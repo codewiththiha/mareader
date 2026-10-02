@@ -8,14 +8,11 @@
 //! between its lines. A press on text keeps its own meaning (selection), as
 //! do links, images, marks and controls.
 //!
-//! The listeners live on the pane's entry element and are handed to it
-//! (`into_js_value`), so they last exactly as long as the entry. Everything
-//! timed — the hold timer, the fling's frames — is cancelled when the press
-//! ends, and is bounded on its own: the hold fires once and stands down for
-//! a detached entry, and a fling decays to a stop within a second. Neither
-//! holds anything but the entry, its scroller and the host's arena keys.
+//! The pane owner explicitly removes the listeners, releases pointer capture,
+//! cancels the hold and stops its animation loop. A fling holds the grab state
+//! weakly and a detached scroller ends it, so no gesture pins a closed pane.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -24,6 +21,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
 use super::lift::HOLD_TO_LIFT_MS;
+use app_chrome::hooks::use_raf::FrameLoop;
 
 /// The attribute the entry carries while the pointer is over empty space
 /// (`ready`) or while a grab is under way (`grabbing`); the stylesheet turns
@@ -72,6 +70,7 @@ struct Grab {
     scroller: Option<web_sys::Element>,
     scroll_start: (f64, f64),
     hold: Option<TimeoutHandle>,
+    fling: FrameLoop,
     /// Last pointer sample (client x, y, time) and the smoothed velocity.
     last: (f64, f64, f64),
     velocity: (f64, f64),
@@ -128,11 +127,12 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
         });
 
     let leave_entry = entry.clone();
-    let on_leave = Closure::<dyn Fn()>::new(move || {
-        if leave_entry.get_attribute(PAN_ATTR).as_deref() == Some("ready") {
-            let _ = leave_entry.remove_attribute(PAN_ATTR);
-        }
-    });
+    let on_leave =
+        Closure::<dyn Fn(web_sys::PointerEvent)>::new(move |_: web_sys::PointerEvent| {
+            if leave_entry.get_attribute(PAN_ATTR).as_deref() == Some("ready") {
+                let _ = leave_entry.remove_attribute(PAN_ATTR);
+            }
+        });
 
     let down_entry = entry.clone();
     let down_state = state.clone();
@@ -170,6 +170,7 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
                 let rect = down_entry.get_bounding_client_rect();
                 if let Some(el) = down_entry.dyn_ref::<web_sys::HtmlElement>() {
                     let style = web_sys::HtmlElement::style(el);
+                    let _ = style.set_property("--hold-duration", &format!("{HOLD_TO_LIFT_MS}ms"));
                     let _ = style.set_property("--hold-x", &format!("{}px", at.0 - rect.left()));
                     let _ = style.set_property("--hold-y", &format!("{}px", at.1 - rect.top()));
                 }
@@ -230,6 +231,7 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
 
     let up_entry = entry.clone();
     let up_state = state.clone();
+    let release_sink = up_sink.clone();
     let on_up = Closure::<dyn Fn(web_sys::PointerEvent)>::new(move |ev: web_sys::PointerEvent| {
         let mut grab = up_state.borrow_mut();
         if ev.pointer_id() != grab.pointer || matches!(grab.phase, Phase::Idle) {
@@ -252,24 +254,56 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
             }
             Phase::Lifted => {
                 drop(grab);
-                up_sink.end(commit);
+                release_sink.end(commit);
             }
             _ => {}
         }
     });
 
-    for (name, listener) in [
-        ("pointermove", on_hover.into_js_value()),
-        ("pointerleave", on_leave.into_js_value()),
-        ("pointerdown", on_down.into_js_value()),
-        ("pointermove", on_move.into_js_value()),
-    ] {
-        let _ = entry.add_event_listener_with_callback(name, listener.unchecked_ref());
+    let listeners = vec![
+        ("pointermove", on_hover),
+        ("pointerleave", on_leave),
+        ("pointerdown", on_down),
+        ("pointermove", on_move),
+        ("pointerup", on_up),
+    ];
+    for (name, listener) in &listeners {
+        let _ = entry.add_event_listener_with_callback(name, listener.as_ref().unchecked_ref());
     }
-    let on_up = on_up.into_js_value();
-    for name in ["pointerup", "pointercancel", "lostpointercapture"] {
+    // pointercancel and lost capture share the end handler, but the owning
+    // closure is stored only once and removed from all three registrations.
+    let on_up = listeners.last().expect("end listener").1.as_ref();
+    for name in ["pointercancel", "lostpointercapture"] {
         let _ = entry.add_event_listener_with_callback(name, on_up.unchecked_ref());
     }
+    let owned = StoredValue::new_local(Some((entry.clone(), state, up_sink, listeners)));
+    on_cleanup(move || {
+        let Some(Some((entry, state, sink, listeners))) = owned.try_update_value(Option::take)
+        else {
+            return;
+        };
+        for (name, listener) in &listeners {
+            let _ =
+                entry.remove_event_listener_with_callback(name, listener.as_ref().unchecked_ref());
+        }
+        let on_up = listeners.last().expect("end listener").1.as_ref();
+        for name in ["pointercancel", "lostpointercapture"] {
+            let _ = entry.remove_event_listener_with_callback(name, on_up.unchecked_ref());
+        }
+        let mut grab = state.borrow_mut();
+        grab.cancel_hold(&entry);
+        grab.fling.stop();
+        grab.generation = grab.generation.wrapping_add(1);
+        let lifted = matches!(grab.phase, Phase::Lifted);
+        grab.phase = Phase::Idle;
+        grab.scroller = None;
+        let _ = entry.release_pointer_capture(grab.pointer);
+        let _ = entry.remove_attribute(PAN_ATTR);
+        drop(grab);
+        if lifted {
+            sink.end(false);
+        }
+    });
 }
 
 /// Scroll the grabbed scroller so the content follows the pointer, and keep
@@ -300,23 +334,31 @@ fn fling(
     generation: u32,
     last: f64,
 ) {
-    request_animation_frame(move || {
-        if state.borrow().generation != generation {
-            return;
+    let weak = Rc::downgrade(&state);
+    let velocity = Cell::new(velocity);
+    let last = Cell::new(last);
+    state.borrow().fling.arm(move || {
+        let Some(state) = weak.upgrade() else {
+            return false;
+        };
+        if state.borrow().generation != generation || !scroller.is_connected() {
+            return false;
         }
         let now = now_ms();
-        let dt = (now - last).clamp(1.0, 48.0);
+        let dt = (now - last.replace(now)).clamp(1.0, 32.0);
         let decay = FLING_DECAY.powf(dt / 16.0);
-        let velocity = (velocity.0 * decay, velocity.1 * decay);
-        if velocity.0.hypot(velocity.1) < FLING_MIN_SPEED {
-            return;
+        let (vx, vy) = velocity.get();
+        let speed = (vx * decay, vy * decay);
+        velocity.set(speed);
+        if speed.0.hypot(speed.1) < FLING_MIN_SPEED {
+            return false;
         }
         let (left, top) = (
             f64::from(scroller.scroll_left()),
             f64::from(scroller.scroll_top()),
         );
-        scroller.scroll_to_with_x_and_y(left - velocity.0 * dt, top - velocity.1 * dt);
-        fling(state, scroller, velocity, generation, now);
+        scroller.scroll_to_with_x_and_y(left - speed.0 * dt, top - speed.1 * dt);
+        true
     });
 }
 

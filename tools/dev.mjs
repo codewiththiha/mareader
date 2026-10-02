@@ -80,7 +80,7 @@ const FINGERPRINT_ROOTS = [
 ];
 
 /** Hook outputs inside the roots above — derived, never fingerprinted. */
-const GENERATED_NAMES = new Set(["pdfEngine.js", "readerEngine.js", "bake.worker.js", "coverBake.js"]);
+const GENERATED_NAMES = new Set(["pdfEngine.js", "readerEngine.js", "rasterLane.js", "bake.worker.js", "coverBake.js"]);
 const ENGINE_DIR = path.join(root, "public", "engine");
 
 /** The floor a fresh manifest vouches for; proveServed still verifies the
@@ -90,6 +90,7 @@ const FRESHNESS_SET = [
   "dist/mareader.js",
   "dist/mareader_bg.wasm",
   "dist/tauri-relay.js",
+  "dist/rasterLane.js",
   "dist/pdf.html",
   "dist/pdf.js",
   "dist/pdf_bg.wasm",
@@ -106,6 +107,7 @@ const FRESHNESS_SET = [
 const PROBED = [
   "/index.html",
   "/tauri-relay.js",
+  "/rasterLane.js",
   "/bake.html",
   "/coverBake.js",
   "/pdf.html",

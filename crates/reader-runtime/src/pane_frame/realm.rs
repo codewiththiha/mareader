@@ -25,8 +25,8 @@ use crate::pane::document::DocumentPane;
 #[cfg(feature = "pdf")]
 use crate::pane_wire::Hook;
 use crate::pane_wire::{
-    Boot, HostToPane, Key, Mirror, PANE_CHANNEL_KIND, PANE_HELLO_KIND, PaneKind, PaneToHost,
-    Paper, WireSidebar, Write, encode,
+    Boot, HostToPane, Key, Mirror, PANE_CHANNEL_KIND, PANE_HELLO_KIND, PaneKind, PaneToHost, Paper,
+    WireSidebar, Write, encode,
 };
 
 /// The port and the shell api over it, once the host handed the port over.
@@ -69,6 +69,7 @@ thread_local! {
     /// Where the digest beat publishes; the final digest after disposal
     /// goes the same way.
     static DIGEST_API: Cell<Option<crate::context::ApiHandle>> = const { Cell::new(None) };
+    static DISPOSED: Cell<bool> = const { Cell::new(false) };
     static HEARD: RefCell<Heard> = RefCell::new(Heard::default());
     /// The pane's mount, dropped at dispose (its cleanup runs the runtime's
     /// disposal with the pane's teardown tail).
@@ -92,14 +93,14 @@ pub(super) fn send(message: &PaneToHost) {
 
 /// Post a raw object (a thumbnail with its transferred bitmap).
 #[cfg(feature = "pdf")]
-pub(super) fn send_object(message: &JsValue, transfer: &JsValue) {
+pub(super) fn send_object(message: &JsValue, transfer: &JsValue) -> bool {
     LINK.with(|l| {
-        if let Some(link) = l.borrow().as_ref() {
-            let _ = link
-                .port
-                .post_message_with_transferable(message, &js_sys::Array::of1(transfer));
-        }
-    });
+        l.borrow().as_ref().is_some_and(|link| {
+            link.port
+                .post_message_with_transferable(message, &js_sys::Array::of1(transfer))
+                .is_ok()
+        })
+    })
 }
 
 pub(super) fn with_api<R>(f: impl FnOnce(&PortShellApi<PaneApiWire>) -> R) -> Option<R> {
@@ -139,6 +140,15 @@ pub(super) fn boot(kind: PaneKind) {
     let expected = nonce.clone();
     let on_offer =
         Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |ev: web_sys::MessageEvent| {
+            let from_parent = web_sys::window()
+                .and_then(|w| w.parent().ok().flatten())
+                .is_some_and(|parent| {
+                    ev.source()
+                        .is_some_and(|source| JsValue::from(source) == JsValue::from(parent))
+                });
+            if !from_parent {
+                return;
+            }
             let data = ev.data();
             let tag = js_sys::Reflect::get(&data, &JsValue::from_str("kind"))
                 .ok()
@@ -202,6 +212,9 @@ fn adopt(kind: PaneKind, port: web_sys::MessagePort) {
 }
 
 fn receive(kind: PaneKind, message: HostToPane) {
+    if DISPOSED.with(Cell::get) {
+        return;
+    }
     if let HostToPane::Boot(boot) = message {
         if LIVE.with(|l| l.borrow().is_none()) {
             start(kind, *boot);
@@ -222,7 +235,7 @@ fn receive(kind: PaneKind, message: HostToPane) {
             look,
         }),
         HostToPane::Workspace(look) => put(live.workspace, look),
-        HostToPane::Paper(paper) => put(live.paper, Some(paper)),
+        HostToPane::Paper { paper } => put(live.paper, paper),
         HostToPane::Active { on } => {
             put(live.active, on);
             if on {
@@ -463,6 +476,11 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
         |_| {},
     );
     crate::diagnostics::expect_engine(kind == PaneKind::Pdf);
+    #[cfg(feature = "pdf")]
+    if kind == PaneKind::Pdf {
+        pdf_engine::api::set_appearance_menu_open(boot.hooks.menu_open);
+        pdf_engine::api::set_scrub_mode(boot.hooks.scrubbing);
+    }
     #[cfg(feature = "pdf")]
     if kind == PaneKind::Pdf {
         let guard = crate::appearance_hooks::install();
@@ -807,6 +825,7 @@ fn finish_dispose(tries: u32) {
 }
 
 fn dispose(live: Live) {
+    DISPOSED.with(|disposed| disposed.set(true));
     LIVE.with(|l| l.borrow_mut().take());
     // The realm's session ends here: its final digest must not report it.
     crate::diagnostics::set_reader_live(false);

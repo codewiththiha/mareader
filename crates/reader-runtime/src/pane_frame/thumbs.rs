@@ -78,18 +78,31 @@ async fn deliver(req: u64, page: u32, canvas: &web_sys::HtmlCanvasElement) {
             Some(Ok(promise)) => wasm_bindgen_futures::JsFuture::from(promise).await.ok(),
             _ => None,
         };
+    let current = PENDING.with(|p| p.borrow().contains_key(&req));
     forget(req);
     release(canvas);
     let Some(bitmap) = bitmap else {
         send_failed(req, false);
         return;
     };
+    // createImageBitmap owns a separate backing store: cancelling the proxy
+    // during that await must also close the eventual bitmap, not send it.
+    if !current || super::realm::pane().is_none() {
+        if let Some(bitmap) = bitmap.dyn_ref::<web_sys::ImageBitmap>() {
+            bitmap.close();
+        }
+        return;
+    }
     let message = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&message, &"t".into(), &THUMB_MESSAGE.into());
     let _ = js_sys::Reflect::set(&message, &"req".into(), &JsValue::from_f64(req as f64));
     let _ = js_sys::Reflect::set(&message, &"page".into(), &JsValue::from(page));
     let _ = js_sys::Reflect::set(&message, &"bitmap".into(), &bitmap);
-    super::realm::send_object(&message, &bitmap);
+    if !super::realm::send_object(&message, &bitmap)
+        && let Some(bitmap) = bitmap.dyn_ref::<web_sys::ImageBitmap>()
+    {
+        bitmap.close();
+    }
 }
 
 /// The host's cell unmounted: abort the render (the engine keeps its cached

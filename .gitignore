@@ -20,6 +20,7 @@
 # for the same reason.
 /public/pdfEngine.js
 /public/readerEngine.js
+/public/rasterLane.js
 /public/bake.worker.js
 /public/coverBake.js
 /public/engine/*.js

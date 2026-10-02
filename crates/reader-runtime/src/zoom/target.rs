@@ -119,15 +119,21 @@ fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
 #[cfg(feature = "pdf")]
 pub(crate) fn page_rendered(state: ReaderState) -> Callback<(u32, f64, f64)> {
     Callback::new(move |(page, width, height): (u32, f64, f64)| {
-        if !state
+        if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+            return;
+        }
+        let changed = state
             .document
             .content
             .metrics
-            .record_rendered(page, width, height)
-        {
+            .record_rendered(page, width, height);
+        if state.viewer.page.try_get_untracked() != Some(page) {
             return;
         }
-        if state.viewer.page.try_get_untracked() != Some(page) {
+        // An unchanged page box is still a successful current canvas blit.
+        // Geometry change owns the refit, never the positive paint verdict.
+        let _ = state.viewer.first_paint.try_set(true);
+        if !changed {
             return;
         }
         let fitting = state
@@ -239,6 +245,47 @@ mod tests {
 
     fn dims(mode: ViewMode, cw: f64, ch: f64, pw: f64, ph: f64) -> FitDims {
         FitDims::from_geometry(mode, (cw, ch), 0.0, (pw, ph)).expect("measured container")
+    }
+
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn unchanged_geometry_still_releases_current_page_paint_in_every_mode() {
+        let owner = Owner::new();
+        owner.with(|| {
+            for mode in [
+                ViewMode::Single,
+                ViewMode::Spread,
+                ViewMode::ScrollVertical,
+                ViewMode::ScrollHorizontal,
+            ] {
+                let pane = crate::pane::handle::PaneHandle::new(
+                    crate::host::model::PaneId::for_tests(1),
+                    crate::runtime::ReaderRuntime::new(),
+                );
+                let state = ReaderState::new(pane);
+                let size = reader_core::document::PageSize {
+                    width: 612.0,
+                    height: 792.0,
+                };
+                state
+                    .document
+                    .content
+                    .metrics
+                    .publish_uniform(2, &size, 792.0);
+                state.viewer.mode.set(mode);
+                let paint = page_rendered(state);
+                paint.run((1, 612.0, 792.0));
+                assert!(state.viewer.first_paint.get_untracked(), "{mode:?}");
+                state.viewer.first_paint.set(false);
+                paint.run((2, 792.0, 612.0));
+                assert!(
+                    !state.viewer.first_paint.get_untracked(),
+                    "look-ahead {mode:?}"
+                );
+                paint.run((1, 0.0, 792.0));
+                assert!(!state.viewer.first_paint.get_untracked(), "empty {mode:?}");
+            }
+        });
     }
 
     #[test]

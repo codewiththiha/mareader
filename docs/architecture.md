@@ -7,10 +7,10 @@ shape is in `docs/route-split-retrospective.md`.
 
 ## Overview
 
-- **Three runtimes.** The Shell, the Library and the Reader are separate WASM
-  artifacts. Library and Reader run in shell-owned iframes connected by a
-  `MessageChannel` handshake (`frame-transport`), and each is disposed as a
-  unit by removing its frame.
+- **Persistent Shell plus document realms.** The Shell renders the library
+  and reader workspace chrome without a window reload. Each document pane
+  is its own iframe/WASM realm: `pdf` or `reflow`. Their format features and
+  built-artifact boundaries are enforced; see `docs/pane-runtimes.md`.
 - **Explicit lifecycle.** `ReaderRuntime` is a state machine with
   generations, a resource registry and observable disposal
   (`crates/reader-runtime/src/runtime.rs`). Counters live in
@@ -42,23 +42,23 @@ shape is in `docs/route-split-retrospective.md`.
 ## Runtime structure
 
 - Shell (`src/`) owns routing, the runtime manager, diagnostics, persistence.
-- Reader and Library boot inside shell-owned iframes (`src/app/frame.rs`),
-  each with its own document, JS realm and WASM instance; the Shell never
-  imports their state, and disposal removes the frame as a unit.
+- Library and reader are owner-scoped view slots in the Shell document
+  (`src/app/frame.rs`); their `.runtime-frame` elements are not reader
+  iframes. `FramePane` owns the actual document iframes and remote chrome
+  mirrors. Document replacement/close removes only those document realms.
 - Frame roots must carry `h-full w-full`: a mount with `height: auto` gives
   the virtualizer an indefinite viewport and every page mounts at once
   (the "peak N page hosts" browser failure).
 - The PDF engine is session-scoped: every document call names a session
   (`sid`), each pane's `PdfSession` owns one, and reader code reaches it only
   through `pane.pdf()` / `MountedPdf` (`crates/reader-runtime/src/pane/engine.rs`).
-  Several document panes share one reader realm: a page's canvas and host
-  are handed to the engine as ELEMENTS when the page registers (pinned to
-  its session), and every canvas the engine sweeps carries
-  `data-engine-sid`, so page-numbered ids in two panes never cross.
+  Production PDF panes do not share an engine realm. Registration still
+  pins each canvas/host to its session's elements (`data-engine-sid`), and
+  the two-session engine smoke keeps that ownership invariant covered.
 - A full-page raster is MAIN-THREAD work — pdf.js draws into the canvas
   synchronously; only parsing/decoding runs in pdf.js's worker — so the page
-  lane's concurrency cap is realm-wide (`REALM_PAGE_LIMIT` = 2 in
-  `state.ts`): at most two rasters in flight across ALL sessions. Four panes
+  lane has a host-wide two-slot cap (`public/rasterLane.ts`) shared across
+  iframe realms, plus the existing `REALM_PAGE_LIMIT = 2` per realm. Four panes
   re-theming or rasterising together pace as one progressive sweep instead
   of stacking eight concurrent stalls; a reading pane alone keeps its two
   slots. The per-session queues and their teardown drain are unchanged, and
@@ -68,7 +68,10 @@ shape is in `docs/route-split-retrospective.md`.
   before any other teardown step, so the registry can never pin a session
   (its surfaces, thumb cache, pdf proxy) past its close. Queued render jobs
   re-check `disposed` at the rAF edge AND at the front of the lane, so a
-  session that retired while work waited starts nothing. The bake's pixel
+  session that retired while work waited starts nothing. The additional
+  host-permit await re-checks page/session/generation liveness too. Its
+  wake is session-owned and weakly held by the host; frame removal reclaims
+  only that frame's leases. The bake's pixel
   readback runs in the bake worker (a transferred `ImageBitmap` read through
   the worker's own canvas), so a theme change pays no main-thread
   `getImageData`; the inline kernel stays the no-worker fallback, and a
@@ -85,7 +88,7 @@ shape is in `docs/route-split-retrospective.md`.
   after a 60 ms dwell (`IN_VIEW_DWELL_MS`) mid-fling. A timer re-checks at
   the dwell deadline, so a page never waits for another scroll event. See
   `docs/memory/fling-gate.md`.
-- Inside the reader frame: `start_session` (composition root) → runtime →
+- In the Shell workspace: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
   dividers / focus outline / pane close) → `PaneTree` (the split layout:
@@ -97,17 +100,11 @@ shape is in `docs/route-split-retrospective.md`.
   chrome only through `ChromeSlot` views. Panes never see `AppState` or
   Shell state; the Shell reads the host through the `host` block of the
   diagnostics digest.
-- The Shell loads **no engine**: `index.html` carries no pdf.js / engine /
-  reader-bundle scripts and the root crate has no `pdf-engine` dependency
-  (`tools/check-dependency-gate.mjs` forbids it, and the whole reader-only
-  set — `reader-runtime`, `reflow-core`, `md-core`, `txt-core`,
-  `virtual-list*`, `leptos-md` — for both the Shell and `library-runtime`).
-  Shelf cover bakes never touch a reader: library `BakeCover` → the Shell's
-  own bake page (`src/app/bake.rs` mounts a hidden `public/bake.html`, whose
-  script `public/coverBake.ts` is pdf.js plus the engine's cover render — no
-  wasm, no runtime) → `window.postMessage` ask/answer → the asking shelf's
-  `CoverBaked`. One bake in flight; the page is removed 5 s after its queue
-  drains, so at rest nothing but the shelf is resident.
+- The Shell loads **no PDF engine**. Its format-neutral raster coordinator
+  holds weak wakes and plain leases only. `check-runtime-artifacts.mjs`
+  rejects `PDFReader` imports in Shell and text WASM glue; the dependency
+  gate rejects `pdf-engine` in the no-default reflow feature graph.
+  Shelf cover bakes remain isolated in the Shell's short-lived bake page.
 - `*_bg.wasm` is wasm-bindgen's file naming (`<name>.js` glue +
   `<name>_bg.wasm` module), not an extra module: there are exactly three —
   the Shell (`mareader`, which links the library and the workspace host),
@@ -122,96 +119,36 @@ shape is in `docs/route-split-retrospective.md`.
   churn record. New memory-sensitive code reads `rules.md` first; a new
   audit updates `audit.md`.
 
-## Warm slot (why a route switch is no longer a boot)
+## Warm slots and document handoff
 
-`src/app/manager.rs::run_start` used to call `dispose_active().await` BEFORE
-the replacement existed, and `start_serialized` blocked concurrent starts on
-top of that: every transition was destroy-A → create-B → boot-B, so the user
-paid a full artifact boot (fetch JS, fetch and instantiate WASM, mount) on
-every click.
+The Shell manager keeps `Active`, `Warm` and `Retiring` view slots, not a
+second reader window/iframe. An empty reflow pane can be prewarmed behind
+the library without loading PDF code. Its first text open promotes it;
+a first PDF open requires a PDF realm. Route handoff retains the outgoing
+surface until the incoming view is ready; the library's deferred refresh
+and intent/idle policy remain owned by the Shell manager.
 
-The manager now owns three slot states — `Active`, `Warm`, `Retiring`
-(`src/app/frame.rs::FrameSlot`) — and keeps at most one `Warm` frame behind
-whatever is on screen:
+Every **document replacement** after adoption uses a fresh iframe, even
+within one format. The pane id/layout/focus stay stable; the old document
+pixels remain until the new frame has mounted and actually painted the
+document. PDF paint is a successful full-resolution current-canvas
+completion in every mode, never a mount or fallback timer. Text preserves
+its anchored synchronous-DOM paint path. Rapid requests supersede the
+incoming nonce; late hello, metadata and paper cannot take over the latest
+open. The chrome reports Opening/new launch rather than old metadata.
 
-- The two runtimes warm asymmetrically. 700ms after the READER goes active
-  (`WARM_DELAY_MS`), the Shell boots the shelf into a hidden slot. The
-  reader is booted behind the shelf only on the shelf's **intent signal** —
-  `RuntimeFrame::ExpectReader`, sent (throttled to one a second) when the
-  pointer is over or moving across `#library-level`, or a card is pressed
-  or focused — never on the shelf's paint. A boot stops at `Ready`: **a warm
-  boot never opens a document**, so the PDF machinery is never paid for
-  twice and never paid for a book the user did not ask for.
-- A warm reader is **evicted when the shelf goes quiet**: each intent signal
-  restarts a `WARM_READER_IDLE_MS` (60 s) clock; when it runs out with the
-  shelf still on screen, the reader is disposed (the full §12 exchange,
-  counted in `readerDisposesCompleted`) and its frame removed
-  (`evict_idle_warm_reader`). This is the one path that removes a reader
-  frame while the user stays on the shelf, and it is what makes the library
-  route's memory the library's alone: `readerFramesResident` (the probe's
-  count of reader frames in the DOM, any slot) is `0` at rest. The suite
-  shortens the window with `?warmIdleMs=` (read once, at manager
-  construction, off the boot URL).
-- A navigation for a kind whose warm frame is ready is a **promotion, not a
-  boot**: same element, same document, same realm, same WASM instance. The
-  reveal is the frame's `data-mareader-slot` flipping to `active` (CSS
-  `z-index`), which is why the frame painted while it waited — there is no
-  cover to hold and nothing to await.
-- A click that beats the warm boot waits out its REMAINDER
-  (`wait_verdict()`), never a second boot of the same artifact.
-- The runtime it displaced goes `Retiring` in the same synchronous block as
-  the reveal and is **recycled** behind it (`retire_or_recycle`): it claims
-  the warm lane, stays intact for `RECYCLE_DELAY_MS` (1.2s — a straight
-  return takes that very session back), then its session is disposed (the
-  full §12 exchange, `DisposeComplete`, counted) and `ShellFrame::Rearm`
-  mounts a fresh warm session in the SAME document. No page load, no wasm
-  fetch/compile, no pdf.js load after the first two boots.
-- A reader frame whose last digest reports `heapHighWaterBytes` above
-  `READER_RECYCLE_HEAP_MAX` (320 MiB) is retired and removed instead: linear
-  memory never shrinks, so dropping the frame is the only way to return it.
-  The HIGH-WATER mark, not `wasmHeapBytes`: the live heap is low again after
-  every close and would keep every frame.
-- A reader whose workspace held a split (the digest's `host.panesCreated`
-  above `READER_RECYCLE_PANES_MAX`, 1) is retired and removed on the way back
-  to the library, never recycled. The Rust heap mark above stays at a couple
-  of MiB whatever is read; what documents grow is beside it (pdf.js and its
-  worker, the engine's arenas, uncompacted canvases), once per pane, and a
-  recycled realm kept it for as long as shelf intent kept it warm. The
-  removal runs behind the library's reveal; the next open reveals a fresh
-  warm reader booted on intent. A single-pane session is still recycled.
-- Module-level state that outlives a session in a recycled frame must be
-  reset or released per session (below). The reflow spot memo and the
-  reflow measurement queue are no longer module-level at all: they are the
-  pane's state (`GlossState.spots`, `ReaderState.measure`) and die with its
-  owner. The search index deliberately survives a close (a bounded cache
-  of the last book's text, cheaper than re-extraction); the eviction bounds
-  its life instead.
-- Hidden frames tell their documents so: `app_ui::frame_theme::
-  mark_frame_hidden` puts `html.frame-hidden` on a warm or rearmed runtime
-  document (cleared by `Launch` / `Refresh`), and `styles/noise.css` pauses
-  the animated grain under it — a hidden frame is `visibility: hidden`, which
-  stops paint but not animation.
-- pdf.js is loaded on the first PDF open (`public/engine/loader.ts::
-  ensurePdfjs`, a dynamic `import()`), not by a `pdf.html` script tag: a
-  pane that never opens a PDF never fetches or holds it.
-- Module-level state that outlives a session in a recycled frame must be
-  reset or released per session: the shelf's cover ledger
-  (`covers::reset_ledger`), and every Tauri listener (`tauri_listen` now
-  unlistens on owner cleanup — Tauri's registry lives in the host window).
-- A warm frame that died on the way up (`ready_outcome()` is an error or a
-  timeout) is torn down and the transition falls back to `cold_start` — the
-  warm slot must never cost the user the runtime.
-- The library's heavy startup passes (migrate, measure, cover backfill,
-  rescan) park in `DEFERRED` during a warm boot and run just after the
-  reveal paints (`after_reveal`, 160ms), so the shelf the user left is
-  refreshed rather than replayed from boot time. `Refresh` re-reads only the
-  stores whose stamp moved (`storage::{library,covers,settings}_stamp`):
-  the cover map is megabytes of data URLs and re-setting it re-rendered
-  every cover at the moment of the reveal.
-- The Idle-bounce guard is two facts: `reader_launched` (a launch was sent)
-  and `reader_armed` (that session then reported Opening/Ready). A promoted
-  warm reader's boot-time `Idle` can land after the promotion and must not
-  send the user back to the shelf.
+An outgoing document flushes its read point and disposes its owned work.
+Its 1.5 s retirement fallback removes only that nonce, not an entire batch
+of frames. Owned 10 s hello/30 s paint deadlines produce named errors and
+are cancelled on adoption, paint or retirement. Removing the iframe also
+reclaims its host raster leases. A closed pane does not dispose siblings,
+and returning to Library never reloads the Shell.
+
+A persistent host must not cache one final JSON report per closed frame.
+Final reports fold into one bounded plain-data aggregate; failed or
+unverifiable terminal evidence is never replaced by a later success.
+See `docs/pane-runtimes.md` for the protocol, paper handoff and regression
+coverage, and `docs/memory/audit.md` for measurement limits.
 
 ## Invariants (enforced by tests — never weaken them)
 
@@ -228,7 +165,8 @@ whatever is on screen:
   remains the single teardown path.
 - Browser peaks: page hosts ≤ render window + zombie cap, active renders ≤
   page-lane slots, counters drain to zero at baseline.
-- At most one frame is visible at any instant, and it is the `active` one. A
+- At most one workspace view slot is active. Every placed document pane is
+  visible; at most one document iframe is visible per pane. A
   hidden slot is `visibility: hidden` — **never `display: none`**, which
   starves the iframe of `requestAnimationFrame` and would therefore never
   produce `Painted`.
@@ -242,9 +180,9 @@ whatever is on screen:
 - A warmed frame is the frame that gets revealed — `backSlots.active ===
   warmShelf.warm` — and the revealed generation is the warmed generation.
   Rebooting at promotion time is a failure, not an optimisation.
-- Disposal epoch is frame-instance-local: a fresh frame opens at 1, a
-  recycled frame opens at its last close + 1, and every close claims exactly
-  one past its open. The reported runtime generation is Shell-owned — the
+- Disposal epoch belongs to the host's document-session count: every open
+  and held-document close claims it, and changing a document realm does
+  not restart it. The reported runtime generation is Shell-owned — the
   reader-session count, advancing once per reader session (a rearm is a new
   session) across frames.
 - The theme pipeline's `gen` (public/engine/theme/pipeline.ts) moves only
@@ -330,43 +268,27 @@ boundaries are already pane-scoped and must not regress:
 
 ## Realm-wide state
 
-Every document is session-owned. What remains shared by the reader realm:
+The persistent host owns authoritative settings, pane looks, layout/focus,
+and shared PDF-paper recency. Each PDF iframe has one engine session,
+its pdf.js worker, bounded pools/caches and paper/theme observers. Text
+frames have their own parsing/layout/theme state and no PDF engine. Page
+ids may repeat across frames; registration still pins owned elements.
 
-- **Element ids.** Page canvas and host ids are page-numbered, not
-  pane-scoped. The engine receives the elements at registration (pinned to
-  the session) and every swept canvas carries `data-engine-sid`, so two
-  panes never cross.
-- **Root backdrop.** `--pdf-paper` on `<html>` has one publisher: the
-  presenting session (latest opened, or `presentSession` — a pane going
-  Ready presents). In a split the workspace stands on the
-  most recently focused PDF's colour — reflowable panes never present, and
-  when the publisher retires the presentation hands over to the most
-  recently presented live session instead of dropping the colour
-  (`state.ts` `presented` MRU, engine smoke "survivor" assertions). A
-  presenting session with nothing detected yet holds the previous colour.
-  In independent mode (see [Workspace appearance and blend](#workspace-appearance-and-blend)) each
-  PDF now bakes and publishes its pane-local paper from its own pinned root;
-  the MRU publisher remains the shared fallback only while independent mode
-  is off.
-- **Diagnostics totals.** The snapshot's `engine` block sums every session
-  (`sessionStats(sid)` has the per-session numbers); `PaneResourceCounts`
-  still reports virtualizers and whether a document session is held.
-- **Realm-shared by design** (not bridges): id mints (`NEXT_SID`, the pane
-  generation mint, reflow session ids), the appearance broadcast and its
-  scrub window, the content-keyed retained search index (`RETAINED`), the
-  pdf.js module, canvas pool, bounded LUT cache and stateless bake worker,
-  and the diagnostics gauges. The reasons are in `docs/session-ownership.md`.
-  Raster pipeline caches are per `EngineSession`, pinned to that session's
-  `[data-pane-root]`; the MRU paper publisher remains the shared fallback
-  only when independent mode is off. The canvas pool drains and the bake
-  worker terminates once the realm's last engine session is retired, so a
-  reader frame kept warm behind the shelf holds neither.
-- **Document replacement is per pane.** `PaneHandle::replace_document` is
-  the one way a pane changes documents (every format, every view mode): the
-  replaced session is disposed at the call, and its release (`Retiring`) is
-  awaited by THAT pane's open only. A fresh pane has nothing to wait for;
-  no open awaits or disposes another pane's document, so split mode can
-  open several documents at once without a realm-wide lock.
+Shared blend repeats the latest focused PDF paper across panes/gutters;
+text focus retains it, PDF close falls back to the next publisher, and
+closing the last PDF explicitly clears it from surviving text frames.
+Independent blend keeps each pane's paper local. Scoped scrub is routed
+by the **host's** `data-appearance-scope` into the selected realm, not
+matched against iframe ancestors. Menu retention is pane-local in
+independent mode; end messages settle every realm.
+
+Host raster scheduling has two slots, weak wakes and at most two requests
+per document realm. The local queues retain/settle their own jobs and
+cancel permit waits before teardown. Diagnostics combine live/disposal
+frames with one bounded final aggregate and the host lane's gauges. No
+unverifiable frame report may be treated as drained. Per-pane session
+ownership, liveness stamps and quiescent sweeps remain enforced by
+`tools/check-session-ownership.mjs` and the engine/browser suites.
 
 ## Split workspace
 
@@ -590,13 +512,13 @@ Every document is session-owned. What remains shared by the reader realm:
   hit test on the target's own text runs, `text_at`); links, images, marks
   and controls are excluded. It shows the hand and drags its nearest
   scroller in both axes with a decaying fling; the press keeps its default
-  so focus still follows a click. In a split a still hold of `HOLD_TO_LIFT_MS` (1.2 s, ring
-  animation in `styles/components/shell.css` matches) lifts the pane. While held the
+  so focus still follows a click. In a split a still hold of `HOLD_TO_LIFT_MS` (5 s, ring
+  duration published from the same constant) lifts the pane. While held the
   workspace is laid out without it (`lay_out` in `host/mod.rs`), so its
   neighbours fill its place; a release docks it beside the target's nearest
-  edge (`PaneTree::dock`; a pane too small to halve is swapped instead). Layout-only: sessions are untouched. Listeners live on
-  the entry element; the hold timer stands down for a detached entry and the
-  fling is generation-guarded.
+  edge (`PaneTree::dock`; a pane too small to halve is swapped instead). Layout-only: sessions are untouched. Owner cleanup removes listeners,
+  releases pointer capture, clears the hold timer and stops the weak-state
+  fling loop. Animation trampolines do not form a self-retaining Rc cycle.
 - **macOS traffic lights.** tao re-applies `trafficLightPosition` from every
   `drawRect:`; the native layout used a different container height (and
   collapsed it on hide), so resizes ping-ponged it (blink) and autoresizing
@@ -634,9 +556,9 @@ Every document is session-owned. What remains shared by the reader realm:
   browser suite asserts one ready, focused pane with a fresh id per open
   and an empty, disposed workspace after close (`assertHostWorkspace`,
   `assertHostDisposed` in `tests/browser/lifecycle.mjs`).
-- Diagnostics hardening: a reader that existed but never reported a terminal
-  digest should fail `atBaseline` closed (currently only "last digest says
-  drained" is required).
+- Native smoke and geometry contracts do not visually prove circular macOS
+  traffic lights or absence of resize blinking. A real macOS visual check
+  remains separate from the desktop/narrow browser evidence.
 - Two app-lifetime pieces have had no caller since the runtime split and
   are kept for the day they are re-armed, not deleted: `DragOverlay`
   (`crates/app-ui/src/components/app_overlays/drag_overlay.rs`, with no

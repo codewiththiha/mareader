@@ -60,6 +60,7 @@ const REQUIRED = [
   ["dist/styles.css", "the compiled stylesheet", RUNTIME_FLOOR_BYTES],
   ["dist/pdfEngine.js", "the imperative pdf.js wrapper (window.PDFReader)", RUNTIME_FLOOR_BYTES],
   ["dist/readerEngine.js", "the format-agnostic reader bundle", RUNTIME_FLOOR_BYTES],
+  ["dist/rasterLane.js", "the host's weak full-page raster coordinator", RUNTIME_FLOOR_BYTES],
   ["dist/bake.worker.js", "the theme bake worker", RUNTIME_FLOOR_BYTES],
   // The Shell's cover-bake page and its script (src/app/bake.rs): without
   // them the shelf's covers never arrive — the Shell mounts this page for
@@ -117,6 +118,9 @@ for (const [rel, what, floor] of REQUIRED) {
 const indexHtml = path.join(root, "dist/index.html");
 if (fs.existsSync(indexHtml)) {
   const html = fs.readFileSync(indexHtml, "utf8");
+  if (!html.includes("/rasterLane.js")) {
+    problems.push("dist/index.html does not load the window raster coordinator");
+  }
   if (!html.includes(SHELL_BOOT_ID)) {
     problems.push(
       `dist/index.html has no ${SHELL_BOOT_ID} placeholder — the shell would show a ` +

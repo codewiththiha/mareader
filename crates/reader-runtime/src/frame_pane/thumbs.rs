@@ -77,6 +77,14 @@ impl RemoteThumbs {
         let Some(pane) = pane.upgrade() else {
             return Err(true);
         };
+        if pane.disposed.get()
+            || pane.incoming.borrow().is_some()
+            || pane.ctx.reader.document.status.get_untracked()
+                != reader_core::document::DocStatus::Ready
+        {
+            return Err(true);
+        }
+        let epoch = self.epoch.get_untracked();
         slot.store(req, Ordering::Relaxed);
         let state = self.state;
         let promise = js_sys::Promise::new(&mut |resolve, reject| {
@@ -92,6 +100,15 @@ impl RemoteThumbs {
         let Ok(bitmap) = bitmap.dyn_into::<web_sys::ImageBitmap>() else {
             return Err(false);
         };
+        // Delivery can win a race with unmount/reset, then resume afterwards.
+        // Never resurrect a detached or already-zeroed canvas.
+        if slot.load(Ordering::Relaxed) != req
+            || !canvas.is_connected()
+            || self.epoch.try_get_untracked() != Some(epoch)
+        {
+            bitmap.close();
+            return Err(true);
+        }
         canvas.set_width(bitmap.width());
         canvas.set_height(bitmap.height());
         let drawn = canvas

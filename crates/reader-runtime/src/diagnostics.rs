@@ -40,7 +40,8 @@ static READER_LIVE: AtomicBool = AtomicBool::new(true);
 /// Whether this realm runs the PDF engine and so must report it drained:
 /// every engine build does, until a pane realm that renders text says it
 /// does not (`expect_engine`).
-static ENGINE_EXPECTED: AtomicBool = AtomicBool::new(cfg!(all(feature = "engine", feature = "pdf")));
+static ENGINE_EXPECTED: AtomicBool =
+    AtomicBool::new(cfg!(all(feature = "engine", feature = "pdf")));
 
 /// Whether lifecycle events are narrated to the console. Off in normal
 /// operation; the dev surface flips it on.
@@ -215,7 +216,7 @@ fn assert_dispose_baseline() {
     // so the runtime is no longer live by construction; the snapshot's
     // engine half and the live gauges are what the assertion really reads.
     let snap = snapshot();
-    if snap.at_baseline() {
+    if snap.realm_at_baseline() {
         if EVENT_LOG.load(Ordering::Relaxed) {
             narrate("reader_runtime:baseline_ok ", &snapshot_json());
         }
@@ -575,7 +576,11 @@ pub(crate) fn snapshot_json() -> String {
     // consumer (the Shell) ANDs this with its own manager facts: a drained
     // reader digest means nothing while the manager still holds a session.
     let (live, finals) = crate::frame_pane::digests();
-    let at_baseline = merge_pane_digests(&mut value, snap.realm_at_baseline(), &live, &finals);
+    let mut at_baseline = merge_pane_digests(&mut value, snap.realm_at_baseline(), &live, &finals);
+    if let Some(lane) = crate::frame_pane::raster::snapshot() {
+        at_baseline &= lane["active"].as_u64() == Some(0) && lane["queued"].as_u64() == Some(0);
+        value["rasterLane"] = lane;
+    }
     value["atBaseline"] = serde_json::Value::Bool(at_baseline);
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
@@ -621,6 +626,13 @@ fn merge_pane_digests(
 ) -> bool {
     use serde_json::Value;
     let mut baseline = host_baseline;
+    if live
+        .iter()
+        .chain(finals)
+        .any(|json| serde_json::from_str::<Value>(json).is_err())
+    {
+        baseline = false;
+    }
     let parse = |json: &String| serde_json::from_str::<Value>(json).ok();
     let live: Vec<Value> = live.iter().filter_map(parse).collect();
     let finals: Vec<Value> = finals.iter().filter_map(parse).collect();
@@ -674,6 +686,23 @@ fn merge_pane_digests(
         baseline = false;
     }
     baseline
+}
+
+/// Reduce closed realms to one plain-data record. Lifetime counters remain
+/// monotonic, but the record's size is independent of the number of closes.
+/// A failed or unverifiable final verdict is never erased by a later close.
+pub(crate) fn fold_terminal_digest(total: Option<&str>, terminal: &str) -> String {
+    let mut value = match total {
+        None => serde_json::json!({ "atBaseline": true }),
+        Some(json) => serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .filter(|value| value.is_object())
+            .unwrap_or_else(|| serde_json::json!({ "atBaseline": false })),
+    };
+    let previous = value["atBaseline"].as_bool().unwrap_or(false);
+    let baseline = merge_pane_digests(&mut value, previous, &[], &[terminal.to_string()]);
+    value["atBaseline"] = serde_json::Value::Bool(baseline);
+    serde_json::to_string(&value).unwrap_or_else(|_| "{\"atBaseline\":false}".to_string())
 }
 
 /// Push the digest across the boundary NOW. Called on the moments the
@@ -943,5 +972,61 @@ mod tests {
             ..pdf_core::diagnostics::EngineStats::default()
         });
         assert!(snap.at_baseline(), "{snap:?}");
+    }
+
+    #[test]
+    fn no_engine_realms_still_require_every_owned_resource_to_drain() {
+        let mut snap = drained_snapshot();
+        snap.engine = None;
+        assert!(snap.at_baseline_without_engine());
+        assert!(!snap.at_baseline());
+        snap.virtualizer_live = 1;
+        assert!(!snap.at_baseline_without_engine());
+        snap.virtualizer_live = 0;
+        snap.accounting_consistent = false;
+        assert!(!snap.at_baseline_without_engine());
+    }
+
+    #[test]
+    fn terminal_digests_are_bounded_and_keep_lifetime_counters() {
+        let terminal = serde_json::json!({
+            "atBaseline": true,
+            "readerRuntimesCreated": 1, "readerDisposesCompleted": 1,
+            "virtualizersCreated": 2, "virtualizersDisposed": 2,
+            "engine": { "sessionsOpened": 1, "sessionsDestroyed": 1, "sessionsLive": 0 }
+        })
+        .to_string();
+        let mut total = None;
+        for _ in 0..1000 {
+            total = Some(fold_terminal_digest(total.as_deref(), &terminal));
+        }
+        let json = total.expect("the single aggregate exists");
+        assert!(
+            json.len() < 512,
+            "aggregate grew with closed realms: {}",
+            json.len()
+        );
+        let value: serde_json::Value = serde_json::from_str(&json).expect("aggregate JSON");
+        assert_eq!(value["readerRuntimesCreated"], 1000);
+        assert_eq!(value["virtualizersDisposed"], 2000);
+        assert_eq!(value["engine"]["sessionsOpened"], 1000);
+        assert_eq!(value["engine"]["sessionsLive"], 0);
+        assert_eq!(value["atBaseline"], true);
+    }
+
+    #[test]
+    fn a_bad_final_verdict_cannot_be_laundered_by_a_later_close() {
+        let good = "{\"atBaseline\":true}";
+        for bad in ["{\"atBaseline\":false}", "not JSON", "null"] {
+            let total = fold_terminal_digest(None, bad);
+            let total = fold_terminal_digest(Some(&total), good);
+            let value: serde_json::Value = serde_json::from_str(&total).expect("aggregate JSON");
+            assert_eq!(value["atBaseline"], false, "lost failed report {bad}");
+        }
+        let bad_previous = fold_terminal_digest(Some("not JSON"), good);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&bad_previous).unwrap()["atBaseline"],
+            false
+        );
     }
 }

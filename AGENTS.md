@@ -7,11 +7,13 @@ a Tauri v2 shell, a Rust/WebAssembly UI in Leptos (CSR), and pdf.js
 vendored at `public/vendor/pdfjs`.
 
 - The Shell (`src/`) owns routing, persistence and the runtime manager.
-- Library and Reader each run in a shell-owned iframe with their own JS
-  realm and WASM instance; removing the frame disposes the runtime.
-- The reader (`crates/reader-runtime`) hosts up to four panes; each pane
-  owns one document session. PDF rasterisation runs in the engine
-  (`public/engine/`, `public/pdfEngine.ts`).
+- Library and Reader workspace chrome render in the persistent Shell.
+- Each document pane has its own iframe, JS realm and WASM instance;
+  removing that frame releases its document runtime. PDF and reflow panes
+  are separate artifacts selected by explicit Cargo features.
+- The reader (`crates/reader-runtime`) hosts up to four panes. Each PDF
+  pane owns its pdf.js engine and worker (`public/engine/`,
+  `public/pdfEngine.ts`); text panes never link or load that engine.
 
 Read `docs/architecture.md` before changing runtime, pane, engine or memory
 behaviour. Read `docs/memory/rules.md` before writing code that allocates

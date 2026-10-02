@@ -353,7 +353,11 @@ pub fn ReflowStreamLayout(
     {
         let v = v.clone();
         let items = v.items();
+        let zooming = state.viewer.zooming();
         Effect::new(move |_| {
+            // A mid-tween report stands down below. Completion must wake it
+            // even when the final scale was already written on the last tick.
+            let _ = zooming.get();
             let mounted = items.get();
             let _typography = typography.get();
             let _ = state.viewer.page_margin.get();

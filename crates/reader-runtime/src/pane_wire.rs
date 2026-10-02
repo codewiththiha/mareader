@@ -7,8 +7,8 @@
 //! plain object carrying a transferred `ImageBitmap` (see
 //! [`THUMB_MESSAGE`]): pixels are not JSON.
 
-use reader_core::document::{DocStatus, PageSize};
 use reader_core::appearance::Appearance;
+use reader_core::document::{DocStatus, PageSize};
 use reader_core::format::Format;
 use reader_core::settings::Settings;
 use reader_core::view::ViewMode;
@@ -135,6 +135,13 @@ pub struct Paper {
     pub baked: String,
 }
 
+/// Ephemeral appearance state owned by the host, inherited by a fresh frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookState {
+    pub scrubbing: bool,
+    pub menu_open: bool,
+}
+
 /// Everything a pane frame needs to build its pane.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Boot {
@@ -149,6 +156,7 @@ pub struct Boot {
     pub look: Option<Appearance>,
     pub workspace: Workspace,
     pub paper: Option<Paper>,
+    pub hooks: HookState,
     pub active: bool,
     pub can_split: bool,
     pub moves: Moves,
@@ -255,7 +263,9 @@ pub enum HostToPane {
         look: Option<Appearance>,
     },
     Workspace(Workspace),
-    Paper(Paper),
+    Paper {
+        paper: Option<Paper>,
+    },
     Active {
         on: bool,
     },
@@ -358,6 +368,13 @@ mod tests {
     fn host_messages_round_trip() {
         let messages = vec![
             HostToPane::Active { on: true },
+            HostToPane::Paper { paper: None },
+            HostToPane::Paper {
+                paper: Some(Paper {
+                    raw: "#fff".into(),
+                    baked: "#eee".into(),
+                }),
+            },
             HostToPane::Write(Write::ZoomStep { step: -1 }),
             HostToPane::Write(Write::Mode {
                 mode: ViewMode::Spread,
@@ -378,6 +395,12 @@ mod tests {
             let back: HostToPane = serde_json::from_str(&json).expect("decodes");
             assert_eq!(back, message);
         }
+    }
+
+    #[test]
+    fn clearing_shared_paper_is_an_explicit_null_field() {
+        let wire = serde_json::to_value(HostToPane::Paper { paper: None }).expect("paper clear");
+        assert_eq!(wire, serde_json::json!({ "t": "paper", "paper": null }));
     }
 
     #[test]

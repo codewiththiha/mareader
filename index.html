@@ -31,6 +31,10 @@
          cover bakes in the bake page above, so the shell's own startup is
          its wasm and nothing else. The copy-file links above still ship
          those bundles to the dist root, where the runtime pages load them. -->
+    <!-- A plain-data, weak-callback budget shared by all PDF pane realms.
+         It contains no PDF engine and runs before the Shell can mount panes. -->
+    <link data-trunk rel="copy-file" href="public/rasterLane.js" />
+    <script src="/rasterLane.js"></script>
     <link data-trunk rel="rust" data-wasm-opt="z" />
     <!-- The remembered paper, applied before the body exists (see the file):
          synchronous on purpose — a deferred script would run after the first

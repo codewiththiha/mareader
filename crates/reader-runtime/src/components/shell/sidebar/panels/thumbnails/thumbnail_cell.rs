@@ -189,7 +189,7 @@ pub fn ThumbCell(
         // flows through the machine.
         let current = ThumbRenderState::from_u8(render_cleanup.load(Ordering::Relaxed));
         render_cleanup.store(current.unmount().as_u8(), Ordering::Relaxed);
-        thumbs.cancel(req_cleanup.load(Ordering::Relaxed));
+        thumbs.cancel(req_cleanup.swap(0, Ordering::Relaxed));
         // WKWebView does not release a canvas backing store on DOM removal
         // alone — every close/open cycle would otherwise leak a batch of
         // IOSurfaces until GC gets around to it. Zero the backing store so

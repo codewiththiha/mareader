@@ -21,6 +21,10 @@ function bundle(entryPoints, outfile) {
   });
 }
 
+// The persistent host's format-neutral full-page budget, loaded by index.html
+// only. It holds no engine or document, and never strongly holds a pane wake.
+await bundle(["public/rasterLane.ts"], "public/rasterLane.js");
+
 // The pdf.js-facing engine.
 await bundle(["public/pdfEngine.ts"], "public/pdfEngine.js");
 

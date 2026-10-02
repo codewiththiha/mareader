@@ -14,6 +14,7 @@
 // baseline: paste it into docs/memory-baseline.md for the environment that
 // ran it.
 import { chromium } from "playwright";
+import { verifyPaneRuntimes } from "./pane-runtimes.mjs";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:8123";
 const PEARLS = "/samples/Programming Pearls (2nd Edition) - Jon Bentley.pdf";
@@ -541,6 +542,9 @@ function assertDrained(s, label, expectedEpoch = 2) {
   // canvases, scales and caller resolvers across the dispose.
   if (s.engine.pageQueue !== 0 || s.engine.pageActive !== 0) {
     throw new Error(`[${label}] page lane not drained (queue ${s.engine.pageQueue}, active ${s.engine.pageActive})`);
+  }
+  if (!s.rasterLane || s.rasterLane.active !== 0 || s.rasterLane.queued !== 0 || s.rasterLane.owners !== 0) {
+    throw new Error(`[${label}] host raster leases did not drain: ${JSON.stringify(s.rasterLane)}`);
   }
   if (s.engine.thumbQueue !== 0 || s.engine.thumbActive !== 0) {
     throw new Error(`[${label}] thumbnail lane not drained (queue ${s.engine.thumbQueue}, active ${s.engine.thumbActive})`);
@@ -3678,6 +3682,14 @@ currentStage = "boot-paint";
   console.log(`boot-paint: ${JSON.stringify(summary.bootPaint)}`);
 }
 console.log("the boot placeholder is blank paper in the remembered theme");
+
+currentStage = "pane-runtime-regressions";
+summary.paneRuntimes = await verifyPaneRuntimes({
+  page, openBook, openIn, waitFor, waitForSettledLayout, frameClick, writeSettings,
+  closeAndWaitBaseline, snap,
+  urls: { pdf: pearlsUrl },
+  paths: { pdf: PEARLS, otherPdf: DEEP_OUTLINE, markdown: SPLIT_NOTES, text: PLAIN_NOTES },
+});
 
 // --- Guards ----------------------------------------------------------------
 summary.consoleErrorsUnrelated = otherErrorCount;

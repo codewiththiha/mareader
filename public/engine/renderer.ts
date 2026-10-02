@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import { blitInto, el, isSharedScratch, sessionEl, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
 import { fail, failFrom } from "./errors";
+import { acquireRasterSlot, cancelRasterWaiters } from "./raster-lane";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
@@ -170,6 +171,7 @@ export function registerPage(
 }
 
 export function unregisterPage(s: EngineSession, canvasId: string): void {
+  cancelRasterWaiters(s, canvasId);
   const st = s.stateByCanvasId.get(canvasId);
   if (st) {
     st.dead = true;
@@ -192,10 +194,14 @@ export function unregisterPage(s: EngineSession, canvasId: string): void {
 }
 
 export function cancelPage(s: EngineSession, canvasId: string): void {
+  cancelRasterWaiters(s, canvasId);
   const st = s.stateByCanvasId.get(canvasId);
-  if (st && st.renderTask) {
-    try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
-    st.renderTask = null;
+  if (st) {
+    st.queueGen = (st.queueGen || 0) + 1;
+    if (st.renderTask) {
+      try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
+      st.renderTask = null;
+    }
   }
 }
 
@@ -209,6 +215,7 @@ export function cancelPage(s: EngineSession, canvasId: string): void {
  * the canvas's rAF or the lane — those guards settle it as a drop — and the
  * rAF itself must fire to deliver that settle, so it is never cancelled. */
 export function cancelPageRenders(s: EngineSession): void {
+  cancelRasterWaiters(s);
   for (const st of s.stateByCanvasId.values()) {
     st.queueGen = (st.queueGen || 0) + 1;
     if (st.renderTask) {
@@ -590,6 +597,7 @@ function pumpAllLanes(): void {
  *  sees the dead state) and never claim a raster slot, so bypassing the cap
  *  starts no work — it only empties the queue the baseline requires empty. */
 export function drainPageLane(s: EngineSession): void {
+  cancelRasterWaiters(s);
   const lane = s.pageLane;
   while (lane.queue.length > 0) {
     const next = lane.queue.shift();
@@ -662,18 +670,33 @@ export async function renderPage(
           return;
         }
         realmLane.active += 1;
-        renderPageInternal(s, canvasId, scale, !!renderText)
-          .then(resolve)
-          .catch((e: unknown) => {
-            resolve(failFrom(e));
-          })
-          .finally(() => {
-            realmLane.active -= 1;
-            // A freed slot is every session's chance: re-offer the lane to
-            // each registered queue so the panes pace as one sweep.
-            pumpAllLanes();
-            finish();
-          });
+        // Keep the existing realm/session cap while waiting for the window
+        // cap. Each pane can own at most two permit requests, and the host
+        // starts at most two full-page rasters across ALL pane realms.
+        void (async () => {
+          const permit = await acquireRasterSlot(s, canvasId);
+          try {
+            // A permit may land after unmount, close or a new zoom. Check
+            // again at this third async edge, before allocating a raster.
+            if (!permit || st.dead || s.disposed || st.queueGen !== gen) {
+              s.rendersDropped += 1;
+              lifecycleEvent("render:cancel");
+              resolve(fail("cancelled", "Render cancelled"));
+              return;
+            }
+            resolve(await renderPageInternal(s, canvasId, scale, !!renderText));
+          } finally {
+            permit?.release();
+          }
+        })().catch((e: unknown) => {
+          resolve(failFrom(e));
+        }).finally(() => {
+          realmLane.active -= 1;
+          // A freed slot is every session's chance: re-offer the lane to
+          // each registered queue so the panes pace as one sweep.
+          pumpAllLanes();
+          finish();
+        });
       });
       pumpPageQueue(s);
     });

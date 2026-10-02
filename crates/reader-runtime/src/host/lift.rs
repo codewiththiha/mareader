@@ -18,7 +18,7 @@ use super::tree::{EVEN, Side, TreeLayout, split_fits, split_rects};
 /// lifts. Long enough that a reader resting the pointer while panning never
 /// lifts a pane by accident, short enough to feel deliberate rather than
 /// stuck; the hold ring shows it filling.
-pub const HOLD_TO_LIFT_MS: u64 = 1200;
+pub const HOLD_TO_LIFT_MS: u64 = 5000;
 
 /// Where a lifted pane would go if released now.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

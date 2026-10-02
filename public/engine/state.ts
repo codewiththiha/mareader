@@ -112,6 +112,12 @@ export const realmCounters: Record<CounterKey, number> = zeroCounters();
 export class PageLane {
   active = 0;
   readonly queue: Array<() => void> = [];
+  permitSerial = 0;
+  readonly waiters = new Map<string, {
+    canvasId: string;
+    cancel: () => void;
+    wake: () => void;
+  }>();
 }
 
 /** Full-page rasters are MAIN-THREAD work — pdf.js draws the page into the

@@ -11,7 +11,7 @@ teardown in the smoke suite and the browser lifecycle baseline.
 | --- | --- | --- | --- |
 | Virtualizer windowing and retention | `crates/virtual-list-leptos` | Pass | Window = viewport + overscan; zombies bounded (`MAX_ZOMBIES = 12`, 120 ms grace); `dispose()` takes the retention timer (`virtualizer.rs:357`) |
 | Fling gate and in-view exemption | `components/formats/pdf/canvas.rs`, `strip.rs` | Pass | Speed-aware exemption with a timer wake; no placeholder pixels; see [fling-gate.md](fling-gate.md) |
-| Page render lane | `public/engine/renderer.ts`, `state.ts` | Pass | Per-session queue + realm cap 2; drained unconditionally on teardown; queued jobs drop on `st.dead / s.disposed / queueGen` |
+| Page render lane | `public/engine/renderer.ts`, `state.ts`, `public/rasterLane.ts` | Source audited; CI verification required | Session/realm cap 2 plus window cap 2; host holds weak wakes/plain keys; session cancels pending permits; post-permit liveness check; frame removal reclaims only its nonce |
 | Lane pump registry | `public/engine/state.ts` | Pass (fixed) | `WeakRef` entries, pruned on every pump; session entry dropped first in `destroySession` |
 | Thumbnail lane and cache | `public/engine/thumbnails.ts` | Pass | Cache capped (`THUMB_CACHE_MAX`), entries released bitmap-first (`releaseThumbEntry`), prefetch epoch-guarded and cancelled on teardown |
 | Canvas pool and scratch | `public/engine/canvas.ts` | Pass | `POOL_MAX = 6`, oversized-return guard, `releaseCanvas` zeroes the backing store, `disposeScratch` drains on idle and on destroy |
@@ -56,3 +56,35 @@ retained raster copies or page canvases; local papers are computed on one
 - The shipped replay harness scrolls once per pane. It measures teardown,
   not churn. Motion-path changes need a scroll-heavy workload before their
   memory numbers mean anything ([rules.md](rules.md), rule 10).
+
+## Document-frame completion audit (2026-10-02)
+
+The starting build linked 29 `PDFReader` references in both PDF and reflow
+WASM glue, despite only the PDF page loading the JS engine. Feature-isolated
+builds now prohibit those imports in text (and retain the existing Shell
+prohibition); shared document/report DTOs no longer pull in browser code.
+
+Source inspection found/fixed these persistent-host lifetime issues:
+
+- A retirement deadline swept every retiring frame. It now removes only
+  its own nonce; a newer realm keeps its own disposal deadline.
+- Final JSON reports accumulated in an unbounded vector. They now reduce
+  to one plain-data record, preserving lifetime pairs and failed evidence.
+- Animation-loop trampolines captured their own Rc slot. The slot is weak;
+  grab cleanup explicitly removes listeners and cancels its hold/fling.
+- Thumbnail bitmap creation/delivery could resume after cancellation and
+  repopulate a zeroed canvas. Both sides re-check ownership and close late
+  or untransferred bitmaps; proxy backing stores are always zeroed.
+- Reflow stream measurements skipped during a fit tween had no completion
+  wake. The measurement effect now tracks zoom completion, preserving the
+  mid-tween guard while settling real row heights after fit/resize. Desktop
+  and narrow browser checks require reported rows not to overlap.
+
+**Verification method:** GitHub Actions production artifacts and existing
+Chromium/WebKit split-return/close-cycle replay, plus the real-browser pane
+regression stage and desktop/narrow captures. No local compiler/build,
+Node/Rust/browser dependency installation, or local process-memory test.
+Pending run results must not be described as measured savings. The replay
+is teardown-oriented (one scroll per pane); it does not prove a scroll-heavy
+churn/peak improvement. Browser process PSS also includes shared resource
+caches and does not imply instantaneous WASM/IOSurface collection.

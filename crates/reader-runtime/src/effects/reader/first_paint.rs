@@ -5,8 +5,8 @@
 //! toward it.
 //!
 //! The release is paint-driven and each surface owns its definition of
-//! painted: the PDF strip lifts the gate on a geometry report (a completed
-//! render, `crate::components::formats::pdf::strip`); the text stream and text
+//! painted: PDF hosts release on a successful current raster completion
+//! (`crate::zoom::target::page_rendered`); the text stream and text
 //! pages lift it when their mount anchor lands (DOM text paints synchronously,
 //! `crate::components::viewer::shells::anchor_settle`). The anchor loops run
 //! under the cover: the viewer is mounted, only masked.
@@ -15,11 +15,9 @@ use leptos::prelude::*;
 
 use reader_core::document::DocStatus;
 
-/// The surfaces' own release path. Paginated modes are the one surface with no
-/// scroll anchor to land and no render callback to wait on: their hosts mount
-/// synchronously, so the first frame after mount releases the gate — which also
-/// unsticks `awaiting_anchor` in Single/Spread, where nothing else would lower
-/// it.
+/// Paginated surfaces have no scroll anchor to land. Clear that anchor guard
+/// on mount, but only DOM text may release on the next frame: PDF hosts wait
+/// for their successful raster callback in every mode.
 fn release_when_painted(state: crate::context::ReaderContext) {
     let r = state.reader;
     Effect::new(move |_| {
@@ -29,6 +27,10 @@ fn release_when_painted(state: crate::context::ReaderContext) {
         if r.viewer.mode.get().is_paginated() {
             if r.viewer.awaiting_anchor.get_untracked() {
                 r.viewer.awaiting_anchor.set(false);
+            }
+            // PDF paged modes release on a real canvas completion too.
+            if !r.reflowable() {
+                return;
             }
             let vs = r.viewer;
             // Let the landed frame paint before the cover lifts.
@@ -44,8 +46,9 @@ fn release_when_painted(state: crate::context::ReaderContext) {
     });
 }
 
-/// The net under it: a first render that never reports (a settle loop that
-/// cannot land, a surface that never binds) must never strand the cover. The
+/// The text anchor net: a settle loop that cannot land must not strand DOM
+/// text under its cover. PDF frames instead have a host-owned startup error
+/// deadline; a timer is never positive evidence that a raster painted. The
 /// worst case is the cover lifting over a still-settling frame — never over the
 /// wrong page (the strips' initial windows already open on it) and never over
 /// the white invert (the paper-ready gate stands down until a colour is
@@ -64,6 +67,11 @@ fn release_if_never_painted(state: crate::context::ReaderContext) {
             handle.clear();
         }
         if r.document.status.get() != DocStatus::Ready || r.viewer.first_paint.get() {
+            return;
+        }
+        // Never trade a PDF replacement's settled old pixels for a timer.
+        // The host owns its startup error deadline; keep the text anchor net.
+        if !r.reflowable() {
             return;
         }
         let vs = r.viewer;

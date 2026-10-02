@@ -23,19 +23,24 @@
 //! results away, and the dispose that releases the content. Markdown and
 //! TXT share that code (`ReflowLifetime`), never an instance.
 
+#[cfg(feature = "reflow")]
 use std::cell::Cell;
+#[cfg(feature = "reflow")]
 use std::rc::Rc;
 
 #[cfg(feature = "pdf")]
 use pdf_engine::PdfSession;
 
+#[cfg(feature = "reflow")]
 use crate::state::document::reflow::ReflowContent;
 
 /// The realm's reflow session ids: minted once, never reused.
+#[cfg(feature = "reflow")]
 static NEXT_REFLOW_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// The lifetime half both reflowable formats share (code, not state: each
 /// session has its own).
+#[cfg(feature = "reflow")]
 struct ReflowLifetime {
     id: u64,
     path: String,
@@ -44,6 +49,7 @@ struct ReflowLifetime {
     reflow: ReflowContent,
 }
 
+#[cfg(feature = "reflow")]
 impl ReflowLifetime {
     fn new(path: &str, reflow: ReflowContent) -> Rc<Self> {
         Rc::new(Self {
@@ -63,6 +69,7 @@ impl ReflowLifetime {
     }
 }
 
+#[cfg(feature = "reflow")]
 macro_rules! reflow_session {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
@@ -99,11 +106,13 @@ macro_rules! reflow_session {
     };
 }
 
+#[cfg(feature = "reflow")]
 reflow_session! {
     /// A Markdown document open in a pane.
     MdSession
 }
 
+#[cfg(feature = "reflow")]
 reflow_session! {
     /// A plain-text document open in a pane.
     TxtSession
@@ -116,7 +125,9 @@ pub(crate) enum FormatSession {
     None,
     #[cfg(feature = "pdf")]
     Pdf(PdfSession),
+    #[cfg(feature = "reflow")]
     Markdown(MdSession),
+    #[cfg(feature = "reflow")]
     Text(TxtSession),
 }
 
@@ -126,7 +137,9 @@ impl FormatSession {
             Self::None => false,
             #[cfg(feature = "pdf")]
             Self::Pdf(s) => s.is_live(),
+            #[cfg(feature = "reflow")]
             Self::Markdown(s) => s.is_live(),
+            #[cfg(feature = "reflow")]
             Self::Text(s) => s.is_live(),
         }
     }
@@ -143,7 +156,9 @@ impl FormatSession {
     /// The live reflowable session's id, if this is one.
     pub(crate) fn reflow_id(&self) -> Option<u64> {
         match self {
+            #[cfg(feature = "reflow")]
             Self::Markdown(s) if s.is_live() => Some(s.id()),
+            #[cfg(feature = "reflow")]
             Self::Text(s) if s.is_live() => Some(s.id()),
             _ => None,
         }
@@ -152,8 +167,12 @@ impl FormatSession {
     /// Whether async work started for the reflow session `id` may still
     /// commit into this pane.
     pub(crate) fn admits_reflow(&self, id: u64) -> bool {
+        #[cfg(not(feature = "reflow"))]
+        let _ = id;
         match self {
+            #[cfg(feature = "reflow")]
             Self::Markdown(s) => s.is_live() && s.id() == id,
+            #[cfg(feature = "reflow")]
             Self::Text(s) => s.is_live() && s.id() == id,
             _ => false,
         }
@@ -181,10 +200,12 @@ impl FormatSession {
     pub(crate) fn dispose(self) -> Retiring {
         match self {
             Self::None => Retiring::settled_now(),
+            #[cfg(feature = "reflow")]
             Self::Markdown(s) => {
                 s.dispose();
                 Retiring::settled_now()
             }
+            #[cfg(feature = "reflow")]
             Self::Text(s) => {
                 s.dispose();
                 Retiring::settled_now()

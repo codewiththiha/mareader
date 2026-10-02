@@ -6,6 +6,7 @@
 // rather than committed.
 
 (async () => {
+  await (await import("./engine-smoke/raster-lane.js")).run();
   await (await import("./engine-smoke/open.js")).run();
   await (await import("./engine-smoke/render.js")).run();
   await (await import("./engine-smoke/theme.js")).run();

@@ -134,7 +134,6 @@ impl FrameLoop {
         let running = self.alive.get();
         let alive = Rc::clone(&self.alive);
         let raf = Rc::clone(&self.raf);
-        let slot = Rc::clone(&self.slot);
         let weak = Rc::downgrade(&self.slot);
         let step = Rc::new(step);
 
@@ -144,7 +143,9 @@ impl FrameLoop {
             }
             if !step() {
                 alive.set(false);
-                *slot.borrow_mut() = None;
+                if let Some(slot) = weak.upgrade() {
+                    *slot.borrow_mut() = None;
+                }
                 cancel(&raf);
                 return;
             }

@@ -3,8 +3,8 @@
 Each reader pane runs in its own iframe, with its own JS realm and WASM
 instance. Closing a pane removes its frame, and the realm's memory goes with
 it: the WASM linear memory, pdf.js and its worker, canvases and every JS
-object. Nothing else in the window repaints, so a close or an in-place open
-never flickers.
+object. The Shell and unrelated document realms stay alive; replacements
+retain the old surface until the new document has actually painted.
 
 ```text
 Shell / workspace host (window document, never reloads)
@@ -17,9 +17,15 @@ Shell / workspace host (window document, never reloads)
 ```
 
 There is no intermediate reader frame: the Shell document itself is the
-workspace host. The two pane runtimes are separate binaries, so a reflow
-pane never links or loads the PDF engine, and a PDF pane never links the
-reflow formats.
+workspace host. The two pane runtimes build with `--no-default-features`:
+`pdf,engine`
+for `pdf.html`, `reflow,engine` for `reflow.html`. `pdf-engine` is optional
+and only the PDF feature enables it. Shared status/page metadata lives in
+`reader-core::document`; engine report data lives in `pdf-core::diagnostics`,
+not the browser engine. The dependency gate checks the reflow feature graph,
+and the artifact gate rejects `PDFReader` imports in both Shell and reflow
+glue (and rejects PDF scripts in the text page). A PDF pane does not link the
+reflow rendering components.
 
 ## The seam
 
@@ -34,8 +40,10 @@ type. The split keeps that seam and changes what stands behind it:
   bins `pdf` and `reflow`) run the existing `DocumentPane` unchanged, with a `PaneEnv`
   built from the port instead of from the host.
 
-The vocabulary both sides serialize is `runtime_contract::pane`
-(`HostToPane`, `PaneToHost`), JSON over the port, like the Shell protocol.
+The vocabulary is `reader_runtime::pane_wire` (`HostToPane`, `PaneToHost`),
+JSON over the port. Shell API requests use the existing runtime-contract
+envelope inside that vocabulary. The initial port offer is accepted only
+from the actual parent and matching nonce; disposal is one-shot.
 
 ## Chrome: a mirror, not a remote view
 
@@ -79,10 +87,15 @@ cells.
   and reports them. The host keeps the most recently focused PDF pane as the
   publisher (falling back to the next most recent on close), paints its own
   root and pushes the shared values to every pane, which sets them on its
-  `.reader-bg`, overriding its own `<html>` for everything inside.
+  `.reader-bg`, overriding its own `<html>` for everything inside. Closing
+  the last PDF sends `Paper { paper: None }` too, so a surviving text pane cannot keep
+  a stale PDF backdrop.
 - **Engine hooks.** The appearance menu's re-bake, scrub and menu-open calls
-  are forwarded to the PDF panes (only the scoped pane while a pane-scoped
-  slider drags).
+  are forwarded by the host, which reads `data-appearance-scope` in its own
+  document and selects the recipient realm. The scope id is not interpreted
+  against unrelated iframe ancestors. Independent menu retention targets
+  the focused pane; end messages visit all panes so focus changes cannot
+  strand a raw-retention/scrub window. Fresh frames inherit these flags.
 
 ## Input across frames
 
@@ -93,16 +106,23 @@ cells.
   forwarded to the active pane.
 - **Grab and lift.** Panning stays in the pane. A hold to lift starts in the
   pane, which then streams pointer positions (in host coordinates) to the
-  host until release.
+  host until release. The still hold is five seconds; the progress ring
+  takes its duration from `HOLD_TO_LIFT_MS`. Listener removal, pointer
+  capture release, hold cancellation and fling-loop stop are owner cleanup.
 - **Host drags** (dividers, library rows, a lifted pane) raise a transparent
   shield over the panes for the drag, so pointer events stay in the host.
 
 ## Rasters across frames
 
-Same-origin frames share one main thread. The realm-wide page-lane cap
-(two rasters in flight across every pane) moves to a lane object the host
-installs on its window; pane engines acquire and release slots through
-`window.parent`. A pane's slots are reclaimed when its frame is removed.
+Same-origin frames share one main thread. `public/rasterLane.ts` installs
+one two-slot full-page budget in the host window. Its FIFO holds **weak**
+wake callbacks and plain owner/lease keys only. Each engine retains its
+pending wakes in its own session (at most two per realm), cancels them on
+page/session teardown, and checks liveness/generation again after a permit
+arrives. The existing per-session/realm caps, fling gate and quiescent
+sweeps remain. Frame removal reclaims only that nonce's leases, including
+abnormal retirement. `rasterLane` diagnostics report active, queued, owners
+and peak; the disposal baseline requires active/queued to be zero.
 
 ## Lifecycle without flicker
 
@@ -110,8 +130,11 @@ installs on its window; pane engines acquire and release slots through
   never `display: none`), sends `Boot` (pane id, launch, settings,
   appearance, flags) after the channel handshake, and reveals the frame on
   the pane's first paint.
-- **Replace in place.** Opening another document in a pane boots a fresh
-  frame behind the current one and swaps them on first paint; the old frame
+- **Replace in place.** Every replacement boots a fresh frame, including
+  PDF → PDF and Markdown → TXT. Only an empty warm realm's first open or an
+  unadopted bootstrap may be promoted without replacement. The current
+  surface stays until `Painted` plus Ready/actual first paint (or an error);
+  no PDF mount/900 ms timer counts as raster paint. The old frame
   is disposed and removed. The pane id, its place and its focus stay, and
   until the swap the pane's chrome shows the open, not the old frame.
 - **Boot facts.** `Boot` is drafted when the frame is created and refreshed
@@ -123,7 +146,9 @@ installs on its window; pane engines acquire and release slots through
 - **Close.** The host sends `Dispose`; the pane frame flushes its read
   point, runs `DocumentPane::dispose` and its teardown tail, sends its final
   diagnostics digest and `Disposed`, and the host removes the iframe. A
-  timeout removes it regardless.
+  1.5 s timeout removes **that nonce only**, never newer retiring frames.
+  Startup has owned/cancelled 10 s hello and 30 s paint deadlines; an
+  incomplete boot produces a named pane error, not an endless hidden frame.
 - **Warm pane.** The host keeps one booted, empty pane frame ready, so an
   open from the library is not a frame boot.
 
@@ -135,7 +160,11 @@ same-origin), so a sample taken mid-render sees the work in flight. The
 host's digest sums the engine and pane counters over every frame still in
 the document (live, booting behind a swap, or disposing) plus the final
 snapshots of removed ones, so `sessionsOpened == sessionsDestroyed` and the
-other balances still hold across frames.
+other balances still hold across frames. Removed reports reduce to **one**
+bounded aggregate, not an ever-growing list in the persistent host. Invalid,
+missing-after-adoption or failed terminal evidence stays failed; a later
+successful close cannot erase it. Text/host realms apply every reader-owned
+resource check without demanding an engine that they do not run.
 
 - **Final word.** On `Dispose` a pane realm waits briefly for the engine
   work the dispose cancelled to settle, then sends its final digest and
@@ -160,3 +189,16 @@ other balances still hold across frames.
   `public/engine/state.ts`): a pane realm holds one session, and the host
   owns the recency.
 - The rail's direct engine binding (`MountedPdf` in thumbnail cells).
+
+## Regression evidence
+
+`tests/browser/pane-runtimes.mjs` runs from the unchanged Deep CI lifecycle
+job. It covers same-format/cross-format replacement, rapid supersession,
+text realms with no PDF global/imported resources, two real PDF engines
+sharing the raster cap, scoped scrub, five-second lift with vacancy fill,
+layout/session preservation and final balanced teardown. It saves desktop
+(1400 px) and narrow (640 px) screenshots plus a SHA-tagged report under
+`dist/verification/`, inside the existing `dist` artifact. CI compilation and
+these browser runs, not local build/dependency installations, validate the
+change. Native traffic-light appearance still needs a real macOS visual
+check; native smoke and chrome-contract checks do not prove shape/blink.

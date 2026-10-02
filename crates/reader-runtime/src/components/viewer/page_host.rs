@@ -44,6 +44,7 @@ use reflow_core::geometry::SpineSide;
 use crate::components::formats::pdf::{GlossOverlayProps, PdfPageCanvas, PdfPageStrip};
 #[cfg(feature = "reflow")]
 use crate::components::formats::reflow::{ReflowPage, ReflowPageStrip, ReflowStreamLayout};
+#[cfg(feature = "pdf")]
 use crate::components::viewer::shells::scroll_shell::ScrollShell;
 use crate::state::ReaderState;
 
@@ -111,6 +112,7 @@ pub fn block_row_id(block: usize) -> String {
 /// The canvas element id of `page` in `mode`: the host id with the canvas
 /// suffix. Kept next to [`host_id_for_mode`] because the pair must never drift —
 /// the engine registers a canvas against its host.
+#[cfg(feature = "pdf")]
 pub(crate) fn canvas_id_for_mode(mode: ViewMode, page: u32) -> String {
     host_id_for_mode(mode, page).replacen("-pg", "-cv", 1)
 }
@@ -127,6 +129,7 @@ pub(crate) fn host_id_for_axis(axis: Axis, page: u32) -> String {
     )
 }
 
+#[cfg(feature = "pdf")]
 pub(crate) fn canvas_id_for_axis(axis: Axis, page: u32) -> String {
     canvas_id_for_mode(
         match axis {
@@ -286,7 +289,10 @@ pub fn UniversalStreamHost(
     virtualizer: Virtualizer,
     #[prop(into)] progress_visible: Signal<bool>,
 ) -> impl IntoView {
+    #[cfg(feature = "pdf")]
     let strip = StoredValue::new_local(virtualizer);
+    #[cfg(not(feature = "pdf"))]
+    let _ = virtualizer;
     let progress = progress_visible;
     view! {
         {move || {

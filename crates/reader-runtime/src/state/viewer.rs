@@ -73,12 +73,11 @@ pub struct ViewerSignals {
     /// the moment a document is claimed ([`Self::reset_position`] re-arms it
     /// on every close, `open_path` on every open) until the page the reader
     /// should see has actually PAINTED. The release is paint-driven, and each
-    /// surface owns its own: the PDF strip lifts it on a completed render
-    /// (its `on_geometry` reports), the text stream and text strip lift it
-    /// when their mount anchor lands (DOM text paints synchronously), and
-    /// the paginated modes — which have no anchor to land — release on
-    /// their first frame after mount. A safety net in
-    /// `crate::pane` guarantees a release either way. For
+    /// surface owns its own: every PDF mode lifts it on a successful
+    /// current-page raster, even when its geometry is unchanged. Text
+    /// lifts it when its mount anchor lands (or, without an anchor, its
+    /// first mounted frame paints). Only text has a timed anchor net; PDF
+    /// startup deadlines report errors instead of pretending it painted. For
     /// exactly that long an opaque cover the colour of the reader's paper
     /// masks the viewer there, so the first renders — however healthy — are
     /// never watched arriving: the reader appears already settled on the
