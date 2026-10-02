@@ -72,7 +72,7 @@ use tree::{LayoutNode, MoveDirection, PaneTree, Side, SplitAxis, SplitId, TreeLa
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OpenTarget {
     /// The active pane, in place — or, with no pane at all, the workspace's
-    /// first pane (the Shell's commands: a drop, a warm reader's launch).
+    /// first pane (the Shell's commands: a drop, another launch).
     Active,
     /// This pane, in place: it keeps its id and replaces its document.
     Pane(PaneId),
@@ -524,8 +524,8 @@ impl ReaderHost {
         });
     }
 
-    /// Suspension: while this frame is off screen (a warm reader waiting
-    /// behind the shelf, a retiring one being disposed) every placed pane
+    /// Suspension: while this frame is off screen (incoming before its
+    /// reveal, or retiring during disposal) every placed pane
     /// is `Suspended` — it keeps its document session but takes no new work
     /// — and coming back on screen resumes them. A pane still mounting is
     /// suspended when it becomes ready ([`Self::pane_ready`]); a transition
@@ -548,7 +548,7 @@ impl ReaderHost {
 
     /// A pane's view is built and its effects installed: `Mounting →
     /// Ready`, then straight on to `Suspended` if the frame is off screen
-    /// (a warm session's pane starts parked).
+    /// (an incoming host's pane starts parked).
     pub(crate) fn pane_ready(&self, id: PaneId) {
         if self.manager.mark_ready(id).is_err() {
             return;
@@ -754,8 +754,8 @@ impl ReaderHost {
             .try_set(Some(app_state::state::Toast::new(message)));
     }
 
-    /// The workspace's first pane, for `launch` (none: an empty pane
-    /// waiting for one — a warm reader), filling the slot.
+    /// The workspace's first pane, filling the slot. `None` is the empty
+    /// unhosted development entry, not a Reader prewarm behind Library.
     pub fn create_root(&self, launch: Option<LaunchDocument>) -> Result<PaneId, PaneError> {
         if self.tree.try_with_untracked(PaneTree::is_empty) != Some(true) {
             return Err(PaneError::Layout(tree::TreeError::NotEmpty));
@@ -1280,7 +1280,7 @@ impl ReaderHost {
         self.library
     }
 
-    /// Pane `id` holds no document (a warm reader's empty root).
+    /// Pane `id` holds no document (the unhosted entry can start empty).
     fn pane_is_empty(&self, id: PaneId) -> bool {
         self.manager
             .pane(id)

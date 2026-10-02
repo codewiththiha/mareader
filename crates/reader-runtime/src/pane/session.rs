@@ -254,6 +254,7 @@ impl Retiring {
     }
 
     /// Let the release finish on its own: nothing waits for it.
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn detach(self) {
         if let Some(release) = self.0 {
             wasm_bindgen_futures::spawn_local(release);

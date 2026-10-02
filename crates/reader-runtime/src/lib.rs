@@ -262,8 +262,8 @@ pub fn start_session(
 
             // The launch the Shell handed over (§13): the minimal descriptor,
             // opened by the pane that owns the document — the workspace's
-            // root. A warm session (empty launch) still gets its one pane,
-            // waiting for the launch its promotion hands over.
+            // root. Only the unhosted development entry can start empty;
+            // a Library open always supplies a real document.
             let first = (!launch.path.is_empty()).then_some(launch);
             if let Err(err) = host.create_root(first) {
                 web_sys::console::error_1(&format!("[reader] no pane: {err:?}").into());
@@ -356,10 +356,8 @@ fn enter_session(work: &mut dyn FnMut()) {
     }
 }
 
-/// An in-session command from the Shell: open a document inside the live
-/// session — a drop or a dialog, and the launch a warm reader is handed when
-/// it is promoted. The HOST routes it: into its active pane, in place
-/// ([`host::OpenTarget::Active`]).
+/// An in-session command from Shell: a drop, a dialog, or another launch.
+/// The host routes it into the active pane ([`host::OpenTarget::Active`]).
 pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     let live = SESSION.with(|s| s.borrow().as_ref().filter(|x| x.id == id).map(|_| ()));
     if live.is_none() {

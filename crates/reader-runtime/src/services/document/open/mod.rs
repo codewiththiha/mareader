@@ -19,6 +19,7 @@ use runtime_contract::boundary::ShellApi;
 
 #[cfg(feature = "pdf")]
 mod cover;
+#[cfg(any(feature = "pdf", feature = "reflow"))]
 mod enter;
 #[cfg(feature = "pdf")]
 mod outline;
@@ -296,6 +297,7 @@ fn ready(
 /// nothing worth keeping, so the pane goes back to holding no document —
 /// never the half-opened one, and (the replace already released it) never
 /// the previous one behind the error. Every format fails through here.
+#[cfg(any(feature = "pdf", feature = "reflow"))]
 pub(super) fn abandon(ctx: crate::context::ReaderContext, message: String) {
     ctx.pane.abandon_document().detach();
     fail(ctx, message);

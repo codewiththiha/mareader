@@ -149,6 +149,7 @@ impl PaneHandle {
     /// (production goes through that; the tests drive this directly).
     /// Refused (returns `session` back as the "replaced" one, so it is
     /// disposed at once) when the slot is gone.
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn install_session(&self, session: FormatSession) -> FormatSession {
         let mut incoming = Some(session);
         let replaced = self.cell.try_update_value(|cell| {
@@ -171,12 +172,14 @@ impl PaneHandle {
     /// Scoped to THIS pane: another pane's session is never disposed,
     /// awaited or delayed by it. A pane with no document yet (a fresh split
     /// pane) gets an already-settled `Retiring` and loads at once.
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn replace_document(&self, next: FormatSession) -> Retiring {
         self.install_session(next).dispose()
     }
 
     /// A failed open: the session it installed owns nothing worth keeping,
     /// so the pane goes back to holding no document. Returns the release.
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn abandon_document(&self) -> Retiring {
         self.take_session().dispose()
     }
@@ -272,6 +275,7 @@ impl PaneHandle {
 
     /// The requested zoom, handed out ONCE: the first document that seeds
     /// takes it, every later open fits as the settings say.
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn take_initial_zoom(&self) -> Option<f64> {
         self.cell
             .try_update_value(|cell| cell.pending_zoom.take())

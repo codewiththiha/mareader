@@ -30,7 +30,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   frameClick, writeSettings, closeAndWaitBaseline, snap, urls, paths }) {
   const out = fileURLToPath(new URL("../../dist/verification/", import.meta.url));
   mkdirSync(out, { recursive: true });
-  const report = { sha: process.env.GITHUB_SHA ?? null, replacements: [], screenshots: [] };
+  const report = { sha: process.env.GITHUB_SHA ?? null, replacements: [], screenshots: [], appearanceGeometry: [] };
   await writeSettings({ appearance: { base: "light", tintStrength: 0, noise: "off" },
     workspace: { independentThemes: false, sharedBaseMode: true, paneGap: 0 } });
   const initial = await openBook(urls.pdf);
@@ -117,7 +117,10 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   report.rapidSupersession = true;
 
   await openIn(paths.pdf, "right");
-  await waitForSettledLayout("two real PDF realms", (s) => s.host?.panes?.length === 2 && s.host.panes.every((p) => p.lifecycle === "ready"));
+  const twoPdfs = await waitForSettledLayout("two real PDF realms", (s) => s.host?.panes?.length === 2 && s.host.panes.every((p) => p.lifecycle === "ready"));
+  // Host-ready means the iframe exists, not that its document is open. An
+  // empty loading frame also has an idle engine, so paint must precede idle.
+  await paintedRealms(twoPdfs.host.panes.map((p) => p.paneId));
   await waitFor("two PDF render frontiers idle", (s) => s.engine.pageActive === 0 && s.engine.pageQueue === 0 && s.rasterLane?.active === 0 && s.rasterLane?.queued === 0);
   // Exercise both engines together. These are real full-resolution renders
   // at their existing scale, not fake permit requests or low-resolution covers.
@@ -256,6 +259,69 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
         });
       });
     }, null, { timeout: 10_000 });
+    // Audit the real Reader document, not the legacy single-pane query
+    // adapter. Each route owns its own toolbar IDs and popup coordinates.
+    const appearanceButton = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]').locator('button[title="Appearance"]');
+    const hit = await page.evaluate(() => {
+      const frame = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]');
+      const button = frame.contentDocument.defaultView.document.querySelector('button[title="Appearance"]');
+      const r = button.getBoundingClientRect(), outer = frame.getBoundingClientRect();
+      return { x: outer.left + r.left + r.width / 2, y: outer.top + r.top + r.height / 2 };
+    });
+    // Holds prevent an already-revealed toolbar from hiding; they do not
+    // reveal it. Geometry must use the same hover/click as an actual user.
+    await page.mouse.move(hit.x, hit.y);
+    await appearanceButton.click({ timeout: 5_000 });
+    const readMenuGeometry = (wait) => {
+      const frame = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]');
+      const doc = frame?.contentDocument?.defaultView.document;
+      const w = doc?.defaultView;
+      const button = doc?.querySelector('button[title="Appearance"]');
+      const anchor = button?.closest('.relative.inline-flex');
+      const panels = [...(doc?.querySelectorAll('.menu-popover') ?? [])];
+      const panel = panels[0];
+      const row = doc?.querySelector('#toolbar-row');
+      if (!anchor || !panel || !row) return wait ? false : null;
+      const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+      };
+      const a = rect(anchor), p = rect(panel);
+      const clamp = (value, extent, size) => Math.max(8, Math.min(value, extent - size - 8));
+      const below = a.bottom + 4 + p.height <= w.innerHeight - 8;
+      const expected = { left: clamp(a.right - p.width, w.innerWidth, p.width),
+        top: clamp(below ? a.bottom + 4 : a.top - 4 - p.height, w.innerHeight, p.height) };
+      const facts = { frame: new URL(frame.src).pathname, toolbarRows: doc.querySelectorAll('#toolbar-row').length,
+        shellToolbarRows: document.querySelectorAll('#toolbar-row').length, panels: panels.length,
+        sameDocument: panel.ownerDocument === anchor.ownerDocument && panel.ownerDocument === doc,
+        anchor: a, panel: p, expected, row: rect(row), rowOpacity: Number(w.getComputedStyle(row).opacity),
+        panelOpacity: Number(w.getComputedStyle(panel).opacity), rowInert: row.inert,
+        viewport: { width: w.innerWidth, height: w.innerHeight } };
+      const aligned = facts.frame === '/reader.html' && facts.toolbarRows === 1 && facts.shellToolbarRows === 0 &&
+        facts.panels === 1 && facts.sameDocument && Math.abs(p.width - 288) <= 2 && p.height > 0 &&
+        p.left >= 7 && p.right <= w.innerWidth - 7 && p.top >= 7 && p.bottom <= w.innerHeight - 7 &&
+        Math.abs(p.left - expected.left) <= 2 && Math.abs(p.top - expected.top) <= 2;
+      const visible = facts.rowOpacity > 0.99 && facts.panelOpacity > 0.99 && !facts.rowInert;
+      return wait ? aligned && visible : { ...facts, aligned, visible };
+    };
+    try {
+      await page.waitForFunction(readMenuGeometry, true, { timeout: 5_000 });
+    } catch (error) {
+      const geometry = await page.evaluate(readMenuGeometry, false);
+      throw new Error(`${name} appearance menu is not visible/aligned in its Reader document: ${JSON.stringify(geometry)}`, { cause: error });
+    }
+    const opened = await page.evaluate(readMenuGeometry, false);
+    if (!opened?.aligned || !opened.visible) throw new Error(`${name} appearance geometry changed after settling: ${JSON.stringify(opened)}`);
+    await page.mouse.move(opened.panel.left + 20, opened.panel.top + 40);
+    // Past the real 400 ms hover grace: an open menu must hold the bar even
+    // after the pointer leaves the toolbar for the popup's own controls.
+    await page.waitForTimeout(650);
+    const geometry = await page.evaluate(readMenuGeometry, false);
+    if (!geometry?.aligned || !geometry.visible) throw new Error(`${name} appearance menu lost its visible anchor while hovered: ${JSON.stringify(geometry)}`);
+    report.appearanceGeometry.push({ name, ...geometry });
+    await page.screenshot({ path: `${out}/${name}-appearance.png`, fullPage: true });
+    await appearanceButton.click({ timeout: 5_000 });
+    await page.waitForFunction(() => !window.__paneReaderDocument.defaultView.document.querySelector('.menu-popover'));
     const facts = await page.evaluate(() => ({ width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth + 2,
       entries: [...window.__paneReaderDocument.querySelectorAll('[data-pane-id]')].filter((e) => !e.classList.contains("pane-retiring")).length,
       engineFreeText: [...window.__paneReaderDocument.querySelectorAll('iframe.pane-frame:not([data-frame-hidden])')].filter((f) => /reflow\.html/.test(f.src)).every((f) => typeof f.contentWindow.PDFReader === "undefined"),

@@ -1218,13 +1218,8 @@ impl RuntimeManager {
         *self.reader_armed.lock().unwrap() = None;
     }
 
-    /// Whether the runtime just left may keep its frame. The shelf always
-    /// may (its heap is small and bounded); a reader only below the heap
-    /// line, read from its last digest — the drained one it published on
-    /// its way out. The HIGH-WATER mark is what is read: the live heap is
-    /// low again after every close, but the frame's linear memory stays at
-    /// the largest size the session ever reached, and that is the number a
-    /// kept frame keeps paying for.
+    /// Only Library may reuse its realm behind Reader. Reader is removed
+    /// regardless of its heap size or previous pane count.
     fn may_recycle(&self, kind: RuntimeName) -> bool {
         kind == RuntimeName::Library
     }
