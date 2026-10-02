@@ -1,6 +1,5 @@
 // Memory after a SPLIT read, measured the same way for any build of the app
-// (the method of tools/measure-route-switch.mjs and
-// docs/route-split-retrospective.md §5.1).
+// (the method of docs/route-split-retrospective.md §5.1).
 //
 //   PORT=8123 DIST_DIR=dist node tests/browser/server.mjs &
 //   node tools/measure-split-return.mjs [label] [baseUrl] [--intent] [--webkit]
@@ -98,11 +97,20 @@ const snap = () =>
 
 const frames = () =>
   page.evaluate(() => {
-    const list = [...document.querySelectorAll("#runtime-host iframe")];
-    const kind = (f) => (f.src.includes("reader.html") ? "reader" : f.src.includes("library.html") ? "library" : "?");
-    return list.map(
+    // Each runtime slot (an iframe in builds that framed their runtimes, a
+    // slot in the Shell's document in builds that mount them there), then
+    // each pane's own frame.
+    const kind = (f) =>
+      f.tagName === "IFRAME"
+        ? f.src.includes("reader.html") ? "reader" : f.src.includes("library.html") ? "library" : "?"
+        : (f.getAttribute("data-mareader-runtime-frame") ?? "?").toLowerCase();
+    const slots = [...document.querySelectorAll("#runtime-host .runtime-frame")].map(
       (f) => `${kind(f)}:${f.getAttribute("data-mareader-slot") ?? "-"}:g${f.getAttribute("data-mareader-generation") ?? "?"}`,
     );
+    const panes = [...document.querySelectorAll("iframe.pane-frame")].map(
+      (f) => `pane:${new URL(f.src).pathname.replace(/^\/|\.html$/g, "")}`,
+    );
+    return [...slots, ...panes];
   });
 
 async function sample(tag) {
@@ -145,13 +153,19 @@ async function waitFor(what, pred, timeout = 60_000) {
   }
 }
 
-const activeFrame = '#runtime-host iframe.runtime-frame[data-mareader-slot="active"]';
+// The active runtime's slot: an iframe in builds that framed their
+// runtimes, an element of the Shell's document in builds that mount them
+// there. The replay measures both kinds of build.
+const activeFrame = '#runtime-host .runtime-frame[data-mareader-slot="active"]';
+const framed = () =>
+  page.evaluate((sel) => document.querySelector(sel)?.tagName === "IFRAME", activeFrame);
 
-/** Run `fn(doc, arg)` in the active frame's document. */
+/** Run `fn(doc, arg)` against the active runtime's document or slot. */
 const inActive = (fn, arg) =>
   page.evaluate(
     ([sel, src, a]) => {
-      const doc = document.querySelector(sel)?.contentDocument ?? null;
+      const el = document.querySelector(sel);
+      const doc = (el?.tagName === "IFRAME" ? el.contentDocument : el) ?? null;
       return new Function("doc", "arg", `return (${src})(doc, arg);`)(doc, a);
     },
     [activeFrame, fn.toString(), arg],
@@ -159,7 +173,7 @@ const inActive = (fn, arg) =>
 
 const shelfIntent = () =>
   inActive((doc) => {
-    const level = doc?.getElementById("library-level") ?? doc?.body;
+    const level = doc?.querySelector("#library-level") ?? doc;
     level?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
   });
 
@@ -182,8 +196,8 @@ await page.waitForTimeout(1500);
 // A real click first, as the lifecycle suite's `clickBook` does: the card
 // opens on the pointer sequence, which a bare `el.click()` does not carry.
 try {
-  await page
-    .frameLocator('iframe.runtime-frame[data-mareader-slot="active"]')
+  const scope = (await framed()) ? page.frameLocator(activeFrame) : page.locator(activeFrame);
+  await scope
     .locator(`.book-title[title*="${NEEDLE}"]`)
     .first()
     .click({ timeout: 5_000 });
@@ -200,7 +214,11 @@ await page.waitForTimeout(1000);
 // 4. split into four panes
 for (const [path, target] of SPLITS) {
   const placed = await page.evaluate(
-    ([sel, p, t]) => document.querySelector(sel)?.contentWindow?.__mareaderOpenIn?.(p, t) === true,
+    ([sel, p, t]) => {
+      const el = document.querySelector(sel);
+      const win = el?.tagName === "IFRAME" ? el.contentWindow : window;
+      return win?.__mareaderOpenIn?.(p, t) === true;
+    },
     [activeFrame, path, target],
   );
   if (!placed) throw new Error(`the host refused ${path} (${target})`);

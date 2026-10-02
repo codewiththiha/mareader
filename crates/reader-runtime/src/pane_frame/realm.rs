@@ -1,7 +1,7 @@
 //! The wasm half of the pane realm: the handshake, the port, the pane and
 //! the effects that keep the host's mirror current.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use app_state::state::UiState;
@@ -63,6 +63,9 @@ struct Heard {
 thread_local! {
     static LINK: RefCell<Option<Link>> = const { RefCell::new(None) };
     static LIVE: RefCell<Option<Live>> = const { RefCell::new(None) };
+    /// Where the digest beat publishes; the final digest after disposal
+    /// goes the same way.
+    static DIGEST_API: Cell<Option<crate::context::ApiHandle>> = const { Cell::new(None) };
     static HEARD: RefCell<Heard> = RefCell::new(Heard::default());
     /// The pane's mount, dropped at dispose (its cleanup runs the runtime's
     /// disposal with the pane's teardown tail).
@@ -440,6 +443,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
         |_| {},
         |_| {},
     );
+    crate::diagnostics::expect_engine(kind == PaneKind::Pdf);
     if kind == PaneKind::Pdf {
         let guard = crate::appearance_hooks::install();
         on_cleanup(move || drop(guard));
@@ -738,6 +742,7 @@ fn install_digest_beat(api: crate::context::ApiHandle) {
     let Some(win) = web_sys::window() else {
         return;
     };
+    DIGEST_API.with(|d| d.set(Some(api)));
     let tick = Closure::<dyn FnMut()>::new(move || crate::diagnostics::publish_digest(&api));
     let Ok(id) = win.set_interval_with_callback_and_timeout_and_arguments_0(
         tick.as_ref().unchecked_ref(),
@@ -757,10 +762,37 @@ fn install_digest_beat(api: crate::context::ApiHandle) {
 /// The host closes the pane: the pane's sync teardown now (read point,
 /// document session, owner), the realm's unmount, and the runtime's tail,
 /// whose completion tells the host it may remove the frame.
+/// How many 25 ms beats a dispose waits for cancelled engine work to settle.
+const SETTLE_TRIES: u32 = 40;
+
+/// Answer `Disposed` once the engine's cancelled work has settled (or the
+/// wait ran out): the host drops the realm on that word, and the final
+/// digest must count every render and prefetch the dispose cut short.
+fn finish_dispose(tries: u32) {
+    if tries > 0 && crate::diagnostics::engine_in_flight() {
+        let next = Closure::once_into_js(move || finish_dispose(tries - 1));
+        if let Some(window) = web_sys::window()
+            && window
+                .set_timeout_with_callback_and_timeout_and_arguments_0(next.unchecked_ref(), 25)
+                .is_ok()
+        {
+            return;
+        }
+    }
+    if let Some(api) = DIGEST_API.with(Cell::take) {
+        crate::diagnostics::publish_digest(&api);
+    }
+    send(&PaneToHost::Disposed);
+}
+
 fn dispose(live: Live) {
     LIVE.with(|l| l.borrow_mut().take());
+    // The realm's session ends here: its final digest must not report it.
+    crate::diagnostics::set_reader_live(false);
     super::thumbs::cancel_all();
-    let done = Closure::once_into_js(|| send(&PaneToHost::Disposed));
+    // The final digest goes first: it is the one the host's balances keep,
+    // and only after the release does it show the session gone.
+    let done = Closure::once_into_js(|| finish_dispose(SETTLE_TRIES));
     crate::on_dispose_complete(done.unchecked_into());
     let teardown = live.pane.dispose();
     TEARDOWN.with(|t| *t.borrow_mut() = Some(teardown));

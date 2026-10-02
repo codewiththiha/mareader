@@ -6,8 +6,8 @@
 // (`build.frontendDist: "../dist"`), and so does the browser suite's server.
 // The failure this check exists for is the one that shipped a blank window:
 // Tauri ran `trunk build --release`, which produces only the shell page, so
-// the packaged app served an `index.html` whose `import("/library.js")`
-// resolved to nothing and left the runtime host empty — with no build error
+// the packaged app served an `index.html` whose runtime artifacts resolved
+// to nothing and left the window empty — with no build error
 // anywhere, because a missing file is not a build failure in a static bundle.
 //
 // So: after the build, the artifact SET is asserted, not assumed. Every entry
@@ -15,7 +15,7 @@
 // a zero-byte stub or an HTML error page saved as `.wasm` cannot pass as a
 // build. Failures print the exact path the guide's incident reports — example:
 //
-//     Missing runtime artifact: dist/library.js
+//     Missing runtime artifact: dist/pdf_bg.wasm
 //
 // Run it after the build (build-dist.sh calls it) and in CI (the deep lane's
 // build step inherits it, and the Web/contracts lane runs it against nothing
@@ -42,15 +42,10 @@ const RUNTIME_FLOOR_BYTES = 1024;
  *  loads and the shared assets the runtimes fetch at boot. */
 const REQUIRED = [
   ["dist/index.html", "the Shell page — Tauri's frontendDist entry", 0],
-  // The standalone runtime pages: not what the shell imports (it imports the
-  // .js artifacts below) but part of the set the build promises, and the way
-  // either runtime is reproduced outside the shell.
-  ["dist/reader.html", "the Reader Runtime's standalone page", 0],
-  ["dist/library.html", "the Library Runtime's standalone page", 0],
-  ["dist/library.js", "the Library Runtime artifact (imported by the shell)", RUNTIME_FLOOR_BYTES],
-  ["dist/library_bg.wasm", "the Library Runtime wasm module", RUNTIME_FLOOR_BYTES],
-  ["dist/reader.js", "the Reader Runtime artifact (imported by the shell)", RUNTIME_FLOOR_BYTES],
-  ["dist/reader_bg.wasm", "the Reader Runtime wasm module", RUNTIME_FLOOR_BYTES],
+  // The Shell's own artifact: it hosts the library and the reader workspace
+  // in its document.
+  ["dist/mareader.js", "the Shell artifact", RUNTIME_FLOOR_BYTES],
+  ["dist/mareader_bg.wasm", "the Shell wasm module", RUNTIME_FLOOR_BYTES],
   // The pane runtimes: the workspace host loads one frame per reader pane
   // (docs/pane-runtimes.md) — `pdf.html` for a PDF, `reflow.html` for text.
   ["dist/pdf.html", "the PDF pane page", 0],

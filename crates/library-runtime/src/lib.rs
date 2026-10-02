@@ -15,11 +15,6 @@ pub mod frame;
 /// signatures: an api that never exists and a boot that is never hosted.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod frame {
-    /// Off wasm an artifact is never frame-hosted.
-    pub fn boot_if_hosted() -> bool {
-        false
-    }
-
     /// The frame api never exists off-wasm: nothing to run `f` against.
     pub fn with_api<R>(
         _f: impl FnOnce(&frame_transport::PortShellApi<frame_transport::wasm::PortWire>) -> R,
@@ -282,16 +277,4 @@ pub fn dispose(id: u32) -> js_sys::Promise {
         let _ = resolve.call0(&js_sys::global());
     }
     promise
-}
-
-/// Standalone boot (`library.html`): no Shell — a storage-backed API.
-pub fn run_standalone() {
-    console_error_panic_hook::set_once();
-    let api = context::ApiHandle::Standalone;
-    let host = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.body())
-        .map(web_sys::Element::from)
-        .expect("document body for the standalone library");
-    start_session(&host, api, false);
 }

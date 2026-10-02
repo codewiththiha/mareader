@@ -331,7 +331,8 @@ an artifact; v2: Deep CI #231, `0eb673d`, the last build before `da06bff`;
 v3: Deep CI #244, `8ae1782`, the final build — the browser lane uploads
 its dist on every run now, which is what made this comparison possible),
 served by `tests/browser/server.mjs` and driven by
-`tools/measure-route-switch.mjs` in headless Chromium (Playwright's
+`tools/measure-route-switch.mjs` (removed with the reader and library
+frames it measured; it lives in the history) in headless Chromium (Playwright's
 `chromium-headless-shell`, Linux, 2 vCPU, 2 GB). Same scenario for all:
 
 ```text
@@ -477,4 +478,5 @@ runtime frames.
   `e8b1d18`, `c722bd7`, `a3e3c8f` and `src/app/manager.rs` at `da06bff`.
 - CI: the GitHub Actions REST API, all runs created since 2026‑09‑20 with
   their jobs and failed steps; eras are split by run creation time.
-- Replays: the `dist` artifacts named in §5.1; `tools/measure-route-switch.mjs`.
+- Replays: the `dist` artifacts named in §5.1; `tools/measure-route-switch.mjs`
+  (in the history).

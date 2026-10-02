@@ -40,7 +40,7 @@ const context = await browser.newContext({ viewport: { width: 1600, height: 1000
 const page = await context.newPage();
 const cdp = WEBKIT ? null : await context.newCDPSession(page);
 await cdp?.send("HeapProfiler.enable");
-const activeFrame = '#runtime-host iframe.runtime-frame[data-mareader-slot="active"]';
+const activeFrame = '#runtime-host .runtime-frame[data-mareader-slot="active"]';
 
 function contentMemory() {
   let pss = 0;
@@ -82,9 +82,11 @@ const snap = () =>
         return null;
       }
     };
+    // The reader runtime mounts in the Shell's document: its digest (with
+    // the pane frames folded in) sits beside the Shell's own.
     const top = read(window);
-    const frame = read(document.querySelector(sel)?.contentWindow);
-    return top || frame ? { ...(top ?? {}), ...(frame ?? {}), bootState: top?.bootState } : null;
+    const reader = document.querySelector(sel) ? read({ __mareaderDiagnostics: window.__mareaderReaderDiagnostics }) : null;
+    return top || reader ? { ...(top ?? {}), ...(reader ?? {}), bootState: top?.bootState } : null;
   }, activeFrame);
 
 async function waitFor(what, pred, timeout = 45_000) {
@@ -100,7 +102,7 @@ async function waitFor(what, pred, timeout = 45_000) {
 const inActive = (fn, arg) =>
   page.evaluate(
     ([sel, src, a]) => {
-      const doc = document.querySelector(sel)?.contentDocument ?? null;
+      const doc = document.querySelector(sel) ? document : null;
       return new Function("doc", "arg", `return (${src})(doc, arg);`)(doc, a);
     },
     [activeFrame, fn.toString(), arg],
@@ -162,7 +164,7 @@ result.whileOpen = [];
 for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
   const file = ROTATION[(cycle - 1) % ROTATION.length];
   const placed = await page.evaluate(
-    ([sel, p]) => document.querySelector(sel)?.contentWindow?.__mareaderOpenIn?.(p, "right") === true,
+    ([sel, p]) => !!document.querySelector(sel) && window.__mareaderOpenIn?.(p, "right") === true,
     [activeFrame, file],
   );
   if (!placed) throw new Error(`[cycle ${cycle}] the host refused ${file}`);
@@ -188,7 +190,7 @@ for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
 
   // Close it through its own control.
   await page.evaluate(([sel, id]) => {
-    const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
+    const btn = document.querySelector(sel)?.querySelector(`[data-pane-close="${id}"] button`);
     if (!btn) throw new Error(`pane ${id} has no close control`);
     btn.click();
   }, [activeFrame, added]);

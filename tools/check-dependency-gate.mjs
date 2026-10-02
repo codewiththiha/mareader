@@ -1,7 +1,7 @@
 // The compile-level runtime boundary, asserted from the dependency graph
 // itself.
 //
-// The guide's separation rule is not a grep rule ("library.html must not load
+// The guide's separation rule is not a grep rule ("the library must not load
 // engine scripts") — those catch imports, not graphs. The real requirement is
 // that no runtime or shared crate can pull an engine, a paginator, a parser
 // or a virtualizer it does not own, TRANSITIVELY: a `library-runtime` build

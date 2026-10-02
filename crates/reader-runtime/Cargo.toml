@@ -7,10 +7,6 @@ edition = "2024"
 crate-type = ["rlib"]
 
 [[bin]]
-name = "reader"
-path = "src/bin/reader.rs"
-
-[[bin]]
 name = "pdf"
 path = "src/bin/pdf.rs"
 
@@ -20,7 +16,7 @@ path = "src/bin/reflow.rs"
 
 [features]
 # The document engines' live probes, for the artifacts that run documents
-# (the pane frames, and the standalone page). The Shell links this crate for
+# (the pane frames). The Shell links this crate for
 # the workspace host only and leaves it off, so no engine import reaches its
 # artifact.
 engine = []

@@ -19,7 +19,7 @@
 //
 // Guards, in order: the API already exists here (the shell itself, or a
 // same-origin frame that still gets injected), a top-level document (plain
-// browser dev, standalone library.html), a cross-origin parent, a parent
+// browser dev, a pane page opened on its own), a cross-origin parent, a parent
 // without the API (`trunk serve` in a browser), and a webview without Proxy.
 // In every one of those this script does nothing, and
 // `tauri_bridge::has_tauri()` stays honest about what is really available.

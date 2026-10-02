@@ -1049,6 +1049,18 @@ impl ReaderHost {
         // listeners go with the owner.
         self.drag.try_update_untracked(|session| session.cancel());
         self.lift.try_update_untracked(|lift| *lift = None);
+        // Every pane's entry stays in the document, out of sight, until the
+        // session unmounts: a frame pane still has its `Dispose` to hear and
+        // its last digest to send, and leaving the document would end its
+        // realm first.
+        let placed = untrack(|| self.manager.placed());
+        let _ = self.retiring.try_update(|r| {
+            for id in placed {
+                if !r.contains(&id) {
+                    r.push(id);
+                }
+            }
+        });
         self.manager.dispose_all();
         // The layout lets go of the panes with the manager. Untracked: the
         // workspace view is being torn down, not re-laid out.
@@ -1581,14 +1593,16 @@ fn snapshot_of(
         let runtime = state.panes.get(&id);
         panes.push(PaneSnapshot {
             pane_id: id,
-            document_id: match runtime {
-                Some(pane) => pane.document(),
-                None => record
+            // A frame pane mirrors its document over the port, which can
+            // trail its readiness by a message; the launch descriptor names
+            // the same document until the mirror lands.
+            document_id: runtime.and_then(|pane| pane.document()).or_else(|| {
+                record
                     .descriptor
                     .document
                     .as_ref()
-                    .map(|d| d.document_id.clone()),
-            },
+                    .map(|d| d.document_id.clone())
+            }),
             format: runtime.map_or(record.descriptor.format, |pane| pane.format()),
             lifecycle: record.lifecycle,
             focused: core.active() == Some(id),

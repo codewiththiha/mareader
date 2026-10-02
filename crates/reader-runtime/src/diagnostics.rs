@@ -37,6 +37,10 @@ static VIRTUALIZERS_DISPOSED: AtomicU64 = AtomicU64::new(0);
 static HEAP_HIGH_WATER: AtomicU64 = AtomicU64::new(0);
 static READER_PAGE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static READER_LIVE: AtomicBool = AtomicBool::new(true);
+/// Whether this realm runs the PDF engine and so must report it drained:
+/// every engine build does, until a pane realm that renders text says it
+/// does not (`expect_engine`).
+static ENGINE_EXPECTED: AtomicBool = AtomicBool::new(cfg!(feature = "engine"));
 
 /// Whether lifecycle events are narrated to the console. Off in normal
 /// operation; the dev surface flips it on.
@@ -377,12 +381,41 @@ impl Snapshot {
             // catch.
             && matches!(&self.engine, Some(engine) if engine.drained())
     }
+
+    /// The baseline of a realm without the engine (the workspace host in
+    /// the Shell, a text pane): each PDF pane's engine answers for itself in
+    /// that frame's digest, so only the reader-owned half is this realm's to
+    /// report.
+    fn at_baseline_without_engine(&self) -> bool {
+        !self.reader_runtime_live
+            && self.pane_live == 0
+            && self.virtualizer_live == 0
+            && self.retained_virtual_items == 0
+            && self.lookahead_samples_active == 0
+            && self.accounting_consistent
+    }
+
+    /// This realm's verdict: where the engine runs, the full gate; where it
+    /// does not (the Shell, a text pane), the reader-owned half.
+    fn realm_at_baseline(&self) -> bool {
+        if ENGINE_EXPECTED.load(Ordering::Relaxed) {
+            self.at_baseline()
+        } else {
+            self.at_baseline_without_engine()
+        }
+    }
 }
 
 /// The viewer's page, pushed by the reading-progress sync so the digest
 /// carries it without the probe needing a signal handle.
 pub fn set_reader_page(page: u32) {
     READER_PAGE.store(page, Ordering::Relaxed);
+}
+
+/// Declare whether this realm runs the PDF engine (a pane realm knows its
+/// kind at boot): a realm that never loads it has no engine to drain.
+pub fn expect_engine(on: bool) {
+    ENGINE_EXPECTED.store(on && cfg!(feature = "engine"), Ordering::Relaxed);
 }
 
 /// The digest is built only while a session owns this artifact; the flag is
@@ -437,7 +470,8 @@ pub(crate) fn snapshot() -> Snapshot {
         reader_runtimes_created: READER_RUNTIMES_CREATED.load(Ordering::Relaxed),
         reader_disposes_completed: READER_DISPOSES_COMPLETED.load(Ordering::Relaxed),
         reader_runtime_live: READER_LIVE.load(Ordering::Relaxed),
-        disposal_epoch: crate::services::document::session::current_epoch(),
+        disposal_epoch: crate::services::document::session::current_epoch()
+            .saturating_sub(EPOCH_OFFSET.load(Ordering::Relaxed)),
         reader_page: READER_PAGE.load(Ordering::Relaxed),
         pane_live: PANES_CREATED
             .load(Ordering::Relaxed)
@@ -482,6 +516,29 @@ pub(crate) fn snapshot() -> Snapshot {
     }
 }
 
+/// Where the runtime's document-session epoch count starts.
+static EPOCH_OFFSET: AtomicU64 = AtomicU64::new(0);
+
+/// Start the runtime's epoch count. A fresh runtime counts from zero; a
+/// recycled one carries on from where its previous session ended, as one
+/// realm's document session would.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn begin_epoch(carry: bool) {
+    if !carry {
+        let now = crate::services::document::session::current_epoch();
+        EPOCH_OFFSET.store(now, Ordering::Relaxed);
+    }
+}
+
+/// True while the engine still has a render or a thumbnail prefetch in
+/// flight: work a dispose cancelled settles a beat after it.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn engine_in_flight() -> bool {
+    engine_probe().is_some_and(|e| {
+        e.active_renders > 0 || e.active_prefetches > 0 || e.page_active > 0 || e.thumb_active > 0
+    })
+}
+
 /// The engine's live counters, or `None` where there is no engine to read:
 /// the probe talks only on wasm in an artifact that runs documents (the
 /// `engine` feature), and a host test must not walk into the wasm-bindgen
@@ -512,7 +569,7 @@ pub(crate) fn snapshot_json() -> String {
     // consumer (the Shell) ANDs this with its own manager facts: a drained
     // reader digest means nothing while the manager still holds a session.
     let (live, finals) = crate::frame_pane::digests();
-    let at_baseline = merge_pane_digests(&mut value, snap.at_baseline(), &live, &finals);
+    let at_baseline = merge_pane_digests(&mut value, snap.realm_at_baseline(), &live, &finals);
     value["atBaseline"] = serde_json::Value::Bool(at_baseline);
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
@@ -603,10 +660,6 @@ fn merge_pane_digests(
                 }
             }
         }
-    }
-    // The page the digest names is the focused pane's (the first live one).
-    if let Some(page) = live.first().and_then(|p| p["readerPage"].as_u64()) {
-        value["readerPage"] = serde_json::json!(page);
     }
     let created = value["virtualizersCreated"].as_u64().unwrap_or(0);
     let disposed = value["virtualizersDisposed"].as_u64().unwrap_or(0);

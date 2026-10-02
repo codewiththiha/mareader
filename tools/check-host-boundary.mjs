@@ -24,7 +24,7 @@
 // A third keeps the Shell's side of the boundary the Shell's: durable
 // persistence and the window belong to the Shell, so reader code reaches
 // them only through `ShellApi`. Outside `context.rs` (whose `StandaloneApi`
-// IS the Shell for a Shell-less `reader.html`) the reader may READ the
+// stands in for the Shell when there is none) the reader may READ the
 // origin's store — the allowlist below — but never write it, and never
 // reload the window itself.
 //

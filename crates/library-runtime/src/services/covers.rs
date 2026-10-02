@@ -4,7 +4,7 @@
 //! to render one, in either deployment: a hosted session ASKS the Shell
 //! across the boundary (`ShellApi::bake_cover`, answered by the `coverBaked`
 //! command — the Shell bakes in a pdf.js-only frame of its own), and the
-//! standalone page, which has no Shell, bakes nothing (its covers arrive
+//! unhosted session, which has no Shell, bakes nothing (its covers arrive
 //! from the reader's open pipeline, which files one on every first open).
 //! The queue is a request/response drain, one path in flight, with one
 //! retry per path.
@@ -76,7 +76,7 @@ fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
 }
 
 pub fn backfill_missing(state: crate::context::LibraryContext) {
-    // No Shell, no baker: the standalone page has nobody to ask, and a queue
+    // No Shell, no baker: an unhosted session has nobody to ask, and a queue
     // it started would only sit at its first path forever.
     if matches!(state.api, crate::context::ApiHandle::Standalone) {
         return;
@@ -176,7 +176,7 @@ fn drain(state: crate::context::LibraryContext) {
     // `coverBaked` into this session (a stale generation is dropped
     // Shell-side), and [`on_baked`] moves the queue on. The frame carries the
     // round trip over its port — the boundary asks, the answer lands, one
-    // retry policy. Off the frame (the standalone api, the host test lane)
+    // retry policy. Off the frame (the unhosted api, the host test lane)
     // the ask goes nowhere and the path stays PENDING: exactly a hosted
     // `bakeCover` whose answer never comes, which is what lets the host tests
     // exercise the queue/retry policy without a baker.

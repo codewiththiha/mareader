@@ -1,9 +1,7 @@
-//! The reader's hosted frame boot: `reader.html?hosted=1&g=<generation>&n=<nonce>`.
-//!
-//! Same rules as the library's frame: the URL marker is the whole boot
-//! descriptor (§6), the channel offer's nonce authenticates the adoption
-//! (§8), and the session is the same `start_session` every other boot uses —
-//! a frame is a transport, never a second reader.
+//! The reader's hosted boot: the workspace host mounts in a slot of the
+//! Shell's document, adopted over a channel (`adopt_in_document`), exactly as
+//! the library's; the session is the one `start_session` — the boot is a
+//! transport, never a second reader.
 //!
 //! Two reader-only shapes sit on top:
 //!
@@ -58,6 +56,10 @@ thread_local! {
     /// instance per realm, so it is adopted the moment that one is gone.
     static QUEUED: RefCell<Option<(web_sys::Element, u64, web_sys::MessagePort)>> =
         const { RefCell::new(None) };
+    /// The instance disposed and kept its channel and slot for a `Rearm`
+    /// (the Shell recycles a disposed slot in place). A new boot offered
+    /// meanwhile supersedes it.
+    static PARKED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Boot inside the Shell's own document: `mount` is the slot the Shell made
@@ -70,8 +72,11 @@ pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys
         return;
     }
     if API.with(|api| api.borrow().is_some()) {
-        QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
-        return;
+        if !PARKED.with(Cell::get) {
+            QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
+            return;
+        }
+        release_in_document();
     }
     ADOPTED.with(|a| a.set(Some(generation)));
     MOUNT.with(|m| *m.borrow_mut() = Some(mount));
@@ -82,6 +87,7 @@ pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys
 /// of its channel and mount point, and adopt a boot that waited for it.
 #[cfg(target_arch = "wasm32")]
 fn release_in_document() {
+    PARKED.with(|p| p.set(false));
     if MOUNT.with(|m| m.borrow_mut().take()).is_none() {
         return;
     }
@@ -93,6 +99,17 @@ fn release_in_document() {
     ADOPTED.with(|a| a.set(None));
     if let Some((mount, generation, port)) = QUEUED.with(|q| q.borrow_mut().take()) {
         adopt_in_document(mount, generation, port);
+    }
+}
+
+/// After a disposal: hand over to a boot that waited for it, or keep the
+/// channel and slot for the Shell's `Rearm`.
+#[cfg(target_arch = "wasm32")]
+fn park_in_document() {
+    if QUEUED.with(|q| q.borrow().is_some()) {
+        release_in_document();
+    } else if MOUNT.with(|m| m.borrow().is_some()) {
+        PARKED.with(|p| p.set(true));
     }
 }
 
@@ -147,24 +164,6 @@ struct PendingOpen {
     ctx: ReaderContext,
     path: String,
     placement: Placement,
-}
-
-/// Boot through the frame when this artifact's URL names one. `true` as soon
-/// as the marker stands: a hosted boot never falls back to standalone (§6).
-pub fn boot_if_hosted() -> bool {
-    let Some((generation, nonce)) = marker() else {
-        return false;
-    };
-    console_error_panic_hook::set_once();
-    frame_transport::wasm::adopt_channel(generation, nonce, move |wire| {
-        adopt(wire, generation);
-    });
-    true
-}
-
-fn marker() -> Option<(u64, String)> {
-    let search = web_sys::window()?.location().search().ok()?;
-    frame_transport::parse_hosted_marker(&search)
 }
 
 /// Run `f` against the live frame api when there is one.
@@ -226,8 +225,8 @@ fn adopt(wire: PortWire, generation: u64) {
 
 /// The Shell's `init`: the frame's one launch. Mounts the runtime root the
 /// handshake names (§9) and starts the session; everything after is the
-/// boot stages on the port.
-fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
+/// boot stages on the port. `recycled` is a rearm: the same runtime again.
+fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64, recycled: bool) {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
@@ -235,20 +234,27 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
         return;
     };
 
-    // An init without a descriptor is a reader with nothing open — the same
-    // shape as a standalone boot without launch parameters, so the same
-    // default answers it. It is also the warm boot: this frame is hidden
+    // An init without a descriptor is a reader with nothing open: an empty
+    // launch answers it. It is also the warm boot: this frame is hidden
     // behind the shelf until a `Launch` reveals it, and the document is
     // told so (the animated grain pauses while nobody can see it).
     app_ui::frame_theme::mark_frame_hidden(launch.is_none());
     let launch = launch
         .map(|launch| *launch)
-        .unwrap_or_else(crate::web_launch);
+        .unwrap_or_else(|| LaunchDocument {
+            book_id: None,
+            path: String::new(),
+            resume_page: 1,
+            saved_fraction: None,
+            blend_override: false,
+            cover_data_url: None,
+            display_name: None,
+        });
     // Hosted, though, the init IS the document handoff: a hosted frame that
     // comes up without a path is the "No document" blank the shell should
     // never have started — name it in the console so the handoff can be
     // traced instead of guessed at.
-    if launch.path.is_empty() && marker().is_some() {
+    if launch.path.is_empty() {
         // Two hosted shapes reach here: the Shell warmed this frame so the
         // click that follows has nothing to boot, or a launch handoff really
         // did arrive empty. Only the second is a fault, and the Shell refuses
@@ -258,6 +264,8 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
             "[reader] init carried no launch; mounting warm with no document",
         ));
     }
+    // A recycled runtime carries its epoch on, as one realm would.
+    crate::diagnostics::begin_epoch(recycled);
     let id = crate::start_session(&root, launch, ApiHandle::Frame);
     SESSION_ID.with(|slot| slot.set(Some(id)));
     crate::diagnostics::set_reader_live(true);
@@ -292,7 +300,7 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     // a reader the Shell has not handed a document to yet, so
                     // the empty-launch path below already is the warm boot.
                     if runtime == RuntimeKind::Reader {
-                        on_init(launch, generation);
+                        on_init(launch, generation, false);
                     }
                 }
                 ShellFrame::Launch { document } => {
@@ -319,14 +327,14 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                             emit(RuntimeFrame::DisposeComplete);
-                            release_in_document();
+                            park_in_document();
                         });
                     } else {
                         // Nothing mounted (an init never arrived, or a
                         // duplicate dispose): the answer is still owed, or
                         // the Shell waits out its forced-removal timeout.
                         emit(RuntimeFrame::DisposeComplete);
-                        release_in_document();
+                        park_in_document();
                     }
                 }
                 ShellFrame::Rearm => {
@@ -360,8 +368,9 @@ fn on_rearm(generation: u64) {
         return;
     }
     PENDING_OPENS.with(|opens| opens.borrow_mut().clear());
+    PARKED.with(|p| p.set(false));
     remove_roots("reader");
-    on_init(None, generation);
+    on_init(None, generation, true);
 }
 
 /// A resolve round trip landing: the parked open flow continues with the
@@ -379,7 +388,7 @@ fn on_resolve_answer(request: u64, document: Option<LaunchDocument>) {
     {
         let launch =
             document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
-        // Through the host's open command, like the standalone tail: the
+        // Through the host's open command: the
         // pane that asked parked only the question, not the authority.
         ctx.open.try_run(OpenRequest { launch, placement });
     }

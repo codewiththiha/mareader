@@ -2,8 +2,7 @@
 //!
 //! - [`document`] — the universal document pane, the [`PaneRuntime`]
 //!   implementation (one document session per pane: PDF, Markdown or plain
-//!   text through the reader's one pipeline), and the [`document::factory`]
-//!   the session's composition root injects into the host.
+//!   text through the reader's one pipeline), run one per pane realm.
 //! - [`handle`] — the pane's Copy handle, carried in its
 //!   [`crate::context::ReaderContext`]: identity, lifecycle gate, document
 //!   session, document generation, resource registry.

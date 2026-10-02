@@ -795,16 +795,16 @@ stays visible.
 |  Tauri v2 shell (Rust)                                       |
 |  native window, file dialog, asset protocol, fullscreen      |
 +-------------------------------------------------------------+
-|  Shell (Leptos 0.8 CSR, src/)                                |
-|  routing, library and reader chrome, frame ownership and     |
-|  recycle policy (src/app/frame.rs, src/app/manager.rs)       |
+|  Shell (Leptos 0.8 CSR, src/) — never reloads                |
+|  title bar, sidebar, settings, menus, layout; the library    |
+|  (crates/library-runtime) and the workspace host             |
+|  (crates/reader-runtime) mount in its own document           |
 +-------------------------------------------------------------+
-|  Runtime frames (iframes, one WASM realm each)               |
-|  /library.html  crates/library-runtime                       |
-|  /reader.html   crates/reader-runtime: virtualization, the   |
-|                 strips, pages, zoom, gestures, effects       |
+|  Pane frames (iframes, one WASM realm per pane)              |
+|  /pdf.html     a PDF pane: strips, pages, zoom, gestures     |
+|  /reflow.html  a Markdown or text pane                       |
 +-------------------------------------------------------------+
-|  Engine (JavaScript, loaded in the reader frame)             |
+|  Engine (JavaScript, loaded in each PDF pane frame)          |
 |  window.PDFReader (public/pdfEngine.js): render lanes,       |
 |  thumbnail cache, text layer, search text, bake worker       |
 +-------------------------------------------------------------+
@@ -1043,7 +1043,7 @@ lifecycle log are realm-wide.
 | `suspendPrefetches` / `resumePrefetches` | Park and resume the session's idle thumbnail prefetch |
 | `stats` | Realm-wide counters across every session, used to assert memory is actually released |
 
-Load order in `reader.html` is deliberate. The reader bundle goes first because it needs nothing;
+Load order in `pdf.html` is deliberate. The reader bundle goes first because it needs nothing;
 then the engine. Both run before the WebAssembly module, which top-level-awaits its own init: the
 app reaches for `window.PDFReader` and for the selection state as soon as its first components
 mount, and a module script that had not run yet leaves both undefined. pdf.js (ESM-only in

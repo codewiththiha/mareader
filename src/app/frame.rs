@@ -578,10 +578,8 @@ impl Driver {
             if driver.saw_contact.get() {
                 driver.fatal_ready(FrameFatalStage::ReadyTimeout);
             } else {
-                // No contact at 20 s means the frame's OWN boot never ran —
-                // its page is missing or its script rejected. That is the
-                // artifact-load class: same stage the missing-`/library.js`
-                // regression has always asserted (§6, §7).
+                // No contact at 20 s means the runtime's own boot never
+                // ran: the artifact-load class (§6, §7).
                 driver.fatal_ready(FrameFatalStage::InitializeTimeout);
             }
         });
@@ -985,14 +983,10 @@ pub(crate) fn fatal_cause(
     stage: FrameFatalStage,
 ) -> std::borrow::Cow<'static, str> {
     let detail = heard_summary(driver);
-    let (page, script) = match driver.kind() {
-        FrameKind::Library => ("/library.html", "/library.js"),
-        FrameKind::Reader => ("/reader.html", "/reader.js"),
-    };
     match stage {
         FrameFatalStage::InitializeTimeout => format!(
-            "the {} frame never answered its channel offer — {page} is missing, {script} \
-             failed, or the boot never reached it ({detail})",
+            "the {} runtime never answered its channel offer: its session did not \
+             start ({detail})",
             driver.kind().label()
         )
         .into(),

@@ -221,6 +221,11 @@ body {
 .reader-bg.pane-shield .pane-frame {
   pointer-events: none;
 }
+/* A frame whose runtime never started: the pane says so over it. */
+.pane-boot-error {
+  color: var(--color-ink);
+  background-color: var(--color-paper);
+}
 
 /* GRAB — empty space in a pane (gutters, gaps, the margin beside the text
    stream) takes the hand: drag to pan in any direction, and in a split hold

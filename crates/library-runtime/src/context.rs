@@ -8,7 +8,7 @@ use reader_core::settings::Settings;
 use runtime_contract::boundary::ShellApi;
 
 /// Which ShellApi implementation backs this session: the hosted frame or
-/// the standalone storage API (`library.html` without a Shell). A Copy handle
+/// the unhosted storage API (the test lane, no Shell). A Copy handle
 /// so the context itself stays Copy — every library service passes it by value.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ApiHandle {
@@ -160,13 +160,13 @@ impl LibraryContext {
 impl Default for LibraryContext {
     /// The unhosted session context unit tests build on: no shell bridge, so
     /// every boundary call is the deliberate no-op — the same shape the
-    /// standalone artifact boots with.
+    /// unhosted api has.
     fn default() -> Self {
         Self::new(ApiHandle::Standalone)
     }
 }
 
-/// The standalone substitute (`library.html` with no Shell): durable writes
+/// The unhosted substitute (no Shell, as in unit tests): durable writes
 /// go straight to the browser store.
 pub struct StandaloneApi;
 
@@ -199,9 +199,9 @@ impl ShellApi for StandaloneApi {
     fn save_gloss(&self, key: &str, marks: String) {
         storage::persist_encoded_gloss(key, &marks);
     }
-    /// No Shell, no baker: the standalone page has nobody to ask, so the
+    /// No Shell, no baker: an unhosted session has nobody to ask, so the
     /// ask goes nowhere and the shelf shows the covers it already holds
-    /// (`covers.rs` never starts a standalone drain — this is only reached
+    /// (`covers.rs` never starts an unhosted drain — this is only reached
     /// by the host tests' queue policy).
     fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}

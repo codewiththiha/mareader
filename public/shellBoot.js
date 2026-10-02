@@ -51,9 +51,9 @@
   }, DEADLINE_MS);
 })();
 
-// Warm both runtimes before anyone asks for them: fetch each runtime page,
+// Warm both pane runtimes before anyone asks for them: fetch each pane page,
 // then every wasm/script/style it references. The shell does this once at
-// start, so the first route switch — and every later app start, through the
+// start, so the first document open — and every later app start, through the
 // webview's persistent HTTP and wasm code caches — is a cache hit instead of
 // a multi-megabyte download and a cold compile. Best-effort by construction:
 // any failure just means the switch pays its own cost.
@@ -74,7 +74,7 @@
       /* best-effort only */
     }
   }
-  ["/library.html", "/reader.html"].forEach(function (page) {
+  ["/pdf.html", "/reflow.html"].forEach(function (page) {
     try {
       fetch(page)
         .then(function (res) {

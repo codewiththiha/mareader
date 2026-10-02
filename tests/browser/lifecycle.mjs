@@ -86,14 +86,28 @@ await context.addInitScript(() => {
   const panes = (slot) =>
     [...slot.querySelectorAll("iframe.pane-frame")]
       .filter((f) => !f.hasAttribute("data-frame-hidden") && f.contentDocument);
-  const one = (slot, sel) =>
-    slot.querySelector(sel) ??
-    panes(slot).map((f) => f.contentDocument.querySelector(sel)).find(Boolean) ??
-    null;
-  const all = (slot, sel) => [
-    ...slot.querySelectorAll(sel),
-    ...panes(slot).flatMap((f) => [...f.contentDocument.querySelectorAll(sel)]),
-  ];
+  // `[data-pane-id="N"] <rest>` crosses the pane boundary: the entry is the
+  // Shell's, what it holds is the pane frame's.
+  const scoped = (slot, sel) => {
+    const m = /^(\[data-pane-id="[^"]+"\])\s+(.+)$/.exec(sel);
+    const entry = m && slot.querySelector(m[1]);
+    return entry ? { scope: entry, rest: m[2] } : null;
+  };
+  const one = (slot, sel) => {
+    const s = scoped(slot, sel);
+    if (s) return one(s.scope, s.rest);
+    return slot.querySelector(sel) ??
+      panes(slot).map((f) => f.contentDocument.querySelector(sel)).find(Boolean) ??
+      null;
+  };
+  const all = (slot, sel) => {
+    const s = scoped(slot, sel);
+    if (s) return all(s.scope, s.rest);
+    return [
+      ...slot.querySelectorAll(sel),
+      ...panes(slot).flatMap((f) => [...f.contentDocument.querySelectorAll(sel)]),
+    ];
+  };
   const fromPoint = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (el?.tagName === "IFRAME" && el.classList.contains("pane-frame") && el.contentDocument) {
@@ -580,8 +594,8 @@ const summary = {
     libraryBoot: null,
     readerBoot: null,
     transition: null,
-    missingLibrary: null,
-    missingReader: null,
+    missingPane: null,
+    missingShell: null,
   },
   fixturePages: {},
   fastJumpRenderDeltas: [],
@@ -615,14 +629,14 @@ const summary = {
 // .github/workflows/deep-ci.yml's tauri-smoke job.
 currentStage = "stage0-boot-contract";
 
-/** The four artifacts the shell dynamically imports, with the status the
- *  browser actually got (§9 — "resolves 200 when LOADED", not "the file is
+/** The runtime artifacts — the Shell's own, and the pane frames' — with the
+ *  status the browser actually got (§9 — "resolves 200 when LOADED", not "the file is
  *  on disk"). Tauri serves these through its custom protocol and the dev
  *  server serves them from dist/; a missing one is the incident. */
 const artifactStatuses = new Map();
 page.on("response", (res) => {
   const { pathname } = new URL(res.url());
-  if (["/library.js", "/library_bg.wasm", "/reader.js", "/reader_bg.wasm"].includes(pathname)) {
+  if (["/mareader.js", "/mareader_bg.wasm", "/pdf.js", "/pdf_bg.wasm", "/reflow.js", "/reflow_bg.wasm"].includes(pathname)) {
     artifactStatuses.set(pathname, res.status());
   }
 });
@@ -630,7 +644,7 @@ page.on("response", (res) => {
 function assertArtifactLoaded(path, label) {
   const status = artifactStatuses.get(path);
   if (status !== 200) {
-    throw new Error(`[${label}] ${path} resolved ${status ?? "never requested"}; the shell's import must reach a real artifact`);
+    throw new Error(`[${label}] ${path} resolved ${status ?? "never requested"}; every runtime load must reach a real artifact`);
   }
 }
 
@@ -983,8 +997,8 @@ const seeded = await waitFor("the reader runtime to boot from ?open=", (x) =>
   x.bootState === "reader" && x.readerRuntimeLive === true && x.engine?.hasDocument === true, 60_000);
 const seededDom = await waitForDom("?open=: the reader rendered", (s) =>
   s.active === "reader" && s.reader >= 1 && s.library === 0 && !s.placeholder);
-assertArtifactLoaded("/reader.js", "?open= seed");
-assertArtifactLoaded("/reader_bg.wasm", "?open= seed");
+assertArtifactLoaded("/pdf.js", "?open= seed");
+assertArtifactLoaded("/pdf_bg.wasm", "?open= seed");
 summary.bootContract.seedOpen = {
   bootState: seeded.bootState,
   readerSessionsCreated: seeded.readerSessionsCreated,
@@ -1067,8 +1081,8 @@ if (libraryDom.frames !== 1) {
     );
   }
 }
-assertArtifactLoaded("/library.js", "/");
-assertArtifactLoaded("/library_bg.wasm", "/");
+assertArtifactLoaded("/mareader.js", "/");
+assertArtifactLoaded("/mareader_bg.wasm", "/");
 const shellBoot = await page.evaluate(() => window.__shellBoot);
 if (!shellBoot?.copy?.includes("Loading MAReader")) {
   throw new Error(`[/] the shell page never carried its loading state (saw ${JSON.stringify(shellBoot?.copy)})`);
@@ -1181,8 +1195,8 @@ if (readerRearmed.warmRuntime !== "library") {
   );
 }
 assertSessionBalance(readerRearmed, "library → reader (rearmed)");
-assertArtifactLoaded("/reader.js", "library → reader");
-assertArtifactLoaded("/reader_bg.wasm", "library → reader");
+assertArtifactLoaded("/pdf.js", "library → reader");
+assertArtifactLoaded("/pdf_bg.wasm", "library → reader");
 
 const beforeHandback = await snap();
 await waitForWarm("reader → library: the shelf warmed behind the reader");
@@ -1355,8 +1369,8 @@ if (readerRouteDom.actives !== 1) {
 if (readerRouteDom.frames > 2) {
   throw new Error(`[/reader] expected at most two runtime frames (active + warm), found ${readerRouteDom.frames}`);
 }
-assertArtifactLoaded("/reader.js", "/reader");
-assertArtifactLoaded("/reader_bg.wasm", "/reader");
+assertArtifactLoaded("/pdf.js", "/reader");
+assertArtifactLoaded("/pdf_bg.wasm", "/reader");
 summary.bootContract.readerBoot = {
   path: readerRouteDom.path,
   generation: readerRoute.runtime?.generation ?? null,
@@ -1490,14 +1504,14 @@ await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
 await waitFor("the library runtime after the boot-contract stage", (x) =>
   x.bootState === "library", 60_000);
 
-// ---- 0f: a boot that cannot finish is VISIBLE, never a legacy fallback ----
-// The incident's other half (§6, §7): with the runtime artifact missing, the
-// shell must show a named error state — runtime + stage + cause — and must
-// NOT mount the old LibraryPage as a fallback. The server 404s the artifact
+// ---- 0f: a boot that cannot finish is VISIBLE ------------------------------
+// With a runtime artifact missing, the user must see a named error state,
+// never a blank pane or an endless placeholder. The server 404s the artifact
 // for the injected context, so this drives the real code path an incomplete
-// build produces.
+// build produces: a missing pane artifact fails that pane (the Shell and its
+// chrome stay up), and a missing Shell artifact fails the page placeholder.
 currentStage = "stage0-missing-artifact";
-async function bootFailureProbe(value, url, label) {
+async function failureProbe(value, url, label, read, check) {
   const failContext = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   await failContext.addCookies([{ name: "mareader_boot_fail", value, url: BASE }]);
   const failPage = await failContext.newPage();
@@ -1510,69 +1524,14 @@ async function bootFailureProbe(value, url, label) {
     const started = Date.now();
     let state = null;
     for (;;) {
-      state = await failPage.evaluate(() => {
-        const node = document.querySelector('#runtime-host [data-mareader-boot="error"]');
-        let diag = null;
-        try {
-          diag = JSON.parse(window.__mareaderDiagnostics?.() ?? "null");
-        } catch {
-          diag = null;
-        }
-        return {
-          hasErrorUi: node !== null,
-          runtime: node?.getAttribute("data-mareader-runtime") ?? null,
-          stage: node?.getAttribute("data-mareader-stage") ?? null,
-          text: (node?.textContent ?? "").replace(/\s+/g, " ").trim(),
-          bootState: diag?.bootState ?? null,
-          lastBootError: diag?.lastBootError ?? null,
-          activeRuntime: diag?.activeRuntime ?? null,
-          library: document.querySelectorAll(".lib-grid").length,
-          reader: document.querySelectorAll(".reader-bg").length,
-          placeholder: document.getElementById("shell-boot") !== null,
-          hostEmpty: (document.getElementById("runtime-host")?.children.length ?? 0) === 0,
-        };
-      });
-      if (state.hasErrorUi || Date.now() - started > 30_000) break;
+      state = await failPage.evaluate(read);
+      if (state.failed || Date.now() - started > 40_000) break;
       await failPage.waitForTimeout(200);
     }
-    if (!state.hasErrorUi) {
+    if (!state.failed) {
       throw new Error(`[${label}] no error state appeared for a missing artifact (state ${JSON.stringify(state)})`);
     }
-    if (state.bootState !== "failed") {
-      throw new Error(`[${label}] bootState is ${state.bootState}, expected failed`);
-    }
-    if (state.runtime !== value || state.stage !== "module-load") {
-      throw new Error(`[${label}] error UI names runtime=${state.runtime} stage=${state.stage}, expected ${value} / module-load`);
-    }
-    if (!state.text.includes("could not start the")) {
-      throw new Error(`[${label}] error UI text does not name the runtime: ${state.text}`);
-    }
-    if (!state.text.includes(`${value}.js`)) {
-      throw new Error(`[${label}] error UI does not name the artifact that failed: ${state.text}`);
-    }
-    if (!state.lastBootError || state.lastBootError.runtime !== value || state.lastBootError.stage !== "module-load") {
-      throw new Error(`[${label}] diagnostics lastBootError is ${JSON.stringify(state.lastBootError)}`);
-    }
-    // §7: the only allowed outcome is the error state. No library page, no
-    // reader, no second host, and nothing left empty.
-    if (state.library !== 0 || state.reader !== 0) {
-      throw new Error(`[${label}] a runtime mounted anyway (library ${state.library}, reader ${state.reader})`);
-    }
-    if (state.activeRuntime !== null) {
-      throw new Error(`[${label}] activeRuntime is ${state.activeRuntime} after a failed boot`);
-    }
-    if (state.hostEmpty) {
-      throw new Error(`[${label}] the host is empty: the error state must be painted INTO it (${JSON.stringify(state)})`);
-    }
-    if (state.placeholder) {
-      throw new Error(`[${label}] the page placeholder still covers the error state`);
-    }
-    // §6: the console keeps the detail, and the failure is not a trap — a
-    // missing artifact must never reach a wasm panic again.
-    const logged = consoleLines.some((line) => line.includes("[mareader] boot failed"));
-    if (!logged) {
-      throw new Error(`[${label}] the console does not carry the boot failure:\n${consoleLines.join("\n")}`);
-    }
+    check(state, consoleLines);
     if (pageErrorLines.length > 0) {
       throw new Error(`[${label}] the failed boot threw ${pageErrorLines.length} page error(s):\n${pageErrorLines.join("\n")}`);
     }
@@ -1582,17 +1541,61 @@ async function bootFailureProbe(value, url, label) {
   }
 }
 
-summary.bootContract.missingLibrary = await bootFailureProbe(
-  "library",
+summary.bootContract.missingPane = await failureProbe(
+  "pdf",
+  pearlsUrl,
+  "missing pane artifact",
+  () => {
+    const node = document.querySelector('[data-pane-boot="error"]');
+    let diag = null;
+    try {
+      diag = JSON.parse(window.__mareaderDiagnostics?.() ?? "null");
+    } catch {
+      diag = null;
+    }
+    return {
+      failed: node !== null,
+      text: (node?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      bootState: diag?.bootState ?? null,
+      reader: document.querySelectorAll(".reader-bg").length,
+      placeholder: document.getElementById("shell-boot") !== null,
+    };
+  },
+  (state, lines) => {
+    if (!state.text.includes("/pdf.js")) {
+      throw new Error(`[missing pane artifact] the pane does not name the artifact that failed: ${state.text}`);
+    }
+    // The Shell itself is fine: its chrome stays up around the failed pane.
+    if (state.bootState !== "reader" || state.reader !== 1 || state.placeholder) {
+      throw new Error(`[missing pane artifact] the Shell did not stay up around the failed pane: ${JSON.stringify(state)}`);
+    }
+    if (!lines.some((line) => line.includes("[mareader] pane boot failed") && line.includes("/pdf.js"))) {
+      throw new Error(`[missing pane artifact] the console does not carry the failure:\n${lines.join("\n")}`);
+    }
+  },
+);
+summary.bootContract.missingShell = await failureProbe(
+  "mareader",
   `${BASE}/`,
-  "missing library artifact",
+  "missing shell artifact",
+  () => {
+    const boot = document.getElementById("shell-boot");
+    return {
+      failed: boot?.getAttribute("data-shell-boot") === "timeout",
+      text: (boot?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      library: document.querySelectorAll(".lib-grid").length,
+    };
+  },
+  (state, lines) => {
+    if (!state.text.includes("did not start") || state.library !== 0) {
+      throw new Error(`[missing shell artifact] the placeholder does not report the failure: ${JSON.stringify(state)}`);
+    }
+    if (!lines.some((line) => line.includes("[mareader] the shell did not start"))) {
+      throw new Error(`[missing shell artifact] the console does not carry the failure:\n${lines.join("\n")}`);
+    }
+  },
 );
-summary.bootContract.missingReader = await bootFailureProbe(
-  "reader",
-  `${BASE}/?blend=1&open=${encodeURIComponent(PEARLS)}`,
-  "missing reader artifact",
-);
-console.log("boot contract: a missing runtime artifact shows a named error state and never a legacy fallback");
+console.log("boot contract: a missing runtime artifact shows a named error state, never a blank window");
 
 // --- Stage 1: boot + open a real book -------------------------------------
 currentStage = "stage1-open";
@@ -1860,7 +1863,11 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
   await openBook(searchBooks[attempt - 1]);
   await page.mouse.click(700, 450);
   await page.keyboard.press("Control+f");
-  const searchBox = page.locator('.runtime-frame[data-mareader-slot="active"]').locator('input[placeholder^="Search in document"]');
+  // The find bar is the active pane's own chrome: it lives in the pane's frame.
+  const searchBox = page
+    .locator('.runtime-frame[data-mareader-slot="active"] iframe.pane-frame:not([data-frame-hidden])')
+    .contentFrame()
+    .locator('input[placeholder^="Search in document"]');
   await searchBox.focus();
   await page.keyboard.type("the");
   await page.keyboard.press("Enter");
@@ -2590,7 +2597,9 @@ async function paneEntries() {
     const mdRoot = doc?.querySelector(`[data-pane-id="${mdId}"] [data-pane-root]`);
     doc.documentElement.style.setProperty("--pdf-paper-baked", "#d02020");
     pdfRoot.style.setProperty("--pane-pdf-paper-baked", "#a0c060");
-    workspace.classList.add("blend");
+    // Blend is workspace state every pane frame mirrors onto its own
+    // `.reader-bg`: the poke lands on all of them, as the mirror would.
+    doc.querySelectorAll(".reader-bg").forEach((bg) => bg.classList.add("blend"));
     return {
       sharedBackdrop: getComputedStyle(workspace).backgroundColor,
       pdfPane: getComputedStyle(pdfRoot).backgroundColor,
@@ -2604,7 +2613,7 @@ async function paneEntries() {
   }
   await page.evaluate(([sel]) => {
     const doc = document.querySelector(sel)?.contentDocument;
-    doc?.querySelector(".reader-bg")?.classList.remove("blend");
+    doc?.querySelectorAll(".reader-bg").forEach((bg) => bg.classList.remove("blend"));
     doc?.documentElement.style.removeProperty("--pdf-paper-baked");
     doc?.querySelectorAll("[data-pane-root]").forEach((root) => root.style.removeProperty("--pane-pdf-paper-baked"));
   }, [activeFrame]);

@@ -1,81 +1,57 @@
-# The runtime split: how the three runtimes are built, loaded, and disposed
+# The runtime split: how the runtimes are built, loaded, and disposed
 
-This document records the actual runtime technology, decided
-from the existing build (Trunk CSR, one `index.html` target, wasm-bindgen
-`--target web` glue, Trunk 0.21.14 in CI), not assumed.
+This document records the runtime technology as built (Trunk CSR,
+wasm-bindgen `--target web` glue, Trunk 0.21.14 in CI). The per-pane frames
+are described in [pane-runtimes.md](pane-runtimes.md).
 
 ## WASM targets
 
-Three independently loadable WASM artifacts, one per runtime lifetime:
+Three independently loadable WASM artifacts:
 
 | Runtime | Package (Cargo) | Entry HTML | Artifact |
 | --- | --- | --- | --- |
 | Shell | `mareader` (workspace root) | `index.html` | `mareader.js` + `mareader_bg.wasm` |
-| Reader | `reader-runtime` | `reader.html` | `reader.js` + `reader_bg.wasm` |
-| Library | `library-runtime` | `library.html` | `library.js` + `library_bg.wasm` |
+| PDF pane | `reader-runtime` (`pdf` features) | `pdf.html` | `pdf.js` + `pdf_bg.wasm` |
+| Text pane | `reader-runtime` (`reflow` features) | `reflow.html` | `reflow.js` + `reflow_bg.wasm` |
 
-Each runtime is a separate `[[bin]]` in its own package, so each artifact
-contains only its own module tree: the shell artifact has no reader or
-library code in it, and the library artifact has no `ReaderState` (the
-compiler cannot even name it — the type lives in `app-state`, but no library
-crate imports it; a compile error is the kill switch, not a review rule).
-
-`reader.html` / `library.html` are standalone loadable pages: they boot their
-runtime against the real production entry (`run_standalone`), which is the
-build-level proof that each artifact stands alone. The packaged app and
-`trunk serve` use `index.html` only; the two extra pages are built by their
-own Trunk config files (`reader.Trunk.toml`, `library.Trunk.toml`, each with
-`filehash = false` so the shell can name them) and merged into `dist/` by
-`tools/build-dist.sh`.
+The Shell links the library (`library-runtime`) and the workspace host
+(`reader-runtime`'s host half) and mounts both in its own document; it never
+reloads. Every open document runs in a pane frame of its own, so closing a
+pane drops its realm — the only way a WASM heap, which never shrinks, is
+given back. The pane pages are built by their own Trunk configs (each with
+`filehash = false` so the host can name them) and merged into `dist/` by
+`tools/build-dist.sh`; `tools/check-runtime-artifacts.mjs` pins the set.
 
 ## Entry modules
 
-- Shell: `src/main.rs` (`mareader` bin) — mounts the shell: route state, the
-  runtime manager and its frames, the persistent overlays, the diagnostics
-  surface, the frame channel the runtimes answer on.
-- Reader: `crates/reader-runtime/src/bin/reader.rs` — reads its launch
-  descriptor and mounts the reader session (see below); `run_standalone`
-  boots without a shell.
-- Library: `crates/library-runtime/src/bin/library.rs` — same shape.
+- Shell: `src/main.rs` — mounts the Shell: title bar, sidebar, settings,
+  menus, the runtime manager and its slots, the diagnostics surface.
+- Library and workspace host: `library_runtime::frame::adopt_in_document`
+  and `reader_runtime::frame::adopt_in_document` start a session in a slot
+  of the Shell's document, paired with the manager over a `MessageChannel`.
+- Panes: `reader_runtime::pane_frame` boots in `pdf.html` / `reflow.html`,
+  says hello to the host with its nonce, and is handed its port and boot
+  descriptor (`crate::pane_wire`).
 
 ## Loader mechanism
 
-The shell never imports a runtime artifact. It loads one by pointing an
-iframe at the artifact's page (`/library.html`, `/reader.html`) with a boot
-descriptor in the URL (`?hosted=1&g=<generation>&n=<nonce>` — §6): the frame
-resolves its own module the ordinary way, and the WASM instance is created
-in the frame's own realm. The frame IS the boundary — a replacement runtime
-gets a fresh browsing context with fresh statics, so the
-instance-per-session claim below survives the split.
-
-Module evaluation does NOT start a runtime. The sequence the manager runs, in
-order, is:
-
-1. Create the iframe at the artifact page with its descriptor; a frame that
-   does not fully claim the descriptor is torn down (§8).
-2. The frame's own entry fetches the page, loads the glue, instantiates the
-   wasm-bindgen module inside the frame, and pairs with the shell over the
-   channel (`crates/frame-transport`).
-3. The entry starts the session in that realm — the launch descriptor is
-   answered over the channel (`resolve_launch`) — and reports the boot
-   stages until `Ready` paints.
+The manager creates a slot (`div.runtime-frame` in `#runtime-host`) and
+starts the runtime's session in it over a fresh channel. Every message
+carries the slot's generation; traffic stamped with another is counted,
+never applied (§35).
 
 Every step can fail on its own, and each failure is named on the error card
-(`module load`, `init`, `start`; src/app/boot.rs plus the frame's protocol
-`Failed` event): a missing artifact page or glue fails during load, a wasm
-that will not instantiate fails at init, a missing export or a throwing
-start fails at start.
-
-A frame that dies — replaced session, crashed boot, a message stamped with
-another generation — never passes its traffic on: every message carries the
-generation that issued it, and stale traffic is counted, never applied
-(§35). Compiled code still caches in the browser's cache, but no module
-instance is SHARED: each frame builds its own.
+(src/app/boot.rs plus the protocol's `Failed` event). A pane frame whose
+artifact does not load answers with silence: after 10 s the pane draws a
+named error over itself and the console logs `[mareader] pane boot failed`
+with the artifact; the Shell and the other panes stay up. A Shell artifact
+that does not load leaves the page placeholder, which `public/shellBoot.js`
+turns into a "did not start" state after 20 s.
 
 ### Slot states: active, warm, retiring
 
-Loading a runtime is the expensive part of a route switch, so the loader
-rarely runs on the click. Each frame carries a `data-mareader-slot`
+Starting a runtime is the expensive part of a route switch, so the loader
+rarely runs on the click. Each slot carries a `data-mareader-slot`
 attribute — `active`, `warm`, `retiring` — and the manager
 (`src/app/manager.rs`) keeps at most one of each behind the screen:
 
@@ -290,24 +266,16 @@ paths to the formats the app opens and sends the live library frame
 `ShellFrame::ImportFiles { paths }`, which imports them onto the shelf it
 shows. The reader ignores that frame.
 
-Standalone pages install a storage-backed shell substitute so the same
-entry code runs unhosted; the trait keeps exactly these two implementations
-(plus the recorder the host tests use).
+Unhosted sessions (the unit-test lane) use a storage-backed substitute; the
+trait keeps exactly these implementations plus the recorder the host tests
+use.
 
 ## Artifact sizes
 
-Released from the build contract's CI log (Deep CI #186,
-2026-09-25 — `tools/check-runtime-artifacts.mjs` prints every artifact's size):
-
-| artifact | bytes | what it says |
-| --- | --- | --- |
-| `library.js` + `library_bg.wasm` | 62,013 / 1,854,894 | the dependency split's library artifact: it has no `pdf-engine` execution half — every page render it ever asks for crosses the boundary |
-| `reader.js` + `reader_bg.wasm` | 83,702 / 2,213,394 | the reader artifact: `pdf-engine`, `pdf-core`, `reflow-core`, `virtual-list`, `md-core`, `txt-core` are all compiled in, as the dependency gate asserts |
-
-These run lower than any same-page baseline by carving the two runtimes'
-distinct dependency closures apart; the gate
-(`tools/check-dependency-gate.mjs`, `cargo tree` over the wasm32 target
-graph) is what promises those closures never reconverge again.
+`tools/check-runtime-artifacts.mjs` prints every artifact's size in the CI
+build log. Each pane artifact is built with its own feature set, and the
+dependency gate (`tools/check-dependency-gate.mjs`, `cargo tree` over the
+wasm32 target graph) keeps the library's closure free of reader code.
 
 ## Asset loading
 

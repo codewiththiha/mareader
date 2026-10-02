@@ -33,11 +33,6 @@ pub mod host;
 /// own signatures.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod frame {
-    /// Off wasm an artifact is never frame-hosted.
-    pub fn boot_if_hosted() -> bool {
-        false
-    }
-
     /// The frame api never exists off-wasm: nothing to run `f` against.
     pub fn with_api<R>(
         _f: impl FnOnce(&frame_transport::PortShellApi<frame_transport::wasm::PortWire>) -> R,
@@ -535,46 +530,4 @@ pub fn report_status(api: &dyn ShellApi, status: &str, error: Option<String>) {
         status: status.to_string(),
         error,
     });
-}
-
-/// Standalone boot (`reader.html`): no Shell — a storage-backed API and the
-/// URL's own launch parameters. This is the artifact's proof that it loads
-/// and runs without the unified app anywhere in the page.
-pub fn run_standalone() {
-    console_error_panic_hook::set_once();
-    let launch = web_launch();
-    let host = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.body())
-        .map(web_sys::Element::from)
-        .expect("document body for the standalone reader");
-    start_session(&host, launch, context::ApiHandle::Standalone);
-}
-
-/// The URL launch (`?open=/samples/…&blend=1`), the same hook the browser
-/// suite drives — parsed by the reader itself when no Shell owns the page.
-pub fn web_launch() -> LaunchDocument {
-    let mut launch = LaunchDocument {
-        book_id: None,
-        path: String::new(),
-        resume_page: 1,
-        saved_fraction: None,
-        blend_override: false,
-        cover_data_url: None,
-        display_name: None,
-    };
-    if let Some(window) = web_sys::window()
-        && let Ok(search) = window.location().search()
-        && let Ok(params) = web_sys::UrlSearchParams::new_with_str(&search)
-    {
-        if params.get("blend").is_some() {
-            launch.blend_override = true;
-        }
-        if let Some(path) = params.get("open")
-            && path.starts_with("/samples/")
-        {
-            launch.path = path;
-        }
-    }
-    launch
 }

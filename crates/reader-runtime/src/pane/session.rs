@@ -156,12 +156,14 @@ impl FormatSession {
 
     /// Stop the session's in-flight work without ending it — the pane is
     /// about to leave, and its dispose follows over the boundary. A PDF's
-    /// page renders are cancelled; a reflowable session has no background
+    /// page renders are cancelled and its speculative thumbnail prefetches
+    /// stand down; a reflowable session has no background
     /// work of its own to stop (its measurement flushes and open tails are
     /// refused once it ends).
     pub(crate) fn quiesce(&self) {
         if let Self::Pdf(s) = self {
             s.cancel_page_renders();
+            s.suspend_prefetches();
         }
     }
 

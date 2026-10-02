@@ -225,9 +225,9 @@ impl ReaderContext {
     }
 }
 
-/// The standalone substitute (`reader.html` with no Shell): durable writes
+/// The unhosted substitute (no Shell, as in unit tests): durable writes
 /// go straight to the browser store the Shell would have written, and
-/// navigation commands are no-ops — the standalone page IS its own route.
+/// navigation commands are no-ops.
 pub struct StandaloneApi;
 
 impl StandaloneApi {

@@ -112,7 +112,14 @@ installs on its window; pane engines acquire and release slots through
   the pane's first paint.
 - **Replace in place.** Opening another document in a pane boots a fresh
   frame behind the current one and swaps them on first paint; the old frame
-  is disposed and removed. The pane id, its place and its focus stay.
+  is disposed and removed. The pane id, its place and its focus stay, and
+  until the swap the pane's chrome shows the open, not the old frame.
+- **Boot facts.** `Boot` is drafted when the frame is created and refreshed
+  with the host's current settings, focus, layout and sidebar when the
+  frame says hello, so nothing said in between is lost.
+- **Leave.** Returning to the library first asks every pane to prepare:
+  it writes its read point, cancels its page renders and stands its
+  thumbnail prefetches down.
 - **Close.** The host sends `Dispose`; the pane frame flushes its read
   point, runs `DocumentPane::dispose` and its teardown tail, sends its final
   diagnostics digest and `Disposed`, and the host removes the iframe. A
@@ -122,35 +129,34 @@ installs on its window; pane engines acquire and release slots through
 
 ## Diagnostics
 
-Each pane frame publishes its snapshot to the host on the digest beat. The
-host's digest sums the engine and pane counters over live panes plus the
-final snapshots of disposed ones, so `sessionsOpened == sessionsDestroyed`
-and the other balances still hold across frames.
+Each pane frame publishes its snapshot to the host on the digest beat, and
+the host also reads a pane realm's probe directly (the frames are
+same-origin), so a sample taken mid-render sees the work in flight. The
+host's digest sums the engine and pane counters over every frame still in
+the document (live, booting behind a swap, or disposing) plus the final
+snapshots of removed ones, so `sessionsOpened == sessionsDestroyed` and the
+other balances still hold across frames.
+
+- **Final word.** On `Dispose` a pane realm waits briefly for the engine
+  work the dispose cancelled to settle, then sends its final digest and
+  `Disposed`; the host reads the realm's probe once more before it removes
+  the frame.
+- **Document epoch.** The host claims the document-session epoch for its
+  panes (each open, each close of a held document), so the count does not
+  restart when a kind swap boots a new realm. A recycled reader runtime
+  carries its count on; a fresh one starts from zero.
+- **Status.** The document status the Shell hears is the host's, derived
+  from the mirrors. A pane realm's own status report is not forwarded, and
+  only the live frame of a pane may act for the user (open, return to the
+  library, reload).
 
 ## Legacy removed
 
 - The reader frame: the Shell hosts the workspace directly, and nothing
   outside a PDF pane frame loads pdf.js.
-- The in-realm pane path: the host no longer mounts `DocumentPane`.
+- The in-realm pane path: the host no longer mounts `DocumentPane`, and a
+  pane realm draws no host chrome (`DocumentPane::chrome` is empty).
 - In-realm presentation recency for the root paper (`presented` in
   `public/engine/state.ts`): a pane realm holds one session, and the host
   owns the recency.
 - The rail's direct engine binding (`MountedPdf` in thumbnail cells).
-
-## Stages
-
-1. Contract and pane artifacts: `runtime_contract::pane`, `pdf.html` /
-   `pdf.wasm` and `reflow.html` / `reflow.wasm` (each with its own Trunk
-   config and feature set), the pane frame boot running `DocumentPane`,
-   the build and artifact checks.
-2. `FramePane` in the host: iframe, handshake, mirror chrome, commands,
-   reveal on paint, dispose; the composition root switches to it.
-3. The Shell becomes the workspace host: the workspace and the library
-   render in the Shell document, and the reader and library frames are
-   retired.
-4. Parity: thumbnails, shared paper and engine hooks, keyboard and focus,
-   grab and lift, shields, the shared raster lane, the warm pane,
-   diagnostics aggregation.
-5. Tests and tools follow the frames: the lifecycle suite reaches into pane
-   frames, the boundary and artifact checks know the new artifact.
-6. Legacy removal and docs.

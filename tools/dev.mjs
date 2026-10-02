@@ -10,11 +10,11 @@
 //
 // Why this exists (`tauri.conf.json` build.beforeDevCommand): the old command
 // was `npm run build:ts && trunk serve`, which serves whatever `dist/` happens
-// to hold. `trunk serve` builds the SHELL page only — `reader.js` and
-// `library.js` come from the other two Trunk invocations, merged by
+// to hold. `trunk serve` builds the SHELL page only — the pane artifacts
+// (`pdf.js`, `reflow.js`) come from the other Trunk invocations, merged by
 // `tools/build-dist.sh`. So on a fresh clone (or after `trunk clean`), every
-// dynamic import the shell makes resolved to a 404, and the app opened to an
-// empty runtime host: the blank window, in dev, with nothing in the terminal.
+// pane frame resolved to a 404, and a document opened to an empty pane: the
+// blank reader, in dev, with nothing in the terminal.
 //
 // The invariant this establishes, in the order the shell needs it:
 //
@@ -66,11 +66,11 @@ const FINGERPRINT_ROOTS = [
   "styles",
   "tools",
   "index.html",
-  "reader.html",
-  "library.html",
+  "pdf.html",
+  "reflow.html",
   "Trunk.toml",
-  "reader.Trunk.toml",
-  "library.Trunk.toml",
+  "pdf.Trunk.toml",
+  "reflow.Trunk.toml",
   "Cargo.toml",
   "Cargo.lock",
   "package.json",
@@ -90,30 +90,24 @@ const FRESHNESS_SET = [
   "dist/mareader.js",
   "dist/mareader_bg.wasm",
   "dist/tauri-relay.js",
-  "dist/library.html",
-  "dist/library.js",
-  "dist/library_bg.wasm",
-  "dist/reader.html",
-  "dist/reader.js",
-  "dist/reader_bg.wasm",
+  "dist/pdf.html",
+  "dist/pdf.js",
+  "dist/pdf_bg.wasm",
+  "dist/reflow.html",
+  "dist/reflow.js",
+  "dist/reflow_bg.wasm",
 ];
 
-/** The files the shell imports at boot, in boot order. Probed over HTTP so the
- *  check is about what the DEV SERVER serves, not what the disk holds. The
- *  two runtime PAGES are probed too: the shell's iframes load them by name,
+/** The files the shell and its pane frames load, in boot order. Probed over
+ *  HTTP so the check is about what the DEV SERVER serves, not what the disk
+ *  holds. The pane PAGES are probed too: the pane iframes load them by name,
  *  and a dist that carries the scripts but not the pages still boots to a
- *  blank frame. */
+ *  blank pane. */
 const PROBED = [
   "/index.html",
   "/tauri-relay.js",
   "/bake.html",
   "/coverBake.js",
-  "/library.html",
-  "/library.js",
-  "/library_bg.wasm",
-  "/reader.html",
-  "/reader.js",
-  "/reader_bg.wasm",
   "/pdf.html",
   "/pdf.js",
   "/pdf_bg.wasm",
@@ -126,15 +120,7 @@ const PROBED = [
  *  them. Re-copied after shell rebuilds: Trunk owns `dist/` while serving. */
 const MERGED = [
   // The page first: Trunk names the built page after the target it built
-  // (reader.html) or normalizes it to index.html, so both are candidates.
-  ["dist-reader/reader.html", "reader.html"],
-  ["dist-reader/index.html", "reader.html"],
-  ["dist-reader/reader.js", "reader.js"],
-  ["dist-reader/reader_bg.wasm", "reader_bg.wasm"],
-  ["dist-library/library.html", "library.html"],
-  ["dist-library/index.html", "library.html"],
-  ["dist-library/library.js", "library.js"],
-  ["dist-library/library_bg.wasm", "library_bg.wasm"],
+  // (pdf.html) or normalizes it to index.html, so both are candidates.
   ["dist-pdf/pdf.html", "pdf.html"],
   ["dist-pdf/index.html", "pdf.html"],
   ["dist-pdf/pdf.js", "pdf.js"],
@@ -151,13 +137,9 @@ const MERGED = [
 const WATCHED_ROOTS = ["crates", "styles", "public"];
 const WATCHED_FILES = [
   "index.html",
-  "reader.html",
-  "library.html",
   "pdf.html",
   "reflow.html",
   "Trunk.toml",
-  "reader.Trunk.toml",
-  "library.Trunk.toml",
   "pdf.Trunk.toml",
   "reflow.Trunk.toml",
 ];
@@ -173,8 +155,6 @@ const IGNORE_DIRS = [
   "scripts",
   "styles",
   "target",
-  "dist-reader",
-  "dist-library",
   "dist-pdf",
   "dist-reflow",
   "node_modules",
@@ -427,7 +407,7 @@ function writeManifest(fingerprint) {
  *  Trunk owns `dist/` while it serves; the runtimes are merged in from the
  *  other two builds and are not Trunk's to keep. Trunk.toml's post_build
  *  hook stages them into every applied distribution — this is the loop-level
- *  backstop for states that hook cannot see (a wiped dist-reader, say). */
+ *  backstop for states that hook cannot see (a wiped dist-pdf, say). */
 function ensureMergedArtifacts() {
   const restored = [];
   for (const [from, to] of MERGED) {
@@ -489,7 +469,7 @@ async function proveServed(label) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const failures = await probeArtifacts();
     if (failures.length === 0) {
-      log(`${label}: dev server serves index.html + library.js + reader.js + both wasm modules`);
+      log(`${label}: dev server serves index.html + the pane pages, scripts and wasm modules`);
       return true;
     }
     if (attempt === 1) ensureMergedArtifacts();

@@ -107,12 +107,11 @@ shape is in `docs/route-split-retrospective.md`.
   script `public/coverBake.ts` is pdf.js plus the engine's cover render — no
   wasm, no runtime) → `window.postMessage` ask/answer → the asking shelf's
   `CoverBaked`. One bake in flight; the page is removed 5 s after its queue
-  drains, so at rest nothing but the shelf is resident. A standalone
-  `library.html` boot has no Shell and never drains its queue (the shelf
-  shows placeholder art).
+  drains, so at rest nothing but the shelf is resident.
 - `*_bg.wasm` is wasm-bindgen's file naming (`<name>.js` glue +
   `<name>_bg.wasm` module), not an extra module: there are exactly three —
-  shell, library, reader.
+  the Shell (`mareader`, which links the library and the workspace host),
+  and the two pane runtimes, `pdf` and `reflow`.
 - Memory docs live in `docs/memory/` (index `docs/memory/README.md`):
   `rules.md` is the binding rule set for new code (frame-scoped release,
   dwell before expensive work, bounded caches with drains, zero-and-remove
@@ -193,8 +192,8 @@ whatever is on screen:
   the animated grain under it — a hidden frame is `visibility: hidden`, which
   stops paint but not animation.
 - pdf.js is loaded on the first PDF open (`public/engine/loader.ts::
-  ensurePdfjs`, a dynamic `import()`), not by a `reader.html` script tag: a
-  warm reader, or a Markdown/text session, never fetches or holds it.
+  ensurePdfjs`, a dynamic `import()`), not by a `pdf.html` script tag: a
+  pane that never opens a PDF never fetches or holds it.
 - Module-level state that outlives a session in a recycled frame must be
   reset or released per session: the shelf's cover ledger
   (`covers::reset_ledger`), and every Tauri listener (`tauri_listen` now

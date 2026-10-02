@@ -1,16 +1,10 @@
-//! The library's hosted frame boot: `library.html?hosted=1&g=<generation>&n=<nonce>`.
+//! The library's hosted boot: the Shell mounts the session in a slot of its
+//! own document and hands it one end of a channel (`adopt_in_document`).
+//! Everything flows over that port, stamped with the slot's generation,
+//! under the protocol vocabulary (`runtime-contract::protocol`).
 //!
-//! The marker is the WHOLE difference between a standalone page and a frame
-//! (§6): no window-object sniffing, no fallback to standalone — a boot that
-//! sees the marker becomes a frame or nothing. The identity in the URL is
-//! what the Shell echoes in its channel offer, so the adoption below is the
-//! first and last unauthenticated message this boot ever accepts (§8);
-//! everything after it flows over the frame's own port, stamped with the
-//! generation, under the protocol vocabulary (`runtime-contract::protocol`).
-//!
-//! The session itself is the same `start_session` the standalone and the
-//! legacy hosted boots use: the frame is a transport and a boot, never a
-//! second implementation of the shelf (§5's "no second UI" rule).
+//! The session itself is the one `start_session`: the boot is a transport,
+//! never a second implementation of the shelf.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -47,6 +41,10 @@ thread_local! {
     /// instance per realm, so it is adopted the moment that one is gone.
     static QUEUED: RefCell<Option<(web_sys::Element, u64, web_sys::MessagePort)>> =
         const { RefCell::new(None) };
+    /// The instance disposed and kept its channel and slot for a `Rearm`
+    /// (the Shell recycles a disposed slot in place). A new boot offered
+    /// meanwhile supersedes it.
+    static PARKED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Boot inside the Shell's own document: `mount` is the slot the Shell made
@@ -59,8 +57,11 @@ pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys
         return;
     }
     if API.with(|api| api.borrow().is_some()) {
-        QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
-        return;
+        if !PARKED.with(Cell::get) {
+            QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
+            return;
+        }
+        release_in_document();
     }
     ADOPTED.with(|a| a.set(Some(generation)));
     MOUNT.with(|m| *m.borrow_mut() = Some(mount));
@@ -71,6 +72,7 @@ pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys
 /// of its channel and mount point, and adopt a boot that waited for it.
 #[cfg(target_arch = "wasm32")]
 fn release_in_document() {
+    PARKED.with(|p| p.set(false));
     if MOUNT.with(|m| m.borrow_mut().take()).is_none() {
         return;
     }
@@ -82,6 +84,17 @@ fn release_in_document() {
     ADOPTED.with(|a| a.set(None));
     if let Some((mount, generation, port)) = QUEUED.with(|q| q.borrow_mut().take()) {
         adopt_in_document(mount, generation, port);
+    }
+}
+
+/// After a disposal: hand over to a boot that waited for it, or keep the
+/// channel and slot for the Shell's `Rearm`.
+#[cfg(target_arch = "wasm32")]
+fn park_in_document() {
+    if QUEUED.with(|q| q.borrow().is_some()) {
+        release_in_document();
+    } else if MOUNT.with(|m| m.borrow().is_some()) {
+        PARKED.with(|p| p.set(true));
     }
 }
 
@@ -128,27 +141,6 @@ fn make_root(
     root.set_attribute("class", "h-full w-full").ok();
     parent.append_child(&root).ok()?;
     Some(root)
-}
-
-/// Boot through the frame when this artifact's URL names one.
-///
-/// Returns `true` as soon as the marker stands — before any offer arrives —
-/// because §6 forbids the fallback: a hosted boot that never hears from its
-/// Shell stays a claimless frame, never a standalone page.
-pub fn boot_if_hosted() -> bool {
-    let Some((generation, nonce)) = marker() else {
-        return false;
-    };
-    console_error_panic_hook::set_once();
-    frame_transport::wasm::adopt_channel(generation, nonce, move |wire| {
-        start_frame(wire, generation);
-    });
-    true
-}
-
-fn marker() -> Option<(u64, String)> {
-    let search = web_sys::window()?.location().search().ok()?;
-    frame_transport::parse_hosted_marker(&search)
 }
 
 /// Run `f` against the live frame api when there is one. Command traffic
@@ -250,6 +242,7 @@ fn on_rearm(generation: u64) {
     if SESSION_ID.with(|slot| slot.get()).is_some() {
         return;
     }
+    PARKED.with(|p| p.set(false));
     remove_roots("library");
     on_init(true, generation);
 }
@@ -320,11 +313,11 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                             emit(RuntimeFrame::DisposeComplete);
-                            release_in_document();
+                            park_in_document();
                         });
                     } else {
                         emit(RuntimeFrame::DisposeComplete);
-                        release_in_document();
+                        park_in_document();
                     }
                 }
                 ShellFrame::Launch { .. } | ShellFrame::ResolveLaunchAnswer { .. } => {

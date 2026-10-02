@@ -237,7 +237,7 @@ pub struct RuntimeManager {
     ///
     /// Two facts, deliberately separate. `reader_launched` is the session the
     /// Shell SENT a launch to; `reader_armed` is set only once that session
-    /// answered with the launch underway (Opening/Ready). A promoted warm
+    /// showed the book (Ready): Idle can trail Opening. A promoted warm
     /// reader's boot-time `Idle` can arrive after the promotion — keyed on
     /// the launch alone, that stale Idle bounced a book the user had just
     /// opened straight back to the shelf.
@@ -1385,9 +1385,10 @@ impl RuntimeManager {
                 let live = self.live_driver().map(|d| d.generation()) == Some(generation)
                     && self.active() == Some(ActiveRuntime::Reader);
                 let launched = *self.reader_launched.lock().unwrap() == Some(generation);
-                if live && launched && matches!(report.status.as_str(), "Opening" | "Ready") {
-                    // The session answered its launch: from here on, Idle
-                    // is the book going away.
+                if live && launched && report.status == "Ready" {
+                    // The session showed the book it was handed: from here
+                    // on, Idle is the book going away. Not on Opening — the
+                    // warm mount's Idle can still be in flight behind it.
                     *self.reader_armed.lock().unwrap() = Some(generation);
                 }
                 let armed = *self.reader_armed.lock().unwrap() == Some(generation);

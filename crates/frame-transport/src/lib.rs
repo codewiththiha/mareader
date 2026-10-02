@@ -2,12 +2,11 @@
 //!
 //! `runtime-contract::protocol` owns the VOCABULARY every side serializes;
 //! this crate owns how it moves: a cloneable message sink both runtime
-//! artifacts call their [`ShellApi`] through when they boot hosted in a
-//! frame ([`PortShellApi`]), the request ids that turn the one synchronous
-//! bridge query (`resolve_launch`) into a port round trip, and — behind
-//! `wasm32`, the only artifact target this transport can ever run on — the
-//! channel adoption that pairs a boot with its Shell
-//! ([`wasm::adopt_channel`]).
+//! runtimes call their [`ShellApi`] through ([`PortShellApi`]), the request
+//! ids that turn the one synchronous bridge query (`resolve_launch`) into a
+//! port round trip, and — behind `wasm32` — the `MessagePort` wire itself
+//! ([`wasm::PortWire`]). The Shell hands each runtime its end of the channel
+//! directly (the runtimes mount in the Shell's own document).
 //!
 //! Host tests exercise everything except the DOM: the wire is a trait with a
 //! recording double, so the envelope stamping (generation on every message,
@@ -25,34 +24,6 @@ use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
 use runtime_contract::protocol::{RuntimeEnvelope, RuntimeFrame};
 
 pub mod wasm;
-
-/// Parse the frame boot marker out of an artifact page's query string
-/// (`?hosted=1&g=17&n=<nonce>`, §5/§6): absent when the page IS the whole
-/// app (standalone boot), complete when a Shell created this frame with an
-/// identity it will echo in its channel offer. A HALF marker (the flag
-/// without the identity) is not a marker at all — the boot falls back rather
-/// than mint a frame the Shell cannot address.
-pub fn parse_hosted_marker(search: &str) -> Option<(u64, String)> {
-    let query = search.strip_prefix('?').unwrap_or(search);
-    let mut hosted = false;
-    let mut generation: Option<u64> = None;
-    let mut nonce: Option<String> = None;
-    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
-        match pair.split_once('=') {
-            Some(("hosted", value)) => hosted = value == "1",
-            Some(("g", value)) => generation = value.parse().ok(),
-            Some(("n", value)) if !value.is_empty() => nonce = Some(value.to_string()),
-            _ => {}
-        }
-    }
-    if hosted { generation.zip(nonce) } else { None }
-}
-
-/// The `kind` of the one message that is NOT on the port: the Shell's own
-/// `postMessage` that transfers the port and the frame identity to a freshly
-/// loaded iframe (§5, §7). Namespaced so no stray message the runtime ever
-/// sees can pass for it.
-pub const CHANNEL_KIND: &str = "mareader.channel";
 
 /// A destination a serialized envelope can be posted to. The production
 /// implementation is the frame's `MessagePort`; the tests' is a `Vec`.
@@ -295,22 +266,6 @@ mod tests {
             posted[0],
             r#"{"generation":17,"kind":"status","stage":"mounted"}"#
         );
-    }
-
-    #[test]
-    fn the_marker_parses_only_as_a_whole_identity() {
-        assert_eq!(
-            parse_hosted_marker("?hosted=1&g=17&n=f7a2"),
-            Some((17, "f7a2".to_string()))
-        );
-        // Standalone pages carry none of this.
-        assert_eq!(parse_hosted_marker(""), None);
-        assert_eq!(parse_hosted_marker("?open=/samples/a.pdf"), None);
-        // The flag without the identity is not a frame.
-        assert_eq!(parse_hosted_marker("?hosted=1"), None);
-        assert_eq!(parse_hosted_marker("?hosted=1&g=17"), None);
-        // A nonsense generation falls with the flag.
-        assert_eq!(parse_hosted_marker("?hosted=1&g=x&n=y"), None);
     }
 
     #[test]

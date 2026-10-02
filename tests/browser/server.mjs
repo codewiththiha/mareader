@@ -30,14 +30,14 @@ const MIME = {
 };
 
 /** Failure injection for the boot-contract stage: a request carrying
- *  `mareader_boot_fail=library|reader` gets that runtime's artifact 404'd, so
+ *  `mareader_boot_fail=mareader|pdf|reflow` gets that runtime's artifact 404'd, so
  *  the suite can drive the REAL missing-artifact path (the one that produced
  *  the blank window) instead of asserting it from the outside. Hard 404, and
  *  before the SPA fallback: a missing runtime artifact must look like a
  *  missing file, not like an HTML page served under a .js URL. */
 function injectedFailure(req) {
   const cookies = req.headers.cookie ?? "";
-  const match = /(?:^|;\s*)mareader_boot_fail=(library|reader)/.exec(cookies);
+  const match = /(?:^|;\s*)mareader_boot_fail=(mareader|pdf|reflow)/.exec(cookies);
   return match ? match[1] : null;
 }
 

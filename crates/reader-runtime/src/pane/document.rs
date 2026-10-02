@@ -3,12 +3,11 @@
 //! one pipeline — with its own reader state, virtualizers, zoom, search,
 //! overlays and listeners, all under the pane's own reactive owner.
 //!
-//! It implements [`PaneRuntime`] and is handed to the host only through
-//! [`factory`], which the session's composition root injects: the host
-//! never names this type.
+//! It implements [`PaneRuntime`] and runs inside a pane realm
+//! (`crate::pane_frame`), one pane per realm; the workspace host speaks to
+//! it only through the realm's wire (`crate::frame_pane`).
 
 use std::cell::Cell;
-use std::rc::Rc;
 
 use leptos::prelude::*;
 use leptos::tachys::reactive_graph::OwnedView;
@@ -16,8 +15,8 @@ use runtime_contract::boundary::LaunchDocument;
 
 use crate::context::ReaderContext;
 use crate::host::contract::{
-    ChromeSlot, PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory,
-    PaneResourceCounts, PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
+    ChromeSlot, PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneResourceCounts,
+    PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
 };
 use crate::host::model::{
     DocumentId, PaneBounds, PaneDescriptor, PaneError, PaneFormat, PaneId, PaneLifecycle,
@@ -26,11 +25,6 @@ use crate::pane::handle::PaneHandle;
 use crate::state::ReaderState;
 use pdf_engine::types::DocStatus;
 use reader_core::format::{Format, format_of};
-
-/// The factory the composition root hands the host.
-pub fn factory() -> PaneFactory {
-    Rc::new(build)
-}
 
 /// The format tag a path names, for the host's descriptor: the host asks
 /// through the injected [`crate::host::contract::PaneClassifier`] and never
@@ -50,16 +44,8 @@ fn tag(format: Format) -> PaneFormat {
     }
 }
 
-fn build(
-    env: PaneEnv,
-    descriptor: PaneDescriptor,
-    launch: Option<LaunchDocument>,
-) -> Rc<dyn PaneRuntime> {
-    Rc::new(DocumentPane::create(env, descriptor, launch))
-}
-
 /// One document pane.
-pub(crate) struct DocumentPane {
+pub struct DocumentPane {
     id: PaneId,
     /// The pane's reactive owner, a child of the host's: every signal,
     /// effect, listener and timer the pane installs lives here and dies in
@@ -87,7 +73,7 @@ impl DocumentPane {
     /// when the descriptor names a document, it resumes at the descriptor's
     /// page, and the descriptor's zoom (if any) seeds the first document in
     /// place of the settings' fit.
-    pub(crate) fn create(
+    pub fn create(
         env: PaneEnv,
         descriptor: PaneDescriptor,
         launch: Option<LaunchDocument>,
@@ -306,43 +292,10 @@ impl PaneRuntime for DocumentPane {
         })
     }
 
-    fn chrome(&self, slot: ChromeSlot, site: PaneSite) -> Option<AnyView> {
-        let ctx = self.ctx;
-        let settings_open = self.env.settings_open;
-        let view = match slot {
-            ChromeSlot::TitleCenter => self.owned(site, move || {
-                view! {
-                    <crate::components::shell::titlebar::document_title::CenteredDocTitle
-                        state=ctx
-                    />
-                }
-                .into_any()
-            }),
-            ChromeSlot::TitleTrailing => self.owned(site, move || {
-                view! {
-                    <crate::components::menus::reader_menu::ReaderMenu
-                        state=ctx
-                        settings_open=settings_open
-                    />
-                }
-                .into_any()
-            }),
-            ChromeSlot::Rail => self.owned(site, move || {
-                let shell =
-                    expect_context::<app_ui::components::shell::controller::ShellController>();
-                view! { <crate::features::rail::ReaderRail state=ctx shell=shell /> }.into_any()
-            }),
-            ChromeSlot::Settings => self.owned(site, move || {
-                view! {
-                    <crate::components::settings::modal::SettingsModal
-                        state=ctx
-                        open=settings_open
-                    />
-                }
-                .into_any()
-            }),
-        };
-        Some(view)
+    /// A pane realm draws no host chrome: the host renders the pane's title,
+    /// menu, rail and settings from its mirror (`crate::frame_pane`).
+    fn chrome(&self, _slot: ChromeSlot, _site: PaneSite) -> Option<AnyView> {
+        None
     }
 
     fn resize(&self, bounds: PaneBounds) {

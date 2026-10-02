@@ -19,9 +19,8 @@
 //! module is the second half of that: once the shell is running, the host
 //! paints its own states, and the page placeholder steps aside.
 //!
-//! This is the ONLY legitimate fallback. If `library.js` cannot load, the old
-//! LibraryPage does not come back: the user gets this error surface, which
-//! names what failed and where.
+//! This is the ONLY legitimate fallback. If a runtime cannot start, the user
+//! gets this error surface, which names what failed and where.
 
 use serde_json::json;
 use wasm_bindgen::JsCast;
@@ -35,7 +34,7 @@ pub enum RuntimeName {
 }
 
 impl RuntimeName {
-    /// The artifact stem: `library` -> `/library.js` + `/library_bg.wasm`.
+    /// The runtime's name in the error card and diagnostics.
     pub const fn artifact(self) -> &'static str {
         match self {
             RuntimeName::Library => "library",
@@ -58,7 +57,7 @@ pub enum BootStage {
     /// The outgoing session is being torn down; the replacement must not
     /// become active until it is gone (§10).
     Dispose,
-    /// `/library.js` or `/reader.js` did not load.
+    /// The runtime's session never answered its offer.
     ModuleLoad,
     /// The artifact's wasm instance did not initialize.
     Init,

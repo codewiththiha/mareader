@@ -2452,7 +2452,6 @@ dependencies = [
  "app-chrome",
  "app-state",
  "app-ui",
- "console_error_panic_hook",
  "frame-transport",
  "js-sys",
  "leptos",

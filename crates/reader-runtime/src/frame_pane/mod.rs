@@ -46,6 +46,11 @@ use thumbs::RemoteThumbs;
 /// removes it regardless (ms).
 const DISPOSE_TIMEOUT_MS: f64 = 1500.0;
 
+/// How long a new frame may take to say hello before the pane reports that
+/// its runtime never started (ms): a missing or broken artifact answers with
+/// silence, and the pane must say so instead of staying blank.
+const HELLO_TIMEOUT_MS: i32 = 10_000;
+
 /// The factory the composition root hands the host: every pane is a frame.
 pub fn factory() -> PaneFactory {
     Rc::new(build) as Rc<PaneBuild>
@@ -85,6 +90,19 @@ impl Frame {
         }
     }
 
+    /// The frame's digest as of now: its realm is same-origin, so its own
+    /// probe answers synchronously; the last posted digest covers a realm
+    /// that has not installed the probe yet.
+    fn fresh_digest(&self) -> Option<String> {
+        let fresh = self.iframe.content_window().and_then(|window| {
+            let probe =
+                js_sys::Reflect::get(&window, &JsValue::from_str("__mareaderDiagnostics")).ok()?;
+            let probe: &js_sys::Function = probe.dyn_ref()?;
+            probe.call0(&JsValue::NULL).ok()?.as_string()
+        });
+        fresh.or_else(|| self.digest.clone())
+    }
+
     fn reveal(&self) {
         let _ = self.iframe.remove_attribute("data-frame-hidden");
     }
@@ -92,6 +110,9 @@ impl Frame {
     /// Take the frame out of the document and drop its port: its realm is
     /// collected with it.
     fn remove(&mut self) {
+        // The realm's last word is read before it goes: work its dispose
+        // settled after its last posted digest still counts.
+        self.digest = self.fresh_digest();
         if let Some(port) = self.port.take() {
             port.set_onmessage(None);
             port.close();
@@ -130,7 +151,12 @@ struct Inner {
     lifecycle: Cell<PaneLifecycle>,
     appearance: Cell<Option<PaneAppearance>>,
     requested: Cell<PaneFormat>,
+    /// Set when a frame never said hello: the pane draws it over the empty
+    /// frame (a frame that started draws its own errors).
+    boot_error: RwSignal<Option<String>>,
     disposed: Cell<bool>,
+    /// The pane holds a document: its close is a claim on the epoch.
+    holds: Cell<bool>,
 }
 
 /// The host's pane over a frame.
@@ -179,6 +205,7 @@ impl FramePane {
             };
             (ctx, surface, RemoteThumbs::new())
         });
+        let boot_error = owner.with(|| RwSignal::new(None));
         let inner = Rc::new(Inner {
             id,
             env,
@@ -194,10 +221,15 @@ impl FramePane {
             lifecycle: Cell::new(PaneLifecycle::New),
             appearance: Cell::new(None),
             requested: Cell::new(descriptor.format),
+            boot_error,
             disposed: Cell::new(false),
+            holds: Cell::new(false),
         });
         thumbs.attach(Rc::downgrade(&inner));
         let launch = launch.filter(|_| descriptor.document.is_some());
+        if launch.is_some() {
+            inner.claim_open();
+        }
         let boot = Boot {
             pane_id: id.get(),
             session_id: env.session_id,
@@ -221,6 +253,9 @@ impl FramePane {
             .map_or(PaneKind::for_format(descriptor.format), |l| {
                 PaneKind::for_path(&l.path)
             });
+        if let Some(launch) = launch.as_ref() {
+            inner.expect_open(launch);
+        }
         *inner.live.borrow_mut() = Some(new_frame(&inner, kind, boot));
         inner.owner.with(|| install_effects(&inner));
         register(&inner);
@@ -252,6 +287,7 @@ fn new_frame(inner: &Rc<Inner>, kind: PaneKind, boot: Boot) -> Frame {
             .push((nonce.clone(), Rc::downgrade(inner), iframe.clone()))
     });
     ensure_hello_listener();
+    watch_hello(inner, kind, nonce.clone());
     Frame {
         kind,
         nonce,
@@ -266,6 +302,36 @@ fn new_frame(inner: &Rc<Inner>, kind: PaneKind, boot: Boot) -> Frame {
         digest: None,
         disposed: Rc::new(Cell::new(false)),
     }
+}
+
+/// Fail the pane if the frame `nonce` has not said hello within
+/// `HELLO_TIMEOUT_MS`: its document reports the error (the pane draws it,
+/// and the Shell's status reports carry it) and the console keeps the
+/// artifact that did not start.
+fn watch_hello(inner: &Rc<Inner>, kind: PaneKind, nonce: String) {
+    let weak = Rc::downgrade(inner);
+    spawn_local(async move {
+        sleep_ms(HELLO_TIMEOUT_MS).await;
+        let Some(inner) = weak.upgrade() else {
+            return;
+        };
+        if inner.disposed.get() {
+            return;
+        }
+        let silent = inner.with_frame(&nonce, |frame| frame.port.is_none());
+        if silent != Some(true) {
+            return;
+        }
+        let script = kind.page().replace(".html", ".js");
+        let message = format!(
+            "could not start the document runtime: /{script} did not load or never answered"
+        );
+        web_sys::console::error_1(&format!("[mareader] pane boot failed: {message}").into());
+        let document = inner.ctx.reader.document;
+        put(document.error, Some(message.clone()));
+        put(document.status, DocStatus::Error);
+        put(inner.boot_error, Some(message));
+    });
 }
 
 /// The host → pane flow: every host-owned fact the pane mirrors, sent to
@@ -458,6 +524,16 @@ impl Inner {
         let appearance = self.appearance.get();
         // Read before borrowing the frame: the board walks every pane's.
         let paper = board_paper();
+        // The boot was drafted when the frame was created; what the env said
+        // since went to a frame without a port, so the boot carries now.
+        let env = &self.env;
+        let settings = env.settings.get_untracked();
+        let workspace = env.workspace.get_untracked();
+        let active = env.active.get_untracked();
+        let can_split = env.can_split.get_untracked();
+        let moves = env.moves.get_untracked();
+        let sidebar = WireSidebar::from(env.ui.sidebar.get_untracked());
+        let settings_open = env.settings_open.get_untracked();
         self.with_frame(nonce, move |frame| {
             frame.port = Some(port);
             frame.on_message = Some(on_message);
@@ -467,10 +543,28 @@ impl Inner {
                     boot.look = appearance.look;
                 }
                 boot.paper = paper;
+                boot.settings = settings;
+                boot.workspace = workspace;
+                boot.active = active;
+                boot.can_split = can_split;
+                boot.moves = moves;
+                boot.sidebar = sidebar;
+                boot.settings_open = settings_open;
                 frame.post(&HostToPane::Boot(Box::new(boot)));
             }
             frame.post(&HostToPane::Lifecycle { lifecycle });
         });
+    }
+
+    /// An open is on its way to the frame: the mirror says so at once, so
+    /// the host's chrome (title, close) follows the click instead of the
+    /// frame's first report. The frame's own reports take over from here.
+    fn expect_open(&self, launch: &LaunchDocument) {
+        let document = self.ctx.reader.document;
+        put(document.error, None);
+        put(document.path, Some(launch.path.clone()));
+        put(document.book_id, launch.book_id.clone());
+        put(document.status, DocStatus::Opening);
     }
 
     fn receive_raw(self: &Rc<Self>, nonce: &str, data: JsValue) {
@@ -531,6 +625,9 @@ impl Inner {
                 let mirror = *mirror;
                 self.with_frame(nonce, |frame| frame.mirror = Some(mirror.clone()));
                 match role {
+                    // A live frame being replaced speaks for a document
+                    // the pane has already left: the pane shows the open.
+                    Role::Live if self.incoming.borrow().is_some() => {}
                     Role::Live => self.apply_mirror(mirror),
                     Role::Incoming => self.try_swap(),
                     Role::Retired => {}
@@ -631,15 +728,22 @@ impl Inner {
             RuntimeFrame::PublishDigest { json } => {
                 self.with_frame(nonce, |frame| frame.digest = Some(json));
             }
-            RuntimeFrame::OpenDocument { launch } => api.open_document(&launch),
-            RuntimeFrame::NavigateLibrary => api.navigate_library(),
+            RuntimeFrame::OpenDocument { launch } if role == Role::Live => {
+                api.open_document(&launch)
+            }
+            RuntimeFrame::NavigateLibrary if role == Role::Live => api.navigate_library(),
             RuntimeFrame::ReadPoint { point } => api.read_point(&point),
             RuntimeFrame::SaveSettings { .. } => {}
             RuntimeFrame::SaveCover { path, image } => api.save_cover(&path, &image),
             RuntimeFrame::SaveGloss { key, marks } => api.save_gloss(&key, marks),
             RuntimeFrame::BakeCover { path } => api.bake_cover(&path),
-            RuntimeFrame::DocStatus { report } if role == Role::Live => api.doc_status(&report),
-            RuntimeFrame::Reload => api.reload(),
+            // Only the live frame acts for the user; the others' last words
+            // are their state (read point, digest, cover, gloss, a bake).
+            // The document status the Shell hears is the workspace's, which
+            // the host reports from the mirrors: a realm's own report (its
+            // boot-time Idle can land after the host's open) is not the
+            // workspace's word.
+            RuntimeFrame::Reload if role == Role::Live => api.reload(),
             _ => {}
         }
     }
@@ -716,6 +820,15 @@ impl Inner {
         }
         self.apply_outline(&outline.unwrap_or_default());
         board_refresh();
+    }
+
+    /// The pane opens a document: a claim on the epoch, after the close of
+    /// the one it held.
+    fn claim_open(&self) {
+        if self.holds.replace(true) {
+            claim_epoch();
+        }
+        claim_epoch();
     }
 
     /// Send a frame its `Dispose` and keep it (hidden) until it answers.
@@ -835,8 +948,26 @@ impl PaneRuntime for FramePane {
             }
             *inner.container.borrow_mut() = Some(el);
         });
-        view! { <div node_ref=container class="absolute inset-0" data-pane-root-host="" /> }
-            .into_any()
+        let boot_error = self.inner.boot_error;
+        let failed = move || boot_error.try_get().flatten();
+        view! {
+            <div node_ref=container class="absolute inset-0" data-pane-root-host="" />
+            {move || {
+                failed()
+                    .map(|message| {
+                        view! {
+                            <div
+                                class="pane-boot-error absolute inset-0 flex items-center justify-center p-6 text-center text-sm"
+                                data-pane-boot="error"
+                                role="alert"
+                            >
+                                {message}
+                            </div>
+                        }
+                    })
+            }}
+        }
+        .into_any()
     }
 
     fn chrome(&self, slot: ChromeSlot, site: PaneSite) -> Option<AnyView> {
@@ -913,9 +1044,23 @@ impl PaneRuntime for FramePane {
                 inner
                     .requested
                     .set(crate::pane::document::classify(&launch.path));
+                inner.expect_open(&launch);
+                inner.claim_open();
                 let kind = PaneKind::for_path(&launch.path);
                 let same = inner.live.borrow().as_ref().is_some_and(|f| f.kind == kind);
-                if same {
+                // A frame that has not said hello yet has no port: the open
+                // rides its boot instead of being posted into nothing.
+                let unadopted = inner
+                    .live
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|f| f.port.is_none() && f.boot.is_some());
+                if same && unadopted {
+                    let boot = self.fresh_boot(*launch);
+                    if let Some(frame) = inner.live.borrow_mut().as_mut() {
+                        frame.boot = Some(boot);
+                    }
+                } else if same {
                     inner.post_live(&HostToPane::Open(launch));
                 } else {
                     // The other runtime: boot it behind the current frame,
@@ -943,25 +1088,37 @@ impl PaneRuntime for FramePane {
     fn dispose(&self) -> PaneTeardown {
         let inner = self.inner.clone();
         inner.disposed.set(true);
+        if inner.holds.replace(false) {
+            claim_epoch();
+        }
         unregister(inner.id);
+        DISPOSING.with(|d| {
+            let mut d = d.borrow_mut();
+            d.retain(|w| w.strong_count() > 0);
+            d.push(Rc::downgrade(&inner));
+        });
         board_refresh();
         inner.thumbs.reset();
+        // Every frame joins the retired list, where its last words (the
+        // final digest, then `Disposed`) still find it: the sweep removes
+        // each as it says it is done.
         let mut frames: Vec<Frame> = Vec::new();
         frames.extend(inner.live.borrow_mut().take());
         frames.extend(inner.incoming.borrow_mut().take());
-        frames.extend(inner.retired.borrow_mut().drain(..));
         for frame in &frames {
             frame.post(&HostToPane::Dispose);
         }
+        inner.retired.borrow_mut().extend(frames);
+        let flags: Vec<(Rc<Cell<bool>>, web_sys::HtmlIFrameElement)> = inner
+            .retired
+            .borrow()
+            .iter()
+            .map(|f| (f.disposed.clone(), f.iframe.clone()))
+            .collect();
         inner.owner.pause();
         inner.owner.cleanup();
         crate::diagnostics::note_pane_dispose();
-        drop(inner);
         Box::pin(async move {
-            let flags: Vec<(Rc<Cell<bool>>, web_sys::HtmlIFrameElement)> = frames
-                .iter()
-                .map(|f| (f.disposed.clone(), f.iframe.clone()))
-                .collect();
             // Done when every frame said so, or left the document with the
             // workspace (the session's end), or the timeout passed.
             wait_until(DISPOSE_TIMEOUT_MS, move || {
@@ -970,9 +1127,7 @@ impl PaneRuntime for FramePane {
                     .all(|(done, iframe)| done.get() || !iframe.is_connected())
             })
             .await;
-            for mut frame in frames {
-                frame.remove();
-            }
+            inner.sweep_retired_all();
         })
     }
 }
@@ -1050,6 +1205,15 @@ thread_local! {
     static SHARED_PAPER: RefCell<Option<Paper>> = const { RefCell::new(None) };
     /// Disposed panes' final digests, for the diagnostics balances.
     static FINALS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Disposed panes whose frames have not all gone yet.
+    static DISPOSING: RefCell<Vec<Weak<Inner>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The document-session epoch, which the host claims for its pane realms
+/// (each open, each close of a held document): realms come and go — a kind
+/// swap boots a new one — while the workspace's sessions are one count.
+fn claim_epoch() {
+    crate::services::document::session::next_generation();
 }
 
 fn mint_nonce() -> String {
@@ -1162,6 +1326,11 @@ fn ensure_key_forward() {
             if !ev.is_trusted() || ev.default_prevented() || typing(&ev) {
                 return;
             }
+            // An Escape a host surface (a modal, a menu) claims is the
+            // host's: the pane must not also read it as "close the rail".
+            if ev.key() == "Escape" && app_chrome::floating::dismiss::escape_is_claimed() {
+                return;
+            }
             let Some(active) = panes()
                 .into_iter()
                 .find(|inner| inner.env.active.try_get_untracked() == Some(true))
@@ -1180,6 +1349,9 @@ fn ensure_key_forward() {
             }));
         });
     if let Some(win) = web_sys::window() {
+        // Bubble phase: a live drag's capture listener cancels on Escape and
+        // marks the press consumed before this forward sees it. A modal's
+        // claim is released by a reactive cleanup, after this dispatch.
         for name in ["keydown", "keyup"] {
             let _ = win.add_event_listener_with_callback(name, listener.as_ref().unchecked_ref());
         }
@@ -1303,10 +1475,28 @@ pub fn install_hooks() -> app_chrome::appearance_hooks::AppearanceHooksGuard {
 /// The pane frames' diagnostics digests: the live panes' latest, and the
 /// final ones of panes since disposed. The host's own digest sums them.
 pub fn digests() -> (Vec<String>, Vec<String>) {
-    let live = panes()
-        .iter()
-        .filter_map(|inner| inner.live.borrow().as_ref().and_then(|f| f.digest.clone()))
-        .collect();
+    // Every frame still in the document speaks: a disposed pane's frames
+    // run until they answer, and their work is not done before that.
+    let disposing: Vec<Rc<Inner>> =
+        DISPOSING.with(|d| d.borrow().iter().filter_map(Weak::upgrade).collect());
+    let mut live = Vec::new();
+    for inner in panes().iter().chain(disposing.iter()) {
+        live.extend(inner.live.borrow().as_ref().and_then(Frame::fresh_digest));
+        live.extend(
+            inner
+                .incoming
+                .borrow()
+                .as_ref()
+                .and_then(Frame::fresh_digest),
+        );
+        live.extend(
+            inner
+                .retired
+                .borrow()
+                .iter()
+                .filter_map(Frame::fresh_digest),
+        );
+    }
     let finals = FINALS.with(|f| f.borrow().clone());
     (live, finals)
 }
