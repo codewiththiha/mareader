@@ -40,7 +40,7 @@ static READER_LIVE: AtomicBool = AtomicBool::new(true);
 /// Whether this realm runs the PDF engine and so must report it drained:
 /// every engine build does, until a pane realm that renders text says it
 /// does not (`expect_engine`).
-static ENGINE_EXPECTED: AtomicBool = AtomicBool::new(cfg!(feature = "engine"));
+static ENGINE_EXPECTED: AtomicBool = AtomicBool::new(cfg!(all(feature = "engine", feature = "pdf")));
 
 /// Whether lifecycle events are narrated to the console. Off in normal
 /// operation; the dev surface flips it on.
@@ -340,7 +340,7 @@ pub(crate) struct Snapshot {
     lookahead_samples_active: usize,
     /// The engine's half (PDF session, worker, render lane, thumbnails).
     /// `None` without an engine — reported, not guessed.
-    engine: Option<pdf_engine::api::EngineStats>,
+    engine: Option<pdf_core::diagnostics::EngineStats>,
     /// The runtime's self-reported view, when one has published (the app
     /// runtime publishes from birth; host tests without a runtime report
     /// `None` rather than inventing a state).
@@ -415,7 +415,10 @@ pub fn set_reader_page(page: u32) {
 /// Declare whether this realm runs the PDF engine (a pane realm knows its
 /// kind at boot): a realm that never loads it has no engine to drain.
 pub fn expect_engine(on: bool) {
-    ENGINE_EXPECTED.store(on && cfg!(feature = "engine"), Ordering::Relaxed);
+    ENGINE_EXPECTED.store(
+        on && cfg!(all(feature = "engine", feature = "pdf")),
+        Ordering::Relaxed,
+    );
 }
 
 /// The digest is built only while a session owns this artifact; the flag is
@@ -483,7 +486,10 @@ pub(crate) fn snapshot() -> Snapshot {
             && VIRTUALIZERS_DISPOSED.load(Ordering::Relaxed)
                 <= VIRTUALIZERS_CREATED.load(Ordering::Relaxed),
         virtualizer_live: LIVE_VIRTUALIZERS.with(|live| live.borrow().len()),
+        #[cfg(feature = "pdf")]
         lookahead_samples_active: pdf_engine::backdrop::pending_samples(),
+        #[cfg(not(feature = "pdf"))]
+        lookahead_samples_active: 0,
         virtualizers_created: VIRTUALIZERS_CREATED.load(Ordering::Relaxed),
         virtualizers_disposed: VIRTUALIZERS_DISPOSED.load(Ordering::Relaxed),
         live_window_items,
@@ -493,7 +499,7 @@ pub(crate) fn snapshot() -> Snapshot {
         virtualizer_timers,
         render_budget_max_items: crate::features::virtualizers::RENDER_BUDGET.max_items as u32,
         runtime: runtime_view.map(|view| {
-            let engine_stats: pdf_engine::api::EngineStats = engine.unwrap_or_default();
+            let engine_stats: pdf_core::diagnostics::EngineStats = engine.unwrap_or_default();
             RuntimeSnapshot {
                 state: view.lifecycle,
                 generation: view.generation,
@@ -543,12 +549,12 @@ pub(crate) fn engine_in_flight() -> bool {
 /// the probe talks only on wasm in an artifact that runs documents (the
 /// `engine` feature), and a host test must not walk into the wasm-bindgen
 /// stubs.
-fn engine_probe() -> Option<pdf_engine::api::EngineStats> {
-    #[cfg(all(target_arch = "wasm32", feature = "engine"))]
+fn engine_probe() -> Option<pdf_core::diagnostics::EngineStats> {
+    #[cfg(all(target_arch = "wasm32", feature = "engine", feature = "pdf"))]
     {
         pdf_engine::api::engine_stats()
     }
-    #[cfg(not(all(target_arch = "wasm32", feature = "engine")))]
+    #[cfg(not(all(target_arch = "wasm32", feature = "engine", feature = "pdf")))]
     {
         None
     }
@@ -832,8 +838,8 @@ mod tests {
     /// global counters: sibling tests tick those concurrently, and the
     /// baseline question is about the SHAPE, not about this process's
     /// moment.
-    fn drained_engine() -> pdf_engine::api::EngineStats {
-        pdf_engine::api::EngineStats::default()
+    fn drained_engine() -> pdf_core::diagnostics::EngineStats {
+        pdf_core::diagnostics::EngineStats::default()
     }
 
     fn drained_snapshot() -> Snapshot {
@@ -908,20 +914,20 @@ mod tests {
     #[test]
     fn an_undrained_engine_breaks_the_baseline() {
         let mut snap = drained_snapshot();
-        snap.engine = Some(pdf_engine::api::EngineStats {
+        snap.engine = Some(pdf_core::diagnostics::EngineStats {
             pages: 1,
-            ..pdf_engine::api::EngineStats::default()
+            ..pdf_core::diagnostics::EngineStats::default()
         });
         assert!(!snap.at_baseline());
-        snap.engine = Some(pdf_engine::api::EngineStats {
+        snap.engine = Some(pdf_core::diagnostics::EngineStats {
             prefetches_started: 2,
             prefetches_completed: 1,
-            ..pdf_engine::api::EngineStats::default()
+            ..pdf_core::diagnostics::EngineStats::default()
         });
         assert!(!snap.at_baseline());
         // And a fully balanced engine half keeps it: the pairing rules hold.
         let mut snap = drained_snapshot();
-        snap.engine = Some(pdf_engine::api::EngineStats {
+        snap.engine = Some(pdf_core::diagnostics::EngineStats {
             sessions_opened: 4,
             sessions_destroyed: 4,
             workers_created: 5,
@@ -934,7 +940,7 @@ mod tests {
             prefetches_started: 6,
             prefetches_completed: 4,
             prefetches_dropped: 2,
-            ..pdf_engine::api::EngineStats::default()
+            ..pdf_core::diagnostics::EngineStats::default()
         });
         assert!(snap.at_baseline(), "{snap:?}");
     }

@@ -20,6 +20,7 @@
 //! rendering the block turns into boxes over its own text
 //! ([`crate::components::formats::reflow::highlight`]).
 
+#[cfg(feature = "reflow")]
 use std::collections::HashMap;
 
 use leptos::prelude::*;
@@ -27,7 +28,9 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 use app_chrome::TITLE_BAR_H;
-use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
+#[cfg(feature = "reflow")]
+use reader_core::search::BlockHit;
+use reader_core::search::{SearchMatch, scroll_to_reveal};
 use reader_core::view::ViewMode;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs
@@ -49,12 +52,19 @@ pub async fn run_search(state: ReaderState) {
     // it — so the pane's document generation is the stand-down: re-checked
     // after every await, the same rule the open tails keep. Per pane: a
     // document opening in ANOTHER pane never stands this run down.
-    let pane = state.pane;
-    let stamp = pane.generation();
     if state.reflowable_now() {
+        #[cfg(feature = "reflow")]
         run_reflow_search(state);
         return;
     }
+    #[cfg(feature = "pdf")]
+    run_pdf_search(state).await;
+}
+
+#[cfg(feature = "pdf")]
+async fn run_pdf_search(state: ReaderState) {
+    let pane = state.pane;
+    let stamp = pane.generation();
     if !state.search.index_built.get_untracked() {
         // One build at a time. The first search of a big book takes seconds —
         // a worker round trip per page, ~3 pages per turn (see
@@ -123,6 +133,7 @@ pub async fn run_search(state: ReaderState) {
 /// hit through the current page cut, and publish the same flat match list
 /// the engine tail produces. No index to build — the document IS the index
 /// — and no engine round-trip at all.
+#[cfg(feature = "reflow")]
 fn run_reflow_search(state: ReaderState) {
     let query = state.search.query.get_untracked();
     if query.trim().is_empty() {
@@ -169,6 +180,7 @@ pub fn clear_search(state: ReaderState) {
     // A reflowable document's boxes are painted by the rows themselves, off the
     // query and the match list below, so there is nothing to clear on the engine
     // side — and the call must not reach an engine that has no document.
+    #[cfg(feature = "pdf")]
     if !state.reflowable_now() {
         state.pane.pdf().clear_highlights();
     }
@@ -199,6 +211,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     // Only the engine has to be TOLD which match is current: it owns the boxes
     // it paints into the page's text layer. A reflowable document's rows read
     // `search.active` themselves and re-class the box that answers to it.
+    #[cfg(feature = "pdf")]
     if !state.reflowable_now() {
         state.pane.pdf().set_active_match(m.page, m.index as i32);
     }

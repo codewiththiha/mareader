@@ -39,7 +39,7 @@ use crate::pane_wire::{
     Boot, Hook, HostToPane, Key, Mirror, PANE_CHANNEL_KIND, PANE_HELLO_KIND, PaneKind, PaneToHost,
     Paper, WireSidebar, Write, encode,
 };
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 use thumbs::RemoteThumbs;
 
 /// How long a disposing frame may take to say it is done before the host

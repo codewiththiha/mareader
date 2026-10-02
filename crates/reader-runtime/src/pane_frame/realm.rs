@@ -22,8 +22,10 @@ use crate::host::model::{
 };
 use crate::host::tree::Moves;
 use crate::pane::document::DocumentPane;
+#[cfg(feature = "pdf")]
+use crate::pane_wire::Hook;
 use crate::pane_wire::{
-    Boot, Hook, HostToPane, Key, Mirror, PANE_CHANNEL_KIND, PANE_HELLO_KIND, PaneKind, PaneToHost,
+    Boot, HostToPane, Key, Mirror, PANE_CHANNEL_KIND, PANE_HELLO_KIND, PaneKind, PaneToHost,
     Paper, WireSidebar, Write, encode,
 };
 
@@ -39,6 +41,7 @@ struct Link {
 /// onto the pane realm's signals, and the pane itself.
 #[derive(Clone)]
 struct Live {
+    #[cfg(feature = "pdf")]
     kind: PaneKind,
     pane: Rc<DocumentPane>,
     settings: RwSignal<Settings>,
@@ -88,6 +91,7 @@ pub(super) fn send(message: &PaneToHost) {
 }
 
 /// Post a raw object (a thumbnail with its transferred bitmap).
+#[cfg(feature = "pdf")]
 pub(super) fn send_object(message: &JsValue, transfer: &JsValue) {
     LINK.with(|l| {
         if let Some(link) = l.borrow().as_ref() {
@@ -104,6 +108,7 @@ pub(super) fn with_api<R>(f: impl FnOnce(&PortShellApi<PaneApiWire>) -> R) -> Op
 }
 
 /// The pane's live document pane, for the thumbnail lane.
+#[cfg(feature = "pdf")]
 pub(super) fn pane() -> Option<Rc<DocumentPane>> {
     LIVE.with(|l| l.borrow().as_ref().map(|live| live.pane.clone()))
 }
@@ -240,7 +245,10 @@ fn receive(kind: PaneKind, message: HostToPane) {
         }
         HostToPane::Lifecycle { lifecycle } => live.pane.lifecycle_changed(lifecycle),
         HostToPane::Write(write) => apply_write(&live, write),
+        #[cfg(feature = "pdf")]
         HostToPane::Hook(hook) => apply_hook(live.kind, hook),
+        #[cfg(not(feature = "pdf"))]
+        HostToPane::Hook(_) => {}
         HostToPane::Open(launch) => {
             if let Err(err) = live.pane.command(PaneCommand::Open(launch)) {
                 web_sys::console::warn_1(&format!("[pane] open refused: {err:?}").into());
@@ -249,9 +257,19 @@ fn receive(kind: PaneKind, message: HostToPane) {
         HostToPane::PrepareLeave => {
             let _ = live.pane.command(PaneCommand::PrepareLeave);
         }
+        #[cfg(feature = "pdf")]
         HostToPane::Thumb { req, page } => super::thumbs::render(req, page),
+        #[cfg(feature = "pdf")]
         HostToPane::ThumbCancel { req } => super::thumbs::cancel(req),
+        #[cfg(feature = "pdf")]
         HostToPane::ThumbPrefetch { page } => super::thumbs::prefetch(page),
+        #[cfg(not(feature = "pdf"))]
+        HostToPane::Thumb { req, .. } => send(&PaneToHost::ThumbFailed {
+            req,
+            cancelled: false,
+        }),
+        #[cfg(not(feature = "pdf"))]
+        HostToPane::ThumbCancel { .. } | HostToPane::ThumbPrefetch { .. } => {}
         HostToPane::Key(key) => dispatch_key(&key),
         HostToPane::Dispose => dispose(live),
     }
@@ -280,6 +298,7 @@ fn apply_write(live: &Live, write: Write) {
     }
 }
 
+#[cfg(feature = "pdf")]
 fn apply_hook(kind: PaneKind, hook: Hook) {
     // Only a PDF realm has an engine to re-bake or scrub.
     if kind != PaneKind::Pdf {
@@ -444,6 +463,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
         |_| {},
     );
     crate::diagnostics::expect_engine(kind == PaneKind::Pdf);
+    #[cfg(feature = "pdf")]
     if kind == PaneKind::Pdf {
         let guard = crate::appearance_hooks::install();
         on_cleanup(move || drop(guard));
@@ -460,6 +480,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
 
     LIVE.with(|l| {
         *l.borrow_mut() = Some(Live {
+            #[cfg(feature = "pdf")]
             kind,
             pane: pane.clone(),
             settings,
@@ -789,6 +810,7 @@ fn dispose(live: Live) {
     LIVE.with(|l| l.borrow_mut().take());
     // The realm's session ends here: its final digest must not report it.
     crate::diagnostics::set_reader_live(false);
+    #[cfg(feature = "pdf")]
     super::thumbs::cancel_all();
     // The final digest goes first: it is the one the host's balances keep,
     // and only after the release does it show the session gone.

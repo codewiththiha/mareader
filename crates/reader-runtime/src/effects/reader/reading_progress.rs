@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 use runtime_contract::boundary::ShellApi;
 
 /// Debounce for the library save: reading position settles this fast, and a

@@ -11,7 +11,7 @@
 
 #[cfg(target_arch = "wasm32")]
 mod realm;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "pdf"))]
 mod thumbs;
 
 use crate::host::contract::Placement;

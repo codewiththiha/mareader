@@ -139,18 +139,33 @@ const distDir = path.join(root, "dist");
 if (fs.existsSync(distDir)) {
   const glue = fs
     .readdirSync(distDir)
-    .filter((name) => /^mareader(-[0-9a-f]+)?\.js$/.test(name));
-  if (glue.length === 0) {
-    problems.push("dist has no mareader*.js — the Shell's own artifact is missing");
+    .filter((name) => /^(mareader|reflow)(-[0-9a-f]+)?\.js$/.test(name));
+  for (const runtime of ["mareader", "reflow"]) {
+    if (!glue.some((name) => name.startsWith(runtime))) {
+      problems.push(`dist has no ${runtime}*.js — that runtime's artifact is missing`);
+    }
   }
   for (const name of glue) {
     if (fs.readFileSync(path.join(distDir, name), "utf8").includes("PDFReader")) {
       problems.push(
-        `dist/${name} references PDFReader — the Shell reaches the PDF engine, ` +
-          `which only pane frames may load`,
+        `dist/${name} references PDFReader — a non-PDF runtime reaches the PDF engine, ` +
+          `which only PDF pane frames may load`,
       );
     }
   }
+}
+
+// A text runtime must not load the engine indirectly from its page either.
+const reflowPage = path.join(root, "dist/reflow.html");
+if (fs.existsSync(reflowPage)) {
+  const html = fs.readFileSync(reflowPage, "utf8");
+  if (/pdfEngine|pdf\.min\.mjs|pdf\.worker/.test(html)) {
+    problems.push("dist/reflow.html loads PDF machinery — text panes must be engine-free");
+  }
+}
+const pdfGlue = path.join(root, "dist/pdf.js");
+if (fs.existsSync(pdfGlue) && !fs.readFileSync(pdfGlue, "utf8").includes("PDFReader")) {
+  problems.push("dist/pdf.js has no PDFReader imports — the PDF runtime lost its engine");
 }
 
 if (problems.length > 0) {
@@ -175,5 +190,5 @@ const total = REQUIRED.reduce(
 );
 console.log(
   `runtime artifact contract OK: ${REQUIRED.length} files, ${total} bytes ` +
-    `(shell + library + reader + shared assets)\n${sizes}`,
+    `(shell + PDF pane + reflow pane + shared assets)\n${sizes}`,
 );

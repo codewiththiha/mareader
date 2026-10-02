@@ -22,6 +22,7 @@
 mod cascade_tests;
 pub mod document;
 pub mod dom;
+#[cfg(feature = "pdf")]
 pub mod engine;
 pub mod handle;
 pub mod origin;

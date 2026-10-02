@@ -5,7 +5,7 @@ use leptos::prelude::*;
 
 use crate::state::{NO_DOCUMENT, ReaderState};
 use app_chrome::icon::{Icon, IconName};
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 
 #[component]
 pub(crate) fn BookInfo(reader: ReaderState, cover: Option<String>) -> impl IntoView {

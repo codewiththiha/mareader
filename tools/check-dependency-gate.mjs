@@ -48,6 +48,11 @@ const READER_ONLY = [
 ];
 
 const RULES = [
+  {
+    crate: "reader-runtime",
+    features: ["--no-default-features", "--features", "reflow"],
+    forbid: ["pdf-engine"],
+  },
   // The Shell (`mareader`) links the reader runtime on purpose: the
   // workspace host runs in the Shell's document. Documents never do — each
   // pane is a frame with its own artifact — so the engine is unreachable
@@ -97,12 +102,12 @@ const RULES = [
 
 /** The dependency names of one crate's graph: the crate itself first, then
  *  every resolved dependency line `cargo tree` prints. Duplicates collapse. */
-function tree(crate) {
+function tree(crate, features = []) {
   let out;
   try {
     out = execFileSync(
       "cargo",
-      ["tree", "-p", crate, "--locked", "--edges", "normal,build", "--prefix", "none"],
+      ["tree", "-p", crate, "--locked", "--edges", "normal,build", "--prefix", "none", ...features],
       { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     );
   } catch (error) {
@@ -121,7 +126,7 @@ let failed = false;
 for (const rule of RULES) {
   let names;
   try {
-    names = tree(rule.crate);
+    names = tree(rule.crate, rule.features);
   } catch (error) {
     console.error(error.message);
     failed = true;

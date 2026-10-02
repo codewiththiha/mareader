@@ -17,11 +17,16 @@
 
 use runtime_contract::boundary::ShellApi;
 
+#[cfg(feature = "pdf")]
 mod cover;
 mod enter;
+#[cfg(feature = "pdf")]
 mod outline;
+#[cfg(feature = "reflow")]
 mod reflow;
+#[cfg(feature = "pdf")]
 mod seed;
+#[cfg(feature = "pdf")]
 mod warmup;
 
 use leptos::prelude::*;
@@ -32,12 +37,15 @@ use leptos::prelude::*;
 // disposing its owner — leaving the app stuck on "Opening..." forever.
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_engine::types::DocStatus;
-use reader_core::format::{Format, format_of};
+use reader_core::document::DocStatus;
+#[cfg(feature = "pdf")]
+use reader_core::format::Format;
+use reader_core::format::format_of;
 
 use app_state::state::Toast;
 
 use crate::host::contract::{OpenRequest, Placement};
+#[cfg(feature = "pdf")]
 use crate::pane::session::FormatSession;
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app
@@ -159,6 +167,7 @@ pub(crate) fn open_with_launch(
     ctx.reader.document.book_id.set(launch.book_id.clone());
     ctx.reader.viewer.first_paint.set(false);
     let saved_page = launch.resume_page;
+    #[cfg(feature = "reflow")]
     let saved_fraction = launch.saved_fraction;
     ctx.launch.set(launch);
     // The console trail the open runs on: one line in, and (via `fail`) one
@@ -169,14 +178,23 @@ pub(crate) fn open_with_launch(
     )));
 
     match format_of(&path) {
+        #[cfg(feature = "pdf")]
         Format::Pdf => open_pdf(ctx, path, saved_page, stamp),
-        fmt => reflow::open_reflowable(ctx, path, fmt, saved_page, saved_fraction, stamp),
+        #[cfg(feature = "reflow")]
+        fmt if fmt.is_reflowable() => {
+            reflow::open_reflowable(ctx, path, fmt, saved_page, saved_fraction, stamp)
+        }
+        _ => fail(
+            ctx,
+            "This document belongs to a different pane runtime".to_string(),
+        ),
     }
 }
 
 /// The PDF tail of the open flow: a fresh engine session for the document,
 /// installed as the pane's document owner, then the open and the seed from
 /// its answer.
+#[cfg(feature = "pdf")]
 fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, stamp: u64) {
     if !ctx.pane.admits_work() {
         return;
@@ -220,6 +238,7 @@ fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, s
 }
 
 /// The book opened: seed the ctx, flip the route, and start the tails.
+#[cfg(feature = "pdf")]
 fn ready(
     ctx: crate::context::ReaderContext,
     path: String,

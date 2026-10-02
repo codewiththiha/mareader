@@ -13,7 +13,7 @@
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 
 /// The surfaces' own release path. Paginated modes are the one surface with no
 /// scroll anchor to land and no render callback to wait on: their hosts mount

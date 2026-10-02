@@ -28,6 +28,7 @@
 //! `ui-geom`, a dependency-free leaf.
 
 pub mod appearance;
+pub mod document;
 pub mod filename;
 pub mod format;
 pub mod outline;

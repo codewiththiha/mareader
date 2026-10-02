@@ -116,6 +116,7 @@ fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
 /// re-resolved against it — the resume page of a fresh open, a page flip in
 /// the paged modes, a jump onto a landscape plate. A page that only rendered
 /// as look-ahead is recorded and fitted when the reader asks.
+#[cfg(feature = "pdf")]
 pub(crate) fn page_rendered(state: ReaderState) -> Callback<(u32, f64, f64)> {
     Callback::new(move |(page, width, height): (u32, f64, f64)| {
         if !state

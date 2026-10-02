@@ -17,7 +17,7 @@ use crate::context::ReaderContext;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::features::virtualizers::{ReaderVirtualizers, use_reader_virtualizers};
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 use reader_core::settings::PageIndicatorStyle;
 
 /// Install every reader effect the pane owns, in its reactive owner, and
@@ -72,11 +72,14 @@ pub(crate) fn install_pane_effects(
     // into the shared measurement store whenever the format, the mode or the
     // cut moves, and reverted when they stop asking for it. Installed AFTER
     // the gap effects so its relayout reads the gap they just resolved.
+    #[cfg(feature = "reflow")]
     crate::effects::reader::reflow_layout::reflow_layout(state, rv.virtualizer.clone());
     // The reflowable measurement pipeline, beside the layout it feeds.
+    #[cfg(feature = "reflow")]
     crate::effects::reader::reflow_measure::install_reflow_measure(state);
     // The Markdown outline follows the same page cut: one re-cut republishes
     // the pages AND moves the chapters.
+    #[cfg(feature = "reflow")]
     crate::effects::reader::reflow_outline::reflow_outline(state);
 
     // What a mode flip owes: the incoming strip's anchor, the stream's zoom, the
@@ -111,6 +114,7 @@ pub(crate) fn install_pane_effects(
     // The blend backdrop's geometry half: the viewport's ladder position per
     // scroll tick (the engine owns the colours it drives). The SETTINGS half
     // was installed with the pane, ahead of its first document open.
+    #[cfg(feature = "pdf")]
     crate::effects::reader::blend_backdrop::blend_backdrop(state);
 
     crate::effects::reader::first_paint::first_paint_gate(state);

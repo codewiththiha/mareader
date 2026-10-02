@@ -14,6 +14,7 @@
 use leptos::prelude::*;
 
 use crate::host::model::{PaneId, PaneLifecycle};
+#[cfg(feature = "pdf")]
 use crate::pane::engine::PdfPane;
 use crate::pane::session::{FormatSession, Retiring};
 use crate::runtime::ReaderRuntime;
@@ -110,6 +111,7 @@ impl PaneHandle {
     /// guards snapshot the pane's (and the runtime's) lifecycle, and the
     /// session is whichever one the pane holds right now (none for a
     /// reflowable document, or before the first open).
+    #[cfg(feature = "pdf")]
     pub fn pdf(&self) -> PdfPane {
         let pane = self.lifecycle();
         let runtime = self.runtime.lifecycle();
@@ -130,6 +132,7 @@ impl PaneHandle {
     /// over from a replaced document can never register into, or render
     /// from, the next one); teardown always reaches it (the engine ignores
     /// a retired sid).
+    #[cfg(feature = "pdf")]
     pub fn pdf_for(&self, session: Option<&pdf_engine::PdfSession>) -> PdfPane {
         let pane = self.lifecycle();
         let runtime = self.runtime.lifecycle();
@@ -224,6 +227,7 @@ impl PaneHandle {
     }
 
     /// Whether `session` is still the pane's PDF session (and live).
+    #[cfg(feature = "pdf")]
     pub fn holds_pdf(&self, session: &pdf_engine::PdfSession) -> bool {
         session.is_live()
             && self

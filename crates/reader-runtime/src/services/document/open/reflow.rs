@@ -30,7 +30,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
 use md_core::MarkdownHeading;
-use pdf_engine::types::PageSize;
+use reader_core::document::PageSize;
 use reader_core::filename::document_title;
 use reader_core::format::Format;
 use reader_core::view::ViewMode;
@@ -153,6 +153,7 @@ pub(super) fn open_reflowable(
         _ => FormatSession::Text(TxtSession::new(&path, reflow)),
     };
     let release = state.pane.replace_document(session);
+    #[cfg(feature = "pdf")]
     pdf_engine::session::drop_retained_search();
     spawn_local(async move {
         // THIS pane's previous document is released before the new one

@@ -7,7 +7,7 @@
 //! plain object carrying a transferred `ImageBitmap` (see
 //! [`THUMB_MESSAGE`]): pixels are not JSON.
 
-use pdf_engine::types::{DocStatus, PageSize};
+use reader_core::document::{DocStatus, PageSize};
 use reader_core::appearance::Appearance;
 use reader_core::format::Format;
 use reader_core::settings::Settings;

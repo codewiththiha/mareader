@@ -9,12 +9,19 @@ crate-type = ["rlib"]
 [[bin]]
 name = "pdf"
 path = "src/bin/pdf.rs"
+required-features = ["pdf"]
 
 [[bin]]
 name = "reflow"
 path = "src/bin/reflow.rs"
+required-features = ["reflow"]
 
 [features]
+# Host/unit tests compose every format; production pane artifacts explicitly
+# select just their document pipeline with no default features.
+default = ["pdf", "reflow"]
+pdf = ["dep:pdf-engine"]
+reflow = []
 # The document engines' live probes, for the artifacts that run documents
 # (the pane frames). The Shell links this crate for
 # the workspace host only and leaves it off, so no engine import reaches its
@@ -34,7 +41,7 @@ leptos-md = "0.1"
 library-core = { path = "../library-core" }
 md-core = { path = "../md-core" }
 pdf-core = { path = "../pdf-core" }
-pdf-engine = { path = "../pdf-engine" }
+pdf-engine = { path = "../pdf-engine", optional = true }
 pdf-paper = { path = "../pdf-paper" }
 reader-core = { path = "../reader-core" }
 runtime-contract = { path = "../runtime-contract" }

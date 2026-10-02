@@ -36,7 +36,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use pdf_core::outline::OutlineEntry;
-use pdf_engine::types::{DocStatus, PageSize};
+use reader_core::document::{DocStatus, PageSize};
 use reader_core::format::Format;
 use reader_core::outline::OutlineNode;
 

@@ -17,6 +17,7 @@
 //! runtime reports its own disposal complete. The compiled module stays
 //! cached between sessions; nothing live does.
 
+#[cfg(feature = "pdf")]
 pub mod appearance_hooks;
 pub mod components;
 pub mod context;

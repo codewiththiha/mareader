@@ -62,9 +62,12 @@ pub fn mode_change(state: crate::context::ReaderContext) {
         // and zoom masks together, the pair every other settle point drops:
         // a mask the flip superseded would otherwise hold a full-page
         // surface until its host unmounts.
-        let pdf = state.pane.pdf();
-        pdf.sweep();
-        pdf.sweep_snapshots();
+        #[cfg(feature = "pdf")]
+        {
+            let pdf = state.pane.pdf();
+            pdf.sweep();
+            pdf.sweep_snapshots();
+        }
         let auto = state.settings.with(|s| s.layout.auto_scale);
         if mode == ViewMode::ScrollHorizontal {
             // Horizontal is one page per virtual item. Do not reinterpret

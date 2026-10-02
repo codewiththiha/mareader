@@ -23,7 +23,7 @@ use crate::host::model::{
 };
 use crate::pane::handle::PaneHandle;
 use crate::state::ReaderState;
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 use reader_core::format::{Format, format_of};
 
 /// The format tag a path names, for the host's descriptor: the host asks
@@ -123,6 +123,7 @@ impl DocumentPane {
             // The paper settings follow every change onto whatever PDF
             // session the pane holds; each new session is configured by the
             // open flow's seed before its first frame.
+            #[cfg(feature = "pdf")]
             crate::effects::reader::blend_backdrop::paper_settings(ctx);
 
             // The launch the pane was created for: opened by the pane that
@@ -250,6 +251,7 @@ impl PaneRuntime for DocumentPane {
         // parked. The switch is THIS pane's session's: another pane's
         // prefetch is untouched. (The view is taken after the lifecycle was
         // published, so a resume sees the pane already admitting work.)
+        #[cfg(feature = "pdf")]
         match lifecycle {
             PaneLifecycle::Suspended => self.ctx.pane.pdf().suspend_prefetches(),
             PaneLifecycle::Ready => {
@@ -313,6 +315,7 @@ impl PaneRuntime for DocumentPane {
         // follow focus is the realm's one presented session: the root
         // backdrop shows the paper of the pane in front. (A pane not Ready
         // has nothing to present; its Ready presents if it is still active.)
+        #[cfg(feature = "pdf")]
         self.ctx.pane.pdf().present();
     }
 

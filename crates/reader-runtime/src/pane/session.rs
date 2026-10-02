@@ -26,6 +26,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+#[cfg(feature = "pdf")]
 use pdf_engine::PdfSession;
 
 use crate::state::document::reflow::ReflowContent;
@@ -113,6 +114,7 @@ reflow_session! {
 pub(crate) enum FormatSession {
     #[default]
     None,
+    #[cfg(feature = "pdf")]
     Pdf(PdfSession),
     Markdown(MdSession),
     Text(TxtSession),
@@ -122,14 +124,17 @@ impl FormatSession {
     pub(crate) fn is_live(&self) -> bool {
         match self {
             Self::None => false,
+            #[cfg(feature = "pdf")]
             Self::Pdf(s) => s.is_live(),
             Self::Markdown(s) => s.is_live(),
             Self::Text(s) => s.is_live(),
         }
     }
 
+    #[cfg(feature = "pdf")]
     pub(crate) fn pdf(&self) -> Option<&PdfSession> {
         match self {
+            #[cfg(feature = "pdf")]
             Self::Pdf(s) => Some(s),
             _ => None,
         }
@@ -161,6 +166,7 @@ impl FormatSession {
     /// work of its own to stop (its measurement flushes and open tails are
     /// refused once it ends).
     pub(crate) fn quiesce(&self) {
+        #[cfg(feature = "pdf")]
         if let Self::Pdf(s) = self {
             s.cancel_page_renders();
             s.suspend_prefetches();
@@ -183,6 +189,7 @@ impl FormatSession {
                 s.dispose();
                 Retiring::settled_now()
             }
+            #[cfg(feature = "pdf")]
             Self::Pdf(s) => Retiring::pending(Box::pin(s.dispose())),
         }
     }
@@ -213,6 +220,7 @@ impl Retiring {
         Self(None)
     }
 
+    #[cfg(feature = "pdf")]
     fn pending(release: std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>) -> Self {
         Self(Some(release))
     }

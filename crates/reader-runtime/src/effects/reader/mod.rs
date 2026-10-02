@@ -3,6 +3,7 @@
 //! entry points the session installs.
 
 pub mod auto_scroll;
+#[cfg(feature = "pdf")]
 pub mod blend_backdrop;
 pub mod first_paint;
 pub mod layout_prefs;

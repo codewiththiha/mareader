@@ -215,8 +215,11 @@ pub(crate) fn use_reader_virtualizers(
     // instead — both virtualizers, registered once (the views rebind the
     // SAME shared virtualizer on every mode flip).
     // Each sweep reaches THIS pane's session only.
-    virtualizer.on_scroll_idle(move || pane.pdf().sweep());
-    h_virtualizer.on_scroll_idle(move || pane.pdf().sweep());
+    #[cfg(feature = "pdf")]
+    {
+        virtualizer.on_scroll_idle(move || pane.pdf().sweep());
+        h_virtualizer.on_scroll_idle(move || pane.pdf().sweep());
+    }
 
     // The strips join the diagnostics registry while they live: a snapshot
     // reads its window and zombie counts from here, and the reader's own

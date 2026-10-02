@@ -10,7 +10,7 @@
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 use reader_core::view::ViewMode;
 
 use runtime_contract::boundary::ShellApi;

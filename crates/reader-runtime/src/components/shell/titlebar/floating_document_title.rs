@@ -58,7 +58,7 @@ use crate::components::ai::anchor::host_id_for_mode;
 use app_chrome::hooks::use_window_event::use_window_event;
 use app_chrome::titlebar::root::TitleBarCtx;
 use app_ui::components::shell::controller::ShellController;
-use pdf_engine::types::DocStatus;
+use reader_core::document::DocStatus;
 
 /// Fraction of the canvas width the label may cover.
 const MAX_CANVAS_OVERLAP: f64 = 0.25;
