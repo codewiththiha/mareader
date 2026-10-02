@@ -58,11 +58,13 @@ ignore = [
     "./public/coverBake.js",
     # The repo root is the default watch path, so these were all live: every
     # cargo run writes `target/` (Trunk's own release build, the DevCommand's
-    # debug build, and build-dist.sh's three targets), and build-dist.sh
-    # builds the two pane targets into `dist-pdf/` and `dist-reflow/`
+    # debug build, and build-dist.sh's five targets), and build-dist.sh
+    # builds the disposable route/pane targets into their own dist trees
     # — each of those writes queued a rebuild after the build that made it,
     # and with the cooldown off by default the cycle never settled.
     "./target",
+    "./dist-library",
+    "./dist-reader",
     "./dist-pdf",
     "./dist-reflow",
     # Trees that move without a source edit: npm's store during an

@@ -7,10 +7,12 @@ shape is in `docs/route-split-retrospective.md`.
 
 ## Overview
 
-- **Persistent Shell plus document realms.** The Shell renders the library
-  and reader workspace chrome without a window reload. Each document pane
-  is its own iframe/WASM realm: `pdf` or `reflow`. Their format features and
-  built-artifact boundaries are enforced; see `docs/pane-runtimes.md`.
+- **Persistent Shell plus disposable route and document realms.** Shell
+  owns navigation and settings without a window reload. Library and Reader
+  workspace chrome each have their own iframe/WASM artifact; every Reader
+  host is removed on Library return. Each document pane independently runs
+  `pdf` or `reflow`. Artifact boundaries are enforced; see
+  `docs/pane-runtimes.md`.
 - **Explicit lifecycle.** `ReaderRuntime` is a state machine with
   generations, a resource registry and observable disposal
   (`crates/reader-runtime/src/runtime.rs`). Counters live in
@@ -42,10 +44,12 @@ shape is in `docs/route-split-retrospective.md`.
 ## Runtime structure
 
 - Shell (`src/`) owns routing, the runtime manager, diagnostics, persistence.
-- Library and reader are owner-scoped view slots in the Shell document
-  (`src/app/frame.rs`); their `.runtime-frame` elements are not reader
-  iframes. `FramePane` owns the actual document iframes and remote chrome
-  mirrors. Document replacement/close removes only those document realms.
+- Library and Reader host are separate disposable iframe/WASM artifacts
+  (`src/app/frame.rs`), never view slots linked into the persistent Shell.
+  Reader workspace chrome, layout and mirrors live in the Reader host;
+  `FramePane` owns the independent document iframes. Library return removes
+  the Reader host and every document realm, with no Reader retention,
+  prewarming or recycling behind Library.
 - Frame roots must carry `h-full w-full`: a mount with `height: auto` gives
   the virtualizer an indefinite viewport and every page mounts at once
   (the "peak N page hosts" browser failure).
@@ -71,7 +75,8 @@ shape is in `docs/route-split-retrospective.md`.
   session that retired while work waited starts nothing. The additional
   host-permit await re-checks page/session/generation liveness too. Its
   wake is session-owned and weakly held by the host; frame removal reclaims
-  only that frame's leases. The bake's pixel
+  only that frame's leases; host removal reclaims its whole descendant scope.
+  The bake's pixel
   readback runs in the bake worker (a transferred `ImageBitmap` read through
   the worker's own canvas), so a theme change pays no main-thread
   `getImageData`; the inline kernel stays the no-worker fallback, and a
@@ -88,7 +93,7 @@ shape is in `docs/route-split-retrospective.md`.
   after a 60 ms dwell (`IN_VIEW_DWELL_MS`) mid-fling. A timer re-checks at
   the dwell deadline, so a page never waits for another scroll event. See
   `docs/memory/fling-gate.md`.
-- In the Shell workspace: `start_session` (composition root) → runtime →
+- In the disposable Reader host: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
   dividers / focus outline / pane close) → `PaneTree` (the split layout:
@@ -100,15 +105,13 @@ shape is in `docs/route-split-retrospective.md`.
   chrome only through `ChromeSlot` views. Panes never see `AppState` or
   Shell state; the Shell reads the host through the `host` block of the
   diagnostics digest.
-- The Shell loads **no PDF engine**. Its format-neutral raster coordinator
-  holds weak wakes and plain leases only. `check-runtime-artifacts.mjs`
-  rejects `PDFReader` imports in Shell and text WASM glue; the dependency
-  gate rejects `pdf-engine` in the no-default reflow feature graph.
-  Shelf cover bakes remain isolated in the Shell's short-lived bake page.
-- `*_bg.wasm` is wasm-bindgen's file naming (`<name>.js` glue +
-  `<name>_bg.wasm` module), not an extra module: there are exactly three —
-  the Shell (`mareader`, which links the library and the workspace host),
-  and the two pane runtimes, `pdf` and `reflow`.
+- The Shell loads **no Reader or Library implementation**. Its two-slot
+  raster coordinator holds weak wakes/plain leases; Reader hosts borrow the
+  same object. Dependency/artifact gates keep runtime code out of Shell and
+  `PDFReader` imports/scripts out of Library, Reader host and reflow.
+  Shelf cover bakes remain isolated in the Shell's short-lived JS-only page.
+- `*_bg.wasm` is wasm-bindgen's file naming, not an extra instance: exactly
+  five artifact types ship — Shell, Library, Reader host, PDF and reflow.
 - Memory docs live in `docs/memory/` (index `docs/memory/README.md`):
   `rules.md` is the binding rule set for new code (frame-scoped release,
   dwell before expensive work, bounded caches with drains, zero-and-remove
@@ -121,12 +124,14 @@ shape is in `docs/route-split-retrospective.md`.
 
 ## Warm slots and document handoff
 
-The Shell manager keeps `Active`, `Warm` and `Retiring` view slots, not a
-second reader window/iframe. An empty reflow pane can be prewarmed behind
-the library without loading PDF code. Its first text open promotes it;
-a first PDF open requires a PDF realm. Route handoff retains the outgoing
-surface until the incoming view is ready; the library's deferred refresh
-and intent/idle policy remain owned by the Shell manager.
+The Shell manager owns actual route iframes in `Active`, `Incoming`, `Warm`
+and `Retiring` slots. Only Library may warm/recycle behind an active Reader.
+A Reader boots only on an actual open, with a launch descriptor; returning
+to Library always removes it, regardless of heap size or pane count.
+Pointer activity/focus on Library never allocates Reader or document WASM.
+Cold handoffs retain outgoing pixels until the incoming frame is Ready and
+Painted. Newest navigation cancels a pending incoming host, and a late boot
+cannot reveal it after Library return. See `docs/runtime-split.md`.
 
 Every **document replacement** after adoption uses a fresh iframe, even
 within one format. The pane id/layout/focus stay stable; the old document
@@ -155,9 +160,9 @@ coverage, and `docs/memory/audit.md` for measurement limits.
 - Shell diagnostic counters are authoritative; runtime digests merge in only
   keys the shell does not already own (`src/diagnostics.rs`, unit-tested).
 - Per kind, `created - completed == (active is X) + (warm-ready is X)`. The
-  old `created == completed` form is only true when the warm slot is EMPTY,
-  and it is never empty while the shell is warm — a warm runtime counts as
-  created the moment it answers `Ready`.
+  equality is checked after retirement/rearm settles. At Library baseline
+  no Reader is active/warm/retiring: Reader created/completed are equal and
+  Reader/pane iframe residency plus raster active/queued/owners are zero.
 - Leaving the reader cancels in-flight page renders synchronously with the
   click (the active pane's `PaneCommand::PrepareLeave` →
   `cancel_page_renders`) before the navigate
@@ -177,22 +182,23 @@ coverage, and `docs/memory/audit.md` for measurement limits.
 - Per kind, `created − completed == (active is X) + (warm-ready is X)`: the
   retired session's disposal still runs to completion, just not in front of
   the handoff.
-- A warmed frame is the frame that gets revealed — `backSlots.active ===
+- A warmed **Library** frame is the frame that gets revealed — `backSlots.active ===
   warmShelf.warm` — and the revealed generation is the warmed generation.
   Rebooting at promotion time is a failure, not an optimisation.
 - Disposal epoch belongs to the host's document-session count: every open
   and held-document close claims it, and changing a document realm does
   not restart it. The reported runtime generation is Shell-owned — the
-  reader-session count, advancing once per reader session (a rearm is a new
-  session) across frames.
+  reader-session count, advancing once per fresh Reader-host session
+  across frames; Reader hosts never rearm.
 - The theme pipeline's `gen` (public/engine/theme/pipeline.ts) moves only
   when a bake INPUT moves (filter | blend | `--color-paper`), never on a
   root-style write alone: the engine's own `--pdf-paper*` publications
   during a zoom used to invalidate every in-flight bake and loop re-renders
   (the zoom flicker).
-- The film-grain `.noise-overlay` lives in each runtime document (created by
-  `install_frame_theme`), next to the body classes that drive it — never in
-  the Shell, whose body classes the frames do not share.
+- The film-grain `.noise-overlay` lives once in each route document
+  (created by `install_frame_theme`), next to the body classes that drive it.
+  Reader-host grain covers its chrome and panes; document realms paint their
+  own tokens/motion without a second grain layer. Shell installs no overlay.
 
 ## Untweened zoom (animations off)
 
@@ -225,21 +231,20 @@ runs nothing. Details: `docs/ci-architecture.md`.
 
 ## Measured, not assumed
 
-The warm slot is proven by the browser lifecycle baseline, not by reasoning:
-`rapidTransitions` reports `reusedWarmFrame: true` for all four back-to-back
-handoffs, the host sampler's `peakFrames` is 2 (one on screen, one behind
-it — never a third on screen), and every memory trend is unchanged
-(`slope 0 B/cycle, drift 0 B` across normal, rapid and same-page cycles).
-A click that outran the warm boot boots the lane on demand instead of
-falling back to a covered cold start, so the runtime the user is leaving
-stays on screen for the boot either way. The eviction has its own stage
-(`stage0-idle-eviction`, `?warmIdleMs=2000`): an untouched shelf boots no
-reader (`frames === 1`, `readerFramesResident 0`), intent boots one, silence
-evicts it (`warmReaderEvictions`, session balance, `frames === 1`,
-`atBaseline`), renewed intent boots a fresh generation and the click reveals
-it, and after a read-and-close the recycled reader is evicted the same way.
-The cover bake is proven in the same run without any reader resident
-(`coverBake.covers`, `bakeFrameResident` back to `false`).
+The browser lifecycle suite verifies actual Library/Reader-host iframes,
+independent document realms, fresh Reader generations across four returns,
+zero Reader residency under repeated shelf pointer/focus/presses, cancelled
+incoming Reader boots and a preserved Shell marker. The host sampler retains
+its no-blank/no-two-visible-routes checks; worker/render/prefetch/canvas and
+virtualizer teardown assertions are unchanged. Mixed workspace proofs also
+require the Reader-host iframe itself to be gone, not merely empty.
+
+`tools/measure-split-return.mjs` samples renderer PSS plus route/document
+residency in Chromium and WebKit, with idle and continuous shelf intent.
+For the current policy, every +2 through +70 second sample must have zero
+Reader/pane frames and drained root raster leases. Historical cached builds
+remain comparison data. No zero-growth or immediate RSS-reclamation claim
+follows from realm teardown alone; use exact-revision replay measurements.
 
 ## Pane ownership boundaries
 
@@ -301,7 +306,7 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   h/v, nesting, close, normalisation, the ratio clamp and a seeded random
   sequence against `check_invariants`.
 - **Placement.** `ReaderHost::open_document(launch, target)`: `Active` (the
-  Shell's commands: a drop, a warm reader's launch), `Pane(id)` in place
+  Shell's commands: a drop or an in-session launch), `Pane(id)` in place
   (the pane keeps its id and replaces its document), or `Split { of, axis,
   side }` — a new pane with its own session, split off `of` on either side,
   taking focus (refused with `TreeError::NoRoom` when a half would be under

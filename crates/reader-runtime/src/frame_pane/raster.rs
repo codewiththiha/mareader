@@ -20,7 +20,15 @@ fn call(method: &str, argument: Option<&str>) -> Option<JsValue> {
 
 pub(super) fn retire(nonce: &str) {
     #[cfg(target_arch = "wasm32")]
-    let _ = call("retire", Some(nonce));
+    {
+        let scope = web_sys::window().and_then(|window| {
+            js_sys::Reflect::get(&window, &"__mareaderRasterScope".into())
+                .ok()?
+                .as_string()
+        });
+        let owner = scope.map(|scope| format!("{scope}/{nonce}"));
+        let _ = call("retire", Some(owner.as_deref().unwrap_or(nonce)));
+    }
     #[cfg(not(target_arch = "wasm32"))]
     let _ = nonce;
 }

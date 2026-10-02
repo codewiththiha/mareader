@@ -5,8 +5,8 @@
 //! runtimes call their [`ShellApi`] through ([`PortShellApi`]), the request
 //! ids that turn the one synchronous bridge query (`resolve_launch`) into a
 //! port round trip, and — behind `wasm32` — the `MessagePort` wire itself
-//! ([`wasm::PortWire`]). The Shell hands each runtime its end of the channel
-//! directly (the runtimes mount in the Shell's own document).
+//! ([`wasm::PortWire`]). Hosted route artifacts adopt a nonce/generation
+//! authenticated channel offer from their actual same-origin parent.
 //!
 //! Host tests exercise everything except the DOM: the wire is a trait with a
 //! recording double, so the envelope stamping (generation on every message,
@@ -24,6 +24,38 @@ use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
 use runtime_contract::protocol::{RuntimeEnvelope, RuntimeFrame};
 
 pub mod wasm;
+
+/// A claimed hosted boot never falls back to a standalone application.
+#[derive(Debug, PartialEq, Eq)]
+pub enum BootMarker {
+    Standalone,
+    Hosted { generation: u64, nonce: String },
+    InvalidHosted,
+}
+
+pub fn parse_boot_marker(search: &str) -> BootMarker {
+    let query = search.strip_prefix('?').unwrap_or(search);
+    let mut hosted = false;
+    let mut generation = None;
+    let mut nonce = None;
+    for pair in query.split('&') {
+        match pair.split_once('=') {
+            Some(("hosted", "1")) => hosted = true,
+            Some(("g", value)) => generation = value.parse::<u64>().ok().filter(|g| *g > 0),
+            Some(("n", value)) if !value.is_empty() => nonce = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    if !hosted {
+        return BootMarker::Standalone;
+    }
+    match generation.zip(nonce) {
+        Some((generation, nonce)) => BootMarker::Hosted { generation, nonce },
+        None => BootMarker::InvalidHosted,
+    }
+}
+
+pub const CHANNEL_KIND: &str = "mareader.channel";
 
 /// A destination a serialized envelope can be posted to. The production
 /// implementation is the frame's `MessagePort`; the tests' is a `Vec`.
@@ -78,6 +110,14 @@ impl PendingResolves {
         }
     }
 
+    /// Disposal settles unanswered tickets without retaining descriptors;
+    /// an answer arriving after this cannot resurrect a removed request.
+    pub fn cancel_all(&self) {
+        for (_, ticket) in self.pending.borrow_mut().drain() {
+            *ticket.borrow_mut() = Some(None);
+        }
+    }
+
     /// Outstanding request ids — the diagnostics window into open queries.
     pub fn count(&self) -> usize {
         self.pending.borrow().len()
@@ -118,11 +158,6 @@ impl<W: Wire> PortShellApi<W> {
             generation,
             resolves,
         }
-    }
-
-    /// The wire the api posts over.
-    pub fn wire(&self) -> &W {
-        &self.wire
     }
 
     /// Post one bound message. The runtime's boot handshake messages (ready /
@@ -224,6 +259,30 @@ mod tests {
     }
 
     #[test]
+    fn a_claimed_hosted_boot_never_becomes_standalone() {
+        assert_eq!(parse_boot_marker(""), BootMarker::Standalone);
+        assert_eq!(
+            parse_boot_marker("?open=/sample.pdf"),
+            BootMarker::Standalone
+        );
+        assert_eq!(
+            parse_boot_marker("?hosted=1&g=7&n=nonce"),
+            BootMarker::Hosted {
+                generation: 7,
+                nonce: "nonce".to_string(),
+            }
+        );
+        for marker in [
+            "?hosted=1",
+            "?hosted=1&g=7",
+            "?hosted=1&g=x&n=y",
+            "?hosted=1&g=0&n=y",
+        ] {
+            assert_eq!(parse_boot_marker(marker), BootMarker::InvalidHosted);
+        }
+    }
+
+    #[test]
     fn every_emitted_envelope_carries_the_frame_generation() {
         let (api, wire, _) = api();
         api.navigate_library();
@@ -266,6 +325,20 @@ mod tests {
             posted[0],
             r#"{"generation":17,"kind":"status","stage":"mounted"}"#
         );
+    }
+
+    #[test]
+    fn disposal_cancels_every_pending_resolve_and_ignores_late_answers() {
+        let (api, _, resolves) = api();
+        let (first_id, first) = api.ask_resolve_launch("/books/first.pdf");
+        let (_, second) = api.ask_resolve_launch("/books/second.pdf");
+        resolves.cancel_all();
+        assert_eq!(resolves.count(), 0);
+        assert_eq!(first.take(), Some(None));
+        assert_eq!(second.take(), Some(None));
+        resolves.settle(first_id, None);
+        assert!(first.take().is_none());
+        assert_eq!(resolves.count(), 0);
     }
 
     #[test]

@@ -13,13 +13,16 @@
 //! - [`FramePipeline::Library`] paints the chrome layer only (shared + UI
 //!   tokens). The shelf has no raster and no reflowable page, so it never
 //!   writes `--canvas-*` / `--tx-*` and never addresses an engine.
-//! - [`FramePipeline::Reader`] paints both document token sets (they are
+//! - [`FramePipeline::Reader`] and [`FramePipeline::Pane`] paint both document token sets (they are
 //!   disjoint, so whichever format is open finds its own), the reflowable
 //!   typography, and re-bakes the raster engine's pixels when — and only
 //!   when — the baked signature moved. A reflowable document repaints from
 //!   CSS alone; the engine hook is a no-op without a PDF session.
 //!
-//! Both publish the motion class and persist edits through the runtime's
+//! Only route documents install global grain; a pane would composite it a
+//! second time under its Reader host's overlay.
+//!
+//! All publish the motion class and persist edits through the runtime's
 //! boundary (`persist`), debounced, never on the boot read.
 
 use std::time::Duration;
@@ -50,21 +53,6 @@ const ANIMATIONS_OFF_CLASS: &str = "animations-off";
 /// crawl under this class; the Shell's reveal message clears it.
 const FRAME_HIDDEN_CLASS: &str = "frame-hidden";
 
-thread_local! {
-    static IN_SHELL_DOCUMENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Mark this realm as the Shell's: runtimes mount in the window's own
-/// document instead of a frame of their own.
-pub fn set_in_shell_document() {
-    IN_SHELL_DOCUMENT.with(|flag| flag.set(true));
-}
-
-/// Whether runtimes in this realm share the Shell's document.
-pub fn in_shell_document() -> bool {
-    IN_SHELL_DOCUMENT.with(std::cell::Cell::get)
-}
-
 /// The runtime's persistence callback, held for the session.
 type PersistFn = StoredValue<std::rc::Rc<dyn Fn(&Settings)>, LocalStorage>;
 /// The runtime's adopt-time override pass, held for the session.
@@ -74,6 +62,8 @@ type ReconcileFn = StoredValue<Box<dyn Fn(&mut Settings)>, LocalStorage>;
 pub enum FramePipeline {
     Library,
     Reader,
+    /// Document tokens without a grain layer: the Reader host owns that.
+    Pane,
 }
 
 /// Install the document's theme, typography, motion and persistence effects
@@ -90,9 +80,11 @@ pub fn install_frame_theme(
 ) {
     set_paint_pipeline(match pipeline {
         FramePipeline::Library => PaintPipeline::Chrome,
-        FramePipeline::Reader => PaintPipeline::Document,
+        FramePipeline::Reader | FramePipeline::Pane => PaintPipeline::Document,
     });
-    ensure_noise_overlay();
+    if pipeline != FramePipeline::Pane {
+        ensure_noise_overlay();
+    }
 
     let appearance = Memo::new(move |_| settings.with(|s| s.appearance));
     let ink_contrast = Memo::new(move |_| settings.with(|s| s.text.ink_contrast));
@@ -101,7 +93,7 @@ pub fn install_frame_theme(
         FramePipeline::Library => {
             Effect::new(move |_| paint_chrome_appearance(appearance.get()));
         }
-        FramePipeline::Reader => {
+        FramePipeline::Reader | FramePipeline::Pane => {
             // What the engine's rasters are baked against. Texture, grain and
             // the UI tokens are CSS layers over the canvas and never re-bake.
             let baked = StoredValue::new(None::<(String, String, String)>);
@@ -225,11 +217,6 @@ pub fn install_frame_theme(
 /// `Refresh` for the shelf). Idempotent; a standalone document never calls
 /// it and never carries the class.
 pub fn mark_frame_hidden(hidden: bool) {
-    // In the Shell's own document the `<html>` is the window's, not a
-    // runtime's: a hidden runtime must not pause the grain for everyone.
-    if crate::frame_theme::in_shell_document() {
-        return;
-    }
     let Some(el) = document_element() else {
         return;
     };

@@ -10,10 +10,13 @@ bottom.
 WASM linear memory only grows. Rust `Drop` runs destructors inside it but
 never returns pages to the browser, and a JS realm keeps every module
 instance ever loaded into it. Memory comes back when the browsing context
-dies: each document runtime lives in a shell-owned iframe, and disposal
-removes that frame ([pane-runtimes.md](../pane-runtimes.md)). The persistent
-Shell's settings/chrome and empty warm slots are not document ownership. Design teardown so the
-frame can die; do not design object graphs that outlive it.
+dies: Library and Reader host have separate route iframe/WASM artifacts;
+each Reader document has an independently owned child iframe. Disposal
+removes those frames ([pane-runtimes.md](../pane-runtimes.md)). Shell contains
+neither runtime implementation. Library return must remove the Reader host
+AND every live/incoming/retiring child, with no retained or prewarmed Reader
+behind Library. Settings/persistence authority stays in Shell. Design
+teardown so the frame can die; do not keep graphs that outlive it.
 
 ## 2. Never start expensive work for an item the strip is sweeping past
 
@@ -50,7 +53,8 @@ bounds: canvas pool `POOL_MAX = 6` with oversized-return guard, LUT cache
 `MAX_ZOMBIES = 12` / 120 ms grace, page lane `PAGE_RENDER_LIMIT = 2` and
 realm cap `REALM_PAGE_LIMIT = 2`, and host cap `WINDOW_RASTER_LIMIT = 2`
 with at most two requests per pane realm (weak host wakes, cancelled on
-session teardown and reclaimed by nonce on frame removal). Raw canvases
+session teardown, reclaimed by scoped nonce on pane removal, and reclaimed
+for all descendants on Reader-host removal). Raw canvases
 survive `RAW_IDLE_MS = 2000` after a theme change and no longer. A new cache needs both numbers in the
 same comment.
 

@@ -35,6 +35,7 @@ pub fn Shell() -> impl IntoView {
     // The shell's durable paints: theme/typography/motion on <html>. They
     // survive every runtime transition (§17).
     bootstrap::install_shell_effects(state.clone());
+    bootstrap::install_history(state.clone());
 
     // The one mount target. The shell controls it; exactly one runtime mounts
     // inside at a time (§4). The manager's starts mount into it — and they

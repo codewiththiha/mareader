@@ -7,8 +7,10 @@ function parentLane(): { lane: RasterLane; owner: string } | null {
   // Standalone engine smoke/cover realms have no pane parent. Their existing
   // realm-wide two-slot gate remains the only page lane they need.
   if (typeof window === "undefined" || !window.parent || window.parent === window) return null;
-  const owner = new URLSearchParams(window.location.search).get("pane");
-  if (!owner) return null;
+  const nonce = new URLSearchParams(window.location.search).get("pane");
+  if (!nonce) return null;
+  const scope = window.parent.__mareaderRasterScope;
+  const owner = scope ? `${scope}/${nonce}` : nonce;
   const lane = window.parent.__mareaderRasterLane;
   if (!lane) throw new Error("The workspace raster coordinator did not load");
   return { lane, owner };

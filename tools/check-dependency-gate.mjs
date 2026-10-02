@@ -53,11 +53,16 @@ const RULES = [
     features: ["--no-default-features", "--features", "reflow"],
     forbid: ["pdf-engine"],
   },
-  // The Shell (`mareader`) links the reader runtime on purpose: the
-  // workspace host runs in the Shell's document. Documents never do — each
-  // pane is a frame with its own artifact — so the engine is unreachable
-  // there, and `tools/check-runtime-artifacts.mjs` proves it on the built
-  // Shell (its glue imports nothing from `PDFReader`).
+  {
+    // The persistent Shell cannot retain route code in its own WASM heap.
+    crate: "mareader",
+    forbid: [...READER_ONLY, "library-runtime"],
+  },
+  {
+    crate: "reader-runtime",
+    features: ["--no-default-features"],
+    forbid: ["pdf-engine"],
+  },
   {
     // The shelf knows the PDF as FORMAT metadata only (`Format::Pdf`); the
     // execution of one — engine and geometry both — belongs to the reader,

@@ -64,15 +64,15 @@ fn install_web(state: ShellState) {
             },
             "warmReady": state.manager.warm_ready(),
             "warmGeneration": state.manager.warm_generation(),
-            // The memory question, asked of the DOM rather than the slots:
-            // how many reader frames exist at all (active, warm, retiring),
-            // each one a realm with a wasm heap that never shrinks. The
-            // library route at rest is `0` here, and the idle eviction is
-            // what takes it there (`warmReaderIdleMs` after the shelf's last
-            // intent signal; `warmReaderEvictions` counts the times it did).
+            // DOM residency includes incoming and retiring realms, not
+            // merely whichever route is visible. No Reader may survive the
+            // Library baseline, even while the pointer stays on a card.
             "readerFramesResident": state.manager.reader_frames_resident(),
-            "warmReaderIdleMs": state.manager.warm_reader_idle_ms(),
-            "warmReaderEvictions": state.manager.warm_reader_evictions.load(std::sync::atomic::Ordering::Relaxed),
+            "paneFramesResident": crate::app::frame::document_frames_resident(),
+            "readerReturnPolicy": "unload",
+            "readerPrewarmAllowed": false,
+            "routeArtifacts": 5,
+            "rasterLane": raster_snapshot(),
             // The shell's cover baker: whether its page is currently mounted
             // (it is torn down a few seconds after the last bake) and how
             // many covers it has answered, either way, since boot.
@@ -108,7 +108,21 @@ fn install_web(state: ShellState) {
             .map(|d| d.get("atBaseline") == Some(&serde_json::Value::Bool(true)))
             .unwrap_or(true);
         value["atBaseline"] = serde_json::Value::Bool(
-            state.manager.active() != Some(ActiveRuntime::Reader) && digest_drained,
+            state.manager.active() != Some(ActiveRuntime::Reader)
+                && digest_drained
+                && state.manager.reader_frames_resident() == 0
+                && crate::app::frame::document_frames_resident() == 0
+                && state
+                    .manager
+                    .reader_sessions_created
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    == state
+                        .manager
+                        .reader_disposes_completed
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                && value["rasterLane"]["active"] == serde_json::json!(0)
+                && value["rasterLane"]["queued"] == serde_json::json!(0)
+                && value["rasterLane"]["owners"] == serde_json::json!(0),
         );
         serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
     }) as Box<dyn Fn() -> String>);
@@ -116,6 +130,25 @@ fn install_web(state: ShellState) {
     let name = wasm_bindgen::JsValue::from_str("__mareaderDiagnostics");
     let target: js_sys::Object = window.unchecked_into();
     _ = js_sys::Reflect::set(&target, &name, &probe);
+}
+
+#[cfg(target_arch = "wasm32")]
+fn raster_snapshot() -> serde_json::Value {
+    use wasm_bindgen::{JsCast, JsValue};
+
+    let read = || {
+        let window = web_sys::window()?;
+        let lane =
+            js_sys::Reflect::get(&window, &JsValue::from_str("__mareaderRasterLane")).ok()?;
+        let snapshot = js_sys::Reflect::get(&lane, &JsValue::from_str("snapshot"))
+            .ok()?
+            .dyn_into::<js_sys::Function>()
+            .ok()?;
+        let value = snapshot.call0(&lane).ok()?;
+        let json = js_sys::JSON::stringify(&value).ok()?.as_string()?;
+        serde_json::from_str(&json).ok()
+    };
+    read().unwrap_or(serde_json::Value::Null)
 }
 
 /// Fold a runtime's last digest into the shell's own diagnostics object.

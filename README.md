@@ -814,9 +814,10 @@ stays visible.
 
 Each runtime lives in a shell-owned iframe so its WASM linear memory and JS
 realm can be released by removing the frame — WASM linear memory only grows,
-and a realm keeps every module it has ever loaded. The shell recycles frames
-across route changes (retire instead of reuse when memory warrants, keep one
-warm reader behind the shelf); the design and its measurements are in
+and a realm keeps every module it has ever loaded. Five artifacts separate
+Shell, Library, disposable Reader host, PDF and reflow. Library return removes
+the Reader host and every document realm; shelf activity never prewarms one.
+Only Library may warm behind an active Reader. The design and its measurements are in
 `docs/runtime-split.md` and `docs/route-split-retrospective.md`. The shell
 page itself loads no engine code and no pdf.js.
 
@@ -1049,7 +1050,7 @@ app reaches for `window.PDFReader` and for the selection state as soon as its fi
 mount, and a module script that had not run yet leaves both undefined. pdf.js (ESM-only in
 version 6) is not a script tag: the engine imports it on the first PDF open (`ensurePdfjs` in
 `public/engine/loader.ts`) and finds it on `globalThis.pdfjsLib` afterwards, so a reader session
-that never opens a PDF — a warm reader, a Markdown or text session — never fetches or holds it.
+that never opens a PDF — Library, Reader host, Markdown or text — never fetches or holds it.
 
 ### State model
 
@@ -1119,7 +1120,7 @@ that does not exist):
 npm run dev:frontend
 ```
 
-It builds all three artifacts in release mode — reusing them untouched when
+It builds all five artifact types in release mode — reusing them untouched when
 the sources haven't moved since the last build (`FORCE_REBUILD=1` forces a
 fresh one) — merges them, starts Trunk on port 1420, and only reports the
 boot as safe once the dev server actually serves every artifact the shell

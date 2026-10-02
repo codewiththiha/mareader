@@ -7,7 +7,9 @@ a Tauri v2 shell, a Rust/WebAssembly UI in Leptos (CSR), and pdf.js
 vendored at `public/vendor/pdfjs`.
 
 - The Shell (`src/`) owns routing, persistence and the runtime manager.
-- Library and Reader workspace chrome render in the persistent Shell.
+- Library and Reader workspace chrome run in separate disposable route
+  iframe/WASM artifacts. Shell links neither runtime; Library return removes
+  the Reader host and every document realm, with no Reader prewarm/recycle.
 - Each document pane has its own iframe, JS realm and WASM instance;
   removing that frame releases its document runtime. PDF and reflow panes
   are separate artifacts selected by explicit Cargo features.

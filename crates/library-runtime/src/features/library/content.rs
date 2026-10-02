@@ -218,24 +218,6 @@ pub(crate) fn LibraryContent(state: crate::context::LibraryContext) -> impl Into
                                 MenuTarget::Level,
                             );
                         }
-                        // Intent, not action: the pointer arriving over or
-                        // moving across the shelf, a card taking focus or
-                        // being pressed all say a book may be opened soon.
-                        // The Shell boots its reader behind the shelf on
-                        // this word — never on the shelf's paint — so an
-                        // open is still a reveal while an untouched shelf
-                        // keeps no reader resident. The listeners sit on the
-                        // level, not on each card: one hint source, and the
-                        // space between cards counts as approaching them
-                        // too. `pointermove` covers the pointer that was
-                        // already resting over the shelf when it painted
-                        // (no `pointerover` until it crosses into a card);
-                        // the frame throttles the word to one a second, so
-                        // a moving pointer costs one message, not a stream.
-                        on:pointerover=move |_| crate::frame::expect_reader()
-                        on:pointermove=move |_| crate::frame::expect_reader()
-                        on:pointerdown=move |_| crate::frame::expect_reader()
-                        on:focusin=move |_| crate::frame::expect_reader()
                     >
                         <div class="mx-auto w-full max-w-6xl px-6 py-8">
                             {move || {

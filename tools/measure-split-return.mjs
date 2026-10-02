@@ -107,7 +107,11 @@ const frames = () =>
     const slots = [...document.querySelectorAll("#runtime-host .runtime-frame")].map(
       (f) => `${kind(f)}:${f.getAttribute("data-mareader-slot") ?? "-"}:g${f.getAttribute("data-mareader-generation") ?? "?"}`,
     );
-    const panes = [...document.querySelectorAll("iframe.pane-frame")].map(
+    const documents = [document];
+    for (const frame of document.querySelectorAll("iframe.runtime-frame")) {
+      if (frame.contentDocument) documents.push(frame.contentDocument);
+    }
+    const panes = documents.flatMap((doc) => [...doc.querySelectorAll("iframe.pane-frame")]).map(
       (f) => `pane:${new URL(f.src).pathname.replace(/^\/|\.html$/g, "")}`,
     );
     return [...slots, ...panes];
@@ -121,6 +125,10 @@ async function sample(tag) {
     ...rendererMemory(),
     frames: await frames(),
     readerFramesResident: s?.readerFramesResident ?? null,
+    paneFramesResident: s?.paneFramesResident ?? null,
+    readerReturnPolicy: s?.readerReturnPolicy ?? null,
+    rasterLane: s?.rasterLane ?? null,
+    atBaseline: s?.atBaseline ?? null,
     panes: s?.host?.panes?.length ?? null,
     heapHighWaterMB: s?.heapHighWaterBytes != null ? +(s.heapHighWaterBytes / 1048576).toFixed(1) : null,
   };
@@ -271,7 +279,18 @@ for (const sec of IDLE_SAMPLES_S) {
     }
     await page.waitForTimeout(Math.min(wait, INTENT ? 1000 : wait));
   }
-  result.afterReturn.push(await sample(`+${sec}s after returning to the library`));
+  const row = await sample(`+${sec}s after returning to the library`);
+  // Pinned historical builds retain their historical policy for comparison.
+  // The current build MUST prove the new no-Reader policy in BOTH engines,
+  // even under continuous intent, well before the old 60-second eviction.
+  if (label === "current" && sec >= 2 &&
+      (row.readerReturnPolicy !== "unload" || row.readerFramesResident !== 0 ||
+       row.paneFramesResident !== 0 || row.atBaseline !== true ||
+       row.frames.some((f) => /^(reader|pane):/.test(f)) ||
+       row.rasterLane?.active !== 0 || row.rasterLane?.queued !== 0 || row.rasterLane?.owners !== 0)) {
+    throw new Error(`Reader realms survived Library return: ${JSON.stringify(row)}`);
+  }
+  result.afterReturn.push(row);
 }
 
 // 7. what a GC can still reclaim

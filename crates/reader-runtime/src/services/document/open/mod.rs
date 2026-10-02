@@ -167,6 +167,8 @@ pub(crate) fn open_with_launch(
     ctx.reader.document.book_id.set(launch.book_id.clone());
     ctx.reader.viewer.first_paint.set(false);
     let saved_page = launch.resume_page;
+    #[cfg(not(any(feature = "pdf", feature = "reflow")))]
+    let _ = (stamp, saved_page);
     #[cfg(feature = "reflow")]
     let saved_fraction = launch.saved_fraction;
     ctx.launch.set(launch);

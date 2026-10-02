@@ -157,11 +157,15 @@ pub fn UniversalPageHost(
     // `render_scale`, which only moves when a zoom lands. Both are read here so
     // neither layout has to know that a page of type needs one and a page of
     // pixels needs both.
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     let page_scale = state.viewer.zoom.display.read_only();
     #[cfg(feature = "pdf")]
     let texture = use_context::<crate::state::TextureSignal>()
         .expect("TextureSignal must be provided by app bootstrap");
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     let host_id = host_id_for_mode(page_slot.mode(), page);
+    #[cfg(not(any(feature = "pdf", feature = "reflow")))]
+    let _ = (page, page_slot, class);
 
     view! {
         {move || {
@@ -232,9 +236,13 @@ pub fn UniversalStripHost(
     scroller_id: &'static str,
     list_ref: NodeRef<html::Div>,
 ) -> impl IntoView {
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     let v = StoredValue::new_local(virtualizer);
+    #[cfg(not(any(feature = "pdf", feature = "reflow")))]
+    let _ = (virtualizer, axis, scroller_id, list_ref);
     view! {
         {move || {
+            #[cfg(any(feature = "pdf", feature = "reflow"))]
             let virtualizer = v.get_value();
             if state.reflowable() {
                 #[cfg(feature = "reflow")]
@@ -293,7 +301,10 @@ pub fn UniversalStreamHost(
     let strip = StoredValue::new_local(virtualizer);
     #[cfg(not(feature = "pdf"))]
     let _ = virtualizer;
+    #[cfg(any(feature = "pdf", feature = "reflow"))]
     let progress = progress_visible;
+    #[cfg(not(any(feature = "pdf", feature = "reflow")))]
+    let _ = progress_visible;
     view! {
         {move || {
             if state.reflowable() {

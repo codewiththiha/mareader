@@ -6,7 +6,12 @@ edition = "2024"
 [lib]
 crate-type = ["rlib"]
 
+[[bin]]
+name = "library"
+path = "src/bin/library.rs"
+
 [dependencies]
+console_error_panic_hook = "0.1.7"
 app-chrome = { path = "../app-chrome" }
 app-state = { path = "../app-state" }
 app-ui = { path = "../app-ui" }

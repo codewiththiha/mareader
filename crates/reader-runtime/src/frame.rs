@@ -1,7 +1,6 @@
-//! The reader's hosted boot: the workspace host mounts in a slot of the
-//! Shell's document, adopted over a channel (`adopt_in_document`), exactly as
-//! the library's; the session is the one `start_session` — the boot is a
-//! transport, never a second reader.
+//! The disposable Reader workspace-host iframe. The URL authenticates the
+//! Shell's channel offer; the host's own WASM owns workspace chrome and
+//! independent PDF/reflow child realms. Removing this iframe retires them all.
 //!
 //! Two reader-only shapes sit on top:
 //!
@@ -45,125 +44,31 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-thread_local! {
-    /// In the Shell's document: the element this realm's live instance
-    /// mounts into (the Shell's runtime slot), instead of `<body>`.
-    static MOUNT: RefCell<Option<web_sys::Element>> = const { RefCell::new(None) };
-    /// The generation adopted in the Shell's document, so a re-offer of the
-    /// same boot adopts nothing.
-    static ADOPTED: Cell<Option<u64>> = const { Cell::new(None) };
-    /// A boot offered while the previous instance was still disposing: one
-    /// instance per realm, so it is adopted the moment that one is gone.
-    static QUEUED: RefCell<Option<(web_sys::Element, u64, web_sys::MessagePort)>> =
-        const { RefCell::new(None) };
-    /// The instance disposed and kept its channel and slot for a `Rearm`
-    /// (the Shell recycles a disposed slot in place). A new boot offered
-    /// meanwhile supersedes it.
-    static PARKED: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Boot inside the Shell's own document: `mount` is the slot the Shell made
-/// for this runtime and `port` its end of the channel. The protocol is the
-/// frame's, word for word; only the adoption differs.
-#[cfg(target_arch = "wasm32")]
-pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys::MessagePort) {
-    let queued = QUEUED.with(|q| q.borrow().as_ref().map(|(_, g, _)| *g));
-    if ADOPTED.with(Cell::get) == Some(generation) || queued == Some(generation) {
-        return;
-    }
-    if API.with(|api| api.borrow().is_some()) {
-        if !PARKED.with(Cell::get) {
-            QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
-            return;
-        }
-        release_in_document();
-    }
-    ADOPTED.with(|a| a.set(Some(generation)));
-    MOUNT.with(|m| *m.borrow_mut() = Some(mount));
-    adopt(PortWire::new(port), generation);
-}
-
-/// After the instance in the Shell's document reported its disposal: let go
-/// of its channel and mount point, and adopt a boot that waited for it.
-#[cfg(target_arch = "wasm32")]
-fn release_in_document() {
-    PARKED.with(|p| p.set(false));
-    if MOUNT.with(|m| m.borrow_mut().take()).is_none() {
-        return;
-    }
-    if let Some(api) = API.with(|api| api.borrow_mut().take()) {
-        let port = api.wire().port().clone();
-        port.set_onmessage(None);
-        port.close();
-    }
-    ADOPTED.with(|a| a.set(None));
-    if let Some((mount, generation, port)) = QUEUED.with(|q| q.borrow_mut().take()) {
-        adopt_in_document(mount, generation, port);
-    }
-}
-
-/// After a disposal: hand over to a boot that waited for it, or keep the
-/// channel and slot for the Shell's `Rearm`.
-#[cfg(target_arch = "wasm32")]
-fn park_in_document() {
-    if QUEUED.with(|q| q.borrow().is_some()) {
-        release_in_document();
-    } else if MOUNT.with(|m| m.borrow().is_some()) {
-        PARKED.with(|p| p.set(true));
-    }
-}
-
-/// The element a session root goes into: the Shell's slot, or `<body>`.
-fn mount_parent(document: &web_sys::Document) -> Option<web_sys::Element> {
-    MOUNT
-        .with(|m| m.borrow().clone())
-        .or_else(|| document.body().map(Into::into))
-}
-
-/// Remove this runtime's previous session roots from where it mounts.
-#[cfg(target_arch = "wasm32")]
-fn remove_roots(kind: &str) {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    let Some(parent) = mount_parent(&document) else {
-        return;
-    };
-    let selector = format!("[data-mareader-runtime=\"{kind}\"]");
-    while let Ok(Some(root)) = parent.query_selector(&selector) {
-        root.remove();
-    }
-}
-
-/// A session root: `#runtime-root` in a document of its own; in the Shell's
-/// document the id stays the Shell's to give (two runtimes share it).
-fn make_root(
-    document: &web_sys::Document,
-    kind: &str,
-    generation: u64,
-) -> Option<web_sys::Element> {
-    let parent = mount_parent(document)?;
-    let root = document.create_element("div").ok()?;
-    if MOUNT.with(|m| m.borrow().is_none()) {
-        root.set_attribute("id", "runtime-root").ok();
-    }
-    root.set_attribute("data-mareader-runtime", kind).ok();
-    root.set_attribute("data-mareader-generation", &generation.to_string())
-        .ok();
-    // `h-full w-full` is load-bearing: a mount point with `height: auto`
-    // hands every full-height child an indefinite measure (the reader's
-    // virtualizer would then mount every page).
-    root.set_attribute("class", "h-full w-full").ok();
-    parent.append_child(&root).ok()?;
-    Some(root)
-}
-
-/// One open parked on its resolve answer: the pane that asked, the path it
-/// asked about and where the document is to go once it resolves.
+/// One open parked on its resolve answer: no live continuation is retained
+/// outside this disposable Reader realm.
 struct PendingOpen {
     ctx: ReaderContext,
     path: String,
     placement: Placement,
+}
+
+/// Boot through the frame when this artifact's URL names one. `true` as soon
+/// as the marker stands: a hosted boot never falls back to standalone (§6).
+pub fn boot_if_hosted() -> bool {
+    let search = web_sys::window()
+        .and_then(|window| window.location().search().ok())
+        .unwrap_or_default();
+    match frame_transport::parse_boot_marker(&search) {
+        frame_transport::BootMarker::Standalone => false,
+        frame_transport::BootMarker::InvalidHosted => true,
+        frame_transport::BootMarker::Hosted { generation, nonce } => {
+            console_error_panic_hook::set_once();
+            frame_transport::wasm::adopt_channel(generation, nonce, move |wire| {
+                adopt(wire, generation);
+            });
+            true
+        }
+    }
 }
 
 /// Run `f` against the live frame api when there is one.
@@ -183,6 +88,9 @@ fn emit(body: RuntimeFrame) {
 /// The placement is parked with it: where the document goes was decided
 /// when the user asked, not when the answer lands.
 pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement) {
+    if SESSION_ID.with(Cell::get) != Some(ctx.id) || !ctx.pane.admits_work() {
+        return;
+    }
     with_api(|api| {
         let (request, _ticket) = api.ask_resolve_launch(&path);
         PENDING_OPENS.with(|opens| {
@@ -225,48 +133,40 @@ fn adopt(wire: PortWire, generation: u64) {
 
 /// The Shell's `init`: the frame's one launch. Mounts the runtime root the
 /// handshake names (§9) and starts the session; everything after is the
-/// boot stages on the port. `recycled` is a rearm: the same runtime again.
-fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64, recycled: bool) {
+/// boot stages on the port. Every Reader host is a fresh realm.
+fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
+    if SESSION_ID.with(Cell::get).is_some() {
+        return;
+    }
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
-    let Some(root) = make_root(&document, "reader", generation) else {
+    let Some(body) = document.body() else {
         return;
     };
-
-    // An init without a descriptor is a reader with nothing open: an empty
-    // launch answers it. It is also the warm boot: this frame is hidden
-    // behind the shelf until a `Launch` reveals it, and the document is
-    // told so (the animated grain pauses while nobody can see it).
-    app_ui::frame_theme::mark_frame_hidden(launch.is_none());
-    let launch = launch
-        .map(|launch| *launch)
-        .unwrap_or_else(|| LaunchDocument {
-            book_id: None,
-            path: String::new(),
-            resume_page: 1,
-            saved_fraction: None,
-            blend_override: false,
-            cover_data_url: None,
-            display_name: None,
+    let Ok(root) = document.create_element("div") else {
+        return;
+    };
+    root.set_attribute("id", "runtime-root").ok();
+    root.set_attribute("data-mareader-runtime", "reader").ok();
+    root.set_attribute("data-mareader-generation", &generation.to_string())
+        .ok();
+    // `h-full w-full` is load-bearing (same rule as the Shell's one target):
+    // every runtime root is `h-full`, and a mount target with `height: auto`
+    // hands the reader's scroll area an indefinite height — the virtualizer
+    // then measures the whole column as visible and mounts every page.
+    root.set_attribute("class", "h-full w-full").ok();
+    let _ = body.append_child(&root);
+    let Some(launch) = launch.filter(|launch| !launch.path.is_empty()) else {
+        emit(RuntimeFrame::Failed {
+            stage: BootStage::Failed,
+            cause: "Reader host init requires a document".to_string(),
         });
-    // Hosted, though, the init IS the document handoff: a hosted frame that
-    // comes up without a path is the "No document" blank the shell should
-    // never have started — name it in the console so the handoff can be
-    // traced instead of guessed at.
-    if launch.path.is_empty() {
-        // Two hosted shapes reach here: the Shell warmed this frame so the
-        // click that follows has nothing to boot, or a launch handoff really
-        // did arrive empty. Only the second is a fault, and the Shell refuses
-        // an empty open before it ever starts a frame — so this line names
-        // the warm case and stays quiet about the one that cannot happen.
-        web_sys::console::debug_1(&wasm_bindgen::JsValue::from_str(
-            "[reader] init carried no launch; mounting warm with no document",
-        ));
-    }
-    // A recycled runtime carries its epoch on, as one realm would.
-    crate::diagnostics::begin_epoch(recycled);
-    let id = crate::start_session(&root, launch, ApiHandle::Frame);
+        return;
+    };
+    app_ui::frame_theme::mark_frame_hidden(false);
+    crate::diagnostics::begin_epoch(false);
+    let id = crate::start_session(&root, *launch, ApiHandle::Frame);
     SESSION_ID.with(|slot| slot.set(Some(id)));
     crate::diagnostics::set_reader_live(true);
     emit(RuntimeFrame::Status {
@@ -296,55 +196,52 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     launch,
                     warm: _,
                 } => {
-                    // `warm` is the library's concern: a warm reader is simply
-                    // a reader the Shell has not handed a document to yet, so
-                    // the empty-launch path below already is the warm boot.
+                    // Only Library can warm. A Reader init must name the
+                    // document this fresh disposable host was opened for.
                     if runtime == RuntimeKind::Reader {
-                        on_init(launch, generation, false);
+                        on_init(launch, generation);
                     }
                 }
                 ShellFrame::Launch { document } => {
-                    // The reveal (a warm reader's promotion) or an in-place
-                    // open: either way this frame is the one on screen now.
+                    // An in-session open keeps this workspace and targets
+                    // an independent document pane, never a retained host.
                     app_ui::frame_theme::mark_frame_hidden(false);
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
                         crate::command(id, *document);
                     }
                 }
                 ShellFrame::Refresh => {
-                    // The reader owns the only copy of its document state,
-                    // and a warm reader owns none until it is handed a
-                    // launch — so there is nothing durable to re-read. The
-                    // promotion itself rides [`ShellFrame::Launch`].
+                    // Refresh activates the Library, never a Reader host.
+                    // Reader document state stays in its independent panes.
                 }
                 ShellFrame::ResolveLaunchAnswer { request, document } => {
                     on_resolve_answer(request, document.map(|document| *document));
                 }
                 ShellFrame::Dispose => {
+                    PENDING_OPENS.with(|opens| opens.borrow_mut().clear());
+                    RESOLVES.with(|slot| {
+                        if let Some(resolves) = slot.borrow().as_ref() {
+                            resolves.cancel_all();
+                        }
+                    });
                     if let Some(id) = SESSION_ID.with(|slot| slot.take()) {
                         let promise = crate::dispose(id);
                         crate::diagnostics::set_reader_live(false);
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                             emit(RuntimeFrame::DisposeComplete);
-                            park_in_document();
                         });
                     } else {
                         // Nothing mounted (an init never arrived, or a
                         // duplicate dispose): the answer is still owed, or
                         // the Shell waits out its forced-removal timeout.
                         emit(RuntimeFrame::DisposeComplete);
-                        park_in_document();
                     }
                 }
-                ShellFrame::Rearm => {
-                    on_rearm(generation);
-                }
-                ShellFrame::CoverBaked { .. } | ShellFrame::ImportFiles { .. } => {
-                    // The shelf's cover answer and the shelf's import on the
-                    // reader's port: both are the library's business, and
-                    // the reader is not the library. Dropped by the
-                    // protocol, never silently.
+                ShellFrame::CoverBaked { .. }
+                | ShellFrame::ImportFiles { .. }
+                | ShellFrame::Rearm => {
+                    // Library-only commands cannot recycle a Reader realm.
                 }
             }
         },
@@ -352,25 +249,6 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
     port.set_onmessage(Some(listener.as_ref().unchecked_ref()));
     // One listener per frame lifetime; the iframe removal is its GC.
     listener.forget();
-}
-
-/// The Shell recycling this frame after a completed disposal: the previous
-/// session is gone (its `DisposeComplete` is what let the Shell ask), so a
-/// fresh warm session mounts in the document that already paid for the wasm
-/// instance and the PDF engine. Same boot as a warm init — a session with no
-/// document — which is why it answers with the same `Ready`/`Painted` pair.
-#[cfg(target_arch = "wasm32")]
-fn on_rearm(generation: u64) {
-    if SESSION_ID.with(|slot| slot.get()).is_some() {
-        // Still live: a rearm is only ever sent after DisposeComplete, so a
-        // live session means the message is out of order — never stack a
-        // second session on top of the first.
-        return;
-    }
-    PENDING_OPENS.with(|opens| opens.borrow_mut().clear());
-    PARKED.with(|p| p.set(false));
-    remove_roots("reader");
-    on_init(None, generation, true);
 }
 
 /// A resolve round trip landing: the parked open flow continues with the
@@ -388,9 +266,10 @@ fn on_resolve_answer(request: u64, document: Option<LaunchDocument>) {
     {
         let launch =
             document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
-        // Through the host's open command: the
-        // pane that asked parked only the question, not the authority.
-        ctx.open.try_run(OpenRequest { launch, placement });
+        // A late answer cannot revive a disposed or replaced requester.
+        if SESSION_ID.with(Cell::get) == Some(ctx.id) && ctx.pane.admits_work() {
+            ctx.open.try_run(OpenRequest { launch, placement });
+        }
     }
 }
 

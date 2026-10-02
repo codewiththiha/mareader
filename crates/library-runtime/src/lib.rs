@@ -22,16 +22,9 @@ pub mod frame {
         None
     }
 
-    /// Off wasm there is no Shell to warn: the shelf's intent hint goes
-    /// nowhere (the host lanes render the grid without a reader to boot).
-    pub fn expect_reader() {}
-
-    /// Off wasm there is no Shell document to mount in.
-    pub fn adopt_in_document(
-        _mount: web_sys::Element,
-        _generation: u64,
-        _port: web_sys::MessagePort,
-    ) {
+    /// Native lanes have no hosted frame marker.
+    pub fn boot_if_hosted() -> bool {
+        false
     }
 }
 pub mod services;
@@ -277,4 +270,16 @@ pub fn dispose(id: u32) -> js_sys::Promise {
         let _ = resolve.call0(&js_sys::global());
     }
     promise
+}
+
+/// The unhosted development entry uses the same production session as a
+/// hosted frame. Its standalone API writes durable data without a Shell.
+pub fn run_standalone() {
+    console_error_panic_hook::set_once();
+    let host = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.body())
+        .map(web_sys::Element::from)
+        .expect("document body for the standalone library");
+    start_session(&host, context::ApiHandle::Standalone, false);
 }

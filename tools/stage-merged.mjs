@@ -32,6 +32,12 @@ if (!staging) process.exit(0);
 /** [destination, sources in priority order] — the built page's name is
  *  Trunk's choice (the target it built, or index.html when normalized). */
 const MERGED = [
+  ["library.html", ["dist-library/library.html", "dist-library/index.html"]],
+  ["library.js", ["dist-library/library.js"]],
+  ["library_bg.wasm", ["dist-library/library_bg.wasm"]],
+  ["reader.html", ["dist-reader/reader.html", "dist-reader/index.html"]],
+  ["reader.js", ["dist-reader/reader.js"]],
+  ["reader_bg.wasm", ["dist-reader/reader_bg.wasm"]],
   ["pdf.html", ["dist-pdf/pdf.html", "dist-pdf/index.html"]],
   ["pdf.js", ["dist-pdf/pdf.js"]],
   ["pdf_bg.wasm", ["dist-pdf/pdf_bg.wasm"]],

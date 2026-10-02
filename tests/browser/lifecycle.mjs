@@ -75,13 +75,10 @@ let currentStage = "boot";
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
 const page = await context.newPage();
-// The runtimes mount in the Shell's document, each in a `.runtime-frame`
-// slot, and every reader pane is an iframe of its own
-// (docs/pane-runtimes.md). The suite addresses a runtime as one surface:
-// a slot's `contentDocument` answers queries across the slot and its
-// visible pane frames, and its `contentWindow` resolves a name on a pane's
-// window when the Shell's window does not carry it (the engine's
-// `PDFReader`, a pane's own hooks).
+// TEST-ONLY query adapter over REAL route and document iframes. Older
+// single-pane assertions address one surface; queries compose the actual
+// host document and visible child documents without inventing div/iframe
+// facades in production. Frame identities, resources and teardown remain real.
 await context.addInitScript(() => {
   if (window !== window.top) return;
   const panes = (slot) =>
@@ -109,8 +106,8 @@ await context.addInitScript(() => {
       ...panes(slot).flatMap((f) => [...f.contentDocument.querySelectorAll(sel)]),
     ];
   };
-  const fromPoint = (x, y) => {
-    const el = document.elementFromPoint(x, y);
+  const fromPoint = (doc, x, y) => {
+    const el = doc.elementFromPoint(x, y);
     if (el?.tagName === "IFRAME" && el.classList.contains("pane-frame") && el.contentDocument) {
       const r = el.getBoundingClientRect();
       return el.contentDocument.elementFromPoint(x - r.left, y - r.top);
@@ -118,22 +115,19 @@ await context.addInitScript(() => {
     return el;
   };
   const view = (slot) =>
-    new Proxy(document, {
+    new Proxy(slot, {
       get(target, key) {
         if (key === "querySelector") return (sel) => one(slot, sel);
         if (key === "querySelectorAll") return (sel) => all(slot, sel);
         if (key === "getElementById") return (id) => one(slot, `#${CSS.escape(id)}`);
-        if (key === "elementFromPoint") return fromPoint;
+        if (key === "elementFromPoint") return (x, y) => fromPoint(slot, x, y);
         const value = Reflect.get(target, key);
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-  const realm = (slot) =>
-    new Proxy(window, {
+  const realm = (slot, nativeWindow) =>
+    new Proxy(nativeWindow, {
       get(target, key) {
-        if (key === "__mareaderDiagnostics") {
-          return target.__mareaderReaderDiagnostics ?? target.__mareaderDiagnostics;
-        }
         if (!(key in target)) {
           const pane = panes(slot).find((f) => key in f.contentWindow);
           if (pane) {
@@ -145,14 +139,23 @@ await context.addInitScript(() => {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-  const isSlot = (el) => el.classList?.contains("runtime-frame");
-  Object.defineProperty(HTMLDivElement.prototype, "contentDocument", {
+  const isRuntime = (el) => el.classList?.contains("runtime-frame");
+  const nativeDocument = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentDocument").get;
+  const nativeWindow = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentWindow").get;
+  Object.defineProperty(HTMLIFrameElement.prototype, "contentDocument", {
     configurable: true,
-    get() { return isSlot(this) ? view(this) : undefined; },
+    get() {
+      const doc = nativeDocument.call(this);
+      return isRuntime(this) && doc ? view(doc) : doc;
+    },
   });
-  Object.defineProperty(HTMLDivElement.prototype, "contentWindow", {
+  Object.defineProperty(HTMLIFrameElement.prototype, "contentWindow", {
     configurable: true,
-    get() { return isSlot(this) ? realm(this) : undefined; },
+    get() {
+      const win = nativeWindow.call(this);
+      const doc = nativeDocument.call(this);
+      return isRuntime(this) && win && doc ? realm(doc, win) : win;
+    },
   });
 });
 page.on("pageerror", (e) => {
@@ -229,7 +232,14 @@ async function snap() {
     // real backing stores even though nothing is showing them, and a
     // byte-faithful memory sample cannot be frame-blind.
     for (const frame of document.querySelectorAll("#runtime-host .runtime-frame")) {
-      if (frame.contentDocument) docs.push(frame.contentDocument);
+      const route = frame.contentDocument?.defaultView.document;
+      if (!route) continue;
+      docs.push(route);
+      // Actual incoming/retiring document canvases count too. The visible
+      // single-pane query adapter must not hide their backing stores.
+      for (const pane of route.querySelectorAll("iframe.pane-frame")) {
+        if (pane.contentDocument) docs.push(pane.contentDocument);
+      }
     }
     for (const d of docs) {
       for (const c of d.querySelectorAll("canvas")) {
@@ -640,7 +650,7 @@ currentStage = "stage0-boot-contract";
 const artifactStatuses = new Map();
 page.on("response", (res) => {
   const { pathname } = new URL(res.url());
-  if (["/mareader.js", "/mareader_bg.wasm", "/pdf.js", "/pdf_bg.wasm", "/reflow.js", "/reflow_bg.wasm"].includes(pathname)) {
+  if (["/mareader.js", "/mareader_bg.wasm", "/library.js", "/library_bg.wasm", "/reader.js", "/reader_bg.wasm", "/pdf.js", "/pdf_bg.wasm", "/reflow.js", "/reflow_bg.wasm"].includes(pathname)) {
     artifactStatuses.set(pathname, res.status());
   }
 });
@@ -702,8 +712,8 @@ async function startHostSampler() {
       let leaked = 0;
       for (const f of frames) {
         const slot = f.getAttribute("data-mareader-slot");
-        if (slot === "active") activeDoc = f;
-        else if (slot === "warm") warmDoc = f;
+        if (slot === "active") activeDoc = f.contentDocument?.defaultView.document;
+        else if (slot === "warm") warmDoc = f.contentDocument?.defaultView.document;
         else retiring += 1;
         // A frame that is not the active one must be invisible: a warm
         // runtime that rendered on screen would be two apps at once.
@@ -825,7 +835,7 @@ async function libraryDomState() {
   return page.evaluate(() => {
     const host = document.getElementById("runtime-host");
     const frames = [...(host?.querySelectorAll(".runtime-frame") ?? [])];
-    const pick = (slot) => frames.find((f) => f.getAttribute("data-mareader-slot") === slot);
+    const pick = (slot) => frames.find((f) => f.getAttribute("data-mareader-slot") === slot)?.contentDocument?.defaultView.document;
     // The runtime roots themselves, in the slots: a pane frame renders a
     // document surface of its own, which is not a second runtime.
     const runtimeDoc = pick("active") ?? null;
@@ -936,17 +946,18 @@ async function waitForDom(label, predicate, timeoutMs = 30_000) {
 
 async function clickBook(title, label, timeout = 45_000) {
   try {
-    await page.locator('.runtime-frame[data-mareader-slot="active"]').locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
+    await page.frameLocator('.runtime-frame[data-mareader-slot="active"]').locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
   } catch {
-    // The grid's gesture layer can swallow a synthetic hit; dispatching on
-    // the row is the same app open path either way.
+    // The grid's tap is pointerup-owned; HTMLElement.click only swallows a
+    // completed hold. The row's Enter handler is the real alternate open.
     await page.evaluate((needle) => {
       const doc = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
       const el = [...(doc?.querySelectorAll(".book-title") ?? [])]
         .find((n) => (n.textContent ?? "").includes(needle));
       if (!el) throw new Error("book row not found in the library");
-      el.click();
+      el.closest('[role="button"]').focus();
     }, title);
+    await page.keyboard.press("Enter");
   }
   return waitFor(`${label}: the reader runtime to become active`, (x) =>
     x.bootState === "reader" &&
@@ -955,16 +966,22 @@ async function clickBook(title, label, timeout = 45_000) {
     x.engine.activeRenders === 0, timeout);
 }
 
-/** The shelf's intent signal: the pointer over the grid. The Shell boots a
- *  reader behind the shelf on this — never on the shelf's paint — so every
- *  stage that expects a warm reader has to do what a user does before a
- *  click: reach into the shelf. `hover()` moves the real mouse (pointerover
- *  fires as it would for a user); the fallback dispatches the same event
- *  on the level for a grid whose gesture layer swallowed the move. */
+/** Exercise the pointer path that formerly prewarmed Reader. It must now
+ *  leave Library alone; only an actual open may instantiate a Reader. */
+function assertLibraryOnly(s, label) {
+  if (s.activeRuntime !== "library" || s.readerReturnPolicy !== "unload" ||
+      s.readerPrewarmAllowed !== false || s.readerFramesResident !== 0 ||
+      s.paneFramesResident !== 0 || s.warmRuntime !== null || s.atBaseline !== true ||
+      s.rasterLane?.active !== 0 || s.rasterLane?.queued !== 0 || s.rasterLane?.owners !== 0 ||
+      s.readerSessionsCreated !== s.readerDisposesCompleted) {
+    throw new Error(`[${label}] Library retained Reader resources: ${JSON.stringify(s)}`);
+  }
+}
+
 async function signalShelfIntent(label) {
   try {
     await page
-      .locator('.runtime-frame[data-mareader-slot="active"]')
+      .frameLocator('.runtime-frame[data-mareader-slot="active"]')
       .locator("#library-level")
       .hover({ timeout: 5_000, position: { x: 40, y: 40 } });
   } catch {
@@ -977,13 +994,6 @@ async function signalShelfIntent(label) {
     });
     if (!dispatched) throw new Error(`[${label}] the shelf has no #library-level to reach into`);
   }
-}
-
-/** Move the mouse off the shelf, so no further intent reaches it while a
- *  stage waits for the warm reader's idle eviction. (0, 0) is the Shell's
- *  own chrome, outside every runtime frame's level. */
-async function leaveShelfAlone() {
-  await page.mouse.move(0, 0);
 }
 
 // ---- 0: the library is seeded the way a user seeds it ---------------------
@@ -1087,6 +1097,8 @@ if (libraryDom.frames !== 1) {
 }
 assertArtifactLoaded("/mareader.js", "/");
 assertArtifactLoaded("/mareader_bg.wasm", "/");
+assertArtifactLoaded("/library.js", "/");
+assertArtifactLoaded("/library_bg.wasm", "/");
 const shellBoot = await page.evaluate(() => window.__shellBoot);
 if (!shellBoot?.copy?.includes("Loading MAReader")) {
   throw new Error(`[/] the shell page never carried its loading state (saw ${JSON.stringify(shellBoot?.copy)})`);
@@ -1156,20 +1168,14 @@ summary.bootContract.libraryBoot = {
   libraryDisposes: libraryBoot.libraryDisposesCompleted ?? 0,
 };
 
-// ---- 0b: a real transition, in both directions ----------------------------
-// Library → Reader is the app's primary transition, and the whole point of
-// the warm slot: the reader was booted while the shelf was on screen, so the
-// click reveals it instead of building it. The proof is the frame identity —
-// a reader that is revealed keeps the generation it was warmed with, while a
-// rebooted one arrives with a fresh one. The sampler above covers the
-// instants in between (one frame on screen, the other hidden).
+// ---- 0b: actual opens instantiate a fresh Reader, never intent ------------
 currentStage = "stage0-transition";
-// The reader is booted on intent: reach into the shelf first, as a user
-// does on the way to a card, then wait for the boot that signal started.
 await signalShelfIntent("library → reader");
-await waitForWarm("library → reader: the reader warmed behind the shelf");
+await page.waitForTimeout(800);
 const warmSlots = await frameSlots();
 const beforeHandoff = await snap();
+assertLibraryOnly(beforeHandoff, "before real open");
+if (warmSlots.warm !== null) throw new Error("shelf intent allocated a warm runtime");
 const readerActive = await clickBook("Programming Pearls", "library → reader");
 const readerDom = await waitForDom("library → reader: the reader mounted", (s) =>
   s.active === "reader" && s.reader >= 1 && s.library === 0);
@@ -1177,12 +1183,11 @@ const revealedSlots = await frameSlots();
 if (readerDom.reader !== 1 || readerDom.library !== 0) {
   throw new Error(`[library → reader] host holds reader ${readerDom.reader} / library ${readerDom.library}`);
 }
-if (revealedSlots.active !== warmSlots.warm) {
-  throw new Error(
-    `[library → reader] the reader was rebooted: the warmed frame was ` +
-      `${warmSlots.warm}, the frame on screen is ${revealedSlots.active}`,
-  );
+if (revealedSlots.active === warmSlots.active || revealedSlots.active === null) {
+  throw new Error("a real open did not instantiate its separate Reader host");
 }
+assertArtifactLoaded("/reader.js", "library → reader");
+assertArtifactLoaded("/reader_bg.wasm", "library → reader");
 // The shelf the user left is retired BEHIND the reveal — so its disposal is
 // no longer ordered before the handoff, but it must still run to completion.
 const libraryRetired = await waitForRetirement("library → reader", "library",
@@ -1223,6 +1228,7 @@ if (backSlots.active !== warmShelf.warm) {
 const readerRetired = await waitForRetirement("reader → library", "reader",
   beforeHandback.readerDisposesCompleted ?? 0);
 assertSessionBalance(readerRetired, "reader → library");
+assertLibraryOnly(readerRetired, "reader → library");
 
 // ---- 0c: the same handoff, back to back ----------------------------------
 // One pair of transitions proves the mechanism; repetition is what finds the
@@ -1234,19 +1240,11 @@ assertSessionBalance(readerRetired, "reader → library");
 currentStage = "stage0-rapid-transitions";
 const cycles = [];
 for (let cycle = 0; cycle < 4; cycle += 1) {
-  // Waiting for the rearm is not slowing the cycle down to make it pass: it
-  // is the precondition the assertion below reads. The property under test
-  // is that a click landing on a booted warm frame COSTS NO BOOT, so the
-  // frame has to be there — and the rearm itself is the thing four cycles
-  // of it proves reliable. No intent signal here on purpose: the reader the
-  // user just left is recycled in place whether or not they reach for the
-  // next book, and this is the stage that proves it.
-  await waitForWarm(`rapid ${cycle}: the reader rearmed behind the shelf`);
-  const before = await snap();
+  const before = await waitFor(`rapid ${cycle}: no Reader realm on Library`,
+    (x) => x.atBaseline === true && x.readerFramesResident === 0);
+  assertLibraryOnly(before, `rapid ${cycle} before open`);
   const warmed = await frameSlots();
-  if (warmed.warm === null) {
-    throw new Error(`[rapid ${cycle}] the warm slot is empty after it reported ready`);
-  }
+  if (warmed.warm !== null) throw new Error(`[rapid ${cycle}] Library retained a warm realm`);
   const intoReader = await clickBook("Programming Pearls", `rapid ${cycle}: library → reader`);
   const readerDomNow = await waitForDom(`rapid ${cycle}: the reader mounted`, (s) =>
     s.active === "reader" && s.reader >= 1 && s.library === 0);
@@ -1254,13 +1252,9 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
     throw new Error(`[rapid ${cycle}] host holds reader ${readerDomNow.reader} / library ${readerDomNow.library}`);
   }
   const revealed = await frameSlots();
-  // The reader on screen IS the frame that was warmed. A reboot here is the
-  // failure this stage exists to catch: it would mean the warm slot paid for
-  // a boot the user never got to use.
-  if (revealed.active !== warmed.warm) {
-    throw new Error(
-      `[rapid ${cycle}] the reader was rebooted: warmed ${warmed.warm}, on screen ${revealed.active}`,
-    );
+  if (revealed.active === warmed.active || revealed.active === null ||
+      cycles.some((c) => c.readerGeneration === revealed.active)) {
+    throw new Error(`[rapid ${cycle}] the Reader host was not a fresh realm`);
   }
   await clickCloseNow();
   const libraryDomNow = await waitForDom(`rapid ${cycle}: the library came back`, (s) =>
@@ -1274,25 +1268,24 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
   const retired = await waitForRetirement(`rapid ${cycle}`, "reader",
     intoReader.readerDisposesCompleted ?? 0);
   assertSessionBalance(retired, `rapid ${cycle}`);
+  assertLibraryOnly(retired, `rapid ${cycle} returned`);
   const after = retired;
   if (after.readerRuntimeLive !== false) {
     throw new Error(`[rapid ${cycle}] the reader runtime is still live after the close`);
   }
   cycles.push({
     cycle,
-    reusedWarmFrame: revealed.active === warmed.warm,
+    readerGeneration: revealed.active,
+    readerFramesAfterReturn: after.readerFramesResident,
     librarySessions: after.librarySessionsCreated,
     libraryDisposes: after.libraryDisposesCompleted,
     readerSessions: after.readerSessionsCreated,
     readerDisposes: after.readerDisposesCompleted,
   });
 }
-// Every cycle that had a warm frame must have reused it: that is the
-// property being bought, and four cycles of it is what separates "works"
-// from "works once".
-const reused = cycles.filter((c) => c.reusedWarmFrame).length;
-if (reused < cycles.length) {
-  throw new Error(`only ${reused}/${cycles.length} handoffs reused the warm frame — the others rebooted`);
+if (new Set(cycles.map((c) => c.readerGeneration)).size !== cycles.length ||
+    cycles.some((c) => c.readerFramesAfterReturn !== 0)) {
+  throw new Error("rapid returns reused or retained a Reader realm");
 }
 summary.bootContract.rapidTransitions = cycles;
 console.log(
@@ -1379,134 +1372,92 @@ summary.bootContract.readerBoot = {
   path: readerRouteDom.path,
   generation: readerRoute.runtime?.generation ?? null,
 };
-// ---- 0e: the warm reader is evicted when the shelf goes quiet -------------
-// The memory half of the split. A reader booted behind the shelf — on
-// intent, or recycled from the session the user just left — is a resident
-// realm: a wasm instance whose heap never shrinks, pdf.js, a worker. The
-// Shell keeps it only while the shelf keeps reaching for a book; once the
-// shelf has been quiet for the idle window it is disposed and its frame
-// removed, and the library route is the library alone. `?warmIdleMs=` is
-// the suite's hook on that window (60 s in production; 2 s here), read off
-// the boot URL.
-currentStage = "stage0-idle-eviction";
-await page.goto(`${BASE}/?warmIdleMs=2000`, { waitUntil: "domcontentloaded" });
-const idleBoot = await waitFor("the library runtime to boot for the eviction stage", (x) =>
-  x.bootState === "library" && x.activeRuntime === "library", 60_000);
-await waitForDom("eviction: the library rendered", (s) =>
-  s.library >= 1 && s.reader === 0 && !s.placeholder);
-if (idleBoot.warmReaderIdleMs !== 2000) {
-  throw new Error(`[eviction] the idle hook was not read (warmReaderIdleMs ${idleBoot.warmReaderIdleMs})`);
-}
-// Intent boots the reader…
-await signalShelfIntent("eviction: intent");
-const idleWarm = await waitForWarm("eviction: the reader warmed on intent");
-if (idleWarm.warmRuntime !== "reader" || (idleWarm.readerFramesResident ?? 0) !== 1) {
-  throw new Error(
-    `[eviction] expected one warm reader after intent (warm ${idleWarm.warmRuntime}, ` +
-      `readerFramesResident ${idleWarm.readerFramesResident})`,
-  );
-}
-const warmedGeneration = (await frameSlots()).warm;
-// …and silence evicts it: the lane empties, the session is disposed and
-// accounted, the frame leaves the DOM.
-await leaveShelfAlone();
-const evictionStarted = Date.now();
-const evicted = await waitFor("eviction: the idle reader evicted", (x) =>
-  (x.warmReaderEvictions ?? 0) >= 1 &&
-  x.warmRuntime === null &&
-  (x.readerFramesResident ?? 0) === 0, 30_000);
-const evictionMs = Date.now() - evictionStarted;
-assertSessionBalance(evicted, "eviction");
-// The eviction is the idle window plus the reader's own dispose beat — a
-// warm reader holds no document, so there is nothing slow to close. An
-// eviction that takes the Shell's forced-removal timeout (8 s) on top means
-// the reader never answered its dispose, and the memory the user was
-// promised back within the window came back only by force.
-if (evictionMs > idleBoot.warmReaderIdleMs + 4_000) {
-  throw new Error(
-    `[eviction] the idle reader took ${evictionMs} ms to leave (window ${idleBoot.warmReaderIdleMs} ms): ` +
-      "its dispose was not answered, the Shell waited out its forced-removal timeout",
-  );
-}
-{
-  const slots = await frameSlots();
-  if (slots.warm !== null || slots.frames !== 1) {
-    throw new Error(`[eviction] the host still holds ${slots.frames} frame(s) (warm ${slots.warm}) after the eviction`);
-  }
-  if (evicted.atBaseline !== true) {
-    throw new Error("[eviction] the shell is not at baseline with no reader resident");
-  }
-}
-// Reaching in again boots a fresh reader (a new generation: the evicted
-// frame is gone, not hidden), and the click that follows is a reveal of
-// THAT frame — an eviction costs nothing the next open cannot recover.
-await signalShelfIntent("eviction: renewed intent");
-const rewarmed = await waitForWarm("eviction: a fresh reader warmed after the eviction");
-const rewarmedSlots = await frameSlots();
-if (rewarmedSlots.warm === null || rewarmedSlots.warm === warmedGeneration) {
-  throw new Error(
-    `[eviction] expected a fresh warm reader after the eviction, got generation ${rewarmedSlots.warm} ` +
-      `(evicted ${warmedGeneration})`,
-  );
-}
-const afterEviction = await clickBook("Programming Pearls", "eviction: library → reader");
-const revealedAfterEviction = await frameSlots();
-if (revealedAfterEviction.active !== rewarmedSlots.warm) {
-  throw new Error(
-    `[eviction] the open after the eviction rebooted: warmed ${rewarmedSlots.warm}, on screen ${revealedAfterEviction.active}`,
-  );
-}
-// Close: the reader is recycled in place (warm again), and with no further
-// intent it is evicted too — the user's own scenario: read, go back to the
-// shelf, and within the idle window the reader's memory is gone.
-await waitForWarm("eviction: the shelf warmed behind the reader");
-await clickCloseNow();
-await waitFor("eviction: the library after the close", (x) =>
-  x.bootState === "library" && x.activeRuntime === "library", 45_000);
-await leaveShelfAlone();
-const recycledGone = await waitFor("eviction: the recycled reader evicted after the close", (x) =>
-  (x.warmReaderEvictions ?? 0) >= 2 &&
-  x.warmRuntime === null &&
-  (x.readerFramesResident ?? 0) === 0 &&
-  x.atBaseline === true, 45_000);
-assertSessionBalance(recycledGone, "eviction (after a read)");
-{
-  const slots = await frameSlots();
-  if (slots.frames !== 1 || slots.active === null) {
-    throw new Error(`[eviction] after the read the host holds ${slots.frames} frame(s) (active ${slots.active})`);
-  }
-  // Both evictions disposed a reader that held no document (the second one
-  // was recycled after its read, so it was warm again when it idled): each
-  // must have ANSWERED its dispose. A forced removal is the Shell giving up
-  // on that answer, and it is logged as exactly that.
-  const forced = huntLog.filter((line) =>
-    line.startsWith(`[${currentStage}]`) && line.includes("forced frame removal"));
-  if (forced.length > 0) {
-    throw new Error(`[eviction] a reader was removed by force instead of answering its dispose:\n${forced.join("\n")}`);
-  }
-}
-summary.bootContract.idleEviction = {
-  idleMs: idleBoot.warmReaderIdleMs,
-  firstEvictionMs: evictionMs,
-  evictions: recycledGone.warmReaderEvictions,
-  readerSessions: recycledGone.readerSessionsCreated,
-  readerDisposes: recycledGone.readerDisposesCompleted,
-  readerFramesResident: recycledGone.readerFramesResident,
-  rewarmedFresh: rewarmedSlots.warm !== warmedGeneration,
-  revealedAfterEviction: revealedAfterEviction.active === rewarmedSlots.warm,
-  openedGeneration: afterEviction.runtime?.generation ?? null,
-};
-assertNoNewPanics("stage0 idle eviction", 0);
-console.log(
-  `boot contract: the idle warm reader was evicted in ${evictionMs} ms (window ${idleBoot.warmReaderIdleMs} ms), ` +
-    `${recycledGone.warmReaderEvictions} evictions, ${recycledGone.readerFramesResident} reader frames resident after a read`,
-);
-
-// Leave the page at a clean library boot: Stage 1 opens its own URL and
-// computes its own epoch/generation bases from a fresh document.
+// ---- 0e: Library never retains or prewarms ANY Reader realm ---------------
+currentStage = "stage0-reader-unload";
 await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
-await waitFor("the library runtime after the boot-contract stage", (x) =>
-  x.bootState === "library", 60_000);
+const idleBoot = await waitFor("Library boot without Reader", (x) =>
+  x.bootState === "library" && x.activeRuntime === "library" && x.atBaseline === true, 60_000);
+await waitForDom("Library alone", (s) => s.library === 1 && s.reader === 0 && !s.placeholder);
+assertLibraryOnly(idleBoot, "idle Library");
+const marker = await page.evaluate(() => (window.__routeLifetimeMarker = crypto.randomUUID()));
+for (let i = 0; i < 4; i += 1) {
+  await signalShelfIntent(`Library pointer ${i}`);
+  await page.evaluate(() => {
+    const frame = document.querySelector('.runtime-frame[data-mareader-slot="active"]');
+    const level = frame.contentDocument.getElementById("library-level");
+    for (const type of ["pointerover", "pointermove", "pointerdown", "focusin"]) {
+      level.dispatchEvent(new frame.contentWindow.Event(type, { bubbles: true }));
+    }
+  });
+  await page.waitForTimeout(300);
+  assertLibraryOnly(await snap(), `Library pointer/focus/press ${i}`);
+}
+const noIntentBoot = await frameSlots();
+if (noIntentBoot.frames !== 1 || noIntentBoot.warm !== null) throw new Error("Library intent created a runtime");
+// No Reader code is fetched without an actual open, either.
+const readerResources = await page.evaluate(() => {
+  const frame = document.querySelector('.runtime-frame[data-mareader-slot="active"]');
+  return [window, frame.contentWindow].flatMap((w) => w.performance.getEntriesByType("resource"))
+    .filter((e) => /\/(reader|pdf|reflow)(_bg\.wasm|\.js)(?:$|[?#])/.test(e.name)).map((e) => e.name);
+});
+if (readerResources.length) throw new Error(`Library fetched Reader artifacts: ${readerResources}`);
+const generations = [];
+for (let i = 0; i < 2; i += 1) {
+  await clickBook("Programming Pearls", `fresh host ${i}`);
+  const slots = await frameSlots();
+  if (generations.includes(slots.active)) throw new Error("Reader host realm survived a Library return");
+  generations.push(slots.active);
+  await waitForWarm(`fresh host ${i}: Library ready`);
+  await clickCloseNow();
+  const returned = await waitFor(`fresh host ${i}: all Reader realms gone`, (x) =>
+    x.bootState === "library" && x.atBaseline === true && x.readerFramesResident === 0, 15_000);
+  assertSessionBalance(returned, `fresh host ${i}`);
+  assertLibraryOnly(returned, `fresh host ${i}`);
+  await signalShelfIntent(`fresh host ${i}: keep pointer on Library`);
+  await page.waitForTimeout(700);
+  assertLibraryOnly(await snap(), `fresh host ${i} after pointer`);
+}
+// Returning while the Reader WASM itself is still loading cancels that
+// incoming host; unblocking a late response must never resurrect it.
+let unblock;
+const held = new Promise((resolve) => { unblock = resolve; });
+let sawBlockedReader;
+const readerBlocked = new Promise((resolve) => { sawBlockedReader = resolve; });
+const delayReader = async (route) => {
+  sawBlockedReader();
+  await held;
+  await route.continue().catch(() => {});
+};
+await page.route("**/reader_bg.wasm", delayReader);
+// Focus the real row and use its Enter action. Shelf taps are decided at
+// pointerup (click only swallows holds); the low-level keyboard API also
+// cannot wait for the WASM navigation this test is deliberately holding.
+await page.evaluate(() => {
+  const doc = document.querySelector('.runtime-frame[data-mareader-slot="active"]').contentDocument;
+  const row = doc.querySelector('.book-title[title*="Programming Pearls"]');
+  if (!row) throw new Error("cancelled-boot proof has no Library row");
+  const entry = row.closest('[role="button"]');
+  if (!entry) throw new Error("cancelled-boot proof has no actionable Library row");
+  entry.focus();
+});
+await page.keyboard.press("Enter");
+await Promise.race([
+  readerBlocked,
+  page.waitForTimeout(5000).then(() => { throw new Error("Reader WASM was never held by the cancellation proof"); }),
+]);
+await page.waitForFunction(() => !!document.querySelector('iframe[data-mareader-runtime-frame="reader"][data-mareader-slot="incoming"]'));
+await page.evaluate(() => history.back());
+const cancelled = await waitFor("cancelled incoming Reader removed", (x) =>
+  x.bootState === "library" && x.atBaseline === true && x.readerFramesResident === 0, 10_000);
+unblock();
+await page.unroute("**/reader_bg.wasm", delayReader);
+await page.waitForTimeout(800);
+assertLibraryOnly(await snap(), "late Reader response");
+if (await page.evaluate(() => window.__routeLifetimeMarker) !== marker) throw new Error("route handoffs reloaded the Shell");
+summary.bootContract.readerUnload = { generations, intentCreatedReader: false,
+  incomingCancelled: cancelled.readerFramesResident === 0, rootPreserved: true };
+assertNoNewPanics("Reader route lifetimes", 0);
+console.log("boot contract: Library holds no Reader/PDF/reflow realms under idle, intent, return or cancelled boot");
 
 // ---- 0f: a boot that cannot finish is VISIBLE ------------------------------
 // With a runtime artifact missing, the user must see a named error state,
@@ -1550,7 +1501,8 @@ summary.bootContract.missingPane = await failureProbe(
   pearlsUrl,
   "missing pane artifact",
   () => {
-    const node = document.querySelector('[data-pane-boot="error"]');
+    const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]')?.contentDocument;
+    const node = doc?.querySelector('[data-pane-boot="error"]') ?? null;
     let diag = null;
     try {
       diag = JSON.parse(window.__mareaderDiagnostics?.() ?? "null");
@@ -1561,7 +1513,7 @@ summary.bootContract.missingPane = await failureProbe(
       failed: node !== null,
       text: (node?.textContent ?? "").replace(/\s+/g, " ").trim(),
       bootState: diag?.bootState ?? null,
-      reader: document.querySelectorAll(".reader-bg").length,
+      reader: doc?.querySelectorAll(".reader-bg").length ?? 0,
       placeholder: document.getElementById("shell-boot") !== null,
     };
   },
@@ -1869,7 +1821,8 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
   await page.keyboard.press("Control+f");
   // The find bar is the active pane's own chrome: it lives in the pane's frame.
   const searchBox = page
-    .locator('.runtime-frame[data-mareader-slot="active"] iframe.pane-frame:not([data-frame-hidden])')
+    .frameLocator('.runtime-frame[data-mareader-slot="active"]')
+    .locator('iframe.pane-frame:not([data-frame-hidden])')
     .contentFrame()
     .locator('input[placeholder^="Search in document"]');
   await searchBox.focus();
@@ -2027,12 +1980,12 @@ currentStage = "stage11-same-page-x10";
 // generation is minted before the click that opens it.
 let lastOpenedGeneration = 0;
 async function openFromLibrary(cycle, fresh = () => true) {
-  const card = page.locator('.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
+  const card = page.frameLocator('.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
   try {
     await card.click({ timeout: 5_000 });
   } catch {
-    // The grid's gesture layer can swallow a synthetic hit; dispatching on
-    // the row is the same app open path either way.
+    // The grid's tap is pointerup-owned; HTMLElement.click only swallows a
+    // completed hold. The row's Enter handler is the real alternate open.
     await page.evaluate(() => {
       const t = [...document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelectorAll(".book-title")]
         .find((el) => (el.textContent ?? "").includes("Programming Pearls"));

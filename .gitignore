@@ -41,3 +41,8 @@
 
 # Local e2e entry page (served via webroot; intentionally not versioned)
 /e2e-index.html
+
+# Generated Reader-host bridge / route artifact distributions.
+/public/readerHost.js
+/dist-library/
+/dist-reader/

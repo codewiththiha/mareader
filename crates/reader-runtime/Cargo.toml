@@ -7,6 +7,10 @@ edition = "2024"
 crate-type = ["rlib"]
 
 [[bin]]
+name = "reader"
+path = "src/bin/reader.rs"
+
+[[bin]]
 name = "pdf"
 path = "src/bin/pdf.rs"
 required-features = ["pdf"]
@@ -23,9 +27,8 @@ default = ["pdf", "reflow"]
 pdf = ["dep:pdf-engine"]
 reflow = []
 # The document engines' live probes, for the artifacts that run documents
-# (the pane frames). The Shell links this crate for
-# the workspace host only and leaves it off, so no engine import reaches its
-# artifact.
+# (the pane frames). The Reader host builds without any features, so no
+# document engine import reaches its artifact.
 engine = []
 
 [dependencies]

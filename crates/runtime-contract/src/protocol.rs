@@ -110,11 +110,9 @@ pub enum ShellFrame {
         path: String,
         image: Option<CoverImage>,
     },
-    /// Recycle a disposed frame: mount a fresh WARM session in the same
-    /// document. Sent only after [`RuntimeFrame::DisposeComplete`], so the
-    /// previous session is gone and its disposal fully accounted; what is
-    /// kept is the page, the wasm instance and (for the reader) the loaded
-    /// PDF engine — the parts a boot pays for and a session does not own.
+    /// Recycle a disposed Library frame: mount a fresh WARM session in the
+    /// same document, only after [`RuntimeFrame::DisposeComplete`]. Reader
+    /// hosts and document realms are never rearmed; their frames are removed.
     Rearm,
     /// Answer to [`RuntimeFrame::ResolveLaunch`], matched by `request`.
     ResolveLaunchAnswer {
@@ -180,12 +178,6 @@ pub enum RuntimeFrame {
     /// `ShellApi::bake_cover` over the wire — answered by
     /// [`ShellFrame::CoverBaked`].
     BakeCover { path: String },
-    /// Library → Shell: the user is about to open a book (a pointer over the
-    /// shelf, a card focused or pressed), so a reader will be wanted soon.
-    /// A hint, not a command: the Shell boots the reader behind the shelf
-    /// on it — and only on it, so a shelf nobody touches keeps no reader
-    /// resident — and drops it once the shelf has gone quiet again.
-    ExpectReader,
     /// `ShellApi::doc_status` over the wire.
     DocStatus { report: DocStatusReport },
     /// `ShellApi::publish_digest` over the wire.
@@ -309,16 +301,6 @@ mod tests {
             r#"{"generation":4,"nonce":"n","kind":"coverBaked","path":"/b.pdf","image":null}"#
         );
         assert_eq!(serde_json::from_str::<ShellEnvelope>(&json).unwrap(), baked);
-        let expect = RuntimeEnvelope {
-            generation: 5,
-            body: RuntimeFrame::ExpectReader,
-        };
-        let json = serde_json::to_string(&expect).unwrap();
-        assert_eq!(json, r#"{"generation":5,"kind":"expectReader"}"#);
-        assert_eq!(
-            serde_json::from_str::<RuntimeEnvelope>(&json).unwrap(),
-            expect
-        );
     }
 
     #[test]

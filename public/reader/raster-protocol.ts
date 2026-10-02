@@ -15,6 +15,7 @@ export interface RasterLane {
   cancel(owner: string, id: string): void;
   release(owner: string, id: string): void;
   retire(owner: string): void;
+  retireScope(scope: string): void;
   snapshot(): RasterLaneSnapshot;
 }
 
@@ -25,5 +26,6 @@ export interface RasterPermit {
 declare global {
   interface Window {
     __mareaderRasterLane?: RasterLane;
+    __mareaderRasterScope?: string;
   }
 }

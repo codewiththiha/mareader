@@ -1,295 +1,155 @@
-# The runtime split: how the runtimes are built, loaded, and disposed
+# Runtime artifacts and route lifetimes
 
-This document records the runtime technology as built (Trunk CSR,
-wasm-bindgen `--target web` glue, Trunk 0.21.14 in CI). The per-pane frames
-are described in [pane-runtimes.md](pane-runtimes.md).
+The app ships five independently loadable WASM artifact types. Served files
+and compiled-module caches may be shared; each iframe instantiates its own
+WASM linear memory and JS realm. Removing a view inside a persistent WASM
+instance is not equivalent to releasing that instance.
 
-## WASM targets
-
-Three independently loadable WASM artifacts:
-
-| Runtime | Package (Cargo) | Entry HTML | Artifact |
+| Runtime | Package / bin | Entry page | Glue + WASM |
 | --- | --- | --- | --- |
-| Shell | `mareader` (workspace root) | `index.html` | `mareader.js` + `mareader_bg.wasm` |
-| PDF pane | `reader-runtime` (`pdf` features) | `pdf.html` | `pdf.js` + `pdf_bg.wasm` |
-| Text pane | `reader-runtime` (`reflow` features) | `reflow.html` | `reflow.js` + `reflow_bg.wasm` |
+| Persistent Shell | `mareader` | `index.html` | `mareader.js`, `mareader_bg.wasm` |
+| Library | `library-runtime` / `library` | `library.html` | `library.js`, `library_bg.wasm` |
+| Disposable Reader host | `reader-runtime` / `reader`, no default features | `reader.html` | `reader.js`, `reader_bg.wasm` |
+| PDF document pane | `reader-runtime` / `pdf`, `pdf,engine` | `pdf.html` | `pdf.js`, `pdf_bg.wasm` |
+| Markdown/TXT pane | `reader-runtime` / `reflow`, `reflow,engine` | `reflow.html` | `reflow.js`, `reflow_bg.wasm` |
 
-The Shell links the library (`library-runtime`) and the workspace host
-(`reader-runtime`'s host half) and mounts both in its own document; it never
-reloads. Every open document runs in a pane frame of its own, so closing a
-pane drops its realm — the only way a WASM heap, which never shrinks, is
-given back. The pane pages are built by their own Trunk configs (each with
-`filehash = false` so the host can name them) and merged into `dist/` by
-`tools/build-dist.sh`; `tools/check-runtime-artifacts.mjs` pins the set.
-
-## Entry modules
-
-- Shell: `src/main.rs` — mounts the Shell: title bar, sidebar, settings,
-  menus, the runtime manager and its slots, the diagnostics surface.
-- Library and workspace host: `library_runtime::frame::adopt_in_document`
-  and `reader_runtime::frame::adopt_in_document` start a session in a slot
-  of the Shell's document, paired with the manager over a `MessageChannel`.
-- Panes: `reader_runtime::pane_frame` boots in `pdf.html` / `reflow.html`,
-  says hello to the host with its nonce, and is handed its port and boot
-  descriptor (`crate::pane_wire`).
-
-## Loader mechanism
-
-The manager creates a slot (`div.runtime-frame` in `#runtime-host`) and
-starts the runtime's session in it over a fresh channel. Every message
-carries the slot's generation; traffic stamped with another is counted,
-never applied (§35).
-
-Every step can fail on its own, and each failure is named on the error card
-(src/app/boot.rs plus the protocol's `Failed` event). A pane frame whose
-artifact does not load answers with silence: after 10 s the pane draws a
-named error over itself and the console logs `[mareader] pane boot failed`
-with the artifact; the Shell and the other panes stay up. A Shell artifact
-that does not load leaves the page placeholder, which `public/shellBoot.js`
-turns into a "did not start" state after 20 s.
-
-### Slot states: active, warm, retiring
-
-Starting a runtime is the expensive part of a route switch, so the loader
-rarely runs on the click. Each slot carries a `data-mareader-slot`
-attribute — `active`, `warm`, `retiring` — and the manager
-(`src/app/manager.rs`) keeps at most one of each behind the screen:
-
-| Slot | Visible | Meaning |
-| --- | --- | --- |
-| `active` | yes | the runtime the user is looking at; `z-index: 1` |
-| `warm` | no | booted through `Ready`, waiting to be revealed |
-| `retiring` | no | displaced, still disposing — off the critical path |
-
-The two runtimes are warmed on different words. The shelf is warmed 700ms
-after the reader settles on screen (`WARM_DELAY_MS`): it is light, and a
-reading session always ends on it. The reader is warmed only on the shelf's
-**intent signal** — `RuntimeFrame::ExpectReader`, which the shelf sends
-(throttled to one a second) when the pointer is over or moving across the
-grid, or a card is pressed or focused — never on the shelf's paint. A warm
-boot stops at `Ready`: it never opens a document, because the PDF machinery
-is exactly the cost that must not be paid for a book nobody asked for — the
-existing `ShellFrame::Launch` opens the document on the real navigation, and
-a revealed shelf gets a `Refresh` instead, since the row the reader left has
-moved since it seeded.
-
-A warm reader does not stay for free. Every intent signal restarts a
-`WARM_READER_IDLE_MS` (60 s) clock, and when it runs out with the shelf
-still on screen the reader is **evicted**: disposed through the same §12
-exchange as any retirement and its frame removed
-(`RuntimeManager::evict_idle_warm_reader`). The reader is the heavy runtime
-— its frame keeps a wasm heap that never shrinks, pdf.js, the engine's
-worker — so a reader kept "just in case" is exactly the memory the library
-route is supposed to give back; with the eviction, the library route at rest
-holds the library alone (`readerFramesResident 0` in the diagnostics probe).
-The next intent boots a fresh reader; a click that beats it pays a boot with
-the shelf still on screen, never a covered cold start. The browser suite
-shortens the window through `?warmIdleMs=` on the boot URL.
-
-A navigation whose warm frame is ready is a **promotion**: the same element
-flips its slot to `active`. Same document, same realm, same WASM instance —
-the boot is already spent. The outgoing frame becomes `retiring` in the same
-synchronous block as the reveal, so two frames are never visible at once,
-and its disposal runs behind the handoff.
-
-Two constraints follow from the browser, not from the design:
-
-- A hidden slot is `visibility: hidden`, never `display: none`. Browsers stop
-  calling `requestAnimationFrame` in a `display: none` iframe, and `Painted`
-  is rAF-driven — a warm frame hidden that way would never finish booting.
-- The frame must be in the registry BEFORE its boot verdict is awaited. A
-  promotion arriving mid-boot resolves from the same verdict, so if the frame
-  is not findable yet the promotion concludes there is nothing to reveal.
-
-A warm frame that cannot be revealed (its verdict is an error or the ready
-timeout) is torn down and the transition falls back to a cold start: the warm
-slot is an optimisation and must never cost the user the runtime.
-
-## The boot contract
-
-One build produces the frontend the app runs. `tools/build-dist.sh` runs the
-shell page's Trunk build and the two runtime builds, merges them into `dist/`
-and then VERIFIES the result (`tools/check-runtime-artifacts.mjs`: every
-runtime artifact present and non-empty, and the shell page carrying its boot
-placeholder). Tauri's `beforeBuildCommand` calls that script through
-`npm run build:dist`; CI calls the same script; `tools/check-tauri-contract.mjs`
-fails the build if either side starts building the frontend by another path.
-
-`trunk build` alone is NOT the app's build: it emits the shell page, leaving
-the runtime pages the frames load to 404. The two runtime builds each emit
-their own
-page, whose name the merge takes as it finds it (a custom `dist` dir makes
-Trunk normalize it to `index.html`); a build that produced no page at all fails
-there instead of shipping a `dist/` without one. — which is precisely how the packaged app
-shipped a native window with an empty runtime host and nothing in the
-terminal.
-
-Development has the same guarantee in operational form: `npm run dev:frontend`
-(`tools/dev.mjs`, Tauri's `beforeDevCommand`) builds all three artifacts,
-starts `trunk serve`, probes the DEV SERVER for `index.html` + both runtime
-artifacts + both wasm modules, and only then reports the boot as safe.
-
-The runtime host is never empty (`src/app/boot.rs`):
-
-| state | host holds | how it ends |
-| --- | --- | --- |
-| loading | the shell's own loading card | the runtime's own DOM arrives |
-| active | the live runtime's DOM (`data-mareader-active`) | a transition starts |
-| error | runtime + stage + cause, with a reload button | a reload boots again |
-
-"The runtime is active" and "the runtime has painted" are different moments, and
-the host is covered across the gap between them. A runtime mounts with
-`mount_to`, which CLEARS the container, and its first render can be a suspense
-anchor with no elements at all — so the shell re-covers the host whenever it
-has nothing painted in it, and takes the card away when it does. That check is
-a `MutationObserver` (`src/app/boot.rs`), not a timer: its callback runs in the
-mutated task's own microtask checkpoint, so no other task can observe the host
-bare, which a polling interval cannot promise.
-
-Before the shell itself exists the page shows the placeholder that
-`index.html` ships (`#shell-boot`, "Loading MAReader…"). The SHELL removes it,
-in the same step that it uncovers the host — one owner for that moment, because
-two of them is exactly how the window ended up uncovered between them.
-`public/shellBoot.js` covers the case where the shell wasm never starts at all.
-A failed boot paints the error state and names the artifact and stage in the
-console — there is no fallback to a monolithic page, because that page no
-longer exists.
-
-## Mount targets
-
-The shell owns one mount target:
-
-```html
-<body>
-  … shell-owned overlays (noise, drag feedback) …
-  <div id="runtime-host"></div>   <!-- exactly one active runtime mounts here -->
-</body>
+```text
+Shell: navigation, persistence/settings authority, lifecycle, raster budget
+├─ Library iframe while the Library route is active
+└─ Reader-host iframe while reading
+   ├─ workspace chrome, sidebar, menus, settings, layout and focus
+   ├─ PDF pane iframe → its own WASM, pdf.js and document worker
+   ├─ reflow pane iframe → its own WASM, no PDF engine
+   └─ other independently owned document panes (up to four)
 ```
 
-The manager replaces the host's content deliberately: the outgoing frame is
-torn down before the incoming one mounts, and the host holds exactly one
-runtime's iframe at a time. A runtime never reaches outside its mount root;
-`document.body`-level chrome belongs to the shell.
+The Root Cargo graph links neither runtime crate. Library and Reader chrome
+are not mounted into the Shell's document. The Shell never reloads for
+normal route changes, document replacements or pane closes.
 
-## Instance creation
+## Route policy
 
-`RuntimeManager::start_reader(state, LaunchDocument)` /
-`start_library(state)`:
+**Reader is allocated only for an actual document open.** Pointer movement,
+focus and presses on the shelf do not prewarm it. Every Library return
+retires the Reader host, regardless of heap size or pane count. There is
+no Reader recycling, empty Reader retention, intent hint or idle-eviction
+window. The next open gets a fresh Reader-host realm and independent pane
+realms, even when its served artifact files are already cached.
 
-1. Dispose the active runtime first (below) and await its completion.
-2. Create the frame: an iframe at the artifact page carrying the boot
-   descriptor (`?hosted=1&g=<generation>&n=<nonce>`), so a stale frame can
-   never pass as the session that replaced it (§6/§35).
-3. The frame's entry instantiates the artifact in its own realm and pairs
-   with the shell over the channel; the session mounts inside the frame
-   (`reader_runtime::start_session`, the composition root) — a fresh
-   reactive ownership root and `ReaderRuntime` (begin_mount → mark_ready),
-   the reader host (`crates/reader-runtime/src/host/`) with its pane
-   manager, and the host's first pane (`crates/reader-runtime/src/pane/`),
-   which builds its OWN `ReaderState`, effects, listeners, virtualizers and
-   engine session under its own reactive owner. A warm session gets its
-   pane too, waiting for the launch its promotion hands over.
-4. The runtime reports `Ready`; the manager records the slot as
-   `Slot::Reader { generation }` with the frame's generation. The launch
-   data crossing the boundary is a serialized `LaunchDocument` (`book_id`,
-   `path`, `resume_page`, `saved_fraction`, `blend_override`) — stable,
-   minimal, serializable (§13/§14) — answered over the channel; the reader
-   obtains everything else through its own services.
+Only Library may wait behind an active Reader. Its warm session pauses
+startup work and grain. The outgoing Library can recycle after 1.2 seconds:
+its session disposes, then `Rearm` mounts a fresh warm session in the same
+Library iframe. A fresh Library warm boot is delayed 700 ms. Promotion
+reuses that Library iframe and sends `Refresh` to adopt durable state.
+This optimization never permits a Reader to survive on Library.
 
-## Instance disposal
+## Pixel-preserving handoff
 
-Disposal is a frame round-trip (`dispose_active`, `src/app/manager.rs`):
+The Shell owns `#runtime-host`. Its actual iframe elements carry
+`data-mareader-slot`:
 
-1. The manager issues the dispose over the frame's channel; the session
-   tears down INSIDE the frame. While the session is still alive the host
-   disposes every pane (`PaneManager::dispose_all`): each pane flushes its
-   read point, claims its document session, closes the paper session,
-   takes its virtualizers out of its registry and cleans up its reactive
-   owner — listeners, observers, timers, effects — explicitly. The unmount
-   follows, and its cleanup runs `ReaderRuntime::dispose`, which awaits the
-   panes' tails (engine destroy awaited → sweeps → virtualizer disposal →
-   each pane `Disposed`) and only then marks the runtime `Disposed`. The
-   unmount is sufficient on its own: nothing inside the session holds its
-   reactive owner, so dropping the unmount handle releases the whole tree
-   and its cleanup still runs the host's disposal (a no-op when it already
-   ran).
-2. The frame answers `DisposeComplete`; only then does the manager remove
-   the iframe (§12: phase 1 acknowledged, phase 2 removal — a strict
-   timeout forces the removal either way). A session that holds no
-   document — a warm reader being evicted or replaced — answers the same
-   way at the end of its tail; it merely has no engine document to destroy.
-3. The slot returns to idle; the next start builds a NEW frame, so no
-   static, listener, or heap survives on the shell side either.
+| Slot | Visible | Lifetime |
+| --- | --- | --- |
+| `active` | yes | exactly one route on screen |
+| `incoming` | no | a requested cold boot, awaiting Ready **and** Painted |
+| `warm` | no | Library only, awaiting promotion |
+| `retiring` | no | displaced route, awaiting graceful disposal |
 
-Nothing of the runtime instance outlives its frame — the realm is disposed
-with it. What does survive is origin-level (localStorage entries, served
-assets), which is what the baseline measured as application scope.
+A cold open leaves the outgoing frame on screen; it does not remove the
+shelf and put a blank incoming iframe in its place. The incoming realm is
+laid out under `visibility: hidden`, never `display: none`. `Ready` is a
+mount verdict; `Painted` is the runtime's two-rAF paint opportunity. A
+missing paint is a named failure, not a synthetic successful reveal. The
+new active stamp and outgoing hiding happen in one synchronous handoff.
+Per-document handoffs additionally await actual document paint as described
+in [pane-runtimes.md](pane-runtimes.md).
 
-The manager never starts a new runtime until the previous runtime's dispose
-completed (§5). What must not survive is live state, and it does not (the
-browser suite's `at_baseline` gates it).
+The route bounds are 20 seconds for contact/Ready, 2.5 seconds from Ready to
+Painted, and 8 seconds for graceful route disposal. Failures name runtime,
+stage and cause. Initial boot has the Shell loading card and page placeholder;
+subsequent cold handoffs keep outgoing pixels instead of covering them.
+Newest navigation wins. Cancelling an incoming boot removes its iframe and
+wakes every pending gate; a late response cannot reveal it on Library.
 
-## Cross-runtime communication
+Incoming status/digest reports are held as one latest plain-data value in
+the driver and replayed after active/launch authority is published. This
+prevents a fast first Ready report from being lost before the paint gate.
 
-One narrow channel, JSON-serialized both ways (§14): a MessagePort per frame
-boot, every message stamped with the frame's generation (§35), so traffic
-from a replaced frame is counted as stale and never applied.
+## Authenticated transport
 
-- runtime → shell: the `ShellApi` trait (`crates/runtime-contract/src/
-  boundary.rs`) — typed calls (`open_document`, `navigate_library`,
-  `read_point`, the save/publish family, `resolve_launch`) — implemented
-  for a hosted frame by the transport's port handle (`PortShellApi` in
-  `crates/frame-transport/src/lib.rs`).
-- shell → runtime: the `ShellFrame` protocol vocabulary
-  (`crates/runtime-contract/src/protocol.rs`) for commands such as a launch,
-  a refresh or a baked cover's answer, and the frame's own boot events
-  answering back (`FrameEvent`: contact, stage, painted, failed-with-stage,
-  `DisposeComplete`, the shelf's `ExpectReader` intent).
+The frame URL contains `?hosted=1&g=<generation>&n=<nonce>`. The Shell
+re-offers a `MessageChannel` until contact. The artifact accepts an offer
+only from its actual same-origin parent with matching nonce/generation.
+An invalid claimed hosted marker never falls back to a standalone app.
+Every subsequent envelope carries its generation; stale messages cannot
+mutate the active route. Library/Reader entry bins use this hosted bootstrap;
+standalone entry pages are available for development.
 
-Shelf covers are the one piece of PDF work the library needs, and it is done
-by neither runtime: the shelf's `BakeCover` ask goes to the Shell, which
-mounts its own hidden bake page (`src/app/bake.rs` → `public/bake.html`,
-script `public/coverBake.ts`: pdf.js and the engine's cover render, no wasm,
-no runtime), drives it over `window.postMessage`, answers the shelf with
-`ShellFrame::CoverBaked`, and removes the page a few seconds after the queue
-drains. The Shell page itself still loads no engine, and no reader is ever
-booted for a cover. A cold shelf asks from inside its own mount, before its
-Ready verdict admits it to the Shell's frame registry: the baker keys the
-ask on the frame generation, boots the page at once, starts the bake when
-the frame is admitted, and prunes the ask if the frame is torn down first.
+Persistence and settings authority stay in the Shell. Runtime commands and
+writes use `ShellApi` (`runtime-contract`) over `PortShellApi`
+(`frame-transport`). Pane requests are relayed through their Reader host;
+the existing pane protocol, independent mirrors and per-pane liveness
+checks remain unchanged. The same-origin Tauri relay runs before each
+artifact and delegates native calls through the host to the main window.
 
-No drag crosses runtimes. A split is dragged inside the reader, from its
-own Library panel. A file dragged in from the OS is an import, handled by
-the Shell only while the library is on screen: the Shell's
-`tauri://drag-drop` listener (`src/services/import_drop.rs`) filters the
-paths to the formats the app opens and sends the live library frame
-`ShellFrame::ImportFiles { paths }`, which imports them onto the shelf it
-shows. The reader ignores that frame.
+## Whole-Reader disposal
 
-Unhosted sessions (the unit-test lane) use a storage-backed substitute; the
-trait keeps exactly these implementations plus the recorder the host tests
-use.
+1. Before navigation, every pane prepares to leave: flush its read point
+   and cancel page work while its state is alive.
+2. After Library is painted/revealed, the Shell asks the outgoing Reader
+   host to `Dispose`. Its `PaneManager::dispose_all` drains every live,
+   incoming and retiring pane realm. Each document explicitly cancels
+   queues/search/prefetch/virtualizers, zeros canvas backing stores,
+   terminates workers and releases listeners, observers and timers.
+3. The Reader host waits for pane tails before unmounting its reactive root
+   and emitting its terminal digest and `DisposeComplete`.
+4. The Shell closes ports/listeners/timers, removes the **Reader-host
+   iframe**, and reclaims that host's whole raster scope. Its WASM memory,
+   module instances and descendant browsing contexts no longer belong to
+   a live application realm. A strict timeout performs forced removal if
+   the graceful acknowledgment never arrives.
 
-## Artifact sizes
+There is one window-wide two-slot raster coordinator in the Shell
+(`public/rasterLane.ts`). `readerHost.ts` borrows that same object; it does
+not allocate a second hosted budget. Owner keys are
+`reader:<generation>:<nonce>/<pane nonce>`. Normal pane removal retires only
+that pane's keys. Reader-host removal also calls `retireScope` to reclaim
+all live/incoming/retiring descendant leases if normal cleanup was cut
+short. Queued wakes are weak and jobs re-check liveness after the permit.
 
-`tools/check-runtime-artifacts.mjs` prints every artifact's size in the CI
-build log. Each pane artifact is built with its own feature set, and the
-dependency gate (`tools/check-dependency-gate.mjs`, `cargo tree` over the
-wasm32 target graph) keeps the library's closure free of reader code.
+The Shell watchdog only handles failed startup; it never fetches Reader or
+pane artifacts speculatively. Actual opens pay the route's artifact cost.
 
-## Asset loading
+## Build and dependency gates
 
-`styles.css`, `public/vendor` (pdf.js), `pdfEngine.js`, `readerEngine.js`,
-`bake.worker.js` are referenced by all three HTML entries, so each build
-emits them; the merged `dist/` holds one copy (`bake.html` and
-`coverBake.js` ship with the shell page alone). pdf.js itself is not a
-script tag anywhere but the bake page: the reader's engine imports it on the
-first PDF open (`ensurePdfjs` in `public/engine/loader.ts`), so a reader
-session that never opens a PDF never fetches or holds it. All three runtimes are
-served from the same origin but live in separate frame realms — own
-document, own window, own WASM instance. What stays shared is
-origin-level: `localStorage` (one browser store; each runtime touches only
-its own keys), the served assets, and the platform APIs each frame's
-document can reach — while DOM, reactive state, WASM linear memory and
-statics are per-frame. That split — origin-shared, instance-isolated — is
-the boundary the rest of this migration keeps honest.
+`npm run build:dist` (`tools/build-dist.sh`) runs the Shell and four route/
+pane Trunk targets, merges all pages/glue/WASM into `dist/`, then asserts the
+artifact contract. Tauri, CI and the dev orchestrator use that same builder.
+A bare `trunk build`/`trunk serve` is not a complete app build.
+`tools/stage-merged.mjs` and the dev freshness/HTTP probes preserve the full
+five-target set across a Shell rebuild.
+
+The dependency gate rejects both runtime crates and document implementation
+dependencies in the Shell graph, all Reader dependencies in Library, and
+`pdf-engine` in the feature-neutral host and reflow graphs. The artifact
+gate rejects `PDFReader` imports in Shell, Library, Reader host and reflow
+glue, plus PDF scripts in their pages. Only `pdf.html` loads the PDF engine.
+Library cover baking remains in the Shell's short-lived JS-only bake page;
+cover work never instantiates Reader WASM.
+
+## Observable release, not a RAM promise
+
+At the settled Library baseline, `readerFramesResident == 0`,
+`paneFramesResident == 0`, `readerSessionsCreated == readerDisposesCompleted`,
+`warmRuntime == null`, and root raster active/queued/owners are zero.
+`atBaseline` fails closed if any realm, lease or terminal evidence remains.
+Browser tests cover repeated intent, rapid open/return, fresh host identities,
+cancelled incoming boots and mixed per-pane teardown without reloading Shell.
+Chromium/WebKit replay asserts zero Reader residency from the +2 second
+sample through +70 seconds, with and without pointer intent.
+
+Browser caches, allocators and graphics resources may retain memory after
+live instances are gone. This ownership change is not a guarantee of zero
+RSS or immediate operating-system reclamation; memory savings require
+same-workload measurements. Historical comparisons remain historical, not
+claims about this policy.

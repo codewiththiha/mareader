@@ -82,10 +82,9 @@ const snap = () =>
         return null;
       }
     };
-    // The reader runtime mounts in the Shell's document: its digest (with
-    // the pane frames folded in) sits beside the Shell's own.
     const top = read(window);
-    const reader = document.querySelector(sel) ? read({ __mareaderDiagnostics: window.__mareaderReaderDiagnostics }) : null;
+    const frame = document.querySelector(sel);
+    const reader = frame?.tagName === "IFRAME" ? read(frame.contentWindow) : null;
     return top || reader ? { ...(top ?? {}), ...(reader ?? {}), bootState: top?.bootState } : null;
   }, activeFrame);
 
@@ -102,7 +101,7 @@ async function waitFor(what, pred, timeout = 45_000) {
 const inActive = (fn, arg) =>
   page.evaluate(
     ([sel, src, a]) => {
-      const doc = document.querySelector(sel) ? document : null;
+      const doc = document.querySelector(sel)?.contentDocument ?? null;
       return new Function("doc", "arg", `return (${src})(doc, arg);`)(doc, a);
     },
     [activeFrame, fn.toString(), arg],
@@ -164,7 +163,7 @@ result.whileOpen = [];
 for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
   const file = ROTATION[(cycle - 1) % ROTATION.length];
   const placed = await page.evaluate(
-    ([sel, p]) => !!document.querySelector(sel) && window.__mareaderOpenIn?.(p, "right") === true,
+    ([sel, p]) => document.querySelector(sel)?.contentWindow?.__mareaderOpenIn?.(p, "right") === true,
     [activeFrame, file],
   );
   if (!placed) throw new Error(`[cycle ${cycle}] the host refused ${file}`);
@@ -190,7 +189,7 @@ for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
 
   // Close it through its own control.
   await page.evaluate(([sel, id]) => {
-    const btn = document.querySelector(sel)?.querySelector(`[data-pane-close="${id}"] button`);
+    const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
     if (!btn) throw new Error(`pane ${id} has no close control`);
     btn.click();
   }, [activeFrame, added]);

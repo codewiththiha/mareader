@@ -11,7 +11,7 @@ export async function verifyPaneRuntimes(args) {
     const facts = await args.page.evaluate(() => ({
       root: JSON.parse(window.__mareaderDiagnostics()),
       marker: window.__paneVerificationMarker,
-      frames: [...document.querySelectorAll("iframe.pane-frame")].map((f) => ({
+      frames: [...[...document.querySelectorAll('iframe[data-mareader-runtime-frame="reader"]')].flatMap((host) => [...(host.contentDocument?.querySelectorAll("iframe.pane-frame") ?? [])])].map((f) => ({
         src: f.src, hidden: f.hasAttribute("data-frame-hidden"),
         slot: f.closest(".runtime-frame")?.dataset.mareaderSlot,
         pane: f.closest("[data-pane-id]")?.dataset.paneId,
@@ -34,13 +34,43 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await writeSettings({ appearance: { base: "light", tintStrength: 0, noise: "off" },
     workspace: { independentThemes: false, sharedBaseMode: true, paneGap: 0 } });
   const initial = await openBook(urls.pdf);
+  await page.evaluate(() => Object.defineProperty(window, "__paneReaderDocument", {
+    configurable: true,
+    get() {
+      return document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]')?.contentDocument;
+    },
+  }));
+  report.hierarchy = await page.evaluate(() => {
+    const host = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]');
+    const panes = [...host.contentDocument.querySelectorAll("iframe.pane-frame")];
+    return { routeTag: host.tagName, route: new URL(host.src).pathname,
+      children: panes.map((f) => new URL(f.src).pathname),
+      shellHasPdf: typeof window.PDFReader !== "undefined",
+      hostNoiseOverlays: host.contentDocument.defaultView.document.querySelectorAll(".noise-overlay").length,
+      childNoiseOverlays: panes.map((f) => f.contentDocument.querySelectorAll(".noise-overlay").length),
+      hostHasPdf: typeof host.contentDocument.defaultView.PDFReader !== "undefined" };
+  });
+  if (report.hierarchy.routeTag !== "IFRAME" || report.hierarchy.route !== "/reader.html" ||
+      report.hierarchy.shellHasPdf || report.hierarchy.hostHasPdf ||
+      report.hierarchy.hostNoiseOverlays !== 1 || report.hierarchy.childNoiseOverlays.some((n) => n !== 0) ||
+      !report.hierarchy.children.includes("/pdf.html")) {
+    throw new Error(`route/document hierarchy broken: ${JSON.stringify(report.hierarchy)}`);
+  }
+  // Layout-ready is a host lifecycle, not proof that a descendant has
+  // finished loading/painting. Scope, lift and close races need real realms.
+  const paintedRealms = (ids) => page.waitForFunction((ids) => ids.every((id) => {
+    const frames = [...window.__paneReaderDocument.querySelectorAll(`[data-pane-id="${id}"] iframe.pane-frame`)];
+    if (frames.length !== 1 || frames[0].hasAttribute("data-frame-hidden")) return false;
+    const raw = frames[0].contentWindow.__mareaderDiagnostics?.();
+    return raw && JSON.parse(raw).runtime?.state === "ready";
+  }), ids, { timeout: 15_000 });
   const pane = initial.host.panes[0].paneId;
   const marker = await page.evaluate(() => {
     window.__paneVerificationMarker = crypto.randomUUID();
     return window.__paneVerificationMarker;
   });
   const visible = (id) => page.evaluate((id) => {
-    const f = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
+    const f = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
     return f ? { src: f.src, path: JSON.parse(f.contentWindow.__mareaderDiagnostics()).host?.panes?.[0]?.documentId,
       hasPdf: typeof f.contentWindow.PDFReader !== "undefined" } : null;
   }, id);
@@ -51,7 +81,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       s.host.panes[0].paneId === pane && s.host.panes[0].format === format &&
       s.host.panes[0].documentId === `path:${path}` && s.host.panes[0].lifecycle === "ready");
     await page.waitForFunction(([id, src]) => {
-      const frames = [...document.querySelectorAll(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`)];
+      const frames = [...window.__paneReaderDocument.querySelectorAll(`[data-pane-id="${id}"] iframe.pane-frame`)];
       return frames.length === 1 && frames[0].src !== src && !frames[0].hasAttribute("data-frame-hidden");
     }, [pane, before.src], { timeout: 15_000 });
     const after = await visible(pane);
@@ -60,7 +90,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     if (s.host.panesCreated !== initial.host.panesCreated) throw new Error("replacement recreated its pane identity");
     if (format !== "pdf") {
       const text = await page.evaluate((id) => {
-        const w = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`).contentWindow;
+        const w = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentWindow;
         return { engine: typeof w.PDFReader, stats: JSON.parse(w.__mareaderDiagnostics()).engine,
           pdfResources: w.performance.getEntriesByType("resource").filter((e) => /pdfEngine|pdf\.min\.mjs|pdf\.worker/.test(e.name)).length };
       }, pane);
@@ -78,12 +108,12 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   // Supersede incoming frames before they can adopt. Late hello/paper/outline
   // reports must not replace the final request or leave a boot error over it.
   await page.evaluate((paths) => {
-    for (const path of paths) if (!window.__mareaderOpenIn(path, "active")) throw new Error("rapid open refused");
+    for (const path of paths) if (!window.__paneReaderDocument.defaultView.__mareaderOpenIn(path, "active")) throw new Error("rapid open refused");
   }, [paths.markdown, paths.pdf, paths.otherPdf]);
   await waitFor("latest rapid replacement only", (s) => s.host?.panes?.length === 1 &&
     s.host.panes[0].documentId === `path:${paths.otherPdf}` && s.host.panes[0].lifecycle === "ready");
-  await page.waitForFunction((id) => document.querySelectorAll(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`).length === 1, pane);
-  if (await page.locator('[data-pane-boot="error"]').count()) throw new Error("a stale startup error survived supersession");
+  await page.waitForFunction((id) => window.__paneReaderDocument.querySelectorAll(`[data-pane-id="${id}"] iframe.pane-frame`).length === 1, pane);
+  if (await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('[data-pane-boot="error"]').count()) throw new Error("a stale startup error survived supersession");
   report.rapidSupersession = true;
 
   await openIn(paths.pdf, "right");
@@ -92,7 +122,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   // Exercise both engines together. These are real full-resolution renders
   // at their existing scale, not fake permit requests or low-resolution covers.
   const budget = await page.evaluate(async () => {
-    const frames = [...document.querySelectorAll('#runtime-host .runtime-frame[data-mareader-slot="active"] iframe.pane-frame:not([data-frame-hidden])')]
+    const frames = [...window.__paneReaderDocument.querySelectorAll('iframe.pane-frame:not([data-frame-hidden])')]
       .filter((f) => typeof f.contentWindow.PDFReader !== "undefined");
     if (frames.length !== 2) throw new Error(`expected two PDF realms, got ${frames.length}`);
     const samples = [];
@@ -128,6 +158,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
 
   await openIn(paths.markdown, "down");
   const mixed = await waitForSettledLayout("three mixed pane realms", (s) => s.host?.panes?.length === 3 && s.host.panes.every((p) => p.lifecycle === "ready"));
+  await paintedRealms(mixed.host.panes.map((p) => p.paneId));
   const pdfIds = mixed.host.panes.filter((p) => p.format === "pdf").map((p) => p.paneId);
   const md = mixed.host.panes.find((p) => p.format === "markdown");
   await frameClick('button[title="Appearance"]', "scope menu");
@@ -135,15 +166,15 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await frameClick('button[title="Appearance"]', "close scope menu");
   await waitFor("independent themes settle", (s) => s.engine.activeRenders === 0 && s.rasterLane?.active === 0);
   await page.evaluate((id) => {
-    const w = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`).contentWindow;
+    const w = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentWindow;
     w.document.querySelector('[data-pane-root]').dispatchEvent(new w.PointerEvent("pointerdown", { bubbles: true }));
   }, pdfIds[0]);
   await waitFor("scope focuses its PDF pane", (s) => s.host?.activePane === pdfIds[0]);
   await frameClick('button[title="Appearance"]', "scoped slider");
   const scope = await page.evaluate(async (ids) => {
-    const windows = ids.map((id) => document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`).contentWindow);
+    const windows = ids.map((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentWindow);
     const siblingBefore = windows[1].PDFReader.stats().rendersCompleted;
-    const slider = document.querySelector('input[aria-label="Strength"]');
+    const slider = window.__paneReaderDocument.querySelector('input[aria-label="Strength"]');
     if (!slider) throw new Error("appearance strength slider missing");
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(slider, "74");
     slider.dispatchEvent(new Event("input", { bubbles: true }));
@@ -152,8 +183,8 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       sibling: windows[1].document.documentElement.classList.contains("appearance-scrubbing"), siblingBefore };
   }, pdfIds);
   if (!scope.edited || scope.sibling) throw new Error(`scrub crossed its pane scope: ${JSON.stringify(scope)}`);
-  await page.waitForFunction((ids) => ids.every((id) => !document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`).contentDocument.documentElement.classList.contains("appearance-scrubbing")), pdfIds);
-  const siblingAfter = await page.evaluate((id) => document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`).contentWindow.PDFReader.stats().rendersCompleted, pdfIds[1]);
+  await page.waitForFunction((ids) => ids.every((id) => !window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentDocument.documentElement.classList.contains("appearance-scrubbing")), pdfIds);
+  const siblingAfter = await page.evaluate((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentWindow.PDFReader.stats().rendersCompleted, pdfIds[1]);
   if (siblingAfter !== scope.siblingBefore) throw new Error("a scoped slider rerendered its untouched sibling");
   report.scopedScrub = { ...scope, siblingAfter };
   await frameClick('[role="switch"][title="Independent theme for each pane"]', "restore shared theme");
@@ -161,7 +192,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
 
   // A real stationary press on the Markdown gutter, not a synthetic lift.
   const gutter = await page.evaluate((id) => {
-    const f = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`);
+    const f = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`);
     const r = f.getBoundingClientRect();
     return { x: r.left + 8, y: r.top + Math.min(180, r.height / 2) };
   }, md.paneId);
@@ -169,10 +200,10 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   const holdStart = Date.now();
   await page.mouse.down();
   try {
-    await page.waitForFunction((id) => document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"] iframe.pane-frame`).contentDocument.querySelector('[data-pan-hold]'), md.paneId, { timeout: 3_000 });
+    await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentDocument.querySelector('[data-pan-hold]'), md.paneId, { timeout: 3_000 });
     await page.waitForTimeout(2500);
-    if (await page.locator('#runtime-host .runtime-frame[data-mareader-slot="active"] .pane-lifted').count()) throw new Error("a short hold lifted the pane before five seconds");
-    await page.waitForFunction((id) => document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"]`).classList.contains("pane-lifted"), md.paneId, { timeout: 6_000 });
+    if (await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.pane-lifted').count()) throw new Error("a short hold lifted the pane before five seconds");
+    await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`).classList.contains("pane-lifted"), md.paneId, { timeout: 6_000 });
     // The class reacts immediately; the host digest arrives on its beat.
     // Timestamp the lift itself, then require both reported and rendered
     // vacancy growth at a bounded deadline, not a stale immediate digest.
@@ -182,14 +213,14 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
         p.bounds.width > mixed.host.panes.find((old) => old.paneId === p.paneId).bounds.width + 20 ||
         p.bounds.height > mixed.host.panes.find((old) => old.paneId === p.paneId).bounds.height + 20), 5_000);
     await page.waitForFunction((before) => before.some((p) => {
-      const el = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${p.paneId}"]`);
+      const el = window.__paneReaderDocument.querySelector(`[data-pane-id="${p.paneId}"]`);
       const r = el?.getBoundingClientRect();
       return r && (r.width > p.bounds.width + 20 || r.height > p.bounds.height + 20);
     }), mixed.host.panes.filter((p) => p.paneId !== md.paneId), { timeout: 5_000 });
     report.liftVacancy = { before: mixed.host.panes.map((p) => ({ id: p.paneId, bounds: p.bounds })),
       after: lifted.host.panes.map((p) => ({ id: p.paneId, bounds: p.bounds })) };
     const dock = await page.evaluate((id) => {
-      const r = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id="${id}"]`).getBoundingClientRect();
+      const r = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`).getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + Math.max(70, r.height * 0.2) };
     }, pdfIds[1]);
     await page.mouse.move(dock.x, dock.y, { steps: 6 });
@@ -197,7 +228,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   } finally {
     await page.mouse.up();
   }
-  await page.waitForFunction(() => !document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"] .pane-lifted'));
+  await page.waitForFunction(() => !window.__paneReaderDocument.querySelector('.pane-lifted'));
   const afterLift = await waitForSettledLayout("lift dock preserves sessions", (s) => s.host?.panes?.length === 3 && s.host.panesCreated === mixed.host.panesCreated && s.engine.sessionsLive === 2);
   if (report.liftHoldMs < 4800) throw new Error(`lift completed too soon: ${report.liftHoldMs}ms`);
 
@@ -215,7 +246,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     // A fit/resize must land the reflow measurements too, not merely the
     // iframe box and PDF work. Otherwise estimated rows can overlap forever.
     await page.waitForFunction(() => {
-      const frames = [...document.querySelectorAll('#runtime-host .runtime-frame[data-mareader-slot="active"] iframe.pane-frame:not([data-frame-hidden])')]
+      const frames = [...window.__paneReaderDocument.querySelectorAll('iframe.pane-frame:not([data-frame-hidden])')]
         .filter((f) => /reflow\.html/.test(f.src));
       return frames.length === 1 && frames.every((f) => {
         const rows = [...f.contentDocument.querySelectorAll('.tx-stream-col > [data-block-index]')];
@@ -226,9 +257,9 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       });
     }, null, { timeout: 10_000 });
     const facts = await page.evaluate(() => ({ width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth + 2,
-      entries: [...document.querySelectorAll('#runtime-host .runtime-frame[data-mareader-slot="active"] [data-pane-id]')].filter((e) => !e.classList.contains("pane-retiring")).length,
-      engineFreeText: [...document.querySelectorAll('#runtime-host .runtime-frame[data-mareader-slot="active"] iframe.pane-frame:not([data-frame-hidden])')].filter((f) => /reflow\.html/.test(f.src)).every((f) => typeof f.contentWindow.PDFReader === "undefined"),
-      textRows: [...document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"] iframe.pane-frame[src*="reflow.html"]').contentDocument.querySelectorAll('.tx-stream-col > [data-block-index]')].map((row) => {
+      entries: [...window.__paneReaderDocument.querySelectorAll('[data-pane-id]')].filter((e) => !e.classList.contains("pane-retiring")).length,
+      engineFreeText: [...window.__paneReaderDocument.querySelectorAll('iframe.pane-frame:not([data-frame-hidden])')].filter((f) => /reflow\.html/.test(f.src)).every((f) => typeof f.contentWindow.PDFReader === "undefined"),
+      textRows: [...window.__paneReaderDocument.querySelector('iframe.pane-frame[src*="reflow.html"]').contentDocument.querySelectorAll('.tx-stream-col > [data-block-index]')].map((row) => {
         const r = row.getBoundingClientRect();
         return { index: Number(row.dataset.blockIndex), top: r.top, bottom: r.bottom };
       }),
@@ -241,8 +272,60 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   const beforeClose = await snap();
   const closed = await closeAndWaitBaseline("pane runtime regressions", false, beforeClose.disposalEpoch + afterLift.host.panes.length);
   if (closed.rasterLane?.active !== 0 || closed.rasterLane?.queued !== 0 || closed.rasterLane?.owners !== 0) throw new Error("closed frames retained host raster leases");
+  const residency = await page.evaluate(() => ({
+    readers: document.querySelectorAll('iframe[data-mareader-runtime-frame="reader"]').length,
+    library: document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]')?.src,
+  }));
+  if (closed.readerFramesResident !== 0 || closed.paneFramesResident !== 0 ||
+      residency.readers !== 0 || !residency.library?.includes("/library.html")) {
+    throw new Error(`mixed workspace kept a Reader WASM realm on Library: ${JSON.stringify(residency)}`);
+  }
+  report.readerHostUnloaded = { ...residency, readerFramesResident: closed.readerFramesResident,
+    paneFramesResident: closed.paneFramesResident };
   report.closed = { atBaseline: closed.atBaseline, sessionsOpened: closed.engine.sessionsOpened,
     sessionsDestroyed: closed.engine.sessionsDestroyed, rasterLane: closed.rasterLane };
+  await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]')
+    .locator('.book-title[title*="Programming Pearls"]').first().click();
+  await waitFor("fresh Reader ready", (s) => s.bootState === "reader" && s.host?.panes?.length === 1 &&
+    s.host.panes[0].lifecycle === "ready" && s.engine.hasDocument);
+  await openIn(paths.markdown, "right");
+  const beforePending = await waitForSettledLayout("mixed panes before pending close", (s) => s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready"));
+  await paintedRealms(beforePending.host.panes.map((p) => p.paneId));
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let sawBlockedText;
+  const textBlocked = new Promise((resolve) => { sawBlockedText = resolve; });
+  const delayText = async (route) => { sawBlockedText(); await held; await route.continue().catch(() => {}); };
+  await page.route("**/reflow_bg.wasm", delayText);
+  try {
+    await openIn(paths.text, "active");
+    await Promise.race([
+      textBlocked,
+      page.waitForTimeout(5000).then(() => { throw new Error("pending-close proof never held the reflow WASM response"); }),
+    ]);
+    await page.waitForFunction(() => !!window.__paneReaderDocument.querySelector('iframe.pane-frame[data-frame-hidden]'));
+    await frameClick('button[title*="Close this book"]', "close Reader with incoming document");
+    const returned = await waitFor("whole mixed Reader plus incoming realm removed", (s) =>
+      s.bootState === "library" && s.atBaseline === true && s.readerFramesResident === 0 && s.paneFramesResident === 0, 15_000);
+    if (returned.engine.sessionsOpened !== returned.engine.sessionsDestroyed ||
+        returned.engine.workersCreated !== returned.engine.workersTerminated ||
+        returned.rasterLane.active !== 0 || returned.rasterLane.queued !== 0 || returned.rasterLane.owners !== 0) {
+      throw new Error(`pending mixed close did not drain: ${JSON.stringify(returned)}`);
+    }
+    report.pendingReaderClose = { atBaseline: true, readerFramesResident: returned.readerFramesResident,
+      paneFramesResident: returned.paneFramesResident, sessionsOpened: returned.engine.sessionsOpened,
+      sessionsDestroyed: returned.engine.sessionsDestroyed, rasterLane: returned.rasterLane };
+  } finally {
+    release();
+    await page.unroute("**/reflow_bg.wasm", delayText);
+  }
+  await page.waitForTimeout(500);
+  const late = await snap();
+  if (late.readerFramesResident !== 0 || late.paneFramesResident !== 0 ||
+      await page.evaluate(() => window.__paneVerificationMarker) !== marker) {
+    throw new Error("a late pane boot survived or the Shell reloaded on Library return");
+  }
   writeFileSync(`${out}/pane-runtimes.json`, JSON.stringify(report, null, 2));
   console.log("PANE_RUNTIME_VERIFICATION_JSON " + JSON.stringify(report));
   return report;

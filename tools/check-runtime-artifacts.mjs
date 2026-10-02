@@ -42,10 +42,17 @@ const RUNTIME_FLOOR_BYTES = 1024;
  *  loads and the shared assets the runtimes fetch at boot. */
 const REQUIRED = [
   ["dist/index.html", "the Shell page — Tauri's frontendDist entry", 0],
-  // The Shell's own artifact: it hosts the library and the reader workspace
-  // in its document.
+  // The persistent Shell contains no route runtime implementation.
   ["dist/mareader.js", "the Shell artifact", RUNTIME_FLOOR_BYTES],
   ["dist/mareader_bg.wasm", "the Shell wasm module", RUNTIME_FLOOR_BYTES],
+  // Independently disposable route realms.
+  ["dist/library.html", "the Library route page", 0],
+  ["dist/library.js", "the Library artifact", RUNTIME_FLOOR_BYTES],
+  ["dist/library_bg.wasm", "the Library wasm module", RUNTIME_FLOOR_BYTES],
+  ["dist/reader.html", "the disposable Reader host page", 0],
+  ["dist/reader.js", "the Reader host artifact", RUNTIME_FLOOR_BYTES],
+  ["dist/reader_bg.wasm", "the Reader host wasm module", RUNTIME_FLOOR_BYTES],
+  ["dist/readerHost.js", "the scoped shared-raster host bridge", RUNTIME_FLOOR_BYTES],
   // The pane runtimes: the workspace host loads one frame per reader pane
   // (docs/pane-runtimes.md) — `pdf.html` for a PDF, `reflow.html` for text.
   ["dist/pdf.html", "the PDF pane page", 0],
@@ -135,16 +142,23 @@ if (fs.existsSync(indexHtml)) {
   }
 }
 
-// The Shell hosts the workspace in its own document, but no document runs
-// there: every pane is a frame. Its wasm-bindgen glue must therefore import
-// nothing from the PDF engine (`window.PDFReader`) — an import here means
-// engine code became reachable from the Shell.
+// Library startup may not allocate temporary download buffers or warm
+// compiled document code through the page watchdog. Actual opens alone
+// fetch Reader/PDF/reflow; their lifetimes are asserted in the browser lane.
+const watchdogPath = path.join(root, "dist/shellBoot.js");
+if (fs.existsSync(watchdogPath) && /\bfetch\s*\(/.test(fs.readFileSync(watchdogPath, "utf8"))) {
+  problems.push("Shell's boot watchdog fetches artifacts without a real Reader open");
+}
+
+// Shell, Library and the disposable Reader host are format-neutral. Their
+// wasm-bindgen glue must import nothing from PDFReader; only the PDF pane
+// artifact may reach that engine. Reflow also carries no PDF facade.
 const distDir = path.join(root, "dist");
 if (fs.existsSync(distDir)) {
   const glue = fs
     .readdirSync(distDir)
-    .filter((name) => /^(mareader|reflow)(-[0-9a-f]+)?\.js$/.test(name));
-  for (const runtime of ["mareader", "reflow"]) {
+    .filter((name) => /^(mareader|library|reader|reflow)(-[0-9a-f]+)?\.js$/.test(name));
+  for (const runtime of ["mareader", "library", "reader", "reflow"]) {
     if (!glue.some((name) => name.startsWith(runtime))) {
       problems.push(`dist has no ${runtime}*.js — that runtime's artifact is missing`);
     }
@@ -159,13 +173,18 @@ if (fs.existsSync(distDir)) {
   }
 }
 
-// A text runtime must not load the engine indirectly from its page either.
-const reflowPage = path.join(root, "dist/reflow.html");
-if (fs.existsSync(reflowPage)) {
-  const html = fs.readFileSync(reflowPage, "utf8");
-  if (/pdfEngine|pdf\.min\.mjs|pdf\.worker/.test(html)) {
-    problems.push("dist/reflow.html loads PDF machinery — text panes must be engine-free");
+// Neither route runtime nor text panes may load PDF machinery indirectly.
+for (const runtime of ["index", "library", "reader", "reflow"]) {
+  const page = path.join(root, `dist/${runtime}.html`);
+  if (!fs.existsSync(page)) continue;
+  const html = fs.readFileSync(page, "utf8");
+  if (/<script[^>]+src=["'][^"']*(pdfEngine|pdf\.min\.mjs|pdf\.worker)/.test(html)) {
+    problems.push(`dist/${runtime}.html loads PDF machinery — only PDF panes may load it`);
   }
+}
+const readerPage = path.join(root, "dist/reader.html");
+if (fs.existsSync(readerPage) && !fs.readFileSync(readerPage, "utf8").includes("/readerHost.js")) {
+  problems.push("dist/reader.html lacks its shared scoped raster bridge");
 }
 const pdfGlue = path.join(root, "dist/pdf.js");
 if (fs.existsSync(pdfGlue) && !fs.readFileSync(pdfGlue, "utf8").includes("PDFReader")) {
@@ -194,5 +213,5 @@ const total = REQUIRED.reduce(
 );
 console.log(
   `runtime artifact contract OK: ${REQUIRED.length} files, ${total} bytes ` +
-    `(shell + PDF pane + reflow pane + shared assets)\n${sizes}`,
+    `(Shell + Library + Reader host + PDF pane + reflow pane + shared assets)\n${sizes}`,
 );

@@ -152,6 +152,7 @@ html:not([data-base]) {
    hit-testable. `visibility` rather than `display`: a `display: none` iframe
    gets no layout, and a runtime that cannot lay out cannot run the animation
    frames its own painted handshake is made of. */
+.runtime-frame[data-mareader-slot="incoming"],
 .runtime-frame[data-mareader-slot="warm"],
 .runtime-frame[data-mareader-slot="retiring"] {
   visibility: hidden;

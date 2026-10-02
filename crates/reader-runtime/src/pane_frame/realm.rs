@@ -471,7 +471,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
     // persistence: the pane hands its own edits up (below), never to storage.
     app_ui::frame_theme::install_frame_theme(
         settings,
-        app_ui::frame_theme::FramePipeline::Reader,
+        app_ui::frame_theme::FramePipeline::Pane,
         |_| {},
         |_| {},
     );

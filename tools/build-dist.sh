@@ -17,8 +17,10 @@ set -e
 # from src-tauri/, and every path below is repo-relative.
 cd "$(dirname "$0")/.."
 
-# The Shell: its page hosts the library and the reader workspace.
+# The small persistent Shell; disposable Library and Reader route realms.
 trunk build "$@"
+trunk build --config library.Trunk.toml --dist dist-library "$@"
+trunk build --config reader.Trunk.toml --dist dist-reader "$@"
 # The pane runtimes: one frame per reader pane (docs/pane-runtimes.md).
 trunk build --config pdf.Trunk.toml --dist dist-pdf "$@"
 trunk build --config reflow.Trunk.toml --dist dist-reflow "$@"
@@ -53,6 +55,12 @@ copy_page() {
   return 1
 }
 
+copy_page dist-library library.html
+cp dist-library/library.js dist/
+cp dist-library/library_bg.wasm dist/
+copy_page dist-reader reader.html
+cp dist-reader/reader.js dist/
+cp dist-reader/reader_bg.wasm dist/
 copy_page dist-pdf pdf.html
 cp dist-pdf/pdf.js dist/
 cp dist-pdf/pdf_bg.wasm dist/
@@ -60,9 +68,10 @@ copy_page dist-reflow reflow.html
 cp dist-reflow/reflow.js dist/
 cp dist-reflow/reflow_bg.wasm dist/
 
-# Both pane pages carry their wasm too: without it a pane frame loads and
+# Every disposable route/pane page carries its wasm: without it a pane frame loads and
 # cannot boot, which is the same failure one level down.
-if [ ! -f dist/pdf_bg.wasm ] || [ ! -f dist/reflow_bg.wasm ]; then
+if [ ! -f dist/library_bg.wasm ] || [ ! -f dist/reader_bg.wasm ] || \
+   [ ! -f dist/pdf_bg.wasm ] || [ ! -f dist/reflow_bg.wasm ]; then
   echo "build-dist.sh: a runtime wasm module did not reach dist/" >&2
   exit 1
 fi

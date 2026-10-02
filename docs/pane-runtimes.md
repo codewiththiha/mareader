@@ -7,24 +7,28 @@ object. The Shell and unrelated document realms stay alive; replacements
 retain the old surface until the new document has actually painted.
 
 ```text
-Shell / workspace host (window document, never reloads)
-├─ title bar, sidebar, settings, menus, dividers, layout
-├─ library view (rendered in the Shell, no frame of its own)
-├─ settings + appearance: one source of truth, pushed to every pane
-├─ pane A: <iframe pdf.html>    → pdf.wasm    (own realm, pdf.js, worker)
-├─ pane B: <iframe reflow.html> → reflow.wasm (own realm, md/txt + themes)
-└─ pane C: <iframe pdf.html>    → pdf.wasm    (own realm, pdf.js, worker)
+Persistent Shell (never reloads; navigation/settings/lifecycle/raster authority)
+├─ Library: <iframe library.html> → library.wasm (Library route only)
+└─ Reader host: <iframe reader.html> → reader.wasm (disposable on Library return)
+   ├─ title bar, sidebar, settings, menus, dividers, layout and chrome mirrors
+   ├─ pane A: <iframe pdf.html>    → pdf.wasm    (own pdf.js + worker)
+   ├─ pane B: <iframe reflow.html> → reflow.wasm (MD/TXT; no PDF engine)
+   └─ pane C: <iframe pdf.html>    → pdf.wasm    (own pdf.js + worker)
 ```
 
-There is no intermediate reader frame: the Shell document itself is the
-workspace host. The two pane runtimes build with `--no-default-features`:
-`pdf,engine`
-for `pdf.html`, `reflow,engine` for `reflow.html`. `pdf-engine` is optional
-and only the PDF feature enables it. Shared status/page metadata lives in
-`reader-core::document`; engine report data lives in `pdf-core::diagnostics`,
-not the browser engine. The dependency gate checks the reflow feature graph,
-and the artifact gate rejects `PDFReader` imports in both Shell and reflow
-glue (and rejects PDF scripts in the text page). A PDF pane does not link the
+There are **five artifact types**; reader workspace chrome belongs to its
+own disposable host, not the persistent Shell document. Every Library return
+unloads that host and all live/incoming/retiring document realms. Shelf
+pointer/focus/presses never prewarm Reader or retain an empty reflow realm
+behind Library. Only Library may wait behind an active Reader.
+
+The Reader host builds with `--no-default-features` and no feature selection;
+the pane artifacts select `pdf,engine` for `pdf.html`, `reflow,engine` for
+`reflow.html`. `pdf-engine` is optional and only the PDF feature enables it.
+Shared status/page metadata lives in `reader-core::document`; engine report
+data lives in `pdf-core::diagnostics`, not the browser engine. Dependency
+and artifact gates keep Reader code out of Shell and PDF execution out of
+Library, the Reader host and reflow glue/pages. A PDF pane does not link the
 reflow rendering components.
 
 ## The seam
@@ -61,9 +65,10 @@ the same components as before, against a mirror `ReaderContext` the
 A write is forwarded only when the mirror value differs from the last value
 the pane reported, so a value arriving from the pane never echoes back.
 
-Settings are host-owned. The host pushes the whole blob on every change and
-persists it; a pane's own settings write is sent to the host, which applies
-and re-broadcasts it.
+Settings authority belongs to the persistent Shell. The Reader host mirrors
+its canonical snapshot and pushes the whole blob to panes on every change.
+A pane settings write is relayed through its host to Shell, which persists
+and re-broadcasts it; Reader-host disposal cannot discard settings.
 
 ## Thumbnails
 
@@ -115,14 +120,17 @@ cells.
 ## Rasters across frames
 
 Same-origin frames share one main thread. `public/rasterLane.ts` installs
-one two-slot full-page budget in the host window. Its FIFO holds **weak**
+one two-slot full-page budget in the persistent Shell window. The Reader
+host borrows that exact coordinator rather than constructing another one. Its FIFO holds **weak**
 wake callbacks and plain owner/lease keys only. Each engine retains its
 pending wakes in its own session (at most two per realm), cancels them on
 page/session teardown, and checks liveness/generation again after a permit
 arrives. The existing per-session/realm caps, fling gate and quiescent
-sweeps remain. Frame removal reclaims only that nonce's leases, including
-abnormal retirement. `rasterLane` diagnostics report active, queued, owners
-and peak; the disposal baseline requires active/queued to be zero.
+sweeps remain. Normal pane removal reclaims only that nonce's scoped leases. Forced
+Reader-host removal reclaims all descendant owners in its generation/nonce
+scope, including incoming and retiring realms. `rasterLane` diagnostics report active, queued, owners
+and peak; the disposal baseline requires active/queued/owners and all Reader/pane
+iframe residency to be zero.
 
 ## Lifecycle without flicker
 
@@ -149,8 +157,9 @@ and peak; the disposal baseline requires active/queued to be zero.
   1.5 s timeout removes **that nonce only**, never newer retiring frames.
   Startup has owned/cancelled 10 s hello and 30 s paint deadlines; an
   incomplete boot produces a named pane error, not an endless hidden frame.
-- **Warm pane.** The host keeps one booted, empty pane frame ready, so an
-  open from the library is not a frame boot.
+- **Bootstrap pane.** Inside a newly opened Reader host, a never-adopted
+  empty pane can accept its first document. No Reader or document frame is
+  prewarmed or retained behind Library; the whole Reader host is gone there.
 
 ## Diagnostics
 
@@ -172,8 +181,8 @@ resource check without demanding an engine that they do not run.
   the frame.
 - **Document epoch.** The host claims the document-session epoch for its
   panes (each open, each close of a held document), so the count does not
-  restart when a kind swap boots a new realm. A recycled reader runtime
-  carries its count on; a fresh one starts from zero.
+  restart when a document kind swap boots a new realm. A fresh Reader host
+  starts from zero; Shell's Reader generation/count stays authoritative.
 - **Status.** The document status the Shell hears is the host's, derived
   from the mirrors. A pane realm's own status report is not forwarded, and
   only the live frame of a pane may act for the user (open, return to the
@@ -181,8 +190,9 @@ resource check without demanding an engine that they do not run.
 
 ## Legacy removed
 
-- The reader frame: the Shell hosts the workspace directly, and nothing
-  outside a PDF pane frame loads pdf.js.
+- In-document Library/Reader adoption: Shell links neither implementation;
+  its route iframes are real disposable realms, with independent document
+  children. Nothing outside a PDF pane (or the JS-only cover baker) loads pdf.js.
 - The in-realm pane path: the host no longer mounts `DocumentPane`, and a
   pane realm draws no host chrome (`DocumentPane::chrome` is empty).
 - In-realm presentation recency for the root paper (`presented` in

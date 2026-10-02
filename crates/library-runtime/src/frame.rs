@@ -1,6 +1,6 @@
-//! The library's hosted boot: the Shell mounts the session in a slot of its
-//! own document and hands it one end of a channel (`adopt_in_document`).
-//! Everything flows over that port, stamped with the slot's generation,
+//! The Library artifact boots in its own disposable iframe. The URL
+//! authenticates the Shell's MessageChannel offer; every message is stamped
+//! with that frame's generation,
 //! under the protocol vocabulary (`runtime-contract::protocol`).
 //!
 //! The session itself is the one `start_session`: the boot is a transport,
@@ -26,121 +26,28 @@ thread_local! {
     static API: RefCell<Option<PortShellApi<PortWire>>> = const { RefCell::new(None) };
     /// The session the frame started, for the Shell's command traffic.
     static SESSION_ID: Cell<Option<u32>> = const { Cell::new(None) };
-    /// When the shelf last told the Shell to expect a reader (`expect_reader`).
-    static LAST_EXPECT_READER_MS: Cell<Option<u64>> = const { Cell::new(None) };
 }
 
-thread_local! {
-    /// In the Shell's document: the element this realm's live instance
-    /// mounts into (the Shell's runtime slot), instead of `<body>`.
-    static MOUNT: RefCell<Option<web_sys::Element>> = const { RefCell::new(None) };
-    /// The generation adopted in the Shell's document, so a re-offer of the
-    /// same boot adopts nothing.
-    static ADOPTED: Cell<Option<u64>> = const { Cell::new(None) };
-    /// A boot offered while the previous instance was still disposing: one
-    /// instance per realm, so it is adopted the moment that one is gone.
-    static QUEUED: RefCell<Option<(web_sys::Element, u64, web_sys::MessagePort)>> =
-        const { RefCell::new(None) };
-    /// The instance disposed and kept its channel and slot for a `Rearm`
-    /// (the Shell recycles a disposed slot in place). A new boot offered
-    /// meanwhile supersedes it.
-    static PARKED: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Boot inside the Shell's own document: `mount` is the slot the Shell made
-/// for this runtime and `port` its end of the channel. The protocol is the
-/// frame's, word for word; only the adoption differs.
-#[cfg(target_arch = "wasm32")]
-pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys::MessagePort) {
-    let queued = QUEUED.with(|q| q.borrow().as_ref().map(|(_, g, _)| *g));
-    if ADOPTED.with(Cell::get) == Some(generation) || queued == Some(generation) {
-        return;
-    }
-    if API.with(|api| api.borrow().is_some()) {
-        if !PARKED.with(Cell::get) {
-            QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
-            return;
+/// Boot through the frame when this artifact's URL names one.
+///
+/// Returns `true` as soon as the marker stands — before any offer arrives —
+/// because §6 forbids the fallback: a hosted boot that never hears from its
+/// Shell stays a claimless frame, never a standalone page.
+pub fn boot_if_hosted() -> bool {
+    let search = web_sys::window()
+        .and_then(|window| window.location().search().ok())
+        .unwrap_or_default();
+    match frame_transport::parse_boot_marker(&search) {
+        frame_transport::BootMarker::Standalone => false,
+        frame_transport::BootMarker::InvalidHosted => true,
+        frame_transport::BootMarker::Hosted { generation, nonce } => {
+            console_error_panic_hook::set_once();
+            frame_transport::wasm::adopt_channel(generation, nonce, move |wire| {
+                start_frame(wire, generation);
+            });
+            true
         }
-        release_in_document();
     }
-    ADOPTED.with(|a| a.set(Some(generation)));
-    MOUNT.with(|m| *m.borrow_mut() = Some(mount));
-    start_frame(PortWire::new(port), generation);
-}
-
-/// After the instance in the Shell's document reported its disposal: let go
-/// of its channel and mount point, and adopt a boot that waited for it.
-#[cfg(target_arch = "wasm32")]
-fn release_in_document() {
-    PARKED.with(|p| p.set(false));
-    if MOUNT.with(|m| m.borrow_mut().take()).is_none() {
-        return;
-    }
-    if let Some(api) = API.with(|api| api.borrow_mut().take()) {
-        let port = api.wire().port().clone();
-        port.set_onmessage(None);
-        port.close();
-    }
-    ADOPTED.with(|a| a.set(None));
-    if let Some((mount, generation, port)) = QUEUED.with(|q| q.borrow_mut().take()) {
-        adopt_in_document(mount, generation, port);
-    }
-}
-
-/// After a disposal: hand over to a boot that waited for it, or keep the
-/// channel and slot for the Shell's `Rearm`.
-#[cfg(target_arch = "wasm32")]
-fn park_in_document() {
-    if QUEUED.with(|q| q.borrow().is_some()) {
-        release_in_document();
-    } else if MOUNT.with(|m| m.borrow().is_some()) {
-        PARKED.with(|p| p.set(true));
-    }
-}
-
-/// The element a session root goes into: the Shell's slot, or `<body>`.
-fn mount_parent(document: &web_sys::Document) -> Option<web_sys::Element> {
-    MOUNT
-        .with(|m| m.borrow().clone())
-        .or_else(|| document.body().map(Into::into))
-}
-
-/// Remove this runtime's previous session roots from where it mounts.
-#[cfg(target_arch = "wasm32")]
-fn remove_roots(kind: &str) {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    let Some(parent) = mount_parent(&document) else {
-        return;
-    };
-    let selector = format!("[data-mareader-runtime=\"{kind}\"]");
-    while let Ok(Some(root)) = parent.query_selector(&selector) {
-        root.remove();
-    }
-}
-
-/// A session root: `#runtime-root` in a document of its own; in the Shell's
-/// document the id stays the Shell's to give (two runtimes share it).
-fn make_root(
-    document: &web_sys::Document,
-    kind: &str,
-    generation: u64,
-) -> Option<web_sys::Element> {
-    let parent = mount_parent(document)?;
-    let root = document.create_element("div").ok()?;
-    if MOUNT.with(|m| m.borrow().is_none()) {
-        root.set_attribute("id", "runtime-root").ok();
-    }
-    root.set_attribute("data-mareader-runtime", kind).ok();
-    root.set_attribute("data-mareader-generation", &generation.to_string())
-        .ok();
-    // `h-full w-full` is load-bearing: a mount point with `height: auto`
-    // hands every full-height child an indefinite measure (the reader's
-    // virtualizer would then mount every page).
-    root.set_attribute("class", "h-full w-full").ok();
-    parent.append_child(&root).ok()?;
-    Some(root)
 }
 
 /// Run `f` against the live frame api when there is one. Command traffic
@@ -153,34 +60,6 @@ pub fn with_api<R>(f: impl FnOnce(&PortShellApi<PortWire>) -> R) -> Option<R> {
 /// One outgoing message, for the boot's own stage reporting below.
 fn emit(body: RuntimeFrame) {
     with_api(|api| api.emit(body));
-}
-
-/// How often the shelf repeats its intent hint at most. A pointer crossing
-/// the grid raises `pointerover` on every card edge; the Shell only needs to
-/// hear "still here" about once a second to keep its reader booted.
-const EXPECT_READER_THROTTLE_MS: u64 = 1_000;
-
-/// Tell the Shell a book is about to be opened (the pointer is over the
-/// shelf, a card has focus or is pressed). The Shell boots its reader
-/// behind the shelf on this word alone — it no longer warms one on every
-/// shelf paint — and every repeat keeps that reader from being evicted as
-/// idle, so the open that follows is still a reveal while a shelf nobody is
-/// touching keeps no reader resident. Standalone (no Shell) there is nobody
-/// to tell, and the call is a no-op.
-pub fn expect_reader() {
-    let now = runtime_contract::time::now_ms();
-    let due = LAST_EXPECT_READER_MS.with(|last| {
-        let due = last
-            .get()
-            .is_none_or(|sent| now.saturating_sub(sent) >= EXPECT_READER_THROTTLE_MS);
-        if due {
-            last.set(Some(now));
-        }
-        due
-    });
-    if due {
-        emit(RuntimeFrame::ExpectReader);
-    }
 }
 
 fn start_frame(wire: PortWire, generation: u64) {
@@ -217,10 +96,21 @@ fn on_init(warm: bool, generation: u64) {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
-    let Some(root) = make_root(&document, "library", generation) else {
+    let Some(body) = document.body() else {
         return;
     };
-
+    let Ok(root) = document.create_element("div") else {
+        return;
+    };
+    root.set_attribute("id", "runtime-root").ok();
+    root.set_attribute("data-mareader-runtime", "library").ok();
+    root.set_attribute("data-mareader-generation", &generation.to_string())
+        .ok();
+    // `h-full w-full` is load-bearing: the same rule the Shell's target obeys
+    // — a mount point with `height: auto` hands every full-height child an
+    // indefinite measure instead of the frame's real one.
+    root.set_attribute("class", "h-full w-full").ok();
+    let _ = body.append_child(&root);
     // A warm shelf is hidden behind the reader until `Refresh` reveals it;
     // the document is told so (the animated grain pauses while nobody can
     // see it).
@@ -242,8 +132,11 @@ fn on_rearm(generation: u64) {
     if SESSION_ID.with(|slot| slot.get()).is_some() {
         return;
     }
-    PARKED.with(|p| p.set(false));
-    remove_roots("library");
+    if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+        while let Some(root) = document.get_element_by_id("runtime-root") {
+            root.remove();
+        }
+    }
     on_init(true, generation);
 }
 
@@ -313,11 +206,9 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                             emit(RuntimeFrame::DisposeComplete);
-                            park_in_document();
                         });
                     } else {
                         emit(RuntimeFrame::DisposeComplete);
-                        park_in_document();
                     }
                 }
                 ShellFrame::Launch { .. } | ShellFrame::ResolveLaunchAnswer { .. } => {

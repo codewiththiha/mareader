@@ -14,8 +14,8 @@
 //! each pane owns one document session and builds its own
 //! [`ReaderContext`]. [`dispose`] has the host dispose its panes while the
 //! session is alive, then unmounts the root, and resolves only when the
-//! runtime reports its own disposal complete. The compiled module stays
-//! cached between sessions; nothing live does.
+//! runtime reports its own disposal complete. Shell then removes the entire
+//! Reader realm; no Reader instance is retained behind Library.
 
 #[cfg(feature = "pdf")]
 pub mod appearance_hooks;
@@ -50,12 +50,9 @@ pub mod frame {
     ) {
     }
 
-    /// Off wasm there is no Shell document to mount in.
-    pub fn adopt_in_document(
-        _mount: web_sys::Element,
-        _generation: u64,
-        _port: web_sys::MessagePort,
-    ) {
+    /// Native lanes have no hosted frame marker.
+    pub fn boot_if_hosted() -> bool {
+        false
     }
 }
 pub mod frame_pane;
@@ -531,4 +528,44 @@ pub fn report_status(api: &dyn ShellApi, status: &str, error: Option<String>) {
         status: status.to_string(),
         error,
     });
+}
+
+/// The unhosted development entry mounts the same independent-pane host.
+pub fn run_standalone() {
+    console_error_panic_hook::set_once();
+    let launch = web_launch();
+    let host = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.body())
+        .map(web_sys::Element::from)
+        .expect("document body for the standalone reader");
+    start_session(&host, launch, context::ApiHandle::Standalone);
+}
+
+/// The URL launch (`?open=/samples/…&blend=1`), the same hook the browser
+/// suite drives — parsed by the reader itself when no Shell owns the page.
+pub fn web_launch() -> LaunchDocument {
+    let mut launch = LaunchDocument {
+        book_id: None,
+        path: String::new(),
+        resume_page: 1,
+        saved_fraction: None,
+        blend_override: false,
+        cover_data_url: None,
+        display_name: None,
+    };
+    if let Some(window) = web_sys::window()
+        && let Ok(search) = window.location().search()
+        && let Ok(params) = web_sys::UrlSearchParams::new_with_str(&search)
+    {
+        if params.get("blend").is_some() {
+            launch.blend_override = true;
+        }
+        if let Some(path) = params.get("open")
+            && path.starts_with("/samples/")
+        {
+            launch.path = path;
+        }
+    }
+    launch
 }

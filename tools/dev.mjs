@@ -1,5 +1,5 @@
 // The development boot orchestrator: build the runtime artifacts, serve the
-// shell, and PROVE that the dev server serves all three artifacts before a
+// shell, and PROVE that the dev server serves all five artifacts before a
 // window can load them.
 //
 // Everything builds in RELEASE. Every route transition mounts a fresh frame
@@ -18,7 +18,7 @@
 //
 // The invariant this establishes, in the order the shell needs it:
 //
-//   1. build all three artifacts (tools/build-dist.sh --release — the
+//   1. build all five artifacts (tools/build-dist.sh --release — the
 //      canonical build, in the profile the rest of the pipeline runs),
 //      SKIPPED when .dev-artifacts/release-manifest.json vouches the inputs
 //      are unchanged and the artifacts exist (FORCE_REBUILD=1 to override)
@@ -66,9 +66,13 @@ const FINGERPRINT_ROOTS = [
   "styles",
   "tools",
   "index.html",
+  "library.html",
+  "reader.html",
   "pdf.html",
   "reflow.html",
   "Trunk.toml",
+  "library.Trunk.toml",
+  "reader.Trunk.toml",
   "pdf.Trunk.toml",
   "reflow.Trunk.toml",
   "Cargo.toml",
@@ -80,7 +84,7 @@ const FINGERPRINT_ROOTS = [
 ];
 
 /** Hook outputs inside the roots above — derived, never fingerprinted. */
-const GENERATED_NAMES = new Set(["pdfEngine.js", "readerEngine.js", "rasterLane.js", "bake.worker.js", "coverBake.js"]);
+const GENERATED_NAMES = new Set(["pdfEngine.js", "readerEngine.js", "rasterLane.js", "readerHost.js", "bake.worker.js", "coverBake.js"]);
 const ENGINE_DIR = path.join(root, "public", "engine");
 
 /** The floor a fresh manifest vouches for; proveServed still verifies the
@@ -91,6 +95,13 @@ const FRESHNESS_SET = [
   "dist/mareader_bg.wasm",
   "dist/tauri-relay.js",
   "dist/rasterLane.js",
+  "dist/readerHost.js",
+  "dist/library.html",
+  "dist/library.js",
+  "dist/library_bg.wasm",
+  "dist/reader.html",
+  "dist/reader.js",
+  "dist/reader_bg.wasm",
   "dist/pdf.html",
   "dist/pdf.js",
   "dist/pdf_bg.wasm",
@@ -110,6 +121,13 @@ const PROBED = [
   "/rasterLane.js",
   "/bake.html",
   "/coverBake.js",
+  "/readerHost.js",
+  "/library.html",
+  "/library.js",
+  "/library_bg.wasm",
+  "/reader.html",
+  "/reader.js",
+  "/reader_bg.wasm",
   "/pdf.html",
   "/pdf.js",
   "/pdf_bg.wasm",
@@ -121,6 +139,14 @@ const PROBED = [
 /** What the merged artifacts are, and where the other two Trunk builds leave
  *  them. Re-copied after shell rebuilds: Trunk owns `dist/` while serving. */
 const MERGED = [
+  ["dist-library/library.html", "library.html"],
+  ["dist-library/index.html", "library.html"],
+  ["dist-library/library.js", "library.js"],
+  ["dist-library/library_bg.wasm", "library_bg.wasm"],
+  ["dist-reader/reader.html", "reader.html"],
+  ["dist-reader/index.html", "reader.html"],
+  ["dist-reader/reader.js", "reader.js"],
+  ["dist-reader/reader_bg.wasm", "reader_bg.wasm"],
   // The page first: Trunk names the built page after the target it built
   // (pdf.html) or normalizes it to index.html, so both are candidates.
   ["dist-pdf/pdf.html", "pdf.html"],
@@ -157,6 +183,8 @@ const IGNORE_DIRS = [
   "scripts",
   "styles",
   "target",
+  "dist-library",
+  "dist-reader",
   "dist-pdf",
   "dist-reflow",
   "node_modules",
@@ -316,7 +344,7 @@ function runCaptured(command, args) {
  *  whether a failure is fatal (startup: yes; the watch loop: no, it retries
  *  and stays up so a transient dist/ race never takes the dev server down). */
 async function runBuildAll() {
-  log("building all three artifacts (tools/build-dist.sh --release)");
+  log("building all five artifacts (tools/build-dist.sh --release)");
   return run("sh", ["tools/build-dist.sh", "--release"]);
 }
 
@@ -651,29 +679,29 @@ function freshnessDecision() {
 
 /** `node tools/dev.mjs --build-only` — what tauri.conf's beforeBuildCommand
  * runs. The same gate as the dev flow, with no server: the canonical
- * three-target build runs when (and only when) the inputs changed, the
+ * five-target build runs when (and only when) the inputs changed, the
  * manifest is written, exit 0. `cargo tauri run` and `tauri build` therefore
  * pay the build once per change — not once per launch. */
 async function buildOnly() {
   const decision = freshnessDecision();
   if (decision.fresh) {
-    log(`build-only: ${decision.why} — skipping the three-target build`);
+    log(`build-only: ${decision.why} — skipping the five-target build`);
     return;
   }
-  log(`build-only: ${decision.why} — running the three-target build`);
+  log(`build-only: ${decision.why} — running the five-target build`);
   await buildAllOrExit();
   writeManifest(decision.fingerprint);
   log("build-only: artifacts built and manifest written");
 }
 
 async function main() {
-  // The freshness gate: a warm restart pays NO three-target build. The
+  // The freshness gate: a warm restart pays NO five-target build. The
   // manifest vouches the inputs are unchanged (and the artifacts exist);
   // FORCE_REBUILD=1 overrides when a build itself is suspect.
   const decision = freshnessDecision();
   if (decision.fresh) {
     log(
-      `freshness gate: ${decision.why} — skipping the three-target build ` +
+      `freshness gate: ${decision.why} — skipping the five-target build ` +
         "(FORCE_REBUILD=1 to rebuild)",
     );
   } else {
