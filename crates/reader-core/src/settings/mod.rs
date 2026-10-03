@@ -250,9 +250,6 @@ mod tests {
         assert_eq!(s, back);
     }
 
-
-
-
     #[test]
     fn user_presets_cannot_shadow_builtins_or_be_nameless() {
         let mut s = Settings {
@@ -282,8 +279,6 @@ mod tests {
         let ids: Vec<String> = s.user_presets.iter().map(|p| p.id.clone()).collect();
         assert_eq!(ids, vec!["good".to_string()]);
     }
-
-
 
     #[test]
     fn missing_fields_default() {

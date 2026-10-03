@@ -20,9 +20,9 @@
 //!
 //! [`PaneRuntime`]: crate::host::contract::PaneRuntime
 
+pub(crate) mod base;
 #[cfg(test)]
 mod cascade_tests;
-pub(crate) mod base;
 pub mod document;
 pub mod dom;
 #[cfg(feature = "pdf")]

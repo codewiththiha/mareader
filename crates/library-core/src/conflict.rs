@@ -370,7 +370,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn an_ask_answers_for_the_thing_it_met_and_refuses_an_answer_it_did_not_offer() {
         let book = PlacementAsk::book(
