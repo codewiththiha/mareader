@@ -47,6 +47,11 @@ on:
       - "src/**"
       - "crates/reader-runtime/**"
       - "crates/library-runtime/**"
+      # The transport and the vocabulary every artifact frame boots through:
+      # a wire, an offer, a boundary or an envelope change is a boot-path
+      # change, and this lane is the only one that boots one for real.
+      - "crates/frame-transport/**"
+      - "crates/runtime-contract/**"
       - "crates/pdf-engine/**"
       - "crates/pdf-paper/**"
       - "crates/app-state/**"
