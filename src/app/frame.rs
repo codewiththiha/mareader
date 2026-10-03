@@ -537,20 +537,16 @@ impl Driver {
         self.post_offer();
         self.start_offer_ticker();
         self.arm_ready_timer();
-        self.emit(FrameEvent::Stage(BootStage::Loading));
-    }
-
-    fn report(&self, event: FrameEvent) {
-        if let Some(events) = self.events.borrow().as_ref() {
-            events(self.generation, event);
-        }
+        self.report(FrameEvent::Stage(BootStage::Loading));
     }
 
     /// Frame-side facts and stage moves, never the manager's decisions. The
     /// manager decides what a signal means for the CURRENT frame; the driver
     /// simply cannot emit for a generation that is not its own.
-    fn emit(&self, event: FrameEvent) {
-        self.report(event);
+    fn report(&self, event: FrameEvent) {
+        if let Some(events) = self.events.borrow().as_ref() {
+            events(self.generation, event);
+        }
     }
 
     /// Post one offer at the frame: a fresh `MessageChannel` whose port1

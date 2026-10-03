@@ -434,7 +434,7 @@ impl RuntimeManager {
                     // the user is still looking at.
                     boot::uncover_page();
                     if let Some(host) = manager.host() {
-                        clear_host(&host);
+                        boot::clear_boot(&host);
                         boot::paint_error(&host, &error);
                     }
                     manager.set_phase(BootPhase::Failed(error));
@@ -463,7 +463,7 @@ impl RuntimeManager {
         boot::uncover_page();
         match self.host() {
             Some(host) => {
-                clear_host(&host);
+                boot::clear_boot(&host);
                 boot::paint_error(&host, &error);
             }
             None => web_sys::console::error_1(&JsValue::from_str(&error.console_line())),
@@ -785,12 +785,6 @@ fn report_line(line: &str) {
     wasm_bindgen_futures::spawn_local(async move {
         let _ = tauri_bridge::invoke("boot_report", args).await;
     });
-}
-
-/// Clear only Shell boot markup. Frames have explicit driver ownership;
-/// removing an error/loading card must never remove an incoming or retiring realm.
-fn clear_host(host: &web_sys::Element) {
-    boot::clear_boot(host);
 }
 
 /// History carries bounded navigation metadata, never the cover raster or
