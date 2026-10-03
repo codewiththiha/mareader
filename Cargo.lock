@@ -1309,6 +1309,7 @@ dependencies = [
 name = "frame-transport"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "js-sys",
  "reader-core",
  "runtime-contract",

@@ -2,7 +2,9 @@
 //! Shell's channel offer; the host's own WASM owns workspace chrome and
 //! independent PDF/reflow child realms. Removing this iframe retires them all.
 //!
-//! Two reader-only shapes sit on top:
+//! The boot every artifact frame shares — the URL marker, the channel offer,
+//! the boundary, the runtime root, the paint report — is
+//! [`frame_transport::artifact`]. Two reader-only shapes sit on top:
 //!
 //! - The launch descriptor rides the Shell's `init`: the frame cannot mount
 //!   before it arrives (a reader IS the document it was opened with), so the
@@ -10,128 +12,98 @@
 //! - In-session path opens await one port-owned launch future. Disposal
 //!   cancels/wakes it; there is no synchronous miss or duplicate open map.
 
-use std::cell::{Cell, RefCell};
-
-use frame_transport::PortShellApi;
 use frame_transport::wasm::PortWire;
 use leptos::prelude::Callable;
 use runtime_contract::boundary::LaunchDocument;
-use runtime_contract::protocol::{BootStage, RuntimeFrame};
-#[cfg(target_arch = "wasm32")]
-use runtime_contract::protocol::{RuntimeKind, ShellEnvelope, ShellFrame};
-use wasm_bindgen::JsCast;
+use runtime_contract::protocol::{BootStage, RuntimeFrame, RuntimeKind, ShellFrame};
 
 use crate::context::{ApiHandle, ReaderContext};
 use crate::host::contract::{OpenRequest, Placement};
 
-thread_local! {
-    /// The live frame's boundary (set at adoption; it dies with the frame).
-    static API: RefCell<Option<PortShellApi<PortWire>>> = const { RefCell::new(None) };
-    /// The session the frame started, for the Shell's command traffic.
-    static SESSION_ID: Cell<Option<u32>> = const { Cell::new(None) };
-}
+pub use frame_transport::artifact::{
+    emit, mount_root, report_painted, session, set_session, take_session, with_api,
+};
 
 /// Boot through the frame when this artifact's URL names one. `true` as soon
 /// as the marker stands: a hosted boot never falls back to standalone (§6).
 pub fn boot_if_hosted() -> bool {
-    let search = web_sys::window()
-        .and_then(|window| window.location().search().ok())
-        .unwrap_or_default();
-    match frame_transport::parse_boot_marker(&search) {
-        frame_transport::BootMarker::Standalone => false,
-        frame_transport::BootMarker::InvalidHosted => true,
-        frame_transport::BootMarker::Hosted { generation, nonce } => {
-            console_error_panic_hook::set_once();
-            frame_transport::wasm::adopt_channel(generation, nonce, move |wire| {
-                adopt(wire, generation);
-            });
-            true
-        }
-    }
+    frame_transport::artifact::boot_if_hosted(adopt)
 }
 
-/// Run `f` against the live frame api when there is one.
-pub fn with_api<R>(f: impl FnOnce(&PortShellApi<PortWire>) -> R) -> Option<R> {
-    API.with(|api| api.borrow().as_ref().map(f))
-}
-
-fn emit(body: RuntimeFrame) {
-    with_api(|api| api.emit(body));
-}
-
-/// The frame-side open flow: ask the Shell to resolve `path` against the
-/// persisted library and await the answer before placing the document.
-/// The frame has no synchronous boundary query — the only honest async form
-/// of "open, resumed where the library says" is to wait for the answer.
-///
-/// The awaiting continuation keeps its placement: where the document goes was decided
-/// when the user asked, not when the answer lands.
-pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement) {
-    if SESSION_ID.with(Cell::get) != Some(ctx.id) || !ctx.pane.admits_work() {
-        return;
-    }
-    let Some(ticket) = with_api(|api| api.resolve_launch(&path)) else {
-        return;
-    };
-    wasm_bindgen_futures::spawn_local(async move {
-        let document = ticket.await;
-        if SESSION_ID.with(Cell::get) == Some(ctx.id) && ctx.pane.admits_work() {
-            let launch =
-                document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
-            ctx.open.try_run(OpenRequest { launch, placement });
-        }
-    });
-}
-
+/// The Shell's channel offer, adopted: from here the boundary is live, the
+/// adoption's own status has gone out (that emission is how the Shell learns
+/// which of its offered channels this boot took) and every envelope this
+/// generation carries reaches [`on_frame`]. A re-offer for the same boot
+/// adopts nothing — the first channel answered first.
 fn adopt(wire: PortWire, generation: u64) {
-    // Re-offers for this same boot adopt nothing: the first channel answers
-    // first, and a second listener would only double the traffic.
-    if API.with(|api| api.borrow().is_some()) {
-        return;
+    frame_transport::artifact::adopt(wire, generation, move |body| on_frame(body, generation));
+}
+
+/// One Shell envelope for this frame, already generation-guarded.
+///
+/// The reader cannot mount before the Shell's `init` (a reader IS its
+/// document), so an envelope that arrives first has no session to address and
+/// is dropped by the protocol, not by accident.
+fn on_frame(body: ShellFrame, generation: u64) {
+    match body {
+        ShellFrame::Init {
+            runtime,
+            launch,
+            hidden: _,
+        } => {
+            // A Reader init must name the document this fresh disposable host
+            // was opened for.
+            if runtime == RuntimeKind::Reader {
+                on_init(launch, generation);
+            }
+        }
+        ShellFrame::Launch { document } => {
+            // An in-session open keeps this workspace and targets an
+            // independent document pane, never a retained host.
+            app_ui::frame_theme::mark_frame_hidden(false);
+            if let Some(id) = session() {
+                crate::command(id, *document);
+            }
+        }
+        ShellFrame::Refresh => {
+            // Refresh activates the Library, never a Reader host. Reader
+            // document state stays in its independent panes.
+        }
+        ShellFrame::ResolveLaunchAnswer { request, document } => {
+            with_api(|api| api.settle_launch(request, document.map(|document| *document)));
+        }
+        ShellFrame::Dispose => {
+            with_api(|api| api.cancel_resolves());
+            if let Some(id) = take_session() {
+                let promise = crate::dispose(id);
+                crate::diagnostics::set_reader_live(false);
+                wasm_bindgen_futures::spawn_local(async move {
+                    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                    emit(RuntimeFrame::DisposeComplete);
+                });
+            } else {
+                // Nothing mounted (an init never arrived, or a duplicate
+                // dispose): the answer is still owed, or the Shell waits out
+                // its forced-removal timeout.
+                emit(RuntimeFrame::DisposeComplete);
+            }
+        }
+        ShellFrame::CoverBaked { .. } | ShellFrame::ImportFiles { .. } => {
+            // Cover answers and imports belong to Library.
+        }
     }
-    let api = PortShellApi::new(wire.clone(), generation);
-    API.with(|slot| *slot.borrow_mut() = Some(api));
-    #[cfg(target_arch = "wasm32")]
-    install_shell_listener(wire.port().clone(), generation);
-    // First contact: the reader cannot mount before the Shell's `init` (a
-    // reader IS its document), so its first word on the port is "alive and
-    // waiting" — that emission is also how the Shell learns which of its
-    // offered channels this boot adopted.
-    emit(RuntimeFrame::Status {
-        stage: BootStage::Initialized,
-    });
-    // No session yet: a reader is the document it was opened with, and that
-    // descriptor arrives with the Shell's init. The handshake's loading
-    // stages are the Shell's clock, not this boot's guess — only a frame the
-    // Shell claims ever becomes a reader.
 }
 
 /// The Shell's `init`: the frame's one launch. Mounts the runtime root the
-/// handshake names (§9) and starts the session; everything after is the
-/// boot stages on the port. Every Reader host is a fresh realm.
+/// handshake names (§9) and starts the session; everything after is the boot
+/// stages on the port. Every Reader host is a fresh realm.
 fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
-    if SESSION_ID.with(Cell::get).is_some() {
+    if session().is_some() {
         return;
     }
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+    let Some(root) = mount_root("reader", generation) else {
         return;
     };
-    let Some(body) = document.body() else {
-        return;
-    };
-    let Ok(root) = document.create_element("div") else {
-        return;
-    };
-    root.set_attribute("id", "runtime-root").ok();
-    root.set_attribute("data-mareader-runtime", "reader").ok();
-    root.set_attribute("data-mareader-generation", &generation.to_string())
-        .ok();
-    // `h-full w-full` is load-bearing (same rule as the Shell's one target):
-    // every runtime root is `h-full`, and a mount target with `height: auto`
-    // hands the reader's scroll area an indefinite height — the virtualizer
-    // then measures the whole column as visible and mounts every page.
-    root.set_attribute("class", "h-full w-full").ok();
-    let _ = body.append_child(&root);
     let Some(launch) = launch.filter(|launch| !launch.path.is_empty()) else {
         emit(RuntimeFrame::Failed {
             stage: BootStage::Failed,
@@ -142,7 +114,7 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     app_ui::frame_theme::mark_frame_hidden(false);
     crate::diagnostics::begin_epoch(false);
     let id = crate::start_session(&root, *launch, ApiHandle::Frame);
-    SESSION_ID.with(|slot| slot.set(Some(id)));
+    set_session(id);
     crate::diagnostics::set_reader_live(true);
     emit(RuntimeFrame::Status {
         stage: BootStage::Mounted,
@@ -151,90 +123,26 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     report_painted();
 }
 
-#[cfg(target_arch = "wasm32")]
-fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
-    let listener = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
-        move |event: web_sys::MessageEvent| {
-            let data: wasm_bindgen::JsValue = event.data();
-            let Ok(json) = js_sys::JSON::stringify(&data) else {
-                return;
-            };
-            let Ok(envelope) = serde_json::from_str::<ShellEnvelope>(&String::from(json)) else {
-                return;
-            };
-            if envelope.generation != generation {
-                return;
-            }
-            match envelope.body {
-                ShellFrame::Init {
-                    runtime,
-                    launch,
-                    hidden: _,
-                } => {
-                    // A Reader init must name the
-                    // document this fresh disposable host was opened for.
-                    if runtime == RuntimeKind::Reader {
-                        on_init(launch, generation);
-                    }
-                }
-                ShellFrame::Launch { document } => {
-                    // An in-session open keeps this workspace and targets
-                    // an independent document pane, never a retained host.
-                    app_ui::frame_theme::mark_frame_hidden(false);
-                    if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
-                        crate::command(id, *document);
-                    }
-                }
-                ShellFrame::Refresh => {
-                    // Refresh activates the Library, never a Reader host.
-                    // Reader document state stays in its independent panes.
-                }
-                ShellFrame::ResolveLaunchAnswer { request, document } => {
-                    with_api(|api| api.settle_launch(request, document.map(|document| *document)));
-                }
-                ShellFrame::Dispose => {
-                    with_api(PortShellApi::cancel_resolves);
-                    if let Some(id) = SESSION_ID.with(|slot| slot.take()) {
-                        let promise = crate::dispose(id);
-                        crate::diagnostics::set_reader_live(false);
-                        wasm_bindgen_futures::spawn_local(async move {
-                            let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
-                            emit(RuntimeFrame::DisposeComplete);
-                        });
-                    } else {
-                        // Nothing mounted (an init never arrived, or a
-                        // duplicate dispose): the answer is still owed, or
-                        // the Shell waits out its forced-removal timeout.
-                        emit(RuntimeFrame::DisposeComplete);
-                    }
-                }
-                ShellFrame::CoverBaked { .. } | ShellFrame::ImportFiles { .. } => {
-                    // Cover answers and imports belong to Library.
-                }
-            }
-        },
-    );
-    port.set_onmessage(Some(listener.as_ref().unchecked_ref()));
-    // One listener per frame lifetime; the iframe removal is its GC.
-    listener.forget();
-}
-
-/// `Painted` after the mount has had its paint opportunity (§9): two frames,
-/// so layout and presentation happened before the Shell lifts its cover.
-fn report_painted() {
-    let Some(window) = web_sys::window() else {
+/// The frame-side open flow: ask the Shell to resolve `path` against the
+/// persisted library and await the answer before placing the document. The
+/// frame has no synchronous boundary query — the only honest async form of
+/// "open, resumed where the library says" is to wait for the answer.
+///
+/// The awaiting continuation keeps its placement: where the document goes was
+/// decided when the user asked, not when the answer lands.
+pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement) {
+    if session() != Some(ctx.id) || !ctx.pane.admits_work() {
+        return;
+    }
+    let Some(ticket) = with_api(|api| api.resolve_launch(&path)) else {
         return;
     };
-    let once = wasm_bindgen::closure::Closure::<dyn FnMut(f64)>::new(move |_: f64| {
-        let Some(window) = web_sys::window() else {
-            return;
-        };
-        let twice = wasm_bindgen::closure::Closure::<dyn FnMut(f64)>::new(move |_: f64| {
-            emit(RuntimeFrame::Painted);
-        });
-        let _ = window.request_animation_frame(twice.as_ref().unchecked_ref());
-        twice.forget();
+    wasm_bindgen_futures::spawn_local(async move {
+        let document = ticket.await;
+        if session() == Some(ctx.id) && ctx.pane.admits_work() {
+            let launch =
+                document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
+            ctx.open.try_run(OpenRequest { launch, placement });
+        }
     });
-    let _ = window.request_animation_frame(once.as_ref().unchecked_ref());
-    once.forget();
 }

@@ -6,7 +6,9 @@
 //! owned launch futures that pair queries with async port answers, and —
 //! behind `wasm32` — the `MessagePort` wire itself
 //! ([`wasm::PortWire`]). Hosted route artifacts adopt a nonce/generation
-//! authenticated channel offer from their actual same-origin parent.
+//! authenticated channel offer from their actual same-origin parent; the
+//! boot those artifacts share on top of that adoption — the marker, the
+//! boundary, the runtime root, the paint report — is [`artifact`].
 //!
 //! Host tests exercise everything except the DOM: the wire is a trait with a
 //! recording double, so the envelope stamping (generation on every message,
@@ -26,6 +28,7 @@ use runtime_contract::ShellApi;
 use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
 use runtime_contract::protocol::{RuntimeEnvelope, RuntimeFrame};
 
+pub mod artifact;
 pub mod wasm;
 
 /// A claimed hosted boot never falls back to a standalone application.

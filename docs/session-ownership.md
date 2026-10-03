@@ -155,7 +155,7 @@ ASYNC WORK? · CAN TWO PANES EXIST (before) · VERDICT.
 | page geometry reports (`components/formats/pdf/strip.rs`), search tails (`effects/reader/search.rs`, `floating_search.rs`) | component / spawn_local | one report / one run | — | no | epoch check | yes | the realm epoch: another pane's open stood them down | **pane-owned**: stamped with `pane.generation()`, checked with `owns_generation` |
 | `effects/reader/shortcuts/navigation.rs` `HOLD_*` | module | realm | yes | yes — one keyboard | `end_key_hold()` on blur | rAF | one keyboard hold at a time | **retained**: input gesture, not document state |
 | `diagnostics.rs` counters, `LIVE_VIRTUALIZERS`, `SESSION_FACTS`, `RUNTIME_VIEW`, `HOST_PROBE` | module | realm | yes | diagnostics | reset per runtime | no | yes | **retained**: diagnostics |
-| `frame.rs` `API`, `SESSION_ID`, `RESOLVES`, `PENDING_OPENS`; `lib.rs` `LIVE_SESSION`, `SESSION`, `NEXT_ID`, `PENDING_DISPOSE` | module | realm | yes | the reader runtime itself | runtime dispose | yes | one runtime per realm | **retained**: runtime/transport owners (Phase 3), not document state |
+| `frame_transport::artifact` `API`, `SESSION_ID` (the boot both artifact frames share); `PortShellApi`'s per-api resolve map; `lib.rs` `LIVE_SESSION`, `SESSION`, `NEXT_ID`, `PENDING_DISPOSE` | module | realm | yes | the reader runtime itself | runtime dispose | yes | one runtime per realm | **retained**: runtime/transport owners (Phase 3), not document state |
 | `components/ai/gloss/selection_mode.rs` `UNDO_GEN` | module | realm | counter | id mint | never | no | yes | **retained**: id generator |
 
 ### Pure crates
