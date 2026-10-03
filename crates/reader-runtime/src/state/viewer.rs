@@ -69,9 +69,8 @@ pub struct ViewerSignals {
     /// strip's queued animation frame runs; the identity keeps that stale
     /// callback from releasing the replacement's guard.
     pub(crate) anchor_generation: RwSignal<u64>,
-    /// The one-shot gate over this open's first VISIBLE frame — false from
-    /// the moment a document is claimed ([`Self::reset_position`] re-arms it
-    /// on every close, `open_path` on every open) until the page the reader
+    /// The one-shot gate over this open's first VISIBLE frame — false in the
+    /// fresh state a document's realm builds with, until the page the reader
     /// should see has actually PAINTED. The release is paint-driven, and each
     /// surface owns its own: every PDF mode lifts it on a successful
     /// current-page raster, even when its geometry is unchanged. Text
@@ -95,56 +94,6 @@ impl ViewerSignals {
 
     pub fn owns_anchor(&self, generation: u64) -> bool {
         self.anchor_generation.get_untracked() == generation
-    }
-
-    /// Reset the reading position on document close. Kept separate from a full
-    /// reset: fit/zoom state is the reader's, not the document's.
-    ///
-    /// Every field is named, so a field added to the struct has to be assigned
-    /// to one of the two groups here rather than falling through unreset. The
-    /// handles are `Copy`, so this binds the signals the struct already holds;
-    /// `Self::default()` would allocate a fresh arena node per field on every
-    /// close and leak them.
-    pub fn reset_position(&self) {
-        let Self {
-            // Document-scoped: belongs to the page range just closed.
-            page,
-            scroll_top,
-            selected_pages,
-            auto_scroll,
-            page_gap,
-            page_margin,
-            awaiting_anchor,
-            anchor_generation,
-            first_paint,
-            // Reader-scoped: the next document inherits the reader's own
-            // layout, fit and prefs, so these deliberately survive.
-            mode: _,
-            fit: _,
-            zoom: _,
-            container_size: _,
-            column_width_pct: _,
-            motion: _,
-            // The pane's own theme look: the workspace's, not the document's
-            // — an in-place open keeps the pane's colour.
-            look: _,
-        } = *self;
-        page.set(1);
-        scroll_top.set(0.0);
-        // The selection belonged to the pages just unmounted. The engine
-        // clears it too, when teardown collapses the DOM selection, but that
-        // is a side effect of the view going away rather than anything this
-        // close asked for — and a range left behind would pin pages of the
-        // next document at indices it does not have.
-        selected_pages.set(None);
-        auto_scroll.set(false);
-        page_gap.set(PAGE_GAP);
-        page_margin.set(0.0);
-        // Invalidate any frame queued by a strip that is being torn down.
-        anchor_generation.update(|generation| *generation = generation.wrapping_add(1));
-        awaiting_anchor.set(false);
-        // Re-arm the first-paint cover: the next open gets its own gate.
-        first_paint.set(false);
     }
 
     /// True while a zoom transaction is in flight: renders are suspended,

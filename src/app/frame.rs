@@ -752,10 +752,9 @@ impl Driver {
         }
         match envelope.body {
             RuntimeFrame::Status { stage } => {
-                if stage == BootStage::Disposed {
-                    // The runtime also sends DisposeComplete explicitly; the
-                    // stage is an extra fact, not a second answer.
-                }
+                // A `Disposed` stage needs no branch: the runtime sends
+                // `DisposeComplete` explicitly, and the stage is an extra
+                // fact, not a second answer.
                 if stage == BootStage::Failed {
                     // §9, §11: the runtime's own failure becomes the shell's
                     // visible runtime error state, never a silent blank.

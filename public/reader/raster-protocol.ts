@@ -1,5 +1,4 @@
 // Pure host/engine seam: no document, worker or engine implementation types.
-export const RASTER_LANE_KEY = "__mareaderRasterLane";
 export const WINDOW_RASTER_LIMIT = 2;
 
 export interface RasterLaneSnapshot {
