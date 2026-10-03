@@ -113,6 +113,11 @@ pub struct LibraryContext {
 impl LibraryContext {
     pub fn new(api: ApiHandle) -> Self {
         let library_blob = storage::load_library();
+        // One-time, before any pane can ask for a row's marks: carry the
+        // address-keyed highlights a build before the row-id scheme wrote
+        // onto the rows that were reading them. The migration is guarded by
+        // its own durable flag, so every later session is a single read.
+        storage::migrate_gloss_keys(&library_blob.books);
         let settings = RwSignal::new(storage::load_settings());
         let sidebar = RwSignal::new(app_state::SidebarMode::None);
         let toast = RwSignal::new(None);
