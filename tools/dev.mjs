@@ -625,6 +625,23 @@ async function buildOnly() {
 }
 
 async function main() {
+  // The port must be OURS before the first build touches dist/. A `trunk
+  // serve` orphaned by an earlier session keeps swapping dist/ under this one
+  // — and the canonical build below is a `trunk build` into that same dist/ —
+  // so the build started first and the race surfaced as "error cleaning final
+  // dist: No such file or directory" instead of as the stale server it is.
+  // (Cleared here rather than only before the spawn below: the server is what
+  // makes every LATER build race.)
+  if (!(await ensureDevPortFree())) process.exit(1);
+
+  // The port is ours, so every build from HERE on is dist/'s one writer: the
+  // start-up build below, and the watch loop's rebuild (which deliberately
+  // runs beside THIS session's `trunk serve`). Set the marker
+  // `tools/build-dist.sh` reads to tell an owned build from a second writer.
+  // `--build-only` (packaging) never reaches this line: it clears no port and
+  // owns no server, so its build stays refused while a dev server is up.
+  process.env.MAREADER_DEV_BUILD = "1";
+
   // The freshness gate: a warm restart pays NO five-target build. The
   // manifest vouches the inputs are unchanged (and the artifacts exist);
   // FORCE_REBUILD=1 overrides when a build itself is suspect.
