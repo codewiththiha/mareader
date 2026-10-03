@@ -107,11 +107,9 @@ dependencies = [
  "app-state",
  "js-sys",
  "leptos",
- "library-core",
  "reader-core",
  "serde",
  "serde-wasm-bindgen",
- "serde_json",
  "storage",
  "tauri-bridge",
  "ui-geom",
@@ -3529,7 +3527,6 @@ dependencies = [
  "storage",
  "tauri-bridge",
  "txt-core",
- "ui-geom",
  "virtual-list",
  "virtual-list-leptos",
  "wasm-bindgen",
@@ -3582,8 +3579,6 @@ name = "reflow-core"
 version = "0.1.0"
 dependencies = [
  "reader-core",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -4202,7 +4197,6 @@ name = "storage"
 version = "0.1.0"
 dependencies = [
  "ai-core",
- "leptos",
  "library-core",
  "reader-core",
  "runtime-contract",
