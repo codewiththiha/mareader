@@ -190,12 +190,6 @@ impl Placement {
         }
     }
 
-    /// Whether the answer destroys anything; the reason *replace* is the only
-    /// one of the five that reads as a warning.
-    pub fn is_destructive(self) -> bool {
-        matches!(self, Placement::Replace)
-    }
-
     /// Offered for an import of a file: no row to fold and none to displace.
     pub const FILE: &'static [Placement] =
         &[Placement::Open, Placement::KeepBoth, Placement::LinkOnly];
@@ -376,12 +370,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn only_replace_destroys_the_thing_that_is_already_there() {
-        for offer in Placement::ALL {
-            assert_eq!(offer.is_destructive(), *offer == Placement::Replace);
-        }
-    }
 
     #[test]
     fn an_ask_answers_for_the_thing_it_met_and_refuses_an_answer_it_did_not_offer() {

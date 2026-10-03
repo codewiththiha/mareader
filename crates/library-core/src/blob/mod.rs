@@ -45,14 +45,6 @@ impl LibraryBlob {
     pub fn is_empty(&self) -> bool {
         self.books.is_empty()
     }
-
-    /// True while some book still carries a placeholder fingerprint — the
-    /// library has not been checked against the filesystem since it loaded.
-    /// The frontend holds folder rescans until this clears: scanning against
-    /// unmeasured fingerprints would re-add every migrated book.
-    pub fn awaiting_check(&self) -> bool {
-        book_rows(&self.books).any(|b| b.fp_pending)
-    }
 }
 
 /// Make a persisted library internally valid, idempotently: the per-list
@@ -141,7 +133,7 @@ mod tests {
         assert!(blob.shelves.is_empty() && blob.folders.is_empty());
         assert_eq!(blob.view, LibraryView::default());
         assert!(
-            !blob.awaiting_check(),
+            !book_rows(&blob.books).any(|b| b.fp_pending),
             "nothing to check is nothing pending"
         );
     }
@@ -172,7 +164,6 @@ mod tests {
             ],
             5,
         );
-        assert!(blob.awaiting_check());
         assert!(book_rows(&blob.books).all(|b| b.fp_pending));
         // Placeholders derive from the address, so migrated books never
         // collide: the ledger's fingerprint index is first-wins.
@@ -185,11 +176,11 @@ mod tests {
         at_mut(&mut blob, 0).fp = Fingerprint::of(1024, 99, b"%PDF-1.7");
         at_mut(&mut blob, 0).fp_pending = false;
         assert!(
-            blob.awaiting_check(),
+            book_rows(&blob.books).any(|b| b.fp_pending),
             "the second book is still a placeholder"
         );
         at_mut(&mut blob, 1).fp_pending = false;
-        assert!(!blob.awaiting_check());
+        assert!(!book_rows(&blob.books).any(|b| b.fp_pending));
     }
 
     #[test]

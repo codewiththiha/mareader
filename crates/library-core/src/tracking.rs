@@ -95,13 +95,6 @@ impl TrackingTree {
         self.set("", if on { Track::On } else { Track::Off });
     }
 
-    /// The explicit decision a rung carries, or [`Track::Inherit`] — the
-    /// state a context-menu toggle shows, as distinct from the effective
-    /// [`Self::resolve`] answer.
-    pub fn track_at(&self, key: &str) -> Track {
-        self.overrides.get(key).copied().unwrap_or(Track::Inherit)
-    }
-
     /// Drop every decision in `zone` and its subtree, by the same
     /// [`crate::folder::key_in_zone`] arithmetic the shelf map uses.
     pub fn prune_zone(&mut self, zone: &str) {
@@ -126,7 +119,6 @@ mod tests {
         assert!(!tree.resolve(""));
         assert!(!tree.resolve("Fiction"));
         assert!(!tree.resolve("Fiction/SciFi"));
-        assert_eq!(tree.track_at(""), Track::Inherit);
     }
 
     #[test]
@@ -136,11 +128,10 @@ mod tests {
         assert!(tree.resolve(""), "and the root itself");
         assert!(tree.resolve("Fiction"), "a rung inherits it");
         assert!(tree.resolve("Fiction/SciFi/deep"), "however deep");
-        assert_eq!(tree.track_at(""), Track::On);
         assert_eq!(
-            tree.track_at("Fiction"),
-            Track::Inherit,
-            "inherited, not set"
+            tree,
+            TrackingTree::tracking_root(),
+            "only the root carries a decision; every rung below inherits"
         );
     }
 
@@ -155,7 +146,6 @@ mod tests {
             !tree.resolve("Fiction/SciFi"),
             "and so is everything below it"
         );
-        assert_eq!(tree.track_at("Fiction"), Track::Off);
     }
 
     #[test]
@@ -201,8 +191,11 @@ mod tests {
         assert!(!tree.resolve("Fiction"));
         tree.set("Fiction", Track::Inherit);
         assert!(tree.resolve("Fiction"), "inherits the root's On again");
-        assert_eq!(tree.track_at("Fiction"), Track::Inherit);
-        assert!(!tree.is_empty(), "the root override is still there");
+        assert_eq!(
+            tree,
+            TrackingTree::tracking_root(),
+            "the override was removed, not stored as Inherit"
+        );
     }
 
     #[test]
@@ -224,12 +217,14 @@ mod tests {
         tree.set("Fiction/SciFi", Track::On);
         tree.set("Poetry", Track::Off);
         tree.prune_zone("Fiction");
-        assert_eq!(tree.track_at("Fiction"), Track::Inherit);
-        assert_eq!(tree.track_at("Fiction/SciFi"), Track::Inherit);
         assert_eq!(
-            tree.track_at("Poetry"),
-            Track::Off,
-            "a sibling is untouched"
+            tree,
+            {
+                let mut kept = TrackingTree::tracking_root();
+                kept.set("Poetry", Track::Off);
+                kept
+            },
+            "the zone's rungs are gone, not left as Inherit; a sibling is untouched"
         );
         assert!(tree.tracked(), "and the root still tracks");
         tree.prune_zone("");
@@ -297,8 +292,8 @@ mod tests {
         assert!(tree.resolve("Fiction"), "every rung inherits it again");
         assert!(tree.resolve("Poetry/deep"), "however deep");
         assert_eq!(
-            tree.track_at("Fiction"),
-            Track::Inherit,
+            tree,
+            TrackingTree::tracking_root(),
             "the overrides are gone, not overruled"
         );
     }

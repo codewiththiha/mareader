@@ -565,7 +565,7 @@ pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
         // cannot drift. A watch on a copying folder is left alone: the source
         // may still gain a file worth copying.
         if f.tracking.is_empty() && f.opts.watch {
-            f.tracking.set("", Track::On);
+            f.tracking = TrackingTree::tracking_root();
         }
         f.opts.watch = f.tracking.tracked();
         f.shelf_map
