@@ -15,8 +15,8 @@ use leptos::prelude::*;
 use pdf_engine::PdfSession;
 
 use crate::host::contract::{
-    ChromeSlot, PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory,
-    PaneResourceCounts, PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
+    PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory, PaneResourceCounts,
+    PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
 };
 use crate::host::manager::PaneManager;
 use crate::host::model::{
@@ -59,9 +59,6 @@ impl PaneRuntime for SessionPane {
     }
     fn mount(&self, _bounds: PaneBounds, _site: PaneSite) -> AnyView {
         ().into_any()
-    }
-    fn chrome(&self, _slot: ChromeSlot, _site: PaneSite) -> Option<AnyView> {
-        None
     }
     fn resize(&self, _bounds: PaneBounds) {}
     fn focus(&self) {}

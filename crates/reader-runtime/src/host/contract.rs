@@ -190,8 +190,12 @@ pub trait PaneRuntime {
     fn mount(&self, bounds: PaneBounds, site: PaneSite) -> AnyView;
 
     /// The pane's contribution to one host-placed chrome region, if any.
-    /// Owned like `mount`'s view.
-    fn chrome(&self, slot: ChromeSlot, site: PaneSite) -> Option<AnyView>;
+    /// Owned like `mount`'s view. A pane realm contributes none: the
+    /// host-side pane renders the reader's chrome from its mirror
+    /// (`crate::frame_pane`).
+    fn chrome(&self, _slot: ChromeSlot, _site: PaneSite) -> Option<AnyView> {
+        None
+    }
 
     /// The host measured new bounds for this pane.
     fn resize(&self, bounds: PaneBounds);

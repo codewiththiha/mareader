@@ -15,8 +15,8 @@ use runtime_contract::boundary::LaunchDocument;
 
 use crate::context::ReaderContext;
 use crate::host::contract::{
-    ChromeSlot, PaneAppearance, PaneCommand, PaneEnv, PaneResourceCounts, PaneRuntime, PaneSite,
-    PaneSurface, PaneTeardown,
+    PaneAppearance, PaneCommand, PaneEnv, PaneResourceCounts, PaneRuntime, PaneSite, PaneSurface,
+    PaneTeardown,
 };
 use crate::host::model::{
     DocumentId, PaneBounds, PaneDescriptor, PaneError, PaneFormat, PaneId, PaneLifecycle,
@@ -242,12 +242,6 @@ impl PaneRuntime for DocumentPane {
         self.owned(site, move || {
             crate::pane::view::pane_content(ctx, rv, request_focus).into_any()
         })
-    }
-
-    /// A pane realm draws no host chrome: the host renders the pane's title,
-    /// menu, rail and settings from its mirror (`crate::frame_pane`).
-    fn chrome(&self, _slot: ChromeSlot, _site: PaneSite) -> Option<AnyView> {
-        None
     }
 
     fn resize(&self, bounds: PaneBounds) {

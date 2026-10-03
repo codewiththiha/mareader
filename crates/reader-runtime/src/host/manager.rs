@@ -392,8 +392,8 @@ mod tests {
 
     use super::PaneManager;
     use crate::host::contract::{
-        ChromeSlot, PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory,
-        PaneResourceCounts, PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
+        PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory, PaneResourceCounts,
+        PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
     };
     use crate::host::model::{
         DocumentId, DocumentRef, PaneBounds, PaneDescriptor, PaneError, PaneFormat, PaneId,
@@ -446,9 +446,6 @@ mod tests {
         }
         fn mount(&self, _bounds: PaneBounds, _site: PaneSite) -> AnyView {
             ().into_any()
-        }
-        fn chrome(&self, _slot: ChromeSlot, _site: PaneSite) -> Option<AnyView> {
-            None
         }
         fn resize(&self, bounds: PaneBounds) {
             self.note(&format!("resize:{}x{}", bounds.width, bounds.height));
