@@ -119,7 +119,7 @@ function configureWorker(l: PdfjsLib): PdfjsLib {
  *  which wants it in parallel with its own script) is found on `globalThis`
  *  and never loaded twice. A failed load is not cached: the next open
  *  retries. */
-export function ensurePdfjs(): Promise<PdfjsLib> {
+function ensurePdfjs(): Promise<PdfjsLib> {
   const present = presentPdfjs();
   if (present) return Promise.resolve(configureWorker(present));
   if (!pdfjsLoading) {

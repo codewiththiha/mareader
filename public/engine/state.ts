@@ -81,7 +81,7 @@ function releaseSnapshots(host: HTMLElement): void {
 }
 
 /** The lifecycle counters every session keeps (see EngineSession). */
-export const COUNTER_KEYS = [
+const COUNTER_KEYS = [
   "sessionsOpened",
   "sessionsDestroyed",
   "workersCreated",
@@ -109,7 +109,7 @@ export const realmCounters: Record<CounterKey, number> = zeroCounters();
  *  in flight, the rest queued FIFO. Per session, so one pane's burst never
  *  queues behind another pane's pages and one pane's teardown drains only
  *  its own queue. */
-export class PageLane {
+class PageLane {
   active = 0;
   readonly queue: Array<() => void> = [];
   permitSerial = 0;
@@ -165,7 +165,7 @@ export function pumpLaneRegistrants(pump: (s: EngineSession) => void): void {
 /** The thumbnail lane and its prefetch bookkeeping, per session: the lane
  *  epoch (bumped by this session's teardown), the prefetch era (bumped by
  *  this pane's suspend), and the per-canvas generations. */
-export class ThumbLane {
+class ThumbLane {
   active = 0;
   readonly queue: Array<() => void> = [];
   readonly prefetchInFlight = new Set<number>();
@@ -179,7 +179,7 @@ export class ThumbLane {
 }
 
 /** The raster-theme state a scrub leaves on ONE session's canvases. */
-export class ScrubState {
+class ScrubState {
   lastBakedFingerprint: string | null = null;
   entryPrepare: Promise<void> | null = null;
   readonly entrySnapshots = new Map<string, HTMLCanvasElement>();

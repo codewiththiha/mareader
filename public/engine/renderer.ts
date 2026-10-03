@@ -292,7 +292,7 @@ export function readRenderTrace(): RenderTraceEntry[] {
   return renderTrace.slice();
 }
 
-export async function renderPageInternal(
+async function renderPageInternal(
   s: EngineSession,
   canvasId: string,
   scale: number,
