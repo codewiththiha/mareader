@@ -574,10 +574,11 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
 
 ## Known limitations
 
-- The Shell accepts a digest from a recycled frame only while its kept
-  session lives (recycle Pending/Disposing); a `BakeCover` ask is routed
-  ahead of both the registry and the live gate, because a cold shelf asks
-  from inside its own mount.
+- The Shell accepts boundary traffic only from the live frame — plus a
+  RETIRING frame's terminal words (read point, settings, cover, gloss,
+  digest, status), whose last digest is the evidence the disposal baseline
+  reads. A `BakeCover` ask is gated on an incoming or active Library,
+  because a cold shelf asks from inside its own mount.
 - Pane teardown is observable: every digest carries `host` (lifecycle,
   activePane, per-pane lifecycle/bounds/resources, panesCreated) and the
   browser suite asserts one ready, focused pane with a fresh id per open
