@@ -39,15 +39,11 @@ pub(super) fn PresetEditor(
         state.settings.update(|s| {
             let id = make_preset_id(&name, &s.user_presets);
             s.user_presets.push(Preset {
-                id: id.clone(),
+                id,
                 name,
                 group,
                 appearance: s.appearance,
             });
-            // Saving selects what you just saved — otherwise the gallery would
-            // show the new preset as inactive while you are literally looking
-            // at its look.
-            s.active_preset = Some(id);
         });
         new_name.set(String::new());
         new_group.set(String::new());

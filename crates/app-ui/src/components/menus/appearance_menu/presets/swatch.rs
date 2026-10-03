@@ -105,12 +105,7 @@ pub(super) fn PresetSwatch(
                                     let id = id.clone();
                                     state
                                         .settings
-                                        .update(|s| {
-                                            s.user_presets.retain(|p| p.id != id);
-                                            if s.active_preset.as_deref() == Some(id.as_str()) {
-                                                s.active_preset = None;
-                                            }
-                                        });
+                                        .update(|s| s.user_presets.retain(|p| p.id != id));
                                 }
                             }
                             class="absolute right-0 top-0 hidden h-5 w-5 items-center justify-center rounded-full border border-line bg-surface text-muted hover:text-ink group-hover:flex"

@@ -64,10 +64,6 @@ pub(crate) fn on_true() -> bool {
 pub struct Settings {
     /// The live look. Edited directly by the appearance controls.
     pub appearance: Appearance,
-    /// Id of the preset currently selected, if the live look still matches
-    /// it. A manual edit re-selects when the resulting look matches a preset,
-    /// and clears the selection only when no preset matches.
-    pub active_preset: Option<String>,
     /// User-saved presets (built-ins are code, not storage).
     pub user_presets: Vec<Preset>,
     /// One-shot gate for the doubled tint curve. Blobs written before
@@ -133,9 +129,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             appearance: Appearance::default(),
-            // No preset matches a fresh install's plain look: the bases are
-            // the Mode section's buttons, not presets.
-            active_preset: None,
             user_presets: Vec::new(),
             // A fresh install is born on the new curve: nothing to migrate.
             tint_strength_halved: true,
@@ -169,35 +162,12 @@ impl Settings {
         v
     }
 
-    fn find_preset(&self, id: &str) -> Option<Preset> {
-        self.all_presets().into_iter().find(|p| p.id == id)
-    }
-
-    /// Apply a preset: copy its look and remember which one is active.
-    pub fn apply_preset(&mut self, id: &str) {
-        if let Some(p) = self.find_preset(id) {
-            self.appearance = p.appearance;
-            self.active_preset = Some(p.id);
-        }
-    }
-
-    /// Record a manual appearance edit. Any hand edit detaches from the
-    /// preset UNLESS it happens to land back exactly on it.
+    /// Record a manual appearance edit: clamp the knobs to their real
+    /// ranges. Whether the look still matches a preset is not stored — every
+    /// surface decides that by comparing the live look, so a preset can never
+    /// claim a selection the reader is not looking at.
     pub fn touch_appearance(&mut self) {
         self.appearance.sanitize();
-        let still = self
-            .active_preset
-            .as_ref()
-            .and_then(|id| self.find_preset(id))
-            .map(|p| p.appearance == self.appearance)
-            .unwrap_or(false);
-        if !still {
-            self.active_preset = self
-                .all_presets()
-                .into_iter()
-                .find(|p| p.appearance == self.appearance)
-                .map(|p| p.id);
-        }
     }
 }
 
@@ -260,14 +230,6 @@ pub fn sanitize(settings: &mut Settings) {
     for p in settings.user_presets.iter_mut() {
         p.appearance.sanitize();
     }
-
-    // A dangling active_preset (deleted preset) must not leave the menu
-    // highlighting nothing while claiming a selection.
-    if let Some(id) = settings.active_preset.clone()
-        && !settings.all_presets().iter().any(|p| p.id == id)
-    {
-        settings.active_preset = None;
-    }
 }
 
 #[cfg(test)]
@@ -288,40 +250,8 @@ mod tests {
         assert_eq!(s, back);
     }
 
-    #[test]
-    fn applying_a_preset_sets_both_look_and_selection() {
-        let mut s = Settings::default();
-        s.apply_preset("green");
-        assert_eq!(s.active_preset.as_deref(), Some("green"));
-        assert_eq!(s.appearance.tint_hue, 104);
-    }
 
-    #[test]
-    fn editing_a_slider_detaches_from_the_preset() {
-        let mut s = Settings::default();
-        s.apply_preset("sepia");
-        s.appearance.tint_hue = 210;
-        s.touch_appearance();
-        assert_eq!(
-            s.active_preset, None,
-            "an edited preset is no longer that preset"
-        );
-    }
 
-    #[test]
-    fn editing_back_onto_a_preset_reselects_it() {
-        // If you dial the sliders to exactly Green, the menu should say
-        // Green — anything else is a lying UI.
-        let mut s = Settings::default();
-        s.apply_preset("sepia");
-        s.appearance = builtin_presets()
-            .into_iter()
-            .find(|p| p.id == "green")
-            .unwrap()
-            .appearance;
-        s.touch_appearance();
-        assert_eq!(s.active_preset.as_deref(), Some("green"));
-    }
 
     #[test]
     fn user_presets_cannot_shadow_builtins_or_be_nameless() {
@@ -353,29 +283,7 @@ mod tests {
         assert_eq!(ids, vec!["good".to_string()]);
     }
 
-    #[test]
-    fn a_stale_plain_base_selection_is_dropped_not_dangled() {
-        // Settings persisted while Light/Dark/Dim were presets carry their
-        // ids as `active_preset`; the sanitizer clears the selection (the look
-        // itself lives in `appearance` and survives) rather than highlight a
-        // swatch that no longer exists.
-        let mut s = Settings {
-            active_preset: Some("light".to_string()),
-            ..Settings::default()
-        };
-        sanitize(&mut s);
-        assert_eq!(s.active_preset, None);
-    }
 
-    #[test]
-    fn a_deleted_active_preset_does_not_dangle() {
-        let mut s = Settings {
-            active_preset: Some("gone".to_string()),
-            ..Settings::default()
-        };
-        sanitize(&mut s);
-        assert_eq!(s.active_preset, None);
-    }
 
     #[test]
     fn missing_fields_default() {
