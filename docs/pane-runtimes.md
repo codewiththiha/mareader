@@ -180,11 +180,15 @@ iframe residency to be zero.
   its route iframes are real disposable realms, with independent document
   children. Nothing outside a PDF pane (or the JS-only cover baker) loads pdf.js.
 - The in-realm pane path: the host no longer mounts `DocumentPane`, and a
-  pane realm draws no host chrome (`DocumentPane::chrome` is empty).
-- In-realm presentation recency for the root paper (`presented` in
-  `public/engine/state.ts`): a pane realm holds one session, and the host
-  owns the recency.
-- The rail's direct engine binding (`MountedPdf` in thumbnail cells).
+  pane realm draws no host chrome (the pane contract's `chrome` default is
+  empty — only the frame pane supplies a slot).
+- In-realm presentation recency for the root paper: the host owns which
+  pane's paper colours the root, and a pane realm holds one session. The
+  engine bundle keeps `presented` (`public/engine/state.ts`) for the
+  sessions that share one engine, not to arbitrate between realms.
+- The rail's direct engine binding: thumbnail cells read engine output
+  through the pane, never by binding the canvas's own `MountedPdf`
+  (`crates/reader-runtime/src/pane/engine.rs`).
 
 ## Regression evidence
 
