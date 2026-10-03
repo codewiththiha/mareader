@@ -6,8 +6,8 @@ description = "The Shell ⇄ runtime frame transport: MessagePort wire adoption,
 license = "MIT"
 
 [dependencies]
-js-sys = "0.3"
 console_error_panic_hook = "0.1.7"
+js-sys = "0.3"
 reader-core = { path = "../reader-core" }
 runtime-contract = { path = "../runtime-contract" }
 serde = { version = "1", features = ["derive"] }

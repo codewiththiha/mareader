@@ -20,9 +20,9 @@ use wasm_bindgen::JsCast;
 
 use crate::PortShellApi;
 use crate::wasm::PortWire;
-use runtime_contract::protocol::{BootStage, RuntimeFrame, ShellFrame};
 #[cfg(target_arch = "wasm32")]
 use runtime_contract::protocol::ShellEnvelope;
+use runtime_contract::protocol::{BootStage, RuntimeFrame, ShellFrame};
 
 thread_local! {
     /// The live frame's boundary. Set when the channel is adopted, cleared
