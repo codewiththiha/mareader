@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::book::{Row, book_rows};
+use crate::book::Row;
 use crate::folder::WatchedFolder;
 use crate::shelf::{Shelf, ShelfKind};
 use crate::view::LibraryView;
@@ -90,7 +90,7 @@ pub fn sanitize(blob: &mut LibraryBlob) {
 mod tests {
     use super::migrate::{BlobV2, RecentBook, migrate_v1, migrate_v2};
     use super::*;
-    use crate::book::{Book, Fingerprint};
+    use crate::book::{Book, Fingerprint, book_rows};
     use crate::folder::FolderOpts;
     use crate::tracking::TrackingTree;
     use std::collections::{BTreeMap, HashSet};
