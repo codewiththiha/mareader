@@ -1,5 +1,7 @@
 //! The production pane: what the reader host creates for each document.
 //!
+//! - [`base`] — the state/context/surface slice every pane implementation
+//!   starts from.
 //! - [`document`] — the universal document pane, the [`PaneRuntime`]
 //!   implementation (one document session per pane: PDF, Markdown or plain
 //!   text through the reader's one pipeline), run one per pane realm.
@@ -20,6 +22,7 @@
 
 #[cfg(test)]
 mod cascade_tests;
+pub(crate) mod base;
 pub mod document;
 pub mod dom;
 #[cfg(feature = "pdf")]

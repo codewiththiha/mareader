@@ -133,13 +133,8 @@ pub fn open_path(ctx: crate::context::ReaderContext, path: String, placement: Pl
 /// proceeds unnamed, and the read record mints the row.
 pub fn bare_launch(path: &str) -> runtime_contract::boundary::LaunchDocument {
     runtime_contract::boundary::LaunchDocument {
-        book_id: None,
         path: path.to_string(),
-        resume_page: 1,
-        saved_fraction: None,
-        blend_override: false,
-        cover_data_url: None,
-        display_name: None,
+        ..crate::pane::base::empty_launch()
     }
 }
 

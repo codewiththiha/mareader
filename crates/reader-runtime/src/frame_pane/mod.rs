@@ -31,8 +31,8 @@ use wasm_bindgen::{JsCast, JsValue};
 
 use crate::context::ReaderContext;
 use crate::host::contract::{
-    ChromeSlot, LiftStep, OpenRequest, PaneAppearance, PaneBuild, PaneCommand, PaneDocStatus,
-    PaneEnv, PaneFactory, PaneResourceCounts, PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
+    ChromeSlot, LiftStep, OpenRequest, PaneAppearance, PaneBuild, PaneCommand, PaneEnv,
+    PaneFactory, PaneResourceCounts, PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
 };
 use crate::host::model::{
     DocumentId, PaneBounds, PaneDescriptor, PaneError, PaneFormat, PaneId, PaneLifecycle,
@@ -212,35 +212,10 @@ impl FramePane {
         let owner = Owner::new();
         let (ctx, surface, thumbs) = owner.with(|| {
             let handle = crate::pane::handle::PaneHandle::new(id, env.runtime);
-            provide_context(handle);
-            let reader = crate::state::ReaderState::new(handle);
             let first = launch
                 .clone()
-                .unwrap_or_else(|| crate::services::document::open::bare_launch(""));
-            let ctx = ReaderContext {
-                reader,
-                pane: handle,
-                settings: env.settings,
-                ui: env.ui,
-                api: env.api,
-                launch: RwSignal::new(first),
-                id: env.session_id,
-                chrome: env.chrome,
-                open: env.open,
-                can_split: env.can_split,
-                moves: env.moves,
-                relocate: env.relocate,
-            };
-            let status = reader.document.status;
-            let error = reader.document.error;
-            let surface = PaneSurface {
-                status: Signal::derive(move || neutral_status(status.get())),
-                error: Signal::derive(move || error.get()),
-                page: reader.viewer.page.into(),
-                reflowable: Signal::derive(move || reader.reflowable()),
-                search_visible: reader.search.visible.into(),
-                name: Signal::derive(move || reader.document.display_name()),
-            };
+                .unwrap_or_else(crate::pane::base::empty_launch);
+            let (ctx, surface) = crate::pane::base::contexts(env, handle, first);
             (ctx, surface, RemoteThumbs::new())
         });
         let boot_error = owner.with(|| RwSignal::new(None));
@@ -919,15 +894,6 @@ impl Inner {
 fn put<T: PartialEq + Send + Sync + 'static>(signal: RwSignal<T>, value: T) {
     if signal.try_with_untracked(|v| *v != value) == Some(true) {
         signal.set(value);
-    }
-}
-
-fn neutral_status(status: DocStatus) -> PaneDocStatus {
-    match status {
-        DocStatus::Idle => PaneDocStatus::Idle,
-        DocStatus::Opening => PaneDocStatus::Opening,
-        DocStatus::Ready => PaneDocStatus::Ready,
-        DocStatus::Error => PaneDocStatus::Error,
     }
 }
 

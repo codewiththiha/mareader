@@ -15,14 +15,13 @@ use runtime_contract::boundary::LaunchDocument;
 
 use crate::context::ReaderContext;
 use crate::host::contract::{
-    ChromeSlot, PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneResourceCounts,
-    PaneRuntime, PaneSite, PaneSurface, PaneTeardown,
+    ChromeSlot, PaneAppearance, PaneCommand, PaneEnv, PaneResourceCounts, PaneRuntime, PaneSite,
+    PaneSurface, PaneTeardown,
 };
 use crate::host::model::{
     DocumentId, PaneBounds, PaneDescriptor, PaneError, PaneFormat, PaneId, PaneLifecycle,
 };
 use crate::pane::handle::PaneHandle;
-use crate::state::ReaderState;
 use reader_core::document::DocStatus;
 use reader_core::format::{Format, format_of};
 
@@ -89,36 +88,11 @@ impl DocumentPane {
             });
         let owner = Owner::new();
         let (ctx, surface) = owner.with(|| {
-            // The pane's handle, for the components that register what they
-            // create with the pane (the reflow stream's and the thumbnail
-            // rail's virtualizers).
-            provide_context(handle);
-            let reader = ReaderState::new(handle);
-            let launch = RwSignal::new(launch.unwrap_or_else(empty_launch));
-            let ctx = ReaderContext {
-                reader,
-                pane: handle,
-                settings: env.settings,
-                ui: env.ui,
-                api: env.api,
-                launch,
-                id: env.session_id,
-                chrome: env.chrome,
-                open: env.open,
-                can_split: env.can_split,
-                moves: env.moves,
-                relocate: env.relocate,
-            };
-            let status = reader.document.status;
-            let error = reader.document.error;
-            let surface = PaneSurface {
-                status: Signal::derive(move || neutral_status(status.get())),
-                error: Signal::derive(move || error.get()),
-                page: reader.viewer.page.into(),
-                reflowable: Signal::derive(move || reader.reflowable()),
-                search_visible: reader.search.visible.into(),
-                name: Signal::derive(move || reader.document.display_name()),
-            };
+            let (ctx, surface) = crate::pane::base::contexts(
+                env,
+                handle,
+                launch.unwrap_or_else(crate::pane::base::empty_launch),
+            );
 
             // The paper settings follow every change onto whatever PDF
             // session the pane holds; each new session is configured by the
@@ -129,7 +103,7 @@ impl DocumentPane {
             // The launch the pane was created for: opened by the pane that
             // owns the document, before the host's first status report, so
             // the session's first word to the Shell is `Opening`.
-            let first = launch.get_untracked();
+            let first = ctx.launch.get_untracked();
             if !first.path.is_empty() {
                 crate::services::document::open::open_with_launch(ctx, first);
             }
@@ -190,28 +164,6 @@ pub(crate) fn view_again(ctx: ReaderContext) -> Option<LaunchDocument> {
 }
 
 /// A launch with no document, for a pane waiting for one.
-fn empty_launch() -> LaunchDocument {
-    LaunchDocument {
-        book_id: None,
-        path: String::new(),
-        resume_page: 1,
-        saved_fraction: None,
-        blend_override: false,
-        cover_data_url: None,
-        display_name: None,
-    }
-}
-
-/// The engine's status in the host's words.
-fn neutral_status(status: DocStatus) -> PaneDocStatus {
-    match status {
-        DocStatus::Idle => PaneDocStatus::Idle,
-        DocStatus::Opening => PaneDocStatus::Opening,
-        DocStatus::Ready => PaneDocStatus::Ready,
-        DocStatus::Error => PaneDocStatus::Error,
-    }
-}
-
 impl PaneRuntime for DocumentPane {
     fn id(&self) -> PaneId {
         self.id
