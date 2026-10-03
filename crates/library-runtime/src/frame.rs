@@ -17,7 +17,8 @@ use runtime_contract::protocol::{BootStage, RuntimeFrame, RuntimeKind, ShellFram
 use crate::context::ApiHandle;
 
 pub use frame_transport::artifact::{
-    emit, mount_root, report_painted, session, set_session, take_session, with_api,
+    emit, frame_session, mount_root, report_painted, set_frame_session, take_frame_session,
+    with_api,
 };
 
 /// Boot through the frame when this artifact's URL names one.
@@ -53,7 +54,7 @@ fn on_frame(body: ShellFrame, generation: u64) {
             on_init(hidden, generation);
         }
         ShellFrame::CoverBaked { path, image } => {
-            if let Some(id) = session() {
+            if let Some(id) = frame_session() {
                 crate::command(
                     id,
                     crate::LibraryCommand::CoverBaked {
@@ -67,17 +68,17 @@ fn on_frame(body: ShellFrame, generation: u64) {
             // Fresh Library has painted. Reconcile late durable writes and
             // run its previously deferred startup once.
             app_ui::frame_theme::mark_frame_hidden(false);
-            if let Some(id) = session() {
+            if let Some(id) = frame_session() {
                 crate::command(id, crate::LibraryCommand::Refresh);
             }
         }
         ShellFrame::ImportFiles { paths } => {
-            if let Some(id) = session() {
+            if let Some(id) = frame_session() {
                 crate::command(id, crate::LibraryCommand::ImportFiles { paths });
             }
         }
         ShellFrame::Dispose => {
-            if let Some(id) = take_session() {
+            if let Some(id) = take_frame_session() {
                 let promise = crate::dispose(id);
                 wasm_bindgen_futures::spawn_local(async move {
                     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
@@ -100,7 +101,7 @@ fn on_frame(body: ShellFrame, generation: u64) {
 fn on_init(hidden: bool, generation: u64) {
     // A re-init for a boot that already mounted is not a second session: the
     // Shell mints one identity per frame and never reuses one.
-    if session().is_some() {
+    if frame_session().is_some() {
         return;
     }
     let Some(root) = mount_root("library", generation) else {
@@ -108,7 +109,7 @@ fn on_init(hidden: bool, generation: u64) {
     };
     app_ui::frame_theme::mark_frame_hidden(hidden);
     let id = crate::start_session(&root, ApiHandle::Frame, hidden);
-    set_session(id);
+    set_frame_session(id);
     emit(RuntimeFrame::Status {
         stage: BootStage::Mounted,
     });

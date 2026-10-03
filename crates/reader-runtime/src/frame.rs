@@ -21,7 +21,8 @@ use crate::context::{ApiHandle, ReaderContext};
 use crate::host::contract::{OpenRequest, Placement};
 
 pub use frame_transport::artifact::{
-    emit, mount_root, report_painted, session, set_session, take_session, with_api,
+    emit, frame_session, mount_root, report_painted, set_frame_session, take_frame_session,
+    with_api,
 };
 
 /// Boot through the frame when this artifact's URL names one. `true` as soon
@@ -61,7 +62,7 @@ fn on_frame(body: ShellFrame, generation: u64) {
             // An in-session open keeps this workspace and targets an
             // independent document pane, never a retained host.
             app_ui::frame_theme::mark_frame_hidden(false);
-            if let Some(id) = session() {
+            if let Some(id) = frame_session() {
                 crate::command(id, *document);
             }
         }
@@ -74,7 +75,7 @@ fn on_frame(body: ShellFrame, generation: u64) {
         }
         ShellFrame::Dispose => {
             with_api(|api| api.cancel_resolves());
-            if let Some(id) = take_session() {
+            if let Some(id) = take_frame_session() {
                 let promise = crate::dispose(id);
                 crate::diagnostics::set_reader_live(false);
                 wasm_bindgen_futures::spawn_local(async move {
@@ -98,7 +99,7 @@ fn on_frame(body: ShellFrame, generation: u64) {
 /// handshake names (§9) and starts the session; everything after is the boot
 /// stages on the port. Every Reader host is a fresh realm.
 fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
-    if session().is_some() {
+    if frame_session().is_some() {
         return;
     }
     let Some(root) = mount_root("reader", generation) else {
@@ -114,7 +115,7 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     app_ui::frame_theme::mark_frame_hidden(false);
     crate::diagnostics::begin_epoch(false);
     let id = crate::start_session(&root, *launch, ApiHandle::Frame);
-    set_session(id);
+    set_frame_session(id);
     crate::diagnostics::set_reader_live(true);
     emit(RuntimeFrame::Status {
         stage: BootStage::Mounted,
@@ -131,7 +132,7 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
 /// The awaiting continuation keeps its placement: where the document goes was
 /// decided when the user asked, not when the answer lands.
 pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement) {
-    if session() != Some(ctx.id) || !ctx.pane.admits_work() {
+    if frame_session() != Some(ctx.id) || !ctx.pane.admits_work() {
         return;
     }
     let Some(ticket) = with_api(|api| api.resolve_launch(&path)) else {
@@ -139,7 +140,7 @@ pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement
     };
     wasm_bindgen_futures::spawn_local(async move {
         let document = ticket.await;
-        if session() == Some(ctx.id) && ctx.pane.admits_work() {
+        if frame_session() == Some(ctx.id) && ctx.pane.admits_work() {
             let launch =
                 document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
             ctx.open.try_run(OpenRequest { launch, placement });

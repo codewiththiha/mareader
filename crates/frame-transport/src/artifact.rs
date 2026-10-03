@@ -67,17 +67,17 @@ pub fn emit(body: RuntimeFrame) {
 
 /// The session this frame started: what the Shell's command traffic is
 /// addressed to, and how the frame knows its own session is live.
-pub fn session() -> Option<u32> {
+pub fn frame_session() -> Option<u32> {
     SESSION_ID.with(Cell::get)
 }
 
-pub fn set_session(id: u32) {
+pub fn set_frame_session(id: u32) {
     SESSION_ID.with(|slot| slot.set(Some(id)));
 }
 
 /// Take the session id, leaving the frame session-less. The disposal path
 /// uses it both as the once-guard and as the id to dispose.
-pub fn take_session() -> Option<u32> {
+pub fn take_frame_session() -> Option<u32> {
     SESSION_ID.with(|slot| slot.take())
 }
 
