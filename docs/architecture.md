@@ -586,11 +586,11 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
 - Native smoke and geometry contracts do not visually prove circular macOS
   traffic lights or absence of resize blinking. A real macOS visual check
   remains separate from the desktop/narrow browser evidence.
-- Two app-lifetime pieces have had no caller since the runtime split and
-  are kept for the day they are re-armed, not deleted: `DragOverlay`
-  (`crates/app-ui/src/components/app_overlays/drag_overlay.rs`, with no
-  `tauri://drag-drop` listener in any runtime — drag-and-drop opening is
-  currently unwired) and `install_window_state_bridge`
-  (`crates/app-ui/src/components/shell/titlebar/window_state.rs`, so the frameless caption's
-  maximize/restore glyph never follows the window). Both need the Tauri
-  event relay to reach the runtime frames.
+- The drag overlay is the SHELL's, not a component: `install_import_drop`
+  (`src/services/import_drop.rs`) listens for the native drag events and
+  returns the hover signal the Shell paints its `data-import-drop` hint from
+  (`src/app/mod.rs`). The app-ui `DragOverlay` that lost its caller in the
+  runtime split was deleted with its stylesheet block. The frameless
+  caption's maximize/restore glyph is live again through the titlebar's own
+  `window_state` module (`app_title_bar.rs`), which replaced the orphaned
+  `window_bridge.rs`.

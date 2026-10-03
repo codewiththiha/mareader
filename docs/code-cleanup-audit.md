@@ -28,6 +28,26 @@ The old orphan is gone. The live `AppTitleBar` installs its private `window_stat
 
 The shared native subscription now keeps a pending-registration callback alive **but inert** after owner disposal until its registration can be unlistened. Unlisten precedes closure release. This avoids freeing a WASM callback still held by the parent native registry. It does not retain the disposed route's reactive owner.
 
+`storage::migrate_gloss_keys` lost its caller in the same split (it ran from the old bootstrap) while its doc comments kept pointing at it. It runs again from `LibraryContext::new`, before any pane can read a row's marks, and remains gated by its own durable flag. This is a data migration: leaving it unwired would have dropped existing readers' page-anchored notes.
+
+## Second pass: dead helpers, duplicate pane setup, unused dependencies
+
+A second repository-wide pass over the same revision looked for symbols whose only remaining references were their own doc comments, duplicate setup between the two pane implementations, and manifest entries no source in the crate reaches. Every deletion below was verified by a whole-tree token census (tests included) before it was made.
+
+| Old path/state | Finding | Current owner/path |
+| --- | --- | --- |
+| `library_core::tracking::TrackingTree::track_at` | The per-rung decision read; no caller — the menu reads the effective answer. | `TrackingTree::resolve`/`tracked`; the tracking tests now assert whole-tree equality with `TrackingTree::tracking_root()`, so the removed reader cannot come back unnoticed. |
+| `library_core::blob::LibraryBlob::awaiting_check` | A one-line public wrapper over `book_rows(&blob.books).any(\|b\| b.fp_pending)` with no caller. | The expression itself, at the rescan gate that reads it. |
+| `library_core::conflict::Placement::is_destructive` | No caller: the ask sheet labels `Replace` in its own words and `ChoiceSpec` carries no danger flag. | `Placement::Replace`, labelled where the choice is built. |
+| `Settings::active_preset` with `apply_preset`/`find_preset` and the `sanitize` dangling-selection clear | Stored state nothing read: every surface derives the active preset by comparing the live look, and a stored id could claim a selection the reader is not looking at. | Live-look comparison in the appearance menu; saving a preset no longer writes a field. |
+| `app_ui::components::app_overlays::drag_overlay::DragOverlay` | No caller since the runtime split; the Shell paints its own `data-import-drop` hint from `install_import_drop`'s hover signal. | `src/app/mod.rs`'s hint. The `.drag-overlay`/`.drag-dropzone*` rules and their keyframes were the component's only consumer and are gone with it; the `--z-drag-overlay` token and the `DRAG_OVERLAY` layer class stay (the drag layer and the first-paint cover use them). |
+| `app_chrome::hooks::frame_active::frame_is_active` | Non-reactive twin of the slot observer; no caller. | `use_frame_active`, the signal the traffic lights read. |
+| `reader_runtime::state::viewer::ViewerSignals::reset_position` | Reset-on-close for a document that lived in the shared realm; every document now runs in its own realm, whose signals are fresh by construction. | The per-document realm's own `ViewerSignals`. |
+| `public/reader/raster-protocol.ts` `RASTER_LANE_KEY` | Exported constant no module imported; the pane side reaches the lane through `window.parent`. | `public/reader/raster-coordinator.ts` and `public/engine/raster-lane.ts` keep the seam. |
+| Duplicate pane setup: `frame_pane::FramePane::create` vs `pane::document::DocumentPane::create` | Two copies of the `ReaderContext` + `PaneSurface` build, plus two private `neutral_status` and `empty_launch`. | `crates/reader-runtime/src/pane/base.rs`: `contexts()` and `empty_launch()`, called by both panes; `bare_launch(path)` spreads `empty_launch()`. |
+| An empty `BootStage::Disposed` arm in `src/app/frame.rs` | A branch whose body only explained why it was empty. | The comment, on the `Status` arm it belongs to. |
+| Manifest entries nothing reaches: `app-ui`→`library-core`, `serde_json`; `reader-runtime`→`ui-geom`; `storage`→`leptos`; `reflow-core`→`serde` (and its dev `serde_json`) | Unused dependencies keep a graph edge alive that the dependency gate reasons about. | The crates' own manifests. |
+
 ## Preserved deliberately
 
 - Five artifact types and independent PDF/reflow document realms, with no Reader/Library warm slots or route reuse.

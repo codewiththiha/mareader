@@ -463,12 +463,13 @@ Removed (nothing referenced them after version 3):
   reader never asks for a bake and the Shell refuses one from any frame
   that is not a shelf.
 
-Kept on purpose, and recorded in `docs/architecture.md` as follow‑ups
-rather than deleted: `DragOverlay` and `install_window_state_bridge` lost
-their callers in the split (`8bbda0a`) — drag‑and‑drop opening and the
-frameless caption's maximize/restore glyph are unwired today. They are
-orphaned features, not legacy; both need the Tauri event relay to reach the
-runtime frames.
+Both follow-up orphans from the split are closed. `DragOverlay` had no
+caller and is deleted: the Shell paints the drop hint itself
+(`data-import-drop` in `src/app/mod.rs`) from the signal
+`install_import_drop` returns, and the component's stylesheet block went
+with it. `install_window_state_bridge` was repaired rather than kept — the
+live `AppTitleBar` installs its own `window_state` module, so the frameless
+caption's maximize/restore glyph follows the window again.
 
 ## 9. Sources
 

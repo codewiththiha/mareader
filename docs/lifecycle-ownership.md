@@ -136,7 +136,10 @@ close_document (services/document/close.rs)
 │   ├── engine::sweep()                 — advisory pdf.cleanup
 │   ├── engine::sweep_snapshots()       — zoom-mask release
 │   └── diagnostics: dispose_complete   — the moment the baseline asserts on
-├── document.reset() / viewer.reset_position() / search.reset()
+├── document.reset() / search.reset()   — no viewer.reset_position():
+│                                         a document runs in its own realm
+│                                         now, so its viewer state is fresh
+│                                         by construction
 ├── gloss.reset() / ai_selection.reset()
 ├── ui.sidebar = None
 └── backdrop::document_close()

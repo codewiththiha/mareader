@@ -587,9 +587,9 @@ focus affordable.
 
 A row migrated from the previous schema carries no measurement, so it carries
 `Fingerprint::placeholder` — derived from the address, so two migrated books can never share one —
-and the `fp_pending` mark. `library_core::blob::LibraryBlob::awaiting_check` is the gate: a rescan
-that diffed real fingerprints against placeholders would match nothing and add a second copy of
-every book the folder already held.
+and the `fp_pending` mark. Those marks are the gate — a rescan is held while any row still carries
+one: a rescan that diffed real fingerprints against placeholders would match nothing and add a
+second copy of every book the folder already held.
 
 The fingerprint is the identity, and one identity is normally one row — but not by force. Two rows
 of one file are allowed, so the sanitizer dedupes by *id* rather than by fingerprint, and every
