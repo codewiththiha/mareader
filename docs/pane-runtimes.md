@@ -140,8 +140,8 @@ iframe residency to be zero.
   appearance, flags) after the channel handshake, and reveals the frame on
   the pane's first paint.
 - **Replace in place.** Every replacement boots a fresh frame, including
-  PDF → PDF and Markdown → TXT. Only an empty warm realm's first open or an
-  unadopted bootstrap may be promoted without replacement. The current
+  PDF → PDF and Markdown → TXT. No empty realm is prebooted, and neither
+  same-format nor unadopted predecessors are reused for a new open. The current
   surface stays until `Painted` plus Ready/actual first paint (or an error);
   no PDF mount/900 ms timer counts as raster paint. The old frame
   is disposed and removed. The pane id, its place and its focus stay, and
@@ -158,24 +158,9 @@ iframe residency to be zero.
   1.5 s timeout removes **that nonce only**, never newer retiring frames.
   Startup has owned/cancelled 10 s hello and 30 s paint deadlines; an
   incomplete boot produces a named pane error, not an endless hidden frame.
-- **Bootstrap pane.** Inside a newly opened Reader host, a never-adopted
-  empty pane can accept its first document. No Reader or document frame is
-  prewarmed or retained behind Library; the whole Reader host is gone there.
-
-## Diagnostics
-
-Each pane frame publishes its snapshot to the host on the digest beat, and
-the host also reads a pane realm's probe directly (the frames are
-same-origin), so a sample taken mid-render sees the work in flight. The
-host's digest sums the engine and pane counters over every frame still in
-the document (live, booting behind a swap, or disposing) plus the final
-snapshots of removed ones, so `sessionsOpened == sessionsDestroyed` and the
-other balances still hold across frames. Removed reports reduce to **one**
-bounded aggregate, not an ever-growing list in the persistent host. Invalid,
-missing-after-adoption or failed terminal evidence stays failed; a later
-successful close cannot erase it. Text/host realms apply every reader-owned
-resource check without demanding an engine that they do not run.
-
+- **First document.** A pane realm boots with its real launch. An empty
+  unhosted development host owns chrome/mirror state only; its first open
+  creates exactly one document iframe without prefetching an empty runtime.
 - **Final word.** On `Dispose` a pane realm waits briefly for the engine
   work the dispose cancelled to settle, then sends its final digest and
   `Disposed`; the host reads the realm's probe once more before it removes

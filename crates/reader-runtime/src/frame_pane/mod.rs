@@ -14,6 +14,7 @@
 //! actual document paint; RETIRED frames are removed when they
 //! say so (or a timeout passes).
 
+mod mirror;
 pub(crate) mod raster;
 pub mod thumbs;
 
@@ -54,25 +55,6 @@ const HELLO_TIMEOUT_MS: u64 = 10_000;
 /// A realm that answered but never lands a document also fails visibly.
 const PAINT_TIMEOUT_MS: u64 = 30_000;
 
-#[derive(Debug, PartialEq, Eq)]
-enum OpenDelivery {
-    Bootstrap,
-    Warm,
-    Replace,
-}
-
-/// Only a never-adopted bootstrap or an empty warm realm may be promoted.
-/// An existing incoming document is always superseded by a fresh frame.
-fn open_delivery(same: bool, unadopted: bool, empty: bool, incoming: bool) -> OpenDelivery {
-    if same && !incoming && unadopted {
-        OpenDelivery::Bootstrap
-    } else if same && !incoming && empty {
-        OpenDelivery::Warm
-    } else {
-        OpenDelivery::Replace
-    }
-}
-
 /// The factory the composition root hands the host: every pane is a frame.
 pub fn factory() -> PaneFactory {
     Rc::new(build) as Rc<PaneBuild>
@@ -88,16 +70,12 @@ fn build(
 
 /// One frame: an iframe running a pane realm, and its port.
 struct Frame {
-    kind: PaneKind,
     nonce: String,
     iframe: web_sys::HtmlIFrameElement,
     port: Option<web_sys::MessagePort>,
     on_message: Option<Closure<dyn FnMut(web_sys::MessageEvent)>>,
     boot: Option<Boot>,
     painted: bool,
-    /// An empty warm realm can accept its first document once. Every later
-    /// open uses a fresh realm, including an open of the same format.
-    document_started: bool,
     hello_timeout: Option<TimeoutHandle>,
     paint_timeout: Option<TimeoutHandle>,
     mirror: Option<Mirror>,
@@ -119,7 +97,7 @@ impl Frame {
     }
 
     fn cancel_completed_deadline(&mut self) {
-        if (self.painted_document() || (self.painted && !self.document_started))
+        if self.painted_document()
             && let Some(timeout) = self.paint_timeout.take()
         {
             timeout.clear();
@@ -287,38 +265,17 @@ impl FramePane {
             holds: Cell::new(false),
         });
         thumbs.attach(Rc::downgrade(&inner));
-        let launch = launch.filter(|_| descriptor.document.is_some());
-        if launch.is_some() {
+        // A documentless host slot owns only its mirror/chrome. It creates
+        // no empty reflow realm; the first real open boots a document once.
+        if let Some(mut launch) = launch.filter(|_| descriptor.document.is_some()) {
+            launch.resume_page = descriptor.initial_page.max(1);
             inner.claim_open();
+            inner.expect_open(&launch);
+            let mut boot = inner.fresh_boot(launch);
+            boot.initial_zoom = descriptor.initial_zoom;
+            let kind = PaneKind::for_path(&boot.launch.path);
+            *inner.live.borrow_mut() = Some(new_frame(&inner, kind, boot));
         }
-        let boot = Boot {
-            pane_id: id.get(),
-            session_id: env.session_id,
-            format: descriptor.format,
-            launch: launch.clone(),
-            initial_page: descriptor.initial_page,
-            initial_zoom: descriptor.initial_zoom,
-            settings: env.settings.get_untracked(),
-            motion: Default::default(),
-            look: None,
-            workspace: env.workspace.get_untracked(),
-            paper: board_paper(),
-            hooks: inner.hooks.get(),
-            active: env.active.get_untracked(),
-            can_split: env.can_split.get_untracked(),
-            moves: env.moves.get_untracked(),
-            sidebar: WireSidebar::from(env.ui.sidebar.get_untracked()),
-            settings_open: env.settings_open.get_untracked(),
-        };
-        let kind = launch
-            .as_ref()
-            .map_or(PaneKind::for_format(descriptor.format), |l| {
-                PaneKind::for_path(&l.path)
-            });
-        if let Some(launch) = launch.as_ref() {
-            inner.expect_open(launch);
-        }
-        *inner.live.borrow_mut() = Some(new_frame(&inner, kind, boot));
         inner.owner.with(|| install_effects(&inner));
         register(&inner);
         Rc::new(FramePane { inner })
@@ -351,16 +308,13 @@ fn new_frame(inner: &Rc<Inner>, kind: PaneKind, boot: Boot) -> Frame {
     ensure_hello_listener();
     let hello_timeout = watch_boot(inner, kind, nonce.clone(), true);
     let paint_timeout = watch_boot(inner, kind, nonce.clone(), false);
-    let document_started = boot.launch.as_ref().is_some_and(|l| !l.path.is_empty());
     Frame {
-        kind,
         nonce,
         iframe,
         port: None,
         on_message: None,
         boot: Some(boot),
         painted: false,
-        document_started,
         hello_timeout,
         paint_timeout,
         mirror: None,
@@ -394,7 +348,7 @@ fn watch_boot(
                 if hello {
                     frame.port.is_none()
                 } else {
-                    !frame.painted_document() && !(frame.painted && !frame.document_started)
+                    !frame.painted_document()
                 }
             });
             if stalled != Some(true) {
@@ -869,50 +823,6 @@ impl Inner {
         }
     }
 
-    /// The live frame's report, written into the mirror. `reported` is set
-    /// first, so the write-forwarding effects see their own value.
-    fn apply_mirror(&self, m: Mirror) {
-        *self.reported.borrow_mut() = Some(m.clone());
-        let reader = self.ctx.reader;
-        let document = &reader.document;
-        put(document.status, m.status);
-        put(document.format, m.format);
-        put(document.error, m.error);
-        put(document.path, m.path);
-        put(document.book_id, m.book_id);
-        put(document.title, m.title);
-        put(document.author, m.author);
-        put(document.num_pages, m.num_pages);
-        put(document.outline_pending, m.outline_pending);
-        put(document.content.metrics.page1_size, m.page1);
-        put(reader.viewer.page, m.page);
-        put(reader.viewer.mode, m.mode);
-        put(reader.viewer.fit, m.fit);
-        put(reader.viewer.zoom.display, m.zoom);
-        put(reader.viewer.auto_scroll, m.auto_scroll);
-        put(reader.search.visible, m.search_visible);
-        put(reader.viewer.first_paint, m.first_paint);
-        let launch_changed = self.ctx.launch.try_with_untracked(|l| *l != m.launch) == Some(true);
-        if launch_changed {
-            // Another document: the rail's pictures are another book's.
-            self.thumbs.reset();
-            self.ctx.launch.set(m.launch);
-        }
-    }
-
-    fn apply_outline(&self, entries: &crate::pane_wire::WireOutline) {
-        let nodes: Vec<reader_core::outline::OutlineNode> = entries
-            .iter()
-            .map(|(title, page, depth)| {
-                reader_core::outline::OutlineNode::new(title.clone(), *page, *depth)
-            })
-            .collect();
-        let outline = self.ctx.reader.document.outline;
-        if outline.try_with_untracked(|o| o.as_slice() != nodes.as_slice()) == Some(true) {
-            outline.set(std::sync::Arc::new(nodes));
-        }
-    }
-
     /// An incoming frame takes over once it has painted AND its document
     /// is on screen (or failed): the swap is one frame, never a blank.
     fn try_swap(self: &Rc<Self>) {
@@ -1181,49 +1091,13 @@ impl PaneRuntime for FramePane {
                 inner.expect_open(&launch);
                 inner.claim_open();
                 let kind = PaneKind::for_path(&launch.path);
-                let same = inner.live.borrow().as_ref().is_some_and(|f| f.kind == kind);
-                // A frame that has not said hello yet has no port: the open
-                // rides its boot instead of being posted into nothing.
-                let unadopted = inner
-                    .live
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|f| f.port.is_none() && f.boot.is_some());
-                let empty = inner
-                    .live
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|f| !f.document_started);
-                let incoming = inner.incoming.borrow().is_some();
-                match open_delivery(same, unadopted, empty, incoming) {
-                    OpenDelivery::Bootstrap => {
-                        let boot = self.fresh_boot(*launch);
-                        if let Some(frame) = inner.live.borrow_mut().as_mut() {
-                            frame.document_started = true;
-                            frame.boot = Some(boot);
-                        }
-                    }
-                    OpenDelivery::Warm => {
-                        // An empty warm realm has no outgoing pixels or high-water memory.
-                        let deadline =
-                            inner.live.borrow().as_ref().map(|frame| {
-                                watch_boot(inner, frame.kind, frame.nonce.clone(), false)
-                            });
-                        if let Some(frame) = inner.live.borrow_mut().as_mut() {
-                            frame.document_started = true;
-                            frame.paint_timeout = deadline.flatten();
-                        }
-                        inner.post_live(&HostToPane::Open(launch));
-                    }
-                    OpenDelivery::Replace => {
-                        // Every replacement gets a fresh realm, even within a format.
-                        // The old pixels stay until the new document has really painted.
-                        let frame = new_frame(inner, kind, self.fresh_boot(*launch));
-                        let old = inner.incoming.borrow_mut().replace(frame);
-                        if let Some(old) = old {
-                            inner.retire(old);
-                        }
-                    }
+                // Every actual replacement is a fresh realm, including a
+                // same-format or not-yet-adopted predecessor. Its outgoing
+                // pixels remain until the incoming document really paints.
+                let frame = new_frame(inner, kind, inner.fresh_boot(*launch));
+                let old = inner.incoming.borrow_mut().replace(frame);
+                if let Some(old) = old {
+                    inner.retire(old);
                 }
             }
             PaneCommand::PrepareLeave => inner.post_live(&HostToPane::PrepareLeave),
@@ -1287,11 +1161,11 @@ impl PaneRuntime for FramePane {
     }
 }
 
-impl FramePane {
+impl Inner {
     /// A boot for a replacement frame: the pane's current facts, the new
     /// launch.
     fn fresh_boot(&self, launch: LaunchDocument) -> Boot {
-        let inner = &self.inner;
+        let inner = self;
         let env = inner.env;
         let appearance = inner.appearance.get();
         Boot {
@@ -1299,7 +1173,7 @@ impl FramePane {
             session_id: env.session_id,
             format: crate::pane::document::classify(&launch.path),
             initial_page: launch.resume_page.max(1),
-            launch: Some(launch),
+            launch,
             initial_zoom: None,
             settings: env.settings.get_untracked(),
             motion: appearance.map(|a| a.motion.into()).unwrap_or_default(),
@@ -1496,6 +1370,19 @@ fn ensure_key_forward() {
             else {
                 return;
             };
+            if active.live.borrow().is_none() {
+                if ev.key().eq_ignore_ascii_case("o")
+                    && (ev.meta_key() || ev.ctrl_key())
+                    && !ev.repeat()
+                {
+                    ev.prevent_default();
+                    crate::services::document::open::open_dialog(
+                        active.ctx,
+                        crate::host::contract::Placement::Here,
+                    );
+                }
+                return;
+            }
             active.post_live(&HostToPane::Key(Key {
                 up: ev.type_() == "keyup",
                 repeat: ev.repeat(),
@@ -1703,31 +1590,6 @@ pub fn prefetch_thumbs(id: PaneId, pages: impl IntoIterator<Item = u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_empty_or_unadopted_realms_accept_a_first_open() {
-        assert_eq!(
-            open_delivery(true, true, true, false),
-            OpenDelivery::Bootstrap
-        );
-        assert_eq!(open_delivery(true, false, true, false), OpenDelivery::Warm);
-        assert_eq!(
-            open_delivery(true, false, false, false),
-            OpenDelivery::Replace
-        );
-        assert_eq!(
-            open_delivery(false, false, true, false),
-            OpenDelivery::Replace
-        );
-        for unadopted in [false, true] {
-            for empty in [false, true] {
-                assert_eq!(
-                    open_delivery(true, unadopted, empty, true),
-                    OpenDelivery::Replace
-                );
-            }
-        }
-    }
 
     #[test]
     fn handoff_requires_real_document_paint_or_a_visible_error() {

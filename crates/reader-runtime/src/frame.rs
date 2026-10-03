@@ -7,16 +7,13 @@
 //! - The launch descriptor rides the Shell's `init`: the frame cannot mount
 //!   before it arrives (a reader IS the document it was opened with), so the
 //!   session starts inside the init handler, not at adoption.
-//! - The one synchronous bridge query, `resolve_launch`, becomes a port
-//!   round trip here: an in-session open asks, parks its continuation in
-//!   [`PENDING_OPENS`], and runs when the answer lands.
+//! - In-session path opens await one port-owned launch future. Disposal
+//!   cancels/wakes it; there is no synchronous miss or duplicate open map.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
-use std::rc::Rc;
 
+use frame_transport::PortShellApi;
 use frame_transport::wasm::PortWire;
-use frame_transport::{PendingResolves, PortShellApi};
 use leptos::prelude::Callable;
 use runtime_contract::boundary::LaunchDocument;
 use runtime_contract::protocol::{BootStage, RuntimeFrame};
@@ -32,24 +29,6 @@ thread_local! {
     static API: RefCell<Option<PortShellApi<PortWire>>> = const { RefCell::new(None) };
     /// The session the frame started, for the Shell's command traffic.
     static SESSION_ID: Cell<Option<u32>> = const { Cell::new(None) };
-    /// The resolve round trips this frame asked, by request id. The Shell
-    /// ALWAYS answers a resolve (a "no row" answer answers None), so an offer
-    /// without a parked query never ages over a frame swap — the port dies
-    /// with the document.
-    static RESOLVES: RefCell<Option<Rc<PendingResolves>>> = const { RefCell::new(None) };
-    /// The open flows parked on their resolve answers, by request id. A drop
-    /// / dialog open arrives sync; its launch resolution is async over the
-    /// port, and this is the rendezvous.
-    static PENDING_OPENS: RefCell<HashMap<u64, PendingOpen>> =
-        RefCell::new(HashMap::new());
-}
-
-/// One open parked on its resolve answer: no live continuation is retained
-/// outside this disposable Reader realm.
-struct PendingOpen {
-    ctx: ReaderContext,
-    path: String,
-    placement: Placement,
 }
 
 /// Boot through the frame when this artifact's URL names one. `true` as soon
@@ -81,28 +60,26 @@ fn emit(body: RuntimeFrame) {
 }
 
 /// The frame-side open flow: ask the Shell to resolve `path` against the
-/// persisted library, park the continuation, run it when the answer lands.
+/// persisted library and await the answer before placing the document.
 /// The frame has no synchronous boundary query — the only honest async form
 /// of "open, resumed where the library says" is to wait for the answer.
 ///
-/// The placement is parked with it: where the document goes was decided
+/// The awaiting continuation keeps its placement: where the document goes was decided
 /// when the user asked, not when the answer lands.
 pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement) {
     if SESSION_ID.with(Cell::get) != Some(ctx.id) || !ctx.pane.admits_work() {
         return;
     }
-    with_api(|api| {
-        let (request, _ticket) = api.ask_resolve_launch(&path);
-        PENDING_OPENS.with(|opens| {
-            opens.borrow_mut().insert(
-                request,
-                PendingOpen {
-                    ctx,
-                    path,
-                    placement,
-                },
-            )
-        });
+    let Some(ticket) = with_api(|api| api.resolve_launch(&path)) else {
+        return;
+    };
+    wasm_bindgen_futures::spawn_local(async move {
+        let document = ticket.await;
+        if SESSION_ID.with(Cell::get) == Some(ctx.id) && ctx.pane.admits_work() {
+            let launch =
+                document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
+            ctx.open.try_run(OpenRequest { launch, placement });
+        }
     });
 }
 
@@ -112,9 +89,7 @@ fn adopt(wire: PortWire, generation: u64) {
     if API.with(|api| api.borrow().is_some()) {
         return;
     }
-    let resolves = Rc::new(PendingResolves::default());
-    let api = PortShellApi::new(wire.clone(), generation, resolves.clone());
-    RESOLVES.with(|slot| *slot.borrow_mut() = Some(resolves));
+    let api = PortShellApi::new(wire.clone(), generation);
     API.with(|slot| *slot.borrow_mut() = Some(api));
     #[cfg(target_arch = "wasm32")]
     install_shell_listener(wire.port().clone(), generation);
@@ -215,15 +190,10 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     // Reader document state stays in its independent panes.
                 }
                 ShellFrame::ResolveLaunchAnswer { request, document } => {
-                    on_resolve_answer(request, document.map(|document| *document));
+                    with_api(|api| api.settle_launch(request, document.map(|document| *document)));
                 }
                 ShellFrame::Dispose => {
-                    PENDING_OPENS.with(|opens| opens.borrow_mut().clear());
-                    RESOLVES.with(|slot| {
-                        if let Some(resolves) = slot.borrow().as_ref() {
-                            resolves.cancel_all();
-                        }
-                    });
+                    with_api(PortShellApi::cancel_resolves);
                     if let Some(id) = SESSION_ID.with(|slot| slot.take()) {
                         let promise = crate::dispose(id);
                         crate::diagnostics::set_reader_live(false);
@@ -247,28 +217,6 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
     port.set_onmessage(Some(listener.as_ref().unchecked_ref()));
     // One listener per frame lifetime; the iframe removal is its GC.
     listener.forget();
-}
-
-/// A resolve round trip landing: the parked open flow continues with the
-/// descriptor, or with a bare launch for a path the store never knew (the
-/// read record mints the row, same as the same-page bridge's None answer).
-fn on_resolve_answer(request: u64, document: Option<LaunchDocument>) {
-    if let Some(resolves) = RESOLVES.with(|slot| slot.borrow().clone()) {
-        resolves.settle(request, document.clone());
-    }
-    if let Some(PendingOpen {
-        ctx,
-        path,
-        placement,
-    }) = PENDING_OPENS.with(|opens| opens.borrow_mut().remove(&request))
-    {
-        let launch =
-            document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
-        // A late answer cannot revive a disposed or replaced requester.
-        if SESSION_ID.with(Cell::get) == Some(ctx.id) && ctx.pane.admits_work() {
-            ctx.open.try_run(OpenRequest { launch, placement });
-        }
-    }
 }
 
 /// `Painted` after the mount has had its paint opportunity (§9): two frames,

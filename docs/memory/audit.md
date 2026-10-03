@@ -186,3 +186,20 @@ create/dispose counts during four-pane reading and continuous-reader cycles,
 and requires a new Library identity plus zero Reader/document frames on
 return. No process-RAM savings are inferred from the source change alone;
 WebKit process retention from prior audits remains unresolved until measured.
+
+## Cleanup ownership review
+
+Launch resolution has one registry, not a ticket map plus an open map. Its
+future owns a weak registry reference; dropping it removes its request and
+waker. Answers and disposal remove entries before waking continuations, and
+late replies retain no abandoned descriptor. Reader checks requester liveness
+after awaiting. Duplicate session launch snapshots and empty document-realm
+preboots were removed; per-pane signals remain authoritative.
+
+The current titlebar now installs its native window-state updater. Probes are
+coalesced and use scoped `try_` reads/writes after awaits. A disposed native
+subscription is inert immediately, but a registration still in flight keeps
+its callback until it can unlisten; unlisten always precedes callback release.
+These ownership rules are checked against real Library WASM using a controlled
+native boundary in the browser suite. This does not assert full process-RAM
+recovery or resolve the previously measured WebKit retention.

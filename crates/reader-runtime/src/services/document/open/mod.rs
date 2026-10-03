@@ -15,6 +15,7 @@
 //! tail owns its own content seeding and calls [`enter`] for everything a
 //! reader expects to behave the same whatever the file extension was.
 
+#[cfg(feature = "pdf")]
 use runtime_contract::boundary::ShellApi;
 
 #[cfg(feature = "pdf")]
@@ -120,10 +121,9 @@ pub fn open_path(ctx: crate::context::ReaderContext, path: String, placement: Pl
         crate::pane_frame::open_path(path, placement);
         return;
     }
-    let launch = ctx
-        .api
-        .resolve_launch(&path)
-        .unwrap_or_else(|| bare_launch(&path));
+    // Only the supported unhosted entry reads its store locally. Hosted
+    // route/pane opens returned above through their asynchronous boundary.
+    let launch = storage::resolve_launch(&path).unwrap_or_else(|| bare_launch(&path));
     // The workspace's open command: the HOST places it (here, or beside this
     // pane), never this pane on its own say-so.
     ctx.open.try_run(OpenRequest { launch, placement });

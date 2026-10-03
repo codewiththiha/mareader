@@ -10,10 +10,9 @@ function parentLane(): { lane: RasterLane; owner: string } | null {
   const nonce = new URLSearchParams(window.location.search).get("pane");
   if (!nonce) return null;
   const scope = window.parent.__mareaderRasterScope;
-  const owner = scope ? `${scope}/${nonce}` : nonce;
   const lane = window.parent.__mareaderRasterLane;
-  if (!lane) throw new Error("The workspace raster coordinator did not load");
-  return { lane, owner };
+  if (!lane || !scope) throw new Error("The workspace scoped raster coordinator did not load");
+  return { lane, owner: `${scope}/${nonce}` };
 }
 
 export function acquireRasterSlot(s: EngineSession, canvasId: string): Promise<RasterPermit | null> {

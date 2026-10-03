@@ -176,13 +176,6 @@ impl ShellApi for ApiHandle {
             }
         }
     }
-    fn resolve_launch(&self, path: &str) -> Option<LaunchDocument> {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.resolve_launch(path),
-            ApiHandle::Frame => crate::frame::with_api(|api| api.resolve_launch(path)).flatten(),
-            ApiHandle::Pane => None,
-        }
-    }
 }
 
 impl ReaderContext {
@@ -228,19 +221,7 @@ impl ReaderContext {
 /// The unhosted substitute (no Shell, as in unit tests): durable writes
 /// go straight to the browser store the Shell would have written, and
 /// navigation commands are no-ops.
-pub struct StandaloneApi;
-
-impl StandaloneApi {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Default for StandaloneApi {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+struct StandaloneApi;
 
 impl ShellApi for StandaloneApi {
     fn open_document(&self, _launch: &LaunchDocument) {}
@@ -264,8 +245,5 @@ impl ShellApi for StandaloneApi {
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {
         app_chrome::window::api::reload_window();
-    }
-    fn resolve_launch(&self, path: &str) -> Option<LaunchDocument> {
-        storage::resolve_launch(path)
     }
 }

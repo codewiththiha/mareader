@@ -43,6 +43,9 @@ pub fn AppTitleBar(
     // (app_chrome::platform), so neither branch is reactive.
     let macos = is_macos();
     let frameless = uses_frameless_controls();
+    if frameless {
+        super::window_state::install(state.ui.window_maximized);
+    }
     // The native lights' two hosts, as the controller computes them: the
     // rail's header gutter while the rail is painted (independent of the
     // bar), the bar's own gutter while the bar owes the lights one. The

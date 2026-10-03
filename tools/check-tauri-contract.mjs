@@ -26,6 +26,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
+import assert from "node:assert/strict";
+import { RUNTIMES, RUNTIME_INPUTS, mergeRuntimeArtifacts } from "./runtime-artifacts.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -227,6 +230,47 @@ for (const required of requiredPaths) {
         `boot-affecting change could skip the lane that tests it`,
     );
   }
+}
+
+// Every route/pane entry and Trunk config participates in dev invalidation.
+const devSource = readText(DEV_ORCHESTRATOR) ?? "";
+assert.deepEqual(RUNTIMES.map((r) => r.name), ["library", "reader", "pdf", "reflow"]);
+assert.equal(RUNTIME_INPUTS.length, 8);
+if (!/const WATCHED_FILES[^;]+\.\.\.RUNTIME_INPUTS/.test(devSource)) {
+  fail("dev watcher does not include every route/pane entry and Trunk config");
+}
+if (!builderScript.includes("runtime-artifacts.mjs --build")) {
+  fail("canonical builder does not use the shared runtime artifact layout");
+}
+
+// Copy-policy fixtures, not a build: strict naming, normalized Trunk names,
+// and first-leg staging are tested without cargo, Trunk or dependencies.
+const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "mareader-artifacts-"));
+try {
+  for (const { name, page, directory } of RUNTIMES) {
+    const dir = path.join(fixture, directory);
+    fs.mkdirSync(dir);
+    for (const file of [page, `${name}.js`, `${name}_bg.wasm`]) {
+      fs.writeFileSync(path.join(dir, file), file);
+    }
+    fs.writeFileSync(path.join(dir, "index.html"), "normalized");
+  }
+  const output = path.join(fixture, "merged");
+  assert.equal(mergeRuntimeArtifacts(output, { sourceRoot: fixture }).length, 12);
+  assert.equal(fs.readFileSync(path.join(output, "reader.html"), "utf8"), "reader.html");
+  fs.unlinkSync(path.join(fixture, "dist-reader/reader.html"));
+  mergeRuntimeArtifacts(output, { sourceRoot: fixture });
+  assert.equal(fs.readFileSync(path.join(output, "reader.html"), "utf8"), "normalized");
+  fs.unlinkSync(path.join(fixture, "dist-reader/index.html"));
+  fs.writeFileSync(path.join(fixture, "dist-reader/unrelated.html"), "not the Reader");
+  assert.throws(() => mergeRuntimeArtifacts(output, { sourceRoot: fixture }), /dist-reader has no artifact for reader.html/);
+  fs.rmSync(output, { recursive: true });
+  const staged = mergeRuntimeArtifacts(output, { sourceRoot: fixture, required: false });
+  assert.equal(staged.length, 11);
+  assert(!fs.existsSync(path.join(output, "reader.html")));
+  assert.deepEqual(mergeRuntimeArtifacts(output, { sourceRoot: fixture, required: false, onlyMissing: true }), []);
+} finally {
+  fs.rmSync(fixture, { recursive: true, force: true });
 }
 
 if (problems.length > 0) {

@@ -26,7 +26,7 @@
 //   3. start `trunk serve`, after clearing a trunk orphaned by an earlier
 //      session off the dev port — an orphan keeps swapping dist/ under the
 //      new session and its window is a 404 on whatever the shell imports
-//   4. probe the dev URL for index.html + both runtime artifacts + both wasm
+//   4. probe the dev URL for index.html + four runtime artifacts + their wasm
 //      modules, and only then report the boot as safe; anything short of a
 //      proven server exits NON-ZERO so Tauri aborts instead of opening a
 //      window against nothing
@@ -47,6 +47,8 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { RUNTIME_INPUTS, RUNTIME_FILES, mergeRuntimeArtifacts } from "./runtime-artifacts.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(root, "dist");
 
@@ -66,15 +68,8 @@ const FINGERPRINT_ROOTS = [
   "styles",
   "tools",
   "index.html",
-  "library.html",
-  "reader.html",
-  "pdf.html",
-  "reflow.html",
   "Trunk.toml",
-  "library.Trunk.toml",
-  "reader.Trunk.toml",
-  "pdf.Trunk.toml",
-  "reflow.Trunk.toml",
+  ...RUNTIME_INPUTS,
   "Cargo.toml",
   "Cargo.lock",
   "package.json",
@@ -96,18 +91,7 @@ const FRESHNESS_SET = [
   "dist/tauri-relay.js",
   "dist/rasterLane.js",
   "dist/readerHost.js",
-  "dist/library.html",
-  "dist/library.js",
-  "dist/library_bg.wasm",
-  "dist/reader.html",
-  "dist/reader.js",
-  "dist/reader_bg.wasm",
-  "dist/pdf.html",
-  "dist/pdf.js",
-  "dist/pdf_bg.wasm",
-  "dist/reflow.html",
-  "dist/reflow.js",
-  "dist/reflow_bg.wasm",
+  ...RUNTIME_FILES.map((file) => `dist/${file}`),
 ];
 
 /** The files the shell and its pane frames load, in boot order. Probed over
@@ -122,55 +106,14 @@ const PROBED = [
   "/bake.html",
   "/coverBake.js",
   "/readerHost.js",
-  "/library.html",
-  "/library.js",
-  "/library_bg.wasm",
-  "/reader.html",
-  "/reader.js",
-  "/reader_bg.wasm",
-  "/pdf.html",
-  "/pdf.js",
-  "/pdf_bg.wasm",
-  "/reflow.html",
-  "/reflow.js",
-  "/reflow_bg.wasm",
-];
-
-/** What the merged artifacts are, and where the other two Trunk builds leave
- *  them. Re-copied after shell rebuilds: Trunk owns `dist/` while serving. */
-const MERGED = [
-  ["dist-library/library.html", "library.html"],
-  ["dist-library/index.html", "library.html"],
-  ["dist-library/library.js", "library.js"],
-  ["dist-library/library_bg.wasm", "library_bg.wasm"],
-  ["dist-reader/reader.html", "reader.html"],
-  ["dist-reader/index.html", "reader.html"],
-  ["dist-reader/reader.js", "reader.js"],
-  ["dist-reader/reader_bg.wasm", "reader_bg.wasm"],
-  // The page first: Trunk names the built page after the target it built
-  // (pdf.html) or normalizes it to index.html, so both are candidates.
-  ["dist-pdf/pdf.html", "pdf.html"],
-  ["dist-pdf/index.html", "pdf.html"],
-  ["dist-pdf/pdf.js", "pdf.js"],
-  ["dist-pdf/pdf_bg.wasm", "pdf_bg.wasm"],
-  ["dist-reflow/reflow.html", "reflow.html"],
-  ["dist-reflow/index.html", "reflow.html"],
-  ["dist-reflow/reflow.js", "reflow.js"],
-  ["dist-reflow/reflow_bg.wasm", "reflow_bg.wasm"],
+  ...RUNTIME_FILES.map((file) => `/${file}`),
 ];
 
 /** Source trees whose changes require a rebuild of the runtime artifacts. The
  *  runtimes share most of the crates, so any of them can change an artifact;
  *  `styles/` and `public/` land in `dist/` through the shell build. */
 const WATCHED_ROOTS = ["crates", "styles", "public"];
-const WATCHED_FILES = [
-  "index.html",
-  "pdf.html",
-  "reflow.html",
-  "Trunk.toml",
-  "pdf.Trunk.toml",
-  "reflow.Trunk.toml",
-];
+const WATCHED_FILES = ["index.html", "Trunk.toml", "Cargo.toml", "Cargo.lock", ...RUNTIME_INPUTS];
 
 /** Directory entries in Trunk.toml's `[watch] ignore` list. Trunk 0.21.x
  *  canonicalizes every entry at startup and a missing path is a hard error,
@@ -215,16 +158,13 @@ function readText(rel) {
  *  number (`tools/check-tauri-contract.mjs` asserts they agree at rest). */
 function devUrl() {
   const conf = JSON.parse(readText("src-tauri/tauri.conf.json"));
-  return conf.build?.devUrl ?? "http://localhost:1420";
+  if (!conf.build?.devUrl) throw new Error("tauri.conf.json has no build.devUrl");
+  return conf.build.devUrl;
 }
 
 function devPort() {
-  try {
-    const url = new URL(devUrl());
-    return Number(url.port || (url.protocol === "https:" ? 443 : 80));
-  } catch {
-    return 1420;
-  }
+  const url = new URL(devUrl());
+  return Number(url.port || (url.protocol === "https:" ? 443 : 80));
 }
 
 /** Run a command to completion, inheriting stdio. Returns the exit code. */
@@ -435,21 +375,12 @@ function writeManifest(fingerprint) {
 
 /** Re-copy the merged runtime artifacts if a shell rebuild removed them.
  *  Trunk owns `dist/` while it serves; the runtimes are merged in from the
- *  other two builds and are not Trunk's to keep. Trunk.toml's post_build
+ *  other four builds and are not Trunk's to keep. Trunk.toml's post_build
  *  hook stages them into every applied distribution — this is the loop-level
  *  backstop for states that hook cannot see (a wiped dist-pdf, say). */
 function ensureMergedArtifacts() {
-  const restored = [];
-  for (const [from, to] of MERGED) {
-    const src = path.join(root, from);
-    const dst = path.join(DIST, to);
-    if (fs.existsSync(dst) || !fs.existsSync(src)) continue;
-    fs.copyFileSync(src, dst);
-    restored.push(to);
-  }
-  if (restored.length > 0) {
-    log(`restored merged runtime artifacts after a shell rebuild: ${restored.join(", ")}`);
-  }
+  const restored = mergeRuntimeArtifacts(DIST, { required: false, onlyMissing: true });
+  if (restored.length) log(`restored merged runtime artifacts: ${restored.join(", ")}`);
   return restored.length > 0;
 }
 
@@ -493,8 +424,7 @@ async function waitForServe(dead) {
   }
 }
 
-/** The gate: the dev server must serve index.html AND both runtime artifacts
- *  AND both wasm modules before any window is allowed to load the shell. */
+/** The gate: the dev server must serve index.html AND all route/pane artifacts before any window is allowed to load the shell. */
 async function proveServed(label) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const failures = await probeArtifacts();
@@ -705,7 +635,7 @@ async function main() {
         "(FORCE_REBUILD=1 to rebuild)",
     );
   } else {
-    log(`freshness gate: ${decision.why} — building the three artifacts`);
+    log(`freshness gate: ${decision.why} — building all five artifacts`);
     await buildAllOrExit();
     writeManifest(decision.fingerprint);
   }

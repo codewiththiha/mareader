@@ -117,11 +117,6 @@ pub trait ShellApi {
     fn publish_digest(&self, json: String);
     /// Reader → Shell: reload the webview (the reader has already flushed).
     fn reload(&self);
-    /// Reader → Shell: resolve an in-session open (drop, dialog) against the
-    /// persisted library: the row id, resume point, cover and display name.
-    /// A query, answered synchronously from the browser store — the reader
-    /// never holds library state, only the descriptor this returns.
-    fn resolve_launch(&self, path: &str) -> Option<LaunchDocument>;
 }
 
 /// A no-Shell default for host tests: every command is recorded, nothing
@@ -157,7 +152,4 @@ impl ShellApi for RecordApi {
     fn doc_status(&self, _report: &DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {}
-    fn resolve_launch(&self, _path: &str) -> Option<LaunchDocument> {
-        None
-    }
 }

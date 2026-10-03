@@ -154,23 +154,17 @@ pub enum FrameVocabulary {
     },
 }
 
-/// What the driver reports through [`FrameEvents`]. The manager's closure
+/// What the driver reports through [`FrameEventHook`]. The manager's closure
 /// decides; the driver's own generation stamps every item, so nothing a
 /// stale frame says can present as current.
 pub enum FrameEvent {
-    /// The frame spoke on the port for the first time and adopted a channel.
-    Contact,
     /// A handshake stage transition (`Status`).
     Stage(BootStage),
-    Ready,
-    Painted,
     /// The runtime itself reported a failure (protocol `Failed`).
     Failed {
         stage: BootStage,
         cause: String,
     },
-    /// §12 phase 1 acknowledged — the iframe may come down.
-    DisposeComplete,
     Boundary(FrameVocabulary),
     /// A message whose generation is not this frame's — kept for the
     /// diagnostics ledger, never applied (§35).
@@ -248,10 +242,10 @@ pub struct Driver {
     saw_dispose_complete: Cell<bool>,
     /// The manager's reporter hook into the driver's event loop.
     events: RefCell<Option<FrameEventHook>>,
-    /// Cancellation/teardown must wake every task observing the boot gate.
-    ready_waiters: RefCell<Vec<js_sys::Function>>,
+    /// The one serialized navigation owns this gate; teardown wakes it.
+    ready_waiter: RefCell<Option<js_sys::Function>>,
     ready_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
-    paint_waiters: RefCell<Vec<js_sys::Function>>,
+    paint_waiter: RefCell<Option<js_sys::Function>>,
     paint_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
     dispose_gate: RefCell<Option<js_sys::Function>>,
     dispose_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
@@ -472,9 +466,9 @@ impl Driver {
             saw_painted: Cell::new(false),
             saw_dispose_complete: Cell::new(false),
             events: RefCell::new(None),
-            ready_waiters: RefCell::new(Vec::new()),
+            ready_waiter: RefCell::new(None),
             ready_pending: RefCell::new(None),
-            paint_waiters: RefCell::new(Vec::new()),
+            paint_waiter: RefCell::new(None),
             paint_pending: RefCell::new(None),
             dispose_gate: RefCell::new(None),
             dispose_pending: RefCell::new(None),
@@ -751,7 +745,6 @@ impl Driver {
         if !self.saw_contact.get() {
             self.saw_contact.set(true);
             self.claim_lane(event);
-            self.report(FrameEvent::Contact);
             // The handshake's next beat belongs to the Shell: `init` rides
             // the lane back (§7, framed README's mermaid), complete with
             // the identity and the reader's launch when there is one.
@@ -777,7 +770,6 @@ impl Driver {
                 if self.paint_pending.borrow().is_none() {
                     self.arm_painted_timeout();
                 }
-                self.report(FrameEvent::Ready);
             }
             RuntimeFrame::Painted => {
                 self.saw_painted.set(true);
@@ -785,7 +777,6 @@ impl Driver {
                 if let (Some(id), Some(window)) = (self.painted_timer.take(), window()) {
                     window.clear_timeout_with_handle(id);
                 }
-                self.report(FrameEvent::Painted);
             }
             RuntimeFrame::Failed { stage, cause } => {
                 self.report(FrameEvent::Failed { stage, cause });
@@ -793,7 +784,6 @@ impl Driver {
             RuntimeFrame::DisposeComplete => {
                 self.saw_dispose_complete.set(true);
                 self.resolve_dispose(Ok(()));
-                self.report(FrameEvent::DisposeComplete);
             }
             RuntimeFrame::OpenDocument { launch } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::OpenDocument(launch)));
@@ -913,26 +903,32 @@ impl Driver {
         }
     }
 
-    /// The boot verdict promise. Teardown resolves every waiter so a
+    /// The boot verdict promise. Teardown resolves its navigation so a
     /// cancelled incoming frame cannot leave its navigation task pending.
     pub fn wait_verdict(&self) -> js_sys::Promise {
         js_sys::Promise::new(&mut |resolve, _reject| {
             if self.ready_pending.borrow().is_some() {
                 let _ = resolve.call0(&JsValue::NULL);
             } else {
-                self.ready_waiters.borrow_mut().push(resolve);
+                assert!(
+                    self.ready_waiter.borrow_mut().replace(resolve).is_none(),
+                    "one navigation owns Ready"
+                );
             }
         })
     }
 
     /// Every handoff awaits this gate as well as Ready. A timeout or a
-    /// cancelled boot wakes all waiters rather than leaving a hidden realm.
+    /// cancelled boot wakes the navigation rather than leaving a hidden realm.
     pub fn wait_painted(&self) -> js_sys::Promise {
         js_sys::Promise::new(&mut |resolve, _reject| {
             if self.paint_pending.borrow().is_some() {
                 let _ = resolve.call0(&JsValue::NULL);
             } else {
-                self.paint_waiters.borrow_mut().push(resolve);
+                assert!(
+                    self.paint_waiter.borrow_mut().replace(resolve).is_none(),
+                    "one navigation owns Painted"
+                );
             }
         })
     }
@@ -946,7 +942,7 @@ impl Driver {
             return;
         }
         *self.paint_pending.borrow_mut() = Some(outcome);
-        for resolve in self.paint_waiters.borrow_mut().drain(..) {
+        if let Some(resolve) = self.paint_waiter.borrow_mut().take() {
             let _ = resolve.call0(&JsValue::NULL);
         }
     }
@@ -967,10 +963,10 @@ impl Driver {
         true
     }
 
-    /// Publish the boot verdict once and wake everyone waiting on it.
+    /// Publish the boot verdict and wake its navigation.
     fn resolve_ready(&self, outcome: Result<(), FrameFatalStage>) {
         *self.ready_pending.borrow_mut() = Some(outcome);
-        for resolve in self.ready_waiters.borrow_mut().drain(..) {
+        if let Some(resolve) = self.ready_waiter.borrow_mut().take() {
             let _ = resolve.call0(&JsValue::NULL);
         }
     }

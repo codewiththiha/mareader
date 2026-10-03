@@ -74,13 +74,11 @@ use wasm_bindgen::JsCast;
 
 pub use context::ReaderContext;
 
-/// One live reader session: the unmount handle plus the launch it was
-/// started with. The manager holds this; dropping it after `dispose`
-/// releases the last Shell-side reference to the session.
-pub struct Session {
-    pub id: u32,
+/// One live Reader session and its explicit unmount owner. Launch metadata
+/// belongs to the document pane's signal, not a duplicate session snapshot.
+struct Session {
+    id: u32,
     unmount: Box<dyn FnOnce()>,
-    pub launch: LaunchDocument,
 }
 
 /// The live session's handles for the entry points outside its reactive
@@ -144,7 +142,6 @@ pub fn start_session(
     });
     diagnostics::note_session_create(id);
 
-    let session_launch = launch.clone();
     let host: web_sys::HtmlElement = host.clone().unchecked_into();
     let handle = mount_to(host, {
         move || {
@@ -170,8 +167,8 @@ pub fn start_session(
             let blend_override = RwSignal::new(launch.blend_override);
 
             // What the reader's panes and effects consume (§17: the runtime
-            // provides the contexts its session reads; the Shell keeps the
-            // <html> paints). The look narrows once and the page hosts
+            // provides the contexts its session reads; the host paints its
+            // own document and forwards settings into independent panes). The look narrows once and the page hosts
             // subscribe to the texture slice of it, so a tint nudge cannot
             // re-run their `texture-*` class.
             let appearance: app_state::AppearanceSignal =
@@ -293,11 +290,7 @@ pub fn start_session(
         drop(handle);
     });
     SESSION.with(|s| {
-        *s.borrow_mut() = Some(Session {
-            id,
-            unmount,
-            launch: session_launch,
-        });
+        *s.borrow_mut() = Some(Session { id, unmount });
     });
     id
 }
@@ -306,8 +299,8 @@ pub fn start_session(
 /// still alive (each pane writes its read point, closes its document
 /// session, releases its owner — explicitly, observably), then the unmount
 /// runs the runtime's disposal, which resolves when the runtime reports its
-/// own completion. The manager awaits this before it starts the next
-/// runtime (§5).
+/// own completion. Shell removes this retiring iframe after the incoming
+/// route has painted; disposal never tears down outgoing pixels early.
 pub fn dispose(id: u32) -> js_sys::Promise {
     let (promise, resolve) = take_dispose_resolver();
     let live = SESSION.with(|s| s.borrow().as_ref().map(|x| x.id) == Some(id));

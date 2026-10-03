@@ -89,7 +89,9 @@ only from its actual same-origin parent with matching nonce/generation.
 An invalid claimed hosted marker never falls back to a standalone app.
 Every subsequent envelope carries its generation; stale messages cannot
 mutate the active route. Library/Reader entry bins use this hosted bootstrap;
-standalone entry pages are available for development.
+standalone entry pages are available for development. A documentless
+standalone Reader host does not preboot a PDF/reflow iframe; its first real
+open creates the document realm.
 
 Persistence and settings authority stay in the Shell. Runtime commands and
 writes use `ShellApi` (`runtime-contract`) over `PortShellApi`
@@ -131,6 +133,10 @@ pane artifacts speculatively. Actual opens pay the route's artifact cost.
 `npm run build:dist` (`tools/build-dist.sh`) runs the Shell and four route/
 pane Trunk targets, merges all pages/glue/WASM into `dist/`, then asserts the
 artifact contract. Tauri, CI and the dev orchestrator use that same builder.
+The shared layout in `tools/runtime-artifacts.mjs` drives canonical builds,
+Trunk staging and dev restoration. All four runtime HTML/Trunk-config inputs
+are watched. Only the runtime's named page or Trunk's normalized `index.html`
+is accepted; arbitrary HTML and malformed dev URLs are not fallback paths.
 A bare `trunk build`/`trunk serve` is not a complete app build.
 `tools/stage-merged.mjs` and the dev freshness/HTTP probes preserve the full
 five-target set across a Shell rebuild.
@@ -164,3 +170,16 @@ live instances are gone. This ownership change is not a guarantee of zero
 RSS or immediate operating-system reclamation; memory savings require
 same-workload measurements. Historical comparisons remain historical, not
 claims about this policy.
+
+## Launch queries and native chrome lifetime
+
+The command-only `ShellApi` cannot pretend to answer synchronously over a
+port. Hosted path opens await a single transport-owned launch future. Normal
+answers, API disposal and abandoned futures remove/wake their requests;
+Reader also checks its session/pane liveness after the await. There is no
+parallel continuation map or orphaned query issued by a synchronous miss.
+
+Each current titlebar installs native maximize-state synchronization in its
+own owner. Native subscriptions become inert on retirement, unlisten before
+freeing callbacks, and retain pending registration callbacks until their
+native handle can be released. This replaces an undeclared, unwired bridge.

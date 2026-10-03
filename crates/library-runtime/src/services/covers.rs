@@ -54,11 +54,9 @@ thread_local! {
 }
 
 /// Forget every in-flight bake and queued path: called when a session
-/// starts. The ledger is module-level and a frame now outlives its sessions
-/// (the Shell recycles frames), so a session that died mid-bake would
-/// otherwise leave `DRAINING` set and its path `PENDING` — and the next
-/// session's backfill would wait forever on an answer addressed to a shelf
-/// that no longer exists.
+/// starts. The ledger belongs to this Library realm; explicit reset and
+/// dispose cleanup keep queued paths and in-flight replies from surviving
+/// their owner. Neither Library nor Reader realms are recycled.
 pub fn reset_ledger() {
     QUEUE.with(|queue| queue.borrow_mut().clear());
     DRAINING.with(|draining| *draining.borrow_mut() = false);

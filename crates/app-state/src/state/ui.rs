@@ -1,6 +1,5 @@
-//! The UI chrome slice of the old `AppState`, plus the appearance signal
-//! alias. The reader and library state slices live beside this module; the
-//! runtime-scoped contexts that bundle them live in the runtime crates.
+//! Shared UI chrome signals. Reader/Library data and their owning contexts
+//! live in their runtime crates, never in this common slice.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -121,9 +120,9 @@ pub struct UiState {
     pub sidebar: RwSignal<SidebarMode>,
     pub toast: RwSignal<Option<Toast>>,
     /// Whether the window is maximized — the frameless caption cluster's
-    /// maximize/restore glyph. Written by the app-lifetime window-state bridge
-    /// (crates/app-ui/src/window_bridge.rs), never by the cluster itself: the state changes
-    /// under it by more than its own button (snapping, taskbar restores,
-    /// drag-to-edge), all of which resize the window.
+    /// maximize/restore glyph. The scoped titlebar updater owns it
+    /// (`app_ui::components::shell::titlebar::window_state`), not the caption
+    /// buttons: state also changes on snapping, taskbar restores and
+    /// drag-to-edge, all of which resize the window.
     pub window_maximized: RwSignal<bool>,
 }

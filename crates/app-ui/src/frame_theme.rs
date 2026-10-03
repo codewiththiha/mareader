@@ -46,7 +46,7 @@ const PERSIST_MS: u64 = 350;
 const ANIMATIONS_OFF_CLASS: &str = "animations-off";
 
 /// The `<html>` class a runtime document wears while its frame is not on
-/// screen (warm behind the active runtime, or rearmed after a recycle). A
+/// screen (incoming before reveal or retiring during disposal). A
 /// hidden frame is `visibility: hidden` in the Shell, which stops painting
 /// but not CSS animation: the animated grain's crawl would keep running its
 /// compositor work in a document nobody sees. `styles/noise.css` pauses the
@@ -178,9 +178,8 @@ pub fn install_frame_theme(
     });
     // Cross-frame sync. All runtime documents share the Shell's origin and
     // so its localStorage; the Shell's write of the active frame's edit fires
-    // `storage` in every OTHER document, the frames included. A warm frame
-    // adopts it, so its promotion reveals the current look instead of the one
-    // it booted with. The active frame receives the echo of its own edit:
+    // `storage` in every OTHER document, the frames included. An incoming
+    // frame adopts it before reveal so its look matches the latest settings. The active frame receives the echo of its own edit:
     // it is equal (skipped), or superseded by a newer local edit still
     // waiting to persist (skipped — the local one wins and lands next).
     use wasm_bindgen::JsCast;
@@ -212,8 +211,8 @@ pub fn install_frame_theme(
 }
 
 /// Tell this document whether its frame is on screen. Runtimes call it from
-/// their frame boot (`hidden` for a warm init or a rearm, shown for a cold
-/// init) and from the Shell's reveal message (`Launch` for the reader,
+/// their frame boot (`hidden` while incoming) and from the Shell's reveal
+/// message (`Launch` for the reader,
 /// `Refresh` for the shelf). Idempotent; a standalone document never calls
 /// it and never carries the class.
 pub fn mark_frame_hidden(hidden: bool) {
@@ -233,7 +232,7 @@ pub fn mark_frame_hidden(hidden: bool) {
 /// has to live next to them: an overlay in the Shell sat above the frames
 /// but followed the Shell's body classes, not the runtime's — so the
 /// animated grain never animated and a toggle made in a frame never reached
-/// it. One per document, kept across the sessions a recycled frame mounts.
+/// it. Exactly one per route document.
 fn ensure_noise_overlay() {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;

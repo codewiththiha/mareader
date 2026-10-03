@@ -15,6 +15,8 @@
 // ran it.
 import { chromium } from "playwright";
 import { verifyPaneRuntimes } from "./pane-runtimes.mjs";
+import { verifyCleanupRuntime } from "./cleanup-runtime.mjs";
+import { verifyWindowState } from "./window-state.mjs";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:8123";
 const PEARLS = "/samples/Programming Pearls (2nd Edition) - Jon Bentley.pdf";
@@ -3719,6 +3721,12 @@ summary.paneRuntimes = await verifyPaneRuntimes({
   urls: { pdf: pearlsUrl },
   paths: { pdf: PEARLS, otherPdf: DEEP_OUTLINE, markdown: SPLIT_NOTES, text: PLAIN_NOTES },
 });
+
+currentStage = "cleanup-runtime-regressions";
+summary.cleanupRuntime = await verifyCleanupRuntime({ page, browser, base: BASE,
+  paths: { pdf: PEARLS, text: PLAIN_NOTES }, openBook, waitFor, snap });
+currentStage = "window-state-regressions";
+summary.windowState = await verifyWindowState({ browser, base: BASE });
 
 // --- Guards ----------------------------------------------------------------
 summary.consoleErrorsUnrelated = otherErrorCount;

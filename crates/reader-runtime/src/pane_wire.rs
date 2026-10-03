@@ -41,18 +41,13 @@ pub enum PaneKind {
 }
 
 impl PaneKind {
-    /// The runtime a format opens in. A pane with no document yet waits in
-    /// the reflow runtime: it never loads pdf.js, and a PDF open replaces it.
-    pub fn for_format(format: PaneFormat) -> Self {
-        match format {
+    /// Choose an artifact only for an actual document path. A documentless
+    /// workspace slot has no document realm to classify or prewarm.
+    pub fn for_path(path: &str) -> Self {
+        match crate::pane::document::classify(path) {
             PaneFormat::Pdf => Self::Pdf,
             _ => Self::Reflow,
         }
-    }
-
-    /// The runtime a path opens in, by its extension.
-    pub fn for_path(path: &str) -> Self {
-        Self::for_format(crate::pane::document::classify(path))
     }
 
     /// The page the frame loads.
@@ -148,7 +143,7 @@ pub struct Boot {
     pub pane_id: u64,
     pub session_id: u32,
     pub format: PaneFormat,
-    pub launch: Option<LaunchDocument>,
+    pub launch: LaunchDocument,
     pub initial_page: u32,
     pub initial_zoom: Option<f64>,
     pub settings: Settings,
@@ -284,7 +279,6 @@ pub enum HostToPane {
     },
     Write(Write),
     Hook(Hook),
-    Open(Box<LaunchDocument>),
     PrepareLeave,
     /// Render page `page`'s thumbnail and answer with a bitmap tagged `req`.
     Thumb {
@@ -434,10 +428,45 @@ mod tests {
     }
 
     #[test]
-    fn a_document_less_pane_waits_in_the_reflow_runtime() {
-        assert_eq!(PaneKind::for_format(PaneFormat::Pending), PaneKind::Reflow);
-        assert_eq!(PaneKind::for_format(PaneFormat::Pdf), PaneKind::Pdf);
+    fn actual_document_paths_select_their_artifact() {
         assert_eq!(PaneKind::for_path("/b/x.md"), PaneKind::Reflow);
         assert_eq!(PaneKind::for_path("/b/x.pdf"), PaneKind::Pdf);
+    }
+    #[test]
+    fn retired_in_realm_document_open_messages_are_rejected() {
+        assert!(serde_json::from_str::<HostToPane>(r#"{"t":"open","path":"/a.pdf"}"#).is_err());
+    }
+
+    #[test]
+    fn document_boot_requires_a_real_launch() {
+        let boot = Boot {
+            pane_id: 1,
+            session_id: 1,
+            format: PaneFormat::Text,
+            launch: crate::services::document::open::bare_launch("/a.txt"),
+            initial_page: 1,
+            initial_zoom: None,
+            settings: Settings::default(),
+            motion: WireMotion::default(),
+            look: None,
+            workspace: Workspace::default(),
+            paper: None,
+            hooks: HookState::default(),
+            active: true,
+            can_split: true,
+            moves: Moves::default(),
+            sidebar: WireSidebar::None,
+            settings_open: false,
+        };
+        let message = HostToPane::Boot(Box::new(boot));
+        let mut json = serde_json::to_value(&message).expect("document boot");
+        assert_eq!(
+            serde_json::from_value::<HostToPane>(json.clone()).unwrap(),
+            message
+        );
+        json["launch"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<HostToPane>(json.clone()).is_err());
+        json.as_object_mut().unwrap().remove("launch");
+        assert!(serde_json::from_value::<HostToPane>(json).is_err());
     }
 }

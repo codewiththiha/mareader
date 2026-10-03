@@ -395,7 +395,6 @@ impl RuntimeManager {
         Rc::new(move |generation, event| {
             let manager = state.manager.clone();
             match event {
-                FrameEvent::Contact | FrameEvent::Ready => {}
                 FrameEvent::Stage(stage) => {
                     // Frame-side telemetry: every handshake stage the runtime
                     // reports lands in the console, so a boot that stalls in
@@ -403,26 +402,6 @@ impl RuntimeManager {
                     web_sys::console::debug_1(&JsValue::from_str(&format!(
                         "[frame {generation}] stage {stage:?}"
                     )));
-                }
-                FrameEvent::Painted => {
-                    let current = manager.live_driver().map(|driver| driver.generation());
-                    if current != Some(generation) {
-                        return;
-                    }
-                    if let Some(host) = manager.host() {
-                        boot::clear_loading(&host);
-                    }
-                    boot::uncover_page();
-                    // Only an actual Painted report admits visible DOM.
-                    // A timeout fails the boot; it never fabricates paint.
-                    if let (Some(host), Some(active)) = (manager.host(), manager.active()) {
-                        let runtime = match active {
-                            ActiveRuntime::Library => RuntimeName::Library,
-                            ActiveRuntime::Reader => RuntimeName::Reader,
-                        };
-                        boot::set_active(&host, runtime);
-                        manager.set_phase(BootPhase::Active(runtime));
-                    }
                 }
                 FrameEvent::Failed { stage, cause } => {
                     let Some(driver) = crate::app::frame::lookup(generation) else {
@@ -459,10 +438,6 @@ impl RuntimeManager {
                         boot::paint_error(&host, &error);
                     }
                     manager.set_phase(BootPhase::Failed(error));
-                }
-                FrameEvent::DisposeComplete => {
-                    // The driver that awaited it resolves its own gate; the
-                    // event is the frame's bookkeeping signal.
                 }
                 FrameEvent::Boundary(vocabulary) => {
                     let state = state.clone();

@@ -7,10 +7,9 @@
 //! never a second implementation of the shelf.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 
+use frame_transport::PortShellApi;
 use frame_transport::wasm::PortWire;
-use frame_transport::{PendingResolves, PortShellApi};
 #[cfg(target_arch = "wasm32")]
 use runtime_contract::protocol::BootStage;
 use runtime_contract::protocol::RuntimeFrame;
@@ -69,8 +68,7 @@ fn start_frame(wire: PortWire, generation: u64) {
     if API.with(|api| api.borrow().is_some()) {
         return;
     }
-    let resolves = Rc::new(PendingResolves::default());
-    let api = PortShellApi::new(wire.clone(), generation, resolves);
+    let api = PortShellApi::new(wire.clone(), generation);
     API.with(|slot| *slot.borrow_mut() = Some(api));
     #[cfg(target_arch = "wasm32")]
     install_shell_listener(wire.port().clone(), generation);

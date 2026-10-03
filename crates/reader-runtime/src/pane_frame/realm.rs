@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use app_state::state::UiState;
 use app_ui::components::primitives::overlay::lanes::OverlayBoard;
-use frame_transport::{PendingResolves, PortShellApi};
+use frame_transport::PortShellApi;
 use leptos::prelude::*;
 use reader_core::settings::Settings;
 use wasm_bindgen::closure::Closure;
@@ -197,11 +197,7 @@ fn adopt(kind: PaneKind, port: web_sys::MessagePort) {
             }
         });
     port.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-    let api = Rc::new(PortShellApi::new(
-        PaneApiWire,
-        0,
-        Rc::new(PendingResolves::default()),
-    ));
+    let api = Rc::new(PortShellApi::new(PaneApiWire, 0));
     LINK.with(|l| {
         *l.borrow_mut() = Some(Link {
             port,
@@ -262,11 +258,6 @@ fn receive(kind: PaneKind, message: HostToPane) {
         HostToPane::Hook(hook) => apply_hook(live.kind, hook),
         #[cfg(not(feature = "pdf"))]
         HostToPane::Hook(_) => {}
-        HostToPane::Open(launch) => {
-            if let Err(err) = live.pane.command(PaneCommand::Open(launch)) {
-                web_sys::console::warn_1(&format!("[pane] open refused: {err:?}").into());
-            }
-        }
         HostToPane::PrepareLeave => {
             let _ = live.pane.command(PaneCommand::PrepareLeave);
         }
@@ -435,14 +426,14 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
         }),
     };
     let id = PaneId::from_raw(boot.pane_id);
-    let document = boot.launch.as_ref().and_then(|launch| {
+    let launch = &boot.launch;
+    let document =
         DocumentId::from_launch(launch.book_id.as_deref(), &launch.path).map(|document_id| {
             DocumentRef {
                 document_id,
                 path: launch.path.clone(),
             }
-        })
-    });
+        });
     let descriptor = PaneDescriptor::remote(
         id,
         PaneRequest {
@@ -453,7 +444,11 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
             request_focus: boot.active,
         },
     );
-    let pane = Rc::new(DocumentPane::create(env, descriptor, boot.launch.clone()));
+    let pane = Rc::new(DocumentPane::create(
+        env,
+        descriptor,
+        Some(boot.launch.clone()),
+    ));
     // This realm's own books balance: its one pane, created here, disposed
     // by `DocumentPane::dispose`.
     crate::diagnostics::note_pane_create();

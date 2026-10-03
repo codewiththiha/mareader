@@ -26,8 +26,10 @@ pub(super) fn retire(nonce: &str) {
                 .ok()?
                 .as_string()
         });
-        let owner = scope.map(|scope| format!("{scope}/{nonce}"));
-        let _ = call("retire", Some(owner.as_deref().unwrap_or(nonce)));
+        if let Some(scope) = scope {
+            let owner = format!("{scope}/{nonce}");
+            let _ = call("retire", Some(&owner));
+        }
     }
     #[cfg(not(target_arch = "wasm32"))]
     let _ = nonce;

@@ -244,11 +244,9 @@ impl PaneRuntime for DocumentPane {
         self.ctx.pane.publish_lifecycle(lifecycle);
         // Idle thumbnail prefetch follows the HOST's suspension (which
         // follows the frame's slot): a suspended pane is KEPT (document
-        // loaded, for an instant reopen), but a rail nobody can see must not
+        // loaded during a bounded handoff), but a rail nobody can see must not
         // render while the shelf is being revealed — suspending abandons
-        // queued and in-flight prefetches, resuming lets them run. A warm
-        // session's pane goes Ready then straight to Suspended, so it starts
-        // parked. The switch is THIS pane's session's: another pane's
+        // queued and in-flight prefetches, resuming lets them run. The switch is THIS pane's session's: another pane's
         // prefetch is untouched. (The view is taken after the lifecycle was
         // published, so a resume sees the pane already admitting work.)
         #[cfg(feature = "pdf")]

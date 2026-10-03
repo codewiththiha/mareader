@@ -30,7 +30,7 @@
 //
 // Plain node modules only, so it runs in a lane that has not run `npm ci`.
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -152,6 +152,27 @@ for (const file of walk(RUNTIME)) {
       );
     }
   });
+}
+
+// Retired execution paths are forbidden, not left as dormant alternatives.
+const retiredWindowBridge = join(ROOT, "crates/app-ui/src/window_bridge.rs");
+if (existsSync(retiredWindowBridge)) failures.push("orphaned window bridge returned; titlebar owns the scoped window-state module");
+const wirePath = join(RUNTIME, "pane_wire.rs");
+const panePath = join(RUNTIME, "frame_pane/mod.rs");
+for (const file of [wirePath, panePath]) {
+  for (const line of codeLines(file)) {
+    if (/HostToPane::Open|\bOpenDelivery\b|\bdocument_started\b/.test(line)) {
+      failures.push(`${relative(ROOT, file)}: retired in-realm/empty-realm document reuse returned`);
+    }
+  }
+}
+const titlebar = join(ROOT, "crates/app-ui/src/components/shell/titlebar/app_title_bar.rs");
+if (!codeLines(titlebar).some((line) => line.includes("super::window_state::install"))) {
+  failures.push("the live AppTitleBar does not install its scoped native window-state updater");
+}
+const commandTrait = join(ROOT, "crates/runtime-contract/src/boundary.rs");
+if (codeLines(commandTrait).some((line) => /fn resolve_launch/.test(line))) {
+  failures.push("ShellApi contains a synchronous launch query; hosted requests must return an awaited transport future");
 }
 
 if (failures.length > 0) {

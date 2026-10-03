@@ -160,6 +160,22 @@ unverifiable terminal evidence is never replaced by a later success.
 See `docs/pane-runtimes.md` for the protocol, paper handoff and regression
 coverage, and `docs/memory/audit.md` for measurement limits.
 
+## Execution-path cleanup
+
+`ShellApi` contains commands/writes, not a synchronous port query. Hosted
+Reader path opens await a transport-owned launch future; response, drop and
+disposal remove the request before waking its continuation. A separate
+pending-open registry is unnecessary. Standalone development reads its store
+locally and a claimed hosted marker never falls back to it.
+
+Document realms always boot with a real launch. A documentless development
+host owns only its mirror/chrome until the first open; every later open gets
+a fresh realm. The retired in-realm `Open` wire message and empty warm realm
+promotion paths are gone. The scoped native window-state updater is installed
+by each live `AppTitleBar`, with coalesced probes and late-registration-safe
+unlisten. See [code-cleanup-audit.md](code-cleanup-audit.md) for the reviewed
+paths, removals and retained supported error/data-migration behavior.
+
 ## Invariants (enforced by tests — never weaken them)
 
 - Shell diagnostic counters are authoritative; runtime digests merge in only
@@ -575,6 +591,6 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   (`crates/app-ui/src/components/app_overlays/drag_overlay.rs`, with no
   `tauri://drag-drop` listener in any runtime — drag-and-drop opening is
   currently unwired) and `install_window_state_bridge`
-  (`crates/app-ui/src/window_bridge.rs`, so the frameless caption's
+  (`crates/app-ui/src/components/shell/titlebar/window_state.rs`, so the frameless caption's
   maximize/restore glyph never follows the window). Both need the Tauri
   event relay to reach the runtime frames.

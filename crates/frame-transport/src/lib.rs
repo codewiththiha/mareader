@@ -3,8 +3,8 @@
 //! `runtime-contract::protocol` owns the VOCABULARY every side serializes;
 //! this crate owns how it moves: a cloneable message sink both runtime
 //! runtimes call their [`ShellApi`] through ([`PortShellApi`]), the request
-//! ids that turn the one synchronous bridge query (`resolve_launch`) into a
-//! port round trip, and — behind `wasm32` — the `MessagePort` wire itself
+//! owned launch futures that pair queries with async port answers, and —
+//! behind `wasm32` — the `MessagePort` wire itself
 //! ([`wasm::PortWire`]). Hosted route artifacts adopt a nonce/generation
 //! authenticated channel offer from their actual same-origin parent.
 //!
@@ -17,7 +17,10 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::future::Future;
+use std::pin::Pin;
+use std::rc::{Rc, Weak};
+use std::task::{Context, Poll, Waker};
 
 use runtime_contract::ShellApi;
 use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
@@ -66,78 +69,115 @@ pub trait Wire: Clone + 'static {
 /// A recording sink for the host lanes: every posted string, shared with the
 /// clone the api holds (a frame's wire is `Clone` so the session's context
 /// stays free of lifetimes).
+#[cfg(test)]
 #[derive(Clone, Default)]
 pub struct TestWire {
     pub posted: Rc<RefCell<Vec<String>>>,
 }
 
+#[cfg(test)]
 impl Wire for TestWire {
     fn post_json(&self, json: String) {
         self.posted.borrow_mut().push(json);
     }
 }
 
-/// The shared settle cell a request parks its answer at (`None` = still
-/// pending), handed to the opener as the [`ResolveTicket`] it polls.
-type TicketSlot = Rc<RefCell<Option<Option<LaunchDocument>>>>;
-
-/// One outstanding `resolve_launch` round trip: the request id the Shell's
-/// [`runtime_contract::protocol::ShellFrame::ResolveLaunchAnswer`] arrives
-/// tagged with, and the descriptor it settled to (`None` while pending).
 #[derive(Default)]
-pub struct PendingResolves {
+struct ResolveState {
+    answer: Option<Option<LaunchDocument>>,
+    wake: Option<Waker>,
+}
+
+type ResolveMap = RefCell<HashMap<u64, Rc<RefCell<ResolveState>>>>;
+
+/// One registry owns every outstanding launch query. Responses, disposal
+/// and dropped futures all remove their entry before waking a continuation.
+#[derive(Default)]
+struct PendingResolves {
     next: Cell<u64>,
-    pending: Rc<RefCell<HashMap<u64, TicketSlot>>>,
+    pending: Rc<ResolveMap>,
 }
 
 impl PendingResolves {
-    /// The id the next request must carry. Ids are per-frame; the generation
-    /// on the envelope already scopes them globally.
-    pub fn issue(&self) -> (u64, ResolveTicket) {
-        let id = self.next.get().saturating_add(1);
+    fn issue(&self) -> (u64, ResolveTicket) {
+        let id = self
+            .next
+            .get()
+            .checked_add(1)
+            .expect("resolve ids exhausted");
         self.next.set(id);
-        let ticket = Rc::new(RefCell::new(None));
-        self.pending.borrow_mut().insert(id, ticket.clone());
-        (id, ResolveTicket { inner: ticket })
+        let state = Rc::new(RefCell::new(ResolveState::default()));
+        self.pending.borrow_mut().insert(id, state.clone());
+        (
+            id,
+            ResolveTicket {
+                id,
+                state,
+                registry: Rc::downgrade(&self.pending),
+            },
+        )
     }
 
-    /// A resolve answer landing, matched to its request by id. A stale
-    /// answer (unknown id — a double answer or one from another generation)
-    /// is dropped, never parked: the identity guard belongs at the envelope.
-    pub fn settle(&self, request: u64, document: Option<LaunchDocument>) {
-        if let Some(ticket) = self.pending.borrow_mut().remove(&request) {
-            *ticket.borrow_mut() = Some(document);
+    fn settle(&self, request: u64, document: Option<LaunchDocument>) {
+        let state = self.pending.borrow_mut().remove(&request);
+        if let Some(state) = state {
+            Self::answer(state, document);
         }
     }
 
-    /// Disposal settles unanswered tickets without retaining descriptors;
-    /// an answer arriving after this cannot resurrect a removed request.
-    pub fn cancel_all(&self) {
-        for (_, ticket) in self.pending.borrow_mut().drain() {
-            *ticket.borrow_mut() = Some(None);
+    fn cancel_all(&self) {
+        let pending = std::mem::take(&mut *self.pending.borrow_mut());
+        for (_, state) in pending {
+            Self::answer(state, None);
         }
     }
 
-    /// Outstanding request ids — the diagnostics window into open queries.
-    pub fn count(&self) -> usize {
-        self.pending.borrow().len()
+    fn answer(state: Rc<RefCell<ResolveState>>, document: Option<LaunchDocument>) {
+        let wake = {
+            let mut state = state.borrow_mut();
+            state.answer = Some(document);
+            state.wake.take()
+        };
+        if let Some(wake) = wake {
+            wake.wake();
+        }
     }
 }
 
-/// The handle an async opener polls for its answer. `None` until the Shell's
-/// answer lands; the id the frame was issued is gone by then, so the ticket
-/// is the whole query.
-#[derive(Clone)]
+/// An awaited launch answer, not a synchronous miss. Its drop cancels the
+/// outstanding request; a late response cannot retain data for an abandoned
+/// continuation. The owning API cancels/wakes all futures during disposal.
 pub struct ResolveTicket {
-    inner: TicketSlot,
+    id: u64,
+    state: Rc<RefCell<ResolveState>>,
+    registry: Weak<ResolveMap>,
 }
 
-impl ResolveTicket {
-    /// `None` while the Shell's answer is still in flight — a pending query,
-    /// not a miss. `Some(document)` is the settled answer, where `None`
-    /// inside means the store had no row for the path.
-    pub fn take(&self) -> Option<Option<LaunchDocument>> {
-        self.inner.borrow_mut().take()
+impl Future for ResolveTicket {
+    type Output = Option<LaunchDocument>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut state = self.state.borrow_mut();
+        if let Some(answer) = state.answer.take() {
+            return Poll::Ready(answer);
+        }
+        if state
+            .wake
+            .as_ref()
+            .is_none_or(|wake| !wake.will_wake(cx.waker()))
+        {
+            state.wake = Some(cx.waker().clone());
+        }
+        Poll::Pending
+    }
+}
+
+impl Drop for ResolveTicket {
+    fn drop(&mut self) {
+        if let Some(registry) = self.registry.upgrade() {
+            registry.borrow_mut().remove(&self.id);
+        }
+        self.state.borrow_mut().wake = None;
     }
 }
 
@@ -148,15 +188,15 @@ impl ResolveTicket {
 pub struct PortShellApi<W: Wire> {
     wire: W,
     generation: u64,
-    resolves: Rc<PendingResolves>,
+    resolves: PendingResolves,
 }
 
 impl<W: Wire> PortShellApi<W> {
-    pub fn new(wire: W, generation: u64, resolves: Rc<PendingResolves>) -> Self {
+    pub fn new(wire: W, generation: u64) -> Self {
         Self {
             wire,
             generation,
-            resolves,
+            resolves: PendingResolves::default(),
         }
     }
 
@@ -173,18 +213,29 @@ impl<W: Wire> PortShellApi<W> {
         }
     }
 
-    /// The request id a resolve answer will arrive tagged with, plus the
-    /// ticket the async opener polls. The opener's flow (see the reader's
-    /// document-open service) cannot be synchronous over a port: ask, then
-    /// await the ticket — or park a continuation behind the id, the two
-    /// shells of the same round trip.
-    pub fn ask_resolve_launch(&self, path: &str) -> (u64, ResolveTicket) {
-        let (id, ticket) = self.resolves.issue();
+    /// Resolve a path over the port. The future distinguishes pending from
+    /// an answered miss; callers must await it before opening the document.
+    pub fn resolve_launch(&self, path: &str) -> ResolveTicket {
+        let (request, ticket) = self.resolves.issue();
         self.emit(RuntimeFrame::ResolveLaunch {
-            request: id,
+            request,
             path: path.to_string(),
         });
-        (id, ticket)
+        ticket
+    }
+
+    pub fn settle_launch(&self, request: u64, document: Option<LaunchDocument>) {
+        self.resolves.settle(request, document);
+    }
+
+    pub fn cancel_resolves(&self) {
+        self.resolves.cancel_all();
+    }
+}
+
+impl<W: Wire> Drop for PortShellApi<W> {
+    fn drop(&mut self) {
+        self.cancel_resolves();
     }
 }
 
@@ -235,15 +286,6 @@ impl<W: Wire> ShellApi for PortShellApi<W> {
     fn reload(&self) {
         self.emit(RuntimeFrame::Reload);
     }
-    fn resolve_launch(&self, path: &str) -> Option<LaunchDocument> {
-        // A port cannot answer synchronously: the synchronous trait entry is
-        // the same-page bridge's shape. The frame's open pipeline uses
-        // [`PortShellApi::ask_resolve_launch`] and awaits; a caller that
-        // still reaches here (the single generic call site guarded off frame
-        // boots) gets the honest answer for "no channel": nothing resolved.
-        let _ = self.ask_resolve_launch(path);
-        None
-    }
 }
 
 #[cfg(test)]
@@ -251,11 +293,9 @@ mod tests {
     use super::*;
     use runtime_contract::protocol::BootStage;
 
-    fn api() -> (PortShellApi<TestWire>, TestWire, Rc<PendingResolves>) {
+    fn api() -> (PortShellApi<TestWire>, TestWire) {
         let wire = TestWire::default();
-        let resolves = Rc::new(PendingResolves::default());
-        let api = PortShellApi::new(wire.clone(), 17, resolves.clone());
-        (api, wire, resolves)
+        (PortShellApi::new(wire.clone(), 17), wire)
     }
 
     #[test]
@@ -284,7 +324,7 @@ mod tests {
 
     #[test]
     fn every_emitted_envelope_carries_the_frame_generation() {
-        let (api, wire, _) = api();
+        let (api, wire) = api();
         api.navigate_library();
         api.bake_cover("/books/a.pdf");
         api.publish_digest("{}".to_string());
@@ -304,7 +344,7 @@ mod tests {
 
     #[test]
     fn a_gloss_save_leaves_over_the_port_for_the_shell_to_write() {
-        let (api, wire, _) = api();
+        let (api, wire) = api();
         api.save_gloss("b-3", "[]".to_string());
         let posted = wire.posted.borrow();
         assert_eq!(
@@ -315,7 +355,7 @@ mod tests {
 
     #[test]
     fn a_status_update_carries_the_stage_it_names() {
-        let (api, wire, _) = api();
+        let (api, wire) = api();
         api.emit(RuntimeFrame::Status {
             stage: BootStage::Mounted,
         });
@@ -327,40 +367,97 @@ mod tests {
         );
     }
 
-    #[test]
-    fn disposal_cancels_every_pending_resolve_and_ignores_late_answers() {
-        let (api, _, resolves) = api();
-        let (first_id, first) = api.ask_resolve_launch("/books/first.pdf");
-        let (_, second) = api.ask_resolve_launch("/books/second.pdf");
-        resolves.cancel_all();
-        assert_eq!(resolves.count(), 0);
-        assert_eq!(first.take(), Some(None));
-        assert_eq!(second.take(), Some(None));
-        resolves.settle(first_id, None);
-        assert!(first.take().is_none());
-        assert_eq!(resolves.count(), 0);
+    struct WakeCount(std::sync::atomic::AtomicUsize);
+
+    impl std::task::Wake for WakeCount {
+        fn wake(self: std::sync::Arc<Self>) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn poll(
+        ticket: &mut ResolveTicket,
+        wake: &std::sync::Arc<WakeCount>,
+    ) -> Poll<Option<LaunchDocument>> {
+        let waker = Waker::from(wake.clone());
+        Pin::new(ticket).poll(&mut Context::from_waker(&waker))
     }
 
     #[test]
-    fn a_resolve_round_trip_pairs_the_answer_to_its_request() {
-        let (api, wire, resolves) = api();
-        let (_first_id, first) = api.ask_resolve_launch("/books/first.pdf");
-        let (_second_id, second) = api.ask_resolve_launch("/books/second.pdf");
+    fn disposal_cancels_every_pending_resolve_and_ignores_late_answers() {
+        let (api, _) = api();
+        let mut first = api.resolve_launch("/books/first.pdf");
+        let mut second = api.resolve_launch("/books/second.pdf");
+        let wake = std::sync::Arc::new(WakeCount(std::sync::atomic::AtomicUsize::new(0)));
+        assert!(poll(&mut first, &wake).is_pending());
+        assert!(poll(&mut second, &wake).is_pending());
+        api.cancel_resolves();
+        assert_eq!(api.resolves.pending.borrow().len(), 0);
+        assert_eq!(wake.0.load(std::sync::atomic::Ordering::Relaxed), 2);
+        assert_eq!(poll(&mut first, &wake), Poll::Ready(None));
+        assert_eq!(poll(&mut second, &wake), Poll::Ready(None));
+        api.settle_launch(1, None);
+        assert_eq!(wake.0.load(std::sync::atomic::Ordering::Relaxed), 2);
+        assert_eq!(api.resolves.pending.borrow().len(), 0);
+    }
+
+    #[test]
+    fn a_resolve_round_trip_pairs_and_wakes_only_its_request() {
+        let (api, wire) = api();
+        let mut first = api.resolve_launch("/books/first.pdf");
+        let mut second = api.resolve_launch("/books/second.pdf");
+        let wake = std::sync::Arc::new(WakeCount(std::sync::atomic::AtomicUsize::new(0)));
+        assert!(poll(&mut first, &wake).is_pending());
+        assert!(poll(&mut second, &wake).is_pending());
         let posted = wire.posted.borrow();
         assert_eq!(posted.len(), 2);
         assert!(posted[0].contains(r#""request":1"#), "{}", posted[0]);
         assert!(posted[1].contains(r#""request":2"#), "{}", posted[1]);
-        assert_eq!(resolves.count(), 2);
-        // The answer to the SECOND request settles its ticket only: a
-        // settled "no row" reads Some(None), distinguishable from pending.
-        resolves.settle(2, None);
-        assert_eq!(second.take(), Some(None));
-        // A repeated take of the settled ticket yields nothing; the known
-        // pending first ticket stays pending.
-        assert!(second.take().is_none());
-        assert!(first.take().is_none());
-        assert_eq!(resolves.count(), 1);
-        resolves.settle(99, None);
-        assert_eq!(resolves.count(), 1, "a stale answer is dropped, not parked");
+        assert_eq!(api.resolves.pending.borrow().len(), 2);
+        api.settle_launch(2, None);
+        assert_eq!(wake.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(poll(&mut second, &wake), Poll::Ready(None));
+        assert!(poll(&mut first, &wake).is_pending());
+        assert_eq!(api.resolves.pending.borrow().len(), 1);
+        api.settle_launch(99, None);
+        api.settle_launch(2, None);
+        assert_eq!(wake.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(api.resolves.pending.borrow().len(), 1);
+    }
+
+    #[test]
+    fn a_stored_launch_is_not_replaced_with_a_synchronous_miss() {
+        let (api, _) = api();
+        let mut ticket = api.resolve_launch("/books/read.pdf");
+        let wake = std::sync::Arc::new(WakeCount(std::sync::atomic::AtomicUsize::new(0)));
+        assert!(poll(&mut ticket, &wake).is_pending());
+        let launch = LaunchDocument {
+            book_id: Some("stored-book".into()),
+            path: "/books/read.pdf".into(),
+            resume_page: 8,
+            saved_fraction: Some(0.5),
+            blend_override: false,
+            cover_data_url: None,
+            display_name: Some("Read".into()),
+        };
+        api.settle_launch(1, Some(launch.clone()));
+        assert_eq!(poll(&mut ticket, &wake), Poll::Ready(Some(launch)));
+        assert_eq!(wake.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert!(api.resolves.pending.borrow().is_empty());
+    }
+
+    #[test]
+    fn dropping_a_query_or_its_api_releases_and_wakes_the_owned_continuation() {
+        let (api, _) = api();
+        let first = api.resolve_launch("/books/first.pdf");
+        drop(first);
+        assert!(api.resolves.pending.borrow().is_empty());
+        api.settle_launch(1, None);
+        let mut second = api.resolve_launch("/books/second.pdf");
+        let wake = std::sync::Arc::new(WakeCount(std::sync::atomic::AtomicUsize::new(0)));
+        assert!(poll(&mut second, &wake).is_pending());
+        drop(api);
+        assert_eq!(wake.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(poll(&mut second, &wake), Poll::Ready(None));
     }
 }

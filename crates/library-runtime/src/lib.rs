@@ -42,8 +42,8 @@ pub use context::LibraryContext;
 /// disposes it like the reader's; the library keeps no cross-session state —
 /// the durable copy in storage is what the next session seeds from
 /// (persist data ≠ retain live object).
-pub struct Session {
-    pub id: u32,
+struct Session {
+    id: u32,
     unmount: Box<dyn FnOnce()>,
 }
 

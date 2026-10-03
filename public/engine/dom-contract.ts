@@ -5,7 +5,7 @@
 // `closest` that returns null — a selection stops producing an "Explain"
 // pill, or a canvas stops finding its host — and the only symptom is a
 // reader that quietly does nothing.
-// The app's half is `src/dom_contract.rs`. Two attribute NAMES
+// The app's half is `crates/app-state/src/dom_contract.rs`. Two attribute NAMES
 // (`data-host-page`, `data-ai-popover`) cannot live there — a Leptos view
 // takes an attribute's name from the markup, only its value from an
 // expression — so the hosts write them as literals and the check reads those
@@ -35,7 +35,7 @@ export const SESSION_ATTR = "data-engine-sid";
  * The engine only ever branches on `reflow`: a PDF host is the path it has
  * always taken, and the app decides what to do with a `host` value it does
  * not recognise. `HOST_PDF` is therefore the app's to declare
- * (`src/dom_contract.rs`), and the check forbids spelling either value as a
+ * (`crates/app-state/src/dom_contract.rs`), and the check forbids spelling either value as a
  * literal all the same.
  */
 export const HOST_REFLOW = "reflow";

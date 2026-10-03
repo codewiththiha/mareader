@@ -21,7 +21,7 @@ pub enum ApiHandle {
 impl ShellApi for ApiHandle {
     fn open_document(&self, launch: &runtime_contract::boundary::LaunchDocument) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().open_document(launch),
+            ApiHandle::Standalone => StandaloneApi.open_document(launch),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.open_document(launch));
             }
@@ -29,7 +29,7 @@ impl ShellApi for ApiHandle {
     }
     fn navigate_library(&self) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().navigate_library(),
+            ApiHandle::Standalone => StandaloneApi.navigate_library(),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.navigate_library());
             }
@@ -37,7 +37,7 @@ impl ShellApi for ApiHandle {
     }
     fn read_point(&self, point: &runtime_contract::boundary::ReadPoint) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().read_point(point),
+            ApiHandle::Standalone => StandaloneApi.read_point(point),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.read_point(point));
             }
@@ -45,7 +45,7 @@ impl ShellApi for ApiHandle {
     }
     fn save_settings(&self, settings: &Settings) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().save_settings(settings),
+            ApiHandle::Standalone => StandaloneApi.save_settings(settings),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_settings(settings));
             }
@@ -53,7 +53,7 @@ impl ShellApi for ApiHandle {
     }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().save_cover(path, image),
+            ApiHandle::Standalone => StandaloneApi.save_cover(path, image),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_cover(path, image));
             }
@@ -65,7 +65,7 @@ impl ShellApi for ApiHandle {
     fn save_gloss(&self, _key: &str, _marks: String) {}
     fn bake_cover(&self, path: &str) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().bake_cover(path),
+            ApiHandle::Standalone => StandaloneApi.bake_cover(path),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.bake_cover(path));
             }
@@ -73,7 +73,7 @@ impl ShellApi for ApiHandle {
     }
     fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().doc_status(report),
+            ApiHandle::Standalone => StandaloneApi.doc_status(report),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.doc_status(report));
             }
@@ -81,7 +81,7 @@ impl ShellApi for ApiHandle {
     }
     fn publish_digest(&self, json: String) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().publish_digest(json),
+            ApiHandle::Standalone => StandaloneApi.publish_digest(json),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.publish_digest(json));
             }
@@ -89,16 +89,10 @@ impl ShellApi for ApiHandle {
     }
     fn reload(&self) {
         match self {
-            ApiHandle::Standalone => StandaloneApi::new().reload(),
+            ApiHandle::Standalone => StandaloneApi.reload(),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.reload());
             }
-        }
-    }
-    fn resolve_launch(&self, path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
-        match self {
-            ApiHandle::Standalone => StandaloneApi::new().resolve_launch(path),
-            ApiHandle::Frame => crate::frame::with_api(|api| api.resolve_launch(path)).flatten(),
         }
     }
 }
@@ -111,7 +105,6 @@ pub struct LibraryContext {
     pub settings: RwSignal<Settings>,
     pub ui: UiState,
     pub api: ApiHandle,
-    pub id: u32,
     /// The shared-chrome handles this session provides: its settings + ui
     /// slices with a dormant reader surface (the reader is another runtime).
     pub chrome: app_state::ChromeState,
@@ -142,7 +135,6 @@ impl LibraryContext {
             settings,
             ui,
             api,
-            id: 0,
             chrome: app_state::ChromeState {
                 settings,
                 ui,
@@ -168,19 +160,7 @@ impl Default for LibraryContext {
 
 /// The unhosted substitute (no Shell, as in unit tests): durable writes
 /// go straight to the browser store.
-pub struct StandaloneApi;
-
-impl StandaloneApi {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Default for StandaloneApi {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+struct StandaloneApi;
 
 impl ShellApi for StandaloneApi {
     fn open_document(&self, _launch: &runtime_contract::boundary::LaunchDocument) {}
@@ -208,8 +188,5 @@ impl ShellApi for StandaloneApi {
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {
         app_chrome::window::api::reload_window();
-    }
-    fn resolve_launch(&self, path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
-        storage::resolve_launch(path)
     }
 }
