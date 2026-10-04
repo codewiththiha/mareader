@@ -568,6 +568,17 @@ pub fn ReflowStreamLayout(
                                     let v_row = handle.get_value();
                                     let row_el = row_ref;
                                     use_resize_observer(row_ref, move |_| {
+                                        // A report taken mid-transaction
+                                        // belongs to a geometry being
+                                        // replaced: the tween rewrites every
+                                        // row's size on every frame, so a
+                                        // height read now measures the scale
+                                        // it is leaving. The settled pass
+                                        // measures them all again at the
+                                        // scale they land on.
+                                        if state.viewer.try_zooming_now() != Some(false) {
+                                            return;
+                                        }
                                         let Some(el) = row_el.get() else {
                                             return;
                                         };

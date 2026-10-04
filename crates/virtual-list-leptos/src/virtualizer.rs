@@ -73,6 +73,7 @@ impl VirtualizerInner {
             pending_scroll: Rc::new(Cell::new(None)),
             scroll_armed: Rc::new(Cell::new(false)),
             flush_armed: Rc::new(Cell::new(false)),
+            now_flush_armed: Rc::new(Cell::new(false)),
             banked_scroll: Cell::new(0.0),
             scroll_feedback: Cell::new(true),
             container_ro: RefCell::new(None),
@@ -113,6 +114,12 @@ pub(crate) struct VirtualizerInner {
     pub pending_scroll: Rc<Cell<Option<f64>>>,
     pub scroll_armed: Rc<Cell<bool>>,
     pub flush_armed: Rc<Cell<bool>>,
+
+    /// The pre-paint flush's once-per-batch latch (see
+    /// [`VirtualizerInner::arm_now_flush`]). Separate from `flush_armed`: the
+    /// two are armed by different reports and land at different checkpoints,
+    /// so a batch that armed both must lose neither.
+    pub now_flush_armed: Rc<Cell<bool>>,
 
     /// Measured sizes the scroller has not been told about: the anchored
     /// scroll corrections a MEASUREMENT flush produced while the reader was
@@ -373,6 +380,38 @@ impl VirtualizerInner {
                 return;
             }
             inner.flush_armed.set(false);
+            let flush = inner.core.borrow_mut().flush();
+            if let Some(flush) = flush {
+                inner.apply_measurements(flush.step);
+            }
+        });
+    }
+
+    /// Land the queued measurements before the frame paints, TOGETHER: the
+    /// pre-paint half of [`Self::arm_flush`], for reports the browser has
+    /// already batched — one `ResizeObserver` notification, or one measure
+    /// pass over the mounted window.
+    ///
+    /// The first report arms the latch and every report beside it rides along,
+    /// so a window of resized rows costs ONE layout rebuild instead of one per
+    /// row. The vehicle is the microtask checkpoint, which runs as soon as the
+    /// reporting callback returns and still precedes the paint — the guarantee
+    /// the synchronous flush gave, without the rebuild per row it also cost.
+    pub(crate) fn arm_now_flush(self: &Rc<Self>) {
+        if self.now_flush_armed.get() {
+            return;
+        }
+        self.now_flush_armed.set(true);
+        let inner = self.clone();
+        queue_microtask(move || {
+            // Same dispose window as the other armed flushes: this checkpoint
+            // can be the first thing that runs after the reader went away.
+            // The latch clears FIRST, so a row the new layout resized arms a
+            // fresh flush of its own.
+            inner.now_flush_armed.set(false);
+            if inner.settled.try_get_untracked().is_none() {
+                return;
+            }
             let flush = inner.core.borrow_mut().flush();
             if let Some(flush) = flush {
                 inner.apply_measurements(flush.step);
@@ -897,15 +936,17 @@ impl Virtualizer {
     /// That is the whole difference between a row of text whose real height is
     /// correct in the frame it first paints and one that spends a frame
     /// painted on top of the row below it.
+    ///
+    /// The size is QUEUED, not flushed: the reports of one browser-delivered
+    /// batch land together on a single pre-paint flush
+    /// ([`VirtualizerInner::arm_now_flush`]), so sweeping a whole window costs
+    /// the layout one rebuild rather than one per row.
     pub fn report_size_now(&self, index: usize, size: f64) {
         if self.inner.settled.try_get_untracked().is_none() {
             return;
         }
         self.inner.core.borrow_mut().queue_size(index, size);
-        let flush = self.inner.core.borrow_mut().flush();
-        if let Some(flush) = flush {
-            self.inner.apply_measurements(flush.step);
-        }
+        self.inner.arm_now_flush();
     }
 
     /// Buffer measurements without flushing.
