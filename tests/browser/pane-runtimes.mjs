@@ -443,6 +443,23 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await page.waitForFunction(() => !window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
   await page.mouse.click(press.x, press.y);
   await settle("the pane the keys are about to move to hold the host's focus", (f) => f.active === "true");
+  // …and the zoom has to be over. A transaction owns the strip it rescales
+  // while it runs — its own landing write re-lands the offset it anchored —
+  // so a nudge issued into it is overwritten (ZOOM_ANIM_MS + ZOOM_GRACE_MS,
+  // 420 ms). Wait for the scale to HOLD still past that, then hand the keys
+  // over; the strip's baseline below is read on the settled side.
+  const stable = async (label, field, holdMs) => {
+    const started = Date.now();
+    let last = null, since = started;
+    for (;;) {
+      const value = (await probe())[field];
+      if (value !== last) { last = value; since = Date.now(); }
+      if (Date.now() - since >= holdMs) return value;
+      if (Date.now() - started > 20_000) throw new Error(`${label}: ${field} never held still (last ${JSON.stringify(value)})`);
+      await page.waitForTimeout(60);
+    }
+  };
+  await stable("the pane's zoom to settle before the vim keys", "scale", 500);
   // Where a key lands decides whether the reader acts on it, so a failed
   // settle below can say what had the focus instead of only that the strip
   // did not move.
