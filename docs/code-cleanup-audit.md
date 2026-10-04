@@ -48,6 +48,41 @@ A second repository-wide pass over the same revision looked for symbols whose on
 | An empty `BootStage::Disposed` arm in `src/app/frame.rs` | A branch whose body only explained why it was empty. | The comment, on the `Status` arm it belongs to. |
 | Manifest entries nothing reaches: `app-ui`→`library-core`, `serde_json`; `reader-runtime`→`ui-geom`; `storage`→`leptos`; `reflow-core`→`serde` (and its dev `serde_json`) | Unused dependencies keep a graph edge alive that the dependency gate reasons about. | The crates' own manifests. |
 
+## Third pass: visibility, and the end of the dead-symbol census
+
+A whole-tree census ran again over the current tip (575 Rust files), this time asking a narrower question
+than the second pass: for every `pub`/`pub(crate)` item, which REFERENCES name it — with comments and
+string literals stripped first, so a name that survives only in a doc sentence, a NOTES entry or a vendor
+bundle does not read as a caller. Two facts came out of it.
+
+The dead symbols really are gone. The seven `pub` fns the second pass removed have no remaining mention
+anywhere (`is_destructive`, `track_at`, `awaiting_check`, `apply_preset` are absent from the tree
+entirely), no type in the workspace has zero code references, and the field census' only zero-use fields
+remain the serde-wire shapes and the `ObserverBinding` destructure it already justified. Nothing to delete.
+
+What was left is surface: 125 items whose only outside-file evidence was prose. 55 of them — functions,
+consts and statics — were provably safe to narrow, and are now private: the item is a fn/const/static, it
+has a real non-test use in its own file (so the `dead_code` lint stays quiet), no other file names it, no
+same-file `pub use` re-exports it, it carries no `#[wasm_bindgen]`/`#[no_mangle]` export attribute, no
+source gate or shipped JS/TS names it, and neither its declaration nor any of its uses sits inside a
+`#[cfg(...)]` region.
+
+| Old path/state | Finding | Current owner/path |
+| --- | --- | --- |
+| 55 `pub`/`pub(crate)` fns, consts and statics across 30 files | Named by nothing outside their own file; the `pub` advertised an interface no sibling module can reach. | The same items, one visibility word lighter. Examples: `virtualizer.rs`'s `publish_range`/`arm_flush`/`arm_now_flush`/`flush_banked_scroll` (the adapter's own plumbing), `host/mod.rs`'s lift/drag handlers, `host/tree.rs`'s ratio constants, `app-ui`'s `Loader`/`ApplyToAll` components (used by their own module). |
+| `app-ui::…::use_custom_event::use_typed_event` | No caller anywhere: the live hook is `use_typed_event_from` (gloss wiring), which is this one plus the dispatch element. | `use_typed_event_from`. |
+| `app-ui::…::use_custom_event::use_raw_event` | Same: `use_raw_event_from` is the live sibling (link navigation, selection, selection tracking). | `use_raw_event_from`; the module doc now describes what is left. |
+| `use_custom_event`'s `pub use crate::events::dispatch_typed_event` | A second path to the dispatcher; every caller already reaches `app_ui::events::` directly. | `crate::events` (services use it there). |
+
+Deliberately NOT narrowed, each for a reason a name census cannot see: the 45 candidate TYPES (a type's
+name is usually absent at its use sites — the value comes back from a fn by inference — so narrowing one
+below the visibility of a signature that names it trips `private_interfaces`, which `-D warnings` makes
+fatal); items whose only callers are test-only or cfg-gated (narrowing makes the other build warn
+`dead_code`); and the names the source gates read textually (`canvas_id_for_mode`, `take_session`, the
+engine-smoke `disable`). The reader host's lift/drag/grab path was re-read end to end while checking the
+census — it is live (the pane frame installs the gesture, the sink reaches `ReaderHost::begin_lift`, the
+view draws the lifted card) and holds no remnant; nothing there was removed.
+
 ## Preserved deliberately
 
 - Five artifact types and independent PDF/reflow document realms, with no Reader/Library warm slots or route reuse.
