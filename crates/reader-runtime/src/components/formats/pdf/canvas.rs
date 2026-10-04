@@ -519,11 +519,22 @@ pub fn PdfPageCanvas(
             // size it belongs at, and there is no second paint to snap.
             if !sized_async.get() {
                 sized_async.set(true);
-                if let Ok(size) = pdf_async.probe_page_size(page_no).await
-                    && let Some(cb) = sized_cb
-                    && cb.run((page_no, size.width, size.height))
-                {
-                    return;
+                if let Ok(size) = pdf_async.probe_page_size(page_no).await {
+                    // A probe can outlive the host that asked for it: a rapid
+                    // reopen disposes this page — and its owner's arena — while
+                    // the answer is in flight, and a `Callback` IS an arena
+                    // handle, so asking one anything afterwards panics the
+                    // wasm. Same question, same handle as the landing guard
+                    // below; a dead host owes nothing, not even the raster it
+                    // was about to ask for.
+                    if seq_async.try_get_value().is_none() {
+                        return;
+                    }
+                    if let Some(cb) = sized_cb
+                        && cb.run((page_no, size.width, size.height))
+                    {
+                        return;
+                    }
                 }
             }
             // A render whose session died resolves `no_session` (the engine

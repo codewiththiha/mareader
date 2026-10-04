@@ -186,18 +186,21 @@ pub(crate) fn page_sized(state: ReaderState, page: u32, width: f64, height: f64)
     {
         return false;
     }
+    // Every read below is a `try_` one, and the ones that follow are not: this
+    // runs from a probe that can outlive its reader state — a rapid reopen
+    // disposes the pane while a page's size is still in flight — and the fit
+    // maths reads its signals plainly. Reaching it at all is what makes those
+    // reads safe, and nothing between here and them awaits.
+    let Some(fit) = state.viewer.fit.try_get_untracked() else {
+        return false;
+    };
     // A page that is only look-ahead is recorded, not fitted: the reader is
     // not looking at it, and a scroll that reaches it re-asks through the fit
     // watcher (which now resolves against the true box).
     if state.viewer.page.try_get_untracked() != Some(page) {
         return false;
     }
-    let fitting = state
-        .viewer
-        .fit
-        .try_get_untracked()
-        .is_some_and(|fit| fit != FitMode::None);
-    if !fitting || state.viewer.try_zooming_now() != Some(false) {
+    if fit == FitMode::None || state.viewer.try_zooming_now() != Some(false) {
         return false;
     }
     let Some(committed) = state.viewer.zoom.committed.try_get_untracked() else {
