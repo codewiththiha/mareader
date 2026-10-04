@@ -375,15 +375,18 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   };
   // A press inside the pane is what makes it the host's active pane, and the
   // forwarded keys only carry to that one — so the sequence starts where a
-  // reader's does.
-  const stripHit = await page.evaluate((id) => {
+  // reader's does. The aim is the pane's middle: the Reader's title bar lies
+  // over the top of the workspace and takes the presses there (the pane
+  // entry keeps its corner controls below it for exactly that reason), so a
+  // press near the pane's corner would land on the chrome and never reach
+  // the pane.
+  const press = await page.evaluate((id) => {
     const reader = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]');
     const frame = reader.contentDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
-    const strip = frame.contentDocument.querySelector("#page-list");
-    const r = strip.getBoundingClientRect(), host = frame.getBoundingClientRect(), outer = reader.getBoundingClientRect();
-    return { x: outer.left + host.left + r.left + 30, y: outer.top + host.top + r.top + 30 };
+    const box = frame.getBoundingClientRect(), outer = reader.getBoundingClientRect();
+    return { x: outer.left + box.left + box.width / 2, y: outer.top + box.top + box.height / 2 };
   }, pdfPane);
-  await page.mouse.click(stripHit.x, stripHit.y);
+  await page.mouse.click(press.x, press.y);
   const seated = await settle("the pressed PDF pane to take the host's focus", (f) => f.active === "true" && f.scale > 0);
   // The toolbar buttons are clicked on the element (their handler, not a hit
   // test): the bar sits under the window drag region in a packaged app, which
