@@ -453,11 +453,28 @@ fn install_effects(inner: &Rc<Inner>) {
             inner.write_if(|m| m.auto_scroll != on, Write::AutoScroll { on });
         }
     });
-    let w = weak;
+    let w = weak.clone();
     Effect::new(move |_| {
         let on = search.visible.get();
         if let Some(inner) = w.upgrade() {
             inner.write_if(|m| m.search_visible != on, Write::SearchVisible { on });
+        }
+    });
+
+    // The outline's jump is not a mirrored value, so `write_if` cannot guard
+    // it: there is no mirror field to compare against. It is TAKEN instead —
+    // the host takes one on the way to a frame, the pane's own arm takes one on
+    // the way to the stream (`ViewerSignals::take_outline_jump`). A value left
+    // standing would be re-sent at a handoff (a lift, a swap, a mode flip) as a
+    // jump the reader made long ago, and a second click on the same entry
+    // would not be a change.
+    let w = weak;
+    Effect::new(move |_| {
+        let Some(index) = viewer.take_outline_jump() else {
+            return;
+        };
+        if let Some(inner) = w.upgrade() {
+            inner.jump_outline(index);
         }
     });
 }
@@ -476,6 +493,13 @@ impl Inner {
         if let Some(frame) = self.live.borrow().as_ref() {
             frame.post(message);
         }
+    }
+
+    /// Hand the pane realm a one-shot directive: show outline entry `index`.
+    /// The mirrored writes go through [`Inner::write_if`]; a directive has no
+    /// mirror field to compare, so it is posted and taken instead.
+    fn jump_outline(&self, index: u32) {
+        self.post_live(&HostToPane::Write(Write::Outline { index }));
     }
 
     /// Forward a chrome write unless the live frame already reported it.

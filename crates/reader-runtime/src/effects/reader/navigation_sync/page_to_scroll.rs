@@ -9,22 +9,9 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use reader_core::view::ViewMode;
-use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
+use virtual_list_leptos::{Align, Virtualizer};
 
-use crate::state::ReaderState;
-
-use super::{Arms, JumpGate};
-
-/// How a page-to-scroll jump should travel: gliding while the reader's scroll
-/// switch allows it, in one step when it does not. Read UNTRACKED, because the
-/// flag that stops a jump gliding must not be what re-runs the jump.
-fn scroll_mode(state: ReaderState) -> ScrollMode {
-    if state.viewer.motion.get_untracked().scroll_glide {
-        ScrollMode::Auto
-    } else {
-        ScrollMode::Instant
-    }
-}
+use super::{Arms, JumpGate, scroll_mode};
 
 /// Install the page → scroll arm for one axis.
 pub(super) fn install(
@@ -50,7 +37,9 @@ pub(super) fn install(
         // the continuous text stream scrolls blocks, and a page number
         // commanded at its (unbound) page virtualizer would be a no-op at
         // best. The stream's layout is placed by its anchor, its search
-        // reveal and its scrubber — none of which write the page.
+        // reveal, its scrubber and the outline's chapter jump — and each of
+        // those aims the stream's own handle; the page write a chapter click
+        // also makes is the counter's and the highlight's, not this arm's.
         if axis == ViewMode::ScrollVertical && state.reflowable() {
             return;
         }

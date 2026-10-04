@@ -10,6 +10,8 @@ pub mod layout_prefs;
 pub mod link_navigation;
 pub mod mode_change;
 pub mod navigation_sync;
+#[cfg(feature = "reflow")]
+pub mod outline_jump;
 pub mod page_selection;
 pub mod reading_progress;
 pub mod reflow_layout;

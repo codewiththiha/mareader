@@ -34,11 +34,28 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use reader_core::view::ViewMode;
-use virtual_list_leptos::{Align, Virtualizer};
+use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 
 use jump_gate::JumpGate;
+
+/// How a jump the reader commanded should travel: gliding while the reader's
+/// scroll switch allows it, in one step when it does not. Read UNTRACKED,
+/// because the flag that stops a jump gliding must not be what re-runs the
+/// jump.
+///
+/// Shared by both commands that land on a virtualizer item — the page write
+/// ([`page_to_scroll`]) and the outline's chapter jump
+/// (`effects::reader::outline_jump`) — so the reader's motion setting means
+/// one thing, not one thing per command.
+pub(crate) fn scroll_mode(state: ReaderState) -> ScrollMode {
+    if state.viewer.motion.get_untracked().scroll_glide {
+        ScrollMode::Auto
+    } else {
+        ScrollMode::Instant
+    }
+}
 
 /// What every arm needs: the state, the shared echo-suppression flag, and
 /// the tracked "a zoom transaction is in flight".

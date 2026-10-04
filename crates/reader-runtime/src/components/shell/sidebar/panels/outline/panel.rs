@@ -27,6 +27,26 @@ fn outline_row_selector(idx: usize) -> String {
     format!(r#"button[data-outline-index="{idx}"]"#)
 }
 
+/// The active entry, with the reader's own click honoured: a chapter that was
+/// clicked stays the active row while the page is still that chapter's page,
+/// even when a later entry shares it.
+///
+/// The page rule alone ([`active_entry`]) would light that later one, because
+/// a text document's page is a cut of the stream — several chapters land on
+/// one, a short document has a single one — and nothing the reader can see.
+/// The row they just asked for is the better answer while it answers for the
+/// page; any page move hands the highlight back to the rule.
+fn active_with_click(
+    outline: &[OutlineNode],
+    page: u32,
+    clicked: Option<(usize, u32)>,
+) -> Option<usize> {
+    match clicked {
+        Some((index, at)) if at == page && index < outline.len() => Some(index),
+        _ => active_entry(outline, page),
+    }
+}
+
 /// Left padding for an outline row, in px.
 ///
 /// The indent used to be an unbounded `8 + depth * 14`. The sidebar is a fixed
@@ -112,13 +132,17 @@ pub fn OutlinePanel(
 ) -> impl IntoView {
     let scroller: NodeRef<leptos::html::Div> = NodeRef::new();
 
-    // The active entry is a function of (outline, page): memoizing it keeps
-    // a viewport-only scroll from rescanning the outline, and the row list,
-    // the reveal effect and the center-on-tab gesture all read one cached
-    // value instead of each computing it.
+    // The entry the rows mark: the reader's own click while it still answers
+    // for the page shown, else the page's entry (see `active_with_click` for
+    // why a click needs a say at all).
+    let clicked = RwSignal::new(None::<(usize, u32)>);
+    // Memoized because the row list, the reveal effect and the center-on-tab
+    // gesture all read one cached answer instead of each rescanning the
+    // outline on a viewport-only scroll.
     let active = Memo::new(move |_| {
         let outline = state.document.outline.get();
-        active_entry(&outline, state.viewer.page.get())
+        let page = state.viewer.page.get();
+        active_with_click(&outline, page, clicked.get())
     });
 
     // Keep the active entry on screen.
@@ -296,7 +320,18 @@ pub fn OutlinePanel(
                                         // document, and the highlight only has
                                         // somewhere to show if the panel stays.
                                         on:click=move |_| {
+                                            // The page write carries the
+                                            // counter, the host's chrome and
+                                            // the highlight; the block jump is
+                                            // what moves a text document, where
+                                            // a page is a cut of the stream and
+                                            // cannot name a chapter (see
+                                            // `effects::reader::outline_jump`).
                                             state.viewer.page.set(page);
+                                            clicked.set(Some((row_index, page)));
+                                            if state.reflowable_now() {
+                                                state.viewer.ask_outline_jump(row_index as u32);
+                                            }
                                         }
                                     >
                                         {title}
@@ -314,7 +349,8 @@ pub fn OutlinePanel(
 
 #[cfg(test)]
 mod tests {
-    use super::indent_px;
+    use super::{active_with_click, indent_px};
+    use reader_core::outline::{OutlineNode, active_entry};
 
     /// The panel is `w-72` = 288px; `px-3` costs 12px on the right.
     const PANEL_W: u32 = 288;
@@ -339,5 +375,28 @@ mod tests {
                 "depth {depth}: only {text_w}px left for the title"
             );
         }
+    }
+
+    /// The click's entry answers for the page it was clicked on, ahead of the
+    /// page rule's LATER entry on the same page — a text stream's pages are
+    /// cuts, so several chapters share one and the rule alone would light the
+    /// wrong row. A page the click no longer answers for (the reader scrolled
+    /// on, or the outline is another document's) falls back to the rule.
+    #[test]
+    fn a_clicked_entry_holds_the_highlight_for_its_own_page() {
+        let node = |title: &str, page: u32, depth: u32| OutlineNode::new(title, page, depth);
+        let outline = [
+            node("Chapter 1", 3, 0),
+            node("1.1 Intro", 3, 1),
+            node("1.2 Details", 9, 1),
+        ];
+        // The page rule lights the later entry of the two sharing page 3...
+        assert_eq!(active_entry(&outline, 3), Some(1));
+        // ...and the click's own entry wins while its page is the one shown.
+        assert_eq!(active_with_click(&outline, 3, Some((0, 3))), Some(0));
+        // The reader moving on hands the highlight back to the rule.
+        assert_eq!(active_with_click(&outline, 9, Some((0, 3))), Some(2));
+        // A click this outline cannot answer is not an answer at all.
+        assert_eq!(active_with_click(&outline, 3, Some((7, 3))), Some(1));
     }
 }

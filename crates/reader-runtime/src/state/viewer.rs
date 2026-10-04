@@ -18,6 +18,23 @@ pub struct ViewerSignals {
     pub mode: RwSignal<ViewMode>,
     /// 1-based current page.
     pub page: RwSignal<u32>,
+    /// The outline entry the reader just asked to see (`None` when nothing is
+    /// pending), as an index into `document.outline`.
+    ///
+    /// A page write cannot carry this. A text document's page is a CUT of the
+    /// stream — several chapters share one, a short document has one, and no
+    /// reader sees a page boundary — so the click's page write keeps the
+    /// counter, the chrome and the highlight honest but cannot move the
+    /// document; the heading's BLOCK is the exact address, and it never leaves
+    /// the pane (`effects::reader::outline_jump` resolves it).
+    ///
+    /// A pane realm renders its chrome host-side, so the panel that clicks and
+    /// the stream that scrolls can be on opposite sides of the frame boundary.
+    /// The directive travels the way the page does: the panel writes it, the
+    /// host hands it to a frame as `Write::Outline`, and the pane's own arm
+    /// consumes it. ONE-SHOT: whoever acts on it clears it, which is what makes
+    /// a second click on the same entry a change again.
+    pub(crate) outline_jump: RwSignal<Option<u32>>,
     pub fit: RwSignal<FitMode>,
     pub scroll_top: RwSignal<f64>,
     pub zoom: ZoomState,
@@ -96,6 +113,27 @@ impl ViewerSignals {
         self.anchor_generation.get_untracked() == generation
     }
 
+    /// Ask for the outline entry at `index` — the outline panel's row click,
+    /// the one write that is not a mirrored value (see the field).
+    pub fn ask_outline_jump(&self, index: u32) {
+        self.outline_jump.set(Some(index));
+    }
+
+    /// Take the pending outline jump, clearing it. Both ends take exactly one
+    /// — the host on its way to a frame, the pane's arm on its way to the
+    /// stream — and a taken directive is gone: `None` is also the answer for
+    /// one already acted on.
+    ///
+    /// The read is TRACKED, because every caller is an effect that must wake
+    /// for the next directive; the clear then wakes that same effect once with
+    /// nothing to do, which is what a directive that leaves no value standing
+    /// costs.
+    pub(crate) fn take_outline_jump(&self) -> Option<u32> {
+        let index = self.outline_jump.get()?;
+        self.outline_jump.set(None);
+        Some(index)
+    }
+
     /// True while a zoom transaction is in flight: renders are suspended,
     /// page/scroll synchronisation and geometry feedback are frozen, and the
     /// mounted window is pinned around the dominant page.
@@ -144,6 +182,7 @@ impl Default for ViewerSignals {
         Self {
             mode: RwSignal::new(ViewMode::ScrollVertical),
             page: RwSignal::new(1),
+            outline_jump: RwSignal::new(None),
             fit: RwSignal::new(FitMode::None),
             scroll_top: RwSignal::new(0.0),
             zoom: ZoomState::default(),

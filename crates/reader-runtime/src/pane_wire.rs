@@ -187,7 +187,12 @@ pub struct Mirror {
 /// One outline entry: title, page, depth.
 pub type WireOutline = Vec<(String, u32, u32)>;
 
-/// A chrome write the host forwards to the pane that owns the state.
+/// A chrome write the host forwards to the pane that owns the state. Every
+/// variant but [`Write::Outline`] mirrors a value the pane also keeps — the
+/// host's copy of a pane signal — and is forwarded only when it differs from
+/// what the frame last reported; `Outline` is a one-shot directive instead,
+/// because a text document's page number cannot name a chapter (see
+/// `crate::effects::reader::outline_jump`).
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(tag = "w", rename_all = "snake_case")]
 pub enum Write {
@@ -197,6 +202,10 @@ pub enum Write {
     ZoomStep { step: i32 },
     AutoScroll { on: bool },
     SearchVisible { on: bool },
+    /// Scroll the continuous stream to outline entry `index` (a paginated
+    /// format answers a `Page` write instead). A one-shot: the pane applies
+    /// it on arrival, so the host clears its own copy as it hands it over.
+    Outline { index: u32 },
 }
 
 /// The appearance engine hooks the host's appearance menu drives.
@@ -373,6 +382,7 @@ mod tests {
             HostToPane::Write(Write::Mode {
                 mode: ViewMode::Spread,
             }),
+            HostToPane::Write(Write::Outline { index: 3 }),
             HostToPane::Hook(Hook::Scrub { on: true }),
             HostToPane::Layout {
                 can_split: true,

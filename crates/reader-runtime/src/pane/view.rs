@@ -81,6 +81,11 @@ pub(crate) fn install_pane_effects(
     // the pages AND moves the chapters.
     #[cfg(feature = "reflow")]
     crate::effects::reader::reflow_outline::reflow_outline(state);
+    // The outline's jump into the stream. A clicked chapter has to land on its
+    // heading's block, which the click's page write cannot name (see the arm);
+    // installed beside the outline it moves.
+    #[cfg(feature = "reflow")]
+    crate::effects::reader::outline_jump::outline_jump(state.reader);
 
     // What a mode flip owes: the incoming strip's anchor, the stream's zoom, the
     // outgoing view's rasters, and the fit the next mode owns.

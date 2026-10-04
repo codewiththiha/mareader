@@ -299,6 +299,11 @@ fn apply_write(live: &Live, write: Write) {
             .post(crate::state::zoom::ZoomCommand::Step(step), true),
         Write::AutoScroll { on } => put(reader.viewer.auto_scroll, on),
         Write::SearchVisible { on } => put(reader.search.visible, on),
+        // The outline's jump is a directive, not mirrored state: the arm that
+        // owns the stream's geometry consumes it
+        // (`effects::reader::outline_jump`), and an index no heading answers
+        // is not a jump.
+        Write::Outline { index } => put(reader.viewer.outline_jump, Some(index)),
     }
 }
 
