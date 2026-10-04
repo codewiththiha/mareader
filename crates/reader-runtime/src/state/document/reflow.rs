@@ -50,6 +50,15 @@ pub struct ReflowContent {
     pub headings: RwSignal<Arc<Vec<MarkdownHeading>>>,
     /// Block heights at scale 1 — estimate-seeded, measurement-refined.
     pub heights: RwSignal<Arc<Vec<f64>>>,
+    /// How many wholesale writes [`Self::heights`] has taken: the open-time
+    /// estimate ([`Self::set_initial_heights`]) and every re-estimate since
+    /// (a typography or width-dial move that re-prices every block at once).
+    /// The store has two kinds of writer, and its consumers need to tell them
+    /// apart. A measurement batch is an echo of numbers the reporting rows
+    /// have already handed the stream's own model, so a layout rebuild for it
+    /// re-seats text that was already right. A wholesale write moves heights
+    /// nothing else knows about. This count is the wholesale writers'.
+    pub estimate_generation: RwSignal<u64>,
     /// The current page split of those heights.
     pub cuts: RwSignal<Arc<Vec<PageCut>>>,
     /// Bumped every time the split is re-published, so a consumer that only
@@ -93,6 +102,7 @@ impl Default for ReflowContent {
             blocks: RwSignal::new(Arc::new(Vec::new())),
             headings: RwSignal::new(Arc::new(Vec::new())),
             heights: RwSignal::new(Arc::new(Vec::new())),
+            estimate_generation: RwSignal::new(0),
             cuts: RwSignal::new(Arc::new(Vec::new())),
             cut_generation: RwSignal::new(0),
             block_page: RwSignal::new(Arc::new(Vec::new())),
@@ -121,6 +131,7 @@ impl ReflowContent {
             blocks,
             headings,
             heights,
+            estimate_generation,
             cuts,
             cut_generation,
             block_page,
@@ -132,6 +143,7 @@ impl ReflowContent {
         blocks.set(Arc::new(Vec::new()));
         headings.set(Arc::new(Vec::new()));
         heights.set(Arc::new(Vec::new()));
+        estimate_generation.set(0);
         cuts.set(Arc::new(Vec::new()));
         cut_generation.set(0);
         block_page.set(Arc::new(Vec::new()));
@@ -187,6 +199,10 @@ impl ReflowContent {
     ) -> super::ReflowCut {
         let cuts = paginate(&heights, geo.content_height);
         self.heights.set(Arc::new(heights));
+        // A wholesale write, so consumers that track the geometry (the
+        // stream's epoch) rebuild for it — the seed can land over an already
+        // mounted layout when a document opens in place.
+        self.estimate_generation.update(|generation| *generation += 1);
         self.publish_cut(state, cuts, geo)
     }
 

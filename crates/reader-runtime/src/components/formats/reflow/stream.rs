@@ -122,13 +122,37 @@ pub fn ReflowStreamLayout(
 
     // The stream's size model: one virtual item per BLOCK, sized by the
     // measured (or estimated) scale-1 height times the live display scale.
-    // The count and the heights are tracked, so a re-parse or a re-measure
-    // rebuilds the layout in the same flush; the epoch exists for the
-    // heights changing IN PLACE (a measurement that lands without moving
-    // the cut still moves the stream's geometry).
+    // The count and the block list are tracked, so a re-parse rebuilds the
+    // layout in the same flush.
     let block_count = Signal::derive(move || {
         state.document.content.reflow.blocks.track();
         state.document.content.reflow.heights.with(|h| h.len())
+    });
+    // The epoch answers the subtler question — did the geometry move IN PLACE
+    // — and it deliberately watches the ESTIMATE count, not the heights
+    // themselves. The rows report their own measured heights straight into
+    // this virtualizer's model (`report_size_now`), and the settle pass hands
+    // the same numbers to the shared store: that write is an echo of a size
+    // the model already holds, so rebuilding on it can only re-seat text that
+    // was already right — the one-frame jolt and the stacked rows a scrolling
+    // document used to show the moment the reader stopped. A wholesale write
+    // is the opposite case: the open-time seed, a typography or width-dial
+    // re-estimate — every block's height moves and no row reports it, so its
+    // count is a rebuild.
+    let epoch = epoch_signal(move |hasher| {
+        state
+            .document
+            .content
+            .reflow
+            .blocks
+            .with(|blocks| (Arc::as_ptr(blocks) as usize).hash(hasher));
+        state
+            .document
+            .content
+            .reflow
+            .estimate_generation
+            .get()
+            .hash(hasher);
     });
     let estimate = move |index: usize| {
         // Runs inside the crate's flush/rebuild paths, which can fire after
@@ -148,17 +172,6 @@ pub fn ReflowStreamLayout(
         };
         height * scale
     };
-    let epoch = epoch_signal(move |hasher| {
-        state
-            .document
-            .content
-            .reflow
-            .blocks
-            .with(|blocks| (Arc::as_ptr(blocks) as usize).hash(hasher));
-        let heights = state.document.content.reflow.heights.get();
-        (Arc::as_ptr(&heights) as usize).hash(hasher);
-        heights.len().hash(hasher);
-    });
     let initial_vh = {
         let (_, height) = state.viewer.container_size.get_untracked();
         if height > 1.0 { height } else { 800.0 }

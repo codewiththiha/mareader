@@ -9,9 +9,11 @@
 //! * the STREAM and the PAGE HOSTS measure their mounted blocks, divide out
 //!   the live scale (the store is scale-1 truth), and hand the batch to
 //!   their pane's inbox ([`MeasureInbox::ingest`]);
-//! * ingest parks the batch and arms a DEBOUNCED flush — a heights write bumps
-//!   the stream's epoch (an `O(n)` layout rebuild), so one frame of a fling
-//!   must never cost one rebuild per frame;
+//! * ingest parks the batch and arms a DEBOUNCED flush — a landed batch
+//!   re-cuts the pages and republishes them, so one frame of a fling must
+//!   never cost one re-cut per frame. (The stream's own layout is not rebuilt
+//!   for a batch at all: its rows have already applied these numbers; see
+//!   `components::formats::reflow::stream`.)
 //! * the flush applies whatever moved more than [`INGEST_EPSILON`], re-cuts
 //!   through
 //!   [`crate::state::document::reflow::ReflowContent::recut`] and
@@ -195,6 +197,13 @@ pub fn install_reflow_measure(state: crate::context::ReaderContext) {
             return;
         }
         reflow.heights.set(Arc::new(merged));
+        // Tell the store's consumers the geometry moved wholesale. This is
+        // the write nothing reports block by block — unlike a measurement
+        // batch, whose numbers the reporting rows have already applied to
+        // their own layouts (see `components::formats::reflow::stream`).
+        reflow
+            .estimate_generation
+            .update(|generation| *generation += 1);
         recut_and_publish(&state, reflow, geo);
     });
 }
