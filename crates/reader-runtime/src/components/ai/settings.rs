@@ -165,3 +165,5 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
         </div>
     }
 }
+
+// only the changed file was rewritten

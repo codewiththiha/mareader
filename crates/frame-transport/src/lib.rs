@@ -461,3 +461,5 @@ mod tests {
         assert_eq!(poll(&mut second, &wake), Poll::Ready(None));
     }
 }
+
+// only the changed file was rewritten

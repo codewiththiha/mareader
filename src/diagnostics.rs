@@ -246,3 +246,5 @@ mod tests {
         assert_eq!(no_runtime, expected);
     }
 }
+
+// only the changed file was rewritten

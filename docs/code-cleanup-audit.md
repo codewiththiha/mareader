@@ -138,3 +138,5 @@ Existing CI/workflows and fatal-warning policies are not weakened. Added checks 
 Compilation, engine smoke, native boot, actual browser regressions and memory replay run in Actions for the pushed revision. Local checks are source/syntax/contract checks only; no compiler, Trunk/bundler build, dependency or browser installation is needed locally. The pre-existing worktree-only executable-bit difference on `tools/build-dist.sh` is not a cleanup target.
 
 This audit is not a claim that every large file can be reduced further, that all platform error handling should be removed, or that WebKit process-memory retention is solved. Current memory ownership and process-RAM limits remain in [memory/audit.md](memory/audit.md).
+
+<!-- // only the changed file was rewritten -->

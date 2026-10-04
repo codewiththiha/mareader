@@ -150,3 +150,5 @@ impl ShellApi for RecordApi {
     fn doc_status(&self, _report: &DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
 }
+
+// only the changed file was rewritten
