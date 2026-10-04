@@ -539,7 +539,7 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   hit test on the target's own text runs, `text_at`); links, images, marks
   and controls are excluded. It shows the hand and drags its nearest
   scroller in both axes with a decaying fling; the press keeps its default
-  so focus still follows a click. In a split a still hold of `HOLD_TO_LIFT_MS` (5 s, ring
+  so focus still follows a click. In a split a still hold of `HOLD_TO_LIFT_MS` (2.5 s, ring
   duration published from the same constant) lifts the pane. While held the
   workspace is laid out without it (`lay_out` in `host/mod.rs`), so its
   neighbours fill its place; a release docks it beside the target's nearest

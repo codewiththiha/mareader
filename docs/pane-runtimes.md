@@ -112,8 +112,8 @@ cells.
   forwarded to the active pane.
 - **Grab and lift.** Panning stays in the pane. A hold to lift starts in the
   pane, which then streams pointer positions (in host coordinates) to the
-  host until release. The still hold is five seconds; the progress ring
-  takes its duration from `HOLD_TO_LIFT_MS`. Listener removal, pointer
+  host until release. The still hold is two and a half seconds; the progress
+  ring takes its duration from `HOLD_TO_LIFT_MS`. Listener removal, pointer
   capture release, hold cancellation and fling-loop stop are owner cleanup.
 - **Host drags** (dividers, library rows, a lifted pane) raise a transparent
   shield over the panes for the drag, so pointer events stay in the host.

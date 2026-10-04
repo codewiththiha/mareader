@@ -257,7 +257,7 @@ body {
   -webkit-mask: radial-gradient(circle, transparent 11px, #000 12px);
   mask: radial-gradient(circle, transparent 11px, #000 12px);
   opacity: 0;
-  animation: pane-hold-fill var(--hold-duration, 5000ms) linear forwards;
+  animation: pane-hold-fill var(--hold-duration, 2500ms) linear forwards;
 }
 @property --hold-progress {
   syntax: "<percentage>";

@@ -17,8 +17,12 @@ use super::tree::{EVEN, Side, TreeLayout, split_fits, split_rects};
 /// How long a still press on a pane's empty space must hold before the pane
 /// lifts. Long enough that a reader resting the pointer while panning never
 /// lifts a pane by accident, short enough to feel deliberate rather than
-/// stuck; the hold ring shows it filling.
-pub const HOLD_TO_LIFT_MS: u64 = 5000;
+/// stuck; the hold ring shows it filling. (Five seconds was the first guess
+/// and read as stuck: the gesture is reachable at two and a half, and the
+/// ring's fill is what tells the reader it is coming. The browser suite
+/// encodes this number — `tests/browser/pane-runtimes.mjs` — so a change
+/// here is a product change, not a tweak.)
+pub const HOLD_TO_LIFT_MS: u64 = 2500;
 
 /// Where a lifted pane would go if released now.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

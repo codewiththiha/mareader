@@ -203,10 +203,18 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   const holdStart = Date.now();
   await page.mouse.down();
   try {
+    // A press shorter than the lift delay is a pan or a click, never a lift.
+    // The probe runs FIRST and off the press's own clock, so nothing later in
+    // this block can spend the window and then blame the lift; the delay
+    // itself is the product spec (`HOLD_TO_LIFT_MS` in
+    // `crates/reader-runtime/src/host/lift.rs`).
+    await page.waitForTimeout(1_200);
+    if (await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.pane-lifted').count()) throw new Error("a press shorter than the lift delay lifted the pane");
+    // The ring is the affordance, and it is up for the rest of the hold...
     await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentDocument.querySelector('[data-pan-hold]'), md.paneId, { timeout: 3_000 });
-    await page.waitForTimeout(2500);
-    if (await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.pane-lifted').count()) throw new Error("a short hold lifted the pane before five seconds");
-    await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`).classList.contains("pane-lifted"), md.paneId, { timeout: 6_000 });
+    // ...and the lift lands within a bounded remainder of the spec, not
+    // "eventually": the press, the ring and the lift all sit inside 2.5 s.
+    await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`).classList.contains("pane-lifted"), md.paneId, { timeout: 3_000 });
     // The class reacts immediately; the host digest arrives on its beat.
     // Timestamp the lift itself, then require both reported and rendered
     // vacancy growth at a bounded deadline, not a stale immediate digest.
@@ -233,7 +241,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   }
   await page.waitForFunction(() => !window.__paneReaderDocument.querySelector('.pane-lifted'));
   const afterLift = await waitForSettledLayout("lift dock preserves sessions", (s) => s.host?.panes?.length === 3 && s.host.panesCreated === mixed.host.panesCreated && s.engine.sessionsLive === 2);
-  if (report.liftHoldMs < 4800) throw new Error(`lift completed too soon: ${report.liftHoldMs}ms`);
+  if (report.liftHoldMs < 2_300 || report.liftHoldMs > 2_900) throw new Error(`lift hold outside its 2.5 s spec: ${report.liftHoldMs}ms`);
 
   for (const [name, width] of [["desktop", 1400], ["narrow", 640]]) {
     await page.setViewportSize({ width, height: 900 });
