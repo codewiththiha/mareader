@@ -196,16 +196,30 @@ pub type WireOutline = Vec<(String, u32, u32)>;
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(tag = "w", rename_all = "snake_case")]
 pub enum Write {
-    Page { page: u32 },
-    Mode { mode: ViewMode },
-    Fit { fit: FitMode },
-    ZoomStep { step: i32 },
-    AutoScroll { on: bool },
-    SearchVisible { on: bool },
+    Page {
+        page: u32,
+    },
+    Mode {
+        mode: ViewMode,
+    },
+    Fit {
+        fit: FitMode,
+    },
+    ZoomStep {
+        step: i32,
+    },
+    AutoScroll {
+        on: bool,
+    },
+    SearchVisible {
+        on: bool,
+    },
     /// Scroll the continuous stream to outline entry `index` (a paginated
     /// format answers a `Page` write instead). A one-shot: the pane applies
     /// it on arrival, so the host clears its own copy as it hands it over.
-    Outline { index: u32 },
+    Outline {
+        index: u32,
+    },
 }
 
 /// The appearance engine hooks the host's appearance menu drives.

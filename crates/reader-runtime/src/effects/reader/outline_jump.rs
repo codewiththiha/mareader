@@ -62,7 +62,9 @@ pub fn outline_jump(state: ReaderState) {
         let Some(stream) = reflow.stream_handle() else {
             return;
         };
-        let block = reflow.headings.with_untracked(|h| block_of_entry(h, index as usize));
+        let block = reflow
+            .headings
+            .with_untracked(|h| block_of_entry(h, index as usize));
         let Some(block) = block else {
             return;
         };
