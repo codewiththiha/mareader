@@ -535,7 +535,7 @@ pub fn run_standalone() {
 
 /// The URL launch (`?open=/samples/…&blend=1`), the same hook the browser
 /// suite drives — parsed by the reader itself when no Shell owns the page.
-pub fn web_launch() -> LaunchDocument {
+fn web_launch() -> LaunchDocument {
     let mut launch = LaunchDocument {
         book_id: None,
         path: String::new(),

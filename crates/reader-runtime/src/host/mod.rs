@@ -593,7 +593,7 @@ impl ReaderHost {
     }
 
     /// The active pane's published facts (tracked on the active id).
-    pub fn active_surface(&self) -> Option<PaneSurface> {
+    fn active_surface(&self) -> Option<PaneSurface> {
         self.manager.active_pane().map(|pane| pane.surface())
     }
 
@@ -981,7 +981,7 @@ impl ReaderHost {
     /// Pick pane `id` up at slot point `at`. Only in a split (one pane has
     /// nowhere to go) and never during a document drag. The lifted pane
     /// takes focus: it is the one the reader is handling.
-    pub fn begin_lift(&self, id: PaneId, at: (f64, f64)) -> bool {
+    fn begin_lift(&self, id: PaneId, at: (f64, f64)) -> bool {
         let busy = self.drag.try_with_untracked(DragSession::is_live) != Some(false);
         if busy || untrack(|| self.pane_count()) < 2 {
             return false;
@@ -991,7 +991,7 @@ impl ReaderHost {
     }
 
     /// The lifted pane's pointer moved to slot point `at`.
-    pub fn lift_move(&self, at: (f64, f64)) {
+    fn lift_move(&self, at: (f64, f64)) {
         let layout = self.layout_now();
         self.lift.try_update(|lift| {
             if let Some(lift) = lift {
@@ -1003,7 +1003,7 @@ impl ReaderHost {
     /// Put the lifted pane down. With `commit`, a release over a target
     /// relocates it (a refusal says why and changes nothing); without, or
     /// over no target, it goes back where it was.
-    pub fn end_lift(&self, commit: bool) {
+    fn end_lift(&self, commit: bool) {
         let Some(Some(lift)) = self.lift.try_update(Option::take) else {
             return;
         };
@@ -1026,7 +1026,7 @@ impl ReaderHost {
 
     /// Whether some pane holds a PDF document (tracked): the blend
     /// backdrop's workspace-wide gate.
-    pub fn has_pdf(&self) -> bool {
+    fn has_pdf(&self) -> bool {
         self.has_pdf.get()
     }
 
@@ -1158,7 +1158,7 @@ impl ReaderHost {
 
     /// The pointer of a live drag moved to client `at`. Subscribers hear of
     /// it only when the shown target (or the phase) changed.
-    pub fn drag_move(&self, at: (f64, f64)) {
+    fn drag_move(&self, at: (f64, f64)) {
         let host = *self;
         self.drag.try_maybe_update(|session| {
             let changed = session.moved(at, || host.measure_geometry());
@@ -1170,7 +1170,7 @@ impl ReaderHost {
     /// the drag ends, and a drop over a target runs as a workspace command.
     /// A drag that got past its threshold swallows the click its release
     /// may still produce on the row it started from.
-    pub fn drag_release(&self, at: Option<(f64, f64)>) {
+    fn drag_release(&self, at: Option<(f64, f64)>) {
         let released = self.drag.try_maybe_update(|session| {
             let was = session.is_live();
             let dragged = session.is_dragging();
@@ -1188,7 +1188,7 @@ impl ReaderHost {
     }
 
     /// End the drag with no drop. Returns whether one was live.
-    pub fn cancel_drag(&self) -> bool {
+    fn cancel_drag(&self) -> bool {
         self.drag
             .try_maybe_update(|session| {
                 let was = session.cancel();

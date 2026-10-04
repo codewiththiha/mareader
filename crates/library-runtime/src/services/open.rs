@@ -30,7 +30,7 @@ pub fn open_row(ctx: &LibraryContext, row_id: String) {
 /// Open a library book: the book's own address, and the row itself as the
 /// launch identity. A row the library KNOWS is dead asks the find-again
 /// question instead of opening onto an error screen.
-pub fn open_book(ctx: &LibraryContext, book_id: String) {
+fn open_book(ctx: &LibraryContext, book_id: String) {
     let Some(book) = ctx
         .library
         .books

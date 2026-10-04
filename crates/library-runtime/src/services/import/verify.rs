@@ -80,7 +80,7 @@ fn run_watched(state: crate::context::LibraryContext) {
 /// No card unless it found something, no toast for a folder that cannot be
 /// read, and the ledger's rescan table, where a removal's tombstones still
 /// hold. Two callers, one spelling: the same walk asked by two moments.
-pub(super) fn walk_one(state: crate::context::LibraryContext, root: String, opts: FolderOpts) {
+fn walk_one(state: crate::context::LibraryContext, root: String, opts: FolderOpts) {
     let Some(claim) = claim_root(&root, Asked::OnFocus) else {
         return;
     };

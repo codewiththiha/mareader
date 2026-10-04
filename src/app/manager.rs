@@ -595,7 +595,7 @@ impl RuntimeManager {
 
     /// The frame-dispatched boundary vocabulary. Called by the driver's
     /// event hook; the hook itself is generation-gated at the port.
-    pub fn dispatch_boundary(&self, state: &ShellState, generation: u64, item: FrameVocabulary) {
+    fn dispatch_boundary(&self, state: &ShellState, generation: u64, item: FrameVocabulary) {
         // Only an actual incoming/active Library owns cover work. Retiring
         // shelves cannot queue new bakes after cancellation at the handoff.
         if let FrameVocabulary::BakeCover { path } = item {

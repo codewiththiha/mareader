@@ -164,7 +164,7 @@ impl VirtualizerInner {
     /// Publish a new mount window: write-if-changed, and schedule zombie
     /// retention for the items the change evicted. Every range write in the
     /// adapter funnels through here so retention cannot miss a transition.
-    pub(crate) fn publish_range(self: &Rc<Self>, new: Option<Window>) {
+    fn publish_range(self: &Rc<Self>, new: Option<Window>) {
         let Some(old) = self.range.try_get_untracked() else {
             return;
         };
@@ -200,7 +200,7 @@ impl VirtualizerInner {
 
     /// Arm (once) the timer that prunes expired zombies. Re-arms itself
     /// while anything is still retained.
-    pub(crate) fn arm_retention_timer(self: &Rc<Self>) {
+    fn arm_retention_timer(self: &Rc<Self>) {
         if self.retention_timer.borrow().is_some() {
             return;
         }
@@ -250,7 +250,7 @@ impl VirtualizerInner {
     /// reader's finger while momentum owns the scroller, the stutter every
     /// native list avoids. So the correction is banked and one write lands
     /// when the movement ends (see [`Self::flush_banked_scroll`]).
-    pub(crate) fn apply_measurements(self: &Rc<Self>, step: Step) {
+    fn apply_measurements(self: &Rc<Self>, step: Step) {
         self.apply_step(step, self.settled.try_get_untracked() == Some(true));
     }
 
@@ -291,7 +291,7 @@ impl VirtualizerInner {
     /// scroll event for the write and the echo (`handle_scroll`) adopts what
     /// the DOM actually holds — which is also how a write the browser clamped
     /// at either end of the content is told apart from one that landed.
-    pub(crate) fn flush_banked_scroll(self: &Rc<Self>) {
+    fn flush_banked_scroll(self: &Rc<Self>) {
         let banked = self.banked_scroll.replace(0.0);
         if banked.abs() <= self.options.measure_epsilon {
             return;
@@ -306,7 +306,7 @@ impl VirtualizerInner {
     /// written by the core): signals only, no second DOM write. Instant
     /// writes carry the adopted position; smooth writes return no step and
     /// surface later through `handle_scroll`.
-    pub(crate) fn apply_local(self: &Rc<Self>, step: Step) {
+    fn apply_local(self: &Rc<Self>, step: Step) {
         if self.settled.try_get_untracked().is_none() {
             return;
         }
@@ -317,7 +317,7 @@ impl VirtualizerInner {
         write_if_changed(self.scroll_top, self.core.borrow().scroll_top());
     }
 
-    pub(crate) fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
+    fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
         // Flush-time callers arrive with the owner's signals already gone
         // (dispose runs later than the purge); a disposed `settled` ends
         // the echo here before any write below.
@@ -352,7 +352,7 @@ impl VirtualizerInner {
         self.arm_scroll_end();
     }
 
-    pub(crate) fn handle_viewport(self: &Rc<Self>, vp: Viewport) {
+    fn handle_viewport(self: &Rc<Self>, vp: Viewport) {
         if self.viewport.try_get_untracked().is_none() {
             return;
         }
@@ -366,7 +366,7 @@ impl VirtualizerInner {
         self.apply(step);
     }
 
-    pub(crate) fn arm_flush(self: &Rc<Self>) {
+    fn arm_flush(self: &Rc<Self>) {
         if self.flush_armed.get() || self.core.borrow().suspended() {
             return;
         }
@@ -397,7 +397,7 @@ impl VirtualizerInner {
     /// row. The vehicle is the microtask checkpoint, which runs as soon as the
     /// reporting callback returns and still precedes the paint — the guarantee
     /// the synchronous flush gave, without the rebuild per row it also cost.
-    pub(crate) fn arm_now_flush(self: &Rc<Self>) {
+    fn arm_now_flush(self: &Rc<Self>) {
         if self.now_flush_armed.get() {
             return;
         }
@@ -419,7 +419,7 @@ impl VirtualizerInner {
         });
     }
 
-    pub(crate) fn arm_scroll_end(self: &Rc<Self>) {
+    fn arm_scroll_end(self: &Rc<Self>) {
         if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {
             handle.clear();
         }
@@ -472,7 +472,7 @@ impl VirtualizerInner {
     /// `removeEventListener` matches by function reference) and the closure
     /// is dropped immediately after — a rebound container never leaks a WASM
     /// closure, and a disposed virtualizer releases every DOM handle.
-    pub(crate) fn teardown_bindings(&self) {
+    fn teardown_bindings(&self) {
         for binding in self.listeners.borrow_mut().drain(..) {
             let _ = binding.element.remove_event_listener_with_callback(
                 binding.event,

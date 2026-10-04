@@ -180,7 +180,7 @@ fn body_classes(density: GlossDensity) -> (&'static str, &'static str, &'static 
 /// `content_height` correct. Block-flow container: the flex-squeeze
 /// protection lives on this root (`shrink-0`), so inner sections need none.
 #[component]
-pub(crate) fn GlossBody(
+fn GlossBody(
     /// The word being explained (header title).
     #[prop(into)]
     word: Signal<String>,

@@ -19,7 +19,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
 /// The attribute the Shell's frame driver writes (`src/app/frame.rs`).
-pub const SLOT_ATTR: &str = "data-mareader-slot";
+const SLOT_ATTR: &str = "data-mareader-slot";
 
 fn frame_element() -> Option<web_sys::Element> {
     web_sys::window()?.frame_element().ok().flatten()

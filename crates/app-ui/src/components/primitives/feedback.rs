@@ -13,7 +13,7 @@ const DEFAULT_SIZE: u32 = 72;
 /// the parent, so `size` scales the whole mark — including the distance a dot
 /// hops, which is a percentage of the dot itself.
 #[component]
-pub fn Loader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoView {
+fn Loader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoView {
     view! {
         <div
             class="loader"

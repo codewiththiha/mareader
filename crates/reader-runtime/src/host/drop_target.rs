@@ -113,7 +113,7 @@ impl DropTarget {
 }
 
 /// A format's name as the workspace says it to the user.
-pub fn format_label(format: PaneFormat) -> &'static str {
+fn format_label(format: PaneFormat) -> &'static str {
     match format {
         PaneFormat::Pdf => "PDF",
         PaneFormat::Markdown => "Markdown",

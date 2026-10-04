@@ -22,7 +22,7 @@ use super::sheet::{SheetBody, SheetFooter, SheetHeader};
 /// actually waiting — a switch offering to answer nothing is a control that
 /// lies about its reach.
 #[component]
-pub fn ApplyToAll(
+fn ApplyToAll(
     /// How many MORE questions wait behind the one on screen.
     waiting: usize,
     /// The switch's own state, owned by the sheet whose answers read it.

@@ -100,7 +100,7 @@ pub struct ConflictAsk {
 }
 
 impl ConflictAsk {
-    pub fn name_collision(arrival: Arrival, existing_id: String, existing_name: String) -> Self {
+    fn name_collision(arrival: Arrival, existing_id: String, existing_name: String) -> Self {
         Self {
             arrival,
             existing_id,
@@ -218,7 +218,7 @@ fn replace_with(state: crate::context::LibraryContext, ask: &PlacementAsk) {
 /// The row being dragged is a read-at-place book an in-place folder placed, and the row
 /// already on the level is one of the library's own stored copies: neither side is the
 /// reader's to destroy, so the sheet offers *make link* in place of *replace*.
-pub fn link_shape(state: crate::context::LibraryContext, ask: &ConflictAsk) -> bool {
+fn link_shape(state: crate::context::LibraryContext, ask: &ConflictAsk) -> bool {
     let Some(moved_id) = ask.arrival.moving.as_deref() else {
         return false;
     };

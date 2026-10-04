@@ -93,7 +93,7 @@ impl PaneThemes {
     }
 
     /// Whether Light / Dark / Dim is shared across the panes right now.
-    pub fn shared_base(self) -> bool {
+    fn shared_base(self) -> bool {
         self.shared_base.get_untracked()
     }
 
@@ -157,7 +157,7 @@ impl PaneThemes {
 
     /// The active pane's current look — what the menu's dials edit and show
     /// while independent themes are on.
-    pub fn active_look(self, active: Option<PaneId>, global: Appearance) -> Appearance {
+    fn active_look(self, active: Option<PaneId>, global: Appearance) -> Appearance {
         let look = active
             .and_then(|id| self.overrides.with_value(|m| m.borrow().get(&id).copied()))
             .unwrap_or(global);

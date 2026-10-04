@@ -74,7 +74,7 @@ pub(crate) fn toggle_selected(state: crate::context::LibraryContext, item_id: &s
     });
 }
 
-pub(crate) fn selected_ids(state: crate::context::LibraryContext) -> Vec<String> {
+fn selected_ids(state: crate::context::LibraryContext) -> Vec<String> {
     state
         .library
         .selected

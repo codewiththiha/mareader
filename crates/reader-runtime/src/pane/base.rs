@@ -32,7 +32,7 @@ pub(crate) fn empty_launch() -> LaunchDocument {
 }
 
 /// The engine's status in the host's words.
-pub(crate) fn status_word(status: DocStatus) -> PaneDocStatus {
+fn status_word(status: DocStatus) -> PaneDocStatus {
     match status {
         DocStatus::Idle => PaneDocStatus::Idle,
         DocStatus::Opening => PaneDocStatus::Opening,

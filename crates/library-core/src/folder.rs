@@ -128,7 +128,7 @@ impl FolderMode {
     /// A match over the pair so the folding of the unofferable combination is
     /// visible in one place: a watching copy is a copy, because tracking is a
     /// promise about the tree the books are read from.
-    pub fn from_opts(opts: &FolderOpts) -> Self {
+    fn from_opts(opts: &FolderOpts) -> Self {
         match (opts.in_place, opts.watch) {
             (false, _) => FolderMode::Copy,
             (true, false) => FolderMode::LinkInPlace,

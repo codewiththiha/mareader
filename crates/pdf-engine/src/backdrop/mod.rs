@@ -297,7 +297,7 @@ fn feed_frame(session: &PdfSession, frame: &api::PaperFrame) {
 
 /// The state half of a feed, for in-borrow use. Returns whether anything
 /// the publish reads has changed.
-pub(super) fn feed_state(s: &mut Paper, frame: &api::PaperFrame) -> bool {
+fn feed_state(s: &mut Paper, frame: &api::PaperFrame) -> bool {
     if s.doc_path.is_none() || frame.width == 0 || frame.height == 0 {
         return false;
     }

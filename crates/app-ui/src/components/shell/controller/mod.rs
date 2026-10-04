@@ -109,7 +109,7 @@ pub enum ChromeSurface {
 
 impl ChromeSurface {
     /// Whether this surface's shell has a sidebar rail at all.
-    pub fn has_rail(self) -> bool {
+    fn has_rail(self) -> bool {
         matches!(self, ChromeSurface::Reader)
     }
 }

@@ -102,7 +102,7 @@ const UNTOUCHED: &str = "The folder on disk is untouched.";
 
 impl CopyAsk {
     /// A book move: the rows the gate screened read in place, and the ground they are leaving.
-    pub(super) fn of_rows(
+    fn of_rows(
         state: crate::context::LibraryContext,
         ids: &[String],
         hand: RowMove,
@@ -286,7 +286,7 @@ impl CopyAsk {
     /// A shelf coming off the list with books read in place on it: the same
     /// copy, and the one removal that changes nothing — the folder's next
     /// import makes the level again.
-    pub(super) fn of_removal(
+    fn of_removal(
         state: crate::context::LibraryContext,
         purge: &[String],
         shelves: &[String],

@@ -291,7 +291,7 @@ pub fn land_file(
     )
 }
 
-pub(crate) fn mint_stored_row(
+fn mint_stored_row(
     state: crate::context::LibraryContext,
     book_id: String,
     file: &FoundFile,
@@ -424,7 +424,7 @@ pub(crate) fn land_stored_copy_settling(
 /// The copy's measurement becomes the row's identity and the source's
 /// fingerprint stays free, so any folder that reads the OS file can still
 /// place it as its own linked book.
-pub(super) fn adopt_copy_measurement(
+fn adopt_copy_measurement(
     state: crate::context::LibraryContext,
     row_id: &str,
     measured: Option<Fingerprint>,

@@ -11,7 +11,7 @@ use crate::features::library::folder_card::THUMB_CAP;
 /// Two, because a shelf of one is a shelf the view menu already makes. The
 /// book under the pointer counts as the second, so the offer starts at the
 /// first item held.
-pub const FOLD_MIN_ITEMS: usize = 2;
+const FOLD_MIN_ITEMS: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Band {

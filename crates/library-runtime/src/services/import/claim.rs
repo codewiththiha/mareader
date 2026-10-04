@@ -34,7 +34,7 @@ impl Drop for RootClaim {
 
 /// The sentence a second ask for a walking folder gets. One spelling: the
 /// two doors that can refuse a run refuse it for the same reason.
-pub(super) fn already_importing(state: crate::context::LibraryContext, root: &str) {
+fn already_importing(state: crate::context::LibraryContext, root: &str) {
     toast(
         state,
         format!("{} is already being imported.", folder_label(root)),

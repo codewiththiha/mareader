@@ -101,7 +101,7 @@ impl Snapshot<'_> {
     /// The row that answers for a found file: by content identity first, which
     /// is the ledger's answer, and by address second for a migrated row whose
     /// placeholder identity no measurement ever matched.
-    pub(super) fn known_row(&self, file: &FoundFile) -> Option<String> {
+    fn known_row(&self, file: &FoundFile) -> Option<String> {
         self.registry
             .get(&file.fp)
             .map(|known| known.id.clone())

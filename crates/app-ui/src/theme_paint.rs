@@ -21,7 +21,7 @@ pub fn html_style() -> Option<web_sys::CssStyleDeclaration> {
         .map(|h| h.style())
 }
 
-pub(crate) fn body_el() -> Option<web_sys::HtmlElement> {
+fn body_el() -> Option<web_sys::HtmlElement> {
     web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.body())
@@ -191,12 +191,12 @@ pub fn set_paint_pipeline(p: PaintPipeline) {
     PIPELINE.with(|c| c.set(p));
 }
 
-pub fn paint_pipeline() -> PaintPipeline {
+fn paint_pipeline() -> PaintPipeline {
     PIPELINE.with(|c| c.get())
 }
 
 /// Paint `a` with whatever this document's pipeline is.
-pub fn paint_for_pipeline(a: Appearance, ink_contrast: f64) {
+fn paint_for_pipeline(a: Appearance, ink_contrast: f64) {
     match paint_pipeline() {
         PaintPipeline::Document => paint_appearance_now(a, ink_contrast),
         PaintPipeline::Chrome => paint_chrome_appearance(a),

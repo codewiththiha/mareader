@@ -120,7 +120,7 @@ pub(crate) fn prune_now(state: crate::context::LibraryContext) {
     });
 }
 
-pub fn file_cover(
+fn file_cover(
     state: crate::context::LibraryContext,
     path: String,
     data_url: String,

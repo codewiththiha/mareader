@@ -24,7 +24,7 @@ use super::tree::split_fits;
 /// How much better (in normalised score) a rival target must be before the
 /// preview leaves the current one: a tenth of the pane's extent. Near a zone
 /// boundary the pointer's jitter is a few pixels; this is tens of them.
-pub const HYSTERESIS: f64 = 0.1;
+const HYSTERESIS: f64 = 0.1;
 
 /// One visible pane as a drag sees it.
 #[derive(Clone, Debug, PartialEq)]
@@ -65,7 +65,7 @@ impl DropGeometry {
 
     /// The pane under a slot-coordinate point. Panes tile the slot, and the
     /// half-open test gives a shared edge to exactly one of them.
-    pub fn pane_at(&self, at: (f64, f64)) -> Option<&PaneGeometry> {
+    fn pane_at(&self, at: (f64, f64)) -> Option<&PaneGeometry> {
         self.panes.iter().find(|pane| contains(pane.rect, at))
     }
 

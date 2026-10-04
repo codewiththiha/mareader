@@ -145,7 +145,7 @@ fn from_directory(sheet: ImportSheet) {
 
 /// Nothing at the root: "All" is the library's own order, not a shelf to
 /// file onto, so a pick from there leaves its books unfiled.
-pub(crate) fn add_target(state: crate::context::LibraryContext) -> Signal<Option<String>> {
+fn add_target(state: crate::context::LibraryContext) -> Signal<Option<String>> {
     Signal::derive(move || {
         let id = state.library.shelf.get();
         (id != ALL_SHELF).then_some(id)
@@ -247,7 +247,7 @@ pub(crate) fn AddMenuButton(state: crate::context::LibraryContext, face: AddFace
 }
 
 #[component]
-pub(crate) fn AddMenu(
+fn AddMenu(
     state: crate::context::LibraryContext,
     open: RwSignal<bool>,
     anchor: NodeRef<html::Div>,
