@@ -20,8 +20,9 @@
 use crate::pane::dom::PaneDom;
 
 /// The attribute every pane's content root carries, so an event's element
-/// can find the pane it is in (`closest`).
-pub const PANE_ROOT_ATTR: &str = "data-pane-root";
+/// can find the pane it is in (`closest`). Written as a literal by the
+/// pane's own view; only the selector here names it.
+const PANE_ROOT_ATTR: &str = "data-pane-root";
 
 /// Whose an event is, from one pane's point of view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

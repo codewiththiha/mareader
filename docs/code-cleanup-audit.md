@@ -60,6 +60,15 @@ anywhere (`is_destructive`, `track_at`, `awaiting_check`, `apply_preset` are abs
 entirely), no type in the workspace has zero code references, and the field census' only zero-use fields
 remain the serde-wire shapes and the `ObserverBinding` destructure it already justified. Nothing to delete.
 
+The census' own first run was the only thing that said otherwise, and the report was a bug in the scanner,
+not a find in the tree. `pane::origin::PANE_ROOT_ATTR` was listed as the lone dead symbol because the
+stripper blanked string literals whole, which also erased the constant's one use — an inline capture,
+`format!("[{PANE_ROOT_ATTR}]")`. Inside a format string an identifier names a value exactly as a bare
+occurrence does, so the stripper now keeps the `{name}` captures it walks past; re-run over the same tip,
+the census reports **zero** dead symbols and 95 items confined to their own file. `PANE_ROOT_ATTR` is one
+of the 95 and was narrowed with that class: the attribute keeps its single spelling in the pane view that
+writes it, and its single name in the selector that finds it.
+
 What was left is surface: 125 items whose only outside-file evidence was prose. 55 of them — functions,
 consts and statics — were provably safe to narrow, and are now private: the item is a fn/const/static, it
 has a real non-test use in its own file (so the `dead_code` lint stays quiet), no other file names it, no
@@ -73,6 +82,7 @@ source gate or shipped JS/TS names it, and neither its declaration nor any of it
 | `app-ui::…::use_custom_event::use_typed_event` | No caller anywhere: the live hook is `use_typed_event_from` (gloss wiring), which is this one plus the dispatch element. | `use_typed_event_from`. |
 | `app-ui::…::use_custom_event::use_raw_event` | Same: `use_raw_event_from` is the live sibling (link navigation, selection, selection tracking). | `use_raw_event_from`; the module doc now describes what is left. |
 | `use_custom_event`'s `pub use crate::events::dispatch_typed_event` | A second path to the dispatcher; every caller already reaches `app_ui::events::` directly. | `crate::events` (services use it there). |
+| `pane::origin::PANE_ROOT_ATTR` | The census' single "dead" report: the constant is named nowhere outside `origin.rs`, whose selector uses it through an inline format capture the old stripper erased. The attribute string is live (written by the pane view, read by the engine and the theme rules); the constant is the wrong half to delete. | Plain `const` in `pane/origin.rs` — the same narrowing as the 55, one word lighter; every string spelling untouched. |
 
 Deliberately NOT narrowed, each for a reason a name census cannot see: the 45 candidate TYPES (a type's
 name is usually absent at its use sites — the value comes back from a fn by inference — so narrowing one
