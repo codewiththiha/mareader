@@ -1,5 +1,6 @@
-//! The AI's appearance settings: the gloss highlight palette (with its custom
-//! colour picker), the highlight's opacity and the word card's density.
+//! The AI's appearance settings: the gloss highlight palette (with the
+//! native colour input on its Custom swatch), the highlight's opacity and the
+//! word card's density.
 //!
 //! These are the AI feature's knobs, so they live with the feature and the
 //! settings modal mounts them: `settings::theme::ThemeTab` composes
@@ -7,7 +8,6 @@
 //! here is the reader's own colour — tint, textures and theme presets belong to
 //! the title bar's palette menu, and the tab says so at its foot.
 
-use leptos::html;
 use leptos::prelude::*;
 
 use reader_core::settings::{GlossColor, GlossDensity};
@@ -15,17 +15,12 @@ use reader_core::settings::{GlossColor, GlossDensity};
 use crate::components::settings::common::StyleSelect;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use app_ui::components::primitives::floating::menu_popover::MenuPopover;
 use app_ui::components::primitives::form::row::Row;
-use app_ui::components::primitives::form::slider::Slider;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
-use app_ui::components::primitives::overlay::lanes::OverlayPolicy;
 
 #[component]
 pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl IntoView {
     let s = state.settings;
-    let custom_open = RwSignal::new(false);
-    let custom_anchor: NodeRef<html::Div> = NodeRef::new();
 
     view! {
         <SectionLabel text="AI Appearance" />
@@ -45,36 +40,49 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
                                     base.to_string()
                                 }
                             };
+                            // The native picker, the control the split-pane
+                            // outline row already uses: a transparent
+                            // `<input type="color">` over the swatch, so the
+                            // OS's own chooser opens on click.
                             view! {
-                                <div node_ref=custom_anchor class="relative flex flex-col items-center">
-                                    <button
-                                        type="button"
-                                        title="Custom…"
-                                        aria-pressed=move || active.get().to_string()
-                                        on:click=move |_| {
-                                            s.update(|st| st.gloss_color = GlossColor::Custom);
-                                            custom_open.set(true);
-                                        }
-                                        class="flex flex-col items-center gap-1.5 rounded-lg py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                <label
+                                    title="Custom highlighter colour"
+                                    aria-label="Custom highlighter colour"
+                                    data-gloss-color="custom"
+                                    class="relative flex cursor-pointer flex-col items-center gap-1.5 rounded-lg py-1 \
+                                           focus-within:outline-none focus-within:ring-2 focus-within:ring-accent"
+                                >
+                                    <span
+                                        class=ring
+                                        style="background:conic-gradient(from 90deg,#e56b64,#e8c449,#6fd58c,#6ba3f5,#a58af0,#e56b64)"
                                     >
                                         <span
-                                            class=ring
-                                            style="background:conic-gradient(from 90deg,#e56b64,#e8c449,#6fd58c,#6ba3f5,#a58af0,#e56b64)"
-                                        >
-                                            <span
-                                                class="h-full w-full rounded-full border border-line"
-                                                style=move || {
-                                                    format!(
-                                                        "background-color:{}",
-                                                        s.with(|st| st.gloss_custom.clone())
-                                                    )
-                                                }
-                                            ></span>
-                                        </span>
-                                        <span class="text-xs text-muted">"Custom"</span>
-                                    </button>
-                                    <CustomColorPicker state=state open=custom_open anchor=custom_anchor />
-                                </div>
+                                            class="h-full w-full rounded-full border border-line"
+                                            style=move || {
+                                                format!(
+                                                    "background-color:{}",
+                                                    s.with(|st| st.gloss_custom.clone())
+                                                )
+                                            }
+                                        ></span>
+                                    </span>
+                                    <span class="text-xs text-muted">"Custom"</span>
+                                    <input
+                                        type="color"
+                                        aria-label="Choose custom highlighter colour"
+                                        data-gloss-color-input="custom"
+                                        prop:value=move || s.with(|st| st.gloss_custom.clone())
+                                        on:click=move |_| s.update(|st| st.gloss_color = GlossColor::Custom)
+                                        on:input=move |ev| {
+                                            let hex = event_target_value(&ev);
+                                            s.update(|st| {
+                                                st.gloss_color = GlossColor::Custom;
+                                                st.gloss_custom = hex;
+                                            });
+                                        }
+                                        class="absolute left-1/2 top-1 h-8 w-8 -translate-x-1/2 cursor-pointer opacity-0"
+                                    />
+                                </label>
                             }
                             .into_any()
                         } else {
@@ -155,154 +163,5 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
                 </Row>
             </div>
         </div>
-    }
-}
-
-fn hsl_to_hex(h: f64, s: f64, l: f64) -> String {
-    let (s, l) = (s / 100.0, l / 100.0);
-    let a = s * l.min(1.0 - l);
-    let f = |n: f64| {
-        let k = (n + h / 30.0) % 12.0;
-        let c = l - a * ((k - 3.0).min(9.0 - k)).clamp(-1.0, 1.0);
-        (c * 255.0).round() as u8
-    };
-    format!("#{:02x}{:02x}{:02x}", f(0.0), f(8.0), f(4.0))
-}
-
-fn hex_to_hsl(hex: &str) -> (f64, f64, f64) {
-    let c = |i: usize| {
-        u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0) as f64 / 255.0
-    };
-    let (r, g, b) = (c(1), c(3), c(5));
-    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
-    let l = (max + min) / 2.0;
-    let d = max - min;
-    if d == 0.0 {
-        return (0.0, 0.0, l * 100.0);
-    }
-    let s = d / (1.0 - (2.0 * l - 1.0).abs());
-    let h = if max == r {
-        ((g - b) / d) % 6.0
-    } else if max == g {
-        (b - r) / d + 2.0
-    } else {
-        (r - g) / d + 4.0
-    };
-    ((h * 60.0 + 360.0) % 360.0, s * 100.0, l * 100.0)
-}
-
-#[component]
-fn CustomColorPicker(
-    state: crate::context::ReaderContext,
-    open: RwSignal<bool>,
-    anchor: NodeRef<html::Div>,
-) -> impl IntoView {
-    let s = state.settings;
-    let (init_h, init_sat, init_li) = hex_to_hsl(&s.with_untracked(|st| st.gloss_custom.clone()));
-    let (h, set_h) = signal(init_h);
-    let (sat, set_sat) = signal(init_sat);
-    let (li, set_li) = signal(init_li);
-    Effect::new(move |_| {
-        if !open.get() {
-            return;
-        }
-        let (hh, ss, ll) = hex_to_hsl(&s.with_untracked(|st| st.gloss_custom.clone()));
-        set_h.set(hh);
-        set_sat.set(ss);
-        set_li.set(ll);
-    });
-    let hex = move || hsl_to_hex(h.get(), sat.get(), li.get());
-    Effect::new(move |_| {
-        if open.get() {
-            s.update(|st| st.gloss_custom = hex());
-        }
-    });
-    view! {
-        <MenuPopover
-            open=open
-            anchor=anchor
-            width=224u32
-            class="space-y-3 p-3".to_string()
-            // The picker floats INSIDE the settings modal; the in-dialog
-            // policy keeps the modal from evicting itself when the picker
-            // opens (same reasoning as the tab's StyleSelects).
-            policy=OverlayPolicy::IN_DIALOG
-            hold_titlebar=false
-        >
-            <Slider
-                value=h
-                min=0.0
-                max=360.0
-                step=1.0
-                label="Hue"
-                on_change=move |v| set_h.set(v)
-                class="hue-strip"
-            />
-            <Slider
-                value=sat
-                min=0.0
-                max=100.0
-                step=1.0
-                label="Saturation"
-                on_change=move |v| set_sat.set(v)
-            />
-            <Slider
-                value=li
-                min=5.0
-                max=95.0
-                step=1.0
-                label="Lightness"
-                on_change=move |v| set_li.set(v)
-            />
-            <div class="flex items-center justify-between text-xs text-muted">
-                <span>"Preview"</span>
-                <span
-                    class="h-6 w-10 rounded-md border border-line"
-                    style=move || format!("background:{}", hex())
-                />
-            </div>
-        </MenuPopover>
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_picker_emits_the_css_primaries_it_shows() {
-        assert_eq!(hsl_to_hex(0.0, 100.0, 50.0), "#ff0000");
-        assert_eq!(hsl_to_hex(120.0, 100.0, 50.0), "#00ff00");
-        assert_eq!(hsl_to_hex(240.0, 100.0, 50.0), "#0000ff");
-        assert_eq!(hsl_to_hex(0.0, 0.0, 0.0), "#000000");
-        assert_eq!(hsl_to_hex(0.0, 0.0, 100.0), "#ffffff");
-    }
-
-    #[test]
-    fn a_colour_survives_the_trip_through_the_sliders() {
-        // The picker's whole contract: open it on a stored hex, move nothing,
-        // and the hex written back must be the one that was read. A drift here
-        // silently re-tints every saved highlight the first time the reader
-        // opens the custom swatch.
-        for hex in ["#2563eb", "#e56b64", "#6fd58c", "#a58af0", "#0f172a"] {
-            let (h, s, l) = hex_to_hsl(hex);
-            assert_eq!(
-                hsl_to_hex(h, s, l),
-                hex,
-                "{hex} did not survive the round trip"
-            );
-        }
-    }
-
-    #[test]
-    fn a_grey_has_no_hue_to_remember() {
-        // The achromatic branch: d == 0 returns a zeroed hue rather than
-        // dividing by a zero saturation denominator.
-        let (h, sat, l) = hex_to_hsl("#808080");
-        assert_eq!((h, sat), (0.0, 0.0));
-        assert!(
-            (l - 50.196).abs() < 0.01,
-            "mid grey should read as ~50% light, got {l}"
-        );
     }
 }
