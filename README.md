@@ -759,8 +759,8 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Fit width | `Cmd/Ctrl` + `0` |
 | Single page view | `Cmd/Ctrl` + `1` |
 | Continuous view | `Cmd/Ctrl` + `2` |
-| Zoom in | `+` or `=`, alone or with `Cmd`/`Ctrl` |
-| Zoom out | `-` or `_`, alone or with `Cmd`/`Ctrl` |
+| Zoom in | `Cmd/Ctrl` + `+`, or `+` / `=` alone |
+| Zoom out | `Cmd/Ctrl` + `-`, or `-` / `_` alone |
 | Previous page | `Left arrow` or `H` |
 | Next page | `Right arrow` or `L` |
 | Scroll up / down (continuous) | `Up arrow` / `Down arrow`, or `K` / `J` |
