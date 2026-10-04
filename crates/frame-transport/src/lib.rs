@@ -286,9 +286,6 @@ impl<W: Wire> ShellApi for PortShellApi<W> {
     fn publish_digest(&self, json: String) {
         self.emit(RuntimeFrame::PublishDigest { json });
     }
-    fn reload(&self) {
-        self.emit(RuntimeFrame::Reload);
-    }
 }
 
 #[cfg(test)]

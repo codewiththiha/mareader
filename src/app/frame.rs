@@ -147,7 +147,6 @@ pub enum FrameVocabulary {
     },
     DocStatus(Box<runtime_contract::boundary::DocStatusReport>),
     PublishDigest(String),
-    Reload,
     ResolveLaunch {
         request: u64,
         path: String,
@@ -822,9 +821,6 @@ impl Driver {
                     *self.boot_digest.borrow_mut() = Some(json.clone());
                 }
                 self.report(FrameEvent::Boundary(FrameVocabulary::PublishDigest(json)));
-            }
-            RuntimeFrame::Reload => {
-                self.report(FrameEvent::Boundary(FrameVocabulary::Reload));
             }
             RuntimeFrame::ResolveLaunch { request, path } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::ResolveLaunch {

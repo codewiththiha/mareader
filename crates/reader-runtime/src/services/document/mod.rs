@@ -4,8 +4,8 @@
 //! points, none of which depend on UI.
 //!
 //! [`flush_read_point`] is what a session ending owes the library: the resume
-//! point the progress effect is still debouncing, written now. Both exits call
-//! it — a pane's dispose, and the reload in [`crate::services::reload`].
+//! point the progress effect is still debouncing, written now. Every exit
+//! calls it — a pane's dispose above all.
 //!
 //! [`gloss_key`] is the one fact the lifecycle owns that is not about the
 //! engine: which book the open document is. The address alone cannot say —

@@ -4,7 +4,6 @@
 
 pub mod ai;
 pub mod document;
-pub mod reload;
 
 use web_sys::Event;
 

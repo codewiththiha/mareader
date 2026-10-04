@@ -138,6 +138,9 @@ for (const file of walk(RUNTIME)) {
         `${at}: the legacy ReaderPage workspace owner is gone — the host and its panes own the reader\n    ${line.trim()}`,
       );
     }
+    if (/\breload_window\b/.test(line)) {
+      failures.push(`${at}: the window is the Shell's — reader code never reloads it\n    ${line.trim()}`);
+    }
     if (substitute) return;
     for (const match of line.matchAll(/\bstorage::(\w+)/g)) {
       if (!STORAGE_READS.has(match[1])) {
@@ -145,11 +148,6 @@ for (const file of walk(RUNTIME)) {
           `${at}: storage::${match[1]} is not a read — durable writes are the Shell's (ShellApi)\n    ${line.trim()}`,
         );
       }
-    }
-    if (/\breload_window\b/.test(line)) {
-      failures.push(
-        `${at}: the window is the Shell's — ask with ShellApi::reload\n    ${line.trim()}`,
-      );
     }
   });
 }
@@ -182,5 +180,5 @@ if (failures.length > 0) {
 }
 console.log(
   `host boundary: ${hostFiles.length} host sources clean; no legacy ReaderPage; ` +
-    "reader writes and reloads go through ShellApi",
+    "reader writes go through ShellApi",
 );

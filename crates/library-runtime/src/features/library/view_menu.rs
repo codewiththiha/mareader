@@ -1,6 +1,4 @@
-//! The ⋯ menu: how the shelf looks, and the one row that is not a look —
-//! Reload Window, the reset for a footprint that latched (the shelf is
-//! exactly where the latch is visible: after the close, the number stays).
+//! The ⋯ menu: how the shelf looks.
 //!
 //! Four decisions — layout, column count, cover treatment and sort — every
 //! one a `LibraryView` field, so no row here reaches into the DOM to arrange
@@ -20,7 +18,6 @@ use app_ui::components::primitives::floating::menu_popover::MenuPopover;
 use app_ui::components::primitives::menu::menu_item::MenuItem;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 use app_ui::components::primitives::menu::separator::Separator;
-use runtime_contract::boundary::ShellApi;
 
 const SORTS: [SortKey; 5] = [
     SortKey::Manual,
@@ -211,21 +208,6 @@ pub(crate) fn ViewMenu(state: crate::context::LibraryContext) -> impl IntoView {
                         }
                     })
                     .collect_view()}
-                <Separator spacing="my-1.5" />
-                // Not a view decision — the memory reset, and the shelf is
-                // where it belongs most: the footprint a reading session
-                // latched onto survives the close, so the empty shelf is
-                // where the number is both highest and least explicable
-                // (Mareader.md, "The memory model").
-                <MenuItem
-                    icon=IconName::Reload
-                    label="Reload Window".to_string()
-                    sublabel="Restarts in place; your place is kept, the memory is not".to_string()
-                    on_click=move || {
-                        open.set(false);
-                        state.api.reload();
-                    }
-                />
             </MenuPopover>
         </div>
     }

@@ -123,7 +123,6 @@ view draws the lifted card) and holds no remnant; nothing there was removed.
 - Persistent library/settings/bookmark/gloss migrations, including older stored shapes/keys. Deleting them would lose existing users' data or reading position, violating "same functioning".
 - Standalone development entries and off-WASM host-test shapes; a claimed hosted boot still never falls back to standalone.
 - Existing real-realm browser lifecycle assertions and their test-only query composition helper. That helper is not shipped code or a production alternate runtime. New cleanup checks deliberately access native documents directly.
-- Explicit user-requested window reload. Normal routes/pane close never reload Shell; the optional recovery action is not routine lifetime management.
 
 ## Validation coverage
 

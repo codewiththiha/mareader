@@ -115,8 +115,6 @@ pub trait ShellApi {
     fn doc_status(&self, report: &DocStatusReport);
     /// Reader → Shell: the diagnostics digest (the Shell's probe merges it).
     fn publish_digest(&self, json: String);
-    /// Reader → Shell: reload the webview (the reader has already flushed).
-    fn reload(&self);
 }
 
 /// A no-Shell default for host tests: every command is recorded, nothing
@@ -151,5 +149,4 @@ impl ShellApi for RecordApi {
     }
     fn doc_status(&self, _report: &DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
-    fn reload(&self) {}
 }

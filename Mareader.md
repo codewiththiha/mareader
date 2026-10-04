@@ -223,8 +223,8 @@ generation counters reset with the document they were issued for.
 The heap is charted from inside, because from outside it is invisible: the
 OS's number folds the wasm linear memory into the webview's total, where
 canvas surfaces dominate. `crates/app-state/src/memory.rs` logs the heap's byte length at
-open, close, zoom commit, index build and the reload that resets it (`[mem]`
-lines in the webview console), and the trace IS the leak-versus-latch test —
+open, close, zoom commit and index build (`[mem]` lines in the webview
+console), and the trace IS the leak-versus-latch test —
 steps up once per book, flat across a session's zooms, never back down: that
 is the ratchet working as the platform dictates. A climb per open/close cycle
 would be a leak, and the log is where one shows up first.
@@ -233,7 +233,8 @@ What the trace is read against is a SHAPE and not a number: a fresh boot is
 some floor X; reading is X plus the mounted canvases; idling on the page
 stays at reading, which is the latch rather than a leak; the shelf after a
 close stays there too, holding the retained index, the covers and whatever
-the wasm arena grew into; and a reload is back to X. Five open/close cycles
+the wasm arena grew into; and the next route boots a fresh runtime instance
+rather than inheriting that arena. Five open/close cycles
 that plateau are a latch. Five that climb are a leak, and these lines say
 which before a profiler does.
 
@@ -242,12 +243,12 @@ The platform levers stay weighed and unpulled: a CPU-backed-canvas hint
 wants an A/B measurement before it ships anywhere; cache-budget engine flags
 are WebView2-only; and an AUTOMATIC pressure valve that recreates the webview
 after very long sessions still trades reading continuity for a number the
-next book latches right back. What shipped instead is the manual one: Reload
-Window — a row in the reader's ⋯ menu and the shelf's — is the force-quit
-minus the quit, offered rather than imposed. It pays what a quit pays first
-(the resume point the progress effect is still debouncing, flushed through
-`crates/reader-runtime/src/services/document/flush.rs`) and parks the address on the shelf before
-it goes, so the boot does not mount a reader for a book that is not there.
+next book latches right back. The runtime split already releases that number
+at its natural seam, so nothing offers a restart by hand: a route handoff
+retires the runtime that ended — realm, wasm instance, heap — and the next
+route starts a fresh instance, while the resume point the progress effect is
+still debouncing is flushed through
+`crates/reader-runtime/src/services/document/flush.rs` before the runtime goes.
 
 ## Formats: one host, one pipeline per family
 

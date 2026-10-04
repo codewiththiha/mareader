@@ -166,8 +166,6 @@ pub enum RuntimeFrame {
     DocStatus { report: DocStatusReport },
     /// `ShellApi::publish_digest` over the wire.
     PublishDigest { json: String },
-    /// `ShellApi::reload` over the wire.
-    Reload,
     /// The one query the bridge answered synchronously becomes a
     /// request/answer pair over the port; `request` matches the answer.
     ResolveLaunch { request: u64, path: String },

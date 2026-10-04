@@ -172,7 +172,7 @@ iframe residency to be zero.
 - **Status.** The document status the Shell hears is the host's, derived
   from the mirrors. A pane realm's own status report is not forwarded, and
   only the live frame of a pane may act for the user (open, return to the
-  library, reload).
+  library).
 
 ## Legacy removed
 

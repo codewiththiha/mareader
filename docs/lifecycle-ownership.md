@@ -318,7 +318,6 @@ responsibilities moved to exactly one owner:
 | AI chunk bridge (window Tauri listener) | session (composition root) |
 | Frame theme / settings persistence, appearance raster hooks | session (composition root) → Shell persists |
 | Gloss marks' durable copy | pane edits the list → Shell writes it (`ShellApi::save_gloss`) |
-| Reload Window (reader menu) | pane flushes its read point → Shell reloads (`ShellApi::reload`) |
 | Reader state (`ReaderState`), `ReaderContext` | pane (one per pane, never global) |
 | Document open / session / close, paper settings, prefetch gate | pane |
 | Virtualizers, zoom controller, navigation sync, reading progress, reflow pipeline, mode change, first paint, blend geometry | pane (installed at mount, in the pane's owner) |

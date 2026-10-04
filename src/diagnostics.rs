@@ -20,14 +20,6 @@ pub fn install(state: ShellState) {
     let _ = state;
 }
 
-/// The heap line the reload path logs (the reader logs its own on close).
-pub fn log_reload_heap() {
-    #[cfg(target_arch = "wasm32")]
-    app_state::memory::log_heap("reload");
-    #[cfg(not(target_arch = "wasm32"))]
-    eprintln!("[mem] reload (host)");
-}
-
 #[cfg(target_arch = "wasm32")]
 fn install_web(state: ShellState) {
     use wasm_bindgen::prelude::Closure;

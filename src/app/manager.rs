@@ -703,10 +703,6 @@ impl RuntimeManager {
                     *self.last_digest.lock().unwrap() = Some(value);
                 }
             }
-            FrameVocabulary::Reload => {
-                crate::diagnostics::log_reload_heap();
-                app_chrome::window::api::reload_window();
-            }
             FrameVocabulary::ResolveLaunch { request, path } => {
                 let document = crate::services::resolve_launch(&path).map(Box::new);
                 if let Some(driver) = self.live_driver() {

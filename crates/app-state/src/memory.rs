@@ -8,8 +8,7 @@
 //! invisible from the outside: Activity Monitor folds the heap into the
 //! webview's total, where canvas surfaces and JSC dominate. So the app
 //! charts the heap itself, one console line at each point that moves it —
-//! open, close, zoom commit, search-index build, and the reload that resets
-//! it.
+//! open, close, zoom commit and search-index build.
 //!
 //! The trace is the leak-versus-latch test: a heap that steps up once per
 //! book and never steps down is the ratchet working as the platform

@@ -87,14 +87,6 @@ impl ShellApi for ApiHandle {
             }
         }
     }
-    fn reload(&self) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.reload(),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.reload());
-            }
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -191,7 +183,4 @@ impl ShellApi for StandaloneApi {
     fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
-    fn reload(&self) {
-        app_chrome::window::api::reload_window();
-    }
 }

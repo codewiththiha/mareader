@@ -840,7 +840,6 @@ impl Inner {
             // the host reports from the mirrors: a realm's own report (its
             // boot-time Idle can land after the host's open) is not the
             // workspace's word.
-            RuntimeFrame::Reload if role == Role::Live => api.reload(),
             _ => {}
         }
     }

@@ -4,9 +4,8 @@
 //! [`crate::effects::reader::reading_progress`] batches its localStorage write
 //! behind a 400 ms debounce, which is right for a continuous scroll and wrong
 //! for anything that ends the session inside that window: a close, and a
-//! reload ([`crate::services::reload`]). Both used to be a page turn away from
-//! losing the reader's place, so the flush they owe is one function rather
-//! than one copy each.
+//! teardown. Both used to be a page turn away from losing the reader's place,
+//! so the flush they owe is one function rather than one copy each.
 
 use leptos::prelude::*;
 
@@ -23,9 +22,8 @@ use runtime_contract::boundary::ShellApi;
 /// The save is unconditional, and that is the point of the function: the
 /// progress effect keeps the library SIGNAL current as the reader moves, so a
 /// flush that saved only what it had just changed would almost always find
-/// nothing to save and leave the durable copy 400 ms behind. A reload replaces
-/// the page and takes the pending timer with it; a quit takes the webview.
-/// Neither waits.
+/// nothing to save and leave the durable copy 400 ms behind. A teardown takes
+/// the pending timer with it; a quit takes the webview. Neither waits.
 pub(crate) fn flush_read_point(ctx: &crate::context::ReaderContext) {
     if ctx.reader.document.status.get_untracked() != DocStatus::Ready {
         return;

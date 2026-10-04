@@ -288,10 +288,10 @@ boundaries are already pane-scoped and must not regress:
   descriptor's document, page, format (via the injected `PaneClassifier`)
   and zoom are honoured by the pane; a pane's gloss marks are written by
   the Shell (`ShellApi::save_gloss`, the list crossing as JSON because
-  `runtime-contract` may not depend on `ai-core`) and Reload Window asks
-  the Shell (`ShellApi::reload`) instead of reloading the frame's own
-  document. `tools/check-host-boundary.mjs` fails on any other store write
-  or window reload in reader code outside `context.rs`'s `StandaloneApi`.
+  `runtime-contract` may not depend on `ai-core`). The reader never writes
+  the origin's store or reloads a window itself, and
+  `tools/check-host-boundary.mjs` fails on any such line outside
+  `context.rs`'s `StandaloneApi`.
 
 ## Realm-wide state
 
