@@ -77,7 +77,7 @@ impl DropGeometry {
     /// only itself; a pane with a document offers the edges whose split
     /// leaves both halves usable ([`split_fits`]), and none at all while the
     /// workspace is full.
-    pub fn targets_of(&self, pane: &PaneGeometry) -> Vec<DropTarget> {
+    fn targets_of(&self, pane: &PaneGeometry) -> Vec<DropTarget> {
         if pane.empty {
             return vec![DropTarget::Here { pane: pane.pane }];
         }

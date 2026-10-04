@@ -22,7 +22,7 @@ use runtime_contract::covers::{CoverImage, CoverMap};
 
 pub const COVER_CAP: usize = 60;
 
-pub fn prune_covers(rows: &[Row], covers: &mut CoverMap) {
+fn prune_covers(rows: &[Row], covers: &mut CoverMap) {
     let books: Vec<&Book> = book_rows(rows).collect();
     let live: HashSet<&str> = books.iter().map(|b| b.path()).collect();
     covers.retain(|path, _| live.contains(path.as_str()));

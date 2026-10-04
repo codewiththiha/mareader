@@ -100,7 +100,7 @@ impl RuntimeCore {
 
     /// Any live state → `Disposing`, exactly once. `false` from `Disposing`
     /// (a dispose is already running) and `Disposed` (idempotent no-op).
-    pub fn begin_dispose(&mut self) -> bool {
+    fn begin_dispose(&mut self) -> bool {
         if self.lifecycle.admits_work() {
             self.lifecycle = RuntimeLifecycle::Disposing;
             true

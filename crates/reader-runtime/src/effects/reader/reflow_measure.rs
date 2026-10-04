@@ -248,11 +248,7 @@ fn recut_and_publish(
 /// through the same numbers everywhere. (The stream's column spends the
 /// margin differently — as an inset around the column — and composes its own;
 /// see `components::formats::reflow::stream`.)
-pub(crate) fn dialled_geometry(
-    settings: &TextSettings,
-    margin: f64,
-    column_pct: f64,
-) -> PageGeometry {
+fn dialled_geometry(settings: &TextSettings, margin: f64, column_pct: f64) -> PageGeometry {
     geometry(settings.book_layout)
         .with_extra_inline(margin)
         .with_column_pct(column_pct)

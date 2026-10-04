@@ -88,8 +88,30 @@ Deliberately NOT narrowed, each for a reason a name census cannot see: the 45 ca
 name is usually absent at its use sites — the value comes back from a fn by inference — so narrowing one
 below the visibility of a signature that names it trips `private_interfaces`, which `-D warnings` makes
 fatal); items whose only callers are test-only or cfg-gated (narrowing makes the other build warn
-`dead_code`); and the names the source gates read textually (`canvas_id_for_mode`, `take_session`, the
-engine-smoke `disable`). The reader host's lift/drag/grab path was re-read end to end while checking the
+`dead_code`); and the names the source gates read textually (`canvas_id_for_mode`, `take_session`).
+
+The cfg half of that paragraph was then re-audited, because its guard was a naive brace counter and the
+mistakes it makes are invisible. `cfg_audit.py` derives the regions properly — every `#[cfg(...)]` /
+`#[cfg_attr(...)]` attribute, the item it attaches to, and that item's brace- or semicolon-delimited
+extent, over the comment/string-stripped source, with a file reached through a cfg-gated `mod name;`
+counting as wholly conditional. Of the 80 fn/const/static candidates it re-read, **13 more are private**:
+`library-core`'s `tracks_anything`, `covers.rs`'s `prune_covers`, `runtime.rs`'s `begin_dispose`,
+`reflow_measure.rs`'s `dialled_geometry`, the two scroll-step helpers in `shortcuts/navigation.rs`, the
+drop-target and theme helpers `targets_of` / `distinct_hue` / `disable`, the library-tree pair
+`from_blob` / `badge_of`, `state/document`'s `page_aspect` and `zoom/animation`'s `same_transaction` —
+each with zero references outside its own file, tests included. Two items the same pass had released
+wrongly are kept, now for a verified reason: `zoom/target.rs`'s `page_sized`, whose one real use sits
+inside the `#[cfg(feature = "pdf")]`-gated `page_sized_cb` (narrowing warns `dead_code` under
+`--no-default-features`), and `page_host.rs`'s `canvas_id_for_mode`, whose uses sit in cfg regions.
+`tree.rs`'s layout constants were among the false drops; `EVEN` stays `pub` because `drop_target.rs` and
+`lift.rs` really do read it.
+
+Two long-open read questions closed the same way. `host/tree.rs` was read end to end (1347 lines, ~550 of
+them tests): a pure layout tree over ids and ratios whose doc claims it holds no session, canvas,
+virtualizer or buffer — and the claim holds, nothing in the file can retain one. Nothing legacy in it.
+`GlossMark`'s `Deref` impl, the last item an earlier pass had left as "read before removing", is live by
+coercion — `mark.page` and `mark.rect` in `components/ai/anchor/mod.rs`, `mark_layer.rs` and
+`gloss/selection_bar.rs` — so it stays. The reader host's lift/drag/grab path was re-read end to end while checking the
 census — it is live (the pane frame installs the gesture, the sink reaches `ReaderHost::begin_lift`, the
 view draws the lifted card) and holds no remnant; nothing there was removed.
 

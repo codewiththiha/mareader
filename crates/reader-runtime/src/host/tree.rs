@@ -25,14 +25,14 @@ use serde::{Deserialize, Serialize};
 use super::model::{PaneBounds, PaneId};
 
 /// The smallest share either side of a split may have.
-pub const MIN_RATIO: f64 = 0.15;
+const MIN_RATIO: f64 = 0.15;
 /// The largest share either side of a split may have.
-pub const MAX_RATIO: f64 = 1.0 - MIN_RATIO;
+const MAX_RATIO: f64 = 1.0 - MIN_RATIO;
 /// The narrowest a pane may be dragged, when the split has room for two.
-pub const MIN_PANE_PX: f64 = 200.0;
+const MIN_PANE_PX: f64 = 200.0;
 /// The width of a divider's pointer strip, centred on the seam. The strip
 /// overlays the two panes' edges; the panes themselves tile the rect.
-pub const DIVIDER_HIT_PX: f64 = 8.0;
+const DIVIDER_HIT_PX: f64 = 8.0;
 /// The ratio a fresh split starts at.
 pub const EVEN: f64 = 0.5;
 
@@ -129,7 +129,7 @@ impl SplitId {
 pub struct SplitNode {
     pub id: SplitId,
     pub axis: SplitAxis,
-    /// `first`'s share, within `[MIN_RATIO, MAX_RATIO]`.
+    /// `first`'s share, within `MIN_RATIO` and `MAX_RATIO`.
     pub ratio: f64,
     pub first: LayoutNode,
     pub second: LayoutNode,
@@ -336,7 +336,7 @@ pub fn split_rects(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds
 }
 
 /// The layout policy's answer to "may this pane be split along `axis`": a
-/// fresh split starts [`EVEN`], and both halves must keep [`MIN_PANE_PX`]
+/// fresh split starts [`EVEN`], and both halves must keep `MIN_PANE_PX`
 /// along the axis. Measured in the boxes the layout itself would produce.
 pub fn split_fits(rect: PaneBounds, axis: SplitAxis) -> bool {
     let (first, second) = divide(rect, axis, EVEN);
@@ -421,7 +421,7 @@ pub enum TreeError {
     /// A ratio that is not a finite number.
     InvalidRatio,
     /// The layout policy refused a split: one half of the pane would be
-    /// narrower (or shorter) than [`MIN_PANE_PX`] ([`split_fits`]).
+    /// narrower (or shorter) than `MIN_PANE_PX` ([`split_fits`]).
     NoRoom(PaneId),
     /// A drop asked to open in a pane that already shows a document (only
     /// an empty pane takes a document in place from a drop).
@@ -691,7 +691,7 @@ impl PaneTree {
             .map(|split| split.ratio)
     }
 
-    /// Set split `id`'s ratio, clamped to `[MIN_RATIO, MAX_RATIO]`. Returns
+    /// Set split `id`'s ratio, clamped to `MIN_RATIO` and `MAX_RATIO`. Returns
     /// the ratio stored.
     pub fn set_ratio(&mut self, id: SplitId, ratio: f64) -> Result<f64, TreeError> {
         if !ratio.is_finite() {
@@ -708,8 +708,8 @@ impl PaneTree {
 
     /// The ratio a divider drag asks for: the pointer's position along the
     /// divider's `span` (see [`DividerLayout`]), clamped so neither side
-    /// drops under [`MIN_PANE_PX`] when the span has room for two such
-    /// panes, and never outside `[MIN_RATIO, MAX_RATIO]`. Pure: the caller
+    /// drops under `MIN_PANE_PX` when the span has room for two such
+    /// panes, and never outside `MIN_RATIO` and `MAX_RATIO`. Pure: the caller
     /// stores it with [`PaneTree::set_ratio`].
     pub fn drag_ratio(axis: SplitAxis, span: PaneBounds, pointer: (f64, f64)) -> Option<f64> {
         let (origin, extent, at) = match axis {

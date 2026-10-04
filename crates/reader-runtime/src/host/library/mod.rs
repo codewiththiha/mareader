@@ -82,7 +82,7 @@ impl LibraryTree {
     /// The tree a library blob describes. Folders first, then files, each
     /// by name (case-insensitive) — an explorer's order, not the shelf's
     /// hand order: the panel is for finding a file, not arranging one.
-    pub fn from_blob(blob: &LibraryBlob) -> Self {
+    fn from_blob(blob: &LibraryBlob) -> Self {
         let books: HashMap<&str, &Book> = blob
             .books
             .iter()
@@ -157,7 +157,7 @@ fn file_of(
 /// The short format tag for an address: its extension, uppercased, with the
 /// long spellings shortened. Read from the address — the panel shows what
 /// the file is called, it does not classify it.
-pub fn badge_of(path: &str) -> String {
+fn badge_of(path: &str) -> String {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     let ext = match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => ext.to_lowercase(),

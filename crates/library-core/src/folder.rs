@@ -426,7 +426,7 @@ impl WatchedFolder {
     /// Whether this folder is watched anywhere: its root, or any rung turned
     /// on under a root that is off. A tree only a subfolder of which is watched
     /// still owes the walk.
-    pub fn tracks_anything(&self) -> bool {
+    fn tracks_anything(&self) -> bool {
         self.tracking.tracked() || self.tracking.any_on()
     }
 

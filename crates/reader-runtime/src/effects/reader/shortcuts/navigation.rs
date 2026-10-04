@@ -26,13 +26,13 @@ use super::keymap::{self, NavAction};
 /// teleported a sixth of the screen with no glide. 8% clamped to a
 /// native-ish band matches the old feel without giving the keys back to a
 /// text-layer span that virtualization will unmount.
-pub(crate) fn line_scroll_px(viewport_h: f64) -> f64 {
+fn line_scroll_px(viewport_h: f64) -> f64 {
     (viewport_h * 0.08).clamp(40.0, 80.0)
 }
 
 /// PageUp / PageDown / Space: almost a screen, with a sliver of overlap
 /// so the reader does not lose the last line they just saw.
-pub(crate) fn page_scroll_px(viewport_h: f64) -> f64 {
+fn page_scroll_px(viewport_h: f64) -> f64 {
     (viewport_h * 0.9).max(1.0)
 }
 

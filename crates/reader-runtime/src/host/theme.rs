@@ -60,7 +60,7 @@ const PANE_TINT_STRENGTH: u8 = 35;
 /// A hue for a new pane: somewhere in the middle of the widest gap between
 /// the hues `taken` (degrees), jittered by `random` in `0..1` so a workspace
 /// does not always get the same colours. With nothing taken, any hue.
-pub(crate) fn distinct_hue(taken: &[u16], random: f64) -> u16 {
+fn distinct_hue(taken: &[u16], random: f64) -> u16 {
     let random = random.clamp(0.0, 1.0);
     if taken.is_empty() {
         return ((random * 360.0) as u16) % 360;
@@ -214,7 +214,7 @@ impl PaneThemes {
     /// Turn the toggle off: every override goes with it and the panes
     /// inherit the window theme again. What the panes painted as their own
     /// is removed by the pane paint on the next boundary push (`look: None`).
-    pub fn disable(self) {
+    fn disable(self) {
         self.overrides.with_value(|m| m.borrow_mut().clear());
         self.independent.set(false);
         self.bump();

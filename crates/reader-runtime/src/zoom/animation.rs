@@ -118,7 +118,7 @@ pub(crate) fn interpolates_now(state: &ReaderState, t: &ZoomTransition) -> bool 
 /// transition with one that differs in `from` and `to` (it starts where the
 /// eye is and heads somewhere new), so the triple identifies it even when two
 /// posts share a millisecond clock reading.
-pub(crate) fn same_transaction(a: &ZoomTransition, b: &ZoomTransition) -> bool {
+fn same_transaction(a: &ZoomTransition, b: &ZoomTransition) -> bool {
     a.start_ms == b.start_ms && a.from == b.from && a.to == b.to && a.following == b.following
 }
 
