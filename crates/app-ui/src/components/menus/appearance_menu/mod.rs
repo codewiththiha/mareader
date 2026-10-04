@@ -80,7 +80,8 @@ pub fn AppearanceMenu(
     let theme = theme.unwrap_or_else(|| ThemeHandle::for_settings(state.settings));
     // The independent-theme toggle appears with the split it serves (two or
     // more panes) and stands down in a single pane, where per-pane theming
-    // has nothing to distinguish. A named closure: `>=` inside a view
+    // has nothing to distinguish — as does the mode itself: a lone pane
+    // always shows the window theme. A named closure: `>=` inside a view
     // attribute would end at the `>`.
     let split = Signal::derive(move || theme.panes.get() >= 2);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
@@ -124,9 +125,9 @@ pub fn AppearanceMenu(
                 coordinate_space="toolbar-row"
                 class="max-h-[min(70vh,32rem)] overflow-y-auto p-3".to_string()
             >
-                // The dials below edit whichever look the toggle selects:
-                // the focused pane's own while it is on, the window's
-                // otherwise. Grain stays global either way.
+                // The dials below edit whichever look the mode selects: the
+                // focused pane's own while it is in effect (a split is on
+                // screen), the window's otherwise. Grain stays global.
                 <SectionLabel text="Presets" />
                 <PresetSection state=state theme=theme />
                 <Separator vertical=false spacing="my-3" />
@@ -165,3 +166,5 @@ pub fn AppearanceMenu(
         </div>
     }
 }
+
+// only the changed file was rewritten

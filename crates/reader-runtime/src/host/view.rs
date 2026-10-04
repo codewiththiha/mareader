@@ -244,7 +244,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
             // window.
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
-                class=("independent-themes", move || host.themes.independent().get())
+                class=("independent-themes", move || host.themes.active().get())
                 class=("split-workspace", move || host.pane_count() > 1)
                 style=move || host.workspace_look().style
                 // The blend class swaps the backdrop AND the page hosts onto
@@ -487,3 +487,5 @@ fn divider_view(host: ReaderHost, split: SplitId) -> impl IntoView {
         </div>
     }
 }
+
+// only the changed file was rewritten

@@ -25,7 +25,7 @@ pub(super) fn PresetSwatch(
     let appearance = preset.appearance;
     // The highlight is "the edited look IS this preset": true whatever mode
     // the routing is in — the active pane's look while independent themes
-    // are on, the window's otherwise.
+    // are in effect, the window's otherwise.
     let active = move || theme.look.with(|a| *a == appearance);
     let active_btn = active;
     let name_title = name.clone();
@@ -117,3 +117,5 @@ pub(super) fn PresetSwatch(
         </div>
     }
 }
+
+// only the changed file was rewritten

@@ -2818,6 +2818,153 @@ async function paneEntries() {
   console.log(`split workspace: PDF | Markdown, divider ratio ${afterDrag.split.ratio}, closed the PDF, the Markdown pane read on`);
 }
 
+// --- Stage 13b: independent themes at the split boundary -----------------
+currentStage = "stage13b-pane-theme-boundary";
+// The mode needs the split it serves. Closing back to ONE pane stands it
+// down and hands the surviving pane's colour to the window theme, so the
+// pane left and the shared chrome around it agree; the stored toggle
+// survives, so the next split brings the mode back by itself, with the
+// survivor's colour untouched and the new pane in a colour of its own.
+{
+  const panicsBefore = panicCount;
+  const openedTheme = await openLight(PEARLS);
+  const themePane = openedTheme.host.panes[0].paneId;
+  if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[theme boundary] the host refused the Markdown pane beside the PDF");
+  const themed = await waitForSettledLayout("[theme boundary] PDF | Markdown both ready", (s) =>
+    s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 60_000);
+  const mdTheme = themed.host.panes.find((p) => p.paneId !== themePane);
+  if (themed.host.activePane !== mdTheme.paneId) throw new Error(`[theme boundary] active pane ${themed.host.activePane}, expected the new Markdown pane ${mdTheme.paneId}`);
+
+  /** The window's paper and every pane's own, in the active frame's
+   *  document. A pane root with no look of its own carries no tokens, and
+   *  a custom property inherits, so it answers the window's value — which
+   *  is exactly what the single-pane state must show. */
+  const papers = () => page.evaluate((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    if (!doc) return null;
+    // A custom property's value is raw text, and one colour has more than one
+    // spelling in this app: the window's root reads `#fff` where a pane root
+    // reads `#ffffff`. Every value therefore goes through a colour property
+    // and comes back as the browser's own computed form before anything is
+    // compared, so equal colours compare equal and different ones differ.
+    const paper = (el) => {
+      if (!el) return "";
+      const raw = getComputedStyle(el).getPropertyValue("--color-paper").trim();
+      if (!raw) return "";
+      const probe = doc.createElement("span");
+      probe.style.color = raw;
+      if (!probe.style.color) return raw;
+      doc.body.appendChild(probe);
+      const computed = doc.defaultView.getComputedStyle(probe).color;
+      probe.remove();
+      return computed || raw;
+    };
+    const panes = {};
+    for (const entry of doc.querySelectorAll("[data-pane-id]")) {
+      const frame = entry.querySelector("iframe.pane-frame:not([data-frame-hidden])");
+      // The root is under the entry, or in the pane frame that entry holds
+      // (the pane's surface and its document frame are separate documents;
+      // only one of them carries the root).
+      const root = entry.querySelector("[data-pane-root]")
+        ?? frame?.contentDocument?.querySelector("[data-pane-root]");
+      panes[entry.dataset.paneId] = paper(root);
+    }
+    return {
+      window: paper(doc.documentElement),
+      independent: !!doc.querySelector(".reader-bg.independent-themes"),
+      panes,
+    };
+  }, activeFrame);
+  const waitPapers = async (label, predicate, timeoutMs = 10_000) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await papers();
+      if (last && predicate(last)) return last;
+      await page.waitForTimeout(100);
+    }
+    throw new Error(`[theme boundary] ${label}: ${JSON.stringify(last)}`);
+  };
+
+  // Which pane keeps the window's look is the host's ACTIVE pane at the
+  // moment the mode comes on, so hand the Markdown pane focus the way a
+  // reader does before flipping the switch: a press on the pane's own root.
+  // The root is looked up the same way `papers()` looks it up — under the
+  // pane entry, or in the pane frame that entry holds — because the pane's
+  // surface and the pane's document frame are separate documents and only
+  // one of them carries the root. The event is built by the constructor of
+  // the window that owns that root.
+  await page.evaluate(([sel, id]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const entry = doc?.querySelector(`[data-pane-id="${id}"]`);
+    const frame = entry?.querySelector("iframe.pane-frame:not([data-frame-hidden])");
+    const target = entry?.querySelector("[data-pane-root]")
+      ?? frame?.contentDocument?.querySelector("[data-pane-root]");
+    if (!target) throw new Error(`pane ${id} has no root of its own`);
+    const win = target.ownerDocument.defaultView;
+    target.dispatchEvent(new win.PointerEvent("pointerdown", { bubbles: true, composed: true }));
+  }, [activeFrame, mdTheme.paneId]);
+  await waitFor("[theme boundary] the Markdown pane focused", (s) => s.host?.activePane === mdTheme.paneId, 10_000);
+
+  await frameClick('button[title="Appearance"]', "[theme boundary] the appearance menu");
+  await frameClick('[data-setting="independent-themes"] [role="switch"]', "[theme boundary] independent themes on");
+  // The pane the open created is focused, so IT keeps the window's look and
+  // the PDF already on screen takes a tint of its own: the two panes and the
+  // window are three different papers, which is the state that must not
+  // survive the collapse.
+  const split = await waitPapers("the split shows a look of its own, apart from the window",
+    (p) => p.independent && p.panes[mdTheme.paneId] === p.window && p.panes[themePane] !== p.window);
+
+  // The collapse: the Markdown pane goes, the tinted PDF pane stays.
+  await page.evaluate(([sel, id]) => {
+    const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
+    if (!btn) throw new Error(`pane ${id} has no close control`);
+    btn.click();
+  }, [activeFrame, mdTheme.paneId]);
+  const aloneTheme = await waitForSettledLayout("[theme boundary] the last split collapsed", (s) =>
+    s.host?.panes?.length === 1 && s.host.panes[0].paneId === themePane, 30_000);
+  if (aloneTheme.host.activePane !== themePane) throw new Error(`[theme boundary] the survivor did not take focus (${aloneTheme.host.activePane})`);
+  const collapsed = await waitPapers("the mode stood down and the window took the pane's colour",
+    (p) => !p.independent && p.window === split.panes[themePane] && p.panes[themePane] === split.panes[themePane]);
+
+  // The stored toggle is on: the next split brings the mode back, the
+  // survivor keeps the colour it had, and the new pane gets its own.
+  if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[theme boundary] the host refused the pane that carries the mode back");
+  const resumed = await waitForSettledLayout("[theme boundary] the mode returns with the split", (s) =>
+    s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 60_000);
+  const newcomer = resumed.host.panes.find((p) => p.paneId !== themePane);
+  const again = await waitPapers("the mode is back, the survivor kept its colour, the new pane has one",
+    (p) => p.independent && p.panes[themePane] === split.panes[themePane] &&
+      p.panes[newcomer.paneId] !== p.panes[themePane]);
+
+  // The facts, before anything is put back: a failure in the restore below
+  // still leaves the numbers this stage proved in the log.
+  summary.paneThemeBoundary = {
+    pane: themePane, window: split.window, split: split.panes,
+    collapsedWindow: collapsed.window, resumed: again.panes,
+  };
+  console.log(`pane theme boundary: the split's papers ${JSON.stringify(split.panes)} against the window ${split.window}; the collapse promoted ${collapsed.window} and stood the mode down; the next split brought it back as ${JSON.stringify(again.panes)}`);
+
+  // Restore the toggle for the stages that follow. The popover the mode-on
+  // click opened is still on screen — a press inside a pane does not dismiss
+  // it — so the menu is reopened only if that stopped being true.
+  const switchOnScreen = () => page.evaluate((sel) =>
+    !!document.querySelector(sel)?.contentDocument
+      ?.querySelector('[data-setting="independent-themes"] [role="switch"]'), activeFrame);
+  if (!(await switchOnScreen())) {
+    await frameClick('button[title="Appearance"]', "[theme boundary] the appearance menu, reopened");
+  }
+  await frameClick('[data-setting="independent-themes"] [role="switch"]', "[theme boundary] independent themes off");
+  await page.waitForFunction((sel) =>
+    !document.querySelector(sel)?.contentDocument?.querySelector(".reader-bg.independent-themes"), activeFrame, { timeout: 5_000 });
+  await frameClick('button[title="Appearance"]', "[theme boundary] close the appearance menu");
+  assertNoNewPanics("independent theme boundary", panicsBefore);
+  const beforeThemeClose = await snap();
+  await closeAndWaitBaseline("pane theme boundary", false, beforeThemeClose.disposalEpoch + beforeThemeClose.host.panes.length);
+}
+
 // --- Stage 14: the Library panel, the one split-drag source --------------
 currentStage = "stage14-drag-drop";
 // The production drag: a file row of the reader's Library panel (the rail's
@@ -3835,3 +3982,5 @@ console.log(JSON.stringify(summary));
 console.log("PHASE0_BASELINE_JSON " + JSON.stringify(summary));
 console.log("=== END PHASE0 BROWSER BASELINE ===");
 console.log("\nBROWSER LIFECYCLE BASELINE PASSED");
+
+// only the changed file was rewritten

@@ -35,10 +35,10 @@ pub use crate::theme_paint::PaintTarget;
 pub use reader_core::appearance::AppearanceScrub;
 
 /// Where a theme edit goes. `Routed` follows the app's routing rule: while
-/// independent themes are on it edits the ACTIVE pane's own look; while they
-/// are off it edits the window's theme like any other settings change.
-/// `Global` always edits the window's theme — the film grain (noise) dial is
-/// the one dial that stays global.
+/// independent themes are in effect — a split on screen — it edits the
+/// ACTIVE pane's own look; while they are not it edits the window's theme
+/// like any other settings change. `Global` always edits the window's theme
+/// — the film grain (noise) dial is the one dial that stays global.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeScope {
     Routed,
@@ -59,21 +59,25 @@ pub type AppearancePatch = Box<dyn FnOnce(&mut Appearance)>;
 pub struct ThemeHandle {
     /// The look the dials currently edit and display.
     pub look: Signal<Appearance>,
+    /// The STORED preference: what the switch shows and flips. Whether the
+    /// mode is in effect is the workspace's answer (an `independent_themes`
+    /// preference needs the split it serves).
     pub independent: Signal<bool>,
     pub set_independent: Callback<bool>,
     pub commit: Callback<(ThemeScope, AppearancePatch)>,
     pub scrub: Callback<(ThemeScope, AppearanceScrub)>,
     /// How many panes the workspace shows: the independent-theme toggle
-    /// appears with a split (two or more) and stands down in a single pane,
-    /// where per-pane theming has nothing to distinguish.
+    /// appears with a split (two or more), and both the row and the mode it
+    /// flips stand down in a single pane, where per-pane theming has
+    /// nothing to distinguish.
     pub panes: Signal<usize>,
 }
 
 impl ThemeHandle {
     /// The window-theme handle: every edit is a Settings edit. The
     /// independent toggle still persists (the Settings row works with or
-    /// without a workspace behind it) — with no panes, there is nothing for
-    /// it to seed.
+    /// without a workspace behind it) — with no split, there is nothing for
+    /// it to show, so the mode waits.
     pub fn for_settings(settings: RwSignal<Settings>) -> Self {
         let look = Signal::derive(move || settings.with(|s| s.appearance));
         let commit = Callback::new(move |(scope, patch): (ThemeScope, AppearancePatch)| {
@@ -355,3 +359,5 @@ pub fn schedule_save(settings: Settings) {
     .ok();
     SAVE_TIMER.with(|t| *t.borrow_mut() = handle);
 }
+
+// only the changed file was rewritten

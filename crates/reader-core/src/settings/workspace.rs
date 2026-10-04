@@ -60,10 +60,12 @@ pub enum PaneCorners {
 #[serde(default, rename_all = "camelCase")]
 pub struct WorkspaceSettings {
     pub library_click: LibraryClick,
-    /// Independent theme per pane (split workspaces): while on, each pane
-    /// shows its own look and the shared chrome keeps the remembered global
-    /// theme. Persisted as the toggle's rest state; the per-pane colours
-    /// themselves are temporary and die with the workspace.
+    /// Independent theme per pane (split workspaces): while a split is on
+    /// screen, each pane shows its own look and the shared chrome keeps the
+    /// remembered global theme. Persisted as the toggle's rest state, so the
+    /// mode stands down with one pane left and comes back with the next
+    /// split; the per-pane colours themselves are temporary. The last pane's
+    /// colour is promoted to the window theme as the split collapses.
     pub independent_themes: bool,
     /// With independent themes on, keep Light / Dark / Dim shared: each pane
     /// keeps its own colour, but switching the mode switches every pane. Off,
@@ -127,3 +129,5 @@ mod tests {
         assert_eq!(PaneOutlineColor::Custom.resolve("#123abc"), Some("#123abc"));
     }
 }
+
+// only the changed file was rewritten

@@ -251,9 +251,13 @@ impl ReaderHost {
         let settings = session.settings;
         let initial = settings.with_untracked(|s| app_state::Motion::from_prefs(&s.animations));
         let motion = RwSignal::new(initial);
+        // The pane count is the mode's other half: independent themes need
+        // the split they serve (see `theme`).
+        let panes = Signal::derive(move || manager.placed().len());
         let themes = theme::PaneThemes::new(
             RwSignal::new(settings.with_untracked(|s| s.workspace.independent_themes)),
             Signal::derive(move || settings.with(|s| s.workspace.shared_base_mode)),
+            panes,
         );
 
         // What the shared chrome reads about "the reader": the ACTIVE pane's
@@ -406,8 +410,8 @@ impl ReaderHost {
     }
 
     /// The appearance a pane created now starts with: the motion switches
-    /// plus its seeded look (its own while independent themes are on —
-    /// seeded from the pane in front; `None` otherwise).
+    /// plus its seeded look (its own while independent themes are in effect
+    /// — seeded from the pane in front; `None` otherwise).
     fn appearance_now(&self, id: PaneId) -> PaneAppearance {
         let global = self.session.settings.with(|s| s.appearance);
         PaneAppearance {
@@ -417,8 +421,8 @@ impl ReaderHost {
     }
 
     /// The appearance menu's theme handle: routed edits land on the active
-    /// pane's look while independent themes are on, everything else in
-    /// Settings (see [`theme`]).
+    /// pane's look while independent themes are in EFFECT (a split on
+    /// screen), everything else in Settings (see [`theme`]).
     pub fn theme_handle(&self) -> app_ui::appearance::ThemeHandle {
         theme::theme_handle(self.themes, self.manager, self.session.settings)
     }
@@ -664,7 +668,7 @@ impl ReaderHost {
     /// it stand on that paper too.
     pub fn workspace_look(&self) -> WorkspaceLook {
         let has_pdf = self.has_pdf();
-        let independent = self.themes.independent().get();
+        let independent = self.themes.active().get();
         let split = self.pane_count() > 1;
         self.session.settings.with(|s| {
             let workspace = &s.workspace;
@@ -804,11 +808,12 @@ impl ReaderHost {
         let id = self
             .manager
             .create(request, launch, move |id| host.env_for(id))?;
-        // A pane born while independent themes are on starts from the look
-        // of the pane in front, in a colour of its own unlike every pane's
-        // showing; while off it has no look of its own and inherits the
+        // A pane born into a live independent split starts from the look of
+        // the pane in front, in a colour of its own unlike every pane's
+        // showing. With the mode off — or a lone pane on screen, where it
+        // stands down — the pane has no look of its own and inherits the
         // window theme.
-        if self.themes.independent().get_untracked() {
+        if self.themes.active().get_untracked() {
             let global = self.session.settings.with(|s| s.appearance);
             let from = self
                 .manager
@@ -887,12 +892,29 @@ impl ReaderHost {
     /// (its split collapses into the sibling), and the layout names the
     /// pane nearest to it as the focus successor; then the manager disposes
     /// it — only it: every other pane keeps its session.
+    ///
+    /// The last split's collapse also hands the window the survivor's colour
+    /// (see [`theme`]): independent themes need the split they serve, so the
+    /// single pane left shows the window theme — which IS its own colour by
+    /// then — and the chrome agrees with it by construction.
     pub fn close_pane(&self, id: PaneId) -> Result<(), PaneError> {
         match self.manager.lifecycle(id) {
             None => return Err(PaneError::Unknown(id)),
             Some(lifecycle) if !lifecycle.is_live() => return Err(PaneError::Gone(id)),
             Some(_) => {}
         }
+        // The survivor's look is read while the split (and so the mode) is
+        // still there: one pane is the count this close lands on.
+        let survivor = if self.pane_count() == 2 {
+            let placed = self.manager.placed();
+            placed.into_iter().find(|pane| *pane != id)
+        } else {
+            None
+        };
+        let promoted = survivor.and_then(|pane| {
+            let global = self.session.settings.get_untracked().appearance;
+            self.themes.promote(pane, global)
+        });
         let successor = self
             .tree
             .try_update(|tree| tree.remove(id).ok().flatten())
@@ -905,6 +927,16 @@ impl ReaderHost {
             let _ = retiring.try_update(|r| r.retain(|other| *other != id));
         });
         self.themes.forget(id);
+        // The promoted colour lands AFTER the close: the pane count is one
+        // by now, so the mode is down and the survivor follows the window
+        // theme through the same boundary (its own `look_for` answers
+        // `None`), repainting it onto the window's new values.
+        if let Some(look) = promoted {
+            self.session.settings.update(|s| {
+                s.appearance = look;
+                s.touch_appearance();
+            });
+        }
         self.relayout_now();
         Ok(())
     }
@@ -1624,3 +1656,5 @@ fn snapshot_of(
         drag,
     }
 }
+
+// only the changed file was rewritten

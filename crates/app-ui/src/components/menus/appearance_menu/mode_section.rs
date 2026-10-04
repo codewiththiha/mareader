@@ -34,7 +34,7 @@ fn base_icon(b: BaseMode) -> IconName {
 #[component]
 pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
     // The dials show and edit the THEME HANDLE's look: the active pane's
-    // own while independent themes are on, the window's otherwise.
+    // own while independent themes are in effect, the window's otherwise.
     let seed = theme.look.read_untracked();
     let (hue, set_hue) = signal(seed.tint_hue as f64);
     let (strength, set_strength) = signal(seed.tint_strength as f64);
@@ -171,3 +171,5 @@ fn TextInkSlider(state: ChromeState) -> impl IntoView {
         />
     }
 }
+
+// only the changed file was rewritten

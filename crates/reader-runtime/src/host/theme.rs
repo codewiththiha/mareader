@@ -1,13 +1,21 @@
 //! The workspace's independent theme state: one look per pane, toggled
 //! from the appearance menu while a split workspace is on screen.
 //!
-//! Routing rule (the walkthrough's): while independent themes are ON, every
-//! appearance edit — structural or slider — routes to the ACTIVE pane's own
-//! look, even with one pane ("one per one open keeps green"). While they are
-//! OFF, edits are ordinary Settings edits. The film grain dial is the one
-//! dial that stays global whatever the toggle says. The shared chrome (title
-//! bar, sidebar, the backdrop outside panes) keeps the remembered global
-//! theme throughout; only a pane's own box shows its own look.
+//! Routing rule (the walkthrough's): while independent themes are IN
+//! EFFECT, every appearance edit — structural or slider — routes to the
+//! ACTIVE pane's own look. While they are not, edits are ordinary Settings
+//! edits. The film grain dial is the one dial that stays global whatever the
+//! toggle says. The shared chrome (title bar, sidebar, the backdrop outside
+//! panes) keeps the remembered global theme throughout; only a pane's own box
+//! shows its own look.
+//!
+//! The mode needs the split it serves, so it is in effect only while two or
+//! more panes are placed: with ONE pane left, per-pane theming has nothing to
+//! distinguish, and a pane coloured unlike the chrome around it is exactly
+//! the mismatch the single-pane state must not show. The stored preference
+//! (`settings.workspace.independent_themes`) is what the menu's switch and
+//! the Settings row carry, and it survives the stand-down: the next split
+//! brings the mode back by itself, unless the reader switched it off.
 //!
 //! Lifetime rules, from the close/fallback walkthrough (4 panes
 //! blue/red/yellow/green): the working colour is the ACTIVE pane's colour —
@@ -15,10 +23,11 @@
 //! tree's successor — so no separate "last activated" tracker exists. An
 //! override survives in-place document opens (it is keyed by the PANE id,
 //! which a replace keeps) and dies with its pane. On split exit the last
-//! active pane's colour is simply that surviving pane's override: it drives
-//! later single-pane opens and new splits (a new pane seeds from the active
-//! pane's look). The global theme is remembered untouched while the toggle
-//! is on; turning it off clears every override and the panes inherit again.
+//! pane's colour is not lost: it is promoted to the window theme as the mode
+//! stands down ([`PaneThemes::promote`]), so the surviving pane and the
+//! chrome agree by construction, and the re-split that follows seeds its new
+//! pane beside it. Turning the toggle off by hand clears every override and
+//! the panes inherit again.
 //!
 //! Colours: turning the toggle on keeps the active pane's look and gives
 //! every other pane a tint hue of its own, and a pane born while it is on
@@ -42,9 +51,15 @@ use super::model::PaneId;
 /// One workspace's per-pane looks. Copy: views and callbacks capture it.
 #[derive(Clone, Copy)]
 pub struct PaneThemes {
-    /// The remembered toggle. Persisted with the workspace settings by the
-    /// shell; the host only reads and publishes it.
+    /// The STORED preference. Persisted with the workspace settings by the
+    /// shell; the host only reads and publishes it. Whether it is in effect
+    /// is [`Self::active`]'s answer.
     independent: RwSignal<bool>,
+    /// The preference AND the split it serves: derived once here, so the
+    /// pane-count read has one home.
+    active: Signal<bool>,
+    /// The pane count the stand-down follows (the workspace's placement).
+    panes: Signal<usize>,
     /// Bumped on every map or toggle change: the host's appearance boundary
     /// tracks it and re-pushes each pane's effective look.
     version: RwSignal<u64>,
@@ -82,10 +97,17 @@ fn distinct_hue(taken: &[u16], random: f64) -> u16 {
 
 impl PaneThemes {
     /// Themes for one workspace. Call inside the host's owner (the signals
-    /// live in the host's arena).
-    pub fn new(independent: RwSignal<bool>, shared_base: Signal<bool>) -> Self {
+    /// live in the host's arena). `panes` is how many the workspace places:
+    /// one pane is no split, and the mode stands down there.
+    pub fn new(
+        independent: RwSignal<bool>,
+        shared_base: Signal<bool>,
+        panes: Signal<usize>,
+    ) -> Self {
         Self {
             independent,
+            active: Signal::derive(move || independent.get() && panes.get() >= 2),
+            panes,
             version: RwSignal::new(0),
             overrides: StoredValue::new_local(Rc::new(RefCell::new(HashMap::new()))),
             shared_base,
@@ -95,6 +117,12 @@ impl PaneThemes {
     /// Whether Light / Dark / Dim is shared across the panes right now.
     fn shared_base(self) -> bool {
         self.shared_base.get_untracked()
+    }
+
+    /// Whether a look of its own is showing anywhere: the stored preference
+    /// AND the split it serves. The untracked gate every routing read uses.
+    fn in_effect(self) -> bool {
+        self.active.get_untracked()
     }
 
     /// A pane's stored look as it shows: in shared mode the base is the
@@ -128,8 +156,24 @@ impl PaneThemes {
         look
     }
 
-    pub fn independent(self) -> Signal<bool> {
+    /// The STORED preference — what the menu's switch and the Settings row
+    /// show and flip, whether or not a split is on screen to carry it.
+    pub fn preferred(self) -> Signal<bool> {
         self.independent.into()
+    }
+
+    /// Whether the mode is IN EFFECT: the preference, while two or more
+    /// panes are placed. Tracked: the class the blend rules key off and the
+    /// workspace look follow a pane count change. Everything that shows or
+    /// routes a per-pane look reads this, never the preference.
+    pub fn active(self) -> Signal<bool> {
+        self.active
+    }
+
+    /// How many panes the workspace places (the menu's split row keys off
+    /// it).
+    pub fn panes(self) -> Signal<usize> {
+        self.panes
     }
 
     /// The change token the appearance boundary tracks alongside settings.
@@ -141,11 +185,12 @@ impl PaneThemes {
         self.version.update(|v| *v = v.wrapping_add(1));
     }
 
-    /// The look this pane owns while independent themes are on (`None` =
-    /// inherit the window theme). A pane missing from the map answers the
-    /// defensive `global` — seeding keeps that arm unreachable in practice.
+    /// The look this pane owns while independent themes are in effect
+    /// (`None` = inherit the window theme). A pane missing from the map
+    /// answers the defensive `global` — seeding keeps that arm unreachable
+    /// in practice.
     pub fn look_for(self, id: PaneId, global: Appearance) -> Option<Appearance> {
-        if !self.independent.get_untracked() {
+        if !self.in_effect() {
             return None;
         }
         let look = self
@@ -155,8 +200,24 @@ impl PaneThemes {
         Some(self.shown(look, global))
     }
 
+    /// The look the window takes over as the last split collapses: the
+    /// surviving pane's own, so the single pane left and the chrome that
+    /// surrounds it agree by construction. `None` when there is nothing to
+    /// hand over: the mode is not in effect, or that pane already shows
+    /// exactly the window theme.
+    ///
+    /// Call BEFORE the close lands the count at one (the mode is still live
+    /// then); the caller writes the answer into Settings.
+    pub fn promote(self, survivor: PaneId, global: Appearance) -> Option<Appearance> {
+        if !self.in_effect() {
+            return None;
+        }
+        let look = self.active_look(Some(survivor), global);
+        (look != global).then_some(look)
+    }
+
     /// The active pane's current look — what the menu's dials edit and show
-    /// while independent themes are on.
+    /// while independent themes are in effect.
     fn active_look(self, active: Option<PaneId>, global: Appearance) -> Appearance {
         let look = active
             .and_then(|id| self.overrides.with_value(|m| m.borrow().get(&id).copied()))
@@ -165,8 +226,8 @@ impl PaneThemes {
     }
 
     /// Seed (or overwrite) one pane's look. The toggle-on seeds every placed
-    /// pane from the global look; a pane created while the toggle is on
-    /// seeds from the ACTIVE pane's look instead (the caller decides).
+    /// pane from the global look; a pane created into a live split seeds
+    /// from the ACTIVE pane's look instead (the caller decides).
     pub fn seed(self, id: PaneId, look: Appearance) {
         self.overrides.with_value(|m| {
             m.borrow_mut().insert(id, look);
@@ -174,8 +235,8 @@ impl PaneThemes {
         self.bump();
     }
 
-    /// A closed pane takes its look with it. The fallback colour is never
-    /// lost: the surviving ACTIVE pane's look is the working colour.
+    /// A closed pane takes its look with it. The surviving pane's colour is
+    /// never lost: with one pane left it is the window's ([`Self::promote`]).
     pub fn forget(self, id: PaneId) {
         self.overrides.with_value(|m| {
             m.borrow_mut().remove(&id);
@@ -186,34 +247,44 @@ impl PaneThemes {
     /// Turn the toggle on: the `active` pane keeps the global look and
     /// every other placed pane gets a colour of its own, each unlike the
     /// rest. The global theme itself is left untouched (remembered).
+    ///
+    /// A lone pane has no split to show a colour in: the preference arms
+    /// here and the mode shows itself on the next split, which seeds the
+    /// pane born beside it. Seeding a lone pane now would only hand it a
+    /// snapshot of a window theme the reader may still edit before that
+    /// split arrives.
     pub fn enable(
         self,
         placed: impl Iterator<Item = PaneId>,
         active: Option<PaneId>,
         global: Appearance,
     ) {
-        self.overrides.with_value(|m| m.borrow_mut().clear());
         let placed: Vec<PaneId> = placed.collect();
-        let first = active
-            .filter(|id| placed.contains(id))
-            .or_else(|| placed.first().copied());
-        for id in placed {
-            let look = if Some(id) == first {
-                global
-            } else {
-                self.distinct_look(global, global)
-            };
-            self.overrides.with_value(|m| {
-                m.borrow_mut().insert(id, look);
-            });
-        }
         self.independent.set(true);
+        self.overrides.with_value(|m| m.borrow_mut().clear());
+        if placed.len() >= 2 {
+            let first = active
+                .filter(|id| placed.contains(id))
+                .or_else(|| placed.first().copied());
+            for id in placed {
+                let look = if Some(id) == first {
+                    global
+                } else {
+                    self.distinct_look(global, global)
+                };
+                self.overrides.with_value(|m| {
+                    m.borrow_mut().insert(id, look);
+                });
+            }
+        }
         self.bump();
     }
 
-    /// Turn the toggle off: every override goes with it and the panes
-    /// inherit the window theme again. What the panes painted as their own
-    /// is removed by the pane paint on the next boundary push (`look: None`).
+    /// Turn the toggle off by hand: every override goes with it and the
+    /// panes inherit the window theme again. What the panes painted as their
+    /// own is removed by the pane paint on the next boundary push
+    /// (`look: None`). A stand-down is NOT this: it keeps the map, so the
+    /// next split brings the colours back.
     fn disable(self) {
         self.overrides.with_value(|m| m.borrow_mut().clear());
         self.independent.set(false);
@@ -281,7 +352,9 @@ pub(crate) fn theme_handle(
         // dials and active look must follow a focused pane's edit immediately.
         themes.version().with(|_| ());
         let global = settings.with(|s| s.appearance);
-        if themes.independent.get() {
+        // The route follows the mode IN EFFECT: at one pane the dials show
+        // and edit the window theme, exactly what that pane shows.
+        if themes.active().get() {
             themes.active_look(manager.active(), global)
         } else {
             global
@@ -307,7 +380,7 @@ pub(crate) fn theme_handle(
             // contract), then the structural change applies on top.
             flush_appearance_commit();
             let routed = scope == ThemeScope::Routed
-                && themes.independent.get_untracked()
+                && themes.active().get_untracked()
                 && manager.active().is_some();
             if routed {
                 let id = manager.active().expect("checked: active pane exists");
@@ -337,7 +410,7 @@ pub(crate) fn theme_handle(
     let scrub = Callback::new(
         move |(scope, patch): (ThemeScope, reader_core::appearance::AppearanceScrub)| {
             let routed = scope == ThemeScope::Routed
-                && themes.independent.get_untracked()
+                && themes.active().get_untracked()
                 && manager.active().is_some();
             // The engine scopes the scrub's raw-raster window by this mark:
             // a drag on one pane's look leaves every other pane's pages as
@@ -365,15 +438,13 @@ pub(crate) fn theme_handle(
         },
     );
 
-    let panes = Signal::derive(move || manager.placed().len());
-
     app_ui::appearance::ThemeHandle {
         look,
-        independent: themes.independent(),
+        independent: themes.preferred(),
         set_independent,
         commit,
         scrub,
-        panes,
+        panes: themes.panes(),
     }
 }
 
@@ -426,3 +497,5 @@ mod tests {
         }
     }
 }
+
+// only the changed file was rewritten

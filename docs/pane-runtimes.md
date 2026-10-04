@@ -88,6 +88,9 @@ cells.
   (independent themes), exactly as the in-realm pane did.
 - The pane frame wraps its content in `.reader-bg` carrying the workspace
   flags the host decides: `blend`, `independent-themes`, `split-workspace`.
+  The host's answer follows the mode IN EFFECT, so a lone pane mirrors no
+  `independent-themes` and shows the window theme its colour was promoted
+  into as the split collapsed.
 - **Shared paper.** A PDF pane's engine publishes `--pdf-paper` and
   `--pdf-paper-baked` on its own `<html>`. The pane frame watches those two
   and reports them. The host keeps the most recently focused PDF pane as the

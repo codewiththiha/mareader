@@ -117,8 +117,9 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
                 <span class="block text-sm text-ink">"Independent theme for each"</span>
                 <span class="block text-xs text-muted">
                     "While a split is open, each pane gets its own colour, different from the \
-                     others. The film grain stays shared, the outer chrome keeps the main \
-                     theme, and the colours are temporary."
+                     others. The film grain stays shared and the outer chrome keeps the main \
+                     theme. Closing back to one pane hands that pane's colour to the main \
+                     theme, and the mode comes back with the next split."
                 </span>
             </span>
             {toggle}
@@ -140,3 +141,5 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
         </div>
     }
 }
+
+// only the changed file was rewritten

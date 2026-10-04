@@ -92,11 +92,11 @@ pub enum ChromeSlot {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PaneAppearance {
     pub motion: app_state::Motion,
-    /// The pane's own look while independent themes are on: `Some` means the
-    /// pane paints these tokens on its root (base + tint + texture — grain
-    /// stays global) and everything inside resolves to them; `None` means
-    /// pure inheritance from the window's theme (the pane removes any tokens
-    /// it previously owned).
+    /// The pane's own look while independent themes are in effect (a split
+    /// on screen): `Some` means the pane paints these tokens on its root
+    /// (base + tint + texture — grain stays global) and everything inside
+    /// resolves to them; `None` means pure inheritance from the window's
+    /// theme (the pane removes any tokens it previously owned).
     pub look: Option<reader_core::appearance::Appearance>,
 }
 
@@ -271,7 +271,8 @@ pub struct PaneEnv {
     /// Ask the host to move THIS pane one step through the layout.
     pub relocate: Callback<super::tree::MoveDirection>,
     /// The workspace facts a pane's own document mirrors (blend, split,
-    /// independent themes, the pane decoration variables), tracked.
+    /// independent themes in effect, the pane decoration variables),
+    /// tracked.
     pub workspace: Signal<WorkspaceLook>,
     /// A press-and-hold lift that began inside the pane, in the host
     /// document's client coordinates.
@@ -284,6 +285,8 @@ pub struct PaneEnv {
 #[derive(Clone, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceLook {
     pub blend: bool,
+    /// Independent themes IN EFFECT: the stored preference while a split is
+    /// on screen. The preference itself rides only on the switch.
     pub independent: bool,
     pub split: bool,
     pub page_shadow: bool,
@@ -326,3 +329,5 @@ pub struct OpenRequest {
     pub launch: LaunchDocument,
     pub placement: Placement,
 }
+
+// only the changed file was rewritten

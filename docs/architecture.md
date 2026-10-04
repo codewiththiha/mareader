@@ -452,9 +452,12 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   shared backdrop. Reflow panes therefore stand on the PDF's paper in ordinary
   blend mode. The MRU publisher is the shared fallback; focus on MD/TXT holds
   the last PDF colour instead of clearing it.
-- **Independent mode:** `PaneThemes` owns temporary looks by `PaneId`; global
-  Settings appearance stays remembered, chrome and the outer reader backdrop
-  keep that global look, and noise remains global. The pane painter writes
+- **Independent mode:** `PaneThemes` owns temporary looks by `PaneId`. The
+  mode needs the split it serves (see
+  [Independent pane colours](#independent-pane-colours)): a lone pane stands
+  it down and takes the look its own colour was promoted into, so the shared
+  chrome and the outer reader backdrop keep the look the reader is looking
+  at; noise remains global. The pane painter writes
   base/tint/filter/reflow/texture tokens onto each pane root. Each PDF session
   pins its `EngineSession.themeRoot` to the root containing its registered
   page and owns `themePipeline` (actual-input fingerprint + generation), so
@@ -566,6 +569,14 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   the global base (`PaneThemes::shown`) and a routed base switch writes the
   global base. Off is the earlier fully per-pane behaviour, which the
   lifecycle pane-theme stage exercises by turning the setting off.
+- The mode needs the split it serves, so it stands down with ONE pane
+  placed: the surviving pane's own colour is promoted to the global theme as
+  the last split collapses (`PaneThemes::promote`, read while the split is
+  still live), which is why the single pane left and the shared chrome agree
+  by construction. The stored toggle (`independent_themes`) stays on, so the
+  next split brings the mode back by itself with the survivor's colour
+  untouched and the new pane seeded beside it; turning the toggle off by
+  hand clears every override for good.
 - Re-raster is per pane: `refreshTheme` (public/pdfEngine.ts) refreshes
   only sessions whose own pipeline generation moved, and a routed slider
   drag marks `data-appearance-scope` on the document so the engine scopes
