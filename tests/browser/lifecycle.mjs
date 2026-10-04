@@ -1557,8 +1557,16 @@ await Promise.race([requestedCover,
 const bakingLibrary = await snap();
 if (!bakingLibrary.bakeFrameResident) throw new Error("held cover had no resident bake page");
 await clickBook("Programming Pearls", "Reader closes baking Library");
+// The reader this stage opens replaces the one whose retirement was still
+// finishing behind the reveal when the Library came back — the host is
+// allowed two frames across a transition (the sampler's "peak 2 frames"), and
+// a retiring driver is registered until its teardown runs. So the wait below
+// asks for the READER's side of the rest shape too, exactly as the handoff
+// stages do through `waitForRetirement`, and the assertion that follows still
+// holds it to one frame at rest.
 const bakerClosed = await waitFor("Library and held cover page gone", (x) =>
-  x.libraryFramesResident === 0 && !x.bakeFrameResident && x.librarySessionsCreated === x.libraryDisposesCompleted);
+  x.libraryFramesResident === 0 && !x.bakeFrameResident && x.readerFramesResident === 1 &&
+  x.librarySessionsCreated === x.libraryDisposesCompleted);
 assertReaderOnly(bakerClosed, "Library-owned bake cancellation");
 releaseCover();
 await page.unroute("**/samples/**", blockCover);
