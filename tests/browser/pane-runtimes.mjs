@@ -208,12 +208,12 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     // this block can spend the window and then blame the lift; the delay
     // itself is the product spec (`HOLD_TO_LIFT_MS` in
     // `crates/reader-runtime/src/host/lift.rs`).
-    await page.waitForTimeout(1_200);
+    await page.waitForTimeout(400);
     if (await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.pane-lifted').count()) throw new Error("a press shorter than the lift delay lifted the pane");
     // The ring is the affordance, and it is up for the rest of the hold...
     await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentDocument.querySelector('[data-pan-hold]'), md.paneId, { timeout: 3_000 });
     // ...and the lift lands within a bounded remainder of the spec, not
-    // "eventually": the press, the ring and the lift all sit inside 2.5 s.
+    // "eventually": the press, the ring and the lift all sit inside 1 s.
     await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`).classList.contains("pane-lifted"), md.paneId, { timeout: 3_000 });
     // The class reacts immediately; the host digest arrives on its beat.
     // Timestamp the lift itself, then require both reported and rendered
@@ -241,7 +241,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   }
   await page.waitForFunction(() => !window.__paneReaderDocument.querySelector('.pane-lifted'));
   const afterLift = await waitForSettledLayout("lift dock preserves sessions", (s) => s.host?.panes?.length === 3 && s.host.panesCreated === mixed.host.panesCreated && s.engine.sessionsLive === 2);
-  if (report.liftHoldMs < 2_300 || report.liftHoldMs > 2_900) throw new Error(`lift hold outside its 2.5 s spec: ${report.liftHoldMs}ms`);
+  if (report.liftHoldMs < 800 || report.liftHoldMs > 1_600) throw new Error(`lift hold outside its 1 s spec: ${report.liftHoldMs}ms`);
 
   for (const [name, width] of [["desktop", 1400], ["narrow", 640]]) {
     await page.setViewportSize({ width, height: 900 });
