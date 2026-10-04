@@ -360,16 +360,28 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     const frame = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
     const pageHost = frame?.contentDocument?.querySelector(".pdf-page canvas[data-engine-sid]:not(.page-snapshot)")?.parentElement;
     const pane = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`);
+    // The strip the reader itself names: inside the pane's own root, never a
+    // document-wide first match. `strips` and `travel` are there to explain a
+    // strip that does not move — a twin id, or a strip with no room left.
+    const strips = frame?.contentDocument?.querySelectorAll("#page-list") ?? [];
+    const strip = frame?.contentDocument?.querySelector("[data-pane-root] #page-list") ?? strips[0];
     return { active: pane?.getAttribute("data-pane-active") ?? null,
+      strips: strips.length,
       scale: frame && pageHost ? Number(frame.contentWindow.getComputedStyle(pageHost).getPropertyValue("--scale-factor")) || 0 : 0,
-      scrollTop: frame?.contentDocument?.querySelector("#page-list")?.scrollTop ?? null };
+      scrollTop: strip?.scrollTop ?? null,
+      travel: strip ? strip.scrollHeight - strip.clientHeight : null };
   }, pdfPane);
   const settle = async (label, predicate) => {
     const started = Date.now();
     for (;;) {
       const facts = await probe();
       if (predicate(facts)) return facts;
-      if (Date.now() - started > 20_000) throw new Error(`${label}: last ${JSON.stringify(facts)}`);
+      if (Date.now() - started > 20_000) {
+        // A key the reader did not act on is a fact about where it landed, so
+        // a failed settle reports the keys seen and the target each had.
+        const keys = await page.evaluate(() => window.__paneKeys ?? null).catch(() => null);
+        throw new Error(`${label}: last ${JSON.stringify(facts)}${keys ? ` keys ${JSON.stringify(keys)}` : ""}`);
+      }
       await page.waitForTimeout(80);
     }
   };
@@ -419,7 +431,33 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await page.keyboard.press("Control+Minus");
   const ctrlOut = await settle("Ctrl+- never zoomed out", (f) => f.scale < ctrlIn.scale);
   // Vim's home row scrolls the strip the arrows do: `j` nudges down (and
-  // glides while held), `k` back up.
+  // glides while held), `k` back up. Three things make the check land on
+  // that meaning rather than on a neighbour: the pane is put in the
+  // vertical-scroll mode the keys scroll in (its own menu button, the same
+  // element click the zoom checks use), the menu is closed again — an open
+  // popover owns its own keys — and the pane takes the keyboard the way a
+  // reader hands it over, with a press on its surface.
+  await chromeClick("View & tools");
+  await chromeClick("Vertical scroll");
+  await chromeClick("View & tools");
+  await page.waitForFunction(() => !window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
+  await page.mouse.click(press.x, press.y);
+  await settle("the pane the keys are about to move to hold the host's focus", (f) => f.active === "true");
+  // Where a key lands decides whether the reader acts on it, so a failed
+  // settle below can say what had the focus instead of only that the strip
+  // did not move.
+  await page.evaluate((id) => {
+    const frame = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
+    const doc = frame.contentDocument;
+    window.__paneKeys = [];
+    doc.addEventListener("keydown", (ev) => {
+      const path = [];
+      for (let el = ev.target; el?.nodeType === 1 && el !== doc.documentElement; el = el.parentElement) {
+        path.push(`${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ""}`);
+      }
+      window.__paneKeys.push({ key: ev.key, active: doc.activeElement?.tagName.toLowerCase(), path });
+    }, true);
+  }, pdfPane);
   const stripReady = await settle("a scrollable strip to nudge", (f) => f.scrollTop !== null);
   await page.keyboard.press("j");
   const scrolledDown = await settle("j never scrolled the strip down", (f) => f.scrollTop > stripReady.scrollTop);
