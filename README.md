@@ -1236,3 +1236,5 @@ Released under the MIT License. See [LICENSE](LICENSE) for the full text.
 
 This project bundles [pdf.js](https://github.com/mozilla/pdf.js), which is distributed under the
 Apache License 2.0.
+
+<!-- // only the changed file was rewritten -->

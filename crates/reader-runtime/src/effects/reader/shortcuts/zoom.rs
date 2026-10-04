@@ -29,3 +29,5 @@ pub(super) fn handle_zoom_shortcut(state: ReaderState, ev: &leptos::ev::Keyboard
         _ => {}
     }
 }
+
+// only the changed file was rewritten

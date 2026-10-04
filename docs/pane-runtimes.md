@@ -202,3 +202,5 @@ layout/session preservation and final balanced teardown. It saves desktop
 these browser runs, not local build/dependency installations, validate the
 change. Native traffic-light appearance still needs a real macOS visual
 check; native smoke and chrome-contract checks do not prove shape/blink.
+
+<!-- // only the changed file was rewritten -->

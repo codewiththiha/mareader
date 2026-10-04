@@ -595,3 +595,5 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   caption's maximize/restore glyph is live again through the titlebar's own
   `window_state` module (`app_title_bar.rs`), which replaced the orphaned
   `window_bridge.rs`.
+
+<!-- // only the changed file was rewritten -->

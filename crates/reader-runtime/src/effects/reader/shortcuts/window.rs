@@ -67,3 +67,5 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
         _ => {}
     }
 }
+
+// only the changed file was rewritten
