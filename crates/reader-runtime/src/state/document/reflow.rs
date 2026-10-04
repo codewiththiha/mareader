@@ -202,7 +202,8 @@ impl ReflowContent {
         // A wholesale write, so consumers that track the geometry (the
         // stream's epoch) rebuild for it — the seed can land over an already
         // mounted layout when a document opens in place.
-        self.estimate_generation.update(|generation| *generation += 1);
+        self.estimate_generation
+            .update(|generation| *generation += 1);
         self.publish_cut(state, cuts, geo)
     }
 
