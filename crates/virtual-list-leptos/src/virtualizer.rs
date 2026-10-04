@@ -73,7 +73,7 @@ impl VirtualizerInner {
             pending_scroll: Rc::new(Cell::new(None)),
             scroll_armed: Rc::new(Cell::new(false)),
             flush_armed: Rc::new(Cell::new(false)),
-            flush_deferred: Cell::new(false),
+            banked_scroll: Cell::new(0.0),
             scroll_feedback: Cell::new(true),
             container_ro: RefCell::new(None),
             listeners: RefCell::new(Vec::new()),
@@ -114,16 +114,14 @@ pub(crate) struct VirtualizerInner {
     pub scroll_armed: Rc<Cell<bool>>,
     pub flush_armed: Rc<Cell<bool>>,
 
-    /// A measurement arrived while the scroller was MOVING and is waiting for
-    /// the scroll-end window. Sizes are applied as one transaction with their
-    /// anchored scroll correction, so applying one mid-fling would write the
-    /// scroll position under the reader's finger — the momentum stutter every
-    /// native list avoids, and the reason the correction is deferred whole
-    /// rather than the write alone: a size applied without its correction
-    /// moves the content under the reader instead. The scroll-end timer always
-    /// follows a move (it is what made `settled` false), so this always
-    /// drains.
-    pub flush_deferred: Cell<bool>,
+    /// Measured sizes the scroller has not been told about: the anchored
+    /// scroll corrections a MEASUREMENT flush produced while the reader was
+    /// moving. The layout half of such a flush always lands (a stale model
+    /// paints rows on top of each other); the correction is the half that
+    /// fights momentum, so it is banked here and applied as ONE write when the
+    /// scroll-end window closes. The window always comes — it is what made
+    /// `settled` false — so this always drains.
+    pub banked_scroll: Cell<f64>,
 
     /// While false, the DOM scroll echo must not touch the core. A
     /// programmatic scroll burst (zoom tween, sidebar slide, resize drag)
@@ -230,6 +228,26 @@ impl VirtualizerInner {
     }
 
     pub(crate) fn apply(self: &Rc<Self>, step: Step) {
+        self.apply_step(step, true);
+    }
+
+    /// Publish a MEASUREMENT flush: the layout lands NOW, the scroll
+    /// correction waits for the reader to stop.
+    ///
+    /// The two halves of a flush pull in opposite directions. A size the
+    /// model has not learned yet is painted where the model says, so a row
+    /// whose own content is taller than its slot renders on top of its
+    /// neighbour — the stacked look a stream of text shows for as long as the
+    /// model lags, and the reason the measured size cannot wait for a settle.
+    /// The anchored scroll correction is the opposite: it is a write under the
+    /// reader's finger while momentum owns the scroller, the stutter every
+    /// native list avoids. So the correction is banked and one write lands
+    /// when the movement ends (see [`Self::flush_banked_scroll`]).
+    pub(crate) fn apply_measurements(self: &Rc<Self>, step: Step) {
+        self.apply_step(step, self.settled.try_get_untracked() == Some(true));
+    }
+
+    fn apply_step(self: &Rc<Self>, step: Step, write_scroll: bool) {
         // The writes below wake cross-subscribed effects; after the owner's
         // purge every one of them belongs to a dead world. `settled` is the
         // scope's liveness probe (same arena as range/scroll_top).
@@ -240,12 +258,41 @@ impl VirtualizerInner {
             self.layout_version.update(|version| *version += 1);
         }
         self.publish_range(step.range);
-        if let Some(top) = step.scroll_write {
-            if (top - self.scroll_top.get_untracked()).abs() > self.options.measure_epsilon {
-                self.surface.set_scroll(top, false);
-            }
-            write_if_changed(self.scroll_top, top);
+        let Some(top) = step.scroll_write else {
+            return;
+        };
+        let delta = top - self.scroll_top.get_untracked();
+        if delta.abs() <= self.options.measure_epsilon {
+            return;
         }
+        if !write_scroll {
+            // The DOM stays where the reader left it and the core's own
+            // offset keeps following the scroll echoes; only the correction is
+            // held back, so what lands at the settle is the sum of the ones
+            // the movement outran.
+            self.banked_scroll.set(self.banked_scroll.get() + delta);
+            return;
+        }
+        self.surface.set_scroll(top, false);
+        write_if_changed(self.scroll_top, top);
+    }
+
+    /// Apply every banked correction as one write. The scroll-end timer's cue,
+    /// and safe to call when nothing is banked.
+    ///
+    /// The core's offset is deliberately NOT written here: the browser fires a
+    /// scroll event for the write and the echo (`handle_scroll`) adopts what
+    /// the DOM actually holds — which is also how a write the browser clamped
+    /// at either end of the content is told apart from one that landed.
+    pub(crate) fn flush_banked_scroll(self: &Rc<Self>) {
+        let banked = self.banked_scroll.replace(0.0);
+        if banked.abs() <= self.options.measure_epsilon {
+            return;
+        }
+        let Some(top) = self.scroll_top.try_get_untracked() else {
+            return;
+        };
+        self.surface.set_scroll((top + banked).max(0.0), false);
     }
 
     /// Apply a step produced by a scroll COMMAND (the surface was already
@@ -316,20 +363,6 @@ impl VirtualizerInner {
         if self.flush_armed.get() || self.core.borrow().suspended() {
             return;
         }
-        // A MOVING scroller holds its measurements. The flush applies sizes
-        // and their anchored scroll correction as one transaction, and a
-        // scroll write landing mid-fling fights the browser's momentum — the
-        // stutter a native list never has. The scroll-end window this waits
-        // for is the same one the first-paint gate uses, and it always
-        // comes: whatever made the scroller move arms that timer.
-        // A `try_` read, like every other flush-time question here: the
-        // scroll-end timer can be the first thing to run after the reader went
-        // away, and a dead scroller defers into a world that will not drain it
-        // rather than aborting the wasm.
-        if self.settled.try_get_untracked() != Some(true) {
-            self.flush_deferred.set(true);
-            return;
-        }
         self.flush_armed.set(true);
         let inner = self.clone();
         raf(move || {
@@ -342,7 +375,7 @@ impl VirtualizerInner {
             inner.flush_armed.set(false);
             let flush = inner.core.borrow_mut().flush();
             if let Some(flush) = flush {
-                inner.apply(flush.step);
+                inner.apply_measurements(flush.step);
             }
         });
     }
@@ -366,12 +399,10 @@ impl VirtualizerInner {
                 // The scroller has been quiet for the whole window: the strip
                 // is settled, and the first paints its gate held back run now.
                 write_if_changed(inner.settled, true);
-                // Measurements the fling held back land NOW, in the same
-                // window the first paints do: one transaction with its
-                // correction, against a scroller nobody is moving.
-                if inner.flush_deferred.replace(false) {
-                    inner.arm_flush();
-                }
+                // Every correction the fling outran lands NOW, in the same
+                // window the first paints do — one write, against a scroller
+                // nobody is moving.
+                inner.flush_banked_scroll();
                 let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
                 for callback in callbacks {
                     callback();
@@ -857,6 +888,24 @@ impl Virtualizer {
         }
         self.inner.core.borrow_mut().queue_size(index, size);
         self.inner.arm_flush();
+    }
+
+    /// [`report_size`](Self::report_size) applied in the frame it is reported
+    /// in, for a caller the browser has already batched — a row's
+    /// `ResizeObserver` notification arrives after layout and BEFORE paint, so
+    /// a size applied here is in the model by the time the row is painted.
+    /// That is the whole difference between a row of text whose real height is
+    /// correct in the frame it first paints and one that spends a frame
+    /// painted on top of the row below it.
+    pub fn report_size_now(&self, index: usize, size: f64) {
+        if self.inner.settled.try_get_untracked().is_none() {
+            return;
+        }
+        self.inner.core.borrow_mut().queue_size(index, size);
+        let flush = self.inner.core.borrow_mut().flush();
+        if let Some(flush) = flush {
+            self.inner.apply_measurements(flush.step);
+        }
     }
 
     /// Buffer measurements without flushing.

@@ -60,7 +60,7 @@ use virtual_list_leptos::{
 use wasm_bindgen::JsCast;
 
 use app_chrome::hooks::dom::PAGE_LIST_ID;
-use app_chrome::hooks::use_resize_observer::observe_content_size_with;
+use app_chrome::hooks::use_resize_observer::{observe_content_size_with, use_resize_observer};
 use reflow_core::pager::first_block_of_page;
 
 use super::block_render;
@@ -431,7 +431,7 @@ pub fn ReflowStreamLayout(
                     };
                     let height = el.offset_height() as f64;
                     if height > 0.0 {
-                        v.report_size(index, height);
+                        v.report_size_now(index, height);
                         if scale > 0.0 {
                             batch.push((index, height / scale));
                         }
@@ -548,6 +548,51 @@ pub fn ReflowStreamLayout(
                             children=move |(_, item): (usize, VirtualItem)| {
                                 let index = item.index;
                                 let top = handle.with_value(|v| v.item_top(index));
+                                // THE ROW'S OWN OBSERVER. A row is positioned
+                                // at the model's offset while its height is its
+                                // CONTENT's, and the model starts from an
+                                // estimate made at the page's column width: a
+                                // narrower reading column makes the real row
+                                // taller than its slot, so until it is
+                                // measured it paints over the row below — the
+                                // stacked, glitchy frame a scrolling text
+                                // document shows. A resize notification is
+                                // delivered after the browser laid the row out
+                                // and BEFORE it paints, so the size applied
+                                // here is in the model by the time the row and
+                                // its neighbours are painted: no stale frame,
+                                // and no whole-window layout forced to avoid
+                                // one.
+                                let row_ref: NodeRef<html::Div> = NodeRef::new();
+                                {
+                                    let v_row = handle.get_value();
+                                    let row_el = row_ref;
+                                    use_resize_observer(row_ref, move |_| {
+                                        let Some(el) = row_el.get() else {
+                                            return;
+                                        };
+                                        let height = el.offset_height() as f64;
+                                        if height <= 0.0 {
+                                            return;
+                                        }
+                                        v_row.report_size_now(index, height);
+                                        // The scale-1 truth also feeds the
+                                        // shared store (the page cut, the
+                                        // paginated modes, progress): the
+                                        // inbox is debounced, so one ingest
+                                        // per row is its ordinary diet.
+                                        let scale = state.viewer.zoom.visual_scale();
+                                        if scale > 0.0
+                                            && let Some(session) = state.pane.reflow_session()
+                                        {
+                                            state.measure.ingest(
+                                                session,
+                                                scale,
+                                                &[(index, height / scale)],
+                                            );
+                                        }
+                                    });
+                                }
                                 // The row's render state, as a signal: a `For` child does
                                 // not re-run for a key it already holds, so the crossing
                                 // into or out of the render band has to reach the view
@@ -572,6 +617,7 @@ pub fn ReflowStreamLayout(
                                         // and the page for that tracker's range
                                         // (bookkeeping in this mode; nothing
                                         // here is paginated).
+                                        node_ref=row_ref
                                         id=block_row_id(index)
                                         data-block-index=index
                                         data-host-page=move || {
