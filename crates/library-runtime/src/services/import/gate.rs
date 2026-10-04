@@ -251,11 +251,7 @@ pub(super) fn covered_shelf(state: crate::context::LibraryContext, root: &str) -
 /// empty rung wins — because its own root shelf is the door the reader meant.
 /// Only read-at-place trees answer here: their shelves are the OS folders
 /// themselves.
-fn covered_of(
-    folders: &[WatchedFolder],
-    shelves: &[Shelf],
-    root: &str,
-) -> Option<Covered> {
+fn covered_of(folders: &[WatchedFolder], shelves: &[Shelf], root: &str) -> Option<Covered> {
     // Both lookups are guaranteed to land; the `?` is a shape, not a second
     // rule.
     let coverage = Governance::new(folders, shelves).covering(root)?;
