@@ -8,7 +8,6 @@ use reader_core::zoom_math::FitMode;
 
 use crate::host::contract::{OpenRequest, Placement};
 use crate::host::tree::{MoveDirection, SplitAxis};
-use crate::state::ZoomCommand;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use app_ui::components::primitives::floating::menu_popover::MenuPopover;
@@ -106,13 +105,13 @@ pub fn ReaderMenu(
                     <IconButton
                         icon=IconName::ZoomOut
                         title="Zoom out (-)"
-                        on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(-1), true)
+                        on_click=move || state.reader.viewer.ask_zoom_step(-1)
                     />
                     <span class="text-sm font-medium tabular-nums text-ink">{percent}</span>
                     <IconButton
                         icon=IconName::ZoomIn
                         title="Zoom in (+)"
-                        on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(1), true)
+                        on_click=move || state.reader.viewer.ask_zoom_step(1)
                     />
                 </div>
                 <div class="flex items-center justify-center gap-1 px-2 py-1">
@@ -229,6 +228,9 @@ pub fn ReaderMenu(
                         <ShortcutRow label="Search…" keys=vec!["⌘", "F"] />
                         <ShortcutRow label="Auto scroll" keys=vec!["Shift", "A"] />
                         <ShortcutRow label="Prev / Next page" keys=vec!["←", "→"] />
+                        <ShortcutRow label="Scroll (vim)" keys=vec!["H", "J", "K", "L"] />
+                        <ShortcutRow label="Zoom" keys=vec!["+", "-"] />
+                        <ShortcutRow label="Zoom (⌘ / Ctrl)" keys=vec!["+", "-"] />
                         <ShortcutRow label="Dismiss" keys=vec!["Esc"] />
                     </div>
                 </Show>

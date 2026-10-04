@@ -35,6 +35,18 @@ pub struct ViewerSignals {
     /// consumes it. ONE-SHOT: whoever acts on it clears it, which is what makes
     /// a second click on the same entry a change again.
     pub(crate) outline_jump: RwSignal<Option<u32>>,
+    /// The zoom step the reader just asked for (`None` when nothing is
+    /// pending): `1` zooms in, `-1` zooms out.
+    ///
+    /// A step is a directive for the same reason the outline jump above is:
+    /// there is no target scale to compare against, because the ladder step
+    /// resolves against the window, the view mode and the page — and only the
+    /// pane's own zoom coordinator knows those. So the host's toolbar writes
+    /// the press here, the host hands it to a frame as `Write::ZoomStep`, and
+    /// the pane's controller resolves and lands it. ONE-SHOT: the host clears
+    /// it as it sends, which is what makes a second press of `+` a change
+    /// again.
+    pub(crate) zoom_step: RwSignal<Option<i32>>,
     pub fit: RwSignal<FitMode>,
     pub scroll_top: RwSignal<f64>,
     pub zoom: ZoomState,
@@ -134,6 +146,24 @@ impl ViewerSignals {
         Some(index)
     }
 
+    /// Ask for one zoom step: `1` zooms in, `-1` zooms out — the toolbar's
+    /// `+`/`-` buttons (see the field; the keyboard steps post straight into
+    /// the pane's own controller and need no directive).
+    pub fn ask_zoom_step(&self, step: i32) {
+        self.zoom_step.set(Some(step));
+    }
+
+    /// Take the pending zoom step, clearing it: the host takes exactly one on
+    /// its way to a frame. The read is TRACKED, for the same reason
+    /// [`Self::take_outline_jump`]'s is — the caller is an effect that must
+    /// wake for the next press — and the clear wakes it once with nothing to
+    /// do, which is what a directive that leaves no value standing costs.
+    pub(crate) fn take_zoom_step(&self) -> Option<i32> {
+        let step = self.zoom_step.get()?;
+        self.zoom_step.set(None);
+        Some(step)
+    }
+
     /// True while a zoom transaction is in flight: renders are suspended,
     /// page/scroll synchronisation and geometry feedback are frozen, and the
     /// mounted window is pinned around the dominant page.
@@ -183,6 +213,7 @@ impl Default for ViewerSignals {
             mode: RwSignal::new(ViewMode::ScrollVertical),
             page: RwSignal::new(1),
             outline_jump: RwSignal::new(None),
+            zoom_step: RwSignal::new(None),
             fit: RwSignal::new(FitMode::None),
             scroll_top: RwSignal::new(0.0),
             zoom: ZoomState::default(),

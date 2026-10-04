@@ -461,6 +461,21 @@ fn install_effects(inner: &Rc<Inner>) {
         }
     });
 
+    // A zoom step is a directive for the same reason the outline jump is:
+    // there is no target scale to compare against, because the ladder step
+    // resolves against the window, the mode and the page, which only the
+    // pane's own coordinator knows. Taken on the way to the frame, so a press
+    // that arrives with no frame to take it is gone rather than replayed.
+    let w = weak.clone();
+    Effect::new(move |_| {
+        let Some(step) = viewer.take_zoom_step() else {
+            return;
+        };
+        if let Some(inner) = w.upgrade() {
+            inner.step_zoom(step);
+        }
+    });
+
     // The outline's jump is not a mirrored value, so `write_if` cannot guard
     // it: there is no mirror field to compare against. It is TAKEN instead —
     // the host takes one on the way to a frame, the pane's own arm takes one on
@@ -500,6 +515,14 @@ impl Inner {
     /// mirror field to compare, so it is posted and taken instead.
     fn jump_outline(&self, index: u32) {
         self.post_live(&HostToPane::Write(Write::Outline { index }));
+    }
+
+    /// Hand the pane realm a one-shot directive: one step along the zoom
+    /// ladder. The pane's coordinator owns the resolving (a step depends on
+    /// the window, the mode and the page — see [`Write::ZoomStep`]), so the
+    /// host posts the press and nothing else.
+    fn step_zoom(&self, step: i32) {
+        self.post_live(&HostToPane::Write(Write::ZoomStep { step }));
     }
 
     /// Forward a chrome write unless the live frame already reported it.
