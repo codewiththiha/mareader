@@ -1,4 +1,9 @@
-//! The Cmd/Ctrl combos: open, fit width, search, view mode.
+//! The Cmd/Ctrl combos: open, fit width, search, view mode, zoom.
+//!
+//! One arm per combo, and the two modifiers are deliberately not
+//! distinguished: the caller routes Cmd and Ctrl through this one handler, so
+//! macOS and Windows/Linux get the same keys by construction rather than by
+//! two tables that can drift apart.
 
 use leptos::prelude::*;
 
@@ -6,6 +11,8 @@ use crate::state::ReaderState;
 use reader_core::document::DocStatus;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
+
+use super::zoom::zoom_by;
 
 /// One Cmd/Ctrl combo. `on_open` is the app's open-file action, injected so
 /// the shortcuts never depend on app chrome.
@@ -43,6 +50,19 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
         "2" => {
             ev.prevent_default();
             state.viewer.mode.set(ViewMode::ScrollVertical);
+        }
+        // Zoom, on every platform: the browser's own page-zoom combos are
+        // claimed here and re-aimed at the document. `=` stands in for `+`
+        // (the unshifted key of that cap on most layouts, and the one
+        // reported when Shift is held on some), `_` for `-`, so the arm does
+        // not depend on how the platform spells the shifted key.
+        "+" | "=" => {
+            ev.prevent_default();
+            zoom_by(state, 1);
+        }
+        "-" | "_" => {
+            ev.prevent_default();
+            zoom_by(state, -1);
         }
         _ => {}
     }

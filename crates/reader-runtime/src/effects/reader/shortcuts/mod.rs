@@ -5,6 +5,14 @@
 //! Installed once per pane. The listener callback runs OUTSIDE the
 //! reactive owner, so everything it touches is a Copy signal handle /
 //! ReaderState captured by value.
+//!
+//! The map, so a new binding has an obvious home rather than a new arm: `Esc`
+//! is handled HERE, before the guards, because it is a dismiss action and not
+//! text input; `window` owns every Cmd/Ctrl combo (open, search, fit, view
+//! mode, zoom); `zoom` owns the bare `+`/`-` steps; `auto_scroll` owns
+//! Shift+A; `navigation` owns the movement keys — the arrows and their vim
+//! aliases `h`/`j`/`k`/`l`, PageUp/Down and Space — decided by the pure,
+//! tested [`keymap`] table and performed by the scroll-hold engine.
 
 mod auto_scroll;
 mod keymap;

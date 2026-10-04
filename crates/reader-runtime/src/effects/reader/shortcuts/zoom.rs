@@ -7,7 +7,11 @@ use crate::state::ZoomCommand;
 /// the step (chaining from an in-flight transition's target so a fast `+ +`
 /// advances two presets, never swallowing the second press), clears the fit
 /// mode and runs the one transition pipeline.
-fn zoom_by(state: ReaderState, dir: i32) {
+///
+/// The step's MEANING has one owner: the bare `+`/`-` arms below and the
+/// Cmd/Ctrl combos (`super::window`) both land here, so no platform or
+/// modifier can resolve a different step than another.
+pub(super) fn zoom_by(state: ReaderState, dir: i32) {
     state.viewer.zoom.post(ZoomCommand::Step(dir), true);
 }
 

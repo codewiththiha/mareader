@@ -759,12 +759,12 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Fit width | `Cmd/Ctrl` + `0` |
 | Single page view | `Cmd/Ctrl` + `1` |
 | Continuous view | `Cmd/Ctrl` + `2` |
-| Zoom in | `+` or `=` |
-| Zoom out | `-` or `_` |
-| Previous page | `Left arrow` |
-| Next page | `Right arrow` |
-| Scroll up / down (continuous) | `Up arrow` / `Down arrow` |
-| Turn page (single) | `Up arrow` / `Down arrow` |
+| Zoom in | `+` or `=`, alone or with `Cmd`/`Ctrl` |
+| Zoom out | `-` or `_`, alone or with `Cmd`/`Ctrl` |
+| Previous page | `Left arrow` or `H` |
+| Next page | `Right arrow` or `L` |
+| Scroll up / down (continuous) | `Up arrow` / `Down arrow`, or `K` / `J` |
+| Turn page (single) | `Up arrow` / `Down arrow`, or `K` / `J` |
 | Screen up / down | `Page Up` / `Page Down` |
 | Screen down / up | `Space` / `Shift` + `Space` |
 | Auto-scroll on or off (the two scrolling modes) | `Shift` + `A` |
@@ -772,11 +772,13 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Go to the chosen suggestion's book, on its shelf | `Enter` in the search bar |
 | Dismiss overlay or search; close the library's suggestions, or clear its search | `Escape` |
 
-In continuous mode the reader owns the arrow keys and scrolls the page list directly. Leaving them
-to the browser meant scrolling whatever held focus, which was usually a text-layer span; when
-virtualization unmounted that page the focused node disappeared, key repeat died, and the next
-press landed on the document body. The page list is focusable and reclaims focus when a descendant
-is removed, so hold-to-repeat stays aimed at a node that outlives any single page.
+In continuous mode the reader owns the arrow keys — and `h`, `j`, `k` and `l`, vim's home row for the
+same four directions, resolved through the same table so both names obey one set of rules — and
+scrolls the page list directly. Leaving them to the browser meant scrolling whatever held focus,
+which was usually a text-layer span; when virtualization unmounted that page the focused node
+disappeared, key repeat died, and the next press landed on the document body. The page list is
+focusable and reclaims focus when a descendant is removed, so hold-to-repeat stays aimed at a node
+that outlives any single page.
 
 A held arrow glides continuously at roughly 1000 pixels per second after a 350 millisecond delay,
 rather than stepping discretely, so browser key repeat cannot chunk the motion. A single tap moves

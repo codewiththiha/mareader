@@ -343,6 +343,88 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     report.screenshots.push({ name, width, facts, panes: settled.host.panes.map((p) => ({ id: p.paneId, bounds: p.bounds })) });
   }
   await page.setViewportSize({ width: 1400, height: 900 });
+  // ── The toolbar's zoom and the keyboard, on a pane that is not the caller ──
+  // The toolbar is HOST chrome and the zoom is the PANE's: a press has to
+  // travel the wire (`Write::ZoomStep`) and land in the pane's own zoom
+  // coordinator, which is the one that resolves a step against the window,
+  // the mode and the page. Read that off the PDF page host's `--scale-factor`
+  // — the same observable the keyboard zoom is proven by — and read the
+  // strip's `scrollTop` for the scrolling keys.
+  const pdfPane = await page.evaluate(() => {
+    const frames = [...window.__paneReaderDocument.querySelectorAll("[data-pane-id] iframe.pane-frame:not([data-frame-hidden])")];
+    const frame = frames.find((f) => /pdf\.html/.test(f.src));
+    return frame ? Number(frame.closest("[data-pane-id]").dataset.paneId) : null;
+  });
+  if (pdfPane === null) throw new Error("no visible PDF pane to read the zoom scale from");
+  const probe = () => page.evaluate((id) => {
+    const frame = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
+    const pageHost = frame?.contentDocument?.querySelector(".pdf-page canvas[data-engine-sid]:not(.page-snapshot)")?.parentElement;
+    const pane = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`);
+    return { active: pane?.getAttribute("data-pane-active") ?? null,
+      scale: frame && pageHost ? Number(frame.contentWindow.getComputedStyle(pageHost).getPropertyValue("--scale-factor")) || 0 : 0,
+      scrollTop: frame?.contentDocument?.querySelector("#page-list")?.scrollTop ?? null };
+  }, pdfPane);
+  const settle = async (label, predicate) => {
+    const started = Date.now();
+    for (;;) {
+      const facts = await probe();
+      if (predicate(facts)) return facts;
+      if (Date.now() - started > 20_000) throw new Error(`${label}: last ${JSON.stringify(facts)}`);
+      await page.waitForTimeout(80);
+    }
+  };
+  // A press inside the pane is what makes it the host's active pane, and the
+  // forwarded keys only carry to that one — so the sequence starts where a
+  // reader's does.
+  const stripHit = await page.evaluate((id) => {
+    const reader = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]');
+    const frame = reader.contentDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
+    const strip = frame.contentDocument.querySelector("#page-list");
+    const r = strip.getBoundingClientRect(), host = frame.getBoundingClientRect(), outer = reader.getBoundingClientRect();
+    return { x: outer.left + host.left + r.left + 30, y: outer.top + host.top + r.top + 30 };
+  }, pdfPane);
+  await page.mouse.click(stripHit.x, stripHit.y);
+  const seated = await settle("the pressed PDF pane to take the host's focus", (f) => f.active === "true" && f.scale > 0);
+  // The toolbar buttons are clicked on the element (their handler, not a hit
+  // test): the bar sits under the window drag region in a packaged app, which
+  // this suite already works around for the close button.
+  const chromeClick = (title) => page.evaluate((title) => {
+    const frame = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]');
+    const button = frame?.contentDocument?.defaultView.document.querySelector(`button[title="${title}"]`);
+    if (!button) throw new Error(`the Reader chrome has no ${title} button`);
+    button.click();
+  }, title);
+  const viewToolsHit = await page.evaluate(() => {
+    const frame = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]');
+    const button = frame.contentDocument.defaultView.document.querySelector('button[title="View & tools"]');
+    const r = button.getBoundingClientRect(), outer = frame.getBoundingClientRect();
+    return { x: outer.left + r.left + r.width / 2, y: outer.top + r.top + r.height / 2 };
+  });
+  await page.mouse.move(viewToolsHit.x, viewToolsHit.y);
+  await chromeClick("View & tools");
+  await page.waitForFunction(() => !!window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
+  await chromeClick("Zoom in (+)");
+  const zoomIn = await settle("the toolbar's zoom-in button never landed", (f) => f.scale > seated.scale);
+  await chromeClick("Zoom out (-)");
+  const zoomOut = await settle("the toolbar's zoom-out button never landed", (f) => f.scale < zoomIn.scale);
+  // An open popover owns its keys (a host menu is a typing surface to the key
+  // forwarder), so the Cmd/Ctrl combos are checked with it closed.
+  await chromeClick("View & tools");
+  await page.waitForFunction(() => !window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
+  await page.keyboard.press("Control+Equal");
+  const ctrlIn = await settle("Ctrl+= never zoomed in", (f) => f.scale > zoomOut.scale);
+  await page.keyboard.press("Control+Minus");
+  const ctrlOut = await settle("Ctrl+- never zoomed out", (f) => f.scale < ctrlIn.scale);
+  // Vim's home row scrolls the strip the arrows do: `j` nudges down (and
+  // glides while held), `k` back up.
+  const stripReady = await settle("a scrollable strip to nudge", (f) => f.scrollTop !== null);
+  await page.keyboard.press("j");
+  const scrolledDown = await settle("j never scrolled the strip down", (f) => f.scrollTop > stripReady.scrollTop);
+  await page.keyboard.press("k");
+  const scrolledUp = await settle("k never scrolled the strip back up", (f) => f.scrollTop < scrolledDown.scrollTop);
+  report.toolbarZoom = { seat: seated.scale, buttonIn: zoomIn.scale, buttonOut: zoomOut.scale,
+    ctrlIn: ctrlIn.scale, ctrlOut: ctrlOut.scale };
+  report.vimScroll = { from: stripReady.scrollTop, down: scrolledDown.scrollTop, up: scrolledUp.scrollTop };
   const beforeClose = await snap();
   const closed = await closeAndWaitBaseline("pane runtime regressions", false, beforeClose.disposalEpoch + afterLift.host.panes.length);
   if (closed.rasterLane?.active !== 0 || closed.rasterLane?.queued !== 0 || closed.rasterLane?.owners !== 0) throw new Error("closed frames retained host raster leases");

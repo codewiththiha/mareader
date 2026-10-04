@@ -81,12 +81,31 @@ impl NavOutcome {
     }
 }
 
+/// The physical keys that mean an arrow. Vim's home row names the same four
+/// directions; resolving the alias HERE, in the pure table, is what gives
+/// `h`/`j`/`k`/`l` every rule the arrows already have — the paginated modes
+/// turn pages, the continuous ones start the hold, chrome scrollers keep
+/// their own keys — and `end_hold_for` shares the table, so a held `j`
+/// releases the glide like a held ArrowDown.
+pub(super) fn arrow_key(key: &str) -> Option<&'static str> {
+    match key {
+        "h" => Some("ArrowLeft"),
+        "j" => Some("ArrowDown"),
+        "k" => Some("ArrowUp"),
+        "l" => Some("ArrowRight"),
+        _ => None,
+    }
+}
+
 pub(super) fn resolve(k: NavKey<'_>) -> NavOutcome {
-    match k.key {
+    // One canonicalisation, and every arm below is the arrows' rules: vim's
+    // home row and the arrow keys are the same intent with different names.
+    let key = arrow_key(k.key).unwrap_or(k.key);
+    match key {
         // Left/right: a page turn everywhere except the horizontal strip,
         // where they are the scroll axis.
         "ArrowLeft" | "ArrowRight" => {
-            let dir: Dir = if k.key == "ArrowLeft" { -1 } else { 1 };
+            let dir: Dir = if key == "ArrowLeft" { -1 } else { 1 };
             if k.mode == ViewMode::ScrollHorizontal {
                 let hold = (!k.in_chrome && !k.repeat).then_some(NavAction::HoldLine {
                     dir,
@@ -100,7 +119,7 @@ pub(super) fn resolve(k: NavKey<'_>) -> NavOutcome {
         // Up/down: a page turn in the paginated modes, a reading nudge (and
         // then a glide) down the column in the continuous one.
         "ArrowUp" | "ArrowDown" => {
-            let dir: Dir = if k.key == "ArrowUp" { -1 } else { 1 };
+            let dir: Dir = if key == "ArrowUp" { -1 } else { 1 };
             if k.mode.is_paginated() {
                 NavOutcome::claimed(Some(page_turn(dir)))
             } else if k.mode == ViewMode::ScrollVertical && !k.in_chrome {
@@ -291,5 +310,33 @@ mod tests {
             resolve(key("q", ViewMode::ScrollVertical)),
             NavOutcome::passed()
         );
+    }
+
+    /// The aliases are the whole point of the table: one row of names, and
+    /// every rule the arrows have. Deriving one from the other is what keeps
+    /// them from drifting.
+    #[test]
+    fn the_vim_home_row_is_the_arrows_by_another_name() {
+        for mode in [
+            ViewMode::Single,
+            ViewMode::Spread,
+            ViewMode::ScrollVertical,
+            ViewMode::ScrollHorizontal,
+        ] {
+            assert_eq!(resolve(key("j", mode)), resolve(key("ArrowDown", mode)));
+            assert_eq!(resolve(key("k", mode)), resolve(key("ArrowUp", mode)));
+            assert_eq!(resolve(key("h", mode)), resolve(key("ArrowLeft", mode)));
+            assert_eq!(resolve(key("l", mode)), resolve(key("ArrowRight", mode)));
+        }
+        // Only the bare letters: a capital is another key (Shift+A is auto
+        // scroll, so the table must not swallow it) and a chrome scroller
+        // keeps its own keys, exactly as it does for the arrows.
+        assert_eq!(
+            resolve(key("J", ViewMode::ScrollVertical)),
+            NavOutcome::passed()
+        );
+        let mut k = key("j", ViewMode::ScrollVertical);
+        k.in_chrome = true;
+        assert_eq!(resolve(k), NavOutcome::passed());
     }
 }

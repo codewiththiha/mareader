@@ -282,9 +282,11 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
     }
 }
 
-/// Ends the rAF glide on keyup; the entry dispatcher wires this.
+/// Ends the rAF glide on keyup; the entry dispatcher wires this. The vim
+/// aliases release the hold their arrow would (`keymap::arrow_key`), or a `j`
+/// held to the end of a chapter would keep gliding after the key came up.
 pub(super) fn end_hold_for(key: &str) {
-    match key {
+    match keymap::arrow_key(key).unwrap_or(key) {
         "ArrowUp" | "ArrowLeft" => end_line_hold(-1.0),
         "ArrowDown" | "ArrowRight" => end_line_hold(1.0),
         _ => {}
