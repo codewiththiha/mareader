@@ -360,6 +360,11 @@ pub enum PaneToHost {
     },
     /// The engine's paper colours on the pane's root.
     Paper(Paper),
+    /// This pane's look was re-baked into its engine: every picture the
+    /// rail holds for it was baked against the look before this one. The
+    /// rail lives in the host, so the pane can only say so — the host
+    /// re-renders its cells (see `RemoteThumbs::invalidate`).
+    ThumbsStale,
     ThumbFailed {
         req: u64,
         cancelled: bool,
@@ -433,6 +438,7 @@ mod tests {
                 raw: "#fff".into(),
                 baked: "#eee".into(),
             }),
+            PaneToHost::ThumbsStale,
             PaneToHost::OpenPath {
                 path: "/a.md".into(),
                 placement: WirePlacement::Beside(SplitAxis::Vertical),
@@ -494,3 +500,5 @@ mod tests {
         assert!(serde_json::from_value::<HostToPane>(json).is_err());
     }
 }
+
+// only the changed file was rewritten

@@ -462,7 +462,9 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   pins its `EngineSession.themeRoot` to the root containing its registered
   page and owns `themePipeline` (actual-input fingerprint + generation), so
   page rasters, thumbnails and detected-paper composites use that pane's
-  filter/blend/paper, never whichever pane last painted `<html>`. The MRU
+  filter/blend/paper, never whichever pane last painted `<html>`. The rail's
+  cells hold the host's copy of a pane's bake, so the pane says when that
+  bake moved (`ThumbsStale`) and the host renders its cells again. The MRU
   publisher still updates the ordinary shared paper; independent CSS selects
   `--pane-pdf-paper-baked` only inside the corresponding PDF pane.
 - **Blend and native chrome:** ordinary blend repeats one colour across the

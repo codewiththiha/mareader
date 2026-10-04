@@ -2829,7 +2829,104 @@ currentStage = "stage13b-pane-theme-boundary";
   const panicsBefore = panicCount;
   const openedTheme = await openLight(PEARLS);
   const themePane = openedTheme.host.panes[0].paneId;
+
+  // --- Stage 13c: the rail's thumbnails follow the theme -----------------
+  currentStage = "stage13c-rail-thumb-themes";
+  // The rail's canvases live in the workspace host and hold a picture the
+  // PANE's engine baked for the look in force when it was requested. A
+  // theme change must reach them: the host re-renders every settled cell
+  // when its pane says the look was re-baked, and the frame re-bakes that
+  // cell's raster from the raw one instead of answering with a picture of
+  // the look before it. The rail is measured by DOWN-SAMPLING the painted
+  // cards' own pixels in the active frame's document, so the numbers are
+  // the engine's bake and nothing a CSS layer paints over it.
+  {
+    const panicsBeforeThumbs = panicCount;
+    await frameClick('button[title="Toggle sidebar"]', "[thumb themes] the thumbnail rail");
+    const railPixels = () => page.evaluate((sel) => {
+      const doc = document.querySelector(sel)?.contentDocument;
+      if (!doc) return { count: 0, mean: null };
+      const nodes = doc.querySelectorAll("#thumb-scroll canvas.thumb-canvas");
+      let probe = doc.defaultView.__thumbProbe;
+      if (!probe) {
+        probe = doc.createElement("canvas");
+        probe.width = 16;
+        probe.height = 16;
+        doc.defaultView.__thumbProbe = probe;
+      }
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      let count = 0;
+      let sum = 0;
+      for (const cv of nodes) {
+        if (!cv.width || !cv.height || cv.classList.contains("thumb-canvas-blank")) continue;
+        ctx.clearRect(0, 0, 16, 16);
+        ctx.drawImage(cv, 0, 0, 16, 16);
+        const px = ctx.getImageData(0, 0, 16, 16).data;
+        let lum = 0;
+        for (let i = 0; i < px.length; i += 4) lum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+        sum += lum / (px.length / 4);
+        count += 1;
+      }
+      return { count, mean: count ? sum / count : null };
+    }, activeFrame);
+    const waitRail = async (label, ok, timeoutMs = 25_000) => {
+      const deadline = Date.now() + timeoutMs;
+      let last = null;
+      while (Date.now() < deadline) {
+        last = await railPixels();
+        if (last.count >= 2 && ok(last)) return last;
+        await page.waitForTimeout(100);
+      }
+      throw new Error(`[thumb themes] ${label}: ${JSON.stringify(last)}`);
+    };
+    // The cards: painted, uncovered, at least a row of them.
+    const first = await waitRail("the rail painted its first thumbnails", () => true);
+    // Which way to move the base: the dials are a 3-way choice, and the
+    // window's look is whatever the run left behind, so the stage reads the
+    // current base and flips it rather than assuming one.
+    await frameClick('button[title="Appearance"]', "[thumb themes] the appearance menu");
+    const baseNow = await page.evaluate((sel) => {
+      const doc = document.querySelector(sel)?.contentDocument;
+      for (const name of ["Light", "Dark", "Dim"]) {
+        const el = doc?.querySelector(`button[title="${name}"]`);
+        if (el?.getAttribute("aria-pressed") === "true") return name;
+      }
+      return null;
+    }, activeFrame);
+    if (!baseNow) throw new Error("[thumb themes] the appearance menu shows no base to move");
+    const moved = baseNow === "Light" ? "Dark" : "Light";
+    // Dark inverts the bake and Dim darkens it; both read far darker than
+    // Light, which is the direction this stage asserts.
+    const darker = moved !== "Light";
+    await frameClick(`button[title="${moved}"]`, `[thumb themes] the ${moved} base`);
+    const after = await waitRail(`the thumbs follow the ${moved} base`,
+      (t) => (darker ? t.mean < first.mean - 30 : t.mean > first.mean + 30));
+    // Put the base back the way the run left it, and the picture with it.
+    await frameClick(`button[title="${baseNow}"]`, `[thumb themes] the ${baseNow} base, back`);
+    const back = await waitRail("the thumbs follow the base back",
+      (t) => (darker ? t.mean > first.mean - 15 : t.mean < first.mean + 15));
+    await frameClick('button[title="Appearance"]', "[thumb themes] close the appearance menu");
+    // The rail closes from its own header — the toolbar's toggle only exists
+    // while the rail is shut — and the cards release with the slide.
+    await frameClick('button[title="Close sidebar"]', "[thumb themes] close the thumbnail rail");
+    await page.waitForFunction((sel) => {
+      const doc = document.querySelector(sel)?.contentDocument;
+      const cards = doc?.querySelectorAll("#thumb-scroll canvas.thumb-canvas") ?? [];
+      for (const cv of cards) if (cv.width) return false;
+      return true;
+    }, activeFrame, { timeout: 10_000 });
+    console.log(
+      `[thumb themes] the rail's cards read ${first.mean.toFixed(1)} under ${baseNow}, ` +
+        `${after.mean.toFixed(1)} under ${moved}, ${back.mean.toFixed(1)} back (${after.count} cards)`,
+    );
+    summary.railThumbThemes = {
+      base: baseNow, moved, from: first.mean, to: after.mean, back: back.mean, cards: after.count,
+    };
+    assertNoNewPanics("rail thumb themes", panicsBeforeThumbs);
+  }
+  currentStage = "stage13b-pane-theme-boundary";
   if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[theme boundary] the host refused the Markdown pane beside the PDF");
+
   const themed = await waitForSettledLayout("[theme boundary] PDF | Markdown both ready", (s) =>
     s.host?.panes?.length === 2 &&
     s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 60_000);

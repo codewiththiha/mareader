@@ -9,9 +9,21 @@ use app_chrome::appearance_hooks::AppearanceEngineHooks;
 
 struct PdfAppearanceHooks;
 
+/// Re-bake this pane's look into its engine, then tell the host the rail's
+/// pictures of it are stale: a picture the rail holds is the HOST's copy of
+/// a raster baked against the look before this one, and only the host can
+/// render its cells again (`PaneToHost::ThumbsStale`). The tokens are
+/// already painted — every caller paints before it re-bakes
+/// (`app_ui::appearance::raster`), which is what lets the host's render
+/// land on the new bake instead of the old one.
+pub fn refresh() {
+    pdf_engine::api::refresh_theme();
+    crate::pane_frame::pictures_stale();
+}
+
 impl AppearanceEngineHooks for PdfAppearanceHooks {
     fn refresh_theme(&self) {
-        pdf_engine::api::refresh_theme();
+        refresh();
     }
     fn set_scrub_mode(&self, on: bool) {
         pdf_engine::api::set_scrub_mode(on);
@@ -27,3 +39,5 @@ impl AppearanceEngineHooks for PdfAppearanceHooks {
 pub fn install() -> app_chrome::appearance_hooks::AppearanceHooksGuard {
     app_chrome::appearance_hooks::install(Rc::new(PdfAppearanceHooks))
 }
+
+// only the changed file was rewritten

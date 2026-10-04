@@ -3,7 +3,7 @@
 //! proxy canvas in this document, then handed over as a transferred
 //! `ImageBitmap` (docs/pane-runtimes.md, "Thumbnails").
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use leptos::task::spawn_local;
@@ -16,6 +16,19 @@ thread_local! {
     /// In-flight requests: the host's request id → the proxy canvas.
     static PENDING: RefCell<HashMap<u64, web_sys::HtmlCanvasElement>> =
         RefCell::new(HashMap::new());
+    /// Whether this pane's engine is inside an appearance scrub window
+    /// (`Hook::Scrub`). Mid-drag the engine shows RAW rasters under the live
+    /// CSS, so no look is baked into anything the rail could be holding —
+    /// and the drag's exit is the one bake at the values the drag landed on,
+    /// which says so itself. A re-bake request inside the window therefore
+    /// stays quiet: otherwise every drag frame would re-render the rail.
+    static SCRUBBING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Track the scrub window the host broadcasts. Called from the pane's hook
+/// arm and from boot (a drag can be in flight when a pane opens).
+pub(super) fn set_scrubbing(on: bool) {
+    SCRUBBING.with(|s| s.set(on));
 }
 
 fn canvas_id(req: u64) -> String {
@@ -153,3 +166,16 @@ fn release(canvas: &web_sys::HtmlCanvasElement) {
 fn send_failed(req: u64, cancelled: bool) {
     super::realm::send(&PaneToHost::ThumbFailed { req, cancelled });
 }
+
+/// This pane's look was re-baked into its engine. Every picture the rail
+/// holds is the HOST's copy of a raster baked against the look before this
+/// one, and only the host can re-render its cells: the frame says so, and
+/// the host's rail renders again (`RemoteThumbs::invalidate`).
+pub(super) fn pictures_stale() {
+    if SCRUBBING.with(|s| s.get()) {
+        return;
+    }
+    super::realm::send(&PaneToHost::ThumbsStale);
+}
+
+// only the changed file was rewritten

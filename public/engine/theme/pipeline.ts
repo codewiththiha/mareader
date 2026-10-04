@@ -57,6 +57,21 @@ export function readPipeline(s: EngineSession): PipelineCache {
   return cache;
 }
 
+/**
+ * The generation every baked raster must be judged against: the pipeline as
+ * it reads NOW. Never `s.themePipeline.gen` for a comparison — that is the
+ * number left behind by whoever read last, and a look can move without a
+ * call reaching this realm (a pane's own tokens are painted by another
+ * task, and the engine is told about it a beat later). A freshness check
+ * that trusts the stored number can therefore serve a bitmap baked against
+ * a look that is already gone — the rail's thumbnails did exactly that
+ * after a theme change. `readPipeline` is token-cached, so asking again
+ * costs a few attribute reads.
+ */
+export function currentGen(s: EngineSession): number {
+  return readPipeline(s).gen;
+}
+
 export function pipelineIsIdentity(pipeline: PipelineCache): boolean {
   if (pipeline.filter !== "none") return false;
   if (pipeline.blend === "normal") return true;
@@ -66,3 +81,5 @@ export function pipelineIsIdentity(pipeline: PipelineCache): boolean {
   }
   return false;
 }
+
+// only the changed file was rewritten

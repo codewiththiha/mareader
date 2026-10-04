@@ -78,8 +78,16 @@ asks its pane for page N. The pane renders into a proxy canvas in its own
 document through the unchanged engine thumbnail lane (cache, theme bake,
 cancellation), turns it into an `ImageBitmap` and transfers it. The host
 draws the bitmap and closes it. Unmounting the cell cancels the request and
-the pane zeroes the proxy. An appearance change re-requests the visible
-cells.
+the pane zeroes the proxy.
+
+The picture the rail holds is the HOST's copy of a raster, so a look change
+can only reach it through the host: the pane sends `ThumbsStale` whenever it
+re-bakes its look — after the new tokens are painted, and again when a scrub
+window ends, because the window itself bakes nothing — and the host
+re-renders every settled cell. The frame answers with a bake from its own
+raw raster: a cached display is judged against the pipeline as it reads NOW,
+never against the generation left behind by the last read, so a cell asking
+during a change cannot be served the look before it.
 
 ## Appearance and blend
 

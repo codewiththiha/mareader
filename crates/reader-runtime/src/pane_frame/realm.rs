@@ -314,8 +314,17 @@ fn apply_hook(kind: PaneKind, hook: Hook) {
         return;
     }
     match hook {
-        Hook::Refresh => pdf_engine::api::refresh_theme(),
-        Hook::Scrub { on } => pdf_engine::api::set_scrub_mode(on),
+        Hook::Refresh => crate::appearance_hooks::refresh(),
+        Hook::Scrub { on } => {
+            super::thumbs::set_scrubbing(on);
+            pdf_engine::api::set_scrub_mode(on);
+            // The drag is over: the exit settles the look the drag landed on
+            // into every raster, which is the bake the rail's pictures — raw
+            // ones from the drag, or the bake it started from — never saw.
+            if !on {
+                crate::pane_frame::pictures_stale();
+            }
+        }
         Hook::MenuOpen { on } => pdf_engine::api::set_appearance_menu_open(on),
     }
 }
@@ -480,6 +489,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
     if kind == PaneKind::Pdf {
         pdf_engine::api::set_appearance_menu_open(boot.hooks.menu_open);
         pdf_engine::api::set_scrub_mode(boot.hooks.scrubbing);
+        super::thumbs::set_scrubbing(boot.hooks.scrubbing);
     }
     #[cfg(feature = "pdf")]
     if kind == PaneKind::Pdf {
@@ -842,3 +852,5 @@ fn dispose(live: Live) {
         unmount();
     }
 }
+
+// only the changed file was rewritten

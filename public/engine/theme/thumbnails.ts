@@ -16,7 +16,7 @@ import {
 } from "../canvas";
 import type { EngineSession } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
-import { readPipeline } from "./pipeline";
+import { currentGen, readPipeline } from "./pipeline";
 
 /** Release a thumbnail entry's display surface (ImageBitmap or pooled canvas),
  *  leaving the raw raster untouched. Called when an entry's themed display is
@@ -82,7 +82,7 @@ export async function ensureEntryCurrent(
   if (s.themeScrubActive) {
     return rasterWidth(entry.display) > 0 ? entry.display : null;
   }
-  if (entry.gen === s.themePipeline.gen && rasterWidth(entry.display) > 0) {
+  if (entry.gen === currentGen(s) && rasterWidth(entry.display) > 0) {
     return entry.display;
   }
   if (entry.pending) return await entry.pending;
@@ -113,7 +113,7 @@ export async function ensureEntryCurrent(
       releaseDisplayOnly(entry);
     }
     entry.display = newDisplay;
-    entry.gen = s.themePipeline.gen;
+    entry.gen = pipeline.gen;
     return entry.display;
   })();
   const result = await entry.pending;
@@ -164,3 +164,5 @@ export function paintCached(
   if (!shown) return null;
   return { width: entry!.cssW, height: entry!.cssH };
 }
+
+// only the changed file was rewritten

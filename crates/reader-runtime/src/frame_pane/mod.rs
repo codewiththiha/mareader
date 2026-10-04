@@ -372,18 +372,6 @@ fn install_effects(inner: &Rc<Inner>) {
             inner.broadcast(&HostToPane::Settings(Box::new(settings)));
         }
     });
-    // The rail's pictures were baked against the old look. (After the
-    // settings broadcast: the frame re-bakes before it renders again.)
-    let look = Memo::new(move |_| env.settings.with(|s| s.appearance));
-    let w = weak.clone();
-    Effect::new(move |previous: Option<()>| {
-        look.track();
-        if previous.is_some()
-            && let Some(inner) = w.upgrade()
-        {
-            inner.thumbs.invalidate();
-        }
-    });
     let w = weak.clone();
     Effect::new(move |_| {
         let look = env.workspace.get();
@@ -740,6 +728,18 @@ impl Inner {
                 self.with_frame(nonce, |frame| frame.paper = Some(paper));
                 if role == Role::Live && self.incoming.borrow().is_none() {
                     board_refresh();
+                }
+            }
+            PaneToHost::ThumbsStale => {
+                // The pane re-baked its look: the rail's pictures of THIS
+                // pane were baked against the look before it, and the host
+                // holds the only copies. Clearing `painted` and bumping the
+                // epoch makes every settled cell render again — the frame's
+                // cache answers with the new bake. Only a LIVE pane's cards
+                // are on screen; the other roles speak for a document the
+                // rail has already left.
+                if role == Role::Live {
+                    self.thumbs.invalidate();
                 }
             }
             _ if role != Role::Live => {}

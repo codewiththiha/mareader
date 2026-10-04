@@ -17,6 +17,15 @@ mod thumbs;
 use crate::host::contract::Placement;
 use crate::pane_wire::PaneKind;
 
+/// This pane's look was re-baked into its engine: every picture the rail
+/// holds for it is stale, and the rail lives in the host. The shell's
+/// appearance paths that re-bake a look call this; a build without an
+/// engine (or without a frame at all) has nothing to say and sends nothing.
+pub fn pictures_stale() {
+    #[cfg(all(target_arch = "wasm32", feature = "pdf"))]
+    thumbs::pictures_stale();
+}
+
 /// The wire the pane's shell calls leave on: each envelope rides the port
 /// inside a [`crate::pane_wire::PaneToHost::Api`].
 #[derive(Clone)]
@@ -64,3 +73,5 @@ pub fn open_path(path: String, placement: Placement) {
     #[cfg(not(target_arch = "wasm32"))]
     let _ = (path, placement);
 }
+
+// only the changed file was rewritten
