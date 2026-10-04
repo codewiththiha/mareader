@@ -147,6 +147,79 @@ pub(crate) fn page_rendered(state: ReaderState) -> Callback<(u32, f64, f64)> {
     })
 }
 
+/// The EARLY half of [`page_rendered`]: the page host's size probe, reported
+/// before the page's first raster. Answers whether the fit is now moving.
+///
+/// Why a probe exists at all: the engine's open seeds every page with page 1's
+/// box, so until a page reports otherwise the fit maths measures it by its
+/// neighbour. `page_rendered` only learns the truth from a completed raster —
+/// which means a mixed-size book's plate is RASTERISED at the wrong fit, sits
+/// on screen at that size for the whole raster, and only then shrinks. The
+/// host asks the engine for the page's box first (one worker round trip, no
+/// pixels); this records it and, when the reader is on that page under an
+/// active fit, posts the refit BEFORE the raster.
+///
+/// `true` means a refit was posted: the caller must not rasterise at the scale
+/// on screen, because the commit is about to move it — the page paints once,
+/// at the size it belongs at, instead of painting wrong and then shrinking.
+///
+/// The comparison is against `committed` (the scale a raster actually uses),
+/// not the live display scale: the deferral is only safe because a `true`
+/// answer PROVES the commit will write a different committed scale, which is
+/// what re-runs the host's render effect. A caller that held its raster for a
+/// transaction that never moved anything would stay blank forever, so a page
+/// that is already fitted — or one with no fit mode to resolve — returns
+/// `false` and paints straight away.
+#[cfg(feature = "pdf")]
+pub(crate) fn page_sized(state: ReaderState, page: u32, width: f64, height: f64) -> bool {
+    if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+        return false;
+    }
+    // Records the page's true box for the fit maths. `changed` is false for a
+    // page already known (a remount, a re-probe) — and for a look-ahead page
+    // whose size the reader has seen before.
+    if !state
+        .document
+        .content
+        .metrics
+        .record_rendered(page, width, height)
+    {
+        return false;
+    }
+    // A page that is only look-ahead is recorded, not fitted: the reader is
+    // not looking at it, and a scroll that reaches it re-asks through the fit
+    // watcher (which now resolves against the true box).
+    if state.viewer.page.try_get_untracked() != Some(page) {
+        return false;
+    }
+    let fitting = state
+        .viewer
+        .fit
+        .try_get_untracked()
+        .is_some_and(|fit| fit != FitMode::None);
+    if !fitting || state.viewer.try_zooming_now() != Some(false) {
+        return false;
+    }
+    let Some(committed) = state.viewer.zoom.committed.try_get_untracked() else {
+        return false;
+    };
+    let profile = zoom_profile();
+    let Some(target) = fit_owned_target(&state, &profile) else {
+        return false;
+    };
+    if (target - committed).abs() <= SETTLED_EPSILON {
+        return false;
+    }
+    state.viewer.zoom.post(ZoomCommand::Refit, false);
+    true
+}
+
+/// [`page_sized`] as the page host's callback.
+#[cfg(feature = "pdf")]
+pub(crate) fn page_sized_cb(state: ReaderState) -> Callback<(u32, f64, f64), bool> {
+    Callback::new(move |(page, width, height)| page_sized(state, page, width, height))
+}
+
 /// The plain-geometry inputs of a fit computation, separated from the
 /// reactive state so the arithmetic is unit-testable on the host.
 #[derive(Debug, Clone, Copy)]

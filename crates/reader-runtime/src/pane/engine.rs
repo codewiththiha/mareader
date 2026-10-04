@@ -18,7 +18,9 @@
 
 use leptos::prelude::{LocalStorage, StoredValue, WithValue, use_context};
 use pdf_engine::api::EngineError;
-use pdf_engine::types::{CoverResult, OpenResult, OutlineEntry, RenderResult, ThumbResult};
+use pdf_engine::types::{
+    CoverResult, OpenResult, OutlineEntry, PageSizeResult, RenderResult, ThumbResult,
+};
 use pdf_engine::{PageElements, PdfSession};
 use reader_core::search::SearchResponse;
 
@@ -146,6 +148,17 @@ impl PdfPane {
     ) -> Result<RenderResult, EngineError> {
         match self.working() {
             Some(s) => s.render_page(canvas_id, scale, render_text).await,
+            None => Err(refused()),
+        }
+    }
+
+    /// One page's intrinsic (scale-1) box, from the document: a worker round
+    /// trip and no pixels. Read before a page's first raster so a fit that the
+    /// page's real size would move lands BEFORE the raster (see
+    /// `components::formats::pdf::canvas`).
+    pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
+        match self.working() {
+            Some(s) => s.probe_page_size(page).await,
             None => Err(refused()),
         }
     }

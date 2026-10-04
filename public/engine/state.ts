@@ -243,6 +243,18 @@ export class EngineSession {
    *  live window; `unregisterPage` removes and releases on unmount. */
   readonly stateByCanvasId = new Map<string, PageState>();
 
+  /** Intrinsic (scale-1) boxes probed from the document, keyed by page. The
+   *  reader's fit maths reads a page's true box BEFORE its first raster
+   *  (`probePageSize`), and a page's box never changes while a document is
+   *  open — so a scroll that remounts a page must not probe it twice. Cleared
+   *  by every open: the cache belongs to one document. */
+  readonly intrinsicByPage = new Map<number, { width: number; height: number }>();
+
+  /** Forget the probed page boxes: a new document is being opened. */
+  clearIntrinsicSizes(): void {
+    this.intrinsicByPage.clear();
+  }
+
   /** LRU-capped thumbnail rasters (≤ THUMB_CACHE_MAX). */
   readonly thumbCache = new Map<number, ThumbEntry>();
   readonly thumbTasks = new Map<string, RenderTask>();

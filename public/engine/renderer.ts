@@ -1,6 +1,7 @@
 // Page registration + canvas render + text/link layers.
 
 import type {
+  PageSizeResult,
   PageState,
   RenderResult,
 } from "./types";
@@ -549,6 +550,44 @@ async function renderPageNow(
   }
 
   return { ok: true, width: cssW, height: cssH, scale };
+}
+
+/** The scale-1 (intrinsic) box of one page, from the DOCUMENT rather than
+ *  from a raster: `getPage` + `getViewport({scale:1})` is one worker round
+ *  trip, allocates no surface and paints nothing.
+ *
+ *  Why the reader needs it before a raster exists: the engine's open seeds
+ *  every page with page 1's box (see `open`), so a book whose pages differ
+ *  from page 1 is fitted — and rasterised — at page 1's scale until a page
+ *  reports its real size. A landscape plate then appears oversized for the
+ *  whole raster, and only the fit re-resolve that follows corrects it. The
+ *  page host asks here first, so the fit moves BEFORE the raster and the page
+ *  is painted once, at the size it belongs at.
+ *
+ *  Cached per session (a page's box never changes while a document is open,
+ *  and a scroll remounts pages constantly); cleared by every open. */
+export async function probePageSize(s: EngineSession, page: number): Promise<PageSizeResult> {
+  if (!s.pdf) return fail("no_document", "No document open");
+  const cached = s.intrinsicByPage.get(page);
+  if (cached) return { ok: true, width: cached.width, height: cached.height };
+  if (!(page >= 1) || page > s.numPages) {
+    return fail("no_page", "No such page: " + page);
+  }
+  try {
+    const p = await s.pdf.getPage(page);
+    if (s.disposed) {
+      try { p.cleanup(); } catch (_) { /* ignore */ }
+      return fail("no_session", "Session destroyed during a size probe");
+    }
+    const vp = p.getViewport({ scale: 1 });
+    try { p.cleanup(); } catch (_) { /* ignore */ }
+    const width = vp.width;
+    const height = vp.height;
+    s.intrinsicByPage.set(page, { width, height });
+    return { ok: true, width, height };
+  } catch (e) {
+    return failFrom(e);
+  }
 }
 
 // Full-size renders share ONE bounded lane, the thumbnail lane's pattern.

@@ -350,6 +350,20 @@ pub fn ReflowStreamLayout(
     // replaced). Blanks are skipped: a placeholder reports the layout's own
     // size back, which the store already knows.
     let column_ref: NodeRef<html::Div> = NodeRef::new();
+    // A SETTLE IS THE MEASURE PASS'S CUE. Rows are measured by reading their
+    // offset heights, which forces the browser to lay out the whole mounted
+    // window, and a measurement that changes a size moves every block below it
+    // — so a pass per frame of a fling is both the most expensive thing the
+    // stream can do and the thing that makes a fast scroll stutter. The pass
+    // below stands down while the scroller moves; this is what tells it the
+    // scroller has stopped (the virtualizer fires its idle callbacks in the
+    // same window the first paints resume in, and the window always comes).
+    let measure_now = ArcTrigger::new();
+    {
+        let v = v.clone();
+        let cue = measure_now.clone();
+        v.on_scroll_idle(move || cue.notify());
+    }
     {
         let v = v.clone();
         let items = v.items();
@@ -358,6 +372,10 @@ pub fn ReflowStreamLayout(
             // A mid-tween report stands down below. Completion must wake it
             // even when the final scale was already written on the last tick.
             let _ = zooming.get();
+            // Re-run on a scroll settle: the pass below returns without
+            // measuring while the scroller moves, and this is how the rows it
+            // missed get measured once the movement stops.
+            measure_now.track();
             let mounted = items.get();
             let _typography = typography.get();
             let _ = state.viewer.page_margin.get();
@@ -375,6 +393,13 @@ pub fn ReflowStreamLayout(
                     return;
                 }
                 if state.viewer.try_zooming_now() != Some(false) {
+                    return;
+                }
+                // The fling gate for MEASUREMENT: while the scroller is
+                // moving, the pass would force a full layout of the mounted
+                // window every frame and feed corrections into a scroll the
+                // reader is driving. The settle trigger above re-arms it.
+                if !v.settled_now() {
                     return;
                 }
                 let Some(col) = column.get() else {

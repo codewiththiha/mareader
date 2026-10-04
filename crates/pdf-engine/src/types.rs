@@ -9,6 +9,15 @@ use serde::{Deserialize, Serialize};
 
 pub use reader_core::document::{DocStatus, PageSize};
 
+/// `{ok:true, width, height}` — engine.probePageSize(): one page's intrinsic
+/// (scale-1) box, read from the document instead of from a raster.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageSizeResult {
+    pub width: f64,
+    pub height: f64,
+}
+
 /// One flattened chapter, exactly as `pdfEngine.js` resolves it. The type is
 /// `pdf-core`'s rather than the engine's: the entries cross this boundary on
 /// the wire and land in the reader's outline with one conversion in between,

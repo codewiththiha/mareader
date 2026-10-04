@@ -73,6 +73,7 @@ impl VirtualizerInner {
             pending_scroll: Rc::new(Cell::new(None)),
             scroll_armed: Rc::new(Cell::new(false)),
             flush_armed: Rc::new(Cell::new(false)),
+            flush_deferred: Cell::new(false),
             scroll_feedback: Cell::new(true),
             container_ro: RefCell::new(None),
             listeners: RefCell::new(Vec::new()),
@@ -112,6 +113,17 @@ pub(crate) struct VirtualizerInner {
     pub pending_scroll: Rc<Cell<Option<f64>>>,
     pub scroll_armed: Rc<Cell<bool>>,
     pub flush_armed: Rc<Cell<bool>>,
+
+    /// A measurement arrived while the scroller was MOVING and is waiting for
+    /// the scroll-end window. Sizes are applied as one transaction with their
+    /// anchored scroll correction, so applying one mid-fling would write the
+    /// scroll position under the reader's finger — the momentum stutter every
+    /// native list avoids, and the reason the correction is deferred whole
+    /// rather than the write alone: a size applied without its correction
+    /// moves the content under the reader instead. The scroll-end timer always
+    /// follows a move (it is what made `settled` false), so this always
+    /// drains.
+    pub flush_deferred: Cell<bool>,
 
     /// While false, the DOM scroll echo must not touch the core. A
     /// programmatic scroll burst (zoom tween, sidebar slide, resize drag)
@@ -304,6 +316,20 @@ impl VirtualizerInner {
         if self.flush_armed.get() || self.core.borrow().suspended() {
             return;
         }
+        // A MOVING scroller holds its measurements. The flush applies sizes
+        // and their anchored scroll correction as one transaction, and a
+        // scroll write landing mid-fling fights the browser's momentum — the
+        // stutter a native list never has. The scroll-end window this waits
+        // for is the same one the first-paint gate uses, and it always
+        // comes: whatever made the scroller move arms that timer.
+        // A `try_` read, like every other flush-time question here: the
+        // scroll-end timer can be the first thing to run after the reader went
+        // away, and a dead scroller defers into a world that will not drain it
+        // rather than aborting the wasm.
+        if self.settled.try_get_untracked() != Some(true) {
+            self.flush_deferred.set(true);
+            return;
+        }
         self.flush_armed.set(true);
         let inner = self.clone();
         raf(move || {
@@ -340,6 +366,12 @@ impl VirtualizerInner {
                 // The scroller has been quiet for the whole window: the strip
                 // is settled, and the first paints its gate held back run now.
                 write_if_changed(inner.settled, true);
+                // Measurements the fling held back land NOW, in the same
+                // window the first paints do: one transaction with its
+                // correction, against a scroller nobody is moving.
+                if inner.flush_deferred.replace(false) {
+                    inner.arm_flush();
+                }
                 let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
                 for callback in callbacks {
                     callback();
@@ -641,6 +673,15 @@ impl Virtualizer {
     /// is the adapter's, not the app's.
     pub fn settled(&self) -> ReadSignal<bool> {
         self.inner.settled.read_only()
+    }
+
+    /// [`settled`](Self::settled) as a plain, panic-free question, for callers
+    /// that can outlive their owner: a measurement pass scheduled on a rAF or
+    /// a scroll-end timer still runs after the strip it belongs to is torn
+    /// down, and a dead scroller reads `false` here instead of aborting the
+    /// wasm the way a bare read of a disposed signal would.
+    pub fn settled_now(&self) -> bool {
+        self.inner.settled.try_get_untracked().unwrap_or(false)
     }
 
     /// The viewport signal.

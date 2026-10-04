@@ -100,6 +100,13 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
     pub async fn render_page(sid: u32, canvas_id: &str, scale: f64, render_text: bool) -> JsValue;
 
+    /// One page's intrinsic (scale-1) box, without rasterising it. The
+    /// reader's fit maths asks before a page's first render, so the fit moves
+    /// before the raster instead of after it (see `probePageSize` in
+    /// `public/engine/renderer.ts`).
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "probePageSize")]
+    pub async fn probe_page_size(sid: u32, page: u32) -> JsValue;
+
     // --- Thumbnails -------------------------------------------------------
 
     // Thumbnail lane: a separate, cheap render path with a per-session

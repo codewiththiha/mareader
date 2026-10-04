@@ -382,6 +382,8 @@ export async function open(s: EngineSession, path: string): Promise<OpenResult> 
     }
     s.setPdf(doc);
     s.setNumPages(doc.numPages);
+    // The probed page boxes belong to the document that just died.
+    s.clearIntrinsicSizes();
     // The new document's thumbnail lane is open: generation bookkeeping
     // records from here until this document's teardown clears it.
     beginThumbLane(s);

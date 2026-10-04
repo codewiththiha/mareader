@@ -281,6 +281,7 @@ pub fn PdfPageStrip(
                                                 render_text=true
                                                 on_geometry=on_geometry
                                                 on_rendered=crate::zoom::target::page_rendered(state)
+                                                on_sized=crate::zoom::target::page_sized_cb(state)
                         gloss_overlay=GlossOverlayProps::from_gloss(state)
                                                 class="mx-auto"
                                             />
@@ -344,6 +345,7 @@ pub fn PdfPageStrip(
                                                 render_text=true
                                                 on_geometry=on_geometry
                                                 on_rendered=crate::zoom::target::page_rendered(state)
+                                                on_sized=crate::zoom::target::page_sized_cb(state)
                         gloss_overlay=GlossOverlayProps::from_gloss(state)
                                                 class="my-auto"
                                             />

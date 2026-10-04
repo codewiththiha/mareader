@@ -27,6 +27,7 @@ import {
   cancelPageRenders,
   drainPageLane,
   pageLaneGauge,
+  probePageSize,
   readRenderTrace,
   registerPage,
   renderPage,
@@ -575,6 +576,8 @@ globalThis.PDFReader = {
     withSession(sid, Promise.resolve(noSession()), (s) => renderPage(s, canvasId, scale, renderText)),
   renderThumb: (sid, canvasId, page, scale) =>
     withSession(sid, Promise.resolve(noSession()), (s) => renderThumb(s, canvasId, page, scale)),
+  probePageSize: (sid, page) =>
+    withSession(sid, Promise.resolve(noSession()), (s) => probePageSize(s, page)),
   cancelThumb: (sid, canvasId) => withSession(sid, undefined, (s) => cancelThumb(s, canvasId)),
   hasThumb: (sid, page, scale) => withSession(sid, false, (s) => hasThumb(s, page, scale)),
   blitThumb: (sid, canvasId, page) => withSession(sid, false, (s) => blitThumb(s, canvasId, page)),

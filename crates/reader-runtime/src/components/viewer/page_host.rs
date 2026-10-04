@@ -204,6 +204,7 @@ pub fn UniversalPageHost(
                             host_id=host_id.clone()
                             render_text=true
                             on_rendered=crate::zoom::target::page_rendered(state)
+                            on_sized=crate::zoom::target::page_sized_cb(state)
                             gloss_overlay=GlossOverlayProps::from_gloss(state)
                             class=class.clone()
                         />

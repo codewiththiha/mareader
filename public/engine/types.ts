@@ -152,6 +152,11 @@ type OutlineResult = Result<{
   outline: { title: string; page: number; depth: number }[];
 }>;
 export type RenderResult = Result<{ width: number; height: number; scale: number }>;
+/** One page's intrinsic (scale-1) box, read from the document rather than
+ *  from a raster. The reader's fit maths asks for it BEFORE the page's first
+ *  raster, so a mixed-size book's plate is fitted on its own terms instead of
+ *  being rasterised at the previous page's fit and corrected afterwards. */
+export type PageSizeResult = Result<{ width: number; height: number }>;
 export type ThumbResult = Result<{ width: number; height: number; scale: number }>;
 export type CoverResult = Result<{ dataUrl: string; width: number; height: number }>;
 /** The engine's live resource picture, read by the app's diagnostics surface
@@ -316,6 +321,10 @@ export type PDFReaderApi = {
     page: number,
     scale: number
   ) => Promise<ThumbResult>;
+  /** One page's scale-1 box, from the document instead of a raster. A worker
+   *  round trip and no surface: the reader asks before a page's first raster
+   *  (see `probePageSize` in engine/renderer.ts). */
+  probePageSize: (sid: Sid, page: number) => Promise<PageSizeResult>;
   cancelThumb: (sid: Sid, canvasId: string) => void;
   hasThumb: (sid: Sid, page: number, scale: number) => boolean;
   blitThumb: (sid: Sid, canvasId: string, page: number) => boolean;

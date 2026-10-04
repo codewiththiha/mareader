@@ -28,7 +28,9 @@ use std::rc::Rc;
 use crate::api::{self, EngineError, EngineStats};
 use crate::backdrop::{self, Paper};
 use crate::bridge;
-use crate::types::{CoverResult, OpenResult, OutlineEntry, RenderResult, ThumbResult};
+use crate::types::{
+    CoverResult, OpenResult, OutlineEntry, PageSizeResult, RenderResult, ThumbResult,
+};
 
 use pdf_paper::PaperConfig;
 use reader_core::search::SearchResponse;
@@ -274,6 +276,21 @@ impl PdfSession {
         let sid = self.require()?;
         let value = bridge::render_page(sid, canvas_id, scale, render_text).await;
         let result = api::resolve::<RenderResult>(value, "render")?;
+        if !self.is_live() {
+            return Err(no_session());
+        }
+        Ok(result)
+    }
+
+    /// The intrinsic (scale-1) box of one page, read from the document: one
+    /// worker round trip, no surface, no pixels. The reader's fit maths asks
+    /// BEFORE a page's first raster — this is what lets a fit re-resolve land
+    /// ahead of the raster instead of correcting a page that is already on
+    /// screen at the wrong size.
+    pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
+        let sid = self.require()?;
+        let value = bridge::probe_page_size(sid, page).await;
+        let result = api::resolve::<PageSizeResult>(value, "probe")?;
         if !self.is_live() {
             return Err(no_session());
         }

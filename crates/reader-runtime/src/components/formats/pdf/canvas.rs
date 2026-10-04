@@ -148,6 +148,15 @@ pub fn PdfPageCanvas(
     /// for up front. The fit modes measure against it.
     #[prop(optional)]
     on_rendered: Option<Callback<(u32, f64, f64)>>,
+    /// Called with a page's true (scale-1) size as soon as the engine can
+    /// state it — BEFORE this host's first raster — and answers whether the
+    /// fit is moving because of it. `true` means the caller must not
+    /// rasterise at the scale on screen: a refit is on its way and the
+    /// commit's render paints this page once, at the size it belongs at.
+    /// `None` (the default) skips the probe: hosts that are not a PDF page
+    /// strip have no fit to move.
+    #[prop(optional)]
+    on_sized: Option<Callback<(u32, f64, f64), bool>>,
     /// The render scale (crisp target). The RENDER effect renders at this;
     /// the `scale` prop is the DISPLAY scale.
     #[prop(into)]
@@ -231,6 +240,10 @@ pub fn PdfPageCanvas(
     // sidebar slide (remount race) would sit blank until a scroll
     // re-triggered the effect.
     let painted = Rc::new(Cell::new(false));
+    // Whether this host has asked the engine for the page's true size. One
+    // probe per mounted host: the answer is cached engine-side, and the
+    // fit maths only needs telling once.
+    let sized = Rc::new(Cell::new(false));
 
     // The component's own two elements, by reference: the stretch, a
     // render's landing and the cover sweep act on THIS host — never on
@@ -437,6 +450,8 @@ pub fn PdfPageCanvas(
         let geo_async = geo;
         let seq_async = render_seq;
         let painted_async = painted.clone();
+        let sized_async = sized.clone();
+        let sized_cb = on_sized;
 
         // This effect run owns the next generation; older completions are stale.
         let my_seq = seq_async.get_value() + 1;
@@ -488,6 +503,28 @@ pub fn PdfPageCanvas(
             if !do_register.get() {
                 register_mounted(&pdf_async, page_no, &cid, &hid, canvas_ref, host_ref);
                 do_register.set(true);
+            }
+            // SIZE BEFORE PIXELS. The fit maths measures a page by the box
+            // it holds for it, and the open seeds every page with page 1's —
+            // so a book whose plates differ from its letter pages rasterises
+            // them at a fit that belongs to another page, shows them at that
+            // size for the whole raster, and shrinks them only when the refit
+            // that follows lands. Asking the engine for the page's true box
+            // first (one worker round trip, no pixels) lets that refit move
+            // BEFORE the raster, so the page is painted once and correctly.
+            //
+            // A `true` answer means the fit is moving: hold this raster. The
+            // commit re-runs this effect at the settled scale — which is the
+            // page's own fit, so the very first bitmap for it is already the
+            // size it belongs at, and there is no second paint to snap.
+            if !sized_async.get() {
+                sized_async.set(true);
+                if let Ok(size) = pdf_async.probe_page_size(page_no).await
+                    && let Some(cb) = sized_cb
+                    && cb.run((page_no, size.width, size.height))
+                {
+                    return;
+                }
             }
             // A render whose session died resolves `no_session` (the engine
             // refuses retired sids, and the session re-checks itself after
