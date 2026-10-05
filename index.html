@@ -48,20 +48,32 @@
          runtime, because the runtime is exactly what may fail to load. It is
          what the user sees while the shell wasm downloads, instantiates and
          loads its first runtime — the difference between "starting" and a
-         blank window. The shell removes it once its own view is mounted
-         (src/app/mod.rs) and the runtime host owns the area from then on.
+         blank window. It goes when the host's coverage watch finds a runtime
+         painted (src/app/boot.rs), which is the one place that knows the
+         difference — and the runtime host owns the area from then on.
          The id and the copy are a CONTRACT: tools/check-runtime-artifacts.mjs
-         fails the build if either disappears from the built page. The copy
-         is for assistive tech and the failure states: while healthy it is
-         visually hidden and the screen is just the remembered paper
-         (public/bootPaint.js); shellBoot.js reveals it on a timeout. -->
+         fails the build if either disappears from the built page. The mark is
+         the app's own loading mark (the `.loader` class pair the Loader
+         component uses, so the wait looks like one thing from boot to pane) and
+         the words say which stage the wait is in: public/shellBoot.js walks
+         them as time passes and reveals the failure copy when the shell never
+         arrives. The screen wears the remembered paper (public/bootPaint.js),
+         so on a dark theme nothing in the launch is white but the pixels the
+         webview itself has not painted yet. -->
     <div id="shell-boot" class="shell-boot" role="status" aria-live="polite">
+      <div class="loader shell-boot__loader" aria-hidden="true">
+        <span class="loader-dot loader-dot-a"></span>
+        <span class="loader-dot loader-dot-b"></span>
+        <span class="loader-dot loader-dot-c"></span>
+      </div>
       <p class="shell-boot__title">Loading MAReader…</p>
       <p class="shell-boot__hint">Starting the shell</p>
     </div>
-    <!-- The "never waits forever" half of §3: if the shell wasm has not taken
-         over within 20s — a failed download, a panic before the first mount —
-         the placeholder says so instead of spinning silently. The healthy path
+    <!-- The "never waits forever" half of §3, and the voice of the two lines
+         above: shellBoot.js walks the hint as the wait grows and makes its last
+         stage the failure report — if the shell wasm has not taken over within
+         20s (a failed download, a panic before the first mount) the placeholder
+         says so instead of spinning silently. The healthy path
          removes the element long before the deadline (src/app/mod.rs).
          An external file, not an inline script: the packaged app's CSP
          (`script-src 'self'` in src-tauri/tauri.conf.json) blocks inline. -->
@@ -69,3 +81,5 @@
     <script src="/shellBoot.js" defer></script>
   </body>
 </html>
+
+<!-- // only the changed file was rewritten -->

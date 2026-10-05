@@ -576,6 +576,32 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   centres via the buttons' `origin.y`, pins their natural size, and applies in
   the event's own main-thread turn. `tools/check-chrome-contracts.ts` mirrors
   the y inset.
+- **A frame's Tauri surface.** The bar and the caption are mounted by a ROUTE,
+  so they live in a frame document, and a frame's access to Tauri is not
+  uniform: macOS and Linux get no initialization script in sub-frames
+  (CVE-2024-35222) and are served by the facade `public/tauri-relay.js`
+  publishes from the parent's API, while Windows is documented the other way
+  round — wry adds scripts to subframes there, so a frame holds its own real
+  `__TAURI__`. Two things do not follow from having that object: an `emit` is
+  delivered by scripting the MAIN frame, so a `listen` registered on a frame's
+  own `event` namespace is unreachable (the caption's `tauri://resize` probe,
+  the shelf's focus and cover-progress listeners and the AI stream all listen
+  from frames), and the injected drag-region script acts only on an element
+  that carries `data-tauri-drag-region` itself. The relay therefore re-points a
+  frame's `event` namespace at the host frame and installs the drag listener
+  with the same semantics as Tauri's — including `"deep"`, which is what makes
+  a CONTAINER a region: `#toolbar-row`, its band and the sidebar's header claim
+  their subtrees and let nothing else, so the bar drags while its buttons stay
+  buttons and the search pill opts out with `"false"`.
+- **The boot screen.** `#shell-boot` (index.html) is the page's own placeholder
+  and `src/app/boot.rs` paints the runtime host's cover after it; both wear the
+  app's loading mark and a line of copy that gets more specific as the wait
+  grows (`public/shellBoot.js`, whose last stage is the failure report). A
+  healthy boot used to be a blank themed sheet — clean, and unreadable as
+  anything but a hang on a webview that takes seconds to paint its first frame,
+  which is what a cold Windows launch does. `public/bootPaint.js` hands the
+  remembered paper to the native window too, because no stylesheet can reach
+  that layer and its default is white.
 
 ## Independent pane looks
 
@@ -639,6 +665,13 @@ texture with colour because a look they own is a whole look.
 - Native smoke and geometry contracts do not visually prove circular macOS
   traffic lights or absence of resize blinking. A real macOS visual check
   remains separate from the desktop/narrow browser evidence.
+- Neither lane MOVES a window: `tools/tauri-smoke.mjs` runs under a window
+  manager that does not honour `start_dragging`, and a browser has no window to
+  move. The `stage0-window-chrome` stage of the browser suite therefore pins the
+  COMMANDS the chrome issues — which press becomes `plugin:window|start_dragging`
+  and which does not, what a double-click becomes, where a frame's listeners are
+  registered, and that the caption's glyph follows the answer the window gives.
+  Whether the window obeys is the desktop's business.
 - The drag overlay is the SHELL's, not a component: `install_import_drop`
   (`src/services/import_drop.rs`) listens for the native drag events and
   returns the hover signal the Shell paints its `data-import-drop` hint from
@@ -646,6 +679,14 @@ texture with colour because a look they own is a whole look.
   runtime split was deleted with its stylesheet block. The frameless
   caption's maximize/restore glyph is live again through the titlebar's own
   `window_state` module (`app_title_bar.rs`), which replaced the orphaned
-  `window_bridge.rs`.
+  `window_bridge.rs`. That module answers a probe and never guesses: an
+  unavailable answer leaves the last state on screen, because writing
+  "not maximized" for "the window did not say" is how a glyph comes to look
+  deliberately wrong. `install()` deliberately does not gate on the surface
+  being present, and does not wait for one: each runtime page loads
+  `tauri-relay.js` in its own `<head>`, before the module script boots the app,
+  so presence is already decided when the bar mounts — a frame with no surface
+  there is a plain browser, and a poll timer waiting for one never clears and
+  keeps the route's owner, which is how a Reader frame stops reporting disposal.
 
 <!-- // only the changed file was rewritten -->

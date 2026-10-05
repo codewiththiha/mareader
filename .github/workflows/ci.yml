@@ -142,6 +142,13 @@ jobs:
       # matching Trunk; the native smoke wired in) without needing a dist.
       - name: Tauri build contract
         run: node tools/check-tauri-contract.mjs
+      # Behavioural, unlike the steps around it: it runs public/tauri-relay.js
+      # against a minimal DOM for each platform's frame shape, because a browser
+      # lane has no Tauri at all and a webview smoke has no window manager to
+      # honour a drag — so this is the only place the frame-side window chrome
+      # (regions, the facade, where a frame's listeners register) can be proven.
+      - name: Frame-side Tauri relay
+        run: node tools/check-tauri-relay.mjs
       - name: Versions in sync
         run: node scripts/check-versions.js
       - name: Supported formats in sync

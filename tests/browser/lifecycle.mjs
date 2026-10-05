@@ -669,13 +669,20 @@ function assertArtifactLoaded(path, label) {
  *  timer starting at DOMContentLoaded. */
 async function armShellBootWatcher() {
   await page.addInitScript(() => {
-    window.__shellBoot = { copy: null, removedAt: null, background: null, titleWidth: null };
+    window.__shellBoot = { copy: null, removedAt: null, background: null, titleWidth: null, mark: null };
     const record = () => {
       const boot = document.getElementById("shell-boot");
       if (boot && window.__shellBoot.copy === null) {
         window.__shellBoot.copy = (boot.textContent ?? "").replace(/\s+/g, " ").trim();
         window.__shellBoot.background = getComputedStyle(boot).backgroundColor;
         window.__shellBoot.titleWidth = boot.querySelector(".shell-boot__title")?.getBoundingClientRect().width ?? null;
+        // The mark is the wait's other half: present, and ANIMATING — a
+        // placeholder that only exists for assistive tech is how a slow launch
+        // read as a hung one, and a mark stuck still reads the same way.
+        const dot = boot.querySelector(".shell-boot__loader > .loader-dot");
+        window.__shellBoot.mark = dot
+          ? { count: boot.querySelectorAll(".shell-boot__loader > .loader-dot").length, animation: getComputedStyle(dot).animationName }
+          : null;
       }
       if (!boot && window.__shellBoot.copy !== null && window.__shellBoot.removedAt === null) {
         window.__shellBoot.removedAt = Math.round(performance.now());
@@ -1124,10 +1131,16 @@ if (!shellBoot?.copy?.includes("Loading MAReader")) {
 if (shellBoot.removedAt === null) {
   throw new Error("[/] the shell never removed the page's boot placeholder");
 }
-// A healthy boot is blank paper: the copy is in the tree (above) but not on
-// screen. It only shows when shellBoot.js marks a failed start.
-if (!(shellBoot.titleWidth !== null && shellBoot.titleWidth <= 1)) {
-  throw new Error(`[/] the boot placeholder's copy is visible on a healthy start (title width ${shellBoot.titleWidth})`);
+// A healthy boot SHOWS its wait: the app's own loading mark, running, and the
+// stage line under it — the webview can hold an unpainted window for seconds on
+// Windows, and the one thing that screen must not be is blank.
+if (!(shellBoot.titleWidth !== null && shellBoot.titleWidth > 1)) {
+  throw new Error(`[/] the boot placeholder's copy is not laid out on a healthy start (title width ${shellBoot.titleWidth})`);
+}
+// loader-hop-* normally, loader-fade under prefers-reduced-motion: the one
+// animation styles/components/animations.css refuses to still.
+if (!(shellBoot.mark?.count === 3 && /^loader-(hop|fade)/.test(shellBoot.mark.animation ?? ""))) {
+  throw new Error(`[/] the boot placeholder does not run the app's own loading mark: ${JSON.stringify(shellBoot.mark)}`);
 }
 // The shelf's cover bakes: neither the Shell nor the library loads a PDF
 // engine, and no reader is booted for them — a cover can only exist if the
@@ -1662,9 +1675,11 @@ summary.bootContract.missingShell = await failureProbe(
   "missing shell artifact",
   () => {
     const boot = document.getElementById("shell-boot");
+    const dot = boot?.querySelector(".shell-boot__loader > .loader-dot");
     return {
       failed: boot?.getAttribute("data-shell-boot") === "timeout",
       text: (boot?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      animation: dot ? getComputedStyle(dot).animationName : null,
       library: document.querySelectorAll(".lib-grid").length,
     };
   },
@@ -1672,12 +1687,242 @@ summary.bootContract.missingShell = await failureProbe(
     if (!state.text.includes("did not start") || state.library !== 0) {
       throw new Error(`[missing shell artifact] the placeholder does not report the failure: ${JSON.stringify(state)}`);
     }
+    // A start that failed is not a start that is slow: the mark stops.
+    if (state.animation !== "none") {
+      throw new Error(`[missing shell artifact] the placeholder is still animating while reporting a failed start: ${JSON.stringify(state.animation)}`);
+    }
     if (!lines.some((line) => line.includes("[mareader] the shell did not start"))) {
       throw new Error(`[missing shell artifact] the console does not carry the failure:\n${lines.join("\n")}`);
     }
   },
 );
 console.log("boot contract: a missing runtime artifact shows a named error state, never a blank window");
+
+// --- Stage 0c: the frameless window's own chrome --------------------------
+// The bar and the caption live in the ROUTE frame, and on Windows a route frame
+// is also injected with its OWN Tauri API — the configuration that used to cost
+// both halves of the chrome: the frame's `event.listen` registrations went to a
+// registry the backend never scripts into (so `tauri://resize` was swallowed and
+// the maximize glyph froze), and the frame's bar had a drag region no listener
+// could act on (so nothing was grabbable). The stub below reproduces that shape
+// — an API in EVERY document — and the UA is pinned so the frameless cluster is
+// mounted whichever machine runs the suite. A real browser cannot move a window
+// or maximize one, so this stage asserts the COMMANDS, which is where the bug
+// lived; `tools/tauri-smoke.mjs` (Linux, no window manager) can prove nothing
+// about either.
+currentStage = "stage0-window-chrome";
+{
+  const chromeContext = await browser.newContext({
+    viewport: { width: 1400, height: 900 },
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  });
+  await chromeContext.addInitScript(() => {
+    // One recorder, in the main frame's realm, because every document's stub
+    // has to feed the same list: on Windows a frame gets its own injected API
+    // and this is the shape that produces.
+    const isTop = window.top === window;
+    const shared = isTop
+      ? (window.__chromeTauri = { calls: [], listeners: [], maximized: false })
+      : window.top.__chromeTauri;
+    if (!shared) return;
+    const windowHandle = {
+      isMaximized: () => Promise.resolve(shared.maximized),
+      minimize: () => { shared.calls.push("window:minimize"); return Promise.resolve(); },
+      toggleMaximize: () => {
+        shared.calls.push("window:toggleMaximize");
+        shared.maximized = !shared.maximized;
+        return Promise.resolve();
+      },
+      close: () => { shared.calls.push("window:close"); return Promise.resolve(); },
+      setBackgroundColor: () => Promise.resolve(),
+    };
+    const api = {
+      metadata: { currentWindow: { label: "main" } },
+      core: {
+        invoke: (cmd) => { shared.calls.push(cmd); return Promise.resolve(undefined); },
+        convertFileSrc: (path) => `https://asset.localhost/${encodeURIComponent(path)}`,
+      },
+      event: {
+        listen: (name, handler) => {
+          shared.listeners.push({ name, where: isTop ? "top" : "frame", handler });
+          return Promise.resolve(() => {});
+        },
+        unlisten: () => Promise.resolve(),
+        emit: () => Promise.resolve(),
+      },
+      window: { getCurrentWindow: () => windowHandle },
+      dialog: {
+        open: () => Promise.resolve(null),
+        save: () => Promise.resolve(null),
+        message: () => Promise.resolve(null),
+        ask: () => Promise.resolve(null),
+        confirm: () => Promise.resolve(null),
+      },
+    };
+    window.__TAURI__ = api;
+    window.__TAURI_INTERNALS__ = {
+      metadata: api.metadata,
+      invoke: api.core.invoke,
+      convertFileSrc: api.core.convertFileSrc,
+      transformCallback: () => 0,
+    };
+  });
+  const chromePage = await chromeContext.newPage();
+  try {
+    await chromePage.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+    // Hover-reveal the bar (the band's own mouseenter is what raises it), so the
+    // presses below land where the user's would.
+    await chromePage.waitForFunction(() => {
+      const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]')?.contentDocument;
+      const row = doc?.getElementById("toolbar-row");
+      if (!row) return false;
+      row.parentElement?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+      return !row.inert && getComputedStyle(row).pointerEvents !== "none";
+    }, null, { timeout: 45_000 });
+
+    const regions = await chromePage.evaluate(() => {
+      const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]')?.contentDocument;
+      if (!doc) throw new Error("[window chrome] the stubbed page mounted no route frame");
+      const row = doc.getElementById("toolbar-row");
+      if (!row) throw new Error("[window chrome] the mounted route carries no #toolbar-row");
+      const band = row.parentElement;
+      const recorder = window.__chromeTauri;
+      const press = (el, detail, type) => {
+        const from = recorder.calls.length;
+        // dispatchEvent returns false once preventDefault() has been called: the
+        // drag script's own claim on the press, and the proof a control was NOT
+        // swallowed by it.
+        const allowed = el.dispatchEvent(new MouseEvent(type ?? "mousedown", {
+          bubbles: true, composed: true, cancelable: true, button: 0,
+          detail: detail ?? 1, clientX: 40, clientY: 20,
+        }));
+        return { calls: recorder.calls.slice(from), defaultPrevented: !allowed };
+      };
+      // Any element the row's `deep` region claims and no control owns.
+      let deep = null;
+      for (const el of row.querySelectorAll("div,span,p")) {
+        if (el.getClientRects().length === 0 || el.clientWidth < 4 || el.clientHeight < 4) continue;
+        if (el.closest("[data-tauri-drag-region='false']")) continue;
+        const region = el.closest("[data-tauri-drag-region]");
+        if (region?.getAttribute("data-tauri-drag-region") !== "deep") continue;
+        deep = el;
+        break;
+      }
+      const button = row.querySelector("button, [role='button'], input, a[href]");
+      const optOut = row.querySelector("[data-tauri-drag-region='false']");
+      // A double-click: Windows and Linux maximize on the press, macOS defers
+      // to the release so a drag away can cancel it (the native title bar's
+      // grace). Either way EXACTLY ONE toggle must come out of the pair, on
+      // whichever host runs the suite.
+      const dbl = deep ? { down: press(deep, 2), up: press(deep, 2, "mouseup") } : null;
+      return {
+        bandAttr: band?.getAttribute("data-tauri-drag-region") ?? null,
+        rowAttr: row.getAttribute("data-tauri-drag-region") ?? null,
+        deepFound: deep !== null,
+        deepPress: deep ? press(deep) : null,
+        bandPress: band ? press(band) : null,
+        dbl: dbl ? { calls: dbl.down.calls.concat(dbl.up.calls) } : null,
+        buttonPress: button ? press(button) : null,
+        optOutPress: optOut ? press(optOut) : null,
+      };
+    });
+    if (regions.rowAttr !== "deep" || regions.bandAttr !== "deep") {
+      throw new Error(`[window chrome] the bar is not a deep drag region (band ${JSON.stringify(regions.bandAttr)}, row ${JSON.stringify(regions.rowAttr)})`);
+    }
+    if (!regions.deepFound) {
+      throw new Error("[window chrome] nothing inside the bar is claimed by its deep region — the region reaches no pixels");
+    }
+    const dragged = "plugin:window|start_dragging";
+    const toggled = "plugin:window|internal_toggle_maximize";
+    for (const [label, record] of [["inside the bar", regions.deepPress], ["the bar's own band", regions.bandPress]]) {
+      if (record?.calls?.[0] !== dragged || record.calls.length !== 1) {
+        throw new Error(`[window chrome] a press on ${label} did not start exactly one window drag: ${JSON.stringify(record)}`);
+      }
+      if (!record.defaultPrevented) {
+        throw new Error(`[window chrome] a press on ${label} was not claimed by the drag region`);
+      }
+    }
+    if (regions.dbl?.calls?.length !== 1 || regions.dbl.calls[0] !== toggled) {
+      throw new Error(`[window chrome] a double-click in the bar did not toggle maximization exactly once: ${JSON.stringify(regions.dbl)}`);
+    }
+    for (const [label, record] of [["a control", regions.buttonPress], ["the search field's pill", regions.optOutPress]]) {
+      if (!record) {
+        throw new Error(`[window chrome] the bar has no ${label} to test the exclusion against`);
+      }
+      if (record.calls.length !== 0 || record.defaultPrevented) {
+        throw new Error(`[window chrome] the bar's drag region swallowed a press on ${label}: ${JSON.stringify(record)}`);
+      }
+    }
+
+    const caption = await chromePage.evaluate(() => {
+      const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]')?.contentDocument;
+      if (!doc) throw new Error("[window chrome] the stubbed page mounted no route frame");
+      const buttons = [...doc.querySelectorAll(".window-controls button")];
+      const maximize = buttons.find((b) => (b.getAttribute("aria-label") ?? b.title) === "Maximize") ?? null;
+      maximize?.click();
+      return { found: maximize !== null, labels: buttons.map((b) => b.getAttribute("aria-label") ?? b.title ?? null) };
+    });
+    if (!caption.found) {
+      throw new Error(`[window chrome] the caption cluster has no Maximize button (${JSON.stringify(caption.labels)})`);
+    }
+    await chromePage.waitForFunction(() => window.__chromeTauri.calls.includes("window:toggleMaximize"), null, { timeout: 10_000 });
+    const emitResize = (width, height) => chromePage.evaluate(([w, h]) => {
+      // The backend delivers an emitted event by scripting the MAIN frame, so a
+      // frame's listener has to be registered there to be reachable at all —
+      // which is what the caption's whole state machine depends on.
+      window.__chromeTauri.listeners
+        .filter((l) => l.name === "tauri://resize")
+        .forEach((l) => l.handler({ event: "tauri://resize", id: 1, payload: { width: w, height: h } }));
+      return null;
+    }, [width, height]);
+    const labelIs = (want) => chromePage.waitForFunction((text) => {
+      const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]')?.contentDocument;
+      if (!doc) return false;
+      return [...doc.querySelectorAll(".window-controls button")]
+        .some((b) => (b.getAttribute("aria-label") ?? b.title) === text);
+    }, want, { timeout: 10_000 });
+    await emitResize(1600, 1000);
+    await labelIs("Restore");
+    const stateAfterMaximize = await chromePage.evaluate(() => ({
+      maximized: window.__chromeTauri.maximized,
+      listeners: window.__chromeTauri.listeners.map(({ name, where }) => ({ name, where })),
+    }));
+    const resizeRegistrations = stateAfterMaximize.listeners.filter((l) => l.name === "tauri://resize");
+    if (resizeRegistrations.length === 0 || resizeRegistrations.some((l) => l.where !== "top")) {
+      throw new Error(`[window chrome] the maximized probe did not register its resize listener on the host frame: ${JSON.stringify(stateAfterMaximize.listeners)}`);
+    }
+    if (stateAfterMaximize.maximized !== true) {
+      throw new Error(`[window chrome] the caption says Restore while the window says otherwise: ${JSON.stringify(stateAfterMaximize)}`);
+    }
+    // And back again, same path, no reload: a probe that answered once and never
+    // again is exactly what the report described.
+    await chromePage.evaluate(() => {
+      const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]').contentDocument;
+      const restore = [...doc.querySelectorAll(".window-controls button")]
+        .find((b) => (b.getAttribute("aria-label") ?? b.title) === "Restore");
+      restore?.click();
+      return null;
+    });
+    await chromePage.waitForFunction(() => window.__chromeTauri.calls.filter((c) => c === "window:toggleMaximize").length === 2, null, { timeout: 10_000 });
+    await emitResize(1400, 900);
+    await labelIs("Maximize");
+    summary.windowChrome = {
+      deepPress: regions.deepPress,
+      bandPress: regions.bandPress,
+      doubleClick: regions.dbl,
+      buttonPress: regions.buttonPress,
+      optOutPress: regions.optOutPress,
+      caption: caption.labels,
+      resizeListeners: resizeRegistrations.length,
+      roundTrip: ["Maximize", "Restore", "Maximize"],
+    };
+    console.log(`window chrome: ${JSON.stringify(summary.windowChrome)}`);
+  } finally {
+    await chromeContext.close();
+  }
+}
+console.log("window chrome: the bar drags the window, the caption follows its state, and a frame's events land where the backend can reach them");
 
 // --- Stage 1: boot + open a real book -------------------------------------
 currentStage = "stage1-open";
@@ -4227,7 +4472,7 @@ currentStage = "boot-paint";
   };
   console.log(`boot-paint: ${JSON.stringify(summary.bootPaint)}`);
 }
-console.log("the boot placeholder is blank paper in the remembered theme");
+console.log("the boot placeholder runs the app's mark on the remembered paper");
 
 currentStage = "pane-runtime-regressions";
 summary.paneRuntimes = await verifyPaneRuntimes({

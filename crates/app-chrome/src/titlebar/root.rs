@@ -235,7 +235,7 @@ pub fn TitleBar(
                 class=format!("absolute top-0 right-0 {BAR} h-12")
                 class=("left-72", sidebar_open)
                 class=("left-0", move || !sidebar_open())
-                data-tauri-drag-region="true"
+                data-tauri-drag-region="deep"
                 on:mouseenter=move |_| enter_band()
                 on:mouseleave=move |_| leave_band()
             >
@@ -248,7 +248,14 @@ pub fn TitleBar(
                     // remount's first tick.
                     id=TOOLBAR_ROW_ID
                     node_ref=row_ref
-                    data-tauri-drag-region="true"
+                    // "deep", not "true": this row is a CONTAINER — every pixel
+                    // of it is a child's — so a region that claims only the
+                    // element carrying it (Tauri's default) is a region nobody
+                    // can press. "deep" claims the subtree, and the drag
+                    // script's own rule still exempts anything clickable, so
+                    // the bar's buttons stay buttons. See public/tauri-relay.js
+                    // for the frame-side copy of that script.
+                    data-tauri-drag-region="deep"
                     prop:inert=move || !visible.get()
                     on:mouseenter=move |_| enter_bar()
                     on:mouseleave=move |_| leave_bar()
@@ -371,3 +378,5 @@ mod tests {
         close(width, 100.0);
     }
 }
+
+// only the changed file was rewritten
