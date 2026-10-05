@@ -220,6 +220,25 @@ fn element(tag: &str) -> Option<web_sys::Element> {
     document().and_then(|d| d.create_element(tag).ok())
 }
 
+/// The app's own loading mark, in the shape `app_ui`'s Loader component uses
+/// (`styles/components/animations.css`), so the page's boot placeholder, this
+/// cover and a pane's wait are one mark instead of three that almost match. The
+/// card itself is the `role=status` region, hence aria-hidden here.
+fn loader_mark(parent: &web_sys::Element) {
+    let Some(mark) = element("div") else {
+        return;
+    };
+    let _ = mark.set_attribute("class", "loader runtime-boot__loader");
+    let _ = mark.set_attribute("aria-hidden", "true");
+    for dot in ["a", "b", "c"] {
+        if let Some(node) = element("span") {
+            let _ = node.set_attribute("class", &format!("loader-dot loader-dot-{dot}"));
+            let _ = mark.append_child(&node);
+        }
+    }
+    let _ = parent.append_child(&mark);
+}
+
 fn text_node(parent: &web_sys::Element, tag: &str, class: &str, text: &str) {
     let Some(node) = element(tag) else {
         return;
@@ -237,6 +256,7 @@ fn loading_card(runtime: RuntimeName) -> Option<web_sys::Element> {
     let _ = card.set_attribute(BOOT_ATTR, LOADING);
     let _ = card.set_attribute("role", "status");
     let _ = card.set_attribute("aria-live", "polite");
+    loader_mark(&card);
     text_node(&card, "p", "runtime-boot__title", "Loading MAReader…");
     let hint = format!("Starting the {} runtime", runtime.label());
     text_node(&card, "p", "runtime-boot__hint", &hint);
@@ -375,3 +395,5 @@ pub fn clear(host: &web_sys::Element) {
     let _ = host.remove_attribute(ACTIVE_ATTR);
     clear_boot(host);
 }
+
+// only the changed file was rewritten

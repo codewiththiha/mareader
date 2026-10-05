@@ -1,9 +1,9 @@
 /* The shell's pre-runtime boot placeholder (#shell-boot in index.html).
    This renders BEFORE the wasm shell exists, so it cannot use utilities the
    Rust side emits — only the variables the stylesheet itself defines, with
-   literal fallbacks. The shell removes the element once its own view is
-   mounted (src/app/mod.rs); the runtime host owns the area from then on, and
-   the runtime's own loading/error states live inside that host. */
+   literal fallbacks. The host's coverage watch takes the element away once a
+   runtime has painted (src/app/boot.rs), and the runtime's own loading and
+   error states live inside that host from then on. */
 .shell-boot {
   position: fixed;
   inset: 0;
@@ -45,21 +45,48 @@ html:not([data-base]) {
   background: var(--boot-paper, transparent);
 }
 
-/* Healthy boot is a blank sheet of paper: the copy stays in the tree for
-   assistive tech (role=status) and for the contract checks, but is visually
-   hidden. shellBoot.js marks a failed start with data-shell-boot, and then
-   the words matter — they come back. */
-.shell-boot:not([data-shell-boot]) > p,
-.runtime-boot[data-mareader-boot="load"] > p {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+/* The wait is shown, not papered over. Both covers carry the app's own
+   loading mark and the words that say which stage is slow — on Windows the
+   webview can hold a blank window for seconds before the page's first paint,
+   and a screen that explains itself beats one that only looks clean. The mark
+   is the Loader component's (styles/components/animations.css, already in this
+   stylesheet), so the boot screen, the runtime cover and a pane's wait are one
+   shape; who stills it is that file's business, and `prefers-reduced-motion`
+   reaches it the same way. */
+.shell-boot__loader,
+.runtime-boot__loader {
+  width: 40px;
+  color: var(--color-muted, #6b7280);
+}
+
+/* Neither cover needs to announce itself to a machine that is not slow. The
+   mark and the words come in 200ms in, so a route handoff that lands inside a
+   frame or two stays still and a wait that is real gets its explanation. `both`
+   is what holds them back until the delay is spent — and it survives both motion
+   nets, which shorten this animation without moving its delay. */
+#shell-boot > *,
+.runtime-boot[data-mareader-boot="load"] > * {
+  animation: boot-reveal 120ms linear 200ms both;
+}
+
+@keyframes boot-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* A start that failed is not a start that is slow. shellBoot.js marks the
+   difference with data-shell-boot; the copy was always readable, so all that
+   changes is that the mark stops hopping underneath it. */
+.shell-boot[data-shell-boot] .loader-dot {
+  animation: none;
+}
+
+.shell-boot[data-shell-boot] .loader {
+  opacity: 0.5;
 }
 
 /* The runtime host's own states (src/app/boot.rs): the shell's loading state
@@ -186,3 +213,5 @@ html:not([data-base]) {
 html:not([data-base]) .runtime-boot {
   background: var(--boot-paper, var(--color-paper, #ffffff));
 }
+
+/* only the changed file was rewritten */

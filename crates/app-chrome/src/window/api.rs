@@ -85,16 +85,15 @@ pub async fn close_window() {
 }
 
 /// Whether the window is maximized — drives the maximize/restore glyph.
-/// `false` whenever the answer cannot be had (browser, missing method), which
-/// is also the correct pre-maximize default.
-pub async fn is_window_maximized() -> bool {
-    let Some(win) = window() else {
-        return false;
-    };
-    invoke_method(&win, "isMaximized")
-        .await
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+/// `None` when no answer could be had (no Tauri surface in this frame yet, a
+/// window object without the method, a rejected call). `false` was the old
+/// answer for all three, and it is a lie the caption cannot recover from: the
+/// chrome's Tauri surface is published by a script, so a frame that mounts
+/// before it lands used to paint "restore" as a fact and then only learn
+/// better on the next resize.
+pub async fn is_window_maximized() -> Option<bool> {
+    let win = window()?;
+    invoke_method(&win, "isMaximized").await?.as_bool()
 }
 
 /// Show/hide the native macOS traffic lights via the backend command. The

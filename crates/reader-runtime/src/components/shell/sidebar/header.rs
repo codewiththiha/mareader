@@ -38,7 +38,7 @@ pub(crate) fn SidebarHeader(reader: ReaderState, sidebar: RwSignal<SidebarMode>)
         // filled panel glyph below marks "sidebar is on".
         <div
             class=format!("flex h-12 shrink-0 items-center gap-1 {lead} pr-2")
-            data-tauri-drag-region="true"
+            data-tauri-drag-region="deep"
         >
             <Tooltip text="Close sidebar">
                 <Button
@@ -78,3 +78,5 @@ pub(crate) fn SidebarHeader(reader: ReaderState, sidebar: RwSignal<SidebarMode>)
         </div>
     }
 }
+
+// only the changed file was rewritten
