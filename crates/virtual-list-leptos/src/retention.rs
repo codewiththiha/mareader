@@ -217,7 +217,13 @@ mod tests {
 
     #[test]
     fn immediate_and_empty_budgets_retain_nothing() {
-        let none = retain_evicted(window(0, 4), window(2, 6), 0.0, 0, &RetentionPolicy::Immediate);
+        let none = retain_evicted(
+            window(0, 4),
+            window(2, 6),
+            0.0,
+            0,
+            &RetentionPolicy::Immediate,
+        );
         assert!(none.is_empty());
         assert!(!RetentionPolicy::Immediate.bridges());
         let unbounded = RetentionPolicy::Grace { ms: 300, max: 0 };
@@ -266,7 +272,10 @@ mod tests {
         let ceiling = f64::from(4 * FRAME_CEILING_MS);
         assert_eq!(retained[0].expires_at, ceiling, "one ceiling per frame");
         assert!(!retained[0].alive(ceiling, 0));
-        assert_eq!(next_deadline_ms(&retained, 0.0), u64::from(4 * FRAME_CEILING_MS));
+        assert_eq!(
+            next_deadline_ms(&retained, 0.0),
+            u64::from(4 * FRAME_CEILING_MS)
+        );
     }
 
     #[test]

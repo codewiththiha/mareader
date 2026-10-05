@@ -20,7 +20,7 @@ use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 use crate::retention::{
-    is_retained, next_deadline_ms, prune_retained, retain_evicted, RetainedItem, RetentionPolicy,
+    RetainedItem, RetentionPolicy, is_retained, next_deadline_ms, prune_retained, retain_evicted,
 };
 use crate::surface::{DomSurface, ScrollSurface};
 
@@ -312,7 +312,11 @@ impl VirtualizerInner {
             .iter()
             .filter(|item| item.alive(now, frame))
             .map(|item| item.index)
-            .filter(|index| window.map(|w| *index < w.first || *index > w.last).unwrap_or(false))
+            .filter(|index| {
+                window
+                    .map(|w| *index < w.first || *index > w.last)
+                    .unwrap_or(false)
+            })
             .collect()
     }
 

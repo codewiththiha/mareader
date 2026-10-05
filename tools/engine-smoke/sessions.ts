@@ -279,7 +279,21 @@ export async function run(): Promise<void> {
   const late = await inFlight;
   await Promise.all([prefetchA, prefetchB]);
   if (!B.hasThumb(5, 0.25)) throw new Error("B's prefetch must survive A's disposal");
-  if (!B.hasThumb(3, 0.25)) throw new Error("A's disposal must not evict B's thumbnails");
+  // A look change re-bakes the cards a rail can SEE and leaves the rest one
+  // generation behind — a prefetched entry nobody ever showed has no canvas to
+  // repaint, so the synchronous probe reads a miss BY DESIGN (its raw is what
+  // makes that cheap). Disposal is what this checks: B must still HOLD the
+  // entry, and asking for the stale card must bring it current from that raw.
+  const heldB = PDFReader.sessionStats(sidB)!.thumbs;
+  if (heldB < 2) {
+    throw new Error("A's disposal must not evict B's thumbnails, B holds " + heldB);
+  }
+  if (B.hasThumb(3, 0.25)) {
+    throw new Error("a look change must not re-bake a cached thumb no rail is showing");
+  }
+  const rebakeB3 = await B.renderThumb("thumb-3", 3, 0.25);
+  if (!rebakeB3.ok) throw new Error("stale thumb must re-bake from raw: " + JSON.stringify(rebakeB3));
+  if (!B.hasThumb(3, 0.25)) throw new Error("asking for a stale thumb must leave it current");
   if (A.hasThumb(5, 0.25)) throw new Error("a disposed session must answer no thumbnails");
   if (late.ok) throw new Error("a render whose session died must not report success");
   const sidC = newSession();
@@ -355,3 +369,5 @@ export async function run(): Promise<void> {
   }
   console.log("two-session teardown ok: realm balanced");
 }
+
+// only the changed file was rewritten
