@@ -3,7 +3,7 @@
 How the reader is built today: the runtimes, who owns what, the invariants the
 tests enforce, and the known limitations. Read it before changing runtime,
 pane, engine or memory behaviour. Why the runtime split took its current
-shape is in `docs/route-split-retrospective.md`.
+shape is in `docs/frame-lifecycle-alternatives.md`.
 
 ## Overview
 
@@ -177,11 +177,20 @@ locally and a claimed hosted marker never falls back to it.
 
 Document realms always boot with a real launch. A documentless development
 host owns only its mirror/chrome until the first open; every later open gets
-a fresh realm. The retired in-realm `Open` wire message and empty warm realm
-promotion paths are gone. The scoped native window-state updater is installed
+a fresh realm. There is no in-realm `Open` wire message and no empty warm
+realm to promote: a document realm exists because a document is open. The
+scoped native window-state updater is installed
 by each live `AppTitleBar`, with coalesced probes and late-registration-safe
-unlisten. See [code-cleanup-audit.md](code-cleanup-audit.md) for the reviewed
-paths, removals and retained supported error/data-migration behavior.
+unlisten.
+
+The rule for pruning a path here: a name that reads as "legacy" or "fallback",
+and a symbol with no cross-file caller, are CANDIDATES, not findings. Cargo
+discovers integration tests that no `src/` file calls, a helper used only
+inside its own module is not an orphan, and a doc comment that still points at
+a removed caller is a clue to read, not proof. The judgement is made after
+reading the module and every test that reaches it — and the `docs/**` passages
+the removal invalidates are rewritten in the same change, so the map never
+describes a tree that no longer exists.
 
 ## Invariants (enforced by tests — never weaken them)
 
@@ -589,16 +598,24 @@ texture with colour because a look they own is a whole look.
 - `workspace.shared_base_mode` (default on; Settings → Workspace, "Light,
   Dark and Dim change every pane"): only colour is per pane. Panes show
   the global base (`PaneThemes::shown`) and a routed base switch writes the
-  global base. Off is the earlier fully per-pane behaviour, which the
-  lifecycle pane-theme stage exercises by turning the setting off.
+  global base. Off lets each pane own its base too, which the lifecycle
+  pane-theme stage exercises by turning the setting off. The row is disabled
+  while the colour mode is off: sharing a base only means something to a pane
+  that owns a colour.
+- Both switches are in the appearance menu (each row appears with the split it
+  serves) and in Settings → Workspace, so the preference is readable where a
+  reader looks for the word — the modal carries the longer explanation.
 - The mode needs the split it serves, so it stands down with ONE pane
   placed: the surviving pane's own colour is promoted to the global theme as
   the last split collapses (`PaneThemes::promote`, read while the split is
   still live), which is why the single pane left and the shared chrome agree
   by construction. The stored toggle (`independent_themes`) stays on, so the
   next split brings the mode back by itself with the survivor's colour
-  untouched and the new pane seeded beside it; turning the toggle off by
-  hand clears every override for good.
+  untouched and the new pane seeded beside it. Turning the toggle off by hand
+  drops this family's overrides for good; a pane's texture half stays in the
+  map while `independent_textures` owns it, because a switch never clears the
+  family it does not route — and switching the colour mode on re-seeds hues,
+  not patterns, for the same reason.
 - Re-raster is per pane: `refreshTheme` (public/pdfEngine.ts) refreshes
   only sessions whose own pipeline generation moved, and a routed slider
   drag marks `data-appearance-scope` on the document so the engine scopes

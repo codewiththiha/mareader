@@ -3134,6 +3134,7 @@ currentStage = "stage13d-pane-texture-boundary";
     const grid = doc.querySelector('[data-appearance-section="page-texture"] .grid-cols-3');
     return {
       windowDial: doc.documentElement.style.getPropertyValue("--texture-opacity").trim() || null,
+      independent: !!doc.querySelector(".reader-bg.independent-themes"),
       section: !!grid,
       chosen: (grid?.querySelector('[aria-pressed="true"]')?.textContent ?? "").replace(/\s+/g, " ").trim(),
       panes,
@@ -3187,6 +3188,21 @@ currentStage = "stage13d-pane-texture-boundary";
       && p.panes[pdfPane].mode !== p.panes[mdPane].mode
       && p.panes[pdfPane].opacity !== null && p.panes[mdPane].opacity !== null);
 
+  // Both per-pane modes at once, in the order a reader would try them. Colour
+  // independence joining a split that already textures per pane must give every
+  // pane a colour of its own WITHOUT shuffling the patterns it is showing: a
+  // switch owns the family it re-seeds, and the map survives the colour mode
+  // folding for the same reason — the texture preference never asked for either.
+  await frameClick('[data-setting="independent-themes"] [role="switch"]', "[texture boundary] independent themes beside the texture mode");
+  const both = await waitTextures("each pane took a colour of its own, patterns unchanged",
+    (p) => p.independent && p.panes[pdfPane].mode === perPane.panes[pdfPane].mode
+      && p.panes[mdPane].mode === perPane.panes[mdPane].mode);
+  await frameClick('[data-setting="independent-themes"] [role="switch"]', "[texture boundary] independent themes off again");
+  const colourOff = await waitTextures("the textures stayed per pane when colour stood down",
+    (p) => !p.independent && p.panes[pdfPane].mode === both.panes[pdfPane].mode
+      && p.panes[mdPane].mode === both.panes[mdPane].mode
+      && p.panes[pdfPane].mode !== p.panes[mdPane].mode);
+
   // A pick, then a dial, with the Markdown pane in front: both move THAT pane
   // and leave its neighbour exactly as the mode left it. Before the fix the
   // class never moved at all — a per-pane edit lands in the pane's own look,
@@ -3203,7 +3219,7 @@ currentStage = "stage13d-pane-texture-boundary";
   await clickTexture(target);
   await waitTextures(`the Markdown pane took ${target} and the PDF did not`,
     (p) => p.chosen === target && p.panes[mdPane].mode === CLASS_OF[target]
-      && p.panes[pdfPane].mode === perPane.panes[pdfPane].mode);
+      && p.panes[pdfPane].mode === colourOff.panes[pdfPane].mode);
   dialTextureOpacity(40);
   const dialed = await waitTextures("the Markdown pane's own opacity moved, its neighbour's did not",
     (p) => p.panes[mdPane].opacity === "0.400"
@@ -3260,7 +3276,7 @@ currentStage = "stage13d-pane-texture-boundary";
   );
   summary.paneTextureBoundary = {
     rest: atRest.panes, perPane: again.panes, promoted: promoted.panes[pdfPane],
-    promotedDial: promoted.windowDial, target,
+    promotedDial: promoted.windowDial, target, withColour: both.panes,
   };
   assertNoNewPanics("independent texture boundary", panicsBeforeTexture);
   const beforeTextureClose = await snap();

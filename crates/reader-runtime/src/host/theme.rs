@@ -31,7 +31,9 @@
 //! stands down ([`PaneThemes::promote`]), so the surviving pane and the
 //! chrome agree by construction, and the re-split that follows seeds its new
 //! pane beside it. Turning the toggle off by hand clears every override and
-//! the panes inherit again.
+//! the panes inherit again — with one exception: the texture halves of a split
+//! that has independent textures on belong to that preference, and a colour
+//! switch does not empty what it does not route ([`PaneThemes::disable`]).
 //!
 //! Colours: turning the toggle on keeps the active pane's look and gives
 //! every other pane a tint hue of its own, and a pane born while it is on
@@ -61,7 +63,11 @@
 //! pane does not own it takes from the window, so no stored half can outlive
 //! the preference that routed it. Turning the texture toggle off hands every
 //! pane the window's texture again and leaves the colour halves the map holds
-//! untouched; a family the mode no longer owns is never shown, only stored.
+//! untouched. The colour switch is held to the same limit: switching it on
+//! gives each pane a hue of its own without reshuffling the patterns it shows,
+//! and switching it off folds the colour halves onto the window's where a
+//! texture mode still owns the map. A family the mode no longer owns is never
+//! shown, only stored — and no mode ever clears the other's.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -214,13 +220,12 @@ impl PaneThemes {
         look
     }
 
-    /// A look of its own for a pane born into a live split: `from`'s, with a
-    /// tint hue unlike every pane's showing now (and the window's, when it is
-    /// tinted) — and, when the reader has the texture mode on, a texture of
-    /// its own too. With the texture mode off the new pane keeps `from`'s
-    /// texture: independent themes inherit the look that is on screen, which
-    /// is what a split beside a textured PDF is for.
-    pub fn distinct_look(self, from: Appearance, global: Appearance) -> Appearance {
+    /// `from` with a tint hue unlike every pane's showing now (and the
+    /// window's, when it is tinted). `shared_base_mode` plays no part here: it
+    /// narrows what a pane's look SHOWS ([`Self::shown`]), not what the pane
+    /// owns, so an override written under a shared base is still the pane's own
+    /// colour for the day the sharing stops.
+    fn distinct_colour(self, from: Appearance, global: Appearance) -> Appearance {
         let mut taken: Vec<u16> = self.overrides.with_value(|m| {
             m.borrow()
                 .values()
@@ -232,12 +237,24 @@ impl PaneThemes {
             taken.push(global.tint_hue);
         }
         let mut look = from;
-        if self.in_effect() {
-            look.tint_hue = distinct_hue(&taken, js_sys::Math::random());
-            if !look.has_tint() {
-                look.tint_strength = PANE_TINT_STRENGTH;
-            }
+        look.tint_hue = distinct_hue(&taken, js_sys::Math::random());
+        if !look.has_tint() {
+            look.tint_strength = PANE_TINT_STRENGTH;
         }
+        look.sanitize();
+        look
+    }
+
+    /// `from` with a TEXTURE unlike every mode showing now, when the reader has
+    /// the texture mode on. With the texture mode off the pane keeps `from`'s
+    /// texture: independent themes inherit the look that is on screen, which is
+    /// what a split beside a textured PDF is for.
+    pub fn distinct_look(self, from: Appearance, global: Appearance) -> Appearance {
+        let mut look = if self.in_effect() {
+            self.distinct_colour(from, global)
+        } else {
+            from
+        };
         if self.textures_active.get_untracked() {
             let showing: Vec<TextureMode> = self
                 .overrides
@@ -348,21 +365,22 @@ impl PaneThemes {
         self.bump();
     }
 
-    /// Turn the toggle on: the `active` pane keeps the global look and
-    /// every other placed pane gets a colour of its own, each unlike the
-    /// rest. The global theme itself is left untouched (remembered).
+    /// Turn the toggle on: the `active` pane keeps the look it shows and every
+    /// other placed pane gets a colour of its own, each unlike the rest. The
+    /// global theme itself is left untouched (remembered).
     ///
-    /// A lone pane has no split to show a colour in: the preference arms
-    /// here and the mode shows itself on the next split, which seeds the
-    /// pane born beside it. Seeding a lone pane now would only hand it a
-    /// snapshot of a window theme the reader may still edit before that
-    /// split arrives.
+    /// A lone pane has no split to show a colour in: the preference arms here
+    /// and the mode shows itself on the next split, which seeds the pane born
+    /// beside it. Seeding a lone pane now would only hand it a snapshot of a
+    /// window theme the reader may still edit before that split arrives.
     ///
-    /// The seed starts from a clean map, texture half included: a reader who
-    /// already had a texture per pane and turns colour independence on gets a
-    /// whole look per pane, randomised again — the one answer that cannot
-    /// leave a pane holding a colour it never picked under a mode it just
-    /// switched on.
+    /// Each pane is seeded from what it SHOWS, not from the window: the colour
+    /// family is this switch's to decide, and a reader who already had a
+    /// texture per pane keeps those patterns (the family the texture preference
+    /// owns is not shuffled by a colour switch, and a pane that owns nothing
+    /// shows the window anyway). The map is trimmed to the placed panes rather
+    /// than emptied, which is the same guard it always was — a closed pane
+    /// forgets its own look — written so it cannot reach past this family.
     pub fn enable(
         self,
         placed: impl Iterator<Item = PaneId>,
@@ -371,16 +389,19 @@ impl PaneThemes {
     ) {
         let placed: Vec<PaneId> = placed.collect();
         self.independent.set(true);
-        self.overrides.with_value(|m| m.borrow_mut().clear());
+        self.overrides.with_value(|m| {
+            m.borrow_mut().retain(|id, _| placed.contains(id));
+        });
         if placed.len() >= 2 {
             let first = active
                 .filter(|id| placed.contains(id))
                 .or_else(|| placed.first().copied());
             for id in placed {
+                let from = self.active_look(Some(id), global);
                 let look = if Some(id) == first {
-                    global
+                    from
                 } else {
-                    self.distinct_look(global, global)
+                    self.distinct_colour(from, global)
                 };
                 self.overrides.with_value(|m| {
                     m.borrow_mut().insert(id, look);
@@ -448,13 +469,31 @@ impl PaneThemes {
         self.bump();
     }
 
-    /// Turn the toggle off by hand: every override goes with it and the
+    /// Turn the toggle off by hand: the colour overrides go with it and the
     /// panes inherit the window theme again. What the panes painted as their
     /// own is removed by the pane paint on the next boundary push
     /// (`look: None`). A stand-down is NOT this: it keeps the map, so the
     /// next split brings the colours back.
-    fn disable(self) {
-        self.overrides.with_value(|m| m.borrow_mut().clear());
+    ///
+    /// The one case the map survives is a split that still has its own
+    /// texture: `independent_textures` owns those halves, so emptying the map
+    /// here would erase patterns the colour switch never claimed. Folding the
+    /// colour halves onto the window instead leaves the map holding exactly
+    /// what the reader has left selected — and nothing stale to resurface if
+    /// this mode comes back on later.
+    fn disable(self, global: Appearance) {
+        self.overrides.with_value(|m| {
+            let mut m = m.borrow_mut();
+            if self.textures_active.get_untracked() {
+                for look in m.values_mut() {
+                    look.base = global.base;
+                    look.tint_hue = global.tint_hue;
+                    look.tint_strength = global.tint_strength;
+                }
+            } else {
+                m.clear();
+            }
+        });
         self.independent.set(false);
         self.bump();
     }
@@ -553,11 +592,11 @@ pub(crate) fn theme_handle(
         // The toggle's rest state is a workspace setting; the per-pane
         // colours it carries are temporary and never persisted.
         settings.update(|s| s.workspace.independent_themes = on);
+        let global = settings.get_untracked().appearance;
         if on {
-            let global = settings.get_untracked().appearance;
             themes.enable(manager.placed().into_iter(), manager.active(), global);
         } else {
-            themes.disable();
+            themes.disable(global);
         }
     });
 
