@@ -1,0 +1,29 @@
+name: "Set up Rust"
+description: "One lane's toolchain + target cache. The cache key is the lane's own; two lanes sharing one key race to write it."
+
+inputs:
+  cache-key:
+    description: "Shared key for this lane's target cache. Empty = no cache (format has nothing to cache)."
+    required: false
+    default: ""
+  components:
+    description: "Extra rustup components (clippy, rustfmt)."
+    required: false
+    default: ""
+  targets:
+    description: "Extra rustup targets (wasm32-unknown-unknown)."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
+
+    - uses: Swatinem/rust-cache@v2
+      if: inputs.cache-key != ''
+      with:
+        shared-key: ${{ inputs.cache-key }}

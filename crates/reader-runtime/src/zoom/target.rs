@@ -1,0 +1,438 @@
+//! Target resolution: turning a `ZoomCommand` plus the current context into
+//! one concrete scale. Manual steps, fit modes and window constraints all
+//! resolve here so they cannot drift apart.
+//!
+//! Resolution also records the intent: a manual zoom writes `desired` and
+//! clears the fit mode (a fit ceiling must never fight a gesture), a fit
+//! refresh writes `desired` to the resolved fit, and a window constraint
+//! deliberately leaves `desired` untouched — the reader's chosen zoom is the
+//! ceiling, so a manual zoom goes as far as the clamp allows and is never
+//! shrunk back to fit width. A container follow answers with whichever of
+//! those two owns the scale right now, so the same numbers govern a slide, a
+//! drag and a pause after one.
+
+use leptos::prelude::*;
+
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::{FitMode, clamp_scale, fit_scale, nearest_zoom};
+
+use crate::state::{ReaderState, ZoomCommand};
+
+use super::config::{SETTLED_EPSILON, ZoomProfile, zoom_profile};
+
+/// Resolve a command to the scale it wants, or `None` when it must stand down
+/// (nothing to re-resolve, an unmeasured container, an unmeasured document).
+///
+/// `in_flight` is the target of a transition already running; manual steps
+/// chain from it so a fast `+ +` advances two presets rather than resolving
+/// the same one twice. Every read here is untracked — the caller's effect
+/// subscribes to the command signal and nothing else.
+pub(crate) fn resolve(
+    state: &ReaderState,
+    cmd: ZoomCommand,
+    in_flight: Option<f64>,
+) -> Option<f64> {
+    let zoom = state.viewer.zoom;
+    let profile = zoom_profile();
+    match cmd {
+        ZoomCommand::Step(dir) => {
+            // Step from the in-flight target while a tween runs, else from the
+            // settled scale. Mid-animation values are deliberately avoided:
+            // nearest_zoom would round to the preset the tween is already
+            // heading towards and swallow the press.
+            let base = in_flight.unwrap_or_else(|| zoom.visual_scale());
+            let target = profile.clamp(nearest_zoom(base, dir));
+            // At the end of the ladder `nearest_zoom` answers with the same
+            // preset, so there is nowhere to go. Bail BEFORE recording intent:
+            // writing `desired` and clearing the fit mode here would drop the
+            // reader out of Fit Width just because they leaned on a zoom
+            // button with nothing left to do. The coordinator bails on an
+            // unchanged target too; this keeps the state untouched.
+            if (target - base).abs() < SETTLED_EPSILON {
+                return None;
+            }
+            zoom.desired.set(target);
+            state.viewer.fit.set(FitMode::None);
+            Some(target)
+        }
+        ZoomCommand::Refit => fit_owned_target(state, &profile),
+        ZoomCommand::Constrain => ceiling_target(state, &profile),
+        // The space around the page moved. Both watchers' cases are the same
+        // question — what does the current width deserve? — and exactly one
+        // owns the answer: an active fit mode, else the reader's chosen zoom.
+        // Dispatching here instead of letting the watcher choose keeps the two
+        // from disagreeing about who is in charge, which is how a slide used
+        // to end at a scale neither had asked for.
+        ZoomCommand::Follow => {
+            fit_owned_target(state, &profile).or_else(|| ceiling_target(state, &profile))
+        }
+    }
+}
+
+/// The scale the active fit mode wants, recorded as the reader's own choice.
+/// `None` with no fit mode: a refit of a hand-picked zoom would resolve to the
+/// current scale AND clobber `desired`, resurrecting an old number as the
+/// ceiling. Callers post it only while a fit is active.
+fn fit_owned_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
+    let fit = state.viewer.fit.get_untracked();
+    if fit == FitMode::None {
+        return None;
+    }
+    let dims = FitDims::of(state)?;
+    let target = profile.clamp(dims.fit(fit, state.viewer.zoom.visual_scale()));
+    // A fit mode IS a deliberate choice, so it owns the ceiling too. Without
+    // this, leaving the fit mode would resurrect a `desired` from some earlier
+    // gesture and the page would jump to it.
+    state.viewer.zoom.desired.set(target);
+    Some(target)
+}
+
+/// The ceiling a hand-picked zoom resolves to: the reader's own `desired`,
+/// clamped. A manual zoom is authoritative rather than capped at fit width, so
+/// a zoomed-in page stays at that scale and overflows with a scroll affordance.
+/// `desired` is deliberately left alone, which is what makes it stable: the
+/// same number governs a slide, a drag and the pause after one. Computing from
+/// `desired` — never from the live scale times a container ratio — is also why
+/// a slide does not accumulate rounding and land somewhere the reader never
+/// asked for.
+fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
+    if state.viewer.fit.get_untracked() != FitMode::None {
+        return None; // a fit mode owns the scale while it is active
+    }
+    // A hand-picked zoom is authoritative up to the profile's clamp; the old
+    // shrink-to-fit ceiling (`min(desired, fit_width)`) quietly locked manual
+    // zoom at fit width, so a reader could never look at a page up close. Free
+    // zoom lets a too-wide page overflow and scroll — a deliberate affordance —
+    // instead of snapping back. The reader's own `desired` is the ceiling, so
+    // a follow resolves to exactly what they chose rather than a size the app
+    // picked.
+    Some(profile.clamp(state.viewer.zoom.desired.get_untracked()))
+}
+
+/// The render-completion hook a PDF page host reports its true scale-1 size
+/// through. The open seeds every page with page 1's box, so until a page has
+/// rendered the fit maths cannot know it is a different size. When the page
+/// the reader is ON turns out to differ while a fit mode is active, the fit is
+/// re-resolved against it — the resume page of a fresh open, a page flip in
+/// the paged modes, a jump onto a landscape plate. A page that only rendered
+/// as look-ahead is recorded and fitted when the reader asks.
+#[cfg(feature = "pdf")]
+pub(crate) fn page_rendered(state: ReaderState) -> Callback<(u32, f64, f64)> {
+    Callback::new(move |(page, width, height): (u32, f64, f64)| {
+        if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+            return;
+        }
+        let changed = state
+            .document
+            .content
+            .metrics
+            .record_rendered(page, width, height);
+        if state.viewer.page.try_get_untracked() != Some(page) {
+            return;
+        }
+        // An unchanged page box is still a successful current canvas blit.
+        // Geometry change owns the refit, never the positive paint verdict.
+        let _ = state.viewer.first_paint.try_set(true);
+        if !changed {
+            return;
+        }
+        let fitting = state
+            .viewer
+            .fit
+            .try_get_untracked()
+            .is_some_and(|fit| fit != FitMode::None);
+        if fitting && state.viewer.try_zooming_now() == Some(false) {
+            state.viewer.zoom.post(ZoomCommand::Refit, false);
+        }
+    })
+}
+
+/// The EARLY half of [`page_rendered`]: the page host's size probe, reported
+/// before the page's first raster. Answers whether the fit is now moving.
+///
+/// Why a probe exists at all: the engine's open seeds every page with page 1's
+/// box, so until a page reports otherwise the fit maths measures it by its
+/// neighbour. `page_rendered` only learns the truth from a completed raster —
+/// which means a mixed-size book's plate is RASTERISED at the wrong fit, sits
+/// on screen at that size for the whole raster, and only then shrinks. The
+/// host asks the engine for the page's box first (one worker round trip, no
+/// pixels); this records it and, when the reader is on that page under an
+/// active fit, posts the refit BEFORE the raster.
+///
+/// `true` means a refit was posted: the caller must not rasterise at the scale
+/// on screen, because the commit is about to move it — the page paints once,
+/// at the size it belongs at, instead of painting wrong and then shrinking.
+///
+/// The comparison is against `committed` (the scale a raster actually uses),
+/// not the live display scale: the deferral is only safe because a `true`
+/// answer PROVES the commit will write a different committed scale, which is
+/// what re-runs the host's render effect. A caller that held its raster for a
+/// transaction that never moved anything would stay blank forever, so a page
+/// that is already fitted — or one with no fit mode to resolve — returns
+/// `false` and paints straight away.
+#[cfg(feature = "pdf")]
+pub(crate) fn page_sized(state: ReaderState, page: u32, width: f64, height: f64) -> bool {
+    if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+        return false;
+    }
+    // Records the page's true box for the fit maths. `changed` is false for a
+    // page already known (a remount, a re-probe) — and for a look-ahead page
+    // whose size the reader has seen before.
+    if !state
+        .document
+        .content
+        .metrics
+        .record_rendered(page, width, height)
+    {
+        return false;
+    }
+    // Every read below is a `try_` one, and the ones that follow are not: this
+    // runs from a probe that can outlive its reader state — a rapid reopen
+    // disposes the pane while a page's size is still in flight — and the fit
+    // maths reads its signals plainly. Reaching it at all is what makes those
+    // reads safe, and nothing between here and them awaits.
+    let Some(fit) = state.viewer.fit.try_get_untracked() else {
+        return false;
+    };
+    // A page that is only look-ahead is recorded, not fitted: the reader is
+    // not looking at it, and a scroll that reaches it re-asks through the fit
+    // watcher (which now resolves against the true box).
+    if state.viewer.page.try_get_untracked() != Some(page) {
+        return false;
+    }
+    if fit == FitMode::None || state.viewer.try_zooming_now() != Some(false) {
+        return false;
+    }
+    let Some(committed) = state.viewer.zoom.committed.try_get_untracked() else {
+        return false;
+    };
+    let profile = zoom_profile();
+    let Some(target) = fit_owned_target(&state, &profile) else {
+        return false;
+    };
+    if (target - committed).abs() <= SETTLED_EPSILON {
+        return false;
+    }
+    state.viewer.zoom.post(ZoomCommand::Refit, false);
+    true
+}
+
+/// [`page_sized`] as the page host's callback.
+#[cfg(feature = "pdf")]
+pub(crate) fn page_sized_cb(state: ReaderState) -> Callback<(u32, f64, f64), bool> {
+    Callback::new(move |(page, width, height)| page_sized(state, page, width, height))
+}
+
+/// The plain-geometry inputs of a fit computation, separated from the
+/// reactive state so the arithmetic is unit-testable on the host.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FitDims {
+    /// Usable container width (margins removed), `>= 1`.
+    pub cw_eff: f64,
+    /// Usable container height (`>= 1`); the full window height in every
+    /// mode, the title bar being a hover-revealed overlay rather than a band.
+    pub ch_eff: f64,
+    pub pw_eff: f64,
+    pub ph_eff: f64,
+    /// Whether the strip runs horizontally. In that mode Fit Page uses the
+    /// viewport height, while Fit Width still means the width of one page.
+    pub horizontal: bool,
+}
+
+impl FitDims {
+    /// Collect the fit inputs from the reader state. `None` while the
+    /// container or the document is still unmeasured — fitting to a
+    /// placeholder would slam the page to the minimum scale.
+    pub(crate) fn of(state: &ReaderState) -> Option<Self> {
+        let page = state.viewer.page.get_untracked().max(1);
+        // The page under the reader's eyes, not page 1: a landscape plate in
+        // an otherwise-portrait book must fit on its own terms. The open seeds
+        // every page with page 1's box, so the size the engine actually
+        // rendered this page at wins once it is known.
+        let (pw, ph) = state.document.content.metrics.fit_size(page)?;
+        // The column-width dial is a reflowable-only setting: a reflowable
+        // column already lives inside `PageGeometry`, and a PDF page IS the
+        // column. Scaling the fit budget here made "fit width" land at
+        // column% of the true fit and left horizontal pan space behind.
+        Self::from_geometry(
+            state.viewer.mode.get_untracked(),
+            state.viewer.container_size.get_untracked(),
+            state.viewer.page_margin.get_untracked(),
+            (pw, ph),
+        )
+    }
+
+    /// The fit geometry for a page of `(pw, ph)` in a `(cw, ch)` container —
+    /// the ONE definition of what a fit measures against, shared by the live
+    /// fit and the open flow's seed scale so the first frame and the first
+    /// refit agree. The reader margin comes off the width, every mode keeps
+    /// the full height (the title bar is an overlay, not a band), and a spread
+    /// doubles the page width. `None` when either container dimension is
+    /// unmeasured.
+    pub(crate) fn from_geometry(
+        mode: ViewMode,
+        (cw, ch): (f64, f64),
+        margin: f64,
+        (pw, ph): (f64, f64),
+    ) -> Option<Self> {
+        if !(cw > 1.0 && ch > 1.0) {
+            return None;
+        }
+        let cw_eff = (cw - 2.0 * margin).max(1.0);
+        let ch_eff = ch.max(1.0);
+        // Only the spread renders a true two-page spread; the horizontal
+        // strip lays out one page per virtual item.
+        let pw_eff = if mode == ViewMode::Spread {
+            pw * 2.0
+        } else {
+            pw
+        };
+        Some(Self {
+            cw_eff,
+            ch_eff,
+            pw_eff,
+            ph_eff: ph,
+            horizontal: mode == ViewMode::ScrollHorizontal,
+        })
+    }
+
+    /// The scale a fit mode wants. The horizontal strip has one page per
+    /// virtual item: Fit Width uses that page's width, while Fit Page keeps
+    /// the height-fit behaviour that shows the full page. `None` is included
+    /// for completeness even though callers only resolve an active fit.
+    pub fn fit(&self, fit: FitMode, current: f64) -> f64 {
+        if self.horizontal && fit == FitMode::Page {
+            return clamp_scale(self.ch_eff / self.ph_eff.max(1.0));
+        }
+        fit_scale(
+            fit,
+            self.cw_eff,
+            self.ch_eff,
+            self.pw_eff,
+            self.ph_eff,
+            current,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dims(mode: ViewMode, cw: f64, ch: f64, pw: f64, ph: f64) -> FitDims {
+        FitDims::from_geometry(mode, (cw, ch), 0.0, (pw, ph)).expect("measured container")
+    }
+
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn unchanged_geometry_still_releases_current_page_paint_in_every_mode() {
+        let owner = Owner::new();
+        owner.with(|| {
+            for mode in [
+                ViewMode::Single,
+                ViewMode::Spread,
+                ViewMode::ScrollVertical,
+                ViewMode::ScrollHorizontal,
+            ] {
+                let pane = crate::pane::handle::PaneHandle::new(
+                    crate::host::model::PaneId::for_tests(1),
+                    crate::runtime::ReaderRuntime::new(),
+                );
+                let state = ReaderState::new(pane);
+                let size = reader_core::document::PageSize {
+                    width: 612.0,
+                    height: 792.0,
+                };
+                state
+                    .document
+                    .content
+                    .metrics
+                    .publish_uniform(2, &size, 792.0);
+                state.viewer.mode.set(mode);
+                let paint = page_rendered(state);
+                paint.run((1, 612.0, 792.0));
+                assert!(state.viewer.first_paint.get_untracked(), "{mode:?}");
+                state.viewer.first_paint.set(false);
+                paint.run((2, 792.0, 612.0));
+                assert!(
+                    !state.viewer.first_paint.get_untracked(),
+                    "look-ahead {mode:?}"
+                );
+                paint.run((1, 0.0, 792.0));
+                assert!(!state.viewer.first_paint.get_untracked(), "empty {mode:?}");
+            }
+        });
+    }
+
+    #[test]
+    fn horizontal_fit_width_uses_one_page_while_fit_page_uses_height() {
+        let d = dims(ViewMode::ScrollHorizontal, 1200.0, 600.0, 612.0, 792.0);
+        let by_width = d.fit(FitMode::Width, 1.0);
+        let by_page = d.fit(FitMode::Page, 1.0);
+        assert!((by_width - 1200.0 / 612.0).abs() < 1e-9);
+        assert!((by_page - 600.0 / 792.0).abs() < 1e-9);
+        assert!(by_width > by_page);
+    }
+
+    #[test]
+    fn a_spread_fits_two_pages_across() {
+        let single = dims(ViewMode::Single, 1024.0, 768.0, 612.0, 792.0);
+        let spread = dims(ViewMode::Spread, 1024.0, 768.0, 612.0, 792.0);
+        assert!(
+            (spread.fit(FitMode::Width, 1.0) - single.fit(FitMode::Width, 1.0) / 2.0).abs() < 1e-9
+        );
+    }
+
+    #[test]
+    fn a_vertical_fit_is_edge_to_edge_on_both_axes() {
+        // Nothing is reserved for the overlay title bar: Fit Width spans the
+        // full width and Fit Page the full height.
+        let vertical = dims(ViewMode::ScrollVertical, 1000.0, 800.0, 500.0, 700.0);
+        let by_w = 1000.0 / 500.0;
+        let by_h = 800.0 / 700.0;
+        assert!((vertical.fit(FitMode::Width, 1.0) - by_w).abs() < 1e-9);
+        assert!((vertical.fit(FitMode::Page, 1.0) - by_w.min(by_h)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_reader_margin_comes_off_the_width_only() {
+        let d = FitDims::from_geometry(
+            ViewMode::ScrollVertical,
+            (1000.0, 800.0),
+            20.0,
+            (500.0, 700.0),
+        )
+        .unwrap();
+        assert!((d.fit(FitMode::Width, 1.0) - 960.0 / 500.0).abs() < 1e-9);
+        assert!(
+            FitDims::from_geometry(ViewMode::Single, (0.0, 800.0), 0.0, (500.0, 700.0)).is_none()
+        );
+    }
+
+    #[test]
+    fn a_pdf_fit_width_spans_the_container_with_no_leftover_pan_space() {
+        // The contract the column dial used to break: a width fit spans the
+        // usable container exactly, so the page row equals the scroller and
+        // no horizontal pan space is left behind.
+        let d = dims(ViewMode::ScrollVertical, 1000.0, 800.0, 500.0, 700.0);
+        let scale = d.fit(FitMode::Width, 1.0);
+        assert!((scale - 2.0).abs() < 1e-9);
+        assert!(
+            (500.0 * scale - 1000.0).abs() < 1e-9,
+            "page must exactly fill the row"
+        );
+    }
+
+    #[test]
+    fn a_measured_narrow_container_keeps_the_effective_width_fallback() {
+        let d = FitDims::from_geometry(
+            ViewMode::ScrollVertical,
+            (30.0, 800.0),
+            20.0,
+            (500.0, 700.0),
+        )
+        .expect("the raw container is measured");
+        assert_eq!(d.cw_eff, 1.0);
+        assert_eq!(d.ch_eff, 800.0);
+    }
+}

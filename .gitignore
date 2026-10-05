@@ -1,4 +1,6 @@
 /dist/
+/dist-pdf/
+/dist-reflow/
 /target/
 
 # macOS
@@ -18,7 +20,9 @@
 # for the same reason.
 /public/pdfEngine.js
 /public/readerEngine.js
+/public/rasterLane.js
 /public/bake.worker.js
+/public/coverBake.js
 /public/engine/*.js
 /scripts/
 
@@ -28,9 +32,17 @@
 # Local-only tooling
 /.env
 
+# Dev orchestrator's freshness manifest (decides skip-vs-rebuild at startup)
+/.dev-artifacts/
+
 # Local web build output (wasm-bindgen webgen + assembled static root)
 /webgen/
 /webroot/
 
 # Local e2e entry page (served via webroot; intentionally not versioned)
 /e2e-index.html
+
+# Generated Reader-host bridge / route artifact distributions.
+/public/readerHost.js
+/dist-library/
+/dist-reader/

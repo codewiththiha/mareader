@@ -46,10 +46,20 @@ body.noise-animated .noise-overlay::after {
 }
 /* will-change unconditionally: nothing pauses the crawl from Rust, and a
    rule gated on an "idle" class the app does not own would be a second,
-   unreachable state machine. Pausing grain is the master switch's job
-   (animations-off). */
+   unreachable state machine. */
 body.noise-animated .noise-overlay::after {
   will-change: transform;
+}
+/* Exempt from Settings → Animations off (components/animations.css), like
+   the loader: that master collapses every animation to one 0.01ms
+   iteration, which froze the crawl on its first keyframe — "Animated" grain
+   that never moved. The grain has its own explicit choice (Static is grain
+   without motion), so the specific setting wins over the general one.
+   Specificity beats the master's `html.animations-off *::after`; the OS
+   reduced-motion net below still stops it. */
+html.animations-off body.noise-animated .noise-overlay::after {
+  animation-duration: 0.66s !important;
+  animation-iteration-count: infinite !important;
 }
 @keyframes noise-crawl {
   0%    { transform: translate3d(0, 0, 0); }
@@ -61,6 +71,15 @@ body.noise-animated .noise-overlay::after {
   75%   { transform: translate3d(5px, -6px, 0); }
   87.5% { transform: translate3d(-8px, -13px, 0); }
   100%  { transform: translate3d(0, 0, 0); }
+}
+/* A runtime document whose frame is off screen (warm behind the active
+   runtime, or rearmed after a recycle — `app_ui::frame_theme::
+   mark_frame_hidden`): the Shell hides the frame with `visibility: hidden`,
+   which stops its paint but not its animations, so the crawl would keep
+   ticking a compositor layer nobody can see. Paused, not removed: the
+   reveal clears the class and the crawl resumes where it was. */
+html.frame-hidden body.noise-animated .noise-overlay::after {
+  animation-play-state: paused;
 }
 /* Constant peripheral motion is exactly what triggers vestibular
    discomfort: the grain stays, it just stops moving. */

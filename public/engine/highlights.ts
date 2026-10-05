@@ -7,7 +7,7 @@
 // results list recognise each other.
 
 import type { PageState } from "./types";
-import { session } from "./state";
+import type { EngineSession } from "./state";
 
 /** Boxes one page will paint. The reflowable layer keeps the same number for a
  *  row (`MAX_BOXES_PER_ROW` in src/components/formats/reflow/highlight.rs), so
@@ -50,8 +50,8 @@ function occurrences(
 /** The ordinal this page emphasises, or -1 for none. One home for the rule,
  *  which both halves of the highlight lifecycle apply: `applyHighlights` sets
  *  it while painting, `setActiveMatch` re-marks boxes already on the page. */
-function activeOrdinal(page: number): number {
-  const active = session.activeMatch;
+function activeOrdinal(s: EngineSession, page: number): number {
+  const active = s.activeMatch;
   return active && active.page === page ? active.index : -1;
 }
 
@@ -61,20 +61,20 @@ export function clearHighlightBoxes(st: PageState): void {
 }
 
 /** Re-mark which painted box is the active match, without repainting any. */
-export function markActiveHighlight(st: PageState): void {
+export function markActiveHighlight(s: EngineSession, st: PageState): void {
   if (!st.textLayerEl) return;
-  const ord = activeOrdinal(st.page);
+  const ord = activeOrdinal(s, st.page);
   const wanted = ord >= 0 ? String(ord) : null;
   for (const d of st.textLayerEl.querySelectorAll(".highlight") as NodeListOf<HTMLElement>) {
     d.classList.toggle("is-active", wanted !== null && d.dataset.match === wanted);
   }
 }
 
-export function applyHighlights(st: PageState): void {
+export function applyHighlights(s: EngineSession, st: PageState): void {
   const { host, textLayerEl } = st;
   if (!host) return;
   clearHighlightBoxes(st);
-  const query = session.searchQuery;
+  const query = s.searchQuery;
   if (!query || !textLayerEl) return;
   const origin = host.getBoundingClientRect();
   const boxes: { r: DOMRect; ord: number }[] = [];
@@ -114,7 +114,7 @@ export function applyHighlights(st: PageState): void {
     }
     if (boxes.length >= MAX_HIGHLIGHTS_PER_PAGE) break;
   }
-  const activeOrd = activeOrdinal(st.page);
+  const activeOrd = activeOrdinal(s, st.page);
   for (const { r, ord: n } of boxes) {
     const d = document.createElement("div");
     d.className = n === activeOrd ? "highlight is-active" : "highlight";
@@ -127,8 +127,8 @@ export function applyHighlights(st: PageState): void {
   }
 }
 
-export function refreshHighlights(): void {
-  for (const st of session.stateByCanvasId.values()) {
-    if (st.textLayerEl) applyHighlights(st);
+export function refreshHighlights(s: EngineSession): void {
+  for (const st of s.stateByCanvasId.values()) {
+    if (st.textLayerEl) applyHighlights(s, st);
   }
 }

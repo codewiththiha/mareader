@@ -221,7 +221,6 @@ impl Strip {
     pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
         StripBackend::set_size(self, index, new_size)
     }
-
 }
 
 impl super::StripBackend for Strip {
@@ -761,6 +760,4 @@ mod tests {
         assert_eq!(s.set_size(15, 200.0), 100.0);
         assert_eq!(s.offset(10), before);
     }
-
 }
-

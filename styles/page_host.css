@@ -49,13 +49,16 @@
   z-index: 0;
 }
 
-/* BLEND PAPER FLATNESS — the page-host half of the flat-paper contract in
-   components/shell.css: the host carries the SAME computed colour as the
-   backdrop base (--pdf-paper-baked), so a page edge on a fractional device
-   pixel mixes F with F and the 1px rim of un-blended app paper vanishes.
-   Non-blend modes keep --color-paper: neither selector matches them. */
-.reader-bg.blend .pdf-page {
+/* BLEND PAPER FLATNESS — ordinary shared mode carries the MRU publisher's
+   baked paper. Independent mode carries this PDF session's local paper on
+   its pane root. Either way the page host and its corresponding backdrop
+   have identical flat F at fractional edges; non-blend pages keep the local
+   theme paper. */
+.reader-bg.blend:not(.independent-themes) .pdf-page {
   background-color: var(--pdf-paper-baked, var(--color-paper));
+}
+.reader-bg.blend.independent-themes [data-pane-root][data-format="pdf"] .pdf-page {
+  background-color: var(--pane-pdf-paper-baked, var(--color-paper));
 }
 /* A tint scrub exposes raw rasters that live-blend against their base, and
    that blend is only correct over the UN-themed base. The host itself keeps
@@ -67,7 +70,7 @@
    against the gutter. The gutter bleed rests for the length of the drag,
    and the opacity rises to 1 because the layer is a base here, not a
    visible texture. */
-html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
+:is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .reader-bg.blend .pdf-page::before {
   inset: 1px;
   background-color: var(--color-paper);
   opacity: 1;
@@ -91,7 +94,8 @@ html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
    only the tag enables the live filter/blend: a raw canvas is themed and a
    baked one is not, regardless of async thumbnail/page work. The html class
    is cosmetic: it only puts the texture behind an actively blending raw
-   page. */
+   page. A scrub scoped to one pane (independent themes) carries the class
+   on that pane's root instead, so no other pane's pages change. */
 .pdf-page canvas.canvas-raw,
 .thumb-canvas.thumb-raw {
   filter: var(--canvas-filter, none);
@@ -103,20 +107,22 @@ html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
    matching how the blend backdrop composites its texture
    (components/shell.css). soft-light in dim is not identity, so the two
    orders would read as different stroke strengths. */
-html.appearance-scrubbing .pdf-page::before {
+:is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .pdf-page::before {
   z-index: 0;
 }
 
-/* Snapshot overlay stacked while a scale re-render is in flight
-   (page_canvas.rs); `.pdf-page canvas` supplies position/size/filter/blend,
-   this keeps it click-through. */
+/* Snapshot cover stacked by the appearance scrub while it rebuilds a page's
+   raws (public/engine/theme/scrub.ts) — its only producer: a zoom keeps the
+   old bitmap on screen by rendering into a scratch and swapping in one blit,
+   so it needs no cover. `.pdf-page canvas` supplies position/size/filter/
+   blend; this keeps it click-through. */
 .pdf-page canvas.page-snapshot {
   pointer-events: none;
 }
 
 /* LIVE-MODE SNAPSHOT THEMING — the snapshot is a raw drawImage copy of the
    live canvas, so in LIVE mode it captures UN-themed pixels; without this
-   rule every zoom commit flashed white. Keying off `.canvas-raw` ("this
+   rule the cover would flash white. Keying off `.canvas-raw` ("this
    canvas is themed by CSS") hands the snapshot the same filter + blend, so
    it composites exactly like the canvas it copied. Baked canvases carry no
    tag, the :has() stays false and the already-themed snapshot is left
@@ -126,8 +132,8 @@ html.appearance-scrubbing .pdf-page::before {
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 
-/* END-OF-ZOOM FLICKER FIX — for the one frame where snapshot and fresh
-   canvas coexist, BOTH would carry filter + blend: two blended layers
+/* ONE BLENDED LAYER — while a cover and the live canvas coexist, BOTH
+   would carry filter + blend: two blended layers
    composite as B*L*S instead of B*L (measured on sepia: rgb(238,230,206) →
    rgb(232,224,197) for one frame; exactly 0 in light mode, which is why it
    only showed in sepia/green/textured). Hiding the live canvas under the
@@ -135,7 +141,7 @@ html.appearance-scrubbing .pdf-page::before {
    so nothing disappears. `:has()` rather than a Rust-toggled class on
    purpose: the rule stops matching the instant the snapshot leaves the DOM,
    so a missed cleanup can never strand the page invisible, and engines
-   without :has() degrade to the old one-frame flicker, never a blank page. */
+   without :has() degrade to a double-blended frame, never a blank page. */
 .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }
@@ -145,6 +151,6 @@ html.appearance-scrubbing .pdf-page::before {
    (public/engine/theme/scrub.ts), and the wipe those re-renders begin with
    is exactly the flash this hides. Spelled at the higher specificity so no
    appearance-scrubbing rule can accidentally outvote it. */
-html.appearance-scrubbing .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
+:is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }

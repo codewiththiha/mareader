@@ -26,11 +26,13 @@ pub mod search;
 pub mod source;
 pub mod typography;
 
-pub use block::{BlockKind, FenceTracker, TextBlock, SPLIT_MAX_LINES, split_blocks, subdivide_with};
-pub use geometry::{PageGeometry, SpineSide, PAGE_HEIGHT, PAGE_WIDTH, geometry};
-pub use pager::{
-    block_page_index, estimate_block_height, estimate_heights, first_block_of_page, paginate,
-    BlockMetrics, PageCut,
+pub use block::{
+    BlockKind, FenceTracker, SPLIT_MAX_LINES, TextBlock, split_blocks, subdivide_with,
 };
-pub use search::{find_matches, TextHit};
+pub use geometry::{PAGE_HEIGHT, PAGE_WIDTH, PageGeometry, SpineSide, geometry};
+pub use pager::{
+    BlockMetrics, PageCut, block_page_index, estimate_block_height, estimate_heights,
+    first_block_of_page, paginate,
+};
+pub use search::{TextHit, find_matches};
 pub use source::normalize;

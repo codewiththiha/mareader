@@ -100,8 +100,7 @@ mod tests {
         // A blob written by an older build still carries the retired
         // `mode`/`scan_pages` keys; they are ignored and the defaults fill
         // in for everything the blob does not name.
-        let c: PaperConfig =
-            serde_json::from_str(r#"{"mode":"fixed","scan_pages":100}"#).unwrap();
+        let c: PaperConfig = serde_json::from_str(r#"{"mode":"fixed","scan_pages":100}"#).unwrap();
         assert_eq!(c.area, PaperArea::WholePage);
         assert_eq!(c.edge_width, DEFAULT_EDGE_WIDTH);
     }

@@ -7,9 +7,13 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub use reader_core::document::{DocStatus, PageSize};
+
+/// `{ok:true, width, height}` — engine.probePageSize(): one page's intrinsic
+/// (scale-1) box, read from the document instead of from a raster.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PageSize {
+pub struct PageSizeResult {
     pub width: f64,
     pub height: f64,
 }
@@ -83,15 +87,6 @@ pub struct CoverResult {
     pub data_url: String,
     pub width: f64,
     pub height: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DocStatus {
-    Idle,
-    Opening,
-    Ready,
-    Error,
 }
 
 /// `{ok:true, page, width, height, data}` — the raw page frame the paper

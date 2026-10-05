@@ -22,9 +22,7 @@ pub fn sanitize(rows: &mut Vec<Row>) {
             Row::Book(b) => !b.path().trim().is_empty(),
             // A link with no name cannot be labeled; one with no target
             // cannot be clicked.
-            Row::Link { name, target, .. } => {
-                !name.trim().is_empty() && !target.trim().is_empty()
-            }
+            Row::Link { name, target, .. } => !name.trim().is_empty() && !target.trim().is_empty(),
         }
     });
     for row in rows.iter_mut() {
@@ -38,7 +36,11 @@ pub fn sanitize(rows: &mut Vec<Row>) {
         // show. This also heals rows stored before the rule existed; names the
         // duplicate namer minted survive via the filename policy's
         // trailing-counter exemption.
-        if !b.title_locked && b.title.as_deref().is_some_and(|t| !reader_core::filename::is_usable_title(t)) {
+        if !b.title_locked
+            && b.title
+                .as_deref()
+                .is_some_and(|t| !reader_core::filename::is_usable_title(t))
+        {
             b.title = None;
         }
         // A stored book whose title is its store address's stem is a burn-in

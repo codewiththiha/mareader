@@ -43,7 +43,11 @@ pub struct HoverConfig {
 
 impl Default for HoverConfig {
     fn default() -> Self {
-        Self { delay: DEFAULT_HOVER_DELAY, hold: None, pin: None }
+        Self {
+            delay: DEFAULT_HOVER_DELAY,
+            hold: None,
+            pin: None,
+        }
     }
 }
 
@@ -85,7 +89,11 @@ impl HoverReveal {
 /// the component's owner, not to an effect scope that is disposed per run.
 pub fn use_hover_reveal(config: HoverConfig) -> HoverReveal {
     let hold = config.hold;
-    reveal(config.delay, move || hold.is_some_and(|h| h.get()), config.pin)
+    reveal(
+        config.delay,
+        move || hold.is_some_and(|h| h.get()),
+        config.pin,
+    )
 }
 
 /// Sugar for the common shape: a closure hold, no pin. Same machine as
@@ -150,7 +158,11 @@ fn reveal(
         None => hovered_visible,
     };
 
-    HoverReveal { visible, enter, leave }
+    HoverReveal {
+        visible,
+        enter,
+        leave,
+    }
 }
 
 /// Whether the point still lands on the surface. Pointer capture keeps a
@@ -223,7 +235,11 @@ pub fn HoverRevealSurface(
     // Both states resolved once: the class attribute is a closure, and
     // formatting a string per frame is the thing to avoid there.
     let shown = class.clone();
-    let hidden_class = if hidden_class.is_empty() { HIDDEN_CLASS.to_string() } else { hidden_class };
+    let hidden_class = if hidden_class.is_empty() {
+        HIDDEN_CLASS.to_string()
+    } else {
+        hidden_class
+    };
     let hidden = format!("{class} {hidden_class}");
     view! {
         <div

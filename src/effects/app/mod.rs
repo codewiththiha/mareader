@@ -1,10 +1,7 @@
-//! App-level effects: browser window concerns (drag-drop, global
-//! shortcuts), the theme applier, the motion preferences and the library's
-//! two automatic moments.
+//! The shell's own effects: the durable theme/typography/motion paints on
+//! `<html>` (they must survive every runtime transition) and the drag-drop
+//! overlay arms the ACTIVE runtime owns — the shell installs none.
 
-pub mod drag_drop;
-pub mod library;
 pub mod motion;
-pub mod shortcuts;
 pub mod theme;
 pub mod typography;

@@ -1,0 +1,6 @@
+# The text pane artifact: one pane per frame (docs/pane-runtimes.md). Built by
+# tools/build-dist.sh alongside the shell page; unhashed so the workspace
+# host can name `reflow.html`.
+[build]
+target = "reflow.html"
+filehash = false

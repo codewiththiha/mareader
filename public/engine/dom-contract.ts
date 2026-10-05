@@ -5,7 +5,7 @@
 // `closest` that returns null — a selection stops producing an "Explain"
 // pill, or a canvas stops finding its host — and the only symptom is a
 // reader that quietly does nothing.
-// The app's half is `src/dom_contract.rs`. Two attribute NAMES
+// The app's half is `crates/app-state/src/dom_contract.rs`. Two attribute NAMES
 // (`data-host-page`, `data-ai-popover`) cannot live there — a Leptos view
 // takes an attribute's name from the markup, only its value from an
 // expression — so the hosts write them as literals and the check reads those
@@ -25,11 +25,17 @@ export const BLOCK_INDEX_ATTR = "data-block-index";
 /** On the AI pill's root: a press here is not a click that clears a selection. */
 export const AI_POPOVER_ATTR = "data-ai-popover";
 
+// The engine session a thumbnail canvas belongs to (its sid). The theme
+// repaint walks the document's thumbnail canvases, and with two PDF panes in
+// one realm a canvas it finds may be another session's: it touches only the
+// ones carrying its own sid.
+export const SESSION_ATTR = "data-engine-sid";
+
 /**
  * The engine only ever branches on `reflow`: a PDF host is the path it has
  * always taken, and the app decides what to do with a `host` value it does
  * not recognise. `HOST_PDF` is therefore the app's to declare
- * (`src/dom_contract.rs`), and the check forbids spelling either value as a
+ * (`crates/app-state/src/dom_contract.rs`), and the check forbids spelling either value as a
  * literal all the same.
  */
 export const HOST_REFLOW = "reflow";

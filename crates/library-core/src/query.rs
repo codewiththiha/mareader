@@ -121,7 +121,9 @@ pub fn matches(book: &Book, query: &str) -> bool {
     let path = book.path();
     query.split_whitespace().all(|term| {
         term_match(&title, term).is_some()
-            || author.as_deref().is_some_and(|a| term_match(a, term).is_some())
+            || author
+                .as_deref()
+                .is_some_and(|a| term_match(a, term).is_some())
             || term_match(path, term).is_some()
     })
 }
@@ -319,12 +321,18 @@ mod tests {
     fn a_titleless_book_is_searchable_by_its_stem() {
         let mut b = book("ignored", None, "/books/Foundation.pdf");
         b.title = None;
-        assert!(matches(&b, "foundation"), "the stem is the title when there is none");
+        assert!(
+            matches(&b, "foundation"),
+            "the stem is the title when there is none"
+        );
     }
 
     #[test]
     fn a_name_is_searched_by_the_same_rule_as_a_book() {
-        assert!(matches_terms("Science Fiction", "sci"), "a prefix is enough");
+        assert!(
+            matches_terms("Science Fiction", "sci"),
+            "a prefix is enough"
+        );
         assert!(matches_terms("Science Fiction", "fiction science"));
         assert!(matches_terms("Science Fiction", "SCIENCE"));
         assert!(!matches_terms("Science Fiction", "science crime"));
@@ -339,7 +347,11 @@ mod tests {
             row("Apricot", None, "/books/apc.pdf"),
         ];
         let kept: Vec<String> = filter(&books, "ap").iter().map(Row::display_name).collect();
-        assert_eq!(kept, vec!["Apple", "Apricot"], "the shelf's own sort ran first");
+        assert_eq!(
+            kept,
+            vec!["Apple", "Apricot"],
+            "the shelf's own sort ran first"
+        );
         assert!(filter(&books, "q").is_empty());
     }
 
@@ -353,7 +365,11 @@ mod tests {
             Row::link("l2".into(), "Recipes".into(), "b2".into(), 5),
         ];
         let kept = filter(&rows, "dune");
-        assert_eq!(kept.len(), 2, "the book and the pointer that wears its name");
+        assert_eq!(
+            kept.len(),
+            2,
+            "the book and the pointer that wears its name"
+        );
         assert!(kept.iter().any(Row::is_link));
         assert_eq!(filter(&rows, "recipes").len(), 1);
         assert_eq!(suggest(&rows, "dune", SUGGEST_LIMIT).len(), 1);
@@ -392,7 +408,10 @@ mod tests {
         let mid = term_match("xxdunexx", "dune").expect("substring");
         assert_eq!(mid.spans, vec![(2, 6)]);
         let start = term_match("dunexx", "dune").expect("substring at start");
-        assert!(start.score > mid.score, "a start is worth more than a middle");
+        assert!(
+            start.score > mid.score,
+            "a start is worth more than a middle"
+        );
     }
 
     #[test]
@@ -426,7 +445,11 @@ mod tests {
         at_mut(&mut books, 7).last_read_ms = 99;
         let ranked = suggest(&books, "dune", SUGGEST_LIMIT);
         assert_eq!(ranked.len(), SUGGEST_LIMIT);
-        assert_eq!(ranked[0].book.title(), "Dune 7", "recency breaks a score tie");
+        assert_eq!(
+            ranked[0].book.title(),
+            "Dune 7",
+            "recency breaks a score tie"
+        );
     }
 
     #[test]

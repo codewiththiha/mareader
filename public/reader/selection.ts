@@ -129,6 +129,17 @@ function findReflowSpot(range: Range): ReflowSpot | null {
   return { block, start, end: Math.min(end, total) };
 }
 
+// Where a selection event is raised. Several panes listen on the window;
+// an event dispatched on the page host the selection is in bubbles there
+// with that host as its target, and each pane keeps only its own. A clear
+// (and a selection whose host is unknown) goes to the window itself: nobody's
+// in particular, which every pane reads as "no selection here".
+function raise(origin: Element | null, name: string, detail: unknown): void {
+  const event = new CustomEvent(name, { detail, bubbles: true });
+  if (origin && origin.isConnected) origin.dispatchEvent(event);
+  else globalThis.dispatchEvent(event);
+}
+
 function dispatchSelectionPages(): void {
   const sel = document.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
@@ -136,9 +147,7 @@ function dispatchSelectionPages(): void {
       lastSelectionRangeKey = null;
       lastKnownAnchorPage = null;
       lastKnownFocusPage = null;
-      globalThis.dispatchEvent(
-        new CustomEvent(SELECTION_PAGES_EVENT, { detail: null })
-      );
+      raise(null, SELECTION_PAGES_EVENT, null);
     }
     return;
   }
@@ -158,11 +167,7 @@ function dispatchSelectionPages(): void {
   const key = `${first}-${last}`;
   if (key === lastSelectionRangeKey) return;
   lastSelectionRangeKey = key;
-  globalThis.dispatchEvent(
-    new CustomEvent(SELECTION_PAGES_EVENT, {
-      detail: { first, last },
-    })
-  );
+  raise(hostOf(sel.anchorNode) ?? hostOf(sel.focusNode), SELECTION_PAGES_EVENT, { first, last });
 }
 
 // ~120 chars of surrounding text from the same layer of the document — a
@@ -203,9 +208,7 @@ function dispatchSelectionDetail(): void {
     // Dedupe consecutive clears: only genuine transitions reach the app.
     if (lastDetailKey === null) return;
     lastDetailKey = null;
-    globalThis.dispatchEvent(
-      new CustomEvent(SELECTION_DETAIL_EVENT, { detail: null })
-    );
+    raise(null, SELECTION_DETAIL_EVENT, null);
     return;
   }
 
@@ -229,25 +232,21 @@ function dispatchSelectionDetail(): void {
   // document; a PDF's anchor is the page-space rect the app derives itself.
   const spot = kind === HOST_REFLOW ? findReflowSpot(range) : null;
 
-  globalThis.dispatchEvent(
-    new CustomEvent(SELECTION_DETAIL_EVENT, {
-      detail: {
-        text,
-        context: extractContext(range, text),
-        rect: {
-          x: rect.left,
-          y: rect.top,
-          width: rect.width,
-          height: rect.height,
-        },
-        // Which format family the selection is in; null when it is in
-        // neither (chrome, the library), which the app treats as the PDF
-        // path it has always been.
-        host: kind,
-        spot,
-      },
-    })
-  );
+  raise(host, SELECTION_DETAIL_EVENT, {
+    text,
+    context: extractContext(range, text),
+    rect: {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    },
+    // Which format family the selection is in; null when it is in
+    // neither (chrome, the library), which the app treats as the PDF
+    // path it has always been.
+    host: kind,
+    spot,
+  });
 }
 
 export function installSelectionTracker(): void {

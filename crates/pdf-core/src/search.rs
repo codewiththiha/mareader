@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 
-use reader_core::search::{occurrence_spans, snippet, SearchMatch, SearchResponse};
+use reader_core::search::{SearchMatch, SearchResponse, occurrence_spans, snippet};
 
 /// One extracted text run of a page, with its scale-1 rect.
 #[derive(Debug, Clone, PartialEq)]
@@ -153,7 +153,13 @@ mod index_tests {
     #[test]
     fn query_finds_every_occurrence_across_items_and_pages() {
         let mut index = SearchIndex::new();
-        index.add_page(page(1, vec![item("The quick brown fox", 0.0, 100.0), item("jumps over the fox", 10.0, 90.0)]));
+        index.add_page(page(
+            1,
+            vec![
+                item("The quick brown fox", 0.0, 100.0),
+                item("jumps over the fox", 10.0, 90.0),
+            ],
+        ));
         index.add_page(page(2, vec![item("A fox in a box", 20.0, 80.0)]));
         let resp = index.query("fox");
         assert_eq!(resp.total, 3);
@@ -184,8 +190,16 @@ mod index_tests {
         index.add_page(page(1, vec![item("abcd", 0.0, 100.0)]));
         let resp = index.query("bc");
         assert_eq!(resp.total, 1);
-        assert!((resp.matches[0].x - 25.0).abs() < 1e-9, "x = {}", resp.matches[0].x);
-        assert!((resp.matches[0].w - 50.0).abs() < 1e-9, "w = {}", resp.matches[0].w);
+        assert!(
+            (resp.matches[0].x - 25.0).abs() < 1e-9,
+            "x = {}",
+            resp.matches[0].x
+        );
+        assert!(
+            (resp.matches[0].w - 50.0).abs() < 1e-9,
+            "w = {}",
+            resp.matches[0].w
+        );
     }
 
     #[test]
@@ -200,7 +214,12 @@ mod index_tests {
         assert_eq!(s.chars().filter(|c| *c == 'N').count(), 1);
         // The shared window: SNIPPET_RADIUS characters either side of the hit.
         let core: String = s.chars().filter(|c| *c != '…').collect();
-        assert_eq!(core.chars().count(), SNIPPET_RADIUS * 2 + 6, "core len {}", core.chars().count());
+        assert_eq!(
+            core.chars().count(),
+            SNIPPET_RADIUS * 2 + 6,
+            "core len {}",
+            core.chars().count()
+        );
     }
 
     #[test]

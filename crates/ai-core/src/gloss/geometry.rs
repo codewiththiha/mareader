@@ -15,7 +15,13 @@ use ui_geom::spring::spring_axis;
 /// the feature knows both, so the feature writes it.
 impl From<GlossBox> for ui_geom::floating::FloatBox {
     fn from(b: GlossBox) -> Self {
-        ui_geom::floating::FloatBox { x: b.x, y: b.y, w: b.w, h: b.h, r: b.r }
+        ui_geom::floating::FloatBox {
+            x: b.x,
+            y: b.y,
+            w: b.w,
+            h: b.h,
+            r: b.r,
+        }
     }
 }
 
@@ -104,7 +110,12 @@ pub fn place_card(
     };
     GlossBox {
         x: clamp_axis(x, view_w, w, margin),
-        y: clamp_axis(anchor.y + anchor.h * 0.5 - h * 0.5 + y_bias, view_h, h, margin),
+        y: clamp_axis(
+            anchor.y + anchor.h * 0.5 - h * 0.5 + y_bias,
+            view_h,
+            h,
+            margin,
+        ),
         w,
         h,
         r: radius,
@@ -112,7 +123,12 @@ pub fn place_card(
 }
 
 /// One spring step over all five box fields. Returns `(next_box, next_velocity)`.
-pub fn step_spring(cur: GlossBox, vel: GlossBox, target: GlossBox, dt: f64) -> (GlossBox, GlossBox) {
+pub fn step_spring(
+    cur: GlossBox,
+    vel: GlossBox,
+    target: GlossBox,
+    dt: f64,
+) -> (GlossBox, GlossBox) {
     let (x, vx) = spring_axis(cur.x, vel.x, target.x, dt);
     let (y, vy) = spring_axis(cur.y, vel.y, target.y, dt);
     let (w, vw) = spring_axis(cur.w, vel.w, target.w, dt);
@@ -120,7 +136,13 @@ pub fn step_spring(cur: GlossBox, vel: GlossBox, target: GlossBox, dt: f64) -> (
     let (r, vr) = spring_axis(cur.r, vel.r, target.r, dt);
     (
         GlossBox { x, y, w, h, r },
-        GlossBox { x: vx, y: vy, w: vw, h: vh, r: vr },
+        GlossBox {
+            x: vx,
+            y: vy,
+            w: vw,
+            h: vh,
+            r: vr,
+        },
     )
 }
 
@@ -158,7 +180,13 @@ mod tests {
     #[test]
     fn place_card_prefers_the_roomier_side() {
         // Anchor near the left edge: plenty of room on the right.
-        let anchor = GlossBox { x: 100.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
+        let anchor = GlossBox {
+            x: 100.0,
+            y: 400.0,
+            w: 60.0,
+            h: 16.0,
+            r: 0.0,
+        };
         let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 0.0);
         assert!((card.x - (anchor.x + anchor.w + 16.0)).abs() < 1e-9);
     }
@@ -166,7 +194,13 @@ mod tests {
     #[test]
     fn place_card_flips_left_when_the_right_edge_is_closer() {
         // space_right = 1920 - 1860 = 60 < anchor.x = 1800 → left side.
-        let anchor = GlossBox { x: 1800.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
+        let anchor = GlossBox {
+            x: 1800.0,
+            y: 400.0,
+            w: 60.0,
+            h: 16.0,
+            r: 0.0,
+        };
         let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 0.0);
         assert!((card.x - (anchor.x - 16.0 - card.w)).abs() < 1e-9);
     }
@@ -174,7 +208,13 @@ mod tests {
     #[test]
     fn place_card_stays_inside_the_viewport_margin_and_shrinks_to_fit() {
         // Tiny viewport, oversized request: everything clamps inboard.
-        let anchor = GlossBox { x: 0.0, y: 0.0, w: 40.0, h: 12.0, r: 0.0 };
+        let anchor = GlossBox {
+            x: 0.0,
+            y: 0.0,
+            w: 40.0,
+            h: 12.0,
+            r: 0.0,
+        };
         let card = place_card(anchor, 800.0, 2000.0, 500.0, 400.0, 12.0, 16.0, 12.0, 0.0);
         assert!(card.x >= 12.0 - 1e-9);
         assert!(card.y >= 12.0 - 1e-9);
@@ -190,22 +230,46 @@ mod tests {
         // Dead-centre read as pasted onto the line; the bias drops the card a
         // touch so it hangs off the word like a footnote. The clamp still owns
         // the last word near the edges.
-        let anchor = GlossBox { x: 400.0, y: 500.0, w: 80.0, h: 20.0, r: 0.0 };
+        let anchor = GlossBox {
+            x: 400.0,
+            y: 500.0,
+            w: 80.0,
+            h: 20.0,
+            r: 0.0,
+        };
         let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 12.0);
         let anchor_mid = anchor.y + anchor.h * 0.5;
         let card_mid = card.y + card.h * 0.5;
         assert!((card_mid - anchor_mid - 12.0).abs() < 1e-9);
         // …and a bias that would push the card out the bottom stops at the
         // viewport margin instead of leaving the screen.
-        let low = GlossBox { x: 400.0, y: 1000.0, w: 80.0, h: 20.0, r: 0.0 };
+        let low = GlossBox {
+            x: 400.0,
+            y: 1000.0,
+            w: 80.0,
+            h: 20.0,
+            r: 0.0,
+        };
         let card = place_card(low, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 12.0);
         assert!(card.y + card.h <= 1080.0 - 12.0 + 1e-9);
     }
 
     #[test]
     fn boxes_close_is_field_wise_within_epsilon() {
-        let a = GlossBox { x: 1.0, y: 2.0, w: 3.0, h: 4.0, r: 5.0 };
-        let b = GlossBox { x: 1.1, y: 2.1, w: 3.1, h: 4.1, r: 5.1 };
+        let a = GlossBox {
+            x: 1.0,
+            y: 2.0,
+            w: 3.0,
+            h: 4.0,
+            r: 5.0,
+        };
+        let b = GlossBox {
+            x: 1.1,
+            y: 2.1,
+            w: 3.1,
+            h: 4.1,
+            r: 5.1,
+        };
         assert!(boxes_close(a, b, 0.2));
         assert!(!boxes_close(a, b, 0.05));
     }
@@ -216,8 +280,20 @@ mod tests {
         // rest, ~120 60-fps frames bring every field to within half a pixel of
         // the target. If this regresses the card either never settles (battery
         // drain from an endless rAF loop) or snaps (no morph).
-        let target = GlossBox { x: 200.0, y: 150.0, w: 320.0, h: 420.0, r: 24.0 };
-        let mut cur = GlossBox { x: 40.0, y: 30.0, w: 30.0, h: 20.0, r: 10.0 };
+        let target = GlossBox {
+            x: 200.0,
+            y: 150.0,
+            w: 320.0,
+            h: 420.0,
+            r: 24.0,
+        };
+        let mut cur = GlossBox {
+            x: 40.0,
+            y: 30.0,
+            w: 30.0,
+            h: 20.0,
+            r: 10.0,
+        };
         let mut vel = GlossBox::default();
         let dt = 1.0 / 60.0;
         for _ in 0..200 {
@@ -233,7 +309,13 @@ mod tests {
         // A long frame (dt clamped at the caller) must not launch the box off to
         // infinity. Stepping at the stability ceiling stays bounded and still
         // approaches the target.
-        let target = GlossBox { x: 0.0, y: 0.0, w: 300.0, h: 300.0, r: 20.0 };
+        let target = GlossBox {
+            x: 0.0,
+            y: 0.0,
+            w: 300.0,
+            h: 300.0,
+            r: 20.0,
+        };
         let mut cur = GlossBox::default();
         let mut vel = GlossBox::default();
         // Several successive "dropped" frames at the caller's clamp (0.032s).
@@ -243,7 +325,10 @@ mod tests {
             vel = next_vel;
             assert!(cur.x.is_finite() && cur.w.is_finite(), "blew up: {cur:?}");
         }
-        assert!(boxes_close(cur, target, 0.5), "did not settle on long frames: {cur:?}");
+        assert!(
+            boxes_close(cur, target, 0.5),
+            "did not settle on long frames: {cur:?}"
+        );
     }
 
     /// The five fields must land in the floating box in the same order they are
@@ -251,8 +336,17 @@ mod tests {
     /// compile error.
     #[test]
     fn the_floating_conversion_keeps_the_fields_in_order() {
-        let box_ = GlossBox { x: 1.0, y: 2.0, w: 3.0, h: 4.0, r: 5.0 };
+        let box_ = GlossBox {
+            x: 1.0,
+            y: 2.0,
+            w: 3.0,
+            h: 4.0,
+            r: 5.0,
+        };
         let float: ui_geom::floating::FloatBox = box_.into();
-        assert_eq!((float.x, float.y, float.w, float.h, float.r), (1.0, 2.0, 3.0, 4.0, 5.0));
+        assert_eq!(
+            (float.x, float.y, float.w, float.h, float.r),
+            (1.0, 2.0, 3.0, 4.0, 5.0)
+        );
     }
 }

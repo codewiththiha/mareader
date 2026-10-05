@@ -1,7 +1,7 @@
 //! Paints the reflowable formats' typography onto `<html>` whenever it
 //! changes — the text counterpart of `apply_theme`.
 //!
-//! The contract is `reflow_core::typography::css_variables`: every knob the
+//! The contract is `reader_core::settings::typography::css_variables`: every knob the
 //! settings own is written as a SCALE-1 custom property (`--tx-font-size`,
 //! `--tx-line-height`, ...). Page hosts never read the settings for type —
 //! they set their own `--ts` multiplier and let the stylesheet resolve
@@ -11,19 +11,22 @@
 
 use leptos::prelude::*;
 
-use crate::state::reader::TypographySignal;
-use crate::effects::app::theme::html_style;
+use app_ui::theme_paint::html_style;
 
 /// Install the typography painter. Runs once at boot (the persisted
 /// typography must be live before the first text document renders) and on
 /// every change afterwards.
-pub fn apply_typography(typography: TypographySignal) {
+pub fn apply_typography(settings: RwSignal<reader_core::settings::Settings>) {
+    // The reflowable typography narrowed out of the settings blob, once,
+    // here in the shell: the durable text tokens repaint from this
+    // subscription the way they always did.
+
     Effect::new(move |_| {
-        let t = typography.get();
+        let t = settings.with(|s| s.text.clone());
         let Some(style) = html_style() else {
             return;
         };
-        for (name, value) in reflow_core::typography::css_variables(&t) {
+        for (name, value) in reader_core::settings::typography::css_variables(&t) {
             let _ = style.set_property(name, &value);
         }
     });

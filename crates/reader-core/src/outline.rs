@@ -17,7 +17,11 @@ pub struct OutlineNode {
 
 impl OutlineNode {
     pub fn new(title: impl Into<String>, page: u32, depth: u32) -> Self {
-        Self { title: title.into(), page, depth }
+        Self {
+            title: title.into(),
+            page,
+            depth,
+        }
     }
 }
 
@@ -48,7 +52,9 @@ pub fn active_entry(nodes: &[OutlineNode], page: u32) -> Option<usize> {
     }
     // `checked_sub` so a page before the first entry yields `None` rather than
     // underflowing the index.
-    nodes.partition_point(|node| node.page <= page).checked_sub(1)
+    nodes
+        .partition_point(|node| node.page <= page)
+        .checked_sub(1)
 }
 
 #[cfg(test)]
@@ -90,7 +96,11 @@ mod tests {
 
     #[test]
     fn an_out_of_order_outline_still_answers_correctly() {
-        let nodes = [node("Late", 30, 0), node("First", 2, 0), node("Middle", 9, 0)];
+        let nodes = [
+            node("Late", 30, 0),
+            node("First", 2, 0),
+            node("Middle", 9, 0),
+        ];
         assert_eq!(active_entry(&nodes, 2), Some(1));
         assert_eq!(active_entry(&nodes, 25), Some(2));
         assert_eq!(active_entry(&nodes, 1), None);

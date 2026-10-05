@@ -1,0 +1,4 @@
+# The disposable library route artifact, merged by tools/build-dist.sh.
+[build]
+target = "library.html"
+filehash = false

@@ -1,6 +1,6 @@
 /* Motion rules. Document content does no entrance animation (page turns,
    popovers, search, toasts appear instantly); layout chrome keeps short
-   structural transitions; zoom scales one continuous surface (src/zoom).
+   structural transitions; zoom scales one continuous surface (crates/reader-runtime/src/zoom).
    Here: the global reduced-motion net, the app's own master switch
    (identical collapse), and the sidebar transitions both nets remove
    outright rather than shorten. */
@@ -61,12 +61,39 @@ html.animations-off .sidebar-panel {
   transition: none;
 }
 
+/* Page geometry is exempt from both nets: removed, not shortened. The nets
+   give EVERY element a 0.01ms transition-duration, and transition-property
+   defaults to `all` — so under them every page wrapper's `top` and every
+   host's `width`/`height` becomes a transition that paints its first frame
+   at the OLD value. scrollTop is not a CSS property and lands at once: an
+   untweened zoom showed the new offset over the old page layout for a frame
+   (a different page under the viewport centre). Nothing in the strip
+   listens for transitionend. */
+@media (prefers-reduced-motion: reduce) {
+  [data-page-strip],
+  [data-page-strip] * {
+    transition: none !important;
+  }
+}
+
+html.animations-off [data-page-strip],
+html.animations-off [data-page-strip] * {
+  transition: none !important;
+}
+
 /* The loader exemption for the master switch: turning animations off is a
-   preference about motion, not a request to be told the app has stopped. */
-html.animations-off .loader .loader-dot {
-  animation-name: loader-fade;
-  animation-duration: 1.6s !important;
-  animation-iteration-count: infinite !important;
+   preference about UI motion, not a request to be told the app has stopped.
+   The mark keeps its full chase — the hop names come from .loader-dot-a/b/c,
+   the master only collapses duration and count, which this restores. A
+   breathing-in-place fade here read as three frozen dots: exactly the
+   "hung app" the mark exists to rule out. Only the OS reduced-motion
+   request trades travel for the fade (the block at the top), and it wins
+   when both apply because this rule is scoped to no-preference. */
+@media (prefers-reduced-motion: no-preference) {
+  html.animations-off .loader .loader-dot {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* Settings → Animations → "Sidebar Animation" off — the only rule here a

@@ -3,7 +3,7 @@
 //! with it, and the pass that puts a watched folder's rungs back on the seats
 //! their directories name.
 
-use super::{find, Shelf, ShelfKind};
+use super::{Shelf, ShelfKind, find};
 
 /// The shelves filed directly inside `parent_id`; `None` asks for the root
 /// level. Direct children only: a level is a page, and flattening the subtree

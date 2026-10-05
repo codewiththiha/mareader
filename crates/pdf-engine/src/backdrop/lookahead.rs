@@ -1,13 +1,14 @@
 //! The look-ahead: resolve the pages the reader is approaching before the
-//! reader arrives.
+//! reader arrives. Per session — the planner reads, and the in-flight set
+//! lives on, the session's own paper state.
 
-use super::{Session, feed_state, publish, slot, spawn_engine, with};
-use crate::api;
+use super::{Paper, land_sample, publish, slot, spawn_engine};
+use crate::session::PdfSession;
 
 /// The pages whose colour the session wants known: the pair the reader
 /// is straddling plus the one after it, so the colour is resolved before
 /// the reader arrives. Pure — the test exercises exactly this choice.
-pub(super) fn lookahead_wants(s: &Session) -> Vec<u32> {
+pub(super) fn lookahead_wants(s: &Paper) -> Vec<u32> {
     if !s.blend_on || s.num_pages == 0 {
         return Vec::new();
     }
@@ -25,31 +26,21 @@ pub(super) fn lookahead_wants(s: &Session) -> Vec<u32> {
 }
 
 /// Resolve (offscreen) the pages [`lookahead_wants`] names, one spawn each,
-/// all generation-guarded so a sample for one book cannot land in the next.
-pub(super) fn ensure_lookahead() {
-    let pages = with(|s| {
+/// all session- and epoch-guarded so a sample for one document cannot land
+/// in the next, nor in a session disposed while it ran.
+pub(super) fn ensure_lookahead(session: &PdfSession) {
+    let (epoch, pages) = session.with_paper(|s| {
         let wants = lookahead_wants(s);
         for page in &wants {
-            s.sampling.insert(*page);
+            s.start_sample(*page);
         }
-        wants
+        (s.epoch, wants)
     });
     for page in pages {
-        spawn_engine(move || async move {
-            let epoch = with(|s| s.epoch);
-            let frame = api::sample_paper_page(page).await.ok().flatten();
-            let changed = with(|s| {
-                if s.epoch != epoch {
-                    return false;
-                }
-                s.sampling.remove(&page);
-                match &frame {
-                    Some(f) => feed_state(s, f),
-                    None => false, // unreadable page: nothing to learn
-                }
-            });
-            if changed {
-                publish();
+        spawn_engine(session, move |session| async move {
+            let frame = session.sample_paper_page(page).await.ok().flatten();
+            if land_sample(&session, epoch, page, frame.as_ref()) {
+                publish(&session);
             }
         });
     }

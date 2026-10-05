@@ -13,8 +13,8 @@ use std::rc::Rc;
 
 use leptos::html;
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::ResizeObserverEntry;
 
 use super::dom::by_id;
@@ -105,9 +105,20 @@ pub fn observe_content_size(
     element_id: &'static str,
     sink: RwSignal<(f64, f64)>,
 ) -> impl Fn() + Send + Sync + 'static {
+    observe_content_size_with(move || by_id(element_id), sink)
+}
+
+/// [`observe_content_size`] for an element the caller finds itself — a
+/// lookup scoped to one subtree (a reader pane's root) rather than the whole
+/// document. `find` runs once, when the observation arms after the mount;
+/// the same explicit stop comes back.
+pub fn observe_content_size_with(
+    find: impl Fn() -> Option<web_sys::Element> + 'static,
+    sink: RwSignal<(f64, f64)>,
+) -> impl Fn() + Send + Sync + 'static {
     let slot = new_slot();
     Effect::new(move || {
-        let Some(el) = by_id(element_id) else {
+        let Some(el) = find() else {
             return;
         };
         let on_resize: Rc<dyn Fn(Vec<ResizeObserverEntry>)> =
@@ -124,10 +135,14 @@ pub fn observe_content_size(
 
 /// Observe a `NodeRef` element and forward each resize entry to `on_resize`.
 /// Re-arms when the node identity changes (remounts create a fresh element).
-pub fn use_resize_observer(target: NodeRef<html::Div>, on_resize: impl Fn(ResizeObserverEntry) + 'static) {
+pub fn use_resize_observer(
+    target: NodeRef<html::Div>,
+    on_resize: impl Fn(ResizeObserverEntry) + 'static,
+) {
     let on_resize = Rc::new(on_resize);
     let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
-    let callback_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
+    let callback_handle =
+        StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
     let observed = StoredValue::new_local(None::<web_sys::Element>);
 
     Effect::new(move |_| {

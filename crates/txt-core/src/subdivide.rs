@@ -31,7 +31,10 @@ mod tests {
 
     #[test]
     fn a_tall_paragraph_becomes_line_bounded_chunks() {
-        let source = (1..=7).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+        let source = (1..=7)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let out = subdivide_with_budget(vec![TextBlock::new(BlockKind::Text, source)], 3);
         assert_eq!(out.len(), 3);
         assert_eq!(out[2].text, "line 7");

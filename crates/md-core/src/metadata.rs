@@ -66,7 +66,11 @@ fn split_front_matter(normalized: &str) -> Option<(&str, &str)> {
         if trimmed == "---" || trimmed == "..." {
             // The matter runs to the newline before the closer; a closer
             // directly under the opener is the empty matter.
-            let matter_end = if before > "---\n".len() { before - 1 } else { before };
+            let matter_end = if before > "---\n".len() {
+                before - 1
+            } else {
+                before
+            };
             return Some((&normalized["---\n".len()..matter_end], rest));
         }
     }
@@ -159,14 +163,23 @@ mod tests {
 
     #[test]
     fn markdown_title_is_the_first_shallow_heading() {
-        assert_eq!(first_heading_title("# Dune\n\nby Frank Herbert").as_deref(), Some("Dune"));
-        assert_eq!(first_heading_title("## Part One").as_deref(), Some("Part One"));
+        assert_eq!(
+            first_heading_title("# Dune\n\nby Frank Herbert").as_deref(),
+            Some("Dune")
+        );
+        assert_eq!(
+            first_heading_title("## Part One").as_deref(),
+            Some("Part One")
+        );
         assert_eq!(first_heading_title("#### too deep"), None);
         assert_eq!(first_heading_title("plain prose first\n\n# later"), None);
         assert_eq!(first_heading_title("#"), None);
         assert_eq!(first_heading_title(""), None);
         // A shell prompt inside a sample is not the document's name.
-        assert_eq!(first_heading_title("```\n# make install\n```\n\n# Build notes"), Some("Build notes".into()));
+        assert_eq!(
+            first_heading_title("```\n# make install\n```\n\n# Build notes"),
+            Some("Build notes".into())
+        );
         // An info-string line inside an open fence is content, not a close —
         // the splitter's rule, which a plain marker toggle gets wrong (it
         // would let the `#` under it win the title).
@@ -178,8 +191,14 @@ mod tests {
 
     #[test]
     fn front_matter_needs_to_open_and_close_the_file() {
-        assert_eq!(front_matter("---\ntitle: Dune\n---\n\nBody").as_deref(), Some("title: Dune"));
-        assert_eq!(front_matter("---\ntitle: Dune\n...\nBody").as_deref(), Some("title: Dune"));
+        assert_eq!(
+            front_matter("---\ntitle: Dune\n---\n\nBody").as_deref(),
+            Some("title: Dune")
+        );
+        assert_eq!(
+            front_matter("---\ntitle: Dune\n...\nBody").as_deref(),
+            Some("title: Dune")
+        );
         assert_eq!(front_matter("---\n---\nBody").as_deref(), Some(""));
         // Never closed: not front matter, so the block stays in the body.
         assert_eq!(front_matter("---\ntitle: Dune\n\nBody"), None);
@@ -192,7 +211,10 @@ mod tests {
     fn scalar_values_are_read_and_noise_stripped() {
         let matter = "title: \"Dune\"\nauthor: Frank Herbert # the novel\nnested:\n  title: wrong\nlist:\n  - one";
         assert_eq!(front_matter_value(matter, "title").as_deref(), Some("Dune"));
-        assert_eq!(front_matter_value(matter, "author").as_deref(), Some("Frank Herbert"));
+        assert_eq!(
+            front_matter_value(matter, "author").as_deref(),
+            Some("Frank Herbert")
+        );
         // The nested key is not a top-level one.
         assert_eq!(front_matter_value(matter, "wrong"), None);
         assert_eq!(front_matter_value(matter, "list"), None);
@@ -208,7 +230,10 @@ mod tests {
             document_title("---\ntitle: Dune\n---\n\n# Wrong Heading").as_deref(),
             Some("Dune")
         );
-        assert_eq!(document_title("# Right Heading\n\nbody").as_deref(), Some("Right Heading"));
+        assert_eq!(
+            document_title("# Right Heading\n\nbody").as_deref(),
+            Some("Right Heading")
+        );
         // A front-matter block with no title does NOT consume the heading.
         assert_eq!(
             document_title("---\nlang: en\n---\n\n# Dune").as_deref(),
@@ -219,7 +244,10 @@ mod tests {
 
     #[test]
     fn author_comes_from_front_matter_only() {
-        assert_eq!(document_author("---\nauthor: 'F. Herbert'\n---").as_deref(), Some("F. Herbert"));
+        assert_eq!(
+            document_author("---\nauthor: 'F. Herbert'\n---").as_deref(),
+            Some("F. Herbert")
+        );
         assert_eq!(document_author("# Dune\n\nby Frank Herbert"), None);
     }
 }

@@ -15,6 +15,7 @@
 //! that moved mid-flight cannot leave the stale one settled last.
 
 pub mod dom;
+pub mod frame_active;
 pub mod hover_reveal;
 pub mod use_raf;
 pub mod use_resize_observer;
@@ -26,7 +27,7 @@ pub mod verified_switch;
 // The auto-hide composite is re-exported flat: it is the entry point most
 // callers want, and `hooks::use_hover_reveal` is the name they reach for.
 pub use hover_reveal::{
-    use_drag_hold, use_hover_reveal, use_hover_reveal_with, HoverConfig, HoverReveal,
-    HoverRevealSurface, DEFAULT_HOVER_DELAY,
+    DEFAULT_HOVER_DELAY, HoverConfig, HoverReveal, HoverRevealSurface, use_drag_hold,
+    use_hover_reveal, use_hover_reveal_with,
 };
-pub use verified_switch::{use_verified_switch, VerifiedSwitch};
+pub use verified_switch::{VerifiedSwitch, use_verified_switch};

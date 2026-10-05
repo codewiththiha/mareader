@@ -12,17 +12,18 @@
 use serde::{Deserialize, Serialize};
 
 use crate::appearance::Appearance;
-use crate::appearance::presets::{builtin_presets, Preset};
+use crate::appearance::presets::{Preset, builtin_presets};
 
 mod animation;
 mod gloss;
 mod layout;
+mod workspace;
 
 // The reflowable formats' typography SCHEMA lives with the rest of the
-// persisted settings, because the field names are the storage contract. The
-// CSS it resolves into is `reflow_core::typography`, which re-exports these
-// names so a component reads a knob and paints it from one import — hence
-// `pub`.
+// persisted settings, because the field names are the storage contract, and
+// the CSS it resolves into lives beside it. `reflow_core::typography`
+// re-exports these names so a component reads a knob and paints it from one
+// import — hence `pub`.
 pub mod typography;
 
 /// The layout tab's and animations tab's schemas live in their own files;
@@ -34,11 +35,13 @@ pub use layout::{
     MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
 };
 pub use typography::TextSettings;
+/// The reader workspace's knobs (the Workspace tab).
+pub use workspace::{LibraryClick, PaneCorners, PaneOutlineColor, WorkspaceSettings};
 
 /// The AI word card's knobs are part of the persisted schema, so the types
 /// live here rather than in `ai-core`, which stays free of anything the
 /// settings model owns.
-pub use gloss::{default_custom_gloss, default_gloss_opacity, is_hex6, GlossColor, GlossDensity};
+pub use gloss::{GlossColor, GlossDensity, default_custom_gloss, default_gloss_opacity, is_hex6};
 
 /// Which pixels of a page carry the paper colour. Owned by `pdf-paper`;
 /// re-exported here because the settings model is the one place a reader's
@@ -53,16 +56,14 @@ pub const SETTINGS_KEY: &str = "mareader.settings.v1";
 pub const RETIRED_SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 /// `serde(default)` for the flags that were on before they were a switch.
-pub(crate) fn on_true() -> bool { true }
+pub(crate) fn on_true() -> bool {
+    true
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// The live look. Edited directly by the appearance controls.
     pub appearance: Appearance,
-    /// Id of the preset currently selected, if the live look still matches
-    /// it. A manual edit re-selects when the resulting look matches a preset,
-    /// and clears the selection only when no preset matches.
-    pub active_preset: Option<String>,
     /// User-saved presets (built-ins are code, not storage).
     pub user_presets: Vec<Preset>,
     /// One-shot gate for the doubled tint curve. Blobs written before
@@ -76,6 +77,13 @@ pub struct Settings {
     /// default would hand it the fresh-install answer instead.
     #[serde(default)]
     pub tint_strength_halved: bool,
+    /// One-shot gate for the startup-fit default moving from Fit Page to Fit
+    /// Width. Every install persisted the old default whether or not the
+    /// reader ever chose it, so a blob without the gate is moved once; a
+    /// choice made after that sticks. `false` for an old blob, like the tint
+    /// gate above.
+    #[serde(default)]
+    pub startup_fit_width: bool,
     pub default_zoom: f64,
     pub last_path: Option<String>,
     /// Pin the READER's titlebar open (no auto-hide). One field per bar
@@ -111,18 +119,20 @@ pub struct Settings {
     /// page. Blobs saved before the text formats existed load the defaults.
     #[serde(default)]
     pub text: TextSettings,
+    /// The reader workspace: what a click in the rail's Library panel does.
+    /// Blobs saved before the panel existed load the default.
+    #[serde(default)]
+    pub workspace: WorkspaceSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             appearance: Appearance::default(),
-            // No preset matches a fresh install's plain look: the bases are
-            // the Mode section's buttons, not presets.
-            active_preset: None,
             user_presets: Vec::new(),
             // A fresh install is born on the new curve: nothing to migrate.
             tint_strength_halved: true,
+            startup_fit_width: true,
             default_zoom: 1.0,
             last_path: None,
             titlebar_pinned: false,
@@ -134,6 +144,7 @@ impl Default for Settings {
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
             text: TextSettings::default(),
+            workspace: WorkspaceSettings::default(),
         }
     }
 }
@@ -151,35 +162,12 @@ impl Settings {
         v
     }
 
-    fn find_preset(&self, id: &str) -> Option<Preset> {
-        self.all_presets().into_iter().find(|p| p.id == id)
-    }
-
-    /// Apply a preset: copy its look and remember which one is active.
-    pub fn apply_preset(&mut self, id: &str) {
-        if let Some(p) = self.find_preset(id) {
-            self.appearance = p.appearance;
-            self.active_preset = Some(p.id);
-        }
-    }
-
-    /// Record a manual appearance edit. Any hand edit detaches from the
-    /// preset UNLESS it happens to land back exactly on it.
+    /// Record a manual appearance edit: clamp the knobs to their real
+    /// ranges. Whether the look still matches a preset is not stored — every
+    /// surface decides that by comparing the live look, so a preset can never
+    /// claim a selection the reader is not looking at.
     pub fn touch_appearance(&mut self) {
         self.appearance.sanitize();
-        let still = self
-            .active_preset
-            .as_ref()
-            .and_then(|id| self.find_preset(id))
-            .map(|p| p.appearance == self.appearance)
-            .unwrap_or(false);
-        if !still {
-            self.active_preset = self
-                .all_presets()
-                .into_iter()
-                .find(|p| p.appearance == self.appearance)
-                .map(|p| p.id);
-        }
     }
 }
 
@@ -204,17 +192,26 @@ pub fn sanitize(settings: &mut Settings) {
         }
         settings.tint_strength_halved = true;
     }
+    if !settings.startup_fit_width {
+        settings.layout.default_fit = layout::default_startup_fit();
+        settings.startup_fit_width = true;
+    }
     settings.appearance.sanitize();
     typography::sanitize(&mut settings.text);
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
     settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
+    settings.workspace.pane_outline_width = settings.workspace.pane_outline_width.min(8);
+    settings.workspace.pane_gap = settings.workspace.pane_gap.min(24);
+    if !is_hex6(&settings.workspace.pane_outline_custom) {
+        settings.workspace.pane_outline_custom = WorkspaceSettings::default().pane_outline_custom;
+    }
     settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
     settings.layout.column_width_pct = settings
         .layout
         .column_width_pct
         .clamp(layout::MIN_COLUMN_WIDTH_PCT, layout::MAX_COLUMN_WIDTH_PCT);
     // A startup fit of `None` is meaningless (the reader would not know how
-    // to size the first page); fall back to `FitMode::Page`.
+    // to size the first page); fall back to the default startup fit.
     if settings.layout.default_fit == crate::zoom_math::FitMode::None {
         settings.layout.default_fit = layout::default_startup_fit();
     }
@@ -232,14 +229,6 @@ pub fn sanitize(settings: &mut Settings) {
     });
     for p in settings.user_presets.iter_mut() {
         p.appearance.sanitize();
-    }
-
-    // A dangling active_preset (deleted preset) must not leave the menu
-    // highlighting nothing while claiming a selection.
-    if let Some(id) = settings.active_preset.clone()
-        && !settings.all_presets().iter().any(|p| p.id == id)
-    {
-        settings.active_preset = None;
     }
 }
 
@@ -262,70 +251,33 @@ mod tests {
     }
 
     #[test]
-    fn applying_a_preset_sets_both_look_and_selection() {
-        let mut s = Settings::default();
-        s.apply_preset("green");
-        assert_eq!(s.active_preset.as_deref(), Some("green"));
-        assert_eq!(s.appearance.tint_hue, 104);
-    }
-
-    #[test]
-    fn editing_a_slider_detaches_from_the_preset() {
-        let mut s = Settings::default();
-        s.apply_preset("sepia");
-        s.appearance.tint_hue = 210;
-        s.touch_appearance();
-        assert_eq!(s.active_preset, None, "an edited preset is no longer that preset");
-    }
-
-    #[test]
-    fn editing_back_onto_a_preset_reselects_it() {
-        // If you dial the sliders to exactly Green, the menu should say
-        // Green — anything else is a lying UI.
-        let mut s = Settings::default();
-        s.apply_preset("sepia");
-        s.appearance = builtin_presets().into_iter().find(|p| p.id == "green").unwrap().appearance;
-        s.touch_appearance();
-        assert_eq!(s.active_preset.as_deref(), Some("green"));
-    }
-
-    #[test]
     fn user_presets_cannot_shadow_builtins_or_be_nameless() {
         let mut s = Settings {
             user_presets: vec![
-                Preset { id: "sepia".into(), name: "Mine".into(), group: String::new(), appearance: Appearance::default() },
-                Preset { id: "ok".into(), name: "  ".into(), group: String::new(), appearance: Appearance::default() },
-                Preset { id: "good".into(), name: "Good".into(), group: "G".into(), appearance: Appearance::default() },
+                Preset {
+                    id: "sepia".into(),
+                    name: "Mine".into(),
+                    group: String::new(),
+                    appearance: Appearance::default(),
+                },
+                Preset {
+                    id: "ok".into(),
+                    name: "  ".into(),
+                    group: String::new(),
+                    appearance: Appearance::default(),
+                },
+                Preset {
+                    id: "good".into(),
+                    name: "Good".into(),
+                    group: "G".into(),
+                    appearance: Appearance::default(),
+                },
             ],
             ..Settings::default()
         };
         sanitize(&mut s);
         let ids: Vec<String> = s.user_presets.iter().map(|p| p.id.clone()).collect();
         assert_eq!(ids, vec!["good".to_string()]);
-    }
-
-    #[test]
-    fn a_stale_plain_base_selection_is_dropped_not_dangled() {
-        // Settings persisted while Light/Dark/Dim were presets carry their
-        // ids as `active_preset`; the sanitizer clears the selection (the look
-        // itself lives in `appearance` and survives) rather than highlight a
-        // swatch that no longer exists.
-        let mut s = Settings {
-            active_preset: Some("light".to_string()),
-            ..Settings::default()
-        };
-        sanitize(&mut s);
-        assert_eq!(s.active_preset, None);
-    }
-
-    #[test]
-    fn a_deleted_active_preset_does_not_dangle() {
-        let mut s = Settings {
-            active_preset: Some("gone".to_string()),
-            ..Settings::default()
-        };
-        sanitize(&mut s);
-        assert_eq!(s.active_preset, None);
     }
 
     #[test]
@@ -347,7 +299,10 @@ mod tests {
                 ]}"#,
         )
         .unwrap();
-        assert!(!s.tint_strength_halved, "a blob without the gate loads un-migrated");
+        assert!(
+            !s.tint_strength_halved,
+            "a blob without the gate loads un-migrated"
+        );
         sanitize(&mut s);
         assert_eq!(
             s.appearance.tint_strength, 23,
@@ -370,7 +325,10 @@ mod tests {
         let mut s = Settings::default();
         s.appearance.tint_strength = 45;
         sanitize(&mut s);
-        assert_eq!(s.appearance.tint_strength, 45, "nothing to migrate on a fresh blob");
+        assert_eq!(
+            s.appearance.tint_strength, 45,
+            "nothing to migrate on a fresh blob"
+        );
         assert!(s.tint_strength_halved);
     }
 
@@ -386,8 +344,8 @@ mod tests {
         assert_eq!(s.blend_area, PaperArea::WholePage);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
-        // Startup fit defaults to Fit Page.
-        assert_eq!(s.default_fit, crate::zoom_math::FitMode::Page);
+        // Startup fit defaults to Fit Width.
+        assert_eq!(s.default_fit, crate::zoom_math::FitMode::Width);
 
         // A blob saved BEFORE `auto_resize` existed is exactly this shape, so
         // these assertions are also the promise that an existing install keeps
@@ -400,15 +358,34 @@ mod tests {
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
         assert_eq!(s.blend_area, PaperArea::WholePage);
-        assert_eq!(s.default_fit, crate::zoom_math::FitMode::Page);
+        assert_eq!(s.default_fit, crate::zoom_math::FitMode::Width);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
     }
 
     #[test]
-    fn a_startup_fit_of_none_is_reset_to_page() {
+    fn a_startup_fit_of_none_is_reset_to_width() {
         let mut s = Settings::default();
         s.layout.default_fit = crate::zoom_math::FitMode::None;
+        sanitize(&mut s);
+        assert_eq!(s.layout.default_fit, crate::zoom_math::FitMode::Width);
+    }
+
+    #[test]
+    fn an_old_startup_fit_moves_to_width_once() {
+        let mut s = Settings {
+            startup_fit_width: false,
+            layout: LayoutSettings {
+                default_fit: crate::zoom_math::FitMode::Page,
+                ..LayoutSettings::default()
+            },
+            ..Settings::default()
+        };
+        sanitize(&mut s);
+        assert_eq!(s.layout.default_fit, crate::zoom_math::FitMode::Width);
+        assert!(s.startup_fit_width);
+        // A later explicit choice survives every subsequent sanitize.
+        s.layout.default_fit = crate::zoom_math::FitMode::Page;
         sanitize(&mut s);
         assert_eq!(s.layout.default_fit, crate::zoom_math::FitMode::Page);
     }

@@ -87,4 +87,3 @@ pub async fn explain_word(
 
     Ok(())
 }
-

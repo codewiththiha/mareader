@@ -14,8 +14,8 @@
 //! Both must be called from inside a reactive scope (an `Effect`); the
 //! listener is torn down when that scope's owner is cleaned up.
 
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 use leptos::prelude::*;
 

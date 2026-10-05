@@ -1,18 +1,17 @@
-//! Typed wrappers over the JS engine (window.PDFReader). This is the ONLY
-//! module that calls engine functions; views and effects never touch
-//! wasm-bindgen types.
+//! The realm-level half of the engine surface, plus the envelope parser
+//! every engine call shares. Views and effects never touch wasm-bindgen
+//! types.
+//!
+//! Document work is NOT here: every call that touches a document goes
+//! through the [`crate::session::PdfSession`] that owns it. What remains is
+//! what names no document — the appearance broadcast ([`theme`]: each live
+//! session re-derives its own raster theme), the diagnostics read side
+//! ([`diagnostics`]), and the paper frame parser ([`paper`]) the session's
+//! paper state machine reads through.
 //!
 //! Every engine fn resolves to `{ok:true, ...}` or
 //! `{ok:false, error:{name,message}}`; we check `ok` here and surface a
 //! `Result<T, EngineError>`.
-//!
-//! One focused module per surface: [`document`] (open / outline / destroy /
-//! covers / pending OS files), [`render`] (page registration, live renders,
-//! thumbnails), [`search`] (the Rust-owned full-text index + engine-side
-//! painting), [`paper`] (the paper session's pixel plumbing), [`dialog`] (the
-//! native open-file dialog), [`theme`] (re-bake / scrub mode / advisory
-//! sweeps). Window chrome and the AI kickoff are not engine surfaces — they
-//! live in the `app-chrome` and `ai-core` crates.
 //!
 //! [`resolve`] and the hoisted property keys live here: the one parser for the
 //! `{ok,...}` envelope and the hottest allocations in the crate, shared rather
@@ -22,22 +21,13 @@ use serde::de::DeserializeOwned;
 use std::thread::LocalKey;
 use wasm_bindgen::JsValue;
 
-pub mod dialog;
-pub mod document;
+pub mod diagnostics;
 pub mod paper;
-pub mod render;
-pub mod search;
 pub mod theme;
 
-pub use dialog::pick_document;
-pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
-pub use paper::{sample_paper_page, set_paper, set_paper_active, take_paper_frame, PaperFrame};
-pub use render::{
-    blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,
-    unregister_page,
-};
-pub use search::{build_search_index, clear_highlights, scope_to_document, search, set_active_match};
-pub use theme::{refresh_theme, set_appearance_menu_open, set_scrub_mode, sweep, sweep_snapshots};
+pub use diagnostics::{EngineStats, engine_stats, set_lifecycle_log};
+pub use paper::PaperFrame;
+pub use theme::{refresh_theme, set_appearance_menu_open, set_scrub_mode};
 
 /// Error returned by any engine call: the engine-side error `name` and
 /// `message`, or a local failure to parse/communicate.
@@ -92,22 +82,14 @@ js_keys! {
     KEY_WIDTH => "width",
     KEY_HEIGHT => "height",
     KEY_DATA => "data",
-    // Native dialog options (built once per dialog open — still hoisted so
-    // the pattern is uniform and the picker never allocates a key twice).
-    KEY_MULTIPLE => "multiple",
-    KEY_FILTERS => "filters",
-    KEY_EXTENSIONS => "extensions",
-    KEY_DOCUMENTS => "Documents",
 }
 
 /// `obj[key]` using one of the hoisted keys.
-pub(crate) fn reflect_get(obj: &JsValue, key: &'static LocalKey<JsValue>) -> Result<JsValue, JsValue> {
+pub(crate) fn reflect_get(
+    obj: &JsValue,
+    key: &'static LocalKey<JsValue>,
+) -> Result<JsValue, JsValue> {
     key.with(|k| js_sys::Reflect::get(obj, k))
-}
-
-/// `obj[key] = value` using one of the hoisted keys.
-pub(crate) fn reflect_set(obj: &JsValue, key: &'static LocalKey<JsValue>, value: &JsValue) -> bool {
-    key.with(|k| js_sys::Reflect::set(obj, k, value)).unwrap_or(false)
 }
 
 /// True when `window.PDFReader` is attached; must be checked before any

@@ -10,6 +10,7 @@
 //! Pure computation: no wasm and no DOM beyond the one device-pixel read at
 //! the presentation boundary; unit-testable via `cargo test -p pdf-core`.
 
+pub mod diagnostics;
 pub mod outline;
 pub mod pixel_grid;
 pub mod search;

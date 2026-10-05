@@ -27,7 +27,11 @@ fn hex_to_linear(hex: &str) -> Option<(f64, f64, f64)> {
     if h.len() != 6 {
         return None;
     }
-    let v = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok().map(|b| b as f64 / 255.0);
+    let v = |i: usize| {
+        u8::from_str_radix(&h[i..i + 2], 16)
+            .ok()
+            .map(|b| b as f64 / 255.0)
+    };
     Some((
         srgb_to_linear(v(0)?),
         srgb_to_linear(v(2)?),
@@ -70,7 +74,11 @@ pub fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
     let v = value.trim();
     if let Some(inner) = v.strip_prefix("oklch(").and_then(|s| s.strip_suffix(')')) {
         let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().ok());
-        return Some((it.next().flatten()?, it.next().flatten()?, it.next().flatten()?));
+        return Some((
+            it.next().flatten()?,
+            it.next().flatten()?,
+            it.next().flatten()?,
+        ));
     }
     hex_to_oklch(v)
 }

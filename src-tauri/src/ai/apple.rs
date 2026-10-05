@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use super::{
     prompts::{WORD_INFO_SYSTEM_PROMPT, WORD_INFO_USER_PROMPT},
-    schema::{word_info_schema, WordInfo},
+    schema::{WordInfo, word_info_schema},
     traits::{AiChunk, AiError, AiErrorKind, AiProvider},
 };
 
@@ -92,13 +92,19 @@ fn merge_partial(acc: &mut WordInfo, val: &serde_json::Value) {
         acc.meaning = s.to_string();
     }
     if let Some(a) = val.get("synonyms").and_then(|v| v.as_array()) {
-        let items: Vec<String> = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        let items: Vec<String> = a
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
         if !items.is_empty() {
             acc.synonyms = items;
         }
     }
     if let Some(a) = val.get("usages").and_then(|v| v.as_array()) {
-        let items: Vec<String> = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        let items: Vec<String> = a
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
         if !items.is_empty() {
             acc.usages = items;
         }

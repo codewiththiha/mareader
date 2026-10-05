@@ -54,7 +54,7 @@
 .import-ring-fill {
   stroke: var(--color-accent);
   /* 2 * pi * r(15), the product of `RING_RADIUS` in
-     src/features/library/progress_dock.rs — CSS cannot read the const, so
+     crates/library-runtime/src/features/library/progress_dock.rs — CSS cannot read the const, so
      `tools/check-chrome-contracts.ts` computes it and fails when the two
      disagree. A drift leaves the ring stopping short of full at 100%. */
   stroke-dasharray: 94.248;

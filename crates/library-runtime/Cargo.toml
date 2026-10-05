@@ -1,0 +1,64 @@
+[package]
+name = "library-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "library"
+path = "src/bin/library.rs"
+
+[dependencies]
+console_error_panic_hook = "0.1.7"
+app-chrome = { path = "../app-chrome" }
+app-state = { path = "../app-state" }
+app-ui = { path = "../app-ui" }
+frame-transport = { path = "../frame-transport" }
+js-sys = "0.3"
+leptos = { version = "0.8", features = ["csr"] }
+library-core = { path = "../library-core" }
+reader-core = { path = "../reader-core" }
+runtime-contract = { path = "../runtime-contract" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+storage = { path = "../storage" }
+tauri-bridge = { path = "../tauri-bridge" }
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Window", "Document", "Element", "HtmlElement", "HtmlDivElement",
+  "HtmlInputElement", "HtmlButtonElement", "HtmlSelectElement", "Node",
+  "NodeList", "HtmlCollection", "DomTokenList", "CssStyleDeclaration",
+  "Event", "MouseEvent", "KeyboardEvent", "WheelEvent", "DragEvent",
+  "DataTransfer", "DomRect", "ResizeObserver", "ResizeObserverEntry",
+  "Location", "UrlSearchParams", "Storage", "CustomEvent",
+  "AddEventListenerOptions", "EventTarget", "Navigator", "Performance",
+  "PerformanceEntry", "console", "ScrollIntoViewOptions", "ScrollLogicalPosition", "VisibilityState", "MessageEvent", "MessagePort", "Worker",
+  # `ScrollIntoViewOptions::set_behavior` and the `ScrollBehavior` enum the
+  # level's scroll-to-selection uses. Declared here because this artifact's
+  # own graph has to provide it: it used to arrive through app-ui's unused
+  # virtual-list dependency, and a feature a crate needs is the crate's own
+  # to name (`cargo` unifies features per build, and the library build is
+  # its own build).
+  "ScrollBehavior",
+] }
+
+[dev-dependencies]
+# The import service's tests read gloss marks straight off ai-core's types.
+ai-core = { path = "../ai-core" }
+# The shelf's tests build their books and shelves with the domain crate's own
+# fixtures (`library_core::testkit`); the feature is a dev-only gate and never
+# reaches a release build. Declared here, by the crate that uses them — the
+# workspace root used to enable the feature for everyone as a side effect of
+# its own dev-dependency.
+library-core = { path = "../library-core", features = ["test-util"] }
+
+# Standalone artifact builds do not inherit the workspace Clippy command.
+# Keep warnings fatal for every target/feature selection, including the
+# format-free Reader host. This is the same policy as the other runtime crates.
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "deny"

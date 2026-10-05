@@ -40,8 +40,15 @@ class FakeEl {
     readonly attrs: Attrs = {},
     readonly classes: string[] = [],
   ) {}
+  readonly isConnected = true;
   getAttribute(name: string): string | null {
     return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null;
+  }
+  /** Raised here, the event bubbles to the window: record it there, with
+   *  this element as its target. */
+  dispatchEvent(e: Dispatched): boolean {
+    dispatched.push({ type: e.type, detail: e.detail, bubbles: e.bubbles, target: this });
+    return true;
   }
   get textContent(): string {
     return this.children.map((c) => c.textContent).join("");
@@ -140,7 +147,7 @@ class FakeSelection {
 
 // sandbox
 
-type Dispatched = { type: string; detail: unknown };
+type Dispatched = { type: string; detail: unknown; bubbles?: boolean; target?: unknown };
 
 const dispatched: Dispatched[] = [];
 const docListeners = new Map<string, (e: { target?: unknown }) => void>();
@@ -155,9 +162,11 @@ const sandbox: Record<string, unknown> = {
   CustomEvent: class {
     readonly type: string;
     readonly detail: unknown;
-    constructor(type: string, init?: { detail?: unknown }) {
+    readonly bubbles: boolean;
+    constructor(type: string, init?: { detail?: unknown; bubbles?: boolean }) {
       this.type = type;
       this.detail = init?.detail;
+      this.bubbles = init?.bubbles ?? false;
     }
   },
   document: {
@@ -169,7 +178,7 @@ const sandbox: Record<string, unknown> = {
     },
   },
   dispatchEvent(e: Dispatched) {
-    dispatched.push({ type: e.type, detail: e.detail });
+    dispatched.push({ type: e.type, detail: e.detail, bubbles: e.bubbles, target: sandbox });
     return true;
   },
   addEventListener(type: string, fn: () => void) {
@@ -179,10 +188,24 @@ const sandbox: Record<string, unknown> = {
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 
-function take(type: string): unknown {
+function takeEvent(type: string): Dispatched {
   const at = dispatched.findIndex((e) => e.type === type);
   if (at === -1) throw new Error("selection smoke: no " + type + " event");
-  return dispatched.splice(at, 1)[0].detail;
+  return dispatched.splice(at, 1)[0];
+}
+
+// Several panes listen on the window, each keeping only the events raised
+// inside its own root: a selection's events are raised ON its page host and
+// bubble; a clear is nobody's and goes to the window itself.
+function takeFrom(type: string, origin: unknown): unknown {
+  const e = takeEvent(type);
+  if (e.target !== origin) {
+    throw new Error(`selection smoke: ${type} raised on the wrong target`);
+  }
+  if (origin !== sandbox && !e.bubbles) {
+    throw new Error(`selection smoke: ${type} raised on its host must bubble to the window`);
+  }
+  return e.detail;
 }
 
 function host(kind: string, page: number, blockIndex: string | null, text: string) {
@@ -199,7 +222,7 @@ function host(kind: string, page: number, blockIndex: string | null, text: strin
   );
   hostEl.children.push(row);
   row.parentElement = hostEl;
-  return { row, node };
+  return { row, node, hostEl };
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -242,12 +265,12 @@ export async function run(): Promise<void> {
   currentSelection = new FakeSelection(reflow.row, reflow.node, start, start + 4);
   docListeners.get("selectionchange")!({});
 
-  const pages = take(PAGES) as { first: number; last: number };
+  const pages = takeFrom(PAGES, reflow.hostEl) as { first: number; last: number };
   if (pages.first !== 3 || pages.last !== 3) {
     throw new Error("selection smoke: wrong page range " + JSON.stringify(pages));
   }
   await wait(220);
-  const detail = take(DETAIL) as {
+  const detail = takeFrom(DETAIL, reflow.hostEl) as {
     text: string;
     context: string;
     host: string | null;
@@ -270,12 +293,12 @@ export async function run(): Promise<void> {
   const pdf = host("pdf", 5, null, "Ink on a canvas, selectable through the text layer.");
   currentSelection = new FakeSelection(pdf.row, pdf.node, 0, 3);
   docListeners.get("selectionchange")!({});
-  const pdfPages = take(PAGES) as { first: number; last: number };
+  const pdfPages = takeFrom(PAGES, pdf.hostEl) as { first: number; last: number };
   if (pdfPages.first !== 5 || pdfPages.last !== 5) {
     throw new Error("selection smoke: wrong pdf page range " + JSON.stringify(pdfPages));
   }
   await wait(220);
-  const pdfDetail = take(DETAIL) as { text: string; host: string | null; spot: unknown };
+  const pdfDetail = takeFrom(DETAIL, pdf.hostEl) as { text: string; host: string | null; spot: unknown };
   if (pdfDetail.text !== "Ink" || pdfDetail.host !== "pdf" || pdfDetail.spot !== null) {
     throw new Error("selection smoke: wrong pdf detail " + JSON.stringify(pdfDetail));
   }
@@ -285,15 +308,15 @@ export async function run(): Promise<void> {
   // pinning and the pill's dismissal both wait for.
   currentSelection = null;
   docListeners.get("selectionchange")!({});
-  const cleared = take(PAGES);
+  const cleared = takeFrom(PAGES, sandbox);
   if (cleared !== null) throw new Error("selection smoke: clear sent " + JSON.stringify(cleared));
   // The debounced detail pass reports the collapse as a null detail, which
   // dismisses the pill; waiting for it here also drains the tracker's timer
   // so nothing fires during a later scenario.
   await wait(220);
-  const clearedDetail = take(DETAIL);
+  const clearedDetail = takeFrom(DETAIL, sandbox);
   if (clearedDetail !== null) {
     throw new Error("selection smoke: clear sent detail " + JSON.stringify(clearedDetail));
   }
-  console.log("selection clear ok: pages and detail reset to null");
+  console.log("selection clear ok: pages and detail reset to null, on the window");
 }

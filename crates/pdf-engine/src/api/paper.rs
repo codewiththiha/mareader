@@ -1,57 +1,16 @@
-//! The paper pipeline's engine plumbing: frames in, colours and switches out.
-//! The colour DECISIONS live in `crate::backdrop` (the session state machine);
-//! this module only shuttles pixels and CSS variables across the bridge.
+//! The paper pipeline's frame parser. The colour DECISIONS live in
+//! `crate::backdrop` (each session's state machine); the bridge calls that
+//! carry frames and papers are [`crate::session::PdfSession`]'s. This module
+//! only turns the engine's frame payloads into [`PaperFrame`]s.
 
 use wasm_bindgen::JsValue;
 
-use super::{
-    guard_pdf_reader, reflect_get, resolve, EngineError, KEY_DATA, KEY_HEIGHT, KEY_OK, KEY_PAGE,
-    KEY_WIDTH,
-};
-use crate::bridge;
+use super::{EngineError, KEY_DATA, KEY_HEIGHT, KEY_OK, KEY_PAGE, KEY_WIDTH, reflect_get, resolve};
 
 /// A raw page frame handed over by the engine: the raster downscaled to a
 /// ≤96px long edge, with its pixels — the input every colour decision in the
 /// `pdf-paper` crate runs on.
 pub use crate::types::PaperFrame;
-
-/// Drain the raw frame a live render of `canvas_id` stashed at the one
-/// pipeline moment the page's own paper is still unbaked. `None` when the
-/// canvas has nothing stashed (no render yet, or already drained).
-pub fn take_paper_frame(canvas_id: &str) -> Option<PaperFrame> {
-    if !guard_pdf_reader() {
-        return None;
-    }
-    parse_frame(&bridge::take_paper_frame(canvas_id))
-}
-
-/// Render `page` offscreen at a tiny scale and return its frame — the
-/// look-ahead's samples come through here.
-/// `Ok(None)` when the engine has no answer for the page (render failed).
-pub async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineError> {
-    if !guard_pdf_reader() {
-        return Ok(None);
-    }
-    let value = bridge::sample_paper_page(page).await;
-    resolve_frame(value, &format!("samplePaperPage({page})"))
-}
-
-pub fn set_paper(hex: Option<&str>) {
-    if !guard_pdf_reader() {
-        return;
-    }
-    bridge::set_paper(hex.unwrap_or(""));
-}
-
-/// Tell the engine whether the paper session wants frames at all: while blend
-/// mode is off, the renderer skips the per-render <=96px downscale + readback
-/// that `stashPaperFrame` exists to pay. Called by `backdrop::configure` on
-/// every settings change — the engine-side flag is idempotent.
-pub fn set_paper_active(on: bool) {
-    if guard_pdf_reader() {
-        bridge::set_paper_active(on);
-    }
-}
 
 /// The shape `resolve` deserialises a frameless `{ok:false, error}` into:
 /// nothing but the envelope, which `resolve` itself consumes.
@@ -60,7 +19,7 @@ struct Empty {}
 
 /// Parse a `{ok, page, width, height, data}` frame payload. The pixels come
 /// back as a typed array, not JSON, so the fields are read by hand.
-fn parse_frame(value: &JsValue) -> Option<PaperFrame> {
+pub(crate) fn parse_frame(value: &JsValue) -> Option<PaperFrame> {
     let ok = reflect_get(value, &KEY_OK)
         .ok()
         .and_then(|v| v.as_bool())
@@ -84,7 +43,7 @@ fn parse_frame(value: &JsValue) -> Option<PaperFrame> {
     })
 }
 
-fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>, EngineError> {
+pub(crate) fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>, EngineError> {
     if let Some(frame) = parse_frame(&value) {
         return Ok(Some(frame));
     }

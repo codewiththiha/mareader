@@ -4,7 +4,14 @@
      scroller — text/Markdown: the scroller IS the surface and carries one
                 background pattern
      bleed    — blend mode: the per-page texture overhangs the page box and
-                paints the gutter itself */
+                paints the gutter itself
+
+   A mode is a class on its carrier, and WHICH look supplies that class — the
+   window's or the pane's own — is decided where the carriers are built: the
+   PDF page host and the reflowable scroller, both through
+   `components::viewer::texture_surface`. Both dials here read the same two
+   variables, so a pane that owns its texture owns its opacity and scale too,
+   and a split can put grid on one document and none on its neighbour.
 
 /* Dark themes flip to LIGHT strokes: the canvas inverts its page to dark
    paper and dark strokes would vanish against it. */
@@ -87,21 +94,22 @@
    pattern rides the scroller as a background with `background-attachment:
    local`: anchored to the content, scrolling with it, behind all type by
    ordinary stacking. The pitch zooms with the type: the scroller writes
-   --tx-zoom inline (src/components/viewer/texture_surface.rs) into the same
+   --tx-zoom inline (crates/reader-runtime/src/components/viewer/texture_surface.rs) into the same
    --tex-scale formula the page texture uses, so both formats stay
    pitch-identical. The opacity dial is emulated with --tx-matte below: a
    background layer has no element opacity to fade. */
 
-:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"],
-:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"] {
+[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"],
+[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"] {
   /* A matte of the live paper colour at alpha (1 - p) over the pattern
      composites to exactly what `opacity: p` gives the PDF ::before: over
-     --tx-paper the visible strength is p × pattern, and the matte is
-     invisible wherever the pattern is not. */
+     the pane's effective paper (--pane-paper — the --tx-paper look, or the
+     blend colour the whole split stands on) the visible strength is
+     p × pattern, and the matte is invisible wherever the pattern is not. */
   --tx-opacity: var(--texture-opacity, 0.9);
   --tx-matte: linear-gradient(
-    color-mix(in srgb, var(--tx-paper) calc((1 - var(--tx-opacity)) * 100%), transparent),
-    color-mix(in srgb, var(--tx-paper) calc((1 - var(--tx-opacity)) * 100%), transparent)
+    color-mix(in srgb, var(--pane-paper, var(--tx-paper)) calc((1 - var(--tx-opacity)) * 100%), transparent),
+    color-mix(in srgb, var(--pane-paper, var(--tx-paper)) calc((1 - var(--tx-opacity)) * 100%), transparent)
   );
   --scale-factor: var(--tx-zoom, 1);
   --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
@@ -111,8 +119,8 @@
   background-origin: padding-box;
 }
 
-:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper,
-:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper {
+[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper,
+[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper {
   /* The matte is the FIRST layer, so it paints above the pattern it stands
      in for the element opacity a background layer has no way to fade. */
   background-image: var(--tx-matte), var(--tex-paper-image);
@@ -122,8 +130,8 @@
   background-size: 100% 100%, calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
 
-:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined,
-:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined {
+[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined,
+[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined {
   background-image: var(--tx-matte), var(--tex-lined-image);
   /* Explicit one-period tile: under `background-attachment: local` the
      positioning area is the whole scrollable extent, and an auto-sized
@@ -132,8 +140,8 @@
   background-size: 100% 100%, var(--tex-unit) var(--tex-unit);
 }
 
-:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid,
-:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid {
+[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid,
+[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid {
   background-image: var(--tx-matte), var(--tex-grid-image);
   /* One-period tiles: same WebKit `local` collapse as lined. */
   background-size:
@@ -142,14 +150,14 @@
     var(--tex-unit) var(--tex-unit);
 }
 
-:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted,
-:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted {
+[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted,
+[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted {
   background-image: var(--tx-matte), var(--tex-dotted-image);
   background-size: 100% 100%, calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
-:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross,
-:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross {
+[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross,
+[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross {
   background-image: var(--tx-matte), var(--tex-cross-image);
   background-size:
     100% 100%,
@@ -174,7 +182,7 @@
    backdrop a page here does not otherwise reach — so the overhang runs half
    a gap up and half a gap down, meeting the page above and the page below in
    the middle. The gap is published as --page-gap by the effect that resolves
-   it (src/effects/reader/layout_prefs.rs) and is zero in No Gap mode, where
+   it (crates/reader-runtime/src/effects/reader/layout_prefs.rs) and is zero in No Gap mode, where
    the pages are pulled together to overlap by a device pixel and the two
    halves collapse to the plain rule this was before. */
 .reader-bg.blend .pdf-page[id^="cont-"]::before {
@@ -224,3 +232,5 @@
   inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }
+
+/* only the changed file was rewritten */

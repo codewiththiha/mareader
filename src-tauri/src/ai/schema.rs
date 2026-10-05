@@ -29,8 +29,9 @@ pub fn word_info_schema() -> Schema {
         vec![
             SchemaProperty::string("pos")
                 .description("The part of speech of the word (e.g., noun, verb, adjective)."),
-            SchemaProperty::string("meaning")
-                .description("A simplified, easy-to-understand meaning of the word in the given context."),
+            SchemaProperty::string("meaning").description(
+                "A simplified, easy-to-understand meaning of the word in the given context.",
+            ),
             SchemaProperty::array("synonyms", SchemaProperty::string("word"))
                 .description("A list of 2 to 5 synonyms.")
                 .count(2, 5),

@@ -1,12 +1,18 @@
-//! The paper-session state machine, wired to the engine's eyes — named
-//! `backdrop` for what it drives. The pure colour math lives in the
-//! `pdf-paper` crate (the brain); this module is its live half.
+//! The paper state machine, wired to the engine's eyes — named `backdrop`
+//! for what it drives. The pure colour math lives in the `pdf-paper` crate
+//! (the brain); this module is its live half.
 //!
 //! Every colour decision — what a page's paper is, what the backdrop should
 //! show right now — lives in the pure crate and in this state machine. The TS
 //! engine keeps only the pixel plumbing: it stashes a raw frame per live
-//! render, renders offscreen samples on request, and paints whatever
-//! `--pdf-paper` it is told to.
+//! render, renders offscreen samples on request, and paints whatever paper it
+//! is told to.
+//!
+//! OWNERSHIP. The state ([`Paper`]) belongs to one [`PdfSession`]: the
+//! palette, the look-ahead set and the epoch are that document's, and every
+//! function here takes the session it works for. Two sessions keep two
+//! palettes; the root `--pdf-paper` shows the presenting session's (the
+//! engine decides which, `presentSession`).
 //!
 //! The backdrop is a colour PER PAGE, blended along the reader's scroll
 //! position so it arrives at the next page's paper at the same moment the page
@@ -18,22 +24,22 @@
 //! area — a flip is a lookup, since every feed detects through both areas
 //! and the other ladder is already warm), [`document_open`] (reset; publish
 //! nothing until a colour is known), [`live_frame`] (drain each successful
-//! render's stashed frame into the per-page ladders), [`document_close`]
-//! (drop the backdrop back to the theme paper), [`position`] (per scroll
-//! tick: the viewport's visible-paint-weighted mean page index, where the
-//! ladder interpolates so the backdrop meets the pages where they are).
+//! render's stashed frame into the per-page ladders), [`position`] (per
+//! scroll tick: the viewport's visible-paint-weighted mean page index), and
+//! [`Paper::invalidate`] when the session is disposed.
 //!
-//! Every spawned task carries the session's generation token and re-checks it
-//! after each `await`, so a sample started for one book can never land in the
-//! next.
+//! Every spawned task carries the session and its epoch and re-checks both
+//! after each `await`, so a sample started for one document can never land
+//! in another — nor in a session disposed while it ran.
 
-use std::cell::RefCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wasm_bindgen_futures::spawn_local;
 
 use pdf_paper::{PAPER_SHARE, PagePalette, PaperArea, PaperConfig, PaperDetector, Rgb};
 
-use crate::{api, bridge};
+use crate::api;
+use crate::session::PdfSession;
 
 mod lookahead;
 
@@ -45,7 +51,19 @@ use lookahead::ensure_lookahead;
 #[cfg(test)]
 use lookahead::lookahead_wants;
 
-pub(super) struct Session {
+/// Look-ahead samples in flight across every session: the diagnostics
+/// snapshot's gauge, which the baseline requires back to zero after the
+/// sessions are gone. Kept in step with each session's `sampling` set by
+/// [`Paper`]'s own methods (and its `Drop`).
+static SAMPLES_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// How many look-ahead samples are in flight, realm-wide.
+pub fn pending_samples() -> usize {
+    SAMPLES_IN_FLIGHT.load(Ordering::Relaxed)
+}
+
+/// One session's paper state.
+pub(crate) struct Paper {
     config: PaperConfig,
     blend_on: bool,
     doc_path: Option<String>,
@@ -65,21 +83,14 @@ pub(super) struct Session {
     published: Option<String>,
     /// The reader's page-ladder position as of the last [`position`] call.
     position: f64,
-    /// Pages whose offscreen look-ahead sample is in flight.
+    /// Pages whose offscreen look-ahead sample is in flight. Private: every
+    /// change goes through the methods that keep the realm gauge in step.
     sampling: std::collections::HashSet<u32>,
-    /// Generation token: bumped on document open/close.
+    /// Generation token: bumped on document open and on dispose.
     epoch: u64,
 }
 
-/// The ladder index a detection area resolves from.
-pub(super) fn slot(area: PaperArea) -> usize {
-    match area {
-        PaperArea::WholePage => 0,
-        PaperArea::Edges => 1,
-    }
-}
-
-impl Default for Session {
+impl Default for Paper {
     fn default() -> Self {
         Self {
             config: PaperConfig::default(),
@@ -96,41 +107,114 @@ impl Default for Session {
     }
 }
 
-thread_local! {
-    static SESSION: RefCell<Session> = RefCell::new(Session::default());
+impl Drop for Paper {
+    fn drop(&mut self) {
+        self.clear_sampling();
+    }
 }
 
-/// Run `f` against the session. The borrow ends before any engine call.
-pub(super) fn with<R>(f: impl FnOnce(&mut Session) -> R) -> R {
-    SESSION.with(|s| f(&mut s.borrow_mut()))
+impl Paper {
+    /// This session's look-ahead samples in flight.
+    pub(crate) fn pending_samples(&self) -> usize {
+        self.sampling.len()
+    }
+
+    fn start_sample(&mut self, page: u32) {
+        if self.sampling.insert(page) {
+            SAMPLES_IN_FLIGHT.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn end_sample(&mut self, page: u32) {
+        if self.sampling.remove(&page) {
+            SAMPLES_IN_FLIGHT.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+
+    fn clear_sampling(&mut self) {
+        SAMPLES_IN_FLIGHT.fetch_sub(self.sampling.len(), Ordering::Relaxed);
+        self.sampling.clear();
+    }
+
+    /// The session is being disposed: every in-flight sample is abandoned
+    /// (the epoch moves, the set empties) and the document is forgotten.
+    /// The engine clears the root paper itself when the presenting session
+    /// retires, so nothing is published from here.
+    pub(crate) fn invalidate(&mut self) {
+        self.epoch += 1;
+        self.clear_sampling();
+        self.doc_path = None;
+        self.num_pages = 0;
+        for palette in &mut self.palettes {
+            palette.clear();
+        }
+        self.interim = [None, None];
+        self.published = None;
+    }
 }
 
-/// Spawn an engine-talking task, but ONLY when a real engine is attached.
-/// Host `cargo test` has no JS runtime, so tasks that would talk to it
-/// simply never start — the state-machine logic they drive is tested
-/// directly instead.
-pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: impl FnOnce() -> F + 'static) {
-    if bridge::has_pdf_reader() {
+/// The ladder index a detection area resolves from.
+pub(super) fn slot(area: PaperArea) -> usize {
+    match area {
+        PaperArea::WholePage => 0,
+        PaperArea::Edges => 1,
+    }
+}
+
+/// Spawn an engine-talking task for `session`, but ONLY when a real engine
+/// is attached and the session is live. Host `cargo test` has no JS
+/// runtime, so tasks that would talk to it simply never start — the
+/// state-machine logic they drive is tested directly instead.
+pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(
+    session: &PdfSession,
+    f: impl FnOnce(PdfSession) -> F + 'static,
+) {
+    if crate::bridge::has_pdf_reader() && session.is_live() {
+        let session = session.clone();
         spawn_local(async move {
-            f().await;
+            f(session).await;
         });
     }
 }
 
-/// The reader's paper settings changed (or are being restated on mount).
+/// Land an offscreen sample of `page` taken at `epoch`: fed only when the
+/// session is still live and still on the document the sample was taken
+/// for. Returns whether the publish reads changed.
+pub(super) fn land_sample(
+    session: &PdfSession,
+    epoch: u64,
+    page: u32,
+    frame: Option<&api::PaperFrame>,
+) -> bool {
+    if !session.is_live() {
+        return false;
+    }
+    session.with_paper(|s| {
+        if s.epoch != epoch {
+            return false; // the document changed under the sample
+        }
+        s.end_sample(page);
+        match frame {
+            Some(f) => feed_state(s, f),
+            None => false, // unreadable page: nothing to learn
+        }
+    })
+}
+
+/// The reader's paper settings changed (or are being restated to a new
+/// session).
 ///
 /// `blend_on` gates the engine-side frame stash: while it is off, live
 /// renders skip the ≤96px downscale + readback entirely.
 ///
 /// An area flip needs no re-detection and invalidates nothing: every feed
 /// already answered through both areas, so the other ladder holds the
-/// answer and `publish` moves the colour old → new in one step — either
-/// direction, at any scroll position, with no gap between. The one cold
-/// case is a session that holds nothing for this book (blend was off, so
-/// nothing was stashed or fed): it samples the page under the cursor once.
-pub fn configure(blend_on: bool, mut config: PaperConfig) {
+/// answer and `publish` moves the colour old → new in one step. The one
+/// cold case is a session that holds nothing for this book (blend was off,
+/// so nothing was stashed or fed): it samples the page under the cursor once.
+pub(crate) fn configure(session: &PdfSession, blend_on: bool, mut config: PaperConfig) {
     config.sanitize();
-    with(|s| {
+    session.with_paper(|s| {
         if s.config.edge_width != config.edge_width {
             let edge_slot = slot(PaperArea::Edges);
             s.palettes[edge_slot].clear();
@@ -139,33 +223,27 @@ pub fn configure(blend_on: bool, mut config: PaperConfig) {
         s.blend_on = blend_on;
         s.config = config;
     });
-    api::set_paper_active(blend_on);
-    publish();
-    if with(|s| s.doc_path.is_some() && s.blend_on && s.published.is_none()) {
-        spawn_engine(move || async move {
-            let epoch = with(|s| s.epoch);
-            let page = with(|s| s.position.floor().max(1.0) as u32);
-            if let Some(frame) = api::sample_paper_page(page).await.ok().flatten() {
-                let changed = with(|s| {
-                    if s.epoch != epoch {
-                        return false; // the book changed under the sample
-                    }
-                    feed_state(s, &frame)
-                });
-                if changed {
-                    publish();
-                }
+    session.set_paper_active(blend_on);
+    publish(session);
+    let cold = session.with_paper(|s| s.doc_path.is_some() && s.blend_on && s.published.is_none());
+    if cold {
+        let (epoch, page) = session.with_paper(|s| (s.epoch, s.position.floor().max(1.0) as u32));
+        spawn_engine(session, move |session| async move {
+            let frame = session.sample_paper_page(page).await.ok().flatten();
+            if land_sample(&session, epoch, page, frame.as_ref()) {
+                publish(&session);
             }
         });
     }
-    ensure_lookahead();
+    ensure_lookahead(session);
 }
 
-/// A document opened: reset for the new book and clear the shelf's colour.
-/// Nothing is published until the reader's first frame lands.
-pub fn document_open(path: &str, num_pages: u32) {
-    with(|s| {
-        s.epoch += 1; // abandon the previous book's in-flight samples
+/// A document opened in `session`: start its paper state. Nothing is
+/// published until the reader's first frame lands.
+pub(crate) fn document_open(session: &PdfSession, path: &str, num_pages: u32) {
+    session.with_paper(|s| {
+        s.epoch += 1; // abandon anything in flight for an earlier state
+        s.clear_sampling();
         s.doc_path = Some(path.to_string());
         s.num_pages = num_pages;
         for palette in &mut s.palettes {
@@ -174,67 +252,52 @@ pub fn document_open(path: &str, num_pages: u32) {
         s.interim = [None, None];
         s.published = None;
         s.position = 1.0;
-        s.sampling.clear();
     });
-    api::set_paper(None); // the previous book's colour must not linger
-}
-
-/// The document closed (or the app is tearing down): forget everything and
-/// drop the backdrop back to the theme paper.
-pub fn document_close() {
-    with(|s| {
-        *s = Session {
-            config: s.config,
-            blend_on: s.blend_on,
-            ..Session::default()
-        };
-    });
-    api::set_paper(None); // the shelf shows the theme paper
+    session.set_paper(None);
 }
 
 /// A live render of `canvas_id` just completed: drain its stashed raw frame
 /// into the palette. A no-op while blend is off — the engine's stash is
-/// gated on the same switch, so there is nothing to drain and no bridge
-/// call worth making.
-pub fn live_frame(canvas_id: &str) {
-    if !with(|s| s.blend_on) {
+/// gated on the same switch, so there is nothing to drain.
+pub(crate) fn live_frame(session: &PdfSession, canvas_id: &str) {
+    if !session.with_paper(|s| s.blend_on) {
         return;
     }
-    if let Some(frame) = api::take_paper_frame(canvas_id) {
-        feed_frame(&frame);
+    if let Some(frame) = session.take_paper_frame(canvas_id) {
+        feed_frame(session, &frame);
     }
 }
 
 /// The viewport's position along the page ladder (1-based, fractional; the
 /// visible-paint-weighted mean page index). Per scroll tick. `pos <= 0`
 /// means "geometry unknown" and holds the last position.
-pub fn position(pos: f64) {
+pub(crate) fn position(session: &PdfSession, pos: f64) {
     if !pos.is_finite() || pos <= 0.0 {
         return;
     }
-    let moved = with(|s| {
+    let moved = session.with_paper(|s| {
         let moved = (pos - s.position).abs() > f64::EPSILON;
         s.position = pos;
         moved
     });
     if moved {
-        publish();
-        ensure_lookahead();
+        publish(session);
+        ensure_lookahead(session);
     }
 }
 
 /// Feed one raw frame (live stash or offscreen sample) into the session.
-fn feed_frame(frame: &api::PaperFrame) {
-    let changed = with(|s| feed_state(s, frame));
+fn feed_frame(session: &PdfSession, frame: &api::PaperFrame) {
+    let changed = session.with_paper(|s| feed_state(s, frame));
     if changed {
-        publish();
-        ensure_lookahead();
+        publish(session);
+        ensure_lookahead(session);
     }
 }
 
 /// The state half of a feed, for in-borrow use. Returns whether anything
 /// the publish reads has changed.
-pub(super) fn feed_state(s: &mut Session, frame: &api::PaperFrame) -> bool {
+fn feed_state(s: &mut Paper, frame: &api::PaperFrame) -> bool {
     if s.doc_path.is_none() || frame.width == 0 || frame.height == 0 {
         return false;
     }
@@ -270,7 +333,7 @@ pub(super) fn feed_state(s: &mut Session, frame: &api::PaperFrame) -> bool {
 /// The colour the session resolves right now, if any: the current area's
 /// ladder at the reader's position, with its first live colour as the
 /// book-open fallback.
-fn resolve(s: &Session) -> Option<Rgb> {
+fn resolve(s: &Paper) -> Option<Rgb> {
     let slot = slot(s.config.area);
     s.palettes[slot].colour_at(s.position).or(s.interim[slot])
 }
@@ -279,8 +342,8 @@ fn resolve(s: &Session) -> Option<Rgb> {
 /// session is deliberately blank (no book, blend off). An UNKNOWN colour
 /// holds what is already published: the backdrop must not flash to the
 /// theme paper while a sample is still in flight.
-pub(super) fn publish() {
-    let outcome = with(|s| {
+pub(super) fn publish(session: &PdfSession) {
+    let outcome = session.with_paper(|s| {
         if s.doc_path.is_none() || !s.blend_on {
             return (None, s.published.take());
         }
@@ -296,15 +359,26 @@ pub(super) fn publish() {
         }
     });
     match outcome {
-        (Some(hex), _) => {
-            api::set_paper(Some(hex.as_str()));
-        }
-        // Deliberate blank: no book / blend off — clear the backdrop.
-        (None, Some(_)) => {
-            api::set_paper(None);
-        }
+        (Some(hex), _) => session.set_paper(Some(hex.as_str())),
+        // Deliberate blank: no book / blend off — clear the session's paper.
+        (None, Some(_)) => session.set_paper(None),
         _ => {}
     }
+}
+
+/// Test hook for the session tests: open a document in `session` and feed
+/// one cream page, so its palette holds something.
+#[cfg(test)]
+pub(crate) fn test_feed(session: &PdfSession, path: &str) {
+    session.with_paper(|s| s.blend_on = true);
+    document_open(session, path, 4);
+    let frame = tests::uniform(1, 16, 16, [0xfa, 0xf4, 0xe8]);
+    feed_frame(session, &frame);
+}
+
+#[cfg(test)]
+pub(crate) fn test_has_palette(session: &PdfSession) -> bool {
+    session.with_paper(|s| s.palettes[0].contains(1))
 }
 
 // The state machine runs on the host: bridge calls are guarded, so only the
@@ -314,16 +388,52 @@ pub(super) fn publish() {
 mod tests {
     use super::*;
     use pdf_paper::PaperArea;
+    use std::cell::RefCell;
+
+    // Each test drives ONE fresh session; these wrappers bind the state
+    // machine's functions to it so the assertions read as before.
+    thread_local! {
+        static CURRENT: RefCell<Option<PdfSession>> = const { RefCell::new(None) };
+    }
+
+    fn cur() -> PdfSession {
+        CURRENT.with(|c| c.borrow().clone().expect("reset_session first"))
+    }
+
+    fn with<R>(f: impl FnOnce(&mut Paper) -> R) -> R {
+        cur().with_paper(f)
+    }
+
+    fn document_open(path: &str, num_pages: u32) {
+        super::document_open(&cur(), path, num_pages);
+    }
+
+    fn feed_frame(frame: &api::PaperFrame) {
+        super::feed_frame(&cur(), frame);
+    }
+
+    fn position(pos: f64) {
+        super::position(&cur(), pos);
+    }
+
+    fn configure(blend_on: bool, config: PaperConfig) {
+        super::configure(&cur(), blend_on, config);
+    }
 
     /// A uniform `w × h` frame of one colour.
-    fn uniform(page: u32, w: u32, h: u32, colour: [u8; 3]) -> api::PaperFrame {
+    pub(super) fn uniform(page: u32, w: u32, h: u32, colour: [u8; 3]) -> api::PaperFrame {
         let mut data = vec![255u8; (w * h * 4) as usize];
         for i in (0..data.len()).step_by(4) {
             data[i] = colour[0];
             data[i + 1] = colour[1];
             data[i + 2] = colour[2];
         }
-        api::PaperFrame { page, width: w, height: h, data }
+        api::PaperFrame {
+            page,
+            width: w,
+            height: h,
+            data,
+        }
     }
 
     const CREAM: [u8; 3] = [0xfa, 0xf4, 0xe8];
@@ -332,13 +442,12 @@ mod tests {
     const MAROON: [u8; 3] = [0x80, 0x00, 0x00];
 
     fn reset_session(config: PaperConfig, blend_on: bool) {
-        with(|s| {
-            *s = Session {
-                config,
-                blend_on,
-                ..Session::default()
-            };
+        let session = PdfSession::create();
+        session.with_paper(|s| {
+            s.config = config;
+            s.blend_on = blend_on;
         });
+        CURRENT.with(|c| *c.borrow_mut() = Some(session));
     }
 
     fn published() -> Option<String> {
@@ -405,7 +514,9 @@ mod tests {
         }
         feed_frame(&art);
         assert_eq!(published().as_deref(), Some("#faf4e8"));
-        assert!(!with(|s| s.palettes[0].contains(2) || s.palettes[1].contains(2)));
+        assert!(!with(
+            |s| s.palettes[0].contains(2) || s.palettes[1].contains(2)
+        ));
     }
 
     #[test]
@@ -452,7 +563,12 @@ mod tests {
                 }
             }
         }
-        api::PaperFrame { page, width: w as u32, height: h as u32, data }
+        api::PaperFrame {
+            page,
+            width: w as u32,
+            height: h as u32,
+            data,
+        }
     }
 
     #[test]
@@ -514,7 +630,7 @@ mod tests {
 
             // `configure` already queued these samples. Clear that bookkeeping
             // to inspect the pure look-ahead decision against the new cache.
-            s.sampling.clear();
+            s.clear_sampling();
             assert_eq!(lookahead_wants(s), vec![1, 2, 3]);
         });
     }
@@ -538,14 +654,79 @@ mod tests {
     }
 
     #[test]
-    fn closing_the_document_forgets_the_book() {
+    fn disposing_the_session_forgets_the_book() {
         reset_session(PaperConfig::default(), true);
         document_open("/fake/book.pdf", 10);
         feed_frame(&uniform(1, 32, 32, CREAM));
-        document_close();
+        futures::executor::block_on(cur().dispose());
         assert_eq!(published(), None);
-        assert!(with(|s| s.palettes[0].is_empty() && s.palettes[1].is_empty()));
+        assert!(with(
+            |s| s.palettes[0].is_empty() && s.palettes[1].is_empty()
+        ));
         assert!(with(|s| s.doc_path.is_none()));
+        // A disposed session ignores every later paper call.
+        cur().paper_position(3.0);
+        cur().paper_document_open("/fake/other.pdf", 3);
+        assert!(with(|s| s.doc_path.is_none()));
+    }
+
+    #[test]
+    fn a_sample_that_outlives_its_session_is_dropped() {
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/book.pdf", 10);
+        let session = cur();
+        let epoch = session.with_paper(|s| {
+            s.start_sample(2);
+            s.epoch
+        });
+        assert_eq!(session.paper_pending_samples(), 1);
+        futures::executor::block_on(session.dispose());
+        // The dispose abandoned the in-flight sample (the realm gauge falls
+        // with the session's set), and the late answer lands nowhere.
+        assert_eq!(session.paper_pending_samples(), 0);
+        let frame = uniform(2, 32, 32, CREAM);
+        assert!(!land_sample(&session, epoch, 2, Some(&frame)));
+        assert!(with(|s| !s.palettes[0].contains(2)));
+    }
+
+    #[test]
+    fn a_sample_from_before_a_reopen_is_dropped() {
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/book.pdf", 10);
+        let session = cur();
+        let epoch = session.with_paper(|s| {
+            s.start_sample(2);
+            s.epoch
+        });
+        document_open("/fake/book.pdf", 10); // epoch moves on
+        let frame = uniform(2, 32, 32, CREAM);
+        assert!(!land_sample(&session, epoch, 2, Some(&frame)));
+        assert_eq!(session.paper_pending_samples(), 0);
+    }
+
+    #[test]
+    fn two_sessions_keep_two_palettes() {
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/a.pdf", 10);
+        feed_frame(&uniform(1, 32, 32, CREAM));
+        let a = cur();
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/b.pdf", 10);
+        feed_frame(&uniform(1, 32, 32, INK));
+        let b = cur();
+        assert_eq!(
+            a.with_paper(|s| s.published.clone()).as_deref(),
+            Some("#faf4e8")
+        );
+        assert_eq!(
+            b.with_paper(|s| s.published.clone()).as_deref(),
+            Some("#404040")
+        );
+        futures::executor::block_on(a.dispose());
+        assert_eq!(
+            b.with_paper(|s| s.published.clone()).as_deref(),
+            Some("#404040")
+        );
     }
 
     #[test]

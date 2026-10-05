@@ -69,8 +69,8 @@ impl Appearance {
 
 #[cfg(test)]
 mod tests {
-    use crate::appearance::fixture::tinted;
     use crate::appearance::BaseMode;
+    use crate::appearance::fixture::tinted;
 
     #[test]
     fn no_tint_leaves_the_base_filters_untouched() {
@@ -82,11 +82,17 @@ mod tests {
         // Dark and Dim keep exactly the pipelines the old hand-written CSS had.
         let dark = tinted(BaseMode::Dark, 34, 0).canvas_filter();
         assert!(dark.starts_with("invert(0.92)"), "{dark}");
-        assert!(!dark.contains("sepia"), "untinted dark must not colourise: {dark}");
+        assert!(
+            !dark.contains("sepia"),
+            "untinted dark must not colourise: {dark}"
+        );
 
         let dim = tinted(BaseMode::Dim, 34, 0).canvas_filter();
         assert_eq!(dim, "brightness(0.8) saturate(0.75) contrast(0.9)");
-        assert!(!dim.contains("invert"), "Dim must preserve document colours");
+        assert!(
+            !dim.contains("invert"),
+            "Dim must preserve document colours"
+        );
     }
 
     #[test]
@@ -153,7 +159,15 @@ mod tests {
         assert!(BaseMode::Dim.is_dark(), "Dim needs the dark UI palette");
         // Dim must keep the document's own colours — that is the reason to
         // pick it over Dark.
-        assert!(!tinted(BaseMode::Dim, 0, 0).canvas_filter().contains("invert"));
-        assert!(tinted(BaseMode::Dark, 0, 0).canvas_filter().contains("invert"));
+        assert!(
+            !tinted(BaseMode::Dim, 0, 0)
+                .canvas_filter()
+                .contains("invert")
+        );
+        assert!(
+            tinted(BaseMode::Dark, 0, 0)
+                .canvas_filter()
+                .contains("invert")
+        );
     }
 }

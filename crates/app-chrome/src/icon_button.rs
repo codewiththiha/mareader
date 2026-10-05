@@ -14,10 +14,8 @@ pub fn IconButton(
     #[prop(optional, into)]
     icon: Option<IconName>,
     on_click: impl Fn() + 'static,
-    #[prop(into, optional)]
-    title: Option<String>,
-    #[prop(default = 18)]
-    size: u16,
+    #[prop(into, optional)] title: Option<String>,
+    #[prop(default = 18)] size: u16,
     /// Optional toggle state: renders `aria-pressed` plus the accent/ink
     /// colour swap (the titlebar pin).
     #[prop(optional)]

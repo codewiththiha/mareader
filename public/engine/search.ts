@@ -10,7 +10,7 @@
 import type { TextItem } from "./types";
 import { fail, failFrom } from "./errors";
 import { clearHighlightBoxes, markActiveHighlight, refreshHighlights } from "./highlights";
-import { session } from "./state";
+import type { EngineSession } from "./state";
 
 function itemRect(item: TextItem, pageH: number): { x: number; y: number; w: number; h: number } {
   const t = item.transform || [1, 0, 0, 1, 0, 0];
@@ -33,16 +33,31 @@ type ExtractedPageItem = { str: string; x: number; y: number; w: number; h: numb
  *  unreadable page is `{ok:false, error}` — the Rust builder skips it, the
  *  same way the old streaming search did. */
 export async function extractPageText(
+  s: EngineSession,
   page: number,
 ): Promise<
   | { ok: true; page: number; items: ExtractedPageItem[] }
   | { ok: false; error: { name: string; message: string } }
 > {
-  const doc = session.pdf;
+  const doc = s.pdf;
   if (!doc || page < 1) return fail("no_document", "No document open");
+  // A close can land while an extraction is in flight. The awaits below go
+  // to the pdf.js worker — a worker destroy() is killing — so they race the
+  // document-gone signal and fail fast instead of hanging on a promise the
+  // dead worker never settles (which would hold the search-build gauge up
+  // forever and block the disposal baseline).
+  const dying = s.documentGoneSignal();
   try {
-    const pg = await doc.getPage(page);
-    const tc = await pg.getTextContent();
+    const pg = await Promise.race([
+      doc.getPage(page),
+      dying.promise.then(() => null),
+    ]);
+    if (!pg) return fail("no_document", "Document closed mid-extraction");
+    const tc = await Promise.race([
+      pg.getTextContent(),
+      dying.promise.then(() => null),
+    ]);
+    if (!tc) return fail("no_document", "Document closed mid-extraction");
     const pageH = pg.getViewport({ scale: 1 }).height;
     const items: ExtractedPageItem[] = [];
     for (const item of tc.items) {
@@ -59,28 +74,30 @@ export async function extractPageText(
     return { ok: true, page, items };
   } catch (e) {
     return failFrom(e);
+  } finally {
+    dying.unsubscribe();
   }
 }
 
 /** Publish the active query so mounted text layers repaint their highlight
  *  boxes immediately (they paint from the DOM spans, not from the match
  *  list, so the index result alone would leave the page unmarked). */
-export function setSearchContext(query: string): void {
-  session.setSearchQuery(String(query || "").toLowerCase().trim());
-  refreshHighlights();
+export function setSearchContext(s: EngineSession, query: string): void {
+  s.setSearchQuery(String(query || "").toLowerCase().trim());
+  refreshHighlights(s);
 }
 
-export function setActiveMatch(page: number, index: number): void {
+export function setActiveMatch(s: EngineSession, page: number, index: number): void {
   const next =
     Number.isFinite(page) && page > 0 && Number.isFinite(index) && index >= 0
       ? { page, index: index | 0 }
       : null;
-  session.setActiveMatchValue(next);
-  for (const st of session.stateByCanvasId.values()) markActiveHighlight(st);
+  s.setActiveMatchValue(next);
+  for (const st of s.stateByCanvasId.values()) markActiveHighlight(s, st);
 }
 
-export function clearHighlights(): void {
-  session.setSearchQuery("");
-  session.setActiveMatchValue(null);
-  for (const st of session.stateByCanvasId.values()) clearHighlightBoxes(st);
+export function clearHighlights(s: EngineSession): void {
+  s.setSearchQuery("");
+  s.setActiveMatchValue(null);
+  for (const st of s.stateByCanvasId.values()) clearHighlightBoxes(st);
 }

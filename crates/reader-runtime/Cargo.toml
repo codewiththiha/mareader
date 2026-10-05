@@ -1,0 +1,87 @@
+[package]
+name = "reader-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "reader"
+path = "src/bin/reader.rs"
+
+[[bin]]
+name = "pdf"
+path = "src/bin/pdf.rs"
+required-features = ["pdf"]
+
+[[bin]]
+name = "reflow"
+path = "src/bin/reflow.rs"
+required-features = ["reflow"]
+
+[features]
+# Host/unit tests compose every format; production pane artifacts explicitly
+# select just their document pipeline with no default features.
+default = ["pdf", "reflow"]
+pdf = ["dep:pdf-engine"]
+reflow = []
+# The document engines' live probes, for the artifacts that run documents
+# (the pane frames). The Reader host builds without any features, so no
+# document engine import reaches its artifact.
+engine = []
+
+[dependencies]
+ai-core = { path = "../ai-core" }
+app-chrome = { path = "../app-chrome" }
+app-state = { path = "../app-state" }
+app-ui = { path = "../app-ui" }
+console_error_panic_hook = "0.1.7"
+frame-transport = { path = "../frame-transport" }
+js-sys = "0.3"
+leptos = { version = "0.8", features = ["csr"] }
+leptos-md = "0.1"
+library-core = { path = "../library-core" }
+md-core = { path = "../md-core" }
+pdf-core = { path = "../pdf-core" }
+pdf-engine = { path = "../pdf-engine", optional = true }
+pdf-paper = { path = "../pdf-paper" }
+reader-core = { path = "../reader-core" }
+runtime-contract = { path = "../runtime-contract" }
+reflow-core = { path = "../reflow-core" }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = "1"
+storage = { path = "../storage" }
+tauri-bridge = { path = "../tauri-bridge" }
+txt-core = { path = "../txt-core" }
+virtual-list = { path = "../virtual-list" }
+virtual-list-leptos = { path = "../virtual-list-leptos" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Window", "Document", "Element", "HtmlElement", "HtmlDivElement",
+  "HtmlCanvasElement", "HtmlInputElement", "HtmlButtonElement",
+  "HtmlSelectElement", "Node", "NodeList", "HtmlCollection", "DomTokenList",
+  "CssStyleDeclaration", "CanvasRenderingContext2d", "Event", "UiEvent", "MouseEvent", "PointerEvent",
+  "KeyboardEvent", "FocusOptions", "WheelEvent", "ResizeObserver",
+  "ResizeObserverEntry", "DomRect", "DomRectList", "Selection", "Range",
+  "Text", "Location", "UrlSearchParams", "Storage", "Performance",
+  "PerformanceEntry", "console", "DragEvent", "DataTransfer", "CustomEvent",
+  "AddEventListenerOptions", "EventTarget", "HtmlDocument", "Navigator",
+  "VisibilityState", "HtmlIFrameElement", "MessageEvent", "Worker",
+  "MessageChannel", "MessagePort", "MutationObserver", "MutationObserverInit",
+  "KeyboardEventInit", "ImageBitmap", "PointerEventInit",
+] }
+
+[dev-dependencies]
+# The fixture builders (`library_core::testkit`) the Library panel's tree
+# tests build a library with. Dev-only: never in a release graph.
+library-core = { path = "../library-core", features = ["test-util"] }
+
+# Standalone artifact builds do not inherit the workspace Clippy command.
+# Keep warnings fatal for every target/feature selection, including the
+# format-free Reader host. This is the same policy as the other runtime crates.
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "deny"

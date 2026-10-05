@@ -1,0 +1,80 @@
+//! Film grain: Off / Static / Animated, plus intensity.
+//!
+//! This replaced a boolean toggle. "Animated" is a third mode rather than a
+//! second checkbox because "animated but off" is not a meaningful state, and a
+//! 3-way choice makes that unrepresentable instead of merely discouraged.
+
+use leptos::prelude::*;
+
+use crate::appearance::{AppearanceScrub, ThemeHandle, ThemeScope};
+use crate::components::primitives::controls::toggle_button::ToggleButton;
+use crate::components::primitives::form::slider::Slider;
+use app_state::ChromeState;
+use reader_core::appearance::NoiseMode;
+
+#[component]
+pub fn NoiseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
+    // Grain is the one GLOBAL dial whatever the theme routing says: the
+    // noise layer is window-level and every pane inherits it, so its dials
+    // read and write Settings directly (ThemeScope::Global).
+    let seed = state.settings.read_untracked().appearance;
+    let (intensity, set_intensity) = signal(seed.noise_intensity as f64);
+
+    Effect::new(move || {
+        let a = state.settings.with(|s| s.appearance);
+        set_intensity.set(a.noise_intensity as f64);
+    });
+
+    let current = move || state.settings.with(|s| s.appearance.noise);
+
+    view! {
+        <div class="grid grid-cols-3 gap-1">
+            {NoiseMode::all()
+                .iter()
+                .copied()
+                .map(|m| {
+                    let selected = Signal::derive(move || current() == m);
+                    view! {
+                        <ToggleButton
+                            active=selected
+                            on_click=move || {
+                                theme.commit.run((ThemeScope::Global, Box::new(move |a| {
+                                    a.noise = m;
+                                    // Turning grain on at 0% shows nothing
+                                    // and reads as a dead control.
+                                    if m.is_on() && a.noise_intensity == 0 {
+                                        a.noise_intensity = 25;
+                                    }
+                                })));
+                            }
+                            variant_class="px-2 py-1.5 text-xs"
+                        >
+                            {m.label()}
+                        </ToggleButton>
+                    }
+                })
+                .collect_view()}
+        </div>
+        <div
+            class=move || {
+                if current().is_on() { "mt-3" } else { "mt-3 opacity-40" }
+            }
+        >
+            <Slider
+                value=intensity
+                min=0.0
+                max=100.0
+                step=1.0
+                unit="%"
+                on_change=move |v| {
+                    let v = v.round().clamp(0.0, 100.0);
+                    set_intensity.set(v);
+                    theme
+                        .scrub
+                        .run((ThemeScope::Global, AppearanceScrub::NoiseIntensity(v as u8)));
+                }
+                label="Grain intensity"
+            />
+        </div>
+    }
+}

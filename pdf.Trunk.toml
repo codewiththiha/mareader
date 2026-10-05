@@ -1,0 +1,6 @@
+# The PDF pane artifact: one pane per frame (docs/pane-runtimes.md). Built by
+# tools/build-dist.sh alongside the shell page; unhashed so the workspace
+# host can name `pdf.html`.
+[build]
+target = "pdf.html"
+filehash = false

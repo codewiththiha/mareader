@@ -5,29 +5,33 @@
 import type { PaperInfo, PipelineCache } from "../types";
 import { acquireScratch, releaseScratch } from "../canvas";
 import { applyFilterToData } from "./filterKernel";
+import { heldSessions, paperPublisher } from "../state";
+import type { EngineSession } from "../state";
 import { readPipeline } from "./pipeline";
-import { session } from "../state";
 
-export function paperInfo(pipeline: PipelineCache): PaperInfo {
+export function paperInfo(pipeline: PipelineCache, scope?: HTMLElement | null): PaperInfo {
   if (pipeline.paperInfo) return pipeline.paperInfo;
   const info: PaperInfo = { color: "#ffffff", rgb: [255, 255, 255] };
   try {
     const probe = document.createElement("div");
     probe.style.cssText = "display:none;background-color:var(--color-paper,#ffffff)";
-    document.documentElement.appendChild(probe);
+    (scope ?? document.documentElement).appendChild(probe);
     const resolved = getComputedStyle(probe).backgroundColor;
     probe.remove();
     if (resolved && resolved !== "rgba(0, 0, 0, 0)") {
       info.color = resolved;
       const c = acquireScratch(1, 1);
-      const ctx = c.getContext("2d");
-      if (ctx) {
-        ctx.fillStyle = resolved;
-        ctx.fillRect(0, 0, 1, 1);
-        const d = ctx.getImageData(0, 0, 1, 1).data;
-        info.rgb = [d[0] ?? 255, d[1] ?? 255, d[2] ?? 255];
+      try {
+        const ctx = c.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = resolved;
+          ctx.fillRect(0, 0, 1, 1);
+          const d = ctx.getImageData(0, 0, 1, 1).data;
+          info.rgb = [d[0] ?? 255, d[1] ?? 255, d[2] ?? 255];
+        }
+      } finally {
+        releaseScratch(c);
       }
-      releaseScratch(c);
     }
   } catch (_) {
     /* white paper */
@@ -85,8 +89,7 @@ function toPaperHex(rgb: [number, number, number]): string {
  *  the colour a baked raster's paper region carries, with no texture folded
  *  in: the overlay rides over this colour, on the page and (through the
  *  page's own bleed) on the gutter alike. */
-function themedPaperHex(pipeline: PipelineCache): string | null {
-  const raw = session.detectedPaper;
+function themedPaperHex(pipeline: PipelineCache, raw: string | null): string | null {
   if (!raw) return null;
   const rgb = parsePaperHex(raw);
   if (!rgb) return raw; // not a shape we can re-theme: keep what we have
@@ -102,11 +105,12 @@ function themedPaperHex(pipeline: PipelineCache): string | null {
   // Stage two — the blend, composited exactly the way bakeRaster does: the
   // themed UI paper as the backdrop, one draw over it in the pipeline's
   // blend mode. A 1×1 canvas is all a single colour needs.
-  const paper = paperInfo(pipeline).color;
+  const paper = pipeline.paperInfo?.color ?? paperInfo(pipeline).color;
   let out: [number, number, number] = [px[0] ?? 0, px[1] ?? 0, px[2] ?? 0];
+  let scratch: HTMLCanvasElement | null = null;
   try {
-    const c = acquireScratch(1, 1);
-    const ctx = c.getContext("2d", { alpha: false });
+    scratch = acquireScratch(1, 1);
+    const ctx = scratch.getContext("2d", { alpha: false });
     if (ctx) {
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = paper;
@@ -118,87 +122,90 @@ function themedPaperHex(pipeline: PipelineCache): string | null {
       const d = ctx.getImageData(0, 0, 1, 1).data;
       out = [d[0] ?? out[0], d[1] ?? out[1], d[2] ?? out[2]];
     }
-    releaseScratch(c);
   } catch (_) {
     /* the filtered colour alone is closer than none */
+  } finally {
+    if (scratch) releaseScratch(scratch);
   }
   return toPaperHex(out);
 }
 
-/** Keep `--pdf-paper-baked` honest: the detected paper pre-rendered through
- *  the current filter + blend, with nothing else folded in — the colour a
- *  baked raster's paper carries, and therefore the colour the backdrop base
- *  and the page hosts both stand on. Called whenever an input moves: the
- *  detected paper (`setPaper`), the theme (`rebakeTheme`, and through it the
- *  scrub exit's forced rebake), and the standing token watch below, which
- *  hears the moves no engine call carries — a drag's per-tick repaint of the
- *  filter, blend and UI paper. */
-export function publishBakedPaper(): void {
-  let el: HTMLElement;
-  try {
-    el = document.documentElement;
-  } catch (_) {
-    return;
-  }
-  const hex = themedPaperHex(readPipeline());
-  if (hex) el.style.setProperty("--pdf-paper-baked", hex);
-  else el.style.removeProperty("--pdf-paper-baked");
-}
-
-// THE STANDING WATCH. The published paper is computed from three root tokens
-// (--canvas-filter, --canvas-blend, --color-paper) plus the detected paper,
-// and the first three move on no schedule the engine hears: a tint drag
-// repaints the root once per animation frame (src/effects/app/theme.rs).
-// Without this watch the backdrop would settle on whatever value the
-// scheduler last published, against a page that already carries the new one.
-// So the watch republishes on every fingerprint move, wherever it came
-// from: per tick through a drag — one 1×1 composite, no raster work, which
-// is what keeps the backdrop in lockstep with the live-blending canvases
-// the SCRUB WINDOW cover in styles/components/shell.css describes — and in
-// the same frame as a structural click's paint, because a MutationObserver
-// callback is a microtask and the value lands before the browser paints.
-// The fingerprint holds only the composite's INPUTS: the observer
-// re-triggers on publishBakedPaper's own root-style write, and the
-// published value not being part of the fingerprint is what dedupes that
-// to one publish per real move.
-let paperWatcher: MutationObserver | null = null;
-let paperWatchLast = "";
-
-function paperWatchFingerprint(): string {
-  try {
-    const cs = getComputedStyle(document.documentElement);
-    return [
-      cs.getPropertyValue("--canvas-filter"),
-      cs.getPropertyValue("--canvas-blend"),
-      cs.getPropertyValue("--color-paper"),
-    ].join("|");
-  } catch (_) {
-    return "";
+/** Publish both paper scopes. `--pdf-paper-baked` remains the shared
+ *  workspace backdrop for ordinary blend mode (the current MRU publisher).
+ *  Every PDF session also writes `--pane-pdf-paper-baked` on its pinned pane
+ *  root, derived from that pane's own PDF paper and appearance pipeline. */
+export function publishBakedPaper(session?: EngineSession): void {
+  const target = session ?? paperPublisher() ?? undefined;
+  if (target && !target.disposed) {
+    const pipeline = readPipeline(target);
+    const hex = themedPaperHex(pipeline, target.detectedPaper);
+    if (target.themeRoot) {
+      if (hex) target.themeRoot.style.setProperty("--pane-pdf-paper-baked", hex);
+      else target.themeRoot.style.removeProperty("--pane-pdf-paper-baked");
+    }
+    if (paperPublisher() === target) writeBakedPaper(document.documentElement, hex, "--pdf-paper-baked");
+  } else {
+    writeBakedPaper(document.documentElement, null, "--pdf-paper-baked");
   }
 }
 
-/** Install the standing watch. Idempotent, and a no-op in environments
- *  without a compositor: the node smoke harness has no MutationObserver —
- *  and no backdrop to keep honest. */
+function writeBakedPaper(root: HTMLElement, hex: string | null, name: string): void {
+  if (hex) root.style.setProperty(name, hex);
+  else root.style.removeProperty(name);
+}
+
+// THE STANDING WATCH. Root appearance writes are realm-shared; pane-root
+// writes are observed per session. We deliberately do not observe the whole
+// document subtree: page/canvas inline geometry changes are frequent, and
+// would turn this 1px paper publisher into a document-wide mutation pump.
+let rootPaperWatcher: MutationObserver | null = null;
+const panePaperWatchers = new WeakMap<EngineSession, MutationObserver>();
+const paperWatchInputs = new WeakMap<EngineSession, string>();
+
+function syncPaperFor(s: EngineSession): void {
+  if (s.disposed) return;
+  const pipeline = readPipeline(s);
+  const input = `${pipeline.filter}|${pipeline.blend}|${pipeline.paperInfo?.color ?? ""}`;
+  if (paperWatchInputs.get(s) === input) return;
+  paperWatchInputs.set(s, input);
+  publishBakedPaper(s);
+}
+
+/** Begin observing this session's pinned pane root. Called when its first
+ *  registered page supplies the owning `[data-pane-root]`. The observer is
+ *  disconnected at session teardown; the WeakMap is not a realm owner. */
+export function observeThemeRoot(s: EngineSession): void {
+  if (typeof MutationObserver === "undefined" || !s.themeRoot || panePaperWatchers.has(s)) return;
+  try {
+    const observer = new MutationObserver(() => syncPaperFor(s));
+    observer.observe(s.themeRoot, { attributes: true, attributeFilter: ["style", "class"] });
+    panePaperWatchers.set(s, observer);
+    syncPaperFor(s);
+  } catch (_) {
+    /* the engine still publishes on paper/theme calls */
+  }
+}
+
+/** Release the per-session appearance observer before the root/session dies. */
+export function unobserveThemeRoot(s: EngineSession): void {
+  panePaperWatchers.get(s)?.disconnect();
+  panePaperWatchers.delete(s);
+  paperWatchInputs.delete(s);
+}
+
+/** Install the one realm-root observer. It only handles global token writes;
+ *  pane-local changes use `observeThemeRoot` above. */
 export function watchPaperTokens(): void {
-  if (typeof MutationObserver === "undefined") return;
-  if (paperWatcher) return;
+  if (typeof MutationObserver === "undefined" || rootPaperWatcher) return;
   try {
-    paperWatchLast = paperWatchFingerprint();
-    paperWatcher = new MutationObserver(() => {
-      const fingerprint = paperWatchFingerprint();
-      if (fingerprint === paperWatchLast) return;
-      paperWatchLast = fingerprint;
-      publishBakedPaper();
+    rootPaperWatcher = new MutationObserver(() => {
+      for (const session of heldSessions()) syncPaperFor(session);
     });
-    // "class" rides along for the base flip: every flip writes the root style
-    // too, so the style filter alone would catch it — the class filter just
-    // does not have to trust that.
-    paperWatcher.observe(document.documentElement, {
+    rootPaperWatcher.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["style", "class"],
     });
   } catch (_) {
-    paperWatcher = null;
+    rootPaperWatcher = null;
   }
 }

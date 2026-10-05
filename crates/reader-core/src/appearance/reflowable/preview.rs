@@ -5,9 +5,9 @@
 //! private namespace and texture/noise tail as the PDF swatch (see
 //! `appearance::preview`); only the colour tokens differ.
 
-use crate::appearance::preview::ps_surface_tail;
-use crate::appearance::Appearance;
 use super::palette::TextPalette;
+use crate::appearance::Appearance;
+use crate::appearance::preview::ps_surface_tail;
 
 impl Appearance {
     /// Inline `style` for a preset thumbnail, rendered with the text-page
@@ -39,21 +39,30 @@ impl Appearance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::appearance::fixture::tinted;
     use crate::appearance::BaseMode;
+    use crate::appearance::fixture::tinted;
 
     #[test]
     fn the_text_swatch_carries_the_text_palette() {
         let a = tinted(BaseMode::Light, 104, 50);
         let style = a.text_preview_style();
         let p = TextPalette::compute(&a);
-        assert!(style.contains(&format!("--ps-color-paper:{};", p.paper)), "{style}");
-        assert!(style.contains(&format!("--ps-color-ink:{};", p.ink)), "{style}");
+        assert!(
+            style.contains(&format!("--ps-color-paper:{};", p.paper)),
+            "{style}"
+        );
+        assert!(
+            style.contains(&format!("--ps-color-ink:{};", p.ink)),
+            "{style}"
+        );
         // Private namespace only, like the PDF swatch: no root-mutated
         // names may leak in, or WKWebView repaints the swatch every frame
         // of a slider drag (see appearance::preview).
         for root_mutated in ["--canvas-filter:", "--color-paper:", "--tx-paper:"] {
-            assert!(!style.contains(root_mutated), "{root_mutated} leaked: {style}");
+            assert!(
+                !style.contains(root_mutated),
+                "{root_mutated} leaked: {style}"
+            );
         }
     }
 
@@ -66,9 +75,16 @@ mod tests {
         assert!(style.contains("--ps-texture-blend:screen"), "{style}");
 
         let dark = tinted(BaseMode::Dark, 0, 0);
-        assert!(dark.text_preview_style().contains("--ps-texture-blend:screen"));
+        assert!(
+            dark.text_preview_style()
+                .contains("--ps-texture-blend:screen")
+        );
 
         let light = tinted(BaseMode::Light, 0, 0);
-        assert!(light.text_preview_style().contains("--ps-texture-blend:multiply"));
+        assert!(
+            light
+                .text_preview_style()
+                .contains("--ps-texture-blend:multiply")
+        );
     }
 }

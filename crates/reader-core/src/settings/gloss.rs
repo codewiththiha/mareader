@@ -20,7 +20,7 @@ pub fn default_custom_gloss() -> String {
     "#a58af0".into()
 }
 
-/// `#` + six ASCII hex digits — the shape the custom colour picker emits.
+/// `#` + six ASCII hex digits — the shape the colour inputs emit.
 pub fn is_hex6(s: &str) -> bool {
     let b = s.as_bytes();
     s.len() == 7 && b[0] == b'#' && b[1..].iter().all(|c| c.is_ascii_hexdigit())
@@ -115,3 +115,5 @@ mod tests {
         );
     }
 }
+
+// only the changed file was rewritten

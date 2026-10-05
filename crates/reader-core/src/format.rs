@@ -61,17 +61,7 @@ pub const SUPPORTED: &[DocumentKind] = &[
 /// set is storage. The serde names are the lower-case pipeline names, so a
 /// blob reads as `"pdf"` rather than as the variant's capitalisation.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    Serialize,
-    Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
@@ -150,7 +140,9 @@ pub fn format_of(path: &str) -> Format {
 
 /// Every supported extension, flattened (for dialog filters).
 pub fn extensions() -> impl Iterator<Item = &'static str> {
-    SUPPORTED.iter().flat_map(|kind| kind.extensions.iter().copied())
+    SUPPORTED
+        .iter()
+        .flat_map(|kind| kind.extensions.iter().copied())
 }
 
 /// Every supported kind's display name, in registry order ("PDF", "Text", ...).
@@ -169,7 +161,11 @@ pub fn kind_list() -> String {
     match names.len() {
         0 => String::new(),
         1 => names[0].to_string(),
-        _ => format!("{} or {}", names[..names.len() - 1].join(", "), names[names.len() - 1]),
+        _ => format!(
+            "{} or {}",
+            names[..names.len() - 1].join(", "),
+            names[names.len() - 1]
+        ),
     }
 }
 
@@ -306,7 +302,6 @@ mod tests {
 
     #[test]
     fn the_kind_list_is_read_out_of_the_registry() {
-
         // UI copy is generated, never typed: a row added to `SUPPORTED` shows
         // up here with no edit.
         assert_eq!(kind_list(), "PDF, Text or Markdown");

@@ -15,15 +15,15 @@ use leptos::children::ViewFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::layers::BAR;
-use crate::hooks::{DEFAULT_HOVER_DELAY, HoverConfig, use_hover_reveal};
 use crate::hooks::dom::{
-    by_id, TOOLBAR_CENTER_TITLE_ID, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,
+    TOOLBAR_CENTER_TITLE_ID, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID, by_id,
 };
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::hooks::use_window_event::use_window_event;
+use crate::hooks::{DEFAULT_HOVER_DELAY, HoverConfig, use_hover_reveal};
 use crate::icon::IconName;
 use crate::icon_button::IconButton;
+use crate::layers::BAR;
 use crate::tooltip::Tooltip;
 
 /// Breathing room between the measured clusters and the centered slot.
@@ -48,9 +48,8 @@ fn resolve_center_slot(
     let center = row_width * 0.5;
     // At the row center the content spans center ± w/2; it fits while both
     // ends clear the clusters.
-    let fits_center = title_width.is_some_and(|w| {
-        w <= 2.0 * (center - left) && w <= 2.0 * (right - center)
-    });
+    let fits_center =
+        title_width.is_some_and(|w| w <= 2.0 * (center - left) && w <= 2.0 * (right - center));
     if fits_center {
         return (0.0, row_width);
     }
@@ -73,7 +72,12 @@ fn measure_center_slot() -> Option<(f64, f64)> {
     let left = leading.get_bounding_client_rect().right() - row_rect.left() + CENTER_GAP;
     let right = trailing.get_bounding_client_rect().left() - row_rect.left() - CENTER_GAP;
     let title_width = by_id(TOOLBAR_CENTER_TITLE_ID).map(|title| title.scroll_width() as f64);
-    Some(resolve_center_slot(row_rect.width(), left, right, title_width))
+    Some(resolve_center_slot(
+        row_rect.width(),
+        left,
+        right,
+        title_width,
+    ))
 }
 
 /// Coalesced slot re-measure (write-if-changed, so a sidebar slide costs
@@ -167,7 +171,8 @@ pub fn TitleBar(
     /// the bar owes the lights one, the resting padding once the corner
     /// belongs to something else. Computed by the shell controller's
     /// `titlebar_left_gutter`, which owns the rule.
-    #[prop(into)] left_gutter: Signal<f64>,
+    #[prop(into)]
+    left_gutter: Signal<f64>,
     #[prop(into)] left: ViewFn,
     /// Center slot (e.g. the document title). Dead center while the
     /// content's natural width clears both clusters, else the free stretch
@@ -205,7 +210,12 @@ pub fn TitleBar(
         pin: Some(pinned.into()),
     });
     let visible = hover.visible;
-    provide_context(TitleBarCtx { visible, held_count, center_title_ref, row_ref });
+    provide_context(TitleBarCtx {
+        visible,
+        held_count,
+        center_title_ref,
+        row_ref,
+    });
 
     let (enter_band, leave_band) = hover.bind();
     let (enter_bar, leave_bar) = hover.bind();
@@ -293,10 +303,7 @@ pub fn TitleBar(
 /// Pin toggle. The new value is reported to the caller, which owns
 /// persistence.
 #[component]
-fn PinButton(
-    pinned: RwSignal<bool>,
-    on_pin_change: Callback<bool>,
-) -> impl IntoView {
+fn PinButton(pinned: RwSignal<bool>, on_pin_change: Callback<bool>) -> impl IntoView {
     view! {
         <Tooltip text="Pin titlebar open">
             <IconButton
@@ -317,7 +324,10 @@ mod tests {
     use super::resolve_center_slot;
 
     fn close(actual: f64, expected: f64) {
-        assert!((actual - expected).abs() < 1e-9, "expected {expected}, got {actual}");
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
     }
 
     #[test]

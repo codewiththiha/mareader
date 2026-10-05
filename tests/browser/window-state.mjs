@@ -1,0 +1,123 @@
+// Real Library WASM against a deterministic Tauri window/event boundary.
+// This checks the compiled titlebar wiring, not an orphaned helper's source.
+export async function verifyWindowState({ browser, base }) {
+  const context = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  try {
+    // This existing same-origin page is inert when opened top-level; no
+    // Shell/runtime starts underneath the manually hosted Library fixture.
+    await page.goto(`${base}/bake.html`, { waitUntil: "load" });
+    await page.evaluate((base) => {
+      const native = window.__windowProbe = {
+        maximized: true, queries: 0, delayQuery: false, delayedQueries: [],
+        holdResize: false, delayedRegistrations: [], resizeHandlers: new Set(), unlistens: 0,
+      };
+      native.emit = () => { for (const handler of native.resizeHandlers) handler({ payload: null }); };
+      const handle = {
+        async isMaximized() {
+          native.queries += 1;
+          if (native.delayQuery) return new Promise((resolve) => native.delayedQueries.push(resolve));
+          return native.maximized;
+        },
+        async toggleMaximize() { native.maximized = !native.maximized; native.emit(); },
+        async minimize() {}, async close() {},
+      };
+      window.__TAURI__ = {
+        core: { async invoke() { return null; } },
+        window: { getCurrentWindow: () => handle },
+        event: { listen(name, handler) {
+          if (name !== "tauri://resize") return Promise.resolve(() => {});
+          native.resizeHandlers.add(handler);
+          const unlisten = () => { native.resizeHandlers.delete(handler); native.unlistens += 1; };
+          if (native.holdResize) return new Promise((resolve) => native.delayedRegistrations.push(() => resolve(unlisten)));
+          return Promise.resolve(unlisten);
+        } },
+      };
+      window.__mountWindowProbe = (generation) => {
+        const nonce = `window-probe-${generation}`;
+        const frame = document.createElement("iframe");
+        frame.id = "window-probe-frame";
+        frame.style.cssText = "width:100%;height:750px;border:0";
+        frame.src = `${base}/library.html?hosted=1&g=${generation}&n=${nonce}`;
+        const fixture = window.__windowFixture = { generation, nonce, ready: false, disposed: false, port: null, offers: [] };
+        const offer = () => {
+          const channel = new MessageChannel();
+          fixture.offers.push(channel.port1);
+          channel.port1.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.kind === "status" && message.stage === "initialized") {
+              fixture.port = channel.port1;
+              clearInterval(fixture.ticker);
+              for (const other of fixture.offers) if (other !== fixture.port) other.close();
+              fixture.offers = [fixture.port];
+              fixture.port.postMessage({ generation, nonce, kind: "init", runtime: "library", launch: null, hidden: false });
+            }
+            if (message.kind === "ready") fixture.ready = true;
+            if (message.kind === "disposeComplete") fixture.disposed = true;
+          };
+          frame.contentWindow.postMessage({ kind: "mareader.channel", generation, nonce }, location.origin, [channel.port2]);
+        };
+        frame.onload = offer;
+        // Trunk's async init can outlive document load; never mistake a
+        // missed early offer for missing titlebar wiring.
+        fixture.ticker = setInterval(offer, 300);
+        document.body.append(frame);
+      };
+      window.__disposeWindowProbe = () => {
+        const f = window.__windowFixture;
+        f.port.postMessage({ generation: f.generation, nonce: f.nonce, kind: "dispose" });
+      };
+      window.__mountWindowProbe(1);
+    }, base);
+    const captions = () => page.frameLocator("#window-probe-frame");
+    await page.waitForFunction(() => window.__windowFixture.ready, null, { timeout: 30_000 });
+    await captions().locator('button[aria-label="Restore"]').waitFor({ state: "attached" });
+    await page.waitForFunction(() => window.__windowProbe.resizeHandlers.size === 1);
+    const before = await page.evaluate(() => window.__windowProbe.queries);
+    await page.evaluate(() => {
+      const native = window.__windowProbe;
+      native.maximized = false;
+      native.delayQuery = true;
+      for (let i = 0; i < 30; i += 1) native.emit();
+    });
+    await page.waitForFunction((before) => window.__windowProbe.queries === before + 1, before);
+    await page.evaluate(() => {
+      const native = window.__windowProbe;
+      native.delayQuery = false;
+      for (const resolve of native.delayedQueries.splice(0)) resolve(native.maximized);
+    });
+    await captions().locator('button[aria-label="Maximize"]').waitFor({ state: "attached" });
+    await page.waitForFunction((before) => window.__windowProbe.queries === before + 2, before);
+    const stormQueries = await page.evaluate((before) => window.__windowProbe.queries - before, before);
+    await page.evaluate(() => { window.__windowProbe.maximized = true; window.__windowProbe.emit(); });
+    await captions().locator('button[aria-label="Restore"]').waitFor({ state: "attached" });
+    await page.evaluate(() => window.__disposeWindowProbe());
+    await page.waitForFunction(() => window.__windowFixture.disposed && window.__windowProbe.resizeHandlers.size === 0);
+    await page.evaluate(() => {
+      document.getElementById("window-probe-frame").remove();
+      window.__windowFixture.port.close();
+      window.__windowProbe.holdResize = true;
+      window.__mountWindowProbe(2);
+    });
+    await page.waitForFunction(() => window.__windowFixture.ready && window.__windowProbe.delayedRegistrations.length === 1);
+    await captions().locator('button[aria-label="Restore"]').waitFor({ state: "attached" });
+    await page.evaluate(() => window.__disposeWindowProbe());
+    await page.waitForFunction(() => window.__windowFixture.disposed);
+    const retiredQueries = await page.evaluate(() => {
+      const native = window.__windowProbe;
+      const before = native.queries;
+      native.emit(); // Native registration is still pending, but handler is inert.
+      for (const complete of native.delayedRegistrations.splice(0)) complete();
+      return before;
+    });
+    await page.waitForFunction(() => window.__windowProbe.resizeHandlers.size === 0 && window.__windowProbe.unlistens === 2);
+    const final = await page.evaluate(() => ({ queries: window.__windowProbe.queries, handlers: window.__windowProbe.resizeHandlers.size }));
+    if (final.queries !== retiredQueries || errors.length) throw new Error(`disposed window bridge ran: ${JSON.stringify({ final, retiredQueries, errors })}`);
+    return { initialMaximized: true, externalResizeUpdates: true, stormQueries,
+      pendingRegistrationUnlistened: true, retiredProbeSuppressed: true };
+  } finally {
+    await context.close();
+  }
+}

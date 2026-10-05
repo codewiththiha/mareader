@@ -10,5 +10,7 @@ pub mod traffic_light {
     pub fn init() -> TauriPlugin<tauri::Wry> {
         Builder::new("traffic_light").build()
     }
-    pub fn set_traffic_lights(_window: tauri::Window, _visible: bool, _header_height: f64) {}
+    // No `set_traffic_lights` here on purpose: the command's body calls it
+    // under `cfg(target_os = "macos")` only, so a stub on the other platforms
+    // is dead code — and the Linux release build denies warnings.
 }

@@ -1,25 +1,20 @@
+//! The shell artifact's entry. The shell is the persistent host: routing,
+//! the runtime manager, persistence, diagnostics. Library and reader are
+//! separate artifacts it loads and disposes (docs/runtime-split.md).
+
 mod app;
-mod components;
-mod dom_contract;
+mod diagnostics;
 mod effects;
-mod epoch;
-mod events;
-mod features;
-mod memory;
 mod services;
 mod state;
-mod storage;
-mod time;
-mod zoom;
 
-use app::*;
 use leptos::prelude::*;
 
 fn main() {
     console_error_panic_hook::set_once();
     mount_to_body(|| {
         view! {
-            <App/>
+            <app::Shell/>
         }
     })
 }

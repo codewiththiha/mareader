@@ -4,7 +4,7 @@
 //! `backdrop-filter` containing blocks force on us.
 
 use super::types::{
-    place_panel_from_anchor, rect_from_element, PlacementOptions, PlacedPanel, Rect, Size,
+    PlacedPanel, PlacementOptions, Rect, Size, place_panel_from_anchor, rect_from_element,
 };
 
 /// Place a panel of `panel_w` x `panel_h` at the given anchor element within

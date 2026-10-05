@@ -116,7 +116,10 @@ fn natural(a: &str, b: &str) -> Ordering {
 }
 
 fn strip_zeros(digits: &[u8]) -> &[u8] {
-    let first = digits.iter().position(|d| *d != b'0').unwrap_or(digits.len());
+    let first = digits
+        .iter()
+        .position(|d| *d != b'0')
+        .unwrap_or(digits.len());
     &digits[first.min(digits.len().saturating_sub(1))..]
 }
 
@@ -128,11 +131,7 @@ pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
     }
     rows.sort_by(|a, b| {
         let ord = ascending(a, b, key);
-        if asc {
-            ord
-        } else {
-            ord.reverse()
-        }
+        if asc { ord } else { ord.reverse() }
     });
 }
 
@@ -250,8 +249,12 @@ mod tests {
     fn equal_keys_fall_back_to_the_address_so_the_order_is_total() {
         let mut a = book("Same", None);
         let mut b = book("Same", None);
-        a.origin = Origin::Linked { src: "/books/zzz.pdf".into() };
-        b.origin = Origin::Linked { src: "/books/aaa.pdf".into() };
+        a.origin = Origin::Linked {
+            src: "/books/zzz.pdf".into(),
+        };
+        b.origin = Origin::Linked {
+            src: "/books/aaa.pdf".into(),
+        };
         a.id = "one".into();
         b.id = "two".into();
         let mut books = rows([a, b]);
@@ -266,8 +269,14 @@ mod tests {
     fn a_stale_membership_is_dropped_rather_than_rendered_as_a_hole() {
         let books = rows([book("a", None), book("b", None)]);
         let members = vec!["b".to_string(), "gone".to_string(), "a".to_string()];
-        assert_eq!(titles(&ordered(&books, &members, SortKey::Manual, true)), vec!["b", "a"]);
-        assert_eq!(titles(&ordered(&books, &members, SortKey::Title, true)), vec!["a", "b"]);
+        assert_eq!(
+            titles(&ordered(&books, &members, SortKey::Manual, true)),
+            vec!["b", "a"]
+        );
+        assert_eq!(
+            titles(&ordered(&books, &members, SortKey::Title, true)),
+            vec!["a", "b"]
+        );
     }
 
     #[test]

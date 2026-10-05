@@ -391,6 +391,15 @@ impl VirtualizerCore {
         self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.pending = None;
+        // Queued measurements were taken at the OLD scale, and `sizes` is the
+        // authority for the new one (the caller builds it from the same
+        // records those reports fed). Left queued, they flush on the next
+        // frame — or at the resume that closes a zoom — and write old-scale
+        // sizes over the rescaled layout: the items above the anchor shrink
+        // back, every page below them jumps, and the view shows a different
+        // page until fresh reports arrive. Measurements taken after this
+        // rescale queue normally.
+        self.queue.clear();
         if let Some(top) = new_top {
             self.scroll_top = top.clamp(self.min_scroll(), self.max_scroll());
         }
@@ -622,6 +631,29 @@ impl VirtualizerCore {
         }
     }
 
+    /// One row's render contract, addressed by ANY item index in the layout:
+    /// the geometry `rows()` reports for a windowed row, available for a row
+    /// the adapter is bridging across a window change. Windowing is the only
+    /// thing the core decides about what is mounted, so the row arithmetic
+    /// has exactly one home.
+    pub fn row_at(&self, index: usize) -> VirtualRow {
+        match &self.layout {
+            LayoutKind::Grid(grid) => {
+                let row = grid.row_of(index);
+                VirtualRow {
+                    row,
+                    start: grid.row_offset(row) + self.padding_start,
+                    items: grid.row_items(row),
+                }
+            }
+            LayoutKind::List(_) => VirtualRow {
+                row: index,
+                start: self.layout.offset(index) + self.padding_start,
+                items: index..index + 1,
+            },
+        }
+    }
+
     /// The mounted rows.
     pub fn rows(&self) -> Vec<VirtualRow> {
         let Some(window) = self.range else {
@@ -632,19 +664,11 @@ impl VirtualizerCore {
                 let row_first = grid.row_of(window.first);
                 let row_last = grid.row_of(window.last);
                 (row_first..=row_last)
-                    .map(|row| VirtualRow {
-                        row,
-                        start: grid.row_offset(row) + self.padding_start,
-                        items: grid.row_items(row),
-                    })
+                    .map(|row| self.row_at(grid.row_items(row).start))
                     .collect()
             }
             LayoutKind::List(_) => (window.first..=window.last)
-                .map(|index| VirtualRow {
-                    row: index,
-                    start: self.layout.offset(index) + self.padding_start,
-                    items: index..index + 1,
-                })
+                .map(|index| self.row_at(index))
                 .collect(),
         }
     }
@@ -898,15 +922,24 @@ mod tests {
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
         // Instant: adopted into the core state immediately, no echo needed.
-        assert!(core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(core.scroll_top(), 5_000.0);
         assert_eq!(surface.writes(), vec![(5_000.0, false)]);
 
         let _ = core.on_scroll(5_000.0);
         // Auto within two viewports: smooth, so nothing adopts locally yet.
-        assert!(core.scroll_to_index(52, Align::Start, ScrollMode::Auto, &surface).is_none());
+        assert!(
+            core.scroll_to_index(52, Align::Start, ScrollMode::Auto, &surface)
+                .is_none()
+        );
         // Auto beyond two viewports: instant, adopted locally.
-        assert!(core.scroll_to_index(0, Align::Start, ScrollMode::Auto, &surface).is_some());
+        assert!(
+            core.scroll_to_index(0, Align::Start, ScrollMode::Auto, &surface)
+                .is_some()
+        );
         assert_eq!(surface.writes()[1], (5_200.0, true));
         assert_eq!(surface.writes()[2], (0.0, false));
         assert_eq!(core.scroll_top(), 0.0);
@@ -923,7 +956,10 @@ mod tests {
         let _ = core.on_scroll(5_000.0); // old document, deep scroll
 
         // Scroll to the top of the NEW document: instant, adopted now.
-        assert!(core.scroll_to_offset(0.0, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_offset(0.0, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(core.scroll_top(), 0.0);
 
         // The count rebuild that follows anchors at the adopted 0.
@@ -961,7 +997,10 @@ mod tests {
         // until it does the core still works from the old position. That is
         // the window the bounded re-aim protects: measurements keep moving
         // the target before the echo lands.
-        assert!(core.scroll_to_index(50, Align::Start, ScrollMode::Smooth, &surface).is_none());
+        assert!(
+            core.scroll_to_index(50, Align::Start, ScrollMode::Smooth, &surface)
+                .is_none()
+        );
 
         let mut retries = 0;
         for round in 0..5 {
@@ -1083,6 +1122,32 @@ mod tests {
     }
 
     #[test]
+    fn rescale_drops_measurements_taken_at_the_old_scale() {
+        let mut core = list_core(50, 100.0, 200.0);
+        let _ = core.on_scroll(2_400.0);
+        // A render at the old scale reports its size just before the zoom.
+        core.queue_size(10, 100.0);
+        core.queue_size(30, 100.0);
+        let step = core.rescale(2.0, &|_index| 200.0);
+        let top = step
+            .scroll_write
+            .expect("rescale writes the anchored offset");
+        // Whatever flushes next must not put the old sizes back.
+        match core.flush() {
+            None => {}
+            Some(flush) => assert_eq!(flush.applied, 0),
+        }
+        assert_eq!(core.layout.size(10), 200.0);
+        assert_eq!(core.layout.size(30), 200.0);
+        assert_eq!(core.scroll_top(), top);
+        // A measurement taken AFTER the rescale still lands.
+        core.queue_size(30, 180.0);
+        let flush = core.flush().expect("a post-rescale measurement flushes");
+        assert_eq!(flush.applied, 1);
+        assert_eq!(core.layout.size(30), 180.0);
+    }
+
+    #[test]
     fn rescale_keeps_the_viewport_center_stable() {
         // The zoom contract from the reader's side: whatever content point
         // sits at the viewport CENTER before a rescale must still sit at the
@@ -1146,12 +1211,21 @@ mod tests {
             },
         );
         let surface = TestSurface::default();
-        assert!(core.scroll_to_offset(-12.0, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_offset(-12.0, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(core.scroll_top(), -12.0);
         assert_eq!(surface.writes(), vec![(-12.0, false)]);
-        assert!(core.scroll_to_index(0, Align::Center, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_index(0, Align::Center, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert!(surface.writes()[1].0 < 0.0);
-        assert!(core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(surface.writes()[2].0, -12.0);
         assert_eq!(core.scroll_top(), -12.0);
     }
@@ -1203,7 +1277,11 @@ mod tests {
         let _ = core.on_scroll(2_000.0);
         let items = core.items();
         assert!(!items.is_empty());
-        assert!(items.iter().all(|item| item.state == VirtualItemState::Active));
+        assert!(
+            items
+                .iter()
+                .all(|item| item.state == VirtualItemState::Active)
+        );
         assert_eq!(core.render_range(), core.range());
     }
 
@@ -1221,3 +1299,5 @@ mod tests {
         }
     }
 }
+
+// only the changed file was rewritten

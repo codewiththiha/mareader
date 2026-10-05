@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mareader — Reader workspace</title>
+    <!-- Disposable chrome/host only. Every document owns its child iframe;
+         this page never loads the PDF engine or a reflow document pipeline. -->
+    <script src="/tauri-relay.js"></script>
+    <script src="/readerHost.js"></script>
+    <link data-trunk rel="css" href="styles.css" />
+    <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
+    <link data-trunk rel="copy-file" href="public/readerHost.js" />
+    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="reader" data-wasm-opt="z" data-cargo-no-default-features="true" />
+  </head>
+  <body></body>
+</html>
