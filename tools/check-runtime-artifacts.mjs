@@ -91,6 +91,8 @@ const REQUIRED = [
  *  and still boots, and the user gets a blank window while the runtime loads. */
 const SHELL_BOOT_ID = 'id="shell-boot"';
 const SHELL_BOOT_COPY = "Loading MAReader";
+const SHELL_BOOT_MARK = 'class="loader shell-boot__loader"';
+const SHELL_BOOT_WATCHDOG = "shellBoot.js";
 
 const problems = [];
 
@@ -138,6 +140,22 @@ if (fs.existsSync(indexHtml)) {
     problems.push(
       `dist/index.html's boot placeholder does not say "${SHELL_BOOT_COPY}" — ` +
         `the loading state is the shell's own copy (see index.html)`,
+    );
+  }
+  // The wait is shown, not papered over: the placeholder carries the app's own
+  // loading mark, the class pair the Loader component uses. A build that drops
+  // it leaves a blank window for as long as the webview takes to start painting,
+  // which is the one thing this screen exists to prevent.
+  if (!html.includes(SHELL_BOOT_MARK)) {
+    problems.push(
+      `dist/index.html's boot placeholder carries no ${SHELL_BOOT_MARK} — the boot ` +
+        `screen must animate while the shell starts (styles/boot.css)`,
+    );
+  }
+  if (!html.includes(SHELL_BOOT_WATCHDOG)) {
+    problems.push(
+      `dist/index.html does not load ${SHELL_BOOT_WATCHDOG} — nothing would say ` +
+        `"the shell did not start" when a launch fails, and the mark would run forever`,
     );
   }
 }
@@ -215,3 +233,5 @@ console.log(
   `runtime artifact contract OK: ${REQUIRED.length} files, ${total} bytes ` +
     `(Shell + Library + Reader host + PDF pane + reflow pane + shared assets)\n${sizes}`,
 );
+
+// only the changed file was rewritten

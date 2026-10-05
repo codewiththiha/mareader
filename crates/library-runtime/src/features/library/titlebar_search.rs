@@ -110,7 +110,11 @@ pub(crate) fn TitlebarSearch(state: crate::context::LibraryContext) -> impl Into
 
     view! {
         <div node_ref=anchor class="relative w-full max-w-xl">
+            // The bar's drag region claims its whole subtree; this pill opts
+            // out, so a press on its padding focuses the field instead of
+            // grabbing the window (and `preventDefault` never eats the caret).
             <div
+                data-tauri-drag-region="false"
                 class="pointer-events-auto flex w-full items-center gap-2 rounded-full \
                        border border-line bg-surface/70 px-3 py-1.5 backdrop-blur \
                        focus-within:border-accent"
@@ -231,3 +235,5 @@ pub(crate) fn TitlebarSearch(state: crate::context::LibraryContext) -> impl Into
         </div>
     }
 }
+
+// only the changed file was rewritten

@@ -717,6 +717,12 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
   than a still frame: an indicator that stops moving reports the wrong thing. Its animation is a
   `transform` on three dots, which the compositor keeps running while the main thread parses a
   document, so the mark is never frozen by the work it stands for.
+- The mark is also what the launch screen wears, before any of the app exists: `#shell-boot` shows
+  it with a line that says which part of starting is slow, and gets more specific as the wait grows
+  (public/shellBoot.js) — a clean blank window reads as a hung one, and a webview can take seconds
+  to paint its first frame on Windows. The window's own background gets the remembered paper from
+  the same script that colours the page (public/bootPaint.js), because no stylesheet can reach the
+  layer the webview paints underneath, and its default is white.
 - Interactive controls carry `aria-label`, `aria-pressed`, `aria-current` and `aria-disabled`
   as appropriate, and icon-only segments carry a title so they are labelled for screen readers
   and on hover.
