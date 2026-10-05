@@ -139,6 +139,9 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       raf = requestAnimationFrame(sample);
     };
     sample();
+    let drainMs = 0;
+    let afterFrame = null;
+    let drain = null;
     try {
       const jobs = frames.flatMap((f) => [...f.contentDocument.querySelectorAll(".pdf-page canvas[data-engine-sid]")].slice(0, 2).map((canvas) => {
         const scale = Number(f.contentWindow.getComputedStyle(canvas.parentElement).getPropertyValue("--scale-factor")) || 1;
@@ -148,15 +151,36 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       const results = await Promise.all(jobs);
       if (results.some((r) => !r.ok)) throw new Error(`cross-realm render failed: ${JSON.stringify(results)}`);
       await new Promise((r) => requestAnimationFrame(r));
+      afterFrame = window.__mareaderRasterLane.snapshot();
+      // A permit is returned by the REALM that took it, on its own frame, when
+      // it applies the result. A parent frame is not that frame: the parent's
+      // rAF is sparse while these realms paint, so snapshotting one parent
+      // frame after the last job resolves can still catch an in-flight lease.
+      // Wait on the lane itself, which the suite's other settle waits allow
+      // 30 s to do; 10 s here so a lease that never returns still fails the
+      // stage, just loudly and with both snapshots in the message.
+      const drainStart = performance.now();
+      const deadline = drainStart + 10_000;
+      let drained = afterFrame;
+      while (drained.active > 0 || drained.queued > 0) {
+        if (performance.now() >= deadline) {
+          throw new Error(`window raster lane never drained: ${JSON.stringify({ afterFrame, drained })}`);
+        }
+        await new Promise((r) => setTimeout(r, 16));
+        drained = window.__mareaderRasterLane.snapshot();
+      }
+      drainMs = Math.round(performance.now() - drainStart);
+      drain = drained;
     } finally {
       alive = false;
       cancelAnimationFrame(raf);
     }
     if (samples.some((s) => s.active > 2 || s.activeRenders > 2)) throw new Error(`window raster cap exceeded: ${JSON.stringify(samples)}`);
     return { samples: samples.length, peakLeases: Math.max(...samples.map((s) => s.active)),
-      peakRenders: Math.max(...samples.map((s) => s.activeRenders)), final: window.__mareaderRasterLane.snapshot() };
+      peakRenders: Math.max(...samples.map((s) => s.activeRenders)), afterFrame, drainMs,
+      final: drain };
   });
-  if (budget.peakLeases !== 2 || budget.final.active !== 0 || budget.final.queued !== 0) throw new Error(`unproved/draining window budget: ${JSON.stringify(budget)}`);
+  if (budget.peakLeases !== 2 || budget.final.active !== 0 || budget.final.queued !== 0) throw new Error(`unproved window budget: ${JSON.stringify(budget)}`);
   report.rasterBudget = budget;
 
   await openIn(paths.markdown, "down");

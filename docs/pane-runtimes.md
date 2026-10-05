@@ -151,7 +151,10 @@ sweeps remain. Normal pane removal reclaims only that nonce's scoped leases. For
 Reader-host removal reclaims all descendant owners in its generation/nonce
 scope, including incoming and retiring realms. `rasterLane` diagnostics report active, queued, owners
 and peak; the disposal baseline requires active/queued/owners and all Reader/pane
-iframe residency to be zero.
+iframe residency to be zero. A permit is returned by the realm that took it, on
+that realm's own frame, so a lane snapshot taken on a parent frame can still name
+one in-flight lease: an observer of an empty lane waits on `rasterLane` rather
+than sampling once after the last job resolves.
 
 ## Lifecycle without flicker
 
