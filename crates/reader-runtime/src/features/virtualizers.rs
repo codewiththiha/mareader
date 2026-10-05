@@ -6,7 +6,7 @@ use std::hash::Hash;
 
 use leptos::prelude::*;
 use virtual_list::{Budget, Viewport};
-use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
+use virtual_list_leptos::{RetentionPolicy, VirtualizerOptions, use_virtualizer};
 
 use crate::state::ReaderState;
 use crate::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
@@ -19,6 +19,14 @@ use app_ui::epoch::epoch_signal;
 /// carries the maths a strip needs while only this crate may name the
 /// virtualizer crates that enforce it.
 pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
+
+/// How a page that leaves the strip's window is retired: bridged for the
+/// scroll grace the zoom config owns, at most `MAX_ZOMBIES` at a time. Both
+/// strips share one policy, and the zoom controller raises and resets it.
+const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::Grace {
+    ms: STRIP_SCROLL_GRACE_MS,
+    max: MAX_ZOMBIES,
+};
 
 /// The handles a pane hands to its viewer components and effects. Both
 /// virtualizers always exist (they are hooks); a view binds only the one for
@@ -185,8 +193,11 @@ pub(crate) fn use_reader_virtualizers(
         h_off += h_estimate(index);
     }
     // Zombie retention: an item that leaves the window mid-fling (or in a
-    // zoom's geometry commit — the controller raises the grace for that)
-    // keeps its DOM briefly instead of popping out.
+    // zoom's geometry commit — the controller raises the policy for that)
+    // keeps its DOM briefly instead of popping out. Milliseconds, not frames:
+    // the strip's bridge is about outliving a commit's relayouts, which are
+    // paced by wall-clock timers, and the ceiling is what keeps a long fling
+    // from mounting the whole document.
     let virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, estimate)
             .gap(0.0)
@@ -194,7 +205,7 @@ pub(crate) fn use_reader_virtualizers(
             .initial(Viewport::main_only(initial_vh), v_off)
             .pinned(pinned_sig.into())
             .epoch(epoch)
-            .retention(STRIP_SCROLL_GRACE_MS, MAX_ZOMBIES),
+            .retention(STRIP_RETENTION),
     );
 
     let h_virtualizer = use_virtualizer(
@@ -205,7 +216,7 @@ pub(crate) fn use_reader_virtualizers(
             .padding(0.0, 0.0)
             .initial(Viewport::new(1200.0, initial_vh), h_off)
             .epoch(epoch)
-            .retention(STRIP_SCROLL_GRACE_MS, MAX_ZOMBIES),
+            .retention(STRIP_RETENTION),
     );
     let h_virtualizer_view = StoredValue::new_local(h_virtualizer.clone());
 
@@ -271,3 +282,5 @@ pub(crate) fn use_reader_virtualizers(
         h_virtualizer_view,
     }
 }
+
+// only the changed file was rewritten

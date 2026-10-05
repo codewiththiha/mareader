@@ -275,16 +275,13 @@ async function renderThumbInternal(
   try {
     const pg = await s.pdf.getPage(page);
     const viewport = pg.getViewport({ scale });
-    const out = 1;
     const cssW = Math.floor(viewport.width);
     const cssH = Math.floor(viewport.height);
 
-    const made = offscreenFor(viewport, out);
+    const made = offscreenFor(viewport);
     if (!made) return fail("no_context", "No 2d context");
     const { canvas: off, ctx } = made;
-    const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
-
-    const task = pg.render({ canvasContext: ctx, viewport, transform });
+    const task = pg.render({ canvasContext: ctx, viewport });
     s.thumbTasks.set(canvasId, task);
     try {
       await task.promise;

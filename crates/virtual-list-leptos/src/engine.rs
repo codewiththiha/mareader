@@ -631,6 +631,29 @@ impl VirtualizerCore {
         }
     }
 
+    /// One row's render contract, addressed by ANY item index in the layout:
+    /// the geometry `rows()` reports for a windowed row, available for a row
+    /// the adapter is bridging across a window change. Windowing is the only
+    /// thing the core decides about what is mounted, so the row arithmetic
+    /// has exactly one home.
+    pub fn row_at(&self, index: usize) -> VirtualRow {
+        match &self.layout {
+            LayoutKind::Grid(grid) => {
+                let row = grid.row_of(index);
+                VirtualRow {
+                    row,
+                    start: grid.row_offset(row) + self.padding_start,
+                    items: grid.row_items(row),
+                }
+            }
+            LayoutKind::List(_) => VirtualRow {
+                row: index,
+                start: self.layout.offset(index) + self.padding_start,
+                items: index..index + 1,
+            },
+        }
+    }
+
     /// The mounted rows.
     pub fn rows(&self) -> Vec<VirtualRow> {
         let Some(window) = self.range else {
@@ -641,19 +664,11 @@ impl VirtualizerCore {
                 let row_first = grid.row_of(window.first);
                 let row_last = grid.row_of(window.last);
                 (row_first..=row_last)
-                    .map(|row| VirtualRow {
-                        row,
-                        start: grid.row_offset(row) + self.padding_start,
-                        items: grid.row_items(row),
-                    })
+                    .map(|row| self.row_at(grid.row_items(row).start))
                     .collect()
             }
             LayoutKind::List(_) => (window.first..=window.last)
-                .map(|index| VirtualRow {
-                    row: index,
-                    start: self.layout.offset(index) + self.padding_start,
-                    items: index..index + 1,
-                })
+                .map(|index| self.row_at(index))
                 .collect(),
         }
     }
@@ -1284,3 +1299,5 @@ mod tests {
         }
     }
 }
+
+// only the changed file was rewritten

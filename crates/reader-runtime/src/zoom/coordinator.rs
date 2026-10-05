@@ -39,6 +39,7 @@ use leptos::prelude::*;
 use crate::state::{ReaderState, ZoomTransition};
 use crate::zoom::actuator::ZoomActuator;
 use app_chrome::hooks::use_timeout::use_debounce;
+use virtual_list_leptos::RetentionPolicy;
 
 use super::animation::{Tween, commit_instant, interpolates_now, land};
 use super::command::holds_commit;
@@ -84,16 +85,16 @@ impl ZoomController {
         let grace = use_debounce(
             Duration::from_millis(u64::from(config::ZOOM_GRACE_MS)),
             move || {
-                // Lower the grace back to its scroll default AND drop the
+                // Lower the bridge back to its scroll default AND drop the
                 // zombies the zoom raised it for, in the same breath: the
-                // retained pages sit on large bitmaps and the per-item expiry
-                // timer can outlive the transaction, so this releases their
+                // retained pages sit on large bitmaps, and the per-item expiry
+                // wakers are bookkeeping of their own, so this releases their
                 // surfaces right after the commit instead of at the next
                 // scroll.
-                grace_v.reset_retention_grace();
-                grace_hv.reset_retention_grace();
-                grace_v.prune_retained_now();
-                grace_hv.prune_retained_now();
+                grace_v.reset_retention_policy();
+                grace_hv.reset_retention_policy();
+                grace_v.remove_retained_now();
+                grace_hv.remove_retained_now();
                 // The commit's renders have landed by now: drop the worker
                 // caches they no longer need (and any stranded scrub cover),
                 // so a settled zoom stops holding its peak surfaces — the
@@ -189,11 +190,15 @@ impl ZoomController {
                 following,
             };
             // Bridge the relayouts before they happen: raise the strips'
-            // zombie grace so pages the moving window evicts keep their DOM
-            // past the animation's end.
+            // zombie retention so pages the moving window evicts keep their
+            // DOM past the animation's end.
             let retention = config::zoom_profile().retention;
-            actuator.vertical.set_retention_grace(retention.grace_ms);
-            actuator.horizontal.set_retention_grace(retention.grace_ms);
+            let policy = RetentionPolicy::Grace {
+                ms: retention.grace_ms,
+                max: retention.max_zombies,
+            };
+            actuator.vertical.set_retention_policy(policy);
+            actuator.horizontal.set_retention_policy(policy);
             if !following && !interpolates_now(&state, &transition) {
                 // Animation off: one discrete change — no tween loop, no
                 // frames to wait; see `commit_instant` for its order.
@@ -274,3 +279,5 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // both callers (the settle deadline, and the tween loop out of a rAF
     // callback) reach it from outside any owner of their own.
 }
+
+// only the changed file was rewritten

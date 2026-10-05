@@ -63,6 +63,9 @@ export function thumbRaw(entry: ThumbEntry | null | undefined): MaybeCanvas {
   if (entry.raw && rasterWidth(entry.raw) > 0) return entry.raw;
   return null;
 }
+/** One canvas the rail can see, and the page it shows. */
+type ThumbTarget = { canvas: HTMLCanvasElement; page: number };
+
 async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
   if (typeof createImageBitmap === "function") {
     try {
@@ -90,25 +93,20 @@ export async function ensureEntryCurrent(
     const raw = thumbRaw(entry);
     if (!raw) return null;
     const pipeline = readPipeline(s);
+    // The bake reads its source and writes its own surface, so the entry's raw
+    // is baked FROM directly: an earlier baker filtered in place, and a copy
+    // in front of it was what kept the raw intact. `rasterToCanvas` still
+    // makes a canvas when the raw is an ImageBitmap, and that one is ours to
+    // return to the pool.
     const { canvas: src, borrowed } = rasterToCanvas(
       raw as HTMLCanvasElement | ImageBitmap,
     );
-    let work = src;
-    let owned = borrowed;
-    if (!borrowed) {
-      work = acquirePooledCanvas(src.width, src.height);
-      blitInto(work, src);
-      owned = true;
-    }
-    const baked = await bakeRaster(work, pipeline);
-    let newDisplay: MaybeCanvas;
-    if (baked === work) {
-      newDisplay = await snapshotRaster(work);
-      if (owned) releasePooledCanvas(work);
-    } else {
-      if (owned) releasePooledCanvas(work);
-      newDisplay = await cacheDisplay({ display: baked });
-    }
+    const baked = await bakeRaster(src, pipeline);
+    // A filter-only bake hands back `src`: the display still needs a surface
+    // of its own, because `src` belongs to the entry as its raw.
+    const newDisplay =
+      baked === src ? await snapshotRaster(src) : await cacheDisplay({ display: baked });
+    if (borrowed) releasePooledCanvas(src);
     if (entry.display && entry.display !== entry.raw && entry.display !== newDisplay) {
       releaseDisplayOnly(entry);
     }
@@ -120,13 +118,18 @@ export async function ensureEntryCurrent(
   entry.pending = null;
   return result;
 }
-export function paintAllVisibleThumbs(s: EngineSession): void {
+/** Every thumb canvas this session owes a paint to, with the page it shows:
+ *  the lane's own registrations plus any `canvas.thumb-canvas` in the document
+ *  this session owns. Enumerated once so the paint below and a theme re-bake
+ *  (`rebakeTheme`) see exactly the same set — a card on screen never keeps the
+ *  look before the change because a second walk of the DOM disagreed. */
+function visibleThumbTargets(s: EngineSession): ThumbTarget[] {
+  const targets: ThumbTarget[] = [];
   const seen = new Set<string>();
   for (const [canvasId, { page }] of s.thumbLive) {
     seen.add(canvasId);
-    const entry = s.thumbCache.get(page);
     const live = sessionEl(s.sid, canvasId) as HTMLCanvasElement | null;
-    if (entry && live) paintCached(s, live, entry);
+    if (live) targets.push({ canvas: live, page });
   }
   try {
     const nodes = document.querySelectorAll("canvas.thumb-canvas");
@@ -138,14 +141,28 @@ export function paintAllVisibleThumbs(s: EngineSession): void {
       if (!ownedBy(live, s.sid)) continue;
       const m = /^thumb-(\d+)$/.exec(live.id);
       if (!m || !m[1]) continue;
-      const page = parseInt(m[1], 10);
-      const entry = s.thumbCache.get(page);
-      if (!entry) continue;
-      paintCached(s, live, entry);
-      s.thumbLive.set(live.id, { page });
+      targets.push({ canvas: live, page: parseInt(m[1], 10) });
     }
   } catch (_) {
     /* no document */
+  }
+  return targets;
+}
+
+/** The pages a visible thumb shows, deduplicated: what a look change must
+ *  have baked before the rail may be painted, and nothing else. */
+export function visibleThumbPages(s: EngineSession): number[] {
+  const pages = new Set<number>();
+  for (const { page } of visibleThumbTargets(s)) pages.add(page);
+  return [...pages];
+}
+
+export function paintAllVisibleThumbs(s: EngineSession): void {
+  for (const { canvas, page } of visibleThumbTargets(s)) {
+    const entry = s.thumbCache.get(page);
+    if (!entry) continue;
+    paintCached(s, canvas, entry);
+    s.thumbLive.set(canvas.id, { page });
   }
 }
 export function paintCached(

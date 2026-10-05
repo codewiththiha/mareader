@@ -15,7 +15,9 @@ use std::time::Duration;
 use leptos::html;
 use leptos::prelude::*;
 use virtual_list::{Budget, GridSpec, Viewport};
-use virtual_list_leptos::{ScrollMode, VirtualRow, VirtualizerOptions, use_virtualizer};
+use virtual_list_leptos::{
+    RetentionPolicy, ScrollMode, VirtualRow, VirtualizerOptions, use_virtualizer,
+};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
@@ -43,6 +45,19 @@ type DriveFnSlot = StoredValue<Option<(js_sys::Function, web_sys::Element)>, Loc
 /// The three drive events, listed once so bind and unbind cannot drift apart.
 const DRIVE_EVENTS: [&str; 3] = ["wheel", "pointerdown", "touchstart"];
 
+/// How many animation frames a row the window has left behind keeps its
+/// painted canvases. The rail's own drive is a glide: a fling that turns
+/// around at once would otherwise ask the pane's engine for every card it
+/// just passed (a wire post, a raster, a bitmap transfer per card) for DOM
+/// that was alive one frame ago. Frames rather than milliseconds because a
+/// row's bridge is about the frames the scroll spent — and the crate bounds
+/// each of them, so a hidden tab still releases the canvases.
+const BRIDGE_FRAMES: u32 = 4;
+/// Ceiling on simultaneously bridged rows, two cards each. Rows the glide
+/// re-enters are dropped from the bridge on the spot, and the bound is what
+/// keeps the rail's canvases inside the reader's zombie policy.
+const BRIDGE_ROWS: usize = 6;
+
 #[component]
 pub fn ThumbnailsPanel(
     state: ReaderState,
@@ -63,7 +78,11 @@ pub fn ThumbnailsPanel(
             .budget(Budget::items(ROW_BUFFER, 64))
             .padding(PAD, PAD)
             .initial(Viewport::new(MIN_VIEWPORT_H, 2.0 * CELL_W + GAP_CROSS), 0.0)
-            .epoch(layout_epoch.into()),
+            .epoch(layout_epoch.into())
+            .retention(RetentionPolicy::Frames {
+                frames: BRIDGE_FRAMES,
+                max: BRIDGE_ROWS,
+            }),
     );
     // The thumbnail grid's virtualizer joins the diagnostics registry for
     // its lifetime, like every other reader-surface strip. The handle rides
@@ -267,3 +286,5 @@ pub fn ThumbnailsPanel(
         </div>
     }
 }
+
+// only the changed file was rewritten

@@ -81,7 +81,14 @@ shape is in `docs/route-split-retrospective.md`.
   readback runs in the bake worker (a transferred `ImageBitmap` read through
   the worker's own canvas), so a theme change pays no main-thread
   `getImageData`; the inline kernel stays the no-worker fallback, and a
-  dead worker degrades one frame, not the page. `unregisterPage` no longer
+  dead worker degrades one frame, not the page. A raster small enough that the
+  crossing costs more than the filter (`INLINE_BAKE_MAX_PIXELS`) takes the
+  inline kernel on purpose — a thumbnail is that small, and a rail-wide
+  re-bake is dozens of them; both paths run one kernel, so which one ran never
+  shows in the pixels. The bake lands ON the visible canvas (its paper fill and
+  composite are one synchronous turn on the destination), so a themed page
+  costs one read, one fill and one draw instead of a third full-page surface
+  plus a blit. `unregisterPage` no longer
   sweeps the document: a window move unmounts pages constantly, and the
   sweep belongs to quiescence (the render cadence `CLEANUP_EVERY`, the idle
   timer, the reader's scroll-idle sweep).

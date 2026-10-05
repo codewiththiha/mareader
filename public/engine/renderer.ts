@@ -5,11 +5,11 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { blitInto, el, isSharedScratch, sessionEl, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
+import { blitInto, el, sessionEl, releaseCanvas } from "./canvas";
 import { fail, failFrom } from "./errors";
 import { acquireRasterSlot, cancelRasterWaiters } from "./raster-lane";
 import { stashPaperFrame } from "./paper";
-import { bakeRaster } from "./theme/bake";
+import { bakeFiltered, paintBaked, releaseBake } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import { observeThemeRoot, unobserveThemeRoot } from "./theme/paper";
 import {
@@ -241,20 +241,6 @@ function pageOutputScale(cssW: number, cssH: number): number {
   return Math.min(dpr, Math.max(0.5, capped));
 }
 
-/** Free a bake's intermediate. A filter-only bake returns the shared scratch
- *  (bakeRaster's blend step is the only pooled destination), and returning
- *  that to the pool would give one canvas two owners — the scratch goes back
- *  to the scratch and everything else to the pool, the same rule bakeInto
- *  follows. The render's own `target` is the caller's to keep or release. */
-function releaseBaked(baked: HTMLCanvasElement, target: HTMLCanvasElement): void {
-  if (baked === target) return;
-  if (isSharedScratch(baked)) {
-    releaseScratch(baked);
-  } else {
-    releasePooledCanvas(baked);
-  }
-}
-
 // --- Render trace (the fast-jump page-identity proof) ----------------------
 // A bounded ring of ACTUAL raster events: the page number recorded when the
 // engine starts a real page render, and that render's terminal
@@ -422,7 +408,7 @@ async function renderPageNow(
     return fail("cancelled", "Render cancelled");
   }
 
-  // `target` still holds raw pixels here (bakeRaster runs below): the one
+  // `target` still holds raw pixels here (the bake below reads a copy): the one
   // point in the pipeline where the document's own paper is intact. Park a
   // ≤96×96 frame for the Rust paper session to drain after the render —
   // every colour decision downstream lives in the pdf-paper crate.
@@ -441,21 +427,22 @@ async function renderPageNow(
 
   if (needsBake && pipeline) {
     const bakeGen = pipeline.gen;
-    const baked = await bakeRaster(target, pipeline);
+    // Only the FILTER waits, and nothing is painted until the check below has
+    // passed: a render that spans a pipeline change keeps showing the look it
+    // was on rather than flashing the one it started under — the property the
+    // old bake-then-decide order bought, now without the second full-page
+    // surface a separate baked canvas needed.
+    const baked = await bakeFiltered(target, pipeline);
     if (readPipeline(s).gen !== bakeGen) {
-      releaseBaked(baked, target);
+      releaseBake(baked);
       if (target !== st.canvas) releaseCanvas(target);
       try { page.cleanup(); } catch (_) { /* ignore */ }
       return renderPageNow(s, canvasId, scale, renderText);
     }
-    if (baked !== st.canvas) {
-      showBaked(st.canvas, baked, "canvas-raw");
-      releaseBaked(baked, target);
-    }
+    paintBaked(st.canvas, baked, pipeline, "canvas-raw");
     if (st.rawCanvas && st.rawCanvas !== st.canvas && st.rawCanvas !== target) {
       releaseCanvas(st.rawCanvas);
     }
-    st.canvas.classList.remove("canvas-raw");
     // Retain the unbaked raster only while a scrub is plausible — its
     // window (a recent scrub transition, or an open appearance menu, where
     // the next drag is being born). A tint drag inside the window restores
@@ -782,3 +769,5 @@ export async function rerenderLivePages(s: EngineSession): Promise<void> {
   }
   await Promise.all(jobs);
 }
+
+// only the changed file was rewritten

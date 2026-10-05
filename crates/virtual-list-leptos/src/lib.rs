@@ -62,6 +62,9 @@ pub use crate::engine::{CoreConfig, Flush, Step, VirtualizerCore};
 pub use crate::hook::use_virtualizer;
 pub use crate::options::{Axis, LayoutShape, ScrollMode, VirtualizerOptions};
 pub use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
+pub use crate::retention::RetentionPolicy;
 pub use crate::surface::{DomSurface, ScrollSurface};
 pub use crate::virtualizer::Virtualizer;
 pub use virtual_list::Align;
+
+// only the changed file was rewritten

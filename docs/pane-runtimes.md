@@ -87,7 +87,15 @@ window ends, because the window itself bakes nothing — and the host
 re-renders every settled cell. The frame answers with a bake from its own
 raw raster: a cached display is judged against the pipeline as it reads NOW,
 never against the generation left behind by the last read, so a cell asking
-during a change cannot be served the look before it.
+during a change cannot be served the look before it. Only the cards the rail
+can SEE are re-baked for the change; the rest of the cache stays one
+generation behind and re-bakes from raw when its cell next asks, which is the
+same lazy path a cold card takes.
+
+A row the rail's window leaves behind keeps its canvases for
+`BRIDGE_FRAMES` animation frames (`BRIDGE_ROWS` rows at a time), so a glide
+that turns around finds the row it passed still mounted instead of paying a
+post, a raster and a bitmap transfer per card.
 
 ## Appearance and blend
 

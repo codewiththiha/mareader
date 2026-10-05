@@ -14,6 +14,29 @@ This crate has two layers:
 - scroll anchoring for measurement changes and zoom-style rescaling
 - `scroll_to_offset` and `scroll_to_index` with alignment and retry support, and `on_scroll_idle` for the moment the scroll settles
 - reactive `items()`, `rows()`, `total_size()` and `dominant()` signals, plus `scroll_offset()`, `viewport()` and a per-item `item_top()`
+- zombie retention: an item (or grid row) the window evicts can be kept rendered for a bounded moment, so the change that moved the window is never visible
+
+## Retiring an evicted item
+
+`VirtualizerOptions::retention` takes one `RetentionPolicy`, and it is the only
+line that decides whether the virtualizer kills on eviction or caches:
+
+- `Immediate` (the default) — unmounted in the same tick, DOM and surfaces
+  released with it.
+- `Grace { ms, max }` — bridged in wall-clock milliseconds, the unit for a
+  caller pacing a known operation (the page strips, and a zoom commit that
+  raises it for its duration).
+- `Frames { frames, max }` — bridged in animation frames, the unit for a caller
+  whose problem is frames: a scroll that turns around at once finds its DOM,
+  its layout sizes and its painted canvases. Each frame is bounded by
+  `FRAME_CEILING_MS`, so a frozen rAF clock still releases the set.
+
+Both bridges are bounded by `max`, oldest-first, and re-entering the window
+drops the bridge on the spot. The handle exposes the two ends of the same
+mechanism directly: `kill_retained()` ends every bridge whose clock ran out
+(what the armed wakers do anyway), and `remove_retained_now()` ends every
+bridge THIS tick — for a caller that knows the change the bridge was bought
+for has landed.
 
 ## Continuous-list sketch
 
@@ -58,3 +81,5 @@ Use `VirtualizerOptions::grid(...)` and render `v.rows()` instead of `v.items()`
 ## License
 
 MIT
+
+<!-- // only the changed file was rewritten -->

@@ -10,7 +10,7 @@ import { PAGE_SNAPSHOT_CLASS, PAGE_SNAPSHOT_SELECTOR } from "../dom-contract";
 import type { EngineSession } from "../state";
 import { readPipeline } from "./pipeline";
 import { paperInfo, publishBakedPaper } from "./paper";
-import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
+import { ensureEntryCurrent, paintAllVisibleThumbs, visibleThumbPages } from "./thumbnails";
 import { preparePagesForScrub, renderPage, rerenderLivePages } from "../renderer";
 
 // A Settings commit after a scrub has the same final pipeline the scrub exit
@@ -119,7 +119,14 @@ export async function rebakeTheme(s: EngineSession, force = false): Promise<void
     s.dropRawIfIdle(st);
   }
 
-  for (const entry of s.thumbCache.values()) {
+  // Only the thumbs the reader can actually SEE are re-baked here: exactly the
+  // set `paintAllVisibleThumbs` is about to paint. Every other cached page is
+  // left one generation behind, and the generation check makes the cell that
+  // next asks for it re-bake from its raw — a theme change must not raster the
+  // whole LRU for cards nobody is looking at.
+  for (const page of visibleThumbPages(s)) {
+    const entry = s.thumbCache.get(page);
+    if (!entry) continue;
     await ensureEntryCurrent(s, entry);
     if (s.themeScrubActive) return;
   }
@@ -263,3 +270,5 @@ export async function setScrubModeInternal(s: EngineSession, on: boolean): Promi
   // live canvas under it.
   releaseAllEntrySnapshots(s);
 }
+
+// only the changed file was rewritten

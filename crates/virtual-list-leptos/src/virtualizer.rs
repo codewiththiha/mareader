@@ -19,7 +19,9 @@ use crate::engine::{Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
-use crate::retention::{prune_retained, retain_evicted};
+use crate::retention::{
+    is_retained, next_deadline_ms, prune_retained, retain_evicted, RetainedItem, RetentionPolicy,
+};
 use crate::surface::{DomSurface, ScrollSurface};
 
 type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
@@ -58,7 +60,7 @@ impl VirtualizerInner {
         // Read every option-derived value before the struct literal moves
         // `options` into the `options` field.
         let initial_viewport = options.initial_viewport;
-        let initial_grace = options.retention_grace_ms;
+        let initial_retention = options.retention;
         Rc::new(Self {
             surface: DomSurface::new(options.axis, options.padding_start),
             scroll_top: RwSignal::new(initial_scroll),
@@ -81,8 +83,10 @@ impl VirtualizerInner {
             scroll_end_timer: RefCell::new(None),
             retained: RefCell::new(Vec::new()),
             retained_version: RwSignal::new(0),
-            retention_grace: Cell::new(initial_grace),
+            retention: Cell::new(initial_retention),
             retention_timer: RefCell::new(None),
+            frame_clock: Cell::new(0),
+            frames_armed: Cell::new(false),
             idle_cbs: RefCell::new(Vec::new()),
             items_signal: OnceCell::new(),
             rows_signal: OnceCell::new(),
@@ -144,13 +148,19 @@ pub(crate) struct VirtualizerInner {
     pub scroll_end_timer: RefCell<Option<TimeoutHandle>>,
 
     /// Zombie retention bookkeeping (see `retention.rs`): evicted items
-    /// still mounted, the reactive version that items() tracks, the
-    /// currently effective grace (raised around a zoom commit), and the
-    /// expiry timer.
-    pub retained: RefCell<Vec<crate::retention::RetainedItem>>,
+    /// still mounted, the reactive version that items() tracks, the currently
+    /// effective policy (raised around a zoom commit), and the two wakers a
+    /// bridge is released by: the expiry timer, and — for a policy counted in
+    /// frames — the animation-frame chain.
+    pub retained: RefCell<Vec<RetainedItem>>,
     pub retained_version: RwSignal<u64>,
-    pub retention_grace: Cell<u32>,
+    pub retention: Cell<RetentionPolicy>,
     pub retention_timer: RefCell<Option<TimeoutHandle>>,
+    /// The adapter's frame counter: advanced once per rAF while a bridge is
+    /// alive, and the only clock a `Frames` policy is measured against.
+    pub frame_clock: Cell<u64>,
+    /// Whether the frame chain is already queued (one chain at a time).
+    pub frames_armed: Cell<bool>,
 
     pub idle_cbs: RefCell<Vec<IdleCallback>>,
 
@@ -171,35 +181,64 @@ impl VirtualizerInner {
         if old == new {
             return;
         }
-        let grace = self.retention_grace.get();
-        if grace > 0 && self.options.retention_max > 0 {
+        let policy = self.retention.get();
+        if policy.bridges() {
             let now = now_ms();
-            let evicted = retain_evicted(old, new, now, grace, self.options.retention_max);
+            let frame = self.frame_clock.get();
+            let evicted = retain_evicted(old, new, now, frame, &policy);
             if !evicted.is_empty() {
                 let mut retained = self.retained.borrow_mut();
                 // Merge: an index already retained keeps its original expiry
                 // only if it is still outside the new window; re-entry drops it.
-                *retained = prune_retained(std::mem::take(&mut *retained), new, now);
+                *retained = prune_retained(std::mem::take(&mut *retained), new, now, frame);
                 for item in evicted {
                     if !retained.iter().any(|r| r.index == item.index) {
                         retained.push(item);
                     }
                 }
-                let max = self.options.retention_max;
+                let max = policy.max();
                 if retained.len() > max {
                     let drop = retained.len() - max;
                     retained.drain(0..drop);
                 }
                 drop(retained);
                 self.retained_version.update(|v| *v += 1);
-                self.arm_retention_timer();
+                self.arm_retention_clocks();
             }
         }
         self.range.set(new);
     }
 
+    /// Run one prune for both wakers: drop every bridge that has expired or
+    /// come back inside the window, and publish the change when it cost
+    /// something. `retained` is the state; the wakers only decide WHEN it is
+    /// asked again, so a bridge can never be released by one clock and
+    /// forgotten by the other.
+    fn prune_retained_tick(self: &Rc<Self>) {
+        let now = now_ms();
+        let frame = self.frame_clock.get();
+        let active = self.core.borrow().range();
+        let mut retained = self.retained.borrow_mut();
+        let before = retained.len();
+        *retained = prune_retained(std::mem::take(&mut *retained), active, now, frame);
+        let changed = before != retained.len();
+        drop(retained);
+        if changed {
+            self.retained_version.update(|v| *v += 1);
+        }
+    }
+
+    /// Arm both wakers a live bridge has. Each one is a no-op when nothing
+    /// is bridged in its unit, so a millisecond grace never queues frames and
+    /// a frame bridge never waits on a timer it does not need.
+    fn arm_retention_clocks(self: &Rc<Self>) {
+        self.arm_retention_timer();
+        self.arm_retention_frames();
+    }
+
     /// Arm (once) the timer that prunes expired zombies. Re-arms itself
-    /// while anything is still retained.
+    /// while anything is still retained: it holds every bridge's wall-clock
+    /// deadline, including the ceiling a frame-counted one may not pass.
     fn arm_retention_timer(self: &Rc<Self>) {
         if self.retention_timer.borrow().is_some() {
             return;
@@ -214,24 +253,67 @@ impl VirtualizerInner {
                     return;
                 }
                 inner.retention_timer.borrow_mut().take();
-                let now = now_ms();
-                let active = inner.core.borrow().range();
-                let mut retained = inner.retained.borrow_mut();
-                let before = retained.len();
-                *retained = prune_retained(std::mem::take(&mut *retained), active, now);
-                let changed = before != retained.len();
-                drop(retained);
-                if changed {
-                    inner.retained_version.update(|v| *v += 1);
-                }
+                inner.prune_retained_tick();
                 if !inner.retained.borrow().is_empty() {
                     inner.arm_retention_timer();
                 }
             },
-            Duration::from_millis(retention_tick_ms(&self.retained.borrow(), now_ms())),
+            Duration::from_millis(next_deadline_ms(&self.retained.borrow(), now_ms())),
         ) {
             *self.retention_timer.borrow_mut() = Some(handle);
         }
+    }
+
+    /// Whether any live bridge still owes a frame tick. A `Grace` item's
+    /// limit is `u64::MAX`, so this is exactly "a frame bridge is pending" —
+    /// and when it reads false the chain stops, leaving no rAF callback
+    /// registered against an idle list.
+    fn waits_on_frames(self: &Rc<Self>) -> bool {
+        let frame = self.frame_clock.get();
+        self.retained
+            .borrow()
+            .iter()
+            .any(|item| item.frame_limit != u64::MAX && item.frame_limit > frame)
+    }
+
+    /// Advance the frame clock one animation frame at a time while a
+    /// `Frames` bridge is alive. Frames, not milliseconds, are what the
+    /// bridge was bought for: a stalled renderer and a smooth one both spend
+    /// the same number of them, and the chain ends with the bridge.
+    fn arm_retention_frames(self: &Rc<Self>) {
+        if self.frames_armed.get() || !self.waits_on_frames() {
+            return;
+        }
+        self.frames_armed.set(true);
+        let inner = self.clone();
+        raf(move || {
+            // The same purge window the timer guards: a disposed owner has
+            // no signals left to publish into, and no bridge to keep.
+            if inner.settled.try_get_untracked().is_none() {
+                return;
+            }
+            inner.frames_armed.set(false);
+            inner.frame_clock.set(inner.frame_clock.get() + 1);
+            inner.prune_retained_tick();
+            if inner.waits_on_frames() {
+                inner.arm_retention_frames();
+            }
+        });
+    }
+
+    /// The indices a live bridge keeps mounted: unexpired and outside the
+    /// active window (inside it, an item is simply active).
+    fn bridged_indices(self: &Rc<Self>) -> Vec<usize> {
+        let now = now_ms();
+        let frame = self.frame_clock.get();
+        let window = self.core.borrow().range();
+        self.retained
+            .borrow()
+            .iter()
+            .filter(|item| item.alive(now, frame))
+            .map(|item| item.index)
+            .filter(|index| window.map(|w| *index < w.first || *index > w.last).unwrap_or(false))
+            .collect()
     }
 
     pub(crate) fn apply(self: &Rc<Self>, step: Step) {
@@ -539,16 +621,6 @@ fn now_ms() -> f64 {
         .unwrap_or_else(js_sys::Date::now)
 }
 
-/// Milliseconds until the next zombie expiry (always at least 1, so a timer
-/// is always armed into the future).
-fn retention_tick_ms(retained: &[crate::retention::RetainedItem], now: f64) -> u64 {
-    retained
-        .iter()
-        .map(|item| (item.expires_at - now).max(1.0))
-        .fold(f64::INFINITY, f64::min)
-        .ceil() as u64
-}
-
 fn dom_scroll_offset(el: &web_sys::HtmlElement, axis: crate::options::Axis) -> f64 {
     match axis {
         crate::options::Axis::Vertical => el.scroll_top() as f64,
@@ -665,20 +737,7 @@ impl Virtualizer {
                 // Zombies: retained, unexpired, outside the active window.
                 // Rendered with live layout geometry so they sit exactly
                 // where the layout says, at the committed scale.
-                let now = now_ms();
-                let window = inner.core.borrow().range();
-                let retained: Vec<usize> = inner
-                    .retained
-                    .borrow()
-                    .iter()
-                    .filter(|r| r.expires_at > now)
-                    .map(|r| r.index)
-                    .filter(|index| {
-                        window
-                            .map(|w| *index < w.first || *index > w.last)
-                            .unwrap_or(false)
-                    })
-                    .collect();
+                let retained = inner.bridged_indices();
                 if retained.is_empty() {
                     return active;
                 }
@@ -694,14 +753,27 @@ impl Virtualizer {
         })
     }
 
-    /// Reactive mounted rows.
+    /// Reactive mounted rows, bridged rows included.
     pub fn rows(&self) -> Signal<Vec<VirtualRow>, LocalStorage> {
         *self.inner.rows_signal.get_or_init(|| {
             let inner = self.inner.clone();
             Signal::derive_local(move || {
                 let _ = inner.range.get();
                 let _ = inner.layout_version.get();
-                inner.core.borrow().rows()
+                let _ = inner.retained_version.get();
+                let mut rows = inner.core.borrow().rows();
+                // A grid renders whole rows, so a bridge holds rows rather
+                // than items: a rail that flings past a row and comes back
+                // finds its own canvases still mounted, not the gap the window
+                // change cut out of the list.
+                for index in inner.bridged_indices() {
+                    let row = inner.core.borrow().row_at(index);
+                    if !rows.iter().any(|mounted| mounted.row == row.row) {
+                        rows.push(row);
+                    }
+                }
+                rows.sort_by_key(|row| row.row);
+                rows
             })
         })
     }
@@ -875,13 +947,8 @@ impl Virtualizer {
             if !in_window {
                 // Retention is the adapter's clock: a zombie is whatever the
                 // retained set still holds, and its state outranks the band.
-                let now = now_ms();
-                let zombie = inner
-                    .retained
-                    .borrow()
-                    .iter()
-                    .any(|retained| retained.index == index && retained.expires_at > now);
-                if zombie {
+                let frame = inner.frame_clock.get();
+                if is_retained(&inner.retained.borrow(), index, now_ms(), frame) {
                     return VirtualItemState::Zombie;
                 }
             }
@@ -977,43 +1044,49 @@ impl Virtualizer {
         self.inner.scroll_feedback.set(true);
     }
 
-    /// Raise the zombie retention grace (e.g. for the duration of a zoom
-    /// transaction, whose geometry commit evicts pages that are still on
-    /// screen). Items evicted while the raised grace is in force keep it
-    /// until their own expiry. Call [`Self::reset_retention_grace`] to
-    /// return to the configured default.
-    pub fn set_retention_grace(&self, ms: u32) {
-        self.inner.retention_grace.set(ms);
-    }
-
-    /// Return the retention grace to the configured default.
-    pub fn reset_retention_grace(&self) {
-        self.inner
-            .retention_grace
-            .set(self.inner.options.retention_grace_ms);
-    }
-
-    /// Drop every retained zombie whose grace has already expired, publishing
-    /// the change so its DOM (and the engine surface it holds) unmounts.
+    /// Choose how the items a window change evicts are retired.
     ///
-    /// The ordinary path handles this with the expiry timer armed by each
-    /// eviction. That timer is per-eviction bookkeeping on the item's owner,
-    /// however, so a zombie retained around a zoom can outlive the transaction
-    /// that raised its grace and sit on a large (recently zoomed) bitmap until
-    /// the window moves. The zoom-settle hook calls this once the grace window
-    /// closes, so a zoom's retained surfaces are released right after the
-    /// commit instead of after the next scroll.
-    pub fn prune_retained_now(&self) {
-        let now = now_ms();
-        let active = self.inner.core.borrow().range();
-        let mut retained = self.inner.retained.borrow_mut();
-        let before = retained.len();
-        *retained = prune_retained(std::mem::take(&mut *retained), active, now);
-        let changed = before != retained.len();
-        drop(retained);
-        if changed {
-            self.inner.retained_version.update(|v| *v += 1);
+    /// [`RetentionPolicy::Immediate`](crate::RetentionPolicy::Immediate) ends
+    /// a bridge in the tick that evicted it; a policy with a bridge keeps the
+    /// item's DOM (and the engine surface behind it) alive for a bounded
+    /// moment, so the change that moved the window is never visible. Items
+    /// already bridged keep the deadlines they were given: this decides the
+    /// NEXT eviction, which is what lets a caller raise a bridge around a
+    /// commit and stand it back down after.
+    pub fn set_retention_policy(&self, policy: RetentionPolicy) {
+        self.inner.retention.set(policy);
+    }
+
+    /// Return the retirement policy to the one this virtualizer was built
+    /// with (see [`Self::set_retention_policy`]).
+    pub fn reset_retention_policy(&self) {
+        self.inner.retention.set(self.inner.options.retention);
+    }
+
+    /// End every bridge whose clock has run out, publishing the change so its
+    /// DOM (and the engine surface it holds) unmounts: the soft endpoint, and
+    /// what the armed wakers do on their own tick.
+    ///
+    /// The wakers make this unnecessary in normal operation. It exists because
+    /// they are per-eviction bookkeeping on the item's owner, so a zombie
+    /// bridged around a zoom can outlive the transaction that raised its grace
+    /// and sit on a large (recently zoomed) bitmap until the window moves. A
+    /// caller that knows the change is over calls this instead of waiting for
+    /// the next scroll.
+    pub fn kill_retained(&self) {
+        self.inner.prune_retained_tick();
+    }
+
+    /// [`Self::kill_retained`] without the clock: every bridge ends THIS tick,
+    /// however much of it is left. The hard endpoint, for a caller that has
+    /// stopped needing the pixels a bridge was holding — and the reason a
+    /// bridge can be a cache rather than a risk.
+    pub fn remove_retained_now(&self) {
+        if self.inner.retained.borrow().is_empty() {
+            return;
         }
+        self.inner.retained.borrow_mut().clear();
+        self.inner.retained_version.update(|v| *v += 1);
     }
 
     /// Zoom: multiply every size by `factor` while keeping the viewport center pinned.
@@ -1081,3 +1154,5 @@ impl Virtualizer {
             + usize::from(self.inner.retention_timer.borrow().is_some())
     }
 }
+
+// only the changed file was rewritten

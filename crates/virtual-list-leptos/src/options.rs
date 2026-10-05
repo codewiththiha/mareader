@@ -5,6 +5,8 @@ use std::rc::Rc;
 use leptos::prelude::*;
 use virtual_list::{Budget, GridSpec, Viewport};
 
+use crate::retention::RetentionPolicy;
+
 /// Which scroll axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Axis {
@@ -73,12 +75,10 @@ pub struct VirtualizerOptions {
     /// Scroll-idle debounce, milliseconds. After this much quiet, a scroll
     /// burst is considered finished.
     pub scroll_end_delay_ms: u32,
-    /// Grace period an evicted item stays rendered after a window change,
-    /// milliseconds. `0` disables zombie retention (the default: items
-    /// unmount the moment they leave the window).
-    pub retention_grace_ms: u32,
-    /// Hard ceiling on simultaneously retained (zombie) items.
-    pub retention_max: usize,
+    /// How an item that leaves the window is retired. [`RetentionPolicy::Immediate`]
+    /// (the default) unmounts it in the same tick; a bridge keeps it rendered
+    /// for a bounded moment so the change that evicted it cannot be seen.
+    pub retention: RetentionPolicy,
     /// Change-detection epsilon for measurements and viewport writes.
     pub measure_epsilon: f64,
     /// Max re-aims for an in-flight `scroll_to_index`.
@@ -114,8 +114,7 @@ impl VirtualizerOptions {
             initial_viewport: Viewport::main_only(0.0),
             initial_offset: 0.0,
             scroll_end_delay_ms: 150,
-            retention_grace_ms: 0,
-            retention_max: 12,
+            retention: RetentionPolicy::Immediate,
             measure_epsilon: 0.5,
             max_scroll_retries: 3,
             render_screens: 0.0,
@@ -197,12 +196,13 @@ impl VirtualizerOptions {
         self
     }
 
-    /// The grace can be raised later — a zoom holds items across its
-    /// geometry commit — with
-    /// [`Virtualizer::set_retention_grace`](crate::Virtualizer::set_retention_grace).
-    pub fn retention(mut self, grace_ms: u32, max_retained: usize) -> Self {
-        self.retention_grace_ms = grace_ms;
-        self.retention_max = max_retained;
+    /// Sets [`Self::retention`]. A bridge can be raised and lowered later —
+    /// a zoom holds items across its geometry commit — with
+    /// [`Virtualizer::set_retention_policy`](crate::Virtualizer::set_retention_policy).
+    pub fn retention(mut self, policy: RetentionPolicy) -> Self {
+        self.retention = policy;
         self
     }
 }
+
+// only the changed file was rewritten
