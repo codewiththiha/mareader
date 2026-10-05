@@ -2,6 +2,7 @@
 // bake intermediates so theme changes do not allocate a new full-page
 // RGBA buffer on every page/thumb.
 
+import { SESSION_ATTR } from "./dom-contract";
 import type { MaybeCanvas, Raster } from "./types";
 
 /** Force the browser to drop a canvas backing store. */
@@ -80,8 +81,8 @@ let scratchInUse = false;
 // concurrent caller gets a POOLED canvas, and releaseScratch(owned) frees the
 // scratch only when the caller owns it — a second caller releasing its pooled
 // canvas can never free it out from under the first. Concurrent bakes do
-// happen: live pages re-bake on theme change (rerenderLivePages,
-// runLimited(2)) alongside thumbnail bakes.
+// happen: live pages re-bake on theme change alongside thumbnail bakes,
+// paced by the page lane's realm-wide raster cap.
 
 /** Borrow the shared bake scratchpad. Concurrent callers get a pooled canvas. */
 export function acquireScratch(w: number, h: number): HTMLCanvasElement {
@@ -105,6 +106,17 @@ export function releaseScratch(owned?: HTMLCanvasElement | null): void {
 
 export function isSharedScratch(c: HTMLCanvasElement | null | undefined): boolean {
   return !!c && c === scratch;
+}
+
+/** Estimated bytes the recycler holds RIGHT NOW: pooled canvases (parked
+ *  at 1x1 placeholders) plus the scratch at its last bake size. Width x
+ *  height x 4 RGBA — an estimate for the baseline, never a physical
+ *  allocation query. */
+export function pooledIntermediateBytesEstimate(): number {
+  let bytes = 0;
+  for (const c of canvasPool) bytes += c.width * c.height * 4;
+  if (scratch) bytes += scratch.width * scratch.height * 4;
+  return bytes;
 }
 
 /** Drop the scratch backing store entirely (document teardown). */
@@ -160,4 +172,27 @@ export function showBaked(
 export function el(id: string): HTMLElement | null {
   if (typeof id !== "string" || !id) return null;
   return document.getElementById(id);
+}
+
+/** Whether `node` may be painted by session `sid`: an element that names
+ *  its session (`SESSION_ATTR`) belongs to that one only; one that names
+ *  none is unclaimed. */
+export function ownedBy(node: Element | null, sid: number): boolean {
+  if (!node) return false;
+  const owner = typeof node.getAttribute === "function" ? node.getAttribute(SESSION_ATTR) : null;
+  return owner === null || owner === String(sid);
+}
+
+/** The element with `id` that belongs to session `sid`. Two panes in one
+ *  realm carry the same page and thumbnail ids, so the document's first
+ *  match may be another session's: then the one tagged with this sid is
+ *  looked up explicitly. */
+export function sessionEl(sid: number, id: string): HTMLElement | null {
+  const first = el(id);
+  if (!first || ownedBy(first, sid)) return first;
+  try {
+    return document.querySelector(`[id="${id}"][${SESSION_ATTR}="${sid}"]`) as HTMLElement | null;
+  } catch (_) {
+    return null;
+  }
 }

@@ -9,7 +9,7 @@ pub mod geometry;
 pub mod mark;
 
 pub use geometry::{
-    boxes_close, is_glossable, is_hintable, place_card, step_spring, GlossBox, MAX_CARD_H_FRAC,
-    MIN_CARD_H, MIN_CARD_W,
+    GlossBox, MAX_CARD_H_FRAC, MIN_CARD_H, MIN_CARD_W, boxes_close, is_glossable, is_hintable,
+    place_card, step_spring,
 };
-pub use mark::{mark_id, GlossMark, PageAnchor, ReflowSpot};
+pub use mark::{GlossMark, PageAnchor, ReflowSpot, mark_id};

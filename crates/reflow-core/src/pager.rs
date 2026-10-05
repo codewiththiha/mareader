@@ -62,7 +62,11 @@ pub fn estimate_block_height(block: &TextBlock, m: &BlockMetrics) -> f64 {
             (chars / per_line).ceil().max(1.0)
         }
     };
-    let margin = if block.continuation { 0.0 } else { m.paragraph_margin_em };
+    let margin = if block.continuation {
+        0.0
+    } else {
+        m.paragraph_margin_em
+    };
     lines * m.line_height_px() + margin * m.font_size
 }
 
@@ -99,20 +103,29 @@ pub fn paginate(heights: &[f64], content_height: f64) -> Vec<PageCut> {
     for (index, &height) in heights.iter().enumerate() {
         let fits = used + height <= content_height + 1e-9;
         if !fits && used > 0.0 {
-            cuts.push(PageCut { start, count: index - start });
+            cuts.push(PageCut {
+                start,
+                count: index - start,
+            });
             start = index;
             used = 0.0;
         }
         used += height;
         // A block taller than the page: it owns this page, overflowing it.
         if height > content_height + 1e-9 {
-            cuts.push(PageCut { start, count: index + 1 - start });
+            cuts.push(PageCut {
+                start,
+                count: index + 1 - start,
+            });
             start = index + 1;
             used = 0.0;
         }
     }
     if start < heights.len() {
-        cuts.push(PageCut { start, count: heights.len() - start });
+        cuts.push(PageCut {
+            start,
+            count: heights.len() - start,
+        });
     }
     cuts
 }
@@ -134,7 +147,9 @@ pub fn block_page_index(cuts: &[PageCut], block_count: usize) -> Vec<u32> {
 /// last page; page 0 lands on the first.
 pub fn first_block_of_page(cuts: &[PageCut], page: u32) -> usize {
     let index = page.saturating_sub(1) as usize;
-    cuts.get(index).or_else(|| cuts.last()).map_or(0, |cut| cut.start)
+    cuts.get(index)
+        .or_else(|| cuts.last())
+        .map_or(0, |cut| cut.start)
 }
 
 #[cfg(test)]
@@ -157,7 +172,11 @@ mod tests {
     }
 
     fn continuation(text: &str) -> TextBlock {
-        TextBlock { kind: BlockKind::Text, text: text.to_string(), continuation: true }
+        TextBlock {
+            kind: BlockKind::Text,
+            text: text.to_string(),
+            continuation: true,
+        }
     }
 
     #[test]

@@ -199,11 +199,21 @@ pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOption
     let fits_below = anchor.bottom() + gap + panel.h <= vp.h - m;
 
     let below = PlacedPanel {
-        rect: Rect::new(anchor.right() - panel.w, anchor.bottom() + gap, panel.w, panel.h),
+        rect: Rect::new(
+            anchor.right() - panel.w,
+            anchor.bottom() + gap,
+            panel.w,
+            panel.h,
+        ),
         transform_origin: "top right",
     };
     let above = PlacedPanel {
-        rect: Rect::new(anchor.right() - panel.w, anchor.top() - gap - panel.h, panel.w, panel.h),
+        rect: Rect::new(
+            anchor.right() - panel.w,
+            anchor.top() - gap - panel.h,
+            panel.w,
+            panel.h,
+        ),
         transform_origin: "bottom right",
     };
 
@@ -222,7 +232,12 @@ pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOption
             transform_origin: "right center",
         },
         PlacementSide::Right => PlacedPanel {
-            rect: Rect::new(anchor.right() + gap, anchor.center_y() - panel.h * 0.5, panel.w, panel.h),
+            rect: Rect::new(
+                anchor.right() + gap,
+                anchor.center_y() - panel.h * 0.5,
+                panel.w,
+                panel.h,
+            ),
             transform_origin: "left center",
         },
     };
@@ -260,7 +275,11 @@ mod tests {
     #[test]
     fn clamp_rect_never_panics_on_an_oversized_panel() {
         // A panel bigger than the viewport collapses the range to the margin.
-        let r = clamp_rect_to_viewport(Rect::new(0.0, 0.0, 2000.0, 2000.0), Size::new(500.0, 400.0), 12.0);
+        let r = clamp_rect_to_viewport(
+            Rect::new(0.0, 0.0, 2000.0, 2000.0),
+            Size::new(500.0, 400.0),
+            12.0,
+        );
         assert!(r.x.is_finite() && r.y.is_finite());
         assert!(r.x >= 12.0 - 1e-9 && r.y >= 12.0 - 1e-9);
     }
@@ -310,7 +329,12 @@ mod tests {
 
     #[test]
     fn place_context_menu_stays_inside_the_viewport() {
-        let p = place_context_menu(Point::new(1270.0, 790.0), Size::new(176.0, 60.0), Size::new(1280.0, 800.0), 8.0);
+        let p = place_context_menu(
+            Point::new(1270.0, 790.0),
+            Size::new(176.0, 60.0),
+            Size::new(1280.0, 800.0),
+            8.0,
+        );
         assert!(p.rect.x + p.rect.w <= 1280.0 - 8.0 + 1e-6);
         assert!(p.rect.y + p.rect.h <= 800.0 - 8.0 + 1e-6);
         assert_eq!(p.transform_origin, "top left");
@@ -318,8 +342,20 @@ mod tests {
 
     #[test]
     fn the_spring_converges_within_about_two_seconds() {
-        let target = FloatBox { x: 200.0, y: 150.0, w: 320.0, h: 420.0, r: 24.0 };
-        let mut cur = FloatBox { x: 40.0, y: 30.0, w: 30.0, h: 20.0, r: 10.0 };
+        let target = FloatBox {
+            x: 200.0,
+            y: 150.0,
+            w: 320.0,
+            h: 420.0,
+            r: 24.0,
+        };
+        let mut cur = FloatBox {
+            x: 40.0,
+            y: 30.0,
+            w: 30.0,
+            h: 20.0,
+            r: 10.0,
+        };
         let mut vel = FloatBox::default();
         for _ in 0..200 {
             let (next, next_vel) = cur.step(&vel, &target, 1.0 / 60.0);
@@ -331,7 +367,13 @@ mod tests {
 
     #[test]
     fn the_spring_is_stable_on_a_dropped_frame() {
-        let target = FloatBox { x: 0.0, y: 0.0, w: 300.0, h: 300.0, r: 20.0 };
+        let target = FloatBox {
+            x: 0.0,
+            y: 0.0,
+            w: 300.0,
+            h: 300.0,
+            r: 20.0,
+        };
         let mut cur = FloatBox::default();
         let mut vel = FloatBox::default();
         for _ in 0..400 {
@@ -340,6 +382,9 @@ mod tests {
             vel = next_vel;
             assert!(cur.x.is_finite() && cur.w.is_finite(), "blew up: {cur:?}");
         }
-        assert!(cur.close(&target, 0.5), "did not settle on long frames: {cur:?}");
+        assert!(
+            cur.close(&target, 0.5),
+            "did not settle on long frames: {cur:?}"
+        );
     }
 }

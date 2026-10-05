@@ -88,13 +88,7 @@ impl PaperDetector {
 
     /// Count only the margin bands: the pixels within `edge_width` of any of
     /// the frame's four sides.
-    fn feed_edges(
-        &mut self,
-        width: usize,
-        height: usize,
-        rgba: &[u8],
-        edge_width: usize,
-    ) -> usize {
+    fn feed_edges(&mut self, width: usize, height: usize, rgba: &[u8], edge_width: usize) -> usize {
         // The strips are `edge` px deep on all four sides. Two opposing
         // strips of HALF the extent each tile the entire axis, so the old
         // half-of-width clamp turned Edges into WholePage in disguise
@@ -275,7 +269,10 @@ mod tests {
         ring(&mut buf, 40, 4, CREAM);
         let mut whole = PaperDetector::new();
         whole.feed(PaperArea::WholePage, 40, 40, &buf, 4);
-        assert_eq!(whole.dominant(PAPER_SHARE), Some(Rgb::new(0x20, 0x20, 0x30)));
+        assert_eq!(
+            whole.dominant(PAPER_SHARE),
+            Some(Rgb::new(0x20, 0x20, 0x30))
+        );
 
         let mut edges = PaperDetector::new();
         edges.feed(PaperArea::Edges, 40, 40, &buf, 4);
@@ -329,11 +326,17 @@ mod tests {
         ring(&mut buf, 40, 4, [0x10, 0x10, 0x10]);
         let mut whole = PaperDetector::new();
         whole.feed(PaperArea::WholePage, 40, 40, &buf, 4);
-        assert_eq!(whole.dominant(PAPER_SHARE), Some(Rgb::new(0x1e, 0x1e, 0x1e)));
+        assert_eq!(
+            whole.dominant(PAPER_SHARE),
+            Some(Rgb::new(0x1e, 0x1e, 0x1e))
+        );
 
         let mut edges = PaperDetector::new();
         edges.feed(PaperArea::Edges, 40, 40, &buf, 4);
-        assert_eq!(edges.dominant(PAPER_SHARE), Some(Rgb::new(0x10, 0x10, 0x10)));
+        assert_eq!(
+            edges.dominant(PAPER_SHARE),
+            Some(Rgb::new(0x10, 0x10, 0x10))
+        );
     }
 
     #[test]

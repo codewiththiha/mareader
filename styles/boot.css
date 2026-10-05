@@ -1,0 +1,188 @@
+/* The shell's pre-runtime boot placeholder (#shell-boot in index.html).
+   This renders BEFORE the wasm shell exists, so it cannot use utilities the
+   Rust side emits — only the variables the stylesheet itself defines, with
+   literal fallbacks. The shell removes the element once its own view is
+   mounted (src/app/mod.rs); the runtime host owns the area from then on, and
+   the runtime's own loading/error states live inside that host. */
+.shell-boot {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* The remembered paper (public/bootPaint.js) — this element only exists
+     before the shell's first theme paint, so it never goes stale here. */
+  background: var(--boot-paper, var(--color-paper, #ffffff));
+  color: var(--color-ink, #1f2937);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.shell-boot__title {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.shell-boot__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted, #6b7280);
+}
+
+/* Until the shell's first theme paint (which sets data-base on <html>), the
+   page itself wears the remembered paper, so nothing around the placeholder
+   flashes the default. After it, --color-paper is the live theme and the
+   remembered value — frozen at page load — must not win. */
+html:not([data-base]) {
+  background: var(--boot-paper, transparent);
+}
+
+/* Healthy boot is a blank sheet of paper: the copy stays in the tree for
+   assistive tech (role=status) and for the contract checks, but is visually
+   hidden. shellBoot.js marks a failed start with data-shell-boot, and then
+   the words matter — they come back. */
+.shell-boot:not([data-shell-boot]) > p,
+.runtime-boot[data-mareader-boot="load"] > p {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The runtime host's own states (src/app/boot.rs): the shell's loading state
+   before a runtime mounts, and the error state when one cannot start (§6,
+   §11). Painted into #runtime-host, which fills the window. */
+/* Above the frames: the host stacks them, so the cover needs a layer of its
+   own to sit on top of whatever is underneath it. */
+.runtime-boot {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  width: 100%;
+  background: var(--color-paper, #ffffff);
+  color: var(--color-ink, #1f2937);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  padding: 32px;
+  text-align: center;
+}
+
+.runtime-boot__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.runtime-boot__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted, #6b7280);
+}
+
+.runtime-boot__detail {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted, #6b7280);
+  overflow-wrap: anywhere;
+}
+
+.runtime-boot__retry {
+  margin-top: 10px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-line, #e5e7eb);
+  border-radius: 8px;
+  background: var(--color-surface, #f3f4f6);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.runtime-boot__retry:hover {
+  background: var(--color-accent-soft, #dbeafe);
+}
+
+/* A handoff briefly overlaps the outgoing route with a fresh incoming one.
+   Once the incoming frame paints, the outgoing realm is disposed/removed;
+   no route stays mounted behind another (docs/runtime-split.md). */
+#runtime-host {
+  position: relative;
+}
+
+/* The runtime frame (§1): the hosted runtime's whole window. It takes the
+   host's full measure — the host itself is `h-full w-full` — so the frame's
+   document lays out exactly where the runtime would mount in the same-page
+   architecture; no border, no inline shrink-wrap. */
+.runtime-frame {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* The incoming frame is laid out and painting, but not shown and not
+   hit-testable. `visibility` rather than `display`: a `display: none` iframe
+   gets no layout, and a runtime that cannot lay out cannot run the animation
+   frames its own painted handshake is made of. */
+.runtime-frame[data-mareader-slot="incoming"],
+.runtime-frame[data-mareader-slot="retiring"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The revealed frame paints above the one it replaced: for one handoff both
+   are in the host, and DOM order alone would let the outgoing runtime paint
+   over its replacement. */
+.runtime-frame[data-mareader-slot="active"] {
+  z-index: 1;
+}
+
+/* The Shell's cover-bake page (src/app/bake.rs): a child document that
+   loads pdf.js alone and renders shelf covers while the shelf lacks them. It
+   sits on <body>, outside the runtime host, and is never shown. Hidden the
+   same way as an incoming runtime frame — laid out, `visibility: hidden`, not
+   hit-testable — because pdf.js paces a render on animation frames, and a
+   frame that gets no layout gets none of those; `display: none` would stall
+   every bake until its timeout. */
+.bake-frame {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* The first runtime's cover can mount before the shell's first theme paint:
+   until then it wears the remembered paper too. */
+html:not([data-base]) .runtime-boot {
+  background: var(--boot-paper, var(--color-paper, #ffffff));
+}

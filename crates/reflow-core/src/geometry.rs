@@ -99,10 +99,8 @@ impl PageGeometry {
     /// land in.
     pub fn with_extra_inline(mut self, extra: f64) -> Self {
         self.extra_inline = extra.max(0.0);
-        self.content_width =
-            (self.content_width - 2.0 * self.extra_inline).max(MIN_CONTENT_WIDTH);
-        let pads =
-            self.pad_inline_left + self.pad_inline_right + 2.0 * self.extra_inline;
+        self.content_width = (self.content_width - 2.0 * self.extra_inline).max(MIN_CONTENT_WIDTH);
+        let pads = self.pad_inline_left + self.pad_inline_right + 2.0 * self.extra_inline;
         self.width = pads + self.content_width;
         self
     }
@@ -114,8 +112,7 @@ impl PageGeometry {
     pub fn with_column_pct(mut self, pct: f64) -> Self {
         let factor = (pct / 100.0).clamp(MIN_COLUMN_PCT / 100.0, MAX_COLUMN_PCT / 100.0);
         self.content_width = (self.content_width * factor).max(MIN_CONTENT_WIDTH);
-        let pads =
-            self.pad_inline_left + self.pad_inline_right + 2.0 * self.extra_inline;
+        let pads = self.pad_inline_left + self.pad_inline_right + 2.0 * self.extra_inline;
         self.width = pads + self.content_width;
         self
     }
@@ -145,7 +142,11 @@ impl Default for PageGeometry {
 
 /// The geometry for a layout choice.
 pub fn geometry(book_layout: bool) -> PageGeometry {
-    let (left, right) = if book_layout { (GUTTER, EDGE) } else { (PAD, PAD) };
+    let (left, right) = if book_layout {
+        (GUTTER, EDGE)
+    } else {
+        (PAD, PAD)
+    };
     PageGeometry {
         width: PAGE_WIDTH,
         height: PAGE_HEIGHT,
@@ -188,7 +189,10 @@ mod tests {
         // Content width is the same whichever side the gutter sits on.
         assert!((g.content_width - (PAGE_WIDTH - GUTTER - EDGE)).abs() < 1e-9);
         // Without a book layout the pads are the stored symmetric pair.
-        assert_eq!(g.inline_pads(false, 1), (g.pad_inline_left, g.pad_inline_right));
+        assert_eq!(
+            g.inline_pads(false, 1),
+            (g.pad_inline_left, g.pad_inline_right)
+        );
     }
 
     #[test]
@@ -199,7 +203,10 @@ mod tests {
         for page in 0..4usize {
             assert_eq!(g.pads(true, page, SpineSide::Left), (EDGE, GUTTER));
             assert_eq!(g.pads(true, page, SpineSide::Right), (GUTTER, EDGE));
-            assert_eq!(g.pads(true, page, SpineSide::Auto), g.inline_pads(true, page));
+            assert_eq!(
+                g.pads(true, page, SpineSide::Auto),
+                g.inline_pads(true, page)
+            );
         }
     }
 
@@ -214,8 +221,14 @@ mod tests {
         // The gutter side carries it too, so a book layout answers the dial
         // on every page of the strip.
         let book = geometry(true).with_extra_inline(8.0);
-        assert_eq!(book.pads(true, 0, SpineSide::Auto), (GUTTER + 8.0, EDGE + 8.0));
-        assert_eq!(book.pads(true, 1, SpineSide::Auto), (EDGE + 8.0, GUTTER + 8.0));
+        assert_eq!(
+            book.pads(true, 0, SpineSide::Auto),
+            (GUTTER + 8.0, EDGE + 8.0)
+        );
+        assert_eq!(
+            book.pads(true, 1, SpineSide::Auto),
+            (EDGE + 8.0, GUTTER + 8.0)
+        );
     }
 
     #[test]
@@ -240,7 +253,10 @@ mod tests {
         assert!((narrow.content_width - base.content_width * 0.6).abs() < 1e-9);
         assert!((narrow.width - (PAD + PAD + narrow.content_width)).abs() < 1e-9);
         assert_eq!(base.with_column_pct(500.0).width, wide.width);
-        assert_eq!(base.with_column_pct(10.0).content_width, narrow.content_width);
+        assert_eq!(
+            base.with_column_pct(10.0).content_width,
+            narrow.content_width
+        );
     }
 
     #[test]

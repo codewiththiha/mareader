@@ -6,16 +6,17 @@ import type { MaybeCanvas, ThumbEntry } from "../types";
 import {
   acquirePooledCanvas,
   blitInto,
-  el,
   isSharedScratch,
   releasePooledCanvas,
+  ownedBy,
   releaseScratch,
+  sessionEl,
   showBaked,
   showRaw,
 } from "../canvas";
-import { session } from "../state";
+import type { EngineSession } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
-import { pipelineCache, readPipeline } from "./pipeline";
+import { currentGen, readPipeline } from "./pipeline";
 
 /** Release a thumbnail entry's display surface (ImageBitmap or pooled canvas),
  *  leaving the raw raster untouched. Called when an entry's themed display is
@@ -62,6 +63,9 @@ export function thumbRaw(entry: ThumbEntry | null | undefined): MaybeCanvas {
   if (entry.raw && rasterWidth(entry.raw) > 0) return entry.raw;
   return null;
 }
+/** One canvas the rail can see, and the page it shows. */
+type ThumbTarget = { canvas: HTMLCanvasElement; page: number };
+
 async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
   if (typeof createImageBitmap === "function") {
     try {
@@ -74,78 +78,99 @@ async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
   blitInto(clone, src);
   return clone;
 }
-export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas> {
-  if (session.themeScrubActive) {
+export async function ensureEntryCurrent(
+  s: EngineSession,
+  entry: ThumbEntry
+): Promise<MaybeCanvas> {
+  if (s.themeScrubActive) {
     return rasterWidth(entry.display) > 0 ? entry.display : null;
   }
-  if (entry.gen === pipelineCache.gen && rasterWidth(entry.display) > 0) {
+  if (entry.gen === currentGen(s) && rasterWidth(entry.display) > 0) {
     return entry.display;
   }
   if (entry.pending) return await entry.pending;
   entry.pending = (async () => {
     const raw = thumbRaw(entry);
     if (!raw) return null;
-    const pipeline = readPipeline();
+    const pipeline = readPipeline(s);
+    // The bake reads its source and writes its own surface, so the entry's raw
+    // is baked FROM directly: an earlier baker filtered in place, and a copy
+    // in front of it was what kept the raw intact. `rasterToCanvas` still
+    // makes a canvas when the raw is an ImageBitmap, and that one is ours to
+    // return to the pool.
     const { canvas: src, borrowed } = rasterToCanvas(
       raw as HTMLCanvasElement | ImageBitmap,
     );
-    let work = src;
-    let owned = borrowed;
-    if (!borrowed) {
-      work = acquirePooledCanvas(src.width, src.height);
-      blitInto(work, src);
-      owned = true;
-    }
-    const baked = await bakeRaster(work, pipeline);
-    let newDisplay: MaybeCanvas;
-    if (baked === work) {
-      newDisplay = await snapshotRaster(work);
-      if (owned) releasePooledCanvas(work);
-    } else {
-      if (owned) releasePooledCanvas(work);
-      newDisplay = await cacheDisplay({ display: baked });
-    }
+    const baked = await bakeRaster(src, pipeline);
+    // A filter-only bake hands back `src`: the display still needs a surface
+    // of its own, because `src` belongs to the entry as its raw.
+    const newDisplay =
+      baked === src ? await snapshotRaster(src) : await cacheDisplay({ display: baked });
+    if (borrowed) releasePooledCanvas(src);
     if (entry.display && entry.display !== entry.raw && entry.display !== newDisplay) {
       releaseDisplayOnly(entry);
     }
     entry.display = newDisplay;
-    entry.gen = pipelineCache.gen;
+    entry.gen = pipeline.gen;
     return entry.display;
   })();
   const result = await entry.pending;
   entry.pending = null;
   return result;
 }
-export function paintAllVisibleThumbs(): void {
+/** Every thumb canvas this session owes a paint to, with the page it shows:
+ *  the lane's own registrations plus any `canvas.thumb-canvas` in the document
+ *  this session owns. Enumerated once so the paint below and a theme re-bake
+ *  (`rebakeTheme`) see exactly the same set — a card on screen never keeps the
+ *  look before the change because a second walk of the DOM disagreed. */
+function visibleThumbTargets(s: EngineSession): ThumbTarget[] {
+  const targets: ThumbTarget[] = [];
   const seen = new Set<string>();
-  for (const [canvasId, { page }] of session.thumbLive) {
+  for (const [canvasId, { page }] of s.thumbLive) {
     seen.add(canvasId);
-    const entry = session.thumbCache.get(page);
-    const live = el(canvasId) as HTMLCanvasElement | null;
-    if (entry && live) paintCached(live, entry);
+    const live = sessionEl(s.sid, canvasId) as HTMLCanvasElement | null;
+    if (live) targets.push({ canvas: live, page });
   }
   try {
     const nodes = document.querySelectorAll("canvas.thumb-canvas");
     for (let i = 0; i < nodes.length; i += 1) {
       const live = nodes[i] as HTMLCanvasElement;
       if (!live.id || seen.has(live.id)) continue;
+      // Only THIS session's canvases: another pane's rail may share the
+      // document, and its thumbnails are not this cache's to paint.
+      if (!ownedBy(live, s.sid)) continue;
       const m = /^thumb-(\d+)$/.exec(live.id);
       if (!m || !m[1]) continue;
-      const page = parseInt(m[1], 10);
-      const entry = session.thumbCache.get(page);
-      if (!entry) continue;
-      paintCached(live, entry);
-      session.thumbLive.set(live.id, { page });
+      targets.push({ canvas: live, page: parseInt(m[1], 10) });
     }
   } catch (_) {
     /* no document */
   }
+  return targets;
+}
+
+/** The pages a visible thumb shows, deduplicated: what a look change must
+ *  have baked before the rail may be painted, and nothing else. */
+export function visibleThumbPages(s: EngineSession): number[] {
+  const pages = new Set<number>();
+  for (const { page } of visibleThumbTargets(s)) pages.add(page);
+  return [...pages];
+}
+
+export function paintAllVisibleThumbs(s: EngineSession): void {
+  for (const { canvas, page } of visibleThumbTargets(s)) {
+    const entry = s.thumbCache.get(page);
+    if (!entry) continue;
+    paintCached(s, canvas, entry);
+    s.thumbLive.set(canvas.id, { page });
+  }
 }
 export function paintCached(
+  s: EngineSession,
   dst: HTMLCanvasElement | null,
   entry: ThumbEntry | null
 ): { width: number; height: number } | null {
-  const raw = session.themeScrubActive ? thumbRaw(entry) : null;
+  const raw = s.themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
   if (!dst || !src) return null;
   // Raster + tag are swapped by one synchronous primitive. Missing cache
@@ -156,3 +181,5 @@ export function paintCached(
   if (!shown) return null;
   return { width: entry!.cssW, height: entry!.cssH };
 }
+
+// only the changed file was rewritten

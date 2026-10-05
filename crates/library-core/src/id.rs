@@ -44,7 +44,10 @@ pub struct Cooldown {
 
 impl Cooldown {
     pub fn new(span_ms: u64) -> Self {
-        Self { last_ms: None, span_ms }
+        Self {
+            last_ms: None,
+            span_ms,
+        }
     }
 
     /// Whether `now` is past the span since the last arm. Arms itself when it
@@ -70,7 +73,8 @@ impl Cooldown {
     /// this never extends the span, for callers that poll (every window focus
     /// polls the picker's grace).
     pub fn within(&self, now_ms: u64) -> bool {
-        self.last_ms.is_some_and(|last| now_ms.saturating_sub(last) < self.span_ms)
+        self.last_ms
+            .is_some_and(|last| now_ms.saturating_sub(last) < self.span_ms)
     }
 }
 
@@ -117,7 +121,11 @@ mod tests {
         ];
         all.sort();
         all.dedup();
-        assert_eq!(all.len(), 7, "counter and prefix together keep all seven apart");
+        assert_eq!(
+            all.len(),
+            7,
+            "counter and prefix together keep all seven apart"
+        );
     }
 
     #[test]
@@ -139,7 +147,11 @@ mod tests {
         let mut sorted = first.clone();
         sorted.sort();
         sorted.dedup();
-        assert_eq!(sorted.len(), first.len(), "4096 ids in one tick, all distinct");
+        assert_eq!(
+            sorted.len(),
+            first.len(),
+            "4096 ids in one tick, all distinct"
+        );
     }
 
     #[test]
@@ -155,7 +167,10 @@ mod tests {
     #[test]
     fn a_cooldown_arms_itself_by_asking() {
         let mut gate = Cooldown::new(5_000);
-        assert!(gate.due(1_000), "a fresh cooldown does not hold the first ask back");
+        assert!(
+            gate.due(1_000),
+            "a fresh cooldown does not hold the first ask back"
+        );
         assert!(!gate.due(4_000), "inside the span is held");
         assert!(gate.due(6_000), "past the span, and armed again");
         assert!(!gate.due(9_000));
@@ -166,7 +181,10 @@ mod tests {
     fn an_armed_cooldown_holds_the_very_next_ask() {
         let mut grace = Cooldown::new(1_000);
         grace.arm(100);
-        assert!(!grace.due(500), "the arm, not a question, started this span");
+        assert!(
+            !grace.due(500),
+            "the arm, not a question, started this span"
+        );
         assert!(grace.due(1_200));
     }
 
@@ -177,7 +195,10 @@ mod tests {
         grace.arm(100);
         assert!(grace.within(500));
         assert!(grace.within(1_000), "polling does not push the span out");
-        assert!(!grace.within(1_100), "past the span is past it, however often asked");
+        assert!(
+            !grace.within(1_100),
+            "past the span is past it, however often asked"
+        );
         // The polls above changed nothing: the arm still holds from 100.
         assert!(grace.within(1_099));
     }

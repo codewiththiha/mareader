@@ -7,16 +7,15 @@
 import { bakeInto } from "./bake";
 import { releaseCanvas, showRaw } from "../canvas";
 import { PAGE_SNAPSHOT_CLASS, PAGE_SNAPSHOT_SELECTOR } from "../dom-contract";
-import { session } from "../state";
+import type { EngineSession } from "../state";
 import { readPipeline } from "./pipeline";
 import { paperInfo, publishBakedPaper } from "./paper";
-import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
-import { preparePagesForScrub, renderPageInternal, rerenderLivePages } from "../renderer";
+import { ensureEntryCurrent, paintAllVisibleThumbs, visibleThumbPages } from "./thumbnails";
+import { preparePagesForScrub, renderPage, rerenderLivePages } from "../renderer";
 
 // A Settings commit after a scrub has the same final pipeline the scrub exit
 // just baked. Remember it by value rather than generation: invalidation bumps
 // generations even when the actual filter/paper output is unchanged.
-let lastBakedFingerprint: string | null = null;
 
 // The scrub entry's re-render cover. A page that retained no unbaked raw is
 // re-rendered in the background when a drag starts, and pdf.js wipes the
@@ -27,32 +26,30 @@ let lastBakedFingerprint: string | null = null;
 // re-render, released the moment the fresh raw lands. Tracked so the exit
 // path can release stragglers; zoom masks share the class but are never
 // touched here.
-let entryPrepare: Promise<void> | null = null;
-const entrySnapshots = new Map<string, HTMLCanvasElement>();
 
-function releaseEntrySnapshot(canvasId: string): void {
-  const snap = entrySnapshots.get(canvasId);
+function releaseEntrySnapshot(s: EngineSession, canvasId: string): void {
+  const snap = s.scrub.entrySnapshots.get(canvasId);
   if (!snap) return;
-  entrySnapshots.delete(canvasId);
+  s.scrub.entrySnapshots.delete(canvasId);
   // Zero the backing store before the node goes: WKWebView does not release
   // a canvas IOSurface on DOM removal alone (state.ts, releaseSnapshots).
   releaseCanvas(snap);
   snap.remove();
 }
 
-function releaseAllEntrySnapshots(): void {
-  for (const canvasId of [...entrySnapshots.keys()]) releaseEntrySnapshot(canvasId);
+export function releaseAllEntrySnapshots(s: EngineSession): void {
+  for (const canvasId of [...s.scrub.entrySnapshots.keys()]) releaseEntrySnapshot(s, canvasId);
 }
 
 /** Copy the current pixels of every visible page that has no raw to swap in
  *  — exactly the set preparePagesForScrub will re-render — into a
  *  `.page-snapshot` mask. The mask hides the live canvas through CSS
  *  (styles/page_host.css) for as long as it is in the DOM. */
-function snapshotStragglerPages(): void {
+function snapshotStragglerPages(s: EngineSession): void {
   const vh = typeof window === "undefined" ? 0 : window.innerHeight;
-  for (const [canvasId, st] of session.stateByCanvasId) {
+  for (const [canvasId, st] of s.stateByCanvasId) {
     if (st.dead || !st.canvas || !st.host || st.rawCanvas) continue;
-    if (entrySnapshots.has(canvasId)) continue;
+    if (s.scrub.entrySnapshots.has(canvasId)) continue;
     if (st.canvas.width === 0) continue;
     const rect = st.canvas.getBoundingClientRect();
     if (vh > 0 && (rect.bottom < 0 || rect.top > vh)) continue;
@@ -75,13 +72,13 @@ function snapshotStragglerPages(): void {
     const next = st.canvas.nextElementSibling;
     if (next) st.host.insertBefore(snap, next);
     else st.host.appendChild(snap);
-    entrySnapshots.set(canvasId, snap);
+    s.scrub.entrySnapshots.set(canvasId, snap);
   }
 }
 
-function pipelineFingerprint(): string {
-  const pipeline = readPipeline();
-  return `${pipeline.filter}|${pipeline.blend}|${paperInfo(pipeline).color}`;
+function pipelineFingerprint(s: EngineSession): string {
+  const pipeline = readPipeline(s);
+  return `${pipeline.filter}|${pipeline.blend}|${paperInfo(pipeline, s.themeRoot).color}`;
 }
 
 // The scrub window repaints the root tokens per tick and the rasters
@@ -96,46 +93,52 @@ function pipelineFingerprint(): string {
 // exit's forced rebakeTheme republishes once more before the class drops,
 // so nothing here manages an observer of its own.
 
-export async function rebakeTheme(force = false): Promise<void> {
-  if (session.themeScrubActive) return;
-  const pipeline = readPipeline();
+export async function rebakeTheme(s: EngineSession, force = false): Promise<void> {
+  if (s.themeScrubActive) return;
+  const pipeline = readPipeline(s);
   // The backdrop's pre-themed paper rides on the same filter + paper this
   // rebake burns into the rasters, so it refreshes alongside them. An
   // unchanged fingerprint rewrites the identical value; the detected paper
   // itself publishes from setPaper the moment it moves.
-  publishBakedPaper();
-  const fingerprint = pipelineFingerprint();
-  if (!force && fingerprint === lastBakedFingerprint) {
-    // The output is already current even though invalidatePipeline assigned a
-    // new generation. Align cache generations so lazy thumbnail paints do not
-    // schedule the same bake later.
-    for (const entry of session.thumbCache.values()) {
+  publishBakedPaper(s);
+  const fingerprint = pipelineFingerprint(s);
+  if (!force && fingerprint === s.scrub.lastBakedFingerprint) {
+    // Inputs were already baked for this session. Align the thumbnail entries
+    // so lazy paints do not schedule the same bake later.
+    for (const entry of s.thumbCache.values()) {
       if (entry.display) entry.gen = pipeline.gen;
     }
     return;
   }
 
-  for (const st of session.stateByCanvasId.values()) {
+  for (const st of s.stateByCanvasId.values()) {
     // Only re-bake from a DISTINCT raw raster. If raw === live canvas the
     // pixels may already be themed; baking again double-filters.
     if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
     await bakeInto(st.canvas, st.rawCanvas, pipeline, "canvas-raw");
-    session.dropRawIfIdle(st);
+    s.dropRawIfIdle(st);
   }
 
-  for (const entry of session.thumbCache.values()) {
-    await ensureEntryCurrent(entry);
-    if (session.themeScrubActive) return;
+  // Only the thumbs the reader can actually SEE are re-baked here: exactly the
+  // set `paintAllVisibleThumbs` is about to paint. Every other cached page is
+  // left one generation behind, and the generation check makes the cell that
+  // next asks for it re-bake from its raw — a theme change must not raster the
+  // whole LRU for cards nobody is looking at.
+  for (const page of visibleThumbPages(s)) {
+    const entry = s.thumbCache.get(page);
+    if (!entry) continue;
+    await ensureEntryCurrent(s, entry);
+    if (s.themeScrubActive) return;
   }
 
   // `paintCached` selects baked displays while scrub is off, retaining the
   // stale baked canvas until each async replacement is ready.
-  paintAllVisibleThumbs();
+  paintAllVisibleThumbs(s);
   // A page render that landed while this loop awaited could have been baked
   // against the superseded generation or left with the live tag; converge
   // before declaring the theme current.
-  await settleCanvasTheme();
-  lastBakedFingerprint = fingerprint;
+  await settleCanvasTheme(s);
+  s.scrub.lastBakedFingerprint = fingerprint;
 }
 
 /**
@@ -150,10 +153,10 @@ export async function rebakeTheme(force = false): Promise<void> {
  * and cheap when nothing drifted. Canvases that lost their unbaked raw are
  * re-rendered rather than baked in place, which would double-filter.
  */
-async function settleCanvasTheme(): Promise<void> {
-  const wantRaw = session.themeScrubActive;
+async function settleCanvasTheme(s: EngineSession): Promise<void> {
+  const wantRaw = s.themeScrubActive;
   const rerender: Array<() => Promise<unknown>> = [];
-  for (const [id, st] of session.stateByCanvasId) {
+  for (const [id, st] of s.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
     const hasTag = st.canvas.classList.contains("canvas-raw");
     if (wantRaw) {
@@ -166,10 +169,10 @@ async function settleCanvasTheme(): Promise<void> {
       }
     } else if (hasTag) {
       if (st.rawCanvas && st.rawCanvas !== st.canvas) {
-        await bakeInto(st.canvas, st.rawCanvas, readPipeline(), "canvas-raw");
-        session.dropRawIfIdle(st);
+        await bakeInto(st.canvas, st.rawCanvas, readPipeline(s), "canvas-raw");
+        s.dropRawIfIdle(st);
       } else {
-        rerender.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
+        rerender.push(() => renderPage(s, id, st.scale || 1, !!st.textLayerEl));
       }
     }
   }
@@ -181,12 +184,12 @@ async function settleCanvasTheme(): Promise<void> {
  * under the live CSS filter + blend — as one atomic operation. Called only
  * through pdfEngine's serialized theme queue.
  */
-export async function setScrubModeInternal(on: boolean): Promise<void> {
-  if (session.themeScrubActive === on) return;
+export async function setScrubModeInternal(s: EngineSession, on: boolean): Promise<void> {
+  if (s.themeScrubActive === on) return;
   // Both edges of the window are worth remembering: a render baking just
   // after either one is a render a follow-up drag may want raw, so it keeps
   // its unbaked raster (renderer.ts). Outside the window bakes drop theirs.
-  session.noteScrub();
+  s.noteScrub();
 
   if (on) {
     // The global class delimits the scrub window for the CSS that keys off
@@ -195,15 +198,14 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     // shell.css). Canvas theming itself rides each raw raster via
     // showRaw/showBaked, so a baked canvas remains unfiltered while another
     // changes asynchronously.
-    document.documentElement.classList.add("appearance-scrubbing");
-    session.setThemeScrubActive(true);
+    s.setThemeScrubActive(true);
 
     // The synchronous half of the swap, and everything the gesture starts
     // with: pages that retained a raw raster blit it under the live CSS
     // filter, and a page whose live canvas IS the raw only needs the tag.
     // No await runs before this loop completes — the pixels and their tags
     // land in the same frame the drag first paints.
-    for (const st of session.stateByCanvasId.values()) {
+    for (const st of s.stateByCanvasId.values()) {
       if (st.dead || !st.canvas) continue;
       if (st.rawCanvas && st.rawCanvas !== st.canvas) {
         showRaw(st.canvas, st.rawCanvas, "canvas-raw");
@@ -211,7 +213,7 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
         st.canvas.classList.add("canvas-raw");
       }
     }
-    paintAllVisibleThumbs();
+    paintAllVisibleThumbs(s);
 
     // The asynchronous half: pages with no raw at all re-render in the
     // background, under a snapshot of their settled pixels. Awaiting that
@@ -221,18 +223,18 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     // drag-out still serializes behind the work started here, and the
     // settle sweep repairs any page whose render landed past the loop —
     // one half of a spread cannot be left un-themet.
-    snapshotStragglerPages();
-    entryPrepare = (async () => {
+    snapshotStragglerPages(s);
+    s.scrub.entryPrepare = (async () => {
       try {
-        await preparePagesForScrub((canvasId) => releaseEntrySnapshot(canvasId));
+        await preparePagesForScrub(s, (canvasId) => releaseEntrySnapshot(s, canvasId));
       } catch (err) {
         console.warn("[pdfEngine] scrub prepare failed:", err);
       } finally {
         // A page whose render failed keeps its cover until here — settled
         // pixels beat a wiped canvas.
-        releaseAllEntrySnapshots();
+        releaseAllEntrySnapshots(s);
       }
-      await settleCanvasTheme().catch((err: unknown) => {
+      await settleCanvasTheme(s).catch((err: unknown) => {
         console.warn("[pdfEngine] scrub settle failed:", err);
       });
     })();
@@ -244,28 +246,29 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
   // whose raw pixels are about to land on the live canvas — and the
   // needsRerender census below has to count the pages whose live canvas
   // became the only raw backing while that prepare ran.
-  if (entryPrepare) {
-    const preparing = entryPrepare;
-    entryPrepare = null;
+  if (s.scrub.entryPrepare) {
+    const preparing = s.scrub.entryPrepare;
+    s.scrub.entryPrepare = null;
     await preparing;
   }
 
   // Keep the class up while async bakes replace raw rasters. A page whose
   // live canvas became its only raw backing during scrub cannot be baked in
   // place without double-filtering, so re-render it before releasing CSS.
-  const needsRerender = [...session.stateByCanvasId.values()].some(
+  const needsRerender = [...s.stateByCanvasId.values()].some(
     (st) => !st.dead && !!st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas),
   );
-  session.setThemeScrubActive(false);
-  await rebakeTheme(true);
-  if (needsRerender) await rerenderLivePages();
+  s.setThemeScrubActive(false);
+  await rebakeTheme(s, true);
+  if (needsRerender) await rerenderLivePages(s);
   // `needsRerender` was snapshotted before the flag cleared; a render landing
   // since then is covered here — as is any canvases the bake loop skipped
   // because their raw had become the live canvas mid-flight.
-  await settleCanvasTheme();
+  await settleCanvasTheme(s);
   // Any straggler cover whose render never landed (a failed job, a host
   // unmounted mid-drag) must not outlive the gesture: the CSS hides the
   // live canvas under it.
-  releaseAllEntrySnapshots();
-  document.documentElement.classList.remove("appearance-scrubbing");
+  releaseAllEntrySnapshots(s);
 }
+
+// only the changed file was rewritten

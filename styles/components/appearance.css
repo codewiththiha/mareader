@@ -99,7 +99,10 @@
    Everything consumed here lives in the private --ps-* namespace, apart from
    the five patterns it shares with the page and the scroller
    (styles/tokens.css) — the swatch previews a preset's OWN strokes, so it
-   feeds the shared patterns its own --tex-stroke. */
+   feeds the shared patterns its own --tex-stroke. The tile sizes repeated
+   below (180px, 8px, --tex-unit) are the page's numbers: a change to a
+   pattern's geometry in styles/textures.css moves here in the same commit, or
+   the swatch quietly stops showing what the page will do. */
 .preset-page::before {
   content: "";
   position: absolute;
@@ -198,3 +201,5 @@
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
+
+/* only the changed file was rewritten */

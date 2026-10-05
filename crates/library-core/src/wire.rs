@@ -14,7 +14,7 @@ pub enum ImportPhase {
 }
 
 /// One progress beat, emitted on the shell's `library://progress` channel
-/// and re-broadcast as a window event by `src/services/library/mod.rs`.
+/// and re-broadcast as a window event by `crates/library-runtime/src/services/mod.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportProgress {
@@ -197,8 +197,7 @@ mod tests {
         assert_eq!(answer.results.len(), 1);
         assert!(answer.results[0].is_ok());
         assert_eq!(answer.results[0].measured, None);
-        let none: RelocateResult =
-            serde_json::from_str(r#"{"root":"","results":[]}"#).unwrap();
+        let none: RelocateResult = serde_json::from_str(r#"{"root":"","results":[]}"#).unwrap();
         assert!(none.root.is_empty() && none.results.is_empty());
     }
 

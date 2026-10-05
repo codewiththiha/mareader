@@ -18,7 +18,7 @@ pub use merge::{fold_books, further_point};
 pub use naming::{duplicate_title, stem_of};
 pub use query::{find_book_mut, find_by_id, find_by_path, index_by_id, resume_point};
 pub use read::{ReadPoint, record_read, record_read_row, rows_for_read};
-pub use sanitize::{sanitize};
+pub use sanitize::sanitize;
 
 /// Storage guard on the library's size, not a "recent books" cap: it keeps the
 /// persisted blob inside the browser's quota. Past it, the least-recently-read
@@ -500,7 +500,11 @@ mod tests {
             "/books/two.pdf",
             Some("Two".into()),
             None,
-            ReadPoint { page: 42, num_pages: 100, fraction: None },
+            ReadPoint {
+                page: 42,
+                num_pages: 100,
+                fraction: None,
+            },
             500,
         );
         assert!(created.is_none(), "an existing book is not created again");
@@ -546,10 +550,17 @@ mod tests {
             "/books/one.pdf",
             Some("one".into()),
             None,
-            ReadPoint { page: 3, num_pages: 10, fraction: None },
+            ReadPoint {
+                page: 3,
+                num_pages: 10,
+                fraction: None,
+            },
             10,
         );
-        assert_eq!(at(&books, 0).title.as_deref(), Some("Named by the document"));
+        assert_eq!(
+            at(&books, 0).title.as_deref(),
+            Some("Named by the document")
+        );
     }
 
     #[test]
@@ -561,12 +572,23 @@ mod tests {
             "/books/one.pdf",
             None,
             None,
-            ReadPoint { page: 0, num_pages: 10, fraction: Some(1.4) },
+            ReadPoint {
+                page: 0,
+                num_pages: 10,
+                fraction: Some(1.4),
+            },
             1,
         );
         assert_eq!(at(&books, 0).page, 1);
         assert_eq!(at(&books, 0).fraction, None);
-        assert_eq!(ReadPoint::fresh(), ReadPoint { page: 1, num_pages: 0, fraction: None });
+        assert_eq!(
+            ReadPoint::fresh(),
+            ReadPoint {
+                page: 1,
+                num_pages: 0,
+                fraction: None
+            }
+        );
     }
 
     #[test]
@@ -575,13 +597,13 @@ mod tests {
             fp_pending: true,
             ..linked("a", "/books/one.pdf")
         }]);
-        let touched = apply_check(
-            &mut books,
-            &check("/books/one.pdf", true, 20, 2, 8),
-        );
+        let touched = apply_check(&mut books, &check("/books/one.pdf", true, 20, 2, 8));
         assert_eq!(touched, vec!["a".to_string()]);
         assert_eq!(at(&books, 0).fp, fp(20, 2, 8));
-        assert!(!at(&books, 0).fp_pending, "the measurement replaces the placeholder");
+        assert!(
+            !at(&books, 0).fp_pending,
+            "the measurement replaces the placeholder"
+        );
         assert!(apply_check(&mut books, &check("/books/one.pdf", true, 20, 2, 8)).is_empty());
     }
 
@@ -597,10 +619,21 @@ mod tests {
             vec!["a".to_string()]
         );
         assert!(at(&books, 0).missing);
-        assert!(!at(&books, 0).fp_pending, "a check that ran is not a check still owed");
+        assert!(
+            !at(&books, 0).fp_pending,
+            "a check that ran is not a check still owed"
+        );
         assert_eq!(books.len(), 1, "a missing book is not a removed one");
-        assert_eq!(at(&books, 0).page, 42, "the resume point survives the address dying");
-        assert_eq!(at(&books, 0).fp, fp(10, 1, 7), "and so does the last known identity");
+        assert_eq!(
+            at(&books, 0).page,
+            42,
+            "the resume point survives the address dying"
+        );
+        assert_eq!(
+            at(&books, 0).fp,
+            fp(10, 1, 7),
+            "and so does the last known identity"
+        );
         assert!(apply_check(&mut books, &check("/books/one.pdf", false, 0, 0, 0)).is_empty());
     }
 
@@ -628,15 +661,21 @@ mod tests {
                 ..linked("a", "/books/dune.pdf")
             },
         ]);
-        assert!(record_read(
-            &mut books,
-            "/books/dune.pdf",
-            Some("Dune".into()),
-            None,
-            ReadPoint { page: 90, num_pages: 400, fraction: None },
-            700,
-        )
-        .is_none());
+        assert!(
+            record_read(
+                &mut books,
+                "/books/dune.pdf",
+                Some("Dune".into()),
+                None,
+                ReadPoint {
+                    page: 90,
+                    num_pages: 400,
+                    fraction: None
+                },
+                700,
+            )
+            .is_none()
+        );
         for book in book_rows(&books) {
             assert_eq!(book.page, 90);
             assert_eq!(book.last_read_ms, 700);
@@ -670,7 +709,11 @@ mod tests {
         assert!(own.independent && !shared.independent);
         // An import resolving this address must never land on the private row.
         let mut list = rows([own.clone()]);
-        assert_eq!(add_book(&mut list, shared.clone()), "a", "a private row holds nothing back");
+        assert_eq!(
+            add_book(&mut list, shared.clone()),
+            "a",
+            "a private row holds nothing back"
+        );
         assert_eq!(list.len(), 2, "so the arrival joins as a book of its own");
         for order in [
             rows([shared.clone(), own.clone()]),
@@ -678,7 +721,13 @@ mod tests {
         ] {
             let mut both = order;
             assert_eq!(
-                add_book(&mut both, Book { fp: fp(10, 1, 7), ..linked("new", "/books/dune.pdf") }),
+                add_book(
+                    &mut both,
+                    Book {
+                        fp: fp(10, 1, 7),
+                        ..linked("new", "/books/dune.pdf")
+                    }
+                ),
                 "a",
                 "a shared row at the address is the one an import resolves to"
             );
@@ -688,14 +737,21 @@ mod tests {
     #[test]
     fn a_shared_read_leaves_a_private_book_where_it_was() {
         // Two rows of one file share their position — unless one is independent.
-        let mut books = rows([linked("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
+        let mut books = rows([
+            linked("a", "/books/dune.pdf"),
+            private("b", "/books/dune.pdf"),
+        ]);
         at_mut(&mut books, 1).page = 240;
         record_read(
             &mut books,
             "/books/dune.pdf",
             Some("Dune".into()),
             None,
-            ReadPoint { page: 90, num_pages: 400, fraction: None },
+            ReadPoint {
+                page: 90,
+                num_pages: 400,
+                fraction: None,
+            },
             700,
         );
         assert_eq!(at(&books, 0).page, 90, "the shared row moves");
@@ -713,17 +769,26 @@ mod tests {
     #[test]
     fn an_open_that_names_no_row_treats_the_address_as_one_book() {
         // An open that cannot ask which row was meant falls back to the address.
-        let mut books = rows([private("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
+        let mut books = rows([
+            private("a", "/books/dune.pdf"),
+            private("b", "/books/dune.pdf"),
+        ]);
         assert_eq!(rows_for_read(&books, None, "/books/dune.pdf"), vec![0, 1]);
-        assert!(record_read(
-            &mut books,
-            "/books/dune.pdf",
-            Some("Dune".into()),
-            None,
-            ReadPoint { page: 12, num_pages: 400, fraction: None },
-            5,
-        )
-        .is_none());
+        assert!(
+            record_read(
+                &mut books,
+                "/books/dune.pdf",
+                Some("Dune".into()),
+                None,
+                ReadPoint {
+                    page: 12,
+                    num_pages: 400,
+                    fraction: None
+                },
+                5,
+            )
+            .is_none()
+        );
         assert_eq!(books.len(), 2, "nothing was minted for a file already held");
         assert!(book_rows(&books).all(|b| b.page == 12));
         assert_eq!(rows_for_read(&books, Some("b"), "/books/dune.pdf"), vec![1]);
@@ -738,26 +803,56 @@ mod tests {
             linked("d", "/books/other.pdf"),
         ]);
         assert_eq!(rows_for_read(&books, None, "/books/dune.pdf"), vec![0, 2]);
-        assert_eq!(rows_for_read(&books, Some("c"), "/books/dune.pdf"), vec![0, 2]);
+        assert_eq!(
+            rows_for_read(&books, Some("c"), "/books/dune.pdf"),
+            vec![0, 2]
+        );
         assert_eq!(rows_for_read(&books, Some("b"), "/books/dune.pdf"), vec![1]);
-        assert_eq!(rows_for_read(&books, Some("d"), "/books/dune.pdf"), vec![0, 2]);
-        assert_eq!(rows_for_read(&books, Some("zzz"), "/books/dune.pdf"), vec![0, 2]);
+        assert_eq!(
+            rows_for_read(&books, Some("d"), "/books/dune.pdf"),
+            vec![0, 2]
+        );
+        assert_eq!(
+            rows_for_read(&books, Some("zzz"), "/books/dune.pdf"),
+            vec![0, 2]
+        );
         assert!(rows_for_read(&books, None, "/books/nothing.pdf").is_empty());
     }
 
     #[test]
     fn a_read_that_names_its_row_writes_that_row() {
-        let mut books = rows([linked("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
-        let point = ReadPoint { page: 240, num_pages: 400, fraction: None };
-        assert!(record_read_row(&mut books, "a", "/books/dune.pdf", None, None, point, 9).is_none());
+        let mut books = rows([
+            linked("a", "/books/dune.pdf"),
+            private("b", "/books/dune.pdf"),
+        ]);
+        let point = ReadPoint {
+            page: 240,
+            num_pages: 400,
+            fraction: None,
+        };
+        assert!(
+            record_read_row(&mut books, "a", "/books/dune.pdf", None, None, point, 9).is_none()
+        );
         assert_eq!(at(&books, 0).page, 240);
         assert_eq!(at(&books, 1).page, 1, "the private row is not a twin of it");
-        let further = ReadPoint { page: 380, num_pages: 400, fraction: None };
-        assert!(record_read_row(&mut books, "b", "/books/dune.pdf", None, None, further, 11).is_none());
+        let further = ReadPoint {
+            page: 380,
+            num_pages: 400,
+            fraction: None,
+        };
+        assert!(
+            record_read_row(&mut books, "b", "/books/dune.pdf", None, None, further, 11).is_none()
+        );
         assert_eq!(at(&books, 1).page, 380);
         assert_eq!(at(&books, 1).last_read_ms, 11);
-        assert_eq!(at(&books, 0).page, 240, "the shared row keeps the read it was given");
-        assert!(record_read_row(&mut books, "zzz", "/books/dune.pdf", None, None, point, 12).is_none());
+        assert_eq!(
+            at(&books, 0).page,
+            240,
+            "the shared row keeps the read it was given"
+        );
+        assert!(
+            record_read_row(&mut books, "zzz", "/books/dune.pdf", None, None, point, 12).is_none()
+        );
         assert_eq!(at(&books, 0).page, 240);
         assert_eq!(books.len(), 2);
         let created = record_read_row(
@@ -781,10 +876,19 @@ mod tests {
         own.page = 240;
         own.fraction = Some(0.5);
         let books = rows([shared, own]);
-        assert_eq!(resume_point(&books, Some("b"), "/books/dune.pdf"), (240, Some(0.5)));
-        assert_eq!(resume_point(&books, Some("a"), "/books/dune.pdf"), (12, None));
+        assert_eq!(
+            resume_point(&books, Some("b"), "/books/dune.pdf"),
+            (240, Some(0.5))
+        );
+        assert_eq!(
+            resume_point(&books, Some("a"), "/books/dune.pdf"),
+            (12, None)
+        );
         assert_eq!(resume_point(&books, None, "/books/dune.pdf"), (12, None));
-        assert_eq!(resume_point(&books, Some("zzz"), "/books/dune.pdf"), (12, None));
+        assert_eq!(
+            resume_point(&books, Some("zzz"), "/books/dune.pdf"),
+            (12, None)
+        );
         assert_eq!(resume_point(&books, None, "/books/nope.pdf"), (1, None));
     }
 
@@ -793,10 +897,16 @@ mod tests {
         // An import must not resolve to a private book.
         let mut books = rows([private("a", "/one/dune.pdf")]);
         let arrival = Book {
-            origin: Origin::Linked { src: "/two/dune.pdf".into() },
+            origin: Origin::Linked {
+                src: "/two/dune.pdf".into(),
+            },
             ..linked("new", "/two/dune.pdf")
         };
-        assert_eq!(add_book(&mut books, arrival), "new", "a private row holds nothing back");
+        assert_eq!(
+            add_book(&mut books, arrival),
+            "new",
+            "a private row holds nothing back"
+        );
         assert_eq!(books.len(), 2);
         let again = linked("new2", "/three/dune.pdf");
         assert_eq!(add_book(&mut books, again), "new");
@@ -814,7 +924,9 @@ mod tests {
         );
         let only = rows([private("a", "/one/dune.pdf")]);
         assert_eq!(
-            crate::ledger::registry_of(&only).get(&fp(10, 1, 7)).map(|k| k.id.as_str()),
+            crate::ledger::registry_of(&only)
+                .get(&fp(10, 1, 7))
+                .map(|k| k.id.as_str()),
             Some("a")
         );
     }
@@ -835,7 +947,10 @@ mod tests {
 
         fold_books(&mut keep, &gone);
         assert_eq!(keep.page, 240, "a merge never sends a reader backwards");
-        assert_eq!(keep.num_pages, 300, "the count survives from whichever row knew it");
+        assert_eq!(
+            keep.num_pages, 300,
+            "the count survives from whichever row knew it"
+        );
         assert_eq!(keep.title.as_deref(), Some("Dune"), "a name fills a gap");
         assert_eq!(keep.author.as_deref(), Some("Frank Herbert"));
         assert_eq!(keep.added_ms, 300, "the book joined when it first joined");
@@ -847,16 +962,32 @@ mod tests {
         keep2.title = Some("Mine".into());
         fold_books(&mut keep2, &gone);
         assert_eq!(keep2.page, 240);
-        assert_eq!(keep2.title.as_deref(), Some("Mine"), "and never overwrites a name");
+        assert_eq!(
+            keep2.title.as_deref(),
+            Some("Mine"),
+            "and never overwrites a name"
+        );
     }
 
     #[test]
     fn a_page_tie_goes_to_the_deeper_stream_fraction() {
-        let a = ReadPoint { page: 10, num_pages: 0, fraction: Some(0.4) };
-        let b = ReadPoint { page: 10, num_pages: 0, fraction: Some(0.7) };
+        let a = ReadPoint {
+            page: 10,
+            num_pages: 0,
+            fraction: Some(0.4),
+        };
+        let b = ReadPoint {
+            page: 10,
+            num_pages: 0,
+            fraction: Some(0.7),
+        };
         assert_eq!(further_point(a, b), b);
         assert_eq!(further_point(b, a), b);
-        let plain = ReadPoint { page: 10, num_pages: 0, fraction: None };
+        let plain = ReadPoint {
+            page: 10,
+            num_pages: 0,
+            fraction: None,
+        };
         assert_eq!(further_point(plain, a), a);
         assert_eq!(further_point(a, plain), a);
         assert_eq!(further_point(a, a), a);
@@ -972,9 +1103,15 @@ mod tests {
             fraction: Some(0.5),
             ..linked("a", "/books/one.pdf")
         }]);
-        assert_eq!(resume_point(&books, None, "/books/one.pdf"), (42, Some(0.5)));
+        assert_eq!(
+            resume_point(&books, None, "/books/one.pdf"),
+            (42, Some(0.5))
+        );
         assert_eq!(resume_point(&books, None, "/books/zzz.pdf"), (1, None));
-        assert_eq!(find_by_path(&books, "/books/one.pdf").map(|b| b.id.as_str()), Some("a"));
+        assert_eq!(
+            find_by_path(&books, "/books/one.pdf").map(|b| b.id.as_str()),
+            Some("a")
+        );
     }
 
     #[test]
@@ -1010,8 +1147,16 @@ mod tests {
         let ids: Vec<&str> = books.iter().map(Row::id).collect();
         assert_eq!(ids, vec!["a", "dup", "c"]);
         assert_eq!(at(&books, 0).page, 1, "page 0 clamps to 1");
-        assert_eq!(at(&books, 1).title.as_deref(), Some("one_1"), "a duplicate keeps the name it was minted with");
-        assert_eq!(at(&books, 2).fraction, None, "an impossible fraction is dropped");
+        assert_eq!(
+            at(&books, 1).title.as_deref(),
+            Some("one_1"),
+            "a duplicate keeps the name it was minted with"
+        );
+        assert_eq!(
+            at(&books, 2).fraction,
+            None,
+            "an impossible fraction is dropped"
+        );
     }
 
     #[test]
@@ -1031,7 +1176,8 @@ mod tests {
         ]);
         sanitize(&mut books);
         assert_eq!(
-            at(&books, 0).title, None,
+            at(&books, 0).title,
+            None,
             "a document's download debris still goes"
         );
         assert_eq!(
@@ -1109,7 +1255,11 @@ mod tests {
         books.push(Row::link("l2".into(), "Gone".into(), "zz".into(), 1));
         sanitize(&mut books);
         let ids: Vec<&str> = books.iter().map(Row::id).collect();
-        assert_eq!(ids, vec!["a", "l1"], "the book link at a gone book goes; the shelf link stays");
+        assert_eq!(
+            ids,
+            vec!["a", "l1"],
+            "the book link at a gone book goes; the shelf link stays"
+        );
     }
 
     #[test]
@@ -1127,13 +1277,19 @@ mod tests {
         }];
         drop_dead_shelf_links(&mut books, &shelves);
         let ids: Vec<&str> = books.iter().map(Row::id).collect();
-        assert_eq!(ids, vec!["a", "l1"], "only the pointer at a shelf that is gone goes");
+        assert_eq!(
+            ids,
+            vec!["a", "l1"],
+            "only the pointer at a shelf that is gone goes"
+        );
     }
 
     #[test]
     fn a_duplicate_is_named_by_the_first_free_counter() {
-        let in_use: std::collections::HashSet<String> =
-            ["Dune", "Dune_1", "Neuromancer"].iter().map(|s| s.to_string()).collect();
+        let in_use: std::collections::HashSet<String> = ["Dune", "Dune_1", "Neuromancer"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(duplicate_title("Dune", &in_use), "Dune_2");
         assert_eq!(duplicate_title("Neuromancer", &in_use), "Neuromancer_1");
         // Duplicating a duplicate steps instead of stacking.
@@ -1146,10 +1302,15 @@ mod tests {
         let gaps: std::collections::HashSet<String> =
             ["Dune", "Dune_2"].iter().map(|s| s.to_string()).collect();
         assert_eq!(duplicate_title("Dune", &gaps), "Dune_1");
-        assert_eq!(duplicate_title("  ", &std::collections::HashSet::new()), "Book_1");
+        assert_eq!(
+            duplicate_title("  ", &std::collections::HashSet::new()),
+            "Book_1"
+        );
         // The minted name survives the sanitizer via the exemption in `reader_core::filename`.
         assert!(reader_core::filename::is_usable_title("Dune_1"));
-        assert!(reader_core::filename::is_usable_title(&duplicate_title("dune", &in_use)));
+        assert!(reader_core::filename::is_usable_title(&duplicate_title(
+            "dune", &in_use
+        )));
     }
 
     #[test]
@@ -1255,10 +1416,17 @@ mod tests {
             1,
         );
         assert!(copy.origin.is_store_copy_of("/src/a.pdf"));
-        assert!(!copy.origin.is_store_copy_of("/store/b1.pdf"), "the copy is not its own provenance");
+        assert!(
+            !copy.origin.is_store_copy_of("/store/b1.pdf"),
+            "the copy is not its own provenance"
+        );
         assert!(!copy.origin.is_store_copy_of("/src/other.pdf"));
         // A linked book is the address, and a copy whose source is gone has no provenance to match.
-        assert!(!linked("b2", "/src/a.pdf").origin.is_store_copy_of("/src/a.pdf"));
+        assert!(
+            !linked("b2", "/src/a.pdf")
+                .origin
+                .is_store_copy_of("/src/a.pdf")
+        );
         let orphan = Book::new(
             "b3".into(),
             fp(1, 1, 1),
@@ -1308,7 +1476,11 @@ mod tests {
                 store: "/store/b1.pdf".into()
             }
         );
-        assert_eq!(b.fp, fp(9, 9, 9), "the copy's own measurement is the identity");
+        assert_eq!(
+            b.fp,
+            fp(9, 9, 9),
+            "the copy's own measurement is the identity"
+        );
         assert!(!b.fp_pending);
         assert!(!b.missing);
         // The opened address is the copy's now and the source is provenance,
@@ -1323,7 +1495,10 @@ mod tests {
         b.title = Some("Dune".to_string());
         b.become_stored("/src/a.pdf", "/store/b1.pdf".into(), None);
         assert_eq!(b.title.as_deref(), Some("Dune"), "a name is not a gap");
-        assert!(b.fp_pending, "a copy nobody weighed is still owed its first check");
+        assert!(
+            b.fp_pending,
+            "a copy nobody weighed is still owed its first check"
+        );
     }
 
     #[test]

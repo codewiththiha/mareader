@@ -37,7 +37,11 @@ pub struct TextBlock {
 
 impl TextBlock {
     pub fn new(kind: BlockKind, text: impl Into<String>) -> Self {
-        Self { kind, text: text.into(), continuation: false }
+        Self {
+            kind,
+            text: text.into(),
+            continuation: false,
+        }
     }
 
     /// The block's source lines, as the splittability predicates and the
@@ -267,7 +271,11 @@ mod tests {
 
     #[test]
     fn an_unclosed_fence_still_yields_one_block() {
-        let blocks = split_blocks("text\n\n```\ncode line\n\nmore code", BlockKind::Markdown, true);
+        let blocks = split_blocks(
+            "text\n\n```\ncode line\n\nmore code",
+            BlockKind::Markdown,
+            true,
+        );
         assert_eq!(blocks.len(), 2);
         assert!(blocks[1].text.contains("more code"));
     }
@@ -293,7 +301,13 @@ mod tests {
         assert!(out[1].continuation);
         assert!(out[2].continuation);
         // Nothing is lost or doubled, and no chunk grows a trailing blank line.
-        assert_eq!(out.iter().map(|b| b.text.clone()).collect::<Vec<_>>().join("\n"), source);
+        assert_eq!(
+            out.iter()
+                .map(|b| b.text.clone())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            source
+        );
         assert!(!out[0].text.ends_with('\n'));
         // A predicate that refuses every block leaves the list untouched, and
         // a zero budget disables the pass outright.

@@ -98,7 +98,10 @@ mod tests {
     fn the_items_root_is_one_directory_under_the_store() {
         assert_eq!(items_root("/app/Library"), "/app/Library/items");
         assert_eq!(items_root("/app/Library/"), "/app/Library/items");
-        assert_eq!(items_root("C:\\AppData\\Library\\"), "C:\\AppData\\Library/items");
+        assert_eq!(
+            items_root("C:\\AppData\\Library\\"),
+            "C:\\AppData\\Library/items"
+        );
     }
 
     #[test]
@@ -151,10 +154,7 @@ mod tests {
 
     #[test]
     fn a_control_character_never_reaches_a_folder_name() {
-        assert_eq!(
-            item_dir("/r", "a\u{0}b\u{1f}c"),
-            "/r/a_b_c"
-        );
+        assert_eq!(item_dir("/r", "a\u{0}b\u{1f}c"), "/r/a_b_c");
     }
 
     #[test]

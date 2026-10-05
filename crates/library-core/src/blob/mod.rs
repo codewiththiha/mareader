@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::book::{Row, book_rows};
+use crate::book::Row;
 use crate::folder::WatchedFolder;
 use crate::shelf::{Shelf, ShelfKind};
 use crate::view::LibraryView;
@@ -44,14 +44,6 @@ pub struct LibraryBlob {
 impl LibraryBlob {
     pub fn is_empty(&self) -> bool {
         self.books.is_empty()
-    }
-
-    /// True while some book still carries a placeholder fingerprint — the
-    /// library has not been checked against the filesystem since it loaded.
-    /// The frontend holds folder rescans until this clears: scanning against
-    /// unmeasured fingerprints would re-add every migrated book.
-    pub fn awaiting_check(&self) -> bool {
-        book_rows(&self.books).any(|b| b.fp_pending)
     }
 }
 
@@ -98,7 +90,7 @@ pub fn sanitize(blob: &mut LibraryBlob) {
 mod tests {
     use super::migrate::{BlobV2, RecentBook, migrate_v1, migrate_v2};
     use super::*;
-    use crate::book::{Book, Fingerprint};
+    use crate::book::{Book, Fingerprint, book_rows};
     use crate::folder::FolderOpts;
     use crate::tracking::TrackingTree;
     use std::collections::{BTreeMap, HashSet};
@@ -108,7 +100,9 @@ mod tests {
     }
 
     fn at_mut(blob: &mut LibraryBlob, i: usize) -> &mut Book {
-        blob.books[i].as_book_mut().expect("a migrated row is a book")
+        blob.books[i]
+            .as_book_mut()
+            .expect("a migrated row is a book")
     }
 
     fn legacy(path: &str, page: u32, num: u32) -> RecentBook {
@@ -138,7 +132,10 @@ mod tests {
         assert!(blob.is_empty());
         assert!(blob.shelves.is_empty() && blob.folders.is_empty());
         assert_eq!(blob.view, LibraryView::default());
-        assert!(!blob.awaiting_check(), "nothing to check is nothing pending");
+        assert!(
+            !book_rows(&blob.books).any(|b| b.fp_pending),
+            "nothing to check is nothing pending"
+        );
     }
 
     #[test]
@@ -161,10 +158,12 @@ mod tests {
     #[test]
     fn a_migrated_book_says_so_until_it_has_been_measured() {
         let mut blob = migrate_v1(
-            vec![legacy("/books/dune.pdf", 1, 1), legacy("/books/notes.md", 1, 1)],
+            vec![
+                legacy("/books/dune.pdf", 1, 1),
+                legacy("/books/notes.md", 1, 1),
+            ],
             5,
         );
-        assert!(blob.awaiting_check());
         assert!(book_rows(&blob.books).all(|b| b.fp_pending));
         // Placeholders derive from the address, so migrated books never
         // collide: the ledger's fingerprint index is first-wins.
@@ -176,15 +175,22 @@ mod tests {
         assert_eq!(blob.books.len(), 2, "both rows survive the dedupe");
         at_mut(&mut blob, 0).fp = Fingerprint::of(1024, 99, b"%PDF-1.7");
         at_mut(&mut blob, 0).fp_pending = false;
-        assert!(blob.awaiting_check(), "the second book is still a placeholder");
+        assert!(
+            book_rows(&blob.books).any(|b| b.fp_pending),
+            "the second book is still a placeholder"
+        );
         at_mut(&mut blob, 1).fp_pending = false;
-        assert!(!blob.awaiting_check());
+        assert!(!book_rows(&blob.books).any(|b| b.fp_pending));
     }
 
     #[test]
     fn a_migration_drops_rows_with_no_address_and_clamps_the_page() {
         let blob = migrate_v1(
-            vec![legacy("", 1, 1), legacy("   ", 1, 1), legacy("/a.pdf", 0, 9)],
+            vec![
+                legacy("", 1, 1),
+                legacy("   ", 1, 1),
+                legacy("/a.pdf", 0, 9),
+            ],
             1,
         );
         assert_eq!(blob.books.len(), 1);
@@ -261,7 +267,8 @@ mod tests {
     fn a_link_travels_in_the_blob_and_goes_with_its_book() {
         let mut blob = migrate_v1(vec![legacy("/books/dune.pdf", 1, 1)], 1);
         let target = blob.books[0].id().to_string();
-        blob.books.push(Row::link("l1".into(), "Dune".into(), target.clone(), 9));
+        blob.books
+            .push(Row::link("l1".into(), "Dune".into(), target.clone(), 9));
         blob.shelves = vec![shelf("s1", "One", ShelfKind::Virtual, &["l1"])];
         let json = serde_json::to_string(&blob).unwrap();
         assert!(json.contains("\"kind\":\"link\""), "{json}");

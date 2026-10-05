@@ -38,7 +38,13 @@ pub fn is_usable_title(t: &str) -> bool {
         return false;
     }
     let lower = t.to_lowercase();
-    const PLACEHOLDERS: [&str; 5] = ["untitled", "unknown", "document", "no title", "pdf document"];
+    const PLACEHOLDERS: [&str; 5] = [
+        "untitled",
+        "unknown",
+        "document",
+        "no title",
+        "pdf document",
+    ];
     if PLACEHOLDERS.contains(&lower.as_str()) {
         return false;
     }
@@ -147,13 +153,9 @@ fn strip_doc_extension(s: &str) -> &str {
     }
     let lower = s[dot + 1..].to_lowercase();
     let ext = lower.as_str();
-    let known = crate::format::extensions().any(|kind| kind == ext)
-        || OFFICE_AND_PRINT.contains(&ext);
-    if known {
-        &s[..dot]
-    } else {
-        s
-    }
+    let known =
+        crate::format::extensions().any(|kind| kind == ext) || OFFICE_AND_PRINT.contains(&ext);
+    if known { &s[..dot] } else { s }
 }
 
 #[cfg(test)]
@@ -176,7 +178,10 @@ mod tests {
             Some("Programming Pearls (2nd Edition) - Jon Bentley")
         );
         // Placeholders and path-shaped titles fall back too.
-        assert_eq!(display_name(Some("untitled"), Some("/x/y.pdf")).as_deref(), Some("y"));
+        assert_eq!(
+            display_name(Some("untitled"), Some("/x/y.pdf")).as_deref(),
+            Some("y")
+        );
         assert_eq!(display_name(None, None), None);
     }
 
@@ -203,7 +208,10 @@ mod tests {
         );
         // Real titles stay titles, short numeric ones included, and a dot in
         // the middle of a name is not an extension.
-        assert_eq!(display_name(Some("1984"), Some("/d/1984.pdf")).as_deref(), Some("1984"));
+        assert_eq!(
+            display_name(Some("1984"), Some("/d/1984.pdf")).as_deref(),
+            Some("1984")
+        );
         assert_eq!(
             display_name(Some("Mathematical Proofs"), Some("/d/mp.pdf")).as_deref(),
             Some("Mathematical Proofs")
@@ -226,7 +234,10 @@ mod tests {
     fn the_document_title_is_the_metadata_half_alone() {
         // The half of `display_name` a persisted name is made of: what the
         // document supplied, trimmed, and nothing borrowed from an address.
-        assert_eq!(super::document_title(Some("  Dune  ")), Some("Dune".to_string()));
+        assert_eq!(
+            super::document_title(Some("  Dune  ")),
+            Some("Dune".to_string())
+        );
         assert_eq!(super::document_title(Some("dune.pdf")), None);
         assert_eq!(super::document_title(Some("")), None);
         assert_eq!(super::document_title(None), None);
@@ -235,8 +246,10 @@ mod tests {
     #[test]
     fn file_stem_extraction() {
         for (path, want) in [
-            ("/b/Programming Pearls (2nd Edition) - Jon Bentley.pdf",
-             Some("Programming Pearls (2nd Edition) - Jon Bentley")),
+            (
+                "/b/Programming Pearls (2nd Edition) - Jon Bentley.pdf",
+                Some("Programming Pearls (2nd Edition) - Jon Bentley"),
+            ),
             (r"C:\Users\me\Docs\Deep Work.pdf", Some("Deep Work")),
             (r"\\server\share\Annual Report.pdf", Some("Annual Report")),
             ("/a/b/", Some("b")),

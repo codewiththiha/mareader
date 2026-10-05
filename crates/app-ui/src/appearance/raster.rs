@@ -1,0 +1,76 @@
+//! The raster pipeline's appearance tokens, plus the dispatch points toward
+//! the raster engine a host runtime installed (`app_chrome::appearance_hooks`).
+//! A reflowable page never touches these — its variables live in `reflow.rs`
+//! and it repaints from CSS alone, with no engine call. This crate must NOT
+//! name the engine: the same appearance chrome runs inside the library
+//! runtime, whose graph has no raster engine in it.
+
+use leptos::prelude::request_animation_frame;
+use reader_core::appearance::Appearance;
+
+thread_local! {
+    /// Several pane roots can repaint in one reactive flush (notably when
+    /// independent mode seeds a split). One next-frame broadcast reads all
+    /// final pane inputs and avoids queuing N full session walks/re-renders.
+    static PANE_REFRESH_PENDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The seven `--color-*` tokens the tint may override. Listed once so they
+/// can be cleared as a set — a stale override left behind when the tint is
+/// removed would keep tinting the UI with no way for the user to see why.
+pub const UI_TOKENS: [&str; 7] = [
+    "--color-paper",
+    "--color-surface",
+    "--color-line",
+    "--color-ink",
+    "--color-muted",
+    "--color-accent",
+    "--color-accent-soft",
+];
+
+/// The variables the PDF pipeline paints: the canvas filter/blend pair
+/// (always) and the tinted UI-token overrides (empty when no tint is
+/// active). The engine bakes its rasters against these.
+pub fn token_vars(a: &Appearance) -> Vec<(&'static str, String)> {
+    let mut vars = vec![
+        ("--canvas-filter", a.canvas_filter()),
+        ("--canvas-blend", a.canvas_blend().to_string()),
+    ];
+    vars.extend(a.ui_overrides());
+    vars
+}
+
+/// Re-bake the theme into every raster the host runtime's engine holds
+/// (mounted pages + cached thumbnails). A no-op while no runtime owns a
+/// raster engine — the library answers the same menu with CSS alone.
+pub fn refresh_theme() {
+    app_chrome::appearance_hooks::refresh_theme();
+}
+
+/// Refresh after a pane-local token paint. Coalesced to one engine broadcast
+/// per frame so a four-pane enable/edit is one theme transaction, not four.
+pub fn refresh_after_pane_paint() {
+    let schedule = PANE_REFRESH_PENDING.with(|pending| !pending.replace(true));
+    if !schedule {
+        return;
+    }
+    request_animation_frame(|| {
+        PANE_REFRESH_PENDING.with(|pending| pending.set(false));
+        app_chrome::appearance_hooks::refresh_theme();
+    });
+}
+
+/// Enter/leave the scrub window's REAL-TIME COMPOSITING: while a slider drag
+/// repaints the variables every frame, the engine shows the RAW rasters under
+/// the live CSS filter/blend so the page re-colours per frame; leaving
+/// re-renders the pre-themed (baked) rasters from the raws.
+pub fn set_scrub_mode(on: bool) {
+    app_chrome::appearance_hooks::set_scrub_mode(on);
+}
+
+/// Whether the appearance popover is open: the engine retains rendered
+/// pages' unbaked raws while it is, so the session's first tint drag blits
+/// instead of re-rendering every page (public/engine/state.ts).
+pub fn set_appearance_menu_open(on: bool) {
+    app_chrome::appearance_hooks::set_appearance_menu_open(on);
+}

@@ -39,7 +39,11 @@ pub fn to_nodes(entries: Vec<OutlineEntry>, page_count: u32) -> Vec<OutlineNode>
         .filter(|entry| entry.page >= 1)
         .map(|entry| OutlineNode {
             title: entry.title.trim().to_string(),
-            page: if page_count == 0 { 1 } else { entry.page.min(page_count) },
+            page: if page_count == 0 {
+                1
+            } else {
+                entry.page.min(page_count)
+            },
             depth: clamp_depth(entry.depth),
         })
         .filter(|node| !node.title.is_empty())
@@ -51,20 +55,37 @@ mod tests {
     use super::*;
 
     fn entry(title: &str, page: u32, depth: u32) -> OutlineEntry {
-        OutlineEntry { title: title.into(), page, depth }
+        OutlineEntry {
+            title: title.into(),
+            page,
+            depth,
+        }
     }
 
     #[test]
     fn entries_become_nodes_in_order() {
         let nodes = to_nodes(vec![entry("One", 1, 0), entry("One.a", 2, 1)], 10);
         assert_eq!(nodes.len(), 2);
-        assert_eq!((nodes[1].title.as_str(), nodes[1].page, nodes[1].depth), ("One.a", 2, 1));
+        assert_eq!(
+            (nodes[1].title.as_str(), nodes[1].page, nodes[1].depth),
+            ("One.a", 2, 1)
+        );
     }
 
     #[test]
     fn an_unresolved_destination_and_a_blank_title_are_dropped() {
-        let nodes = to_nodes(vec![entry("Nowhere", 0, 0), entry("  ", 3, 0), entry("Real", 4, 0)], 9);
-        assert_eq!(nodes.iter().map(|n| n.title.as_str()).collect::<Vec<_>>(), ["Real"]);
+        let nodes = to_nodes(
+            vec![
+                entry("Nowhere", 0, 0),
+                entry("  ", 3, 0),
+                entry("Real", 4, 0),
+            ],
+            9,
+        );
+        assert_eq!(
+            nodes.iter().map(|n| n.title.as_str()).collect::<Vec<_>>(),
+            ["Real"]
+        );
     }
 
     #[test]

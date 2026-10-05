@@ -1,14 +1,4 @@
-import {
-  FakeCtx,
-  PDFReader,
-  assertClose,
-  created,
-  expectedBakePixel,
-  fakeComputed,
-  setFakeComputed,
-  getEl,
-  isScrubActive,
-} from "./harness.js";
+import { FakeCtx, PDFReader, assertClose, created, expectedBakePixel, fakeComputed, setFakeComputed, getEl, isScrubActive, R } from "./harness.js";
 
 export async function run(): Promise<void> {
   // DARK MODE REGRESSION. The theme is pre-rendered into every
@@ -30,8 +20,8 @@ export async function run(): Promise<void> {
   console.log("refreshTheme (dark) ok: page pixel", Array.from(darkPx).slice(0, 3), "expected", darkExpect);
 
   // Rendering another page while dark must bake it too.
-  PDFReader.registerPage(2, "cont-1-cv", "cont-1-pg");
-  const r2 = await PDFReader.renderPage("cont-1-cv", 1.5, true);
+  R.registerPage(2, "cont-1-cv", "cont-1-pg");
+  const r2 = await R.renderPage("cont-1-cv", 1.5, true);
   if (!r2.ok) throw new Error("render2 failed: " + JSON.stringify(r2));
   const darkAllocs = created.length - beforeDark;
   const cv1 = getEl("cont-1-cv") as unknown as {
@@ -82,8 +72,8 @@ export async function run(): Promise<void> {
     paper: "#1a1c1f",
   });
   await PDFReader.refreshTheme();
-  PDFReader.registerPage(3, "cont-2-cv", "cont-2-pg");
-  const r3 = await PDFReader.renderPage("cont-2-cv", 1.5, true);
+  R.registerPage(3, "cont-2-cv", "cont-2-pg");
+  const r3 = await R.renderPage("cont-2-cv", 1.5, true);
   if (!r3.ok) throw new Error("render3 failed: " + JSON.stringify(r3));
   const dimExpect = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "soft-light", [26, 28, 31]);
   const cv2 = getEl("cont-2-cv") as unknown as {
@@ -101,8 +91,8 @@ export async function run(): Promise<void> {
     paper: "#131316",
   });
   await PDFReader.refreshTheme();
-  PDFReader.registerPage(4, "cont-3-cv", "cont-3-pg");
-  const r4 = await PDFReader.renderPage("cont-3-cv", 1.5, true);
+  R.registerPage(4, "cont-3-cv", "cont-3-pg");
+  const r4 = await R.renderPage("cont-3-cv", 1.5, true);
   if (!r4.ok) throw new Error("render4 failed: " + JSON.stringify(r4));
   const nightExpect = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "screen", [19, 19, 22]);
   const cv3 = getEl("cont-3-cv") as unknown as {
@@ -132,7 +122,7 @@ export async function run(): Promise<void> {
     return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
   };
 
-  PDFReader.setPaper("#faf4e8");
+  R.setPaper("#faf4e8");
   setFakeComputed({
     "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)",
     "--canvas-blend": "soft-light",
@@ -154,7 +144,7 @@ export async function run(): Promise<void> {
 
   // The detected paper itself moves (the session lerps it along the page
   // ladder); the pre-themed twin must follow on the same write.
-  PDFReader.setPaper("#ffffff");
+  R.setPaper("#ffffff");
   const dimBackdropWhite = expectedBakePixel(
     [255, 255, 255],
     fakeComputed["--canvas-filter"],
@@ -183,7 +173,7 @@ export async function run(): Promise<void> {
   console.log("backdrop paper ok: one colour for every mode:", rootProp("--pdf-paper-baked"));
 
   // A blank session paints no backdrop paper.
-  PDFReader.setPaper("");
+  R.setPaper("");
   if (rootProp("--pdf-paper-baked")) {
     throw new Error("a cleared --pdf-paper must clear --pdf-paper-baked, got " + rootProp("--pdf-paper-baked"));
   }

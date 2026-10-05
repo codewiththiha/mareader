@@ -102,7 +102,7 @@ export function isIdentityFilter(filterString: string): boolean {
 }
 
 /** Compose a filter string into one 3×3 matrix + offset (row-major). */
-export function composeFilter(filterString: string): FilterMatrix {
+function composeFilter(filterString: string): FilterMatrix {
   let m = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   let o = [0, 0, 0];
   for (const tok of String(filterString).split(/\s+/)) {

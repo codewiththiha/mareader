@@ -37,4 +37,3 @@ pub(crate) fn to_sub(px: f64) -> i64 {
 pub(crate) fn from_sub(sub: i64) -> f64 {
     (sub as f64) / (SUBPIXEL_FACTOR as f64)
 }
-

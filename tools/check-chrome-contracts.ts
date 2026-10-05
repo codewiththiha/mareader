@@ -58,7 +58,7 @@ function agree(label: string, values: [file: string, value: string][]): void {
 // documents the channel in prose, which is not a declaration and is not read
 // here.
 const SHELL_PROGRESS = "src-tauri/src/commands/library.rs";
-const APP_PROGRESS = "src/services/library/mod.rs";
+const APP_PROGRESS = "crates/library-runtime/src/services/mod.rs";
 
 const shellChannel = sole(
   /^const PROGRESS_EVENT: &str = "([^"]+)";/mg,
@@ -110,7 +110,7 @@ const shellInset = sole(
   `${TRAFFIC_LIGHT} (TRAFFIC_LIGHT_X_INSET)`,
 );
 const conf = JSON.parse(read(TAURI_CONF)) as {
-  app?: { windows?: { trafficLightPosition?: { x?: number } }[] };
+  app?: { windows?: { trafficLightPosition?: { x?: number; y?: number } }[] };
 };
 const confInset = conf.app?.windows?.[0]?.trafficLightPosition?.x;
 if (shellInset && confInset === undefined) {
@@ -122,6 +122,24 @@ if (shellInset && confInset === undefined) {
   );
 } else if (shellInset) {
   console.log(`traffic-light x inset: ${shellInset}`);
+}
+
+// The y inset is a mirror too, and a load-bearing one: tao re-applies the
+// config's `y` from every `drawRect:`, so a native container height built
+// from any other number fights it on each redraw (the resize blink).
+const shellInsetY = sole(
+  /^    const TRAFFIC_LIGHT_Y_INSET: f64 = ([\d.]+);/mg,
+  read(TRAFFIC_LIGHT),
+  `${TRAFFIC_LIGHT} (TRAFFIC_LIGHT_Y_INSET)`,
+);
+const confInsetY = conf.app?.windows?.[0]?.trafficLightPosition?.y;
+if (shellInsetY && Number(shellInsetY) !== confInsetY) {
+  fail(
+    `traffic-light y inset disagrees: ${TRAFFIC_LIGHT} says ${shellInsetY}, ` +
+      `${TAURI_CONF} says ${confInsetY}`,
+  );
+} else if (shellInsetY) {
+  console.log(`traffic-light y inset: ${shellInsetY}`);
 }
 
 // ── 3. The z-index scale ────────────────────────────────────────────────────
@@ -198,10 +216,10 @@ if (rustTokens.length > 0 && cssTokens.length > 0 && sameOrder) {
 //            padding, and by the rail header's own while the rail owns that
 //            corner. Different widths put the lights off-centre in one of
 //            them, which is the title-bar-height failure one section up.
-const SHELL_CONTROLLER = "src/components/shell/controller/mod.rs";
-const SIDEBAR_ASIDE = "src/components/shell/sidebar/container.rs";
-const SIDEBAR_OVERLAY = "src/components/shell/sidebar/overlay.rs";
-const SIDEBAR_HEADER = "src/components/shell/sidebar/header.rs";
+const SHELL_CONTROLLER = "crates/app-ui/src/components/shell/controller/mod.rs";
+const SIDEBAR_ASIDE = "crates/reader-runtime/src/components/shell/sidebar/container.rs";
+const SIDEBAR_OVERLAY = "crates/reader-runtime/src/components/shell/sidebar/overlay.rs";
+const SIDEBAR_HEADER = "crates/reader-runtime/src/components/shell/sidebar/header.rs";
 
 /** The one `duration-N` a quoted class list carries. Unquoted mentions in
  * doc comments are prose and must not be counted as the declaration. */
@@ -271,7 +289,7 @@ if (gutterPx && headerPx) {
 // the two sides were kept in step by a comment on each. A radius that moves
 // without the stylesheet leaves a ring that stops short of full at 100%, which
 // reads as an import that never finishes.
-const PROGRESS_DOCK = "src/features/library/progress_dock.rs";
+const PROGRESS_DOCK = "crates/library-runtime/src/features/library/progress_dock.rs";
 const DOCK_CSS = "styles/components/library/dock.css";
 
 const ringRadius = sole(

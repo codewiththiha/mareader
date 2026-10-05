@@ -52,6 +52,8 @@ thread_local! {
     /// Stack of open dismissable ids, most recent last.
     static DISMISS_STACK: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
     static DISMISS_NEXT: RefCell<u64> = const { RefCell::new(1) };
+    /// Modals whose Escape listener is installed (see [`use_modal_escape`]).
+    static OPEN_MODALS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 fn next_id() -> u64 {
@@ -90,6 +92,8 @@ pub fn use_modal_escape(open: RwSignal<bool>) {
         if !open.get() {
             return;
         }
+        OPEN_MODALS.with(|n| n.set(n.get() + 1));
+        on_cleanup(|| OPEN_MODALS.with(|n| n.set(n.get().saturating_sub(1))));
         use_window_event("keydown", move |ev: web_sys::Event| {
             if let Ok(key) = ev.dyn_into::<web_sys::KeyboardEvent>()
                 && key.key() == "Escape"
@@ -99,6 +103,17 @@ pub fn use_modal_escape(open: RwSignal<bool>) {
             }
         });
     });
+}
+
+/// Whether this Escape press already belongs to a layer above the page: an
+/// open modal or a dismissable surface. Page-level Escape actions (the
+/// reader's "close the sidebar") ask this first, so one press peels one
+/// layer — dismissing the settings sheet must not also fold the rail away.
+/// Window keydown listeners run in registration order, and the page's are
+/// installed long before any modal opens, so the modal cannot mark the event
+/// as consumed in time; the page asks instead.
+pub fn escape_is_claimed() -> bool {
+    OPEN_MODALS.with(|n| n.get() > 0) || has_open_dismissable()
 }
 
 fn push_stack(id: u64) {
@@ -169,7 +184,8 @@ pub fn use_dismiss(
             let is_inside = std::rc::Rc::clone(&is_inside);
             let handler = move |ev: web_sys::Event| {
                 // No target: nothing to test, ignore.
-                let Some(node) = ev.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else {
+                let Some(node) = ev.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                else {
                     return;
                 };
                 // Inside the surface: the surface's own interaction.
@@ -254,6 +270,18 @@ mod tests {
             pop_stack(3);
             assert!(is_topmost(1)); // the oldest becomes topmost again
         });
+    }
+
+    #[test]
+    fn an_open_modal_or_surface_claims_escape_from_the_page() {
+        // Each test runs on its own thread, so these registries start empty.
+        assert!(!escape_is_claimed());
+        with_stack(&[77], || assert!(escape_is_claimed()));
+        assert!(!escape_is_claimed());
+        OPEN_MODALS.with(|n| n.set(1));
+        assert!(escape_is_claimed());
+        OPEN_MODALS.with(|n| n.set(0));
+        assert!(!escape_is_claimed());
     }
 
     #[test]

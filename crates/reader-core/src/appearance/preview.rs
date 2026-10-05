@@ -37,7 +37,15 @@ impl Appearance {
         // 2. Aliases: --ps-color-* defaults to --ps-* (the base palette).
         //    If a tint is active, step 3 overrides these with the tinted
         //    value; otherwise the alias resolves to the base.
-        for token in ["paper", "ink", "muted", "surface", "line", "accent", "accent-soft"] {
+        for token in [
+            "paper",
+            "ink",
+            "muted",
+            "surface",
+            "line",
+            "accent",
+            "accent-soft",
+        ] {
             out.push_str(&format!("--ps-color-{token}:var(--ps-{token});"));
         }
 
@@ -133,12 +141,18 @@ mod tests {
         // while a different one is applied to the document.
         let p = tinted(BaseMode::Dark, 110, 40).preview_style();
         assert!(p.contains("--ps-paper:#131316"), "{p}");
-        assert!(p.contains("--ps-color-paper:oklch("), "tint must reach the swatch");
+        assert!(
+            p.contains("--ps-color-paper:oklch("),
+            "tint must reach the swatch"
+        );
 
         // An untinted preview still pins the palette, or it would inherit the
         // live (possibly tinted) tokens and show the wrong colour.
         let plain = tinted(BaseMode::Light, 34, 0).preview_style();
-        assert!(plain.contains("--ps-color-paper:var(--ps-paper)"), "{plain}");
+        assert!(
+            plain.contains("--ps-color-paper:var(--ps-paper)"),
+            "{plain}"
+        );
 
         // The swatch must consume ONLY --ps-* names — no root-mutated names
         // (--canvas-filter, --color-*, --texture-*, --noise-*) — or WKWebView's
@@ -148,11 +162,18 @@ mod tests {
         // no longer emitted (the .preset-canvas uses solid colours, not CSS
         // filter/blend) so the swatch has zero GPU compositing layers.
         for root_mutated in [
-            "--canvas-filter:", "--canvas-blend:",
-            "--color-paper:", "--color-ink:", "--color-line:",
-            "--texture-opacity:", "--texture-scale-user:",
-            "--texture-line:", "--texture-paper:", "--texture-blend:",
-            "--noise-opacity:", "--noise-blend:",
+            "--canvas-filter:",
+            "--canvas-blend:",
+            "--color-paper:",
+            "--color-ink:",
+            "--color-line:",
+            "--texture-opacity:",
+            "--texture-scale-user:",
+            "--texture-line:",
+            "--texture-paper:",
+            "--texture-blend:",
+            "--noise-opacity:",
+            "--noise-blend:",
         ] {
             assert!(
                 !p.contains(root_mutated),
@@ -168,7 +189,11 @@ mod tests {
     #[test]
     fn preview_shrinks_the_texture_pitch_so_the_pattern_is_visible() {
         // At true pitch a 26px rule grid on a ~40px swatch is a solid block.
-        let a = Appearance { texture: TextureMode::Lined, texture_scale: 100, ..Default::default() };
+        let a = Appearance {
+            texture: TextureMode::Lined,
+            texture_scale: 100,
+            ..Default::default()
+        };
         let s = a.preview_style();
         let i = s.find("--ps-tex-scale:").unwrap() + "--ps-tex-scale:".len();
         let v: f64 = s[i..].split(';').next().unwrap().parse().unwrap();

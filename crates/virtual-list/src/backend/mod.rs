@@ -194,11 +194,7 @@ fn overlapping_from_first<B: StripBackend + ?Sized>(
 
 /// Shared `visible` — shorthand for `overlapping` with the raw viewport.
 #[inline]
-pub fn visible<B: StripBackend + ?Sized>(
-    b: &B,
-    scroll_top: f64,
-    viewport: f64,
-) -> Option<Window> {
+pub fn visible<B: StripBackend + ?Sized>(b: &B, scroll_top: f64, viewport: f64) -> Option<Window> {
     overlapping(b, scroll_top, viewport)
 }
 

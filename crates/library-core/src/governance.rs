@@ -4,8 +4,8 @@
 //! variation of one question: which read-at-place tree's ledger speaks for
 //! this ground, and which of its shelves still stands. Resolved once here.
 
-use crate::folder::{rel_under, FolderMode, WatchedFolder};
-use crate::shelf::{ancestors, find as find_shelf, Shelf, ShelfKind};
+use crate::folder::{FolderMode, WatchedFolder, rel_under};
+use crate::shelf::{Shelf, ShelfKind, ancestors, find as find_shelf};
 
 /// The folder, the rung and the standing shelf that answer for a path. A
 /// named struct rather than a tuple: the three strings are easy to transpose,
@@ -173,15 +173,14 @@ impl<'a> Governance<'a> {
         };
         folder.tracks_rung(&seat.rung)
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::folder::{FolderMode, FolderOpts};
-    use crate::tracking::TrackingTree;
     use crate::testkit::{departed_shelf, folder_shelf};
+    use crate::tracking::TrackingTree;
     use std::collections::{BTreeMap, HashSet};
 
     fn folder(id: &str, root: &str, in_place: bool, map: &[(&str, &str)]) -> WatchedFolder {
@@ -234,7 +233,11 @@ mod tests {
         assert_eq!(rung.shelf_id, "sf");
         assert_eq!(g.covering("/books/Unmapped"), None);
         assert_eq!(g.covering("/other"), None);
-        assert_eq!(g.covering("/bookshelf"), None, "a prefix is not a directory");
+        assert_eq!(
+            g.covering("/bookshelf"),
+            None,
+            "a prefix is not a directory"
+        );
     }
 
     #[test]
@@ -250,8 +253,14 @@ mod tests {
             folder_shelf("fic", "Fiction", "inner", None, &[], None),
         ];
         let g = Governance::new(&folders, &shelves);
-        assert_eq!(g.covering("/books").map(|c| c.folder_id).as_deref(), Some("outer"));
-        assert_eq!(g.covering("/books/Fiction").map(|c| c.folder_id).as_deref(), Some("inner"));
+        assert_eq!(
+            g.covering("/books").map(|c| c.folder_id).as_deref(),
+            Some("outer")
+        );
+        assert_eq!(
+            g.covering("/books/Fiction").map(|c| c.folder_id).as_deref(),
+            Some("inner")
+        );
     }
 
     #[test]
@@ -261,8 +270,15 @@ mod tests {
         assert_eq!(Governance::new(&copying, &shelves).covering("/books"), None);
         let (folders, mut dead) = tree();
         dead.retain(|s| s.id != "sf");
-        assert_eq!(Governance::new(&folders, &dead).covering("/books/Fiction/SciFi"), None);
-        assert!(Governance::new(&folders, &dead).covering("/books").is_some());
+        assert_eq!(
+            Governance::new(&folders, &dead).covering("/books/Fiction/SciFi"),
+            None
+        );
+        assert!(
+            Governance::new(&folders, &dead)
+                .covering("/books")
+                .is_some()
+        );
     }
 
     #[test]
@@ -276,7 +292,9 @@ mod tests {
         assert_eq!(g.family("/books/Fiction/SciFi"), None);
         assert_eq!(g.family("/books"), None);
         let mut dead = folders.clone();
-        dead[0].shelf_map.insert("Fiction/SciFi".into(), "gone".into());
+        dead[0]
+            .shelf_map
+            .insert("Fiction/SciFi".into(), "gone".into());
         assert_eq!(
             Governance::new(&dead, &shelves).family("/books/Fiction/SciFi"),
             Some(("f1".to_string(), "Fiction/SciFi".to_string()))
@@ -355,7 +373,10 @@ mod tests {
         assert_eq!(g.seat_of("moved"), None);
         assert!(!g.shelf_tracked("moved"), "no ground, no dot");
         assert_eq!(g.mode_of("moved"), Some(FolderMode::Copy));
-        assert_eq!(g.tree_of("fic").map(|seat| seat.rung), Some("Fiction".to_string()));
+        assert_eq!(
+            g.tree_of("fic").map(|seat| seat.rung),
+            Some("Fiction".to_string())
+        );
     }
 
     #[test]
@@ -364,7 +385,11 @@ mod tests {
         shelves.push(departed_shelf("moved", &[], Some("fic")));
         shelves.push(crate::testkit::shelf("mine2", "Mine", &[], Some("moved")));
         let g = Governance::new(&folders, &shelves);
-        assert_eq!(g.tree_of("mine2"), None, "the ground ends with the shelf that left it");
+        assert_eq!(
+            g.tree_of("mine2"),
+            None,
+            "the ground ends with the shelf that left it"
+        );
     }
 
     #[test]
@@ -372,7 +397,11 @@ mod tests {
         let copying = vec![folder("c1", "/books", false, &[("", "r")])];
         let shelves = vec![folder_shelf("r", "Books", "c1", None, &[], None)];
         let g = Governance::new(&copying, &shelves);
-        assert_eq!(g.mode_of("r"), Some(FolderMode::Copy), "the library keeps its own");
+        assert_eq!(
+            g.mode_of("r"),
+            Some(FolderMode::Copy),
+            "the library keeps its own"
+        );
         assert_eq!(g.seat_of("r"), None, "and there is no tracking to promise");
         assert_eq!(g.tree_of("r").map(|seat| seat.rung), Some(String::new()));
     }
@@ -398,15 +427,24 @@ mod tests {
         let g = Governance::new(&folders, &shelves);
         assert_eq!(
             g.seat_of("r"),
-            Some(Seat { folder_id: "f1".into(), rung: "".into() })
+            Some(Seat {
+                folder_id: "f1".into(),
+                rung: "".into()
+            })
         );
         assert_eq!(
             g.seat_of("sf"),
-            Some(Seat { folder_id: "f1".into(), rung: "Fiction/SciFi".into() })
+            Some(Seat {
+                folder_id: "f1".into(),
+                rung: "Fiction/SciFi".into()
+            })
         );
         assert_eq!(
             g.seat_of("mine2"),
-            Some(Seat { folder_id: "f1".into(), rung: "Fiction".into() })
+            Some(Seat {
+                folder_id: "f1".into(),
+                rung: "Fiction".into()
+            })
         );
         assert_eq!(g.seat_of("mine"), None);
         assert_eq!(g.seat_of("gone"), None);

@@ -99,7 +99,11 @@ pub enum ScanAction {
 /// Decide what a folder's scan does, file by file, in walk order. Pure: reads
 /// the folder's ledger and the global registry, answers one [`ScanAction`]
 /// per found file.
-pub fn diff_folder(folder: &WatchedFolder, registry: &Registry, found: &[FoundFile]) -> Vec<ScanAction> {
+pub fn diff_folder(
+    folder: &WatchedFolder,
+    registry: &Registry,
+    found: &[FoundFile],
+) -> Vec<ScanAction> {
     let mut out = Vec::with_capacity(found.len());
     for file in found {
         out.push(decide(folder, registry, file));
@@ -179,7 +183,11 @@ fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) 
 }
 
 /// [`diff_folder`] for a run the reader asked for by name.
-pub fn diff_import(folder: &WatchedFolder, registry: &Registry, found: &[FoundFile]) -> Vec<ScanAction> {
+pub fn diff_import(
+    folder: &WatchedFolder,
+    registry: &Registry,
+    found: &[FoundFile],
+) -> Vec<ScanAction> {
     let mut out = Vec::with_capacity(found.len());
     for file in found {
         out.push(decide_import(folder, registry, file));
@@ -444,7 +452,10 @@ mod tests {
             fp_pending: true,
             ..crate::testkit::book("b1")
         })];
-        assert_eq!(existing_for(&pending, Fingerprint::placeholder("/books/dune.pdf")), None);
+        assert_eq!(
+            existing_for(&pending, Fingerprint::placeholder("/books/dune.pdf")),
+            None
+        );
         assert_eq!(existing_for(&pending, fp(1)), None);
         // A measured row answers: the guard is about the fingerprint, not the row.
         let measured = vec![crate::testkit::row_at("b1", "/books/dune.pdf")];
@@ -476,7 +487,10 @@ mod tests {
             }),
         ];
         let held = existing_for(&twins, fp(1)).expect("one content");
-        assert_eq!(held.row_id, "b1", "the shared row answers, not the private one");
+        assert_eq!(
+            held.row_id, "b1",
+            "the shared row answers, not the private one"
+        );
     }
 
     fn file(n: u32, path: &str) -> FoundFile {
@@ -556,7 +570,10 @@ mod tests {
     #[test]
     fn an_unknown_fingerprint_is_added() {
         let f = folder(&[], &[]);
-        assert_eq!(decide(&f, &registry(&[]), &file(1, "/books/a.pdf")), ScanAction::Add(file(1, "/books/a.pdf")));
+        assert_eq!(
+            decide(&f, &registry(&[]), &file(1, "/books/a.pdf")),
+            ScanAction::Add(file(1, "/books/a.pdf"))
+        );
     }
 
     /// The tracking tree's quiet half: a rung turned off under a watched root
@@ -575,8 +592,14 @@ mod tests {
             decide(&f, &reg, &file(4, "/books/Poetry/d.pdf")),
             ScanAction::Add(file(4, "/books/Poetry/d.pdf"))
         );
-        assert_eq!(decide(&f, &reg, &file(2, "/books/Fiction/b.pdf")), ScanAction::Skip);
-        assert_eq!(decide(&f, &reg, &file(3, "/books/Fiction/SciFi/c.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide(&f, &reg, &file(2, "/books/Fiction/b.pdf")),
+            ScanAction::Skip
+        );
+        assert_eq!(
+            decide(&f, &reg, &file(3, "/books/Fiction/SciFi/c.pdf")),
+            ScanAction::Skip
+        );
         assert_eq!(
             decide_import(&f, &reg, &file(2, "/books/Fiction/b.pdf")),
             ScanAction::Add(file(2, "/books/Fiction/b.pdf"))
@@ -629,16 +652,25 @@ mod tests {
         let r = registry(&[(1, "b1", "/books/a.pdf", false)]);
         assert_eq!(decide(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
         let f = folder(&[1], &[]);
-        assert_eq!(decide(&f, &registry(&[]), &file(1, "/books/a.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide(&f, &registry(&[]), &file(1, "/books/a.pdf")),
+            ScanAction::Skip
+        );
     }
 
     #[test]
     fn a_removed_book_stays_removed() {
         let f = folder(&[], &[1]);
-        assert_eq!(decide(&f, &registry(&[]), &file(1, "/books/a.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide(&f, &registry(&[]), &file(1, "/books/a.pdf")),
+            ScanAction::Skip
+        );
         let f = folder(&[1], &[1]);
         let r = registry(&[(1, "b1", "/books/a.pdf", false)]);
-        assert_eq!(decide(&f, &r, &file(1, "/books/elsewhere.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide(&f, &r, &file(1, "/books/elsewhere.pdf")),
+            ScanAction::Skip
+        );
     }
 
     /// A removal answers "should this come back on its own", not "the reader
@@ -665,7 +697,10 @@ mod tests {
     fn an_explicit_import_duplicates_nothing_this_folder_placed() {
         let f = folder(&[1], &[]);
         let r = registry(&[(1, "b1", "/books/a.pdf", false)]);
-        assert_eq!(decide_import(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide_import(&f, &r, &file(1, "/books/a.pdf")),
+            ScanAction::Skip
+        );
         assert_eq!(
             decide_import(&f, &r, &file(1, "/books/moved/a.pdf")),
             ScanAction::Relink {
@@ -701,7 +736,10 @@ mod tests {
             "a rescan of the copy's own source is quiet, however the folder placed it"
         );
         let stranger = folder(&[], &[]);
-        assert_eq!(decide(&stranger, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide(&stranger, &r, &file(1, "/books/a.pdf")),
+            ScanAction::Skip
+        );
         let other = copied_registry(&[(1, "b1", "/store/b1.pdf", "/books/elsewhere.pdf")]);
         assert_eq!(
             decide(&f, &other, &file(1, "/books/moved.pdf")),
@@ -780,7 +818,11 @@ mod tests {
         ))];
         let known = registry_of(&rows).get(&fp(1)).cloned().expect("a row");
         assert_eq!(known.path, "/store/b1.pdf", "the address is the store's");
-        assert_eq!(known.source.as_deref(), Some("/books/a.pdf"), "and the source is the file's");
+        assert_eq!(
+            known.source.as_deref(),
+            Some("/books/a.pdf"),
+            "and the source is the file's"
+        );
         let rows = vec![Row::Book(Book::new(
             "b2".into(),
             fp(2),
@@ -791,7 +833,12 @@ mod tests {
             },
             0,
         ))];
-        assert_eq!(registry_of(&rows).get(&fp(2)).and_then(|k| k.source.clone()), None);
+        assert_eq!(
+            registry_of(&rows)
+                .get(&fp(2))
+                .and_then(|k| k.source.clone()),
+            None
+        );
     }
 
     #[test]
@@ -816,7 +863,10 @@ mod tests {
     #[test]
     fn an_unchanged_folder_costs_one_state_write_nothing() {
         let f = folder(&[1, 2], &[]);
-        let r = registry(&[(1, "b1", "/books/a.pdf", false), (2, "b2", "/books/b.pdf", false)]);
+        let r = registry(&[
+            (1, "b1", "/books/a.pdf", false),
+            (2, "b2", "/books/b.pdf", false),
+        ]);
         let walk = vec![file(1, "/books/a.pdf"), file(2, "/books/b.pdf")];
         assert!(diff_folder(&f, &r, &walk).iter().all(|a| !changes(a)));
     }
@@ -845,9 +895,9 @@ mod tests {
             ))
         };
         let rows = vec![
-            linked("b1", "/one/a.md", 1),   // read in place
-            stored("b2", "/one/b.md", 2),   // already the library's own copy
-            linked("b3", "/one/c.md", 3),   // read in place by ANOTHER folder's tree
+            linked("b1", "/one/a.md", 1), // read in place
+            stored("b2", "/one/b.md", 2), // already the library's own copy
+            linked("b3", "/one/c.md", 3), // read in place by ANOTHER folder's tree
         ];
         let found = vec![
             file(1, "/one/a.md"),
@@ -901,7 +951,9 @@ mod tests {
                     "b9".into(),
                     fp(9),
                     Format::Markdown,
-                    Origin::Linked { src: "/gone/x.md".into() },
+                    Origin::Linked {
+                        src: "/gone/x.md".into(),
+                    },
                     0,
                 )
             }),
@@ -910,9 +962,9 @@ mod tests {
             file(1, "/one/a.md"),
             file(2, "/one/b.md"),
             file(3, "/one/c.md"),
-            file(4, "/one/d.md"), // content nobody holds: an ordinary add
+            file(4, "/one/d.md"),      // content nobody holds: an ordinary add
             file(1, "/one/a-copy.md"), // a second file of the first one's bytes
-            file(9, "/one/x.md"), // a missing book's content, at a new address
+            file(9, "/one/x.md"),      // a missing book's content, at a new address
         ];
         let registry = registry_of(&rows);
         let owed = unbound_copies(&found, &registry, &rows);
@@ -1037,7 +1089,10 @@ mod tests {
     fn placing_a_file_is_what_makes_the_next_scan_skip_it() {
         let mut f = folder(&[], &[]);
         f.mark_placed(fp(1));
-        assert_eq!(decide(&f, &registry(&[]), &file(1, "/books/a.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide(&f, &registry(&[]), &file(1, "/books/a.pdf")),
+            ScanAction::Skip
+        );
     }
 
     fn book(id: &str, origin: Origin, missing: bool) -> Row {
@@ -1064,11 +1119,21 @@ mod tests {
 
     #[test]
     fn a_relink_moves_the_address_and_keeps_everything_else() {
-        let mut books = vec![book("b1", Origin::Linked { src: "/gone/a.pdf".into() }, true)];
+        let mut books = vec![book(
+            "b1",
+            Origin::Linked {
+                src: "/gone/a.pdf".into(),
+            },
+            true,
+        )];
         assert!(relink(&mut books, "b1", "/books/a.pdf"));
         assert_eq!(at(&books, 0).path(), "/books/a.pdf");
         assert!(!at(&books, 0).missing);
-        assert_eq!(at(&books, 0).page, 42, "the resume point is the reader's, not the scan's");
+        assert_eq!(
+            at(&books, 0).page,
+            42,
+            "the resume point is the reader's, not the scan's"
+        );
         assert_eq!(at(&books, 0).title.as_deref(), Some("Dune"));
         assert_eq!(books[0].id(), "b1");
         assert!(!relink(&mut books, "zzz", "/x"));
@@ -1098,7 +1163,13 @@ mod tests {
                 src: path.to_string(),
             },
             missing,
-            ..book_value(id, Origin::Linked { src: path.to_string() }, false)
+            ..book_value(
+                id,
+                Origin::Linked {
+                    src: path.to_string(),
+                },
+                false,
+            )
         })
     }
 
@@ -1188,7 +1259,10 @@ mod tests {
             ..stone(1)
         });
         f.ignored.push(stone(2));
-        let reg = registry(&[(1, "b1", "/store/b1.pdf", false), (2, "b2", "/books/2.pdf", false)]);
+        let reg = registry(&[
+            (1, "b1", "/store/b1.pdf", false),
+            (2, "b2", "/books/2.pdf", false),
+        ]);
         prune_tombstones(&mut f, &reg);
         let left: Vec<Fingerprint> = f.ignored.iter().map(|t| t.fp).collect();
         assert_eq!(
@@ -1196,7 +1270,10 @@ mod tests {
             vec![fp(1)],
             "the copy's own fingerprint in the registry is the log's reason to stand, not to go"
         );
-        assert!(f.ignored[0].moved, "and the log that stands is the moved-out one");
+        assert!(
+            f.ignored[0].moved,
+            "and the log that stands is the moved-out one"
+        );
     }
 
     /// The log's spend is a restore's landing: afterwards the file has a
@@ -1211,7 +1288,10 @@ mod tests {
         let reg = registry(&[(1, "b1", "/store/b1.pdf", false)]);
         prune_tombstones(&mut f, &reg);
         assert_eq!(f.ignored.len(), 1, "a scan leaves it standing");
-        assert!(restore_deleted(&mut f, &fp(1)).is_some(), "a restore takes it");
+        assert!(
+            restore_deleted(&mut f, &fp(1)).is_some(),
+            "a restore takes it"
+        );
         prune_tombstones(&mut f, &reg);
         assert!(f.ignored.is_empty(), "and nothing puts it back");
     }
@@ -1222,10 +1302,7 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let shelves = [
-            fshelf("s1", "Books", &[]),
-            vshelf("s9", "Fiction", &["b1"]),
-        ];
+        let shelves = [fshelf("s1", "Books", &[]), vshelf("s9", "Fiction", &["b1"])];
         assert_eq!(
             recoverables(&f, &index, &shelves),
             vec![Recovered::Moved {
@@ -1268,10 +1345,7 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", true)];
         let index = index_by_fp(&books);
-        let shelves = [
-            fshelf("s1", "Books", &[]),
-            vshelf("s9", "Fiction", &["b1"]),
-        ];
+        let shelves = [fshelf("s1", "Books", &[]), vshelf("s9", "Fiction", &["b1"])];
         assert!(recoverables(&f, &index, &shelves).is_empty());
     }
 
@@ -1290,10 +1364,7 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let shelves = [
-            fshelf("s1", "Books", &[]),
-            vshelf("s9", "Fiction", &["b1"]),
-        ];
+        let shelves = [fshelf("s1", "Books", &[]), vshelf("s9", "Fiction", &["b1"])];
         let out = recoverables(&f, &index, &shelves);
         assert_eq!(out.len(), 2);
         assert!(matches!(out[0], Recovered::Deleted(_)));
@@ -1459,7 +1530,13 @@ mod tests {
         // address to relink, nothing a folder could place.
         let rows = vec![
             Row::link("l1".into(), "Dune".into(), "b1".into(), 5),
-            book("b1", Origin::Linked { src: "/books/a.pdf".into() }, false),
+            book(
+                "b1",
+                Origin::Linked {
+                    src: "/books/a.pdf".into(),
+                },
+                false,
+            ),
         ];
         let r = registry_of(&rows);
         assert_eq!(r.len(), 1, "the link is not in it");
@@ -1474,10 +1551,22 @@ mod tests {
     #[test]
     fn the_registry_is_built_from_the_books_and_first_row_wins() {
         let books = vec![
-            book("b1", Origin::Linked { src: "/books/a.pdf".into() }, false),
+            book(
+                "b1",
+                Origin::Linked {
+                    src: "/books/a.pdf".into(),
+                },
+                false,
+            ),
             Row::Book(Book {
                 id: "dup".into(),
-                ..book_value("b1", Origin::Linked { src: "/books/a.pdf".into() }, false)
+                ..book_value(
+                    "b1",
+                    Origin::Linked {
+                        src: "/books/a.pdf".into(),
+                    },
+                    false,
+                )
             }),
         ];
         let r = registry_of(&books);

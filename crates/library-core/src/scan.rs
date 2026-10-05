@@ -62,7 +62,11 @@ pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
         return false;
     };
     let selected = opts.formats.contains(&fmt);
-    let wanted = if opts.include_selected { selected } else { !selected };
+    let wanted = if opts.include_selected {
+        selected
+    } else {
+        !selected
+    };
     wanted && size > opts.min_size
 }
 
@@ -74,8 +78,7 @@ pub fn selectable_formats() -> Vec<Format> {
 /// The store sub-directory a format's copies go into: the pipeline's own
 /// name, so the directories read `pdf`, `text` and `markdown`.
 pub fn store_dir(ext: &str) -> &'static str {
-    format_from_ext(ext)
-        .map_or("other", |fmt| fmt.store_dir())
+    format_from_ext(ext).map_or("other", |fmt| fmt.store_dir())
 }
 
 #[cfg(test)]
@@ -126,7 +129,10 @@ mod tests {
     #[test]
     fn the_size_threshold_is_strict() {
         let o = opts(&[Format::Pdf], true, 30 * 1024);
-        assert!(!admits(&o, "pdf", 30 * 1024), "exactly 30 KB is not larger than 30 KB");
+        assert!(
+            !admits(&o, "pdf", 30 * 1024),
+            "exactly 30 KB is not larger than 30 KB"
+        );
         assert!(admits(&o, "pdf", 30 * 1024 + 1));
         assert!(!admits(&o, "pdf", 1));
         // Zero is strict too: "larger than zero" refuses an empty file.
@@ -159,7 +165,11 @@ mod tests {
         assert_eq!(store_dir("TXT"), "text");
         assert_eq!(store_dir("markdown"), "markdown");
         assert_eq!(store_dir("mdown"), "markdown");
-        assert_eq!(store_dir("epub"), "other", "an unknown kind gets no directory of its own");
+        assert_eq!(
+            store_dir("epub"),
+            "other",
+            "an unknown kind gets no directory of its own"
+        );
     }
 
     #[test]

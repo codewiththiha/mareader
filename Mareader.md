@@ -121,7 +121,8 @@ The app uses the adapter and keeps only app-specific policy locally:
 
 ## Continuous reader flow
 
-1. `ReaderPage` builds one `Virtualizer` for the continuous surface.
+1. Each reader pane (`reader_runtime::pane::document::DocumentPane`, created by the
+   reader host) builds one `Virtualizer` for the continuous surface.
 2. `ScrollShell` binds the scroll container and hands the mounted window to
    `UniversalStripHost`, which picks the format's strip — `PdfPageStrip` or the
    reflowable one. The strip renders `v.items()`, and the PDF's reports measured
@@ -138,7 +139,7 @@ The thumbnail sidebar is a separate grid virtualizer:
 
 - width-aware row windowing lives in `virtual-list`
 - DOM/reactive wiring lives in `virtual-list-leptos`
-- panel-specific constants stay in `src/components/shell/sidebar/panels/thumbnails`
+- panel-specific constants stay in `crates/reader-runtime/src/components/shell/sidebar/panels/thumbnails`
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
 
@@ -175,7 +176,7 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   open, which is where the next drag is born — and drops it at the bake
   otherwise; the scrub path re-renders on demand.
 - A zoom stretch skips the snapshot mask when a render is queued for the same
-  page (`src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
+  page (`crates/reader-runtime/src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
   the frames until that render lands, which is not worth a third full-page
   layer.
 - Where reading work ends — the zoom commit, the mode flip, the retention
@@ -191,7 +192,7 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   mounted ceiling, is what drives the engine's resource cache to the mark
   the footprint latches onto.
 - The full-text index builds on the first search, never at open
-  (`src/effects/reader/search.rs`): extraction is the one wasm-side cost
+  (`crates/reader-runtime/src/effects/reader/search.rs`): extraction is the one wasm-side cost
   that scales with the BOOK — a worker round trip per page, landing in a
   heap that only grows — so an open-time build charged every book that
   ratchet whether or not anyone ever searched it. One build runs at a time;
@@ -221,9 +222,9 @@ generation counters reset with the document they were issued for.
 
 The heap is charted from inside, because from outside it is invisible: the
 OS's number folds the wasm linear memory into the webview's total, where
-canvas surfaces dominate. `src/memory.rs` logs the heap's byte length at
-open, close, zoom commit, index build and the reload that resets it (`[mem]`
-lines in the webview console), and the trace IS the leak-versus-latch test —
+canvas surfaces dominate. `crates/app-state/src/memory.rs` logs the heap's byte length at
+open, close, zoom commit and index build (`[mem]` lines in the webview
+console), and the trace IS the leak-versus-latch test —
 steps up once per book, flat across a session's zooms, never back down: that
 is the ratchet working as the platform dictates. A climb per open/close cycle
 would be a leak, and the log is where one shows up first.
@@ -232,7 +233,8 @@ What the trace is read against is a SHAPE and not a number: a fresh boot is
 some floor X; reading is X plus the mounted canvases; idling on the page
 stays at reading, which is the latch rather than a leak; the shelf after a
 close stays there too, holding the retained index, the covers and whatever
-the wasm arena grew into; and a reload is back to X. Five open/close cycles
+the wasm arena grew into; and the next route boots a fresh runtime instance
+rather than inheriting that arena. Five open/close cycles
 that plateau are a latch. Five that climb are a leak, and these lines say
 which before a profiler does.
 
@@ -241,12 +243,12 @@ The platform levers stay weighed and unpulled: a CPU-backed-canvas hint
 wants an A/B measurement before it ships anywhere; cache-budget engine flags
 are WebView2-only; and an AUTOMATIC pressure valve that recreates the webview
 after very long sessions still trades reading continuity for a number the
-next book latches right back. What shipped instead is the manual one: Reload
-Window — a row in the reader's ⋯ menu and the shelf's — is the force-quit
-minus the quit, offered rather than imposed. It pays what a quit pays first
-(the resume point the progress effect is still debouncing, flushed through
-`src/services/document/flush.rs`) and parks the address on the shelf before
-it goes, so the boot does not mount a reader for a book that is not there.
+next book latches right back. The runtime split already releases that number
+at its natural seam, so nothing offers a restart by hand: a route handoff
+retires the runtime that ended — realm, wasm instance, heap — and the next
+route starts a fresh instance, while the resume point the progress effect is
+still debouncing is flushed through
+`crates/reader-runtime/src/services/document/flush.rs` before the runtime goes.
 
 ## Formats: one host, one pipeline per family
 
@@ -254,13 +256,13 @@ The reader has two axes that must not multiply: how a document is *viewed* (sing
 spread, two scroll modes) and what it *is* (PDF, plain text, Markdown). The UI is split
 along the first axis and the crates along the second, and exactly one file joins them.
 
-- `src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
+- `crates/reader-runtime/src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
   hold the scroll container, and the reader's own controls (the bottom bar, the overlay
   scrollbar, the page indicator). A layout may not name a format; adding a view mode touches
   this directory and `reader-core`'s `view` module, and no format crate.
-- `src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
+- `crates/reader-runtime/src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
   touches this directory, one parser crate, and one match arm in the open flow.
-- `src/components/viewer/page_host.rs` is the seam, and the only file in the viewer layer
+- `crates/reader-runtime/src/components/viewer/page_host.rs` is the seam, and the only file in the viewer layer
   allowed to ask which format is open. `UniversalPageHost` takes a page plus a `PageSlot`
   (single, spread left, spread right) and mounts either `PdfPageCanvas` or `ReflowPage`;
   `UniversalStripHost` does the same for the virtualized strip; `UniversalStreamHost`
@@ -586,9 +588,9 @@ focus affordable.
 
 A row migrated from the previous schema carries no measurement, so it carries
 `Fingerprint::placeholder` — derived from the address, so two migrated books can never share one —
-and the `fp_pending` mark. `library_core::blob::LibraryBlob::awaiting_check` is the gate: a rescan
-that diffed real fingerprints against placeholders would match nothing and add a second copy of
-every book the folder already held.
+and the `fp_pending` mark. Those marks are the gate — a rescan is held while any row still carries
+one: a rescan that diffed real fingerprints against placeholders would match nothing and add a
+second copy of every book the folder already held.
 
 The fingerprint is the identity, and one identity is normally one row — but not by force. Two rows
 of one file are allowed, so the sanitizer dedupes by *id* rather than by fingerprint, and every
@@ -621,9 +623,10 @@ is a fact about the file, so `book::apply_check` still writes every row at it, a
 the file's art. Which rows a read belongs to is one function (`book::rows_for_read`, indices so a
 caller can hold the answer across the write it is about to make), and the three writers of a resume
 point all read it: the open's record, the progress debounce and the close's flush. That is also why
-an open carries the row it came from — `document::open_row` for a card, a list row or the menu's
-Open, which opens a book and reveals the target of a link, and `document::open_path` for a drop, an
-*open with* and a dialog — because an address cannot say which of two rows the reader clicked, and a
+an open carries the row it came from — `library_runtime::services::open::open_row` for a card, a
+list row or the menu's Open, which opens a book and reveals the target of a link, and
+`reader_runtime::services::document::open::open_path` for a drop, an *open with* and a dialog —
+because an address cannot say which of two rows the reader clicked, and a
 reader who asked for a book of its own is a reader who means that book. The rest of the library prefers a shared row wherever it resolves a content: the
 ledger's registry indexes shared rows first and a private one only for a content nothing else
 holds, and `book::add_book` resolves an import to a shared row and never to a private one.
@@ -1055,7 +1058,8 @@ The split is IO on one side and decisions on the other, and the wire between the
   file, and a failure half way through would leave the library holding books whose bytes never
   arrived. A copy failure is per-file, so one locked file costs the reader that file and not the
   batch.
-- `effects::app::library` installs the three app-lifetime pieces: the sink that folds progress beats
+- `crates/library-runtime/src/effects_library.rs` installs the three
+  session-lifetime pieces: the sink that folds progress beats
   into `state::library`'s task list (a run outlives the page that started it, so a listener mounted
   on the page would stop counting at the route flip), the startup measurement pass, and the rescan
   on `tauri://focus` behind a cooldown.
@@ -1324,9 +1328,10 @@ rather than scattered facts: `ChromeSurface` (`components::shell::controller`) n
 every per-route rule reads that name. The pin is remembered per surface, in one settings field each,
 because unhitching the reader's bar out of a document's way says nothing about the shelf's — and the
 shelf's defaults to pinned, since its bar is how the reader moves. The appearance menu drops its
-page-texture section off the reader surface (and on the reader too while a reflowable document
-paints its own paper — the same two facts the settings modal's Paper section gates itself on), and
-the settings gear does not mount: settings are the reader's, and a button that opens a modal with
+page-texture section off the reader surface — and only there; it stays for every document
+format, because a text page carries a pattern on the scroller that IS its paper
+(`styles/textures.css`), which is a stylesheet fact and not a reason to hide a control — and the
+settings gear does not mount: settings are the reader's, and a button that opens a modal with
 nothing to say about the shelf is a button the reader has to read and then ignore.
 
 ### A bar that can go deep
@@ -1504,3 +1509,5 @@ Not all of them can be fixed with a path. `GlossMark::context` points at a
 struct field, and rustdoc has no link form for one at any prefix, so those are
 prose rewrites — and the eleven undocumented crates cannot be enumerated short
 of running rustdoc until they can.
+
+<!-- // only the changed file was rewritten -->

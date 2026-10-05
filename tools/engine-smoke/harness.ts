@@ -181,7 +181,11 @@ export class FakeCanvas {
   toDataURL(): string { return "data:image/jpeg;base64,xx"; }
   setAttribute(): void {}
   getAttribute(): string | null { return null; }
-  appendChild<T>(c: T): T { this.children.push(c); return c; }
+  appendChild<T>(c: T): T {
+    this.children.push(c);
+    if (c && typeof c === "object") (c as { parentElement?: unknown }).parentElement = this;
+    return c;
+  }
   replaceChildren(): void {}
   remove(): void {}
   replaceWith(): void {}
@@ -338,14 +342,22 @@ export const fakeWindow: FakeWindow = {
   },
   addEventListener() {},
   dispatchEvent() { return true; },
-  getComputedStyle: (_el) => ({
-    getPropertyValue: (name: string) => {
-      if (name === "--canvas-filter") return fakeComputed["--canvas-filter"] || "none";
-      if (name === "--canvas-blend") return fakeComputed["--canvas-blend"] || "normal";
-      return "";
-    },
-    backgroundColor: fakeComputed.paper || "#ffffff",
-  }),
+  getComputedStyle: (el) => {
+    const node = el as unknown as {
+      _themeComputed?: typeof fakeComputed;
+      parentElement?: { _themeComputed?: typeof fakeComputed } | null;
+    };
+    const scoped = node._themeComputed ?? node.parentElement?._themeComputed ?? fakeComputed;
+    return {
+      getPropertyValue: (name: string) => {
+        if (name === "--canvas-filter") return scoped["--canvas-filter"] || "none";
+        if (name === "--canvas-blend") return scoped["--canvas-blend"] || "normal";
+        if (name === "--color-paper") return scoped.paper || "#ffffff";
+        return "";
+      },
+      backgroundColor: scoped.paper || "#ffffff",
+    };
+  },
   requestAnimationFrame: (fn: () => void) => { setTimeout(fn, 0); return 1; },
   cancelAnimationFrame() {},
   __TAURI__: {
@@ -411,7 +423,12 @@ const fakePdf = {
   fingerprints: ["smoke-permanent", "smoke-temporary"],
   cleanup: async () => {},
 };
-const fakeLoadingTask = { promise: Promise.resolve(fakePdf), destroy: async () => {} };
+// A FRESH LoadingTask per getDocument call — pdf.js hands back a new task
+// (with its own worker lifetime) every time, and the engine's worker
+// counters are balanced per task. One shared object here would collapse
+// distinct opens into one identity and hide exactly the imbalance the
+// teardown baseline exists to catch.
+const fakeLoadingTask = () => ({ promise: Promise.resolve(fakePdf), destroy: async () => {} });
 
 const sandbox: Record<string, unknown> = {
   console,
@@ -450,7 +467,7 @@ const sandbox: Record<string, unknown> = {
     };
   },
   pdfjsLib: {
-    getDocument: () => fakeLoadingTask,
+    getDocument: () => fakeLoadingTask(),
     GlobalWorkerOptions: {},
     TextLayer: class {
       constructor() {}
@@ -479,51 +496,181 @@ interface OpenPayload {
 }
 interface RenderPayload { width: number; height: number; scale: number }
 interface ThumbPayload { width: number; height: number; scale: number }
-interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number }
+interface StatsPayload {
+  pages: number;
+  thumbs: number;
+  thumbLimit: number;
+  thumbTasks: number;
+  activeRenders: number;
+  activePrefetches: number;
+  pageQueue: number;
+  pageActive: number;
+  thumbQueue: number;
+  thumbActive: number;
+  hasDocument: boolean;
+  hasLoadingTask: boolean;
+  sessionsOpened: number;
+  sessionsDestroyed: number;
+  workersCreated: number;
+  workersTerminated: number;
+  rendersStarted: number;
+  rendersCompleted: number;
+  rendersCancelled: number;
+  rendersFailed: number;
+  rendersQueued: number;
+  rendersDropped: number;
+  prefetchesStarted: number;
+  prefetchesCompleted: number;
+  prefetchesDropped: number;
+  documentPages: number;
+  thumbGenerationSize: number;
+  rawRetentionTimers: number;
+  sweepTimerArmed: number;
+}
 
+type PaperFramePayload = {
+  ok: true;
+  page: number;
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+};
+
+/** The facade as the smoke drives it: every document call names a session
+ *  id first; the realm calls (stats, appearance broadcast, diagnostics)
+ *  name none. */
 interface PDFReaderHandle {
-  open(path: string): Promise<EngineResult<OpenPayload>>;
-  resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
-  registerPage(page: number, canvasId: string, hostId?: string): void;
-  renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
-  renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
-  cancelThumb(canvasId: string): void;
-  hasThumb(page: number, scale: number): boolean;
-  refreshTheme(): Promise<void>;
-  setScrubMode(on: boolean): Promise<void>;
-  setAppearanceMenuOpen(on: boolean): void;
-  setPaper(hex: string): void;
-  setPaperActive(on: boolean): void;
-  takePaperFrame(canvasId: string): {
-    ok: true;
-    page: number;
-    width: number;
-    height: number;
-    data: Uint8ClampedArray;
-  } | null;
-  samplePaperPage(page: number): Promise<{
+  createSession(sid: number): boolean;
+  destroySession(sid: number): Promise<void>;
+  presentSession(sid: number): void;
+  sessions(): number[];
+  open(sid: number, path: string): Promise<EngineResult<OpenPayload>>;
+  resolveOutline(sid: number): Promise<EngineResult<{ outline: unknown[] }>>;
+  quiesce(sid: number): void;
+  registerPage(
+    sid: number,
+    page: number,
+    canvasId: string,
+    hostId?: string,
+    canvas?: HTMLCanvasElement | null,
+    host?: HTMLElement | null,
+  ): void;
+  prefetchThumb(sid: number, page: number, scale: number): Promise<void>;
+  suspendPrefetches(sid: number): void;
+  resumePrefetches(sid: number): void;
+  renderPage(
+    sid: number,
+    canvasId: string,
+    scale: number,
+    renderText: boolean
+  ): Promise<EngineResult<RenderPayload>>;
+  renderThumb(
+    sid: number,
+    canvasId: string,
+    page: number,
+    scale: number
+  ): Promise<EngineResult<ThumbPayload>>;
+  cancelThumb(sid: number, canvasId: string): void;
+  hasThumb(sid: number, page: number, scale: number): boolean;
+  setPaper(sid: number, hex: string): void;
+  setPaperActive(sid: number, on: boolean): void;
+  takePaperFrame(sid: number, canvasId: string): PaperFramePayload | null;
+  samplePaperPage(sid: number, page: number): Promise<{
     ok: true;
     page?: number;
     width?: number;
     height?: number;
     data?: Uint8ClampedArray;
   }>;
-  unregisterPage(canvasId: string): void;
-  destroy(): Promise<void>;
-  stats(): StatsPayload;
-  sweep(): void;
-  sweepSnapshots(): void;
-  takePendingFile(): Promise<string | null>;
-  extractPageText(page: number): Promise<
+  unregisterPage(sid: number, canvasId: string): void;
+  sweep(sid: number): void;
+  sweepSnapshots(sid: number): void;
+  extractPageText(sid: number, page: number): Promise<
     EngineResult<{ page: number; items: { str: string; x: number; y: number; w: number; h: number }[] }>
   >;
-  setSearchContext(query: string): void;
-  setActiveMatch(page: number, index: number): void;
-  clearHighlights(): void;
+  setSearchContext(sid: number, query: string): void;
+  setActiveMatch(sid: number, page: number, index: number): void;
+  clearHighlights(sid: number): void;
+  sessionStats(sid: number): StatsPayload | null;
+  // Realm calls.
+  setLifecycleLog(on: boolean): void;
+  stats(): StatsPayload & { sessionsLive: number; sessionsRetired: number };
+  refreshTheme(): Promise<void>;
+  setScrubMode(on: boolean): Promise<void>;
+  setAppearanceMenuOpen(on: boolean): void;
 }
 
 export const PDFReader = sandbox.PDFReader as PDFReaderHandle;
 if (!PDFReader) throw new Error("PDFReader not defined after eval");
+
+// --- Sessions -------------------------------------------------------------
+// The scenarios share one document at a time, as the reader pane does: the
+// CURRENT session. `openDoc` retires it and opens the next document in a
+// fresh session (a PDF session holds exactly one document); `R` is the
+// facade bound to the current sid, so a scenario reads like the reader's
+// own calls through its pane's `PdfSession`.
+
+type RealmMethod =
+  | "createSession"
+  | "destroySession"
+  | "presentSession"
+  | "sessions"
+  | "setLifecycleLog"
+  | "stats"
+  | "refreshTheme"
+  | "setScrubMode"
+  | "setAppearanceMenuOpen";
+type SessionMethods = Omit<PDFReaderHandle, RealmMethod>;
+export type BoundReader = {
+  [K in keyof SessionMethods]: SessionMethods[K] extends (sid: number, ...rest: infer A) => infer T
+    ? (...rest: A) => T
+    : never;
+};
+
+let nextSid = 1;
+
+/** Register a brand-new session and return its sid. */
+export function newSession(): number {
+  const sid = nextSid++;
+  if (!PDFReader.createSession(sid)) throw new Error("createSession refused a fresh sid " + sid);
+  return sid;
+}
+
+/** A view of the facade that supplies the sid first. Only real facade
+ *  members resolve: anything else (notably `then`, which `await` probes)
+ *  is undefined, so a bound view is not mistaken for a thenable. */
+function boundView(sid: () => number): BoundReader {
+  const api = PDFReader as unknown as Record<string, unknown>;
+  return new Proxy({} as BoundReader, {
+    get: (_target, key) => {
+      if (typeof key !== "string" || typeof api[key] !== "function") return undefined;
+      return (...rest: unknown[]) => (api[key] as (...a: unknown[]) => unknown)(sid(), ...rest);
+    },
+  });
+}
+
+/** The facade bound to `sid`. */
+export function bind(sid: number): BoundReader {
+  return boundView(() => sid);
+}
+
+export const current = { sid: 0 };
+
+/** The facade bound to whatever session is current at call time. */
+export const R: BoundReader = boundView(() => current.sid);
+
+/** Retire the current session (if any) and open `path` in a fresh one. */
+export async function openDoc(path: string): Promise<EngineResult<OpenPayload>> {
+  if (current.sid) await PDFReader.destroySession(current.sid);
+  current.sid = newSession();
+  return PDFReader.open(current.sid, path);
+}
+
+/** Retire the current session. Its sid stays current, so a later call
+ *  through `R` proves a retired sid is refused. */
+export async function closeDoc(): Promise<void> {
+  if (current.sid) await PDFReader.destroySession(current.sid);
+}
 
 // Independent re-implementation of the CSS Filter Effects math, used to
 // compute the pixel the bake MUST produce — deliberately separate from the

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MAReader — cover baker</title>
+    <!-- The Shell's cover-bake page (src/app/bake.rs, public/coverBake.ts):
+         pdf.js and the engine's cover render, nothing else — no wasm, no
+         runtime. Mounted hidden while the shelf has covers to bake, removed
+         once the queue drains. tauri-relay.js first, as in the pane pages: the
+         page reads local files over the parent's Tauri IPC. -->
+    <script src="/tauri-relay.js"></script>
+    <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
+    <script type="module" src="/coverBake.js"></script>
+  </head>
+  <body></body>
+</html>

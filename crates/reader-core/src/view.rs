@@ -6,21 +6,15 @@
 //! reflowable document is laid out through exactly the same model as a PDF,
 //! so none of this may name a format.
 //!
-//! The windowing arithmetic lives in `virtual-list` / `virtual-list-leptos`;
-//! this module carries the reader's policy and re-exports [`Budget`] so a
-//! caller sizes a strip without naming two crates. The PDF page frame's own
-//! constant (the toolbar band the search reveal must clear) stays at
-//! `pdf_core`'s root.
-
-pub use virtual_list::Budget;
+//! The windowing arithmetic lives in `virtual-list` / `virtual-list-leptos`,
+//! and the reader runtime names those crates itself: nothing here may import
+//! them, or every consumer of a view constant would pull a virtualizer into
+//! its own graph (the library runtime's boundary is exactly that consumer).
+//! The PDF page frame's own constant (the toolbar band the search reveal
+//! must clear) stays at `pdf_core`'s root.
 
 /// Gap between pages in the continuous reader, in CSS px.
 pub const PAGE_GAP: f64 = 24.0;
-
-/// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
-/// total (visible + ~1 above + ~1 below). Each mounted page at 2× DPR plus
-/// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
-pub const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
@@ -28,7 +22,8 @@ pub enum Axis {
     Horizontal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewMode {
     Single,
     Spread,
@@ -61,7 +56,11 @@ impl ViewMode {
 /// reads as 0 rather than as a division by a non-positive number.
 pub fn scroll_fraction(offset: f64, total: f64, viewport: f64) -> f64 {
     let travel = total - viewport;
-    if travel > 0.0 { (offset / travel).clamp(0.0, 1.0) } else { 0.0 }
+    if travel > 0.0 {
+        (offset / travel).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 /// The inverse of [`scroll_fraction`]: the offset a reading fraction names on a
@@ -98,11 +97,12 @@ pub fn anchored_position(
     // remainder: the gap is fixed chrome and never scales.
     let above = height_sum * factor + index as f64 * gap;
     let offset_inside = centre_y_doc - above_with_gap;
-    above + if offset_inside <= height {
-        offset_inside * factor
-    } else {
-        height * factor + (offset_inside - height)
-    }
+    above
+        + if offset_inside <= height {
+            offset_inside * factor
+        } else {
+            height * factor + (offset_inside - height)
+        }
 }
 
 /// First 1-based page of the two-up spread containing `page`.
@@ -159,7 +159,10 @@ mod tests {
     fn an_anchor_in_a_gap_keeps_the_gap_unscaled() {
         // Page 0 ends at 100, the gap spans 100..120; 110 is 10 into the gap,
         // so after doubling, page 0 ends at 200 and the gap is still 20.
-        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 110.0, 2.0, 0), 210.0);
+        assert_eq!(
+            anchored_position(100.0, 0.0, 0.0, 20.0, 110.0, 2.0, 0),
+            210.0
+        );
     }
 
     /// Every gap above the reader counts, not just the one it is standing in:
@@ -168,10 +171,16 @@ mod tests {
     fn gaps_above_the_anchor_hold_the_page_still() {
         // Page 5 starts at 5 * (100 + 20) = 600; +30 into it is 630, which
         // scales to 5 * 200 + 5 * 20 + 60 = 1160.
-        assert_eq!(anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5), 1160.0);
+        assert_eq!(
+            anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5),
+            1160.0
+        );
         // Zooming back out by the same factor returns to the exact start.
         let forward = anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5);
-        assert_eq!(anchored_position(200.0, 1100.0, 1000.0, 20.0, forward, 0.5, 5), 630.0);
+        assert_eq!(
+            anchored_position(200.0, 1100.0, 1000.0, 20.0, forward, 0.5, 5),
+            630.0
+        );
     }
 
     /// A centre past the end of a short document still lands at the scaled end,
@@ -180,7 +189,10 @@ mod tests {
     fn a_centre_past_the_end_keeps_the_overflow_unscaled() {
         // 900 is far past the single page: the page scales to 200 and the 800
         // of overflow beyond it stays exactly as long as it was.
-        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 900.0, 2.0, 0), 1000.0);
+        assert_eq!(
+            anchored_position(100.0, 0.0, 0.0, 20.0, 900.0, 2.0, 0),
+            1000.0
+        );
     }
 
     #[test]

@@ -21,6 +21,11 @@ function bundle(entryPoints, outfile) {
   });
 }
 
+// The persistent host's format-neutral full-page budget, loaded by index.html
+// only. It holds no engine or document, and never strongly holds a pane wake.
+await bundle(["public/rasterLane.ts"], "public/rasterLane.js");
+await bundle(["public/readerHost.ts"], "public/readerHost.js");
+
 // The pdf.js-facing engine.
 await bundle(["public/pdfEngine.ts"], "public/pdfEngine.js");
 
@@ -36,3 +41,9 @@ await bundle(["public/readerEngine.ts"], "public/readerEngine.js");
 // to pdfEngine.js so index.html can copy-file it to the dist root — copying
 // public/engine/ wholesale would ship the TypeScript sources.
 await bundle(["public/engine/theme/bake.worker.ts"], "public/bake.worker.js");
+
+// The Shell's cover-bake page script (public/bake.html): the engine's cover
+// render alone, for the hidden frame the Shell mounts to bake shelf covers
+// without a reader. Its own bundle so the bake page never loads the reader
+// facade, and the facade never learns about the bake wire.
+await bundle(["public/coverBake.ts"], "public/coverBake.js");

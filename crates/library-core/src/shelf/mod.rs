@@ -11,7 +11,7 @@ mod family;
 mod members;
 mod tree;
 
-pub use content::{badge_kind, ContentKind};
+pub use content::{ContentKind, badge_kind};
 pub use family::{departing_moves, departs_on_move, family_for};
 pub use members::{containing, forget, forget_everywhere, members_of, place, shelf_add};
 pub use tree::{
@@ -162,13 +162,12 @@ pub fn find_mut<'a>(shelves: &'a mut [Shelf], id: &str) -> Option<&'a mut Shelf>
 /// nesting graph back to a forest. Idempotent.
 pub fn sanitize(shelves: &mut Vec<Shelf>) {
     let mut seen = std::collections::HashSet::new();
-    shelves.retain(|s| {
-        !s.id.trim().is_empty() && !s.name.trim().is_empty() && s.id != ALL_SHELF
-    });
+    shelves.retain(|s| !s.id.trim().is_empty() && !s.name.trim().is_empty() && s.id != ALL_SHELF);
     shelves.retain(|s| seen.insert(s.id.clone()));
     for s in shelves.iter_mut() {
         let mut members = std::collections::HashSet::new();
-        s.books.retain(|m| !m.trim().is_empty() && members.insert(m.clone()));
+        s.books
+            .retain(|m| !m.trim().is_empty() && members.insert(m.clone()));
     }
 
     // A parent that is the shelf itself, or that names no shelf, renders on
@@ -179,8 +178,7 @@ pub fn sanitize(shelves: &mut Vec<Shelf>) {
         }
     }
     // Owned ids: the pass below writes to the list it reads names from.
-    let ids: std::collections::HashSet<String> =
-        shelves.iter().map(|s| s.id.clone()).collect();
+    let ids: std::collections::HashSet<String> = shelves.iter().map(|s| s.id.clone()).collect();
     for s in shelves.iter_mut() {
         if s.parent.as_deref().is_some_and(|p| !ids.contains(p)) {
             s.parent = None;
@@ -242,7 +240,10 @@ mod tests {
         assert!(find_mut(&mut shelves, ALL_SHELF).is_none());
         assert_eq!(find(&shelves, "s").map(|s| s.name.as_str()), Some("s"));
         find_mut(&mut shelves, "s").unwrap().name = "renamed".into();
-        assert_eq!(find(&shelves, "s").map(|s| s.name.as_str()), Some("renamed"));
+        assert_eq!(
+            find(&shelves, "s").map(|s| s.name.as_str()),
+            Some("renamed")
+        );
         assert!(find_mut(&mut shelves, "gone").is_none());
     }
 
@@ -294,7 +295,10 @@ mod tests {
     fn a_pseudo_all_shelf_never_survives_a_load() {
         // A blob carrying an "all" row must not become a tile duplicating the
         // whole library.
-        let mut shelves = vec![shelf(ALL_SHELF, "All", &["a"]), shelf("s1", "Sci-fi", &["a"])];
+        let mut shelves = vec![
+            shelf(ALL_SHELF, "All", &["a"]),
+            shelf("s1", "Sci-fi", &["a"]),
+        ];
         sanitize(&mut shelves);
         let ids: Vec<&str> = shelves.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, vec!["s1"]);
@@ -322,7 +326,11 @@ mod tests {
         place(&mut m, "c", Some(0));
         assert_eq!(ids(&m), vec!["c", "a", "b"]);
         place(&mut m, "a", Some(1));
-        assert_eq!(ids(&m), vec!["c", "a", "b"], "a book stays where it is dropped");
+        assert_eq!(
+            ids(&m),
+            vec!["c", "a", "b"],
+            "a book stays where it is dropped"
+        );
         place(&mut m, "c", Some(3));
         assert_eq!(ids(&m), vec!["a", "b", "c"]);
     }
@@ -356,7 +364,10 @@ mod tests {
     #[test]
     fn the_shelves_a_book_is_on_are_found_in_order() {
         let shelves = vec![shelf("s1", "One", &["a", "b"]), shelf("s2", "Two", &["b"])];
-        let names: Vec<&str> = containing(&shelves, "b").iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = containing(&shelves, "b")
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
         assert_eq!(names, vec!["One", "Two"]);
         assert!(containing(&shelves, "zzz").is_empty());
     }
@@ -463,10 +474,19 @@ mod tests {
             shelf("s2", "Sci-fi", &[]),
             nested("s3", "Space", "s2"),
         ];
-        assert!(can_nest(&shelves, "s1", "s3"), "s1 is above nothing, so it can go deepest");
+        assert!(
+            can_nest(&shelves, "s1", "s3"),
+            "s1 is above nothing, so it can go deepest"
+        );
         assert!(can_nest(&shelves, "s2", "s1"));
-        assert!(can_nest(&shelves, "s3", "s1"), "and a shelf may be lifted out of its branch");
-        assert!(!can_nest(&shelves, "s2", "s2"), "a shelf is not inside itself");
+        assert!(
+            can_nest(&shelves, "s3", "s1"),
+            "and a shelf may be lifted out of its branch"
+        );
+        assert!(
+            !can_nest(&shelves, "s2", "s2"),
+            "a shelf is not inside itself"
+        );
         assert!(!can_nest(&shelves, "s1", "s1"));
         assert!(!can_nest(&shelves, "s2", "s3"), "s3 is already inside s2");
         assert!(!can_nest(&shelves, "s2", "s2"));
@@ -554,7 +574,10 @@ mod tests {
         );
         assert_eq!(shelves[3].parent, None, "a shelf elsewhere is not touched");
         lift_children(&mut shelves, "s1");
-        assert_eq!(shelves[1].parent, None, "a root shelf's children become roots");
+        assert_eq!(
+            shelves[1].parent, None,
+            "a root shelf's children become roots"
+        );
         assert_eq!(
             shelves[2].parent, None,
             "including the one that just moved up into it"
@@ -566,7 +589,11 @@ mod tests {
         let mut shelves = vec![nested("s1", "Orphan", "gone"), nested("s2", "Filed", "s1")];
         sanitize(&mut shelves);
         assert_eq!(shelves[0].parent, None, "an orphan is a root, not a hole");
-        assert_eq!(shelves[1].parent.as_deref(), Some("s1"), "its child is untouched");
+        assert_eq!(
+            shelves[1].parent.as_deref(),
+            Some("s1"),
+            "its child is untouched"
+        );
         assert_eq!(ids_of(&children_of(&shelves, None)), vec!["s1"]);
     }
 
@@ -788,11 +815,7 @@ mod tests {
         // A rung an older blob carries off its seat comes back as a return:
         // no copy is owed.
         let mut off_seat = shelves.clone();
-        off_seat
-            .iter_mut()
-            .find(|s| s.id == "sf")
-            .unwrap()
-            .parent = Some("mine".to_string());
+        off_seat.iter_mut().find(|s| s.id == "sf").unwrap().parent = Some("mine".to_string());
         assert!(!departs_on_move(&off_seat, &folders, "sf", Some("fic")));
     }
 
@@ -862,10 +885,7 @@ mod tests {
             family_for(&folders, &shelves, "/books/Fiction/Deleted"),
             Some(("f1".to_string(), "Fiction/Deleted".to_string()))
         );
-        assert_eq!(
-            family_for(&folders, &shelves, "/books/Fiction/SciFi"),
-            None
-        );
+        assert_eq!(family_for(&folders, &shelves, "/books/Fiction/SciFi"), None);
         assert_eq!(family_for(&folders, &shelves, "/books"), None);
         let mut dead_slot = folders.clone();
         dead_slot[0]
@@ -905,7 +925,10 @@ mod tests {
         // With the root shelf gone the tree is out of the library and the
         // ground under it is a start of its own.
         let taken_out: Vec<Shelf> = shelves.iter().filter(|s| s.id != "r").cloned().collect();
-        assert_eq!(family_for(&folders, &taken_out, "/books/Fiction/Deleted"), None);
+        assert_eq!(
+            family_for(&folders, &taken_out, "/books/Fiction/Deleted"),
+            None
+        );
     }
 
     #[test]

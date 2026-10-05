@@ -2,7 +2,7 @@
 //! to, and which shelf moves are departures from their folder's ground rather
 //! than plain re-hangs.
 
-use super::{ancestors, find, Shelf, ShelfKind};
+use super::{Shelf, ShelfKind, ancestors, find};
 
 /// The family a ground directory belongs to but is not standing in —
 /// [`crate::governance::Governance::family`] with the folder and shelf lists
@@ -73,11 +73,9 @@ pub fn departing_moves(
     let riders: Vec<String> = departing
         .iter()
         .filter(|id| {
-            ancestors(shelves, id.as_str())
-                .iter()
-                .any(|each| {
-                    each.id != id.as_str() && departing.iter().any(|outer| outer == &each.id)
-                })
+            ancestors(shelves, id.as_str()).iter().any(|each| {
+                each.id != id.as_str() && departing.iter().any(|outer| outer == &each.id)
+            })
         })
         .cloned()
         .collect();

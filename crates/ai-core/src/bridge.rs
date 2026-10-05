@@ -50,5 +50,8 @@ pub async fn explain_word(word: &str, context: &str, run: &str) -> Result<(), St
     tauri_bridge::invoke("explain_word", args)
         .await
         .map(|_| ())
-        .map_err(|e| e.as_string().unwrap_or_else(|| "unknown invoke error".to_string()))
+        .map_err(|e| {
+            e.as_string()
+                .unwrap_or_else(|| "unknown invoke error".to_string())
+        })
 }

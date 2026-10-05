@@ -53,9 +53,10 @@ fn queue_pending(app: &tauri::AppHandle, path: String) {
         return;
     }
     if let Some(state) = app.try_state::<PendingFile>()
-        && let Ok(mut guard) = state.0.lock() {
-            *guard = Some(path.clone());
-        }
+        && let Ok(mut guard) = state.0.lock()
+    {
+        *guard = Some(path.clone());
+    }
     let _ = app.emit("document-open-file", path);
 }
 
@@ -133,15 +134,17 @@ async fn read_file_text(path: String) -> Result<String, String> {
 ///
 /// `titleBarStyle: "Overlay"` lets the webview draw under the lights, but CSS
 /// cannot hide or re-center native NSViews. Delegates to
-/// `macos::traffic_light`, which owns the container geometry:
+/// `macos::traffic_light`, which centres the buttons inside the container
+/// tao keeps at `button_height + trafficLightPosition.y`:
 ///
 /// ```text
-/// y = ((header_height - button_height)/2 + natural_origin_y).max(0)
-/// container.height = visible ? button_height + y : 0
+/// top      = round((header_height - button_height) / 2)
+/// origin.y = container.height - button_height - top
 /// ```
 ///
-/// `tauri.conf.json:trafficLightPosition` remains only the pre-mount
-/// fallback; after the first invoke Rust is the sole authority for `y`.
+/// tao re-applies `tauri.conf.json:trafficLightPosition` on every redraw, so
+/// the native layout agrees with it on the container and `x` and owns only
+/// the buttons' `origin.y` and size.
 /// `header_height` comes from the frontend's ResizeObserver on `#toolbar-row`
 /// (pass 0 to keep the last height). Re-applied on `ThemeChanged`.
 #[tauri::command]
@@ -152,6 +155,32 @@ fn set_traffic_lights(window: tauri::Window, visible: bool, header_height: Optio
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (window, visible, header_height);
+}
+
+/// The frontend's boot report: which runtime the shell brought up, where the
+/// boot stopped, and the document's own truth as it changes (`doc: Ready`,
+/// `doc: Error — …`). One line per transition (never per frame), on stderr —
+/// the terminal that launched the app, and the native smoke test's log
+/// (tools/tauri-smoke.mjs).
+///
+/// This exists because of the incident it reports on: a packaged app whose
+/// frontend could not load its runtimes opened a native window and said
+/// nothing anywhere. The window is now never blank (the shell paints a
+/// loading or error state, src/app/boot.rs), and this is the second half of
+/// that answer — a boot that fails is legible from OUTSIDE the webview.
+#[tauri::command]
+fn boot_report(report: String) {
+    let line = report
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .take(160)
+        .collect::<String>();
+    if !line.is_empty() {
+        eprintln!("[mareader] {line}");
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -172,6 +201,7 @@ pub fn run() {
             read_file_bytes,
             read_file_text,
             set_traffic_lights,
+            boot_report,
             commands::ai::explain_word,
             commands::library::scan_folder,
             commands::library::verify_paths,

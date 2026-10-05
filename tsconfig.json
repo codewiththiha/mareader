@@ -27,6 +27,9 @@
     "public/pdfEngine.ts",
     "public/engine/**/*.ts",
     "public/readerEngine.ts",
+    "public/rasterLane.ts",
+    "public/readerHost.ts",
+    "public/coverBake.ts",
     "public/reader/**/*.ts"
   ]
 }

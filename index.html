@@ -4,11 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mareader</title>
-    <!-- pdf.js text-layer base rules (required for selectable text). Served from public/. -->
-    <link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css" />
     <link data-trunk rel="css" href="styles.css" />
     <!-- Copy static assets to the dist ROOT so root-absolute URLs (/vendor/..., /pdfEngine.js)
-         resolve in the packaged app. Trunk's copy-dir preserves the referenced dir's basename. -->
+         resolve in the packaged app's runtime pages. Trunk's copy-dir preserves the referenced dir's basename. -->
     <link data-trunk rel="copy-dir" href="public/vendor" />
     <link data-trunk rel="copy-dir" href="public/samples" />
     <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
@@ -17,26 +15,57 @@
          pre-build hook) must ship next to the engine in the packaged app; the
          engine falls back to inline baking when it cannot find it. -->
     <link data-trunk rel="copy-file" href="public/bake.worker.js" />
-    <!-- The reader bundle: the format-agnostic half of the browser side (today
-         the selection tracker, public/readerEngine.ts). It has no pdf.js
-         dependency, so it goes first — and like the engine below it must run
-         before the wasm, because the app reads selection state as soon as its
-         first components mount. -->
-    <script type="module" src="/readerEngine.js"></script>
-    <!-- pdf.js (ESM-only in v6): must load BEFORE the engine so globalThis.pdfjsLib exists. -->
-    <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
-    <!-- The imperative engine wrapper: sets window.PDFReader (see
-         public/pdfEngine.ts — Trunk's pre-build hook compiles it to
-         public/pdfEngine.js on every build). MUST execute BEFORE the Leptos
-         wasm (the rust link below): module scripts run in order, and the
-         app reaches for window.PDFReader as soon as its first components
-         mount (the engine version probe in the menus). If the wasm module
-         (which top-level-awaits init) ran first, it could finish
-         instantiating before this script had executed, leaving
-         window.PDFReader undefined and panicking those probes. Ordering
-         these first removes the race. -->
-    <script type="module" src="/pdfEngine.js"></script>
+    <!-- The frames' Tauri facade: the runtime iframes load /tauri-relay.js
+         from the dist root, so the shell page's build is what ships it —
+         same rule as the engine bundles above (the artifact contract pins
+         it). -->
+    <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
+    <!-- The Shell's cover-bake page (src/app/bake.rs): pdf.js plus the
+         engine's cover render, mounted hidden while the shelf has covers to
+         bake and removed after. Shipped from here like the relay above; the
+         shell page itself never loads it. -->
+    <link data-trunk rel="copy-file" href="public/bake.html" />
+    <link data-trunk rel="copy-file" href="public/coverBake.js" />
+    <!-- No engine scripts: the shell page loads no pdf.js, no engine wrapper
+         and no reader bundle. Documents run in the reader frame and shelf
+         cover bakes in the bake page above, so the shell's own startup is
+         its wasm and nothing else. The copy-file links above still ship
+         those bundles to the dist root, where the runtime pages load them. -->
+    <!-- A plain-data, weak-callback budget shared by all PDF pane realms.
+         It contains no PDF engine and runs before the Shell can mount panes. -->
+    <link data-trunk rel="copy-file" href="public/rasterLane.js" />
+    <link data-trunk rel="copy-file" href="public/readerHost.js" />
+    <script src="/rasterLane.js"></script>
     <link data-trunk rel="rust" data-wasm-opt="z" />
+    <!-- The remembered paper, applied before the body exists (see the file):
+         synchronous on purpose — a deferred script would run after the first
+         paint it exists to colour. External for the CSP. -->
+    <link data-trunk rel="copy-file" href="public/bootPaint.js" />
+    <script src="/bootPaint.js"></script>
   </head>
-  <body></body>
+  <body>
+    <!-- The shell's boot placeholder (§5): it lives in the PAGE, never in a
+         runtime, because the runtime is exactly what may fail to load. It is
+         what the user sees while the shell wasm downloads, instantiates and
+         loads its first runtime — the difference between "starting" and a
+         blank window. The shell removes it once its own view is mounted
+         (src/app/mod.rs) and the runtime host owns the area from then on.
+         The id and the copy are a CONTRACT: tools/check-runtime-artifacts.mjs
+         fails the build if either disappears from the built page. The copy
+         is for assistive tech and the failure states: while healthy it is
+         visually hidden and the screen is just the remembered paper
+         (public/bootPaint.js); shellBoot.js reveals it on a timeout. -->
+    <div id="shell-boot" class="shell-boot" role="status" aria-live="polite">
+      <p class="shell-boot__title">Loading MAReader…</p>
+      <p class="shell-boot__hint">Starting the shell</p>
+    </div>
+    <!-- The "never waits forever" half of §3: if the shell wasm has not taken
+         over within 20s — a failed download, a panic before the first mount —
+         the placeholder says so instead of spinning silently. The healthy path
+         removes the element long before the deadline (src/app/mod.rs).
+         An external file, not an inline script: the packaged app's CSP
+         (`script-src 'self'` in src-tauri/tauri.conf.json) blocks inline. -->
+    <link data-trunk rel="copy-file" href="public/shellBoot.js" />
+    <script src="/shellBoot.js" defer></script>
+  </body>
 </html>

@@ -35,6 +35,7 @@ optional paper textures and film grain, all persisted between sessions.
   - [Project layout](#project-layout)
   - [Engine API](#engine-api)
   - [State model](#state-model)
+  - [Documentation](#documentation)
 - [Getting started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
@@ -247,9 +248,14 @@ what keeps the page and the surrounding interface in the same colour family at e
 **Textures** overlay the page with a repeating pattern: none, paper, lined, grid, dotted or cross.
 Opacity is adjustable from 0 to 100 and scale from 25 to 400 percent of the natural pitch.
 Textures are anchored to the page rather than the viewport, so they track the page during zoom
-instead of sliding across it.
+instead of sliding across it. Every document format carries them, on whichever surface is its
+paper: a PDF page composites the pattern over its raster, a text or Markdown page lays it on the
+scroller it scrolls. In a split, **Texture for each** in the appearance menu gives every pane its
+own mode and its own two dials — the texture analogue of independent themes — and closing
+the last split hands the window the surviving pane's texture.
 
-**Film grain** can be off, static or animated, with intensity from 0 to 100.
+**Film grain** can be off, static or animated, with intensity from 0 to 100. It stays the
+window's own, whatever either per-pane mode is doing.
 
 ### Presets
 
@@ -738,13 +744,13 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 - The memory number the OS reports is a high-water mark, not a reservation: the webview returns
   freed heap to its own free lists rather than the kernel, and the WebAssembly linear memory only
   grows, so the footprint of a long reading session does not come back down on its own. It stays
-  reclaimable under pressure, and Reload Window — a row in the reader's and the shelf's menus —
-  resets it in place, a restart without the quit. It flushes the reading position the progress
-  debounce is still holding before it goes, so the book reopens where the reload found you, and it
-  lands on the shelf rather than in a reader with nothing in it.
+  reclaimable under pressure, and a route handoff retires the runtime that ended — its realm, its
+  wasm instance and the heap the instance held — so the next route starts a fresh one rather than
+  inheriting the high-water mark. The reading position the progress debounce is still holding is
+  flushed into the library before the runtime goes, so the book reopens where it was left.
 - The full-text search index builds on the first search rather than at open, so a book nobody
   searches never pays the per-page extraction, and the WebAssembly heap logs its size at open,
-  close, zoom commit, index build and reload (`[mem]` lines in the webview console): the plateau of
+  close, zoom commit and index build (`[mem]` lines in the webview console): the plateau of
   a latch reads differently there from the climb of a leak.
 
 ---
@@ -758,12 +764,12 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Fit width | `Cmd/Ctrl` + `0` |
 | Single page view | `Cmd/Ctrl` + `1` |
 | Continuous view | `Cmd/Ctrl` + `2` |
-| Zoom in | `+` or `=` |
-| Zoom out | `-` or `_` |
-| Previous page | `Left arrow` |
-| Next page | `Right arrow` |
-| Scroll up / down (continuous) | `Up arrow` / `Down arrow` |
-| Turn page (single) | `Up arrow` / `Down arrow` |
+| Zoom in | `Cmd/Ctrl` + `+`, or `+` / `=` alone |
+| Zoom out | `Cmd/Ctrl` + `-`, or `-` / `_` alone |
+| Previous page | `Left arrow` or `H` |
+| Next page | `Right arrow` or `L` |
+| Scroll up / down (continuous) | `Up arrow` / `Down arrow`, or `K` / `J` |
+| Turn page (single) | `Up arrow` / `Down arrow`, or `K` / `J` |
 | Screen up / down | `Page Up` / `Page Down` |
 | Screen down / up | `Space` / `Shift` + `Space` |
 | Auto-scroll on or off (the two scrolling modes) | `Shift` + `A` |
@@ -771,11 +777,13 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Go to the chosen suggestion's book, on its shelf | `Enter` in the search bar |
 | Dismiss overlay or search; close the library's suggestions, or clear its search | `Escape` |
 
-In continuous mode the reader owns the arrow keys and scrolls the page list directly. Leaving them
-to the browser meant scrolling whatever held focus, which was usually a text-layer span; when
-virtualization unmounted that page the focused node disappeared, key repeat died, and the next
-press landed on the document body. The page list is focusable and reclaims focus when a descendant
-is removed, so hold-to-repeat stays aimed at a node that outlives any single page.
+In continuous mode the reader owns the arrow keys — and `h`, `j`, `k` and `l`, vim's home row for the
+same four directions, resolved through the same table so both names obey one set of rules — and
+scrolls the page list directly. Leaving them to the browser meant scrolling whatever held focus,
+which was usually a text-layer span; when virtualization unmounted that page the focused node
+disappeared, key repeat died, and the next press landed on the document body. The page list is
+focusable and reclaims focus when a descendant is removed, so hold-to-repeat stays aimed at a node
+that outlives any single page.
 
 A held arrow glides continuously at roughly 1000 pixels per second after a 350 millisecond delay,
 rather than stepping discretely, so browser key repeat cannot chunk the motion. A single tap moves
@@ -794,23 +802,36 @@ stays visible.
 |  Tauri v2 shell (Rust)                                       |
 |  native window, file dialog, asset protocol, fullscreen      |
 +-------------------------------------------------------------+
-|  Leptos 0.8 interface (Rust, compiled to WebAssembly)        |
-|  features / components / state / effects, reactive signals   |
+|  Shell (Leptos 0.8 CSR, src/) — never reloads                |
+|  title bar, sidebar, settings, menus, layout; the library    |
+|  (crates/library-runtime) and the workspace host             |
+|  (crates/reader-runtime) mount in its own document           |
 +-------------------------------------------------------------+
-|  Typed bridge (wasm-bindgen)                                 |
-|  pdf-engine: snake_case Rust mapped to camelCase engine      |
+|  Pane frames (iframes, one WASM realm per pane)              |
+|  /pdf.html     a PDF pane: strips, pages, zoom, gestures     |
+|  /reflow.html  a Markdown or text pane                       |
 +-------------------------------------------------------------+
-|  reader bundle (JavaScript, public/readerEngine.js)          |
-|  selection tracking for every format; needs no pdf.js        |
-+-------------------------------------------------------------+
-|  window.PDFReader engine (JavaScript, public/pdfEngine.js)   |
-|  render queue, thumbnail cache, text layer, search index     |
+|  Engine (JavaScript, loaded in each PDF pane frame)          |
+|  window.PDFReader (public/pdfEngine.js): render lanes,       |
+|  thumbnail cache, text layer, search text, bake worker       |
 +-------------------------------------------------------------+
 |  pdf.js 6.2.108, vendored into public/vendor/pdfjs           |
 +-------------------------------------------------------------+
 ```
 
-Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`, `md-core`,
+Each runtime lives in a shell-owned iframe so its WASM linear memory and JS
+realm can be released by removing the frame — WASM linear memory only grows,
+and a realm keeps every module it has ever loaded. Five artifacts separate
+Shell, Library, disposable Reader host, PDF and reflow. Library return removes
+the Reader host and every document realm; shelf activity never prewarms one.
+Entering Reader also removes Library. Neither route warms/recycles behind
+another; both remount fresh while the small Shell persists. The design and
+its measurements are in
+`docs/runtime-split.md` and `docs/frame-lifecycle-alternatives.md`. The shell
+page itself loads no engine code and no pdf.js.
+
+Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`,
+`md-core`,
 `ui-geom` and `ai-core` — no DOM and no Leptos — so the view-mode arithmetic, the zoom
 ladder, filename rules, colour conversion, the search index, text typography and pagination,
 settings migration, the floating-panel placement and the AI word-card's geometry and spring
@@ -1003,40 +1024,65 @@ release-notes/            one file per version; the release workflow publishes
 never rejects: success is `{ok: true, ...}` and failure is `{ok: false, error: {name, message}}`,
 so the Rust side reads `ok` first and then deserializes.
 
+The engine is session-scoped (see `docs/session-ownership.md`): every document function takes the
+session id (`sid`) first, and each pane's `PdfSession` owns exactly one engine session — its
+document, worker, page registry, render and thumbnail lanes, caches and paper state. A retired or
+unknown sid is refused (`no_session`); only the appearance broadcasts, `version`, `stats` and the
+lifecycle log are realm-wide.
+
 | Function | Purpose |
 |----------|---------|
 | `version` | Engine version string |
-| `open` | Load a document, return page count and intrinsic page sizes (the outline is NOT resolved here — that is `resolveOutline`'s job, so opens stay fast on chapter-heavy books) |
-| `resolveOutline` | Flatten the open document's chapter tree after the reader is up |
-| `destroy` | Tear down the current document |
+| `createSession` / `destroySession` | Register a session under a Rust-minted sid; tear it down with everything it owns (the pane's dispose, or a replaced document) |
+| `presentSession` / `sessions` / `sessionStats` | Name the session whose paper the root backdrop shows; list live sids; one session's counters |
+| `open` | Load a document into its session (one per session), return page count and intrinsic page sizes (the outline is NOT resolved here — that is `resolveOutline`'s job, so opens stay fast on chapter-heavy books) |
+| `resolveOutline` | Flatten the session's chapter tree after the reader is up |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |
+| `cancelPageRenders` | Cancel every in-flight page render (the close path's first act) |
+| `quiesce` | Stop every in-flight and queued job for the session's document without ending the session |
 | `renderPage` | Render one page |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
-| `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
+| `hasThumb` | Probe the bitmap cache |
 | `extractPageText` | One page's text items with their rects — the input to the search index, which is Rust (`crates/pdf-core`'s `SearchIndex`), not the engine's |
 | `setSearchContext` / `setActiveMatch` / `clearHighlights` | Paint, move and clear the engine's highlight rects in the text layer |
 | `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |
 | `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
-| `stats` | Internal counters, used to assert memory is actually released |
+| `sweep` / `sweepSnapshots` | Release the session's settled rasters and stranded scrub covers |
+| `suspendPrefetches` / `resumePrefetches` | Park and resume the session's idle thumbnail prefetch |
+| `stats` | Realm-wide counters across every session, for asserting memory is actually released |
 
-Load order in `index.html` is deliberate. The reader bundle goes first because it needs nothing;
-then pdf.js, which is ESM-only in version 6 and must execute before the engine so
-`globalThis.pdfjsLib` exists; then the engine. All three run before the WebAssembly module, which
-top-level-awaits its own init: the app reaches for `window.PDFReader` and for the selection state
-as soon as its first components mount, and a module script that had not run yet leaves both
-undefined.
+Load order in `pdf.html` is deliberate. The reader bundle goes first because it needs nothing;
+then the engine. Both run before the WebAssembly module, which top-level-awaits its own init: the
+app reaches for `window.PDFReader` and for the selection state as soon as its first components
+mount, and a module script that had not run yet leaves both undefined. pdf.js (ESM-only in
+version 6) is not a script tag: the engine imports it on the first PDF open (`ensurePdfjs` in
+`public/engine/loader.ts`) and finds it on `globalThis.pdfjsLib` afterwards, so a reader session
+that never opens a PDF — Library, Reader host, Markdown or text — never fetches or holds it.
 
 ### State model
 
-A single `AppState` tree of Leptos signals is threaded through the component tree: the persisted
+Per-runtime context trees of Leptos signals are threaded through each runtime's component tree: the persisted
 `settings`, the reader, the library, and the app's own `ui` state. The reader's branches are the
 document, the viewer — page, mode, fit, container size, and the zoom transaction inside it —
 search, the gloss marks and the AI's selection state. Effects subscribe to it rather than
 components talking to one another, which keeps ownership of each concern in exactly one place.
 During a zoom, for example, a single system owns the display scale and render scale, and every
 zoom control posts a request to it rather than writing the scale directly.
+
+### Documentation
+
+Deeper records live in `docs/`:
+
+| Document | Contents |
+|----------|----------|
+| `docs/runtime-split.md` | The shell/frame architecture: why each runtime is iframed, the frame lifecycle, the recycle policy |
+| `docs/frame-lifecycle-alternatives.md` | The three frame-lifecycle designs, their measurements, and why the shipped one won |
+| `docs/session-ownership.md` | Ownership table for every engine resource a session holds |
+| `docs/memory/README.md` | Memory documentation index: the binding rules for new code, the subsystem audit, and the fling-gate churn record |
+| `docs/memory-baseline.md` | Instrumentation and the baseline memory numbers |
+| `docs/ci-architecture.md`, `docs/lifecycle-ownership.md` | The CI pipeline and the browser lifecycle assertions |
 
 ---
 
@@ -1075,13 +1121,21 @@ cargo tauri dev
 ```
 
 This generates the TypeScript bundles, starts Trunk on port 1420 and opens the native window. Tailwind is compiled by a Trunk pre-build hook, so stylesheet changes rebuild
-automatically. To run the interface in a plain browser instead, without the native shell,
-generate the engine bundle once and serve:
+automatically. To run the interface in a plain browser instead, without the native shell, use the dev orchestrator — the shell page alone is not the app: the library
+and reader runtimes come from their own builds, merged into the same output, and a bare `trunk serve` builds only the shell (the library frame would wait on a page
+that does not exist):
 
 ```bash
-npm run build:ts
-trunk serve
+npm run dev:frontend
 ```
+
+It builds all five artifact types in release mode — reusing them untouched when
+the sources haven't moved since the last build (`FORCE_REBUILD=1` forces a
+fresh one) — merges them, starts Trunk on port 1420, and only reports the
+boot as safe once the dev server actually serves every artifact the shell
+loads. Release is the profile CI and the packaged app run: debug wasm makes
+every route transition visibly slow, because each transition instantiates
+its runtime's module again.
 
 Note that the file dialog and drag-and-drop rely on Tauri and are unavailable in a browser.
 
@@ -1187,3 +1241,5 @@ Released under the MIT License. See [LICENSE](LICENSE) for the full text.
 
 This project bundles [pdf.js](https://github.com/mozilla/pdf.js), which is distributed under the
 Apache License 2.0.
+
+<!-- // only the changed file was rewritten -->

@@ -1,15 +1,26 @@
 // Page registration + canvas render + text/link layers.
 
 import type {
+  PageSizeResult,
   PageState,
   RenderResult,
 } from "./types";
-import { el, isSharedScratch, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
+import { blitInto, el, sessionEl, releaseCanvas } from "./canvas";
 import { fail, failFrom } from "./errors";
+import { acquireRasterSlot, cancelRasterWaiters } from "./raster-lane";
 import { stashPaperFrame } from "./paper";
-import { bakeRaster } from "./theme/bake";
+import { bakeFiltered, paintBaked, releaseBake } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
-import { CLEANUP_EVERY, PAGE_MAX_PIXELS, session } from "./state";
+import { observeThemeRoot, unobserveThemeRoot } from "./theme/paper";
+import {
+  CLEANUP_EVERY,
+  REALM_PAGE_LIMIT,
+  lifecycleEvent,
+  PAGE_MAX_PIXELS,
+  pumpLaneRegistrants,
+  realmLane,
+} from "./state";
+import type { EngineSession } from "./state";
 import {
   hostIdFromCanvasId,
   pageFromCanvasId,
@@ -44,18 +55,41 @@ function blankPage(
     rawCanvas: null,
     queueGen: 0,
     queueHandle: 0,
+    pinned: false,
   };
+}
+
+/** Pin one session to the pane root that owns its first registered page.
+ *  Reader Rust passes its elements directly; the legacy id-only path resolves
+ *  the same root here. */
+function pinThemeRoot(s: EngineSession, host: HTMLElement | null): void {
+  const paneRoot = host && typeof host.closest === "function"
+    ? host.closest("[data-pane-root]") as HTMLElement | null
+    : null;
+  if (paneRoot && s.themeRoot !== paneRoot) {
+    if (s.themeRoot) unobserveThemeRoot(s);
+    s.themeRoot = paneRoot;
+    s.themePipeline.token = null;
+    observeThemeRoot(s);
+  }
 }
 
 /** Look up or create PageState. Recovers when registerPage ran before the
  *  <canvas> was in the DOM (Leptos mounts the effect one tick early). */
 function ensurePage(
+  s: EngineSession,
   canvasId: string,
   pageHint?: number,
   hostIdHint?: string
 ): PageState | null {
-  const existing = session.stateByCanvasId.get(canvasId);
-  const canvas = el(canvasId) as HTMLCanvasElement | null;
+  const existing = s.stateByCanvasId.get(canvasId);
+  // A page pinned to its own elements answers with them: the id is its key
+  // in THIS session's map, not an address — another pane's page with the
+  // same id is somebody else's canvas.
+  // One whose surfaces were released is gone until its component registers
+  // it again — never re-found by id.
+  if (existing && existing.pinned) return existing.canvas && !existing.dead ? existing : null;
+  const canvas = sessionEl(s.sid, canvasId) as HTMLCanvasElement | null;
   if (existing && existing.canvas && !existing.dead) {
     if (canvas && existing.canvas !== canvas) existing.canvas = canvas;
     return existing;
@@ -63,6 +97,7 @@ function ensurePage(
   if (!canvas) return null;
   const hostId = hostIdHint || hostIdFromCanvasId(canvasId);
   const host = el(hostId);
+  pinThemeRoot(s, host);
   const textLayerEl = host ? (host.querySelector(TEXT_LAYER_SELECTOR) as HTMLElement | null) : null;
   if (existing) {
     existing.dead = false;
@@ -77,12 +112,19 @@ function ensurePage(
   // canvas about to be told which page it is.
   const page = pageHint && pageHint > 0 ? pageHint : (pageFromCanvasId(canvasId) ?? 1);
   const st = blankPage(page, canvas, host, textLayerEl);
-  session.stateByCanvasId.set(canvasId, st);
+  s.stateByCanvasId.set(canvasId, st);
   return st;
 }
 
-export function registerPage(page: number, canvasId: string, hostId?: string): void {
-  const existing = session.stateByCanvasId.get(canvasId);
+export function registerPage(
+  s: EngineSession,
+  page: number,
+  canvasId: string,
+  hostId?: string,
+  canvas?: HTMLCanvasElement | null,
+  host?: HTMLElement | null
+): void {
+  const existing = s.stateByCanvasId.get(canvasId);
   if (existing) {
     existing.dead = true;
     try { existing.renderTask && existing.renderTask.cancel(); } catch (_) { /* ignore */ }
@@ -92,19 +134,46 @@ export function registerPage(page: number, canvasId: string, hostId?: string): v
       existing.queueHandle = 0;
     }
   }
-  const st = ensurePage(canvasId, page, hostId);
+  if (canvas) {
+    // The caller handed over the page's own elements (the reader always
+    // does): pin them. No document-wide lookup can then pick a second
+    // pane's page that happens to carry the same id.
+    const pinnedHost = host ?? null;
+    pinThemeRoot(s, pinnedHost);
+    const textLayerEl = pinnedHost
+      ? (pinnedHost.querySelector(TEXT_LAYER_SELECTOR) as HTMLElement | null)
+      : null;
+    if (existing) {
+      // Re-registered (a remount of the same page): the state keeps what
+      // it holds — its raw raster, viewport and scale — exactly as the id
+      // path's revival does; only the elements are the new ones.
+      existing.dead = false;
+      existing.page = page;
+      existing.canvas = canvas;
+      existing.host = pinnedHost;
+      existing.textLayerEl = textLayerEl;
+      existing.pinned = true;
+      return;
+    }
+    const st = blankPage(page, canvas, pinnedHost, textLayerEl);
+    st.pinned = true;
+    s.stateByCanvasId.set(canvasId, st);
+    return;
+  }
+  const st = ensurePage(s, canvasId, page, hostId);
   if (!st) {
     // Canvas not in the DOM yet. Remember the page/host so renderPage can
     // finish registration on the next tick.
-    session.stateByCanvasId.set(
+    s.stateByCanvasId.set(
       canvasId,
       blankPage(page, null, hostId ? el(hostId) : null, null)
     );
   }
 }
 
-export function unregisterPage(canvasId: string): void {
-  const st = session.stateByCanvasId.get(canvasId);
+export function unregisterPage(s: EngineSession, canvasId: string): void {
+  cancelRasterWaiters(s, canvasId);
+  const st = s.stateByCanvasId.get(canvasId);
   if (st) {
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
@@ -113,17 +182,47 @@ export function unregisterPage(canvasId: string): void {
       cancelAnimationFrame(st.queueHandle);
       st.queueHandle = 0;
     }
-    session.releasePageSurfaces(st);
+    s.releasePageSurfaces(st);
   }
-  session.stateByCanvasId.delete(canvasId);
-  session.sweepPdf();
+  s.stateByCanvasId.delete(canvasId);
+  // Deliberately NO sweepPdf here: a window move unmounts pages constantly,
+  // and every unmount asking the worker to drop document caches would force
+  // a re-parse of the very pages the next scroll remounts — churn paid at
+  // the one moment the reader is moving. The sweep belongs to quiescence,
+  // and three paths still run it there: the render-count cadence
+  // (CLEANUP_EVERY), the session's idle timer, and the reader's
+  // scroll-idle sweep.
 }
 
-export function cancelPage(canvasId: string): void {
-  const st = session.stateByCanvasId.get(canvasId);
-  if (st && st.renderTask) {
-    try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
-    st.renderTask = null;
+export function cancelPage(s: EngineSession, canvasId: string): void {
+  cancelRasterWaiters(s, canvasId);
+  const st = s.stateByCanvasId.get(canvasId);
+  if (st) {
+    st.queueGen = (st.queueGen || 0) + 1;
+    if (st.renderTask) {
+      try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
+      st.renderTask = null;
+    }
+  }
+}
+
+/** Cancel every in-flight page render at once. The reader's close path calls
+ * this synchronously with the click, BEFORE the navigate command crosses to
+ * the Shell: the dispose returns over the frame channel, and a raster that
+ * finished inside those hops would make the close look like it interrupted
+ * nothing. Work observed in flight when the user leaves is cancelled here,
+ * not raced; the session destroy during disposal still owns the teardown.
+ * Superseding the per-canvas generation also stops work still queued behind
+ * the canvas's rAF or the lane — those guards settle it as a drop — and the
+ * rAF itself must fire to deliver that settle, so it is never cancelled. */
+export function cancelPageRenders(s: EngineSession): void {
+  cancelRasterWaiters(s);
+  for (const st of s.stateByCanvasId.values()) {
+    st.queueGen = (st.queueGen || 0) + 1;
+    if (st.renderTask) {
+      try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
+      st.renderTask = null;
+    }
   }
 }
 
@@ -142,38 +241,106 @@ function pageOutputScale(cssW: number, cssH: number): number {
   return Math.min(dpr, Math.max(0.5, capped));
 }
 
-/** Free a bake's intermediate. A filter-only bake returns the shared scratch
- *  (bakeRaster's blend step is the only pooled destination), and returning
- *  that to the pool would give one canvas two owners — the scratch goes back
- *  to the scratch and everything else to the pool, the same rule bakeInto
- *  follows. The render's own `target` is the caller's to keep or release. */
-function releaseBaked(baked: HTMLCanvasElement, target: HTMLCanvasElement): void {
-  if (baked === target) return;
-  if (isSharedScratch(baked)) {
-    releaseScratch(baked);
-  } else {
-    releasePooledCanvas(baked);
-  }
+// --- Render trace (the fast-jump page-identity proof) ----------------------
+// A bounded ring of ACTUAL raster events: the page number recorded when the
+// engine starts a real page render, and that render's terminal
+// classification. Render COUNTS alone cannot prove a jump skipped the pages
+// it flew over — a burst over intermediate pages produces a small count just
+// the same; this names the pages. Bounded: the oldest entry falls off at
+// RENDER_TRACE_CAP, and nothing here touches the console in normal
+// operation (the lifecycle counters stay the cheap primary signal).
+export type RenderTracePhase = "start" | "complete" | "cancel" | "fail";
+export type RenderTraceEntry = {
+  sid: number;
+  gen: number;
+  page: number;
+  phase: RenderTracePhase;
+  t: number;
+};
+
+const RENDER_TRACE_CAP = 128;
+const renderTrace: RenderTraceEntry[] = [];
+let renderGeneration = 0;
+
+/** Mark the beginning of a measurement generation: every raster the engine
+ *  starts from now carries the returned id in the trace. */
+export function beginRenderGeneration(): number {
+  renderGeneration += 1;
+  return renderGeneration;
 }
 
-export async function renderPageInternal(
+function traceRender(sid: number, page: number, phase: RenderTracePhase): void {
+  renderTrace.push({ sid, gen: renderGeneration, page, phase, t: Date.now() });
+  if (renderTrace.length > RENDER_TRACE_CAP) renderTrace.shift();
+}
+
+/** A bounded copy of the ring, oldest first. */
+export function readRenderTrace(): RenderTraceEntry[] {
+  return renderTrace.slice();
+}
+
+async function renderPageInternal(
+  s: EngineSession,
   canvasId: string,
   scale: number,
   renderText: boolean
 ): Promise<RenderResult> {
-  const st = ensurePage(canvasId);
+  // Counting wrapper: every started render resolves exactly one of
+  // completed / cancelled / failed, so the teardown baseline can assert the
+  // lane is fully drained. The superseded-bake retry below recurses into
+  // `renderPageNow` directly — the retry is the SAME started render, not a
+  // second one.
+  s.rendersStarted += 1;
+  // The trace records the page at the moment the raster STARTS; the
+  // terminal classification below pairs with it in the same generation.
+  const tracePage = ensurePage(s, canvasId)?.page ?? -1;
+  traceRender(s.sid, tracePage, "start");
+  lifecycleEvent("render:start");
+  try {
+    const result = await renderPageNow(s, canvasId, scale, renderText);
+    if (result.ok) {
+      s.rendersCompleted += 1;
+      traceRender(s.sid, tracePage, "complete");
+      lifecycleEvent("render:complete");
+    } else if (result.error.name === "cancelled") {
+      s.rendersCancelled += 1;
+      traceRender(s.sid, tracePage, "cancel");
+      lifecycleEvent("render:cancel");
+    } else {
+      s.rendersFailed += 1;
+      traceRender(s.sid, tracePage, "fail");
+    }
+    return result;
+  } catch (e) {
+    // The counting wrapper OWNS the invariant: a started render gets
+    // exactly one terminal classification even when the body throws
+    // instead of returning a result — otherwise the pairing rule the
+    // baseline asserts breaks on an exception path, not a real leak.
+    s.rendersFailed += 1;
+    traceRender(s.sid, tracePage, "fail");
+    throw e;
+  }
+}
+
+async function renderPageNow(
+  s: EngineSession,
+  canvasId: string,
+  scale: number,
+  renderText: boolean
+): Promise<RenderResult> {
+  const st = ensurePage(s, canvasId);
   if (!st || !st.canvas) return fail("no_canvas", "Canvas element not found in DOM: " + canvasId);
-  if (!session.pdf) return fail("no_document", "No document open");
+  if (!s.pdf) return fail("no_document", "No document open");
 
   try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
   try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
   st.renderTask = null;
   st.textLayer = null;
 
-  const page = await session.pdf.getPage(st.page);
+  const page = await s.pdf.getPage(st.page);
   if (st.dead || !st.canvas) {
     try { page.cleanup(); } catch (_) { /* ignore */ }
-    session.releasePageSurfaces(st);
+    s.releasePageSurfaces(st);
     return fail("cancelled", "Render cancelled");
   }
   const viewport = page.getViewport({ scale });
@@ -184,15 +351,21 @@ export async function renderPageInternal(
   const pxW = Math.max(1, Math.floor(viewport.width * out));
   const pxH = Math.max(1, Math.floor(viewport.height * out));
 
-  // Where the render draws: a scratch when the pipeline in force at start is
-  // non-identity (the visible canvas keeps its baked copy until the swap),
-  // the live canvas otherwise. pdf.js needs the destination NOW, so this half
-  // is start-time; the THEME decision itself is re-made at completion (the
-  // generation guard below) — a render that spans a pipeline change must not
-  // bake against the palette it started under.
-  const pipeline0 = session.themeScrubActive ? null : readPipeline();
-  const needsBake0 = !session.themeScrubActive && pipeline0 ? !pipelineIsIdentity(pipeline0) : false;
-  const target = needsBake0 ? document.createElement("canvas") : st.canvas;
+  // Where the render draws: ALWAYS a scratch outside a scrub, so the
+  // visible canvas keeps its last good bitmap until one synchronous blit
+  // replaces it at completion. Assigning `width`/`height` clears a canvas,
+  // and pdf.js then paints progressively — drawing straight into the live
+  // canvas (what the identity pipeline used to do) showed every re-render
+  // as a page that went blank and filled back in, most visibly at a zoom
+  // commit, which re-renders every mounted page at once. The cost is one
+  // page-sized scratch per IN-FLIGHT render, bounded by the lane
+  // (PAGE_RENDER_LIMIT) — the surface the non-identity pipelines already
+  // paid. A scrub still draws in place: it covers the page with its own
+  // `.page-snapshot` while its raws are rebuilt (theme/scrub.ts). The THEME
+  // decision itself is re-made at completion (the generation guard below):
+  // a render that spans a pipeline change must not bake against the palette
+  // it started under.
+  const target = s.themeScrubActive ? st.canvas : document.createElement("canvas");
   target.width = pxW;
   target.height = pxH;
   const ctx = target.getContext("2d", { alpha: false });
@@ -213,28 +386,33 @@ export async function renderPageInternal(
   try {
     await task.promise;
   } catch (e) {
+    // The task settled: drop the handle (only if it is still THIS task —
+    // a superseding render already cancelled and replaced it) so the
+    // active-render count reads in-flight truth, not render history.
+    if (st.renderTask === task) st.renderTask = null;
     // The raster is dead: the orphaned text extraction was already made
     // infallible at creation time, so nothing can leak here.
     try { page.cleanup(); } catch (_) { /* ignore */ }
     if (target !== st.canvas) releaseCanvas(target);
-    if (st.dead) session.releasePageSurfaces(st);
+    if (st.dead) s.releasePageSurfaces(st);
     if ((e as { name?: string }).name === "RenderingCancelledException") {
       return fail("cancelled", "Render cancelled");
     }
     return failFrom(e);
   }
+  if (st.renderTask === task) st.renderTask = null;
   if (st.dead) {
     try { page.cleanup(); } catch (_) { /* ignore */ }
     if (target !== st.canvas) releaseCanvas(target);
-    session.releasePageSurfaces(st);
+    s.releasePageSurfaces(st);
     return fail("cancelled", "Render cancelled");
   }
 
-  // `target` still holds raw pixels here (bakeRaster runs below): the one
+  // `target` still holds raw pixels here (the bake below reads a copy): the one
   // point in the pipeline where the document's own paper is intact. Park a
   // ≤96×96 frame for the Rust paper session to drain after the render —
   // every colour decision downstream lives in the pdf-paper crate.
-  stashPaperFrame(canvasId, st.page, target);
+  stashPaperFrame(s, canvasId, st.page, target);
 
   // GENERATION GUARD: settle under the pipeline CURRENT at landing, not the
   // one in force when the render was issued. readPipeline() caches by the
@@ -244,26 +422,27 @@ export async function renderPageInternal(
   // apart, could bake against different theme states or land one raw and one
   // baked — the half-theme seam. The raw pixels are in `target` either way,
   // so the decision is free to move here.
-  const pipeline = session.themeScrubActive ? null : readPipeline();
+  const pipeline = s.themeScrubActive ? null : readPipeline(s);
   const needsBake = pipeline ? !pipelineIsIdentity(pipeline) : false;
 
   if (needsBake && pipeline) {
     const bakeGen = pipeline.gen;
-    const baked = await bakeRaster(target, pipeline);
-    if (readPipeline().gen !== bakeGen) {
-      releaseBaked(baked, target);
+    // Only the FILTER waits, and nothing is painted until the check below has
+    // passed: a render that spans a pipeline change keeps showing the look it
+    // was on rather than flashing the one it started under — the property the
+    // old bake-then-decide order bought, now without the second full-page
+    // surface a separate baked canvas needed.
+    const baked = await bakeFiltered(target, pipeline);
+    if (readPipeline(s).gen !== bakeGen) {
+      releaseBake(baked);
       if (target !== st.canvas) releaseCanvas(target);
       try { page.cleanup(); } catch (_) { /* ignore */ }
-      return renderPageInternal(canvasId, scale, renderText);
+      return renderPageNow(s, canvasId, scale, renderText);
     }
-    if (baked !== st.canvas) {
-      showBaked(st.canvas, baked, "canvas-raw");
-      releaseBaked(baked, target);
-    }
+    paintBaked(st.canvas, baked, pipeline, "canvas-raw");
     if (st.rawCanvas && st.rawCanvas !== st.canvas && st.rawCanvas !== target) {
       releaseCanvas(st.rawCanvas);
     }
-    st.canvas.classList.remove("canvas-raw");
     // Retain the unbaked raster only while a scrub is plausible — its
     // window (a recent scrub transition, or an open appearance menu, where
     // the next drag is being born). A tint drag inside the window restores
@@ -272,23 +451,30 @@ export async function renderPageInternal(
     // full-page surface per mounted page that nothing will ever ask for,
     // held while the footprint latches onto the peak; the scrub path
     // re-renders on demand (preparePagesForScrub).
-    if (session.scrubIsPlausible()) {
+    if (s.scrubIsPlausible()) {
       st.rawCanvas = target;
-      session.dropRawIfIdle(st);
+      s.dropRawIfIdle(st);
     } else if (target !== st.canvas) {
       st.rawCanvas = null;
       releaseCanvas(target);
     } else {
-      // The render started under the identity pipeline or a scrub and drew
-      // straight into the live canvas: that canvas IS the raw, and releasing
+      // The render started under a scrub (the one case that draws in place)
+      // and drew straight into the live canvas: that canvas IS the raw, and releasing
       // "the raw" would blank the page. Same bookkeeping the identity path
       // below keeps.
       st.rawCanvas = st.canvas;
     }
   } else {
-    // Identity / already scrubbing: the live canvas IS the raw.
+    // Identity / already scrubbing: the live canvas IS the raw. A scratch
+    // render lands here in one blit — the swap that keeps the old bitmap on
+    // screen for the whole raster.
+    if (target !== st.canvas) {
+      blitInto(st.canvas, target);
+      if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
+      releaseCanvas(target);
+    }
     st.rawCanvas = st.canvas;
-    st.canvas.classList.toggle("canvas-raw", session.themeScrubActive);
+    st.canvas.classList.toggle("canvas-raw", s.themeScrubActive);
   }
 
   if (renderText && st.host && st.textLayerEl) {
@@ -311,7 +497,7 @@ export async function renderPageInternal(
       await tl.render();
     } catch (e) {
       try { page.cleanup(); } catch (_) { /* ignore */ }
-      if (st.dead) session.releasePageSurfaces(st);
+      if (st.dead) s.releasePageSurfaces(st);
       if ((e as { name?: string }).name === "AbortException") {
         return fail("cancelled", "Text render cancelled");
       }
@@ -319,7 +505,7 @@ export async function renderPageInternal(
     }
     if (st.dead) {
       try { page.cleanup(); } catch (_) { /* ignore */ }
-      session.releasePageSurfaces(st);
+      s.releasePageSurfaces(st);
       return fail("cancelled", "Render cancelled");
     }
 
@@ -331,19 +517,64 @@ export async function renderPageInternal(
     }
     st.textLayerEl = layer;
 
-    applyHighlights(st);
+    applyHighlights(s, st);
 
-    await buildLinkLayer(st, viewport, page);
+    await buildLinkLayer(s, st, viewport, page);
   }
 
   st.viewport = viewport;
   st.scale = scale;
   page.cleanup();
 
-  if (session.bumpRenderCount() % CLEANUP_EVERY === 0) session.sweepPdf();
-  session.noteActivity();
+  // The link-layer build above awaits, so the document can be gone by the time
+  // control returns here (a close during render). A dead surface must not touch
+  // document-scoped bookkeeping — the idle sweeper belongs to the document
+  // that just died, and re-arming it keeps the teardown baseline from ever
+  // reading drained.
+  if (!st.dead) {
+    if (s.bumpRenderCount() % CLEANUP_EVERY === 0) s.sweepPdf();
+    s.noteActivity();
+  }
 
   return { ok: true, width: cssW, height: cssH, scale };
+}
+
+/** The scale-1 (intrinsic) box of one page, from the DOCUMENT rather than
+ *  from a raster: `getPage` + `getViewport({scale:1})` is one worker round
+ *  trip, allocates no surface and paints nothing.
+ *
+ *  Why the reader needs it before a raster exists: the engine's open seeds
+ *  every page with page 1's box (see `open`), so a book whose pages differ
+ *  from page 1 is fitted — and rasterised — at page 1's scale until a page
+ *  reports its real size. A landscape plate then appears oversized for the
+ *  whole raster, and only the fit re-resolve that follows corrects it. The
+ *  page host asks here first, so the fit moves BEFORE the raster and the page
+ *  is painted once, at the size it belongs at.
+ *
+ *  Cached per session (a page's box never changes while a document is open,
+ *  and a scroll remounts pages constantly); cleared by every open. */
+export async function probePageSize(s: EngineSession, page: number): Promise<PageSizeResult> {
+  if (!s.pdf) return fail("no_document", "No document open");
+  const cached = s.intrinsicByPage.get(page);
+  if (cached) return { ok: true, width: cached.width, height: cached.height };
+  if (!(page >= 1) || page > s.numPages) {
+    return fail("no_page", "No such page: " + page);
+  }
+  try {
+    const p = await s.pdf.getPage(page);
+    if (s.disposed) {
+      try { p.cleanup(); } catch (_) { /* ignore */ }
+      return fail("no_session", "Session destroyed during a size probe");
+    }
+    const vp = p.getViewport({ scale: 1 });
+    try { p.cleanup(); } catch (_) { /* ignore */ }
+    const width = vp.width;
+    const height = vp.height;
+    s.intrinsicByPage.set(page, { width, height });
+    return { ok: true, width, height };
+  } catch (e) {
+    return failFrom(e);
+  }
 }
 
 // Full-size renders share ONE bounded lane, the thumbnail lane's pattern.
@@ -355,51 +586,82 @@ export async function renderPageInternal(
 // hundreds of MB it never handed back. Queued jobs re-check their
 // generation at the front of the lane, so a page that unmounted or was
 // superseded while waiting drops without touching pdf.js.
+//
+// The cap is TWO-LAYERED. PAGE_RENDER_LIMIT bounds one session's in-flight
+// rasters (its own queue, its own teardown drain). REALM_PAGE_LIMIT bounds
+// in-flight rasters across ALL sessions, because a raster is main-thread
+// work wherever it runs: four panes re-theming or scrolling together would
+// otherwise stack four sessions' worth of concurrent rasters into one long
+// frame stall. With the realm cap the panes pace as one progressive sweep;
+// a pane reading alone sees the same two slots it always had.
 const PAGE_RENDER_LIMIT = 2;
-let pageActive = 0;
-const pageQueue: Array<() => void> = [];
 
-function pumpPageQueue(): void {
-  while (pageActive < PAGE_RENDER_LIMIT && pageQueue.length > 0) {
-    const next = pageQueue.shift();
+/** The page lane's gauges for the stats surface (queue depth, active
+ *  slots): the teardown baseline requires an EMPTY lane, not merely one
+ *  whose in-flight jobs have settled. */
+export function pageLaneGauge(s: EngineSession): { pageQueue: number; pageActive: number } {
+  return { pageQueue: s.pageLane.queue.length, pageActive: s.pageLane.active };
+}
+
+/** Re-offer every registered session's queue head the lane. The registry
+ *  holds sessions weakly (state.ts), so this walk can never keep a session
+ *  alive; retired or collected ones are pruned as the walk meets them. */
+function pumpAllLanes(): void {
+  pumpLaneRegistrants(pumpPageQueue);
+}
+
+/** Drain the queue on teardown: every queued job's guard sees the dead
+ *  state, resolves its caller with a drop, and pumps the next — the same
+ *  cascade the thumbnail lane's epoch bump runs. Without this, queued
+ *  closures (and the promise resolvers they capture) sit in the array
+ *  until the FIFO happens to reach them, retaining canvases, scales and
+ *  resolvers across the dispose.
+ *
+ *  A drain is a teardown act, not scheduling: it pops regardless of the
+ *  realm cap, which may be full of ANOTHER session's rasters at the moment
+ *  this session dies. The popped jobs all resolve as drops (their guard
+ *  sees the dead state) and never claim a raster slot, so bypassing the cap
+ *  starts no work — it only empties the queue the baseline requires empty. */
+export function drainPageLane(s: EngineSession): void {
+  cancelRasterWaiters(s);
+  const lane = s.pageLane;
+  while (lane.queue.length > 0) {
+    const next = lane.queue.shift();
     if (!next) return;
-    pageActive += 1;
+    lane.active += 1;
     next();
   }
 }
 
-async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
-  const out: T[] = [];
-  let i = 0;
-  const workers = Array.from(
-    { length: Math.min(Math.max(limit, 1), Math.max(jobs.length, 1)) },
-    async () => {
-      while (i < jobs.length) {
-        const idx = i;
-        i += 1;
-        const job = jobs[idx];
-        if (job) out[idx] = await job();
-      }
-    },
-  );
-  await Promise.all(workers);
-  return out;
+function pumpPageQueue(s: EngineSession): void {
+  const lane = s.pageLane;
+  while (
+    lane.active < PAGE_RENDER_LIMIT &&
+    realmLane.active < REALM_PAGE_LIMIT &&
+    lane.queue.length > 0
+  ) {
+    const next = lane.queue.shift();
+    if (!next) return;
+    lane.active += 1;
+    next();
+  }
 }
 
 export async function renderPage(
+  s: EngineSession,
   canvasId: string,
   scale: number,
   renderText: boolean
 ): Promise<RenderResult> {
-  let st = ensurePage(canvasId);
+  let st = ensurePage(s, canvasId);
   if (!st || !st.canvas) {
     await new Promise<void>((r) => {
       requestAnimationFrame(() => r());
     });
-    st = ensurePage(canvasId);
+    st = ensurePage(s, canvasId);
   }
   if (!st) return fail("no_canvas", "Canvas element not found in DOM: " + canvasId);
-  if (!session.pdf) return fail("no_document", "No document open");
+  if (!s.pdf) return fail("no_document", "No document open");
 
   const gen = (st.queueGen || 0) + 1;
   st.queueGen = gen;
@@ -410,30 +672,59 @@ export async function renderPage(
   return await new Promise<RenderResult>((resolve) => {
     st.queueHandle = requestAnimationFrame(() => {
       st.queueHandle = 0;
-      if (st.dead || st.queueGen !== gen) {
+      if (st.dead || s.disposed || st.queueGen !== gen) {
+        s.rendersDropped += 1;
+        lifecycleEvent("render:cancel");
         resolve(fail("cancelled", "Render cancelled"));
         return;
       }
-      pageQueue.push(() => {
+      s.rendersQueued += 1;
+      s.pageLane.queue.push(() => {
         const finish = () => {
-          pageActive -= 1;
-          pumpPageQueue();
+          s.pageLane.active -= 1;
+          pumpPageQueue(s);
         };
-        // The page unmounted, or a newer scale superseded this job, while it
-        // waited for a lane slot. Drop it without touching pdf.js.
-        if (st.dead || st.queueGen !== gen) {
+        // The page unmounted, a newer scale superseded this job, or the
+        // session retired while it waited for a lane slot. Drop it without
+        // touching pdf.js — and without ever holding a realm slot, which
+        // is claimed only by work that actually runs.
+        if (st.dead || s.disposed || st.queueGen !== gen) {
+          s.rendersDropped += 1;
+          lifecycleEvent("render:cancel");
           resolve(fail("cancelled", "Render cancelled"));
           finish();
           return;
         }
-        renderPageInternal(canvasId, scale, !!renderText)
-          .then(resolve)
-          .catch((e: unknown) => {
-            resolve(failFrom(e));
-          })
-          .finally(finish);
+        realmLane.active += 1;
+        // Keep the existing realm/session cap while waiting for the window
+        // cap. Each pane can own at most two permit requests, and the host
+        // starts at most two full-page rasters across ALL pane realms.
+        void (async () => {
+          const permit = await acquireRasterSlot(s, canvasId);
+          try {
+            // A permit may land after unmount, close or a new zoom. Check
+            // again at this third async edge, before allocating a raster.
+            if (!permit || st.dead || s.disposed || st.queueGen !== gen) {
+              s.rendersDropped += 1;
+              lifecycleEvent("render:cancel");
+              resolve(fail("cancelled", "Render cancelled"));
+              return;
+            }
+            resolve(await renderPageInternal(s, canvasId, scale, !!renderText));
+          } finally {
+            permit?.release();
+          }
+        })().catch((e: unknown) => {
+          resolve(failFrom(e));
+        }).finally(() => {
+          realmLane.active -= 1;
+          // A freed slot is every session's chance: re-offer the lane to
+          // each registered queue so the panes pace as one sweep.
+          pumpAllLanes();
+          finish();
+        });
       });
-      pumpPageQueue();
+      pumpPageQueue(s);
     });
   });
 }
@@ -442,33 +733,41 @@ export async function renderPage(
  *  without applying CSS filters on already-baked pixels — the scrub entry's
  *  background half. `onRendered` fires per page the moment its raw pixels
  *  have landed and been tagged, in the same turn, so the caller can drop
- *  that page's snapshot cover with no paint in between. */
+ *  that page's snapshot cover with no paint in between. The renders ride
+ *  the page lane (and its realm cap), so a multi-pane scrub queues as one
+ *  paced sweep instead of stacking full-page rasters. */
 export async function preparePagesForScrub(
+  s: EngineSession,
   onRendered?: (canvasId: string) => void,
 ): Promise<void> {
-  const jobs: Array<() => Promise<unknown>> = [];
-  for (const [id, st] of session.stateByCanvasId) {
+  const jobs: Array<Promise<unknown>> = [];
+  for (const [id, st] of s.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
     if (st.rawCanvas && st.rawCanvas !== st.canvas) continue;
     if (!st.rawCanvas) {
-      jobs.push(async () => {
-        const rendered = await renderPageInternal(id, st.scale || 1, false);
-        // A failed render keeps its cover — settled pixels beat a wiped
-        // canvas — and the caller's final sweep releases it.
-        if (rendered.ok) onRendered?.(id);
-      });
+      jobs.push(
+        renderPage(s, id, st.scale || 1, false).then((rendered) => {
+          // A failed render keeps its cover — settled pixels beat a wiped
+          // canvas — and the caller's final sweep releases it.
+          if (rendered.ok) onRendered?.(id);
+        }),
+      );
     }
   }
-  if (jobs.length) await runLimited(jobs, 2);
+  if (jobs.length) await Promise.all(jobs);
 }
 
 /** Re-render every live page from pdf.js. Used when a theme change arrives
- *  after we have already dropped the raw raster. */
-export async function rerenderLivePages(): Promise<void> {
-  const jobs: Array<() => Promise<unknown>> = [];
-  for (const [id, st] of session.stateByCanvasId) {
+ *  after we have already dropped the raw raster. Through the page lane, so
+ *  a theme change with several panes open re-renders as one paced sweep
+ *  across the realm instead of one stall per pane in parallel. */
+export async function rerenderLivePages(s: EngineSession): Promise<void> {
+  const jobs: Array<Promise<unknown>> = [];
+  for (const [id, st] of s.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
-    jobs.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
+    jobs.push(renderPage(s, id, st.scale || 1, !!st.textLayerEl));
   }
-  await runLimited(jobs, 2);
+  await Promise.all(jobs);
 }
+
+// only the changed file was rewritten
