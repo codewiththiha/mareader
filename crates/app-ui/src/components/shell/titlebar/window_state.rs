@@ -41,35 +41,20 @@ impl ProbeState {
 }
 
 /// Publish the native window's actual maximized state:
-/// once the Tauri surface is available, then on every window resize.
+/// once at install, then on every window resize.
 pub(super) fn install(maximized: RwSignal<bool>) {
+    // No `has_tauri()` gate here, and no wait for one. Each runtime page loads
+    // `tauri-relay.js` in its own `<head>`, before the module script that boots
+    // this app, so the surface's presence is final by the time a bar mounts: a
+    // frame with none here is a plain browser and nothing will ever arrive to
+    // notify it. Both halves ask on their own and decline quietly —
+    // `is_window_maximized()` answers `None`, `tauri_listen` returns without
+    // registering — which leaves the glyph on the state this route can defend.
+    // Polling for the surface is the worse option: with none it never clears,
+    // and while it runs it holds this owner, so the frame cannot report
+    // disposal. `Deep CI` caught precisely that — eleven forced frame removals
+    // and a virtualizer stage whose look-ahead was never observed.
     if !uses_frameless_controls() {
-        return;
-    }
-
-    // A route can mount before its relay publishes Tauri. Defer both the
-    // initial probe and subscription: tauri_listen otherwise skips registration.
-    if !tauri_bridge::has_tauri() {
-        let owner = Owner::current().expect("the titlebar installs inside its route owner");
-        let retry = StoredValue::new_local(None::<IntervalHandle>);
-        let handle = set_interval_with_handle(
-            move || {
-                if tauri_bridge::has_tauri() {
-                    if let Some(Some(handle)) = retry.try_update_value(Option::take) {
-                        handle.clear();
-                        owner.with(|| install(maximized));
-                    }
-                }
-            },
-            std::time::Duration::from_millis(250),
-        )
-        .ok();
-        retry.set_value(handle);
-        on_cleanup(move || {
-            if let Some(Some(handle)) = retry.try_update_value(Option::take) {
-                handle.clear();
-            }
-        });
         return;
     }
 

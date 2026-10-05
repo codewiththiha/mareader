@@ -9,7 +9,19 @@ export async function verifyWindowState({ browser, base }) {
     await context.addInitScript(() => {
       const generation = new URL(location.href).searchParams.get("g");
       if (window === window.top || !["1", "3"].includes(generation)) return;
-      // Hold the relay's published surface until after the titlebar mounts.
+      // A route frame runs no repeating timer: its cadence is observers and
+      // rAF. Counting creations in this realm measures what the mounted titlebar
+      // itself does — the host's channel ticker lives in another window.
+      window.__intervalCreations = 0;
+      const setInterval = window.setInterval.bind(window);
+      window.setInterval = (...args) => {
+        window.__intervalCreations += 1;
+        return setInterval(...args);
+      };
+      if (generation !== "3") return;
+      // Generation 3 has no Tauri surface and never gains one before it is
+      // disposed: the relay publishes from this page's own <head>, ahead of the
+      // module script, so a bar that finds nothing there is a plain browser.
       let surface;
       let available = false;
       Object.defineProperty(window, "__TAURI__", {
@@ -85,13 +97,13 @@ export async function verifyWindowState({ browser, base }) {
       window.__mountWindowProbe(1);
     }, base);
     const captions = () => page.frameLocator("#window-probe-frame");
+    const frameStats = () =>
+      page.evaluate(() => ({
+        queries: window.__windowProbe.queries,
+        handlers: window.__windowProbe.resizeHandlers.size,
+        intervals: document.getElementById("window-probe-frame").contentWindow.__intervalCreations,
+      }));
     await page.waitForFunction(() => window.__windowFixture.ready, null, { timeout: 30_000 });
-    await captions().locator('button[aria-label="Maximize"]').waitFor({ state: "attached" });
-    if (await page.evaluate(() => window.__windowProbe.queries !== 0 || window.__windowProbe.resizeHandlers.size !== 0)) {
-      throw new Error("window probe ran before the frame's Tauri surface was available");
-    }
-    await page.evaluate(() => document.getElementById("window-probe-frame").contentWindow.__releaseWindowSurface());
-    // No resize is emitted: delayed availability alone must update the glyph.
     await captions().locator('button[aria-label="Restore"]').waitFor({ state: "attached" });
     await page.waitForFunction(() => window.__windowProbe.resizeHandlers.size === 1);
     const before = await page.evaluate(() => window.__windowProbe.queries);
@@ -140,6 +152,25 @@ export async function verifyWindowState({ browser, base }) {
     });
     await page.waitForFunction(() => window.__windowFixture.ready);
     await captions().locator('button[aria-label="Maximize"]').waitFor({ state: "attached" });
+    // A bar with no window reaches for nothing: the probe declines, no listener
+    // registers, and no timer is created to wait for a surface that cannot
+    // arrive. `intervals` is counted in this realm only — a poll there holds the
+    // route's `Owner`, and a frame whose runtime never reports disposal is the
+    // failure that timer produced. `queries` is the host's counter shared by
+    // every generation, so it is compared with itself: what matters is that an
+    // idle surface-less route adds nothing to it.
+    const quiet = await frameStats();
+    if (quiet.intervals !== 0 || quiet.handlers !== 0) {
+      throw new Error(`a surface-less route registered for a window it cannot reach: ${JSON.stringify(quiet)}`);
+    }
+    await page.waitForTimeout(750);
+    const idle = await frameStats();
+    if (idle.intervals !== 0 || idle.handlers !== 0 || idle.queries !== quiet.queries) {
+      throw new Error(`a mounted titlebar polls for Tauri instead of declining: ${JSON.stringify({ quiet, idle })}`);
+    }
+    if (await captions().locator('button[aria-label="Restore"]').count() !== 0) {
+      throw new Error("a frame with no window invented a maximized state");
+    }
     await page.evaluate(() => window.__disposeWindowProbe());
     await page.waitForFunction(() => window.__windowFixture.disposed);
     await page.evaluate(() => document.getElementById("window-probe-frame").contentWindow.__releaseWindowSurface());
@@ -148,9 +179,11 @@ export async function verifyWindowState({ browser, base }) {
     const final = await page.evaluate(() => ({ queries: window.__windowProbe.queries, handlers: window.__windowProbe.resizeHandlers.size }));
     if (final.queries !== retiredQueries || final.handlers !== 0 || errors.length) throw new Error(`disposed window bridge ran: ${JSON.stringify({ final, retiredQueries, errors })}`);
     return { initialMaximized: true, externalResizeUpdates: true, stormQueries,
-      delayedSurfaceProbed: true, disposedBeforeSurfaceSuppressed: true,
+      surfacelessRouteIdle: true, disposedBeforeSurfaceSuppressed: true,
       pendingRegistrationUnlistened: true, retiredProbeSuppressed: true };
   } finally {
     await context.close();
   }
 }
+
+// only the changed file was rewritten

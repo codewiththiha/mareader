@@ -682,8 +682,11 @@ texture with colour because a look they own is a whole look.
   `window_bridge.rs`. That module answers a probe and never guesses: an
   unavailable answer leaves the last state on screen, because writing
   "not maximized" for "the window did not say" is how a glyph comes to look
-  deliberately wrong. When the surface arrives after the bar mounts, a
-  route-owned 250 ms timer waits for it before probing and subscribing to
-  resize. The timer is cleared when the surface arrives or the route closes.
+  deliberately wrong. `install()` deliberately does not gate on the surface
+  being present, and does not wait for one: each runtime page loads
+  `tauri-relay.js` in its own `<head>`, before the module script boots the app,
+  so presence is already decided when the bar mounts — a frame with no surface
+  there is a plain browser, and a poll timer waiting for one never clears and
+  keeps the route's owner, which is how a Reader frame stops reporting disposal.
 
 <!-- // only the changed file was rewritten -->
