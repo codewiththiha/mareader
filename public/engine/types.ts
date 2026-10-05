@@ -327,7 +327,6 @@ export type PDFReaderApi = {
   probePageSize: (sid: Sid, page: number) => Promise<PageSizeResult>;
   cancelThumb: (sid: Sid, canvasId: string) => void;
   hasThumb: (sid: Sid, page: number, scale: number) => boolean;
-  blitThumb: (sid: Sid, canvasId: string, page: number) => boolean;
   coverDataUrl: (sid: Sid, path: string, maxWidth?: number) => Promise<CoverResult>;
   /** Extract one page's text runs for the Rust search index. */
   extractPageText: (sid: Sid, page: number) => Promise<
@@ -379,3 +378,4 @@ export type PDFReaderApi = {
   setAppearanceMenuOpen: (on: boolean) => void;
 };
 
+// only the changed file was rewritten

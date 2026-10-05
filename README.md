@@ -1043,7 +1043,7 @@ lifecycle log are realm-wide.
 | `quiesce` | Stop every in-flight and queued job for the session's document without ending the session |
 | `renderPage` | Render one page |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
-| `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
+| `hasThumb` | Probe the bitmap cache |
 | `extractPageText` | One page's text items with their rects — the input to the search index, which is Rust (`crates/pdf-core`'s `SearchIndex`), not the engine's |
 | `setSearchContext` / `setActiveMatch` / `clearHighlights` | Paint, move and clear the engine's highlight rects in the text layer |
 | `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |

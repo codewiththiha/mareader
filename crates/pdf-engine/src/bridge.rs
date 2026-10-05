@@ -124,11 +124,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "hasThumb")]
     pub fn has_thumb(sid: u32, page: u32, scale: f64) -> bool;
 
-    /// Paint the cached thumbnail of `page` into `canvas_id` as a blurry
-    /// placeholder. Best-effort: returns false when there is nothing cached.
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "blitThumb")]
-    pub fn blit_thumb(sid: u32, canvas_id: &str, page: u32) -> bool;
-
     /// Render a page into the session's thumbnail cache with no DOM canvas
     /// (idle prefetch). Best-effort; resolves after the raster lands.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "prefetchThumb")]
@@ -275,3 +270,5 @@ pub fn release_session_detached(sid: u32) {
         let _ = destroy.call1(&reader, &JsValue::from_f64(f64::from(sid)));
     }
 }
+
+// only the changed file was rewritten

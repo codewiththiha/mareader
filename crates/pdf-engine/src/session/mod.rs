@@ -328,12 +328,6 @@ impl PdfSession {
         self.engine() && bridge::has_thumb(self.inner.sid, page, scale)
     }
 
-    /// Paint the cached thumbnail of `page` into `canvas_id` as a
-    /// placeholder. True if painted.
-    pub fn blit_thumb(&self, canvas_id: &str, page: u32) -> bool {
-        self.engine() && bridge::blit_thumb(self.inner.sid, canvas_id, page)
-    }
-
     /// Render a page into this session's thumbnail cache with no DOM canvas
     /// (idle prefetch — the look-ahead of the thumbnail lane).
     pub async fn prefetch_thumb(&self, page: u32, scale: f64) {
@@ -589,3 +583,5 @@ mod tests {
         assert!(!backdrop::test_has_palette(&a));
     }
 }
+
+// only the changed file was rewritten

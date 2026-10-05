@@ -59,7 +59,7 @@ Launch -> open_with_launch                      pane.claim_generation()
            retiring.settled().await; owns_generation? -> read + parse (raw text dropped
                                                  after the parse); failure -> abandon_document()
 Page canvas / thumbnail cell: MountedPdf::bind() at mount
-           -> register_page / render_page / blit_thumb / render_thumb / cancel_* on THAT session
+           -> register_page / render_page / render_thumb / cancel_* on THAT session
 Search, sweeps, prefetch, zoom, mode flip, blend geometry: state.pane.pdf().*
 Pane lifecycle: Suspended -> suspend_prefetches; Ready -> present + resume_prefetches
 Pane leave:   prepare_leave -> pane.quiesce()   (the session stops its own in-flight work)
@@ -134,7 +134,7 @@ ASYNC WORK? · CAN TWO PANES EXIST (before) · VERDICT.
 | Item | Owner | Lifetime | Mut | Shared? | Disposal | Async | Two panes before | Verdict |
 |---|---|---|---|---|---|---|---|---|
 | `bridge.rs` session-less `window.PDFReader` externs | crate | realm | — | — | — | — | every call hit the one document | **replaced**: every document extern takes `sid` first |
-| `api::{open, destroy, outline, cover_data_url, register_page, unregister_page, cancel_page_renders, render_page, render_thumb, cancel_thumb, has_thumb, blit_thumb, prefetch_thumb, suspend_prefetches, resume_prefetches, build_search_index, search, set_active_match, clear_highlights, sweep, sweep_snapshots, take_paper_frame, sample_paper_page, set_paper, set_paper_active}` free fns | crate | realm | — | — | — | yes | implicit singleton target | **removed**: methods on `PdfSession` |
+| `api::{open, destroy, outline, cover_data_url, register_page, unregister_page, cancel_page_renders, render_page, render_thumb, cancel_thumb, has_thumb, prefetch_thumb, suspend_prefetches, resume_prefetches, build_search_index, search, set_active_match, clear_highlights, sweep, sweep_snapshots, take_paper_frame, sample_paper_page, set_paper, set_paper_active}` free fns | crate | realm | — | — | — | yes | implicit singleton target | **removed**: methods on `PdfSession` |
 | `api::search` `INDEX`, `SCOPED`, `BUILT` thread-locals | module | realm | yes | no | re-scope on open | yes (index build) | one index for all | **session-owned** (`PdfSession` search scope); cross-open reuse moves to an explicit `RETAINED` cache (1 entry, keyed by content fingerprint + page count, filled at session dispose, taken at scope, dropped when a reflowable document opens) |
 | `api::search` `BUILD_ACTIVE` | module | realm | counter | diagnostics | guard drop | — | summed | **retained as aggregate gauge**; each session also counts its own |
 | `backdrop` `SESSION` thread-local (paper state machine: config, blend, doc path, palettes, interim, published, position, sampling, epoch) | module | realm | yes | no | `document_close()` | yes (samples) | one palette for all | **session-owned** (`PdfSession` paper session); tasks hold their session and re-check its epoch + liveness |
@@ -204,3 +204,5 @@ when:
    set (`NEXT_SID`, `SAMPLES_IN_FLIGHT`, `RETAINED`, `BUILD_ACTIVE`).
 
 Test code (`#[cfg(test)]` modules and files) is exempt.
+
+<!-- // only the changed file was rewritten -->

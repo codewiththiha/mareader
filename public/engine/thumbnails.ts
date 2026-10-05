@@ -1,17 +1,11 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { offscreenFor, releaseCanvas, sessionEl, showBaked, showRaw } from "./canvas";
+import { offscreenFor, releaseCanvas, sessionEl } from "./canvas";
 import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
 import { currentGen, readPipeline } from "./theme/pipeline";
-import {
-  cacheDisplay,
-  ensureEntryCurrent,
-  paintCached,
-  thumbRaw,
-  thumbSource,
-} from "./theme/thumbnails";
+import { cacheDisplay, ensureEntryCurrent, paintCached } from "./theme/thumbnails";
 import { lifecycleEvent, THUMB_CACHE_MAX } from "./state";
 import type { EngineSession } from "./state";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
@@ -170,18 +164,6 @@ function targetCanvas(s: EngineSession, canvasId: string): HTMLCanvasElement | n
   return sessionEl(s.sid, canvasId) as HTMLCanvasElement | null;
 }
 
-export function blitThumb(s: EngineSession, canvasId: string, page: number): boolean {
-  const dst = targetCanvas(s, canvasId);
-  const entry = s.thumbCache.get(page);
-  if (!dst || !entry) return false;
-  const raw = s.themeScrubActive ? thumbRaw(entry) : null;
-  const src = raw ?? thumbSource(entry);
-  if (!src) return false;
-  return raw
-    ? showRaw(dst, raw, "thumb-raw")
-    : showBaked(dst, src, "thumb-raw");
-}
-
 export async function renderThumb(
   s: EngineSession,
   canvasId: string,
@@ -245,20 +227,12 @@ async function renderThumbInternal(
 
   const hit = s.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    if (s.themeScrubActive) {
-      if (showRaw(canvas, thumbRaw(hit), "thumb-raw")) {
-        cachePut(s, page, hit);
-        s.thumbLive.set(canvasId, { page });
-        return { ok: true, width: hit.cssW, height: hit.cssH, scale };
-      }
-    } else if (hit.gen === currentGen(s)) {
-      const size = paintCached(s, canvas, hit);
-      if (size) {
-        cachePut(s, page, hit);
-        s.thumbLive.set(canvasId, { page });
-        return { ok: true, width: size.width, height: size.height, scale };
-      }
-    } else if (await ensureEntryCurrent(s, hit)) {
+    // Whether the entry may paint as it stands, or must be re-baked from its
+    // raw raster first — the same two facts `hasThumb` answers. Under a scrub
+    // the raw IS the picture, so staleness cannot strand it, and `paintCached`
+    // picks raw or baked off that flag: one paint path for both cases.
+    const current = s.themeScrubActive || hit.gen === currentGen(s);
+    if (current || (await ensureEntryCurrent(s, hit))) {
       const size = paintCached(s, canvas, hit);
       if (size) {
         cachePut(s, page, hit);

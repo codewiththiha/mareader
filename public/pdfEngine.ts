@@ -35,7 +35,6 @@ import {
   unregisterPage,
 } from "./engine/renderer";
 import {
-  blitThumb,
   cancelThumb,
   hasThumb,
   thumbGenerationSize,
@@ -580,7 +579,6 @@ globalThis.PDFReader = {
     withSession(sid, Promise.resolve(noSession()), (s) => probePageSize(s, page)),
   cancelThumb: (sid, canvasId) => withSession(sid, undefined, (s) => cancelThumb(s, canvasId)),
   hasThumb: (sid, page, scale) => withSession(sid, false, (s) => hasThumb(s, page, scale)),
-  blitThumb: (sid, canvasId, page) => withSession(sid, false, (s) => blitThumb(s, canvasId, page)),
   coverDataUrl: (sid, path, maxWidth) =>
     withSession(sid, Promise.resolve(noSession()), (s) => coverDataUrl(s, path, maxWidth)),
   extractPageText: (sid, page) =>
@@ -611,3 +609,5 @@ globalThis.PDFReader = {
 // The engine contract is fixed by the Rust bridge: surface integrity beats
 // extensibility, so freeze the object (has_pdf_reader only checks existence).
 Object.freeze(globalThis.PDFReader);
+
+// only the changed file was rewritten
