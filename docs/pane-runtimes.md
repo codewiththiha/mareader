@@ -93,9 +93,10 @@ generation behind and re-bakes from raw when its cell next asks, which is the
 same lazy path a cold card takes.
 
 A row the rail's window leaves behind keeps its canvases for
-`BRIDGE_FRAMES` animation frames (`BRIDGE_ROWS` rows at a time), so a glide
-that turns around finds the row it passed still mounted instead of paying a
-post, a raster and a bitmap transfer per card.
+`BRIDGE_FRAMES` animation frames, up to `BRIDGE_CELLS` cells at a time (the
+rail's two columns, so three rows), so a glide that turns around finds the row
+it passed still mounted instead of paying a post, a raster and a bitmap
+transfer per card.
 
 ## Appearance and blend
 

@@ -53,10 +53,12 @@ const DRIVE_EVENTS: [&str; 3] = ["wheel", "pointerdown", "touchstart"];
 /// row's bridge is about the frames the scroll spent — and the crate bounds
 /// each of them, so a hidden tab still releases the canvases.
 const BRIDGE_FRAMES: u32 = 4;
-/// Ceiling on simultaneously bridged rows, two cards each. Rows the glide
-/// re-enters are dropped from the bridge on the spot, and the bound is what
-/// keeps the rail's canvases inside the reader's zombie policy.
-const BRIDGE_ROWS: usize = 6;
+/// Ceiling on simultaneously bridged cells — three rows of the rail's two
+/// columns. Retention counts items, and a grid's window moves whole rows at
+/// a time, so the bound is stated in cells: rows the glide re-enters drop out
+/// on the spot, and this is what keeps the rail inside the reader's zombie
+/// policy (the two page strips already allow `MAX_ZOMBIES` each).
+const BRIDGE_CELLS: usize = 6;
 
 #[component]
 pub fn ThumbnailsPanel(
@@ -81,7 +83,7 @@ pub fn ThumbnailsPanel(
             .epoch(layout_epoch.into())
             .retention(RetentionPolicy::Frames {
                 frames: BRIDGE_FRAMES,
-                max: BRIDGE_ROWS,
+                max: BRIDGE_CELLS,
             }),
     );
     // The thumbnail grid's virtualizer joins the diagnostics registry for

@@ -53,8 +53,8 @@ call site, name the quiescence paths that replace it in the commit.
 A cache without a bound or a drain is a leak with extra steps. Existing
 bounds: canvas pool `POOL_MAX = 6` with oversized-return guard, LUT cache
 `LUT_CACHE_MAX = 8`, thumbnail cache `THUMB_CACHE_MAX`, zombies
-`MAX_ZOMBIES = 12` / 120 ms grace (and the rail's 6 rows / 4 frames, capped at
-`FRAME_CEILING_MS` per frame), page lane `PAGE_RENDER_LIMIT = 2` and
+`MAX_ZOMBIES = 12` / 120 ms grace, the rail's 6 cells / 4 frames capped at
+`FRAME_CEILING_MS` a frame, page lane `PAGE_RENDER_LIMIT = 2` and
 realm cap `REALM_PAGE_LIMIT = 2`, and host cap `WINDOW_RASTER_LIMIT = 2`
 with at most two requests per pane realm (weak host wakes, cancelled on
 session teardown, reclaimed by scoped nonce on pane removal, and reclaimed

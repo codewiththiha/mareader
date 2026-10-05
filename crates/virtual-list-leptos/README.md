@@ -31,8 +31,9 @@ line that decides whether the virtualizer kills on eviction or caches:
   its layout sizes and its painted canvases. Each frame is bounded by
   `FRAME_CEILING_MS`, so a frozen rAF clock still releases the set.
 
-Both bridges are bounded by `max`, oldest-first, and re-entering the window
-drops the bridge on the spot. The handle exposes the two ends of the same
+Both bridges are bounded by `max` ITEMS (for a grid, cells — state the bound
+in cells and the row count follows from the column count), oldest-first, and
+re-entering the window drops the bridge on the spot. The handle exposes the two ends of the same
 mechanism directly: `kill_retained()` ends every bridge whose clock ran out
 (what the armed wakers do anyway), and `remove_retained_now()` ends every
 bridge THIS tick — for a caller that knows the change the bridge was bought
