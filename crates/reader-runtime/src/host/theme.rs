@@ -347,10 +347,12 @@ impl PaneThemes {
     }
 
     /// Seed (or overwrite) one pane's look. The caller decides what a pane is
-    /// seeded with: a pane born into a live split takes the ACTIVE pane's look
-    /// in a family of its own, and switching a per-pane mode on seeds every
-    /// placed pane from what it shows now — the window's look for a pane that
-    /// owns nothing, its own for a pane that does ([`Self::active_look`]).
+    /// seeded with: a pane born into a live split takes the ACTIVE pane's
+    /// shown look in a family of its own, and switching a per-pane mode on
+    /// seeds every placed pane from the window's current values for the family
+    /// that switch owns and the pane's stored halves for the family it does
+    /// not — never from [`Self::active_look`], because a half folded by the
+    /// other mode's teardown is not a choice the pane made since.
     pub fn seed(self, id: PaneId, look: Appearance) {
         self.overrides.with_value(|m| {
             m.borrow_mut().insert(id, look);
@@ -379,13 +381,16 @@ impl PaneThemes {
     /// beside it. Seeding a lone pane now would only hand it a snapshot of a
     /// window theme the reader may still edit before that split arrives.
     ///
-    /// Each pane is seeded from what it SHOWS, not from the window: the colour
-    /// family is this switch's to decide, and a reader who already had a
-    /// texture per pane keeps those patterns (the family the texture preference
-    /// owns is not shuffled by a colour switch, and a pane that owns nothing
-    /// shows the window anyway). The map is trimmed to the placed panes rather
-    /// than emptied, which is the same guard it always was — a closed pane
-    /// forgets its own look — written so it cannot reach past this family.
+    /// Each pane is seeded from the window's colour plus its OWN texture
+    /// family: the colour family is this switch's to decide, and a reader who
+    /// already had a texture per pane keeps those patterns (the family the
+    /// texture preference owns is not shuffled by a colour switch). The colour
+    /// half comes from the live global look rather than from what the pane
+    /// shows, because `disable` folded those halves when this mode went off
+    /// and the window may have moved since — a stored colour must not come
+    /// back on its own. The map is trimmed to the placed panes rather than
+    /// emptied, which is the same guard it always was — a closed pane forgets
+    /// its own look — written so it cannot reach past this family.
     pub fn enable(
         self,
         placed: impl Iterator<Item = PaneId>,
@@ -402,7 +407,16 @@ impl PaneThemes {
                 .filter(|id| placed.contains(id))
                 .or_else(|| placed.first().copied());
             for id in placed {
-                let from = self.active_look(Some(id), global);
+                let stored = self.overrides.with_value(|m| m.borrow().get(&id).copied());
+                let from = match stored {
+                    Some(look) => Appearance {
+                        texture: look.texture,
+                        texture_opacity: look.texture_opacity,
+                        texture_scale: look.texture_scale,
+                        ..global
+                    },
+                    None => global,
+                };
                 let look = if Some(id) == first {
                     from
                 } else {
@@ -421,7 +435,9 @@ impl PaneThemes {
     /// random and unlike the others, so the split opens on a texture per pane
     /// instead of on the same pattern five times. The window's own texture is
     /// left as it was (remembered), and the colour halves of each pane's look
-    /// ride along untouched — this preference owns one family.
+    /// ride along untouched — this preference owns one family, and it is
+    /// seeded from the live window rather than from what the map still holds
+    /// for the family it is about to decide.
     ///
     /// The lone-pane rule is the colour toggle's: the preference arms, the
     /// mode shows itself on the next split.
@@ -442,7 +458,22 @@ impl PaneThemes {
             // escape.
             let mut taken = vec![global.texture];
             for id in placed {
-                let mut look = self.active_look(Some(id), global);
+                let stored = self.overrides.with_value(|m| m.borrow().get(&id).copied());
+                // The pane's own colour, the window's CURRENT texture: this
+                // switch decides the texture family, and a family it decides
+                // is seeded from where it lives now rather than from the fold
+                // the last mode left in the map — a pattern the reader has
+                // since changed on the window must not come back as a pane's
+                // "own" choice.
+                let mut look = match stored {
+                    Some(look) => Appearance {
+                        base: look.base,
+                        tint_hue: look.tint_hue,
+                        tint_strength: look.tint_strength,
+                        ..global
+                    },
+                    None => global,
+                };
                 if Some(id) != first {
                     look.texture = distinct_texture(&taken, js_sys::Math::random());
                     taken.push(look.texture);
