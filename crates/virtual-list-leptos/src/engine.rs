@@ -11,8 +11,8 @@
 //! before it.
 
 use virtual_list::{
-    Align, AnchorPolicy, Budget, GridLayout, Layout, LayoutKind, ListLayout, Viewport, Window,
-    correct, pin_at, rescale_anchor,
+    Align, AnchorPolicy, BandWindow, Budget, FillPriority, GridLayout, Layout, LayoutKind,
+    ListLayout, Motion, MotionConfig, Pipeline, Viewport, Window, correct, pin_at, rescale_anchor,
 };
 
 use crate::options::{LayoutShape, ScrollMode};
@@ -105,6 +105,8 @@ pub struct VirtualizerCore {
     max_retries: u32,
     render_screens: f64,
 
+    motion: Motion,
+    pipeline: Pipeline,
     hint: usize,
     scroll_top: f64,
     viewport: Viewport,
@@ -128,6 +130,8 @@ impl VirtualizerCore {
             eps: config.eps,
             max_retries: config.max_retries,
             render_screens: config.render_screens,
+            motion: Motion::new(MotionConfig::default()),
+            pipeline: Pipeline::default(),
             hint: 0,
             scroll_top: config.initial_offset,
             viewport: config.viewport,
@@ -478,36 +482,123 @@ impl VirtualizerCore {
         self.range
     }
 
-    /// The render band: the tighter window inside the mount window that
-    /// carries real content. With no band configured it IS the mount window
-    /// (pages mode); with one, it is the items overlapping the viewport
-    /// padded by `render_screens` viewport screens each way, intersected
-    /// with the mount window — the band never mounts, it only decides which
-    /// of the mounted items render. Every partly-visible item is inside it
-    /// by construction, so nothing the reader is looking at is ever a
-    /// placeholder.
+    /// The render band: the window inside the mount window that carries real
+    /// content.
+    ///
+    /// It is derived from the measured scroll, not from a distance somebody
+    /// remembered: while the reader is moving fast enough that the pipeline
+    /// cannot have filled the next item in time, the band is the viewport
+    /// padded by the lead the motion earns (see
+    /// [`virtual_list::Motion::band`]) — more ahead of the reader than behind
+    /// them. At any other speed there is no band at all and the mount window
+    /// renders, which is why an ordinary scroll shows no placeholders.
+    /// [`VirtualizerOptions::render_band`](crate::VirtualizerOptions::render_band)
+    /// is a FLOOR under that band and never a cap over it, and every
+    /// partly-visible item is inside it by construction, so nothing the reader
+    /// is looking at is ever a placeholder.
     pub fn render_range(&self) -> Option<Window> {
         let mount = self.range?;
-        if self.render_screens <= 0.0 {
+        let band = self.motion_band();
+        if !band.placeholder {
             return Some(mount);
         }
-        let pad = self.render_screens * self.viewport.main;
-        let band = self
-            .layout
-            .overlapping(self.scroll_top - pad, self.viewport.main + 2.0 * pad)?;
-        let first = band.first.max(mount.first);
-        let last = band.last.min(mount.last);
+        let extent = (band.active.end - band.active.start).max(0.0);
+        let items = self.layout.overlapping(band.active.start, extent)?;
+        let first = items.first.max(mount.first);
+        let last = items.last.min(mount.last);
         (first <= last).then_some(Window { first, last })
     }
 
-    /// The render state of a mounted index: [`VirtualItemState::Active`]
-    /// inside the render band, [`VirtualItemState::Blank`] outside it. The
-    /// adapter overrides it for retained zombies.
-    pub fn item_state(&self, index: usize) -> VirtualItemState {
-        match self.render_range() {
-            Some(band) if band.contains(index) => VirtualItemState::Active,
-            _ => VirtualItemState::Blank,
+    /// The scroll container, sampled with the caller's clock.
+    ///
+    /// The only difference from [`Self::on_scroll`] is that this feeds the
+    /// motion estimator first, so the band the reader is owed is computed from
+    /// the movement that just happened. The adapter calls it from the scroll
+    /// listener; a host test that only cares about geometry calls
+    /// [`Self::on_scroll`] and leaves the estimator at rest.
+    pub fn on_scroll_at(&mut self, content_top: f64, now_ms: f64) -> Step {
+        self.motion.update(content_top, now_ms);
+        self.on_scroll(content_top)
+    }
+
+    /// The scroller has stopped: `scrollend`, or the adapter's debounce
+    /// firing. The estimate goes to rest at once and the band closes with it,
+    /// which is what turns every mounted item back into real content.
+    pub fn note_scroll_end(&mut self) -> Step {
+        if self.motion.speed_px_s() == 0.0 && !self.motion.engaged() {
+            return Step {
+                range: self.range,
+                scroll_write: None,
+                layout_changed: false,
+            };
         }
+        self.motion.settle();
+        self.rewindow()
+    }
+
+    /// Point the band policy at the caller's measured pipeline: how long one
+    /// item's content takes to become real, and how many are made at once. A
+    /// reader that never calls this has no capacity to report, so engagement is
+    /// decided by the speed floor alone.
+    pub fn set_pipeline(&mut self, pipeline: Pipeline) {
+        self.pipeline = pipeline;
+    }
+
+    /// The pipeline in use.
+    pub const fn pipeline(&self) -> Pipeline {
+        self.pipeline
+    }
+
+    /// Whether the current scroll is a seek — fast enough, and arriving faster
+    /// than the pipeline can fill, that a placeholder is the honest answer for
+    /// an item outside the band. `false` means every mounted item renders.
+    pub const fn motion_engaged(&self) -> bool {
+        self.motion.engaged()
+    }
+
+    /// The estimated scroll speed, pixels per second.
+    pub fn motion_speed(&self) -> f64 {
+        self.motion.speed_px_s()
+    }
+
+    /// The band the estimator earned against the current layout and viewport.
+    pub fn motion_band(&self) -> BandWindow {
+        let mut pipeline = self.pipeline;
+        if pipeline.pitch <= 0.0 {
+            pipeline.pitch = self.layout.item_size_hint();
+        }
+        let floor = self.render_screens.max(0.0) * self.viewport.main;
+        self.motion
+            .band(self.scroll_top, self.viewport.main, floor.max(0.0), &pipeline)
+    }
+
+    /// How urgent one mounted index is right now: the viewport first, then the
+    /// side the reader is approaching, then behind them. A fill queue that
+    /// works in this order is the difference between a blank that never appears
+    /// and one that appears for the page the reader has already reached.
+    pub fn fill_priority(&self, index: usize) -> FillPriority {
+        let visible = self
+            .layout
+            .overlapping(self.scroll_top, self.viewport.main)
+            .unwrap_or(self.range.unwrap_or(Window {
+                first: index,
+                last: index,
+            }));
+        self.motion.priority(index, visible, self.render_range())
+    }
+
+    /// The index the viewport is expected to reach by the time the current fill
+    /// finishes, so a prefetch is aimed at a place. Clamped to the layout.
+    pub fn landing_index(&self) -> usize {
+        let pitch = self.pipeline.pitch.max(self.layout.item_size_hint());
+        let at = self.layout.dominant(self.scroll_top, self.viewport.main);
+        let landed = self
+            .motion
+            .landing_index(at, pitch, self.pipeline.fill_ms.max(0.0));
+        if self.layout.is_empty() {
+            return 0;
+        }
+        landed.min(self.layout.item_count() - 1)
     }
 
     /// Current scroll position.

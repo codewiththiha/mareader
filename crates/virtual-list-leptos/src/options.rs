@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use virtual_list::{Budget, GridSpec, Viewport};
+use virtual_list::{Budget, GridSpec, Pipeline, Viewport};
 
 use crate::retention::RetentionPolicy;
 
@@ -76,9 +76,16 @@ pub struct VirtualizerOptions {
     /// burst is considered finished.
     pub scroll_end_delay_ms: u32,
     /// How an item that leaves the window is retired. [`RetentionPolicy::Immediate`]
-    /// (the default) unmounts it in the same tick; a bridge keeps it rendered
-    /// for a bounded moment so the change that evicted it cannot be seen.
+    /// (the default) unmounts it in the same tick; [`RetentionPolicy::MotionGated`]
+    /// bridges a seek and nothing else; [`RetentionPolicy::Grace`] bridges a
+    /// known wall-clock operation, which is what a zoom commit is.
     pub retention: RetentionPolicy,
+    /// The content pipeline the render band is measured against. Only the
+    /// `fill_ms`/`lanes` half is usually interesting at runtime, and
+    /// [`crate::Virtualizer::set_fill_profile`] updates it as the reader's own
+    /// telemetry moves; a `fill_ms` of `0` means "not measured" and leaves
+    /// engagement to the speed floor.
+    pub pipeline: Pipeline,
     /// Change-detection epsilon for measurements and viewport writes.
     pub measure_epsilon: f64,
     /// Max re-aims for an in-flight `scroll_to_index`.
@@ -116,6 +123,7 @@ impl VirtualizerOptions {
             scroll_end_delay_ms: 150,
             retention: RetentionPolicy::Immediate,
             measure_epsilon: 0.5,
+            pipeline: Pipeline::default(),
             max_scroll_retries: 3,
             render_screens: 0.0,
         }
@@ -135,15 +143,25 @@ impl VirtualizerOptions {
     /// A continuous stream: a list whose mount window is wider than its
     /// render band. Items the window mounts outside the band stay
     /// [`crate::VirtualItemState::Blank`] placeholders — layout and scrollbar
-    /// honest, content free — until the band reaches them. Pair it with a
-    /// mount budget wider than the band (the band is `0.75` viewport screens
-    /// each way); a budget narrower than the band would mount nothing the
-    /// band does not already cover.
+    /// honest, content free — until the band reaches them. The band is a
+    /// `0.75`-screen FLOOR, widened ahead of the reader by the scroll the
+    /// estimator measures, and it does not apply at all while the reader is
+    /// moving slowly enough for the reported pipeline to keep up: an ordinary
+    /// scroll renders everything it mounts. Pair it with a mount budget wider
+    /// than the floor; a budget narrower than it would mount nothing the band
+    /// does not already cover.
     pub fn stream(
         count: impl Into<Signal<usize>>,
         estimate_size: impl Fn(usize) -> f64 + 'static,
     ) -> Self {
         Self::list(count, estimate_size).render_band(0.75)
+    }
+
+    /// Reports the caller's fill pipeline into [`Self::pipeline`].
+    pub fn fill_profile(mut self, fill_ms: f64, lanes: usize) -> Self {
+        self.pipeline.fill_ms = fill_ms.max(0.0);
+        self.pipeline.lanes = lanes;
+        self
     }
 
     /// Sets [`Self::render_screens`]; `0` disables the band.

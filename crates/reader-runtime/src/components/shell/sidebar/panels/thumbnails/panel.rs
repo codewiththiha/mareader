@@ -49,10 +49,11 @@ const DRIVE_EVENTS: [&str; 3] = ["wheel", "pointerdown", "touchstart"];
 /// painted canvases. The rail's own drive is a glide: a fling that turns
 /// around at once would otherwise ask the pane's engine for every card it
 /// just passed (a wire post, a raster, a bitmap transfer per card) for DOM
-/// that was alive one frame ago. Frames rather than milliseconds because a
-/// row's bridge is about the frames the scroll spent — and the crate bounds
-/// each of them, so a hidden tab still releases the canvases.
-const BRIDGE_FRAMES: u32 = 4;
+/// that was alive one frame ago. Motion-gated rather than always-on because a
+/// rail being dragged through the document is the only case the bridge pays
+/// for: at reading speed the grid unmounts in the tick it evicts, and the crate
+/// bounds the one bridged frame in wall-clock time too, so a hidden tab still
+/// releases the canvases.
 /// Ceiling on simultaneously bridged cells — three rows of the rail's two
 /// columns. Retention counts items, and a grid's window moves whole rows at
 /// a time, so the bound is stated in cells: rows the glide re-enters drop out
@@ -81,8 +82,7 @@ pub fn ThumbnailsPanel(
             .padding(PAD, PAD)
             .initial(Viewport::new(MIN_VIEWPORT_H, 2.0 * CELL_W + GAP_CROSS), 0.0)
             .epoch(layout_epoch.into())
-            .retention(RetentionPolicy::Frames {
-                frames: BRIDGE_FRAMES,
+            .retention(RetentionPolicy::MotionGated {
                 max: BRIDGE_CELLS,
             }),
     );
