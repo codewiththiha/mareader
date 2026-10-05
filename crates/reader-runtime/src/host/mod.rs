@@ -785,6 +785,13 @@ impl ReaderHost {
             .try_update(|tree| place(tree, id))
             .unwrap_or(Err(tree::TreeError::UnknownPane(id)));
         if let Err(error) = placed {
+            // The refused pane is gone, and so is the look it was seeded with:
+            // the map is keyed by ids that are never reused, and every
+            // per-pane picker reads each entry as "already on screen", so a
+            // look left behind for a pane that was never placed both grows
+            // without bound (one entry per refused split) and quietly narrows
+            // the hues and patterns the next real pane is offered.
+            self.themes.forget(id);
             let _ = self.manager.close(id, None);
             return Err(PaneError::Layout(error));
         }

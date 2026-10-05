@@ -346,9 +346,11 @@ impl PaneThemes {
         self.shown(look, global)
     }
 
-    /// Seed (or overwrite) one pane's look. The toggle-on seeds every placed
-    /// pane from the global look; a pane created into a live split seeds
-    /// from the ACTIVE pane's look instead (the caller decides).
+    /// Seed (or overwrite) one pane's look. The caller decides what a pane is
+    /// seeded with: a pane born into a live split takes the ACTIVE pane's look
+    /// in a family of its own, and switching a per-pane mode on seeds every
+    /// placed pane from what it shows now — the window's look for a pane that
+    /// owns nothing, its own for a pane that does ([`Self::active_look`]).
     pub fn seed(self, id: PaneId, look: Appearance) {
         self.overrides.with_value(|m| {
             m.borrow_mut().insert(id, look);
@@ -358,6 +360,9 @@ impl PaneThemes {
 
     /// A closed pane takes its look with it. The surviving pane's colour is
     /// never lost: with one pane left it is the window's ([`Self::promote`]).
+    /// Every path that ends a pane runs this, including a placement the tree
+    /// refused: that pane was seeded before the split was checked, and ids are
+    /// never reused, so a look left behind is a look nothing will ever show.
     pub fn forget(self, id: PaneId) {
         self.overrides.with_value(|m| {
             m.borrow_mut().remove(&id);
