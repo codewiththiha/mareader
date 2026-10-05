@@ -1,6 +1,7 @@
 //! The Workspace tab: how the reader's split workspace behaves. Pane
-//! decoration lives in the Theme tab; this tab keeps workspace opening and
-//! independent-theme controls.
+//! decoration lives in the Theme tab; this tab keeps workspace opening and the
+//! two per-pane look preferences — the colour mode and the texture mode, each
+//! with its own row because each owns its own half of a pane's look.
 
 use leptos::prelude::*;
 
@@ -43,6 +44,13 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
             checked=theme.independent
             on_change=theme.set_independent
             title="Independent theme for each pane"
+        />
+    };
+    let texture_toggle = view! {
+        <Switch
+            checked=theme.independent_texture
+            on_change=theme.set_independent_texture
+            title="Independent page texture for each pane"
         />
     };
     let shared = Signal::derive(move || s.with(|st| st.workspace.shared_base_mode));
@@ -123,6 +131,21 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
                 </span>
             </span>
             {toggle}
+        </div>
+        <div
+            class="mt-2 flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3"
+            data-setting="independent-textures"
+        >
+            <span class="min-w-0">
+                <span class="block text-sm text-ink">"Texture for each"</span>
+                <span class="block text-xs text-muted">
+                    "While a split is open, each pane keeps the page texture it was showing and \
+                     its own two dials, so a lined PDF can sit beside a plain Markdown page. \
+                     This stands on its own beside the colour mode above, and closing back to one \
+                     pane hands that pane's texture to the main theme the same way."
+                </span>
+            </span>
+            {texture_toggle}
         </div>
         <div
             class="mt-2 flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3"
