@@ -34,14 +34,19 @@ pub use crate::theme_paint::PaintTarget;
 /// callback; re-exported for the menu's dial call sites.
 pub use reader_core::appearance::AppearanceScrub;
 
-/// Where a theme edit goes. `Routed` follows the app's routing rule: while
-/// independent themes are in effect — a split on screen — it edits the
-/// ACTIVE pane's own look; while they are not it edits the window's theme
-/// like any other settings change. `Global` always edits the window's theme
-/// — the film grain (noise) dial is the one dial that stays global.
+/// Which family an edit belongs to, and so which preference decides whether
+/// it is the ACTIVE pane's own or the window's. The menu knows what each of
+/// its sections paints; the routing rule is the workspace's, so a scope names
+/// the family and the handle answers for it. `Global` always edits the
+/// window's theme — the film grain (noise) dial is the one dial that stays
+/// global whatever the modes say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeScope {
-    Routed,
+    /// Base mode and tint: routed while independent themes are in effect.
+    Colour,
+    /// Texture mode and its two dials: routed while independent themes OR
+    /// independent textures are in effect.
+    Texture,
     Global,
 }
 
@@ -51,10 +56,10 @@ pub type AppearancePatch = Box<dyn FnOnce(&mut Appearance)>;
 
 /// The menu's one door into whichever theme it is editing. The reader host
 /// builds a routed handle (its pane looks live behind it); a surface with no
-/// workspace — the shelf — uses [`ThemeHandle::for_settings`], where both
-/// scopes land in Settings. The dials read `look` (the edit target's current
-/// values) and write through `commit` / `scrub`; `independent` + the theme
-/// toggle ride along so the menu can show and flip it.
+/// workspace — the shelf — uses [`ThemeHandle::for_settings`], where every
+/// scope lands in Settings. The dials read `look` (the edit target's current
+/// values) and write through `commit` / `scrub`; the two per-pane preferences
+/// and their switches ride along so the menu can show and flip them.
 #[derive(Clone, Copy)]
 pub struct ThemeHandle {
     /// The look the dials currently edit and display.
@@ -64,6 +69,11 @@ pub struct ThemeHandle {
     /// preference needs the split it serves).
     pub independent: Signal<bool>,
     pub set_independent: Callback<bool>,
+    /// The texture family's own per-pane mode, named the same way: the stored
+    /// preference and the switch that flips it. It has its own row in the menu
+    /// because a reader can want a pattern per pane and a colour for all.
+    pub independent_texture: Signal<bool>,
+    pub set_independent_texture: Callback<bool>,
     pub commit: Callback<(ThemeScope, AppearancePatch)>,
     pub scrub: Callback<(ThemeScope, AppearanceScrub)>,
     /// How many panes the workspace shows: the independent-theme toggle
@@ -96,10 +106,17 @@ impl ThemeHandle {
             settings.update(|s| s.workspace.independent_themes = on);
         });
         let independent = Signal::derive(move || settings.with(|s| s.workspace.independent_themes));
+        let set_independent_texture = Callback::new(move |on: bool| {
+            settings.update(|s| s.workspace.independent_textures = on);
+        });
+        let independent_texture =
+            Signal::derive(move || settings.with(|s| s.workspace.independent_textures));
         Self {
             look,
             independent,
             set_independent,
+            independent_texture,
+            set_independent_texture,
             commit,
             scrub,
             panes: Signal::derive(|| 1),

@@ -384,10 +384,23 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
     let runtime = crate::runtime::ReaderRuntime::new();
     let appearance: app_state::AppearanceSignal =
         Memo::new(move |_| settings.with(|s| s.appearance));
-    let texture: crate::state::TextureSignal = Memo::new(move |_| appearance.get().texture);
+    // The look THIS pane shows, mirrored from the pane's own signal: the pane
+    // is built below, and its page hosts ask for this context while they are
+    // being built, so the mirror — not the pane's copy of settings — is what
+    // lets the texture memo, and with it every carrier's `texture-*` class,
+    // follow the LOOK the host routed to this pane. A per-pane edit lands in
+    // that look and never in settings, which is why deriving the mode from
+    // settings made a split's texture picker move both dials and no pattern.
+    // Seeded from `boot.look` so the first paint is already the right one.
+    let look = RwSignal::new(boot.look);
+    let texture: crate::state::TextureSignal = Memo::new(move |_| {
+        look.get()
+            .map(|a| a.texture)
+            .unwrap_or_else(|| appearance.get().texture)
+    });
+    provide_context(texture);
     let typography: crate::state::TypographySignal =
         Memo::new(move |_| settings.with(|s| s.text.clone()));
-    provide_context(texture);
     provide_context(typography);
     provide_context(OverlayBoard::default());
     runtime.begin_mount();
@@ -471,6 +484,10 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
         look: boot.look,
     });
     let ctx = pane.context();
+    // The look's own mirror, next to the chrome facts the realm borrows from
+    // its pane (see `texture` above): the host pushes the look into
+    // `viewer.look` and this hands it to the carriers.
+    Effect::new(move |_| put(look, ctx.reader.viewer.look.get()));
     // The chrome surface the pane's own components read (the bottom bar's
     // reflowable sections, the title's search hold).
     Effect::new(move |_| put(reflowable, ctx.reader.reflowable()));

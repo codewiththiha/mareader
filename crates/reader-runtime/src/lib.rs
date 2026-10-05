@@ -168,15 +168,14 @@ pub fn start_session(
 
             // What the reader's panes and effects consume (§17: the runtime
             // provides the contexts its session reads; the host paints its
-            // own document and forwards settings into independent panes). The look narrows once and the page hosts
-            // subscribe to the texture slice of it, so a tint nudge cannot
-            // re-run their `texture-*` class.
-            let appearance: app_state::AppearanceSignal =
-                Memo::new(move |_| settings.with(|s| s.appearance));
-            let texture: crate::state::TextureSignal = Memo::new(move |_| appearance.get().texture);
+            // own document and forwards settings into independent panes).
+            // Typography is the host's to hand on: every pane reads the same
+            // session copy. The look is not — a pane's texture follows the
+            // look the host routed to THAT pane, so `pane_frame::realm`
+            // derives the texture context inside the frame whose pages it
+            // paints.
             let typography: crate::state::TypographySignal =
                 Memo::new(move |_| settings.with(|s| s.text.clone()));
-            provide_context(texture);
             provide_context(typography);
 
             // One overlay registry for this session: the reader's menus and
@@ -560,3 +559,5 @@ fn web_launch() -> LaunchDocument {
     }
     launch
 }
+
+// only the changed file was rewritten

@@ -4,7 +4,14 @@
      scroller — text/Markdown: the scroller IS the surface and carries one
                 background pattern
      bleed    — blend mode: the per-page texture overhangs the page box and
-                paints the gutter itself */
+                paints the gutter itself
+
+   A mode is a class on its carrier, and WHICH look supplies that class — the
+   window's or the pane's own — is decided where the carriers are built: the
+   PDF page host and the reflowable scroller, both through
+   `components::viewer::texture_surface`. Both dials here read the same two
+   variables, so a pane that owns its texture owns its opacity and scale too,
+   and a split can put grid on one document and none on its neighbour.
 
 /* Dark themes flip to LIGHT strokes: the canvas inverts its page to dark
    paper and dark strokes would vanish against it. */
@@ -225,3 +232,5 @@
   inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }
+
+/* only the changed file was rewritten */

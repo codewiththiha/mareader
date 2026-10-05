@@ -71,6 +71,15 @@ pub struct WorkspaceSettings {
     /// keeps its own colour, but switching the mode switches every pane. Off,
     /// the mode is per pane too, like the rest of its look.
     pub shared_base_mode: bool,
+    /// Independent page texture per pane (split workspaces): each pane keeps
+    /// its own texture mode and its own opacity / pitch, while the colour
+    /// stays the window's. The texture family alone — a page's pattern is a
+    /// decision about the paper, not about the look, and reading a Lined PDF
+    /// beside a plain-text page wants exactly that. Same lifetime as
+    /// `independent_themes`: persisted as the toggle's rest state, in effect
+    /// only while a split is on screen, and the last pane's texture is
+    /// promoted to the window theme as the split collapses.
+    pub independent_textures: bool,
     /// Active-pane focus outline width, in CSS pixels. Zero hides the outline.
     pub pane_outline_width: u8,
     /// Active-pane outline palette selection.
@@ -92,6 +101,7 @@ impl Default for WorkspaceSettings {
             library_click: LibraryClick::default(),
             independent_themes: false,
             shared_base_mode: true,
+            independent_textures: false,
             pane_outline_width: 2,
             pane_outline_color: PaneOutlineColor::Auto,
             pane_outline_custom: "#6ba3f5".into(),
@@ -112,6 +122,7 @@ mod tests {
         assert_eq!(s.library_click, LibraryClick::Replace);
         assert!(!s.independent_themes);
         assert!(s.shared_base_mode);
+        assert!(!s.independent_textures);
         assert_eq!(s.pane_outline_width, 2);
         assert_eq!(s.pane_outline_color, PaneOutlineColor::Auto);
         assert_eq!(s.pane_gap, 0);

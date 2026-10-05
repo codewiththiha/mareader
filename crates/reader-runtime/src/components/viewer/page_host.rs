@@ -161,7 +161,7 @@ pub fn UniversalPageHost(
     let page_scale = state.viewer.zoom.display.read_only();
     #[cfg(feature = "pdf")]
     let texture = use_context::<crate::state::TextureSignal>()
-        .expect("TextureSignal must be provided by app bootstrap");
+        .expect("TextureSignal is provided by the pane realm, from its own look");
     #[cfg(any(feature = "pdf", feature = "reflow"))]
     let host_id = host_id_for_mode(page_slot.mode(), page);
     #[cfg(not(any(feature = "pdf", feature = "reflow")))]
@@ -340,3 +340,5 @@ pub fn UniversalStreamHost(
         }}
     }
 }
+
+// only the changed file was rewritten

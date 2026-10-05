@@ -248,9 +248,14 @@ what keeps the page and the surrounding interface in the same colour family at e
 **Textures** overlay the page with a repeating pattern: none, paper, lined, grid, dotted or cross.
 Opacity is adjustable from 0 to 100 and scale from 25 to 400 percent of the natural pitch.
 Textures are anchored to the page rather than the viewport, so they track the page during zoom
-instead of sliding across it.
+instead of sliding across it. Every document format carries them, on whichever surface is its
+paper: a PDF page composites the pattern over its raster, a text or Markdown page lays it on the
+scroller it scrolls. In a split, **Texture for each** in the appearance menu gives every pane its
+own mode and its own two dials — the texture analogue of independent themes — and closing
+the last split hands the window the surviving pane's texture.
 
-**Film grain** can be off, static or animated, with intensity from 0 to 100.
+**Film grain** can be off, static or animated, with intensity from 0 to 100. It stays the
+window's own, whatever either per-pane mode is doing.
 
 ### Presets
 

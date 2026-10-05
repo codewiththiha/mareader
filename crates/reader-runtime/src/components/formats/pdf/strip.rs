@@ -53,7 +53,7 @@ pub fn PdfPageStrip(
     list_ref: NodeRef<html::Div>,
 ) -> impl IntoView {
     let texture =
-        use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
+        use_context::<TextureSignal>().expect("TextureSignal is provided by the pane realm");
 
     let v = virtualizer;
     let handle = StoredValue::new_local(v.clone());
@@ -492,3 +492,5 @@ fn in_view_signal(
         false
     })
 }
+
+// only the changed file was rewritten

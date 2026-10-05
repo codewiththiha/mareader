@@ -196,7 +196,8 @@ pub fn PdfPageCanvas(
     /// bitmap the next frame has already superseded.
     #[prop(into)]
     gesture_owns: Signal<bool>,
-    /// The page texture mode (from the app shell, derived from settings).
+    /// The page's texture mode: the pane realm's answer for THIS pane, from
+    /// the look the host routed to it (see `state::TextureSignal`).
     #[prop(into)]
     texture: Signal<TextureMode>,
     /// The gloss overlay: persisted marks, the processing id, and the shared
@@ -705,3 +706,5 @@ pub fn PdfPageCanvas(
         </div>
     }
 }
+
+// only the changed file was rewritten

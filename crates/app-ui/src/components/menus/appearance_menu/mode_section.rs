@@ -65,7 +65,7 @@ pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
                                 // then switch family.
                                 theme
                                     .commit
-                                    .run((ThemeScope::Routed, Box::new(move |a| {
+                                    .run((ThemeScope::Colour, Box::new(move |a| {
                                         a.base = b;
                                     })));
                             }
@@ -99,7 +99,7 @@ pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
                         set_strength.set(18.0);
                     }
                     theme.scrub.run((
-                        ThemeScope::Routed,
+                        ThemeScope::Colour,
                         AppearanceScrub::Tint { hue: v as u16, strength: st },
                     ));
                 }
@@ -120,7 +120,7 @@ pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
                     // committed yet.
                     let hue = hue.get_untracked().round().clamp(0.0, 359.0) as u16;
                     theme.scrub.run((
-                        ThemeScope::Routed,
+                        ThemeScope::Colour,
                         AppearanceScrub::Tint { hue, strength: v as u8 },
                     ));
                 }

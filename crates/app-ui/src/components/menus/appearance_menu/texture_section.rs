@@ -5,6 +5,12 @@
 //! Opacity and scale are disabled (not hidden) when the texture is None, so
 //! the controls stay in place and the panel does not resize as you click
 //! around the list.
+//!
+//! The whole section is scoped `Texture` (see [`crate::appearance`]): while a
+//! per-pane mode is in effect it edits the focused pane's own texture, and the
+//! modes are the reader's choice — independent themes carry the texture family
+//! with the colour, and `independent_textures` carries the family on its own
+//! for a reader who wants a pattern per pane and a colour for all.
 
 use leptos::prelude::*;
 
@@ -42,7 +48,7 @@ pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
                             on_click=move || {
                                 theme
                                     .commit
-                                    .run((ThemeScope::Routed, Box::new(move |a| {
+                                    .run((ThemeScope::Texture, Box::new(move |a| {
                                         a.texture = mode;
                                     })));
                             }
@@ -81,7 +87,7 @@ pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
                     set_opacity.set(v);
                     theme
                         .scrub
-                        .run((ThemeScope::Routed, AppearanceScrub::TextureOpacity(v as u8)));
+                        .run((ThemeScope::Texture, AppearanceScrub::TextureOpacity(v as u8)));
                 }
                 label="Texture opacity"
             />
@@ -99,10 +105,12 @@ pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
                     set_tscale.set(v);
                     theme
                         .scrub
-                        .run((ThemeScope::Routed, AppearanceScrub::TextureScale(v as u16)));
+                        .run((ThemeScope::Texture, AppearanceScrub::TextureScale(v as u16)));
                 }
                 label="Texture scale"
             />
         </div>
     }
 }
+
+// only the changed file was rewritten

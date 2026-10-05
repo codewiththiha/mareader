@@ -42,7 +42,7 @@ pub(super) fn PresetSwatch(
                     // A preset is an explicit look: drop any in-flight
                     // slider commit so it cannot overwrite this a beat later.
                     cancel_appearance_commit();
-                    theme.commit.run((ThemeScope::Routed, Box::new(move |a| {
+                    theme.commit.run((ThemeScope::Colour, Box::new(move |a| {
                         *a = appearance;
                     })));
                 }

@@ -1,13 +1,17 @@
 //! The workspace's independent theme state: one look per pane, toggled
 //! from the appearance menu while a split workspace is on screen.
 //!
-//! Routing rule (the walkthrough's): while independent themes are IN
-//! EFFECT, every appearance edit — structural or slider — routes to the
-//! ACTIVE pane's own look. While they are not, edits are ordinary Settings
-//! edits. The film grain dial is the one dial that stays global whatever the
-//! toggle says. The shared chrome (title bar, sidebar, the backdrop outside
+//! Routing rule (the walkthrough's), per FAMILY: a colour edit — base mode
+//! or tint — goes to the ACTIVE pane's own look while independent themes are
+//! IN EFFECT; a texture edit — the mode or either dial — goes there while
+//! independent themes OR independent textures are in effect. Anything else,
+//! including both while no per-pane mode is on, is an ordinary Settings edit,
+//! and the film grain dial is the one dial that stays global whatever the
+//! toggles say. The shared chrome (title bar, sidebar, the backdrop outside
 //! panes) keeps the remembered global theme throughout; only a pane's own box
-//! shows its own look.
+//! shows its own look. Two preferences, one map: an `Appearance` per pane is
+//! whole, and each family of it is read from the pane or the window by the
+//! rules below, which is why one `version` bump and one push carry either.
 //!
 //! The mode needs the split it serves, so it is in effect only while two or
 //! more panes are placed: with ONE pane left, per-pane theming has nothing to
@@ -32,18 +36,39 @@
 //! Colours: turning the toggle on keeps the active pane's look and gives
 //! every other pane a tint hue of its own, and a pane born while it is on
 //! gets one too — picked at random inside the widest gap between the hues
-//! already showing, so no two panes come out alike.
+//! already showing, so no two panes come out alike. Textures: the same shape
+//! of answer — the focused pane keeps what it shows, every other pane gets a
+//! mode of its own drawn from the modes not already showing, and closing the
+//! mode folds the window's texture back into every pane so the workspace is
+//! one texture again. The last pane's texture is promoted to the window on the
+//! same close that promotes its colour, and it persists in settings the same
+//! way, so the next launch opens with the texture the reader left.
 //!
 //! Shared mode (`workspace.shared_base_mode`, on by default): only the
 //! colour is per pane. Light / Dark / Dim stays the window's — every pane
 //! shows the global base, and switching it from any pane switches all.
+//!
+//! A preset is a colour-family edit, so it follows the colour rule: routed it
+//! is one pane's whole look, patterns included; global it is the window's
+//! look for every family a pane does not own, which leaves each pane's own
+//! pattern where it was — the picker's chips are how a pattern moves.
+//!
+//! The texture family (`workspace.independent_textures`) is the same
+//! mechanism over one family instead of the whole look, for the reader who
+//! wants a Lined PDF beside a plain page: it owns the texture mode and its
+//! two dials, and it composes with the colour mode rather than replacing it.
+//! Each pane's shown look is therefore assembled per family — whatever a
+//! pane does not own it takes from the window, so no stored half can outlive
+//! the preference that routed it. Turning the texture toggle off hands every
+//! pane the window's texture again and leaves the colour halves the map holds
+//! untouched; a family the mode no longer owns is never shown, only stored.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use reader_core::appearance::Appearance;
+use reader_core::appearance::{Appearance, TextureMode};
 use reader_core::settings::Settings;
 
 use super::model::PaneId;
@@ -55,9 +80,14 @@ pub struct PaneThemes {
     /// shell; the host only reads and publishes it. Whether it is in effect
     /// is [`Self::active`]'s answer.
     independent: RwSignal<bool>,
+    /// The texture family's own preference, with the same split gate: a page's
+    /// pattern is a decision about the paper, not about the look, so it can be
+    /// per pane while the colour is shared.
+    independent_textures: RwSignal<bool>,
     /// The preference AND the split it serves: derived once here, so the
     /// pane-count read has one home.
     active: Signal<bool>,
+    textures_active: Signal<bool>,
     /// The pane count the stand-down follows (the workspace's placement).
     panes: Signal<usize>,
     /// Bumped on every map or toggle change: the host's appearance boundary
@@ -95,18 +125,42 @@ fn distinct_hue(taken: &[u16], random: f64) -> u16 {
     (hue.round() as u16) % 360
 }
 
+/// A texture for a pane that has just become independent: one at random from
+/// the modes that paint something, and unlike every `taken` mode while any
+/// remain. `None` is out of the pool — an "independent texture" that shows no
+/// texture is not independent, it is off — and with five modes and at most
+/// four panes the pool cannot run dry; the fallback is there to keep the
+/// choice total if that ever changes.
+fn distinct_texture(taken: &[TextureMode], random: f64) -> TextureMode {
+    let pool: Vec<TextureMode> = TextureMode::all()
+        .iter()
+        .copied()
+        .filter(|mode| *mode != TextureMode::None && !taken.contains(mode))
+        .collect();
+    let modes: &[TextureMode] = if pool.is_empty() {
+        &TextureMode::ALL[1..]
+    } else {
+        &pool
+    };
+    let pick = (random.clamp(0.0, 1.0) * modes.len() as f64) as usize % modes.len();
+    modes[pick]
+}
+
 impl PaneThemes {
     /// Themes for one workspace. Call inside the host's owner (the signals
     /// live in the host's arena). `panes` is how many the workspace places:
     /// one pane is no split, and the mode stands down there.
     pub fn new(
         independent: RwSignal<bool>,
+        independent_textures: RwSignal<bool>,
         shared_base: Signal<bool>,
         panes: Signal<usize>,
     ) -> Self {
         Self {
             independent,
             active: Signal::derive(move || independent.get() && panes.get() >= 2),
+            independent_textures,
+            textures_active: Signal::derive(move || independent_textures.get() && panes.get() >= 2),
             panes,
             version: RwSignal::new(0),
             overrides: StoredValue::new_local(Rc::new(RefCell::new(HashMap::new()))),
@@ -125,17 +179,47 @@ impl PaneThemes {
         self.active.get_untracked()
     }
 
-    /// A pane's stored look as it shows: in shared mode the base is the
-    /// window's, whatever the pane stored.
+    /// Whether the TEXTURE family is a pane's own: its preference (with the
+    /// split it serves), or independent themes, which have always owned the
+    /// whole look — texture included. One answer for the picker's routing and
+    /// for the composition below, so the two can never disagree.
+    fn textures_owned(self) -> bool {
+        self.in_effect() || self.textures_active.get_untracked()
+    }
+
+    /// A pane's stored look as it shows, assembled family by family: a family
+    /// the modes do not route to the pane is the window's, whatever the map
+    /// still holds from an earlier mode. `shared_base_mode` is the same rule
+    /// for one field of the colour family.
     fn shown(self, mut look: Appearance, global: Appearance) -> Appearance {
-        if self.shared_base() {
+        if self.in_effect() {
+            if self.shared_base() {
+                look.base = global.base;
+            }
+        } else {
             look.base = global.base;
+            look.tint_hue = global.tint_hue;
+            look.tint_strength = global.tint_strength;
         }
+        if !self.textures_owned() {
+            look.texture = global.texture;
+            look.texture_opacity = global.texture_opacity;
+            look.texture_scale = global.texture_scale;
+        }
+        // Grain has no per-pane half at all: the noise layer is the window's,
+        // so a pane's look reports it as the window's rather than as whatever
+        // the map happened to be holding when the preset was clicked.
+        look.noise = global.noise;
+        look.noise_intensity = global.noise_intensity;
         look
     }
 
-    /// A look of its own for a new pane: `from`'s, with a tint hue unlike
-    /// every pane's showing now (and the window's, when it is tinted).
+    /// A look of its own for a pane born into a live split: `from`'s, with a
+    /// tint hue unlike every pane's showing now (and the window's, when it is
+    /// tinted) — and, when the reader has the texture mode on, a texture of
+    /// its own too. With the texture mode off the new pane keeps `from`'s
+    /// texture: independent themes inherit the look that is on screen, which
+    /// is what a split beside a textured PDF is for.
     pub fn distinct_look(self, from: Appearance, global: Appearance) -> Appearance {
         let mut taken: Vec<u16> = self.overrides.with_value(|m| {
             m.borrow()
@@ -148,9 +232,17 @@ impl PaneThemes {
             taken.push(global.tint_hue);
         }
         let mut look = from;
-        look.tint_hue = distinct_hue(&taken, js_sys::Math::random());
-        if !look.has_tint() {
-            look.tint_strength = PANE_TINT_STRENGTH;
+        if self.in_effect() {
+            look.tint_hue = distinct_hue(&taken, js_sys::Math::random());
+            if !look.has_tint() {
+                look.tint_strength = PANE_TINT_STRENGTH;
+            }
+        }
+        if self.textures_active.get_untracked() {
+            let showing: Vec<TextureMode> = self
+                .overrides
+                .with_value(|m| m.borrow().values().map(|look| look.texture).collect());
+            look.texture = distinct_texture(&showing, js_sys::Math::random());
         }
         look.sanitize();
         look
@@ -160,6 +252,18 @@ impl PaneThemes {
     /// show and flip, whether or not a split is on screen to carry it.
     pub fn preferred(self) -> Signal<bool> {
         self.independent.into()
+    }
+
+    /// The texture family's STORED preference.
+    pub fn preferred_textures(self) -> Signal<bool> {
+        self.independent_textures.into()
+    }
+
+    /// Whether the texture mode is IN EFFECT (its preference and the split it
+    /// serves). Tracked: the menu's row and the boundary push both follow a
+    /// pane count change through it.
+    pub fn textures_active(self) -> Signal<bool> {
+        self.textures_active
     }
 
     /// Whether the mode is IN EFFECT: the preference, while two or more
@@ -185,12 +289,12 @@ impl PaneThemes {
         self.version.update(|v| *v = v.wrapping_add(1));
     }
 
-    /// The look this pane owns while independent themes are in effect
-    /// (`None` = inherit the window theme). A pane missing from the map
-    /// answers the defensive `global` — seeding keeps that arm unreachable
-    /// in practice.
+    /// The look this pane owns while a per-pane mode is in effect (`None` =
+    /// inherit the window theme, which is also what a family the modes do not
+    /// route shows). A pane missing from the map answers the defensive
+    /// `global` — seeding keeps that arm unreachable in practice.
     pub fn look_for(self, id: PaneId, global: Appearance) -> Option<Appearance> {
-        if !self.in_effect() {
+        if !self.in_effect() && !self.textures_active.get_untracked() {
             return None;
         }
         let look = self
@@ -209,7 +313,7 @@ impl PaneThemes {
     /// Call BEFORE the close lands the count at one (the mode is still live
     /// then); the caller writes the answer into Settings.
     pub fn promote(self, survivor: PaneId, global: Appearance) -> Option<Appearance> {
-        if !self.in_effect() {
+        if !self.in_effect() && !self.textures_active.get_untracked() {
             return None;
         }
         let look = self.active_look(Some(survivor), global);
@@ -253,6 +357,12 @@ impl PaneThemes {
     /// pane born beside it. Seeding a lone pane now would only hand it a
     /// snapshot of a window theme the reader may still edit before that
     /// split arrives.
+    ///
+    /// The seed starts from a clean map, texture half included: a reader who
+    /// already had a texture per pane and turns colour independence on gets a
+    /// whole look per pane, randomised again — the one answer that cannot
+    /// leave a pane holding a colour it never picked under a mode it just
+    /// switched on.
     pub fn enable(
         self,
         placed: impl Iterator<Item = PaneId>,
@@ -277,6 +387,64 @@ impl PaneThemes {
                 });
             }
         }
+        self.bump();
+    }
+
+    /// Turn the texture toggle on: the pane in front keeps the window's
+    /// texture and every other placed pane gets one of its own, chosen at
+    /// random and unlike the others, so the split opens on a texture per pane
+    /// instead of on the same pattern five times. The window's own texture is
+    /// left as it was (remembered), and the colour halves of each pane's look
+    /// ride along untouched — this preference owns one family.
+    ///
+    /// The lone-pane rule is the colour toggle's: the preference arms, the
+    /// mode shows itself on the next split.
+    pub fn enable_textures(
+        self,
+        placed: impl Iterator<Item = PaneId>,
+        active: Option<PaneId>,
+        global: Appearance,
+    ) {
+        let placed: Vec<PaneId> = placed.collect();
+        self.independent_textures.set(true);
+        if placed.len() >= 2 {
+            let first = active
+                .filter(|id| placed.contains(id))
+                .or_else(|| placed.first().copied());
+            // The window's own texture counts as taken: no second pane is
+            // handed the pattern the reader just turned independence off to
+            // escape.
+            let mut taken = vec![global.texture];
+            for id in placed {
+                let mut look = self.active_look(Some(id), global);
+                if Some(id) != first {
+                    look.texture = distinct_texture(&taken, js_sys::Math::random());
+                    taken.push(look.texture);
+                }
+                look.sanitize();
+                self.overrides.with_value(|m| {
+                    m.borrow_mut().insert(id, look);
+                });
+            }
+        }
+        self.bump();
+    }
+
+    /// Turn the texture toggle off by hand: every pane shows the window's
+    /// texture again, and the per-pane picks go with the mode rather than
+    /// waiting under it hidden — the colour halves of the same looks stay,
+    /// because this preference never owned them. A stand-down (one pane left)
+    /// is NOT this: the map survives it, and the survivor's texture is
+    /// promoted to the window first ([`Self::promote`]).
+    fn disable_textures(self, global: Appearance) {
+        self.independent_textures.set(false);
+        self.overrides.with_value(|m| {
+            for look in m.borrow_mut().values_mut() {
+                look.texture = global.texture;
+                look.texture_opacity = global.texture_opacity;
+                look.texture_scale = global.texture_scale;
+            }
+        });
         self.bump();
     }
 
@@ -345,6 +513,22 @@ pub(crate) fn theme_handle(
         PaintTarget, ThemeScope, preview_appearance, preview_appearance_into,
     };
 
+    // Which family an edit belongs to decides whether it can be a pane's own:
+    // a colour edit while independent themes are in effect, a texture edit
+    // while either mode is — independent themes have always owned the whole
+    // look, texture included, and the texture preference adds the family on its
+    // own. Film grain answers `false`: it is the window's dial.
+    // A `move` closure: both callbacks below capture it, and the two handles
+    // it reads are Copy, so the rule itself is Copy.
+    let routes = move |scope: ThemeScope| {
+        let owned = match scope {
+            ThemeScope::Colour => themes.in_effect(),
+            ThemeScope::Texture => themes.textures_owned(),
+            ThemeScope::Global => false,
+        };
+        owned && manager.active().is_some()
+    };
+
     let look = Signal::derive(move || {
         // The per-pane map is behind StoredValue/RefCell so it has one owner,
         // not one signal per pane. Subscribe to its version here as well as in
@@ -352,9 +536,13 @@ pub(crate) fn theme_handle(
         // dials and active look must follow a focused pane's edit immediately.
         themes.version().with(|_| ());
         let global = settings.with(|s| s.appearance);
-        // The route follows the mode IN EFFECT: at one pane the dials show
-        // and edit the window theme, exactly what that pane shows.
-        if themes.active().get() {
+        // The route follows either mode IN EFFECT: a look of its own is a
+        // look of its own, whichever preference put it there, and
+        // `active_look` answers each family by its own rule (the colour half
+        // the window's while only textures are independent). At one pane both
+        // modes stand down and the dials show and edit the window theme,
+        // exactly what that pane shows.
+        if themes.active().get() || themes.textures_active().get() {
             themes.active_look(manager.active(), global)
         } else {
             global
@@ -379,9 +567,7 @@ pub(crate) fn theme_handle(
             // A pending slider drag lands first (the shared scheduler's
             // contract), then the structural change applies on top.
             flush_appearance_commit();
-            let routed = scope == ThemeScope::Routed
-                && themes.active().get_untracked()
-                && manager.active().is_some();
+            let routed = routes(scope);
             if routed {
                 let id = manager.active().expect("checked: active pane exists");
                 let global = settings.get_untracked().appearance;
@@ -409,9 +595,7 @@ pub(crate) fn theme_handle(
 
     let scrub = Callback::new(
         move |(scope, patch): (ThemeScope, reader_core::appearance::AppearanceScrub)| {
-            let routed = scope == ThemeScope::Routed
-                && themes.active().get_untracked()
-                && manager.active().is_some();
+            let routed = routes(scope);
             // The engine scopes the scrub's raw-raster window by this mark:
             // a drag on one pane's look leaves every other pane's pages as
             // they are (public/pdfEngine.ts `scrubScope`).
@@ -438,10 +622,26 @@ pub(crate) fn theme_handle(
         },
     );
 
+    let set_independent_texture = Callback::new(move |on: bool| {
+        // Same persistence rule as the colour toggle: the preference is the
+        // workspace's, the per-pane textures it carries are temporary, and the
+        // window's own texture is what every pane falls back to when the mode
+        // goes off.
+        settings.update(|s| s.workspace.independent_textures = on);
+        let global = settings.get_untracked().appearance;
+        if on {
+            themes.enable_textures(manager.placed().into_iter(), manager.active(), global);
+        } else {
+            themes.disable_textures(global);
+        }
+    });
+
     app_ui::appearance::ThemeHandle {
         look,
         independent: themes.preferred(),
         set_independent,
+        independent_texture: themes.preferred_textures(),
+        set_independent_texture,
         commit,
         scrub,
         panes: themes.panes(),
@@ -450,7 +650,7 @@ pub(crate) fn theme_handle(
 
 #[cfg(test)]
 mod tests {
-    use super::distinct_hue;
+    use super::{distinct_hue, distinct_texture};
 
     fn gap(a: u16, b: u16) -> u16 {
         let d = a.abs_diff(b) % 360;
@@ -482,6 +682,21 @@ mod tests {
     fn the_widest_gap_wins_across_zero() {
         // Taken 100..=200: the free arc is 200 -> 460 (= 100), centre 330.
         assert_eq!(distinct_hue(&[100, 150, 200], 0.5), 330);
+    }
+
+    #[test]
+    fn a_new_texture_skips_the_modes_already_showing() {
+        use reader_core::appearance::TextureMode;
+        let taken = [TextureMode::Paper, TextureMode::Grid];
+        for r in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let mode = distinct_texture(&taken, r);
+            assert!(!taken.contains(&mode), "{mode:?} was already taken");
+            assert_ne!(mode, TextureMode::None, "None paints nothing");
+        }
+        // Every textured mode taken (five) and a sixth asked for: still a
+        // textured mode, one of the pool chosen at random.
+        let full: Vec<TextureMode> = TextureMode::all().iter().copied().skip(1).collect();
+        assert_ne!(distinct_texture(&full, 0.5), TextureMode::None);
     }
 
     #[test]

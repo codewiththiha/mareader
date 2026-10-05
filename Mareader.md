@@ -1328,9 +1328,10 @@ rather than scattered facts: `ChromeSurface` (`components::shell::controller`) n
 every per-route rule reads that name. The pin is remembered per surface, in one settings field each,
 because unhitching the reader's bar out of a document's way says nothing about the shelf's — and the
 shelf's defaults to pinned, since its bar is how the reader moves. The appearance menu drops its
-page-texture section off the reader surface (and on the reader too while a reflowable document
-paints its own paper — the same two facts the settings modal's Paper section gates itself on), and
-the settings gear does not mount: settings are the reader's, and a button that opens a modal with
+page-texture section off the reader surface — and only there; it stays for every document
+format, because a text page carries a pattern on the scroller that IS its paper
+(`styles/textures.css`), which is a stylesheet fact and not a reason to hide a control — and the
+settings gear does not mount: settings are the reader's, and a button that opens a modal with
 nothing to say about the shelf is a button the reader has to read and then ignore.
 
 ### A bar that can go deep

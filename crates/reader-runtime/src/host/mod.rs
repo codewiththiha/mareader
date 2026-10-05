@@ -161,8 +161,9 @@ pub struct ReaderHost {
     /// read, which folders are open, where it was scrolled. The host's, so
     /// it survives the rail remounting on an active-pane change.
     library: library::LibraryState,
-    /// The workspace's independent theme state (one look per pane; see
-    /// [`theme`]). The appearance menu routes through its handle.
+    /// The workspace's per-pane look state — the colour and texture
+    /// families, each with its own preference (see [`theme`]). The appearance
+    /// menu routes through its handle.
     themes: theme::PaneThemes,
 }
 
@@ -256,6 +257,7 @@ impl ReaderHost {
         let panes = Signal::derive(move || manager.placed().len());
         let themes = theme::PaneThemes::new(
             RwSignal::new(settings.with_untracked(|s| s.workspace.independent_themes)),
+            RwSignal::new(settings.with_untracked(|s| s.workspace.independent_textures)),
             Signal::derive(move || settings.with(|s| s.workspace.shared_base_mode)),
             panes,
         );
@@ -410,8 +412,9 @@ impl ReaderHost {
     }
 
     /// The appearance a pane created now starts with: the motion switches
-    /// plus its seeded look (its own while independent themes are in effect
-    /// — seeded from the pane in front; `None` otherwise).
+    /// plus its seeded look (its own while either per-pane mode is in effect
+    /// — seeded from the pane in front; `None` otherwise, which means
+    /// "inherit the window theme").
     fn appearance_now(&self, id: PaneId) -> PaneAppearance {
         let global = self.session.settings.with(|s| s.appearance);
         PaneAppearance {
@@ -420,8 +423,8 @@ impl ReaderHost {
         }
     }
 
-    /// The appearance menu's theme handle: routed edits land on the active
-    /// pane's look while independent themes are in EFFECT (a split on
+    /// The appearance menu's theme handle: a routed edit lands on the active
+    /// pane's look while the family's own mode is in EFFECT (a split on
     /// screen), everything else in Settings (see [`theme`]).
     pub fn theme_handle(&self) -> app_ui::appearance::ThemeHandle {
         theme::theme_handle(self.themes, self.manager, self.session.settings)
@@ -810,10 +813,11 @@ impl ReaderHost {
             .create(request, launch, move |id| host.env_for(id))?;
         // A pane born into a live independent split starts from the look of
         // the pane in front, in a colour of its own unlike every pane's
-        // showing. With the mode off — or a lone pane on screen, where it
-        // stands down — the pane has no look of its own and inherits the
-        // window theme.
-        if self.themes.active().get_untracked() {
+        // showing (and its own texture, when the texture mode is the one in
+        // effect). With neither mode in effect — or a lone pane on screen,
+        // where both stand down — the pane has no look of its own and
+        // inherits the window theme.
+        if self.themes.active().get_untracked() || self.themes.textures_active().get_untracked() {
             let global = self.session.settings.with(|s| s.appearance);
             let from = self
                 .manager
@@ -893,10 +897,10 @@ impl ReaderHost {
     /// pane nearest to it as the focus successor; then the manager disposes
     /// it — only it: every other pane keeps its session.
     ///
-    /// The last split's collapse also hands the window the survivor's colour
-    /// (see [`theme`]): independent themes need the split they serve, so the
-    /// single pane left shows the window theme — which IS its own colour by
-    /// then — and the chrome agrees with it by construction.
+    /// The last split's collapse also hands the window the survivor's look
+    /// (see [`theme`]): each per-pane mode needs the split it serves, so the
+    /// single pane left shows the window theme — which IS its own colour and
+    /// texture by then — and the chrome agrees with it by construction.
     pub fn close_pane(&self, id: PaneId) -> Result<(), PaneError> {
         match self.manager.lifecycle(id) {
             None => return Err(PaneError::Unknown(id)),
@@ -927,8 +931,8 @@ impl ReaderHost {
             let _ = retiring.try_update(|r| r.retain(|other| *other != id));
         });
         self.themes.forget(id);
-        // The promoted colour lands AFTER the close: the pane count is one
-        // by now, so the mode is down and the survivor follows the window
+        // The promoted look lands AFTER the close: the pane count is one by
+        // now, so both modes are down and the survivor follows the window
         // theme through the same boundary (its own `look_for` answers
         // `None`), repainting it onto the window's new values.
         if let Some(look) = promoted {

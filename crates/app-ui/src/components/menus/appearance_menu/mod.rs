@@ -24,12 +24,14 @@
 //! something no pixel on screen reads is a section the reader has to read and
 //! then ignore. So the menu is told WHICH surface mounted it
 //! ([`ChromeSurface`], the shell controller's name for the route) and gates
-//! the one section that is a document's business — page texture paints the
-//! PDF's paper bitmaps, so it shows on the reader surface and only while a
-//! raster document is the one open (the same two facts the settings modal's
-//! Paper section gates itself on). The shelf has no page to texture; a
-//! reflowable document paints its paper from the theme tokens. Mode, tint,
-//! presets and grain are the window's own and show everywhere.
+//! the one section that is a document's business: page texture shows on the
+//! reader surface and stands down on the shelf, which has no page to texture.
+//! Both document families carry it, each on its own surface — a PDF page
+//! composites the pattern over its raster, a text or Markdown page lays it on
+//! the scroller that IS its paper (`styles/textures.css`) — so the section is
+//! the reader's for either format and the difference lives in the stylesheet,
+//! not in a gate. Mode, tint, presets and grain are the window's own and show
+//! everywhere.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -97,12 +99,11 @@ pub fn AppearanceMenu(
     });
     on_cleanup(|| set_appearance_menu_open(false));
 
-    // The texture section's two facts, in one derive: this surface has pages
-    // to texture, and the document open on it is a raster one. Tracked, so a
-    // text document swapping in takes the section out (and a PDF swaps it
-    // back) without the menu being remounted.
-    let texture_applies =
-        Signal::derive(move || surface == ChromeSurface::Reader && !state.reader.reflowable.get());
+    // The texture section's one fact: this surface has a document to texture.
+    // It used to also ask which format that document was, on the reasoning
+    // that only a raster can carry a pattern — which left the reflowable
+    // formats' scroller texture with no way to be chosen at all.
+    let texture_applies = Signal::derive(move || surface == ChromeSurface::Reader);
 
     view! {
         <div node_ref=root_ref class="relative inline-flex">
@@ -135,8 +136,28 @@ pub fn AppearanceMenu(
                 <BaseSection state=state theme=theme />
                 <Show when=move || texture_applies.get()>
                     <Separator vertical=false spacing="my-3" />
-                    <SectionLabel text="Page texture" />
-                    <TextureSection theme=theme />
+                    <div data-appearance-section="page-texture">
+                        <SectionLabel text="Page texture" />
+                        <TextureSection theme=theme />
+                        <Show when=move || split.get()>
+                            <div
+                                class="mt-3 flex items-center justify-between gap-3"
+                                data-setting="independent-textures"
+                            >
+                                <span class="min-w-0">
+                                    <span class="block text-sm text-ink">"Texture for each"</span>
+                                    <span class="block text-xs text-muted">
+                                        "Each pane keeps its own texture and dials."
+                                    </span>
+                                </span>
+                                <Switch
+                                    checked=theme.independent_texture
+                                    on_change=theme.set_independent_texture
+                                    title="Independent page texture for each pane"
+                                />
+                            </div>
+                        </Show>
+                    </div>
                 </Show>
                 <Separator vertical=false spacing="my-3" />
                 <div data-appearance-section="film-grain">

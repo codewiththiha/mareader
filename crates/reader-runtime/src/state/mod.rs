@@ -35,9 +35,11 @@ pub use search::SearchState;
 pub use viewer::ViewerSignals;
 pub use zoom::{ZoomCommand, ZoomTransition};
 
-/// Page-host texture, provided via Leptos context by the app shell (derived
-/// from settings). The page canvases and the reflowable page hosts read it to
-/// pick their `texture-*` class; neither ever touches settings.
+/// Page-host texture, provided via Leptos context by the pane realm, from the
+/// look THAT pane is showing (its own when a per-pane mode routes the texture
+/// family, the window's otherwise). The page canvases and the reflowable page
+/// hosts read it to pick their `texture-*` class; neither ever touches
+/// settings.
 pub type TextureSignal = leptos::prelude::Memo<TextureMode>;
 
 /// The reflowable formats' typography, provided via context by the app
@@ -135,3 +137,5 @@ impl ReaderState {
         self.document.content.reflow.stream_fraction()
     }
 }
+
+// only the changed file was rewritten

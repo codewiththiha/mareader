@@ -92,11 +92,15 @@ pub enum ChromeSlot {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PaneAppearance {
     pub motion: app_state::Motion,
-    /// The pane's own look while independent themes are in effect (a split
-    /// on screen): `Some` means the pane paints these tokens on its root
+    /// The pane's own look while a per-pane mode is in effect (a split on
+    /// screen): `Some` means the pane paints these tokens on its root
     /// (base + tint + texture — grain stays global) and everything inside
     /// resolves to them; `None` means pure inheritance from the window's
-    /// theme (the pane removes any tokens it previously owned).
+    /// theme (the pane removes any tokens it previously owned). WHICH
+    /// families the pane owns is the composition behind this field, not the
+    /// field's: the texture-only mode hands over a look whose colour is the
+    /// window's, and repainting an equal colour is worth the one push and the
+    /// one paint both modes share.
     pub look: Option<reader_core::appearance::Appearance>,
 }
 
@@ -286,7 +290,10 @@ pub struct PaneEnv {
 pub struct WorkspaceLook {
     pub blend: bool,
     /// Independent themes IN EFFECT: the stored preference while a split is
-    /// on screen. The preference itself rides only on the switch.
+    /// on screen. The preference itself rides only on the switch. The
+    /// texture family has its own preference and NO class here: it changes
+    /// no backdrop, and a texture-only pane's colour tokens are the
+    /// window's, so the blend rules must keep treating the split as shared.
     pub independent: bool,
     pub split: bool,
     pub page_shadow: bool,

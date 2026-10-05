@@ -25,8 +25,8 @@ use crate::state::{ReaderState, TextureSignal};
 /// PDF document (whose pages own their texture; the class must not land on
 /// the PDF scroller, which paints the chrome surface).
 pub fn texture_class(state: ReaderState) -> Memo<String> {
-    let texture =
-        use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
+    let texture = use_context::<TextureSignal>()
+        .expect("TextureSignal is provided by the pane realm, from its look");
     Memo::new(move |_| {
         if !state.reflowable() {
             return String::new();
@@ -53,3 +53,5 @@ pub fn zoom_style(state: ReaderState) -> Signal<String> {
         format!("--tx-zoom:{zoom};")
     })
 }
+
+// only the changed file was rewritten

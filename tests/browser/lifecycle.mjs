@@ -3062,6 +3062,211 @@ currentStage = "stage13b-pane-theme-boundary";
   await closeAndWaitBaseline("pane theme boundary", false, beforeThemeClose.disposalEpoch + beforeThemeClose.host.panes.length);
 }
 
+// --- Stage 13d: independent textures at the split boundary ----------------
+currentStage = "stage13d-pane-texture-boundary";
+// The texture family has its own per-pane mode, the same shape as the colour
+// one and routed by the same rule: turning it on keeps the focused pane's
+// pattern and hands every other pane a mode of its own; a routed pick — the
+// mode or either dial — lands on the focused pane alone and on nothing beside
+// it; and switching the mode off folds the window's texture back over every
+// pane. The last split's collapse promotes the survivor's texture into the
+// window theme, the way the colour stage proves one turn earlier, so the
+// texture a reader ends on is the texture the next launch opens with. A
+// Markdown pane is on stage deliberately: its pattern rides the scroller that
+// IS its paper, which is the half of the contract that used to be missing —
+// and the half whose absence used to hide the picker entirely.
+{
+  const panicsBeforeTexture = panicCount;
+  const openedTextured = await openLight(PEARLS);
+  const pdfPane = openedTextured.host.panes[0].paneId;
+  if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[texture boundary] the host refused the Markdown pane beside the PDF");
+  const textured = await waitForSettledLayout("[texture boundary] PDF | Markdown both ready", (s) =>
+    s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 60_000);
+  const mdPane = textured.host.panes.find((p) => p.paneId !== pdfPane).paneId;
+  if (textured.host.activePane !== mdPane) throw new Error(`[texture boundary] active pane ${textured.host.activePane}, expected the new Markdown pane ${mdPane}`);
+
+  // The `texture-*` class is the naming contract `styles/textures.css` and
+  // `TextureMode::css_class` share, restated here on purpose: a mode that
+  // renames its class in Rust without renaming it in the stylesheet paints
+  // nothing, and that is exactly the bug class this stage exists to catch.
+  const CLASS_OF = {
+    None: null,
+    "Real paper": "texture-paper",
+    Lined: "texture-lined",
+    Grid: "texture-grid",
+    Dotted: "texture-dotted",
+    Cross: "texture-cross",
+  };
+
+  // Per pane: the class its carriers wear — a PDF page host, or the reflowable
+  // scroller for a text document — and the two dials its root paints as its
+  // OWN. A pane with no look of its own paints neither and reads null,
+  // inheriting the window; that difference is what turns this probe into a
+  // routing assert rather than a look at the same number twice. `chosen` is
+  // the menu's own answer: which mode the picker marks pressed, read from the
+  // same `aria-pressed` the reader sees.
+  const textures = () => page.evaluate((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    if (!doc) return null;
+    const read = (root) => {
+      const carrier = root.querySelector(".pdf-page")
+        ?? root.querySelector(".paginated-scroller, .tx-stream, .tx-strip");
+      const mode = [...(carrier?.classList ?? [])].find((c) => c.startsWith("texture-")) ?? null;
+      return {
+        mode,
+        opacity: root.style.getPropertyValue("--texture-opacity").trim() || null,
+        scale: root.style.getPropertyValue("--texture-scale-user").trim() || null,
+      };
+    };
+    const panes = {};
+    for (const entry of doc.querySelectorAll("[data-pane-id]")) {
+      const frame = entry.querySelector("iframe.pane-frame:not([data-frame-hidden])");
+      // The root is under the entry, or in the pane frame that entry holds —
+      // the pane's surface and the pane's document frame are separate
+      // documents, and only one of them carries the root.
+      const root = entry.querySelector("[data-pane-root]")
+        ?? frame?.contentDocument?.querySelector("[data-pane-root]");
+      panes[entry.dataset.paneId] = root
+        ? read(root)
+        : { mode: "no-root", opacity: null, scale: null };
+    }
+    const grid = doc.querySelector('[data-appearance-section="page-texture"] .grid-cols-3');
+    return {
+      windowDial: doc.documentElement.style.getPropertyValue("--texture-opacity").trim() || null,
+      section: !!grid,
+      chosen: (grid?.querySelector('[aria-pressed="true"]')?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      panes,
+    };
+  }, activeFrame);
+  const waitTextures = async (label, predicate, timeoutMs = 20_000) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await textures();
+      if (last && predicate(last)) return last;
+      await page.waitForTimeout(100);
+    }
+    throw new Error(`[texture boundary] ${label}: ${JSON.stringify(last)}`);
+  };
+  // The picker's own clicks, by the label a reader reads: the mode chips carry
+  // no test-only attribute, and the button whose text says "Grid" is the
+  // button the menu offers for Grid.
+  const clickTexture = (name) => page.evaluate(([sel, name]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const buttons = [...(doc?.querySelectorAll('[data-appearance-section="page-texture"] .grid-cols-3 button') ?? [])];
+    const btn = buttons.find((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim() === name);
+    if (!btn) throw new Error(`the texture grid has no "${name}" button (${buttons.length} buttons)`);
+    btn.click();
+  }, [activeFrame, name]);
+  const dialTextureOpacity = (value) => page.evaluate(([sel, value]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const input = doc?.querySelector('[data-appearance-section="page-texture"] input[type="range"][aria-label="Texture opacity"]');
+    if (!input) throw new Error("the texture section has no opacity dial");
+    const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, "value").set;
+    setter.call(input, String(value));
+    input.dispatchEvent(new doc.defaultView.Event("input", { bubbles: true }));
+  }, [activeFrame, value]);
+
+  await frameClick('button[title="Appearance"]', "[texture boundary] the appearance menu");
+  // The picker is there for the Markdown pane: the section used to stand down
+  // while the focused document was reflowable, on the theory that only a
+  // raster can carry a pattern.
+  await waitTextures("the texture section shows while a Markdown pane is focused", (p) => p.section);
+  const atRest = await waitTextures("the split rests on the window's own texture",
+    (p) => p.chosen in CLASS_OF && p.panes[pdfPane].mode === p.panes[mdPane].mode
+      && p.panes[pdfPane].opacity === null && p.panes[mdPane].opacity === null);
+
+  // The mode comes on. The pane in front — the Markdown one the reader just
+  // opened and is looking at — keeps the texture it shows; the PDF beside it
+  // is handed a different mode, chosen at random out of the ones not already
+  // on screen, and each pane now paints its own two dials.
+  await frameClick('[data-setting="independent-textures"] [role="switch"]', "[texture boundary] independent textures on");
+  const perPane = await waitTextures("each pane took a texture of its own",
+    (p) => p.panes[mdPane].mode === atRest.panes[mdPane].mode
+      && p.panes[pdfPane].mode !== p.panes[mdPane].mode
+      && p.panes[pdfPane].opacity !== null && p.panes[mdPane].opacity !== null);
+
+  // A pick, then a dial, with the Markdown pane in front: both move THAT pane
+  // and leave its neighbour exactly as the mode left it. Before the fix the
+  // class never moved at all — a per-pane edit lands in the pane's own look,
+  // not in the settings a pane's copy of the world is read from.
+  const options = await page.evaluate((sel) => [...(document.querySelector(sel)?.contentDocument
+    ?.querySelectorAll('[data-appearance-section="page-texture"] .grid-cols-3 button') ?? [])]
+    .map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim()), activeFrame);
+  // A mode the Markdown pane is not already wearing and the PDF pane will not
+  // be caught wearing either, so the pick below can only pass by moving one
+  // pane; "None" is out because its dials are inert by design.
+  const target = options.find((name) => name !== atRest.chosen
+    && CLASS_OF[name] && CLASS_OF[name] !== perPane.panes[pdfPane].mode);
+  if (!target) throw new Error(`[texture boundary] the grid offers nothing to switch to: ${JSON.stringify(options)}`);
+  await clickTexture(target);
+  await waitTextures(`the Markdown pane took ${target} and the PDF did not`,
+    (p) => p.chosen === target && p.panes[mdPane].mode === CLASS_OF[target]
+      && p.panes[pdfPane].mode === perPane.panes[pdfPane].mode);
+  dialTextureOpacity(40);
+  const dialed = await waitTextures("the Markdown pane's own opacity moved, its neighbour's did not",
+    (p) => p.panes[mdPane].opacity === "0.400"
+      && p.panes[pdfPane].opacity === perPane.panes[pdfPane].opacity
+      && p.panes[pdfPane].opacity === p.windowDial);
+
+  // The collapse: the Markdown pane, whose texture the window never saw,
+  // goes. The surviving PDF pane's own texture is promoted into the window
+  // theme as the mode stands down, and the pane stops painting dials of its
+  // own because the window now says the same thing.
+  await page.evaluate(([sel, id]) => {
+    const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
+    if (!btn) throw new Error(`pane ${id} has no close control`);
+    btn.click();
+  }, [activeFrame, mdPane]);
+  await waitForSettledLayout("[texture boundary] the Markdown pane closed", (s) =>
+    s.host?.panes?.length === 1 && s.host.panes[0].paneId === pdfPane, 30_000);
+  const promoted = await waitTextures("the window took the survivor's texture",
+    (p) => p.panes[pdfPane].mode === perPane.panes[pdfPane].mode
+      && p.panes[pdfPane].opacity === null && p.windowDial === perPane.panes[pdfPane].opacity);
+
+  // The stored preference survived the stand-down, so the next split brings
+  // the mode back by itself: the survivor keeps what the window just learned
+  // from it, and the pane born beside it is handed a mode of its own.
+  if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[texture boundary] the host refused the pane that carries the mode back");
+  const back = await waitForSettledLayout("[texture boundary] the mode returns with the split", (s) =>
+    s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 60_000);
+  const newcomer = back.host.panes.find((p) => p.paneId !== pdfPane).paneId;
+  const again = await waitTextures("the mode is back: survivor unchanged, newcomer its own",
+    (p) => p.panes[pdfPane].mode === promoted.panes[pdfPane].mode
+      && p.panes[newcomer].mode !== p.panes[pdfPane].mode);
+
+  // Switch the mode off by hand: one texture for every pane again — the
+  // window's, which is the promoted one — and no pane paints dials. Then put
+  // the window back where the stage found it, so the stages that follow read
+  // the workspace they expect.
+  await frameClick('[data-setting="independent-textures"] [role="switch"]', "[texture boundary] independent textures off");
+  await waitTextures("one texture for every pane, the window's own",
+    (p) => p.panes[pdfPane].mode === p.panes[newcomer].mode
+      && p.panes[pdfPane].mode === again.panes[pdfPane].mode
+      && p.panes[pdfPane].opacity === null && p.panes[newcomer].opacity === null);
+  await clickTexture(atRest.chosen);
+  const restored = await waitTextures("the window's texture is as the stage found it",
+    (p) => p.panes[pdfPane].mode === atRest.panes[pdfPane].mode
+      && p.panes[newcomer].mode === atRest.panes[pdfPane].mode
+      && p.chosen === atRest.chosen);
+  await frameClick('button[title="Appearance"]', "[texture boundary] close the appearance menu");
+
+  console.log(
+    `[texture boundary]: the split's textures ${atRest.panes[pdfPane].mode} | ${atRest.panes[mdPane].mode} ` +
+      `became ${again.panes[pdfPane].mode} | ${again.panes[newcomer].mode}, the Markdown pane moved to ${target} at 0.400, ` +
+      `the collapse promoted ${promoted.panes[pdfPane].mode} to the window, and the mode off left both at ${restored.panes[pdfPane].mode}`,
+  );
+  summary.paneTextureBoundary = {
+    rest: atRest.panes, perPane: again.panes, promoted: promoted.panes[pdfPane],
+    promotedDial: promoted.windowDial, target,
+  };
+  assertNoNewPanics("independent texture boundary", panicsBeforeTexture);
+  const beforeTextureClose = await snap();
+  await closeAndWaitBaseline("pane texture boundary", false, beforeTextureClose.disposalEpoch + beforeTextureClose.host.panes.length);
+}
+
 // --- Stage 14: the Library panel, the one split-drag source --------------
 currentStage = "stage14-drag-drop";
 // The production drag: a file row of the reader's Library panel (the rail's

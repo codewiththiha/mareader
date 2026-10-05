@@ -33,11 +33,11 @@ shape is in `docs/route-split-retrospective.md`.
   [Split workspace](#split-workspace).
 - **Document drag and drop.** A file row in the reader's Library panel is
   the split-drag source; see [Document drag and drop](#document-drag-and-drop).
-- **Appearance.** Split-mode blend with a shared MRU paper, and an
-  independent per-pane theme mode; see
+- **Appearance.** Split-mode blend with a shared MRU paper, and
+  independent per-pane colour and texture; see
   [Workspace appearance and blend](#workspace-appearance-and-blend),
   [Split pane decoration](#split-pane-decoration) and
-  [Independent pane colours](#independent-pane-colours).
+  [Independent pane looks](#independent-pane-looks).
 - **Fit, moves and grab.** Fit follows the page on screen, panes move and
   lift, and empty space grab-pans; see [Fit, pane moves and grab](#fit-pane-moves-and-grab).
 
@@ -460,11 +460,11 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   blend mode. The MRU publisher is the shared fallback; focus on MD/TXT holds
   the last PDF colour instead of clearing it.
 - **Independent mode:** `PaneThemes` owns temporary looks by `PaneId`. The
-  mode needs the split it serves (see
-  [Independent pane colours](#independent-pane-colours)): a lone pane stands
-  it down and takes the look its own colour was promoted into, so the shared
-  chrome and the outer reader backdrop keep the look the reader is looking
-  at; noise remains global. The pane painter writes
+  modes need the split they serve (see
+  [Independent pane looks](#independent-pane-looks)): a lone pane stands them
+  down and takes the look its own colour and texture were promoted into, so
+  the shared chrome and the outer reader backdrop keep the look the reader is
+  looking at; noise remains global. The pane painter writes
   base/tint/filter/reflow/texture tokens onto each pane root. Each PDF session
   pins its `EngineSession.themeRoot` to the root containing its registered
   page and owns `themePipeline` (actual-input fingerprint + generation), so
@@ -566,13 +566,26 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   the event's own main-thread turn. `tools/check-chrome-contracts.ts` mirrors
   the y inset.
 
-## Independent pane colours
+## Independent pane looks
+
+Two preferences, one stored `Appearance` per pane, and a family of that look
+is per pane only while the preference that owns it is in effect: colour is the
+theme switch's, texture is the texture switch's, and independent themes carry
+texture with colour because a look they own is a whole look.
 
 - Turning independent themes on keeps the focused pane's look and gives
   every other pane its own tint hue; a pane born while on gets one too.
   `theme::distinct_hue` picks at random inside the middle half of the
   widest gap between the hues showing (unit-tested), so no two match;
   an untinted start gets `PANE_TINT_STRENGTH`.
+- Turning independent textures on does the same for the texture family: the
+  focused pane keeps its pattern and dials, every other pane gets a mode of
+  its own (`theme::distinct_texture`, random among the modes not already
+  showing), and a routed texture edit — the mode or either dial — lands on the
+  focused pane alone. A pane's `texture-*` class comes from the look the host
+  routed to IT (`pane_frame::realm` derives the `TextureSignal` from
+  `viewer.look`, not from settings), which is what lets a text or Markdown
+  pane be textured apart from the PDF beside it.
 - `workspace.shared_base_mode` (default on; Settings → Workspace, "Light,
   Dark and Dim change every pane"): only colour is per pane. Panes show
   the global base (`PaneThemes::shown`) and a routed base switch writes the
