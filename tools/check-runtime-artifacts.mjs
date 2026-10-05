@@ -92,7 +92,8 @@ const REQUIRED = [
 const SHELL_BOOT_ID = 'id="shell-boot"';
 const SHELL_BOOT_COPY = "Loading MAReader";
 const SHELL_BOOT_MARK = 'class="loader shell-boot__loader"';
-const SHELL_BOOT_WATCHDOG = "shellBoot.js";
+const SHELL_BOOT_WATCHDOG = "/shellBoot.js";
+const SCRIPT_SRC = /<script(?=\s|>)(?:[^"'<>]|"[^"]*"|'[^']*')*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi;
 
 const problems = [];
 
@@ -152,7 +153,8 @@ if (fs.existsSync(indexHtml)) {
         `screen must animate while the shell starts (styles/boot.css)`,
     );
   }
-  if (!html.includes(SHELL_BOOT_WATCHDOG)) {
+  const scripts = html.replace(/<!--[\s\S]*?-->/g, "").matchAll(SCRIPT_SRC);
+  if (![...scripts].some((match) => (match[1] ?? match[2] ?? match[3]) === SHELL_BOOT_WATCHDOG)) {
     problems.push(
       `dist/index.html does not load ${SHELL_BOOT_WATCHDOG} — nothing would say ` +
         `"the shell did not start" when a launch fails, and the mark would run forever`,

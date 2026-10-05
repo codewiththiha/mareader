@@ -682,8 +682,8 @@ texture with colour because a look they own is a whole look.
   `window_bridge.rs`. That module answers a probe and never guesses: an
   unavailable answer leaves the last state on screen, because writing
   "not maximized" for "the window did not say" is how a glyph comes to look
-  deliberately wrong. `install()` deliberately does not gate on the surface
-  being present — in a frame it is published by a script, so it can arrive
-  after the bar mounted, and the next resize finds it.
+  deliberately wrong. When the surface arrives after the bar mounts, a
+  route-owned 250 ms timer waits for it before probing and subscribing to
+  resize. The timer is cleared when the surface arrives or the route closes.
 
 <!-- // only the changed file was rewritten -->

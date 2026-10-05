@@ -185,7 +185,7 @@ function frame({ platform, host = null, own = null, injected = false }) {
 {
   const f = frame({ platform: "Linux x86_64", host: "stub" });
   const b = bar();
-  ok("the frame gets a facade, not a copy of the host object", f.self.__TAURI__ && f.self.__TAURI__ !== f.hostLog, f.self.__TAURI__ === undefined);
+  ok("the frame gets a facade, not a copy of the host object", f.self.__TAURI__ && f.self.__TAURI__ !== f.self.parent.__TAURI__, f.self.__TAURI__ === undefined);
   const through = f.press(b.anchor);
   ok("a press on a child of the bar's deep region drags the window", through.prevented && through.host.join() === START, through);
   ok("a press on the bar itself drags the window", f.press(b.row).host.join() === START);

@@ -41,14 +41,35 @@ impl ProbeState {
 }
 
 /// Publish the native window's actual maximized state:
-/// once at install, then on every window resize.
+/// once the Tauri surface is available, then on every window resize.
 pub(super) fn install(maximized: RwSignal<bool>) {
-    // No `has_tauri()` gate here, unlike the call it makes: this runs when the
-    // bar mounts, and in a route frame the Tauri surface is published by a
-    // script that may not have run yet. Each probe asks on its own, so the
-    // first resize after the surface lands is enough — an install-time refusal
-    // would leave the glyph frozen for the life of the route.
     if !uses_frameless_controls() {
+        return;
+    }
+
+    // A route can mount before its relay publishes Tauri. Defer both the
+    // initial probe and subscription: tauri_listen otherwise skips registration.
+    if !tauri_bridge::has_tauri() {
+        let owner = Owner::current().expect("the titlebar installs inside its route owner");
+        let retry = StoredValue::new_local(None::<IntervalHandle>);
+        let handle = set_interval_with_handle(
+            move || {
+                if tauri_bridge::has_tauri() {
+                    if let Some(Some(handle)) = retry.try_update_value(Option::take) {
+                        handle.clear();
+                        owner.with(|| install(maximized));
+                    }
+                }
+            },
+            std::time::Duration::from_millis(250),
+        )
+        .ok();
+        retry.set_value(handle);
+        on_cleanup(move || {
+            if let Some(Some(handle)) = retry.try_update_value(Option::take) {
+                handle.clear();
+            }
+        });
         return;
     }
 

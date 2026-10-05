@@ -6,6 +6,19 @@ export async function verifyWindowState({ browser, base }) {
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
   try {
+    await context.addInitScript(() => {
+      const generation = new URL(location.href).searchParams.get("g");
+      if (window === window.top || !["1", "3"].includes(generation)) return;
+      // Hold the relay's published surface until after the titlebar mounts.
+      let surface;
+      let available = false;
+      Object.defineProperty(window, "__TAURI__", {
+        configurable: true,
+        get: () => available ? surface : undefined,
+        set: (value) => { surface = value; },
+      });
+      window.__releaseWindowSurface = () => { available = true; };
+    });
     // This existing same-origin page is inert when opened top-level; no
     // Shell/runtime starts underneath the manually hosted Library fixture.
     await page.goto(`${base}/bake.html`, { waitUntil: "load" });
@@ -73,6 +86,12 @@ export async function verifyWindowState({ browser, base }) {
     }, base);
     const captions = () => page.frameLocator("#window-probe-frame");
     await page.waitForFunction(() => window.__windowFixture.ready, null, { timeout: 30_000 });
+    await captions().locator('button[aria-label="Maximize"]').waitFor({ state: "attached" });
+    if (await page.evaluate(() => window.__windowProbe.queries !== 0 || window.__windowProbe.resizeHandlers.size !== 0)) {
+      throw new Error("window probe ran before the frame's Tauri surface was available");
+    }
+    await page.evaluate(() => document.getElementById("window-probe-frame").contentWindow.__releaseWindowSurface());
+    // No resize is emitted: delayed availability alone must update the glyph.
     await captions().locator('button[aria-label="Restore"]').waitFor({ state: "attached" });
     await page.waitForFunction(() => window.__windowProbe.resizeHandlers.size === 1);
     const before = await page.evaluate(() => window.__windowProbe.queries);
@@ -113,9 +132,23 @@ export async function verifyWindowState({ browser, base }) {
       return before;
     });
     await page.waitForFunction(() => window.__windowProbe.resizeHandlers.size === 0 && window.__windowProbe.unlistens === 2);
+    await page.evaluate(() => {
+      document.getElementById("window-probe-frame").remove();
+      window.__windowFixture.port.close();
+      window.__windowProbe.holdResize = false;
+      window.__mountWindowProbe(3);
+    });
+    await page.waitForFunction(() => window.__windowFixture.ready);
+    await captions().locator('button[aria-label="Maximize"]').waitFor({ state: "attached" });
+    await page.evaluate(() => window.__disposeWindowProbe());
+    await page.waitForFunction(() => window.__windowFixture.disposed);
+    await page.evaluate(() => document.getElementById("window-probe-frame").contentWindow.__releaseWindowSurface());
+    // Keep the disposed realm alive beyond two retry ticks to expose a leak.
+    await page.waitForTimeout(750);
     const final = await page.evaluate(() => ({ queries: window.__windowProbe.queries, handlers: window.__windowProbe.resizeHandlers.size }));
-    if (final.queries !== retiredQueries || errors.length) throw new Error(`disposed window bridge ran: ${JSON.stringify({ final, retiredQueries, errors })}`);
+    if (final.queries !== retiredQueries || final.handlers !== 0 || errors.length) throw new Error(`disposed window bridge ran: ${JSON.stringify({ final, retiredQueries, errors })}`);
     return { initialMaximized: true, externalResizeUpdates: true, stormQueries,
+      delayedSurfaceProbed: true, disposedBeforeSurfaceSuppressed: true,
       pendingRegistrationUnlistened: true, retiredProbeSuppressed: true };
   } finally {
     await context.close();
