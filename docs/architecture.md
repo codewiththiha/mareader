@@ -263,9 +263,11 @@ describes a tree that no longer exists.
 GitHub Actions is the build: `CI` (format, clippy, wasm check, dependency
 gate, `cargo test`, web contracts, macOS shell) runs on every push that
 touches code; `Deep CI` (browser lifecycle baseline, Tauri boot smoke, split
-memory replay) runs on pushes touching app or engine paths and honours
-`[skip deep]` in the subject. Neither reads `docs/**`, so a docs-only push
-runs nothing. Details: `docs/ci-architecture.md`.
+memory replay) runs on pushes touching app or engine paths, and `[skip deep]`
+in the last commit's subject drops all three of its jobs when the change cannot
+move a byte, a wake or a release — the lists that decide live in `AGENTS.md`.
+Neither workflow reads `docs/**`, so a docs-only push runs nothing.
+Details: `docs/ci-architecture.md`.
 
 ## Measured, not assumed
 

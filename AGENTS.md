@@ -38,8 +38,55 @@ large installs locally. Run the fast checks that match what you touched:
 - Browser suite syntax: `node --check tests/browser/lifecycle.mjs`
 
 After pushing, find the workflow run for the pushed SHA (not the branch's
-latest run) and wait for `CI` and `Deep CI` to finish. Fix and repeat until
-both are green. `docs/**`-only pushes trigger no run.
+latest run) and wait for `CI` to finish. Wait for `Deep CI` when that push
+started one — the rule for whether it should is under "Deep CI" below. Fix and
+repeat until every lane that ran is green. `docs/**`-only pushes trigger no
+run.
+
+## Deep CI
+
+`Deep CI` answers one question: does everything a change allocated come back?
+It boots the real wasm app in a real browser and drives open → scroll → zoom →
+close-during-work → dispose → reopen against the disposal baseline
+(`docs/memory-baseline.md`), replays a split read in Chromium and WebKit, and
+boots the Tauri window under Xvfb: three jobs capped at 45, 75 and 45 minutes.
+
+It runs on a push only when a path listed in `.github/workflows/deep-ci.yml`
+changed. When it would run and the change cannot move a byte, a wake or a
+release, put `[skip deep]` in the subject of the LAST commit of the push: the
+workflow reads that subject and nothing else (a body quoting the marker changes
+nothing), and the marker skips all three jobs. The nightly cron ignores it and a
+`workflow_dispatch` run can force one with `ignore-skip`, so a skip is never
+the last word.
+
+- Skip it for presentation and prose: docs, release notes and comments; copy,
+  labels, spacing, a control's placement or visibility, `styles/**`, and the
+  menu or settings rows that only read and write an existing signal; AI,
+  toolbar and shelf-surface presentation; `tools/**` scripts that neither build
+  nor gate artifacts; pure logic in `reader-core`, `pdf-core`, `md-core`,
+  `txt-core`, `ui-geom` and `ai-core`, whose answers `CI`'s `cargo test` gives.
+- Never skip it for anything that allocates, retains, counts or releases:
+  `public/**`, `src/**`, `src-tauri/**`, `crates/reader-runtime/**`,
+  `crates/library-runtime/**`, `crates/frame-transport/**`,
+  `crates/runtime-contract/**`, `crates/pdf-engine/**`, `crates/pdf-paper/**`,
+  `crates/app-state/**`, `crates/virtual-list*/**`, `crates/tauri-bridge/**`
+  and the disposal counters in `src/diagnostics.rs` and
+  `crates/reader-runtime/src/diagnostics.rs`; a new cache, timer, observer,
+  listener, queue, canvas or
+  worker — or a change to when one dies; a retention policy, a cap or a
+  ceiling; a build, staging, artifact or boot change (`tools/build-dist.sh`,
+  `tools/dev.mjs`, `*.Trunk.toml`, `index.html`, `package.json`); a change to
+  `tests/browser/**`, `tools/engine-smoke/**` or `.github/workflows/**`; and
+  any push that follows a red `Deep CI`. In `crates/app-ui/**` and
+  `crates/app-chrome/**` the marker covers a control's LOOK only: a diff that
+  adds a listener, observer, memo, registry entry or effect is an owner and runs
+  the deep lane.
+- A skip is a claim, not a shortcut: name in the summary which list the change
+  fell in, and say that nightly will see it. When the lists disagree, or an
+  owner is touched by a change that does not read like memory work, run the
+  lane. Never add the marker to dodge a failure, and never edit the workflow's
+  path list to avoid a run — narrowing a gate is a decision for the repository,
+  not for a task.
 
 ## Code style
 
@@ -89,16 +136,21 @@ both are green. `docs/**`-only pushes trigger no run.
 - Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`,
   `chore`. Scope is the area touched (`pdf`, `split`, `shell`, `engine`, …).
 - One coherent change per commit; context goes in the body, not the subject.
-  No progress reports, phase labels or ticket numbers in the subject.
+  No progress reports, phase labels or ticket numbers in the subject. The one
+  non-descriptive token a subject may carry is `[skip deep]` (see "Deep CI"),
+  and the 72-character check counts it.
 - Squash fixups before pushing; rewrite remote history only with
   `git push --force-with-lease`.
 
 ## Definition of done
 
 1. The change is implemented, and visually verified if it touches UI.
-2. Matching local checks pass, and `CI` and `Deep CI` are green for the
-   pushed SHA.
+2. Matching local checks pass and `CI` is green for the pushed SHA; `Deep CI`
+   is green for it as well unless the push carried `[skip deep]` under the rules
+   above, which the summary states either way.
 3. Docs describe the current behaviour (`docs/architecture.md`,
    `docs/memory/` for memory behaviour).
 4. The summary states what changed, what was verified and any limits. If a
    requirement cannot be met, report the blocker instead of dropping it.
+
+<!-- // only the changed file was rewritten -->

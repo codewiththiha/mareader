@@ -45,11 +45,23 @@ both deep lanes honour "[skip deep]" in the commit subject (never the cron)
   touch `docs/**` — no lane reads those files as input (the contract scripts
   parse SOURCE comments, not the documents they point at), so there is
   nothing to compile. The filter drops a run only when EVERY changed path
-  matches. `Deep CI`'s two 45-minute lanes honour `[skip deep]` in the
-  commit subject, and a `workflow_dispatch` can narrow the run to one lane or
-  override the marker. Neither escape is the last word: the nightly cron
-  takes no notice of either, so whatever the day skipped is caught
+  matches. `Deep CI`'s three jobs (browser lifecycle 45 minutes, the memory
+  replay that follows it 75, the native boot smoke 45) are gated twice over:
+  the push's changed paths decide whether the lane is in scope at all, and
+  `[skip deep]` in the SUBJECT of the push's last commit drops all three —
+  the marker job reads that one line and no body, so quoting it in prose
+  cannot turn a gate off by accident. A `workflow_dispatch` can narrow the run
+  to one lane or override the marker. Neither escape is the last word: the
+  nightly cron takes no notice of either, so whatever the day skipped is caught
   overnight.
+- **The skip is a policy, not a shortcut, and it lives in `AGENTS.md`.** What
+  may carry the marker (presentation, prose, pure logic that `CI` already
+  tests) and what may never (anything that allocates, retains, counts or
+  releases) is decided by the lists there, because the judgement is about the
+  change, not about the workflow. The path filter stays wide on purpose: a
+  narrow list plus a marker would let an owner change through with neither
+  gate, and widening a filter costs a run while narrowing one costs a
+  regression.
 - **Parallel, not serial.** The lanes are independent; the wall clock is the
   slowest lane, not the sum.
 - **One cache key per lane** (`lint-cache`, `test-cache`, `macos-cache`):
