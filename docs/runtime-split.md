@@ -42,6 +42,14 @@ creates a fresh Library frame/generation, seeded from durable settings,
 books, covers and reading progress. Neither route has a warm slot, recycle
 delay or `Rearm` command. Only the small Shell persists between routes.
 
+**Route documents are DOM boundaries as well as memory boundaries.** Both
+route views once carried a `toolbar-row` id, and a lookup by id answers in
+document order: `app_chrome::floating::position::place_at_anchor` and the
+titlebar's measurements call `document.get_element_by_id`, so a hidden
+Library toolbar could satisfy a Reader menu's containment check and place its
+popover wrong. A chrome id is unique inside the document that renders it, and
+an anchor is never resolved across documents.
+
 Library-owned cover work is cancelled at retirement: queued requests are
 pruned, the in-flight bake/loading task/render is aborted, its offscreen
 canvas is zeroed, and the JS-only bake page/listener/timers are removed.
@@ -113,8 +121,8 @@ artifact and delegates native calls through the host to the main window.
    and emitting its terminal digest and `DisposeComplete`.
 4. The Shell closes ports/listeners/timers, removes the **Reader-host
    iframe**, and reclaims that host's whole raster scope. Its WASM memory,
-   module instances and descendant browsing contexts no longer belong to
-   a live application realm. A strict timeout performs forced removal if
+   module instances and descendant browsing contexts are outside every live
+   application realm. A strict timeout performs forced removal if
    the graceful acknowledgment never arrives.
 
 There is one window-wide two-slot raster coordinator in the Shell
@@ -183,3 +191,5 @@ Each current titlebar installs native maximize-state synchronization in its
 own owner. Native subscriptions become inert on retirement, unlisten before
 freeing callbacks, and retain pending registration callbacks until their
 native handle can be released. This replaces an undeclared, unwired bridge.
+
+<!-- // only the changed file was rewritten -->

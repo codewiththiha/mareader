@@ -69,6 +69,15 @@ both deep lanes honour "[skip deep]" in the commit subject (never the cron)
 - **`--locked` everywhere, no lockfile mutation.** `cargo metadata --locked
   --no-deps` is the cheap early failure; nothing in CI ever edits
   `Cargo.lock` just to discover the answer.
+- **Feature selections are linted by the artifact build, not by Clippy.**
+  `cargo clippy --workspace --all-targets` unifies the workspace's features,
+  so a helper only a disabled format calls looks used and its dead-code
+  warning never fires. The artifact builds (`cargo check --target
+  wasm32-unknown-unknown --workspace`, and the per-route `reader` / `pdf` /
+  `reflow` bins with their own feature sets) are where that code shows, so
+  every runtime crate carries its own `[lints.rust]` table — the root
+  package's table stops at the root package. A dead helper is deleted or
+  used, and `allow(dead_code)` is not an answer (the workflow greps for it).
 - **No README test-count gate.** The test runner is the authority; a number
   in prose is not a second database of executable tests.
 - **rustfmt is required, permanently.** After the one intentional
@@ -80,17 +89,18 @@ both deep lanes honour "[skip deep]" in the commit subject (never the cron)
   host compilation: it is the only lane that sees `wasm32`-only code. The
   standalone `app-chrome` check stays with it because workspace feature
   unification hides missing direct dependencies.
-- **Toolchain:** unpinned `stable` today; the next deliberate step is a
-  `rust-toolchain.toml` with an exact version the project has tested, so
-  "stable" stops being a moving target.
+- **Toolchain:** unpinned `stable`, deliberately — a moving target is what
+  makes a nightly red informative. A pin is a decision with a date and a
+  reason, not a cleanup: it lands as a `rust-toolchain.toml` naming a version
+  the project has tested, in a PR that runs CI with it.
 - **Actions:** current majors (`actions/checkout@v7`, `actions/setup-node@v7`,
   `Swatinem/rust-cache@v2`), updated through a PR so CI validates each bump.
 - **Permissions:** `contents: read`; nothing in this workflow writes. The
   release workflow holds the only publishing token, isolated on tags.
-- **Expensive checks live outside this workflow:** the full
-  `trunk build --release`, `cargo doc`, audits and (after the runtime
-  migration) the lifecycle/memory smoke suite belong in a nightly/deep CI,
-  not in every PR.
+- **Expensive checks live in `deep-ci.yml`:** the production frontend build,
+  the browser lifecycle and memory replay, and the native boot smoke run
+  nightly, on demand, or when the boot path itself changes — never in every
+  PR, where a 45-minute lane would price a comment typo.
 
 ## What "healthy" means
 
@@ -98,3 +108,5 @@ The required workflow is fast enough to run constantly, every expensive
 operation has one owner, smoke tests exercise the source they run next to,
 failures name a real repository invariant, and no lane exists merely to keep
 another lane green.
+
+<!-- // only the changed file was rewritten -->

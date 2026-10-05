@@ -194,12 +194,15 @@ iframe residency to be zero.
   only the live frame of a pane may act for the user (open, return to the
   library).
 
-## Legacy removed
+## Absent by design
+
+These paths are not here, and a change must not bring them back: they were the
+ways a pane could reach around its own realm.
 
 - In-document Library/Reader adoption: Shell links neither implementation;
   its route iframes are real disposable realms, with independent document
   children. Nothing outside a PDF pane (or the JS-only cover baker) loads pdf.js.
-- The in-realm pane path: the host no longer mounts `DocumentPane`, and a
+- The in-realm pane path: the host does not mount `DocumentPane`, and a
   pane realm draws no host chrome (the pane contract's `chrome` default is
   empty — only the frame pane supplies a slot).
 - In-realm presentation recency for the root paper: the host owns which
@@ -209,6 +212,10 @@ iframe residency to be zero.
 - The rail's direct engine binding: thumbnail cells read engine output
   through the pane, never by binding the canvas's own `MountedPdf`
   (`crates/reader-runtime/src/pane/engine.rs`).
+- Two pane implementations: `frame_pane/mirror.rs` holds the chrome mirror
+  (pane state projected for the host's views) and the lifetime module holds
+  iframe creation, nonce/port ownership, handoff and retirement. One pane,
+  two files — a split of responsibility, not a second path.
 
 ## Regression evidence
 

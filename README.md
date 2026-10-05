@@ -827,7 +827,7 @@ the Reader host and every document realm; shelf activity never prewarms one.
 Entering Reader also removes Library. Neither route warms/recycles behind
 another; both remount fresh while the small Shell persists. The design and
 its measurements are in
-`docs/runtime-split.md` and `docs/route-split-retrospective.md`. The shell
+`docs/runtime-split.md` and `docs/frame-lifecycle-alternatives.md`. The shell
 page itself loads no engine code and no pdf.js.
 
 Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`,
@@ -1051,7 +1051,7 @@ lifecycle log are realm-wide.
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
 | `sweep` / `sweepSnapshots` | Release the session's settled rasters and stranded scrub covers |
 | `suspendPrefetches` / `resumePrefetches` | Park and resume the session's idle thumbnail prefetch |
-| `stats` | Realm-wide counters across every session, used to assert memory is actually released |
+| `stats` | Realm-wide counters across every session, for asserting memory is actually released |
 
 Load order in `pdf.html` is deliberate. The reader bundle goes first because it needs nothing;
 then the engine. Both run before the WebAssembly module, which top-level-awaits its own init: the
@@ -1078,7 +1078,7 @@ Deeper records live in `docs/`:
 | Document | Contents |
 |----------|----------|
 | `docs/runtime-split.md` | The shell/frame architecture: why each runtime is iframed, the frame lifecycle, the recycle policy |
-| `docs/route-split-retrospective.md` | The frame-lifecycle designs that were measured and the one that shipped |
+| `docs/frame-lifecycle-alternatives.md` | The three frame-lifecycle designs, their measurements, and why the shipped one won |
 | `docs/session-ownership.md` | Ownership table for every engine resource a session holds |
 | `docs/memory/README.md` | Memory documentation index: the binding rules for new code, the subsystem audit, and the fling-gate churn record |
 | `docs/memory-baseline.md` | Instrumentation and the baseline memory numbers |

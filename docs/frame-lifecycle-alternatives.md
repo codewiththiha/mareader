@@ -1,36 +1,24 @@
-# The route split, three times — a retrospective
+# Frame lifecycle: three designs, measured
 
-Three designs for "one WASM per route, mounted and unmounted instantly, with
-the other route's memory gone" were built in turn. The first was
+Three designs answer the same question — *one WASM per route, mounted and
+unmounted instantly, with the other route's memory gone*. The first was
 correct about memory and too slow to use; the second was instant and kept
-every byte; the third is instant and lets the memory go. This document
-records what each one was, what it cost to build, why it failed or works,
-and what the numbers say — so the next person does not rebuild the first
-two.
+every byte; the third is instant and lets the memory go, and its frame
+boundary and reveal sequence are what the app runs today. This document
+records what each design is, why the first two fail, and what the numbers
+say, so that nobody rebuilds them.
 
-Everything here was reconstructed from the git history (`git log`,
-the diffs and the docs at each stage), from the GitHub Actions run and job
-records (509 runs), and from the CI-built `dist/` artifacts
-of each era replayed in a local browser. Where a number is measured, the
-source is named; where it is an inference from code, it says so.
+Policy moved on after the third design was drawn, and `docs/runtime-split.md`
+is the authority on what the app does now: no intent warming, no warm shelf
+slot, no `Rearm`. What this document keeps is the part that did not move —
+where the boundary goes, and what a baseline has to be able to say. Every
+figure below was measured on a CI-built `dist/` artifact replayed in a local
+browser, or read off a Deep CI run; a measurement names its run and an
+inference from code says so.
 
-## 1. Timeline
+## Version 1 — dispose, then boot
 
-| | Version 1 — dispose, then boot | Version 2 — warm slot + recycle | Version 3 — intent warming + eviction |
-| --- | --- | --- | --- |
-| Commits | `9a9381d` … `e6b7a65` (reader runtime, the split, frames, transport, build contract, dev flow) | `861d518` … `da06bff` (`perf(shell): keep a runtime warm`, `perf(shell): recycle frames and relay cover bakes`, then zoom/noise polish) | `b737644` … `a2aa19a` (`refactor(shell): bake covers in a shell frame, warm reader on intent` and seven follow-ups) |
-| CI window (UTC) | 2026‑09‑24 10:34 → 09‑26 06:50 | 2026‑09‑28 00:46 → 08:52 | 2026‑09‑28 11:20 → 12:04 |
-| Route switch | cover the host, dispose the outgoing frame, await it, create the next frame, boot, open | reveal a frame that booted behind the screen; the one just left is kept and re-armed in place | same reveal, but the reader boots on shelf intent, is evicted after an idle window, and covers never touch it |
-| Memory after a read | freed with the frame, at once | never freed: the reader frame lives as long as the app | freed with the frame, ≤ idle window (60 s) or at once past a heap ceiling |
-| What was wrong | every switch paid a page load + wasm instantiation + Leptos mount + pdf.js, behind two visible loading states | acted like the unified app: the reader realm, its wasm linear memory and pdf.js stayed resident; a reader was booted 700 ms after every library paint even if no book was ever opened; covers were baked in that reader | — (trade‑offs in §4.4) |
-
-Five earlier attempts at the same goal (2026‑09‑20 → 09‑23) ran 361 CI
-runs, 257 of them failures, 1,016 wall‑minutes, none of it merged. They are
-not analysed here.
-
-## 2. Version 1 — dispose, then boot
-
-### 2.1 What it was
+### What it was
 
 Two sub‑stages, both "one runtime alive at a time":
 
@@ -44,7 +32,7 @@ Two sub‑stages, both "one runtime alive at a time":
   is the compiled‑code cache."* In one realm a wasm instance is never
   collectible while its module namespace is reachable, so this design could
   not free memory by construction. It lasted about a day.
-- **1b, shell‑owned iframes** (`3a87309 feat: host runtimes in shell-owned
+- **Shell‑owned iframes** (`3a87309 feat: host runtimes in shell-owned
   frames`, `d1f06e8` transport, `1850048 refactor: delete the same-window
   runtime transport`): each runtime boots in its own iframe
   (`/reader.html?hosted=1&g=<generation>&n=<nonce>`), pairs with the Shell
@@ -53,7 +41,7 @@ Two sub‑stages, both "one runtime alive at a time":
   a removed frame's realm — wasm instance, JS heap, pdf.js worker, DOM — is
   garbage.
 
-The route switch in 1b (`run_start`, `src/app/manager.rs` at `e6b7a65`):
+The route switch in that design (`run_start`, `src/app/manager.rs`):
 
 ```text
 paint the loading card → dispose_active().await   (Dispose → DisposeComplete round trip)
@@ -67,11 +55,11 @@ carried `pdf-engine` itself to bake shelf covers (`bake_for_library`
 called `pdf_engine::api::cover_data_url` in the Shell page), so the
 "no‑engine Shell" of later versions did not exist yet.
 
-### 2.2 Why it was too slow
+### Why it was too slow
 
 Measured by replaying the CI artifact of Deep CI #193 (`0159f09`, the last
 1b build with an artifact) in headless Chromium, warm HTTP cache, 2 vCPU —
-a floor, not a desktop number (see §5 for the method):
+a floor, not a desktop number (see [Method](#method) for how):
 
 | switch | v1 | v2 | v3 |
 | --- | --- | --- | --- |
@@ -87,54 +75,16 @@ disk cache and a real book, it is the "too much time" the user reported.
 The cost is structural, not a bug: a disposal awaited before a boot, and a
 boot that is a page load.
 
-### 2.3 What it got right
+### What it got right
 
 Memory. With the frame gone the renderer returns to its shelf baseline
-within seconds (§5.2: 232 → 134 MB PSS after a forced GC for the text
+within seconds ([Results](#results): 232 → 134 MB PSS after a forced GC for the text
 book, 368 → 162 MB for the scanned one, and `frames: [library]` only).
 Every later version had to reproduce this property, and version 2 lost it.
 
-### 2.4 What it cost to build
+## Version 2 — warm slot and recycle
 
-From the Actions records, 09‑24 10:34 → 09‑26 06:50:
-
-| | v1 |
-| --- | --- |
-| workflow runs | 308 (96 success, 162 failure, 50 cancelled) |
-| distinct pushed commits | 156, of which **25 came out green** |
-| longest run of consecutive red pushes | **44** |
-| wall‑clock minutes on runners | 889 (1,402 job‑minutes) |
-| job failures by lane | browser lifecycle 83 · clippy 72 (+11 macOS) · tests 52 · rustfmt 42 · Tauri smoke 34 · web contracts 12 |
-| median gap between pushes | 5.2 min; 123 of 155 pushes landed within 10 min of the previous one |
-
-Two patterns account for most of it:
-
-1. **CI as the compiler.** 42 pushes failed on `cargo fmt --check` and 83
-   on clippy; the same subject *"feat(runtime): split shell, library, and
-   reader runtimes"* was force‑pushed **47 times** (54 failed runs) as one
-   amended commit. Between 14:38 and 16:05 on 09‑25, `feat: host the
-   runtimes in shell-owned frames` was followed by 22 consecutive
-   one‑line `fix:` pushes, each fixing the one lint the previous run
-   reported (`fix: drop the offer's unused window binding`, `fix: call the
-   port start without a unit binding`, `fix: close the lane without a unit
-   binding`, …), all 23 of them red. Nothing was compiled or formatted
-   before pushing.
-2. **The blank window.** `trunk build` alone emitted the Shell page and left
-   the runtime pages to 404, and the packaged app shipped a native window
-   with an empty host (`40b5719 build: boot runtimes from one dist build`,
-   `Keep the window covered until the runtime paints`, `Cover the host
-   across the whole handover…`). The build contract
-   (`tools/build-dist.sh`, `tools/check-runtime-artifacts.mjs`, the boot
-   placeholder) was invented under that incident, one push at a time.
-
-The lifecycle suite was also being written during the same window, so a
-share of the 83 browser failures is the suite finding real races
-(close‑during‑render, stale geometry on dispose) — that part was work, not
-waste. The rest was the absence of a local check.
-
-## 3. Version 2 — warm slot and recycle
-
-### 3.1 What it was
+### What it was
 
 `861d518 perf(shell): keep a runtime warm for instant route swaps` inverted
 the order: the *other* runtime boots into a hidden warm slot behind the one
@@ -157,9 +107,9 @@ the warm **reader** frame (`ShellFrame::BakeCover` → `RuntimeFrame::CoverReady
 This is the version the user described as "fast but no memory benefit", and
 the one version 3 was built on top of.
 
-### 3.2 Why it had no memory benefit
+### Why it had no memory benefit
 
-Read from `src/app/manager.rs` at `da06bff` and confirmed in the replay:
+Read from `src/app/manager.rs` in that design and confirmed in the replay:
 
 1. **The reader frame was never removed.** `retire_or_recycle` recycled;
    `run_recycle` disposed the *session* and re‑armed the *frame*. There was
@@ -175,7 +125,7 @@ Read from `src/app/manager.rs` at `da06bff` and confirmed in the replay:
    armed a 700 ms timer after every library paint and booted a reader
    behind the shelf. Opening the app to look at the shelf cost a reader
    realm. In the replay the shelf "at rest" already holds
-   `['library:active', 'reader:warm']` (§5.2), and its footprint is the
+   `['library:active', 'reader:warm']` ([Results](#results)), and its footprint is the
    same as version 3's shelf *plus* a booted reader.
 3. **The shelf depended on the reader.** Covers for the library were baked
    *in the warm reader*. The reader was therefore a dependency of the
@@ -196,33 +146,11 @@ So after a read the numbers looked like the unified app's: the session's
 canvases and decoded images went (the document *was* closed), and
 everything that is the reader stayed. `frames` after a return, sampled for
 70 s: `['library:active', 'reader:warm']` at every sample, unchanged by a
-forced GC (§5.2).
+forced GC ([Results](#results)).
 
-### 3.3 What it cost to build
+## Version 3 — intent warming, idle eviction, a transient bake page
 
-09‑28 00:46 → 08:52 (this includes the zoom/noise fixes pushed on the same
-day, which share the CI record):
-
-| | v2 |
-| --- | --- |
-| workflow runs | 74 (35 success, 25 failure, 13 cancelled) |
-| distinct pushed commits | 36, of which **6 came out green** |
-| longest run of consecutive red pushes | 13 |
-| wall‑clock minutes on runners | 241 (431 job‑minutes) |
-| job failures by lane | browser lifecycle 24 · clippy 8 · tests 4 · Tauri smoke 4 · rustfmt 1 |
-
-Better hygiene than v1 (one rustfmt failure, and a `ci: let a push skip the
-work it cannot change` commit), but the same loop for the browser lane: the
-two `perf(shell)` subjects were pushed 5 and 6 times each, and the untweened
-zoom work that followed pushed `fixup!` commits ten times against a red
-lifecycle lane. The measurements written into `docs/architecture.md`
-("Measured, not assumed") were taken from the suite's own summary without
-asking whether the suite measured the right thing — which is how a 1 ms
-"relay" and a `true` baseline with a resident reader got recorded as proof.
-
-## 4. Version 3 — intent warming, idle eviction, a transient bake page
-
-### 4.1 What changed
+### What changed
 
 The frame boundary and the reveal are version 2's. What changed is Shell
 *policy* — when a frame exists — and one coupling:
@@ -256,7 +184,7 @@ fixed:
   suite bounds the eviction to the window plus a dispose beat and refuses a
   forced removal (Deep CI #242: 2,019 ms).
 
-### 4.2 Why it works
+### Why it works
 
 - **The unit of memory is the frame, and the frame is now time‑bound.**
   Version 1 proved a removed frame frees everything; version 2 proved a
@@ -285,30 +213,7 @@ idle eviction `2,019 ms` for a 2,000 ms window, 0 forced removals;
 `reusedWarmFrame` 4/4 handoffs, `peakFrames` 2, host never empty; reopen
 heap slope 0 B/cycle; `samePageRecycledOpens` 9/10.
 
-### 4.3 What it cost to build
-
-| | v3 |
-| --- | --- |
-| workflow runs | 14 (7 success, 4 failure, 3 cancelled) |
-| distinct pushed commits | 7, of which 2 fully green (`3643dbf`, `a2aa19a`) |
-| longest run of consecutive red pushes | 4 |
-| wall‑clock minutes on runners | 51 (89 job‑minutes) |
-| red pushes, each a distinct root cause | `7ab4edd` host stub missing `expect_reader` + clippy `question_mark`; `ab54a4e` `web_sys::ScrollBehavior` feature only came transitively; `bb859b3` the suite cleared the covers 2 ms before the reader's late cover write landed; `fd5851a` the bake‑before‑registration bug above |
-
-Four red pushes is not zero; two of them were compile errors a local
-`cargo clippy --target wasm32-unknown-unknown` would have caught, and the
-sandbox this was built in has no Rust toolchain (a deliberate constraint of
-the session, recorded in `docs/architecture.md`). The cleanup pass that
-produced this document added one more (`cb97379`: dropping the workspace
-root's dev‑dependency on `library-core` also dropped the `test-util`
-feature it had been enabling for two other crates' tests as a side effect;
-each now declares it). The difference from the
-earlier eras is what happened after a red run: the CI `dist/` was
-downloaded and served locally, Playwright drove the real build, the
-`MessagePort` traffic was traced, and the fix addressed the cause — instead
-of pushing the next guess.
-
-### 4.4 Trade‑offs, stated
+### Trade‑offs, stated
 
 - A click that lands faster than a reader boot after the *first* shelf
   intent waits for that boot (the boot is ~300 ms on the replay machine).
@@ -317,23 +222,24 @@ of pushing the next guess.
   dispose beat, or at once past the heap ceiling. Continuous pointer
   movement over the shelf keeps the warm reader alive — that is intent, by
   design.
-- The library is still warmed behind the reader (it is cheap and it is
-  where every close goes). It is the reader, not the shelf, that is
-  time‑bound.
+- Warming the shelf behind the reader looked free, because a close goes there.
+  It is not policy: a route that is not on screen owns no frame, so the shelf
+  is created on the return exactly as the reader is on the way in.
+  `docs/runtime-split.md` carries the rule; the trade-off is recorded here
+  because it looks free until someone has to measure it.
 
-## 5. Measurements
+## Measurements
 
-### 5.1 Method
+### Method
 
-Each era's production build was taken from the `dist` artifact its own
-Deep CI run uploaded (v1: Deep CI #193, `0159f09`, the last 1b build with
-an artifact; v2: Deep CI #231, `0eb673d`, the last build before `da06bff`;
-v3: Deep CI #244, `8ae1782`, the final build — the browser lane uploads
-its dist on every run now, which is what made this comparison possible),
-served by `tests/browser/server.mjs` and driven by
-`tools/measure-route-switch.mjs` (removed with the reader and library
-frames it measured; it lives in the history) in headless Chromium (Playwright's
-`chromium-headless-shell`, Linux, 2 vCPU, 2 GB). Same scenario for all:
+Each design's production build was taken from the `dist` artifact its own Deep
+CI run uploaded (v1: run #193, commit `0159f09`; v2: #231, `0eb673d`; v3: #244,
+`8ae1782`) — the browser lane uploads its `dist` on every run, pass or fail,
+which is what makes a comparison across designs possible at all. That build was
+served by `tests/browser/server.mjs` and driven by a replay script of the same
+shape as today's `tools/measure-split-return.mjs`, in headless Chromium
+(Playwright's `chromium-headless-shell`, Linux, 2 vCPU, 2 GB). Same scenario
+for all three:
 
 ```text
 seed one read book (?open=) → fresh library boot → 1.5 s of shelf intent (pointer-over)
@@ -348,7 +254,7 @@ cache are not deterministic); the deltas within a run and the frame lists
 are the evidence. Two fixtures: a text PDF (the CSS 2.1 specification,
 3.3 MB, 430 pages) and a generated scanned book (60 JPEG pages, 65 MB).
 
-### 5.2 Results
+### Results
 
 Text PDF, PSS in MB and the frames in the host (`kind:slot`):
 
@@ -387,9 +293,9 @@ What the tables say:
   not the size.
 - Version 3 returns to the shelf's footprint once the frame is evicted
   (136 vs 134, 161 vs 162 — within noise of version 1) while keeping
-  version 2's switch times (§2.2).
+  version 2's switch times ([Why it was too slow](#why-it-was-too-slow)).
 
-Latencies for the same runs are in §2.2. Deep CI's own numbers for the
+The same runs' latencies are under [Why it was too slow](#why-it-was-too-slow). Deep CI's own numbers for the
 three eras (its lifecycle summary): v1 (Deep CI #186) `rapidTransitions`
 booted a new library *and* reader session per handoff (library sessions
 3→6, reader 2→5); v2 (Deep CI #217) `reusedWarmFrame` 4/4 with library
@@ -397,7 +303,7 @@ sessions constant at 2 and `coverRelay {covers: 1, ms: 1}`; v3 (Deep CI
 #242) `reusedWarmFrame` 4/4, `coverBake {covers: 1, ms: 5064}`, eviction
 2,019 ms.
 
-## 6. Comparison
+## Comparison
 
 | | v1 | v2 | v3 |
 | --- | --- | --- | --- |
@@ -412,72 +318,27 @@ sessions constant at 2 and `coverRelay {covers: 1, ms: 1}`; v3 (Deep CI
 | switch to reader on screen (replay) | 490 ms | 128 ms | 158 ms |
 | back to the shelf (replay) | 423 ms | 14 ms | 12 ms |
 | memory after a read | baseline in seconds | baseline + a reader realm, forever | baseline within the idle window |
-| CI: pushes / green / longest red streak | 156 / 25 / 44 | 36 / 6 / 13 | 7 / 2 / 4 |
-| CI: runner wall‑minutes | 889 | 241 | 51 |
+| who bakes a shelf cover | the Shell, with `pdf-engine` linked into its artifact | the warm reader, over the wire | the shelf itself, in a JS-only bake document |
 
-## 7. What to keep from this
+## What these designs rule out
 
 1. **Separate the boundary from the policy.** The iframe boundary was right
-   from 1b onward. Both failures were policies on top of it: "dispose
+   from the first design. Both failures were policies on top of it: "dispose
    before boot" and "never dispose". Memory and latency are decided by
    *when* a frame exists, and that is a small state machine in the Shell,
    not a rewrite.
 2. **Measure the claim, not the proxy.** `reusedWarmFrame: true` measures
-   reuse; the user's complaint was retention. A 1 ms cover "relay" cannot
-   be a render. A baseline that cannot be false with a reader resident is
-   not a baseline. Every version 3 stage asserts the user‑visible property
-   (frames resident, eviction time, a cover that could only come from the
-   bake page).
-3. **Compile before you push, or replay before you push again.** 42
-   rustfmt and 83 clippy failures are a local pre‑push hook; 44 red pushes
-   in a row is a signal to stop and reproduce. The CI `dist/` artifact is
-   downloadable and serves locally in one command — now on every browser
-   run, pass or fail — and Playwright against it finds in minutes what a
-   push‑and‑wait loop finds in hours.
-4. **Latent bugs live where nobody is looking.** The cold‑shelf bake had
-   been broken since `da06bff`; the document‑less dispose had waited out
-   its timeout on every eviction. Both were invisible until a test refused
-   to be satisfied by a side effect.
+   reuse; the complaint was retention. A 1 ms cover "relay" cannot be a
+   render, and a baseline that cannot be false while a reader is resident is
+   not a baseline. The stages that guard the boundary therefore assert the
+   user‑visible property instead — frames resident, eviction time, a cover
+   that could only have come from the bake document — and the Shell refuses a
+   bake from a frame that is not a shelf, so no other runtime can produce a
+   cover at all.
+3. **Latent bugs live where nobody is looking.** A cold-shelf bake that had
+   been broken for a week, and a document-less dispose that waited out its
+   timeout on every eviction, were both invisible until a test refused to be
+   satisfied by a side effect of another assertion. An assertion earns its
+   place by being able to fail.
 
-## 8. Legacy removed in this pass, and what was deliberately kept
-
-Removed (nothing referenced them after version 3):
-
-- `ShellApi::save_library` and `ShellApi::save_covers`, with
-  `RuntimeFrame::SaveLibrary`/`SaveCovers`, the Shell's
-  `FrameVocabulary` arms and `services::save_library`, the port and
-  standalone implementations in both runtimes, and the recorder's
-  `library_calls`. The shelf writes its blob and its cover cache itself,
-  through the origin's one store; nothing ever sent these over the wire.
-  With them gone `runtime-contract`, `frame-transport`, `reader-runtime`
-  and the Shell no longer depend on `library-core` directly (it reaches
-  them only through `storage`), and the Shell artifact lost 48 KB
-  (`mareader_bg.wasm` 648,701 → 600,698 bytes between Deep CI #240 and
-  #244).
-- `app_state::memory::set_heap_sample_sink` and its thread‑local: a hook
-  the split introduced for the reader diagnostics to register, which
-  nothing ever registered; the high‑water mark is sampled by the
-  diagnostics themselves.
-- `library_runtime::standalone_settings` (never called).
-- The reader's `ApiHandle::bake_cover` no longer forwards to the port — the
-  reader never asks for a bake and the Shell refuses one from any frame
-  that is not a shelf.
-
-Both follow-up orphans from the split are closed. `DragOverlay` had no
-caller and is deleted: the Shell paints the drop hint itself
-(`data-import-drop` in `src/app/mod.rs`) from the signal
-`install_import_drop` returns, and the component's stylesheet block went
-with it. `install_window_state_bridge` was repaired rather than kept — the
-live `AppTitleBar` installs its own `window_state` module, so the frameless
-caption's maximize/restore glyph follows the window again.
-
-## 9. Sources
-
-- History: `git log --format='%h %ad %s' --date=short`; the v1 designs from `git show
-  8bbda0a:docs/runtime-split.md`, `git show e6b7a65:docs/runtime-split.md`
-  and `git show e6b7a65:src/app/manager.rs`; the v2 design from `861d518`,
-  `e8b1d18`, `c722bd7`, `a3e3c8f` and `src/app/manager.rs` at `da06bff`.
-- CI: the GitHub Actions REST API, all runs created since 2026‑09‑20 with
-  their jobs and failed steps; eras are split by run creation time.
-- Replays: the `dist` artifacts named in §5.1; `tools/measure-route-switch.mjs`
-  (in the history).
+<!-- // only the changed file was rewritten -->

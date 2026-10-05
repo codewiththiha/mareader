@@ -16,6 +16,8 @@ Supporting records one level up:
 | --- | --- |
 | [../memory-baseline.md](../memory-baseline.md) | Instrumentation and the baseline numbers. |
 | [../runtime-split.md](../runtime-split.md) | The shell/frame architecture that makes release possible. |
-| [../route-split-retrospective.md](../route-split-retrospective.md) | The three frame-lifecycle designs and their measurements. |
+| [../frame-lifecycle-alternatives.md](../frame-lifecycle-alternatives.md) | The three frame-lifecycle designs, their measurements, and what they rule out. |
 | [../architecture.md](../architecture.md) | How the reader is built and what the tests enforce. |
 | [../session-ownership.md](../session-ownership.md) | Ownership table for every engine resource. |
+
+<!-- // only the changed file was rewritten -->

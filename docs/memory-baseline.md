@@ -16,8 +16,8 @@ and retention are checkable instead of narrative.
 - `disposalEpoch` — the document session's claim stamp; it moves on every
   open and close, so two snapshots can never be confused about which moment
   they describe.
-- Wasm heap size and high-water mark (fed by the existing `src/memory.rs`
-  probe, which still logs its `[mem]` lines at open/close/zoom/search).
+- Wasm heap size and high-water mark, fed by `crates/app-state/src/memory.rs`,
+  which logs its `[mem]` lines at open/close/zoom/search.
 - The engine's half, read live at snapshot time:
   `pdf_engine::api::engine_stats()`.
 
@@ -165,13 +165,15 @@ level rises.
 Environment: GitHub Actions `ubuntu-24.04`, headless Chromium (Playwright),
 the production `trunk build --release` output served statically, sample
 book *Programming Pearls (2nd Edition)* opened through the web test hook
-with blend (look-ahead) enabled. The numbers below are pasted verbatim from
-the `=== PHASE0 BROWSER BASELINE ===` tables the workflow prints; rerun the
-lane to reproduce or to compare a change against it.
+with blend (look-ahead) enabled. What is recorded here is pasted from what the
+lane prints — the counter pairings it asserts, then the full table dump under
+"The recorded tables" — so a rerun can be compared against it line for line.
+The counters and what each one means are described once, under
+"The instrumentation"; the results do not restate them.
 
 Recorded from Deep CI run **35983608664** (commit `2b58f11`, 2026-09-24) — the full matrix with all three raced closes,
 the fast-jump page-identity proof, the same-page reopen workload, and
-fail-closed accounting, zero wasm traps::
+fail-closed accounting, zero wasm traps. The pairings that must hold::
 
 ```text
 sessionsOpened    == sessionsDestroyed
@@ -180,142 +182,12 @@ rendersStarted    == rendersCompleted + rendersCancelled + rendersFailed
 prefetchesStarted == prefetchesCompleted + prefetchesDropped
 ```
 
-`workersTerminated` is counted only after pdf.js's worker shutdown round
-trip resolves, and `destroy()` awaits it — so a balanced worker pair means
-the worker is actually dead, not that death was scheduled. Thumbnail
-prefetch (the warmup and the idle cache fills) is lane work: bounded by the
-thumbnail lane, registered in `thumbTasks` under `prefetch-<page>` ids so
-teardown cancels it, epoch-guarded at every await so a stale prefetch never
-lands in the next document, and fully counted.
+### The recorded tables
 
-The narration (`pdf_session:*`, `pdf_worker:*`, `render:*`,
-`thumb_prefetch:*` events) is opt-in and silent in normal operation; the
-counters are always on.
-
-The look-ahead's active work is visible from the Rust side:
-`pdf_engine::backdrop::pending_samples()` feeds the snapshot's
-`lookaheadSamplesActive` — pages whose offscreen colour sample is in
-flight — and it must read zero after a dispose.
-
-### The dev probe
-
-In the app webview console:
-
-```js
-__mareaderDiagnostics()   // prints + returns the full JSON snapshot,
-                          // with an `atBaseline` verdict, and turns
-                          // lifecycle narration on
-```
-
-Off the webview (host tests) the surface is inert; the counters and the
-`at_baseline()` check are still unit-tested on the host.
-
-A note on the reader-side counters' semantics: `readerRuntimesCreated`
-counts OPEN ATTEMPTS that claimed the document state — the boundary hook
-today's architecture has for "a runtime began". A failed open is a create
-whose dispose never needs to run, so the pairing these counters prove is
-the close path's completion, not liveness; the liveness truth is
-`readerRuntimeLive` plus the engine's `hasDocument`. The explicit runtime
-object (`ReaderRuntime`) has since replaced this hook with a real lifetime.
-
-### CI enforcement
-
-Two automated layers:
-
-1. **Engine smoke suite** (`tools/engine-smoke/teardown.ts`, the web lane,
-   every PR): against the bundle built from current source, after
-   `destroy()`, after a rapid reopen + prefetch + close, and after a no-op
-   destroy — every live gauge empty, every counter pair balanced,
-   prefetches included.
-2. **Browser lifecycle baseline** (`tests/browser/`, the Deep CI lane):
-   the REAL built app in a REAL Chromium — real wasm, real pdf.js worker,
-   real renders — driven through opening a shipped sample book with blend
-   (look-ahead) enabled, the warmup prefetch, fast navigation with the
-   look-ahead observed ACTIVE, zoom pressure, a close during active work,
-   waiting for `atBaseline`, asserting every reader/engine counter drained
-   and balanced, and a reopen that repeats the cycle. The workload the
-   guide demands, automated against the production build; its per-stage
-   measurement table is the recorded baseline below.
-
-## The benchmark procedures
-
-### Automated (Deep CI, every run)
-
-The browser lane runs the documented workload matrix end to end and prints
-the per-stage measurement table (`=== PHASE0 BROWSER BASELINE ===`): after
-open, after the warmup, during scroll, after zoom, during fast jumps, after
-each raced close (render / prefetch / search), and the final state after
-the normal x10, large x5 and rapid-reopen x10 cycles, plus a summary line
-with the fast-jump render deltas and the reopen heap steps. Those tables
-are the recorded baseline — same command, same environment, every run,
-comparable across commits.
-
-### Manual (Tauri/WKWebView, per significant change)
-
-Run against a dev build (`trunk serve`, or `cargo tauri dev`); record a
-`__mareaderDiagnostics()` snapshot at every marked point, plus the process
-RSS from the OS (Task Manager / `ps` / Activity Monitor) as the second,
-non-interchangeable signal. Look-ahead stays ENABLED in every workload.
-
-Measure, per snapshot: `wasmHeapBytes`, `heapHighWaterBytes`,
-`engine.pages`, `engine.activeRenders`, `engine.thumbs`, `engine.thumbTasks`,
-`engine.hasDocument`, `engine.hasLoadingTask`, `paneLive`, `virtualizerLive`,
-`retainedVirtualItems`, `disposalEpoch`, and process RSS. Browser/WebView
-APIs and OS measurements do not return memory to the OS immediately — read
-them as different signals, and compare only like with like on the same build.
-
-### Workloads
-
-**A. Normal PDF lifecycle (x10)** — Library -> open a medium PDF -> read a
-few pages -> close -> Library. Record: before open, after open settles,
-after close settles. Expectation: every counter except the wasm heap and the
-monotonic counters returns to its pre-open value; `disposalEpoch` advances
-by exactly 1 per cycle.
-
-**B. Large PDF lifecycle (x5)** — same, scrolling through the document.
-Watch `retainedVirtualItems` during scroll (zombies are bounded and
-transient — they must drain within the grace period after scrolling
-settles).
-
-**C. Fast-scroll pressure** — open a large PDF, fast-scroll between distant
-ranges, pause, repeat, close. Record during (peaks are the point), after the
-pause, and after close. `engine.pages` stays at the RENDER_BUDGET ceiling
-during; returns to 0 after close.
-
-**D. Zoom pressure** — rapid zoom changes, scroll, return near original
-zoom, close. The zoom transients (scratch, bake output, snapshot masks) are
-the peak to watch: `heapHighWaterBytes` records the latch; `pages` and
-`activeRenders` must drain after close.
-
-**E. Look-ahead pressure** — move steadily so look-ahead is active, close
-DURING active prefetch. The close tail must complete (`disposalEpoch`
-advances, `dispose_complete` fires) and the engine must drain despite the
-in-flight work.
-
-**F. Close during active work** — close while a page renders, a thumbnail
-loads, search builds, look-ahead samples. Each variant: the counters must
-balance (a cancelled render counts as `rendersCancelled`), and nothing
-reader-owned survives.
-
-**G. Rapid reopen (x10)** — open -> close -> reopen the same PDF. The
-monotonic counters advance in lockstep; the interesting number is the wasm
-heap: it ratchets by allocation (the platform never shrinks it), so judge
-LEAK versus LATCH by whether the per-cycle step GROWS, not by whether the
-level rises.
-
-## Baseline results
-
-### Recorded: browser lifecycle baseline (automated)
-
-Environment: GitHub Actions `ubuntu-24.04`, headless Chromium (Playwright),
-the production `trunk build --release` output served statically, sample
-book *Programming Pearls (2nd Edition)* opened through the web test hook
-with blend (look-ahead) enabled. The numbers below are pasted verbatim from
-the `=== PHASE0 BROWSER BASELINE ===` tables the workflow prints; rerun the
-lane to reproduce or to compare a change against it.
-
-Recorded from Deep CI run **35977320462** (commit `7db2d91`, 2026-09-24) — the full matrix with all three raced closes,
-zero wasm traps, verified stable across a repeat run of the same commit:
+The dump below is the run before that one: Deep CI **35977320462** (commit
+`7db2d91`, 2026-09-24), zero wasm traps, verified stable across a repeat run of
+the same commit. Every run of the lane prints this whole table set; these two
+are the ones recorded here.
 
 ```text
 === PHASE0 BROWSER BASELINE (chromium, release wasm build) ===
@@ -437,21 +309,22 @@ retained OWNERSHIP, not a synchronous return of bytes to the OS.
    baseline kept; it is now a content-keyed, realm-wide index
    (`docs/session-ownership.md`).
 3. **The covers cache** persists for the app's lifetime (library state).
-4. **The engine session object** is a module singleton — destroyed and
-   re-created per open today; it stays reachable from the module, which is
-   correct at baseline; it is now one engine session per pane session.
-5. **The paper/backdrop session** is a thread-local, reset on close but
-   reachable from module scope — same trajectory.
+4. **The engine session object** is one `EngineSession` per pane session:
+   reachable from the module while its document is open, unreachable after
+   `destroy()`. The baseline asserts the second half of that sentence.
+5. **The paper/backdrop session** is a thread-local, reset on close and
+   epoch-guarded while open — the same trajectory.
 6. **WebKit/WebView latching** — freed canvas IOSurfaces and JS arenas may
    not return to the OS; `releaseCanvas`/snapshot sweeping exist to hand
    the surfaces back, and the OS may still hold them under pressure.
 
 ### What the map says about ownership
 
-- The PDF session is owned by `public/engine/state.ts`'s `EngineSession`
-  (module-global today), driven through `services/document/close.rs` and
-  the next open's pre-destroy. Provable via `hasDocument` +
-  `sessionsOpened/Destroyed`.
+- The PDF session is owned by `public/engine/state.ts`'s `EngineSession`,
+  driven through `crates/reader-runtime/src/services/document/close.rs` and the
+  next open's pre-destroy — one instance per pane session, never a module
+  singleton released by "whoever calls destroy eventually". Provable via
+  `hasDocument` + `sessionsOpened/Destroyed`.
 - Render tasks are owned by the engine's page lane
   (`renderPageInternal`/`st.renderTask`), provable via `activeRenders` and
   the started/resolved balance.
@@ -463,25 +336,12 @@ retained OWNERSHIP, not a synchronous return of bytes to the OS.
 - Reader disposal completion is detectable: the close tail emits
   `dispose_complete` AFTER the sweeps, and `disposalEpoch` names the moment.
 
-## The ownership boundary that followed
+The test that this ownership is real is this document's post-close baseline:
+every module-global owner named in `docs/lifecycle-ownership.md` is either gone
+or reduced to an explicit owned handle, and the same counters prove it. The
+search index is the one deliberate handover between sessions — the retained
+index in `crates/pdf-engine/src/session/search.rs`, adopted by a reopen of the
+same bytes — and the backdrop session carries the epoch token that makes a late
+sample inert instead of misfiled.
 
-The evidence pointed to making the engine session an explicit,
-instance-owned object rather than a module singleton, with the
-close path owning its disposal as today but the lifetime no longer held by
-module scope:
-
-1. Introduce an explicit reader-runtime/session object on the Rust side that
-   OWNS the open document's identity (the claim stamp becomes its handle)
-   and the engine session's lifetime, replacing "whoever calls destroy
-   eventually" with one owner.
-2. Keep the search-index adoption as an explicit handover between sessions
-   (a scoped transfer on close/open) instead of a thread-local survivor.
-3. Move the backdrop session under the same explicit lifetime (epoch token
-   already exists; make the owner explicit).
-4. Leave routing, virtualization and appearance untouched; the
-   Shell/Library/Reader split and the host/pane model came separately.
-
-That boundary is implemented (`docs/architecture.md`). Its success
-criterion is exactly this document's post-close baseline,
-enforced by the same counters, with the module-global owners from
-`docs/lifecycle-ownership.md` gone or reduced to explicit, owned handles.
+<!-- // only the changed file was rewritten -->

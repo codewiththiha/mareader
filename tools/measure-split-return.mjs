@@ -1,5 +1,5 @@
 // Memory after a SPLIT read, measured the same way for any build of the app
-// (the method of docs/route-split-retrospective.md §5.1).
+// (the method recorded in docs/frame-lifecycle-alternatives.md, "Method").
 //
 //   PORT=8123 DIST_DIR=dist node tests/browser/server.mjs &
 //   node tools/measure-split-return.mjs [label] [baseUrl] [--intent] [--webkit]
@@ -309,3 +309,5 @@ result.afterGc = await sample(cdp ? "after a forced GC" : "after a 1.5 s settle 
 console.log(`RESULT ${JSON.stringify(result)}`);
 console.log(`CONSOLE ${JSON.stringify(consoleLines.filter((l) => /mareader\]|evict|forced|panick|error/i.test(l)).slice(0, 40))}`);
 await browser.close();
+
+// only the changed file was rewritten

@@ -2,31 +2,10 @@
 
 Who owns each reader resource, traced from route mount to resource, with
 every global/module-level owner and every piece of async work that can
-outlive a route change named explicitly. The first half records the
-single-runtime app the runtime split started from; the later sections
-describe the runtime and the host/pane ownership that replaced it. The
-disposal baseline (`docs/memory-baseline.md`) asserts against this map.
-
-## The original single-runtime app
-
-One root Leptos mount (`src/app`), one `AppState`
-(`src/state/app.rs`) spanning library and reader, and a two-route shell:
-
-```text
-mount_to_body -> App
-├── AppState (settings / reader / library / ui)  — one shared instance
-├── Router
-│   ├── "/"        -> LibraryPage (features/library)
-│   └── "/reader"  -> ReaderPage (features/reader)   [the single reader "pane"]
-└── app-lifetime effects (theme, motion, drag-drop, window bridge)
-```
-
-(`ReaderPage` has since been replaced by the reader host and its panes —
-see [The reader host and its panes](#the-reader-host-and-its-panes).)
-
-Route changes mount and unmount component trees, but the STATE and the
-engine session were app-lifetime singletons — what the runtime split
-replaced. The inventory below records that starting point.
+outlive a route change named explicitly. Every owner listed is one the
+reader runs today; a row describing an arrangement the app no longer has is a
+bug in this document, not a note about the past. The disposal baseline
+(`docs/memory-baseline.md`) asserts against this map.
 
 ## Resource owners, traced
 
@@ -66,38 +45,46 @@ never release reader resources:
    search index, BY DESIGN (a reopen of the same bytes adopts it).
 4. `crates/pdf-engine/src/backdrop/mod.rs` `SAMPLES_IN_FLIGHT` — a gauge;
    the paper state machine itself is per session.
-5. `src/effects/app/library.rs`, `src/effects/appearance/mod.rs`
-   thread-locals — app-lifetime effect bookkeeping (debounce cells). The
-   reflow measurement queue is the pane's own now (`ReaderState.measure`,
+5. `crates/library-runtime/src/effects_library.rs` thread-locals — the
+   watched-folder rescan cooldown (`RESCAN`) and the deferred boot-context
+   handoff (`DEFERRED`), both inert between mounts. The Shell's own durable
+   paints (`src/effects/app/theme.rs`, `motion.rs`, `typography.rs`) write
+   `<html>` and hold no bookkeeping of their own. The reflow measurement queue
+   is the pane's own (`ReaderState.measure`,
    `crates/reader-runtime/src/effects/reader/reflow_measure.rs`), and the
    key-hold engine (`crates/reader-runtime/src/effects/reader/shortcuts/navigation.rs`)
    is window-level by design — one keyboard — capturing its target strip
    from the ACTIVE pane's root per hold and ending on that pane's blur or
    teardown.
-6. `src/services/library/covers.rs` and `import/claim.rs` thread-locals —
+6. `crates/library-runtime/src/services/covers.rs` and
+   `crates/library-runtime/src/services/import/claim.rs` thread-locals —
    import/cover queues (library-side by design).
 7. `crates/reader-runtime/src/components/viewer/shells/scroll_shell.rs`
    thread-local — a constant listener-options object (stateless). The
-   reflow spot memo that used to sit beside it is per pane now (row above).
+   reflow spot memo is per pane (row above): a window-level memo would show
+   one pane's row in the other.
 8. `crates/app-chrome/src/floating/dismiss.rs` — topmost-overlay registry
    (shell scope).
 9. `public/pdfEngine.ts` module state: the `pagehide`/`visibilitychange`
-   listeners (they walk every live session) and the `watchPaperTokens`
-   mutation observer — installed once at bundle evaluation, never removed.
-   The theme chain is per session now.
-10. `src/memory.rs` probe + the new diagnostics counters
-    (`src/diagnostics.rs`) — instrumentation is itself app-lifetime (bounded,
-    numeric, and deliberately so).
+   listeners (they walk every live session) — installed once at bundle
+   evaluation, never removed. The paper watch is
+   `public/engine/theme/paper.ts`: one root watcher (`rootPaperWatcher`) for
+   the window backdrop plus one observer per pane root (`panePaperWatchers`, a
+   `WeakMap` keyed by session), and the theme chain is per session.
+10. the heap probe (`crates/app-state/src/memory.rs`, logging `[mem]` at
+    open/close/zoom/search) and the counters — `src/diagnostics.rs` for the
+    Shell, `crates/reader-runtime/src/diagnostics.rs` for the runtime.
+    Instrumentation is itself app-lifetime (bounded, numeric, deliberately).
 
 ## Async work that can outlive a route/component teardown
 
 Every entry re-checks its guard after each `await`; none is cancelled by the
 route change itself:
 
-- Open tails (`src/services/document/open/*`): engine open, outline resolve,
+- Open tails (`crates/reader-runtime/src/services/document/open/*`): engine open, outline resolve,
   cover render, content seeding — all stamp-guarded
   (`services::document::session::owns`).
-- Close tail (`src/services/document/close.rs`): `destroy().await` + sweeps +
+- Close tail (`crates/reader-runtime/src/services/document/close.rs`): `destroy().await` + sweeps +
   dispose-complete note — the one teardown that MUST finish; idempotent by
   design.
 - Look-ahead samples (`backdrop::spawn_engine`): epoch-guarded, so a sample
@@ -106,13 +93,15 @@ route change itself:
   (a fire that must not reach into a possibly-disposed reader), but the
   ENGINE owns each prefetch as lane work: bounded by the lane limit,
   epoch-guarded at every await, cancelled by teardown, fully counted in
-  `stats()` — the fire can therefore no longer touch the wrong document.
-- Search index build (`src/effects/reader/search.rs`): one-build-at-a-time
+  `stats()` — so the fire cannot reach a disposed document.
+- Search index build (`crates/reader-runtime/src/effects/reader/search.rs`): one-build-at-a-time
   via `SearchState::building`; a close during a build leaves the index
   finishing into the retained slot (adoption contract above).
-- Cover render queue (`services/library/covers.rs`) and import pipeline
-  (`services/library/import/*`): library-side, run on the shelf by design.
-- AI gloss chunk fetches (`services/ai.rs`, gloss controller): generation /
+- Cover render queue (`crates/library-runtime/src/services/covers.rs`) and import
+  pipeline (`crates/library-runtime/src/services/import/*`): library-side, run
+  on the shelf by design.
+- AI gloss chunk fetches (`crates/reader-runtime/src/services/ai.rs`, gloss
+  controller): generation /
   owner-guarded against stale popovers.
 - Engine-side: the theme mutation chain (`themeChain`), bake worker jobs,
   thumbnail lane queue, the 30s idle sweep timer (`EngineSession::idleTimer`)
@@ -121,29 +110,13 @@ route change itself:
 - Virtualizer rAF coalescing and retention timer: owned by
   `VirtualizerInner`, cleared in `dispose()`.
 
-## The original disposal sequence
+## Engine destroy (`public/pdfEngine.ts`)
 
-Kept as the starting-point record. The current sequence is the pane's dispose
-("Disposal" below) ending its `PdfSession` — see `docs/session-ownership.md`.
+The block every disposal path ends in, reached from a pane's `dispose` tail
+(`crates/reader-runtime/src/services/document/close.rs`); the Rust side of
+the same sequence is in [`docs/session-ownership.md`](session-ownership.md).
 
 ```text
-close_document (services/document/close.rs)
-├── session::claim()                    — invalidate every in-flight open tail
-├── diagnostics: dispose_begin          — baseline instrumentation
-├── flush_read_point                    — persist resume point synchronously
-├── spawn_local:
-│   ├── engine::destroy().await         — engine session teardown (below)
-│   ├── engine::sweep()                 — advisory pdf.cleanup
-│   ├── engine::sweep_snapshots()       — zoom-mask release
-│   └── diagnostics: dispose_complete   — the moment the baseline asserts on
-├── document.reset() / search.reset()   — no viewer.reset_position():
-│                                         a document runs in its own realm
-│                                         now, so its viewer state is fresh
-│                                         by construction
-├── gloss.reset() / ai_selection.reset()
-├── ui.sidebar = None
-└── backdrop::document_close()
-
 engine destroy (public/pdfEngine.ts)
 ├── session.sweepPdf()                  — pdf.cleanup while the doc is alive
 ├── cancel + release every page surface (render/text tasks, canvases, masks)
@@ -244,8 +217,8 @@ the dispose rather than what it measures:
 
 ## The reader runtime as the lifecycle owner
 
-The route boundary is the runtime boundary (`src/runtime.rs`,
-`crate::runtime::ReaderRuntime`):
+The route boundary is the runtime boundary
+(`crates/reader-runtime/src/runtime.rs`, `crate::runtime::ReaderRuntime`):
 
 - **Lifecycle states** (`RuntimeLifecycle`): `New → Mounting → Ready →
   Disposing → Disposed`, one state machine (`RuntimeCore`) with the
