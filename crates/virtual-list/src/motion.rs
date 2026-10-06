@@ -11,8 +11,8 @@
 //! [`Motion`] measures the first number: signed velocity in pixels per second,
 //! estimated over the adapter's frame samples with a time-constant blend, so a
 //! 30 Hz renderer and a 120 Hz one read the same speed for the same scroll.
-//! [`Pipeline`] carries the second, measured by the caller: its median fill cost
-//! and how many items it fills at once. [`Motion::band`] joins them, and
+//! [`Pipeline`] carries the second, measured by the caller: what one item's
+//! content costs and how many items it fills at once. [`Motion::band`] joins them, and
 //! engagement requires *both* conditions — the reader is genuinely flicking, and
 //! pages are arriving faster than the pipeline can make them:
 //!
@@ -139,14 +139,14 @@ impl Default for MotionConfig {
 }
 
 /// What the caller's content pipeline can do, measured rather than assumed: the
-/// fill cost is its own recent median, the lane count is what it actually runs.
+/// recent cost of one item, and the lane count it actually runs.
 /// This is the input that makes engagement a fact about the machine instead of
 /// a constant copied from a demo.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Pipeline {
-    /// Median time to make one item's content real, milliseconds. `0` means the
-    /// caller has not measured it yet, which reads as "no capacity" and leaves
-    /// the decision to the speed floor.
+    /// Time to make one item's content real, milliseconds, as recently measured.
+    /// `0` means the caller has not measured it yet, which reads as "no
+    /// capacity" and leaves the decision to the speed floor.
     pub fill_ms: f64,
     /// The layout's average item extent, pixels. `0` is the same unknown.
     pub pitch: f64,

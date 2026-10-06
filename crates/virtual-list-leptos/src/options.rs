@@ -80,11 +80,9 @@ pub struct VirtualizerOptions {
     /// bridges a seek and nothing else; [`RetentionPolicy::Grace`] bridges a
     /// known wall-clock operation, which is what a zoom commit is.
     pub retention: RetentionPolicy,
-    /// The content pipeline the render band is measured against. Only the
-    /// `fill_ms`/`lanes` half is usually interesting at runtime, and
-    /// [`crate::Virtualizer::set_fill_profile`] updates it as the reader's own
-    /// telemetry moves; a `fill_ms` of `0` means "not measured" and leaves
-    /// engagement to the speed floor.
+    /// The content pipeline the render band is measured against. A strip reports
+    /// it at runtime with [`crate::Virtualizer::set_fill_profile`]; a `fill_ms`
+    /// of `0` means "not measured" and leaves engagement to the speed floor.
     pub pipeline: Pipeline,
     /// Change-detection epsilon for measurements and viewport writes.
     pub measure_epsilon: f64,
@@ -155,13 +153,6 @@ impl VirtualizerOptions {
         estimate_size: impl Fn(usize) -> f64 + 'static,
     ) -> Self {
         Self::list(count, estimate_size).render_band(0.75)
-    }
-
-    /// Reports the caller's fill pipeline into [`Self::pipeline`].
-    pub fn fill_profile(mut self, fill_ms: f64, lanes: usize) -> Self {
-        self.pipeline.fill_ms = fill_ms.max(0.0);
-        self.pipeline.lanes = lanes;
-        self
     }
 
     /// Sets [`Self::render_screens`]; `0` disables the band.

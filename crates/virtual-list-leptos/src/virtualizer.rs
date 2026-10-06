@@ -1144,22 +1144,17 @@ impl Virtualizer {
         self.inner.apply_local(step);
     }
 
-    /// Report the caller's measured fill pipeline: the median milliseconds one
-    /// item's content takes to become real, and how many the caller makes at
-    /// once. The content band is decided against this, which is why a machine
-    /// that can fill faster never shows a placeholder for the same scroll. A
-    /// reader that reports nothing leaves the decision to the speed floor.
-    ///
-    /// Called from the pipeline's own telemetry, once its median has moved
-    /// meaningfully — not per frame.
+    /// Report what one item's content costs on this machine (`fill_ms`) and how
+    /// many the caller makes at once (`lanes`); the content band is decided
+    /// against both, so a faster machine shows a placeholder less often for the
+    /// same scroll. Reporting nothing leaves the decision to the speed floor.
     pub fn set_fill_profile(&self, fill_ms: f64, lanes: usize) {
         let mut pipeline = self.inner.core.borrow().pipeline();
         pipeline.fill_ms = fill_ms.max(0.0);
         pipeline.lanes = lanes;
         self.inner.core.borrow_mut().set_pipeline(pipeline);
-        // The band may have opened or closed without the window moving, and
-        // that is a render-state change: `items()` recomputes, the DOM does not
-        // move.
+        // The band can open or close without the window moving: `items()`
+        // recomputes, the DOM does not move.
         self.inner.sync_band_version();
     }
 
