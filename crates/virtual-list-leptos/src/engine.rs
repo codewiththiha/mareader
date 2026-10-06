@@ -1427,10 +1427,7 @@ mod tests {
         // this is well past any fill capacity the host could promise.
         core.set_pipeline(Pipeline::default());
         for step in 1..=8u32 {
-            core.on_scroll_at(
-                2_000.0 + f64::from(step) * 900.0,
-                f64::from(step) * 16.0,
-            );
+            core.on_scroll_at(2_000.0 + f64::from(step) * 900.0, f64::from(step) * 16.0);
         }
         assert!(core.motion_band().placeholder, "a fling seeks");
         let mounted = core.items();
@@ -1443,8 +1440,11 @@ mod tests {
         for item in &mounted {
             assert_eq!(item.size, 100.0, "a blank must not resize");
         }
-        let viewport = core.viewport();
-        for index in viewport.first_visible_index..=viewport.last_visible_index {
+        let top = core.scroll_top();
+        let visible = core.viewport().main;
+        let first = core.index_at(top + 0.5);
+        let last = core.index_at(top + visible - 0.5);
+        for index in first..=last {
             assert_eq!(
                 core.item_state(index),
                 VirtualItemState::Active,
@@ -1454,8 +1454,7 @@ mod tests {
         assert!(
             blanked
                 .iter()
-                .all(|index| *index < viewport.first_visible_index
-                    || *index > viewport.last_visible_index),
+                .all(|index| *index < first || *index > last),
             "blanks stay off the visible rows: {blanked:?}"
         );
     }
