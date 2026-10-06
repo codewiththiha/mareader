@@ -146,9 +146,10 @@ fn note_fill_profile(
     }
     let lanes = stats.page_limit as usize;
     let (fill_ms, applied_lanes) = last.get();
-    let worth_a_publish = lanes != applied_lanes
-        || fill_ms <= 0.0
-        || (stats.fill_ms - fill_ms).abs() > fill_ms * 0.1;
+    // The cell starts at -1.0, so a negative here means nothing has been applied
+    // to this strip yet and the first real figure always lands.
+    let drift = (stats.fill_ms - fill_ms).abs();
+    let worth_a_publish = lanes != applied_lanes || fill_ms <= 0.0 || drift > fill_ms * 0.1;
     if !worth_a_publish {
         return;
     }
