@@ -206,10 +206,7 @@ def branch_of_sha(repo: str, token: str, sha: str) -> str:
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
-# A run a newer push replaced is not a verdict on this code: GitHub cancels the
-# in-progress run on the same ref, its jobs report `cancelled`, and none of them
-# ever ran. Reporting that as red sends a round chasing a failure that does not
-# exist, which is the one thing this fast-fail exists to avoid.
+# A run a newer push cancelled is no verdict; calling it red wastes a round.
 SUPERSEDED = ("cancelled", "startup_cancelled")
 
 
@@ -282,8 +279,7 @@ def fetch_failed_logs(repo: str, token: str, run: Run) -> str:
         zf = zipfile.ZipFile(buf)
     except zipfile.BadZipFile:
         return "(log archive was not a zip; logs may have expired)"
-    # An archive names its entries after the job's display name with the path
-    # separator replaced: "Rust / format" becomes "Rust _ format/…".
+    # Archive entries replace "/" in a job name: "Rust / format" -> "Rust _ format".
     for item in sorted(zf.namelist()):
         if item.endswith("/"):
             continue

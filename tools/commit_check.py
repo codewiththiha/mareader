@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Refuse a commit whose subject is longer than the repository allows.
 
-AGENTS.md fixes the subject at 72 characters, `[skip deep]` counted. This turns
-that line into a gate instead of a hope.
+AGENTS.md fixes the subject at 50 characters, `[skip deep]` counted — GitHub's UI
+and `git log` cut a subject off, and 50 is the width that survives the cut. This
+turns that line into a gate instead of a hope.
 
   python3 tools/commit_check.py --install          # wire into .git/hooks
   python3 tools/commit_check.py --uninstall
   python3 tools/commit_check.py --range main..HEAD # audit committed history
+  python3 tools/commit_check.py --status          # is the gate armed at all?
   python3 tools/commit_check.py <file>             # hook mode: check a message
 
 Exit 0 when every subject passes; in hook mode a non-zero exit is what refuses
@@ -25,7 +27,7 @@ import os
 import subprocess
 import sys
 
-LIMIT = 72
+LIMIT = 50
 HOOK_MARKER = "mareader: commit subject length gate"
 HOOK_BODY = f"""#!/bin/sh
 # {HOOK_MARKER} — see tools/commit_check.py.
@@ -101,11 +103,29 @@ def install(force: bool) -> int:
             print(f"{path} exists and is not ours; pass --force to replace it.")
             return 1
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(HOOK_BODY)
+    fresh = not os.path.exists(path)
+    if fresh:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(HOOK_BODY)
     os.chmod(path, 0o755)
-    print(f"installed {path}")
-    print("every commit now passes tools/commit_check.py before it is written.")
+    # git skips a hook it cannot execute, so the mode is part of the install.
+    print(("installed " if fresh else "re-armed ") + path)
+    return 0
+
+
+def status() -> int:
+    """Whether the gate is actually armed: git ignores a hook it cannot execute."""
+    path = hook_path()
+    if not os.path.exists(path):
+        print(f"no commit-msg hook at {path}: run --install.")
+        return 1
+    if HOOK_MARKER not in open(path, encoding="utf-8").read():
+        print(f"{path} is not ours; this repository's limit is unenforced.")
+        return 1
+    if not os.access(path, os.X_OK):
+        print(f"{path} is ours but not executable, so git skips it: run --install.")
+        return 1
+    print(f"{path} is armed: subjects over {LIMIT} characters are refused.")
     return 0
 
 
@@ -131,6 +151,8 @@ def main() -> int:
                     help="audit every subject in a git range, e.g. main..HEAD")
     ap.add_argument("--install", action="store_true", help="write .git/hooks/commit-msg")
     ap.add_argument("--uninstall", action="store_true", help="remove that hook")
+    ap.add_argument("--status", action="store_true",
+                    help="report whether the hook is installed, ours and executable")
     ap.add_argument("--force", action="store_true",
                     help="with --install, replace a commit-msg hook we do not own")
     args = ap.parse_args()
@@ -139,6 +161,8 @@ def main() -> int:
         return install(args.force)
     if args.uninstall:
         return uninstall()
+    if args.status:
+        return status()
     if args.rev_range:
         os.chdir(toplevel())
         return audit(args.rev_range)

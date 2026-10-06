@@ -39,6 +39,9 @@ large installs locally. Run the fast checks that match what you touched:
 - Gate or watch CI for a revision: `python3 tools/ci_watch.py` (`--once` reads
   once, `--detach` watches in the background, `--tail` reads it back)
 - Enforce the commit-subject limit: `python3 tools/commit_check.py --install`
+- Audit comment length: `python3 tools/comment_check.py <file or directory>`
+  (directories recurse; `--json` for the payload, `--strip` to remove what
+  owns its lines)
 
 `tools/` holds the hand-written tooling; `scripts/` is generated — it is
 `tsconfig.tools.json`'s `outDir`, so nothing authored belongs there and `.gitignore`
@@ -192,9 +195,20 @@ other legitimate use, and it is described in "The CI loop".
 
 ### Comments
 
+Write clean, self-documenting code. Do not write comments that explain what the
+code is doing; only write comments explaining why something non-obvious was done.
+Avoid repeating variable names in comments.
+
 A comment carries a constraint the code cannot show; it never argues for a
 decision. Test every added line: **would a reader who never saw the diff need
-this?** If not, cut it and put what it said in the commit message.
+this?** If not, cut it and put what it said in the commit message. Measure it with
+`python3 tools/comment_check.py` — three lines, eighty characters a line, fifteen
+words per block by default, all three raisable with `--max-lines`, `--max-line`,
+`--max-words`. Run it on the files you touched, not on the repository: the style
+this rule replaces is still in the tree, and the tool names 6,300 blocks across
+713 files today. A comment that genuinely needs more than the ceiling states so
+itself with `comment-check: allow` on the line above it, which the tool honours and
+a reviewer can read as a claim, not an escape.
 
 Blocking — remove rather than shorten:
 
@@ -254,18 +268,22 @@ design and the commit message for the decision — and neither is a comment.
 ## Commits and pull requests
 
 - Conventional commits: `type(scope): summary`, imperative, lower case, no
-  trailing period, subject ≤ 72 characters, enforced rather than remembered:
+  trailing period, subject ≤ 50 characters — GitHub's own truncation sits near 72,
+  so 50 is what survives a log line, a UI row and a checklist cell intact.
+  Enforced rather than remembered:
   `python3 tools/commit_check.py --install` writes a `commit-msg` hook that
   refuses an over-long subject, and `python3 tools/commit_check.py
   --range main..HEAD` audits history. The hook is per checkout, so a fresh clone
-  installs it once; `--uninstall` removes it, and `--force` replaces a hook this
-  repository does not own.
+  installs it once; `--uninstall` removes it, `--force` replaces a hook this
+  repository does not own, and `--status` reports whether it is armed — git skips a
+  non-executable hook in silence, so the check is worth running after a reset.
 - Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`,
   `chore`. Scope is the area touched (`pdf`, `split`, `shell`, `engine`, …).
 - One coherent change per commit; context goes in the body, not the subject.
   No progress reports, phase labels or ticket numbers in the subject. The one
   non-descriptive token a subject may carry is `[skip deep]` (see "Deep CI"),
-  and the 72-character check counts it.
+  and the 50-character check counts it — 39 characters left for the description,
+  so keep the scope short.
 - Squash fixups before pushing; rewrite remote history only with
   `git push --force-with-lease`.
 
@@ -277,10 +295,11 @@ design and the commit message for the decision — and neither is a comment.
    one that deferred it with `[skip deep]`, which the summary states either way.
 3. Docs describe the current behaviour (`docs/architecture.md`,
    `docs/memory/` for memory behaviour).
-4. Every added comment passes the diff-blind test (`### Comments`): no narration,
-   no defence, no restatement. The round that adds a rule to this repository also
-   applies it to the code in the same round — a guideline the author ignores is
-   not a guideline.
+4. Every added comment passes the diff-blind test (`### Comments`): no
+   narration, no defence, no restatement, and `python3 tools/comment_check.py`
+   is clean on the files the round changed. The round that adds a rule to this
+   repository also applies it to the code in the same round — a guideline the
+   author ignores is not a guideline.
 5. The summary states what changed, what was verified and any limits. If a
    requirement cannot be met, report the blocker instead of dropping it.
 
