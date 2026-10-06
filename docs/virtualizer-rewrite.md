@@ -94,14 +94,31 @@ saturates at `max_lead`; a stopped scroller decays to zero within a frame or two
    shape (consumers construct it) but gains `MotionGated`, which becomes the
    default: `bridges_now(motion, commit)` decides per publish.
 
-### 4. Release is an event, not a side effect of unmount. Publishing a window
-   diff produces `Released { index, reason: Evicted | Superseded }` entries that
-   the adapter hands to registered listeners on the same tick the row leaves the
-   band ∪ bridge — so page rasters, raw bitmaps and page canvases are dropped
-   when the *virtualizer* says a page is gone, while the **measurement** (the
-   item's size) is kept as long as the layout keeps it: sizes are 16 bytes and
-   they are what keeps the scrollbar and anchor honest (TanStack keeps
-   `itemSizeCache` for the same reason; MAReader must not keep rasters for it).
+### 4. Content dies with the frame; the queue decides who goes first.
+   A page's rasters, raw bitmap and canvas are released by the unmount the band
+   now causes promptly (`unregisterPage` → `releasePageSurfaces`, which zeroes
+   the backing stores), while the **measurement** — the item's size — stays with
+   the layout as long as the layout keeps the item: 16 bytes that keep the
+   scrollbar and every anchor honest (TanStack keeps `itemSizeCache` for the same
+   reason; a reader must not keep rasters for it). An earlier draft of this
+   round added a release *event* (`on_release` plus a bounded ledger) so caches
+   could drop a page one tick sooner than the DOM did. Nothing needed it: every
+   per-page surface is already owned by the frame, so the event had no honest
+   consumer and it was deleted rather than left as a hook. What was missing was
+   not an earlier release but an ordered fill — see §6.
+
+### 6. Fill order is the lane's, and it is derived, not configured. The page
+   lane runs two rasters per session, so the cost of one queued page is roughly
+   the cost of the frame the reader is waiting for. Issued in mount order, the
+   page under the reader's eyes waits behind the overscan queued around it and
+   shows a blank at a speed nobody would call fast. So the strip hands every
+   request a `rank`: the band's own class first (`FillPriority::rank`: visible,
+   ahead, behind, warm) and then the distance from `landing_index()`, so a page
+   the reader is travelling toward outranks one they have left, and two pages in
+   one class compete on which pair of eyes reaches it first. A raster already
+   running is never preempted — abandoning it buys a blank, not a bitmap — but a
+   page that leaves the band while still unpainted has its queued request
+   cancelled, because a slot spent on it is a slot the visible pages cannot use.
 
 ### 5. Measurement cadence. Keep the coalesced pre-paint flush, but a mount whose
    measured size differs from the estimate by more than `eps` re-windows within
@@ -116,21 +133,24 @@ saturates at `max_lead`; a stopped scroller decays to zero within a frame or two
 Every item in `crates/virtual-list-leptos/src/lib.rs`'s re-export list and every
 `pub fn` on `Virtualizer`/`VirtualizerCore` keeps its name, argument types and
 return type. `VirtualizerOptions` keeps its fields and builder methods; new knobs
-arrive as new builder methods (`fill_latency`, `band`, `min_items_ahead`,
-`on_release`). The kernel keeps `Strip`, `Layout`, `ListLayout`, `GridLayout`,
-`GridSpec`, `GridDimension`, `window_for`, `Window`, `Viewport`, `Budget`,
-`Overscan`, `Align`, `AnchorPolicy`, `pin_at`, `correct`, `rescale_anchor`,
+arrive as new builder methods (`pipeline`) and new read-only getters
+(`motion_engaged`, `motion_speed`, `fill_priority`, `landing_index`). The kernel
+keeps `Strip`, `Layout`, `ListLayout`, `GridLayout`, `GridSpec`,
+`GridDimension`, `window_for`, `Window`, `Viewport`, `Budget`, `Overscan`,
+`Align`, `AnchorPolicy`, `pin_at`, `correct`, `rescale_anchor`,
 `subpixel_factor`, `SUBPIXEL_FACTOR`.
 
 ## Phase plan (each phase lands green on CI before the next)
 
-1. `virtual-list::motion` (pure estimator + band math + release ledger), unit
-   tests in the crate. `cargo test -p virtual-list` runs them in CI.
-2. Adapter: `driver.rs` (frame chain feeds the estimator), `band.rs` (band
-   policy from motion), `retention.rs` (motion-gated bridge), `release.rs`
-   (listener fan-out), `virtualizer.rs`/`hook.rs` endpoints preserved.
-3. Consumers: strips publish their fill latency and take the release signal; the
-   raster lane orders work by `priority`.
+1. `virtual-list::motion` (pure estimator + band math), unit tests in the crate
+   and a `tests/motion_band.rs` suite for the policy. `cargo test -p
+   virtual-list` runs them in CI.
+2. Adapter: the core owns `Motion` + `Pipeline` and *stores* the band
+   (`rewindow` evaluates it, so every getter stays `&self`), `retention.rs`
+   (motion-gated bridge), `virtualizer.rs`/`hook.rs` endpoints preserved.
+3. Consumers: the strip reads the band for what carries content and the band's
+   priority for the engine's page-lane `rank`; the lane inserts by rank and
+   pumps a cancelled job out instead of parking it at its head.
 4. Gates: `tests/browser/lifecycle.mjs` — the look-ahead stage and the retention
    ceilings get *tighter* assertions (placeholder mode must not engage at normal
    speed; `retainedVirtualItems` must fall to 0 at rest without waiting for the
@@ -158,9 +178,11 @@ Refinements that came out of writing it, so the plan above and the code agree:
 - `lead` is `speed × fill_ms`, floored at `min_lead_screens` (0.5), capped at
   `max_lead_screens` (2.0), and never below the mount policy's own overscan;
   `trail` is `trail_screens`, capped by `lead`.
-- `release.rs` is its own module (`ReleaseReason::{Evicted, Superseded}`,
-  `ReleaseLedger::{new, push, drain, len, is_empty}`, `release_sides`). The
-  ledger is bounded and dedups an index already pending.
+- Fill order is a `u32` sort key handed to the engine lane
+  (`pdf-engine::render_page(..., rank)`, `PageLane.push(rank, run)`), derived by
+  `rank_signal` from `FillPriority::rank() × 2¹⁶ + |index − landing_index()|`.
+  Read untracked at issue time: a rank change says who goes first, not what has
+  to be drawn, so re-running a render effect for it would restart rasters.
 - `blend_backdrop`'s "am I moving" input becomes `motion_drifts` — true while
   engaged, `false` once settled and slower than `drift_eps`, and nothing else —
   replacing any speed *ratio* a caller might have invented. The engine-side
@@ -171,6 +193,13 @@ Refinements that came out of writing it, so the plan above and the code agree:
   under the motion-derived band, never a cap over it. `render_band(0)` keeps its
   meaning, which is that the mode is off.
 
-Phase 1 (this commit) is kernel-only and host-tested; the adapter and the strips
-follow, so `Virtualizer` keeps every endpoint and the lifecycle suite still sees
-the old policy until the next commit lands.
+## Status
+
+All four phases are landed on `perf/virtualizer-motion`. What the reader sees:
+at reading speed nothing mounted is a placeholder and every page renders in the
+frame it mounts; a fling earns a lead instead of a fixed pad, pays for it by
+blanking only what it flew past, and hands the queue back the work it no longer
+wants; at rest the bridge dissolves in the same frame the motion estimate
+decays. `CI` and `Deep CI` green on the gated SHA; the page lane's queue and
+active slots stay drained at quiescence, which `tests/browser/lifecycle.mjs`
+asserts.

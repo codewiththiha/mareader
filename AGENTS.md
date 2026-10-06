@@ -74,6 +74,10 @@ one-line fix costs half an hour, so the loop separates them:
   *when* the lane runs, not *whether*: nothing merges, ships or gets reported on
   a SHA that deferred it. If a round ends without a final commit, name the SHA
   that still owes the lane.
+- **Triggering that last run may be a commit of its own.** When the code is
+  already `CI`-green and only prose followed it, an empty commit whose subject
+  carries no marker runs both lanes on the tree being reported: a `docs/**`-only
+  commit triggers nothing, and would leave the round ungated.
 - **Do not idle on the last wait.** While the final push's `Deep CI` runs, do the
   bookkeeping that is owed anyway — notes, docs, the next small fix — then read
   the lane with the run already minutes old. A long lane is only expensive when

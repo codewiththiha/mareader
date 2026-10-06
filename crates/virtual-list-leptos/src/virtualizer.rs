@@ -19,8 +19,9 @@ use crate::engine::{Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
-use crate::retention::{RetainedItem, RetentionPolicy, is_retained, next_deadline_ms,
-    prune_retained, retain_evicted};
+use crate::retention::{
+    RetainedItem, RetentionPolicy, is_retained, next_deadline_ms, prune_retained, retain_evicted,
+};
 use crate::surface::{DomSurface, ScrollSurface};
 
 type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
