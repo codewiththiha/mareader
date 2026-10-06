@@ -43,43 +43,61 @@ trigger no run.
 
 ## The CI loop
 
-`CI` is the fast lane: `Rust / format`, `Rust / lint`, `Rust / test`,
-`Web / contracts` and `macOS / shell`, which run in parallel and answer in two to
-four minutes (measured: 2.8 green, 1.8 to a red format job). `Deep CI` is the
-slow one: three jobs capped at 45, 75 and 45 minutes, tens of minutes even when
-everything passes (measured: 22 for a green run), and its verdict is unreadable
-while `CI` is red — a build break fails all three of its jobs for one reason that
-`cargo test` already states. Waiting for both lanes after every push is how a
-one-line fix costs half an hour, so the loop separates them:
+`CI` is the fast lane — `Rust / format`, `Rust / lint`, `Rust / test`,
+`Web / contracts`, `macOS / shell`, in parallel, two to four minutes (measured:
+2.8 green, 1.8 to a red format job). `Deep CI` is the slow one — three jobs
+capped at 45, 75 and 45 minutes, twenty minutes even when all is well — and its
+verdict cannot be read while `CI` is red, because one build break fails all three
+jobs for a reason `cargo test` already states. So each commit decides which lane
+owes an answer and which owes nothing.
 
-- **Poll only `CI` while the round is still being fixed up.** Resolve the runs of
-  the pushed SHA (`GET /repos/:owner/:repo/actions/runs?head_sha=<full 40
-  characters>` — an abbreviated SHA returns nothing), read that run's jobs
-  (`GET /actions/runs/:id/jobs`), and do not wait for `Deep CI`: for a SHA that
-  is not the round's last one, its conclusion gates nothing. A job's log is the
-  only place `rustfmt`'s diff and clippy's message exist
-  (`GET /actions/jobs/:id/logs`); fetch the red job, not the whole run.
-- **Stop polling at the first red job.** Once one lane of `CI` has failed, the
-  diagnosis is in hand; waiting for the remaining jobs to finish adds minutes to
-  every fix and cannot change what to fix. Read the failure, fix it, push again.
-- **`Deep CI` runs once per round, on the last commit that carries code** —
-  `docs/**` alone triggers no lane, so a closing documentation push can be the
-  round's literal last commit but can never be the one that gates it. The gated
-  SHA is the SHA a report calls done; a follow-up that only moves whitespace or
-  prose inside that same tree does not reopen the gate, and the summary says so
-  instead of paying for a third rebuild.
-- **A mid-round push carries `[skip deep]` even when the change touches code
-  that never normally skips the lane**, with one line in the body saying the deep
-  lane is deferred to the round's final commit. Used this way the marker says
-  *when* the lane runs, not *whether*: nothing merges, ships or gets reported on
-  a SHA that deferred it. If a round ends without a final commit, name the SHA
-  that still owes the lane.
-- **The final `Deep CI` run is dispatched, not pushed.** Both workflows filter
-  `push` by path: `CI` drops a push whose every path is under `docs/`, and
-  `deep-ci.yml` only lists source trees in its `paths:` allowlist. So an empty
-  commit or a prose-only commit — including one whose subject drops the marker —
-  starts nothing at all, and the round would quietly go ungated. Dispatch it
-  instead, on the head that carries the finished tree:
+### Which lane a commit owes
+
+| The commit | `Deep CI` | Wait for |
+| --- | --- | --- |
+| a `cargo fmt` hunk, whitespace, a blank line | `[skip deep]`, always | `Rust / format` — that job *is* the check |
+| comments, doc text, a rename no caller can see | `[skip deep]` | `CI` |
+| `docs/**` only | no run at all | nothing — say the tree is unchanged |
+| root prose (`AGENTS.md`, `README.md`) | no run | `CI` |
+| logic in `*-core`, `ui-geom`, `ai-core`, `tools/**` | `[skip deep]` | `CI`, `cargo test` included |
+| anything on the never-skip list below | on the round's last code commit, once | `CI` green, then that run |
+| a version bump, a build or workflow change, a push after a red `Deep CI` | on that head | both, in that order |
+
+Housekeeping commits are never the round's gate. `deep-ci.yml` filters `push` by a
+source-path allowlist, and a `.rs` file whose only change is a blank line matches
+it, so the marker is the only thing that stops a twenty-minute lane from checking
+nothing — and `CI` still proves it.
+
+### Reading a verdict without losing the afternoon
+
+- **Poll only `CI` while the round is open.** Resolve the run at the pushed SHA
+  (`GET /repos/:owner/:repo/actions/runs?head_sha=<40 characters>` — an
+  abbreviated SHA returns nothing), then its jobs (`GET /actions/runs/:id/jobs`).
+  A job's log (`GET /actions/jobs/:id/logs`) is the only place rustfmt's diff and
+  clippy's message exist; fetch the red job, not the run.
+- **Stop at the first red `CI` job.** The diagnosis is in hand; the rest cannot
+  change what to fix.
+- **Never block on a `Deep CI` verdict** — not on a sleep, not on a poll loop, not
+  on a tool call that waits for a run that size. Start it, do the owed work (notes,
+  docs, the next fix), then read it once. If the turn has nothing left, end it with
+  the run live and name the SHA that owes the verdict; the next turn reads it. A
+  long lane is only expensive when it is spent waiting.
+- **Cancel a `Deep CI` run that gates nothing** instead of watching it:
+  `POST /actions/runs/:id/cancel`. That covers a marker-less whitespace head, a
+  dispatch against a stale SHA, and any live run whose SHA has since gone red in
+  `CI`. Push the fix; the round's final head runs the lane again.
+- **Do not dispatch `Deep CI` onto a ref whose push-triggered run is still queued
+  or live**: the per-ref concurrency group settles that by cancelling one of the
+  two, and a cancelled run is not a verdict — the round loses its gate for
+  nothing. Let the push-triggered run be the gate, or dispatch once `CI` has
+  landed. Say in the summary which of the two it was.
+- **`Deep CI` runs once per round**, on the last commit that carries code, after
+  every `CI` lane on that SHA is green. `docs/**` triggers no lane, so a closing
+  prose push can be the round's literal last commit and never its gate; a
+  follow-up that moves only whitespace or prose under an already-gated tree does
+  not reopen it — the summary says so instead of paying for another rebuild.
+- **Dispatch the final run rather than pushing for it**, because a prose or empty
+  commit starts nothing at all:
 
   ```sh
   curl -sf -X POST -H "Authorization: token $TOKEN" \
@@ -89,16 +107,12 @@ one-line fix costs half an hour, so the loop separates them:
   ```
 
   A dispatched run reports its check on that head, so it gates exactly the tree
-  under review. `ignore-skip` exists for the case where the head subject still
-  says `[skip deep]`; drop the marker instead when you can.
-- **Do not idle on the last wait.** While the final push's `Deep CI` runs, do the
-  bookkeeping that is owed anyway — notes, docs, the next small fix — then read
-  the lane with the run already minutes old. A long lane is only expensive when
-  it is spent sleeping.
-- **A red `Deep CI` on the final SHA is fixed like any other red:** read the
-  failing job, fix, push — and that push is the round's final one, so it runs
-  both lanes (`CI` is never skipped, and a push after a red `Deep CI` never
-  carries the marker).
+  under review. `ignore-skip` covers a head whose subject still says `[skip deep]`;
+  drop the marker instead when you can.
+- **A red `Deep CI` on the gated SHA is fixed like any other red**: read the
+  failing job, fix, push — and that push is the round's final one, so it runs both
+  lanes. `CI` is never skipped, and a push after a red `Deep CI` never carries the
+  marker.
 
 Never shorten this loop by narrowing a gate: no edited workflow path list, no
 dropped assertion, no `[skip deep]` on the reported SHA.
@@ -120,7 +134,9 @@ nothing), and the marker skips all three jobs. The nightly cron ignores it and a
 the last word. Deferring the lane to a round's final commit is the marker's only
 other legitimate use, and it is described in "The CI loop".
 
-- Skip it for presentation and prose: docs, release notes and comments; copy,
+- Skip it for presentation and prose: docs, release notes and comments; a
+  `cargo fmt` hunk, whitespace or a blank line inside a listed path — the
+  file's name does not decide, the diff does; copy,
   labels, spacing, a control's placement or visibility, `styles/**`, and the
   menu or settings rows that only read and write an existing signal; AI,
   toolbar and shelf-surface presentation; `tools/**` scripts that neither build
