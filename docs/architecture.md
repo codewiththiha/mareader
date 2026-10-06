@@ -513,6 +513,10 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   background, and under shared blend it resolves `--pdf-paper-baked` exactly as a
   pane root does, so panes and gutter are one colour; the theme's `--color-paper`
   remains the fallback while nothing publishes paper.
+- **Pane shadow:** `WorkspaceSettings::pane_box_shadow` gates the soft shadow a
+  pane box casts. Shared blend suppresses it while a split is on screen, because
+  a black shadow falling on the gutter contradicts the one-paper promise above;
+  independent themes keep it, since there each pane stands on its own surface.
 - **Focus paint:** `.reader-bg.split-workspace [data-pane-id]` creates an
   isolated pane stacking context; the active entry receives the higher
   sibling z-index and its focus outline paints above that pane's content.

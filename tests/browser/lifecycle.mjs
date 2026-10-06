@@ -2773,11 +2773,21 @@ async function paneEntries() {
     root.append(probe);
     const want = getComputedStyle(probe).backgroundColor;
     probe.remove();
-    return { want, got: getComputedStyle(root).backgroundColor };
+    const entry = doc.querySelector("[data-pane-id]");
+    return {
+      want,
+      got: getComputedStyle(root).backgroundColor,
+      shadow: entry ? getComputedStyle(entry).boxShadow : "none",
+    };
   }, activeFrame);
-  if (gutterLook && gutterLook.gut !== gutterLook.want) {
+  if (gutterLook && gutterLook.got !== gutterLook.want) {
     throw new Error(
-      `[pane appearance] the split gutter paints ${gutterLook.gut} where shared blend promises ${gutterLook.want}`,
+      `[pane appearance] the split gutter paints ${gutterLook.got} where shared blend promises ${gutterLook.want}`,
+    );
+  }
+  if (gutterLook && gutterLook.shadow !== "none") {
+    throw new Error(
+      `[pane appearance] a pane shadow falls on the shared blend gutter: ${gutterLook.shadow}`,
     );
   }
   const paneDecoration = await page.evaluate(([sel, activeId]) => {

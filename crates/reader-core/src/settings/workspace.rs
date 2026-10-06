@@ -95,6 +95,21 @@ pub struct WorkspaceSettings {
     pub pane_corners: PaneCorners,
 }
 
+/// Shared blend's gutter is one continuous paper; a shadow reads as
+/// a band.
+const SHARED_BLEND_SHADOW: &str = "0 5px 18px rgb(0 0 0 / 0.24)";
+
+impl WorkspaceSettings {
+    /// The pane box shadow the workspace should carry.
+    pub fn pane_box_shadow(&self, blend: bool, split: bool, independent: bool) -> &'static str {
+        if self.pane_shadow && !(blend && split && !independent) {
+            SHARED_BLEND_SHADOW
+        } else {
+            "none"
+        }
+    }
+}
+
 impl Default for WorkspaceSettings {
     fn default() -> Self {
         Self {
@@ -131,6 +146,20 @@ mod tests {
 
         let s: WorkspaceSettings = serde_json::from_str(r#"{"libraryClick":"dragOnly"}"#).unwrap();
         assert_eq!(s.library_click, LibraryClick::DragOnly);
+    }
+
+    #[test]
+    fn shared_blend_split_keeps_the_gutter_shadow_free() {
+        let cast = WorkspaceSettings {
+            pane_shadow: true,
+            ..Default::default()
+        };
+        assert_eq!(cast.pane_box_shadow(true, true, false), "none");
+        assert_ne!(cast.pane_box_shadow(false, true, false), "none");
+        assert_ne!(cast.pane_box_shadow(true, true, true), "none");
+        assert_ne!(cast.pane_box_shadow(true, false, false), "none");
+        let none = WorkspaceSettings::default();
+        assert_eq!(none.pane_box_shadow(false, true, false), "none");
     }
 
     #[test]

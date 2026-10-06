@@ -684,13 +684,10 @@ impl ReaderHost {
             } else {
                 "0px"
             };
-            let shadow = if workspace.pane_shadow {
-                "0 5px 18px rgb(0 0 0 / 0.24)"
-            } else {
-                "none"
-            };
+            let blend = s.layout.blend_mode && has_pdf;
+            let shadow = workspace.pane_box_shadow(blend, split, independent);
             WorkspaceLook {
-                blend: s.layout.blend_mode && has_pdf,
+                blend,
                 independent,
                 split,
                 page_shadow: s.layout.page_shadow,
