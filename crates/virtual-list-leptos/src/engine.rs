@@ -1397,31 +1397,67 @@ mod tests {
         )
     }
 
+    /// The band is a *seeking* mechanism, not a smaller viewport. At rest every
+    /// mounted row is drawn — DOM that is already paid for must never be
+    /// blanked — and only while the reader is actually in flight do the fringes
+    /// fall back to placeholders. Either way the rows under the reader's eyes
+    /// are never blanks, and a placeholder keeps the layout's own size, so the
+    /// scrollbar and the anchors never see the band at all.
     #[test]
-    fn a_render_band_blanks_the_mount_fringes_but_never_the_viewport() {
+    fn the_band_blanks_the_mount_fringes_only_while_the_reader_is_seeking() {
         let mut core = stream_core(0.75);
         let _ = core.on_scroll(2_000.0);
         // Mount: visible rows 20-21 plus two screens of overscan -> 16..=25.
-        // Band: viewport padded three quarters of a screen -> rows 18..=23.
         let items = core.items();
         assert_eq!(
             items.iter().map(|item| item.index).collect::<Vec<_>>(),
             (16..=25).collect::<Vec<_>>()
         );
         for item in &items {
-            let want = if (18..=23).contains(&item.index) {
-                VirtualItemState::Active
-            } else {
-                VirtualItemState::Blank
-            };
-            assert_eq!(item.state, want, "item {}", item.index);
-            // A placeholder keeps the layout's own size: the scrollbar and
-            // the anchors must not see the band at all.
+            assert_eq!(
+                item.state,
+                VirtualItemState::Active,
+                "item {} while the reader is at rest",
+                item.index
+            );
             assert_eq!(item.size, 100.0);
         }
-        // The rows under the reader's eyes are never blanks.
-        assert_eq!(core.item_state(20), VirtualItemState::Active);
-        assert_eq!(core.item_state(21), VirtualItemState::Active);
+
+        // A fling through the same list: a wheel notch is ~100 px in 16 ms, so
+        // this is well past any fill capacity the host could promise.
+        core.set_pipeline(Pipeline::default());
+        for step in 1..=8u32 {
+            core.on_scroll_at(
+                2_000.0 + f64::from(step) * 900.0,
+                f64::from(step) * 16.0,
+            );
+        }
+        assert!(core.motion_band().placeholder, "a fling seeks");
+        let mounted = core.items();
+        let blanked: Vec<usize> = mounted
+            .iter()
+            .filter(|item| item.state == VirtualItemState::Blank)
+            .map(|item| item.index)
+            .collect();
+        assert!(!blanked.is_empty(), "the fringes must fall back");
+        for item in &mounted {
+            assert_eq!(item.size, 100.0, "a blank must not resize");
+        }
+        let viewport = core.viewport();
+        for index in viewport.first_visible_index..=viewport.last_visible_index {
+            assert_eq!(
+                core.item_state(index),
+                VirtualItemState::Active,
+                "viewport item {index}"
+            );
+        }
+        assert!(
+            blanked
+                .iter()
+                .all(|index| *index < viewport.first_visible_index
+                    || *index > viewport.last_visible_index),
+            "blanks stay off the visible rows: {blanked:?}"
+        );
     }
 
     #[test]
