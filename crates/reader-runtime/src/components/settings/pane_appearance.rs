@@ -11,7 +11,7 @@ use app_ui::components::primitives::form::slider::Slider;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 
 const OUTLINE_COLORS: [(PaneOutlineColor, &str, &str); 5] = [
-    (PaneOutlineColor::Auto, "Auto", "var(--pane-outline-auto)"),
+    (PaneOutlineColor::Auto, "Auto", "var(--color-accent)"),
     (PaneOutlineColor::Red, "Red", "#e56b64"),
     (PaneOutlineColor::Yellow, "Yellow", "#e8c449"),
     (PaneOutlineColor::Green, "Green", "#6fd58c"),
@@ -193,5 +193,3 @@ fn CornerChoice(
         </button>
     }
 }
-
-// only the changed file was rewritten
