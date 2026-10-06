@@ -2694,10 +2694,12 @@ async function paneEntries() {
       activeZ: Number(getComputedStyle(active).zIndex),
       inactiveZ: Number(getComputedStyle(inactive).zIndex),
       outline: !!outline && getComputedStyle(outline).boxShadow.includes("2px"),
+      painted: !!outline && getComputedStyle(outline).boxShadow.includes("rgb("),
     };
   }, [activeFrame]);
-  if (!focusPaint.split || focusPaint.autoColor !== "var(--color-accent)"
-      || focusPaint.activeZ <= focusPaint.inactiveZ || !focusPaint.outline) {
+  if (!focusPaint.split || focusPaint.autoColor !== "var(--pane-outline-auto)"
+      || !focusPaint.painted || focusPaint.activeZ <= focusPaint.inactiveZ
+      || !focusPaint.outline) {
     throw new Error(`[pane focus] the active outline is not painted above every pane: ${JSON.stringify(focusPaint)}`);
   }
 
