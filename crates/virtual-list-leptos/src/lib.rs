@@ -65,8 +65,8 @@ pub use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 pub use crate::retention::{RELEASE_LEDGER_CAPACITY, REVERSAL_GRACE_ITEMS, RetentionPolicy};
 pub use virtual_list::ReleaseReason;
 pub use crate::surface::{DomSurface, ScrollSurface};
+pub use crate::virtualizer::DRIFT_EPS_PX_S;
 pub use crate::virtualizer::Virtualizer;
 pub use virtual_list::{Align, BandWindow, Direction, FillPriority, Pipeline};
-pub use crate::virtualizer::DRIFT_EPS_PX_S;
 
 // only the changed file was rewritten

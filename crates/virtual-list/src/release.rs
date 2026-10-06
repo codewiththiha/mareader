@@ -108,12 +108,12 @@ impl ReleaseLedger {
     }
 
     /// How many releases are waiting.
-    pub const fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether nothing is waiting. Required alongside [`Self::len`].
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 }

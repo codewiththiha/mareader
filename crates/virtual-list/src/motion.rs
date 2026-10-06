@@ -41,6 +41,8 @@
 //! calls [`Motion::settle`]. The rules here are tested against the sample
 //! streams those produce — see `tests/motion_band.rs`.
 
+use core::f64::consts::{LN_2, LOG2_E};
+
 use crate::Window;
 
 /// Which way the scroller is moving.
@@ -454,8 +456,6 @@ fn one_minus_exp_neg(x: f64) -> f64 {
     if x > 20.0 {
         return 1.0;
     }
-    const LOG2_E: f64 = 1.442_695_040_888_963_4;
-    const LN_2: f64 = 0.693_147_180_559_945_3;
     let n = (x * LOG2_E + 0.5) as i32;
     let r = f64::from(n) * LN_2 - x;
     // e^r = sum r^k / k!, and the `k = 0` term is exactly the `1` that
@@ -485,16 +485,21 @@ mod tests {
         // where the result is exact by construction: 1 - 2^-n.
         assert_eq!(one_minus_exp_neg(0.0), 0.0);
         assert_eq!(one_minus_exp_neg(25.0), 1.0);
-        assert_eq!(one_minus_exp_neg(0.693_147_180_559_945_3), 0.5);
-        assert_eq!(one_minus_exp_neg(1.386_294_361_119_890_6), 0.75);
-        assert_eq!(one_minus_exp_neg(2.079_441_541_679_835_7), 0.875);
-        // And the in-between samples land on the definition to 1e-9.
-        for (x, wanted) in [
-            (0.02_f64, 0.019_801_326_702_611_44_f64),
-            (1.0, 0.632_120_558_828_557_6),
-            (5.0, 0.993_262_053_000_914_5),
-            (12.0, 0.999_993_919_789_048_3),
-        ] {
+        assert_eq!(one_minus_exp_neg(LN_2), 0.5);
+        assert_eq!(one_minus_exp_neg(2.0 * LN_2), 0.75);
+        assert_eq!(one_minus_exp_neg(3.0 * LN_2), 0.875);
+        // And the in-between samples against the definition itself: `e^-x` from
+        // its series, evaluated here so the test shares no code with the
+        // reduction under test. Up to x = 7 the raw series is still exact to
+        // better than 1e-12 in f64, and 1e-9 is the bar the blend cares about.
+        for x in [0.05, 0.4, 1.0, 3.0, 5.0, 7.0] {
+            let mut term = 1.0;
+            let mut sum = 1.0;
+            for k in 1..=60 {
+                term *= -x / k as f64;
+                sum += term;
+            }
+            let wanted = 1.0 - sum;
             assert!(
                 (one_minus_exp_neg(x) - wanted).abs() < 1e-9,
                 "x={x}: {} vs {wanted}",

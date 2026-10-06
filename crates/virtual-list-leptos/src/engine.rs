@@ -854,8 +854,12 @@ impl VirtualizerCore {
             pipeline.pitch = self.layout.item_size_hint();
         }
         let floor = self.render_screens.max(0.0) * self.viewport.main;
-        self.motion
-            .band(self.scroll_top, self.viewport.main, floor.max(0.0), &pipeline)
+        self.motion.band(
+            self.scroll_top,
+            self.viewport.main,
+            floor.max(0.0),
+            &pipeline,
+        )
     }
 
     /// Resolve [`ScrollMode::Auto`].
