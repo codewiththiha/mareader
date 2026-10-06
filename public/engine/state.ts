@@ -105,19 +105,39 @@ function zeroCounters(): Record<CounterKey, number> {
 /** Realm totals over every session that ever lived — diagnostics only. */
 export const realmCounters: Record<CounterKey, number> = zeroCounters();
 
-/** The page render lane: at most PAGE_RENDER_LIMIT rasters of THIS session
- *  in flight, the rest queued FIFO. Per session, so one pane's burst never
- *  queues behind another pane's pages and one pane's teardown drains only
- *  its own queue. */
+/** One queued raster: its fill rank (see `rank_signal` in
+ *  `components/formats/pdf/strip.rs`), the request order behind it, and the job. */
+type QueuedRaster = { rank: number; seq: number; run: () => void };
+
+/** The page render lane: at most PAGE_RENDER_LIMIT rasters of THIS session in
+ *  flight, the rest queued by rank, harshest first. A raster that has started is
+ *  never preempted. Per session: a burst in one pane never queues behind
+ *  another's pages, and a teardown drains only its own queue. */
 class PageLane {
   active = 0;
-  readonly queue: Array<() => void> = [];
+  readonly queue: QueuedRaster[] = [];
+  private seq = 0;
   permitSerial = 0;
   readonly waiters = new Map<string, {
     canvasId: string;
     cancel: () => void;
     wake: () => void;
   }>();
+
+  /** Insert ahead of everything looser-ranked, stable inside a rank: a page
+   *  window is a handful of jobs, so scanning beats sorting on every push. */
+  push(rank: number, run: () => void): void {
+    const job: QueuedRaster = { rank, seq: this.seq++, run };
+    let at = this.queue.length;
+    while (at > 0 && this.queue[at - 1]!.rank > rank) at -= 1;
+    this.queue.splice(at, 0, job);
+  }
+
+  /** Harshest rank first, request order inside a rank. */
+  take(): (() => void) | null {
+    const next = this.queue.shift();
+    return next ? next.run : null;
+  }
 }
 
 /** Full-page rasters are MAIN-THREAD work — pdf.js draws the page into the
@@ -194,6 +214,10 @@ export class EngineSession {
   readonly sid: number;
   /** Set by `retireSession`; every lane checks it before committing. */
   disposed = false;
+  /** Recent page-raster cost in ms: exponential mean over COMPLETED rasters,
+   *  timed inside the lane slot, so it excludes queue wait. `0` means nothing
+   *  has completed yet. The reader's virtualizer reads this back as `fill_ms`. */
+  fillMs = 0;
 
   readonly pageLane = new PageLane();
   readonly thumbLane = new ThumbLane();
@@ -754,3 +778,5 @@ export function noteWorkerCreated(s: EngineSession): void {
 }
 
 export const CLEANUP_EVERY = 5;
+
+// only the changed file was rewritten

@@ -345,3 +345,17 @@ same bytes — and the backdrop session carries the epoch token that makes a lat
 sample inert instead of misfiled.
 
 <!-- // only the changed file was rewritten -->
+
+## What the engine's ledger counts (and what it does not)
+
+`pdf_core::diagnostics::Stats` mirrors `public/engine/types.ts` field for field: a
+rename on either side is a diagnostics regression, and the smoke teardown's pairing
+assertions are what catch it. The byte categories are `width x height x 4` estimates
+of what the engine *holds*, never an allocation query — so the page category
+overlaps a browser test's DOM-scanned `liveCanvasBytes` by construction: the same
+surfaces, two ledgers. Adding them would double-count.
+
+One category is not expected to return to zero at close. The bake-intermediates
+recycler is module-bounded rather than document-owned, so it may hold pooled
+canvases across a close; the baseline records it and gates per-cycle drift instead
+of requiring zero, which is a measurement decision, not a leak left in place.

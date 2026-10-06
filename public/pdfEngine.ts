@@ -410,6 +410,8 @@ function gauges(s: EngineSession): Omit<Stats, CounterKey> {
   const pageLane = pageLaneGauge(s);
   const thumbLane = thumbLaneGauge(s);
   return {
+    fillMs: s.fillMs,
+    pageLimit: pageLane.pageLimit,
     pageQueue: pageLane.pageQueue,
     pageActive: pageLane.pageActive,
     thumbQueue: thumbLane.thumbQueue,
@@ -442,6 +444,8 @@ function sessionStats(sid: Sid): Stats | null {
  *  counters over every session that ever lived (realm totals). */
 function stats(): AggregateStats {
   const out: AggregateStats = {
+    fillMs: 0,
+    pageLimit: 0,
     pageQueue: 0,
     pageActive: 0,
     thumbQueue: 0,
@@ -468,6 +472,9 @@ function stats(): AggregateStats {
   };
   for (const s of heldSessions()) {
     const g = gauges(s);
+    // Per-session figures: max across panes, never a sum.
+    out.fillMs = Math.max(out.fillMs, g.fillMs);
+    out.pageLimit = Math.max(out.pageLimit, g.pageLimit);
     out.pageQueue += g.pageQueue;
     out.pageActive += g.pageActive;
     out.thumbQueue += g.thumbQueue;
@@ -571,8 +578,9 @@ globalThis.PDFReader = {
   cancelPage: (sid, canvasId) => withSession(sid, undefined, (s) => cancelPage(s, canvasId)),
   cancelPageRenders: (sid) => withSession(sid, undefined, (s) => cancelPageRenders(s)),
   quiesce: (sid) => withSession(sid, undefined, (s) => quiesce(s)),
-  renderPage: (sid, canvasId, scale, renderText) =>
-    withSession(sid, Promise.resolve(noSession()), (s) => renderPage(s, canvasId, scale, renderText)),
+  renderPage: (sid, canvasId, scale, renderText, rank = 0) =>
+    withSession(sid, Promise.resolve(noSession()), (s) =>
+      renderPage(s, canvasId, scale, renderText, rank)),
   renderThumb: (sid, canvasId, page, scale) =>
     withSession(sid, Promise.resolve(noSession()), (s) => renderThumb(s, canvasId, page, scale)),
   probePageSize: (sid, page) =>

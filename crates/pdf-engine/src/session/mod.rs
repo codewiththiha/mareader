@@ -267,14 +267,17 @@ impl PdfSession {
         }
     }
 
+    /// Queue one page's raster at `rank` in this session's page lane: lower
+    /// runs first.
     pub async fn render_page(
         &self,
         canvas_id: &str,
         scale: f64,
         render_text: bool,
+        rank: u32,
     ) -> Result<RenderResult, EngineError> {
         let sid = self.require()?;
-        let value = bridge::render_page(sid, canvas_id, scale, render_text).await;
+        let value = bridge::render_page(sid, canvas_id, scale, render_text, rank).await;
         let result = api::resolve::<RenderResult>(value, "render")?;
         if !self.is_live() {
             return Err(no_session());
@@ -287,6 +290,14 @@ impl PdfSession {
     /// BEFORE a page's first raster — this is what lets a fit re-resolve land
     /// ahead of the raster instead of correcting a page that is already on
     /// screen at the wrong size.
+    /// Stand down one page's queued or in-flight raster, leaving its
+    /// registration alone.
+    pub fn cancel_page(&self, canvas_id: &str) {
+        if let Ok(sid) = self.require() {
+            bridge::cancel_page(sid, canvas_id);
+        }
+    }
+
     pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
         let sid = self.require()?;
         let value = bridge::probe_page_size(sid, page).await;
@@ -547,7 +558,7 @@ mod tests {
         assert!(!s.is_live());
         let opened = block_on(s.open("/shelf/book.pdf"));
         assert_eq!(opened.err().map(|e| e.name).as_deref(), Some("no_session"));
-        let rendered = block_on(s.render_page("cv", 1.0, false));
+        let rendered = block_on(s.render_page("cv", 1.0, false, 0));
         assert_eq!(
             rendered.err().map(|e| e.name).as_deref(),
             Some("no_session")

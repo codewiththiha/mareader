@@ -188,6 +188,12 @@ pub fn PdfPageCanvas(
     /// read is tracked, so the crossing itself re-runs the render effect.
     #[prop(optional)]
     in_view: Option<Signal<bool, LocalStorage>>,
+    /// Where this page sits in the engine's page lane: lower starts first,
+    /// `None` (the default) is the front of it. Read UNTRACKED at the moment a
+    /// raster is issued — a rank change says who goes first, not what has to be
+    /// drawn, so tracking it would restart renders.
+    #[prop(optional)]
+    rank: Option<Signal<u32, LocalStorage>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
     /// `zoom_animating`, which every resize-driven animation also holds — a
     /// fit slide, a window drag carrying a hand-picked zoom — for the whole
@@ -426,19 +432,18 @@ pub fn PdfPageCanvas(
         if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
             return;
         }
-        // SCROLL-FLING GATE. An unpainted page the scroller is sweeping past
-        // at speed stays blank until it is visible or the strip settles:
-        // rasterising every page a fling flies past creates and discards a
-        // full-page surface every few frames. `in_view` (tracked) is the
-        // strip's speed-aware visibility: a page in view at reading speed
-        // renders at once, one met mid-fling after a short dwell that a
-        // timer re-checks, so a page never waits on a scroll event that will
-        // not come. `settled` (tracked) renders the overscan at the end.
-        // A render already in flight is never touched.
+        // SCROLL-FLING GATE. `in_view` (tracked) is the strip's fill band's own
+        // verdict, and it is the whole rule: a page the band swept past stays
+        // blank rather than building a full-page surface nobody will look at.
+        // `settled` (tracked) is the guaranteed wake for what the fling left.
         let visible_now = in_view.as_ref().is_none_or(|v| v.get());
         // Read every time so a forced re-render (below) re-runs this effect.
         rerender.track();
         if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
+            // Give a held slot back: a raster for a page outside the band paints
+            // nobody, and re-entering the band re-runs this effect, so the work
+            // is re-issued rather than lost.
+            pdf().cancel_page(&cid_effect);
             return;
         }
         let page_no = page;
@@ -541,7 +546,15 @@ pub fn PdfPageCanvas(
             // A render whose session died resolves `no_session` (the engine
             // refuses retired sids, and the session re-checks itself after
             // the await), so nothing below commits into a replaced document.
-            match pdf_async.render_page(&cid, s, rt).await {
+            // The rank signal lives in this host's own arena: an unmount between
+            // the probe above and here leaves no band to ask, and a derived read
+            // would panic on the disposed value. Rank 0 is the answer for a host
+            // with no band left.
+            let rank_now = rank
+                .as_ref()
+                .and_then(|r| r.try_get_untracked())
+                .unwrap_or(0);
+            match pdf_async.render_page(&cid, s, rt, rank_now).await {
                 Ok(r) => {
                     // Unmounted mid-render: the owner's signals are gone, and
                     // there is no host left to size.

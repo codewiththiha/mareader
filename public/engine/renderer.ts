@@ -197,13 +197,15 @@ export function unregisterPage(s: EngineSession, canvasId: string): void {
 export function cancelPage(s: EngineSession, canvasId: string): void {
   cancelRasterWaiters(s, canvasId);
   const st = s.stateByCanvasId.get(canvasId);
-  if (st) {
-    st.queueGen = (st.queueGen || 0) + 1;
-    if (st.renderTask) {
-      try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
-      st.renderTask = null;
-    }
+  if (!st) return;
+  st.queueGen = (st.queueGen || 0) + 1;
+  if (st.renderTask) {
+    try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
+    st.renderTask = null;
   }
+  // A cancelled job drops only once the lane pops it, so a cancel without a
+  // pump can leave a slot held by a job nobody will run.
+  if (s.pageLane.queue.length > 0) pumpPageQueue(s);
 }
 
 /** Cancel every in-flight page render at once. The reader's close path calls
@@ -296,10 +298,16 @@ async function renderPageInternal(
   const tracePage = ensurePage(s, canvasId)?.page ?? -1;
   traceRender(s.sid, tracePage, "start");
   lifecycleEvent("render:start");
+  // Raster service time, timed from the moment this job owns a lane slot: queue
+  // wait is what the band predicts rather than absorbs.
+  const startMs = Date.now();
   try {
     const result = await renderPageNow(s, canvasId, scale, renderText);
     if (result.ok) {
       s.rendersCompleted += 1;
+      // An exponential mean: one slow frame must not retune the session.
+      const ms = Date.now() - startMs;
+      s.fillMs = s.fillMs <= 0 ? ms : s.fillMs + (ms - s.fillMs) * 0.2;
       traceRender(s.sid, tracePage, "complete");
       lifecycleEvent("render:complete");
     } else if (result.error.name === "cancelled") {
@@ -596,11 +604,19 @@ export async function probePageSize(s: EngineSession, page: number): Promise<Pag
 // a pane reading alone sees the same two slots it always had.
 const PAGE_RENDER_LIMIT = 2;
 
-/** The page lane's gauges for the stats surface (queue depth, active
- *  slots): the teardown baseline requires an EMPTY lane, not merely one
- *  whose in-flight jobs have settled. */
-export function pageLaneGauge(s: EngineSession): { pageQueue: number; pageActive: number } {
-  return { pageQueue: s.pageLane.queue.length, pageActive: s.pageLane.active };
+/** The page lane's stats gauges: queue depth, active slots, and the slot count
+ *  that bounds them. The teardown baseline requires an empty queue. */
+export function pageLaneGauge(s: EngineSession): {
+  pageQueue: number;
+  pageActive: number;
+  pageLimit: number;
+} {
+  return {
+    pageQueue: s.pageLane.queue.length,
+    pageActive: s.pageLane.active,
+    // Published rather than copied by the caller: the limit has one home.
+    pageLimit: PAGE_RENDER_LIMIT,
+  };
 }
 
 /** Re-offer every registered session's queue head the lane. The registry
@@ -614,8 +630,8 @@ function pumpAllLanes(): void {
  *  state, resolves its caller with a drop, and pumps the next — the same
  *  cascade the thumbnail lane's epoch bump runs. Without this, queued
  *  closures (and the promise resolvers they capture) sit in the array
- *  until the FIFO happens to reach them, retaining canvases, scales and
- *  resolvers across the dispose.
+ *  until the lane happens to pop them, retaining canvases, scales and resolvers
+ *  across the dispose.
  *
  *  A drain is a teardown act, not scheduling: it pops regardless of the
  *  realm cap, which may be full of ANOTHER session's rasters at the moment
@@ -626,7 +642,7 @@ export function drainPageLane(s: EngineSession): void {
   cancelRasterWaiters(s);
   const lane = s.pageLane;
   while (lane.queue.length > 0) {
-    const next = lane.queue.shift();
+    const next = lane.take();
     if (!next) return;
     lane.active += 1;
     next();
@@ -640,7 +656,7 @@ function pumpPageQueue(s: EngineSession): void {
     realmLane.active < REALM_PAGE_LIMIT &&
     lane.queue.length > 0
   ) {
-    const next = lane.queue.shift();
+    const next = lane.take();
     if (!next) return;
     lane.active += 1;
     next();
@@ -651,7 +667,8 @@ export async function renderPage(
   s: EngineSession,
   canvasId: string,
   scale: number,
-  renderText: boolean
+  renderText: boolean,
+  rank = 0
 ): Promise<RenderResult> {
   let st = ensurePage(s, canvasId);
   if (!st || !st.canvas) {
@@ -679,7 +696,7 @@ export async function renderPage(
         return;
       }
       s.rendersQueued += 1;
-      s.pageLane.queue.push(() => {
+      s.pageLane.push(rank, () => {
         const finish = () => {
           s.pageLane.active -= 1;
           pumpPageQueue(s);
