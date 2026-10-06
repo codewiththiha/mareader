@@ -133,7 +133,10 @@ other legitimate use, and it is described in "The CI loop".
 
 ## Code style
 
-- Rust: default rustfmt (`max_width = 100`); clippy must be clean.
+- Rust: default rustfmt (`max_width = 100`); clippy must be clean. One-line
+  joining inside a function-like macro call (`assert_eq!`, `write!`) is gated by
+  `attr_fn_like_width` — 60 by default — so a 98-character `assert_eq!` is still
+  a diff: let the format job's own hunks decide, and replay them verbatim.
 - Comments explain why, invariants or lifecycle; never restate code.
 - No `TODO`/`FIXME`, no scaffolding for work not being done now, no
   speculative abstractions.
