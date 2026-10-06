@@ -44,12 +44,13 @@ trigger no run.
 ## The CI loop
 
 `CI` is the fast lane: `Rust / format`, `Rust / lint`, `Rust / test`,
-`Web / contracts` and `macOS / shell`, together in roughly seven minutes.
-`Deep CI` is the slow one: three jobs capped at 45, 75 and 45 minutes, and its
-verdict is unreadable while `CI` is red — a build break fails all three of its
-jobs for one reason that `cargo test` already states. Waiting for both lanes
-after every push is how a one-line fix costs half an hour, so the loop separates
-them:
+`Web / contracts` and `macOS / shell`, which run in parallel and answer in two to
+four minutes (measured: 2.8 green, 1.8 to a red format job). `Deep CI` is the
+slow one: three jobs capped at 45, 75 and 45 minutes, tens of minutes even when
+everything passes (measured: 22 for a green run), and its verdict is unreadable
+while `CI` is red — a build break fails all three of its jobs for one reason that
+`cargo test` already states. Waiting for both lanes after every push is how a
+one-line fix costs half an hour, so the loop separates them:
 
 - **Poll only `CI` while the round is still being fixed up.** Resolve the runs of
   the pushed SHA (`GET /repos/:owner/:repo/actions/runs?head_sha=<full 40
