@@ -107,6 +107,7 @@ pub struct VirtualizerCore {
 
     motion: Motion,
     pipeline: Pipeline,
+    band: BandWindow,
     hint: usize,
     scroll_top: f64,
     viewport: Viewport,
@@ -132,6 +133,7 @@ impl VirtualizerCore {
             render_screens: config.render_screens,
             motion: Motion::new(MotionConfig::default()),
             pipeline: Pipeline::default(),
+            band: BandWindow::default(),
             hint: 0,
             scroll_top: config.initial_offset,
             viewport: config.viewport,
@@ -498,7 +500,7 @@ impl VirtualizerCore {
     /// is looking at is ever a placeholder.
     pub fn render_range(&self) -> Option<Window> {
         let mount = self.range?;
-        let band = self.motion_band();
+        let band = self.band;
         if !band.placeholder {
             return Some(mount);
         }
@@ -507,6 +509,16 @@ impl VirtualizerCore {
         let first = items.first.max(mount.first);
         let last = items.last.min(mount.last);
         (first <= last).then_some(Window { first, last })
+    }
+
+    /// The render state of a mounted index: [`VirtualItemState::Active`]
+    /// inside the render band, [`VirtualItemState::Blank`] outside it. The
+    /// adapter overrides it for retained zombies.
+    pub fn item_state(&self, index: usize) -> VirtualItemState {
+        match self.render_range() {
+            Some(band) if band.contains(index) => VirtualItemState::Active,
+            _ => VirtualItemState::Blank,
+        }
     }
 
     /// The scroll container, sampled with the caller's clock.
@@ -542,6 +554,7 @@ impl VirtualizerCore {
     /// decided by the speed floor alone.
     pub fn set_pipeline(&mut self, pipeline: Pipeline) {
         self.pipeline = pipeline;
+        self.band = self.evaluate_band();
     }
 
     /// The pipeline in use.
@@ -561,15 +574,10 @@ impl VirtualizerCore {
         self.motion.speed_px_s()
     }
 
-    /// The band the estimator earned against the current layout and viewport.
-    pub fn motion_band(&self) -> BandWindow {
-        let mut pipeline = self.pipeline;
-        if pipeline.pitch <= 0.0 {
-            pipeline.pitch = self.layout.item_size_hint();
-        }
-        let floor = self.render_screens.max(0.0) * self.viewport.main;
-        self.motion
-            .band(self.scroll_top, self.viewport.main, floor.max(0.0), &pipeline)
+    /// The band the estimator earned against the current layout and viewport,
+    /// as of the last window update.
+    pub const fn motion_band(&self) -> BandWindow {
+        self.band
     }
 
     /// How urgent one mounted index is right now: the viewport first, then the
@@ -793,11 +801,29 @@ impl VirtualizerCore {
             }
         };
         self.range = range;
+        // The band is derived from the same inputs the window was, so it is
+        // evaluated here and stored: `render_range` and `item_state` are then
+        // read-only and cannot disagree with the window they sit inside.
+        self.band = self.evaluate_band();
         Step {
             range,
             scroll_write: None,
             layout_changed: false,
         }
+    }
+
+    /// Re-evaluate the content band from the estimator, the layout's own pitch
+    /// hint and the caller's floor. `BandWindow::placeholder` is the only
+    /// answer that ever makes a mounted item a placeholder, and it says so only
+    /// while the scroll outruns the reported pipeline.
+    fn evaluate_band(&mut self) -> BandWindow {
+        let mut pipeline = self.pipeline;
+        if pipeline.pitch <= 0.0 {
+            pipeline.pitch = self.layout.item_size_hint();
+        }
+        let floor = self.render_screens.max(0.0) * self.viewport.main;
+        self.motion
+            .band(self.scroll_top, self.viewport.main, floor.max(0.0), &pipeline)
     }
 
     /// Resolve [`ScrollMode::Auto`].

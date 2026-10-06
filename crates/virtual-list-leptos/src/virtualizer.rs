@@ -904,11 +904,7 @@ impl Virtualizer {
         if (content - self.inner.core.borrow().scroll_top()).abs()
             > self.inner.options.measure_epsilon
         {
-            let step = self
-                .inner
-                .core
-                .borrow_mut()
-                .on_scroll_at(content, now_ms());
+            let step = self.inner.core.borrow_mut().on_scroll_at(content, now_ms());
             write_if_changed(self.inner.scroll_top, content);
             self.inner.publish_range(step.range);
         }
@@ -1151,6 +1147,10 @@ impl Virtualizer {
         pipeline.fill_ms = fill_ms.max(0.0);
         pipeline.lanes = lanes;
         self.inner.core.borrow_mut().set_pipeline(pipeline);
+        // The band may have opened or closed without the window moving, and
+        // that is a render-state change: `items()` recomputes, the DOM does not
+        // move.
+        self.inner.retained_version.update(|v| *v += 1);
     }
 
     /// Whether the current scroll outruns the reported pipeline: the state in

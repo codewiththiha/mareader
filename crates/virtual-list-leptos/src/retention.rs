@@ -77,7 +77,7 @@ impl RetentionPolicy {
     pub fn max(&self) -> usize {
         match self {
             Self::Immediate => 0,
-            Self::Grace { max, .. } | Self::Frames { max, .. } => *max,
+            Self::Grace { max, .. } | Self::MotionGated { max } => *max,
         }
     }
 }
@@ -112,10 +112,7 @@ fn deadline(policy: &RetentionPolicy, now_ms: f64, frame: u64) -> (f64, u64) {
         // One frame, and the wall-clock ceiling only stands in for a frame
         // that never arrives (a hidden tab): the seek is what granted the
         // bridge, so the seek is also what ends it.
-        RetentionPolicy::MotionGated { .. } => (
-            now_ms + f64::from(FRAME_CEILING_MS),
-            frame + 1,
-        ),
+        RetentionPolicy::MotionGated { .. } => (now_ms + f64::from(FRAME_CEILING_MS), frame + 1),
         // Unreachable through `retain_evicted` (no bridge, no deadlines);
         // "already expired" is the honest answer for anything that asks.
         RetentionPolicy::Immediate => (now_ms, frame),
@@ -302,7 +299,10 @@ mod tests {
         let ceiling = f64::from(FRAME_CEILING_MS);
         assert_eq!(retained[0].expires_at, ceiling, "one ceiling per bridge");
         assert!(!retained[0].alive(ceiling, 0));
-        assert_eq!(next_deadline_ms(&retained, 0.0), u64::from(FRAME_CEILING_MS));
+        assert_eq!(
+            next_deadline_ms(&retained, 0.0),
+            u64::from(FRAME_CEILING_MS)
+        );
     }
 
     #[test]

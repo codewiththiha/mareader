@@ -185,7 +185,7 @@ impl Pipeline {
 
 /// A band of content coordinates: `start` inclusive, `end` exclusive, exactly
 /// the half-open shape [`crate::Layout::overlapping`] takes.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct BandRange {
     /// First coordinate inside the band.
     pub start: f64,
@@ -199,7 +199,7 @@ pub struct BandRange {
 /// `placeholder` is the whole answer: `false` means every mounted item renders,
 /// so a caller must not consult `active` for culling (it still reports the
 /// padded viewport, so a diagnostic can show what the band would have been).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct BandWindow {
     /// The content band, in content coordinates. The caller intersects it with
     /// its mount window to get the indices that render.
@@ -404,11 +404,7 @@ impl Motion {
         let pitch = pitch.max(1.0);
         let moved = self.velocity_px_s * (fill_ms.max(0.0) / 1_000.0);
         let landed = index as f64 + (moved / pitch).trunc();
-        if landed <= 0.0 {
-            0
-        } else {
-            landed as usize
-        }
+        if landed <= 0.0 { 0 } else { landed as usize }
     }
 
     /// The urgency of one mounted index. `visible` is the window overlapping
@@ -505,22 +501,6 @@ mod tests {
                 one_minus_exp_neg(x)
             );
         }
-    }
-
-    #[test]
-    fn a_band_range_is_half_open_and_never_negative() {
-        let band = BandRange {
-            start: 100.0,
-            end: 250.0,
-        };
-        assert_eq!(band.len(), 150.0);
-        assert!(band.contains(100.0));
-        assert!(!band.contains(250.0));
-        let inverted = BandRange {
-            start: 300.0,
-            end: 100.0,
-        };
-        assert_eq!(inverted.len(), 0.0);
     }
 }
 

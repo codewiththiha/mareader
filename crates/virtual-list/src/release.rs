@@ -51,11 +51,7 @@ pub enum ReleaseReason {
 /// index the new window mounts — dropping content from an item that just came
 /// into the window is the worst thing a release rule can do, because it blanks
 /// the page the reader is looking at.
-pub fn release_sides(
-    old: Window,
-    new: Window,
-    grace: usize,
-) -> (Option<Window>, Option<Window>) {
+pub fn release_sides(old: Window, new: Window, grace: usize) -> (Option<Window>, Option<Window>) {
     let below_last = new.first.saturating_sub(grace + 1);
     let below = (old.first <= old.last && old.first <= below_last).then_some(Window {
         first: old.first,
@@ -174,7 +170,10 @@ mod tests {
     fn the_ledger_dedups_bounds_and_clears() {
         let mut ledger = ReleaseLedger::new(3);
         assert!(ledger.push(5, ReleaseReason::Evicted));
-        assert!(!ledger.push(5, ReleaseReason::Superseded), "already pending");
+        assert!(
+            !ledger.push(5, ReleaseReason::Superseded),
+            "already pending"
+        );
         assert!(ledger.push(6, ReleaseReason::Evicted));
         assert_eq!(ledger.len(), 2);
         // Overflow drops the oldest entry, the one the caller has had longest

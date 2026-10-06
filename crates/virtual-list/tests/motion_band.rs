@@ -75,7 +75,10 @@ fn an_ordinary_scroll_never_shows_a_placeholder() {
 
     let mut motion = Motion::new(MotionConfig::default());
     let band = scroll_at(&mut motion, 3_000.0, 20, &ctx, VIEWPORT, 0.0);
-    assert!(band.speed_px_s > 2_900.0, "the estimate tracks it: {band:?}");
+    assert!(
+        band.speed_px_s > 2_900.0,
+        "the estimate tracks it: {band:?}"
+    );
     assert!(!motion.engaged());
     assert!(!band.placeholder, "3 000 px/s cannot outrun 10 000 px/s");
     assert_eq!(band.lead_px, 0.0, "no lead is owed at ordinary speeds");
@@ -153,7 +156,10 @@ fn the_engagement_latch_opens_wide_and_closes_tight() {
     assert!(m.engaged(), "2 500 px/s is a seek");
     scroll_at(&mut m, 1_000.0, 30, &STRUGGLING, 1_000.0, 0.0);
     assert!(m.speed_px_s() < enter, "it has slowed past the entry gate");
-    assert!(m.engaged(), "but not below the exit gate, so the band holds");
+    assert!(
+        m.engaged(),
+        "but not below the exit gate, so the band holds"
+    );
     assert!(m.band(0.0, 1_000.0, 0.0, &STRUGGLING).placeholder);
     // Stop for real and it lets go without another threshold being consulted.
     scroll_at(&mut m, 0.0, 60, &STRUGGLING, 1_000.0, 0.0);
@@ -265,7 +271,11 @@ fn the_landing_index_aims_a_prefetch_a_fill_latency_ahead() {
     assert_eq!(back.landing_index(1, 900.0, 500.0), 0, "never below zero");
     let rest = Motion::new(MotionConfig::default());
     assert_eq!(rest.landing_index(7, 900.0, 500.0), 7, "at rest, here");
-    assert_eq!(rest.landing_index(0, 0.0, 0.0), 0, "an unknown pitch is safe");
+    assert_eq!(
+        rest.landing_index(0, 0.0, 0.0),
+        0,
+        "an unknown pitch is safe"
+    );
 }
 
 // only the changed file was rewritten

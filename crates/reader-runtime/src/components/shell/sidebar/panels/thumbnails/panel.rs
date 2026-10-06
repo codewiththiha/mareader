@@ -82,9 +82,7 @@ pub fn ThumbnailsPanel(
             .padding(PAD, PAD)
             .initial(Viewport::new(MIN_VIEWPORT_H, 2.0 * CELL_W + GAP_CROSS), 0.0)
             .epoch(layout_epoch.into())
-            .retention(RetentionPolicy::MotionGated {
-                max: BRIDGE_CELLS,
-            }),
+            .retention(RetentionPolicy::MotionGated { max: BRIDGE_CELLS }),
     );
     // The thumbnail grid's virtualizer joins the diagnostics registry for
     // its lifetime, like every other reader-surface strip. The handle rides
