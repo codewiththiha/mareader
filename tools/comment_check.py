@@ -280,6 +280,10 @@ def files_for(targets: list[str], exts: set[str]) -> list[str]:
     out: list[str] = []
     for target in targets:
         if os.path.isfile(target):
+            if os.path.splitext(target)[1] not in exts:
+                print(f"{target}: no comment grammar for it, skipped",
+                      file=sys.stderr)
+                continue
             out.append(target)
             continue
         listing = _git_files(target)
@@ -376,6 +380,7 @@ def self_test() -> int:
     assert len(hits) == 1, f"expected one offending block, got {[h[1]['reasons'] for h in hits]}"
     why = hits[0][1]["reasons"]
     assert any("words" in r for r in why) or any("lines" in r for r in why), why
+    assert ".md" not in LANGS, "markdown has no grammar, and must not be read"
     sh = scan("#!/usr/bin/env sh\n# one short line\n", LANGS[".sh"])
     assert [c.start_line for c in sh] == [2], "a shebang was read as a comment"
     exempted = scan(RUST_FIXTURE.replace("    // NOTE:",
@@ -405,7 +410,7 @@ def main() -> int:
     exts = set(LANGS)
     paths = files_for(args.targets or ["."], exts)
     if not paths:
-        print("no source files matched", file=sys.stderr)
+        print("no files with a comment grammar matched", file=sys.stderr)
         return 1
     results: list[dict] = []
     per_file: dict[str, list[dict]] = {}
