@@ -509,18 +509,11 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
 
 ## Split pane decoration
 
-- **Gutter colour:** the strip between and around panes is `.reader-bg`'s own
-  background, and under shared blend it resolves `--pdf-paper-baked` exactly as a
-  pane root does, so panes and gutter are one colour; the theme's `--color-paper`
-  remains the fallback while nothing publishes paper.
 - **Focus paint:** `.reader-bg.split-workspace [data-pane-id]` creates an
   isolated pane stacking context; the active entry receives the higher
   sibling z-index and its focus outline paints above that pane's content.
   The outline uses a configurable inset stroke rather than a Tailwind ring
-  whose stacking could be obscured by a later pane. `Auto` resolves
-  `--pane-outline-auto` -- the accent mixed 55/45 with the backdrop the pane
-  stands on -- so the ring stays a focus mark without becoming a hairline in the
-  gutter; an explicit colour or a custom hex paints exactly what was picked.
+  whose stacking could be obscured by a later pane.
 - **Settings:** split-only pane controls appear in the Reader Settings →
   Theme tab, only while the host has two or more placed panes. The title-bar
   Appearance popover has none of these controls; its independent-theme

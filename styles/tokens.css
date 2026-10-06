@@ -15,14 +15,6 @@
 
 /* Runtime (non-utility) variables, light defaults. */
 :root {
-  /* `Auto` split outline: the accent read against the backdrop it is drawn on.
-     Deliberately NOT in `@theme` -- the mix must see the themed
-     `--color-accent` and the paper the engine publishes at runtime. */
-  --pane-outline-auto: color-mix(
-    in srgb,
-    var(--color-accent) 55%,
-    var(--pdf-paper-baked, var(--color-paper))
-  );
   --canvas-filter: none;
   --canvas-blend: multiply;
   --noise-opacity: 0;
@@ -200,5 +192,3 @@
       transparent calc(2px * var(--tex-scale))
     );
 }
-
-/* only the changed file was rewritten */

@@ -394,8 +394,9 @@ fn capture_focus(entry: &web_sys::Element, manager: PaneManager, id: PaneId) {
     }
 }
 
-/// One split's divider: a pointer strip over the seam (the panes tile the
-/// slot; the strip overlays both edges) with a hairline in its middle.
+/// One split's pointer strip over the seam (the panes tile the slot; the
+/// strip overlays both edges). It paints nothing: the gutter between panes is
+/// shared paper, and a line there would be the theme's, not the page's.
 ///
 /// A drag converts the pointer's position along the split's box into a
 /// ratio ([`PaneTree::drag_ratio`], which keeps both sides usable) and
@@ -476,14 +477,6 @@ fn divider_view(host: ReaderHost, split: SplitId) -> impl IntoView {
                 host.resizing.set(false);
             }
         >
-            <div
-                aria-hidden="true"
-                class="pointer-events-none absolute bg-line"
-                style=move || match axis() {
-                    SplitAxis::Horizontal => "left:50%;top:0;bottom:0;width:1px",
-                    SplitAxis::Vertical => "top:50%;left:0;right:0;height:1px",
-                }
-            />
         </div>
     }
 }
