@@ -36,6 +36,13 @@ large installs locally. Run the fast checks that match what you touched:
 - Session ownership docs: `node tools/check-session-ownership.mjs`
 - Host boundary: `node tools/check-host-boundary.mjs`
 - Browser suite syntax: `node --check tests/browser/lifecycle.mjs`
+- Gate or watch CI for a revision: `python3 tools/ci_watch.py` (`--once` reads
+  once, `--detach` watches in the background, `--tail` reads it back)
+- Enforce the commit-subject limit: `python3 tools/commit_check.py --install`
+
+`tools/` holds the hand-written tooling; `scripts/` is generated — it is
+`tsconfig.tools.json`'s `outDir`, so nothing authored belongs there and `.gitignore`
+ignores the directory wholesale on purpose.
 
 Keep the cheap checks in the editor and the expensive ones in CI. What to wait
 for after a push — and what not to — is in "The CI loop". `docs/**`-only pushes
@@ -70,18 +77,23 @@ nothing — and `CI` still proves it.
 
 ### Reading a verdict without losing the afternoon
 
-- **Poll only `CI` while the round is open.** Resolve the run at the pushed SHA
-  (`GET /repos/:owner/:repo/actions/runs?head_sha=<40 characters>` — an
-  abbreviated SHA returns nothing), then its jobs (`GET /actions/runs/:id/jobs`).
-  A job's log (`GET /actions/jobs/:id/logs`) is the only place rustfmt's diff and
-  clippy's message exist; fetch the red job, not the run.
+- **Poll only `CI` while the round is open:** `python3 tools/ci_watch.py --once`,
+  which resolves the branch head (or an explicit SHA), reads the runs gating that
+  exact SHA, and exits 0 green, 1 red, 2 still running — so a poll is one cheap
+  command, and `--json` gives the same to a script. `--final` adds `Deep CI`.
+  It digests the red job's log, the only place rustfmt's diff and clippy's
+  message exist (`GET /actions/jobs/:id/logs`, one run per workflow: the newest
+  decides, so a `[skip deep]` run beside a dispatched one cannot confuse it).
+  Anonymous reads allow 60 requests an hour; pass `--token-file` for more.
 - **Stop at the first red `CI` job.** The diagnosis is in hand; the rest cannot
   change what to fix.
 - **Never block on a `Deep CI` verdict** — not on a sleep, not on a poll loop, not
-  on a tool call that waits for a run that size. Start it, do the owed work (notes,
-  docs, the next fix), then read it once. If the turn has nothing left, end it with
-  the run live and name the SHA that owes the verdict; the next turn reads it. A
-  long lane is only expensive when it is spent waiting.
+  on a tool call that waits for a run that size. Run
+  `python3 tools/ci_watch.py --detach --final`, do the owed work (notes, docs, the
+  next fix), then `--tail` once: it prints the log and carries the verdict as its
+  exit code, and `--stop` ends a watcher nobody needs. If the turn has nothing
+  left, end it with the run live and name the SHA that owes the verdict; the next
+  turn reads it. A long lane is only expensive when it is spent waiting.
 - **Cancel a `Deep CI` run that gates nothing** instead of watching it:
   `POST /actions/runs/:id/cancel`. That covers a marker-less whitespace head, a
   dispatch against a stale SHA, and any live run whose SHA has since gone red in
@@ -242,8 +254,12 @@ design and the commit message for the decision — and neither is a comment.
 ## Commits and pull requests
 
 - Conventional commits: `type(scope): summary`, imperative, lower case, no
-  trailing period, subject ≤ 72 characters. Check with
-  `git log -1 --format=%s | awk '{print length}'` before pushing.
+  trailing period, subject ≤ 72 characters, enforced rather than remembered:
+  `python3 tools/commit_check.py --install` writes a `commit-msg` hook that
+  refuses an over-long subject, and `python3 tools/commit_check.py
+  --range main..HEAD` audits history. The hook is per checkout, so a fresh clone
+  installs it once; `--uninstall` removes it, and `--force` replaces a hook this
+  repository does not own.
 - Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`,
   `chore`. Scope is the area touched (`pdf`, `split`, `shell`, `engine`, …).
 - One coherent change per commit; context goes in the body, not the subject.
