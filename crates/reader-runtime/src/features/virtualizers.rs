@@ -146,8 +146,9 @@ fn note_fill_profile(
     }
     let lanes = stats.page_limit as usize;
     let (fill_ms, applied_lanes) = last.get();
-    let worth_a_publish =
-        lanes != applied_lanes || fill_ms <= 0.0 || (stats.fill_ms - fill_ms).abs() > fill_ms * 0.1;
+    let worth_a_publish = lanes != applied_lanes
+        || fill_ms <= 0.0
+        || (stats.fill_ms - fill_ms).abs() > fill_ms * 0.1;
     if !worth_a_publish {
         return;
     }

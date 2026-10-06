@@ -608,9 +608,9 @@ export async function probePageSize(s: EngineSession, page: number): Promise<Pag
 // a pane reading alone sees the same two slots it always had.
 const PAGE_RENDER_LIMIT = 2;
 
-/** The page lane's gauges for the stats surface (queue depth, active
- *  slots): the teardown baseline requires an EMPTY lane, not merely one
- *  whose in-flight jobs have settled. */
+/** The page lane's gauges for the stats surface: queue depth, the active slots,
+ *  and the width those two are measured against. The teardown baseline requires
+ *  an EMPTY lane, not merely one whose in-flight jobs have settled. */
 export function pageLaneGauge(s: EngineSession): {
   pageQueue: number;
   pageActive: number;
