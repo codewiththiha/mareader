@@ -105,19 +105,48 @@ function zeroCounters(): Record<CounterKey, number> {
 /** Realm totals over every session that ever lived — diagnostics only. */
 export const realmCounters: Record<CounterKey, number> = zeroCounters();
 
-/** The page render lane: at most PAGE_RENDER_LIMIT rasters of THIS session
- *  in flight, the rest queued FIFO. Per session, so one pane's burst never
- *  queues behind another pane's pages and one pane's teardown drains only
- *  its own queue. */
+/** One queued raster. `rank` is how soon the reader is expected to look at this
+ *  page — see `rank_signal` in `components/formats/pdf/strip.rs` — and `seq` is
+ *  the request order, which keeps the lane honest for a caller with no opinion
+ *  to express: rank 0 for everyone is exactly the FIFO this lane used to be. */
+type QueuedRaster = { rank: number; seq: number; run: () => void };
+
+/** The page render lane: at most PAGE_RENDER_LIMIT rasters of THIS session in
+ *  flight, the rest queued by rank. Ranking is what makes a scroll feel fast
+ *  rather than merely bounded: the page that just came under the reader's eyes
+ *  must not wait behind the overscan queued around it, and a page the reader is
+ *  travelling toward outranks one they have left. Ordering is the lane's only
+ *  lever — a raster that already started is never preempted, because abandoning
+ *  it buys a blank instead of a bitmap.
+ *
+ *  Per session, so one pane's burst never queues behind another pane's pages
+ *  and one pane's teardown drains only its own queue. */
 class PageLane {
   active = 0;
-  readonly queue: Array<() => void> = [];
+  readonly queue: QueuedRaster[] = [];
+  private seq = 0;
   permitSerial = 0;
   readonly waiters = new Map<string, {
     canvasId: string;
     cancel: () => void;
     wake: () => void;
   }>();
+
+  /** Insert ahead of everything looser-ranked. A page window is a handful of
+   *  jobs, so scanning back to the insertion point costs less than sorting on
+   *  every push — and it is stable, which sorting by rank alone is not. */
+  push(rank: number, run: () => void): void {
+    const job: QueuedRaster = { rank, seq: this.seq++, run };
+    let at = this.queue.length;
+    while (at > 0 && this.queue[at - 1]!.rank > rank) at -= 1;
+    this.queue.splice(at, 0, job);
+  }
+
+  /** Harshest rank first, request order inside a rank. */
+  take(): (() => void) | null {
+    const next = this.queue.shift();
+    return next ? next.run : null;
+  }
 }
 
 /** Full-page rasters are MAIN-THREAD work — pdf.js draws the page into the
@@ -194,6 +223,13 @@ export class EngineSession {
   readonly sid: number;
   /** Set by `retireSession`; every lane checks it before committing. */
   disposed = false;
+  /** The session's recent page-raster cost in milliseconds: an exponential
+   *  mean over COMPLETED rasters, timed inside the lane slot so queue wait is
+   *  not part of it. The reader's virtualizer reads it back as `fill_ms` and
+   *  turns it into the lead a fling must cover, which is what makes the band's
+   *  gate a measurement of this machine rather than a constant copied from a
+   *  demo. `0` means "nothing has completed yet". */
+  fillMs = 0;
 
   readonly pageLane = new PageLane();
   readonly thumbLane = new ThumbLane();

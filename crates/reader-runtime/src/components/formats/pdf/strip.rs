@@ -232,6 +232,7 @@ pub fn PdfPageStrip(
                                     let top = handle.with_value(|v| v.item_top(index));
                                     let dormant = dormant_signal(items, index);
                                     let in_view = in_view_signal(items, index);
+                                    let rank = handle.with_value(|c| rank_signal(items, c, index));
                                     // Offsets are snapped for the same reason
                                     // sizes are: the wrapper's top is a running
                                     // sum of page extents at the live scale, so
@@ -271,6 +272,7 @@ pub fn PdfPageStrip(
                                                 dormant=dormant
                                                 settled=settled
                                                 in_view=in_view
+                                                rank=rank
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -312,6 +314,7 @@ pub fn PdfPageStrip(
                                     let left = handle.with_value(|v| v.item_top(index));
                                     let dormant = dormant_signal(items, index);
                                     let in_view = in_view_signal(items, index);
+                                    let rank = handle.with_value(|c| rank_signal(items, c, index));
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     // The main-axis offset is snapped to the device-pixel
@@ -332,6 +335,7 @@ pub fn PdfPageStrip(
                                                 dormant=dormant
                                                 settled=settled
                                                 in_view=in_view
+                                                rank=rank
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -377,6 +381,41 @@ fn dormant_signal(
             .get()
             .iter()
             .any(|item| item.index == index && item.state == VirtualItemState::Zombie)
+    })
+}
+
+/// Where one mounted page belongs in the engine's page lane right now.
+///
+/// Two factors, in that order: the band's own class (the viewport outranks the
+/// side being approached, which outranks the trail, which outranks a
+/// placeholder) and then the distance from the index the reader is expected to
+/// land on, so two pages in one class compete on which pair of eyes reaches it
+/// first. The class gets a wide field so a far `Ahead` page can never outrank a
+/// near `Visible` one.
+///
+/// This is what makes an ordinary scroll feel instant rather than merely
+/// bounded. The lane runs two rasters and a page costs on the order of a frame
+/// or two of main-thread work; issued in mount order, the page under the
+/// reader's eyes waits behind whatever overscan was queued around it, which is
+/// a visible blank at a speed nobody would call fast.
+fn rank_signal(
+    items: Signal<Vec<VirtualItem>, LocalStorage>,
+    virt: &Virtualizer,
+    index: usize,
+) -> Signal<u32, LocalStorage> {
+    /// Items per priority class: the band spans a window, not a book.
+    const CLASS: u32 = 1 << 16;
+    let v = virt.clone();
+    Signal::derive_local(move || {
+        // The band publishes through `items`; reading it is what makes this
+        // re-derive when the band moves, without subscribing to the scroll.
+        let _ = items.get();
+        let distance = (index as i64 - v.landing_index() as i64)
+            .unsigned_abs()
+            .min((CLASS - 1) as u64) as u32;
+        u32::from(v.fill_priority(index).rank())
+            .saturating_mul(CLASS)
+            .saturating_add(distance)
     })
 }
 

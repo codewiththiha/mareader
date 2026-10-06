@@ -23,10 +23,6 @@ use crate::retention::{
     RELEASE_LEDGER_CAPACITY, REVERSAL_GRACE_ITEMS, RetainedItem, RetentionPolicy, is_retained,
     next_deadline_ms, prune_retained, retain_evicted,
 };
-
-/// The speed below which a reader is not drifting, in pixels per second — well
-/// under one tenth of a pixel in a frame. [`Virtualizer::motion_drifts`] is the
-/// answer an effect can sample against without inventing its own threshold.
 use crate::surface::{DomSurface, ScrollSurface};
 
 type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;

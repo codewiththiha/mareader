@@ -117,6 +117,44 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
     })
 }
 
+/// What one raster costs on this machine, folded into the band's gate.
+///
+/// The virtualizer's engagement question — is the reader moving faster than the
+/// fill pipeline can keep up? — has a second half that only the engine knows,
+/// and the engine measures it: an exponential mean over completed rasters, timed
+/// inside the lane slot, published with the lane's width. So a machine that
+/// fills quickly blanks less for the same scroll and a slow one starts earlier,
+/// because the lead comes from the cost instead of from a declared constant.
+///
+/// `last` holds what was applied to THIS strip, because re-evaluating the band
+/// republishes items: a median that drifted a few percent must not cost a
+/// publish, and a settle with nothing new must cost none at all.
+#[cfg(feature = "pdf")]
+fn note_fill_profile(
+    pane: &crate::pane::handle::PaneHandle,
+    strip: &virtual_list_leptos::Virtualizer,
+    last: &std::rc::Rc<std::cell::Cell<(f64, usize)>>,
+) {
+    let Some(stats) = pane.pdf().stats() else {
+        return;
+    };
+    // The engine reports 0 until a raster completes: the same answer as no
+    // measurement, so the last profile stands rather than being zeroed — and a
+    // zeroed one would read as infinite capacity, which never blanks anything.
+    if stats.fill_ms <= 0.0 {
+        return;
+    }
+    let lanes = stats.page_limit as usize;
+    let (fill_ms, applied_lanes) = last.get();
+    let worth_a_publish =
+        lanes != applied_lanes || fill_ms <= 0.0 || (stats.fill_ms - fill_ms).abs() > fill_ms * 0.1;
+    if !worth_a_publish {
+        return;
+    }
+    last.set((stats.fill_ms, lanes));
+    strip.set_fill_profile(stats.fill_ms, lanes);
+}
+
 pub(crate) fn use_reader_virtualizers(
     state: ReaderState,
     pane: crate::pane::handle::PaneHandle,
@@ -229,8 +267,18 @@ pub(crate) fn use_reader_virtualizers(
     // Each sweep reaches THIS pane's session only.
     #[cfg(feature = "pdf")]
     {
-        virtualizer.on_scroll_idle(move || pane.pdf().sweep());
-        h_virtualizer.on_scroll_idle(move || pane.pdf().sweep());
+        let vertical = virtualizer.clone();
+        let horizontal = h_virtualizer.clone();
+        let applied_v = std::rc::Rc::new(std::cell::Cell::new((-1.0f64, 0usize)));
+        let applied_h = std::rc::Rc::new(std::cell::Cell::new((-1.0f64, 0usize)));
+        virtualizer.on_scroll_idle(move || {
+            pane.pdf().sweep();
+            note_fill_profile(&pane, &vertical, &applied_v);
+        });
+        h_virtualizer.on_scroll_idle(move || {
+            pane.pdf().sweep();
+            note_fill_profile(&pane, &horizontal, &applied_h);
+        });
     }
 
     // The strips join the diagnostics registry while they live: a snapshot

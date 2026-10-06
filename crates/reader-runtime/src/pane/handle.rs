@@ -502,7 +502,7 @@ mod tests {
                 );
                 assert!(!stale.still_current(&pane));
                 assert!(stale.search("anything").is_none());
-                let render = block_on(stale.render_page("page-1", 1.0, false));
+                let render = block_on(stale.render_page("page-1", 1.0, false, 0));
                 assert_eq!(render.map(|_| ()).unwrap_err().name, "no_session");
             }
             // A page bound to A never gets work admitted against B.

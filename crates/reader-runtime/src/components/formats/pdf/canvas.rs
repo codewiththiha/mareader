@@ -188,6 +188,13 @@ pub fn PdfPageCanvas(
     /// read is tracked, so the crossing itself re-runs the render effect.
     #[prop(optional)]
     in_view: Option<Signal<bool, LocalStorage>>,
+    /// Where this page belongs in the engine's page lane right now: lower
+    /// starts first, `None` (the default) means the front of it. The strip
+    /// derives it from the virtualizer's band, and it is read UNTRACKED at the
+    /// moment a raster is issued — a rank change says who goes first, not what
+    /// has to be drawn, so tracking it would restart renders for nothing.
+    #[prop(optional)]
+    rank: Option<Signal<u32, LocalStorage>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
     /// `zoom_animating`, which every resize-driven animation also holds — a
     /// fit slide, a window drag carrying a hand-picked zoom — for the whole
@@ -427,18 +434,24 @@ pub fn PdfPageCanvas(
             return;
         }
         // SCROLL-FLING GATE. An unpainted page the scroller is sweeping past
-        // at speed stays blank until it is visible or the strip settles:
-        // rasterising every page a fling flies past creates and discards a
-        // full-page surface every few frames. `in_view` (tracked) is the
-        // strip's speed-aware visibility: a page in view at reading speed
-        // renders at once, one met mid-fling after a short dwell that a
-        // timer re-checks, so a page never waits on a scroll event that will
-        // not come. `settled` (tracked) renders the overscan at the end.
-        // A render already in flight is never touched.
+        // at speed stays blank until it is inside the band or the strip
+        // settles: rasterising every page a fling flies past creates and
+        // discards a full-page surface every few frames. `in_view` (tracked) is
+        // the band's own verdict, and it is the whole rule — a page the reader
+        // can see at reading speed renders in the frame it mounts, because the
+        // band IS the mount window at that speed, so there is no dwell timer
+        // here to be wrong about. `settled` (tracked) paints what the fling
+        // left behind once the strip stops, which is the guaranteed wake.
         let visible_now = in_view.as_ref().is_none_or(|v| v.get());
         // Read every time so a forced re-render (below) re-runs this effect.
         rerender.track();
         if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
+            // This page may already hold a lane slot from the frame it was in
+            // view. Give it back: a raster for a page outside the band paints
+            // nobody, and the lane has two slots for the pages in front of the
+            // reader. Coming back into the band re-runs this effect (the
+            // tracked read above), so the work is re-issued, never lost.
+            pdf().cancel_page(&cid_effect);
             return;
         }
         let page_no = page;
@@ -541,7 +554,8 @@ pub fn PdfPageCanvas(
             // A render whose session died resolves `no_session` (the engine
             // refuses retired sids, and the session re-checks itself after
             // the await), so nothing below commits into a replaced document.
-            match pdf_async.render_page(&cid, s, rt).await {
+            let rank_now = rank.as_ref().map(|r| r.get_untracked()).unwrap_or(0);
+            match pdf_async.render_page(&cid, s, rt, rank_now).await {
                 Ok(r) => {
                     // Unmounted mid-render: the owner's signals are gone, and
                     // there is no host left to size.
