@@ -122,7 +122,8 @@ pub(crate) fn use_reader_virtualizers(
 
     let count = Signal::derive(move || state.document.num_pages.get() as usize);
     let estimate = move |index: usize| {
-        // Teardown can call this; `page_gap` gone means every read below is gone.
+        // Teardown can call this; `page_gap` gone means every read below
+        // is gone.
         let Some(gap) = state.viewer.page_gap.try_get_untracked() else {
             return 0.0;
         };

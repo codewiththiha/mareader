@@ -78,7 +78,11 @@ class Comment:
         return len(self.prose().split())
 
     def widest(self) -> int:
-        return max((len(l) for l in self.raw.splitlines()), default=0)
+        # `raw` starts at the marker, so line 1 owes its indent back.
+        lengths = [len(l) for l in self.raw.splitlines()]
+        if lengths:
+            lengths[0] += self.indent
+        return max(lengths, default=0)
 
     def lines(self) -> int:
         return self.end_line - self.start_line + 1
@@ -386,6 +390,12 @@ def self_test() -> int:
     exempted = scan(RUST_FIXTURE.replace("    // NOTE:",
                                          "    // comment-check: allow\n    // NOTE:"), lang)
     assert not offending(exempted, 80, 15, 3), "the allow marker did not exempt"
+    pad, mark = " " * 8, "/// "
+    edge = pad + mark + "x" * (80 - len(pad) - len(mark))
+    deep = scan(f"fn f() {{\n{edge}\n{pad}{mark}short\n{pad}let y = 1;\n}}\n",
+                LANGS[".rs"])
+    assert len(edge) == 80 and offending(deep, 80, 15, 3) == [], "80 col flagged"
+    assert offending(deep, 79, 15, 3), "indent did not count toward the width"
     print(f"self-test passed: {len(comments)} blocks, {len(hits)} flagged, "
           "strings, nested blocks and the allow marker all handled")
     return 0

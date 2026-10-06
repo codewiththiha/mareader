@@ -202,11 +202,11 @@ Avoid repeating variable names in comments.
 A comment carries a constraint the code cannot show; it never argues for a
 decision. Test every added line: **would a reader who never saw the diff need
 this?** If not, cut it and put what it said in the commit message. Measure it with
-`python3 tools/comment_check.py` — three lines, eighty characters a line, fifteen
-words per block by default, all three raisable with `--max-lines`, `--max-line`,
-`--max-words`. Run it on the files you touched, not on the repository: the style
-this rule replaces is still in the tree, and the tool names 6,300 blocks across
-713 files today. A comment that genuinely needs more than the ceiling states so
+`python3 tools/comment_check.py` — three lines, eighty characters a line counted
+from the left margin, fifteen words per block by default, all three raisable with
+`--max-lines`, `--max-line`, `--max-words`. Run it on the files you touched, not on
+the repository: the style this rule replaces is still in the tree, and the tool
+names 6,246 blocks across 714 files today. A comment that genuinely needs more than the ceiling states so
 itself with `comment-check: allow` on the line above it, which the tool honours and
 a reviewer can read as a claim, not an escape.
 

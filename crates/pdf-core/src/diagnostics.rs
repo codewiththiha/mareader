@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStats {
-    /// Timed inside the lane slot, so queue wait is excluded; `0` is unmeasured.
+    /// Timed inside the lane slot, so queue wait is excluded; `0`
+    /// means unmeasured.
     #[serde(default)]
     pub fill_ms: f64,
     /// How many rasters this session's page lane runs at once.
@@ -61,10 +62,12 @@ pub struct EngineStats {
     pub prefetches_started: u64,
     pub prefetches_completed: u64,
     pub prefetches_dropped: u64,
-    /// The open document's `numPages`, unlike [`Self::pages`], which counts hosts.
+    /// The open document's `numPages`, unlike [`Self::pages`], which
+    /// counts hosts.
     #[serde(default)]
     pub document_pages: u32,
-    /// Per-canvas bookkeeping kept until teardown; measured for drift, not zero.
+    /// Per-canvas bookkeeping kept until teardown: drift is gated, not
+    /// zero.
     #[serde(default)]
     pub thumb_generation_size: u32,
     /// The "keep the unbaked raw briefly" timeouts; teardown releases them all.
