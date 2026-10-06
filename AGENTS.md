@@ -74,10 +74,23 @@ one-line fix costs half an hour, so the loop separates them:
   *when* the lane runs, not *whether*: nothing merges, ships or gets reported on
   a SHA that deferred it. If a round ends without a final commit, name the SHA
   that still owes the lane.
-- **Triggering that last run may be a commit of its own.** When the code is
-  already `CI`-green and only prose followed it, an empty commit whose subject
-  carries no marker runs both lanes on the tree being reported: a `docs/**`-only
-  commit triggers nothing, and would leave the round ungated.
+- **The final `Deep CI` run is dispatched, not pushed.** Both workflows filter
+  `push` by path: `CI` drops a push whose every path is under `docs/`, and
+  `deep-ci.yml` only lists source trees in its `paths:` allowlist. So an empty
+  commit or a prose-only commit — including one whose subject drops the marker —
+  starts nothing at all, and the round would quietly go ungated. Dispatch it
+  instead, on the head that carries the finished tree:
+
+  ```sh
+  curl -sf -X POST -H "Authorization: token $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"ref":"<branch>","inputs":{"lanes":"both"}}' \
+    https://api.github.com/repos/OWNER/REPO/actions/workflows/deep-ci.yml/dispatches
+  ```
+
+  A dispatched run reports its check on that head, so it gates exactly the tree
+  under review. `ignore-skip` exists for the case where the head subject still
+  says `[skip deep]`; drop the marker instead when you can.
 - **Do not idle on the last wait.** While the final push's `Deep CI` runs, do the
   bookkeeping that is owed anyway — notes, docs, the next small fix — then read
   the lane with the run already minutes old. A long lane is only expensive when

@@ -203,3 +203,5 @@ wants; at rest the bridge dissolves in the same frame the motion estimate
 decays. `CI` and `Deep CI` green on the gated SHA; the page lane's queue and
 active slots stay drained at quiescence, which `tests/browser/lifecycle.mjs`
 asserts.
+
+<!-- // only the changed file was rewritten -->
