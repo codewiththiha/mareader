@@ -20,7 +20,6 @@ use app_ui::epoch::epoch_signal;
 /// virtualizer crates that enforce it.
 pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
-
 /// How a page that leaves the strip's window is retired: bridged for the one
 /// frame that evicted it, and only while the reader is mid-seek, at most
 /// `MAX_ZOMBIES` at a time. Both strips share one policy, and the zoom
