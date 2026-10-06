@@ -39,21 +39,6 @@ use virtual_list::Window;
 /// backgrounded reader cannot pin a surface indefinitely.
 pub const FRAME_CEILING_MS: u32 = 120;
 
-/// How far past the mount window a released item's content is still held: the
-/// reversal allowance, in items. Two pages is a page turn — scroll back one page
-/// mid-fling and its raster is still there; scroll away and it goes the frame the
-/// window left it behind, instead of at the end of the session.
-///
-/// This is the spatial half of the memory argument, and it is deliberately not a
-/// timer: a timed hold keeps whatever happened to be on screen when the scroll
-/// stopped and drops whatever the reader is about to return to.
-pub const REVERSAL_GRACE_ITEMS: usize = 2;
-
-/// Ceiling on the releases queued for a subscriber that has not registered yet,
-/// or for one publish that escaped a long way in a single jump. The oldest entry
-/// goes first: it is the one the reader has travelled furthest from.
-pub const RELEASE_LEDGER_CAPACITY: usize = 64;
-
 /// How an item that leaves the mount window is retired.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetentionPolicy {
