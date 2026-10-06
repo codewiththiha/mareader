@@ -159,3 +159,5 @@ impl EngineStats {
             && self.prefetches_started == self.prefetches_completed + self.prefetches_dropped
     }
 }
+
+// only the changed file was rewritten

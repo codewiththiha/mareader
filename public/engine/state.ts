@@ -790,3 +790,5 @@ export function noteWorkerCreated(s: EngineSession): void {
 }
 
 export const CLEANUP_EVERY = 5;
+
+// only the changed file was rewritten
