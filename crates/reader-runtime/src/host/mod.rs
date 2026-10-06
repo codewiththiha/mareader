@@ -678,7 +678,7 @@ impl ReaderHost {
             let color = workspace
                 .pane_outline_color
                 .resolve(&workspace.pane_outline_custom)
-                .unwrap_or("var(--color-accent)");
+                .unwrap_or("var(--pane-outline-auto)");
             let radius = if workspace.pane_corners == reader_core::settings::PaneCorners::Rounded {
                 "10px"
             } else {

@@ -170,6 +170,12 @@ body {
   background-color: var(--pdf-paper-baked, var(--color-paper));
   --pane-paper: var(--pdf-paper-baked, var(--color-paper));
 }
+/* `.reader-bg` IS the gutter between panes: it must take the shared colour the
+   rule above gives every pane, or the strip reads as a band beside the pages. */
+.reader-bg.blend:not(.independent-themes) {
+  background-color: var(--pdf-paper-baked, var(--color-paper));
+}
+
 /* Split pane decoration belongs to the pane entry, outside the document's
    page stack. Each entry gets a local stacking context; the focused entry is
    raised above its neighbours, so its focus outline cannot disappear under a
@@ -188,7 +194,7 @@ body {
   z-index: 40;
   border-radius: inherit;
   box-shadow: inset 0 0 0 var(--pane-outline-width, 2px)
-    var(--pane-outline-color, var(--color-accent));
+    var(--pane-outline-color, var(--pane-outline-auto));
 }
 .reader-bg.split-workspace [data-pane-close] {
   z-index: var(--z-popover);
