@@ -11,16 +11,18 @@
   --color-line: #e5e7eb;
   --color-accent: #2563eb;
   --color-accent-soft: #dbeafe;
-  /* `Auto` outline: accent read against the backdrop, never a raw hairline. */
+}
+
+/* Runtime (non-utility) variables, light defaults. */
+:root {
+  /* `Auto` split outline: the accent read against the backdrop it is drawn on.
+     Deliberately NOT in `@theme` -- the mix must see the themed
+     `--color-accent` and the paper the engine publishes at runtime. */
   --pane-outline-auto: color-mix(
     in srgb,
     var(--color-accent) 55%,
     var(--pdf-paper-baked, var(--color-paper))
   );
-}
-
-/* Runtime (non-utility) variables, light defaults. */
-:root {
   --canvas-filter: none;
   --canvas-blend: multiply;
   --noise-opacity: 0;

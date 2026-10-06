@@ -2694,7 +2694,17 @@ async function paneEntries() {
       activeZ: Number(getComputedStyle(active).zIndex),
       inactiveZ: Number(getComputedStyle(inactive).zIndex),
       outline: !!outline && getComputedStyle(outline).boxShadow.includes("2px"),
-      painted: !!outline && getComputedStyle(outline).boxShadow.includes("rgb("),
+      // The token must RESOLVE where the ring is drawn: a `box-shadow` that
+      // keeps the unresolved `color-mix()` text paints nothing.
+      painted: (() => {
+        if (!outline) return false;
+        const probe = doc.createElement("div");
+        probe.style.color = "var(--pane-outline-auto)";
+        doc.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return /rgba?\(|color\(/.test(color) && getComputedStyle(outline).boxShadow !== "none";
+      })(),
     };
   }, [activeFrame]);
   if (!focusPaint.split || focusPaint.autoColor !== "var(--pane-outline-auto)"
