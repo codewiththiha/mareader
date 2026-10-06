@@ -439,10 +439,7 @@ pub fn PdfPageCanvas(
         let visible_now = in_view.as_ref().is_none_or(|v| v.get());
         // Read every time so a forced re-render (below) re-runs this effect.
         rerender.track();
-        // `!anim`: a zoom commit judges its landing by the bitmap this page
-        // hands up (see the fallthrough warning above), so a cancel mid-
-        // transaction saves a slot and costs the commit.
-        if !anim && !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
+        if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
             // Give a held slot back: a raster for a page outside the band paints
             // nobody, and re-entering the band re-runs this effect, so the work
             // is re-issued rather than lost.
