@@ -1445,7 +1445,11 @@ mod tests {
         let first = core.index_at(top + 0.5);
         let last = core.index_at(top + visible - 0.5);
         for index in first..=last {
-            assert_eq!(core.item_state(index), VirtualItemState::Active, "viewport item {index}");
+            assert_eq!(
+                core.item_state(index),
+                VirtualItemState::Active,
+                "viewport item {index}"
+            );
         }
         assert!(
             blanked.iter().all(|index| *index < first || *index > last),
