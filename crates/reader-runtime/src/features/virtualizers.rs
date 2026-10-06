@@ -1,6 +1,5 @@
-//! Builds and wires the reader's two virtualizers: the vertical scroll list
-//! and the horizontal strip. One pair per pane: the pane's mount builds them
-//! and the pane's dispose owns their end.
+//! The reader's two virtualizers: one pair per pane, built at mount and
+//! ended at dispose.
 
 use std::hash::Hash;
 
@@ -9,29 +8,16 @@ use virtual_list::{Budget, Viewport};
 use virtual_list_leptos::{RetentionPolicy, VirtualizerOptions, use_virtualizer};
 
 use crate::state::ReaderState;
-use crate::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
+use crate::zoom::config::MAX_ZOMBIES;
 use app_ui::epoch::epoch_signal;
 
-/// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
-/// total (visible + ~1 above + ~1 below). Each mounted page at 2× DPR plus
-/// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
-/// The reader budget is the READER runtime's policy: the core view model
-/// carries the maths a strip needs while only this crate may name the
-/// virtualizer crates that enforce it.
+/// ~64MB per mounted page at 2× DPR: the ceiling is what bounds idle RAM.
 pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
-/// How a page that leaves the strip's window is retired: bridged for the
-/// scroll grace the zoom config owns, at most `MAX_ZOMBIES` at a time. Both
-/// strips share one policy, and the zoom controller raises and resets it.
-const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::Grace {
-    ms: STRIP_SCROLL_GRACE_MS,
-    max: MAX_ZOMBIES,
-};
+/// Bridged only mid-seek; a zoom commit raises a timed Grace over it.
+const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::MotionGated { max: MAX_ZOMBIES };
 
-/// The handles a pane hands to its viewer components and effects. Both
-/// virtualizers always exist (they are hooks); a view binds only the one for
-/// its axis when it mounts. The `StoredValue`s are the `Clone`-safe wrappers
-/// the components pass by value, while the raw handles drive the effects.
+/// Both virtualizers always exist; a view binds the one for its axis.
 pub(crate) struct ReaderVirtualizers {
     pub virtualizer: virtual_list_leptos::Virtualizer,
     pub h_virtualizer: virtual_list_leptos::Virtualizer,
@@ -51,15 +37,7 @@ fn fallback_height(state: ReaderState) -> f64 {
         .map_or(0.0, |size| size.height)
 }
 
-/// Keeps `css_heights` — the shared measurement store behind the vertical
-/// virtualizer and the zoom commit path — filled from the intrinsic sizes.
-///
-/// The rule is simply "an empty store gets seeded": the open flow empties it
-/// for every new document (the same book included), the zoom coordinator
-/// rescales it in place, and the pages overwrite entries as they measure.
-/// So emptiness is exactly "a book just arrived", and nothing else — not a
-/// zoom tick, not a re-measure — can trigger a re-seed that would clobber
-/// live heights.
+/// Only the open flow empties the store, so seeding when empty is safe.
 fn seed_css_heights(state: ReaderState) {
     Effect::new(move || {
         let count = state.document.num_pages.get() as usize;
@@ -73,8 +51,7 @@ fn seed_css_heights(state: ReaderState) {
         if filled || count == 0 || scale <= 0.0 {
             return;
         }
-        // Tracked reads: the store is only worth filling once the sizes are
-        // there, and they arrive in the same open that emptied it.
+        // Tracked: the sizes arrive in the same open that emptied the store.
         let fallback = state
             .document
             .content
@@ -101,8 +78,7 @@ fn seed_css_heights(state: ReaderState) {
     });
 }
 
-/// A fingerprint of the document's geometry: page count plus every
-/// intrinsic size. The virtualizers rebuild their layouts when it changes.
+/// Page count plus every intrinsic size; a change rebuilds the layouts.
 fn geometry_epoch(state: ReaderState) -> Signal<u64> {
     epoch_signal(move |hasher| {
         state.document.num_pages.get().hash(hasher);
@@ -116,6 +92,28 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
     })
 }
 
+/// What one settled page costs here, and how wide the lane that serves it.
+#[cfg(feature = "pdf")]
+fn note_fill_profile(
+    pane: &crate::pane::handle::PaneHandle,
+    strip: &virtual_list_leptos::Virtualizer,
+    last: &std::rc::Rc<std::cell::Cell<f64>>,
+) {
+    let Some(stats) = pane.pdf().stats() else {
+        return;
+    };
+    // 0 is "not measured", not "instant": a zero never engages the band.
+    if stats.fill_ms <= 0.0 {
+        return;
+    }
+    // Once per strip: a report re-evaluates every mounted page of the band.
+    if last.get() >= 0.0 {
+        return;
+    }
+    last.set(stats.fill_ms);
+    strip.set_fill_profile(stats.fill_ms, stats.page_limit.max(1) as usize);
+}
+
 pub(crate) fn use_reader_virtualizers(
     state: ReaderState,
     pane: crate::pane::handle::PaneHandle,
@@ -124,11 +122,8 @@ pub(crate) fn use_reader_virtualizers(
 
     let count = Signal::derive(move || state.document.num_pages.get() as usize);
     let estimate = move |index: usize| {
-        // The crate calls this from flush and rebuild paths that can fire
-        // after the close purged the reader state (the strip's own scope
-        // outlives it by a teardown beat). `page_gap` is the unit's
-        // liveness probe: gone means every read below is gone too, and the
-        // estimate only feeds a dead cycle.
+        // Teardown can call this; `page_gap` gone means every read below
+        // is gone.
         let Some(gap) = state.viewer.page_gap.try_get_untracked() else {
             return 0.0;
         };
@@ -151,9 +146,7 @@ pub(crate) fn use_reader_virtualizers(
             .filter(|height| *height > 0.0);
         intrinsic.unwrap_or_else(|| fallback_height(state)) * state.viewer.zoom.visual_scale() + gap
     };
-    // Both strips estimate from the live DISPLAY scale — the scale the
-    // layout is relaid out to as a zoom runs — so the two axes can never
-    // disagree about how big a page is.
+    // The live display scale, so neither axis disagrees about a page's size.
     let h_estimate = move |index: usize| {
         let Some(margin) = state.viewer.page_margin.try_get_untracked() else {
             return 0.0;
@@ -173,15 +166,7 @@ pub(crate) fn use_reader_virtualizers(
         let (_, height) = state.viewer.container_size.get_untracked();
         if height > 1.0 { height } else { 800.0 }
     };
-    // Start the window on the RESUME page rather than at the top: page 1 is
-    // never in a fresh open's first window, so it is never mounted, never
-    // rendered, and its raster can never flash past on the way to the page
-    // the reader actually resumes on. Summed under the SAME estimates the
-    // virtualizer builds its layout from, so the first window sits exactly
-    // where the mount anchor (`anchor_to_page`) is about to aim — the
-    // anchor still re-asserts, it simply agrees on its first frame. The
-    // reader's page is seeded by the open flow BEFORE the route flips
-    // (`enter_ready` last), so it is already the resume page here.
+    // Opens on the resume page, summed under the layout's own estimates.
     let resume_index = {
         let count0 = state.document.num_pages.get_untracked() as usize;
         ((state.viewer.page.get_untracked().max(1) as usize) - 1).min(count0)
@@ -192,12 +177,7 @@ pub(crate) fn use_reader_virtualizers(
         v_off += estimate(index);
         h_off += h_estimate(index);
     }
-    // Zombie retention: an item that leaves the window mid-fling (or in a
-    // zoom's geometry commit — the controller raises the policy for that)
-    // keeps its DOM briefly instead of popping out. Milliseconds, not frames:
-    // the strip's bridge is about outliving a commit's relayouts, which are
-    // paced by wall-clock timers, and the ceiling is what keeps a long fling
-    // from mounting the whole document.
+    // Milliseconds, not frames: a commit's relayouts are wall-clock paced.
     let virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, estimate)
             .gap(0.0)
@@ -220,28 +200,31 @@ pub(crate) fn use_reader_virtualizers(
     );
     let h_virtualizer_view = StoredValue::new_local(h_virtualizer.clone());
 
-    // The engine only sweeps its rasters inside render activity; after a
-    // zoom-out or a mode flip nothing renders, so the big rasters would stay
-    // pinned until the 30s idle timer. Sweep the moment scrolling settles
-    // instead — both virtualizers, registered once (the views rebind the
-    // SAME shared virtualizer on every mode flip).
-    // Each sweep reaches THIS pane's session only.
+    // A zoom-out or mode flip renders nothing: sweep when scrolling settles.
     #[cfg(feature = "pdf")]
     {
-        virtualizer.on_scroll_idle(move || pane.pdf().sweep());
-        h_virtualizer.on_scroll_idle(move || pane.pdf().sweep());
+        let vertical = virtualizer.clone();
+        let horizontal = h_virtualizer.clone();
+        let applied_v = std::rc::Rc::new(std::cell::Cell::new(-1.0));
+        let applied_h = std::rc::Rc::new(std::cell::Cell::new(-1.0));
+        virtualizer.on_scroll_idle(move || {
+            pane.pdf().sweep();
+            if state.viewer.page_gap.try_get_untracked().is_some() {
+                note_fill_profile(&pane, &vertical, &applied_v);
+            }
+        });
+        h_virtualizer.on_scroll_idle(move || {
+            pane.pdf().sweep();
+            if state.viewer.page_gap.try_get_untracked().is_some() {
+                note_fill_profile(&pane, &horizontal, &applied_h);
+            }
+        });
     }
 
-    // The strips join the diagnostics registry while they live: a snapshot
-    // reads its window and zombie counts from here, and the reader's own
-    // cleanup drops the entries — the registry never outlives an owner.
-    // The handles ride StoredValues because a cleanup closure must be
-    // Send + Sync, which the Rc inside a Virtualizer is not.
+    // The registry never outlives an owner: cleanup drops these entries.
     crate::diagnostics::track_virtualizer(&virtualizer);
     crate::diagnostics::track_virtualizer(&h_virtualizer);
-    // The PANE owns these instances: its dispose sequence disposes them
-    // explicitly — the component cleanups below and inside the virtualizer
-    // crate are the inner safety net, not the owner.
+    // The pane disposes them explicitly; component cleanups are the net.
     pane.track_virtualizer(&virtualizer);
     pane.track_virtualizer(&h_virtualizer);
     let tracked_v = StoredValue::new_local(virtualizer.clone());

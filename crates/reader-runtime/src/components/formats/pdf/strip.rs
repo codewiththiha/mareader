@@ -1,37 +1,4 @@
 //! Axis-generic virtualized page strip, shared by the two scrolling layouts.
-//!
-//! This is the unified replacement for the vertical page list and the inline
-//! loop the horizontal layout used to carry itself: one component renders the
-//! mounted page window along either axis, absolutely positioning each page at
-//! the virtualizer's `item_top`, and reporting the rendered main-axis size
-//! back into the virtualizer's size model.
-//!
-//! A zoom resizes this strip for real: the zoom actuator rescales the
-//! virtualizer's items frame by frame and holds the document point under the
-//! viewport centre still, while the page hosts below stretch the bitmap they
-//! already hold to the new size. Nothing here animates a transform over
-//! frozen geometry — a CSS `scale()` would scale the page gaps along with the
-//! pages, and the layout deliberately does not.
-//!
-//! The strip is pure presentation. It owns no scroll policy, no wheel
-//! translation, no container binding — those live in [`ScrollShell`], which
-//! creates the scroller element this strip draws into. The page-host ids keep
-//! their per-axis prefixes (`cont-` / `hp-`) because the engine's selection
-//! and the AI gloss layer parse them back into page numbers.
-//!
-//! Every offset this strip writes is snapped to the device-pixel grid (see
-//! [`pdf_core::pixel_grid`]), because the sizes the page
-//! hosts write are: a wrapper positioned half a device pixel off its page's
-//! painted edge is exactly the compositor seam that snapping exists to close.
-//!
-//! Cross-axis centering is the same rule in every layout: the page host is
-//! centred with an AUTO margin (`mx-auto` here, `my-auto` in the horizontal
-//! strip, `m-auto` in [`PageShell`]) rather than flex `justify-content` /
-//! `align-items`. An auto margin centres the page when it fits and degrades to
-//! start-alignment when it overflows, so a zoomed page that is wider (or
-//! taller) than the viewport scrolls to BOTH its edges — the near edge is
-//! never clipped. Flex centering instead overflows symmetrically, which makes
-//! the near edge unreachable: the whole point of the margin-auto degrade.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -57,24 +24,17 @@ pub fn PdfPageStrip(
 
     let v = virtualizer;
     let handle = StoredValue::new_local(v.clone());
-    // The live VISUAL scale. Hosts size themselves to it and CSS-stretch
-    // whatever bitmap they already hold, so a zoom resizes the page every
-    // frame without kicking off a render; the crisp rasterisation follows
-    // `render_scale` (`committed`), which moves only when the transaction
-    // lands.
+    // The live VISUAL scale: hosts stretch what they hold. Rasterisation
+    // follows `committed`.
     let page_scale = state.viewer.zoom.display.read_only();
     let gesture_owns = state.viewer.gesture_owns();
-    // The fling gate's input: while the scroller is still moving, unpainted
-    // pages not yet in view stay blank and rasterise once the strip
-    // settles (see the page host's SCROLL-FLING GATE). The prop wraps it in
-    // the Option the page-mode hosts default to.
+    // Fling gate input: while the scroller moves, offscreen pages stay blank.
     let settled: Signal<bool> = v.settled().into();
     let items = v.items();
     let total_size = v.total_size();
 
-    // Horizontal-only: the strip is at least as tall as the tallest page at
-    // the live scale, so a zoom past fit-height yields real vertical scroll
-    // range as the zoom happens, not only once it lands.
+    // Horizontal-only: min-height is the tallest page, so a zoom past
+    // fit-height yields vertical range immediately.
     let strip_h = Memo::new(move |_| {
         let scale = state.viewer.zoom.display.get();
         let tallest = state
@@ -93,41 +53,15 @@ pub fn PdfPageStrip(
         }
     };
 
-    // Report a rendered page's main-axis extent back into the virtualizer.
-    // Vertical uses the measured height (+ gap); horizontal uses the measured
-    // width (+ the two horizontal margins, which are part of the main span).
-    // The sizes arriving here are already snapped to the device-pixel grid by
-    // the page host, so the offsets the virtualizer derives from them are
-    // grid-aligned too, and every page's wrapper sits exactly on the edge the
-    // page above it painted.
-    // BOTH axes refuse to report while a zoom transaction is in flight: the
-    // rendered size belongs to the committed geometry, and a mid-tween page
-    // stretching to the visual scale would feed the virtualizer a size from
-    // a geometry model that does not exist yet. (Only the vertical axis used
-    // to be guarded — the asymmetry let the horizontal strip's window model
-    // drift during the exact frames it needed to stay still.)
-    // The report rides a render COMPLETION, which can outlive the strip: a
-    // close during active rendering resolves the task after the virtualizers
-    // are disposed, and a report into them reads a disposed `range`. The
-    // pane's document generation is the liveness check — a close or swap
-    // claims a new one, so a report from the old document's render era is
-    // dropped. The report's true liveness oracle. The generation drops reports from
-    // a *stale document era*, but a report from the CURRENT era can still
-    // land after the strip's owner purged its signals (a close during active
-    // rendering resolves a queued completion into the torn-down strip): the
-    // epoch has not moved yet, yet `css_heights` and friends are already
-    // gone, and an `update` on them panics. Cleanups run before the purge,
-    // so this flag reads `Some(true)` exactly while the signals below are
-    // alive — checked before any signal is touched.
+    // A report can outlive the strip: the pane's generation, then
+    // `report_alive`, keeps it honest.
     let report_alive = StoredValue::new_local(true);
     on_cleanup({
         move || {
             let _ = report_alive.try_set_value(false);
         }
     });
-    // The pane's document generation this strip reports for: a report from
-    // an earlier document of THIS pane stands down (another pane's open
-    // never moves it).
+    // This pane's generation: another pane's open never moves it.
     let report_epoch = state.pane.generation();
     let on_geometry = match axis {
         Axis::Vertical => {
@@ -135,10 +69,8 @@ pub fn PdfPageStrip(
                 if report_alive.try_get_value() != Some(true) {
                     return;
                 }
-                // The reader state (metrics, viewer dials) purges one
-                // teardown beat before this strip's scope: the epoch can
-                // still match while `css_heights` is already gone, and an
-                // `update` on it panics. Probe the unit first.
+                // The unit purges a beat before this scope: probe it
+                // before any `update`.
                 if state
                     .document
                     .content
@@ -171,11 +103,8 @@ pub fn PdfPageStrip(
                         heights[index] = height;
                     });
                 handle.with_value(|v| v.report_size(index, height + gap));
-                // The first-paint gate lifts HERE: a geometry report only
-                // arrives when a page render completes, and the fresh open's
-                // window mounts around the resume page — so the first report
-                // means the reader's page has pixels. Until then the loader
-                // cover owns the slot (see `crate::pane`).
+                // First-paint gate lifts here: a report means the
+                // reader's page has pixels (see `crate::pane`).
                 if page == state.viewer.page.get_untracked()
                     && !state.viewer.first_paint.get_untracked()
                 {
@@ -202,9 +131,7 @@ pub fn PdfPageStrip(
                     handle.with_value(|v| {
                         v.report_size(page.saturating_sub(1) as usize, w + 2.0 * m)
                     });
-                    // Same gate as the vertical arm, same reason: the report
-                    // is a completed render, and the window is the resume
-                    // page's.
+                    // Same gate as the vertical arm, same reason.
                     if page == state.viewer.page.get_untracked()
                         && !state.viewer.first_paint.get_untracked()
                     {
@@ -230,26 +157,11 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
-                                    let size = handle.with_value(|v| v.item_size(index));
                                     let dormant = dormant_signal(items, index);
-                                    let in_view = handle.with_value(|v| {
-                                        in_view_signal(v.clone(), top, size)
-                                    });
-                                    // Offsets are snapped for the same reason
-                                    // sizes are: the wrapper's top is a running
-                                    // sum of page extents at the live scale, so
-                                    // it lands mid-device-pixel at most zoom
-                                    // levels and the joint between two pages
-                                    // rounds into a hairline of backdrop.
-                                    //
-                                    // In no-gap mode snapping alone still leaves
-                                    // the two rects merely TOUCHING; pull every
-                                    // page after the first up by one device
-                                    // pixel so they always overlap instead. The
-                                    // host is opaque and pages composite
-                                    // source-over against each other, so the
-                                    // overlap is invisible — but a gap can no
-                                    // longer open up.
+                                    let in_view = in_view_signal(items, index);
+                                    let rank = handle.with_value(|c| rank_signal(items, c, index));
+                                    // Snapped like the sizes: no-gap mode
+                                    // overlaps by one device pixel.
                                     let style = move || {
                                         let overlap = if index > 0
                                             && state.viewer.page_gap.get() <= 1e-9
@@ -274,6 +186,7 @@ pub fn PdfPageStrip(
                                                 dormant=dormant
                                                 settled=settled
                                                 in_view=in_view
+                                                rank=rank
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -313,17 +226,11 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
-                                    let size = handle.with_value(|v| v.item_size(index));
                                     let dormant = dormant_signal(items, index);
-                                    let in_view = handle.with_value(|v| {
-                                        in_view_signal(v.clone(), left, size)
-                                    });
-                                    // top:0 — the strip owns the full window height and
-                                    // the auto-hiding title bar overlays it, like Spread.
-                                    // The main-axis offset is snapped to the device-pixel
-                                    // grid, same as the vertical strip's `top`: an
-                                    // unsnapped left edge rounds against the gutter behind
-                                    // it and paints a hairline down the side of the page.
+                                    let in_view = in_view_signal(items, index);
+                                    let rank = handle.with_value(|c| rank_signal(items, c, index));
+                                    // The auto-hiding title bar overlays
+                                    // this strip, so it owns full height.
                                     let style = move || format!(
                                         "position:absolute;top:0;left:{}px;height:100%;display:flex;padding-inline:{}px",
                                         snap_px(left.get()), state.viewer.page_margin.get()
@@ -338,6 +245,7 @@ pub fn PdfPageStrip(
                                                 dormant=dormant
                                                 settled=settled
                                                 in_view=in_view
+                                                rank=rank
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -361,8 +269,7 @@ pub fn PdfPageStrip(
     }
 }
 
-/// Per-axis wrapper id, kept as a free function so both ends of the strip's
-/// `<For>` can name it without capturing anything by move.
+/// A free function so both ends of the `<For>` can name it without moving.
 fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
     match axis {
         Axis::Vertical => format!("cont-{index}-wrap"),
@@ -370,10 +277,7 @@ fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
     }
 }
 
-/// Whether one mounted item is currently a RETAINED ZOMBIE — freshly evicted
-/// from the window and bridged by the virtualizer's retention grace. A
-/// zombie page keeps its DOM and its last bitmap; it must not start new
-/// expensive work (a crisp re-render) for the few frames it has left.
+/// A zombie holds its DOM and last bitmap: no new expensive work for it.
 fn dormant_signal(
     items: Signal<Vec<VirtualItem>, LocalStorage>,
     index: usize,
@@ -386,111 +290,37 @@ fn dormant_signal(
     })
 }
 
-/// Main-axis slack on either side of the viewport within which a page counts
-/// as visible for the page host's fling gate exemption. Generous on purpose:
-/// a page about to scroll in starts rasterising before it arrives.
-const IN_VIEW_MARGIN_PX: f64 = 320.0;
-
-/// Scroll speed (CSS px per ms) above which the strip counts as FLINGING.
-/// Below it — reading, a slow drag, a wheel notch — a page in the band is
-/// visible at once and renders immediately.
-const FLING_PX_PER_MS: f64 = 4.0;
-
-/// How long a page met MID-FLING must stay in the band before it counts as
-/// visible. A fling sweeps a page through in a few frames; rasterising it
-/// only to scroll away is the full-surface churn the fling gate stops. A
-/// timer re-checks at the deadline, so a fling that stops inside the band
-/// renders the page then — never later, never stuck.
-const IN_VIEW_DWELL_MS: f64 = 60.0;
-
-/// Milliseconds on the monotonic clock, with `Date::now()` as fallback.
-fn in_view_now_ms() -> f64 {
-    web_sys::window()
-        .and_then(|w| w.performance())
-        .map(|p| p.now())
-        .unwrap_or_else(js_sys::Date::now)
-}
-
-/// Whether one mounted item is inside (or within [`IN_VIEW_MARGIN_PX`] of)
-/// the scroller's visible window, derived from the virtualizer's own model
-/// (scroll offset, viewport, item offsets), so it agrees with the layout by
-/// construction and needs no observer.
-///
-/// Speed-aware: the derive tracks how fast the offset moves. At reading
-/// speed a page in the band is visible immediately. Above
-/// [`FLING_PX_PER_MS`] it must dwell [`IN_VIEW_DWELL_MS`] continuously (the
-/// clock restarts on every exit); a timer wakes the derive at the deadline,
-/// so the answer never depends on another scroll event arriving.
-fn in_view_signal(
-    virtualizer: Virtualizer,
-    top: Signal<f64, LocalStorage>,
-    size: Signal<f64, LocalStorage>,
-) -> Signal<bool, LocalStorage> {
-    use std::cell::Cell;
-    use std::rc::Rc;
-    let dwell_start = Rc::new(Cell::<Option<f64>>::new(None));
-    let last = Cell::<Option<(f64, f64)>>::new(None);
-    let speed = Cell::new(0.0f64);
-    let wake = ArcTrigger::new();
-    let wake_armed = Rc::new(Cell::new(false));
+/// The band's class first, then distance from the landing index.
+fn rank_signal(
+    items: Signal<Vec<VirtualItem>, LocalStorage>,
+    virt: &Virtualizer,
+    index: usize,
+) -> Signal<u32, LocalStorage> {
+    /// Wide enough that distance can never carry a page into the next class.
+    const CLASS: u32 = 1 << 16;
+    let v = virt.clone();
     Signal::derive_local(move || {
-        wake.track();
-        let scroll = virtualizer.scroll_offset().get();
-        let viewport = virtualizer.viewport().get().main;
-        // A layout rebuild moves every offset without a scroll; the total
-        // extent is the layout-version carrier this derive re-reads through.
-        let _ = virtualizer.total_size().get();
-        let start = top.get();
-        let span = size.get().max(0.0);
-        let now = in_view_now_ms();
-        // Speed from the last offset sample; a quiet gap decays it to rest.
-        if let Some((at, offset)) = last.get() {
-            let dt = now - at;
-            if dt > 0.0 {
-                // A long quiet gap means the strip was at rest: a fresh move.
-                speed.set(if dt > 120.0 {
-                    0.0
-                } else {
-                    (scroll - offset).abs() / dt
-                });
-            }
-        }
-        last.set(Some((now, scroll)));
-        let inside = start + span >= scroll - IN_VIEW_MARGIN_PX
-            && start <= scroll + viewport + IN_VIEW_MARGIN_PX;
-        if !inside {
-            dwell_start.set(None);
-            return false;
-        }
-        if speed.get() < FLING_PX_PER_MS {
-            return true;
-        }
-        let started_at = match dwell_start.get() {
-            Some(at) => at,
-            None => {
-                dwell_start.set(Some(now));
-                now
-            }
-        };
-        if now - started_at >= IN_VIEW_DWELL_MS {
-            return true;
-        }
-        // One short one-shot (≤ the dwell) per page at a time; an
-        // ArcTrigger, so a wake after the page unmounted notifies nobody.
-        if !wake_armed.replace(true) {
-            let wake = wake.clone();
-            let armed = wake_armed.clone();
-            let wait = (IN_VIEW_DWELL_MS - (now - started_at)).max(0.0) + 4.0;
-            set_timeout(
-                move || {
-                    armed.set(false);
-                    wake.notify();
-                },
-                std::time::Duration::from_millis(wait as u64),
-            );
-        }
-        false
+        // Reading `items` is what re-derives this when the band moves.
+        let _ = items.get();
+        let distance = (index as i64 - v.landing_index() as i64)
+            .unsigned_abs()
+            .min((CLASS - 1) as u64) as u32;
+        u32::from(v.fill_priority(index).rank())
+            .saturating_mul(CLASS)
+            .saturating_add(distance)
     })
 }
 
+/// The virtualizer's own band answers, so no local estimate can disagree.
+fn in_view_signal(
+    items: Signal<Vec<VirtualItem>, LocalStorage>,
+    index: usize,
+) -> Signal<bool, LocalStorage> {
+    Signal::derive_local(move || {
+        items
+            .get()
+            .iter()
+            .any(|item| item.index == index && item.state == VirtualItemState::Active)
+    })
+}
 // only the changed file was rewritten

@@ -58,7 +58,12 @@ both deep lanes honour "[skip deep]" in the commit subject (never the cron)
   may carry the marker (presentation, prose, pure logic that `CI` already
   tests) and what may never (anything that allocates, retains, counts or
   releases) is decided by the lists there, because the judgement is about the
-  change, not about the workflow. The path filter stays wide on purpose: a
+  change, not about the workflow. The marker also carries a second, narrower
+  meaning: on a branch under repair it *defers* a lane to the round's last
+  code-bearing commit rather than dropping it, since `CI` says whether the tree
+  builds and no deep verdict is readable before that ("The CI loop" in
+  `AGENTS.md` states the loop and its one rule that a deferral is never what a
+  report calls done). The path filter stays wide on purpose: a
   narrow list plus a marker would let an owner change through with neither
   gate, and widening a filter costs a run while narrowing one costs a
   regression.

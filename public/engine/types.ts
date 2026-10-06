@@ -164,6 +164,11 @@ export type CoverResult = Result<{ dataUrl: string; width: number; height: numbe
  *  lifecycle counters whose pairing rules (every session/worker dies once,
  *  every started render resolves) are the teardown baseline. */
 export type Stats = {
+  /** Recent page-raster cost in ms; 0 before the first completed render.
+   *  Max-aggregated across sessions — it is a duration, not a count. */
+  fillMs: number;
+  /** One session's page-lane slot count, max-aggregated for the same reason. */
+  pageLimit: number;
   /** Registered page hosts (live page surfaces). */
   pages: number;
   /** Cached thumbnail rasters. */
@@ -309,11 +314,14 @@ export type PDFReaderApi = {
    *  stops in the click's own task. The session survives; the one teardown
    *  stays destroySession's and shares the same idempotent sweep. */
   quiesce: (sid: Sid) => void;
+  /** `rank` orders this session's page lane, lower first; 0 (the default)
+   *  means "when a slot frees". See `PageLane` in engine/state.ts. */
   renderPage: (
     sid: Sid,
     canvasId: string,
     scale: number,
-    renderText: boolean
+    renderText: boolean,
+    rank?: number
   ) => Promise<RenderResult>;
   renderThumb: (
     sid: Sid,

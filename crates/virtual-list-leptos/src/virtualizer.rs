@@ -28,6 +28,11 @@ type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
 type ListenerCallback = Closure<dyn FnMut(Event)>;
 type IdleCallback = Rc<dyn Fn()>;
 
+/// The speed below which the reader is not drifting, pixels per second (well
+/// under a tenth of a pixel in a frame). [`Virtualizer::motion_drifts`] is the
+/// answer an effect samples against instead of inventing its own threshold.
+pub const DRIFT_EPS_PX_S: f64 = 20.0;
+
 /// One `ResizeObserver` and the wasm-bindgen closure that serves it. Named
 /// so the pairing is explicit: the callback must stay alive exactly as long
 /// as the observer is connected, and `dispose` drops both together.
@@ -70,6 +75,7 @@ impl VirtualizerInner {
             layout_version: RwSignal::new(0),
 
             last_epoch: Cell::new(initial_epoch),
+            last_band_version: Cell::new(0),
             options,
             core: RefCell::new(core),
             pending_scroll: Rc::new(Cell::new(None)),
@@ -114,6 +120,10 @@ pub(crate) struct VirtualizerInner {
     pub range: RwSignal<Option<Window>>,
     pub layout_version: RwSignal<u64>,
     pub last_epoch: Cell<u64>,
+    /// The core's band version as last published. A band change without a
+    /// window change is invisible to `range`, so this is what makes the items
+    /// (and the pages' Active/Blank state they carry) republish.
+    pub last_band_version: Cell<u64>,
 
     pub pending_scroll: Rc<Cell<Option<f64>>>,
     pub scroll_armed: Rc<Cell<bool>>,
@@ -171,10 +181,23 @@ pub(crate) struct VirtualizerInner {
 }
 
 impl VirtualizerInner {
+    /// Republish the item list when the render band moved inside an unchanged
+    /// window. The lead grows and shrinks with the measured scroll, so this is
+    /// the path by which a page entering the band starts carrying content
+    /// without waiting for a window move or a timer.
+    fn sync_band_version(self: &Rc<Self>) {
+        let version = self.core.borrow().band_version();
+        if self.last_band_version.replace(version) == version {
+            return;
+        }
+        self.retained_version.update(|v| *v += 1);
+    }
+
     /// Publish a new mount window: write-if-changed, and schedule zombie
     /// retention for the items the change evicted. Every range write in the
     /// adapter funnels through here so retention cannot miss a transition.
     fn publish_range(self: &Rc<Self>, new: Option<Window>) {
+        self.sync_band_version();
         let Some(old) = self.range.try_get_untracked() else {
             return;
         };
@@ -182,10 +205,13 @@ impl VirtualizerInner {
             return;
         }
         let policy = self.retention.get();
+        // A motion-gated bridge is granted by the seek that moved the window;
+        // every other policy ignores the verdict.
+        let seeking = self.core.borrow().motion_engaged();
         if policy.bridges() {
             let now = now_ms();
             let frame = self.frame_clock.get();
-            let evicted = retain_evicted(old, new, now, frame, &policy);
+            let evicted = retain_evicted(old, new, now, frame, &policy, seeking);
             if !evicted.is_empty() {
                 let mut retained = self.retained.borrow_mut();
                 // Merge: an index already retained keeps its original expiry
@@ -426,7 +452,7 @@ impl VirtualizerInner {
         if (content - self.core.borrow().scroll_top()).abs() <= self.options.measure_epsilon {
             return;
         }
-        let step = self.core.borrow_mut().on_scroll(content);
+        let step = self.core.borrow_mut().on_scroll_at(content, now_ms());
         write_if_changed(self.scroll_top, content);
         // The strip is moving again: first paints wait for the scroll-end
         // window this re-arms (see the field docs).
@@ -524,6 +550,14 @@ impl VirtualizerInner {
                 // The scroller has been quiet for the whole window: the strip
                 // is settled, and the first paints its gate held back run now.
                 write_if_changed(inner.settled, true);
+                // The motion is over: the band closes with it, so every
+                // mounted item becomes real content, and a bridge the seek had
+                // earned is earning nothing. Both changes are state changes
+                // without a range change, so they publish through the version
+                // `items()` tracks.
+                let step = inner.core.borrow_mut().note_scroll_end();
+                inner.publish_range(step.range);
+                inner.prune_retained_tick();
                 // Every correction the fling outran lands NOW, in the same
                 // window the first paints do — one write, against a scroller
                 // nobody is moving.
@@ -880,7 +914,7 @@ impl Virtualizer {
         if (content - self.inner.core.borrow().scroll_top()).abs()
             > self.inner.options.measure_epsilon
         {
-            let step = self.inner.core.borrow_mut().on_scroll(content);
+            let step = self.inner.core.borrow_mut().on_scroll_at(content, now_ms());
             write_if_changed(self.inner.scroll_top, content);
             self.inner.publish_range(step.range);
         }
@@ -1108,6 +1142,52 @@ impl Virtualizer {
     pub fn rescale_detached(&self, factor: f64, new_sizes: impl Fn(usize) -> f64) {
         let step = self.inner.core.borrow_mut().rescale(factor, &new_sizes);
         self.inner.apply_local(step);
+    }
+
+    /// Report what one item's content costs on this machine (`fill_ms`) and how
+    /// many the caller makes at once (`lanes`); the content band is decided
+    /// against both, so a faster machine shows a placeholder less often for the
+    /// same scroll. Reporting nothing leaves the decision to the speed floor.
+    pub fn set_fill_profile(&self, fill_ms: f64, lanes: usize) {
+        let mut pipeline = self.inner.core.borrow().pipeline();
+        pipeline.fill_ms = fill_ms.max(0.0);
+        pipeline.lanes = lanes;
+        self.inner.core.borrow_mut().set_pipeline(pipeline);
+        // The band can open or close without the window moving: `items()`
+        // recomputes, the DOM does not move.
+        self.inner.sync_band_version();
+    }
+
+    /// Whether the current scroll outruns the reported pipeline: the state in
+    /// which a mounted item outside the band renders as a placeholder, and the
+    /// only state in which a retention bridge is granted.
+    pub fn motion_engaged(&self) -> bool {
+        self.inner.core.borrow().motion_engaged()
+    }
+
+    /// Whether the reader is moving at all, measured rather than assumed:
+    /// true while the estimate is above [`DRIFT_EPS_PX_S`]. A sampler that only
+    /// wants to know "should I be looking at the page or at the scroll" reads
+    /// this instead of watching scroll events, and an effect that must go quiet
+    /// while the reader is reading has one threshold to share.
+    pub fn motion_drifts(&self) -> bool {
+        self.inner.core.borrow().motion_speed() > DRIFT_EPS_PX_S
+    }
+
+    /// Where a mounted index ranks in the fill order right now: the viewport,
+    /// then the side the reader is approaching, then behind them, then the
+    /// placeholders. A queue that works in this order fills the blank the
+    /// reader is about to look at first.
+    pub fn fill_priority(&self, index: usize) -> virtual_list::FillPriority {
+        self.inner.core.borrow().fill_priority(index)
+    }
+
+    /// The index the viewport is expected to reach by the time the current fill
+    /// finishes: the point the strip measures fill order from, so a lane that
+    /// can run two rasters spends them on the pages the eyes are arriving at
+    /// rather than on the pages the mount happened to add first.
+    pub fn landing_index(&self) -> usize {
+        self.inner.core.borrow().landing_index()
     }
 
     /// Called when scrolling settles.

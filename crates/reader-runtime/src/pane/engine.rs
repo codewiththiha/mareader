@@ -140,15 +140,26 @@ impl PdfPane {
         }
     }
 
+    /// Queue one page's raster at `rank` in the session's page lane (lower
+    /// first).
     pub async fn render_page(
         &self,
         canvas_id: &str,
         scale: f64,
         render_text: bool,
+        rank: u32,
     ) -> Result<RenderResult, EngineError> {
         match self.working() {
-            Some(s) => s.render_page(canvas_id, scale, render_text).await,
+            Some(s) => s.render_page(canvas_id, scale, render_text, rank).await,
             None => Err(refused()),
+        }
+    }
+
+    /// Stand down one page's queued or in-flight raster without unregistering it.
+    /// Same liveness rule as a render.
+    pub fn cancel_page(&self, canvas_id: &str) {
+        if let Some(s) = self.working() {
+            s.cancel_page(canvas_id);
         }
     }
 
@@ -213,6 +224,13 @@ impl PdfPane {
         if let Some(s) = self.tearing() {
             s.sweep();
         }
+    }
+
+    /// This session's engine report: diagnostics, and what the reader's band
+    /// asks a raster's cost and the lane's width of. `None` with no live
+    /// session, which the caller reads as "no new information".
+    pub fn stats(&self) -> Option<pdf_core::diagnostics::EngineStats> {
+        self.working().and_then(|s| s.stats())
     }
 
     pub fn sweep_snapshots(&self) {
@@ -328,3 +346,5 @@ impl MountedPdf {
         }
     }
 }
+
+// only the changed file was rewritten

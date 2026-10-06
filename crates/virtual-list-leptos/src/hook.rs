@@ -35,7 +35,8 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         options.initial_viewport.cross,
         options.gap,
     );
-    let core = VirtualizerCore::new(layout, config);
+    let mut core = VirtualizerCore::new(layout, config);
+    core.set_pipeline(options.pipeline);
     let initial_range = core.range();
     let initial_scroll = core.scroll_top();
     let initial_epoch = options

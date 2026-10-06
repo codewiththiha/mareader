@@ -46,3 +46,8 @@
 /public/readerHost.js
 /dist-library/
 /dist-reader/
+
+# tools/ holds hand-written python; running it leaves bytecode that belongs
+# to nobody.
+__pycache__/
+*.pyc
