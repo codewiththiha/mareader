@@ -37,11 +37,53 @@ large installs locally. Run the fast checks that match what you touched:
 - Host boundary: `node tools/check-host-boundary.mjs`
 - Browser suite syntax: `node --check tests/browser/lifecycle.mjs`
 
-After pushing, find the workflow run for the pushed SHA (not the branch's
-latest run) and wait for `CI` to finish. Wait for `Deep CI` when that push
-started one — the rule for whether it should is under "Deep CI" below. Fix and
-repeat until every lane that ran is green. `docs/**`-only pushes trigger no
-run.
+Keep the cheap checks in the editor and the expensive ones in CI. What to wait
+for after a push — and what not to — is in "The CI loop". `docs/**`-only pushes
+trigger no run.
+
+## The CI loop
+
+`CI` is the fast lane: `Rust / format`, `Rust / lint`, `Rust / test`,
+`Web / contracts` and `macOS / shell`, together in roughly seven minutes.
+`Deep CI` is the slow one: three jobs capped at 45, 75 and 45 minutes, and its
+verdict is unreadable while `CI` is red — a build break fails all three of its
+jobs for one reason that `cargo test` already states. Waiting for both lanes
+after every push is how a one-line fix costs half an hour, so the loop separates
+them:
+
+- **Poll only `CI` while the round is still being fixed up.** Resolve the runs of
+  the pushed SHA (`GET /repos/:owner/:repo/actions/runs?head_sha=<full 40
+  characters>` — an abbreviated SHA returns nothing), read that run's jobs
+  (`GET /actions/runs/:id/jobs`), and do not wait for `Deep CI`: for a SHA that
+  is not the round's last one, its conclusion gates nothing. A job's log is the
+  only place `rustfmt`'s diff and clippy's message exist
+  (`GET /actions/jobs/:id/logs`); fetch the red job, not the whole run.
+- **Stop polling at the first red job.** Once one lane of `CI` has failed, the
+  diagnosis is in hand; waiting for the remaining jobs to finish adds minutes to
+  every fix and cannot change what to fix. Read the failure, fix it, push again.
+- **`Deep CI` runs once per round, on the last commit that carries code** —
+  `docs/**` alone triggers no lane, so a closing documentation push can be the
+  round's literal last commit but can never be the one that gates it. The gated
+  SHA is the SHA a report calls done; a follow-up that only moves whitespace or
+  prose inside that same tree does not reopen the gate, and the summary says so
+  instead of paying for a third rebuild.
+- **A mid-round push carries `[skip deep]` even when the change touches code
+  that never normally skips the lane**, with one line in the body saying the deep
+  lane is deferred to the round's final commit. Used this way the marker says
+  *when* the lane runs, not *whether*: nothing merges, ships or gets reported on
+  a SHA that deferred it. If a round ends without a final commit, name the SHA
+  that still owes the lane.
+- **Do not idle on the last wait.** While the final push's `Deep CI` runs, do the
+  bookkeeping that is owed anyway — notes, docs, the next small fix — then read
+  the lane with the run already minutes old. A long lane is only expensive when
+  it is spent sleeping.
+- **A red `Deep CI` on the final SHA is fixed like any other red:** read the
+  failing job, fix, push — and that push is the round's final one, so it runs
+  both lanes (`CI` is never skipped, and a push after a red `Deep CI` never
+  carries the marker).
+
+Never shorten this loop by narrowing a gate: no edited workflow path list, no
+dropped assertion, no `[skip deep]` on the reported SHA.
 
 ## Deep CI
 
@@ -57,7 +99,8 @@ release, put `[skip deep]` in the subject of the LAST commit of the push: the
 workflow reads that subject and nothing else (a body quoting the marker changes
 nothing), and the marker skips all three jobs. The nightly cron ignores it and a
 `workflow_dispatch` run can force one with `ignore-skip`, so a skip is never
-the last word.
+the last word. Deferring the lane to a round's final commit is the marker's only
+other legitimate use, and it is described in "The CI loop".
 
 - Skip it for presentation and prose: docs, release notes and comments; copy,
   labels, spacing, a control's placement or visibility, `styles/**`, and the
@@ -101,7 +144,7 @@ the last word.
 ## Resource rules
 
 - Everything that allocates has an explicit teardown: tasks, render queues,
-  workers, page registrations, canvases, caches, virtualizers, observers,
+  workers, page registrations, canvases, virtualizers, observers,
   event listeners, timers and idle callbacks. Unmounting is not teardown.
 - Closing a pane or a document releases everything it allocated.
 - Canvases are released by zeroing the backing store (`releaseCanvas`,
@@ -145,9 +188,9 @@ the last word.
 ## Definition of done
 
 1. The change is implemented, and visually verified if it touches UI.
-2. Matching local checks pass and `CI` is green for the pushed SHA; `Deep CI`
-   is green for it as well unless the push carried `[skip deep]` under the rules
-   above, which the summary states either way.
+2. Matching local checks pass and `CI` is green for the pushed SHA. `Deep CI`
+   is green for that SHA too — on the round's final commit, never on a mid-round
+   one that deferred it with `[skip deep]`, which the summary states either way.
 3. Docs describe the current behaviour (`docs/architecture.md`,
    `docs/memory/` for memory behaviour).
 4. The summary states what changed, what was verified and any limits. If a
