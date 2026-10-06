@@ -2746,6 +2746,28 @@ async function paneEntries() {
   const originalBounds = new Map(both.host.panes.map((pane) => [pane.paneId, pane.bounds]));
   const decorated = await waitForSettledLayout("split decoration gutter", (s) =>
     s.host?.panes?.length === 2 && s.host.panes.every((pane) => pane.bounds.width < originalBounds.get(pane.paneId).width - 4));
+  // Under shared blend the gutter IS the workspace background, so it must resolve
+  // the same promise a pane root does. A probe resolves it in the browser, so the
+  // assertion holds whatever the detected paper happens to be.
+  const gutterLook = await page.evaluate((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const root = doc?.querySelector(".reader-bg");
+    if (!root || !root.classList.contains("blend") || root.classList.contains("independent-themes")) {
+      return null;
+    }
+    const probe = doc.createElement("div");
+    probe.style.cssText =
+      "position:absolute;left:-9999px;background-color:var(--pdf-paper-baked, var(--color-paper))";
+    root.append(probe);
+    const want = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return { want, got: getComputedStyle(root).backgroundColor };
+  }, activeFrame);
+  if (gutterLook && gutterLook.gut !== gutterLook.want) {
+    throw new Error(
+      `[pane appearance] the split gutter paints ${gutterLook.gut} where shared blend promises ${gutterLook.want}`,
+    );
+  }
   const paneDecoration = await page.evaluate(([sel, activeId]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     const root = doc?.querySelector(".reader-bg");
