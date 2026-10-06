@@ -13,9 +13,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 
-use virtual_list::{
-    Align, Layout, ReleaseLedger, ReleaseReason, Viewport, Window, release_sides,
-};
+use virtual_list::{Align, Layout, ReleaseLedger, ReleaseReason, Viewport, Window, release_sides};
 
 use crate::engine::{Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};

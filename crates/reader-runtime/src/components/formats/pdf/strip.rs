@@ -230,7 +230,6 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
-                                    let size = handle.with_value(|v| v.item_size(index));
                                     let dormant = dormant_signal(items, index);
                                     let in_view = in_view_signal(items, index);
                                     // Offsets are snapped for the same reason
@@ -311,7 +310,6 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
-                                    let size = handle.with_value(|v| v.item_size(index));
                                     let dormant = dormant_signal(items, index);
                                     let in_view = in_view_signal(items, index);
                                     // top:0 — the strip owns the full window height and

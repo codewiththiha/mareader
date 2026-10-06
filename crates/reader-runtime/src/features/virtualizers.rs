@@ -9,7 +9,7 @@ use virtual_list::{Budget, Viewport};
 use virtual_list_leptos::{RetentionPolicy, VirtualizerOptions, use_virtualizer};
 
 use crate::state::ReaderState;
-use crate::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
+use crate::zoom::config::MAX_ZOMBIES;
 use app_ui::epoch::epoch_signal;
 
 /// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
@@ -24,8 +24,9 @@ pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 /// frame that evicted it, and only while the reader is mid-seek, at most
 /// `MAX_ZOMBIES` at a time. Both strips share one policy, and the zoom
 /// controller raises a wall-clock grace over it for the duration of a commit
-/// (`STRIP_SCROLL_GRACE_MS` is that window) and stands it back down after —
-/// which is the only case where a timed bridge is the right instrument.
+/// (the `Grace` it raises is timed by the zoom config) and stands it back down
+/// after — which is the only case where a timed bridge is the right
+/// instrument.
 const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::MotionGated { max: MAX_ZOMBIES };
 
 /// The handles a pane hands to its viewer components and effects. Both
