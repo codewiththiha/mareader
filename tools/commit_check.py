@@ -13,7 +13,9 @@ turns that line into a gate instead of a hope.
 
 `--status` says whether the gate is armed. Git skips a hook it cannot execute
 and a restored workspace can reset that mode without touching the file, so run
-it at the start of a session; the copy in every CI job is the one that holds.
+it at the start of a session. No CI job reads a subject, so this hook plus a
+reviewer is the whole enforcement -- and a squash merge turns a PR title into a
+subject with ` (#NN)` appended, which the limit counts.
 
 Exit 0 when every subject passes; in hook mode a non-zero exit is what refuses
 the commit. Only the length is enforced here — the imperative mood, the lower

@@ -277,6 +277,12 @@ design and the commit message for the decision — and neither is a comment.
   installs it once; `--uninstall` removes it, `--force` replaces a hook this
   repository does not own, and `--status` reports whether it is armed — git skips a
   non-executable hook in silence, so the check is worth running after a reset.
+- A squash merge makes the **PR title** the commit subject and appends ` (#NN)`, so a
+  title must fit 50 characters *after* that suffix: 43 for a two-digit number, 42 once
+  the repo passes 999. Check the merged form, never the title as typed —
+  `printf '%s (#62)\n' "$title" > /tmp/m && python3 tools/commit_check.py /tmp/m`.
+  No CI job reads a subject or a title, so the hook, `--range`, and the reviewer are the
+  entire enforcement; a PR is exactly where the habit leaks.
 - Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`,
   `chore`. Scope is the area touched (`pdf`, `split`, `shell`, `engine`, …).
 - One coherent change per commit; context goes in the body, not the subject.
