@@ -322,6 +322,9 @@ ids may repeat across frames; registration still pins owned elements.
 Shared blend repeats the latest focused PDF paper across panes/gutters;
 text focus retains it, PDF close falls back to the next publisher, and
 closing the last PDF explicitly clears it from surviving text frames.
+A realm reports the paper it actually renders with, so a pane that is not
+the shared publisher still hands the shell its own baked colour: the gutter
+blends whatever is on screen, not only what the publisher sees.
 Independent blend keeps each pane's paper local. Scoped scrub is routed
 by the **host's** `data-appearance-scope` into the selected realm, not
 matched against iframe ancestors. Menu retention is pane-local in

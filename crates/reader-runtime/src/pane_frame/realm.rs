@@ -734,32 +734,49 @@ fn install_mirror(pane: &Rc<DocumentPane>) {
 /// shares the focused pane's with every pane. Watched with an observer that
 /// dies with the pane's owner.
 fn install_paper_watch() {
-    let Some(root) = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.document_element())
-    else {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(root) = doc.document_element() else {
         return;
     };
     let last = Rc::new(RefCell::new(Paper::default()));
     let report = {
         let root = root.clone();
+        let doc = doc.clone();
         move || {
             let Some(style) = root.dyn_ref::<web_sys::HtmlElement>().map(|el| el.style()) else {
                 return;
             };
-            let paper = Paper {
-                raw: style
-                    .get_property_value("--pdf-paper")
+            let pane_style = doc
+                .query_selector("[data-pane-root]")
+                .ok()
+                .flatten()
+                .and_then(|el| el.dyn_ref::<web_sys::HtmlElement>().cloned())
+                .map(|el| el.style());
+            let read = |name: &str| -> String {
+                style
+                    .get_property_value(name)
                     .unwrap_or_default()
                     .trim()
-                    .to_string(),
-                baked: style
-                    .get_property_value("--pdf-paper-baked")
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string(),
+                    .to_string()
             };
-            if paper.raw.is_empty() || *last.borrow() == paper {
+            let baked = read("--pdf-paper-baked");
+            let raw = read("--pdf-paper");
+            // A non-publisher realm bakes its own paper; the shell needs it.
+            let baked = match (baked.is_empty(), pane_style.as_ref()) {
+                (true, Some(pane)) => pane
+                    .get_property_value("--pane-pdf-paper-baked")
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+                _ => baked,
+            };
+            let paper = Paper {
+                raw: if raw.is_empty() { baked.clone() } else { raw },
+                baked,
+            };
+            if paper.baked.is_empty() || *last.borrow() == paper {
                 return;
             }
             *last.borrow_mut() = paper.clone();
