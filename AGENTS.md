@@ -155,12 +155,43 @@ other legitimate use, and it is described in "The CI loop".
   joining inside a function-like macro call (`assert_eq!`, `write!`) is gated by
   `attr_fn_like_width` — 60 by default — so a 98-character `assert_eq!` is still
   a diff: let the format job's own hunks decide, and replay them verbatim.
-- Comments explain why, invariants or lifecycle; never restate code.
+- Comments: see [`### Comments`](#comments) below — a constraint, not an argument.
 - No `TODO`/`FIXME`, no scaffolding for work not being done now, no
   speculative abstractions.
 - One owner per responsibility. No duplicate state, no permanent
   compatibility layers, no unbounded fallbacks.
 - No per-frame, per-page or per-scroll logging.
+
+### Comments
+
+A comment carries a constraint the code cannot show; it never argues for a
+decision. Test every added line: **would a reader who never saw the diff need
+this?** If not, cut it and put what it said in the commit message.
+
+Blocking — remove rather than shorten:
+
+- **Narration** of the change: "now uses…", "no longer FIFO", "this round
+  added…", "changed because…". Git holds the change; the file holds the result.
+- **Justification** of a choice the code cannot debate: why the alternative is
+  worse, why the design is right, a debate with a deleted sibling. Pick the
+  better shape and name it; the argument goes in the commit body.
+- **Restatement**: what the next line says, or a parameter whose name already
+  carries it. `// the page index` above `page: usize` is noise.
+- **History**: what the code used to be, or what something removed did.
+- An **essay on a leaf function**: a doc comment longer than its body belongs in
+  `docs/` as design, not in the file.
+
+Wanted, at one to three lines next to the thing it governs:
+
+- An invariant another file owns, or an order a callback depends on.
+- A unit, precision or width trap: `ms` against `px/s`, the `camelCase` names the
+  bridge reads by, `attr_fn_like_width` deciding a macro's wrapping.
+- A hazard that makes the obvious edit wrong: a disposed handle, a lane slot
+  nobody pops, a write that must precede a counter.
+
+When the rule needs more than three lines, the fix is usually a better name or a
+smaller function. Reasoning is not banned — it has two homes, `docs/` for the
+design and the commit message for the decision — and neither is a comment.
 
 ## Resource rules
 
@@ -214,7 +245,11 @@ other legitimate use, and it is described in "The CI loop".
    one that deferred it with `[skip deep]`, which the summary states either way.
 3. Docs describe the current behaviour (`docs/architecture.md`,
    `docs/memory/` for memory behaviour).
-4. The summary states what changed, what was verified and any limits. If a
+4. Every added comment passes the diff-blind test (`### Comments`): no narration,
+   no defence, no restatement. The round that adds a rule to this repository also
+   applies it to the code in the same round — a guideline the author ignores is
+   not a guideline.
+5. The summary states what changed, what was verified and any limits. If a
    requirement cannot be met, report the blocker instead of dropping it.
 
 <!-- // only the changed file was rewritten -->

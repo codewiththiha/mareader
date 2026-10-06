@@ -97,9 +97,8 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelPageRenders")]
     pub fn cancel_page_renders(sid: u32);
 
-    /// Queue one page's raster. `rank` orders the session's page lane — lower
-    /// runs first, `0` means the front of it — so the page the reader is
-    /// looking at is never stuck behind the overscan queued around it.
+    /// Queue one page's raster. `rank` orders the session's page lane: lower
+    /// runs first, `0` means the front of it.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
     pub async fn render_page(
         sid: u32,
@@ -109,9 +108,8 @@ extern "C" {
         rank: u32,
     ) -> JsValue;
 
-    /// Stop one page's queued or in-flight raster. The page stays registered,
-    /// so a later request for it is normal: this is not teardown, it is the
-    /// lane being told the work is no longer wanted.
+    /// Stop one page's queued or in-flight raster; the page stays registered, so
+    /// a later request for it is normal.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelPage")]
     pub fn cancel_page(sid: u32, canvas_id: &str);
 

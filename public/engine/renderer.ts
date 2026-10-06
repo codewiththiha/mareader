@@ -203,10 +203,8 @@ export function cancelPage(s: EngineSession, canvasId: string): void {
     try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
     st.renderTask = null;
   }
-  // A cancelled job is only a drop once the lane has popped it, and the lane
-  // pops when a slot frees. Without this pump a cancel could leave its job at
-  // the head of an otherwise idle queue, which reads as an undrained lane to
-  // the lifecycle baseline and as a slot nobody is allowed to use.
+  // A cancelled job drops only once the lane pops it, so a cancel without a
+  // pump can leave a slot held by a job nobody will run.
   if (s.pageLane.queue.length > 0) pumpPageQueue(s);
 }
 
@@ -300,16 +298,14 @@ async function renderPageInternal(
   const tracePage = ensurePage(s, canvasId)?.page ?? -1;
   traceRender(s.sid, tracePage, "start");
   lifecycleEvent("render:start");
-  // The span that matters to the reader's band maths: raster service time, from
-  // the moment this job owns a lane slot. Everything before this point is
-  // queueing, which is what the band is trying to predict rather than absorb.
+  // Raster service time, timed from the moment this job owns a lane slot: queue
+  // wait is what the band predicts rather than absorbs.
   const startMs = Date.now();
   try {
     const result = await renderPageNow(s, canvasId, scale, renderText);
     if (result.ok) {
       s.rendersCompleted += 1;
-      // One mean, not a histogram: the band needs the typical cost, and a
-      // single slow frame must not make the lead jump for the whole session.
+      // An exponential mean: one slow frame must not retune the session.
       const ms = Date.now() - startMs;
       s.fillMs = s.fillMs <= 0 ? ms : s.fillMs + (ms - s.fillMs) * 0.2;
       traceRender(s.sid, tracePage, "complete");
@@ -608,9 +604,8 @@ export async function probePageSize(s: EngineSession, page: number): Promise<Pag
 // a pane reading alone sees the same two slots it always had.
 const PAGE_RENDER_LIMIT = 2;
 
-/** The page lane's gauges for the stats surface: queue depth, the active slots,
- *  and the width those two are measured against. The teardown baseline requires
- *  an EMPTY lane, not merely one whose in-flight jobs have settled. */
+/** The page lane's stats gauges: queue depth, active slots, and the slot count
+ *  that bounds them. The teardown baseline requires an empty queue. */
 export function pageLaneGauge(s: EngineSession): {
   pageQueue: number;
   pageActive: number;
@@ -619,8 +614,7 @@ export function pageLaneGauge(s: EngineSession): {
   return {
     pageQueue: s.pageLane.queue.length,
     pageActive: s.pageLane.active,
-    // The lane's own width, published next to its depth: a caller that wants
-    // to know how much can be in flight must not have to copy the constant.
+    // Published rather than copied by the caller: the limit has one home.
     pageLimit: PAGE_RENDER_LIMIT,
   };
 }
@@ -636,9 +630,8 @@ function pumpAllLanes(): void {
  *  state, resolves its caller with a drop, and pumps the next — the same
  *  cascade the thumbnail lane's epoch bump runs. Without this, queued
  *  closures (and the promise resolvers they capture) sit in the array
- *  until the lane happens to pop them — ranked order decides who goes first,
- *  not who gets drained — retaining canvases, scales and resolvers across the
- *  dispose.
+ *  until the lane happens to pop them, retaining canvases, scales and resolvers
+ *  across the dispose.
  *
  *  A drain is a teardown act, not scheduling: it pops regardless of the
  *  realm cap, which may be full of ANOTHER session's rasters at the moment

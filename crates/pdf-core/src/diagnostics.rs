@@ -9,15 +9,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStats {
-    /// This session's recent page-raster cost, milliseconds — an exponential
-    /// mean over COMPLETED rasters, timed inside the lane slot so queueing is
-    /// not part of it. The reader's virtualizer feeds it to its band as the
-    /// pipeline's `fill_ms`, which is what turns "is this scroll faster than
-    /// this machine can fill?" into a measurement. `0` until a render lands.
+    /// One settled page raster's cost in ms, timed inside the lane slot so it
+    /// excludes queue wait; `0` until a render lands. The strip's `fill_ms`.
     #[serde(default)]
     pub fill_ms: f64,
-    /// How many rasters one session's page lane runs at once. With `fill_ms`
-    /// this is the whole capacity figure the band compares the scroll against.
+    /// How many rasters this session's page lane runs at once.
     #[serde(default)]
     pub page_limit: u32,
     /// Registered page hosts (live page surfaces).

@@ -164,10 +164,10 @@ export type CoverResult = Result<{ dataUrl: string; width: number; height: numbe
  *  lifecycle counters whose pairing rules (every session/worker dies once,
  *  every started render resolves) are the teardown baseline. */
 export type Stats = {
-  /** This session's recent page-raster cost, ms (0 before the first
-   *  completed render). Aggregated as a MAX, never a sum: it is a duration. */
+  /** Recent page-raster cost in ms; 0 before the first completed render.
+   *  Max-aggregated across sessions — it is a duration, not a count. */
   fillMs: number;
-  /** The page lane's slot count for one session, again max-aggregated. */
+  /** One session's page-lane slot count, max-aggregated for the same reason. */
   pageLimit: number;
   /** Registered page hosts (live page surfaces). */
   pages: number;
@@ -314,10 +314,8 @@ export type PDFReaderApi = {
    *  stops in the click's own task. The session survives; the one teardown
    *  stays destroySession's and shares the same idempotent sweep. */
   quiesce: (sid: Sid) => void;
-  /** `rank` orders the session's page lane: lower runs first, and 0 (the
-   *  default) means "as soon as a slot frees". The reader passes the item's
-   *  fill rank so the page under the viewport never waits behind the overscan
-   *  queued around it (see `PageLane` in engine/state.ts). */
+  /** `rank` orders this session's page lane, lower first; 0 (the default)
+   *  means "when a slot frees". See `PageLane` in engine/state.ts. */
   renderPage: (
     sid: Sid,
     canvasId: string,

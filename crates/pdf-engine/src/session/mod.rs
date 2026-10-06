@@ -268,8 +268,7 @@ impl PdfSession {
     }
 
     /// Queue one page's raster at `rank` in this session's page lane: lower
-    /// runs first, so a caller that knows which page the reader will look at
-    /// next decides the order instead of leaving it to mount order.
+    /// runs first.
     pub async fn render_page(
         &self,
         canvas_id: &str,
@@ -292,9 +291,7 @@ impl PdfSession {
     /// ahead of the raster instead of correcting a page that is already on
     /// screen at the wrong size.
     /// Stand down one page's queued or in-flight raster, leaving its
-    /// registration alone. Called when a page leaves the fill band while still
-    /// unpainted: the lane has two slots and they belong to the pages the
-    /// reader can see.
+    /// registration alone.
     pub fn cancel_page(&self, canvas_id: &str) {
         if let Ok(sid) = self.require() {
             bridge::cancel_page(sid, canvas_id);

@@ -472,8 +472,7 @@ function stats(): AggregateStats {
   };
   for (const s of heldSessions()) {
     const g = gauges(s);
-    // A duration and a width are not counts: summing them would describe a
-    // machine with more lanes and slower rasters than any pane actually has.
+    // Per-session figures: max across panes, never a sum.
     out.fillMs = Math.max(out.fillMs, g.fillMs);
     out.pageLimit = Math.max(out.pageLimit, g.pageLimit);
     out.pageQueue += g.pageQueue;

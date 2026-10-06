@@ -118,19 +118,12 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
     })
 }
 
-/// What one raster costs on this machine, folded into the band's gate.
+/// Tell a strip's band what one settled page costs on this machine (`fill_ms`,
+/// the lead's unit) and how wide its lane is (`page_limit`, how much runs at
+/// once). Both belong to the machine and the session, not to the document.
 ///
-/// The virtualizer's engagement question — is the reader moving faster than the
-/// fill pipeline can keep up? — has a second half that only the engine knows,
-/// and the engine measures it: an exponential mean over completed rasters, timed
-/// inside the lane slot, published with the lane's width. So a machine that
-/// fills quickly blanks less for the same scroll and a slow one starts earlier,
-/// because the lead comes from the cost instead of from a declared constant.
-///
-/// `last` is what this strip has been told already, held per strip because each
-/// one owns its own band: the same session answering twice would republish both
-/// lists. A plain `f64` rather than a pair — the lane count comes from the
-/// engine's own gauge, so there is nothing to remember beside the cost.
+/// `last` holds what this strip has been told, per strip because each owns its
+/// own band; reporting twice would republish both lists.
 #[cfg(feature = "pdf")]
 fn note_fill_profile(
     pane: &crate::pane::handle::PaneHandle,
@@ -140,18 +133,13 @@ fn note_fill_profile(
     let Some(stats) = pane.pdf().stats() else {
         return;
     };
-    // The engine reports 0 until a raster completes: the same answer as no
-    // measurement, so the last profile stands rather than being zeroed — and a
-    // zeroed one would read as infinite capacity, which never blanks anything.
+    // 0 is "no measurement yet", not "instant": a zeroed profile would read as
+    // infinite capacity, which never engages the band.
     if stats.fill_ms <= 0.0 {
         return;
     }
-    // Once per strip. The cell's -1.0 means "not yet", and a real cost is always
-    // positive, so one value carries both the figure and the flag. Re-evaluating
-    // the band republishes every mounted page, and this hook fires at each
-    // scroll settle — a settle is exactly when a deferred zoom commit is waiting
-    // for quiet, so a stream of small corrections to a number that is already
-    // right within a few percent costs more than it buys.
+    // Once per strip: `>= 0.0` says a figure already landed, and each report
+    // re-evaluates every mounted page of the band.
     if last.get() >= 0.0 {
         return;
     }

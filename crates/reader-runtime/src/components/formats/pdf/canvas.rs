@@ -188,11 +188,10 @@ pub fn PdfPageCanvas(
     /// read is tracked, so the crossing itself re-runs the render effect.
     #[prop(optional)]
     in_view: Option<Signal<bool, LocalStorage>>,
-    /// Where this page belongs in the engine's page lane right now: lower
-    /// starts first, `None` (the default) means the front of it. The strip
-    /// derives it from the virtualizer's band, and it is read UNTRACKED at the
-    /// moment a raster is issued — a rank change says who goes first, not what
-    /// has to be drawn, so tracking it would restart renders for nothing.
+    /// Where this page sits in the engine's page lane: lower starts first,
+    /// `None` (the default) is the front of it. Read UNTRACKED at the moment a
+    /// raster is issued — a rank change says who goes first, not what has to be
+    /// drawn, so tracking it would restart renders.
     #[prop(optional)]
     rank: Option<Signal<u32, LocalStorage>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
@@ -433,28 +432,20 @@ pub fn PdfPageCanvas(
         if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
             return;
         }
-        // SCROLL-FLING GATE. An unpainted page the scroller is sweeping past
-        // at speed stays blank until it is inside the band or the strip
-        // settles: rasterising every page a fling flies past creates and
-        // discards a full-page surface every few frames. `in_view` (tracked) is
-        // the band's own verdict, and it is the whole rule — a page the reader
-        // can see at reading speed renders in the frame it mounts, because the
-        // band IS the mount window at that speed, so there is no dwell timer
-        // here to be wrong about. `settled` (tracked) paints what the fling
-        // left behind once the strip stops, which is the guaranteed wake.
+        // SCROLL-FLING GATE. `in_view` (tracked) is the strip's fill band's own
+        // verdict, and it is the whole rule: a page the band swept past stays
+        // blank rather than building a full-page surface nobody will look at.
+        // `settled` (tracked) is the guaranteed wake for what the fling left.
         let visible_now = in_view.as_ref().is_none_or(|v| v.get());
         // Read every time so a forced re-render (below) re-runs this effect.
         rerender.track();
-        // `!anim`: never give a slot back in the middle of a zoom transaction. The
-        // commit judges its landing by the bitmap this page would hand up (see the
-        // fallthrough warning above), so cancelling it there buys a settle and
-        // costs the commit — the slot is worth less than the page it holds.
+        // `!anim`: a zoom commit judges its landing by the bitmap this page
+        // hands up (see the fallthrough warning above), so a cancel mid-
+        // transaction saves a slot and costs the commit.
         if !anim && !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
-            // This page may already hold a lane slot from the frame it was in
-            // view. Give it back: a raster for a page outside the band paints
-            // nobody, and the lane has two slots for the pages in front of the
-            // reader. Coming back into the band re-runs this effect (the
-            // tracked read above), so the work is re-issued, never lost.
+            // Give a held slot back: a raster for a page outside the band paints
+            // nobody, and re-entering the band re-runs this effect, so the work
+            // is re-issued rather than lost.
             pdf().cancel_page(&cid_effect);
             return;
         }
@@ -558,11 +549,10 @@ pub fn PdfPageCanvas(
             // A render whose session died resolves `no_session` (the engine
             // refuses retired sids, and the session re-checks itself after
             // the await), so nothing below commits into a replaced document.
-            // The rank signal lives in this host's own arena, and an unmount
-            // between the probe above and here leaves no band to ask — a derived
-            // read would panic on the disposed value, which is not a thing a
-            // raster is worth. Rank 0 is request order, the answer a host with
-            // no band left gives.
+            // The rank signal lives in this host's own arena: an unmount between
+            // the probe above and here leaves no band to ask, and a derived read
+            // would panic on the disposed value. Rank 0 is the answer for a host
+            // with no band left.
             let rank_now = rank
                 .as_ref()
                 .and_then(|r| r.try_get_untracked())

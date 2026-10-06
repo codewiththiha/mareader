@@ -141,8 +141,7 @@ impl PdfPane {
     }
 
     /// Queue one page's raster at `rank` in the session's page lane (lower
-    /// first); the strip passes the virtualizer's fill rank so the reader's own
-    /// page outranks the overscan queued around it.
+    /// first).
     pub async fn render_page(
         &self,
         canvas_id: &str,
@@ -156,9 +155,8 @@ impl PdfPane {
         }
     }
 
-    /// Stand down one page's queued or in-flight raster without unregistering
-    /// it. Follows the same liveness rule as a render, because it is a render
-    /// that is no longer wanted rather than a teardown step.
+    /// Stand down one page's queued or in-flight raster without unregistering it.
+    /// Same liveness rule as a render.
     pub fn cancel_page(&self, canvas_id: &str) {
         if let Some(s) = self.working() {
             s.cancel_page(canvas_id);
@@ -228,11 +226,9 @@ impl PdfPane {
         }
     }
 
-    /// This session's own engine report. Not only diagnostics: the reader's
-    /// virtualizer asks it what a raster costs and how wide the lane is, so the
-    /// render band is sized by measured work instead of by a constant.
-    /// `None` with no live session — which the caller reads as "no new
-    /// information", keeping the last reported pipeline.
+    /// This session's engine report: diagnostics, and what the reader's band
+    /// asks a raster's cost and the lane's width of. `None` with no live
+    /// session, which the caller reads as "no new information".
     pub fn stats(&self) -> Option<pdf_core::diagnostics::EngineStats> {
         self.working().and_then(|s| s.stats())
     }

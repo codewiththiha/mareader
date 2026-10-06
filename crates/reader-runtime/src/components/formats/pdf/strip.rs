@@ -384,26 +384,17 @@ fn dormant_signal(
     })
 }
 
-/// Where one mounted page belongs in the engine's page lane right now.
-///
-/// Two factors, in that order: the band's own class (the viewport outranks the
-/// side being approached, which outranks the trail, which outranks a
-/// placeholder) and then the distance from the index the reader is expected to
-/// land on, so two pages in one class compete on which pair of eyes reaches it
-/// first. The class gets a wide field so a far `Ahead` page can never outrank a
-/// near `Visible` one.
-///
-/// This is what makes an ordinary scroll feel instant rather than merely
-/// bounded. The lane runs two rasters and a page costs on the order of a frame
-/// or two of main-thread work; issued in mount order, the page under the
-/// reader's eyes waits behind whatever overscan was queued around it, which is
-/// a visible blank at a speed nobody would call fast.
+/// Where one mounted page belongs in the engine's page lane: the band's priority
+/// class first — viewport, the side being approached, the trail, a placeholder —
+/// then the distance from the landing index. The class field is wide so a far
+/// `Ahead` page can never outrank a near `Visible` one.
 fn rank_signal(
     items: Signal<Vec<VirtualItem>, LocalStorage>,
     virt: &Virtualizer,
     index: usize,
 ) -> Signal<u32, LocalStorage> {
-    /// Items per priority class: the band spans a window, not a book.
+    /// Distance is clamped below this, so it can never carry a page into the
+    /// next class.
     const CLASS: u32 = 1 << 16;
     let v = virt.clone();
     Signal::derive_local(move || {
@@ -421,16 +412,7 @@ fn rank_signal(
 
 /// Whether one page should carry real content right now: the virtualizer's own
 /// render band answers, from the measured scroll and the fill pipeline the pane
-/// reports. No local speed estimate, no dwell timer, no margin that can disagree
-/// with the layout it is gating.
-///
-/// The two halves are the reason this reads the band instead of measuring the
-/// scroll here: at reading speed the band IS the mount window, so a page renders
-/// in the frame it mounts and the reader never sees a blank for the page they can
-/// already see; mid-fling the band is the viewport plus the lead that scroll
-/// earned, so a page swept past costs nothing and a page the reader is settling
-/// on is already filled. The same verdict then retakes the allowance the frame
-/// it gave, which is what keeps the wide window cheap.
+/// reports, so no local estimate can disagree with the layout it is gating.
 fn in_view_signal(
     items: Signal<Vec<VirtualItem>, LocalStorage>,
     index: usize,
