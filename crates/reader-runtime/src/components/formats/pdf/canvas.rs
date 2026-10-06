@@ -445,7 +445,11 @@ pub fn PdfPageCanvas(
         let visible_now = in_view.as_ref().is_none_or(|v| v.get());
         // Read every time so a forced re-render (below) re-runs this effect.
         rerender.track();
-        if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
+        // `!anim`: never give a slot back in the middle of a zoom transaction. The
+        // commit judges its landing by the bitmap this page would hand up (see the
+        // fallthrough warning above), so cancelling it there buys a settle and
+        // costs the commit — the slot is worth less than the page it holds.
+        if !anim && !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
             // This page may already hold a lane slot from the frame it was in
             // view. Give it back: a raster for a page outside the band paints
             // nobody, and the lane has two slots for the pages in front of the
