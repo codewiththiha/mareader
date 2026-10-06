@@ -296,7 +296,7 @@ fn rank_signal(
     virt: &Virtualizer,
     index: usize,
 ) -> Signal<u32, LocalStorage> {
-/// Wide enough that distance can never carry a page into the next class.
+    /// Wide enough that distance can never carry a page into the next class.
     const CLASS: u32 = 1 << 16;
     let v = virt.clone();
     Signal::derive_local(move || {
