@@ -131,7 +131,15 @@ fn the_lead_is_the_distance_covered_during_one_fill_and_saturates() {
     // applies, because an item whose DOM is paid for must not be blanked.
     let mut idle = Motion::new(MotionConfig::default());
     let mut clock = 0.0;
-    let padded = scroll_at(&mut idle, 1_500.0, 60, &UNMEASURED, VIEWPORT, 900.0, &mut clock);
+    let padded = scroll_at(
+        &mut idle,
+        1_500.0,
+        60,
+        &UNMEASURED,
+        VIEWPORT,
+        900.0,
+        &mut clock,
+    );
     assert!(idle.engaged(), "with no capacity the floor decides");
     assert!(
         (padded.lead_px - 900.0).abs() < 1e-9,
@@ -197,7 +205,6 @@ fn scrollend_ends_the_state_without_waiting_for_the_frames() {
 fn a_recoil_at_the_end_of_a_flick_does_not_move_the_lead() {
     let ctx = STRUGGLING;
     let mut m = Motion::new(MotionConfig::default());
-    let mut clock = 0.0;
     let mut at = 0.0;
     for _ in 0..12 {
         at += DT;
