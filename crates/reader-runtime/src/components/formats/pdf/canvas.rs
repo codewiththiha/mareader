@@ -554,7 +554,15 @@ pub fn PdfPageCanvas(
             // A render whose session died resolves `no_session` (the engine
             // refuses retired sids, and the session re-checks itself after
             // the await), so nothing below commits into a replaced document.
-            let rank_now = rank.as_ref().map(|r| r.get_untracked()).unwrap_or(0);
+            // The rank signal lives in this host's own arena, and an unmount
+            // between the probe above and here leaves no band to ask — a derived
+            // read would panic on the disposed value, which is not a thing a
+            // raster is worth. Rank 0 is request order, the answer a host with
+            // no band left gives.
+            let rank_now = rank
+                .as_ref()
+                .and_then(|r| r.try_get_untracked())
+                .unwrap_or(0);
             match pdf_async.render_page(&cid, s, rt, rank_now).await {
                 Ok(r) => {
                     // Unmounted mid-render: the owner's signals are gone, and

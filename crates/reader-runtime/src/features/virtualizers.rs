@@ -275,11 +275,15 @@ pub(crate) fn use_reader_virtualizers(
         let applied_h = std::rc::Rc::new(std::cell::Cell::new((-1.0f64, 0usize)));
         virtualizer.on_scroll_idle(move || {
             pane.pdf().sweep();
-            note_fill_profile(&pane, &vertical, &applied_v);
+            if state.viewer.page_gap.try_get_untracked().is_some() {
+                note_fill_profile(&pane, &vertical, &applied_v);
+            }
         });
         h_virtualizer.on_scroll_idle(move || {
             pane.pdf().sweep();
-            note_fill_profile(&pane, &horizontal, &applied_h);
+            if state.viewer.page_gap.try_get_untracked().is_some() {
+                note_fill_profile(&pane, &horizontal, &applied_h);
+            }
         });
     }
 
