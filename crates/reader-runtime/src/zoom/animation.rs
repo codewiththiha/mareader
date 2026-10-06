@@ -237,7 +237,15 @@ impl Tween {
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
             show(&state, &actuator, visual);
             if progress >= 1.0 {
-                finish_transition(&state, &t);
+                // `show` can swap the signal for a newer transition;
+                // finishing follows it.
+                let Some(cur) = state.viewer.zoom.transition.get_untracked() else {
+                    return false;
+                };
+                if !same_transaction(&cur, &t) {
+                    return true;
+                }
+                finish_transition(&state, &cur);
                 return false;
             }
             true
@@ -308,3 +316,5 @@ mod tests {
         assert_eq!(ease_out_cubic(2.0), 1.0);
     }
 }
+
+// only the changed file was rewritten
