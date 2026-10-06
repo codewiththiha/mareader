@@ -20,6 +20,7 @@ use app_ui::epoch::epoch_signal;
 /// virtualizer crates that enforce it.
 pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
+
 /// How a page that leaves the strip's window is retired: bridged for the one
 /// frame that evicted it, and only while the reader is mid-seek, at most
 /// `MAX_ZOMBIES` at a time. Both strips share one policy, and the zoom
@@ -126,14 +127,15 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
 /// fills quickly blanks less for the same scroll and a slow one starts earlier,
 /// because the lead comes from the cost instead of from a declared constant.
 ///
-/// `last` holds what was applied to THIS strip, because re-evaluating the band
-/// republishes items: a median that drifted a few percent must not cost a
-/// publish, and a settle with nothing new must cost none at all.
+/// `last` is what this strip has been told already, held per strip because each
+/// one owns its own band: the same session answering twice would republish both
+/// lists. A plain `f64` rather than a pair — the lane count comes from the
+/// engine's own gauge, so there is nothing to remember beside the cost.
 #[cfg(feature = "pdf")]
 fn note_fill_profile(
     pane: &crate::pane::handle::PaneHandle,
     strip: &virtual_list_leptos::Virtualizer,
-    last: &std::rc::Rc<std::cell::Cell<(f64, usize)>>,
+    last: &std::rc::Rc<std::cell::Cell<f64>>,
 ) {
     let Some(stats) = pane.pdf().stats() else {
         return;
@@ -144,17 +146,17 @@ fn note_fill_profile(
     if stats.fill_ms <= 0.0 {
         return;
     }
-    let lanes = stats.page_limit as usize;
-    let (fill_ms, applied_lanes) = last.get();
-    // The cell starts at -1.0, so a negative here means nothing has been applied
-    // to this strip yet and the first real figure always lands.
-    let drift = (stats.fill_ms - fill_ms).abs();
-    let worth_a_publish = lanes != applied_lanes || fill_ms <= 0.0 || drift > fill_ms * 0.1;
-    if !worth_a_publish {
+    // Once per strip. The cell's -1.0 means "not yet", and a real cost is always
+    // positive, so one value carries both the figure and the flag. Re-evaluating
+    // the band republishes every mounted page, and this hook fires at each
+    // scroll settle — a settle is exactly when a deferred zoom commit is waiting
+    // for quiet, so a stream of small corrections to a number that is already
+    // right within a few percent costs more than it buys.
+    if last.get() >= 0.0 {
         return;
     }
-    last.set((stats.fill_ms, lanes));
-    strip.set_fill_profile(stats.fill_ms, lanes);
+    last.set(stats.fill_ms);
+    strip.set_fill_profile(stats.fill_ms, stats.page_limit.max(1) as usize);
 }
 
 pub(crate) fn use_reader_virtualizers(
@@ -271,8 +273,8 @@ pub(crate) fn use_reader_virtualizers(
     {
         let vertical = virtualizer.clone();
         let horizontal = h_virtualizer.clone();
-        let applied_v = std::rc::Rc::new(std::cell::Cell::new((-1.0f64, 0usize)));
-        let applied_h = std::rc::Rc::new(std::cell::Cell::new((-1.0f64, 0usize)));
+        let applied_v = std::rc::Rc::new(std::cell::Cell::new(-1.0));
+        let applied_h = std::rc::Rc::new(std::cell::Cell::new(-1.0));
         virtualizer.on_scroll_idle(move || {
             pane.pdf().sweep();
             if state.viewer.page_gap.try_get_untracked().is_some() {
