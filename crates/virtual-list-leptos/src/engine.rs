@@ -108,6 +108,10 @@ pub struct VirtualizerCore {
     motion: Motion,
     pipeline: Pipeline,
     band: BandWindow,
+    /// The stored [`Self::render_range`], and the version that lets the adapter
+    /// see a band move even when the mount window did not.
+    render: Option<Window>,
+    band_version: u64,
     hint: usize,
     scroll_top: f64,
     viewport: Viewport,
@@ -134,6 +138,8 @@ impl VirtualizerCore {
             motion: Motion::new(MotionConfig::default()),
             pipeline: Pipeline::default(),
             band: BandWindow::default(),
+            render: None,
+            band_version: 0,
             hint: 0,
             scroll_top: config.initial_offset,
             viewport: config.viewport,
@@ -498,8 +504,21 @@ impl VirtualizerCore {
     /// is a FLOOR under that band and never a cap over it, and every
     /// partly-visible item is inside it by construction, so nothing the reader
     /// is looking at is ever a placeholder.
-    pub fn render_range(&self) -> Option<Window> {
-        let mount = self.range?;
+    pub const fn render_range(&self) -> Option<Window> {
+        self.render
+    }
+
+    /// How many times the band has changed which items carry content. The
+    /// adapter publishes against this, so a band that moved inside an
+    /// unchanged window still republishes its items — and a band that did not
+    /// move still costs nothing.
+    pub const fn band_version(&self) -> u64 {
+        self.band_version
+    }
+
+    /// The band clipped to the mount window (see [`Self::render_range`]).
+    fn compute_render_range(&self, mount: Option<Window>) -> Option<Window> {
+        let mount = mount?;
         let band = self.band;
         if !band.placeholder {
             return Some(mount);
@@ -555,6 +574,11 @@ impl VirtualizerCore {
     pub fn set_pipeline(&mut self, pipeline: Pipeline) {
         self.pipeline = pipeline;
         self.band = self.evaluate_band();
+        let render = self.compute_render_range(self.range);
+        if render != self.render {
+            self.render = render;
+            self.band_version += 1;
+        }
     }
 
     /// The pipeline in use.
@@ -803,8 +827,16 @@ impl VirtualizerCore {
         self.range = range;
         // The band is derived from the same inputs the window was, so it is
         // evaluated here and stored: `render_range` and `item_state` are then
-        // read-only and cannot disagree with the window they sit inside.
+        // read-only and cannot disagree with the window they sit inside. The
+        // version exists because a band can move WITHOUT the window doing so —
+        // the lead growing across a page boundary mid-fling — and the adapter
+        // must still republish its items.
         self.band = self.evaluate_band();
+        let render = self.compute_render_range(range);
+        if render != self.render {
+            self.render = render;
+            self.band_version += 1;
+        }
         Step {
             range,
             scroll_write: None,

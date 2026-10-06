@@ -13,14 +13,17 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 
-use virtual_list::{Align, Layout, Viewport, Window};
+use virtual_list::{
+    Align, Layout, ReleaseLedger, ReleaseReason, Viewport, Window, release_sides,
+};
 
 use crate::engine::{Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 use crate::retention::{
-    RetainedItem, RetentionPolicy, is_retained, next_deadline_ms, prune_retained, retain_evicted,
+    RELEASE_LEDGER_CAPACITY, REVERSAL_GRACE_ITEMS, RetainedItem, RetentionPolicy, is_retained,
+    next_deadline_ms, prune_retained, retain_evicted,
 };
 
 /// The speed below which a reader is not drifting, in pixels per second — well
@@ -31,6 +34,7 @@ use crate::surface::{DomSurface, ScrollSurface};
 type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
 type ListenerCallback = Closure<dyn FnMut(Event)>;
 type IdleCallback = Rc<dyn Fn()>;
+type ReleaseCallback = Rc<dyn Fn(usize, virtual_list::ReleaseReason)>;
 
 /// The speed below which the reader is not drifting, pixels per second (well
 /// under a tenth of a pixel in a frame). [`Virtualizer::motion_drifts`] is the
@@ -79,6 +83,7 @@ impl VirtualizerInner {
             layout_version: RwSignal::new(0),
 
             last_epoch: Cell::new(initial_epoch),
+            last_band_version: Cell::new(0),
             options,
             core: RefCell::new(core),
             pending_scroll: Rc::new(Cell::new(None)),
@@ -97,6 +102,8 @@ impl VirtualizerInner {
             frame_clock: Cell::new(0),
             frames_armed: Cell::new(false),
             idle_cbs: RefCell::new(Vec::new()),
+            release: RefCell::new(ReleaseLedger::new(RELEASE_LEDGER_CAPACITY)),
+            release_cbs: RefCell::new(Vec::new()),
             items_signal: OnceCell::new(),
             rows_signal: OnceCell::new(),
             total_signal: OnceCell::new(),
@@ -123,6 +130,10 @@ pub(crate) struct VirtualizerInner {
     pub range: RwSignal<Option<Window>>,
     pub layout_version: RwSignal<u64>,
     pub last_epoch: Cell<u64>,
+    /// The core's band version as last published. A band change without a
+    /// window change is invisible to `range`, so this is what makes the items
+    /// (and the pages' Active/Blank state they carry) republish.
+    pub last_band_version: Cell<u64>,
 
     pub pending_scroll: Rc<Cell<Option<f64>>>,
     pub scroll_armed: Rc<Cell<bool>>,
@@ -172,6 +183,13 @@ pub(crate) struct VirtualizerInner {
     pub frames_armed: Cell<bool>,
 
     pub idle_cbs: RefCell<Vec<IdleCallback>>,
+    /// Releases the window moves have earned but no subscriber has taken yet
+    /// (bounded, deduped by index), and the subscribers themselves. Content
+    /// caches register through [`Virtualizer::on_release`]; a pane that mounts
+    /// after a jump still gets the queue, so a bitmap cannot be stranded by the
+    /// order the effects happened to run in.
+    pub release: RefCell<ReleaseLedger>,
+    pub release_cbs: RefCell<Vec<ReleaseCallback>>,
 
     pub items_signal: OnceCell<Signal<Vec<VirtualItem>, LocalStorage>>,
     pub rows_signal: OnceCell<Signal<Vec<VirtualRow>, LocalStorage>>,
@@ -180,13 +198,71 @@ pub(crate) struct VirtualizerInner {
 }
 
 impl VirtualizerInner {
+    /// Republish the item list when the render band moved inside an unchanged
+    /// window. The lead grows and shrinks with the measured scroll, so this is
+    /// the path by which a page entering the band starts carrying content
+    /// without waiting for a window move or a timer.
+    fn sync_band_version(self: &Rc<Self>) {
+        let version = self.core.borrow().band_version();
+        if self.last_band_version.replace(version) == version {
+            return;
+        }
+        self.retained_version.update(|v| *v += 1);
+    }
+
+    /// Hand the content caches the indices this window move left behind past
+    /// [`REVERSAL_GRACE_ITEMS`], on the same tick the row unmounts.
+    ///
+    /// What this says to drop is a page's *content* — its rasters, canvases and
+    /// snapshots. The item's measurement stays with the layout for as long as
+    /// the layout keeps the item: the scrollbar and every anchor depend on it,
+    /// and it costs 16 bytes. That split is the whole memory argument, and it
+    /// is why an evicted row is not the end of a page's story while it is still
+    /// near the window, and is the end of it as soon as it is not.
+    fn release_for(self: &Rc<Self>, old: Option<Window>, new: Option<Window>) {
+        let (Some(old), Some(new)) = (old, new) else {
+            return;
+        };
+        let (below, above) = release_sides(old, new, REVERSAL_GRACE_ITEMS);
+        {
+            let mut ledger = self.release.borrow_mut();
+            for side in below.into_iter().chain(above) {
+                for index in side.iter() {
+                    ledger.push(index, ReleaseReason::Evicted);
+                }
+            }
+        }
+        self.flush_releases();
+    }
+
+    /// Deliver everything pending, if anybody is listening. With no subscriber
+    /// the ledger simply holds (bounded), which is what lets a release precede
+    /// the effect that registers for it.
+    fn flush_releases(self: &Rc<Self>) {
+        if self.release_cbs.borrow().is_empty() {
+            return;
+        }
+        let pending = self.release.borrow_mut().drain();
+        if pending.is_empty() {
+            return;
+        }
+        let callbacks: Vec<_> = self.release_cbs.borrow().iter().cloned().collect();
+        for (index, reason) in pending {
+            for callback in &callbacks {
+                callback(index, reason);
+            }
+        }
+    }
+
     /// Publish a new mount window: write-if-changed, and schedule zombie
     /// retention for the items the change evicted. Every range write in the
     /// adapter funnels through here so retention cannot miss a transition.
     fn publish_range(self: &Rc<Self>, new: Option<Window>) {
+        self.sync_band_version();
         let Some(old) = self.range.try_get_untracked() else {
             return;
         };
+        self.release_for(old, new);
         if old == new {
             return;
         }
@@ -541,13 +617,9 @@ impl VirtualizerInner {
                 // earned is earning nothing. Both changes are state changes
                 // without a range change, so they publish through the version
                 // `items()` tracks.
-                let was_seeking = inner.core.borrow().motion_engaged();
                 let step = inner.core.borrow_mut().note_scroll_end();
                 inner.publish_range(step.range);
                 inner.prune_retained_tick();
-                if was_seeking {
-                    inner.retained_version.update(|v| *v += 1);
-                }
                 // Every correction the fling outran lands NOW, in the same
                 // window the first paints do — one write, against a scroller
                 // nobody is moving.
@@ -568,6 +640,10 @@ impl VirtualizerInner {
     /// bindings, timers and observers tear down once.
     pub(crate) fn dispose(&self) {
         self.teardown_bindings();
+        // A release closure is the caller's code with the caller's handles: it
+        // must not outlive the virtualizer that owns the window they describe.
+        self.release_cbs.borrow_mut().clear();
+        self.release.borrow_mut().drain();
         if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {
             handle.clear();
         }
@@ -1150,7 +1226,7 @@ impl Virtualizer {
         // The band may have opened or closed without the window moving, and
         // that is a render-state change: `items()` recomputes, the DOM does not
         // move.
-        self.inner.retained_version.update(|v| *v += 1);
+        self.inner.sync_band_version();
     }
 
     /// Whether the current scroll outruns the reported pipeline: the state in
@@ -1181,6 +1257,21 @@ impl Virtualizer {
     /// finishes: where to aim a prefetch so it is not wrong twice.
     pub fn landing_index(&self) -> usize {
         self.inner.core.borrow().landing_index()
+    }
+
+    /// Subscribe to content releases: `f(index, reason)` runs on the tick the
+    /// index left the window past the reversal grace (
+    /// [`REVERSAL_GRACE_ITEMS`](crate::REVERSAL_GRACE_ITEMS)), and anything that
+    /// queued before the subscription is delivered immediately.
+    ///
+    /// A subscriber owns the expensive half of an item — the raster, the canvas,
+    /// the snapshot — and this is the only signal that says the reader has
+    /// travelled far enough that keeping it is a cost and not a benefit. Held
+    /// until the pane unmounts instead, it is what makes a reader's RAM grow
+    /// with the session rather than with the window.
+    pub fn on_release(&self, cb: impl Fn(usize, ReleaseReason) + 'static) {
+        self.inner.release_cbs.borrow_mut().push(Rc::new(cb));
+        self.inner.flush_releases();
     }
 
     /// Called when scrolling settles.

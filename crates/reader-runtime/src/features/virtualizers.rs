@@ -20,13 +20,13 @@ use app_ui::epoch::epoch_signal;
 /// virtualizer crates that enforce it.
 pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
-/// How a page that leaves the strip's window is retired: bridged for the
-/// scroll grace the zoom config owns, at most `MAX_ZOMBIES` at a time. Both
-/// strips share one policy, and the zoom controller raises and resets it.
-const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::Grace {
-    ms: STRIP_SCROLL_GRACE_MS,
-    max: MAX_ZOMBIES,
-};
+/// How a page that leaves the strip's window is retired: bridged for the one
+/// frame that evicted it, and only while the reader is mid-seek, at most
+/// `MAX_ZOMBIES` at a time. Both strips share one policy, and the zoom
+/// controller raises a wall-clock grace over it for the duration of a commit
+/// (`STRIP_SCROLL_GRACE_MS` is that window) and stands it back down after —
+/// which is the only case where a timed bridge is the right instrument.
+const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::MotionGated { max: MAX_ZOMBIES };
 
 /// The handles a pane hands to its viewer components and effects. Both
 /// virtualizers always exist (they are hooks); a view binds only the one for
