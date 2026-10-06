@@ -193,6 +193,84 @@ Refinements that came out of writing it, so the plan above and the code agree:
   under the motion-derived band, never a cap over it. `render_band(0)` keeps its
   meaning, which is that the mode is off.
 
+## As landed, in the reader (`features/virtualizers.rs`)
+
+The wiring notes that do not belong in a comment because they argue a design
+rather than constrain a line:
+
+- The first window opens on the **resume page**, never the top: page 1 is not in
+  a fresh open's first window, so it is never mounted, never rendered, and its
+  raster can never flash past on the way to the page the reader resumes on. Its
+  offset is summed under the SAME estimates the virtualizer builds its layout
+  from, so the first window sits exactly where `anchor_to_page` is about to aim —
+  the anchor still re-asserts, it simply agrees on frame one. The reader's page is
+  seeded by the open flow before the route flips (`enter_ready` last), so it is
+  already the resume page here.
+- Zombie retention is timed in **milliseconds, not frames**: the bridge exists to
+  outlive a zoom commit's relayouts, which wall-clock timers pace, and
+  `MAX_ZOMBIES` is what stops a long fling mounting the whole document.
+- The engine sweeps its rasters only inside render activity, so after a zoom-out or
+  a mode flip nothing renders and the big rasters would stay pinned until the 30 s
+  idle timer. The reader sweeps at scroll idle on both strips instead, registered
+  once because the views rebind the SAME shared virtualizer on every mode flip, and
+  each sweep reaches only its own pane's session.
+- The strips join the diagnostics registry while they live, and the reader's own
+  cleanup drops the entries, so the registry never outlives an owner. The handles
+  ride `StoredValue`s because a cleanup closure must be `Send + Sync`, which the
+  `Rc` inside a `Virtualizer` is not.
+- `css_heights` is seeded when it is EMPTY, and only the open flow empties it: the
+  zoom coordinator rescales it in place and pages overwrite entries as they
+  measure, so emptiness means exactly "a new book arrived" and a re-seed cannot
+  clobber measured heights.
+- `note_fill_profile` reports the machine's cost once per strip, because a report
+  re-evaluates every mounted page of the band; `0` from the engine means "not
+  measured", and a zeroed profile would read as infinite capacity and never
+  engage.
+- The estimate closures run on paths that can fire after the close has purged the
+  reader state — a strip's scope outlives it by a teardown beat — so `page_gap`
+  is the liveness probe for the whole body, and both axes estimate from the live
+  DISPLAY scale so they cannot disagree about a page's size.
+
+## As landed, in the page strip (`components/formats/pdf/strip.rs`)
+
+- The strip is pure presentation: no scroll policy, no wheel translation, no
+  container binding — those live in `ScrollShell`, which creates the scroller
+  element it draws into. Page-host ids keep their per-axis prefixes (`cont-` /
+  `hp-`) because the engine's selection and the AI gloss layer parse them back
+  into page numbers.
+- A zoom resizes the strip for real: the actuator rescales the virtualizer's items
+  frame by frame and holds the document point under the viewport centre still,
+  while each host stretches the bitmap it already holds. Nothing animates a
+  transform over frozen geometry, because a CSS `scale()` would scale the page
+  gaps along with the pages.
+- Cross-axis centering is an AUTO margin (`mx-auto` here, `my-auto` in the
+  horizontal strip, `m-auto` in `PageShell`), never flex `justify-content` /
+  `align-items`: an auto margin centres a page that fits and degrades to
+  start-alignment when it overflows, so a page wider than the viewport still
+  scrolls to BOTH edges. Flex centering overflows symmetrically and makes the near
+  edge unreachable.
+- Every offset the strip writes is snapped to the device-pixel grid
+  (`pdf_core::pixel_grid`), because the sizes the hosts write are too: a wrapper
+  half a device pixel off its page's painted edge is exactly the compositor seam
+  snapping exists to close. In no-gap mode snapping alone leaves two rects merely
+  touching, so every page after the first is pulled up one device pixel — the host
+  is opaque and pages composite source-over, so the overlap is invisible and a gap
+  can no longer open.
+- A size report refuses to publish while a zoom transaction is in flight: the
+  rendered size belongs to the committed geometry, and a page mid-tween would hand
+  the virtualizer a size from a layout model that does not exist yet. Both axes
+  carry the guard; the horizontal strip used to lack it, which let its window
+  model drift during exactly the frames it needed to stay still.
+- A report rides a render completion, so it can land after the strip is gone. Two
+  checks run in order: the pane's document generation (a close or swap claims a new
+  one, so a report from a stale document era stands down, and another pane's open
+  never moves it), then `report_alive`, which cleanup clears before the purge — so
+  it reads true exactly while the signals it touches are alive. The reader state
+  purges one teardown beat before the strip's own scope, which is why the epoch
+  alone is not enough: an `update` on a purged `css_heights` panics.
+- `top: 0` on the horizontal arm because the strip owns the full window height and
+  the auto-hiding title bar overlays it, like Spread.
+
 ## Status
 
 All four phases are landed on `perf/virtualizer-motion`. What the reader sees:
