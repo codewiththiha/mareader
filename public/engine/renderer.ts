@@ -636,8 +636,9 @@ function pumpAllLanes(): void {
  *  state, resolves its caller with a drop, and pumps the next — the same
  *  cascade the thumbnail lane's epoch bump runs. Without this, queued
  *  closures (and the promise resolvers they capture) sit in the array
- *  until the FIFO happens to reach them, retaining canvases, scales and
- *  resolvers across the dispose.
+ *  until the lane happens to pop them — ranked order decides who goes first,
+ *  not who gets drained — retaining canvases, scales and resolvers across the
+ *  dispose.
  *
  *  A drain is a teardown act, not scheduling: it pops regardless of the
  *  realm cap, which may be full of ANOTHER session's rasters at the moment
