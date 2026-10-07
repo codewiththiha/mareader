@@ -1,6 +1,4 @@
-//! The "save current look" form: name + optional section, with a datalist of
-//! existing sections. Local editing state is a `signal()` pair — nothing
-//! outside this component needs the `RwSignal` API.
+//! The "save current look" form: name plus an optional section.
 
 use std::sync::Arc;
 
@@ -23,9 +21,7 @@ pub(super) fn PresetEditor(
     let new_name = RwSignal::new(String::new());
     let new_group = RwSignal::new(String::new());
 
-    // The provider closure rides in an Arc so the outer view closure stays
-    // `Fn` (it only captures the Arc) while the datalist closure below can
-    // clone it for its own reactive call.
+    // The provider closure rides in an Arc so the outer view stays `Fn`.
     let existing_groups = Arc::new(existing_groups);
 
     let commit = move || {
@@ -50,8 +46,7 @@ pub(super) fn PresetEditor(
         set_saving.set(false);
     };
 
-    // Enter saves from either field, Escape leaves the form: one callback
-    // rather than two spellings of the same two keys.
+    // Enter saves from either field, Escape leaves the form.
     let on_keys = Callback::new(move |ev: leptos::ev::KeyboardEvent| {
         if ev.key() == "Enter" {
             commit();
@@ -86,9 +81,7 @@ pub(super) fn PresetEditor(
                     on_keydown=on_keys
                     class="w-full rounded border border-line bg-paper px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
                 />
-                // Free text WITH a datalist: users can type a brand new
-                // section or pick one they already made, without two
-                // separate controls for "new" and "existing".
+                // Free text with a datalist: type new or pick existing.
                 <TextInput
                     value=new_group
                     on_input=Callback::new(move |v| new_group.set(v))

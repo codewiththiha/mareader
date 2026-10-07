@@ -1,23 +1,5 @@
-//! The spring, as a Leptos effect, generic over any 5-field [`SpringValue`]
-//! (the floating box, first and foremost: [`app_chrome::floating::types::FloatBox`]).
-//!
-//! Springs `value` toward `target`; while `snap` is true (dragging / a forced
-//! beat / reduced-motion) it jumps instead of wobbling.
-//!
-//! The frame machinery is [`FrameLoop`], the primitive the zoom tween rides
-//! too: one loop, whose step is REPLACED when `target` changes rather than
-//! stacked, so a retarget mid-flight carries the spring's velocity over
-//! instead of restarting it. `vel` and `last_ms` live outside the Effect for
-//! the same reason — velocity survives a retarget, keeping the morph
-//! continuous — unless a caller hard-resets via [`SpringBox::reset_to`] when a
-//! *new* anchor opens.
-//!
-//! This module implements [`SpringValue`] for the floating box and for nothing
-//! else. A domain type that wants to ride the spring brings its own adapter —
-//! the gloss box's lives beside the gloss card in the reader runtime — because a
-//! primitive that imported a feature crate's type would be breakable by that
-//! crate, and would make every other consumer of the primitive depend on the
-//! feature too.
+//! The spring over any 5-field [`SpringValue`], on one [`FrameLoop`] whose
+//! step a retarget replaces.
 
 use leptos::prelude::*;
 
@@ -30,11 +12,7 @@ use super::frame::frame_delta;
 /// The largest field magnitude that counts as "stopped" for loop teardown.
 const SETTLE_EPS: f64 = 0.6;
 
-/// A value the spring can drive: five numeric fields with a step, a closeness
-/// test and a magnitude test.
-///
-/// `Send + Sync` mirrors what reactive signals stored in `Signal<T>` require
-/// (default storage); plain data types like the boxes qualify trivially.
+/// A value the spring can drive: five numeric fields and their tests.
 pub trait SpringValue: Copy + Send + Sync + 'static {
     /// The all-zero value (rest).
     fn zero() -> Self;
@@ -61,38 +39,15 @@ impl SpringValue for FloatBox {
     }
 }
 
-/// Handle returned by [`use_spring_box`]: the live sprung value plus a way to
-/// hard-jump onto a new anchor so the next morph starts from there.
+/// The live sprung value, plus a way to hard-jump to a new anchor.
 #[derive(Clone, Copy)]
 pub struct SpringBox<T: SpringValue> {
     pub value: RwSignal<Option<T>>,
-    /// Hard-jump to a box and zero the velocity. Called when a NEW anchor is
-    /// opened so the next morph starts from exactly that anchor instead of
-    /// wherever the previous surface settled.
+    /// Hard-jump to a box and zero the velocity.
     pub reset_to: Callback<T>,
 }
 
-/// Springs `value` toward `target`. Setting `target` to `None` clears the
-/// value and stops the loop.
-///
-/// This is the reusable MORPH primitive — any floating surface that grows
-/// out of one rectangle and lands on another can drive it with two inputs:
-///
-/// * `target` — the END point (a `Signal<Option<T>>`; retargeting
-///   mid-flight is fine, the spring carries its velocity over).
-/// * `snap` — while true (dragging, reduced motion, a forced beat) the
-///   value jumps to the target instead of wobbling.
-///
-/// and one handle output: `SpringBox::reset_to` is the START point — call it
-/// when a new origin appears (a fresh anchor rect) so the morph begins from
-/// there. The value signal renders straight into geometry (left/top/width/
-/// height/radius); write it to style per frame and put NO transition on
-/// those properties — the spring is the animation.
-///
-/// Bring your own five-field type by implementing [`SpringValue`]
-/// (or use the generic `FloatBox`); the gloss word card is the reference
-/// consumer (`ai/gloss/targeting.rs`), and its rustdoc history is the
-/// recipe.
+/// Springs `value` toward `target`; `None` clears it and stops the loop.
 pub fn use_spring_box<T: SpringValue>(
     target: Signal<Option<T>>,
     snap: Signal<bool>,
@@ -100,8 +55,7 @@ pub fn use_spring_box<T: SpringValue>(
     let value = RwSignal::new(target.get_untracked());
     let vel = StoredValue::new_local(T::zero());
     let last_ms = StoredValue::new_local(f64::NAN);
-    // One loop for the life of this hook: a retarget replaces its step rather
-    // than starting a second loop, and it stops with the owner that built it.
+    // One loop per hook: a retarget replaces its step, and the owner stops it.
     let frames = FrameLoop::new();
 
     let reset_to = Callback::new(move |b: T| {
@@ -111,8 +65,7 @@ pub fn use_spring_box<T: SpringValue>(
     });
 
     Effect::new(move |_| {
-        // A new target. Reading it here both tracks it (so this re-runs) and
-        // gates the run: no target means clear and stop.
+        // A new target: read here to track it and gate the run.
         if target.get().is_none() {
             value.set(None);
             vel.set_value(T::zero());
@@ -129,8 +82,7 @@ pub fn use_spring_box<T: SpringValue>(
             };
 
             let now = js_sys::Date::now();
-            // Long frames clamp to the integrator's stability bound, and the
-            // first frame after arming (the `NAN` above) passes no time.
+            // Long frames clamp to the stability bound; the first passes none.
             let dt = frame_delta(last_ms.get_value(), now, MAX_FRAME_S);
             last_ms.set_value(now);
 
@@ -141,8 +93,7 @@ pub fn use_spring_box<T: SpringValue>(
                 if !already {
                     value.set(Some(dest));
                 }
-                // Snapped to target; target changes re-run the Effect to move
-                // again, so no further frames are needed here.
+                // Snapped to target; a later target re-runs the Effect.
                 return false;
             }
 
@@ -165,10 +116,7 @@ pub fn use_spring_box<T: SpringValue>(
     SpringBox { value, reset_to }
 }
 
-// The gloss card animates its geometry through the same spring the chrome
-// uses: ai-core's GlossBox is the state, this crate owns the trait — the
-// impl lives here because neither type can see the impl from its own crate
-// (orphan rule).
+// The gloss card rides the same spring; the impl lives here (orphan rule).
 impl SpringValue for ai_core::gloss::GlossBox {
     fn zero() -> Self {
         ai_core::gloss::GlossBox::default()
@@ -180,9 +128,7 @@ impl SpringValue for ai_core::gloss::GlossBox {
         ai_core::gloss::step_spring(*self, *vel, *target, dt)
     }
     fn all_small(&self, epsilon: f64) -> bool {
-        // A velocity is small exactly when it is close to zero, so this is
-        // `boxes_close` against the default rather than a second enumeration of
-        // the five fields that could drift from the one `close` uses.
+        // A small velocity is a velocity close to zero: reuse `boxes_close`.
         ai_core::gloss::boxes_close(*self, ai_core::gloss::GlossBox::default(), epsilon)
     }
 }
@@ -193,9 +139,7 @@ mod tests {
 
     #[test]
     fn float_step_through_the_trait_settles_on_the_target() {
-        // The adapter path end-to-end: a few hundred stable 60fps steps must
-        // land within the loop's settle epsilon with a dead velocity — the
-        // same condition use_spring_box uses to stop scheduling frames.
+        // The adapter path end-to-end: stable steps must settle dead.
         let mut cur = FloatBox::default();
         let mut vel = FloatBox::default();
         let target = FloatBox {

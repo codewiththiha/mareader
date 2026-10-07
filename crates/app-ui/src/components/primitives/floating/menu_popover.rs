@@ -1,24 +1,4 @@
-//! The app's anchored MENU: the floating [`Popover`] primitive plus the two
-//! pieces of policy every menu in the app shares. The primitive reports
-//! open-state transitions through `on_open_change` and knows nothing about
-//! the chrome layer; this wrapper owns:
-//!
-//! * **holding the reader titlebar open while the menu is up**, so the bar
-//!   does not auto-hide under your hand mid-click (the sidebar's More menu
-//!   opts out — it does not sit under the bar);
-//! * **lane arbitration** (`OverlayPolicy::MENU`): one menu at a time, and a
-//!   menu replaces an open modal instead of stacking under it. Registering it
-//!   HERE is what makes that automatic for every menu, so a new one cannot
-//!   forget it.
-//!
-//! It lives beside the primitive it wraps rather than under the titlebar it
-//! often hangs from, because its callers are everywhere — the reader's menus,
-//! the settings rows, the library's breadcrumb, view menu, selection bar and
-//! add menu — and a wrapper half the app imports is a primitive with the
-//! wrong address inside one surface's folder.
-//!
-//! Not a second popover primitive: a thin, single-purpose composition —
-//! holds, policy, pass-through. New policy belongs in its own wrapper, not here.
+//! The app's anchored MENU: the [`Popover`] plus shared menu policy.
 
 use leptos::children::ChildrenFn;
 use leptos::html;
@@ -33,38 +13,26 @@ use app_chrome::titlebar::root::TitleBarCtx;
 pub fn MenuPopover(
     open: RwSignal<bool>,
     anchor: NodeRef<html::Div>,
-    /// The panel's width in CSS px — reactive for the one menu that measures
-    /// itself (the breadcrumb's folded chain); every other menu passes a
-    /// number.
+    /// The panel's width in CSS px.
     #[prop(into, default = Signal::stored(256u32))]
     width: Signal<u32>,
     #[prop(default = 8)] margin: u32,
     #[prop(optional, into)] class: String,
     /// Whether opening this popover holds the reader titlebar open.
-    /// Defaults to true; anchored popovers that sit clear of the bar (for
-    /// example the settings rows' dropdowns) set this to false.
     #[prop(default = true)]
     hold_titlebar: bool,
     #[prop(default = PlacementSide::Auto)] placement: PlacementSide,
-    /// Id of an element whose viewport offset must be subtracted (WebKit's
-    /// `backdrop-filter` containing block) — pass `"toolbar-row"` when the
-    /// anchor sits inside the glass toolbar row.
+    /// Id of an element whose viewport offset is subtracted.
     #[prop(optional)]
     coordinate_space: Option<&'static str>,
-    /// Which surfaces this menu may coexist with. The default
-    /// ([`OverlayPolicy::MENU`]) takes part in the app's menu/modal
-    /// arbitration; a surface that genuinely wants to float alongside
-    /// everything else passes a policy with both `occupies` and `displaces`
-    /// set to `Lanes::default()`.
+    /// Which surfaces this menu may coexist with.
     #[prop(default = OverlayPolicy::MENU)]
     policy: OverlayPolicy,
     children: ChildrenFn,
 ) -> impl IntoView {
-    // Registration only: arbitration reacts to the SIGNAL, and every path that
-    // can close this menu (the trigger, Escape, an outside press) writes it.
+    // Registration only: arbitration reacts to the SIGNAL.
     use_overlay_lane(open, policy);
-    // Hold/release the titlebar as the popover opens/closes. The primitive
-    // only reports transitions; the counts stay here, at the shell.
+    // Hold/release the titlebar as the popover opens and closes.
     let on_open_change = if hold_titlebar {
         use_context::<TitleBarCtx>().map(|ctx| {
             Callback::new(move |open: bool| {

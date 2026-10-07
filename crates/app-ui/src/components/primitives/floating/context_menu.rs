@@ -1,15 +1,5 @@
-//! Context-menu primitive: a cursor-point menu that clamps into the viewport,
-//! dismisses on Escape / outside press, and delegates the payload to the
-//! caller. The domain flavor (what a right-click on a gloss mark means)
-//! lives in the caller; the shell here is generic.
-//!
-//! Usage:
-//! ```ignore
-//! <ContextMenu target=menu position=|t: &ContextTarget| (t.x, t.y) on_close=move || menu.set(None)>
-//!     <MenuItem icon=IconName::Close label="Remove highlight" tone=MenuItemTone::Danger
-//!               on_click=move || { /* read menu.get_untracked() here */ } />
-//! </ContextMenu>
-//! ```
+//! Context-menu primitive: a clamped cursor-point menu; callers own the
+//! payload.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -20,11 +10,6 @@ use app_chrome::floating::types::{Point, place_context_menu};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 /// A right-click menu for a generic target payload.
-///
-/// `position` derives the cursor point from the payload; the menu is clamped
-/// into the viewport at that point with an 8px margin. `on_close` is fired on
-/// Escape / outside press; `children` are the (static) menu items, which may
-/// read `target` themselves to act on the current payload.
 #[component]
 pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
     /// The payload the menu acts on; `None` hides the menu.
@@ -45,8 +30,7 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
 
     let visible = Signal::derive(move || target.with(|t| t.is_some()));
 
-    // Place (and clamp) at the target while open; re-measure after the panel
-    // mounts (so the clamp uses the real size), and re-clamp on resize.
+    // Place and clamp at the target while open, re-measuring after mount.
     Effect::new(move |_| {
         let Some(t) = target.get() else {
             return;
@@ -71,8 +55,7 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
         {
             let place = std::rc::Rc::clone(&place);
             request_animation_frame(move || {
-                // A frame can outlive the menu's owner: a disposed target
-                // means there is nothing left to place.
+                // A frame can outlive the menu's owner: a disposed target.
                 if target.try_get_untracked().is_none() {
                     return;
                 }
@@ -113,12 +96,7 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
         Some(extra) => format!("{base_class} {extra}"),
         None => base_class,
     };
-    // Static for the menu's lifetime, parked in a StoredValue — a Copy
-    // handle to a plain scoped cell. `Show`'s children closure must be an
-    // `Fn` and the class closure is moved into the element by value, so the
-    // captured handle has to be Copy; a signal would compile too but would
-    // pretend the class is reactive when only `style` actually is
-    // (re-written by the placement effect).
+    // Static for the menu's lifetime: a Copy handle to a scoped cell.
     let panel_class: StoredValue<String, LocalStorage> = StoredValue::new_local(panel_class);
 
     view! {

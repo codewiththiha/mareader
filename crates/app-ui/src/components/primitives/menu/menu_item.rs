@@ -1,6 +1,4 @@
-//! Menu row: icon + label + optional trailing content. Shared by the reader
-//! menu's rows and the gloss context menu (where the danger row and the
-//! disabled rows live).
+//! Menu row: icon, label, optional trailing content.
 
 use leptos::prelude::*;
 
@@ -17,8 +15,7 @@ pub enum MenuItemTone {
 
 #[component]
 pub fn MenuItem(
-    /// Leading icon, if any. `None` still renders the aligned w-4 slot so
-    /// rows in one menu line up whether or not they carry an icon.
+    /// Leading icon; `None` still renders the aligned slot.
     #[prop(optional, into)]
     icon: Option<IconName>,
     #[prop(into)] label: String,
@@ -30,23 +27,13 @@ pub fn MenuItem(
     /// Selected/pressed state (checked rows, active options).
     #[prop(optional)]
     selected: Option<Signal<bool>>,
-    /// Draw the trailing check from `selected` instead of passing one in as a
-    /// child.
-    ///
-    /// Every checked row in the app wants the same accent mark in the same
-    /// trailing slot, and a row that took `selected` AND a child check derived
-    /// one predicate twice to say one thing — six times over in the shelf's view
-    /// menu alone, and once more as inline markup in the settings dropdown. The
-    /// row already holds the signal; this lets it answer for the mark too.
+    /// Draw the trailing check from `selected`.
     #[prop(default = false)]
     check: bool,
-    /// A muted second line under the label, for a row that has something to say
-    /// about itself beyond its name. Opt-in and additive: a row without one
-    /// renders exactly the single span it always did, so no existing menu moves.
+    /// A muted second line under the label.
     #[prop(optional, into)]
     sublabel: Option<String>,
-    /// A tooltip, for the rows where the label and its second line still leave
-    /// something worth saying that does not fit on either.
+    /// A tooltip, for rows the label and second line leave short.
     #[prop(optional, into)]
     title: Option<String>,
     /// Row geometry override (denser/larger rows). Defaults to the shared
@@ -59,11 +46,7 @@ pub fn MenuItem(
     let danger = tone == MenuItemTone::Danger;
     let row_class = row_class.unwrap_or("rounded-md px-2 py-1.5");
 
-    // A computed class string: the repo rule only restricts single-token
-    // conditional tuples, and a computed string avoids two text-colour
-    // utilities fighting each other. Selected uses the same accent-soft
-    // treatment as the toggle's outlined variant, so every selected/pressed
-    // row in the app speaks one visual language.
+    // A computed class string: avoids two text-colour utilities fighting.
     let class = move || {
         let hover = if disabled { "" } else { "hover:bg-line" };
         let base = format!(

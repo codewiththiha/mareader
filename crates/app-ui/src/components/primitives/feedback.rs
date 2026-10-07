@@ -1,17 +1,11 @@
-//! Waiting-state feedback: the centered loader and the shimmer that stands
-//! in for content that has not arrived yet.
+//! Waiting-state feedback: the centered loader and the shimmer.
 
 use leptos::prelude::*;
 
-/// Default edge of the mark in CSS px. Big enough to read from across the
-/// window when it sits alone in the middle of a surface.
+/// Default edge of the mark in CSS px.
 const DEFAULT_SIZE: u32 = 72;
 
-/// The three-dot loader. `size` is the square's edge in CSS px.
-///
-/// The dots are absolutely positioned inside the box the inline `width` gives
-/// the parent, so `size` scales the whole mark — including the distance a dot
-/// hops, which is a percentage of the dot itself.
+/// The three-dot loader; `size` is the square's edge in CSS px.
 #[component]
 fn Loader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoView {
     view! {
@@ -28,9 +22,7 @@ fn Loader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoView {
     }
 }
 
-/// The loader alone, centred in whatever box the caller gives it — the
-/// shape every full-surface wait takes (opening a book, an empty panel
-/// filling in). Fills its parent; the parent decides the extent.
+/// The loader alone, centred in whatever box the caller gives it.
 #[component]
 pub fn CenteredLoader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoView {
     view! {

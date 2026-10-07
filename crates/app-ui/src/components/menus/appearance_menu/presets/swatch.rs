@@ -1,11 +1,4 @@
-//! One preset thumbnail: a miniature page with a couple of text-ish rules on
-//! it, so tint and texture both have something to act on.
-//!
-//! Each thumbnail is a REAL miniature page — same `--canvas-filter`, same
-//! texture classes, same grain — rendered by pinning that preset's appearance
-//! as inline custom properties on the swatch (`Appearance::preview_style`).
-//! Nothing here re-implements the look in miniature, so a swatch cannot drift
-//! from what selecting it actually does.
+//! One preset thumbnail: a real miniature page, so it cannot drift.
 
 use leptos::prelude::*;
 
@@ -23,9 +16,7 @@ pub(super) fn PresetSwatch(
     let id = preset.id.clone();
     let name = preset.name.clone();
     let appearance = preset.appearance;
-    // The highlight is "the edited look IS this preset": true whatever mode
-    // the routing is in — the active pane's look while independent themes
-    // are in effect, the window's otherwise.
+    // The highlight means "the edited look IS this preset".
     let active = move || theme.look.with(|a| *a == appearance);
     let active_btn = active;
     let name_title = name.clone();
@@ -39,8 +30,7 @@ pub(super) fn PresetSwatch(
                 title=name_title
                 aria-pressed=move || active_btn().to_string()
                 on:click=move |_| {
-                    // A preset is an explicit look: drop any in-flight
-                    // slider commit so it cannot overwrite this a beat later.
+                    // A preset is an explicit look: drop any in-flight commit.
                     cancel_appearance_commit();
                     theme.commit.run((ThemeScope::Colour, Box::new(move |a| {
                         *a = appearance;
@@ -54,14 +44,7 @@ pub(super) fn PresetSwatch(
                     }
                 }
             >
-                // The swatch root carries the preset's whole appearance as
-                // inline custom properties, so everything inside resolves
-                // against THAT look rather than the applied one. WHICH
-                // look depends on the open format: a text/Markdown
-                // document gets the text palette (bright light paper in
-                // Light, dark in Dark, grey in Dim), a PDF the raster
-                // pipeline — the same swap the title bar's controls
-                // trigger on the pages themselves.
+                // The swatch carries the preset as inline properties.
                 <span
                     class="preset-swatch"
                     style=move || {
@@ -74,12 +57,7 @@ pub(super) fn PresetSwatch(
                     aria-hidden="true"
                 >
                     <span class=appearance.preview_class()>
-                        // Mirrors the real page structure: an unfiltered
-                        // themed backdrop with a "canvas" on top. No inline
-                        // filter/blend — the swatch uses solid colours
-                        // (--ps-color-paper / --ps-color-ink) instead of
-                        // GPU filter layers, so it is immune to compositor
-                        // bugs during slider drags.
+                        // Mirrors a real page: solid colours, no GPU layers.
                         <span class="preset-canvas">
                             <span class="preset-line preset-line-a"></span>
                             <span class="preset-line preset-line-b"></span>

@@ -1,6 +1,4 @@
-//! Reusable button container: the variant owns the styling, the children own
-//! the content (`<Icon .../><span>"Open"</span>`). Icon-only buttons use
-//! [`IconButton`](app_chrome::icon_button::IconButton).
+//! Reusable button container: the variant styles, the children speak.
 
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
@@ -30,12 +28,10 @@ pub fn Button(
     on_click: impl Fn(MouseEvent) + 'static,
     children: Children,
     #[prop(default = ButtonVariant::Ghost)] variant: ButtonVariant,
-    /// Reactive so a dynamic title (e.g. the zoom readout's held-back
-    /// note) tracks state; static strings work unchanged.
+    /// Reactive so a dynamic title tracks state.
     #[prop(into, optional)]
     title: Option<Signal<String>>,
-    /// Open/pressed state (reactive, so triggers derive it from their open
-    /// signal); renders the accent border+text toggle.
+    /// Open/pressed state, reactive from the trigger's open signal.
     #[prop(into, default = Signal::derive(|| false))]
     active: Signal<bool>,
     /// Reactive so callers can wire `Signal::derive(...)` from their state;
@@ -46,8 +42,7 @@ pub fn Button(
     /// Compact sizing (h-8, tighter padding, smaller text) for dense rows.
     #[prop(default = false)]
     compact: bool,
-    /// Extra classes appended to the computed class string (callers may
-    /// override sizing/surface details; do not fork another button).
+    /// Extra classes appended to the computed class string.
     #[prop(optional, into)]
     class: Option<String>,
 ) -> impl IntoView {

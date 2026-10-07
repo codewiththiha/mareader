@@ -1,40 +1,21 @@
-//! The sheet's chrome below the panel: a heading, a scrollable body and a
-//! row of buttons.
-//!
-//! [`ModalShell`](super::modal_shell::ModalShell) owns the backdrop, panel,
-//! overlay lane and Escape rule; this owns the three parts a reader sees,
-//! which every sheet used to draw from scratch.
-//!
-//! Split from the shell rather than folded into it because two sheets have a
-//! header of their own shape (the import sheet's is a sentence, the removal
-//! receipt's carries a cover): these are ordinary components a sheet
-//! composes, so one that does not fit uses the two that do and draws the
-//! third itself. The heading carries its own truncation tooltip — a shelf
-//! name or folder path too long for a 420px panel has to be readable
-//! somewhere.
+//! The sheet's chrome below the panel: heading, body, button row.
 
 use leptos::prelude::*;
 
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 
-/// The sheet's heading: a title, one muted line under it, and the ✕ that closes
-/// it.
+/// The sheet's heading: title, muted line, and the ✕.
 #[component]
 pub fn SheetHeader(
-    /// The title. Truncates to one line and is its own tooltip: a sheet is
-    /// usually about a shelf name or a file path, and neither fits a 420px
-    /// panel.
+    /// The title, truncating to one line as its own tooltip.
     #[prop(into)]
     heading: String,
     /// The muted line under the title: what the sheet is about in one
     /// clause.
     #[prop(optional, into)]
     subtitle: Option<String>,
-    /// What the ✕ does. A sheet whose closing means more than "not open" — the
-    /// conflict sheet's question has to go with it — watches its own signal in an
-    /// effect and passes the same write here, so the button, the backdrop and
-    /// the Escape key all end in one place.
+    /// What the ✕ does: the sheet's one close.
     on_close: Callback<()>,
 ) -> impl IntoView {
     let tooltip = heading.clone();
@@ -58,8 +39,7 @@ pub fn SheetHeader(
     }
 }
 
-/// The scrollable middle: everything the sheet has to say, in the box that
-/// scrolls when it is too much for the panel.
+/// The scrollable middle: everything the sheet has to say.
 #[component]
 pub fn SheetBody(children: Children) -> impl IntoView {
     view! {
