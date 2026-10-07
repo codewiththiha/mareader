@@ -55,11 +55,11 @@ trigger no run.
 
 `CI` is the fast lane — `Rust / format`, `Rust / lint`, `Rust / test`,
 `Web / contracts`, `macOS / shell`, in parallel, two to four minutes (measured:
-2.8 green, 1.8 to a red format job). `Deep CI` is the slow one — three jobs
-capped at 45, 75 and 45 minutes, twenty minutes even when all is well — and its
-verdict cannot be read while `CI` is red, because one build break fails all three
-jobs for a reason `cargo test` already states. So each commit decides which lane
-owes an answer and which owes nothing.
+2.8 green, 1.8 to a red format job). `Deep CI` is the slow one — one shared
+frontend build feeds the browser and Tauri smoke lanes, alongside memory replay;
+the four jobs are capped at 45, 45, 75 and 45 minutes. Do not wait on its verdict
+while `CI` is red. Each commit decides which lane owes an answer and which owes
+nothing.
 
 ### Which lane a commit owes
 
@@ -138,14 +138,16 @@ dropped assertion, no `[skip deep]` on the reported SHA.
 It boots the real wasm app in a real browser and drives open → scroll → zoom →
 close-during-work → dispose → reopen against the disposal baseline
 (`docs/memory-baseline.md`), replays a split read in Chromium and WebKit, and
-boots the Tauri window under Xvfb: three jobs capped at 45, 75 and 45 minutes.
+boots the Tauri window under Xvfb. One production frontend build is shared by the
+browser and Tauri jobs; four jobs are capped at 45, 45, 75 and 45 minutes.
 
 It runs on a push only when a path listed in `.github/workflows/deep-ci.yml`
 changed. When it would run and the change cannot move a byte, a wake or a
 release, put `[skip deep]` in the subject of the LAST commit of the push: the
 workflow reads that subject and nothing else (a body quoting the marker changes
-nothing), and the marker skips all three jobs. The nightly cron ignores it and a
-`workflow_dispatch` run can force one with `ignore-skip`, so a skip is never
+nothing), and the marker skips the frontend build and all three validation lanes.
+The nightly cron ignores it, and a `workflow_dispatch` run can force one with
+`ignore-skip`, so a skip is never
 the last word. Deferring the lane to a round's final commit is the marker's only
 other legitimate use, and it is described in "The CI loop".
 

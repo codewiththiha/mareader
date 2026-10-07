@@ -733,8 +733,10 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 
 ### Performance and memory
 
-- Release builds optimise for size with link-time optimisation and a single codegen unit, and the
-  WebAssembly output is passed through `wasm-opt`.
+- Native release builds keep size-oriented optimisation, fat LTO and a single codegen unit.
+  Frontend WebAssembly inherits `opt-level="z"` in a dedicated `wasm-release` profile:
+  thin LTO, 16 codegen units and incremental local recompilation. Trunk still applies
+  `wasm-opt="z"` to every release WASM artifact; CI disables incremental compilation.
 - Thumbnails are cached as bitmaps in an LRU of 16 entries — each thumbnail is a pair of rasters,
   so the tight cap is what keeps the whole grid near eight megabytes. A cache hit blits
   synchronously with no skeleton, no pulse and no transition, so a remounted row has nothing left
@@ -1109,8 +1111,10 @@ asset changes without rebuilding every runtime. The orchestrator merges the
 artifacts, starts Trunk on port 1420 and reports a safe boot only after the
 server answers for every asset the shell loads. Set
 `MAREADER_DEV_PROFILE=release` when a release-sized frontend is needed while
-developing. `cargo tauri build` and `npm run build:dist` still build release
-artifacts.
+developing. `cargo tauri build` keeps the native release profile and its frontend
+freshness gate rebuilds only affected release targets; `npm run build:dist` remains
+the full, canonical production build. Deep CI builds that frontend once and shares
+its `dist` artifact with the browser, memory-replay and Tauri smoke jobs.
 
 Note that the file dialog and drag-and-drop rely on Tauri and are unavailable in a browser.
 

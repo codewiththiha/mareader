@@ -25,35 +25,34 @@ web             npm ci -> build:ts -> build:css -> contract checks -> engine smo
 macos-shell     clippy + test of mareader-shell, natively on macOS
 
 deep (nightly / on demand / when the boot path itself changes):
-browser         the one production frontend build, then the wasm app in a real
-                browser: the boot contract stage (library at /, both runtime
-                transitions with disposal order, /reader, and a missing
-                artifact's error state), then the lifecycle/memory suite;
-                the dist it measured is uploaded (3 days) pass or fail, so a
-                run can be replayed or compared locally
-tauri-smoke     the same production build, then the REAL native window under
-                Xvfb: the Library runtime boots, the pixels are not one flat
-                colour, and an OS document handoff boots the Reader
+frontend-build  one production frontend build; uploads frontend-dist (3 days)
+browser         downloads frontend-dist, then runs the wasm app's browser
+                lifecycle and boot-contract checks
+memory-replay   downloads frontend-dist, then replays split memory in Chromium
+                and WebKit
+tauri-smoke     downloads frontend-dist, then boots the REAL native window
+                under Xvfb and hands an OS document to the Reader
 
-both deep lanes honour "[skip deep]" in the commit subject (never the cron)
+all four deep jobs honour "[skip deep]" in the commit subject (never the cron)
 ```
 
-- **One check, one reason.** No command runs twice across lanes; the engine
-  smoke consumes the bundle the same job built from current source, so a
-  smoke pass can never mean an old artifact passed.
+- **One check, one reason.** The production frontend builder runs once and
+  uploads the bundle the browser, memory replay and Tauri smoke jobs consume;
+  a smoke pass can never mean an old artifact passed.
 - **Skippable where the answer cannot change.** `CI` ignores pushes that only
   touch `docs/**` — no lane reads those files as input (the contract scripts
   parse SOURCE comments, not the documents they point at), so there is
   nothing to compile. The filter drops a run only when EVERY changed path
-  matches. `Deep CI`'s three jobs (browser lifecycle 45 minutes, the memory
-  replay that follows it 75, the native boot smoke 45) are gated twice over:
-  the push's changed paths decide whether the lane is in scope at all, and
-  `[skip deep]` in the SUBJECT of the push's last commit drops all three —
-  the marker job reads that one line and no body, so quoting it in prose
-  cannot turn a gate off by accident. A `workflow_dispatch` can narrow the run
-  to one lane or override the marker. Neither escape is the last word: the
-  nightly cron takes no notice of either, so whatever the day skipped is caught
-  overnight.
+  matches. `Deep CI` has one shared frontend build (45-minute cap); browser
+  lifecycle (45) and native boot smoke (45) fan out after it, and memory replay
+  (75) follows browser. Changed paths decide whether the workflow is in scope;
+  `[skip deep]` in the SUBJECT of the
+  push's last commit drops the frontend build and all three validation lanes —
+  the marker job reads that one line and no body, so quoting it in prose cannot
+  turn a gate off by accident. A `workflow_dispatch` can choose browser or Tauri
+  validation, or override the marker; both lanes consume the shared build. Neither
+  escape is the last word: the nightly cron takes no notice of either, so
+  whatever the day skipped is caught overnight.
 - **The skip is a policy, not a shortcut, and it lives in `AGENTS.md`.** What
   may carry the marker (presentation, prose, pure logic that `CI` already
   tests) and what may never (anything that allocates, retains, counts or
@@ -67,14 +66,15 @@ both deep lanes honour "[skip deep]" in the commit subject (never the cron)
   narrow list plus a marker would let an owner change through with neither
   gate, and widening a filter costs a run while narrowing one costs a
   regression.
-- **Parallel, not serial.** The lanes are independent; the wall clock is the
-  slowest lane, not the sum.
-- **One cache key per lane** (`lint-cache`, `test-cache`, `macos-cache`):
-  two lanes sharing a key race to write it, and neither carries the
-  artifacts the other built. The format lane caches nothing because it
-  compiles nothing. `target/` is never transferred between jobs — a cache
-  miss that rebuilds locally is cheaper and more robust than artifact
-  transfer.
+- **Build once, then fan out.** Browser and Tauri smoke run in parallel after
+  the shared frontend build; memory replay follows the browser lane. The
+  frontend is an artifact, not a second compilation in either smoke job.
+- **One cache key per Rust lane** (`lint-cache`, `test-cache`, `macos-cache`,
+  `deep-cache`, `tauri-smoke-cache`): two lanes sharing a key race to write it,
+  and neither carries the artifacts the other built. The format lane caches
+  nothing because it compiles nothing. `target/` is never transferred between
+  jobs — a cache miss that rebuilds locally is cheaper and more robust than
+  artifact transfer.
 - **The shell crate is excluded from the Linux LINT lane and compiled on
   macOS** because its macOS-only branches (`set_traffic_lights`, objc2) do not
   compile on Linux. It IS built on Linux in the deep lane's native smoke job,

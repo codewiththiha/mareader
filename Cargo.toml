@@ -122,6 +122,13 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 
+# Faster frontend release builds with local incremental recompilation.
+[profile.wasm-release]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+incremental = true
+
 # The iteration profile keeps route WASM responsive without release LTO.
 [profile.dev]
 opt-level = 1
