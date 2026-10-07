@@ -1,11 +1,4 @@
-//! The Shell's route/lifecycle authority. Library and Reader host are
-//! disposable iframe/WASM artifacts; the Reader host owns independent
-//! document realms, never document engines in the persistent Shell.
-//!
-//! Both route realms are disposable. Navigation creates a fresh incoming
-//! frame, retains the outgoing pixels until Ready and Painted, then retires
-//! and removes the outgoing realm. Neither route prewarms or recycles the
-//! other behind it; only Shell and the current route survive the handoff.
+//! The Shell's route and lifecycle authority over disposable realms.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -22,13 +15,7 @@ use crate::app::frame::{
 };
 use crate::state::{ActiveRuntime, ShellState};
 
-/// The active-runtime slot. `Starting` holds the in-flight load so a second
-/// navigation cannot start a second runtime into the same host. The slot
-/// keeps the frame's GENERATION, not the driver itself: `Rc`/DOM plumbing can
-/// never live in this `Arc`'d type (the shell state goes through Leptos
-/// context, which demands `Send + Sync`), and the generation is all the
-/// security property needs anyway — the whole frame security model IS the
-/// generation (§8).
+/// The active-runtime slot, keeping the frame's GENERATION.
 #[derive(Debug)]
 pub enum Slot {
     None,
@@ -49,55 +36,33 @@ impl Slot {
 
 pub struct RuntimeManager {
     slot: Mutex<Slot>,
-    /// What the runtime host is showing (§6, §11), in the plain form the
-    /// diagnostics probe reads. The pair (state + error) is always written
-    /// together so a probe can never read one side stale.
+    /// What the runtime host is showing, in the probe's plain form.
     pub boot_state: Mutex<String>,
     pub boot_error: Mutex<Option<serde_json::Value>>,
-    /// Create/dispose counts for the diagnostics identity (§21): a reader →
-    /// library transition must leave active reader = none, library = one.
-    /// A frame counts as created when it answers Ready. After retirement,
-    /// `created - disposed == active`; there is no retained counterpart.
+    /// Create/dispose counts for the diagnostics identity.
     pub reader_sessions_created: std::sync::atomic::AtomicU64,
     pub reader_disposes_completed: std::sync::atomic::AtomicU64,
     pub library_sessions_created: std::sync::atomic::AtomicU64,
     pub library_disposes_completed: std::sync::atomic::AtomicU64,
     host: Mutex<Option<web_sys::Element>>,
-    /// Starts are serialized (§10): a navigation mid-start becomes the
-    /// pending request, newest intent wins. An incoming realm is cancelled
-    /// before its successor starts; outgoing retirement runs independently.
+    /// Starts are serialized: a navigation mid-start becomes pending.
     starting: std::sync::atomic::AtomicBool,
     pending: Mutex<Option<(RuntimeName, Option<LaunchDocument>)>>,
-    /// The cold incoming frame, cancellable before Ready/Painted so a return
-    /// to Library cannot leave a late Reader boot behind it.
+    /// The cold incoming frame, cancellable before Ready and Painted.
     incoming: Mutex<Option<u64>>,
     /// The last reader digest, cached for the probe.
     pub last_digest: Mutex<Option<serde_json::Value>>,
     pub doc_status: Mutex<String>,
     pub doc_error: Mutex<Option<String>>,
-    /// The frame generations ever seen sending a message for a generation
-    /// that is not the frame they belong to (§35): a ledger, not a gate —
-    /// the generation check is the gate.
+    /// The stale-message ledger: a ledger, not a gate.
     pub stale_frames_seen: std::sync::atomic::AtomicU64,
-    /// The reader session the Shell has handed a document to. An Idle
-    /// document status only means "the book is gone, go back to the shelf"
-    /// for a session that actually showed one. Initial Idle may trail Opening.
-    ///
-    /// Two facts, deliberately separate. `reader_launched` is the session the
-    /// Shell SENT a launch to; `reader_armed` is set only once that session
-    /// showed the book (Ready): a boot-time Idle arriving after admission
-    /// must not bounce a newly opened document back to Library.
+    /// The reader session the Shell has handed a document to.
     reader_launched: Mutex<Option<u64>>,
     reader_armed: Mutex<Option<u64>>,
 }
 
 thread_local! {
-    /// The shell state, attached once the Shell component exists. NOT a
-    /// manager field: a Leptos `RwSignal` shell must stay out of any type
-    /// that crosses a `Sync` boundary (`provide_context` requires it), and
-    /// there is exactly one thread this field ever runs on — the frame
-    /// driver's closures arrive from the same event loop the manager awaits
-    /// on — so the module thread-local is the honest wiring.
+    /// The shell state, attached once the Shell component exists.
     static SHELL_STATE: RefCell<Option<ShellState>> = const { RefCell::new(None) };
 }
 
@@ -124,23 +89,17 @@ impl RuntimeManager {
         }
     }
 
-    /// Attach the shell state (called once from the Shell component, before
-    /// the first boot). The manager stores it because frame events arrive
-    /// from drivers the manager created — the state handle the bridge
-    /// closures capture is exactly the handle the frame path needs.
+    /// Attach the shell state, once, before the first boot.
     pub fn attach_state(&self, state: ShellState) {
         SHELL_STATE.with(|slot| *slot.borrow_mut() = Some(state));
     }
 
-    /// A handle on the shared manager. Retirement outlives the
-    /// call that started them, so they need an owned handle; the shell state
-    /// owns the one `Arc` there is.
+    /// A handle on the shared manager.
     fn handle(&self) -> Option<std::sync::Arc<RuntimeManager>> {
         SHELL_STATE.with(|slot| slot.borrow().as_ref().map(|state| state.manager.clone()))
     }
 
-    /// Publish a boot phase: the diagnostics probe's copy, and the native
-    /// host's boot report, written as one pair (state + error).
+    /// Publish a boot phase, state and error as one pair.
     fn set_phase(&self, phase: BootPhase) {
         *self.boot_error.lock().unwrap() = phase.error().map(BootError::to_json);
         *self.boot_state.lock().unwrap() = phase.as_str().to_string();
@@ -159,10 +118,7 @@ impl RuntimeManager {
         }
     }
 
-    /// How many reader frames are in the page, whatever their slot (the
-    /// probe's `readerFramesResident`). This — not the active runtime, not
-    /// a lifecycle label — is the memory question: a reader frame that exists
-    /// holds its realm, its wasm instance and its heap high-water mark.
+    /// How many reader frames are in the page, whatever their slot.
     #[cfg(target_arch = "wasm32")]
     pub fn reader_frames_resident(&self) -> usize {
         crate::app::frame::resident(FrameKind::Reader)
@@ -218,10 +174,7 @@ impl RuntimeManager {
         }
     }
 
-    /// One start at a time — the queue discipline is unchanged from the
-    /// module-loader era, and it means exactly what it meant then with a
-    /// heavier boundary: two starts never interleave their awaits into the
-    /// same host.
+    /// One start at a time: two starts never interleave their awaits.
     async fn start_serialized(&self, runtime: RuntimeName, launch: Option<LaunchDocument>) {
         if self
             .starting
@@ -252,8 +205,7 @@ impl RuntimeManager {
         }
     }
 
-    /// An open inside Reader keeps its workspace and replaces a document
-    /// realm. A route change always boots a fresh independent route frame.
+    /// An open inside Reader replaces a document realm.
     async fn run_start(
         &self,
         runtime: RuntimeName,
@@ -267,9 +219,7 @@ impl RuntimeManager {
             }
         };
 
-        // Already there. A reader that is on screen takes a new document over
-        // its own port: rebooting it to change books is the slowest possible
-        // answer to a drop or an "open another".
+        // A reader on screen takes a new document over its own port.
         if self.active() == Some(ActiveRuntime::Reader) && runtime == RuntimeName::Reader {
             if let (Some(document), Some(driver)) = (launch, self.live_driver()) {
                 driver.send(&ShellFrame::Launch {
@@ -277,8 +227,8 @@ impl RuntimeManager {
                 });
                 self.note_launch(Some(driver.generation()));
             }
-            // Cancelling an incoming Library can return to the Reader that
-            // never stopped being visible. Restore its route phase as well.
+            // Cancelling an incoming Library returns to the Reader; restore its
+            // phase.
             boot::clear_loading(&host);
             boot::set_active(&host, runtime);
             self.set_phase(BootPhase::Active(runtime));
@@ -294,8 +244,7 @@ impl RuntimeManager {
         self.start_fresh(&host, runtime, launch).await
     }
 
-    /// A fresh realm without sacrificing the outgoing pixels. An incoming
-    /// frame is laid out but hidden until BOTH Ready and Painted arrive.
+    /// A fresh realm without sacrificing the outgoing pixels.
     async fn start_fresh(
         &self,
         host: &web_sys::Element,
@@ -382,11 +331,7 @@ impl RuntimeManager {
         outgoing
     }
 
-    /// The dispatch closure every driver reports through. Everything here is
-    /// generation-checked against the CURRENT slot: a stale frame cannot
-    /// raise its own events into the live state (§35), and the stale ledger
-    /// counts what was dropped. The hook runs on wasm's single thread, so the
-    /// slot lock is never contended here.
+    /// The dispatch closure every driver reports through.
     fn events_hook(&self) -> crate::app::frame::FrameEventHook {
         let state = SHELL_STATE.with(|slot| slot.borrow().clone());
         let Some(state) = state else {
@@ -396,9 +341,7 @@ impl RuntimeManager {
             let manager = state.manager.clone();
             match event {
                 FrameEvent::Stage(stage) => {
-                    // Frame-side telemetry: every handshake stage the runtime
-                    // reports lands in the console, so a boot that stalls in
-                    // the field names where it stopped (§9's stage trail).
+                    // Frame-side telemetry: every stage lands in the console.
                     web_sys::console::debug_1(&JsValue::from_str(&format!(
                         "[frame {generation}] stage {stage:?}"
                     )));
@@ -411,9 +354,7 @@ impl RuntimeManager {
                         driver.teardown();
                         return;
                     }
-                    // §11: the error state is the outcome — the frame is taken
-                    // down, nothing half-mounted survives, and the phase names
-                    // it.
+                    // The error state is the outcome: nothing half-mounted.
                     if manager.live_driver().as_ref().map(|d| d.generation()) != Some(generation) {
                         manager
                             .stale_frames_seen
@@ -428,10 +369,7 @@ impl RuntimeManager {
                     let label = protocol_stage_label(stage);
                     let message = format!("{cause} (protocol stage {label})");
                     let error = BootError::new(runtime, protocol_boot_stage(stage), message);
-                    // The page placeholder still covers the window until the
-                    // first paint: a failure before that paint must step it
-                    // aside too, or the error card lands behind the one thing
-                    // the user is still looking at.
+                    // The page placeholder covers the window until first paint.
                     boot::uncover_page();
                     if let Some(host) = manager.host() {
                         boot::clear_boot(&host);
@@ -452,8 +390,7 @@ impl RuntimeManager {
         })
     }
 
-    /// A failed start: the host paints the error state and the console keeps
-    /// the detail (§6).
+    /// A failed start: the host paints the error state.
     fn fail(&self, error: BootError) {
         if let Some(driver) = self.live_driver() {
             driver.begin_retiring();
@@ -475,8 +412,7 @@ impl RuntimeManager {
     // Retirement
     // -----------------------------------------------------------------
 
-    /// Take the runtime the user just left off the critical path: it is
-    /// already invisible, so its teardown can finish whenever it finishes.
+    /// Take the runtime the user just left off the critical path.
     fn retire(&self, generation: u64) {
         let Some(manager) = self.handle() else {
             return;
@@ -486,17 +422,12 @@ impl RuntimeManager {
         });
     }
 
-    /// §12, unchanged in substance — graceful first (`DisposeComplete`),
-    /// forced removal after the strict timeout, never silent. Both outcomes
-    /// COMPLETE the exchange (the forced one simply names itself), so there
-    /// is no error to fold back into a boot: nothing is waiting on this.
+    /// Graceful disposal first, forced removal after the strict timeout.
     async fn run_retire(&self, generation: u64) {
         let Some(driver) = crate::app::frame::lookup(generation) else {
             return;
         };
-        // Nothing is disposed while it is still on screen. A retirement
-        // started by the reveal has already been hidden there; any other
-        // path into here gets hidden on arrival.
+        // Nothing is disposed while it is still on screen.
         if driver.slot().is_visible() {
             driver.begin_retiring();
         }
@@ -542,10 +473,7 @@ impl RuntimeManager {
 
     /// A library open command: navigate + start the reader (§13's sequence).
     pub fn open_document(&self, state: &ShellState, launch: LaunchDocument) {
-        // A launch with no path would mount a reader that can never show a
-        // document — the bare "No document" shell with a blank viewer. Refuse
-        // it here, where the launch arrives, and say so in the console
-        // instead of failing silently somewhere down the pipeline.
+        // A launch with no path would mount a reader that shows nothing.
         if launch.path.is_empty() {
             web_sys::console::error_1(&JsValue::from_str(
                 "[shell] open-document refused: the launch carries no path",
@@ -560,9 +488,7 @@ impl RuntimeManager {
         self.start_reader(state, launch);
     }
 
-    /// Files dropped from the OS: imported by the LIBRARY when it is the
-    /// runtime on screen, and nothing otherwise — a drop over the reader
-    /// neither imports nor opens. Returns whether the shelf was asked.
+    /// Files dropped from the OS: imported by the LIBRARY, never the reader.
     #[cfg(target_arch = "wasm32")]
     pub fn import_dropped(&self, paths: Vec<String>) -> bool {
         let generation = match &*self.slot.lock().unwrap() {
@@ -580,8 +506,7 @@ impl RuntimeManager {
         true
     }
 
-    /// Whether the library is the runtime on screen (the drop listener's
-    /// admission: only then is an OS drag worth showing).
+    /// Whether the library is the runtime on screen.
     #[cfg(target_arch = "wasm32")]
     pub fn library_on_screen(&self) -> bool {
         matches!(&*self.slot.lock().unwrap(), Slot::Library { .. })
@@ -593,11 +518,9 @@ impl RuntimeManager {
         self.start_library(state);
     }
 
-    /// The frame-dispatched boundary vocabulary. Called by the driver's
-    /// event hook; the hook itself is generation-gated at the port.
+    /// The frame-dispatched boundary vocabulary of a boot.
     fn dispatch_boundary(&self, state: &ShellState, generation: u64, item: FrameVocabulary) {
-        // Only an actual incoming/active Library owns cover work. Retiring
-        // shelves cannot queue new bakes after cancellation at the handoff.
+        // Only an incoming or active Library owns cover work.
         if let FrameVocabulary::BakeCover { path } = item {
             if crate::app::frame::lookup(generation).is_some_and(|driver| {
                 driver.kind() == FrameKind::Library && driver.slot() != FrameSlot::Retiring
@@ -609,10 +532,7 @@ impl RuntimeManager {
         let Some(driver) = crate::app::frame::lookup(generation) else {
             return;
         };
-        // Not the live frame — but a RETIRING one still gets its terminal
-        // word in: its last digest is the evidence the disposal baseline
-        // reads, and dropping it would leave the probe describing a runtime
-        // that is already gone.
+        // A retiring frame still gets its terminal word in.
         let live = self.live_driver().as_ref().map(|d| d.generation()) == Some(generation);
         let terminal = matches!(
             &item,
@@ -638,17 +558,13 @@ impl RuntimeManager {
             FrameVocabulary::ReadPoint(point) => crate::services::apply_read_point(&point),
             FrameVocabulary::SaveSettings(settings) => {
                 crate::services::save_settings(&settings);
-                // The Shell paints its own document too (the backdrop between
-                // frames, the boot and error covers): follow the runtime's
-                // edit instead of keeping the look it booted with.
+                // The Shell paints its own document: follow the runtime's edit.
                 let _ = leptos::prelude::Set::try_set(&state.settings, *settings);
             }
             FrameVocabulary::SaveCover { path, image } => {
                 crate::services::save_cover(&path, image);
             }
-            // Only a reader glosses — the shelf's own gloss upkeep is row data
-            // it writes in its frame — so a list from any other kind is not a
-            // gloss the user made, and is refused.
+            // Only a reader glosses; a list from any other kind is refused.
             FrameVocabulary::SaveGloss { key, marks } => {
                 if driver.kind() == FrameKind::Reader {
                     crate::services::save_gloss(&key, &marks);
@@ -661,25 +577,16 @@ impl RuntimeManager {
                     && self.active() == Some(ActiveRuntime::Reader);
                 let launched = *self.reader_launched.lock().unwrap() == Some(generation);
                 if live && launched && report.status == "Ready" {
-                    // The session showed the book it was handed: from here
-                    // on, Idle is the book going away. Not on Opening — the
-                    // initial host's Idle can still be in flight behind it.
+                    // The session showed the book: Idle means it goes away.
                     *self.reader_armed.lock().unwrap() = Some(generation);
                 }
                 let armed = *self.reader_armed.lock().unwrap() == Some(generation);
-                // Idle only means "the book is gone" for a reader that
-                // actually opened the book it was handed. Boot-time Idle
-                // trailing admission must not bounce a new open to Library.
+                // Idle means "the book is gone" for a reader that opened it.
                 if live && armed && report.status == "Idle" {
                     self.note_launch(None);
                     self.navigate_library(state);
                 }
-                // The document's truth, printed the moment it changes: the
-                // terminal line `doc: Ready` means the file was read and the
-                // viewer is up (and `doc: Error — …` carries the reason).
-                // This is the line the native smoke waits for after handing
-                // a file to the app — a booted Reader that never reads
-                // cannot produce it.
+                // The document's truth, printed the moment it changes.
                 let previous = {
                     let mut status = self.doc_status.lock().unwrap();
                     let changed = *status != report.status;
@@ -721,8 +628,7 @@ impl RuntimeManager {
     // Reader launch identity
     // -----------------------------------------------------------------
 
-    /// Record which reader session was handed a document (`None` when the
-    /// shelf takes over). The session is armed only once it answers.
+    /// Record which reader session was handed a document.
     fn note_launch(&self, generation: Option<u64>) {
         *self.reader_launched.lock().unwrap() = generation;
         *self.reader_armed.lock().unwrap() = None;
@@ -730,8 +636,7 @@ impl RuntimeManager {
 }
 
 impl RuntimeManager {
-    /// The live driver, resolved from the slot's generation on the page
-    /// thread (None while `Starting` or after teardown).
+    /// The live driver, resolved from the slot's generation.
     fn live_driver(&self) -> Option<Rc<Driver>> {
         let generation = self.slot.lock().unwrap().generation()?;
         crate::app::frame::lookup(generation)
@@ -766,9 +671,7 @@ fn report_boot(phase: &BootPhase) {
     report_line(&format!("boot: {report}"));
 }
 
-/// One honest line to the native host's terminal (`[mareader] <line>`).
-/// Boot phases prefix themselves with `boot: `; document truth rides as
-/// `doc: …`. Gated on the IPC being real — a plain browser has no host.
+/// One honest line to the native host's terminal.
 fn report_line(line: &str) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -783,8 +686,7 @@ fn report_line(line: &str) {
     });
 }
 
-/// History carries bounded navigation metadata, never the cover raster or
-/// a live runtime. The forward handler resolves the latest persisted read point.
+/// History carries navigation metadata, never rasters or runtimes.
 fn history_launch(launch: &LaunchDocument) -> LaunchDocument {
     LaunchDocument {
         book_id: launch.book_id.clone(),
@@ -797,8 +699,7 @@ fn history_launch(launch: &LaunchDocument) -> LaunchDocument {
     }
 }
 
-/// A forward-history Reader entry keeps a plain launch descriptor. The
-/// Reader runtime itself is always fresh after a Library return.
+/// A forward-history Reader entry keeps a plain launch descriptor.
 fn navigate_reader(launch: &LaunchDocument) {
     let Ok(value) = serde_wasm_bindgen::to_value(&history_launch(launch)) else {
         return;
@@ -810,8 +711,7 @@ fn navigate_reader(launch: &LaunchDocument) {
     }
 }
 
-/// History-API navigation: two paths, `/` and `/reader` (§11). popstate is
-/// wired in the shell root once.
+/// History-API navigation: two paths, `/` and `/reader`.
 pub fn navigate(path: &str) {
     if let Some(window) = web_sys::window() {
         let _ = window.history().map(|h| {

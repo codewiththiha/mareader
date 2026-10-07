@@ -1,35 +1,5 @@
-//! The runtime frame: the disposable execution boundary the Shell hosts (§1,
-//! §5–§12). A runtime is an iframed artifact page (`/library.html`,
-//! `/reader.html`) with a boot marker in its URL (`?hosted=1&g=<generation>
-//! &n=<nonce>`), adopted over a dedicated `MessageChannel` port the Shell
-//! re-offers until the frame answers, and put down in two phases — the
-//! runtime's `DisposeComplete` first, the iframe removal after §12's phase 2,
-//! forced after a strict timeout.
-//!
-//! The Shell's invariants live in the type rather than in memory:
-//!
-//! * The URL is the boot descriptor (§6): the frame either fully claims a
-//!   hosted boot with the identity the Shell will echo, or it boots
-//!   standalone — never "hosted at the syntax level".
-//! * Every envelope travelling the port carries the frame's generation
-//!   (§8): a stale iframe — from a replaced session, a crashed one, a
-//!   half-disposed one — cannot mutate the current state, because its
-//!   generation is not the live one and both directions of the port check it.
-//! * The nonce authenticates the channel establishment itself (§8): it
-//!   exists only in the URL and in the Shell's memory, and the frame proves
-//!   it heard its own address by echoing the gen back on the port.
-//! * A stage never runs without a bound (§6, §11): offer retries stop at
-//!   60 s, `Ready` must arrive inside 20 s of the frame's insertion,
-//!   `Painted` inside 2.5 s of `Ready`, and a disposal has 8 s to complete
-//!   phase 1 before the Shell takes phase 2 into its own hands. Every
-//!   timeout becomes the runtime's visible error state — never a silent
-//!   blank, never a fallback (§11).
-//!
-//! What this module is NOT: a loader of code. The artifact pages are the
-//! deployment layout the build owns, and the iframe is where their own
-//! module resolution happens — the Shell neither imports `/library.js` nor
-//! caches its module map (§3's "the layout each deployment stands alone
-//! under" — and §30, once green: no query-string-per-session imports).
+//! The runtime frame: the disposable iframe boundary the Shell hosts,
+//! bounded at every stage.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -47,27 +17,18 @@ pub enum FrameKind {
 }
 
 /// Which half of the host a frame occupies.
-///
-/// One route is active; an incoming realm paints before reveal, and the
-/// outgoing realm then retires and is removed. There are no warm slots or
-/// retained route counterparts (`docs/runtime-split.md`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FrameSlot {
     /// On screen: the runtime the user is looking at. Exactly one at a time.
     Active,
     /// Navigation is booting this realm; no reveal before actual Painted.
     Incoming,
-    /// Revealed past: displaced by a handoff, disposing behind the runtime
-    /// that replaced it. Still owed its `DisposeComplete`, and still the
-    /// author of the terminal digest the baseline reads, so it is hidden but
-    /// not yet gone.
+    /// Revealed past: disposing behind the runtime that replaced it.
     Retiring,
 }
 
 impl FrameSlot {
-    /// The `data-mareader-slot` value: CSS hides everything that is not on
-    /// screen, and the browser suites scope every DOM assertion to the one
-    /// that is.
+    /// The `data-mareader-slot` value CSS and the suites scope on.
     pub const fn attr(self) -> &'static str {
         match self {
             FrameSlot::Active => "active",
@@ -116,8 +77,7 @@ impl FrameKind {
     }
 }
 
-/// The Shell's boot vocabulary, bridged to boot.rs's runtime naming: the
-/// loading card and the boot-error state keep speaking in artifact names.
+/// The Shell's boot vocabulary, bridged to boot.rs's runtime naming.
 impl From<FrameKind> for crate::app::boot::RuntimeName {
     fn from(kind: FrameKind) -> Self {
         match kind {
@@ -127,8 +87,7 @@ impl From<FrameKind> for crate::app::boot::RuntimeName {
     }
 }
 
-/// A `ShellApi` boundary message coming up the port, lifted out of the
-/// protocol enum so the manager's dispatch reads in vocabulary terms.
+/// A `ShellApi` boundary message coming up the port.
 pub enum FrameVocabulary {
     OpenDocument(Box<LaunchDocument>),
     NavigateLibrary,
@@ -153,9 +112,7 @@ pub enum FrameVocabulary {
     },
 }
 
-/// What the driver reports through [`FrameEventHook`]. The manager's closure
-/// decides; the driver's own generation stamps every item, so nothing a
-/// stale frame says can present as current.
+/// What the driver reports through [`FrameEventHook`].
 pub enum FrameEvent {
     /// A handshake stage transition (`Status`).
     Stage(BootStage),
@@ -165,19 +122,14 @@ pub enum FrameEvent {
         cause: String,
     },
     Boundary(FrameVocabulary),
-    /// A message whose generation is not this frame's — kept for the
-    /// diagnostics ledger, never applied (§35).
+    /// A message whose generation is not this frame's, kept for the ledger.
     Stale,
 }
 
-/// The stage a fatal boundary problem happened at. Mapped into boot.rs's
-/// public stage names so the error card keeps speaking the same language it
-/// always did.
+/// The stage a fatal boundary problem happened at.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FrameFatalStage {
-    /// The frame never answered the channel offer (its document did not
-    /// load, or its script never ran): the frame-equivalent of the artifact
-    /// load / wasm init stages.
+    /// The frame never answered the channel offer.
     InitializeTimeout,
     /// The frame answered but never announced `Ready`.
     ReadyTimeout,
@@ -185,15 +137,11 @@ pub enum FrameFatalStage {
     PaintTimeout,
     /// The runtime reported its own failure (protocol `Failed`).
     RuntimeFailed,
-    /// A graceful disposal did not complete inside the forced timeout — the
-    /// removal proceeds by force, and the boot report names it (§12,
-    /// "what the forced path heard").
+    /// A graceful disposal did not complete inside the forced timeout.
     DisposeTimeout,
 }
 
-/// One offered channel's Shell side. Kept until the frame answers (only one
-/// of the retry offers is ever answered; the rest are closed when the lane
-/// is claimed or the driver tears down).
+/// One offered channel's Shell side, kept until the frame answers.
 struct Offer {
     port: web_sys::MessagePort,
     listener: Closure<dyn FnMut(web_sys::MessageEvent)>,
@@ -203,28 +151,19 @@ struct Offer {
 /// generation-checked events hook (§35).
 pub type FrameEventHook = Rc<dyn Fn(u64, FrameEvent)>;
 
-/// The driver's plumbing — everything JS-side the frame interacts with, in
-/// `RefCell`s because the listener closures arrive on the event loop while
-/// the manager's awaits are suspended elsewhere.
+/// The driver's plumbing: everything JS-side the frame interacts with.
 pub struct Driver {
     kind: FrameKind,
     generation: u64,
     nonce: String,
-    /// Which half of the host this frame is in. Mutable: promotion moves a
-    /// incoming frame to active without changing its boot identity.
+    /// Which half of the host this frame is in.
     slot: Cell<FrameSlot>,
     iframe: web_sys::HtmlIFrameElement,
     host: web_sys::Element,
-    /// Offer re-posting until first contact (§7's "re-init must be
-    /// idempotent": the Shell keeps addressing the same identity — same
-    /// generation, same nonce, fresh `MessageChannel` — and the frame's
-    /// adoption of whichever copy it actually got is which one its answers
-    /// arrive on).
+    /// Offer re-posting until first contact.
     offer_ticker: Cell<Option<i32>>,
     offer_ticks: Cell<u32>,
-    /// The live offer set: every port1 awaiting first contact. Once the
-    /// lane is claimed only the adopted port survives; the rest are
-    /// discarded with their listeners.
+    /// The live offer set: every port1 awaiting first contact.
     offers: RefCell<Vec<Offer>>,
     /// The adopted channel; `None` until first contact.
     lane: RefCell<Option<Offer>>,
@@ -250,9 +189,7 @@ pub struct Driver {
     dispose_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
     /// What this frame boots with (the Init payload), kept for re-init.
     launch: RefCell<Option<LaunchDocument>>,
-    // Incoming metadata may arrive before the parent paint gate. Replay it
-    // once this generation becomes authoritative, rather than dropping its
-    // only Ready report (which would make last-pane close stay in Reader).
+    // Incoming metadata may arrive before the parent paint gate.
     boot_status: RefCell<Option<Box<runtime_contract::boundary::DocStatusReport>>>,
     boot_digest: RefCell<Option<String>>,
     torn_down: Cell<bool>,
@@ -260,20 +197,12 @@ pub struct Driver {
 
 thread_local! {
     static NEXT_GENERATION: Cell<u64> = const { Cell::new(1) };
-    /// The live drivers, keyed by their generation. NOT a manager field: a
-    /// driver is `Rc`/DOM plumbing and the manager sits behind `Arc` in the
-    /// shell state (Leptos context demands `Send + Sync`), so the drivers
-    /// live on the one thread the manager's awaits and the frame's events
-    /// all run on — this page's. The manager keeps only the generation
-    /// number, and every lookup resolves it here.
+    /// The live drivers, keyed by their generation, on this page's thread.
     static DRIVERS: RefCell<std::collections::HashMap<u64, Rc<Driver>>> =
         RefCell::new(std::collections::HashMap::new());
 }
 
-/// Admit a driver into the page-thread registry. The manager admits a cold
-/// incoming frame before its boot starts; the baker is told
-/// either way, because a cold shelf's cover asks precede its own admission
-/// (`bake::frame_registered`).
+/// Admit a driver into the page-thread registry.
 pub fn register(driver: Rc<Driver>) {
     let generation = driver.generation();
     DRIVERS.with(|drivers| drivers.borrow_mut().insert(generation, driver));
@@ -285,8 +214,7 @@ pub fn lookup(generation: u64) -> Option<Rc<Driver>> {
     DRIVERS.with(|drivers| drivers.borrow().get(&generation).cloned())
 }
 
-/// All document realms across live/incoming/retiring Reader hosts. Merely
-/// hiding a route does not satisfy the Library baseline.
+/// All document realms across live, incoming and retiring Reader hosts.
 #[cfg(target_arch = "wasm32")]
 pub fn document_frames_resident() -> usize {
     let Some(document) = window().and_then(|window| window.document()) else {
@@ -305,20 +233,13 @@ pub fn document_frames_resident() -> usize {
         .sum()
 }
 
-/// Remove a driver from the registry (at teardown). Idempotent: a forced
-/// and a graceful path can both reach it for one generation, and so can a
-/// frame that was never admitted (a boot that failed). The baker prunes the
-/// asks of a frame that is gone (`bake::cancel_library`).
+/// Remove a driver from the registry at teardown.
 pub fn unregister(generation: u64) {
     DRIVERS.with(|drivers| drivers.borrow_mut().remove(&generation));
     crate::app::bake::cancel_library(generation);
 }
 
-/// How many frames of `kind` are in the page right now, whatever slot they
-/// sit in — active, incoming or retiring. The diagnostics probe's
-/// `readerFramesResident`: the number the memory question is actually
-/// about, since a frame that exists holds its realm, its wasm instance and
-/// its heap high-water mark whether or not a session is live in it.
+/// How many frames of `kind` are in the page right now.
 #[cfg(target_arch = "wasm32")]
 pub fn resident(kind: FrameKind) -> usize {
     DRIVERS.with(|drivers| {
@@ -330,9 +251,7 @@ pub fn resident(kind: FrameKind) -> usize {
     })
 }
 
-/// Mint the next frame generation: monotonic while this Shell documents
-/// lives, so `$g=1` in the browser suite's evidence means "the first frame
-/// this shell ever hosted" and a jump in the number names a replacement.
+/// Mint the next frame generation; monotonic per Shell document.
 pub fn next_generation() -> u64 {
     NEXT_GENERATION.with(|g| {
         let next = g.get();
@@ -345,10 +264,7 @@ fn window() -> Option<web_sys::Window> {
     web_sys::window()
 }
 
-/// A random 64-bit nonce. `Math.random` is where ALL entropy in this shell
-/// comes from today (services' rng); the marker is for marking live identities,
-/// not for proving secrecy across origins (§8's attack surface is the stale
-/// iframe inside the SAME shell document).
+/// A random 64-bit nonce, minted from the shell's entropy.
 fn nonce() -> String {
     let mut out = String::with_capacity(32);
     for _ in 0..8 {
@@ -358,9 +274,7 @@ fn nonce() -> String {
     out
 }
 
-/// The origin the Shell posts at (§8: exact, never "*"). Tauri's webview
-/// serves from a custom origin whose string is the only authority for "the
-/// frame this Shell owns".
+/// The origin the Shell posts at: exact, never "*".
 fn target_origin() -> String {
     window()
         .and_then(|w| w.location().origin().ok())
@@ -368,10 +282,7 @@ fn target_origin() -> String {
         .unwrap_or_else(|| "*".to_string())
 }
 
-/// Build the offered-contact object the frame's `match_offer` authenticates:
-/// `{kind, generation, nonce}` (frame_transport::CHANNEL_KIND is the kind,
-/// and the frame's own URL is the only place outside this driver where the
-/// nonce exists — §8).
+/// Build the offered-contact object the frame authenticates.
 fn offer_value(generation: u64, nonce: &str) -> JsValue {
     let obj = js_sys::Object::new();
     let kind_key = JsValue::from_str("kind");
@@ -385,17 +296,12 @@ fn offer_value(generation: u64, nonce: &str) -> JsValue {
     obj.into()
 }
 
-/// Serialize the Shell frame into the port's vocabulary: the frame parses
-/// the envelope with `serde_json` against a `JSON.stringify`d event data,
-/// so posting the OBJECT is what each direction reads (the runtime posts
-/// its own envelopes as compact strings; both directions flatten the same
-/// `serde` shape).
+/// Serialize the Shell frame into the port's vocabulary.
 fn post_shell_frame(lane: &Offer, generation: u64, nonce: &str, body: &ShellFrame) {
     let envelope = ShellEnvelope {
         generation,
         nonce: nonce.to_string(),
-        // Owned: the envelope is the contract-tested serde shape, and a
-        // derived clone stays exhaustive as the vocabulary grows.
+        // Owned: the envelope is the contract-tested serde shape.
         body: body.clone(),
     };
     let Ok(json) = serde_json::to_string(&envelope) else {
@@ -407,10 +313,7 @@ fn post_shell_frame(lane: &Offer, generation: u64, nonce: &str, body: &ShellFram
     let _ = lane.port.post_message(&obj);
 }
 
-/// One runtime envelope, decoded off the wire. The runtime posts compact
-/// JSON STRINGS (frame_transport's wire is `post_json`), so anything whose
-/// data is not a string was not our frame — the source check already bound
-/// the window, this binds the shape.
+/// One runtime envelope, decoded off the wire.
 fn parse_runtime_event(
     event: &web_sys::MessageEvent,
 ) -> Option<runtime_contract::protocol::RuntimeEnvelope> {
@@ -419,8 +322,7 @@ fn parse_runtime_event(
 }
 
 impl Driver {
-    /// Create the frame element with its boot identity in the URL. The
-    /// driver is inert until [`Driver::start`].
+    /// Create the frame element with its boot identity in the URL.
     pub fn new(
         kind: FrameKind,
         host: &web_sys::Element,
@@ -495,8 +397,7 @@ impl Driver {
         self.set_slot(FrameSlot::Active);
     }
 
-    /// The Shell has just admitted this incoming generation. Its latest
-    /// boot metadata must land AFTER launch/active identity is published.
+    /// The Shell has just admitted this incoming generation.
     pub fn publish_boot_metadata(&self) {
         let status = self.boot_status.borrow_mut().take();
         if let Some(report) = status {
@@ -508,10 +409,7 @@ impl Driver {
         }
     }
 
-    /// Hide a displaced frame the instant its replacement is revealed. The
-    /// disposal still runs to completion behind it; what the user must not
-    /// see is the runtime they just left, still on screen for the length of
-    /// its teardown.
+    /// Hide a displaced frame the instant its replacement is revealed.
     pub fn begin_retiring(&self) {
         self.set_slot(FrameSlot::Retiring);
         if self.kind == FrameKind::Library {
@@ -524,14 +422,11 @@ impl Driver {
         let _ = self.iframe.set_attribute("data-mareader-slot", slot.attr());
     }
 
-    /// Insert the frame and start the handshake. The loading cover is the
-    /// caller's business and is ALREADY painted (§11 — covered before the
-    /// first await); this driver's insertion is the first thing behind it.
+    /// Insert the frame and start the handshake.
     pub fn start(self: &Rc<Self>, launch: Option<LaunchDocument>, events: FrameEventHook) {
         *self.events.borrow_mut() = Some(events);
         *self.launch.borrow_mut() = launch;
-        // The frame enters the host as the ONLY permanent child (§1's "only
-        // the iframe holds focus"): the boot card overlays it until Painted.
+        // The frame enters the host as the ONLY permanent child.
         let _ = self.host.append_child(self.iframe.as_ref());
         self.post_offer();
         self.start_offer_ticker();
@@ -539,17 +434,14 @@ impl Driver {
         self.report(FrameEvent::Stage(BootStage::Loading));
     }
 
-    /// Frame-side facts and stage moves, never the manager's decisions. The
-    /// manager decides what a signal means for the CURRENT frame; the driver
-    /// simply cannot emit for a generation that is not its own.
+    /// Frame-side facts and stage moves, never the manager's decisions.
     fn report(&self, event: FrameEvent) {
         if let Some(events) = self.events.borrow().as_ref() {
             events(self.generation, event);
         }
     }
 
-    /// Post one offer at the frame: a fresh `MessageChannel` whose port1
-    /// gets the Shell's listener and whose port2 crosses in the message.
+    /// Post one offer at the frame: a fresh `MessageChannel`.
     fn post_offer(self: &Rc<Self>) {
         let (Some(_), Ok(channel)) = (window(), web_sys::MessageChannel::new()) else {
             return;
@@ -567,14 +459,10 @@ impl Driver {
         let transfer = js_sys::Array::new();
         transfer.push(channel.port2().as_ref());
         let Some(target) = self.iframe.content_window() else {
-            // The frame has no window to speak to (document never built):
-            // the ticker will keep the offer alive until the bound expires.
+            // The frame has no window to speak to.
             return;
         };
-        // postMessage(message, targetOrigin, transfer-for-ports): the typed
-        // overload with an options dict has no web-sys feature in the pinned
-        // version, so the call goes through reflect — the origin stays the
-        // frame's own, and the offer object is the only thing that crosses.
+        // The typed postMessage overload with options has no web-sys feature.
         let Ok(post) = js_sys::Reflect::get(target.as_ref(), &JsValue::from_str("postMessage"))
         else {
             return;
@@ -589,8 +477,7 @@ impl Driver {
         self.offers.borrow_mut().push(Offer { port, listener });
     }
 
-    /// Keep re-offering until the frame answers — §7's idempotent re-init at
-    /// the transport level, bounded at 60 s (§6's never-unbounded rule).
+    /// Keep re-offering until the frame answers.
     fn start_offer_ticker(self: &Rc<Self>) {
         let Some(window) = window() else {
             return;
@@ -627,16 +514,11 @@ impl Driver {
         if let (Some(id), Some(window)) = (self.offer_ticker.take(), window()) {
             window.clear_interval_with_handle(id);
         }
-        // Every un-adopted offer dies with its port: the frame adopted at
-        // most one, and the rest only ever received OUR offer (never a
-        // message from the frame), so nothing in them is live traffic.
+        // Every un-adopted offer dies with its port.
         self.offers.borrow_mut().clear();
     }
 
-    /// The timer that bounds "frame inserted" → "Ready announced". It is the
-    /// boot fix's execution boundary (§6): without it a frame that loaded a
-    /// broken artifact answers with silence and the Shell would hold the
-    /// loading card forever.
+    /// The timer bounding "frame inserted" to "Ready announced".
     fn arm_ready_timer(self: &Rc<Self>) {
         let Some(window) = window() else {
             return;
@@ -650,10 +532,7 @@ impl Driver {
             if driver.saw_contact.get() {
                 driver.fatal_ready(FrameFatalStage::ReadyTimeout);
             } else {
-                // No contact at 20 s means the frame's OWN boot never ran —
-                // its page is missing or its script rejected. That is the
-                // artifact-load class: same stage the missing-`/library.js`
-                // regression has always asserted (§6, §7).
+                // No contact at 20 s means the frame's OWN boot never ran.
                 driver.fatal_ready(FrameFatalStage::InitializeTimeout);
             }
         });
@@ -667,8 +546,7 @@ impl Driver {
         timer.into_js_value();
     }
 
-    /// Ready is a mount, not paint. Keep the outgoing pixels on screen and
-    /// fail the incoming boot if it never reports its paint opportunity.
+    /// Ready is a mount, not paint.
     fn arm_painted_timeout(self: &Rc<Self>) {
         let Some(window) = window() else {
             return;
@@ -699,11 +577,7 @@ impl Driver {
         self.fatal_ready(FrameFatalStage::PaintTimeout);
     }
 
-    /// A fatal boundary problem during boot: resolve the ready gate with the
-    /// stage and make sure no timer ever fires after it. The manager paints
-    /// the error state and takes the frame down. After `Ready` the same
-    /// class of problem is reported as a live-frame failure instead — there
-    /// is no boot left to fail.
+    /// A fatal boundary problem during boot.
     fn fatal_ready(&self, stage: FrameFatalStage) {
         if self.torn_down.get() {
             return;
@@ -723,9 +597,7 @@ impl Driver {
         self.resolve_ready(Err(stage));
     }
 
-    /// The port listener's entry point, with the frame's own identity
-    /// recovered by the closure's captured `Rc<Driver>` — generation checks
-    /// run before ANY signal becomes visible (§8, §35).
+    /// The port listener's entry point, identity generation-checked first.
     fn dispatch_port(self: &Rc<Self>, event: &web_sys::MessageEvent) {
         let Some(envelope) = parse_runtime_event(event) else {
             return;
@@ -734,25 +606,18 @@ impl Driver {
             self.report(FrameEvent::Stale);
             return;
         }
-        // First contact on THIS port: adopt it as the lane. Only one of the
-        // offered channels ever gets here (frame_transport's adopt-guard
-        // makes the frame answer exactly one).
+        // First contact on THIS port: adopt it as the lane.
         if !self.saw_contact.get() {
             self.saw_contact.set(true);
             self.claim_lane(event);
-            // The handshake's next beat belongs to the Shell: `init` rides
-            // the lane back (§7, framed README's mermaid), complete with
-            // the identity and the reader's launch when there is one.
+            // The handshake's next beat belongs to the Shell.
             self.send_init();
         }
         match envelope.body {
             RuntimeFrame::Status { stage } => {
-                // A `Disposed` stage needs no branch: the runtime sends
-                // `DisposeComplete` explicitly, and the stage is an extra
-                // fact, not a second answer.
+                // A `Disposed` stage needs no branch.
                 if stage == BootStage::Failed {
-                    // §9, §11: the runtime's own failure becomes the shell's
-                    // visible runtime error state, never a silent blank.
+                    // The runtime's failure becomes the shell's error state.
                     self.fatal_ready(FrameFatalStage::RuntimeFailed);
                     return;
                 }
@@ -831,8 +696,7 @@ impl Driver {
         }
     }
 
-    /// Adopt the port that first contact arrived on. The offer set is closed
-    /// with it; the adopted one is the only Offer that survives.
+    /// Adopt the port that first contact arrived on.
     fn claim_lane(&self, event: &web_sys::MessageEvent) {
         let target = event.target();
         let mut chosen: Option<Offer> = None;
@@ -858,9 +722,7 @@ impl Driver {
         }
     }
 
-    /// The frame's `init`: identity and, for the reader, its launch (§7's
-    /// "re-init must reuse the same nonce" — re-sends happen here, never
-    /// with a minted identity).
+    /// The frame's `init`: identity and, for the reader, its launch.
     fn send_init(&self) {
         let lane = self.lane.borrow();
         let Some(lane) = lane.as_ref() else {
@@ -877,16 +739,13 @@ impl Driver {
                     .borrow()
                     .as_ref()
                     .map(|launch| Box::new(launch.clone())),
-                // Incoming frames lay out/paint without starting Library
-                // scans or grain animation before the route is visible.
+                // Incoming frames paint without starting Library scans.
                 hidden: self.slot.get() != FrameSlot::Active,
             },
         );
     }
 
-    /// Send a shell frame over the live lane. A lane that does not exist
-    /// means the frame was never claimed (nothing to receive the message —
-    /// the boundary answer dies with it, by design in §35).
+    /// Send a shell frame over the live lane.
     pub fn send(&self, body: &ShellFrame) {
         let lane = self.lane.borrow();
         if let Some(lane) = lane.as_ref() {
@@ -894,8 +753,7 @@ impl Driver {
         }
     }
 
-    /// The boot verdict promise. Teardown resolves its navigation so a
-    /// cancelled incoming frame cannot leave its navigation task pending.
+    /// The boot verdict promise.
     pub fn wait_verdict(&self) -> js_sys::Promise {
         js_sys::Promise::new(&mut |resolve, _reject| {
             if self.ready_pending.borrow().is_some() {
@@ -909,8 +767,7 @@ impl Driver {
         })
     }
 
-    /// Every handoff awaits this gate as well as Ready. A timeout or a
-    /// cancelled boot wakes the navigation rather than leaving a hidden realm.
+    /// Every handoff awaits this gate as well as Ready.
     pub fn wait_painted(&self) -> js_sys::Promise {
         js_sys::Promise::new(&mut |resolve, _reject| {
             if self.paint_pending.borrow().is_some() {
@@ -962,10 +819,7 @@ impl Driver {
         }
     }
 
-    /// §12 phase 1, from the Shell's side: ask for the graceful shutdown and
-    /// wait — bounded by the forced-removal timeout. The manager removes the
-    /// frame itself when this resolves `Err`, and the digest names what the
-    /// forced path heard.
+    /// Phase 1 of disposal, from the Shell's side: ask, then wait.
     pub fn grace_dispose(self: &Rc<Self>) -> js_sys::Promise {
         self.send(&ShellFrame::Dispose);
         if let Some(window) = window() {
@@ -990,8 +844,7 @@ impl Driver {
         })
     }
 
-    /// The awaited disposal verdict (`Ok` = DisposeComplete; `Err` = the
-    /// forced path ran), taken by the manager once its wait resolves.
+    /// The awaited disposal verdict: `Ok` or the forced path.
     pub fn take_dispose_outcome(&self) -> Option<Result<(), FrameFatalStage>> {
         self.dispose_pending.borrow_mut().take()
     }
@@ -1008,9 +861,7 @@ impl Driver {
         }
     }
 
-    /// Tear down everything JS-side: timers, the offers, the lane's listener,
-    /// the window listener, and finally the iframe element. After this the
-    /// driver is inert; generation checks keep stale stragglers silent.
+    /// Tear down everything JS-side: timers, offers, listeners, the element.
     pub fn teardown(&self) {
         unregister(self.generation);
         if self.torn_down.replace(true) {
@@ -1035,8 +886,7 @@ impl Driver {
             let _ = parent.remove_child(self.iframe.as_ref());
         }
         if self.kind == FrameKind::Reader {
-            // No descendant may monopolize a window lease if the host dies
-            // before its graceful DisposeComplete (including incoming panes).
+            // A dying host must not leave descendants holding window leases.
             if let Some(window) = window()
                 && let Ok(lane) = js_sys::Reflect::get(&window, &"__mareaderRasterLane".into())
                 && let Ok(method) = js_sys::Reflect::get(&lane, &"retireScope".into())
@@ -1055,27 +905,17 @@ impl Drop for Driver {
     }
 }
 
-/// The bounded-contact budget: one offer every 300 ms for up to 60 s —
-/// the init-welcome space §6's sidebar calls for.
+/// The bounded-contact budget: one offer per 300 ms, 60 s.
 const OFFER_TICK_MS: i32 = 300;
 const OFFER_TICK_LIMIT: u32 = 200;
-/// The frame's whole boot (insert → `Ready`) has 20 s, and the Nil-error
-/// discovery the guide wants is exactly "it got this long and didn't finish"
-/// (§6 — never an unbounded loading state).
+/// The frame's whole boot, insert to `Ready`, has 20 s.
 const READY_TIMEOUT_MS: i32 = 20_000;
-/// `Painted` after `Ready`: two animation frames plus render jitter — and,
-/// since the Active phase (and its `boot: <runtime>` line) is published on
-/// Painted, this grace also bounds how long the terminal and the loading
-/// cover can lag a mounted runtime. Two seconds is many frames of render
-/// jitter; 15 s was a wait the user could feel.
+/// `Painted` after `Ready`: two animation frames plus render jitter.
 const PAINTED_TIMEOUT_MS: i32 = 2_500;
 /// §12's forced removal: phase 1 gets 8 s, then the Shell takes phase 2.
 const DISPOSE_TIMEOUT_MS: i32 = 8_000;
 
-/// What the forced path heard (§12): the exact signals the frame managed to
-/// emit before it was taken down. It is in every fatal cause and (through
-/// the digest) in the probe, so a "nothing after Ready" boot reads exactly
-/// that.
+/// What the forced path heard before the frame was taken down.
 pub fn heard_summary(driver: &Driver) -> String {
     format!(
         "contact={} ready={} painted={} disposed={}",
@@ -1118,9 +958,7 @@ pub(crate) fn fatal_cause(
 }
 
 impl FrameFatalStage {
-    /// The boot.rs stage the error card quotes (§6's stage names were the
-    /// production vocabulary before frames; keep them — the card has never
-    /// needed new words, only new truth inside the old ones).
+    /// The boot.rs stage the error card quotes.
     pub fn boot_stage(self) -> crate::app::boot::BootStage {
         match self {
             FrameFatalStage::InitializeTimeout => crate::app::boot::BootStage::ModuleLoad,
@@ -1133,9 +971,7 @@ impl FrameFatalStage {
     }
 }
 
-/// The protocol's stage as the shell's error-stage vocabulary: a reader
-/// turning on a failure at `Mounted` means "start" to a user (the loading
-/// stage names were about windows, not about serde tags).
+/// The protocol's stage as the shell's error-stage vocabulary.
 pub fn protocol_boot_stage(stage: BootStage) -> crate::app::boot::BootStage {
     match stage {
         BootStage::Loading | BootStage::Initialized => crate::app::boot::BootStage::Init,
