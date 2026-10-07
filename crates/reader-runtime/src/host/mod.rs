@@ -1,34 +1,4 @@
-//! The reader host: the workspace owner between the session's runtime and
-//! its panes.
-//!
-//! ```text
-//! /reader → ReaderRuntime (session lifecycle)
-//!         → ReaderHost    (chrome placement, focus, bounds, workspace commands)
-//!         → PaneTree      (the layout: splits, ratios, PaneIds — nothing else)
-//!         → PaneManager   (pane create / focus / resize / close / dispose_all)
-//!         → pane runtime  (one document session each, behind `PaneRuntime`)
-//! ```
-//!
-//! The tree and the manager hold the same set of panes, and the host is the
-//! one place that changes both: a pane is created (manager) and then placed
-//! (tree), and a closing pane leaves the tree first so the tree can name its
-//! successor for the manager's focus hand-over. The layout lays the tree out
-//! over the measured workspace slot and every pane is handed its box.
-//!
-//! What the host OWNS: the title bar and where the chrome regions sit, the
-//! sidebar rail's mount points and the shell controller that coordinates
-//! them, the settings modal's placement, the one active pane, pane creation
-//! and removal, bounds measurement, the workspace commands (open, Library),
-//! the lifecycle dispatch to its panes (suspending them while the frame is
-//! off screen), the appearance boundary (the resolved look pushed to
-//! every pane), and the rail's Library panel ([`library`]): the persisted
-//! library as a compact tree, the one place a split is dragged from.
-//!
-//! What it does NOT own: any document. It never names a format, an engine
-//! type or a pane implementation — the composition root injects a
-//! [`contract::PaneFactory`], and the host speaks to what it built only
-//! through [`contract::PaneRuntime`]. `tools/check-host-boundary.mjs` holds
-//! that line in CI.
+//! The workspace owner between the session's runtime and its panes.
 
 pub mod commands;
 pub mod contract;
@@ -67,19 +37,14 @@ use model::{
 };
 use tree::{LayoutNode, MoveDirection, PaneTree, Side, SplitAxis, SplitId, TreeLayout};
 
-/// Where the workspace puts a document. Explicit on purpose: there is no
-/// hidden "current document" deciding it.
+/// Where the workspace puts a document; explicit, never a hidden current.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OpenTarget {
-    /// The active pane, in place — or, with no pane at all, the workspace's
-    /// first pane (the Shell's commands: a drop, another launch).
+    /// The active pane, in place; with no pane at all, the first one.
     Active,
     /// This pane, in place: it keeps its id and replaces its document.
     Pane(PaneId),
-    /// A new pane beside `of`, split along `axis`, on `side` of it — the
-    /// one placement the Split menu, the test hook and a drop all use. The
-    /// layout policy refuses it when a half would be under the minimum
-    /// pane size ([`tree::split_fits`]).
+    /// A new pane beside `of`, split along `axis`, on `side` of it.
     Split {
         of: PaneId,
         axis: SplitAxis,
@@ -89,8 +54,7 @@ pub enum OpenTarget {
 
 pub use view::ReaderHostView;
 
-/// The session slices the composition root hands the host: Copy handles
-/// onto the SESSION's own state (never the Shell's live signals).
+/// The session slices the composition root hands the host as Copy handles.
 #[derive(Clone, Copy)]
 pub struct HostSession {
     pub runtime: crate::runtime::ReaderRuntime,
@@ -98,24 +62,19 @@ pub struct HostSession {
     pub ui: app_state::UiState,
     pub api: crate::context::ApiHandle,
     pub session_id: u32,
-    /// Run a closure inside the session's root owner (nothing, once the
-    /// session is gone). Work that begins in an event handler — a menu's
-    /// split, a drop — has no current owner, and a pane created there would
-    /// belong to no scope. A plain `fn`: the host keeps no owner of its own.
+    /// Run a closure inside the session's root owner (nothing once gone).
     pub enter: fn(&mut dyn FnMut()),
 }
 
-/// The reader host. Copy: the title bar's closures, the workspace slot and
-/// the session's command entry all capture it.
+/// The reader host. Copy: the chrome, the slot and the command entry
+/// capture it.
 #[derive(Clone, Copy)]
 pub struct ReaderHost {
     session: HostSession,
     manager: PaneManager,
-    /// The shared chrome handles this session's chrome code reads. Its
-    /// reader surface follows the ACTIVE pane.
+    /// The shared chrome handles; its reader surface follows the ACTIVE pane.
     chrome: app_state::ChromeState,
-    /// The shell's layout brain for the whole workspace: the title bar, the
-    /// traffic lights, the floating label and both rail mount points ask it.
+    /// The shell's layout brain: the title bar and both rail mounts ask it.
     shell: ShellController,
     /// The settings modal's open signal (the host places the modal; the
     /// active pane fills it).
@@ -127,56 +86,35 @@ pub struct ReaderHost {
     slot_size: RwSignal<(f64, f64)>,
     /// The workspace layout: splits and pane ids, nothing heavier.
     tree: RwSignal<PaneTree>,
-    /// Whether SOME pane holds a PDF document (any pane, not just the
-    /// focused one): the workspace-wide blend backdrop's gate.
+    /// Whether SOME pane (not just the focused one) holds a PDF: the
+    /// workspace-wide blend gate.
     has_pdf: Signal<bool>,
-    /// Panes closed but still finishing their teardown. Their entries stay
-    /// in the slot, hidden, until the tail resolves: a pane's view may own
-    /// a frame whose realm is still flushing, and removing the entry would
-    /// cut it off mid-write.
+    /// Closed panes still finishing teardown; their entries stay hidden
+    /// until the tail resolves.
     retiring: RwSignal<Vec<PaneId>>,
     /// A divider is being dragged (the pane frames let the pointer through).
     resizing: RwSignal<bool>,
-    /// The one document drag session (see [`drag`]): typed data only, no
-    /// DOM reference. Idle whenever no drag is live, and cleared by the
-    /// workspace's disposal.
+    /// The one document drag session (see [`drag`]): typed data only.
     drag: RwSignal<DragSession>,
-    /// A pane lifted by a press-and-hold on its empty space (see [`lift`]):
-    /// plain data, `None` while nothing is held, cleared by disposal.
+    /// A pane lifted by a press-and-hold (see [`lift`]), as plain data.
     lift: RwSignal<Option<lift::Lift>>,
-    /// The tree laid out over the slot: every pane's box and every
-    /// divider's strip. What the bounds effect and the view both follow.
+    /// The tree laid out over the slot: pane boxes and divider strips.
     layout: Memo<TreeLayout>,
-    /// A divider drag's latest ratio, waiting for the next frame: pointer
-    /// moves only record it, one frame applies the last (see
-    /// [`Self::drag_divider`]).
+    /// A divider drag's latest ratio, applied on the next frame.
     pending_ratio: StoredValue<Option<(SplitId, f64)>>,
     /// Names a launch's format tag for the descriptor (injected with the
-    /// factory: the host reads no extension itself).
+    /// factory).
     classify: PaneClassifier,
-    /// Whether this frame is the one on screen: the host suspends its panes
-    /// while it is not.
+    /// Whether this frame is on screen; off screen its panes suspend.
     frame_active: Signal<bool>,
-    /// The rail's Library panel state (see [`library`]): the tree as last
-    /// read, which folders are open, where it was scrolled. The host's, so
-    /// it survives the rail remounting on an active-pane change.
+    /// The rail's Library panel state (see [`library`]), the host's so it
+    /// survives a remount.
     library: library::LibraryState,
-    /// The workspace's per-pane look state — the colour and texture
-    /// families, each with its own preference (see [`theme`]). The appearance
-    /// menu routes through its handle.
+    /// The workspace's per-pane look state (see [`theme`]).
     themes: theme::PaneThemes,
 }
 
-/// Apply the requested spacing to every pane edge: half on each side of an
-/// internal divider, and the full spacing along the workspace perimeter.
-/// The layout tree retains unmodified split geometry; only the content
-/// viewport gets these decorated bounds, so its dimensions match the visible
-/// pane box.
-/// The tree laid out over `rect`. While a pane is lifted the workspace is
-/// laid out as if it were closed, so its neighbours fill its space and a
-/// drop target previews the box the drop really gives; the lifted pane
-/// keeps its own box (listed last, so every other pane wins a hit test) to
-/// ride the pointer from without re-measuring.
+/// The tree laid out over `rect`, as if a lifted pane were closed.
 fn lay_out(tree: &PaneTree, rect: PaneBounds, lifted: Option<PaneId>) -> TreeLayout {
     let full = tree.layout(rect);
     let Some(pane) = lifted.filter(|pane| tree.contains(*pane) && tree.len() > 1) else {
@@ -193,6 +131,8 @@ fn lay_out(tree: &PaneTree, rect: PaneBounds, lifted: Option<PaneId>) -> TreeLay
     layout
 }
 
+/// A pane's visible box: half a gap at dividers, the full gap at the
+/// perimeter.
 fn inset_pane_bounds(bounds: PaneBounds, workspace: PaneBounds, gap: u8) -> PaneBounds {
     let full = gap as f64;
     let half = full / 2.0;
@@ -222,9 +162,7 @@ fn inset_pane_bounds(bounds: PaneBounds, workspace: PaneBounds, gap: u8) -> Pane
     }
 }
 
-/// Divider-facing sides receive half a gap; sides on the workspace boundary
-/// receive the full gap. Scale both requests together for very small panes so
-/// their visible dimensions can never become negative.
+/// Divider-facing sides get half a gap, boundary sides the full gap.
 fn side_insets(
     size: f64,
     before_divider: bool,
@@ -244,16 +182,13 @@ fn side_insets(
 }
 
 impl ReaderHost {
-    /// Build the host inside the session's reactive owner. `factory` is the
-    /// pane implementation the composition root chose, `classify` the same
-    /// implementation's reading of a document address.
+    /// Build the host inside the session's reactive owner.
     pub fn new(session: HostSession, factory: PaneFactory, classify: PaneClassifier) -> Self {
         let manager = PaneManager::new(factory);
         let settings = session.settings;
         let initial = settings.with_untracked(|s| app_state::Motion::from_prefs(&s.animations));
         let motion = RwSignal::new(initial);
-        // The pane count is the mode's other half: independent themes need
-        // the split they serve (see `theme`).
+        // Independent themes need the split they serve (see `theme`).
         let panes = Signal::derive(move || manager.placed().len());
         let themes = theme::PaneThemes::new(
             RwSignal::new(settings.with_untracked(|s| s.workspace.independent_themes)),
@@ -262,9 +197,7 @@ impl ReaderHost {
             panes,
         );
 
-        // What the shared chrome reads about "the reader": the ACTIVE pane's
-        // published facts, read through `try_` because a pane's signals die
-        // with the pane.
+        // What the shared chrome reads: the ACTIVE pane's published facts.
         let reflowable = Signal::derive(move || {
             manager
                 .active_pane()
@@ -277,12 +210,7 @@ impl ReaderHost {
                 .and_then(|pane| pane.surface().search_visible.try_get())
                 .unwrap_or(false)
         });
-        // The workspace's blend gate: SOME pane holds a PDF document — any
-        // pane, not just the focused one. The blend backdrop colour is
-        // workspace-wide (the PDF's detected paper + the theme), so its
-        // switch is a workspace fact: focusing a reflowable pane (which has
-        // no page colour to detect) must not drop the colour out from under
-        // the PDF beside it.
+        // The blend gate is a workspace fact: SOME pane holds a PDF.
         let has_pdf = Signal::derive(move || {
             manager.placed().iter().any(|id| {
                 manager.pane(*id).is_some_and(|pane| {
@@ -302,16 +230,13 @@ impl ReaderHost {
             },
         };
 
-        // One controller for the whole workspace, provided for the title bar,
-        // the traffic lights, the floating label and both rail mount points.
-        // It owns the open/close slide machine, so the chrome stays aligned
-        // with the rail's pixels for the whole slide.
+        // One controller for the whole workspace, provided to the chrome; it
+        // owns the slide machine.
         let shell = ShellController::reader(chrome);
         provide_context(shell);
 
-        // The settings modal is opened from several places (the view menu's
-        // Settings… item, the sidebar header's gear) that sit under different
-        // mount points, so the open signal is shared through context.
+        // The settings modal opens from several places, so the signal is
+        // shared through context.
         let settings_open = RwSignal::new(false);
         provide_context(settings_open);
 
@@ -348,12 +273,10 @@ impl ReaderHost {
             library: library::LibraryState::new(),
             themes,
         };
-        // The Library panel is the host's; the active pane's rail shows it
-        // beside its own panels, found through context like the controller.
+        // The Library panel is the host's; the rail finds it through context.
         provide_context(library::LibraryPanel::new(host));
-        // The theme handle is shared beyond the title bar's menu: the
-        // Settings modal's Workspace tab flips the same toggle, so it is
-        // reached through context like the shell controller.
+        // The theme handle is shared through context too: the Settings modal
+        // flips the same toggle.
         provide_context(host.theme_handle());
         host.install_appearance_boundary();
         host.install_bounds();
@@ -361,14 +284,8 @@ impl ReaderHost {
         host.install_reports();
         host.install_drag();
 
-        // The workspace as the diagnostics surface reports it. The probe
-        // reads the manager's plain state, never the arena — and holds it
-        // WEAKLY: it lives in a thread-local that outlasts the session, so a
-        // strong reference would keep the host's state for as long as the
-        // frame waits for its next session. The teardown settles it into
-        // plain data ([`Self::take_teardown`]).
-        // The layout rides along through the tree's signal handle — an arena
-        // key, not a reference: once the session is gone it reads nothing.
+        // The diagnostics probe reads the manager's plain state and holds it
+        // WEAKLY.
         let probe = manager.shared().map(|shared| Rc::downgrade(&shared));
         crate::diagnostics::install_host_probe(move || {
             let shared = probe.as_ref()?.upgrade()?;
@@ -382,11 +299,8 @@ impl ReaderHost {
         self.manager
     }
 
-    /// The appearance boundary: the motion switches resolve ONCE, here,
-    /// from the session's settings copy (which the frame theme keeps
-    /// current, cross-frame edits included), and every live pane is handed
-    /// the result. Written only on a real change: a Leptos `set` notifies
-    /// even when equal.
+    /// The appearance boundary: resolve the motion switches once, hand every
+    /// live pane its look.
     fn install_appearance_boundary(&self) {
         let host = *self;
         Effect::new(move |_| {
@@ -397,9 +311,8 @@ impl ReaderHost {
             if host.motion.try_get_untracked().is_some_and(|m| m != next) {
                 host.motion.set(next);
             }
-            // The theme half: the per-pane look map's change token, tracked
-            // alongside settings so an override edit (or the toggle)
-            // re-pushes too. Each pane receives ITS look.
+            // The per-pane look map's token, tracked with settings: each pane
+            // gets ITS look.
             host.themes.version().with(|_| ());
             let global = host.session.settings.with(|s| s.appearance);
             for pane in host.manager.live_panes() {
@@ -411,10 +324,8 @@ impl ReaderHost {
         });
     }
 
-    /// The appearance a pane created now starts with: the motion switches
-    /// plus its seeded look (its own while either per-pane mode is in effect
-    /// — seeded from the pane in front; `None` otherwise, which means
-    /// "inherit the window theme").
+    /// The appearance a pane created now starts with: motion plus its
+    /// seeded look.
     fn appearance_now(&self, id: PaneId) -> PaneAppearance {
         let global = self.session.settings.with(|s| s.appearance);
         PaneAppearance {
@@ -423,23 +334,12 @@ impl ReaderHost {
         }
     }
 
-    /// The appearance menu's theme handle: a routed edit lands on the active
-    /// pane's look while the family's own mode is in EFFECT (a split on
-    /// screen), everything else in Settings (see [`theme`]).
+    /// The appearance menu's theme handle (see [`theme`]).
     pub fn theme_handle(&self) -> app_ui::appearance::ThemeHandle {
         theme::theme_handle(self.themes, self.manager, self.session.settings)
     }
 
-    /// Bounds: the host measures its workspace slot, lays the tree out over
-    /// it, and hands every pane its box explicitly; the pane owns everything
-    /// inside its box. A divider drag is the same path — a new ratio, a new
-    /// layout, new boxes — so a pane reacts to it exactly as to a window
-    /// resize, through its own viewport and zoom-follow machinery.
-    ///
-    /// The slot is looked up by its document-wide id ON PURPOSE: it is the
-    /// HOST's element (one per session, rendered by the host's own view),
-    /// not a pane's — every pane-owned element is looked up inside its
-    /// pane's root instead (`crate::pane::dom`).
+    /// Bounds: measure the slot, lay the tree out, hand each pane its box.
     fn install_bounds(&self) {
         let host = *self;
         let stop = app_chrome::hooks::use_resize_observer::observe_content_size(
@@ -451,16 +351,15 @@ impl ReaderHost {
             let Some(layout) = host.layout.try_get() else {
                 return;
             };
-            // Tracked on the placement and gap: a pane placed after the last
-            // layout, or a changed gap, is handed its visible content box.
+            // Tracked on the placement and gap: a later placement gets a box.
             let _ = host.manager.placed();
             let gap = host.session.settings.with(|s| s.workspace.pane_gap);
             untrack(|| host.hand_out_bounds(&layout, gap));
         });
     }
 
-    /// Every live pane's box from `layout`. A pane the tree does not hold
-    /// (none should exist) fills the slot rather than getting nothing.
+    /// Every live pane's box from `layout`; a pane the tree lacks fills the
+    /// slot.
     fn hand_out_bounds(&self, layout: &TreeLayout, gap: u8) {
         let whole = self.slot_rect();
         let split = self.manager.placed().len() > 1;
@@ -470,8 +369,7 @@ impl ReaderHost {
         });
     }
 
-    /// Re-lay the tree NOW and hand the boxes out: a pane placed by an open
-    /// has its visible content box before its view mounts.
+    /// Re-lay the tree now and hand the boxes out, before a view mounts.
     fn relayout_now(&self) {
         let layout = self.layout_now();
         let gap = self
@@ -505,12 +403,7 @@ impl ReaderHost {
         self.layout.try_get().unwrap_or_default()
     }
 
-    /// A divider drag moved: record the ratio the pointer asks for and
-    /// apply the LAST one on the next animation frame. Pointer events can
-    /// outpace frames several times over; each applied ratio re-lays the
-    /// workspace and hands two panes new boxes, which is what their own
-    /// resize handling (viewport measurement, zoom follow, the render
-    /// scheduler) absorbs — once per frame, never once per event.
+    /// A divider drag: record the ratio and apply the last one per frame.
     pub fn drag_divider(&self, split: SplitId, ratio: f64) {
         let queued = self
             .pending_ratio
@@ -531,12 +424,8 @@ impl ReaderHost {
         });
     }
 
-    /// Suspension: while this frame is off screen (incoming before its
-    /// reveal, or retiring during disposal) every placed pane
-    /// is `Suspended` — it keeps its document session but takes no new work
-    /// — and coming back on screen resumes them. A pane still mounting is
-    /// suspended when it becomes ready ([`Self::pane_ready`]); a transition
-    /// that does not apply (already there, not ready yet) is nothing to do.
+    /// Suspension: off screen, every placed pane is `Suspended`; on screen,
+    /// resumed.
     fn install_suspension(&self) {
         let host = *self;
         Effect::new(move |_| {
@@ -553,9 +442,7 @@ impl ReaderHost {
         });
     }
 
-    /// A pane's view is built and its effects installed: `Mounting →
-    /// Ready`, then straight on to `Suspended` if the frame is off screen
-    /// (an incoming host's pane starts parked).
+    /// A pane's view is built: ready, then suspended if the frame is off.
     pub(crate) fn pane_ready(&self, id: PaneId) {
         if self.manager.mark_ready(id).is_err() {
             return;
@@ -572,10 +459,8 @@ impl ReaderHost {
             .unwrap_or_else(|| self.slot_rect())
     }
 
-    /// The two facts the Shell's probe serves from this session (§21): the
-    /// ACTIVE pane's document status, which its route policy answers from,
-    /// and its page. Both are PUSHED across the boundary: the Shell holds no
-    /// reader state, and the host's scope is what ends the pushing.
+    /// The two facts the Shell's probe serves (§21): the active pane's
+    /// status and page, pushed.
     fn install_reports(&self) {
         let host = *self;
         Effect::new(move |_| {
@@ -584,8 +469,7 @@ impl ReaderHost {
                 crate::report_status(&host.session.api, PaneDocStatus::Idle.word(), None);
                 return;
             };
-            // try_: a pane's dispose can wake this effect after the pane's
-            // owner is gone — the report is worth nothing then.
+            // try_: a pane's dispose can wake this after its owner is gone.
             let Some(status) = surface.status.try_get() else {
                 return;
             };
@@ -611,9 +495,8 @@ impl ReaderHost {
             .unwrap_or_default()
     }
 
-    /// The environment a new pane is handed: the session's slices, its view
-    /// of the focus authority — DERIVED from the one active id — and the
-    /// two requests it may make of the host: focus, and open.
+    /// The environment a new pane is handed: the session's slices, its
+    /// focus view and open.
     fn env_for(&self, id: PaneId) -> PaneEnv {
         let manager = self.manager;
         let host = *self;
@@ -659,16 +542,8 @@ impl ReaderHost {
         }
     }
 
-    /// The workspace facts the shared CSS keys off, tracked: what the host's
-    /// own `.reader-bg` carries and what every pane frame mirrors onto its
-    /// own.
-    ///
-    /// Blend swaps the backdrop and the page hosts onto the engine's one
-    /// computed paper colour (styles/components/shell.css,
-    /// styles/page_host.css). It is a WORKSPACE fact: blend mode exists for
-    /// raster pages, and the colour it publishes is the split's shared
-    /// backdrop, so while some pane holds a PDF the reflowable panes beside
-    /// it stand on that paper too.
+    /// The workspace facts the shared CSS keys off, tracked: blend,
+    /// independent looks, split, style.
     pub fn workspace_look(&self) -> WorkspaceLook {
         let has_pdf = self.has_pdf();
         let independent = self.themes.active().get();
@@ -703,8 +578,7 @@ impl ReaderHost {
         })
     }
 
-    /// A lift step from inside a pane, in host client coordinates, mapped
-    /// into the workspace slot's.
+    /// A lift step from inside a pane, mapped into the slot's coordinates.
     fn lift_step(&self, id: PaneId, step: LiftStep) {
         let origin = web_sys::window()
             .and_then(|w| w.document())
@@ -725,8 +599,7 @@ impl ReaderHost {
         }
     }
 
-    /// Run `work` inside the session's root owner ([`HostSession::enter`]);
-    /// `None` when the session is gone and nothing ran.
+    /// Run `work` inside the session's root owner; `None` when it is gone.
     fn in_session<R>(&self, work: impl FnOnce() -> R) -> Option<R> {
         let mut work = Some(work);
         let mut out = None;
@@ -738,8 +611,7 @@ impl ReaderHost {
         out
     }
 
-    /// Say why the workspace refused a placement: the console for the
-    /// record, a toast for the user.
+    /// Say why the workspace refused a placement: the console, a toast.
     fn refused(&self, error: PaneError) {
         leptos::logging::warn!("[reader] the workspace refused an open: {error:?}");
         let message = match error {
@@ -761,8 +633,7 @@ impl ReaderHost {
             .try_set(Some(app_state::state::Toast::new(message)));
     }
 
-    /// The workspace's first pane, filling the slot. `None` is the empty
-    /// unhosted development entry, not a Reader prewarm behind Library.
+    /// The workspace's first pane, filling the slot; `None` the empty entry.
     pub fn create_root(&self, launch: Option<LaunchDocument>) -> Result<PaneId, PaneError> {
         if self.tree.try_with_untracked(PaneTree::is_empty) != Some(true) {
             return Err(PaneError::Layout(tree::TreeError::NotEmpty));
@@ -770,10 +641,8 @@ impl ReaderHost {
         self.create_placed(launch, |tree, id| tree.set_root(id))
     }
 
-    /// Create a pane and place it in the tree, transactionally: the pane is
-    /// created (the manager mints its id, and it takes focus), `place` puts
-    /// it in the layout, and every pane is handed its new box — or, when
-    /// the layout refuses, the pane is closed again and nothing changed.
+    /// Create a pane and place it, transactionally: a refused placement
+    /// closes it again.
     fn create_placed(
         &self,
         launch: Option<LaunchDocument>,
@@ -785,12 +654,8 @@ impl ReaderHost {
             .try_update(|tree| place(tree, id))
             .unwrap_or(Err(tree::TreeError::UnknownPane(id)));
         if let Err(error) = placed {
-            // The refused pane is gone, and so is the look it was seeded with:
-            // the map is keyed by ids that are never reused, and every
-            // per-pane picker reads each entry as "already on screen", so a
-            // look left behind for a pane that was never placed both grows
-            // without bound (one entry per refused split) and quietly narrows
-            // the hues and patterns the next real pane is offered.
+            // The refused pane's seeded look is forgotten too: ids are never
+            // reused.
             self.themes.forget(id);
             let _ = self.manager.close(id, None);
             return Err(PaneError::Layout(error));
@@ -799,8 +664,7 @@ impl ReaderHost {
         Ok(id)
     }
 
-    /// Create a pane for `launch` and hand it the current appearance. Not
-    /// yet placed: [`Self::create_placed`] is the only caller.
+    /// Create a pane for `launch` with the current appearance, unplaced.
     fn create_unplaced(&self, launch: Option<LaunchDocument>) -> Result<PaneId, PaneError> {
         let format = launch
             .as_ref()
@@ -818,12 +682,7 @@ impl ReaderHost {
         let id = self
             .manager
             .create(request, launch, move |id| host.env_for(id))?;
-        // A pane born into a live independent split starts from the look of
-        // the pane in front, in a colour of its own unlike every pane's
-        // showing (and its own texture, when the texture mode is the one in
-        // effect). With neither mode in effect — or a lone pane on screen,
-        // where both stand down — the pane has no look of its own and
-        // inherits the window theme.
+        // A pane born into a live split starts from the pane in front.
         if self.themes.active().get_untracked() || self.themes.textures_active().get_untracked() {
             let global = self.session.settings.with(|s| s.appearance);
             let from = self
@@ -841,16 +700,8 @@ impl ReaderHost {
         Ok(id)
     }
 
-    /// The workspace's document placement: `launch` goes where `target`
-    /// says (see [`OpenTarget`]).
-    ///
-    /// * In place ([`OpenTarget::Pane`], or the active pane): the pane keeps
-    ///   its id and replaces its document session — the one per-pane
-    ///   document change; no other pane is touched.
-    /// * Split: a NEW pane with its own session, split off the named one;
-    ///   it takes focus. Transactional: a refused placement leaves the
-    ///   workspace as it was. A document that then fails to load leaves the
-    ///   new pane showing its error, closable like any other.
+    /// The workspace's document placement; see [`OpenTarget`]. A split
+    /// refuses cleanly.
     pub fn open_document(
         &self,
         launch: LaunchDocument,
@@ -875,12 +726,8 @@ impl ReaderHost {
         }
     }
 
-    /// Open `launch` in pane `id`, in place.
-    ///
-    /// A suspended pane takes no work, and an open IS work: it is resumed
-    /// for the command (every gate of the open is passed synchronously, in
-    /// the command itself) and parked again if the frame is still off
-    /// screen. The promotion's slot flip normally resumed it already.
+    /// Open `launch` in pane `id`, in place. A suspended pane is resumed
+    /// for it.
     fn open_in(&self, id: PaneId, launch: LaunchDocument) -> Result<PaneId, PaneError> {
         let pane = self.manager.pane(id).ok_or(PaneError::Gone(id))?;
         let parked = self.manager.lifecycle(id) == Some(PaneLifecycle::Suspended);
@@ -899,15 +746,8 @@ impl ReaderHost {
         self.manager.set_active(id)
     }
 
-    /// Close one pane inside the live session. It leaves the layout first
-    /// (its split collapses into the sibling), and the layout names the
-    /// pane nearest to it as the focus successor; then the manager disposes
-    /// it — only it: every other pane keeps its session.
-    ///
-    /// The last split's collapse also hands the window the survivor's look
-    /// (see [`theme`]): each per-pane mode needs the split it serves, so the
-    /// single pane left shows the window theme — which IS its own colour and
-    /// texture by then — and the chrome agrees with it by construction.
+    /// Close one pane: it leaves the layout first, then the manager
+    /// disposes it.
     pub fn close_pane(&self, id: PaneId) -> Result<(), PaneError> {
         match self.manager.lifecycle(id) {
             None => return Err(PaneError::Unknown(id)),
@@ -915,7 +755,7 @@ impl ReaderHost {
             Some(_) => {}
         }
         // The survivor's look is read while the split (and so the mode) is
-        // still there: one pane is the count this close lands on.
+        // still there.
         let survivor = if self.pane_count() == 2 {
             let placed = self.manager.placed();
             placed.into_iter().find(|pane| *pane != id)
@@ -938,10 +778,8 @@ impl ReaderHost {
             let _ = retiring.try_update(|r| r.retain(|other| *other != id));
         });
         self.themes.forget(id);
-        // The promoted look lands AFTER the close: the pane count is one by
-        // now, so both modes are down and the survivor follows the window
-        // theme through the same boundary (its own `look_for` answers
-        // `None`), repainting it onto the window's new values.
+        // The promoted look lands after the close, when both modes stand
+        // down.
         if let Some(look) = promoted {
             self.session.settings.update(|s| {
                 s.appearance = look;
@@ -953,9 +791,7 @@ impl ReaderHost {
     }
 
     /// The slot's entries: the placed panes and the retiring ones, in id
-    /// order. Ids only grow and the order never changes for the ids that
-    /// stay, so an entry is never moved in the document — moving an element
-    /// that holds a frame would reload the frame.
+    /// order.
     pub fn entries(&self) -> Vec<PaneId> {
         let mut ids = self.manager.placed();
         if let Some(retiring) = self.retiring.try_get() {
@@ -974,9 +810,7 @@ impl ReaderHost {
         self.retiring.try_with(|r| r.contains(&id)).unwrap_or(false)
     }
 
-    /// Move pane `id` one step toward `direction` through the layout. Only
-    /// the tree changes: every pane keeps its session, and the moved pane
-    /// keeps focus.
+    /// Move pane `id` one step toward `direction`; only the tree changes.
     pub fn move_pane(&self, id: PaneId, direction: MoveDirection) -> Result<(), PaneError> {
         self.reshape(|tree| tree.move_pane(id, direction))
     }
@@ -993,8 +827,7 @@ impl ReaderHost {
         self.reshape(|tree| tree.dock(id, target, axis, side))
     }
 
-    /// One layout-only change: applied to the tree (a refusal changes
-    /// nothing), then every pane is handed its new box.
+    /// One layout-only change, then every pane is handed its new box.
     fn reshape(
         &self,
         change: impl FnOnce(&mut PaneTree) -> Result<(), tree::TreeError>,
@@ -1007,10 +840,8 @@ impl ReaderHost {
         Ok(())
     }
 
-    /// The host is dragging something across the panes (a divider, a
-    /// document): the pane frames must let the pointer through to the host
-    /// for the drag (tracked). A lift is not one of these: it is driven
-    /// from inside the lifted pane's frame, which holds the pointer.
+    /// The host is dragging (a divider, a document): panes let the
+    /// pointer through.
     pub fn shielded(&self) -> bool {
         self.resizing.try_get().unwrap_or(false)
             || self.drag.try_with(DragSession::is_live).unwrap_or(false)
@@ -1021,9 +852,7 @@ impl ReaderHost {
         self.lift.try_get().flatten()
     }
 
-    /// Pick pane `id` up at slot point `at`. Only in a split (one pane has
-    /// nowhere to go) and never during a document drag. The lifted pane
-    /// takes focus: it is the one the reader is handling.
+    /// Pick pane `id` up at slot point `at`; only in a split.
     fn begin_lift(&self, id: PaneId, at: (f64, f64)) -> bool {
         let busy = self.drag.try_with_untracked(DragSession::is_live) != Some(false);
         if busy || untrack(|| self.pane_count()) < 2 {
@@ -1043,9 +872,7 @@ impl ReaderHost {
         });
     }
 
-    /// Put the lifted pane down. With `commit`, a release over a target
-    /// relocates it (a refusal says why and changes nothing); without, or
-    /// over no target, it goes back where it was.
+    /// Put the lifted pane down: `commit` relocates it, else it returns.
     fn end_lift(&self, commit: bool) {
         let Some(Some(lift)) = self.lift.try_update(Option::take) else {
             return;
@@ -1073,9 +900,8 @@ impl ReaderHost {
         self.has_pdf.get()
     }
 
-    /// The Library button: every pane writes its durable point and stops its
-    /// render work, then the Shell is asked to navigate. The Shell's dispose
-    /// comes back over the boundary and tears the workspace down.
+    /// The Library button: panes write their point and stop work, then the
+    /// Shell navigates.
     pub fn return_to_library(&self) {
         for pane in self.manager.live_panes() {
             let _ = pane.command(PaneCommand::PrepareLeave);
@@ -1083,19 +909,13 @@ impl ReaderHost {
         self.session.api.navigate_library();
     }
 
-    /// Dispose the workspace: every pane's dispose runs now (explicit,
-    /// observable), the host refuses new panes from here. Idempotent. The
-    /// panes' async tails wait in [`Self::take_teardown`].
+    /// Dispose the workspace: every pane's dispose runs now. Idempotent.
     pub fn dispose(&self) {
-        // No drag outlives the workspace: whatever was in flight ends here,
-        // with no drop. Untracked — the view is being torn down, and the
-        // listeners go with the owner.
+        // No drag outlives the workspace: an in-flight one ends here.
         self.drag.try_update_untracked(|session| session.cancel());
         self.lift.try_update_untracked(|lift| *lift = None);
         // Every pane's entry stays in the document, out of sight, until the
-        // session unmounts: a frame pane still has its `Dispose` to hear and
-        // its last digest to send, and leaving the document would end its
-        // realm first.
+        // session unmounts.
         let placed = untrack(|| self.manager.placed());
         let _ = self.retiring.try_update(|r| {
             for id in placed {
@@ -1105,22 +925,16 @@ impl ReaderHost {
             }
         });
         self.manager.dispose_all();
-        // The layout lets go of the panes with the manager. Untracked: the
-        // workspace view is being torn down, not re-laid out.
+        // The layout lets go of the panes with the manager; untracked.
         self.tree
             .try_update_untracked(|tree| *tree = PaneTree::new());
     }
 
-    /// The panes' disposal tails, for the session's runtime to await. When
-    /// the last one finished, the diagnostics probe is settled into the
-    /// workspace's final snapshot and the manager's state is let go — the
-    /// only reference this future keeps, and only until then.
+    /// The panes' disposal tails, for the session's runtime to await.
     pub fn take_teardown(&self) -> contract::PaneTeardown {
         let shared = self.manager.shared();
         let tails = self.manager.take_teardown();
-        // The drag as the dispose left it, read now, while the session's
-        // arena still holds it (the settled snapshot outlives the session):
-        // proof that no drag outlived the workspace, not an assumption.
+        // The drag as the dispose left it: proof no drag outlived it.
         let drag = drag_phase(self.drag);
         Box::pin(async move {
             tails.await;
@@ -1142,13 +956,8 @@ impl ReaderHost {
 // ---------------------------------------------------------------------------
 
 impl ReaderHost {
-    /// The drag session's lifetime. While a drag is live, ONE window listener
-    /// set exists — the pointer's moves and release (no pointer capture: the
-    /// pointer crosses from the rail onto the workspace), Escape (capture
-    /// phase, so no pane shortcut sees it) and the window losing focus, both
-    /// cancelling — installed when the drag goes live and removed when it
-    /// ends, or with the host's owner. A drag also ends with no drop when the
-    /// frame leaves the screen (a route transition).
+    /// The drag session's lifetime: one window listener set while a drag is
+    /// live.
     fn install_drag(&self) {
         let host = *self;
         let live = Memo::new(move |_| host.drag.with(DragSession::is_live));
@@ -1169,8 +978,7 @@ impl ReaderHost {
         self.drag.try_with(DragSession::preview).flatten()
     }
 
-    /// The address a drag past its threshold carries (tracked): the Library
-    /// panel dims the row it was lifted from.
+    /// The address a drag past its threshold carries; the row dims.
     pub fn dragged_path(&self) -> Option<String> {
         self.drag
             .try_with(|session| match session {
@@ -1180,9 +988,8 @@ impl ReaderHost {
             .flatten()
     }
 
-    /// A press on a Library row, at client `at`. Arms only: the geometry is
-    /// measured once the pointer passes the threshold, and a press that
-    /// stays a click is the row's click.
+    /// A press on a Library row: arms only; the geometry is measured at
+    /// the threshold.
     pub fn library_press(&self, file: &library::LibraryFile, at: (f64, f64)) -> bool {
         let source = DocumentDragSource {
             document: DocumentId::from_launch(Some(&file.book_id), &file.path),
@@ -1199,8 +1006,7 @@ impl ReaderHost {
             .unwrap_or(false)
     }
 
-    /// The pointer of a live drag moved to client `at`. Subscribers hear of
-    /// it only when the shown target (or the phase) changed.
+    /// The pointer of a live drag moved; subscribers hear only on change.
     fn drag_move(&self, at: (f64, f64)) {
         let host = *self;
         self.drag.try_maybe_update(|session| {
@@ -1209,10 +1015,7 @@ impl ReaderHost {
         });
     }
 
-    /// The pointer was released (at client `at`, when it has a position):
-    /// the drag ends, and a drop over a target runs as a workspace command.
-    /// A drag that got past its threshold swallows the click its release
-    /// may still produce on the row it started from.
+    /// The pointer was released: the drag ends, a drop over a target runs.
     fn drag_release(&self, at: Option<(f64, f64)>) {
         let released = self.drag.try_maybe_update(|session| {
             let was = session.is_live();
@@ -1249,12 +1052,8 @@ impl ReaderHost {
         }
     }
 
-    /// Run a workspace command. The drop is validated against the workspace
-    /// as it is NOW ([`commands::plan`]; a refusal changes nothing), the
-    /// source is resolved through the established open path (the store's
-    /// launch for the row: resume point, title, cover), and the placement is
-    /// the host's one placement path: the manager creates the pane (it takes
-    /// focus), the tree places it, every pane gets its box.
+    /// Run a workspace command: validate now, resolve the source, place
+    /// through the one path.
     pub fn run(&self, command: WorkspaceCommand) -> Result<PaneId, PaneError> {
         let WorkspaceCommand::OpenInDropTarget { source, target } = command;
         let layout = self.layout_now();
@@ -1274,9 +1073,7 @@ impl ReaderHost {
         }
     }
 
-    /// A Library row was activated (clicked, or Enter): `how` says where its
-    /// document goes. A document a pane already shows is focused there
-    /// rather than opened twice — dragging is the way to a second view.
+    /// A Library row was activated; `how` says where its document goes.
     pub fn library_open(&self, file: &library::LibraryFile, how: library::OpenHow) {
         let document = DocumentId::from_launch(Some(&file.book_id), &file.path);
         let showing = self
@@ -1302,8 +1099,7 @@ impl ReaderHost {
         }
     }
 
-    /// The placed panes as the Library panel's open-tabs strip lists them,
-    /// in placement order (tracked on the placement).
+    /// The placed panes as the Library panel's open-tabs strip lists them.
     pub fn open_tabs(&self) -> Vec<library::OpenTab> {
         self.manager
             .placed()
@@ -1330,9 +1126,7 @@ impl ReaderHost {
             .is_none_or(|pane| pane.document().is_none())
     }
 
-    /// The drag's one measurement: the workspace slot's client rect, read
-    /// from the DOM here and nowhere else, and every placed pane's box from
-    /// the layout the panes are drawn at.
+    /// The drag's one measurement: the slot's client rect and the layout.
     fn measure_geometry(&self) -> Option<DropGeometry> {
         let slot = web_sys::window()?
             .document()?
@@ -1368,10 +1162,8 @@ impl ReaderHost {
     }
 }
 
-/// The live drag's window listeners (see [`ReaderHost::install_drag`]):
-/// added now, removed by the calling effect's cleanup. The closures park in
-/// owner-scoped storage (a cleanup must be `Send + Sync`, a `Closure` is
-/// neither) and hold only the host's Copy handles.
+/// The live drag's window listeners, removed by the calling effect's
+/// cleanup.
 fn install_drag_listeners(host: ReaderHost) {
     use wasm_bindgen::JsCast;
     use wasm_bindgen::closure::Closure;
@@ -1433,9 +1225,8 @@ fn install_drag_listeners(host: ReaderHost) {
 /// The pointer events a live drag follows at the window.
 const POINTER_EVENTS: [&str; 3] = ["pointermove", "pointerup", "pointercancel"];
 
-/// The launch for a library address: the store's own resolution (resume
-/// point, title, cover — the function the Shell's open uses), else a bare
-/// launch at page one under the row's name.
+/// The launch for a library address: the store's resolution, else a
+/// bare launch.
 fn launch_for(book_id: Option<&str>, path: &str, name: &str) -> LaunchDocument {
     storage::resolve_launch(path).unwrap_or_else(|| LaunchDocument {
         book_id: book_id.map(str::to_string),
@@ -1476,24 +1267,19 @@ pub struct HostSnapshot {
     /// disposal began.
     pub lifecycle: &'static str,
     pub active_pane: Option<PaneId>,
-    /// The workspace layout: the split tree over pane ids (`None` when no
-    /// pane is placed, or once the session is gone).
+    /// The workspace layout: the split tree over pane ids.
     pub layout: Option<LayoutNode>,
-    /// Every pane not yet `Disposed`, in placement order (a disposing pane
-    /// stays listed until its tail finished).
+    /// Every pane not yet `Disposed`, in placement order.
     pub panes: Vec<PaneSnapshot>,
     /// Every pane this host ever created.
     pub panes_created: usize,
-    /// The document drag session's phase (`idle` whenever no drag is live;
-    /// always `idle` once the workspace is gone).
+    /// The document drag session's phase (`idle` when none is live).
     pub drag: &'static str,
 }
 
 impl HostSnapshot {
     /// Whether the workspace still reads something: live, with a pane that
-    /// is not on its way out. A pane's dispose inside such a workspace (one
-    /// split closed, the others open) is not the reader's dispose, and the
-    /// reader-wide drained baseline is not its question.
+    /// is not leaving.
     pub fn still_reading(&self) -> bool {
         still_reading(self.lifecycle, self.panes.iter().map(|pane| pane.lifecycle))
     }
@@ -1605,12 +1391,10 @@ pub struct PaneSnapshot {
     pub document_id: Option<DocumentId>,
     pub format: PaneFormat,
     pub lifecycle: PaneLifecycle,
-    /// The one active pane (inactive is not disposed: an inactive pane is
-    /// listed live, keeps its session and is shown).
+    /// The one active pane (inactive is not disposed, only unfocused).
     pub focused: bool,
     pub bounds: PaneBounds,
-    /// The pane's box in CSS px² — with its zoom, what its raster demand
-    /// scales with.
+    /// The pane's box in CSS px², what its raster demand scales with.
     pub viewport_area: f64,
     pub resources: contract::PaneResourceCounts,
 }
@@ -1636,9 +1420,8 @@ fn snapshot_of(
         let runtime = state.panes.get(&id);
         panes.push(PaneSnapshot {
             pane_id: id,
-            // A frame pane mirrors its document over the port, which can
-            // trail its readiness by a message; the launch descriptor names
-            // the same document until the mirror lands.
+            // A frame pane mirrors its document over the port, which can trail
+            // by a message.
             document_id: runtime.and_then(|pane| pane.document()).or_else(|| {
                 record
                     .descriptor
