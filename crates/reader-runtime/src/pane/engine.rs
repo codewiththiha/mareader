@@ -1,20 +1,5 @@
-//! The pane's guarded view of its own PDF session.
-//!
-//! Every PDF engine call a pane makes goes through [`PdfPane`], made by
-//! [`crate::pane::handle::PaneHandle::pdf`]: it carries the `PdfSession` the
-//! pane holds at that moment (none for a reflowable document or before the
-//! first open) and the pane's (and runtime's) lifecycle as captured then.
-//! Work ops no-op once disposal began; teardown ops (unregister, cancel,
-//! sweeps) stay admitted until `Disposed`. Behind that, the session itself
-//! refuses everything once it is disposed — so a view captured before a
-//! reopen talks to the OLD session, which answers nothing, and can never
-//! reach the new document.
-//!
-//! The four identity checks a committing result passes (see
-//! `docs/session-ownership.md`): runtime and pane (the captured flags, and
-//! [`PdfPane::still_current`] for results that land after an await), session
-//! (the captured `PdfSession` is live and still the pane's), operation (the
-//! engine's per-op guards, per session).
+//! The pane's guarded view of its PDF session: work stops at
+disposal, teardown stays admitted.
 
 use leptos::prelude::{LocalStorage, StoredValue, WithValue, use_context};
 use pdf_engine::api::EngineError;
@@ -48,8 +33,7 @@ impl PdfPane {
         }
     }
 
-    /// A view onto nothing (a host mounted outside any pane): every call is
-    /// a no-op or a refusal.
+    /// A view onto nothing (a host outside any pane): no-ops or refusals.
     pub(crate) fn none() -> Self {
         Self::new(None, false, false)
     }
@@ -69,8 +53,7 @@ impl PdfPane {
         self.session.as_ref().filter(|_| self.teardown)
     }
 
-    /// Whether a result obtained through this view may still commit: the
-    /// pane still admits work and still holds THIS session, live.
+    /// Whether a result through this view may still commit: pane and session.
     pub fn still_current(&self, pane: &crate::pane::handle::PaneHandle) -> bool {
         self.session
             .as_ref()
@@ -112,10 +95,7 @@ impl PdfPane {
 
     // --- Pages ----------------------------------------------------------
 
-    /// Register a mounted page WITH its own elements: the engine is pinned
-    /// to them and never looks the id up in the document, where another
-    /// pane's page carries the same one. There is no id-only form on
-    /// purpose.
+    /// Register a mounted page WITH its own elements, never by id alone.
     pub fn register_page(
         &self,
         page: u32,
@@ -155,18 +135,16 @@ impl PdfPane {
         }
     }
 
-    /// Stand down one page's queued or in-flight raster without unregistering it.
-    /// Same liveness rule as a render.
+    /// Stand down one page's queued or in-flight raster; same rule as a
+    /// render.
     pub fn cancel_page(&self, canvas_id: &str) {
         if let Some(s) = self.working() {
             s.cancel_page(canvas_id);
         }
     }
 
-    /// One page's intrinsic (scale-1) box, from the document: a worker round
-    /// trip and no pixels. Read before a page's first raster so a fit that the
-    /// page's real size would move lands BEFORE the raster (see
-    /// `components::formats::pdf::canvas`).
+    /// One page's intrinsic box, from the document: no pixels, read before
+    /// its first raster.
     pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
         match self.working() {
             Some(s) => s.probe_page_size(page).await,
@@ -204,8 +182,7 @@ impl PdfPane {
         }
     }
 
-    /// Park the session's idle prefetch. Work-stopping, so admitted like
-    /// teardown (a suspended pane no longer admits work).
+    /// Park the session's idle prefetch; admitted like teardown.
     pub fn suspend_prefetches(&self) {
         if let Some(s) = self.tearing() {
             s.suspend_prefetches();
@@ -226,9 +203,7 @@ impl PdfPane {
         }
     }
 
-    /// This session's engine report: diagnostics, and what the reader's band
-    /// asks a raster's cost and the lane's width of. `None` with no live
-    /// session, which the caller reads as "no new information".
+    /// This session's engine report for diagnostics and the reader's band.
     pub fn stats(&self) -> Option<pdf_core::diagnostics::EngineStats> {
         self.working().and_then(|s| s.stats())
     }
@@ -293,19 +268,7 @@ impl PdfPane {
     }
 }
 
-/// A component's binding to the PDF session its pane held when it mounted.
-///
-/// A page canvas or thumbnail cell is mounted FOR one document: it binds
-/// once, in its body, and every later engine call — the registration, the
-/// render, the cleanup's cancel — goes to that session through
-/// [`MountedPdf::pdf`]. Work is admitted only while the pane still holds that
-/// exact session, so a component left over from a replaced document can never
-/// register into, render from or blit out of the next one; teardown always
-/// reaches the session it bound (the engine ignores a retired sid). A
-/// component mounted outside any pane binds nothing and paints nothing.
-///
-/// Copy and `Send + Sync` (a pane handle plus an arena slot), so cleanup
-/// closures and callbacks can carry it.
+/// A component's binding to the session its pane held at mount.
 #[derive(Clone, Copy)]
 pub struct MountedPdf {
     pane: Option<crate::pane::handle::PaneHandle>,
@@ -313,8 +276,7 @@ pub struct MountedPdf {
 }
 
 impl MountedPdf {
-    /// Bind to the pane in context and its PDF session right now. Call from
-    /// a component body (it reads context and allocates in the owner).
+    /// Bind to the pane in context and its PDF session right now.
     pub fn bind() -> Self {
         let pane = use_context::<crate::pane::handle::PaneHandle>();
         let session = pane.and_then(|p| p.pdf().session().cloned());
@@ -324,18 +286,14 @@ impl MountedPdf {
         }
     }
 
-    /// The engine id of the bound session, for the one DOM attribute that
-    /// tells the engine whose element a thumbnail canvas is
-    /// (`data-engine-sid`). `None` when nothing is bound.
+    /// The engine id of the bound session, for `data-engine-sid`.
     pub fn sid(&self) -> Option<u32> {
         self.session
             .try_with_value(|s| s.as_ref().map(PdfSession::sid))
             .flatten()
     }
 
-    /// The guarded view onto the bound session, with the pane's lifecycle as
-    /// it stands NOW. After the component's owner is gone, a view onto
-    /// nothing.
+    /// The guarded view onto the bound session, with the pane's lifecycle now.
     pub fn pdf(&self) -> PdfPane {
         let Some(pane) = self.pane else {
             return PdfPane::none();
