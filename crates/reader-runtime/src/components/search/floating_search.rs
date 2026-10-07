@@ -1,8 +1,4 @@
-//! Floating search overlay (Chrome/VS-Code style). Search is a transient task,
-//! so it lives in a floating bar over the viewer rather than in the docked
-//! sidebar. Mounted by the coordinator inside `main#viewer-slot` (which is
-//! `relative`); the bar positions itself at the slot's top-right, just below
-//! the toolbar.
+//! Floating search overlay, mounted by the coordinator over the viewer.
 
 use std::time::Duration;
 
@@ -77,10 +73,7 @@ pub fn FloatingSearch(
         }
         set_search_gen.update(|g| *g += 1);
         let started = search_gen.get_untracked();
-        // A close can dispose the reader's signals while the run is still
-        // going (wasm spawn_local runs to completion); reading them here
-        // would panic the wasm, so the pane's document generation stands the
-        // tail down (per pane: another pane's open does not).
+        // A close disposes signals mid-run; its generation stands down.
         let epoch = state.pane.generation();
         spawn_local(async move {
             run_search(state).await;

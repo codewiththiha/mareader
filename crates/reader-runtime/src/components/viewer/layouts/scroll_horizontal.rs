@@ -1,5 +1,4 @@
-//! Scroll-horizontal layout: all pages in one horizontal strip.
-//! Mirrors the scroll-vertical layout; only the axis flips.
+//! Scroll-horizontal layout: all pages in one strip; only the axis flips.
 
 use leptos::prelude::*;
 use reader_core::view::Axis;

@@ -1,13 +1,4 @@
-//! AI-assisted reading: the floating pill anchored to the reader's text
-//! selection and the explanation card it opens.
-//!
-//!   * `selection_pill` — the pill a selection produces, and its anchor maths.
-//!   * `anchor` / `reflow_anchor` — where a selection or a mark is on screen,
-//!     per format family.
-//!   * `gloss` — the explanation card, its highlight marks and the commands
-//!     that drive them.
-//!   * `settings` — the AI's appearance knobs, hosted by the settings modal's
-//!     Theme tab.
+//! AI-assisted reading: the pill a selection produces and the card it opens.
 
 pub mod anchor;
 pub mod gloss;
@@ -15,12 +6,7 @@ pub mod reflow_anchor;
 pub mod selection_pill;
 pub mod settings;
 
-/// Fixtures this feature's tests share.
-///
-/// The anchor watchers and the card interactions both reason about the same
-/// question — a gloss origin of some height, some distance down the viewport —
-/// and both were building the identical box by hand.
-#[cfg(test)]
+/// Fixtures this feature's tests share: the gloss origin box.
 pub(crate) mod fixture {
     use ai_core::gloss::GlossBox;
 

@@ -1,8 +1,4 @@
-//! The right-click menu for a single mark. One action by design — Remove
-//! highlight — composed on the generic [`ContextMenu`] primitive: the
-//! primitive places it at the cursor (clamped into the viewport), owns
-//! Escape/outside dismissal, and this module supplies only the payload type
-//! and the danger row (a [`MenuItem`] with `MenuItemTone::Danger`).
+//! The right-click menu for a single mark: Remove highlight only.
 
 use leptos::prelude::*;
 

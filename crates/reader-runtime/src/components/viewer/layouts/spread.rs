@@ -1,10 +1,4 @@
-//! Spread (`spread`) layout: two pages side by side with no gap.
-//!
-//! Both halves go through the page host with a slot that says which side of the
-//! spine they are on, and that is the whole of this file's contribution to
-//! pagination: under a book layout each host carries its own gutter-side padding,
-//! so the spine falls exactly where the two hosts meet — for a document of rasters
-//! and a document of type alike.
+//! Spread layout: two pages side by side, each carrying its own gutter pad.
 
 use app_chrome::hooks::dom::DUAL_PAGE_CONTAINER_ID;
 use leptos::prelude::*;
