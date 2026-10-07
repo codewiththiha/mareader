@@ -379,13 +379,8 @@ fn install_open_in_hook() {
             _ => return false,
         };
         let launch = LaunchDocument {
-            book_id: None,
             path,
-            resume_page: 1,
-            saved_fraction: None,
-            blend_override: false,
-            cover_data_url: None,
-            display_name: None,
+            ..crate::pane::base::empty_launch()
         };
         live.owner
             .with(|| live.host.open_document(launch, target))
@@ -430,15 +425,7 @@ pub fn run_standalone() {
 
 /// The URL launch (`?open=…&blend=1`) the browser suite drives.
 fn web_launch() -> LaunchDocument {
-    let mut launch = LaunchDocument {
-        book_id: None,
-        path: String::new(),
-        resume_page: 1,
-        saved_fraction: None,
-        blend_override: false,
-        cover_data_url: None,
-        display_name: None,
-    };
+    let mut launch = crate::pane::base::empty_launch();
     if let Some(window) = web_sys::window()
         && let Ok(search) = window.location().search()
         && let Ok(params) = web_sys::UrlSearchParams::new_with_str(&search)

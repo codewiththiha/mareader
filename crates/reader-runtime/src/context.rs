@@ -50,96 +50,44 @@ pub enum ApiHandle {
     Pane,
 }
 
+impl ApiHandle {
+    /// Route one Shell call to this session's transport. `None` while
+    /// no port is adopted.
+    fn route<R>(&self, call: impl FnOnce(&dyn ShellApi) -> R) -> Option<R> {
+        match self {
+            ApiHandle::Standalone => Some(call(&StandaloneApi)),
+            ApiHandle::Frame => crate::frame::with_api(|api| call(api)),
+            ApiHandle::Pane => crate::pane_frame::with_api(|api| call(api)),
+        }
+    }
+}
+
 impl ShellApi for ApiHandle {
     fn open_document(&self, launch: &LaunchDocument) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.open_document(launch),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.open_document(launch));
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.open_document(launch));
-            }
-        }
+        self.route(|api| api.open_document(launch));
     }
     fn navigate_library(&self) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.navigate_library(),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.navigate_library());
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.navigate_library());
-            }
-        }
+        self.route(|api| api.navigate_library());
     }
     fn read_point(&self, point: &ReadPoint) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.read_point(point),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.read_point(point));
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.read_point(point));
-            }
-        }
+        self.route(|api| api.read_point(point));
     }
     fn save_settings(&self, settings: &Settings) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.save_settings(settings),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.save_settings(settings));
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.save_settings(settings));
-            }
-        }
+        self.route(|api| api.save_settings(settings));
     }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.save_cover(path, image),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.save_cover(path, image));
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.save_cover(path, image));
-            }
-        }
+        self.route(|api| api.save_cover(path, image));
     }
     fn save_gloss(&self, key: &str, marks: String) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.save_gloss(key, marks),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.save_gloss(key, marks));
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.save_gloss(key, marks));
-            }
-        }
+        self.route(|api| api.save_gloss(key, marks));
     }
     /// The reader never asks for a bake: it owns the engine. Nothing sent.
     fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, report: &DocStatusReport) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.doc_status(report),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.doc_status(report));
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.doc_status(report));
-            }
-        }
+        self.route(|api| api.doc_status(report));
     }
     fn publish_digest(&self, json: String) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.publish_digest(json),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.publish_digest(json));
-            }
-            ApiHandle::Pane => {
-                crate::pane_frame::with_api(|api| api.publish_digest(json));
-            }
-        }
+        self.route(|api| api.publish_digest(json));
     }
 }
 
