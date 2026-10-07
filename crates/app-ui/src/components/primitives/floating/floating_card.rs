@@ -47,9 +47,6 @@ pub fn FloatingCard(
     /// ARIA label while expanded (e.g. "Gloss for x").
     #[prop(optional)]
     aria_label: Option<Signal<String>>,
-    /// Extra classes for the scroll area (padding etc.).
-    #[prop(optional)]
-    scroll_class: Option<&'static str>,
     /// Hide the inner scroller's native scrollbar. Floating surfaces must
     /// not show a gutter — and a layout-consuming scrollbar would narrow
     /// the content column, making the real content taller than the
@@ -84,7 +81,6 @@ pub fn FloatingCard(
         )
     });
 
-    let scroll_class = scroll_class.unwrap_or("");
     // Static for the component's lifetime: handed to the view as a plain
     // attribute (no reactive closure, no signal) so nothing suggests it
     // ever changes.
@@ -106,7 +102,7 @@ pub fn FloatingCard(
             >
                 {drag_handle.map(|h| h())}
                 <div
-                    class=format!("flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain {scroll_class}")
+                    class="flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain"
                     data-gloss-scroll=hide_scrollbar.then_some("")
                 >
                     {children()}
