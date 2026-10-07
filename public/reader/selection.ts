@@ -1,11 +1,5 @@
-// Selection page-range tracking for virtualization pinning, plus the rich
-// selection detail (text / context / bounding rect) the AI explain pill
-// anchors to: no clamp mid-drag, last-known pages preserved across
-// inter-page gaps. Lives outside public/engine/ because nothing here is the
-// PDF engine's — it reads the host protocol from ../engine/dom-contract and
-// answers for every format that tags a page host. Bundled on its own (see
-// public/readerEngine.ts) so the reader layer is not carried in by the
-// bundle that drags pdf.js along.
+// Selection page-range tracking and the rich detail the AI pill anchors
+// to; bundled on its own.
 
 import {
   AI_POPOVER_SELECTOR,
@@ -27,29 +21,15 @@ let lastKnownAnchorPage: number | null = null;
 let lastKnownFocusPage: number | null = null;
 let lastSelectionRangeKey: string | null = null;
 
-// Detail side: debounced so a drag fires one event, not one per
-// selectionchange, and deduped on text+position so Rust only sees real
-// transitions (a `.set()` there notifies even on unchanged values).
+// Detail is debounced and deduped on text+position.
 let detailDebounce: ReturnType<typeof setTimeout> | null = null;
 let lastDetailKey: string | null = null;
-// Plain clicks produce NO selectionchange when the selection is already
-// collapsed — exactly the state the AI UI leaves behind after suppressing a
-// clear — so any press outside the AI UI schedules one recheck and a stale
-// detail (ghost "Explain" pill) cannot linger.
+// Plain clicks produce no selectionchange, so a press schedules a recheck.
 let clickClearTimer: ReturnType<typeof setTimeout> | null = null;
-// Set on every mousedown: true when the press landed inside the AI UI (the
-// Explain pill and its popover, marked [data-ai-popover]). Pressing
-// "Explain" collapses the document selection, but that collapse must NOT
-// clear the detail state — the button click fires right after and still
-// needs the detail and its anchor rect. Kept until the next mousedown
-// rather than cleared on mouseup: the debounced clear runs after mouseup.
+// Set on every mousedown: true when the press landed inside the AI UI.
 let pointerDownInAiUi = false;
 
-// Every reader page host advertises the format family that painted it and
-// the 1-based page it is showing (both in `../engine/dom-contract`). Asking
-// those instead of `.pdf-page` keeps a selection inside a page of type a
-// selection like any other: no selector here grows a second class when a
-// format arrives.
+// Hosts advertise their family and page via the dom-contract.
 
 function hostOf(node: Node | null): Element | null {
   if (!node) return null;
@@ -67,9 +47,7 @@ function findPageNumber(node: Node | null): number | null {
     const page = parseInt(declared, 10);
     if (Number.isFinite(page) && page > 0) return page;
   }
-  // A host that does not declare its page still carries it in its id, as do
-  // the wrappers around a strip's pages (a selection in the gap between two
-  // pages lands on a wrapper). The fallback it has always been.
+  // A host that does not declare its page carries it in its id.
   if (host.id) {
     const fromId = pageFromHostId(host.id);
     if (fromId !== null) return fromId;
@@ -83,12 +61,8 @@ function findPageNumber(node: Node | null): number | null {
   return null;
 }
 
-// A reflowable document has no fixed page grid, so a page-space rect cannot
-// be what a gloss mark remembers there: a font-size change, a resize or the
-// measure pass settling all re-cut the pages and the rect drifts onto other
-// words. What survives every re-flow is the BLOCK the words sit in and how
-// far into its rendered text they start — what this reports and the app
-// persists (see components/ai/reflow_anchor.rs).
+// A reflowable document has no page grid: the mark remembers a BLOCK
+// and a character range.
 type ReflowSpot = { block: number; start: number; end: number };
 
 function findReflowSpot(range: Range): ReflowSpot | null {
@@ -103,14 +77,7 @@ function findReflowSpot(range: Range): ReflowSpot | null {
   const block = parseInt(rawBlock, 10);
   if (!Number.isFinite(block) || block < 0) return null;
 
-  // Offsets count CHARACTERS (Unicode code points) of the block's rendered
-  // text, in the text nodes under the row in document order — the same
-  // coordinate system the app walks when projecting the spot back to pixels
-  // (components/ai/reflow_anchor.rs). Code points rather than UTF-16 units
-  // keep an emoji ONE character on both sides of the wire. Range.toString()
-  // concatenates the partially-contained Text nodes in tree order, so a
-  // range from the row's start to the selection's start counts exactly the
-  // characters before it.
+  // Offsets count characters (code points) of the block's rendered text.
   const full = row.textContent ?? "";
   if (!full) return null;
   const before = range.cloneRange();
@@ -118,8 +85,7 @@ function findReflowSpot(range: Range): ReflowSpot | null {
   try {
     before.setEnd(range.startContainer, range.startOffset);
   } catch {
-    // A start the row does not contain (a selection re-anchored mid-flight):
-    // no honest spot to report, and the app falls back to its own capture.
+    // A start the row does not contain: no honest spot.
     return null;
   }
   const start = [...before.toString()].length;
@@ -129,11 +95,7 @@ function findReflowSpot(range: Range): ReflowSpot | null {
   return { block, start, end: Math.min(end, total) };
 }
 
-// Where a selection event is raised. Several panes listen on the window;
-// an event dispatched on the page host the selection is in bubbles there
-// with that host as its target, and each pane keeps only its own. A clear
-// (and a selection whose host is unknown) goes to the window itself: nobody's
-// in particular, which every pane reads as "no selection here".
+// Events are raised on the page host; a clear goes to the window.
 function raise(origin: Element | null, name: string, detail: unknown): void {
   const event = new CustomEvent(name, { detail, bubbles: true });
   if (origin && origin.isConnected) origin.dispatchEvent(event);
@@ -170,13 +132,7 @@ function dispatchSelectionPages(): void {
   raise(hostOf(sel.anchorNode) ?? hostOf(sel.focusNode), SELECTION_PAGES_EVENT, { first, last });
 }
 
-// ~120 chars of surrounding text from the same layer of the document — a
-// PDF's text layer or a reflowable block row, whichever the selection is
-// actually in — giving the model the clause around the word rather than the
-// chapter. Nothing here names a format's classes: both layers are "the
-// element this selection is inside", found by the attributes the hosts
-// publish. A selection spanning two blocks takes its start's row, which is
-// the row its spot counts characters in.
+// ~120 chars of surrounding text from the selection's own layer.
 function contextLayer(node: Node | null): Element | null {
   const el = node && (node.nodeType === Node.TEXT_NODE
     ? node.parentElement
@@ -213,9 +169,7 @@ function dispatchSelectionDetail(): void {
   }
 
   const range = sel.getRangeAt(0);
-  // getBoundingClientRect() is the tight box around all selected fragments —
-  // the "warp window" anchor. Degenerate ranges (zero-size) fall back to the
-  // first client rect, which covers multi-line selections.
+  // getBoundingClientRect() is the tight box — the warp-window anchor.
   const bounds = range.getBoundingClientRect();
   const rect = bounds.width > 0 && bounds.height > 0
     ? bounds
@@ -228,8 +182,7 @@ function dispatchSelectionDetail(): void {
 
   const host = hostOf(range.startContainer);
   const kind = host ? host.getAttribute(HOST_ATTR) : null;
-  // The spot is only meaningful — and only computed — for a reflowable
-  // document; a PDF's anchor is the page-space rect the app derives itself.
+  // The spot is only computed for a reflowable document.
   const spot = kind === HOST_REFLOW ? findReflowSpot(range) : null;
 
   raise(host, SELECTION_DETAIL_EVENT, {
@@ -241,9 +194,7 @@ function dispatchSelectionDetail(): void {
       width: rect.width,
       height: rect.height,
     },
-    // Which format family the selection is in; null when it is in
-    // neither (chrome, the library), which the app treats as the PDF
-    // path it has always been.
+    // Which family the selection is in; null when neither.
     host: kind,
     spot,
   });
@@ -252,9 +203,7 @@ function dispatchSelectionDetail(): void {
 export function installSelectionTracker(): void {
   document.addEventListener("mousedown", (e) => {
     const t = e.target as HTMLElement | null;
-    // A drag inside any reader host coalesces the detail pass onto mouseup:
-    // per-move getClientRects() is a layout read, and a paragraph of text is
-    // worth exactly as much protection as a page of pixels.
+    // A drag coalesces the detail pass onto mouseup.
     if (t && t.closest && t.closest(HOST_SELECTOR)) {
       selDragging = true;
     }
@@ -276,9 +225,7 @@ export function installSelectionTracker(): void {
 
   document.addEventListener("selectionchange", () => {
     dispatchSelectionPages();
-    // While a drag is in progress, selectionchange fires per mouse move and
-    // getClientRects() is a layout read. Coalesce the detail pass onto the
-    // drag's end (mouseup) and only debounce here for keyboard selection.
+    // During a drag, coalesce onto mouseup; debounce only for keyboard.
     if (selDragging) return;
     if (detailDebounce) clearTimeout(detailDebounce);
     detailDebounce = setTimeout(dispatchSelectionDetail, 120);
