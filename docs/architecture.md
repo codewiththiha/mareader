@@ -109,9 +109,10 @@ shape is in `docs/frame-lifecycle-alternatives.md`.
   pane (its own `ReaderState`, effects, virtualizers, document session).
   The host never names a PDF type or a pane's state
   (`tools/check-host-boundary.mjs`, CI lint lane); pane content reaches the
-  chrome only through `ChromeSlot` views. Panes never see `AppState` or
-  Shell state; the Shell reads the host through the `host` block of the
-  diagnostics digest.
+  chrome only through `ChromeSlot` views. A pane holds no Shell store: it
+  gets the shared chrome signals (`ChromeState`) and a commands-only
+  boundary (`ApiHandle`), and the Shell reads the host through the `host`
+  block of the diagnostics digest.
 - The Shell loads **no Reader or Library implementation**. Its two-slot
   raster coordinator holds weak wakes/plain leases; Reader hosts borrow the
   same object. Dependency/artifact gates keep runtime code out of Shell and
