@@ -409,6 +409,19 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       await page.waitForTimeout(80);
     }
   };
+  // A press into a running zoom transaction is dropped, not replayed, so
+  // wait for `field` to hold still before the next one.
+  const stable = async (label, field, holdMs) => {
+    const started = Date.now();
+    let last = null, since = started;
+    for (;;) {
+      const value = (await probe())[field];
+      if (value !== last) { last = value; since = Date.now(); }
+      if (Date.now() - since >= holdMs) return value;
+      if (Date.now() - started > 20_000) throw new Error(`${label}: ${field} never held still (last ${JSON.stringify(value)})`);
+      await page.waitForTimeout(60);
+    }
+  };
   // A press inside the pane is what makes it the host's active pane, and the
   // forwarded keys only carry to that one — so the sequence starts where a
   // reader's does. The aim is the pane's middle: the Reader's title bar lies
@@ -444,14 +457,17 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await page.waitForFunction(() => !!window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
   await chromeClick("Zoom in (+)");
   const zoomIn = await settle("the toolbar's zoom-in button never landed", (f) => f.scale > seated.scale);
+  await stable("the toolbar's zoom-in before the zoom-out", "scale", 500);
   await chromeClick("Zoom out (-)");
   const zoomOut = await settle("the toolbar's zoom-out button never landed", (f) => f.scale < zoomIn.scale);
+  await stable("the toolbar's zoom-out before the Ctrl keys", "scale", 500);
   // An open popover owns its keys (a host menu is a typing surface to the key
   // forwarder), so the Cmd/Ctrl combos are checked with it closed.
   await chromeClick("View & tools");
   await page.waitForFunction(() => !window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
   await page.keyboard.press("Control+Equal");
   const ctrlIn = await settle("Ctrl+= never zoomed in", (f) => f.scale > zoomOut.scale);
+  await stable("the Ctrl+= zoom before Ctrl+-", "scale", 500);
   await page.keyboard.press("Control+Minus");
   const ctrlOut = await settle("Ctrl+- never zoomed out", (f) => f.scale < ctrlIn.scale);
   // Vim's home row scrolls the strip the arrows do: `j` nudges down (and
@@ -467,22 +483,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await page.waitForFunction(() => !window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
   await page.mouse.click(press.x, press.y);
   await settle("the pane the keys are about to move to hold the host's focus", (f) => f.active === "true");
-  // …and the zoom has to be over. A transaction owns the strip it rescales
-  // while it runs — its own landing write re-lands the offset it anchored —
-  // so a nudge issued into it is overwritten (ZOOM_ANIM_MS + ZOOM_GRACE_MS,
-  // 420 ms). Wait for the scale to HOLD still past that, then hand the keys
-  // over; the strip's baseline below is read on the settled side.
-  const stable = async (label, field, holdMs) => {
-    const started = Date.now();
-    let last = null, since = started;
-    for (;;) {
-      const value = (await probe())[field];
-      if (value !== last) { last = value; since = Date.now(); }
-      if (Date.now() - since >= holdMs) return value;
-      if (Date.now() - started > 20_000) throw new Error(`${label}: ${field} never held still (last ${JSON.stringify(value)})`);
-      await page.waitForTimeout(60);
-    }
-  };
+  // …and the zoom has to be over before the vim keys.
   await stable("the pane's zoom to settle before the vim keys", "scale", 500);
   // Where a key lands decides whether the reader acts on it, so a failed
   // settle below can say what had the focus instead of only that the strip
