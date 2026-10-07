@@ -1,16 +1,5 @@
-//! Grabbing a pane's empty space: the hand cursor, drag-to-pan in every
-//! direction (with a short fling on release), and — in a split — a still
-//! press-and-hold that lifts the pane so it can be dropped elsewhere
-//! ([`super::lift`]).
-//!
-//! "Empty space" is anywhere with nothing to select or press under the
-//! pointer: the gutters, and the white of a page or a text block around and
-//! between its lines. A press on text keeps its own meaning (selection), as
-//! do links, images, marks and controls.
-//!
-//! The pane owner explicitly removes the listeners, releases pointer capture,
-//! cancels the hold and stops its animation loop. A fling holds the grab state
-//! weakly and a detached scroller ends it, so no gesture pins a closed pane.
+//! Grabbing empty space: the hand cursor, drag-to-pan with a fling, and
+//! hold-to-lift in a split.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -23,17 +12,14 @@ use wasm_bindgen::closure::Closure;
 use super::lift::HOLD_TO_LIFT_MS;
 use app_chrome::hooks::use_raf::FrameLoop;
 
-/// The attribute the entry carries while the pointer is over empty space
-/// (`ready`) or while a grab is under way (`grabbing`); the stylesheet turns
-/// it into the hand cursor (styles/components/shell.css).
+/// Hand cursor: `ready` over empty space, `grabbing` under a press
+/// (styles/components/shell.css).
 const PAN_ATTR: &str = "data-pan";
-/// Present while a hold is counting down towards a lift; the stylesheet
-/// draws the filling ring at `--hold-x`/`--hold-y`.
+/// Present while a hold counts down to a lift; the stylesheet draws the ring.
 const HOLD_ATTR: &str = "data-pan-hold";
 
-/// What a press on these is NOT a grab of: controls, links, images and
-/// marks. Text is decided by a hit test on its glyphs ([`text_at`]), so the
-/// white around and between the lines of a page or a block is empty space.
+/// Never a grab: controls, links, images, marks; text is decided by
+/// its glyphs ([`text_at`]).
 const NOT_EMPTY: &str = "button, a, input, textarea, select, label, summary, img, svg, video, \
      mark, [contenteditable], [role=menu], [role=menuitem], [role=dialog], [role=separator], \
      [role=slider], [role=button], [data-pane-close], [data-no-grab]";
@@ -88,9 +74,8 @@ impl Grab {
     }
 }
 
-/// Where a hold-to-lift goes: the workspace that can lift the pane. Points
-/// are in the client coordinates of the document the entry lives in; the
-/// sink maps them into the workspace's own.
+/// Where a hold-to-lift goes: the workspace, which maps the entry's
+/// client points into its own.
 pub trait LiftSink {
     /// Whether a hold may lift the pane now (the workspace holds others).
     fn can_lift(&self) -> bool;
@@ -141,9 +126,8 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
             if ev.button() != 0 || !ev.is_primary() || !is_empty_space(&ev) {
                 return;
             }
-            // The default stays: it is what moves focus into this frame, so
-            // the keyboard follows a click on the margin. The grabbing state
-            // below turns selection off for the drag instead.
+            // The default stays: it moves focus here, so clicking the margin
+            // keeps the keyboard.
             let at = (f64::from(ev.client_x()), f64::from(ev.client_y()));
             let scroller = ev
                 .target()
@@ -164,8 +148,7 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
             let _ = down_entry.set_pointer_capture(ev.pointer_id());
             let _ = down_entry.set_attribute(PAN_ATTR, "grabbing");
 
-            // In a split a still hold lifts the pane. The ring shows the hold
-            // filling, at the pointer, so the wait reads as progress.
+            // In a split a hold lifts the pane; the ring shows it filling.
             if sink.can_lift() {
                 let rect = down_entry.get_bounding_client_rect();
                 if let Some(el) = down_entry.dyn_ref::<web_sys::HtmlElement>() {
@@ -270,8 +253,8 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
     for (name, listener) in &listeners {
         let _ = entry.add_event_listener_with_callback(name, listener.as_ref().unchecked_ref());
     }
-    // pointercancel and lost capture share the end handler, but the owning
-    // closure is stored only once and removed from all three registrations.
+    // pointercancel and lost capture reuse the end handler, registered
+    // and removed once.
     let on_up = listeners.last().expect("end listener").1.as_ref();
     for name in ["pointercancel", "lostpointercapture"] {
         let _ = entry.add_event_listener_with_callback(name, on_up.unchecked_ref());
@@ -306,8 +289,8 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
     });
 }
 
-/// Scroll the grabbed scroller so the content follows the pointer, and keep
-/// a smoothed velocity for the fling.
+/// Scroll the scroller so content follows the pointer; keeps a smoothed
+/// velocity for the fling.
 fn pan(grab: &mut Grab, at: (f64, f64)) {
     let now = now_ms();
     let dt = (now - grab.last.2).max(1.0);
@@ -324,9 +307,8 @@ fn pan(grab: &mut Grab, at: (f64, f64)) {
     }
 }
 
-/// Carry a released pan on with a decaying speed, one frame at a time,
-/// until it stops or the next press (or the entry's end) claims a new
-/// generation.
+/// Carry a released pan on, decaying, until it stops or a newer
+/// generation claims it.
 fn fling(
     state: Rc<RefCell<Grab>>,
     scroller: web_sys::Element,
@@ -363,7 +345,7 @@ fn fling(
 }
 
 /// Whether the event landed on empty space: nothing to select or press
-/// under the pointer, whatever the format (PDF, Markdown, text).
+/// under the pointer.
 fn is_empty_space(ev: &web_sys::PointerEvent) -> bool {
     let Some(el) = ev
         .target()
@@ -377,9 +359,7 @@ fn is_empty_space(ev: &web_sys::PointerEvent) -> bool {
     !text_at(&el, f64::from(ev.client_x()), f64::from(ev.client_y()))
 }
 
-/// Whether one of `el`'s own text runs has a glyph box under (x, y). The
-/// event target is the innermost element at the point, so only its direct
-/// text children can be there: a PDF text-layer span, a paragraph's line.
+/// Whether a direct text run of `el` has glyphs over (x, y).
 fn text_at(el: &web_sys::Element, x: f64, y: f64) -> bool {
     let Some(doc) = el.owner_document() else {
         return false;

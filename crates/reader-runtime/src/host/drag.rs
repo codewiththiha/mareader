@@ -1,35 +1,13 @@
-//! The document drag session: a small state machine the host owns, one per
-//! workspace, holding typed data only — the source descriptor, the geometry
-//! measured when the drag started, the target shown. No DOM element, no
-//! pane runtime, no document state: a drag is an intent until it is dropped,
-//! and a drop is handed to the command layer ([`super::commands`]), which
-//! alone mutates the workspace.
-//!
-//! The one source is a file row of the rail's Library panel
-//! ([`super::library`]): a document the persisted library names, dragged
-//! onto the workspace to open it in a split. A drag from outside the window
-//! (a file from the OS) is never one of these — that is the library route's
-//! import, and it never reaches the reader.
-//!
-//! ```text
-//! Idle ─arm─▶ Arming ─(threshold)─▶ Dragging{target} ─release─▶ Idle + DropIntent
-//!                                                    └cancel─▶ Idle
-//! ```
-//!
-//! `Arming` does no work at all: the geometry is measured when the pointer
-//! crosses the threshold, never before, so a press that stays a click costs
-//! nothing and changes nothing.
+//! The document drag session: typed data only, no DOM, no pane runtime.
 
 use super::drop_target::DropTarget;
 use super::geometry::DropGeometry;
 use super::model::{DocumentId, PaneBounds, PaneFormat};
 
-/// The repository's one drag threshold (`app_ui`'s draggable item): a press
-/// that moves this far or less is still a click.
+/// The repository's one drag threshold; a shorter move stays a click.
 pub use app_ui::components::primitives::interactions::draggable_item::DRAG_THRESHOLD_PX;
 
-/// The dragged document: an address the persisted library names, as data.
-/// The command layer resolves it through the established open path.
+/// The dragged document: an address the persisted library names.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DocumentDragSource {
     pub document: Option<DocumentId>,
@@ -58,8 +36,7 @@ pub enum DragSession {
         source: DocumentDragSource,
         origin: (f64, f64),
     },
-    /// A drag: the geometry measured when it started, and the target the
-    /// pointer (or the keyboard) chose, if any.
+    /// A drag: the geometry measured at the start, and the chosen target.
     Dragging {
         source: DocumentDragSource,
         geometry: DropGeometry,
@@ -109,8 +86,7 @@ impl DragSession {
         }
     }
 
-    /// A press on a source. Only from `Idle`: a second press while a drag is
-    /// live is not a second drag.
+    /// A press on a source. Only from `Idle`: no second drag while live.
     pub fn arm(&mut self, source: DocumentDragSource, at: (f64, f64)) -> bool {
         if self.is_live() {
             return false;
@@ -135,12 +111,8 @@ impl DragSession {
         true
     }
 
-    /// The pointer moved to `at` (client coordinates). While arming, nothing
-    /// happens until the pointer is farther than [`DRAG_THRESHOLD_PX`] from
-    /// the press; crossing it measures the geometry (`measure`, called at
-    /// most once per drag — a `None` means there is no workspace to drop
-    /// on, and the press is let go). Returns whether the shown target (or
-    /// the phase) changed, so the caller writes only on a change.
+    /// The pointer moved to `at`; crossing the threshold measures the
+    /// geometry. Returns whether anything changed.
     pub fn moved(
         &mut self,
         at: (f64, f64),
@@ -189,9 +161,7 @@ impl DragSession {
         changed
     }
 
-    /// The pointer was released (at `at`, when the release has a position).
-    /// The session is over either way; the intent is the drop to carry out,
-    /// `None` for a click (still arming) or a release over no target.
+    /// Release: the drop to carry out, `None` for a click or no target.
     pub fn release(&mut self, at: Option<(f64, f64)>) -> Option<DropIntent> {
         if let Some(at) = at {
             self.point(at);
@@ -213,8 +183,7 @@ impl DragSession {
         was
     }
 
-    /// What the preview draws: the target, the box the dropped document
-    /// will occupy (slot coordinates), and the operation in words.
+    /// What the preview draws: the target, the box the drop will take.
     pub fn preview(&self) -> Option<Preview> {
         let DragSession::Dragging {
             geometry,

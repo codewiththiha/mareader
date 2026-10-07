@@ -1,13 +1,4 @@
-//! Drop targets: what a document dropped on the workspace may do, as data.
-//!
-//! Only operations the host can execute exist here. A split of a pane on one
-//! of its four edges is the drop's normal answer (a NEW pane, with its own
-//! session, halving the target's box). [`DropTarget::Here`] is the product's
-//! one defined "centre" behaviour, and it exists only over a pane that holds
-//! no document yet (a warm reader's empty root): a drop there opens the
-//! document in that pane. Over a pane that shows a document there is no
-//! centre target at all, so a drop can never replace a document the user
-//! was reading by accident.
+//! Drop targets: what a document dropped on the workspace may do.
 
 use serde::Serialize;
 
@@ -83,9 +74,7 @@ impl DropTarget {
         }
     }
 
-    /// The box the dropped document will occupy, given the target pane's
-    /// box `rect` — laid out by the same rounding the tree's layout uses, so
-    /// the preview is the box the drop produces.
+    /// The box the drop produces, by the tree's own rounding.
     pub fn predicted_rect(self, rect: PaneBounds) -> PaneBounds {
         match self {
             DropTarget::Here { .. } => rect,
@@ -100,8 +89,7 @@ impl DropTarget {
         }
     }
 
-    /// The pending operation in words: the preview's label and the live
-    /// region's announcement. `format` is the target pane's.
+    /// The pending operation in words.
     pub fn describe(self, format: PaneFormat) -> String {
         match self {
             DropTarget::Split { edge, .. } => {
@@ -157,8 +145,8 @@ mod tests {
     fn the_predicted_box_is_the_half_the_new_pane_gets() {
         let pane = rect(100.0, 50.0, 801.0, 600.0);
         let split = |edge| DropTarget::Split { pane: p(1), edge };
-        // The layout rounds the FIRST half: 400.5 → 401 (Rust rounds half
-        // away from zero), the second takes the remaining 400.
+        // The layout rounds the FIRST half: 400.5 → 401, so the second
+        // takes 400.
         assert_eq!(
             split(Edge::Left).predicted_rect(pane),
             rect(100.0, 50.0, 401.0, 600.0)

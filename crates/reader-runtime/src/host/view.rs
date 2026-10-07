@@ -1,18 +1,4 @@
 //! The host's view: the workspace chrome and the slot the panes mount in.
-//!
-//! The title bar, the backdrop, the rail's two mount points and the settings
-//! modal's placement are the host's — ONE copy for the workspace, whatever
-//! the panes show. Each chrome region the active pane may fill is a
-//! [`ChromeSlot`] the host places and the pane fills through the contract;
-//! the workspace slot (`main#viewer-slot`) holds one keyed entry per placed
-//! pane, positioned at the box the layout gave it, and one divider per
-//! split.
-//!
-//! The workspace-level overlays are the host's too, never a pane's: the
-//! active pane's focus outline, each pane's close control, the dividers
-//! (§22), and a drag's drop preview — a box drawn from the drag's measured
-//! geometry, never a render and never an open. A pane's own overlays (its
-//! find bar, its selection pill, its gloss menus) stay inside its content.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -33,13 +19,12 @@ use app_ui::components::menus::appearance_menu::AppearanceMenu;
 use app_ui::components::primitives::controls::button::{Button, ButtonVariant};
 use app_ui::components::shell::titlebar::app_title_bar::AppTitleBar;
 
-/// The title bar's height (its root's `h-12`, always hit-testable): it lies over
-/// the top of the workspace and takes presses there.
+/// The title bar's height (`h-12`): it lies over the workspace top and
+/// takes presses there.
 const TITLE_BAR_PX: f64 = 48.0;
 
-/// The active pane's contribution to `slot`, placed where this closure
-/// runs. Tracked on the active pane only: a focus change re-places the
-/// region; nothing inside the pane re-runs it.
+/// The active pane's contribution to `slot`: a focus change re-places
+/// it.
 fn slot_view(
     host: ReaderHost,
     slot: ChromeSlot,
@@ -51,21 +36,15 @@ fn slot_view(
     }
 }
 
-/// The workspace: the title bar (sidebar toggle + Library on the left, the
-/// active document's title in the centre, its view menu and the host's
-/// appearance menu on the right), the backdrop, the rail's mount points, the
-/// pane slot, and the settings modal.
+/// The workspace: the title bar, the backdrop, the rail mounts, the
+/// pane slot.
 #[component]
 pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
     let shell = host.shell;
     let settings = host.session.settings;
 
-    // The sidebar toggle's visibility is the controller's rule: overlay mode
-    // drops it (the rail opens by brushing the window's left edge and closes
-    // from its own header). The Library button stays put — the rail floats
-    // above the bar and covers it while up. The cluster is always mounted so
-    // the row keeps its left edge (and `#toolbar-leading`, the measurement
-    // anchor the library title uses) wherever the mode puts it.
+    // Always mounted: the cluster anchors the library title; the toggle's
+    // visibility is the controller's rule.
     let show_sidebar_toggle = move || shell.show_sidebar_toggle().get();
     let has_open_doc = move || host.active_status().holds_document();
     let go_library = move |_| host.return_to_library();
@@ -113,12 +92,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
     let rail_overlay = slot_view(host, ChromeSlot::Rail);
     let settings_modal = slot_view(host, ChromeSlot::Settings);
 
-    // The workspace slot's entries: one per placed pane, keyed by PANE id
-    // (never a document id or an index), each positioned at the box the host
-    // handed that pane — filling the slot until the first measurement
-    // lands. Every placed pane is SHOWN and live: inactive is not hidden
-    // and not disposed, it is only not the pane the keyboard and the
-    // title bar's chrome follow.
+    // One entry per placed pane, keyed by PANE id, at the box handed it.
     let manager = host.manager;
     let pane_entry = move |id: PaneId| {
         let Some(pane) = manager.pane(id) else {
@@ -126,14 +100,13 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
         };
         let site = PaneSite::here();
         let content = untrack(|| pane.mount(host.bounds_now(id), site));
-        // The pane's effects are installed and its view is built (and, off
-        // screen, it is parked right away).
+        // The pane's effects are installed and its view built here (parked
+        // off screen right away).
         host.pane_ready(id);
         let active = move || manager.active() == Some(id);
         let split = move || host.pane_count() > 1;
-        // Focus is decided at the ENTRY, in the capture phase: a press or a
-        // keyboard focus anywhere in the pane makes it active before any
-        // control inside can swallow the event.
+        // Focus is decided at the ENTRY, in the capture phase, before any
+        // control sees it.
         let entry_ref: NodeRef<html::Div> = NodeRef::new();
         entry_ref.on_load(move |entry| {
             let entry: web_sys::Element = entry.into();
@@ -145,11 +118,11 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                 .filter(|b| b.width > 0.0 && b.height > 0.0)
         };
         // A pane whose top meets the title bar keeps its corner controls
-        // below the bar, which would otherwise take their presses.
+        // below the bar.
         let under_bar = Signal::derive(move || bounds().is_none_or(|b| b.y < TITLE_BAR_PX));
         let corner = move || if under_bar.get() { "top-14" } else { "top-2" };
-        // While lifted, the entry rides the pointer as a card: shrunk about
-        // the point it was picked up by, offset by how far the pointer went.
+        // While lifted, the entry rides the pointer as a card, shrunk about
+        // its pivot.
         let lifted = move || host.lifted().filter(|lift| lift.pane == id);
         let ride = move || {
             lifted()
@@ -167,8 +140,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                 node_ref=entry_ref
                 class="pane-entry group absolute"
                 class=("pane-lifted", move || lifted().is_some())
-                // A closed pane finishing its teardown: out of sight and out
-                // of reach, but still in the document (see `entries`).
+                // A closed pane retiring: out of sight, still in the document.
                 class=("pane-retiring", move || host.is_retiring(id))
                 style:translate=ride
                 style:transform-origin=pivot
@@ -184,17 +156,14 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                 data-pane-active=move || active().to_string()
             >
                 {content}
-                // The focus outline: which of several panes the keyboard
-                // and the title bar follow. Painted over the content, never
-                // taking a pointer.
+                // The focus outline: which pane the keyboard follows.
                 <Show when=move || split() && active()>
                     <div
                         aria-hidden="true"
                         class="pane-focus-outline pointer-events-none absolute inset-0"
                     />
                 </Show>
-                // Close THIS pane (with more than one: the last pane closes
-                // with the reader, through the Library button).
+                // Close THIS pane; with one pane, Library closes all.
                 <Show when=split>
                     <div
                         data-pane-close=id.get()
@@ -227,31 +196,25 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
         .into_any()
     };
 
-    // One divider per split, keyed by the split: its strip and the box it
-    // resizes are read from the layout, so a re-layout moves it in place.
+    // One divider per split, keyed by the split: strip and box come from
+    // the layout.
     let divider = move |split: SplitId| divider_view(host, split);
 
     view! {
         <AppTitleBar state=host.chrome left=left center=center right=right>
-            // overflow-hidden clips the hidden bottom bar's slide-down
-            // translate so it can never leak a phantom scrollbar onto the
-            // window.
+            // overflow-hidden clips the bottom bar's slide-down, so no phantom
+            // scrollbar.
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
                 class=("independent-themes", move || host.themes.active().get())
                 class=("split-workspace", move || host.pane_count() > 1)
                 style=move || host.workspace_look().style
-                // The blend class swaps the backdrop AND the page hosts onto
-                // the engine's one computed paper colour (see
-                // `ReaderHost::workspace_look`).
+                // The blend class swaps backdrop and page hosts onto the paper.
                 class=("blend", move || host.workspace_look().blend)
                 class=("pane-shield", move || host.shielded())
             >
                 <div class="relative flex min-h-0 flex-1">
-                    // DOCKED: the rail is a flex sibling of `<main>`, so the
-                    // workspace gives up the width. `PushRail` renders
-                    // nothing while the controller says the layout is
-                    // overlay.
+                    // DOCKED: the rail sits beside `<main>` and takes width.
                     <PushRail shell=shell>{rail_push}</PushRail>
                     <main
                         id=VIEWER_SLOT_ID
@@ -272,34 +235,25 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                         />
                         {move || host.drag_preview().map(preview_view)}
                         {move || host.lifted().map(|lift| lift_view(manager, lift))}
-                        // The pending drop in words, for assistive technology:
-                        // the text changes only when the target does.
+                        // The pending drop in words, for screen readers.
                         <div class="sr-only" role="status" aria-live="polite" data-drop-announce="">
                             {move || host.drag_preview().map(|preview| preview.label).unwrap_or_default()}
                         </div>
                     </main>
                 </div>
             </div>
-            // OVERLAY: `OverlayRail` mounts OUTSIDE `.reader-bg`, which is a
-            // stacking context at z-index 0 — a rail inside it would paint
-            // under the title bar's band. Out here its own z-popover outranks
-            // the bar, so the rail covers the bar's left corner (Library
-            // button included) and takes the traffic lights with it. Renders
-            // nothing while the controller says the layout is docked.
+            // OVERLAY: `OverlayRail` mounts outside `.reader-bg` (a stacking
+            // context), so its z-popover outranks the title bar.
             <OverlayRail shell=shell>{rail_overlay}</OverlayRail>
-            // The settings modal belongs to the window, not to the workspace:
-            // inside `.reader-bg` (a stacking context) the title bar's band
-            // would paint over an open modal. As a sibling, its own z-popover
-            // token outranks the bar, and rendering after the floating rail
-            // wins their shared token too.
+            // The settings modal belongs to the window: inside `.reader-bg` the
+            // bar would paint over it.
             {settings_modal}
         </AppTitleBar>
     }
 }
 
-/// The pending drop: the box the dropped document will occupy, and what
-/// the drop does. Pure geometry — nothing is opened or rendered for it —
-/// and it never takes a pointer. Reduced motion drops its glide.
+/// The pending drop's box and words. Pure geometry; never opens
+/// anything, never takes a pointer.
 fn preview_view(preview: super::drag::Preview) -> impl IntoView {
     let rect = preview.rect;
     view! {
@@ -326,10 +280,7 @@ fn preview_view(preview: super::drag::Preview) -> impl IntoView {
     }
 }
 
-/// The lifted pane's mark on the workspace: the box it would take if
-/// released now, with what the release does. Its old place is not held
-/// open — the workspace is laid out without it while it is held — so the
-/// neighbours have already filled it. Geometry only, never taking a pointer.
+/// The lifted pane's mark: the box it would take if released now.
 fn lift_view(manager: PaneManager, lift: super::lift::Lift) -> impl IntoView {
     let px = |v: f64| format!("{v}px");
     let target = lift.target.and_then(|target| {
@@ -359,13 +310,8 @@ fn lift_view(manager: PaneManager, lift: super::lift::Lift) -> impl IntoView {
     }
 }
 
-/// Make pane `id` active on any press or keyboard focus inside `entry`, in
-/// the CAPTURE phase (see the entry). A press on the pane's close control
-/// is not a request to look at the pane it is closing, and is left alone.
-///
-/// The listener's closure is handed to the element (`into_js_value`): it
-/// lives exactly as long as the entry does and holds only Copy handles (the
-/// manager's arena keys), so a detached entry keeps nothing of the session.
+/// Make pane `id` active on any press or focus inside `entry`, in
+/// the capture phase.
 fn capture_focus(entry: &web_sys::Element, manager: PaneManager, id: PaneId) {
     let activate = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::Event)>::new(
         move |event: web_sys::Event| {
@@ -386,16 +332,8 @@ fn capture_focus(entry: &web_sys::Element, manager: PaneManager, id: PaneId) {
     }
 }
 
-/// One split's pointer strip over the seam (the panes tile the slot; the
-/// strip overlays both edges). It paints nothing: the gutter between panes is
-/// shared paper, and a line there would be the theme's, not the page's.
-///
-/// A drag converts the pointer's position along the split's box into a
-/// ratio ([`PaneTree::drag_ratio`], which keeps both sides usable) and
-/// hands it to the host, which applies the last one per animation frame
-/// ([`ReaderHost::drag_divider`]). Pointer capture keeps the drag on the
-/// strip wherever the pointer goes; the slot's client origin is read once,
-/// at the press.
+/// One split's strip over the seam, painting nothing: a drag becomes
+/// a ratio through [`PaneTree::drag_ratio`].
 fn divider_view(host: ReaderHost, split: SplitId) -> impl IntoView {
     let current = move || {
         host.layout()
