@@ -1,24 +1,4 @@
-// Chrome-contract check — the window frame's numbers are declared on both
-// sides of the IPC boundary, in two languages that cannot see each other.
-// Each pair used to carry only a comment asking the next reader to keep it in
-// sync; a comment is a request, and this is the enforcement.
-//
-//   1. the import progress channel (shell constant ↔ frontend constant)
-//   2. the title-bar height (wasm constant ↔ native fallback) and the
-//      traffic-light inset (native constant ↔ tauri.conf.json)
-//   3. the z-index scale (app_chrome::layers ↔ styles/tokens.css)
-//   4. the sidebar's motion durations and its traffic-light gutter
-//      (shell controller constants ↔ the rail's Tailwind classes)
-//   5. the import dock's progress ring (one Rust radius ↔ the SVG markup ↔
-//      three numbers in the stylesheet)
-//
-// None of these can fail a build when it drifts. A renamed channel means the
-// progress ring never moves; a title-bar height that disagrees means the
-// macOS traffic lights sit off-centre until the first ResizeObserver fires;
-// a missing `--z-*` means a floating surface renders at z-index 0 and hides
-// behind the page. Same family as check-versions and check-formats.
-// TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-chrome-contracts.js`.
+// Declared twice across the IPC: channel, height, z-index, motion, ring.
 
 import { read } from "./repo.js";
 
@@ -52,11 +32,8 @@ function agree(label: string, values: [file: string, value: string][]): void {
   for (const [file, value] of values) fail(`    ${file}: ${value}`);
 }
 
-// ── 1. The import progress channel ──────────────────────────────────────────
-// The shell emits on it, the frontend listens on it, and the two constants sit
-// in different languages with no shared definition. library-core's wire module
-// documents the channel in prose, which is not a declaration and is not read
-// here.
+// ── 1. The import progress channel
+// One constant per side, never shared.
 const SHELL_PROGRESS = "src-tauri/src/commands/library.rs";
 const APP_PROGRESS = "crates/library-runtime/src/services/mod.rs";
 
@@ -77,12 +54,8 @@ if (shellChannel && appChannel) {
   ]);
 }
 
-// ── 2. The title bar's height and the traffic-light inset ───────────────────
-// `TITLE_BAR_H` is the pre-observation assumption on both sides: the wasm
-// constant the ResizeObserver replaces, and the native centring fallback the
-// shell uses before the first invoke carries a measured height. The x inset
-// exists twice for the same reason — the native layout and the pre-mount
-// `trafficLightPosition` Tauri applies before Rust takes over.
+// ── 2. Height and inset
+// Mirrored assumptions the observer replaces.
 const TITLEBAR = "crates/app-chrome/src/titlebar/mod.rs";
 const TRAFFIC_LIGHT = "src-tauri/src/macos/traffic_light.rs";
 const TAURI_CONF = "src-tauri/tauri.conf.json";
@@ -124,9 +97,7 @@ if (shellInset && confInset === undefined) {
   console.log(`traffic-light x inset: ${shellInset}`);
 }
 
-// The y inset is a mirror too, and a load-bearing one: tao re-applies the
-// config's `y` from every `drawRect:`, so a native container height built
-// from any other number fights it on each redraw (the resize blink).
+// The y inset mirrors too: tao re-applies the config's `y` on every redraw.
 const shellInsetY = sole(
   /^    const TRAFFIC_LIGHT_Y_INSET: f64 = ([\d.]+);/mg,
   read(TRAFFIC_LIGHT),
@@ -142,15 +113,8 @@ if (shellInsetY && Number(shellInsetY) !== confInsetY) {
   console.log(`traffic-light y inset: ${shellInsetY}`);
 }
 
-// ── 3. The z-index scale ────────────────────────────────────────────────────
-// `app_chrome::layers` holds the class-name constants components embed, and
-// `styles/tokens.css` holds the numbers behind them. A constant naming a
-// `--z-*` the stylesheet does not define is the silent half: Tailwind emits
-// `z-[var(--z-thing)]` happily and the surface renders at z-index 0.
-//
-// The token name is matched as `[A-Za-z0-9-]+` on purpose — the stylesheet's
-// own comment above the scale writes `z-[var(--z-…)]`, and an ellipsis is not
-// a custom-property name.
+// ── 3. The z-index scale
+// layers and tokens.css: same names, same order.
 const LAYERS = "crates/app-chrome/src/layers.rs";
 const TOKENS = "styles/tokens.css";
 
@@ -176,10 +140,7 @@ for (const token of cssTokens) {
   }
 }
 
-// The order IS the contract: both tables list the layers bottom-to-top, so a
-// token inserted out of place is a surface that paints under one it should
-// cover, and nothing else in the pipeline can see it. The stylesheet's
-// numbers must ascend, and the constants must follow the stylesheet's order.
+// Order is the contract: both tables list layers bottom-to-top.
 for (let i = 1; i < cssLayers.length; i++) {
   const prev = cssLayers[i - 1]!;
   const cur = cssLayers[i]!;
@@ -202,27 +163,14 @@ if (rustTokens.length > 0 && cssTokens.length > 0 && sameOrder) {
   console.log(`z-index scale agrees on ${cssTokens.length} layers, in stacking order`);
 }
 
-// ── 4. The sidebar's motion and gutter ─────────────────────────────────────
-// Both are a Rust number and a Tailwind class that cannot see each other, and
-// both were guarded by a comment on the class asking the next reader to keep
-// it in step.
-//
-//   motion — the close machine holds the panel and its live canvases for
-//            exactly as long as the rail takes to get out of the way, so the
-//            hold and the transition have to land on the same frame. A hold
-//            that outlasts the slide releases the bar's inset a timer late;
-//            one that ends early drops the canvases mid-slide.
-//   gutter — the traffic-light corner is reserved twice: by the bar's row
-//            padding, and by the rail header's own while the rail owns that
-//            corner. Different widths put the lights off-centre in one of
-//            them, which is the title-bar-height failure one section up.
+// ── 4. Sidebar motion and gutter
+// Hold matches slide; gutter, the lights' corner.
 const SHELL_CONTROLLER = "crates/app-ui/src/components/shell/controller/mod.rs";
 const SIDEBAR_ASIDE = "crates/reader-runtime/src/components/shell/sidebar/container.rs";
 const SIDEBAR_OVERLAY = "crates/reader-runtime/src/components/shell/sidebar/overlay.rs";
 const SIDEBAR_HEADER = "crates/reader-runtime/src/components/shell/sidebar/header.rs";
 
-/** The one `duration-N` a quoted class list carries. Unquoted mentions in
- * doc comments are prose and must not be counted as the declaration. */
+/** The one `duration-N` a quoted class list carries; prose does not count. */
 function tailwindDuration(file: string, label: string): string {
   return sole(/"[^"\n]*\bduration-(\d+)\b[^"\n]*"/g, read(file), `${file} (${label})`);
 }
@@ -281,14 +229,8 @@ if (gutterPx && headerPx) {
   ]);
 }
 
-// ── 5. The import dock's progress ring ─────────────────────────────────────
-// One radius is written four times: the Rust const, the `r` attribute of both
-// SVG circles, and — as the product `2 * pi * r` — the stylesheet's
-// `stroke-dasharray` and the `stroke-dashoffset` fallback behind it. CSS
-// cannot read the const, so the stylesheet spells the product out longhand and
-// the two sides were kept in step by a comment on each. A radius that moves
-// without the stylesheet leaves a ring that stops short of full at 100%, which
-// reads as an import that never finishes.
+// ── 5. The dock's ring
+// One radius: SVG r, dasharray, offset.
 const PROGRESS_DOCK = "crates/library-runtime/src/features/library/progress_dock.rs";
 const DOCK_CSS = "styles/components/library/dock.css";
 
@@ -301,10 +243,7 @@ const ringRadius = sole(
 if (ringRadius) {
   const radius = Number(ringRadius);
 
-  // The whole check rests on the ring's circumference being 2 * pi * r, which
-  // the app computes once and never spells out numerically. Read the formula
-  // rather than assume it: the stylesheet agrees with the product, so a change
-  // to how the product is taken would otherwise look like agreement.
+  // The check rests on 2 * pi * r: the stylesheet spells the product.
   const formula = sole(
     /^const CIRCUMFERENCE: f64 = ([^;]+);/gm,
     read(PROGRESS_DOCK),
@@ -332,9 +271,7 @@ if (ringRadius) {
     }
   }
 
-  // The stylesheet carries the product, twice: the dash length, and the
-  // offset that hides the whole ring before the first progress write lands.
-  // It is hand-rounded to three decimals, so compare within half of that.
+  // The stylesheet carries the product twice: dash length, hiding offset.
   const TOL = 0.0005;
   const dockCss = read(DOCK_CSS);
   const dash = sole(
@@ -360,9 +297,7 @@ if (ringRadius) {
     }
   }
 
-  // The scanning state parks the dash at a fixed fraction of the circle so a
-  // quarter arc spins: a radius change moves the circumference under it and
-  // the arc silently becomes some other size.
+  // Scanning parks the dash at a fixed fraction, so a radius change moves it.
   const spin = sole(
     /^  stroke-dashoffset: ([\d.]+);/gm,
     dockCss,

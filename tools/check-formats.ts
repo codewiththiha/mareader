@@ -1,19 +1,4 @@
-// Format-list sync check — the same cheap insurance as `check-versions.ts`,
-// for the other thing written down more than once. What the reader opens is
-// declared in THREE places, in two languages, none of which can see the
-// others:
-//   - crates/reader-core/src/format.rs   `SUPPORTED`             — the
-//     registry the frontend consults (dialog filters, drop feedback, copy)
-//   - src-tauri/src/lib.rs               `DOCUMENT_EXTENSIONS`   — the
-//     shell's filesystem gate for OS handoffs and `read_file_*`
-//   - src-tauri/tauri.conf.json          `bundle.fileAssociations` — what
-//     the installer registers with the OS
-// The registry is the source of truth; the other two are derived facts. The
-// failure mode on drift is quiet and one-sided: the app opens the format
-// from its own dialog while the OS refuses the handoff and the shell's gate
-// rejects the path. This script fails CI when they disagree.
-// TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-formats.js`.
+// Format-list sync check: registry, shell gate and tauri.conf.json must agree.
 
 import { read } from "./repo.js";
 
@@ -24,12 +9,7 @@ const REGISTRY = "crates/reader-core/src/format.rs";
 const SHELL_GATE = "src-tauri/src/lib.rs";
 const BUNDLE_CONF = "src-tauri/tauri.conf.json";
 
-// The registry: parse the `SUPPORTED` table. Parsed rather than imported —
-// it is a const in a wasm-targeted crate, and a build step emitting JSON
-// from Rust would be more machinery than the three lists it guards. The
-// patterns match the table's literal shape (`.+?`, not `[^=]*`: the type
-// annotation contains an `=` of its own) and throw rather than return empty
-// when the shape moves, so a refactor cannot silently empty the check.
+// Parse the `SUPPORTED` table rather than import it; no JSON step needed.
 function parseRegistry(): Kind[] {
   const text = read(REGISTRY);
   const table = /pub const SUPPORTED.+?=\s*&?\[([\s\S]*?)\n\];/.exec(text);

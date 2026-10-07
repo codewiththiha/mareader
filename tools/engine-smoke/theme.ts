@@ -1,8 +1,7 @@
 import { FakeCtx, PDFReader, assertClose, created, expectedBakePixel, fakeComputed, setFakeComputed, getEl, isScrubActive, R } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // DARK MODE REGRESSION. The theme is pre-rendered into every
-  // raster, so a refresh must bake the new look into the pages on screen.
+  // Dark-mode regression: the theme is baked in, so a refresh must re-bake.
   const beforeDark = created.length;
   setFakeComputed({
     "--canvas-filter": "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02)",
@@ -33,16 +32,12 @@ export async function run(): Promise<void> {
   assertClose(darkPx2, darkExpect, "dark render bake");
   console.log("render ok (dark/baked):", r2.width, "x", r2.height, `(${darkAllocs} canvases)`);
 
-  // Scrub mode — the real-time compositing window a slider drag runs in —
-  // must expose raw pixels under the live CSS filter, and re-bake them on
-  // exit.
+  // Scrub mode exposes raw pixels under the live filter, re-baking on exit.
   await PDFReader.setScrubMode(true);
   if (!isScrubActive()) {
     throw new Error("entering scrub must raise the appearance-scrubbing class the CSS keys off");
   }
-  // Entry swaps in whatever raw it holds synchronously and re-renders the
-  // raw-less stragglers in the BACKGROUND — the first drag frame must not
-  // wait on pdf.js. Drive the harness clock until the straggler lands.
+  // Entry swaps in the raw it holds; stragglers re-render in the background.
   const isRawish = (px: Uint8ClampedArray): boolean => px[0]! >= 200 && px[1]! >= 200 && px[2]! >= 200;
   let scrubPx = cv0._ctx.getImageData(0, 0, 1, 1).data;
   for (let turn = 0; turn < 100 && !isRawish(scrubPx); turn += 1) {
@@ -103,12 +98,7 @@ export async function run(): Promise<void> {
   assertClose(nightPx, nightExpect, "dark+tint bake");
   console.log("dark+tint bake ok: page pixel", Array.from(nightPx).slice(0, 3), "expected", nightExpect);
 
-  // THE PRE-RENDERED BACKDROP PAPER. A baked page already carries the
-  // themed paper in its pixels, so the backdrop must not run the filter +
-  // blend a second time over the detected colour — the engine publishes the
-  // pre-themed paper as --pdf-paper-baked instead. multiply and screen are
-  // identity on paper; the mode where a double pass shows is dim's
-  // soft-light, so assert it there.
+  // The backdrop uses --pdf-paper-baked, never a second filter pass.
   const rootProp = (name: string): string => {
     const root = getEl("documentElement") as unknown as {
       style: { getPropertyValue: (n: string) => string };
@@ -142,8 +132,7 @@ export async function run(): Promise<void> {
   );
   console.log("baked backdrop paper ok (theme change):", rootProp("--pdf-paper-baked"), "expected", dimBackdrop);
 
-  // The detected paper itself moves (the session lerps it along the page
-  // ladder); the pre-themed twin must follow on the same write.
+  // The detected paper lerps along the ladder; its themed twin follows.
   R.setPaper("#ffffff");
   const dimBackdropWhite = expectedBakePixel(
     [255, 255, 255],
@@ -158,15 +147,7 @@ export async function run(): Promise<void> {
   );
   console.log("baked backdrop paper ok (paper publish):", rootProp("--pdf-paper-baked"), "expected", dimBackdropWhite);
 
-  // ONE COLOUR, EVERY MODE. The texture overlay is a compositor layer, and
-  // the backdrop already gets it from the pages' own bleed (textures.css,
-  // BLEND BLEED) — a plain overhang on every side a page has to spare, half
-  // of a gap from each of the two neighbours on the vertical strip's row
-  // gap, which is the one stretch no page reaches on its own. So the
-  // published paper is the bake path's colour and nothing else, in the paged
-  // modes and the scrolling ones alike. It was once folded toward the
-  // overlay's mean colour here, which is what darkened every stretch of
-  // backdrop covered by a page in all four view modes.
+  // The published paper is the bake path's colour alone, in every mode.
   if (rootProp("--pdf-paper-page")) {
     throw new Error("the paper is published as one colour for every mode, not per mode");
   }

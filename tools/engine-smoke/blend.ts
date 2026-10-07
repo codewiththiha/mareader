@@ -13,18 +13,13 @@ function firstPixel(data: Uint8ClampedArray | undefined): [number, number, numbe
   return [data?.[0] ?? -1, data?.[1] ?? -1, data?.[2] ?? -1];
 }
 
-/** `a` within ±1 of `b` per channel (a downscaled uniform raster is exact,
- * but the assertion stays tolerant to rounding by a single step). */
+/** `a` within ±1 of `b` per channel; rounding is tolerated. */
 function isColour(actual: [number, number, number], want: [number, number, number]): boolean {
   return actual.every((v, i) => Math.abs(v - want[i]!) <= 1);
 }
 
 export async function run(): Promise<void> {
-  // The colour DECISIONS (detection, the palette, the scroll interpolation)
-  // live in the pdf-paper crate behind the Rust paper session and are
-  // covered by cargo tests. This scenario walks the ENGINE side of the
-  // contract: the frames it hands over and the --pdf-paper it paints when
-  // told to.
+  // Colour decisions live in pdf-paper; this walks the engine's frames.
   setFakePageColors({ 1: "#404040", 2: "#ffffff", 3: "#a0a0a0", 4: "#ffffff", 5: "#ffffff" });
 
   // a live render parks its raw frame for the session to drain
@@ -79,8 +74,7 @@ export async function run(): Promise<void> {
   if (!sample3.ok || !sample3.data || !isColour(firstPixel(sample3.data), [0xa0, 0xa0, 0xa0])) {
     throw new Error("page 3's sample should be #a0a0a0, got " + firstPixel(sample3.data));
   }
-  // A page that cannot answer (past the end) resolves {ok:true} with no
-  // frame — a skip for the look-ahead, not an error.
+  // A page past the end resolves {ok:true} with no frame: a look-ahead skip.
   const none = await R.samplePaperPage(99);
   if (!none.ok || (none as { data?: Uint8ClampedArray }).data) {
     throw new Error("an out-of-range page must resolve a frameless ok, got " + JSON.stringify(none));
@@ -108,9 +102,7 @@ export async function run(): Promise<void> {
   }
   console.log("paper stash lifecycle ok: re-render re-stashes, reopen clears");
 
-  // the stash is gated on the blend switch
-  // While the session says blend is off, a live render pays nothing on the
-  // paper pipeline: no downscale, no readback, no stash.
+  // With blend off, a live render pays nothing on the paper pipeline: no stash.
   R.setPaperActive(false);
   R.registerPage(3, "blend-3-cv", "blend-3-pg");
   const r3 = await R.renderPage("blend-3-cv", 1.0, true);
