@@ -1,21 +1,4 @@
 //! Auto-hide surfaces: the whole hover machine, once.
-//!
-//! [`use_hover_visibility`] is the timer primitive — `show` reveals and
-//! cancels a pending hide, `hide_later` schedules one unless a hold says
-//! otherwise. Every real surface needs the same four lines on top of it (the
-//! title bar and bottom bar had them verbatim):
-//!
-//!   - one `hovered` truth shared by the N elements that make up the surface,
-//!     so an enter or leave on any of them counts;
-//!   - an effect that rechecks the moment a hold releases — a hold ending
-//!     while the pointer is already gone produces no further `mouseleave`;
-//!   - `visible = pinned || hovered`, where a pin exists.
-//!
-//! This module owns that composite, so a new auto-hide surface is one call.
-//! Three run it today: the title bar, the bottom bar, the overlay rail.
-//!
-//! Contract, same as the rest of `hooks`: nothing here knows what holds a
-//! surface open — a hold is a `Signal<bool>` and the callers' business.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -26,12 +9,10 @@ use wasm_bindgen::JsCast;
 
 use crate::hooks::use_timeout::use_hover_visibility;
 
-/// The grace period every chrome surface hides after. Shared so the title
-/// bar and the bottom bar cannot drift apart by a hundred milliseconds.
+/// The grace period every chrome surface hides after.
 pub const DEFAULT_HOVER_DELAY: Duration = Duration::from_millis(400);
 
-/// How a surface reveals: the grace period, what holds it open, what pins
-/// it. `..Default::default()` covers the two optional halves.
+/// How a surface reveals: grace period, hold, pin.
 #[derive(Clone, Copy)]
 pub struct HoverConfig {
     pub delay: Duration,
@@ -54,13 +35,10 @@ impl Default for HoverConfig {
 /// One pointer edge, cloned out to every element that binds it.
 type Handler = Rc<dyn Fn()>;
 
-/// A reveal controller: the visibility to render from, plus the two pointer
-/// edges to bind on every element that belongs to the surface.
+/// A reveal controller: visibility plus the two pointer edges.
 #[derive(Clone)]
 pub struct HoverReveal {
-    /// What to render from: `pin || hovered_visible`. The raw hover truth stays
-    /// inside the hook: the reveal owns the writes, and a consumer that could
-    /// set it would desynchronise the timer.
+    /// What to render from: `pin || hovered_visible`. Writes stay the hook's.
     pub visible: Signal<bool>,
     enter: Handler,
     leave: Handler,
@@ -75,18 +53,13 @@ impl HoverReveal {
         (self.leave)();
     }
 
-    /// A fresh `(enter, leave)` pair to move into one element's handlers.
-    /// Call it once per element — a surface made of a band and a row binds
-    /// twice, and both edges feed the same `hovered` truth.
+    /// A fresh `(enter, leave)` pair for one element.
     pub fn bind(&self) -> (Handler, Handler) {
         (Rc::clone(&self.enter), Rc::clone(&self.leave))
     }
 }
 
 /// Build a reveal controller owned by the current reactive owner.
-///
-/// Call it from a component body: the hide timer and its cleanup belong to
-/// the component's owner, not to an effect scope that is disposed per run.
 pub fn use_hover_reveal(config: HoverConfig) -> HoverReveal {
     let hold = config.hold;
     reveal(
@@ -96,12 +69,7 @@ pub fn use_hover_reveal(config: HoverConfig) -> HoverReveal {
     )
 }
 
-/// Sugar for the common shape: a closure hold, no pin. Same machine as
-/// [`use_hover_reveal`] — the closure only spares the `Signal::derive` at the
-/// call site (and stays `LocalStorage`-friendly). Read every signal the hold
-/// depends on unconditionally in it (`|`, not `||`): the recheck effect
-/// subscribes through this closure, and a short-circuited read is a hold whose
-/// release never settles the surface.
+/// Sugar for the common shape: a closure hold, no pin.
 pub fn use_hover_reveal_with(
     delay: Duration,
     hold: impl Fn() -> bool + Copy + 'static,
@@ -109,11 +77,7 @@ pub fn use_hover_reveal_with(
     reveal(delay, hold, None)
 }
 
-/// The one implementation both entry points funnel into. `held` is `Copy`
-/// rather than `Rc`-wrapped because it has two readers that must agree — the
-/// postpone gate and the recheck effect — and a closure over `Copy` signal
-/// handles is itself `Copy`. A hold needing owned state should be lifted into
-/// a signal at the call site rather than boxed here.
+/// The one implementation both entry points funnel into.
 fn reveal(
     delay: Duration,
     held: impl Fn() -> bool + Copy + 'static,
@@ -121,9 +85,7 @@ fn reveal(
 ) -> HoverReveal {
     let hover = use_hover_visibility(delay, held);
 
-    // `StoredValue`, not a signal: the flag is read inside the recheck effect
-    // (a tracked read there would re-run it on every hover) and cloned into as
-    // many element handlers as the surface has.
+    // `StoredValue`: the recheck effect must not track this flag.
     let hovered = StoredValue::new_local(false);
     let enter: Rc<dyn Fn()> = Rc::new({
         let show = hover.show.clone();
@@ -140,10 +102,8 @@ fn reveal(
         }
     });
 
-    // The non-obvious edge: a hold released while the pointer is already
-    // elsewhere produces no `mouseleave`, so nothing would schedule the hide.
-    // This effect tracks the hold and settles it; the untracked `visible` read
-    // keeps a holdless surface from arming a timer with nothing to hide.
+    // A hold released while the pointer is away produces no
+    // `mouseleave`; this settles it.
     let recheck = hover.hide_later.clone();
     let shown = hover.visible;
     Effect::new(move |_| {
@@ -165,11 +125,7 @@ fn reveal(
     }
 }
 
-/// Whether the point still lands on the surface. Pointer capture keeps a
-/// drag's events glued to the captured element — including releases that land
-/// outside — so after a drag the release coordinates are the only trustworthy
-/// answer. `element_from_point` skips `pointer-events: none` decorations, so a
-/// release over an inert overlay still counts as on-surface.
+/// Whether the point still lands on the surface, after capture.
 fn released_on(surface: &web_sys::Element, x: f32, y: f32) -> bool {
     web_sys::window()
         .and_then(|w| w.document())
@@ -177,13 +133,8 @@ fn released_on(surface: &web_sys::Element, x: f32, y: f32) -> bool {
         .is_some_and(|el| surface.contains(Some(&el)))
 }
 
-/// The pointer-capture half, opt-in: a drag inside the surface holds it open
-/// and the release re-synchronises the hover truth. Returns the `pointerup` /
-/// `pointercancel` handler to bind alongside
-/// `on:pointerdown=move |_| dragging.set(true)`. `dragging` is the caller's so
-/// it can also be the [`HoverConfig::hold`] the reveal was built with. The
-/// reveal is taken by value (it is `Clone`): the returned handler outlives
-/// this call.
+/// The pointer-capture half, opt-in: the handler to bind alongside
+/// `on:pointerdown`. `reveal` is taken by value.
 pub fn use_drag_hold<E>(
     surface: NodeRef<E>,
     dragging: RwSignal<bool>,
@@ -199,8 +150,7 @@ where
             return;
         }
         dragging.set(false);
-        // Capture swallowed the surface's `mouseleave` for the whole drag,
-        // so this is where it learns the pointer's real position again.
+        // Capture swallows `mouseleave`; learn the real position here.
         let over = surface
             .get()
             .is_some_and(|el| released_on(el.as_ref(), ev.client_x() as f32, ev.client_y() as f32));

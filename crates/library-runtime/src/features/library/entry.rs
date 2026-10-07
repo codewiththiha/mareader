@@ -1,17 +1,12 @@
-//! The one door every shelf item goes through: a descriptor of what an item
-//! is, and a shell that paints the shared contract from it.
-//!
-//! Six surfaces draw a shelf item; each used to say the same two things about
-//! itself by hand — the reveal's class and the policy its press contract
-//! takes.
+//! The one door every shelf item goes through.
 
 use leptos::prelude::*;
 
 use crate::features::library::gestures::ShelfItemPolicy;
 use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 
-/// The facts a surface genuinely owns. The id doubles as the element id, the
-/// drag registration and the reveal's target.
+/// What a surface owns: the id doubles as element id, drag
+/// registration and reveal target.
 pub struct EntryDescriptor {
     pub(crate) id: String,
     pub(crate) vocab: SeamVocab,
@@ -36,8 +31,7 @@ pub(crate) fn EntryShell(
         policy,
     } = entry;
 
-    // The reveal class is asked once here, in the surface's own vocabulary;
-    // list surfaces layer their own facts on top (a dead address is grey).
+    // The reveal class, in the surface's own vocabulary.
     let mut classes = vec![(vocab.reveal().to_string(), state.library.is_revealed(&id))];
     classes.extend(extra_classes);
 

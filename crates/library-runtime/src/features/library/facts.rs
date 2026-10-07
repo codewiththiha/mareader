@@ -1,9 +1,4 @@
-//! The facts about a book that a shelf surface paints, read back out of the
-//! library by id on the frame they are asked for.
-//!
-//! A keyed row is not re-created when its content changes — a measurement
-//! marking the book missing, a relink, a rename, a fold — so every fact that
-//! can move is read here rather than captured.
+//! The facts a shelf surface paints, read back by id.
 
 use leptos::prelude::*;
 
@@ -12,9 +7,8 @@ use library_core::text::page_line;
 
 #[derive(Clone)]
 pub(crate) struct BookFacts {
-    /// The fallback line when a document-supplied title cannot tell two books
-    /// called "Report" apart — and the cover cache's key, which is why a relink
-    /// has to move it.
+    /// The cover cache's key and the fallback line for two books of
+    /// one name.
     pub path: String,
     pub title: String,
     pub author: Option<String>,
@@ -30,9 +24,8 @@ impl BookFacts {
     }
 }
 
-/// One derive rather than one per field: the facts move together, and six
-/// signals would subscribe six times to one list. `None` is the beat between
-/// a removal and the list catching up.
+/// One derive, because the facts move together; `None` is the beat
+/// before a removal lands.
 pub(crate) fn book_facts(
     state: crate::context::LibraryContext,
     book_id: &str,

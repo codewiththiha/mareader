@@ -1,8 +1,4 @@
 //! The one element every shelf item is.
-//!
-//! Six surfaces answer to the shelf's press contract — the grid's book card
-//! and its link, the list's book row and its link, the grid's folder card and
-//! the tree's shelf row — each of which used to wear the same sixty lines.
 
 use std::rc::Rc;
 
@@ -13,8 +9,8 @@ use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
 
-/// The whole per-surface difference: which class names it writes, which
-/// session questions it asks, and which element id it registers under.
+/// The whole per-surface difference: class names, session questions,
+/// element id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeamVocab {
     GridCard,
@@ -56,8 +52,7 @@ impl SeamVocab {
         }
     }
 
-    /// A fact about the density, not the kind: a card's reveal rings the
-    /// cover frame, a row's is an inset ring, a folder card rings the plate.
+    /// A fact about the density, not the kind; see the reveal classes.
     pub(crate) fn reveal(self) -> &'static str {
         match self {
             SeamVocab::FolderCard => "folder-reveal",
@@ -67,9 +62,8 @@ impl SeamVocab {
     }
 }
 
-/// One table decides every element id an item mounts under
-/// ([`ShelfItemShell`]), so the reveal — the only reader of those ids outside
-/// the mount — asks the table too, and a renamed prefix moves both.
+/// One table decides every element id: the mount and the reveal
+/// both ask it.
 pub(crate) fn reveal_dom_id(target_is_shelf: bool, list_layout: bool, id: &str) -> String {
     let vocab = match (target_is_shelf, list_layout) {
         (true, true) => SeamVocab::FolderRow,
@@ -88,8 +82,7 @@ impl SeamVocab {
         }
     }
 
-    /// One string rather than one binding per class: the list is one fact and
-    /// the shell is its only writer.
+    /// One string rather than one binding per class.
     fn classes(
         self,
         base: &'static str,
@@ -169,10 +162,8 @@ pub(crate) fn ShelfItemShell(
     policy: ShelfItemPolicy,
     #[prop(optional)] extra_classes: Vec<(String, Signal<bool>)>,
     #[prop(optional)] style: String,
-    /// `Option` in the field type and `into` rather than `optional` on
-    /// purpose: [`crate::features::library::entry::EntryShell`] already holds
-    /// the disclosure's facts as an `Option`, and an `optional` prop's setter
-    /// takes the value inside the option.
+    /// `into` rather than `optional`: the caller already holds an
+    /// `Option`.
     #[prop(into)]
     aria_expanded: Option<Signal<bool>>,
     #[prop(into)] on_keydown_first: Option<Callback<leptos::ev::KeyboardEvent, bool>>,

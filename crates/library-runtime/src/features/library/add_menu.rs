@@ -1,9 +1,4 @@
-//! The two ways books arrive, and — inside a watched folder's shelf — the
-//! way one comes back.
-//!
-//! The shelf's `+` card and the empty state's button open this rather than
-//! acting themselves: an import has two sources and the reader should see
-//! both from either.
+//! The ways books arrive: the picker, a folder, or a restore.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -27,8 +22,7 @@ use app_ui::components::primitives::menu::separator::Separator;
 #[derive(Debug, Clone, PartialEq)]
 struct RestoreRow {
     item: Recovered,
-    /// Still listed but disabled: a menu that quietly drops rows is
-    /// indistinguishable from one that never had them.
+    /// Still listed but disabled: dropping rows would read as loss.
     gone: bool,
 }
 
@@ -68,8 +62,7 @@ impl RestoreRow {
         }
     }
 
-    /// A restore is an explicit act, so it says out loud that it ignores the
-    /// folder's filters.
+    /// A restore is explicit, so it says it ignores the folder's filters.
     fn hint(&self) -> &'static str {
         match self.item {
             Recovered::Deleted(_) => {
@@ -93,12 +86,14 @@ fn candidates(state: crate::context::LibraryContext, folder_id: &str) -> Vec<Res
         .collect()
 }
 
-fn from_files(state: crate::context::LibraryContext, target: Option<String>) {
+/// `root` narrows the picker to one watched folder; `None` is the whole disk.
+fn from_files(state: crate::context::LibraryContext, target: Option<String>, root: Option<String>) {
     spawn_local(async move {
-        let picked = pick_documents().await;
-        // The picker's dialog outlives the library: a book opened from the
-        // shelf behind it disposes this runtime while the dialog is up, and
-        // an import writing into that disposed state would abort the wasm.
+        let picked = match root {
+            Some(root) => pick_documents_in(root).await,
+            None => pick_documents().await,
+        };
+        // The dialog outlives the library: a disposed state would abort.
         if state.library.books.try_get_untracked().is_none() {
             return;
         }
@@ -110,28 +105,11 @@ fn from_files(state: crate::context::LibraryContext, target: Option<String>) {
     });
 }
 
-fn from_files_in(state: crate::context::LibraryContext, root: String, target: Option<String>) {
-    spawn_local(async move {
-        let picked = pick_documents_in(root).await;
-        // Same guard as `from_files`: the dialog outlives the library.
-        if state.library.books.try_get_untracked().is_none() {
-            return;
-        }
-        match picked {
-            Ok(paths) if paths.is_empty() => {}
-            Ok(paths) => import_files(state, paths, target),
-            Err(message) => crate::services::toast(state, message),
-        }
-    });
-}
-
-/// A folder has options — formats, size floor, copy, watch — and importing
-/// one on a picker alone would have to guess all of them.
+/// A folder has options, so it gets the import sheet.
 fn from_directory(sheet: ImportSheet) {
     spawn_local(async move {
         let picked = crate::services::pick_folder().await;
-        // The folder dialog outlives the library it was opened from: a
-        // disposed sheet owns nothing left to open onto.
+        // The dialog outlives the library it was opened from.
         if sheet.open.try_get_untracked().is_none() {
             return;
         }
@@ -143,8 +121,7 @@ fn from_directory(sheet: ImportSheet) {
     });
 }
 
-/// Nothing at the root: "All" is the library's own order, not a shelf to
-/// file onto, so a pick from there leaves its books unfiled.
+/// At the root nothing is filed: "All" is an order, not a shelf.
 fn add_target(state: crate::context::LibraryContext) -> Signal<Option<String>> {
     Signal::derive(move || {
         let id = state.library.shelf.get();
@@ -154,9 +131,7 @@ fn add_target(state: crate::context::LibraryContext) -> Signal<Option<String>> {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AddFace {
-    /// A card, not a toolbar button: the shelf is where the reader is looking
-    /// when they decide to add, and a grid with a hole at the end reads as
-    /// unfinished.
+    /// The shelf's own add card; a grid with a hole reads as unfinished.
     Card,
     Row,
     Empty,
@@ -267,9 +242,7 @@ fn AddMenu(
     });
 
     let rows = RwSignal::new(Vec::<RestoreRow>::new());
-    // "Also show it here" and "go and look" are different answers, so the
-    // list swaps for a two-choice confirm inside the same popover — a confirm
-    // that evicted its menu would close what the reader was reading.
+    // Two different answers, so the list swaps for a confirm in place.
     let confirm = RwSignal::new(None::<Recovered>);
 
     Effect::new(move |_| {
@@ -283,13 +256,7 @@ fn AddMenu(
         };
         let built = candidates(state, &folder_id);
         rows.set(built.clone());
-        let paths: Vec<String> = built
-            .iter()
-            .filter_map(|row| match &row.item {
-                Recovered::Deleted(entry) => Some(entry.last_path.clone()),
-                Recovered::Moved { .. } => None,
-            })
-            .collect();
+        let paths: Vec<String> = built.iter().filter_map(deleted_path).collect();
         if paths.is_empty() {
             return;
         }
@@ -339,7 +306,7 @@ fn AddMenu(
                             label="Choose files…"
                             on_click=move || {
                                 open.set(false);
-                                from_files(state, target.get_untracked());
+                                from_files(state, target.get_untracked(), None);
                             }
                         />
                         <MenuItem
@@ -362,10 +329,10 @@ fn AddMenu(
                                             sublabel=folder_label(&root)
                                             on_click=move || {
                                                 open.set(false);
-                                                from_files_in(
+                                                from_files(
                                                     state,
-                                                    root.clone(),
                                                     target.get_untracked(),
+                                                    Some(root.clone()),
                                                 );
                                             }
                                         />
@@ -415,8 +382,7 @@ fn deleted_path(row: &RestoreRow) -> Option<String> {
     }
 }
 
-/// Read at click time: a restore names the folder it restores through, and
-/// the menu outlives the render that built it.
+/// Read at click time: the menu outlives the render that built it.
 fn current_folder_id(state: crate::context::LibraryContext) -> Option<String> {
     let shelf_id = state.library.shelf.get_untracked();
     if shelf_id == ALL_SHELF {
@@ -425,8 +391,7 @@ fn current_folder_id(state: crate::context::LibraryContext) -> Option<String> {
     state.library.shelf_folder_id(&shelf_id)
 }
 
-/// Its own component: a row is four strings and a branch, and building that
-/// inside an enumerated `map` would be a closure per signal handle.
+/// Its own component: a row is four strings and a branch.
 #[component]
 fn RestoreItem(
     state: crate::context::LibraryContext,

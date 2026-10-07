@@ -1,15 +1,4 @@
-//! FloatingCard — the advanced floating-surface primitive that AI-style
-//! cards compose instead of being forced into a simple menu popover.
-//!
-//! One fixed box whose `left/top/width/height/border-radius` come from a
-//! [`FloatBox`] (typically sprung by [`crate::components::primitives::motion::spring::use_spring_box`]),
-//! with an inner content wrapper sized to the *expanded* target so text never
-//! reflows as the box morphs, an optional drag-handle slot, progress-driven
-//! opacity/pointer-events, and an optional scroll area.
-//!
-//! Phase styling (fills, shadows, data-phase attributes) is the caller's
-//! policy: `surface_style` / `data_phase` / `role` / `aria_label` pass it
-//! through.
+//! A morphing floating surface driven by a box signal.
 
 use leptos::children::Children;
 use leptos::prelude::*;
@@ -21,8 +10,7 @@ use app_chrome::floating::types::FloatBox;
 pub fn FloatingCard(
     /// The current box (x/y/w/h/r) — written per frame by a spring.
     box_: Signal<FloatBox>,
-    /// The box the CONTENT wrapper is sized to. Usually the final expanded
-    /// target, so text never reflows while the box morphs.
+    /// The box the CONTENT wrapper is sized to, so text never reflows.
     expanded: Signal<FloatBox>,
     /// Extra inline style appended after the box geometry (fills, shadows…).
     #[prop(optional)]
@@ -34,8 +22,7 @@ pub fn FloatingCard(
     content_opacity: Signal<f64>,
     /// Whether the content is interactive (pointer-events) right now.
     content_interactive: Signal<bool>,
-    /// Drag handle slot — rendered above the scroll area, faded in by
-    /// progress by the caller's opacity signal if desired.
+    /// Drag-handle slot, above the scroll area.
     #[prop(optional)]
     drag_handle: Option<Children>,
     /// Phase marker for CSS/state selectors (`data-phase="processing"`).
@@ -47,10 +34,8 @@ pub fn FloatingCard(
     /// ARIA label while expanded (e.g. "Gloss for x").
     #[prop(optional)]
     aria_label: Option<Signal<String>>,
-    /// Hide the inner scroller's native scrollbar. Floating surfaces must
-    /// not show a gutter — and a layout-consuming scrollbar would narrow
-    /// the content column, making the real content taller than the
-    /// scrollbar-less measure twin, leaving the card permanently short.
+    /// Hides the inner scroller's scrollbar, which would otherwise
+    /// narrow the content column.
     #[prop(default = false)]
     hide_scrollbar: bool,
     children: Children,
@@ -81,9 +66,7 @@ pub fn FloatingCard(
         )
     });
 
-    // Static for the component's lifetime: handed to the view as a plain
-    // attribute (no reactive closure, no signal) so nothing suggests it
-    // ever changes.
+    // Static for the component's lifetime.
     let surface_class = class.unwrap_or_default();
 
     view! {

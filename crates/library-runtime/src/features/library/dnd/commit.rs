@@ -1,8 +1,5 @@
-//! The only place a drop touches library state.
-//!
-//! Every move rides a service the shelf's menus already ride
-//! (`crate::services::library`), so a dragged book persists, keeps its cover
-//! and is revealed exactly as a filed one is.
+//! The only place a drop touches library state: every move rides a
+//! shelf service.
 
 use leptos::prelude::*;
 
@@ -19,9 +16,7 @@ pub fn apply(state: crate::context::LibraryContext, effect: DropEffect, payload:
     if payload.is_empty() {
         return;
     }
-    // A drag inside an expanded branch is that branch's: reading the page's
-    // level instead would unfile a book that sits on both, for a reorder that
-    // never left the branch.
+    // A drag inside an expanded branch is that branch's, not the page's level.
     let from = match payload.source.clone() {
         Some(named) => (named != ALL_SHELF).then_some(named),
         None => {
@@ -37,9 +32,8 @@ pub fn apply(state: crate::context::LibraryContext, effect: DropEffect, payload:
             shelf,
             after,
         } => {
-            // The effect carries the landing facts (container and seam side)
-            // rather than this step re-deriving them. Held folders get no
-            // position: a level renders its folders before its books.
+            // The effect carries the landing facts; held folders get no
+            // position.
             let (to, index) = insert_anchor(state, &book_id, shelf.as_deref(), after);
             move_many_to_shelf(state, &payload.books, from, to.clone(), index);
             land_folders(state, &payload.folders, &to);
@@ -91,9 +85,7 @@ fn land_folders(state: crate::context::LibraryContext, folders: &[String], to: &
     }
 }
 
-/// The index is the anchor's position in its container, not a count of what
-/// is on screen: an expanded tree renders rows the level's own order does not
-/// hold.
+/// The index is the anchor's position in its container, not the screen.
 fn insert_anchor(
     state: crate::context::LibraryContext,
     book_id: &str,

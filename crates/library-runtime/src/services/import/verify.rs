@@ -1,8 +1,4 @@
-//! The library's two automatic measurements, in the one order they owe:
-//! first a pass over every address the library holds — marking books
-//! `missing` when their file was deleted or moved, and replacing migrated
-//! placeholder fingerprints with real ones — then the walk of every watched
-//! folder. The walk only ever sees what the measure pass made legible.
+//! The library's two automatic measurements: measure, then backfill.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -20,8 +16,7 @@ use super::tasks::task_id;
 use crate::services as ipc;
 use crate::services::{folder_label, picker_focus, toast};
 
-/// Called on startup and whenever the window regains focus; both moments owe
-/// both passes, measure first.
+/// Called on startup and on focus; both owe both passes.
 pub fn rescan_watched(state: crate::context::LibraryContext) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -43,9 +38,7 @@ pub fn rescan_watched(state: crate::context::LibraryContext) {
     });
 }
 
-/// The measurement pass has just replaced every placeholder it could, so
-/// this guard only holds the walk back for a book whose address the shell
-/// could not read at all.
+/// Guard for a book whose address the shell could not read at all.
 fn run_watched(state: crate::context::LibraryContext) {
     if state
         .library
@@ -54,10 +47,7 @@ fn run_watched(state: crate::context::LibraryContext) {
     {
         return;
     }
-    // A focus the app's own picker caused is not a reader coming back: the
-    // import that picker closed on is about to walk this very ground. The
-    // measure pass still ran — a book whose file died while a dialog was up
-    // is a book the library should know about; it is the walk that waits.
+    // A focus the app's own picker caused is not a reader coming back.
     if picker_focus() {
         return;
     }
@@ -66,9 +56,7 @@ fn run_watched(state: crate::context::LibraryContext) {
         .folders
         .get_untracked()
         .iter()
-        // Watched anywhere, not only at the root: a tree turned off at the
-        // root with one subfolder still on owes the walk, and the ledger's
-        // per-rung gate keeps the off rungs quiet inside it.
+        // Watched anywhere, not only at the root.
         .filter(|f| f.owes_walk())
         .map(|f| (f.root.clone(), f.opts.clone()))
         .collect();
@@ -77,9 +65,7 @@ fn run_watched(state: crate::context::LibraryContext) {
     }
 }
 
-/// No card unless it found something, no toast for a folder that cannot be
-/// read, and the ledger's rescan table, where a removal's tombstones still
-/// hold. Two callers, one spelling: the same walk asked by two moments.
+/// No card unless it found something; two callers, one spelling.
 fn walk_one(state: crate::context::LibraryContext, root: String, opts: FolderOpts) {
     let Some(claim) = claim_root(&root, Asked::OnFocus) else {
         return;
@@ -108,26 +94,19 @@ pub(super) fn apply_checks(state: crate::context::LibraryContext, checks: &[Path
     crate::services::persist_library(state.library);
 }
 
-/// A value rather than a `bool`: the menu row that asks is a label and a
-/// sentence.
+/// A value rather than a `bool`: the row is a label and a sentence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShelfWatch {
     pub folder_id: String,
-    /// The shelf's own `rel` for a shelf the tree cut (`""` at the watched
-    /// root), and the closest folder shelf's rung for a shelf the reader made
-    /// inside the tree: a made shelf is no rung the disk names, but its seat
-    /// answers.
+    /// The shelf's own `rel`, or the seat's rung for a made shelf.
     pub rung: String,
     pub on: bool,
-    /// A watch sentence from three shelves deep names the tree it is about,
-    /// so the reader is told what stops being watched.
+    /// The sentence names the tree the watch decision was about.
     pub label: String,
     pub rung_label: Option<String>,
 }
 
-/// The seat is [`library_core::governance::Governance::seat_of`]'s answer: a
-/// shelf the tree cut answers with its own rung, a shelf the reader made with
-/// the rung it stands on.
+/// The seat as `Governance::seat_of` answers it.
 pub fn shelf_watch(state: crate::context::LibraryContext, shelf_id: &str) -> Option<ShelfWatch> {
     let (folders, shelves) = (
         state.library.folders.get_untracked(),
@@ -146,10 +125,7 @@ pub fn shelf_watch(state: crate::context::LibraryContext, shelf_id: &str) -> Opt
     })
 }
 
-/// The write is the seat's rung rather than the tree's root: tracking is a
-/// tree (`library_core::tracking`) and a shelf is a seat in it, so "stop
-/// watching" asked of a rung is an explicit Off there while the tree above
-/// keeps watching.
+/// The write is the seat's rung, not the tree's root.
 pub fn set_shelf_watch(state: crate::context::LibraryContext, shelf_id: &str, on: bool) {
     let Some(watch) = shelf_watch(state, shelf_id) else {
         return;
@@ -167,16 +143,13 @@ pub fn set_shelf_watch(state: crate::context::LibraryContext, shelf_id: &str, on
         }
     });
     crate::services::persist_library(state.library);
-    // Read after the write: a walk handed the pre-toggle flag would resolve
-    // the tree straight back to the state the reader just turned off.
+    // Read after the write, so the walk sees the new flag.
     let Some((root, opts)) = state.library.folders.with_untracked(|folders| {
         folder_ops::find(folders, &watch.folder_id).map(|f| (f.root.clone(), f.opts.clone()))
     }) else {
         return;
     };
-    // The sentence names the ground the decision was about: a "no longer
-    // watched" that read as the whole tree would be a surprise three shelves
-    // deep.
+    // The sentence names the ground the decision was about.
     let ground = match &watch.rung_label {
         Some(rung) => format!("“{rung}” in {}", watch.label),
         None => watch.label.clone(),
