@@ -1,18 +1,5 @@
-//! sRGB <-> OKLCH conversion, used to tint the UI palette without destroying
-//! it.
-//!
-//! The first tint implementation mixed toward the tint colour in CSS
-//! (`color-mix(in oklch, ...)`), which drags every token toward the tint's
-//! lightness: in light mode paper (L=1.00), surface (0.97) and line (0.93)
-//! converged at ~0.88 and page, sidebar, toolbar and thumbnails became one
-//! flat slab. Dark mode hid it (its bases start low). The fix keeps each
-//! token's OWN lightness — which encodes the hierarchy — and moves only hue
-//! and chroma. `color-mix` cannot express that and relative-colour syntax
-//! would push untestable work into the browser, so the conversion happens
-//! here and emits `oklch(L C H)` literals.
-//!
-//! Shared kernel because BOTH pipelines compute in this space: the PDF tint
-//! emits OKLCH UI tokens, the text palette derives its page colours in OKLCH.
+//! sRGB to OKLCH conversion, used to tint the UI palette without
+//! moving any token's lightness.
 
 fn srgb_to_linear(c: f64) -> f64 {
     if c <= 0.04045 {
@@ -39,9 +26,7 @@ fn hex_to_linear(hex: &str) -> Option<(f64, f64, f64)> {
     ))
 }
 
-/// Lightness, chroma and hue (degrees) of an `#rrggbb` colour in OKLCH.
-///
-/// Standard Björn Ottosson matrices: linear sRGB -> LMS -> cube root -> OKLab.
+/// Lightness, chroma and hue of an `#rrggbb` colour in OKLCH.
 #[inline]
 pub fn hex_to_oklch(hex: &str) -> Option<(f64, f64, f64)> {
     let (r, g, b) = hex_to_linear(hex)?;
@@ -64,12 +49,7 @@ pub fn hex_to_oklch(hex: &str) -> Option<(f64, f64, f64)> {
     Some((ll, chroma, hue))
 }
 
-/// (L, C, H) out of a colour this reader emits: an `oklch(...)` literal or an
-/// `#rrggbb` hex. The inverse of [`oklch_css`] and the only place the
-/// literal's grammar is written down. Untinted palettes emit hex and tinted
-/// ones oklch, so anything reading a palette back —
-/// [`crate::appearance::reflowable::palette`]'s precomposed mixes and the
-/// tests — must accept both.
+/// (L, C, H) out of an `oklch(...)` literal or a hex.
 pub fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
     let v = value.trim();
     if let Some(inner) = v.strip_prefix("oklch(").and_then(|s| s.strip_suffix(')')) {
@@ -83,11 +63,7 @@ pub fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
     hex_to_oklch(v)
 }
 
-/// Hue `from` rotated a fraction `t` of the way to `to`, the SHORT way round
-/// the circle: 350 -> 10 is a 20 degree step, not a 340 degree sweep through
-/// the spectrum (a tint that took the long way turned warm paper green on its
-/// way to red). Both the UI-token tint and the text palette's accent ride it,
-/// so one slider moves every colour the same direction.
+/// Hue `from` rotated a fraction `t` toward `to`, the short way round.
 pub fn hue_toward(from: f64, to: f64, t: f64) -> f64 {
     let mut delta = to - from;
     while delta > 180.0 {
@@ -128,7 +104,7 @@ mod tests {
         assert!(l < 0.002, "black L={l}");
         assert!(c < 0.002);
 
-        // Pure sRGB red is a well-known OKLCH landmark: L≈0.628, C≈0.258, h≈29.2
+        // Pure sRGB red: L≈0.628, C≈0.258, h≈29.2.
         let (l, c, h) = hex_to_oklch("#ff0000").unwrap();
         assert!((l - 0.628).abs() < 0.01, "red L={l}");
         assert!((c - 0.258).abs() < 0.01, "red C={c}");
@@ -137,9 +113,7 @@ mod tests {
 
     #[test]
     fn the_light_palette_has_the_lightness_ladder_the_ui_depends_on() {
-        // This ordering IS the visual hierarchy: page brighter than chrome,
-        // chrome brighter than its borders. The tint must preserve it — losing
-        // it is the bug this module exists to fix.
+        // This ordering IS the hierarchy: page brighter than chrome.
         let paper = l_of("#ffffff");
         let surface = l_of("#f3f4f6");
         let line = l_of("#e5e7eb");
@@ -166,8 +140,7 @@ mod tests {
 
     #[test]
     fn an_emitted_literal_reads_back_as_the_numbers_it_was_built_from() {
-        // The round trip both pipelines depend on: tinted palettes emit oklch,
-        // untinted ones emit hex, and one parser has to read either.
+        // The round trip both pipelines depend on: oklch and hex.
         let (l, c, h) = parse_color(&oklch_css(0.98, 0.08, 104.0)).unwrap();
         assert!((l - 0.98).abs() < 1e-9 && (c - 0.08).abs() < 1e-9 && (h - 104.0).abs() < 1e-9);
         assert!((parse_color("#ffffff").unwrap().0 - 1.0).abs() < 0.002);

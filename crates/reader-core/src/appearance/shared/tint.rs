@@ -1,17 +1,9 @@
-//! The tint maths BOTH pipelines share: the sRGB->OKLCH hue mapping and the
-//! per-token OKLCH shift that preserves each token's lightness. The PDF
-//! pipeline feeds these numbers into the CSS filter chain and the UI-token
-//! overrides; the text pipeline writes them into its page tokens. Keeping the
-//! mapping and the chroma ceilings here — and nowhere else — is what makes
-//! one slider drive both formats onto the same hue at the same strength.
+//! The tint maths both pipelines share: the hue mapping and the
+//! per-token shift.
 
 use crate::appearance::shared::oklch::{hex_to_oklch, hue_toward, oklch_css};
 
-/// Map an sRGB hue angle (`tint_hue`, applied via `hue-rotate()`) to the
-/// corresponding OKLCH hue angle (what the tokens are emitted in). The two
-/// circles are rotated relative to each other, so converting a saturated sRGB
-/// colour at the requested angle recovers the right OKLCH hue and one slider
-/// drives both consistently.
+/// Map an sRGB hue angle to the corresponding OKLCH hue angle.
 pub fn ui_hue_oklch(srgb_hue: f64) -> f64 {
     let h = srgb_hue.rem_euclid(360.0) / 60.0;
     let i = h.floor() as i32;
@@ -34,11 +26,7 @@ pub fn ui_hue_oklch(srgb_hue: f64) -> f64 {
     hex_to_oklch(&hex).map(|(_, _, h)| h).unwrap_or(srgb_hue)
 }
 
-/// The chroma ceiling a token may reach at a 100% tint. Large flat areas
-/// (paper, surface) need restraint — what looks right on a page is
-/// overwhelming across a window — while accents are supposed to be saturated.
-/// Ink is deliberately near-zero: text carries the reading contrast, and a
-/// coloured ink on coloured paper is what makes tinted themes feel murky.
+/// The chroma ceiling a token may reach at a 100% tint.
 pub fn chroma_ceiling(token: &str) -> f64 {
     match token {
         "paper" => 0.055,
@@ -52,18 +40,13 @@ pub fn chroma_ceiling(token: &str) -> f64 {
     }
 }
 
-/// Shift one token colour toward the tint at strength `t` (0..=1). Preserves
-/// the token's OWN lightness — which encodes the hierarchy — and moves only
-/// hue (the SHORT way toward `target_h`) and chroma (lifted toward the
-/// token's ceiling). Because L never moves, contrast ratios survive a 100%
-/// tint.
+/// Shift one token toward the tint at strength `t`, keeping its
+/// lightness.
 pub fn tinted_token(hex: &str, target_h: f64, t: f64, max_c: f64) -> Option<String> {
     let (l, c0, h0) = hex_to_oklch(hex)?;
     let h = hue_toward(h0, target_h, t);
 
-    // Near-neutral bases (white paper, gray line) have a meaningless hue:
-    // blend from their own chroma up to the ceiling rather than preserving a
-    // hue that was never there.
+    // Near-neutral bases have a meaningless hue.
     let c = c0 + (max_c - c0).max(0.0) * t;
 
     Some(oklch_css(l, c, h))
@@ -76,10 +59,7 @@ mod tests {
 
     #[test]
     fn the_srgb_hue_maps_onto_the_oklch_circle_not_identity() {
-        // COLOUR-SPACE TRAP: `hue-rotate()` works in sRGB, so `tint_hue` is
-        // an sRGB angle, but the tokens are emitted in OKLCH, whose hue circle
-        // is rotated — sRGB 34 (warm tan) sits near OKLCH 60, not 34. Feeding
-        // the raw number in made the page tan while the chrome went pink.
+        // COLOUR-SPACE TRAP: `hue-rotate()` is sRGB, tokens are OKLCH.
         let h = ui_hue_oklch(34.0);
         assert!(
             h > 40.0,
@@ -108,8 +88,7 @@ mod tests {
 
     #[test]
     fn a_full_strength_tint_lands_on_the_requested_hue() {
-        // Near-neutral bases rotate from a meaningless hue, so at 100% every
-        // token must land ON the requested hue rather than near it.
+        // At 100% every token must land ON the requested hue.
         let target = ui_hue_oklch(104.0);
         for hex in ["#ffffff", "#2563eb", "#e5e7eb"] {
             let h = tinted_token(hex, target, 1.0, 0.150)
@@ -122,9 +101,7 @@ mod tests {
 
     #[test]
     fn hue_rotation_takes_the_short_way_round_the_circle() {
-        // A base at ~265deg tinted to 10deg must rotate forward through 300,
-        // not sweep backwards through the whole spectrum. At half strength the
-        // result should sit between the two, going the short way.
+        // A base at ~265deg tinted to 10deg rotates through 300.
         let target = ui_hue_oklch(10.0);
         assert!(target < 90.0, "sanity: sRGB 10 maps low, got {target}");
         let v = tinted_token("#e5e7eb", target, 0.5, 0.090).unwrap();

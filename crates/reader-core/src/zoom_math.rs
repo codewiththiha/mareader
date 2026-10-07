@@ -20,9 +20,7 @@ pub fn clamp_scale(s: f64) -> f64 {
     s.clamp(MIN_SCALE, MAX_SCALE)
 }
 
-/// Scale that fits a page (base CSS-px size `page_w` x `page_h`) into a
-/// container of `container_w` x `container_h`, edge to edge.
-/// `FitMode::None` should never call this — it returns the caller's current scale.
+/// Scale that fits a page into a container, edge to edge.
 pub fn fit_scale(
     fit: FitMode,
     container_w: f64,
@@ -40,12 +38,7 @@ pub fn fit_scale(
     }
 }
 
-/// One step along the preset ladder; `dir > 0` zooms in, `dir < 0` out. The
-/// step is taken from the preset CLOSEST to `current`, then clamped into the
-/// ladder, so a reader at the top or bottom stays put instead of wrapping or
-/// falling off. A non-preset scale (a 137% fit-width) rounds onto the ladder
-/// first and steps from there, which is what makes repeated presses feel
-/// even.
+/// One step along the preset ladder; `dir` carries only a sign.
 pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
     if dir == 0 {
         return clamp_scale(current);
@@ -64,9 +57,7 @@ pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
     ZOOM_STEPS[target_idx]
 }
 
-/// Hermite smoothstep: 0 below `edge0`, 1 above `edge1`, smooth between.
-/// Pure easing math, not gloss-specific — any UI fade that must start and end
-/// with zero derivative belongs here.
+/// Hermite smoothstep: 0 below `edge0`, 1 above `edge1`.
 pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
     let x = ((t - edge0) / (edge1 - edge0).max(0.0001)).clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
@@ -80,8 +71,7 @@ mod tests {
 
     #[test]
     fn fit_uses_the_page_under_the_eyes_not_page_one() {
-        // Portrait letter, then a landscape plate twice as wide: the same
-        // container must fit the plate at half the letter's scale.
+        // Portrait letter, then a plate twice as wide.
         let letter = fit_scale(FitMode::Width, 600.0, 800.0, 612.0, 792.0, 1.0);
         let plate = fit_scale(FitMode::Width, 600.0, 800.0, 1224.0, 792.0, 1.0);
         assert!(
@@ -90,13 +80,12 @@ mod tests {
         );
     }
 
-    /// Fit modes: width uses the container width, page takes the smaller of the
-    /// two ratios (so the whole page shows).
+    /// Fit modes: width uses the width, page the smaller ratio.
     #[test]
     fn fit_modes() {
         let s = fit_scale(FitMode::Width, 600.0, 800.0, 300.0, 400.0, 1.0);
         assert!((s - 2.0).abs() < 1e-9);
-        // 300x400 page in 500x1000 -> height-limited (500/300=1.66 vs 1000/400=2.5).
+        // 300x400 page in 500x1000: height-limited.
         let s = fit_scale(FitMode::Page, 500.0, 1000.0, 300.0, 400.0, 1.0);
         assert!((s - 1.6666).abs() < 1e-3);
         // ...and in 500x600 -> width-limited (1.6666 vs 1.5).
@@ -104,8 +93,7 @@ mod tests {
         assert!((s - 1.5).abs() < 1e-9);
     }
 
-    /// Zoom presets: clamped to the supported range, and stepping moves to the
-    /// adjacent preset — including from a value that is not itself a preset.
+    /// Zoom presets, clamped, stepping to the adjacent preset.
     #[test]
     fn zoom_clamping_and_steps() {
         assert_eq!(clamp_scale(0.1), MIN_SCALE);
@@ -116,8 +104,7 @@ mod tests {
             (1.0, -1, 0.9),
             (0.1, -1, 0.25),
             (99.0, 1, 5.0),
-            // A non-preset current value rounds onto the ladder first, then
-            // steps: 1.2 is closest to 1.25, so zooming in lands on 1.5.
+            // A non-preset value rounds onto the ladder first.
             (1.2, 1, 1.5),
             (1.2, -1, 1.0),
         ] {
@@ -128,8 +115,7 @@ mod tests {
         }
     }
 
-    /// Pressing zoom-in at the maximum (or zoom-out at the minimum) must be
-    /// a no-op, not a wrap to the other end of the ladder.
+    /// Zooming in at the maximum must be a no-op, not a wrap.
     #[test]
     fn stepping_at_the_ends_of_the_ladder_stays_put() {
         assert_eq!(nearest_zoom(MAX_SCALE, 1), MAX_SCALE);
@@ -137,8 +123,7 @@ mod tests {
         // Repeated presses at the ceiling cannot walk off the array either.
         assert_eq!(nearest_zoom(nearest_zoom(MAX_SCALE, 1), 1), MAX_SCALE);
         assert_eq!(nearest_zoom(nearest_zoom(MIN_SCALE, -1), -1), MIN_SCALE);
-        // And a garbage scale lands somewhere sane rather than poisoning the
-        // ladder for every later step.
+        // A garbage scale lands somewhere sane.
         assert!(nearest_zoom(f64::NAN, 1).is_finite());
         assert_eq!(nearest_zoom(1.0, 0), 1.0);
     }
@@ -163,8 +148,7 @@ mod tests {
 
     #[test]
     fn a_degenerate_or_inverted_edge_pair_still_terminates() {
-        // edge1 == edge0: the tiny epsilon denominator must not blow up or
-        // produce NaN; the result is clamped to one end.
+        // edge1 == edge0: the epsilon denominator must not blow up.
         assert!(smoothstep(5.0, 5.0, 5.0).is_finite());
     }
 }
