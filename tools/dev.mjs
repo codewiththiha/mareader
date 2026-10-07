@@ -1,13 +1,20 @@
 // Dev boot: build the artifacts, serve the shell, prove they are all served.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { RUNTIME_INPUTS, RUNTIME_FILES, mergeRuntimeArtifacts } from "./runtime-artifacts.mjs";
+import { BUILD_TARGETS, RUNTIME_INPUTS, RUNTIME_FILES, mergeRuntimeArtifacts } from "./runtime-artifacts.mjs";
+import {
+  cargoDependencyRoots,
+  hasReleaseTargetManifest,
+  mergedReleaseTargets,
+  RELEASE_FINGERPRINT_SCHEMA,
+  staleReleaseTargets,
+} from "./release-freshness.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(root, "dist");
@@ -16,23 +23,65 @@ const DIST = path.join(root, "dist");
 const MANIFEST_DIR = path.join(root, ".dev-artifacts");
 const MANIFEST_PATH = path.join(MANIFEST_DIR, "artifact-manifest.json");
 
-/** Inputs that invalidate a complete production distribution. */
-const RELEASE_FINGERPRINT_ROOTS = [
-  "src",
-  "crates",
-  "public",
-  "styles",
-  "tools",
-  "index.html",
-  "Trunk.toml",
-  ...RUNTIME_INPUTS,
+const RELEASE_SHARED_ROOTS = [
   "Cargo.toml",
   "Cargo.lock",
-  "package.json",
-  "package-lock.json",
-  "tsconfig.json",
-  "tsconfig.tools.json",
+  "tools/build-dist.sh",
+  "tools/runtime-artifacts.mjs",
 ];
+const RELEASE_TARGET_ROOTS = {
+  shell: [
+    "src",
+    "public",
+    "styles",
+    "tools",
+    "index.html",
+    "Trunk.toml",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "tsconfig.tools.json",
+  ],
+  library: ["library.html", "library.Trunk.toml"],
+  reader: ["reader.html", "reader.Trunk.toml"],
+  pdf: ["pdf.html", "pdf.Trunk.toml"],
+  reflow: ["reflow.html", "reflow.Trunk.toml"],
+};
+const RELEASE_SHELL_OUTPUTS = [
+  "dist/index.html",
+  "dist/mareader.js",
+  "dist/mareader_bg.wasm",
+  "dist/styles.css",
+  "dist/pdfEngine.js",
+  "dist/readerEngine.js",
+  "dist/rasterLane.js",
+  "dist/bake.worker.js",
+  "dist/bake.html",
+  "dist/coverBake.js",
+  "dist/shellBoot.js",
+  "dist/bootPaint.js",
+  "dist/tauri-relay.js",
+  "dist/readerHost.js",
+  "dist/vendor/pdfjs/pdf.min.mjs",
+  "dist/vendor/pdfjs/pdf.worker.min.mjs",
+  "dist/vendor/pdfjs/pdf_viewer.css",
+];
+const RELEASE_TARGET_OUTPUTS = {
+  shell: RELEASE_SHELL_OUTPUTS,
+  ...Object.fromEntries(
+    ["library", "reader", "pdf", "reflow"].map((name) => [
+      name,
+      [
+        `dist/${name}.html`,
+        `dist/${name}.js`,
+        `dist/${name}_bg.wasm`,
+        `dist-${name}/${name}.html`,
+        `dist-${name}/${name}.js`,
+        `dist-${name}/${name}_bg.wasm`,
+      ],
+    ]),
+  ),
+};
 
 /** Trunk owns shell, CSS and public assets. */
 const DEV_FINGERPRINT_ROOTS = [
@@ -52,16 +101,6 @@ const DEV_FINGERPRINT_ROOTS = [
 const GENERATED_NAMES = new Set(["pdfEngine.js", "readerEngine.js", "rasterLane.js", "readerHost.js", "bake.worker.js", "coverBake.js"]);
 const ENGINE_DIR = path.join(root, "public", "engine");
 
-/** Production outputs; dev only reuses the route artifacts. */
-const RELEASE_FRESHNESS_SET = [
-  "dist/index.html",
-  "dist/mareader.js",
-  "dist/mareader_bg.wasm",
-  "dist/tauri-relay.js",
-  "dist/rasterLane.js",
-  "dist/readerHost.js",
-  ...RUNTIME_FILES.map((file) => `dist/${file}`),
-];
 const DEV_FRESHNESS_SET = RUNTIME_FILES.map((file) => `dist/${file}`);
 
 /** The files the shell and its pane frames load, probed over HTTP. */
@@ -237,25 +276,24 @@ function developmentProfile() {
   return profile;
 }
 
-/** Run the canonical build; the caller decides whether a failure is fatal. */
-async function runBuildAll(profile) {
-  log(`building all five artifacts (${profile} profile)`);
-  return run("sh", ["tools/build-dist.sh", ...profileArgs(profile)]);
+async function runBuildTargets(profile, targets = BUILD_TARGETS) {
+  const selected = targets.length === BUILD_TARGETS.length ? "all five targets" : targets.join(", ");
+  log(`building ${selected} (${profile} profile)`);
+  const only = targets.length === BUILD_TARGETS.length ? [] : ["--only", targets.join(",")];
+  return run("sh", ["tools/build-dist.sh", ...profileArgs(profile), ...only]);
 }
 
-async function buildAllOrExit(profile) {
-  const code = await runBuildAll(profile);
+async function buildTargetsOrExit(profile, targets = BUILD_TARGETS) {
+  const code = await runBuildTargets(profile, targets);
   if (code !== 0) {
     console.error(`[dev] the canonical build failed (exit ${code}) — not starting the shell`);
     process.exit(code);
   }
 }
 
-/** The (path, mtime, size) fingerprint of each build profile's inputs. */
-function sourceFingerprint(profile) {
-  const roots = profile === "release" ? RELEASE_FINGERPRINT_ROOTS : DEV_FINGERPRINT_ROOTS;
+function fingerprintRoots(profile, roots) {
   const hash = crypto.createHash("sha256");
-  hash.update(`profile:${profile};builder:build-dist.sh`);
+  hash.update(`profile:${profile};builder:build-dist.sh;release-schema:${RELEASE_FINGERPRINT_SCHEMA}`);
   const visit = (abs) => {
     let entries;
     try {
@@ -265,9 +303,7 @@ function sourceFingerprint(profile) {
     }
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
-      if (entry.name === "target" || entry.name === "node_modules" || entry.name === ".git") {
-        continue;
-      }
+      if (["target", "node_modules", ".git", ".dev-artifacts"].includes(entry.name)) continue;
       if (GENERATED_NAMES.has(entry.name)) continue;
       if (abs === ENGINE_DIR && entry.name.endsWith(".js")) continue;
       const child = path.join(abs, entry.name);
@@ -277,15 +313,15 @@ function sourceFingerprint(profile) {
       }
       try {
         const stat = fs.statSync(child);
-        hash.update(child.slice(root.length));
+        hash.update(path.relative(root, child));
         hash.update(` ${stat.mtimeMs} ${stat.size} `);
       } catch {
         /* vanished mid-walk: the next start fingerprints the new state */
       }
     }
   };
-  for (const rel of roots) {
-    hash.update(rel);
+  for (const rel of [...new Set(roots)].sort()) {
+    hash.update(`root:${rel};`);
     let stat;
     try {
       stat = fs.statSync(path.join(root, rel));
@@ -301,9 +337,48 @@ function sourceFingerprint(profile) {
   return hash.digest("hex");
 }
 
-function artifactsPresent(profile) {
-  const files = profile === "release" ? RELEASE_FRESHNESS_SET : DEV_FRESHNESS_SET;
-  return files.every((rel) => {
+// The workspace graph lets a crate edit invalidate only dependent WASM targets.
+function cargoWorkspacePackages() {
+  try {
+    const text = execFileSync(
+      "cargo",
+      ["metadata", "--format-version", "1", "--no-deps", "--locked"],
+      { cwd: root, encoding: "utf8", timeout: 30_000, maxBuffer: 8 * 1024 * 1024 },
+    );
+    return JSON.parse(text).packages ?? null;
+  } catch {
+    // If Cargo cannot resolve the graph, fingerprint every crate to stay safe.
+    return null;
+  }
+}
+
+function releaseFingerprints() {
+  const packages = cargoWorkspacePackages();
+  return Object.fromEntries(
+    BUILD_TARGETS.map((target) => [
+      target,
+      fingerprintRoots("release", [
+        ...RELEASE_SHARED_ROOTS,
+        ...RELEASE_TARGET_ROOTS[target],
+        ...cargoDependencyRoots(target, packages, root),
+      ]),
+    ]),
+  );
+}
+
+function combinedFingerprint(targetFingerprints) {
+  return crypto
+    .createHash("sha256")
+    .update(`release-schema:${RELEASE_FINGERPRINT_SCHEMA}:${JSON.stringify(targetFingerprints)}`)
+    .digest("hex");
+}
+
+function devSourceFingerprint() {
+  return fingerprintRoots("dev", DEV_FINGERPRINT_ROOTS);
+}
+
+function devArtifactsPresent() {
+  return DEV_FRESHNESS_SET.every((rel) => {
     try {
       return fs.statSync(path.join(root, rel)).size > 0;
     } catch {
@@ -320,12 +395,20 @@ function readManifest() {
   }
 }
 
-function writeManifest(profile, fingerprint) {
+/** A release manifest advances only the targets actually rebuilt. */
+function writeManifest(profile, fingerprint, builtTargets = [], targetFingerprints = null) {
   fs.mkdirSync(MANIFEST_DIR, { recursive: true });
-  fs.writeFileSync(
-    MANIFEST_PATH,
-    `${JSON.stringify({ profile, fingerprint }, null, 2)}\n`,
-  );
+  let manifest = { profile, fingerprint };
+  if (profile === "release") {
+    const targets = mergedReleaseTargets(readManifest(), builtTargets, targetFingerprints);
+    manifest = {
+      profile,
+      schema: RELEASE_FINGERPRINT_SCHEMA,
+      fingerprint: combinedFingerprint(targets),
+      targets,
+    };
+  }
+  fs.writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 /** Re-copy the merged runtime artifacts if a shell rebuild removed them. */
@@ -492,11 +575,12 @@ async function waitForDistQuiet() {
 }
 
 /** Builds racing `trunk serve` are retried; failures surface at the end. */
-async function rebuildRuntimeArtifacts(profile) {
+async function rebuildRuntimeArtifacts(profile, targets = BUILD_TARGETS) {
   await waitForDistQuiet();
+  const only = targets.length === BUILD_TARGETS.length ? [] : ["--only", targets.join(",")];
   let last = { code: 1, out: "" };
   for (let attempt = 1; attempt <= REBUILD_ATTEMPTS; attempt += 1) {
-    last = await runCaptured("sh", ["tools/build-dist.sh", ...profileArgs(profile)]);
+    last = await runCaptured("sh", ["tools/build-dist.sh", ...profileArgs(profile), ...only]);
     if (last.code === 0) {
       if (attempt > 1) log(`rebuild succeeded on attempt ${attempt}`);
       return true;
@@ -521,12 +605,49 @@ function ensureIgnoreDirs() {
   }
 }
 
-/** The freshness decision: build only when the manifest does not vouch. */
 function freshnessDecision(profile) {
   const force = process.env.FORCE_REBUILD === "1";
-  const fingerprint = sourceFingerprint(profile);
+  if (profile === "release") {
+    const targetFingerprints = releaseFingerprints();
+    const fingerprint = combinedFingerprint(targetFingerprints);
+    const manifest = readManifest();
+    const outputsPresent = Object.fromEntries(
+      BUILD_TARGETS.map((target) => [
+        target,
+        RELEASE_TARGET_OUTPUTS[target].every((rel) => {
+          try {
+            return fs.statSync(path.join(root, rel)).size > 0;
+          } catch {
+            return false;
+          }
+        }),
+      ]),
+    );
+    const rebuildTargets = staleReleaseTargets({
+      manifest,
+      targetFingerprints,
+      outputsPresent,
+      force,
+    });
+    let why = "inputs unchanged";
+    if (force) why = "FORCE_REBUILD=1";
+    else if (!hasReleaseTargetManifest(manifest)) {
+      why = manifest === null ? "no manifest yet" : "release target manifest is stale";
+    } else if (rebuildTargets.length > 0) {
+      why = `stale or missing targets: ${rebuildTargets.join(", ")}`;
+    }
+    return {
+      fresh: rebuildTargets.length === 0,
+      fingerprint,
+      targetFingerprints,
+      rebuildTargets,
+      why,
+    };
+  }
+
+  const fingerprint = devSourceFingerprint();
   if (force) return { fresh: false, fingerprint, why: "FORCE_REBUILD=1" };
-  if (!artifactsPresent(profile))
+  if (!devArtifactsPresent())
     return { fresh: false, fingerprint, why: "artifacts are missing" };
   const manifest = readManifest();
   if (manifest === null) return { fresh: false, fingerprint, why: "no manifest yet" };
@@ -543,10 +664,11 @@ async function buildOnly() {
     log(`build-only: ${decision.why} — skipping the five-target build`);
     return;
   }
-  log(`build-only: ${decision.why} — running the five-target build`);
-  await buildAllOrExit(profile);
-  writeManifest(profile, decision.fingerprint);
-  log("build-only: artifacts built and manifest written");
+  const targets = decision.rebuildTargets ?? BUILD_TARGETS;
+  log(`build-only: ${decision.why} — building ${targets.join(", ")}`);
+  await buildTargetsOrExit(profile, targets);
+  writeManifest(profile, decision.fingerprint, targets, decision.targetFingerprints);
+  log(`build-only: built ${targets.join(", ")} and updated the manifest`);
 }
 
 async function main() {
@@ -566,9 +688,10 @@ async function main() {
         "(FORCE_REBUILD=1 to rebuild)",
     );
   } else {
-    log(`freshness gate: ${decision.why} — building all five artifacts`);
-    await buildAllOrExit(profile);
-    writeManifest(profile, decision.fingerprint);
+    const targets = decision.rebuildTargets ?? BUILD_TARGETS;
+    log(`freshness gate: ${decision.why} — building ${targets.join(", ")}`);
+    await buildTargetsOrExit(profile, targets);
+    writeManifest(profile, decision.fingerprint, targets, decision.targetFingerprints);
   }
 
   // Trunk hard-errors on a missing watch-ignore entry; create them first.
@@ -651,10 +774,19 @@ async function main() {
     const now = newestMtime();
     if (now === watermark) continue;
     watermark = now;
-    // A watched source changed: the runtime artifacts are stale until rebuilt.
-    log("source change detected — rebuilding the runtime artifacts");
-    if (!(await rebuildRuntimeArtifacts(profile))) continue;
-    writeManifest(profile, sourceFingerprint(profile));
+    const decision = profile === "release" ? freshnessDecision(profile) : null;
+    const targets = decision?.rebuildTargets ?? BUILD_TARGETS;
+    if (targets.length === 0) {
+      log("watched file changed, but no release artifact input changed — skipping rebuild");
+      continue;
+    }
+    log(`source change detected — rebuilding ${targets.join(", ")}`);
+    if (!(await rebuildRuntimeArtifacts(profile, targets))) continue;
+    if (decision) {
+      writeManifest(profile, decision.fingerprint, targets, decision.targetFingerprints);
+    } else {
+      writeManifest(profile, devSourceFingerprint());
+    }
     if (!(await proveServed("rebuild"))) stop(1);
   }
 }

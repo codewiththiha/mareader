@@ -37,17 +37,55 @@ export function mergeRuntimeArtifacts(destination, {
   return copied;
 }
 
-function build(args) {
-  for (const runtime of [null, ...RUNTIMES]) {
+export const BUILD_TARGETS = ["shell", ...RUNTIMES.map(({ name }) => name)];
+
+export function parseBuildArgs(argv) {
+  const args = [];
+  let requestedTargets = null;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--only") {
+      if (requestedTargets !== null || !argv[index + 1]) {
+        throw new Error("--only requires one comma-separated target list");
+      }
+      requestedTargets = argv[index + 1].split(",");
+      index += 1;
+    } else if (arg.startsWith("--only=")) {
+      if (requestedTargets !== null) throw new Error("--only may be specified once");
+      requestedTargets = arg.slice("--only=".length).split(",");
+    } else {
+      args.push(arg);
+    }
+  }
+
+  const targets = requestedTargets ?? BUILD_TARGETS;
+  const unknown = targets.filter((target) => !BUILD_TARGETS.includes(target));
+  if (targets.length === 0 || targets.some((target) => !target) || unknown.length > 0) {
+    throw new Error(
+      `Invalid build targets: ${targets.join(", ") || "<empty>"}. ` +
+        `Choose from ${BUILD_TARGETS.join(", ")}.`,
+    );
+  }
+  return { args, targets: BUILD_TARGETS.filter((target) => targets.includes(target)) };
+}
+
+function build(args, targets) {
+  const startedAt = Date.now();
+  for (const target of targets) {
+    const runtime = RUNTIMES.find(({ name }) => name === target);
     const config = runtime ? ["--config", runtime.config, "--dist", runtime.directory] : [];
+    const targetStartedAt = Date.now();
     const child = spawnSync("trunk", ["build", ...config, ...args], { cwd: project, stdio: "inherit" });
     if (child.error) throw child.error;
     if (child.status !== 0) process.exit(child.status ?? 1);
+    console.log(`[frontend] ${target} build: ${((Date.now() - targetStartedAt) / 1000).toFixed(1)}s`);
   }
   mergeRuntimeArtifacts(path.join(project, "dist"));
+  console.log(`[frontend] selected builds + merge: ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] !== "--build") throw new Error("runtime-artifacts.mjs requires --build");
-  build(process.argv.slice(3));
+  const { args, targets } = parseBuildArgs(process.argv.slice(3));
+  build(args, targets);
 }

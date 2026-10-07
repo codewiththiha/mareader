@@ -5,7 +5,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import assert from "node:assert/strict";
-import { RUNTIMES, RUNTIME_INPUTS, mergeRuntimeArtifacts } from "./runtime-artifacts.mjs";
+import {
+  BUILD_TARGETS,
+  RUNTIMES,
+  RUNTIME_INPUTS,
+  mergeRuntimeArtifacts,
+  parseBuildArgs,
+} from "./runtime-artifacts.mjs";
+import {
+  cargoDependencyRoots,
+  hasReleaseTargetManifest,
+  mergedReleaseTargets,
+  RELEASE_FINGERPRINT_SCHEMA,
+  staleReleaseTargets,
+} from "./release-freshness.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -141,7 +154,9 @@ const workflows = fs.existsSync(path.join(root, ".github/workflows"))
   : [];
 for (const wf of workflows) {
   const text = readText(`.github/workflows/${wf}`) ?? "";
-  if (text.includes(CANONICAL_BUILDER)) ciRunsBuilder = true;
+  if (/\brun:\s*(?:npm run build:dist|sh tools\/build-dist\.sh)\b/.test(text)) {
+    ciRunsBuilder = true;
+  }
 }
 if (!ciRunsBuilder) {
   fail(
@@ -178,6 +193,32 @@ if (!fs.existsSync(path.join(root, NATIVE_SMOKE))) {
 }
 let ciRunsNativeSmoke = false;
 const deepText = readText(".github/workflows/deep-ci.yml") ?? "";
+function workflowJob(name) {
+  const marker = `  ${name}:\n`;
+  const start = deepText.indexOf(marker);
+  if (start < 0) return "";
+  const body = deepText.slice(start + marker.length);
+  const next = body.search(/\n  [A-Za-z][A-Za-z0-9_-]*:\n/);
+  return next < 0 ? body : body.slice(0, next);
+}
+const frontendJob = workflowJob("frontend-build");
+if (!frontendJob.includes("npm run build:dist") ||
+    !frontendJob.includes("actions/upload-artifact@v5") ||
+    !frontendJob.includes("name: frontend-dist")) {
+  fail("Deep CI must build and upload one canonical `frontend-dist` artifact");
+}
+for (const jobName of ["browser-lifecycle", "tauri-smoke", "memory-replay"]) {
+  const job = workflowJob(jobName);
+  if (!job.includes("frontend-build") && jobName !== "memory-replay") {
+    fail(`Deep CI ${jobName} must depend on the shared frontend build`);
+  }
+  if (!job.includes("actions/download-artifact@v5") || !job.includes("name: frontend-dist")) {
+    fail(`Deep CI ${jobName} must download the shared frontend-dist artifact`);
+  }
+  if (/npm run build:dist|tools\/build-dist\.sh/.test(job)) {
+    fail(`Deep CI ${jobName} must not build a second production frontend`);
+  }
+}
 for (const wf of workflows) {
   const text = readText(`.github/workflows/${wf}`) ?? "";
   if (text.includes(NATIVE_SMOKE)) ciRunsNativeSmoke = true;
@@ -202,8 +243,93 @@ for (const required of requiredPaths) {
 
 // Every route/pane entry and Trunk config participates in dev invalidation.
 const devSource = readText(DEV_ORCHESTRATOR) ?? "";
+const cargoToml = readText("Cargo.toml") ?? "";
+function tomlProfile(name) {
+  const start = cargoToml.indexOf(`[profile.${name}]`);
+  if (start < 0) return "";
+  const body = cargoToml.slice(start);
+  const next = body.search(/\n\[/);
+  return next < 0 ? body : body.slice(0, next);
+}
+const nativeRelease = tomlProfile("release");
+const wasmRelease = tomlProfile("wasm-release");
+if (!/opt-level\s*=\s*"z"/.test(nativeRelease) ||
+    !/lto\s*=\s*true/.test(nativeRelease) ||
+    !/codegen-units\s*=\s*1/.test(nativeRelease)) {
+  fail("the native release profile must keep size optimisation, fat LTO and one codegen unit");
+}
+if (!/inherits\s*=\s*"release"/.test(wasmRelease) ||
+    !/lto\s*=\s*"thin"/.test(wasmRelease) ||
+    !/codegen-units\s*=\s*16/.test(wasmRelease) ||
+    !/incremental\s*=\s*true/.test(wasmRelease)) {
+  fail("the frontend wasm-release profile must inherit release with thin LTO, 16 units and incremental builds");
+}
+for (const page of ["index.html", "library.html", "reader.html", "pdf.html", "reflow.html"]) {
+  const html = readText(page) ?? "";
+  if (!html.includes('data-cargo-profile-release="wasm-release"') ||
+      !html.includes('data-wasm-opt="z"')) {
+    fail(`${page} must use wasm-release and retain release wasm-opt=z`);
+  }
+}
+if (!deepText.includes('CARGO_INCREMENTAL: "0"')) {
+  fail("Deep CI must disable incremental artifacts to keep the hosted build cache lean");
+}
+const releaseFreshnessSource = readText("tools/release-freshness.mjs") ?? "";
+if (!devSource.includes('"metadata"') || !devSource.includes('"--no-deps"') ||
+    !devSource.includes('"--only"') ||
+    !releaseFreshnessSource.includes("function cargoDependencyRoots") ||
+    !releaseFreshnessSource.includes("function staleReleaseTargets")) {
+  fail("the release freshness gate must fingerprint Cargo dependencies and rebuild selected targets");
+}
 assert.deepEqual(RUNTIMES.map((r) => r.name), ["library", "reader", "pdf", "reflow"]);
 assert.equal(RUNTIME_INPUTS.length, 8);
+assert.deepEqual(BUILD_TARGETS, ["shell", "library", "reader", "pdf", "reflow"]);
+assert.deepEqual(parseBuildArgs(["--release", "--only=pdf,shell"]), {
+  args: ["--release"],
+  targets: ["shell", "pdf"],
+});
+assert.deepEqual(parseBuildArgs([]), { args: [], targets: BUILD_TARGETS });
+assert.throws(() => parseBuildArgs(["--only=unknown"]), /Invalid build targets/);
+const targetFingerprints = Object.fromEntries(BUILD_TARGETS.map((target) => [target, `${target}-v1`]));
+const releaseManifest = {
+  profile: "release",
+  schema: RELEASE_FINGERPRINT_SCHEMA,
+  targets: targetFingerprints,
+};
+const allOutputsPresent = Object.fromEntries(BUILD_TARGETS.map((target) => [target, true]));
+assert.equal(hasReleaseTargetManifest(releaseManifest), true);
+assert.deepEqual(staleReleaseTargets({
+  manifest: releaseManifest,
+  targetFingerprints,
+  outputsPresent: allOutputsPresent,
+}), []);
+const changedFingerprints = { ...targetFingerprints, reader: "reader-v2" };
+const oneMissingOutput = { ...allOutputsPresent, pdf: false };
+assert.deepEqual(staleReleaseTargets({
+  manifest: releaseManifest,
+  targetFingerprints: changedFingerprints,
+  outputsPresent: oneMissingOutput,
+}), ["reader", "pdf"]);
+assert.deepEqual(staleReleaseTargets({
+  manifest: null,
+  targetFingerprints,
+  outputsPresent: allOutputsPresent,
+}), BUILD_TARGETS);
+assert.deepEqual(staleReleaseTargets({
+  manifest: { ...releaseManifest, schema: 0 },
+  targetFingerprints,
+  outputsPresent: allOutputsPresent,
+}), BUILD_TARGETS);
+assert.deepEqual(staleReleaseTargets({
+  manifest: releaseManifest,
+  targetFingerprints,
+  outputsPresent: allOutputsPresent,
+  force: true,
+}), BUILD_TARGETS);
+assert.deepEqual(mergedReleaseTargets(releaseManifest, ["reader"], changedFingerprints), {
+  ...targetFingerprints,
+  reader: "reader-v2",
+});
 if (!/const WATCHED_FILES[^;]+\.\.\.RUNTIME_INPUTS/.test(devSource)) {
   fail("dev watcher does not include every route/pane entry and Trunk config");
 }
@@ -214,6 +340,44 @@ if (!builderScript.includes("runtime-artifacts.mjs --build")) {
 // Copy-policy fixtures: strict naming, Trunk normalization, first-leg staging.
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "mareader-artifacts-"));
 try {
+  const workspace = path.join(fixture, "workspace");
+  const pkg = (name, manifest, dependencies = []) => ({
+    id: `${name} 1.0.0`,
+    name,
+    manifest_path: path.join(workspace, manifest),
+    dependencies,
+  });
+  const graph = [
+    pkg("mareader", "Cargo.toml", [{ name: "app-ui" }, { name: "reader-core" }]),
+    pkg("app-ui", "crates/app-ui/Cargo.toml", [{ name: "runtime-contract" }]),
+    pkg("runtime-contract", "crates/runtime-contract/Cargo.toml"),
+    pkg("reader-core", "crates/reader-core/Cargo.toml"),
+    pkg("library-runtime", "crates/library-runtime/Cargo.toml", [{ name: "library-core" }]),
+    pkg("library-core", "crates/library-core/Cargo.toml"),
+    pkg("reader-runtime", "crates/reader-runtime/Cargo.toml", [{ name: "reader-core" }]),
+    pkg("unrelated", "crates/unrelated/Cargo.toml"),
+  ];
+  assert.deepEqual(cargoDependencyRoots("shell", graph, workspace).sort(), [
+    "build.rs",
+    "crates/app-ui",
+    "crates/reader-core",
+    "crates/runtime-contract",
+    "src",
+  ]);
+  assert.deepEqual(cargoDependencyRoots("library", graph, workspace).sort(), [
+    "crates/library-core",
+    "crates/library-runtime",
+  ]);
+  assert.deepEqual(cargoDependencyRoots("reader", graph, workspace).sort(), [
+    "crates/reader-core",
+    "crates/reader-runtime",
+  ]);
+  assert.deepEqual(cargoDependencyRoots("pdf", graph, workspace).sort(),
+    cargoDependencyRoots("reader", graph, workspace).sort());
+  assert.deepEqual(cargoDependencyRoots("reflow", graph, workspace).sort(),
+    cargoDependencyRoots("reader", graph, workspace).sort());
+  assert.deepEqual(cargoDependencyRoots("unknown", graph, workspace), ["crates"]);
+
   for (const { name, page, directory } of RUNTIMES) {
     const dir = path.join(fixture, directory);
     fs.mkdirSync(dir);

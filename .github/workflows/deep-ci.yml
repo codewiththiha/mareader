@@ -42,13 +42,22 @@ on:
       - "index.html"
       - "reader.html"
       - "library.html"
+      - "pdf.html"
+      - "reflow.html"
       - "Trunk.toml"
       - "reader.Trunk.toml"
       - "library.Trunk.toml"
+      - "pdf.Trunk.toml"
+      - "reflow.Trunk.toml"
       - "package.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "tsconfig.json"
       - "tsconfig.tools.json"
       - "tools/build-dist.sh"
+      - "tools/runtime-artifacts.mjs"
+      - "tools/release-freshness.mjs"
+      - "tools/stage-merged.mjs"
       - "tools/dev.mjs"
       - "tools/tauri-smoke.mjs"
       - "tools/check-runtime-artifacts.mjs"
@@ -90,16 +99,14 @@ jobs:
             *) echo "skip=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
-  browser-lifecycle:
-    name: Browser lifecycle baseline
+  frontend-build:
+    name: Production frontend
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: skip
-    # Two ways in: the subject's marker, or a dispatch narrowing the lane.
     if: >-
-      github.event.inputs.lanes != 'tauri'
-      && (needs.skip.outputs.skip != 'true'
-      || github.event.inputs.ignore-skip == 'true')
+      needs.skip.outputs.skip != 'true'
+      || github.event.inputs.ignore-skip == 'true'
     steps:
       - uses: actions/checkout@v7
 
@@ -108,12 +115,44 @@ jobs:
           targets: wasm32-unknown-unknown
           cache-key: deep-cache
 
-      # The real production build: Trunk's hooks fire inside it; the WASM runs.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
       - name: Install trunk
         run: |
           curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz
           sudo mv trunk /usr/local/bin/trunk
           trunk --version
+
+      - name: Build the production frontend
+        run: npm run build:dist
+
+      # Both smoke lanes consume this same production build.
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: frontend-dist
+          path: dist
+          retention-days: 3
+          if-no-files-found: warn
+
+  browser-lifecycle:
+    name: Browser lifecycle baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs: [skip, frontend-build]
+    # Two ways in: the subject's marker, or a dispatch narrowing the lane.
+    if: >-
+      github.event.inputs.lanes != 'tauri'
+      && (needs.skip.outputs.skip != 'true'
+      || github.event.inputs.ignore-skip == 'true')
+    steps:
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
@@ -124,9 +163,10 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Build the production frontend
-        # Both runtime pages and the shell page; build-dist.sh merges them.
-        run: sh tools/build-dist.sh --release
+      - uses: actions/download-artifact@v5
+        with:
+          name: frontend-dist
+          path: dist
 
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
@@ -140,16 +180,6 @@ jobs:
           STATUS=$?
           kill $SERVER_PID 2>/dev/null || true
           exit $STATUS
-
-      # Every run, not only failed runs: a green build is what a comparison
-      # serves.
-      - name: Upload dist for local debugging
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: dist
-          path: dist
-          retention-days: 3
 
   # Split-read memory (tools/measure-split-return.mjs): PSS over the 70 s
   # after a four-pane close.
@@ -182,7 +212,7 @@ jobs:
 
       - uses: actions/download-artifact@v5
         with:
-          name: dist
+          name: frontend-dist
           path: builds/current
 
       - name: Fetch the baselines
@@ -282,7 +312,7 @@ jobs:
     name: Tauri native boot smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    needs: skip
+    needs: [skip, frontend-build]
     if: >-
       github.event.inputs.lanes != 'browser'
       && (needs.skip.outputs.skip != 'true'
@@ -292,8 +322,6 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
-          # Compiles Rust TO WASM: this job installs the wasm32 target.
-          targets: wasm32-unknown-unknown
           cache-key: tauri-smoke-cache
 
       - uses: actions/setup-node@v7
@@ -312,17 +340,10 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # Trunk's hooks run in the canonical build; the builder is pinned.
-      - name: Install trunk
-        run: |
-          curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz
-          sudo mv trunk /usr/local/bin/trunk
-          trunk --version
-
-      # The SAME canonical build Tauri runs, so this job cannot pass on
-        # another frontend.
-      - name: Build the production frontend
-        run: npm run build:dist
+      - uses: actions/download-artifact@v5
+        with:
+          name: frontend-dist
+          path: dist
 
       - name: Build the desktop shell
         run: cargo build --release -p mareader-shell --locked

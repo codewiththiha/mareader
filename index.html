@@ -36,7 +36,7 @@
     <link data-trunk rel="copy-file" href="public/rasterLane.js" />
     <link data-trunk rel="copy-file" href="public/readerHost.js" />
     <script src="/rasterLane.js"></script>
-    <link data-trunk rel="rust" data-wasm-opt="z" />
+    <link data-trunk rel="rust" data-wasm-opt="z" data-cargo-profile-release="wasm-release" />
     <!-- The remembered paper, applied before the body exists (see the file):
          synchronous on purpose — a deferred script would run after the first
          paint it exists to colour. External for the CSP. -->
