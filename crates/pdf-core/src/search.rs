@@ -68,10 +68,6 @@ impl SearchIndex {
         Self::default()
     }
 
-    pub fn page_count(&self) -> u32 {
-        self.pages.len() as u32
-    }
-
     pub fn is_empty(&self) -> bool {
         self.pages.is_empty()
     }
@@ -240,7 +236,6 @@ mod index_tests {
         assert_eq!(index.query("alpha").total, 1);
         index.clear();
         assert!(index.is_empty());
-        assert_eq!(index.page_count(), 0);
     }
 
     #[test]

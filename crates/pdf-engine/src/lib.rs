@@ -13,9 +13,7 @@
 //! does — and the native open-file dialog is not an engine surface at all
 //! anymore (it lives in `app-chrome`).
 //!
-//! `bridge` is private: callers go through `session` and `api`, except for
-//! the raw engine probes (engine version, `window.PDFReader` presence)
-//! re-exported at the crate root.
+//! `bridge` is private: callers go through `session` and `api`.
 
 mod bridge;
 
@@ -24,5 +22,4 @@ pub mod backdrop;
 pub mod session;
 pub mod types;
 
-pub use bridge::{has_pdf_reader, version};
 pub use session::{PageElements, PdfSession};

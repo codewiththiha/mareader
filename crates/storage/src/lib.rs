@@ -121,13 +121,14 @@ fn local() -> Option<web_sys::Storage> {
     }
 }
 
-/// Read a raw JSON blob, if present and readable.
-pub fn get(key: &str) -> Option<String> {
+/// Read a raw JSON blob, if present and readable; the crate's own store
+/// access, not part of the surface other crates see.
+pub(crate) fn get(key: &str) -> Option<String> {
     local().and_then(|s| s.get_item(key).ok().flatten())
 }
 
 /// Write a raw JSON blob. Quota/security failures surface as an error.
-pub fn set(key: &str, value: &str) -> Result<(), StorageError> {
+pub(crate) fn set(key: &str, value: &str) -> Result<(), StorageError> {
     let storage = local().ok_or_else(|| StorageError {
         op: "set",
         detail: "localStorage unavailable".to_string(),
@@ -280,24 +281,9 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     set(COVERS_KEY, &encode("save_covers", &borrowed)?)
 }
 
-/// Write the library's current blob, reporting a failure instead of returning
-/// it.
-///
-/// None of the callers can do anything with a `StorageError`: a shelf that
-/// will not write is still a shelf the reader can use, and the next write
-/// carries the same books again.
-///
-/// The read is untracked: storage takes a value and writes it, never
-/// subscribes. Writes are immediate rather than debounced on purpose — a
-/// debounced save ahead of a teardown or window close may never land — which
-/// is why the reading-progress debounce keeps [`save_library`] instead: it
-/// snapshots the value and hands it to a timer, because a timer firing during
-/// teardown that reached into a disposed signal would panic where a dropped
-/// save would not.
-/// Apply a reader session's read point to the persisted library blob: the
-/// rows the read belongs to (the shared row set the resume rules name) take
-/// the page and fraction. This is the Shell's recorder body AND the
-/// standalone substitute's — one implementation, two deployment callers.
+/// Apply a reader session's read point to the persisted library blob: the rows
+/// `library_core::book::rows_for_read` names take the page and fraction. This
+/// is the Shell's recorder body AND the standalone substitute's.
 pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     let mut blob = load_library();
     // The same recorder the reader's own tail used when the tree was unified
@@ -311,6 +297,7 @@ pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     };
     library_core::book::record_read(
         &mut blob.books,
+        point.book_id.as_deref(),
         &point.path,
         point.title.clone(),
         point.author.clone(),

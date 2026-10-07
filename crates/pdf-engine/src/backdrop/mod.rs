@@ -43,7 +43,7 @@ use crate::session::PdfSession;
 
 mod lookahead;
 
-use lookahead::ensure_lookahead;
+use lookahead::{ensure_lookahead, sample_page};
 
 // Named by the state-machine tests directly. Test-only on purpose: in a
 // plain `cargo test` build it is reachable, and shipping it into the lib
@@ -228,12 +228,7 @@ pub(crate) fn configure(session: &PdfSession, blend_on: bool, mut config: PaperC
     let cold = session.with_paper(|s| s.doc_path.is_some() && s.blend_on && s.published.is_none());
     if cold {
         let (epoch, page) = session.with_paper(|s| (s.epoch, s.position.floor().max(1.0) as u32));
-        spawn_engine(session, move |session| async move {
-            let frame = session.sample_paper_page(page).await.ok().flatten();
-            if land_sample(&session, epoch, page, frame.as_ref()) {
-                publish(&session);
-            }
-        });
+        sample_page(session, epoch, page);
     }
     ensure_lookahead(session);
 }

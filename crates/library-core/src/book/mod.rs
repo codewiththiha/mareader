@@ -14,10 +14,10 @@ pub mod read;
 pub mod sanitize;
 
 pub use check::{add_book, apply_check, drop_dangling_links, drop_dead_shelf_links, remove_row};
-pub use merge::{fold_books, further_point};
+pub use merge::fold_books;
 pub use naming::{duplicate_title, stem_of};
-pub use query::{find_book_mut, find_by_id, find_by_path, index_by_id, resume_point};
-pub use read::{ReadPoint, record_read, record_read_row, rows_for_read};
+pub use query::{find_book_mut, find_by_id, index_by_id, resume_point};
+pub use read::{ReadPoint, record_read, rows_for_read};
 pub use sanitize::sanitize;
 
 /// Storage guard on the library's size, not a "recent books" cap: it keeps the
@@ -295,14 +295,8 @@ impl Book {
         crate::text::display_or_stem(self.title.as_deref(), self.name_source())
     }
 
-    /// The stem of this book's address: the name an untitled book shows and a
-    /// collision compares.
-    pub fn stem(&self) -> String {
-        stem_of(self.name_source())
-    }
-
-    /// One spelling so [`Book::title`] and [`Book::stem`] cannot fall back to
-    /// different names.
+    /// The address a name falls back to; store bytes are named `source.<ext>`,
+    /// so a stored book's fallback is its source's stem.
     fn name_source(&self) -> &str {
         match &self.origin {
             Origin::Stored { src: Some(src), .. } => src,
@@ -460,6 +454,7 @@ mod tests {
         let mut books = rows([linked("a", "/books/one.pdf")]);
         record_read(
             &mut books,
+            None,
             "/books/one.pdf",
             None,
             Some("Frank Herbert".into()),
@@ -469,6 +464,7 @@ mod tests {
         assert_eq!(at(&books, 0).author.as_deref(), Some("Frank Herbert"));
         record_read(
             &mut books,
+            None,
             "/books/one.pdf",
             None,
             Some("Somebody Else".into()),
@@ -483,6 +479,7 @@ mod tests {
         let mut books = rows([linked("b", "/books/two.pdf")]);
         record_read(
             &mut books,
+            None,
             "/books/two.pdf",
             None,
             Some("   ".into()),
@@ -497,6 +494,7 @@ mod tests {
         let mut books = rows([linked("a", "/books/one.pdf"), linked("b", "/books/two.pdf")]);
         let created = record_read(
             &mut books,
+            None,
             "/books/two.pdf",
             Some("Two".into()),
             None,
@@ -522,6 +520,7 @@ mod tests {
         let mut books = rows([linked("a", "/books/one.pdf")]);
         let created = record_read(
             &mut books,
+            None,
             "/books/new.md",
             None,
             None,
@@ -547,6 +546,7 @@ mod tests {
         }]);
         record_read(
             &mut books,
+            None,
             "/books/one.pdf",
             Some("one".into()),
             None,
@@ -569,6 +569,7 @@ mod tests {
         let mut books = rows([linked("a", "/books/one.pdf")]);
         record_read(
             &mut books,
+            None,
             "/books/one.pdf",
             None,
             None,
@@ -664,6 +665,7 @@ mod tests {
         assert!(
             record_read(
                 &mut books,
+                None,
                 "/books/dune.pdf",
                 Some("Dune".into()),
                 None,
@@ -744,6 +746,7 @@ mod tests {
         at_mut(&mut books, 1).page = 240;
         record_read(
             &mut books,
+            None,
             "/books/dune.pdf",
             Some("Dune".into()),
             None,
@@ -777,6 +780,7 @@ mod tests {
         assert!(
             record_read(
                 &mut books,
+                None,
                 "/books/dune.pdf",
                 Some("Dune".into()),
                 None,
@@ -831,7 +835,16 @@ mod tests {
             fraction: None,
         };
         assert!(
-            record_read_row(&mut books, "a", "/books/dune.pdf", None, None, point, 9).is_none()
+            record_read(
+                &mut books,
+                Some("a"),
+                "/books/dune.pdf",
+                None,
+                None,
+                point,
+                9
+            )
+            .is_none()
         );
         assert_eq!(at(&books, 0).page, 240);
         assert_eq!(at(&books, 1).page, 1, "the private row is not a twin of it");
@@ -841,7 +854,16 @@ mod tests {
             fraction: None,
         };
         assert!(
-            record_read_row(&mut books, "b", "/books/dune.pdf", None, None, further, 11).is_none()
+            record_read(
+                &mut books,
+                Some("b"),
+                "/books/dune.pdf",
+                None,
+                None,
+                further,
+                11
+            )
+            .is_none()
         );
         assert_eq!(at(&books, 1).page, 380);
         assert_eq!(at(&books, 1).last_read_ms, 11);
@@ -851,13 +873,22 @@ mod tests {
             "the shared row keeps the read it was given"
         );
         assert!(
-            record_read_row(&mut books, "zzz", "/books/dune.pdf", None, None, point, 12).is_none()
+            record_read(
+                &mut books,
+                Some("zzz"),
+                "/books/dune.pdf",
+                None,
+                None,
+                point,
+                12
+            )
+            .is_none()
         );
         assert_eq!(at(&books, 0).page, 240);
         assert_eq!(books.len(), 2);
-        let created = record_read_row(
+        let created = record_read(
             &mut books,
-            "zzz",
+            Some("zzz"),
             "/books/other.pdf",
             Some("Other".into()),
             None,
@@ -981,16 +1012,16 @@ mod tests {
             num_pages: 0,
             fraction: Some(0.7),
         };
-        assert_eq!(further_point(a, b), b);
-        assert_eq!(further_point(b, a), b);
+        assert_eq!(merge::further_point(a, b), b);
+        assert_eq!(merge::further_point(b, a), b);
         let plain = ReadPoint {
             page: 10,
             num_pages: 0,
             fraction: None,
         };
-        assert_eq!(further_point(plain, a), a);
-        assert_eq!(further_point(a, plain), a);
-        assert_eq!(further_point(a, a), a);
+        assert_eq!(merge::further_point(plain, a), a);
+        assert_eq!(merge::further_point(a, plain), a);
+        assert_eq!(merge::further_point(a, a), a);
     }
 
     #[test]
@@ -1109,7 +1140,7 @@ mod tests {
         );
         assert_eq!(resume_point(&books, None, "/books/zzz.pdf"), (1, None));
         assert_eq!(
-            find_by_path(&books, "/books/one.pdf").map(|b| b.id.as_str()),
+            query::find_by_path(&books, "/books/one.pdf").map(|b| b.id.as_str()),
             Some("a")
         );
     }
@@ -1198,7 +1229,6 @@ mod tests {
             ..linked("b1", "/app/Library/items/b1/source.pdf")
         };
         assert_eq!(stored.title(), "dune");
-        assert_eq!(stored.stem(), "dune");
         let orphan = Book {
             origin: Origin::Stored {
                 src: None,

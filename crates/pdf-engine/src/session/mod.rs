@@ -285,11 +285,6 @@ impl PdfSession {
         Ok(result)
     }
 
-    /// The intrinsic (scale-1) box of one page, read from the document: one
-    /// worker round trip, no surface, no pixels. The reader's fit maths asks
-    /// BEFORE a page's first raster — this is what lets a fit re-resolve land
-    /// ahead of the raster instead of correcting a page that is already on
-    /// screen at the wrong size.
     /// Stand down one page's queued or in-flight raster, leaving its
     /// registration alone.
     pub fn cancel_page(&self, canvas_id: &str) {
@@ -298,6 +293,11 @@ impl PdfSession {
         }
     }
 
+    /// The intrinsic (scale-1) box of one page, read from the document: one
+    /// worker round trip, no surface, no pixels. The reader's fit maths asks
+    /// BEFORE a page's first raster — this is what lets a fit re-resolve land
+    /// ahead of the raster instead of correcting a page that is already on
+    /// screen at the wrong size.
     pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
         let sid = self.require()?;
         let value = bridge::probe_page_size(sid, page).await;

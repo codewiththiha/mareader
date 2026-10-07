@@ -3,7 +3,7 @@
 //! The ONLY place that declares the `window.PDFReader` externs
 //! (public/pdfEngine.js). Callers go through [`crate::session::PdfSession`]
 //! (document work) or `crate::api` (the realm-level calls), never here
-//! directly (except the probes re-exported at the crate root). The
+//! directly. The
 //! `window.__TAURI__` externs belong to the `tauri-bridge` crate, so no
 //! format crate owns chrome's IPC surface. The async fns mirror the `invoke`
 //! pattern: wasm-bindgen awaits the underlying Promise and yields the
@@ -13,8 +13,8 @@
 //! The engine holds no current document — a sid resolves to the one engine
 //! session a `PdfSession` registered, an unknown or retired sid resolves to
 //! nothing (async calls answer `{ok:false, error:{name:"no_session"}}`, sync
-//! calls are no-ops). The realm calls (version, stats, the appearance
-//! broadcast, diagnostics) name no sid. The contract is textual too:
+//! calls are no-ops). The realm calls (stats, the appearance broadcast,
+//! diagnostics) name no sid. The contract is textual too:
 //! `tools/check-versions.ts` and `tests/engine_contract.rs` check every name
 //! below against the compiled facade.
 
@@ -23,11 +23,6 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
-    // --- Realm ------------------------------------------------------------
-
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
-    pub fn version() -> String;
-
     // --- Session lifecycle ------------------------------------------------
 
     /// Register engine session `sid`. False when the engine refuses it — a

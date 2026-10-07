@@ -1,12 +1,10 @@
 //! Path-part spelling: the one place a file name, an extension or a folder
 //! label is taken apart.
 //!
-//! These jobs used to be done by six functions in three idioms across the
-//! services, the shell and the import, and a Windows path answered
-//! differently depending on which door it came in. Everything here is pure,
-//! host-tested, and shared by the frontend and the shell. (The stem — the
-//! name without its extension — is `reader_core::filename`'s job, where the
-//! title fallback lives.)
+//! Pure and host-tested, shared by the frontend and the shell so a name is
+//! taken apart the same way whichever door it arrives at. (The stem — the name
+//! without its extension — is `reader_core::filename`'s job, where the title
+//! fallback lives.)
 
 /// The last segment of a path, either separator, no trailing empties: what a
 /// shelf shows a file by. Empty for an all-separator path and for a bare drive

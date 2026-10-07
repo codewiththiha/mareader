@@ -12,7 +12,7 @@
 //! in. Both rules live here so no component has to know the pair of paddings
 //! a spine implies.
 
-pub const PAGE_WIDTH: f64 = 794.0;
+const PAGE_WIDTH: f64 = 794.0;
 pub const PAGE_HEIGHT: f64 = 1123.0;
 
 const PAD: f64 = 72.0;

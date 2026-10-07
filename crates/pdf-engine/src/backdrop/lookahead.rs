@@ -37,11 +37,15 @@ pub(super) fn ensure_lookahead(session: &PdfSession) {
         (s.epoch, wants)
     });
     for page in pages {
-        spawn_engine(session, move |session| async move {
-            let frame = session.sample_paper_page(page).await.ok().flatten();
-            if land_sample(&session, epoch, page, frame.as_ref()) {
-                publish(&session);
-            }
-        });
+        sample_page(session, epoch, page);
     }
+}
+
+pub(super) fn sample_page(session: &PdfSession, epoch: u64, page: u32) {
+    spawn_engine(session, move |session| async move {
+        let frame = session.sample_paper_page(page).await.ok().flatten();
+        if land_sample(&session, epoch, page, frame.as_ref()) {
+            publish(&session);
+        }
+    });
 }

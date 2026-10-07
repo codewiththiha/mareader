@@ -26,13 +26,7 @@ pub mod search;
 pub mod source;
 pub mod typography;
 
-pub use block::{
-    BlockKind, FenceTracker, SPLIT_MAX_LINES, TextBlock, split_blocks, subdivide_with,
-};
-pub use geometry::{PAGE_HEIGHT, PAGE_WIDTH, PageGeometry, SpineSide, geometry};
-pub use pager::{
-    BlockMetrics, PageCut, block_page_index, estimate_block_height, estimate_heights,
-    first_block_of_page, paginate,
-};
-pub use search::{TextHit, find_matches};
-pub use source::normalize;
+// The one root-path reader is `reflow_core::geometry(book_layout)` (the
+// function, not the module): every other consumer imports through the module
+// it lives in, so the façade carries exactly what is read through it.
+pub use geometry::geometry;

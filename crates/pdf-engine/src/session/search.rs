@@ -33,7 +33,7 @@ use serde::Deserialize;
 use pdf_core::search::{PageText, SearchIndex, SearchItem};
 use reader_core::search::SearchResponse;
 
-use super::PdfSession;
+use super::{PdfSession, no_session};
 use crate::api::{self, EngineError};
 
 /// Pages extracted concurrently per turn while the index is built. Three is
@@ -171,13 +171,6 @@ struct BuildActiveGuard;
 impl Drop for BuildActiveGuard {
     fn drop(&mut self) {
         BUILD_ACTIVE.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
-fn no_session() -> EngineError {
-    EngineError {
-        name: "no_session".to_string(),
-        message: "The PDF session was disposed".to_string(),
     }
 }
 
