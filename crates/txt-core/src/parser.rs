@@ -3,13 +3,7 @@
 use reflow_core::block::{BlockKind, TextBlock, split_blocks};
 use reflow_core::source::normalize;
 
-/// A plain-text file into blocks: runs of non-empty lines separated by blank
-/// lines. Internal single newlines are KEPT — the renderer preserves them
-/// (`pre-wrap`), so fixed-line prose and code-ish notes read as authored.
-///
-/// No fence awareness, on purpose: a fence is Markdown syntax, and inside a
-/// plain-text file a blank line in an indented code sample is a paragraph
-/// boundary like any other.
+/// A plain-text file into blocks: runs of non-empty lines, newlines kept.
 pub fn parse_plain_text(raw: &str) -> Vec<TextBlock> {
     let text = normalize(raw);
     split_blocks(&text, BlockKind::Text, false)
@@ -37,9 +31,7 @@ mod tests {
 
     #[test]
     fn markup_looking_lines_stay_verbatim() {
-        // Plain text is not Markdown: a heading marker is two characters, and
-        // a fence is a line of backticks. The one paragraph they sit in stays
-        // one paragraph, blank lines aside.
+        // Plain text is not Markdown: a heading marker is just two characters.
         let blocks = parse_plain_text("# not a heading\n```\nfenced?");
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].text, "# not a heading\n```\nfenced?");

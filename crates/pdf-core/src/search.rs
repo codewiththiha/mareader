@@ -1,18 +1,4 @@
 //! The PDF page-text index: the engine extracts, this crate searches.
-//!
-//! pdf.js can only extract text in the browser; everything after that is
-//! string work that belongs here, off the JS heap. The engine hands pages over
-//! as [`PageText`] (geometry already normalised to scale-1 CSS px),
-//! [`SearchIndex`] stores them per page with a folded copy of every run, and
-//! `query` scans those strings per keystroke with no pdf.js round trip.
-//!
-//! What this crate owns is the index and the geometry: a run's rect
-//! interpolated to the characters a hit covers. The result shape
-//! ([`SearchMatch`] / [`SearchResponse`]), the occurrence scan and the snippet
-//! window are format-agnostic and live in `reader_core::search` — a reflowable
-//! document searches its blocks with the same functions and answers in the
-//! same shape, so the UI never learns which pipeline produced a hit and an
-//! occurrence ordinal means the same thing in both.
 
 use std::sync::Arc;
 
@@ -23,8 +9,7 @@ use reader_core::search::{SearchMatch, SearchResponse, occurrence_spans, snippet
 pub struct SearchItem {
     /// The original glyph string (what snippets read naturally).
     pub text: String,
-    /// Lowercased copy of `text`, computed once at index build so every
-    /// query scans strings instead of allocating a fresh lowercase per item.
+    /// Lowercased copy of `text`, computed once at index build.
     pub lower: String,
     pub x: f64,
     pub y: f64,
@@ -54,11 +39,7 @@ pub struct PageText {
     pub items: Vec<SearchItem>,
 }
 
-/// The document's full-text index: every extracted page, in document order.
-///
-/// Pages can arrive OUT of order (the builder extracts concurrently), so the
-/// index keeps them keyed by page and walks them sorted at query time.
-#[derive(Debug, Default)]
+/// The document's full-text index: every extracted page, keyed by page.
 pub struct SearchIndex {
     pages: std::collections::BTreeMap<u32, PageText>,
 }
@@ -72,8 +53,7 @@ impl SearchIndex {
         self.pages.is_empty()
     }
 
-    /// Add (or replace) one page's extracted text. Replacing keeps a
-    /// re-extraction idempotent; the builder sends each page exactly once.
+    /// Add or replace one page; replacement keeps re-extraction idempotent.
     pub fn add_page(&mut self, page: PageText) {
         self.pages.insert(page.page, page);
     }
@@ -82,8 +62,7 @@ impl SearchIndex {
         self.pages.clear();
     }
 
-    /// Run `query` against the index, returning every occurrence in document
-    /// order. An empty index or empty query yields an empty response.
+    /// Run `query` against the index, in document order.
     pub fn query(&self, query: &str) -> SearchResponse {
         let mut matches = Vec::new();
         if query.trim().is_empty() {
@@ -96,16 +75,11 @@ impl SearchIndex {
         for page in self.pages.values() {
             let mut ord = 0u32;
             for item in &page.items {
-                // A zero-width run has no rectangle to highlight — skip it
-                // exactly like the JS search did.
+                // A zero-width run has no rectangle to highlight; skip it.
                 if item.w <= 0.0 {
                     continue;
                 }
-                // The index stores one rect per extracted RUN, not per glyph,
-                // so a hit's box is the run's slice proportional to where its
-                // characters sit. The scan reports character spans and the
-                // denominator counts characters of the ORIGINAL text — the
-                // text the spans are offsets into and the snippet quotes.
+                // One rect per run: a hit's box is its proportional slice.
                 let chars = item.text.chars().count().max(1) as f64;
                 for (start, end) in occurrence_spans(&item.text, &item.lower, query) {
                     let span = (end - start).max(1) as f64;
@@ -117,8 +91,7 @@ impl SearchIndex {
                         y: item.y,
                         w: (item.w * span / chars).max(1.0),
                         h: item.h,
-                        // A page of pixels answers with the rect above; the
-                        // block half is a reflowable document's.
+                        // A page of pixels answers with the rect above.
                         block_hit: None,
                     });
                     ord += 1;
@@ -261,9 +234,7 @@ mod index_tests {
 
     #[test]
     fn overlapping_occurrences_advance_by_query_length() {
-        // "aaaa" with query "aa": the scan advances by the needle's length →
-        // 2 matches, not 3. The engine's painter has always done the same, and
-        // a box ordinal has to line up with a result ordinal.
+        // "aaaa"/"aa": the scan advances by the needle, so 2 matches, not 3.
         let mut index = SearchIndex::new();
         index.add_page(page(1, vec![item("aaaa", 0.0, 100.0)]));
         let resp = index.query("aa");

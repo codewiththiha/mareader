@@ -1,18 +1,10 @@
 //! Gloss card geometry: box math, the word-lookup gates, viewport placement
 //! and spring stepping.
-//!
-//! The card is one rectangle whose `left/top/width/height` and corner `radius`
-//! are driven by a single damped spring ([`ui_geom::spring`]), so the chip's
-//! pill radius morphs into the card radius in the same motion that grows the
-//! box. Named `GlossBox` to avoid colliding with `std::boxed::Box`.
 
 use ui_geom::floating::clamp_axis;
 use ui_geom::spring::spring_axis;
 
-/// The floating motion layer's box is field-identical to this one, and the card
-/// rides it: the conversion belongs here rather than in `ui-geom`'s `floating`
-/// module because that crate's geometry may not name a feature crate's type —
-/// the feature knows both, so the feature writes it.
+/// Field-identical to the floating layer's box; the feature converts.
 impl From<GlossBox> for ui_geom::floating::FloatBox {
     fn from(b: GlossBox) -> Self {
         ui_geom::floating::FloatBox {
@@ -25,11 +17,7 @@ impl From<GlossBox> for ui_geom::floating::FloatBox {
     }
 }
 
-/// A positioned, sized, rounded rectangle — the five fields the spring
-/// drives. Serializable because [`crate::gloss::mark::GlossMark`] persists one
-/// to localStorage and ships one through a `CustomEvent` detail on a mark
-/// click.
-#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+/// The five fields the spring drives; serialized because a mark persists one.
 pub struct GlossBox {
     pub x: f64,
     pub y: f64,
@@ -39,33 +27,24 @@ pub struct GlossBox {
 }
 
 /// Longest selection still treated as a word lookup (chars, not bytes).
-/// This feature is a dictionary: a word or a short phrase. Beyond this, the
-/// single-POS / single-meaning `WordInfo` shape stops making sense.
 const MAX_GLOSS_CHARS: usize = 60;
 
-/// Soft edge of the length gate: selections up to twice [`MAX_GLOSS_CHARS`]
-/// still earn a (muted, explaining) Explain pill; past this it hides.
+/// The muted-hint band's soft edge: up to twice the cap still earns a pill.
 const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
 
-/// Whether `text` can be looked up as a word. A dictionary look-up is a
-/// single token, not a phrase: edges trimmed, then non-empty, within the
-/// length cap, and free of ANY whitespace — an interior space means the reader
-/// selected several words, which is not a word to explain. Spaces grabbed by
-/// accident trim away and still count.
+/// Whether `text` is one lookup-able token: trimmed, non-empty, no whitespace.
 pub fn is_glossable(text: &str) -> bool {
     let t = text.trim();
     !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS && !t.chars().any(char::is_whitespace)
 }
 
-/// Whether `text` stays inside the menu's visible range. Callers use
-/// [`is_glossable`] to distinguish the enabled pill from the muted hint band.
+/// Whether `text` stays inside the menu's visible range.
 pub fn is_hintable(text: &str) -> bool {
     let t = text.trim();
     !t.is_empty() && t.chars().count() <= MAX_GLOSS_HINT_CHARS
 }
 
-/// Whether two boxes are equal to within `epsilon` on all five fields — the
-/// spring's "settled" and "already snapped" tests.
+/// Whether two boxes are equal within `epsilon` on all five fields.
 pub fn boxes_close(a: GlossBox, b: GlossBox, epsilon: f64) -> bool {
     (a.x - b.x).abs() < epsilon
         && (a.y - b.y).abs() < epsilon
@@ -80,15 +59,7 @@ const MIN_CARD_H: f64 = 140.0;
 /// The fraction is of the viewport's height.
 const MAX_CARD_H_FRAC: f64 = 0.8;
 
-/// Gap-aware, side-aware card placement: the card goes on whichever side of
-/// the anchor has more free space (never covering the stroke), sits a little
-/// BELOW the mark's midline (`y_bias` — dead-centre reads as pasted onto the
-/// line; a hand's-width below reads as attached to it, the way a footnote
-/// hangs off its word), clamped into the viewport margin, shrinking when the
-/// viewport cannot host the requested size.
-///
-/// Pure: `cargo test -p ai-core gloss`.
-#[allow(clippy::too_many_arguments)]
+/// Side-aware placement with the card hung just below the mark's midline.
 pub fn place_card(
     anchor: GlossBox,
     size_w: f64,
@@ -122,7 +93,7 @@ pub fn place_card(
     }
 }
 
-/// One spring step over all five box fields. Returns `(next_box, next_velocity)`.
+/// One spring step over all five box fields; returns (box, velocity).
 pub fn step_spring(
     cur: GlossBox,
     vel: GlossBox,
@@ -227,9 +198,7 @@ mod tests {
 
     #[test]
     fn place_card_hangs_below_the_anchor_midline() {
-        // Dead-centre read as pasted onto the line; the bias drops the card a
-        // touch so it hangs off the word like a footnote. The clamp still owns
-        // the last word near the edges.
+        // The bias hangs the card off the word like a footnote.
         let anchor = GlossBox {
             x: 400.0,
             y: 500.0,
@@ -241,8 +210,7 @@ mod tests {
         let anchor_mid = anchor.y + anchor.h * 0.5;
         let card_mid = card.y + card.h * 0.5;
         assert!((card_mid - anchor_mid - 12.0).abs() < 1e-9);
-        // …and a bias that would push the card out the bottom stops at the
-        // viewport margin instead of leaving the screen.
+        // A bias that would push past the bottom stops at the viewport margin.
         let low = GlossBox {
             x: 400.0,
             y: 1000.0,
@@ -276,10 +244,7 @@ mod tests {
 
     #[test]
     fn the_spring_converges_to_its_target_within_about_two_seconds() {
-        // THE point of the spring: starting from the (small) chip box and at
-        // rest, ~120 60-fps frames bring every field to within half a pixel of
-        // the target. If this regresses the card either never settles (battery
-        // drain from an endless rAF loop) or snaps (no morph).
+        // Chip box to target in ~120 frames, within half a pixel.
         let target = GlossBox {
             x: 200.0,
             y: 150.0,
@@ -306,9 +271,7 @@ mod tests {
 
     #[test]
     fn the_spring_is_stable_on_a_dropped_frame() {
-        // A long frame (dt clamped at the caller) must not launch the box off to
-        // infinity. Stepping at the stability ceiling stays bounded and still
-        // approaches the target.
+        // A long clamped frame must not launch the box off to infinity.
         let target = GlossBox {
             x: 0.0,
             y: 0.0,
@@ -331,10 +294,7 @@ mod tests {
         );
     }
 
-    /// The five fields must land in the floating box in the same order they are
-    /// read out: a swapped pair here is an invisible card that jitters, not a
-    /// compile error.
-    #[test]
+    /// The fields must land in the floating box in the order they are read.
     fn the_floating_conversion_keeps_the_fields_in_order() {
         let box_ = GlossBox {
             x: 1.0,
