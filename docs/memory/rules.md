@@ -119,4 +119,3 @@ Symptom: memory high at idle after a change to a rendering or scroll path.
 3. For motion-path changes, enumerate the surfaces created per item swept
    past and multiply by scroll throughput; reproduce with sustained
    scrolling, then sample before, during, and 60 s after.
-

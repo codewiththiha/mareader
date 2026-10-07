@@ -19,4 +19,3 @@ Supporting records one level up:
 | [../frame-lifecycle-alternatives.md](../frame-lifecycle-alternatives.md) | The three frame-lifecycle designs, their measurements, and what they rule out. |
 | [../architecture.md](../architecture.md) | How the reader is built and what the tests enforce. |
 | [../session-ownership.md](../session-ownership.md) | Ownership table for every engine resource. |
-

@@ -383,4 +383,3 @@ several panes share the realm. Session-level by
 design, not pane state: the frame's boundary and parked opens
 (`frame_transport::artifact`), the live-session record (`lib.rs`), the
 diagnostics probes, and the host's `#viewer-slot` measurement.
-

@@ -125,4 +125,3 @@ The required workflow is fast enough to run constantly, every expensive
 operation has one owner, smoke tests exercise the source they run next to,
 failures name a real repository invariant, and no lane exists merely to keep
 another lane green.
-

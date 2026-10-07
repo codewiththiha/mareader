@@ -688,4 +688,3 @@ texture with colour because a look they own is a whole look.
   so presence is already decided when the bar mounts — a frame with no surface
   there is a plain browser, and a poll timer waiting for one never clears and
   keeps the route's owner, which is how a Reader frame stops reporting disposal.
-
