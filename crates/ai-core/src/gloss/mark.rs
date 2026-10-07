@@ -137,16 +137,6 @@ impl ReflowSpot {
             end: end.max(start),
         }
     }
-
-    pub fn len(&self) -> usize {
-        self.end.saturating_sub(self.start)
-    }
-
-    /// Whether the spot covers no characters at all (a collapsed or clamped
-    /// range), which makes it unprojectable and worth dropping.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 #[cfg(test)]
@@ -257,13 +247,12 @@ mod tests {
     #[test]
     fn a_reflow_spot_is_its_characters_and_clamps_into_a_shorter_block() {
         let spot = ReflowSpot::new(7, 12, 24);
-        assert_eq!(spot.len(), 12);
-        assert!(!spot.is_empty());
-        // A block that shrank under the mark is clamped where the mark is
-        // PROJECTED (`formats::reflow::spot::clamp_span`), against the text
-        // that is actually on the page rather than a char count guessed here.
-        // An end before the start is a collapsed range, not a backwards one.
-        assert!(ReflowSpot::new(1, 9, 3).is_empty());
+        assert_eq!(spot.end, 24);
+        // Clamping happens where the mark is PROJECTED
+        // (`formats::reflow::spot::clamp_span`), against the text really on
+        // the page; `new` only folds a backwards end flat.
+        let collapsed = ReflowSpot::new(1, 9, 3);
+        assert_eq!(collapsed.end, collapsed.start);
     }
 
     #[test]

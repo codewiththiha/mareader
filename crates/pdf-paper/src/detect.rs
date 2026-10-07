@@ -146,13 +146,6 @@ impl PaperDetector {
         self.pixels == 0
     }
 
-    /// Forget everything — used when the detection area changes, since a
-    /// histogram fed through one area says nothing about the other.
-    pub fn reset(&mut self) {
-        self.buckets.clear();
-        self.pixels = 0;
-    }
-
     fn count(&mut self, r: u8, g: u8, b: u8) {
         // Five bits per channel: a 32-wide cell. Four bits merged margins
         // into bodies on low-contrast sheets (see the module doc); fifteen
@@ -361,15 +354,6 @@ mod tests {
         let mut d = PaperDetector::new();
         assert_eq!(d.feed(PaperArea::WholePage, 10, 10, &[1, 2, 3], 4), 0);
         assert_eq!(d.feed(PaperArea::Edges, 0, 10, &[], 4), 0);
-        assert!(d.is_empty());
-        assert_eq!(d.dominant(PAPER_SHARE), None);
-    }
-
-    #[test]
-    fn reset_forgets_the_histogram() {
-        let mut d = PaperDetector::new();
-        d.feed_rgba(&frame(8, 8, [0x40, 0x40, 0x40]));
-        d.reset();
         assert!(d.is_empty());
         assert_eq!(d.dominant(PAPER_SHARE), None);
     }

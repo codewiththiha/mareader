@@ -226,6 +226,3 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 pub use imp::{init, set_traffic_lights};
-
-#[cfg(not(target_os = "macos"))]
-pub use super::traffic_light::{init, set_traffic_lights};
