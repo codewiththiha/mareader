@@ -1,57 +1,440 @@
-//! Serde types that mirror the pdf.js engine's return shapes. The engine
-//! resolves `{ok:true, ...}` objects whose field names are camelCase (straight
-//! from JS); these structs are deserialized via serde_wasm_bindgen after
-//! `crate::api::resolve` checks the `ok` flag.
-//!
-//! CONTRACT: field names are the wire contract with pdfEngine.js.
+/
+/
+!
+
+S
+e
+r
+d
+e
+
+t
+y
+p
+e
+s
+
+m
+i
+r
+r
+o
+r
+i
+n
+g
+
+t
+h
+e
+
+e
+n
+g
+i
+n
+e
+'
+s
+
+r
+e
+t
+u
+r
+n
+
+s
+h
+a
+p
+e
+s
+.
 
 use serde::{Deserialize, Serialize};
 
 pub use reader_core::document::{DocStatus, PageSize};
 
-/// `{ok:true, width, height}` — engine.probePageSize(): one page's intrinsic
-/// (scale-1) box, read from the document instead of from a raster.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+`
+{
+o
+k
+,
+
+w
+i
+d
+t
+h
+,
+
+h
+e
+i
+g
+h
+t
+}
+`
+:
+
+o
+n
+e
+
+p
+a
+g
+e
+'
+s
+
+i
+n
+t
+r
+i
+n
+s
+i
+c
+
+b
+o
+x
+.
 pub struct PageSizeResult {
     pub width: f64,
     pub height: f64,
 }
 
-/// One flattened chapter, exactly as `pdfEngine.js` resolves it. The type is
-/// `pdf-core`'s rather than the engine's: the entries cross this boundary on
-/// the wire and land in the reader's outline with one conversion in between,
-/// and a wire shape duplicated on both sides is how a field rename becomes a
-/// silent `depth: 0` instead of a compile error.
+/
+/
+/
+
+O
+n
+e
+
+f
+l
+a
+t
+t
+e
+n
+e
+d
+
+c
+h
+a
+p
+t
+e
+r
+,
+
+e
+x
+a
+c
+t
+l
+y
+
+a
+s
+
+t
+h
+e
+
+e
+n
+g
+i
+n
+e
+
+r
+e
+s
+o
+l
+v
+e
+s
+
+i
+t
+.
 pub use pdf_core::outline::OutlineEntry;
 
-/// `{ok:true, numPages, title, author, fingerprint, outline, page1Size, pageHeights}` — engine.open().
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+`
+{
+o
+k
+,
+
+n
+u
+m
+P
+a
+g
+e
+s
+,
+
+t
+i
+t
+l
+e
+,
+
+a
+u
+t
+h
+o
+r
+,
+
+f
+i
+n
+g
+e
+r
+p
+r
+i
+n
+t
+,
+
+o
+u
+t
+l
+i
+n
+e
+,
+
+.
+.
+.
+}
+`
+:
+
+e
+n
+g
+i
+n
+e
+.
+o
+p
+e
+n
+(
+)
+.
 pub struct OpenResult {
     pub num_pages: u32,
     pub title: Option<String>,
     pub author: Option<String>,
-    /// The document's permanent pdf.js content fingerprint — the identity the
-    /// search index caches under, so reopening the same bytes adopts the
-    /// retained index instead of re-extracting every page. Null only for
-    /// engine builds predating the field; the index falls back to the path.
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+    '
+    s
+
+    p
+    e
+    r
+    m
+    a
+    n
+    e
+    n
+    t
+
+    c
+    o
+    n
+    t
+    e
+    n
+    t
+
+    f
+    i
+    n
+    g
+    e
+    r
+    p
+    r
+    i
+    n
+    t
+    ,
+
+    t
+    h
+    e
+
+    i
+    n
+    d
+    e
+    x
+    '
+    s
+
+    k
+    e
+    y
+    .
     pub fingerprint: Option<String>,
     pub outline: Vec<OutlineEntry>,
     pub page1_size: PageSize,
-    /// Intrinsic (scale-1) height of every page, in document order.
-    ///
-    /// Empty only for engines predating this field; callers fall back to
-    /// `page1_size.height` for every page in that case.
-    #[serde(default)]
+    /
+    /
+    /
+
+    I
+    n
+    t
+    r
+    i
+    n
+    s
+    i
+    c
+
+    h
+    e
+    i
+    g
+    h
+    t
+
+    o
+    f
+
+    e
+    v
+    e
+    r
+    y
+
+    p
+    a
+    g
+    e
+    ,
+
+    i
+    n
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    o
+    r
+    d
+    e
+    r
+    .
     pub page_heights: Vec<f64>,
-    /// Intrinsic (scale-1) width of every page, in document order. Fit /
-    /// shrink-to-fit must use the page the reader is LOOKING AT, not page 1: a
-    /// landscape plate in an otherwise-A4 book is cropped if the ceiling is
-    /// computed from the letter pages around it. Empty only for engines
-    /// predating this field; callers fall back to `page1_size.width`.
-    #[serde(default)]
+    /
+    /
+    /
+
+    I
+    n
+    t
+    r
+    i
+    n
+    s
+    i
+    c
+
+    w
+    i
+    d
+    t
+    h
+
+    o
+    f
+
+    e
+    v
+    e
+    r
+    y
+
+    p
+    a
+    g
+    e
+    ,
+
+    i
+    n
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    o
+    r
+    d
+    e
+    r
+    .
     pub page_widths: Vec<f64>,
 }
 
@@ -63,38 +446,196 @@ pub struct RenderResult {
     pub scale: f64,
 }
 
-/// The old `cached` flag (the engine blitted an already-rendered bitmap
-/// synchronously) arrived with the promise — too late for the cell's first
-/// composited frame — and was left unread. What actually removed the flicker
-/// is `has_thumb`, the same question asked synchronously while the cell is
-/// still being built (thumbnails/thumbnail_cell.rs). The blit is still
-/// synchronous; only the reporting of it is gone.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+T
+h
+e
+
+o
+l
+d
+
+`
+c
+a
+c
+h
+e
+d
+`
+
+f
+l
+a
+g
+,
+
+l
+e
+f
+t
+
+u
+n
+r
+e
+a
+d
+;
+
+`
+h
+a
+s
+_
+t
+h
+u
+m
+b
+`
+
+r
+e
+p
+l
+a
+c
+e
+d
+
+i
+t
+.
 pub struct ThumbResult {
     pub width: f64,
     pub height: f64,
     pub scale: f64,
 }
 
-/// `{ok:true, dataUrl, width, height}` — engine.coverDataUrl. Page 1 of the
-/// current document rendered to a small JPEG, for the library shelf's
-/// book-cover art. `width`/`height` are CSS px so the shelf keeps the cover's
-/// real proportions (portrait vs landscape).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+`
+{
+o
+k
+,
+
+d
+a
+t
+a
+U
+r
+l
+,
+
+w
+i
+d
+t
+h
+,
+
+h
+e
+i
+g
+h
+t
+}
+`
+:
+
+e
+n
+g
+i
+n
+e
+.
+c
+o
+v
+e
+r
+D
+a
+t
+a
+U
+r
+l
+.
 pub struct CoverResult {
     pub data_url: String,
     pub width: f64,
     pub height: f64,
 }
 
-/// `{ok:true, page, width, height, data}` — the raw page frame the paper
-/// pipeline runs on: the raster downscaled to a <=96px long edge, `data` its
-/// RGBA pixels (`width * height * 4`). Produced by `takePaperFrame` (a live
-/// render's stash) and `samplePaperPage` (an offscreen sample). The pixels
-/// travel as a typed array rather than JSON, so this shape is parsed by hand
-/// in `crate::api::paper::parse_frame`, not through serde.
+/
+/
+/
+
+`
+{
+o
+k
+,
+
+p
+a
+g
+e
+,
+
+w
+i
+d
+t
+h
+,
+
+h
+e
+i
+g
+h
+t
+,
+
+d
+a
+t
+a
+}
+`
+:
+
+t
+h
+e
+
+r
+a
+w
+
+p
+a
+g
+e
+
+f
+r
+a
+m
+e
+.
 pub struct PaperFrame {
     pub page: u32,
     pub width: u32,

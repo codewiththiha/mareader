@@ -1,24 +1,286 @@
-//! The paper pipeline's frame parser. The colour DECISIONS live in
-//! `crate::backdrop` (each session's state machine); the bridge calls that
-//! carry frames and papers are [`crate::session::PdfSession`]'s. This module
-//! only turns the engine's frame payloads into [`PaperFrame`]s.
+/
+/
+!
+
+T
+h
+e
+
+p
+a
+p
+e
+r
+
+p
+i
+p
+e
+l
+i
+n
+e
+'
+s
+
+f
+r
+a
+m
+e
+
+p
+a
+r
+s
+e
+r
+;
+
+t
+h
+e
+
+c
+o
+l
+o
+u
+r
+
+d
+e
+c
+i
+s
+i
+o
+n
+s
+
+l
+i
+v
+e
+
+i
+n
+
+/
+/
+!
+
+`
+c
+r
+a
+t
+e
+:
+:
+b
+a
+c
+k
+d
+r
+o
+p
+`
+.
 
 use wasm_bindgen::JsValue;
 
 use super::{EngineError, KEY_DATA, KEY_HEIGHT, KEY_OK, KEY_PAGE, KEY_WIDTH, reflect_get, resolve};
 
-/// A raw page frame handed over by the engine: the raster downscaled to a
-/// ≤96px long edge, with its pixels — the input every colour decision in the
-/// `pdf-paper` crate runs on.
+/
+/
+/
+
+A
+
+r
+a
+w
+
+p
+a
+g
+e
+
+f
+r
+a
+m
+e
+:
+
+t
+h
+e
+
+r
+a
+s
+t
+e
+r
+
+d
+o
+w
+n
+s
+c
+a
+l
+e
+d
+
+t
+o
+
+a
+
+≤
+9
+6
+p
+x
+
+l
+o
+n
+g
+
+e
+d
+g
+e
+.
 pub use crate::types::PaperFrame;
 
-/// The shape `resolve` deserialises a frameless `{ok:false, error}` into:
-/// nothing but the envelope, which `resolve` itself consumes.
-#[derive(Debug, serde::Deserialize)]
+/
+/
+/
+
+T
+h
+e
+
+s
+h
+a
+p
+e
+
+a
+
+f
+r
+a
+m
+e
+l
+e
+s
+s
+
+e
+r
+r
+o
+r
+
+e
+n
+v
+e
+l
+o
+p
+e
+
+d
+e
+s
+e
+r
+i
+a
+l
+i
+s
+e
+s
+
+i
+n
+t
+o
+.
 struct Empty {}
 
-/// Parse a `{ok, page, width, height, data}` frame payload. The pixels come
-/// back as a typed array, not JSON, so the fields are read by hand.
+/
+/
+/
+
+P
+a
+r
+s
+e
+
+a
+
+`
+{
+o
+k
+,
+
+p
+a
+g
+e
+,
+
+w
+i
+d
+t
+h
+,
+
+h
+e
+i
+g
+h
+t
+,
+
+d
+a
+t
+a
+}
+`
+
+f
+r
+a
+m
+e
+
+p
+a
+y
+l
+o
+a
+d
+.
 pub(crate) fn parse_frame(value: &JsValue) -> Option<PaperFrame> {
     let ok = reflect_get(value, &KEY_OK)
         .ok()
@@ -47,8 +309,64 @@ pub(crate) fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFr
     if let Some(frame) = parse_frame(&value) {
         return Ok(Some(frame));
     }
-    // `{ok:true}` with no frame is the engine's "no answer for this page" —
-    // a skipped page, not a failure to communicate.
+    /
+    /
+
+    `
+    {
+    o
+    k
+    :
+    t
+    r
+    u
+    e
+    }
+    `
+
+    w
+    i
+    t
+    h
+
+    n
+    o
+
+    f
+    r
+    a
+    m
+    e
+
+    i
+    s
+
+    "
+    n
+    o
+
+    a
+    n
+    s
+    w
+    e
+    r
+
+    f
+    o
+    r
+
+    t
+    h
+    i
+    s
+
+    p
+    a
+    g
+    e
+    "
+    .
     let ok = reflect_get(&value, &KEY_OK)
         .ok()
         .and_then(|v| v.as_bool())
@@ -56,10 +374,71 @@ pub(crate) fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFr
     if ok {
         return Ok(None);
     }
-    // `{ok:false, error}` — surface it through the shared error path.
-    // `resolve` errs whenever the envelope's `ok` is false, which the check
-    // above has just established, so the success arm never runs and its
-    // payload is discarded.
+    /
+    /
+
+    `
+    {
+    o
+    k
+    :
+    f
+    a
+    l
+    s
+    e
+    ,
+
+    e
+    r
+    r
+    o
+    r
+    }
+    `
+    :
+
+    s
+    u
+    r
+    f
+    a
+    c
+    e
+
+    i
+    t
+
+    t
+    h
+    r
+    o
+    u
+    g
+    h
+
+    t
+    h
+    e
+
+    s
+    h
+    a
+    r
+    e
+    d
+
+    e
+    r
+    r
+    o
+    r
+
+    p
+    a
+    t
+    h
+    .
     resolve::<Empty>(value, what)?;
     Ok(None)
 }

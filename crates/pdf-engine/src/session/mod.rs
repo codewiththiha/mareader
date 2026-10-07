@@ -1,26 +1,81 @@
-//! `PdfSession`: the one owner of an open PDF document.
-//!
-//! Everything a document holds — the engine's document proxy and its pdf.js
-//! worker, the page registry, the render and thumbnail lanes, the thumbnail
-//! cache, the prefetch state, the raster theme, the paper palette and its
-//! look-ahead, the search index — belongs to exactly one session. The JS
-//! engine keys all of it by the session's id (`sid`); this type is the only
-//! thing that mints a sid, and every document call goes through it.
-//!
-//! Lifecycle: [`PdfSession::create`] registers a fresh sid with the engine,
-//! [`PdfSession::open`] opens one document in it (a new document is a new
-//! session), and [`PdfSession::dispose`] tears it down: stop accepting
-//! (every op refuses from the first line of `dispose`), advance invalidation
-//! (the paper epoch, the look-ahead set; the engine's own lane epochs),
-//! cancel and destroy the engine side (document, worker, page registry,
-//! caches), and release. A disposed session answers every call with a no-op
-//! or a `no_session` error — it can never be reused, and a sid is never
-//! minted twice.
-//!
-//! The handle is a cheap `Rc` clone, so async work captures the session it
-//! was started for and re-checks [`PdfSession::is_live`] after every await:
-//! a result that outlives its session is dropped, never committed into
-//! whatever session came next.
+/
+/
+!
+
+`
+P
+d
+f
+S
+e
+s
+s
+i
+o
+n
+`
+:
+
+t
+h
+e
+
+o
+n
+e
+
+o
+w
+n
+e
+r
+
+o
+f
+
+a
+n
+
+o
+p
+e
+n
+
+P
+D
+F
+
+d
+o
+c
+u
+m
+e
+n
+t
+,
+
+k
+e
+y
+e
+d
+
+b
+y
+
+i
+t
+s
+
+/
+/
+!
+
+s
+i
+d
+.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -49,9 +104,55 @@ enum State {
     Disposed,
 }
 
-/// The last sid minted in this realm. Monotonic: a sid names one session
-/// for the life of the realm, so a stale sid can never reach a newer
-/// session (the engine refuses a sid at or below the highest it has seen).
+/
+/
+/
+
+T
+h
+e
+
+l
+a
+s
+t
+
+s
+i
+d
+
+m
+i
+n
+t
+e
+d
+
+i
+n
+
+t
+h
+i
+s
+
+r
+e
+a
+l
+m
+;
+
+m
+o
+n
+o
+t
+o
+n
+i
+c
+.
 static NEXT_SID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 fn mint_sid() -> u32 {
@@ -61,19 +162,122 @@ fn mint_sid() -> u32 {
 struct Inner {
     sid: u32,
     state: Cell<State>,
-    /// The engine accepted the sid (false on the host, where there is no
-    /// engine, and when the engine was not loaded yet).
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    e
+    n
+    g
+    i
+    n
+    e
+
+    a
+    c
+    c
+    e
+    p
+    t
+    e
+    d
+
+    t
+    h
+    e
+
+    s
+    i
+    d
+    ,
+
+    f
+    a
+    l
+    s
+    e
+
+    o
+    n
+
+    t
+    h
+    e
+
+    h
+    o
+    s
+    t
+    .
     registered: bool,
     paper: RefCell<Paper>,
     search: RefCell<SearchState>,
 }
 
 impl Drop for Inner {
-    /// The safety net for a session dropped without `dispose` (an owner
-    /// swept by its arena), or whose dispose future was dropped before it
-    /// finished (`Disposing`). The engine side must still be released;
-    /// nothing can await here, so the destroy runs detached (the engine
-    /// ignores a sid it already forgot).
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    s
+    a
+    f
+    e
+    t
+    y
+
+    n
+    e
+    t
+
+    f
+    o
+    r
+
+    a
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+
+    d
+    r
+    o
+    p
+    p
+    e
+    d
+
+    w
+    i
+    t
+    h
+    o
+    u
+    t
+
+    `
+    d
+    i
+    s
+    p
+    o
+    s
+    e
+    `
+    .
     fn drop(&mut self) {
         if self.state.get() != State::Disposed && self.registered && bridge::has_pdf_reader() {
             bridge::release_session_detached(self.sid);
@@ -81,10 +285,65 @@ impl Drop for Inner {
     }
 }
 
-/// A page's own elements, handed to [`PdfSession::register_page`] so the
-/// engine paints into THESE and never into whatever element in the document
-/// answers to the page's id — a second pane's page carries the same one.
-#[derive(Clone, Copy)]
+/
+/
+/
+
+A
+
+p
+a
+g
+e
+'
+s
+
+o
+w
+n
+
+e
+l
+e
+m
+e
+n
+t
+s
+,
+
+s
+o
+
+t
+h
+e
+
+e
+n
+g
+i
+n
+e
+
+p
+a
+i
+n
+t
+s
+
+i
+n
+t
+o
+
+T
+H
+E
+S
+E
+.
 pub struct PageElements<'a> {
     pub canvas: &'a web_sys::Element,
     pub host: Option<&'a web_sys::Element>,
@@ -113,9 +372,48 @@ fn no_session() -> EngineError {
 }
 
 impl PdfSession {
-    /// A fresh session with a never-used sid, registered with the engine
-    /// when one is attached. On the host (no engine) the session still
-    /// exists — its state machines are exercised directly by the tests.
+    /
+    /
+    /
+
+    A
+
+    f
+    r
+    e
+    s
+    h
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+
+    w
+    i
+    t
+    h
+
+    a
+
+    n
+    e
+    v
+    e
+    r
+    -
+    u
+    s
+    e
+    d
+
+    s
+    i
+    d
+    .
     pub fn create() -> Self {
         let sid = mint_sid();
         let registered = bridge::has_pdf_reader() && bridge::create_session(sid);
@@ -174,28 +472,256 @@ impl PdfSession {
 
     // --- Document -------------------------------------------------------
 
-    /// Open `path` in this session. A session holds exactly one document:
-    /// a second open is refused by the engine (`session_in_use`).
+    /
+    /
+    /
+
+    O
+    p
+    e
+    n
+
+    `
+    p
+    a
+    t
+    h
+    `
+
+    i
+    n
+
+    t
+    h
+    i
+    s
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+    ;
+
+    o
+    n
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    p
+    e
+    r
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+    .
     pub async fn open(&self, path: &str) -> Result<OpenResult, EngineError> {
         let sid = self.require()?;
         let value = bridge::open(sid, path).await;
         let open: OpenResult = api::resolve(value, "open")?;
-        // Disposed while the engine worked: the engine has already torn the
-        // document down with the session; nothing lands here.
+        /
+        /
+
+        D
+        i
+        s
+        p
+        o
+        s
+        e
+        d
+
+        w
+        h
+        i
+        l
+        e
+
+        t
+        h
+        e
+
+        e
+        n
+        g
+        i
+        n
+        e
+
+        w
+        o
+        r
+        k
+        e
+        d
+        :
+
+        n
+        o
+        t
+        h
+        i
+        n
+        g
+
+        l
+        a
+        n
+        d
+        s
+
+        h
+        e
+        r
+        e
+        .
         if !self.is_live() {
             return Err(no_session());
         }
-        // The search index is scoped to the document's CONTENT identity
-        // before anything can query it: a retained index built for these
-        // exact bytes is adopted instead of re-extracted.
+        /
+        /
+
+        T
+        h
+        e
+
+        i
+        n
+        d
+        e
+        x
+
+        i
+        s
+
+        s
+        c
+        o
+        p
+        e
+        d
+
+        t
+        o
+
+        t
+        h
+        e
+
+        d
+        o
+        c
+        u
+        m
+        e
+        n
+        t
+        '
+        s
+
+        c
+        o
+        n
+        t
+        e
+        n
+        t
+
+        i
+        d
+        e
+        n
+        t
+        i
+        t
+        y
+
+        f
+        i
+        r
+        s
+        t
+        .
         self.with_search(|s| s.scope(open.fingerprint.as_deref(), path, open.num_pages));
         Ok(open)
     }
 
-    /// The document's chapter tree, flattened into wire entries.
-    ///
-    /// INVARIANT: `Ok(empty)` means "no engine, no outline, or no session"
-    /// — never an error. A genuine engine failure still surfaces as `Err`.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+    '
+    s
+
+    c
+    h
+    a
+    p
+    t
+    e
+    r
+
+    t
+    r
+    e
+    e
+    ,
+
+    f
+    l
+    a
+    t
+    t
+    e
+    n
+    e
+    d
+
+    i
+    n
+    t
+    o
+
+    w
+    i
+    r
+    e
+
+    e
+    n
+    t
+    r
+    i
+    e
+    s
+    .
     pub async fn outline(&self) -> Result<Vec<OutlineEntry>, EngineError> {
         if !self.engine() {
             return Ok(Vec::new());
@@ -205,9 +731,60 @@ impl PdfSession {
         Ok(payload.outline)
     }
 
-    /// Page 1 of `path` as a small JPEG (the shelf cover for this session's
-    /// document). A standalone loading task inside the engine, counted on
-    /// and torn down within this session.
+    /
+    /
+    /
+
+    P
+    a
+    g
+    e
+
+    1
+
+    o
+    f
+
+    `
+    p
+    a
+    t
+    h
+    `
+
+    a
+    s
+
+    a
+
+    s
+    m
+    a
+    l
+    l
+
+    J
+    P
+    E
+    G
+    ,
+
+    t
+    h
+    e
+
+    s
+    h
+    e
+    l
+    f
+
+    c
+    o
+    v
+    e
+    r
+    .
     pub async fn cover_data_url(
         &self,
         path: &str,
@@ -227,11 +804,64 @@ impl PdfSession {
 
     // --- Pages ----------------------------------------------------------
 
-    /// Register a page's canvas with THIS session's page registry.
-    /// `host_id` `None` means the canvas id derives the host id. `elements`
-    /// are the page's own canvas and host when the caller holds them: the
-    /// engine then pins the page to them instead of looking the id up in the
-    /// document, where a second pane's page carries the same id.
+    /
+    /
+    /
+
+    R
+    e
+    g
+    i
+    s
+    t
+    e
+    r
+
+    a
+
+    p
+    a
+    g
+    e
+    '
+    s
+
+    c
+    a
+    n
+    v
+    a
+    s
+
+    w
+    i
+    t
+    h
+
+    T
+    H
+    I
+    S
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+    '
+    s
+
+    r
+    e
+    g
+    i
+    s
+    t
+    r
+    y
+    .
     pub fn register_page(
         &self,
         page: u32,
@@ -259,8 +889,61 @@ impl PdfSession {
         }
     }
 
-    /// Cancel every in-flight page render of this session (the close path's
-    /// first act; the dispose remains the one teardown).
+    /
+    /
+    /
+
+    C
+    a
+    n
+    c
+    e
+    l
+
+    e
+    v
+    e
+    r
+    y
+
+    i
+    n
+    -
+    f
+    l
+    i
+    g
+    h
+    t
+
+    p
+    a
+    g
+    e
+
+    r
+    e
+    n
+    d
+    e
+    r
+
+    o
+    f
+
+    t
+    h
+    i
+    s
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+    .
     pub fn cancel_page_renders(&self) {
         if self.engine() {
             bridge::cancel_page_renders(self.inner.sid);
@@ -293,11 +976,64 @@ impl PdfSession {
         }
     }
 
-    /// The intrinsic (scale-1) box of one page, read from the document: one
-    /// worker round trip, no surface, no pixels. The reader's fit maths asks
-    /// BEFORE a page's first raster — this is what lets a fit re-resolve land
-    /// ahead of the raster instead of correcting a page that is already on
-    /// screen at the wrong size.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    i
+    n
+    t
+    r
+    i
+    n
+    s
+    i
+    c
+
+    b
+    o
+    x
+
+    o
+    f
+
+    o
+    n
+    e
+
+    p
+    a
+    g
+    e
+    ,
+
+    r
+    e
+    a
+    d
+
+    f
+    r
+    o
+    m
+
+    t
+    h
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+    .
     pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
         let sid = self.require()?;
         let value = bridge::probe_page_size(sid, page).await;
@@ -339,8 +1075,68 @@ impl PdfSession {
         self.engine() && bridge::has_thumb(self.inner.sid, page, scale)
     }
 
-    /// Render a page into this session's thumbnail cache with no DOM canvas
-    /// (idle prefetch — the look-ahead of the thumbnail lane).
+    /
+    /
+    /
+
+    R
+    e
+    n
+    d
+    e
+    r
+
+    a
+
+    p
+    a
+    g
+    e
+
+    i
+    n
+    t
+    o
+
+    t
+    h
+    e
+
+    t
+    h
+    u
+    m
+    b
+    n
+    a
+    i
+    l
+
+    c
+    a
+    c
+    h
+    e
+
+    w
+    i
+    t
+    h
+
+    n
+    o
+
+    D
+    O
+    M
+
+    c
+    a
+    n
+    v
+    a
+    s
+    .
     pub async fn prefetch_thumb(&self, page: u32, scale: f64) {
         if self.engine() {
             let _ = bridge::prefetch_thumb(self.inner.sid, page, scale).await;
@@ -378,15 +1174,110 @@ impl PdfSession {
 
     // --- Search ---------------------------------------------------------
 
-    /// Build (or adopt) this session's search index. Returns the pages
-    /// indexed. `Err(no_session)` when the session died mid-build — a
-    /// half-built index is never recorded.
+    /
+    /
+    /
+
+    B
+    u
+    i
+    l
+    d
+
+    o
+    r
+
+    a
+    d
+    o
+    p
+    t
+
+    t
+    h
+    i
+    s
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+    '
+    s
+
+    s
+    e
+    a
+    r
+    c
+    h
+
+    i
+    n
+    d
+    e
+    x
+    .
     pub async fn build_search_index(&self, num_pages: u32) -> Result<u32, EngineError> {
         search::build(self, num_pages).await
     }
 
-    /// Query this session's index, then publish the query to its text
-    /// layers so mounted pages repaint their highlight boxes.
+    /
+    /
+    /
+
+    Q
+    u
+    e
+    r
+    y
+
+    t
+    h
+    i
+    s
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+    '
+    s
+
+    i
+    n
+    d
+    e
+    x
+
+    a
+    n
+    d
+
+    p
+    u
+    b
+    l
+    i
+    s
+    h
+
+    t
+    h
+    e
+
+    q
+    u
+    e
+    r
+    y
+    .
     pub fn search(&self, query: &str) -> SearchResponse {
         let response = self.with_search(|s| s.query(query));
         if self.engine() {
@@ -424,8 +1315,62 @@ impl PdfSession {
         }
     }
 
-    /// The document opened: the paper state machine starts for it. Nothing
-    /// is published until the first live frame lands.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    o
+    p
+    e
+    n
+    e
+    d
+    :
+
+    t
+    h
+    e
+
+    p
+    a
+    p
+    e
+    r
+
+    s
+    t
+    a
+    t
+    e
+
+    m
+    a
+    c
+    h
+    i
+    n
+    e
+
+    s
+    t
+    a
+    r
+    t
+    s
+    .
     pub fn paper_document_open(&self, path: &str, num_pages: u32) {
         if self.is_live() {
             backdrop::document_open(self, path, num_pages);
@@ -483,8 +1428,49 @@ impl PdfSession {
 
     // --- Diagnostics ----------------------------------------------------
 
-    /// This session's own gauges and counters. `None` without an engine or
-    /// once the engine forgot the sid.
+    /
+    /
+    /
+
+    T
+    h
+    i
+    s
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+    '
+    s
+
+    o
+    w
+    n
+
+    g
+    a
+    u
+    g
+    e
+    s
+
+    a
+    n
+    d
+
+    c
+    o
+    u
+    n
+    t
+    e
+    r
+    s
+    .
     pub fn stats(&self) -> Option<EngineStats> {
         if !(self.inner.registered && bridge::has_pdf_reader()) {
             return None;
@@ -494,18 +1480,83 @@ impl PdfSession {
 
     // --- Teardown -------------------------------------------------------
 
-    /// Tear the session down. Idempotent; the returned future resolves once
-    /// the engine side is gone (never on a timer).
-    ///
-    /// The session stops being usable AT THIS CALL, not at the future's
-    /// first poll: the state leaves `Live` (every op above refuses), the
-    /// invalidation advances (the paper epoch; in-flight samples are
-    /// forgotten) and the search index is retained for a same-book reopen
-    /// before this returns. The future is only the engine's own teardown
-    /// (cancel lanes and prefetches, destroy the document and its worker,
-    /// clear the page registry and caches, forget the sid) → `Disposed`.
-    /// A future dropped unpolled still releases the engine: the `Inner`
-    /// drop net covers a `Disposing` session too.
+    /
+    /
+    /
+
+    T
+    e
+    a
+    r
+
+    t
+    h
+    e
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+
+    d
+    o
+    w
+    n
+    ;
+
+    i
+    d
+    e
+    m
+    p
+    o
+    t
+    e
+    n
+    t
+    ,
+
+    r
+    e
+    s
+    o
+    l
+    v
+    i
+    n
+    g
+
+    o
+    n
+    c
+    e
+
+    t
+    h
+    e
+
+    e
+    n
+    g
+    i
+    n
+    e
+
+    i
+    s
+
+    /
+    /
+    !
+
+    g
+    o
+    n
+    e
+    .
     pub fn dispose(&self) -> impl std::future::Future<Output = ()> + use<> {
         let begun = self.inner.state.get() == State::Live;
         if begun {

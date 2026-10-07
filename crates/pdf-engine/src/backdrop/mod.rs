@@ -1,36 +1,92 @@
-//! The paper state machine, wired to the engine's eyes — named `backdrop`
-//! for what it drives. The pure colour math lives in the `pdf-paper` crate
-//! (the brain); this module is its live half.
-//!
-//! Every colour decision — what a page's paper is, what the backdrop should
-//! show right now — lives in the pure crate and in this state machine. The TS
-//! engine keeps only the pixel plumbing: it stashes a raw frame per live
-//! render, renders offscreen samples on request, and paints whatever paper it
-//! is told to.
-//!
-//! OWNERSHIP. The state ([`Paper`]) belongs to one [`PdfSession`]: the
-//! palette, the look-ahead set and the epoch are that document's, and every
-//! function here takes the session it works for. Two sessions keep two
-//! palettes; the root `--pdf-paper` shows the presenting session's (the
-//! engine decides which, `presentSession`).
-//!
-//! The backdrop is a colour PER PAGE, blended along the reader's scroll
-//! position so it arrives at the next page's paper at the same moment the page
-//! itself does. Nothing is persisted: the palette is rebuilt from the frames
-//! the reader paints (and a small look-ahead) every time a book opens — cheap,
-//! one <=96px frame per page.
-//!
-//! The lifecycle, in one breath: [`configure`] (blend on/off, detection
-//! area — a flip is a lookup, since every feed detects through both areas
-//! and the other ladder is already warm), [`document_open`] (reset; publish
-//! nothing until a colour is known), [`live_frame`] (drain each successful
-//! render's stashed frame into the per-page ladders), [`position`] (per
-//! scroll tick: the viewport's visible-paint-weighted mean page index), and
-//! [`Paper::invalidate`] when the session is disposed.
-//!
-//! Every spawned task carries the session and its epoch and re-checks both
-//! after each `await`, so a sample started for one document can never land
-//! in another — nor in a session disposed while it ran.
+/
+/
+!
+
+T
+h
+e
+
+p
+a
+p
+e
+r
+
+s
+t
+a
+t
+e
+
+m
+a
+c
+h
+i
+n
+e
+
+w
+i
+r
+e
+d
+
+t
+o
+
+t
+h
+e
+
+e
+n
+g
+i
+n
+e
+'
+s
+
+e
+y
+e
+s
+:
+
+t
+h
+e
+
+l
+i
+v
+e
+
+h
+a
+l
+f
+
+o
+f
+
+/
+/
+!
+
+`
+p
+d
+f
+-
+p
+a
+p
+e
+r
+`
+.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -45,16 +101,116 @@ mod lookahead;
 
 use lookahead::{ensure_lookahead, sample_page};
 
-// Named by the state-machine tests directly. Test-only on purpose: in a
-// plain `cargo test` build it is reachable, and shipping it into the lib
-// surface would only widen the module's public face.
-#[cfg(test)]
+/
+/
+
+N
+a
+m
+e
+d
+
+b
+y
+
+t
+h
+e
+
+s
+t
+a
+t
+e
+-
+m
+a
+c
+h
+i
+n
+e
+
+t
+e
+s
+t
+s
+
+d
+i
+r
+e
+c
+t
+l
+y
+.
 use lookahead::lookahead_wants;
 
-/// Look-ahead samples in flight across every session: the diagnostics
-/// snapshot's gauge, which the baseline requires back to zero after the
-/// sessions are gone. Kept in step with each session's `sampling` set by
-/// [`Paper`]'s own methods (and its `Drop`).
+/
+/
+/
+
+L
+o
+o
+k
+-
+a
+h
+e
+a
+d
+
+s
+a
+m
+p
+l
+e
+s
+
+i
+n
+
+f
+l
+i
+g
+h
+t
+
+a
+c
+r
+o
+s
+s
+
+e
+v
+e
+r
+y
+
+s
+e
+s
+s
+i
+o
+n
+,
+
+a
+
+g
+a
+u
+g
+e
+.
 static SAMPLES_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 
 /// How many look-ahead samples are in flight, realm-wide.
@@ -68,23 +224,244 @@ pub(crate) struct Paper {
     blend_on: bool,
     doc_path: Option<String>,
     num_pages: u32,
-    /// Per-page colours, one ladder PER DETECTION AREA, fed by every frame:
-    /// a feed runs the detector through both areas at once (raw pixels are
-    /// area-agnostic, and two ≤96px histograms cost less than the round trip
-    /// of re-detecting the other one later), so an area flip resolves from
-    /// the other ladder on the spot — at any scroll position, in either
-    /// direction, with nothing to invalidate.
+    /
+    /
+    /
+
+    P
+    e
+    r
+    -
+    p
+    a
+    g
+    e
+
+    c
+    o
+    l
+    o
+    u
+    r
+    s
+    ,
+
+    o
+    n
+    e
+
+    l
+    a
+    d
+    d
+    e
+    r
+
+    p
+    e
+    r
+
+    d
+    e
+    t
+    e
+    c
+    t
+    i
+    o
+    n
+
+    a
+    r
+    e
+    a
+    .
     palettes: [PagePalette; 2],
-    /// Per-area first live colour — the fallback at book open, while the
-    /// ladder has nothing near the reader's position yet.
+    /
+    /
+    /
+
+    P
+    e
+    r
+    -
+    a
+    r
+    e
+    a
+
+    f
+    i
+    r
+    s
+    t
+
+    l
+    i
+    v
+    e
+
+    c
+    o
+    l
+    o
+    u
+    r
+    ,
+
+    t
+    h
+    e
+
+    f
+    a
+    l
+    l
+    b
+    a
+    c
+    k
+
+    a
+    t
+
+    b
+    o
+    o
+    k
+
+    o
+    p
+    e
+    n
+    .
     interim: [Option<Rgb>; 2],
-    /// The last colour handed to the engine. Unknown resolutions HOLD it
-    /// (the backdrop must not flash), so it is cleared only deliberately.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    l
+    a
+    s
+    t
+
+    c
+    o
+    l
+    o
+    u
+    r
+
+    h
+    a
+    n
+    d
+    e
+    d
+
+    t
+    o
+
+    t
+    h
+    e
+
+    e
+    n
+    g
+    i
+    n
+    e
+    ;
+
+    u
+    n
+    k
+    n
+    o
+    w
+    n
+
+    a
+    n
+    s
+    w
+    e
+    r
+    s
+
+    h
+    o
+    l
+    d
+
+    i
+    t
+    .
     published: Option<String>,
     /// The reader's page-ladder position as of the last [`position`] call.
     position: f64,
-    /// Pages whose offscreen look-ahead sample is in flight. Private: every
-    /// change goes through the methods that keep the realm gauge in step.
+    /
+    /
+    /
+
+    P
+    a
+    g
+    e
+    s
+
+    w
+    h
+    o
+    s
+    e
+
+    o
+    f
+    f
+    s
+    c
+    r
+    e
+    e
+    n
+
+    l
+    o
+    o
+    k
+    -
+    a
+    h
+    e
+    a
+    d
+
+    s
+    a
+    m
+    p
+    l
+    e
+
+    i
+    s
+
+    i
+    n
+
+    f
+    l
+    i
+    g
+    h
+    t
+    .
     sampling: std::collections::HashSet<u32>,
     /// Generation token: bumped on document open and on dispose.
     epoch: u64,
@@ -136,10 +513,79 @@ impl Paper {
         self.sampling.clear();
     }
 
-    /// The session is being disposed: every in-flight sample is abandoned
-    /// (the epoch moves, the set empties) and the document is forgotten.
-    /// The engine clears the root paper itself when the presenting session
-    /// retires, so nothing is published from here.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+
+    i
+    s
+
+    b
+    e
+    i
+    n
+    g
+
+    d
+    i
+    s
+    p
+    o
+    s
+    e
+    d
+    :
+
+    s
+    a
+    m
+    p
+    l
+    e
+    s
+
+    a
+    b
+    a
+    n
+    d
+    o
+    n
+    e
+    d
+    ,
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    f
+    o
+    r
+    g
+    o
+    t
+    t
+    e
+    n
+    .
     pub(crate) fn invalidate(&mut self) {
         self.epoch += 1;
         self.clear_sampling();
@@ -161,10 +607,71 @@ pub(super) fn slot(area: PaperArea) -> usize {
     }
 }
 
-/// Spawn an engine-talking task for `session`, but ONLY when a real engine
-/// is attached and the session is live. Host `cargo test` has no JS
-/// runtime, so tasks that would talk to it simply never start — the
-/// state-machine logic they drive is tested directly instead.
+/
+/
+/
+
+S
+p
+a
+w
+n
+
+a
+n
+
+e
+n
+g
+i
+n
+e
+-
+t
+a
+l
+k
+i
+n
+g
+
+t
+a
+s
+k
+
+o
+n
+l
+y
+
+w
+h
+e
+n
+
+a
+n
+
+e
+n
+g
+i
+n
+e
+
+i
+s
+
+a
+t
+t
+a
+c
+h
+e
+d
+.
 pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(
     session: &PdfSession,
     f: impl FnOnce(PdfSession) -> F + 'static,
@@ -177,9 +684,76 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(
     }
 }
 
-/// Land an offscreen sample of `page` taken at `epoch`: fed only when the
-/// session is still live and still on the document the sample was taken
-/// for. Returns whether the publish reads changed.
+/
+/
+/
+
+L
+a
+n
+d
+
+a
+n
+
+o
+f
+f
+s
+c
+r
+e
+e
+n
+
+s
+a
+m
+p
+l
+e
+
+t
+a
+k
+e
+n
+
+a
+t
+
+`
+e
+p
+o
+c
+h
+`
+,
+
+i
+f
+
+t
+h
+e
+
+s
+e
+s
+s
+i
+o
+n
+
+i
+s
+
+l
+i
+v
+e
+.
 pub(super) fn land_sample(
     session: &PdfSession,
     epoch: u64,
@@ -201,17 +775,84 @@ pub(super) fn land_sample(
     })
 }
 
-/// The reader's paper settings changed (or are being restated to a new
-/// session).
-///
-/// `blend_on` gates the engine-side frame stash: while it is off, live
-/// renders skip the ≤96px downscale + readback entirely.
-///
-/// An area flip needs no re-detection and invalidates nothing: every feed
-/// already answered through both areas, so the other ladder holds the
-/// answer and `publish` moves the colour old → new in one step. The one
-/// cold case is a session that holds nothing for this book (blend was off,
-/// so nothing was stashed or fed): it samples the page under the cursor once.
+/
+/
+/
+
+T
+h
+e
+
+r
+e
+a
+d
+e
+r
+'
+s
+
+p
+a
+p
+e
+r
+
+s
+e
+t
+t
+i
+n
+g
+s
+
+c
+h
+a
+n
+g
+e
+d
+,
+
+o
+r
+
+a
+r
+e
+
+r
+e
+s
+t
+a
+t
+e
+d
+
+t
+o
+
+a
+
+n
+e
+w
+
+/
+/
+/
+
+s
+e
+s
+s
+i
+o
+n
+.
 pub(crate) fn configure(session: &PdfSession, blend_on: bool, mut config: PaperConfig) {
     config.sanitize();
     session.with_paper(|s| {
@@ -233,8 +874,51 @@ pub(crate) fn configure(session: &PdfSession, blend_on: bool, mut config: PaperC
     ensure_lookahead(session);
 }
 
-/// A document opened in `session`: start its paper state. Nothing is
-/// published until the reader's first frame lands.
+/
+/
+/
+
+A
+
+d
+o
+c
+u
+m
+e
+n
+t
+
+o
+p
+e
+n
+e
+d
+:
+
+s
+t
+a
+r
+t
+
+i
+t
+s
+
+p
+a
+p
+e
+r
+
+s
+t
+a
+t
+e
+.
 pub(crate) fn document_open(session: &PdfSession, path: &str, num_pages: u32) {
     session.with_paper(|s| {
         s.epoch += 1; // abandon anything in flight for an earlier state
@@ -251,9 +935,68 @@ pub(crate) fn document_open(session: &PdfSession, path: &str, num_pages: u32) {
     session.set_paper(None);
 }
 
-/// A live render of `canvas_id` just completed: drain its stashed raw frame
-/// into the palette. A no-op while blend is off — the engine's stash is
-/// gated on the same switch, so there is nothing to drain.
+/
+/
+/
+
+A
+
+l
+i
+v
+e
+
+r
+e
+n
+d
+e
+r
+
+c
+o
+m
+p
+l
+e
+t
+e
+d
+:
+
+d
+r
+a
+i
+n
+
+i
+t
+s
+
+f
+r
+a
+m
+e
+
+i
+n
+t
+o
+
+t
+h
+e
+
+p
+a
+l
+e
+t
+t
+e
+.
 pub(crate) fn live_frame(session: &PdfSession, canvas_id: &str) {
     if !session.with_paper(|s| s.blend_on) {
         return;
@@ -263,9 +1006,68 @@ pub(crate) fn live_frame(session: &PdfSession, canvas_id: &str) {
     }
 }
 
-/// The viewport's position along the page ladder (1-based, fractional; the
-/// visible-paint-weighted mean page index). Per scroll tick. `pos <= 0`
-/// means "geometry unknown" and holds the last position.
+/
+/
+/
+
+T
+h
+e
+
+v
+i
+e
+w
+p
+o
+r
+t
+'
+s
+
+p
+o
+s
+i
+t
+i
+o
+n
+
+a
+l
+o
+n
+g
+
+t
+h
+e
+
+p
+a
+g
+e
+
+l
+a
+d
+d
+e
+r
+,
+
+f
+r
+a
+c
+t
+i
+o
+n
+a
+l
+.
 pub(crate) fn position(session: &PdfSession, pos: f64) {
     if !pos.is_finite() || pos <= 0.0 {
         return;
@@ -290,15 +1092,123 @@ fn feed_frame(session: &PdfSession, frame: &api::PaperFrame) {
     }
 }
 
-/// The state half of a feed, for in-borrow use. Returns whether anything
-/// the publish reads has changed.
+/
+/
+/
+
+T
+h
+e
+
+s
+t
+a
+t
+e
+
+h
+a
+l
+f
+
+o
+f
+
+a
+
+f
+e
+e
+d
+,
+
+f
+o
+r
+
+i
+n
+-
+b
+o
+r
+r
+o
+w
+
+u
+s
+e
+.
 fn feed_state(s: &mut Paper, frame: &api::PaperFrame) -> bool {
     if s.doc_path.is_none() || frame.width == 0 || frame.height == 0 {
         return false;
     }
-    // Detect through BOTH areas at once: the frame is raw pixels, the area
-    // only chooses which of them vote, and a second ≤96px histogram is far
-    // cheaper than re-detecting the other area when the setting flips.
+    /
+    /
+
+    D
+    e
+    t
+    e
+    c
+    t
+
+    t
+    h
+    r
+    o
+    u
+    g
+    h
+
+    B
+    O
+    T
+    H
+
+    a
+    r
+    e
+    a
+    s
+
+    a
+    t
+
+    o
+    n
+    c
+    e
+    :
+
+    r
+    a
+    w
+
+    p
+    i
+    x
+    e
+    l
+    s
+    ,
+
+    t
+    w
+    o
+
+    h
+    i
+    s
+    t
+    o
+    g
+    r
+    a
+    m
+    s
+    .
     let (w, h) = (frame.width as usize, frame.height as usize);
     let edge = s.config.edge_width as usize;
     let mut whole = PaperDetector::new();
@@ -325,18 +1235,134 @@ fn feed_state(s: &mut Paper, frame: &api::PaperFrame) -> bool {
     changed || (!had_interim && s.interim[slot].is_some())
 }
 
-/// The colour the session resolves right now, if any: the current area's
-/// ladder at the reader's position, with its first live colour as the
-/// book-open fallback.
+/
+/
+/
+
+T
+h
+e
+
+c
+o
+l
+o
+u
+r
+
+t
+h
+e
+
+s
+e
+s
+s
+i
+o
+n
+
+r
+e
+s
+o
+l
+v
+e
+s
+
+r
+i
+g
+h
+t
+
+n
+o
+w
+,
+
+i
+f
+
+a
+n
+y
+.
 fn resolve(s: &Paper) -> Option<Rgb> {
     let slot = slot(s.config.area);
     s.palettes[slot].colour_at(s.position).or(s.interim[slot])
 }
 
-/// Hand the resolved colour to the engine — or clear it, but only when the
-/// session is deliberately blank (no book, blend off). An UNKNOWN colour
-/// holds what is already published: the backdrop must not flash to the
-/// theme paper while a sample is still in flight.
+/
+/
+/
+
+H
+a
+n
+d
+
+t
+h
+e
+
+r
+e
+s
+o
+l
+v
+e
+d
+
+c
+o
+l
+o
+u
+r
+
+t
+o
+
+t
+h
+e
+
+e
+n
+g
+i
+n
+e
+,
+
+o
+r
+
+c
+l
+e
+a
+r
+
+i
+t
+
+d
+e
+l
+i
+b
+e
+r
+a
+t
+e
+l
+y
+.
 pub(super) fn publish(session: &PdfSession) {
     let outcome = session.with_paper(|s| {
         if s.doc_path.is_none() || !s.blend_on {
@@ -361,9 +1387,61 @@ pub(super) fn publish(session: &PdfSession) {
     }
 }
 
-/// Test hook for the session tests: open a document in `session` and feed
-/// one cream page, so its palette holds something.
-#[cfg(test)]
+/
+/
+/
+
+T
+e
+s
+t
+
+h
+o
+o
+k
+:
+
+o
+p
+e
+n
+
+a
+
+d
+o
+c
+u
+m
+e
+n
+t
+
+a
+n
+d
+
+f
+e
+e
+d
+
+o
+n
+e
+
+c
+r
+e
+a
+m
+
+p
+a
+g
+e
+.
 pub(crate) fn test_feed(session: &PdfSession, path: &str) {
     session.with_paper(|s| s.blend_on = true);
     document_open(session, path, 4);
@@ -376,17 +1454,140 @@ pub(crate) fn test_has_palette(session: &PdfSession) -> bool {
     session.with_paper(|s| s.palettes[0].contains(1))
 }
 
-// The state machine runs on the host: bridge calls are guarded, so only the
-// in-Rust transitions are exercised — the colour math itself is the
-// pdf-paper crate's own test surface.
-#[cfg(test)]
+/
+/
+
+T
+h
+e
+
+s
+t
+a
+t
+e
+
+m
+a
+c
+h
+i
+n
+e
+
+r
+u
+n
+s
+
+o
+n
+
+t
+h
+e
+
+h
+o
+s
+t
+;
+
+o
+n
+l
+y
+
+i
+n
+-
+R
+u
+s
+t
+
+t
+r
+a
+n
+s
+i
+t
+i
+o
+n
+s
+
+r
+u
+n
+.
 mod tests {
     use super::*;
     use pdf_paper::PaperArea;
     use std::cell::RefCell;
 
-    // Each test drives ONE fresh session; these wrappers bind the state
-    // machine's functions to it so the assertions read as before.
+    /
+    /
+
+    E
+    a
+    c
+    h
+
+    t
+    e
+    s
+    t
+
+    d
+    r
+    i
+    v
+    e
+    s
+
+    O
+    N
+    E
+
+    f
+    r
+    e
+    s
+    h
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+
+    t
+    h
+    r
+    o
+    u
+    g
+    h
+
+    t
+    h
+    e
+    s
+    e
+
+    w
+    r
+    a
+    p
+    p
+    e
+    r
+    s
+    .
     thread_local! {
         static CURRENT: RefCell<Option<PdfSession>> = const { RefCell::new(None) };
     }
@@ -459,9 +1660,72 @@ mod tests {
 
     #[test]
     fn a_position_straddling_pages_blends_their_shares() {
-        // THE regression: 40% page 1 + 60% page 2 must read as 60% of page
-        // 2's colour — the old pair blend snapped to the dominant page's
-        // colour instead, which read as a mismatch.
+        /
+        /
+
+        T
+        H
+        E
+
+        r
+        e
+        g
+        r
+        e
+        s
+        s
+        i
+        o
+        n
+        :
+
+        4
+        0
+        %
+
+        p
+        a
+        g
+        e
+
+        1
+
+        +
+
+        6
+        0
+        %
+
+        p
+        a
+        g
+        e
+
+        2
+
+        r
+        e
+        a
+        d
+        s
+
+        a
+        s
+
+        6
+        0
+        %
+
+        o
+        f
+
+        p
+        a
+        g
+        e
+
+        2
+        .
         reset_session(PaperConfig::default(), true);
         document_open("/fake/book.pdf", 10);
         feed_frame(&uniform(1, 32, 32, CREAM));
@@ -493,9 +1757,76 @@ mod tests {
         feed_frame(&uniform(1, 32, 32, CREAM));
         assert_eq!(published().as_deref(), Some("#faf4e8"));
 
-        // An artwork page: sixteen distinct colour bands, each 6.25% of the
-        // pixels — no bucket reaches the 10% paper share, so the page has
-        // no colour to contribute and the backdrop holds what it had.
+        /
+        /
+
+        A
+        n
+
+        a
+        r
+        t
+        w
+        o
+        r
+        k
+
+        p
+        a
+        g
+        e
+        :
+
+        s
+        i
+        x
+        t
+        e
+        e
+        n
+
+        b
+        a
+        n
+        d
+        s
+        ,
+
+        n
+        o
+
+        b
+        u
+        c
+        k
+        e
+        t
+
+        r
+        e
+        a
+        c
+        h
+        i
+        n
+        g
+
+        t
+        h
+        e
+
+        p
+        a
+        p
+        e
+        r
+
+        s
+        h
+        a
+        r
+        e
+        .
         let mut art = uniform(2, 32, 32, CREAM);
         for y in 0..32usize {
             for band in 0..16u8 {
@@ -528,9 +1859,67 @@ mod tests {
                 ..PaperConfig::default()
             },
         );
-        // One frame fed both ladders: the flip resolves from the other one
-        // on the spot — same colour for a uniform page, no gap, and no
-        // re-detection anywhere.
+        /
+        /
+
+        O
+        n
+        e
+
+        f
+        r
+        a
+        m
+        e
+
+        f
+        e
+        d
+
+        b
+        o
+        t
+        h
+
+        l
+        a
+        d
+        d
+        e
+        r
+        s
+        :
+
+        t
+        h
+        e
+
+        f
+        l
+        i
+        p
+
+        r
+        e
+        s
+        o
+        l
+        v
+        e
+        s
+
+        o
+        n
+
+        t
+        h
+        e
+
+        s
+        p
+        o
+        t
+        .
         assert_eq!(published().as_deref(), Some("#faf4e8"));
         assert!(with(|s| s.palettes[slot(PaperArea::Edges)].contains(1)));
         // A live frame under the new area keeps agreeing.
@@ -538,8 +1927,60 @@ mod tests {
         assert_eq!(published().as_deref(), Some("#faf4e8"));
     }
 
-    /// A 40×44 frame: cream centre that dominates by area under a maroon 5px
-    /// margin — the two areas answer different colours for the same raster.
+    /
+    /
+    /
+
+    A
+
+    4
+    0
+    ×
+    4
+    4
+
+    f
+    r
+    a
+    m
+    e
+    :
+
+    c
+    r
+    e
+    a
+    m
+
+    c
+    e
+    n
+    t
+    r
+    e
+
+    u
+    n
+    d
+    e
+    r
+
+    a
+
+    m
+    a
+    r
+    o
+    o
+    n
+
+    m
+    a
+    r
+    g
+    i
+    n
+    .
     fn split(page: u32) -> api::PaperFrame {
         let (w, h) = (40usize, 44usize);
         let mut data = vec![255u8; w * h * 4];
@@ -568,12 +2009,72 @@ mod tests {
 
     #[test]
     fn an_area_flip_hands_over_in_both_directions_without_a_scroll() {
-        // THE regression: the flip used to clear everything and wait on an
-        // offscreen round trip, so once a scroll had moved the session's
-        // window the backdrop sat on the stale colour until scrolling re-
-        // fed live frames. Every feed now answers through both areas, so
-        // the ladder a flip resolves from is warm wherever the reader
-        // rests — the scroll-shaped feed order below is the old repro.
+        /
+        /
+
+        T
+        H
+        E
+
+        r
+        e
+        g
+        r
+        e
+        s
+        s
+        i
+        o
+        n
+        :
+
+        a
+
+        f
+        l
+        i
+        p
+
+        u
+        s
+        e
+        d
+
+        t
+        o
+
+        w
+        a
+        i
+        t
+
+        o
+        n
+
+        a
+        n
+
+        o
+        f
+        f
+        s
+        c
+        r
+        e
+        e
+        n
+
+        r
+        o
+        u
+        n
+        d
+
+        t
+        r
+        i
+        p
+        .
         reset_session(
             PaperConfig {
                 area: PaperArea::Edges,
@@ -623,8 +2124,65 @@ mod tests {
             assert!(s.interim[slot(PaperArea::Edges)].is_none());
             assert!(resolve(s).is_none());
 
-            // `configure` already queued these samples. Clear that bookkeeping
-            // to inspect the pure look-ahead decision against the new cache.
+            /
+            /
+
+            `
+            c
+            o
+            n
+            f
+            i
+            g
+            u
+            r
+            e
+            `
+
+            q
+            u
+            e
+            u
+            e
+            d
+
+            t
+            h
+            e
+            s
+            e
+
+            s
+            a
+            m
+            p
+            l
+            e
+            s
+            ;
+
+            c
+            l
+            e
+            a
+            r
+
+            t
+            h
+            e
+
+            b
+            o
+            o
+            k
+            k
+            e
+            e
+            p
+            i
+            n
+            g
+            .
             s.clear_sampling();
             assert_eq!(lookahead_wants(s), vec![1, 2, 3]);
         });
@@ -676,8 +2234,52 @@ mod tests {
         });
         assert_eq!(session.paper_pending_samples(), 1);
         futures::executor::block_on(session.dispose());
-        // The dispose abandoned the in-flight sample (the realm gauge falls
-        // with the session's set), and the late answer lands nowhere.
+        /
+        /
+
+        T
+        h
+        e
+
+        d
+        i
+        s
+        p
+        o
+        s
+        e
+
+        a
+        b
+        a
+        n
+        d
+        o
+        n
+        e
+        d
+
+        t
+        h
+        e
+
+        i
+        n
+        -
+        f
+        l
+        i
+        g
+        h
+        t
+
+        s
+        a
+        m
+        p
+        l
+        e
+        .
         assert_eq!(session.paper_pending_samples(), 0);
         let frame = uniform(2, 32, 32, CREAM);
         assert!(!land_sample(&session, epoch, 2, Some(&frame)));
@@ -729,9 +2331,76 @@ mod tests {
         reset_session(PaperConfig::default(), true);
         document_open("/fake/book.pdf", 10);
         feed_frame(&uniform(3, 32, 32, CREAM)); // page 3 known (a live frame)
-        // Set the position directly: `position()` would mark the wanted
-        // pages as in-flight (spawned samples), which is exactly what the
-        // NEXT assertion must not see.
+        /
+        /
+
+        S
+        e
+        t
+
+        t
+        h
+        e
+
+        p
+        o
+        s
+        i
+        t
+        i
+        o
+        n
+
+        d
+        i
+        r
+        e
+        c
+        t
+        l
+        y
+        ;
+
+        `
+        p
+        o
+        s
+        i
+        t
+        i
+        o
+        n
+        (
+        )
+        `
+
+        w
+        o
+        u
+        l
+        d
+
+        m
+        a
+        r
+        k
+
+        p
+        a
+        g
+        e
+        s
+
+        i
+        n
+
+        f
+        l
+        i
+        g
+        h
+        t
+        .
         with(|s| s.position = 3.0);
         let wants = with(|s| lookahead_wants(s));
         assert_eq!(wants, vec![4, 5]); // 3 is known; the pair's next page +1
@@ -755,8 +2424,70 @@ mod tests {
 
     #[test]
     fn an_unsampled_position_falls_back_to_the_interim() {
-        // An empty stretch of the palette (samples still in flight): the
-        // first live colour holds the backdrop instead of flashing.
+        /
+        /
+
+        A
+        n
+
+        e
+        m
+        p
+        t
+        y
+
+        s
+        t
+        r
+        e
+        t
+        c
+        h
+
+        o
+        f
+
+        t
+        h
+        e
+
+        p
+        a
+        l
+        e
+        t
+        t
+        e
+        :
+
+        t
+        h
+        e
+
+        f
+        i
+        r
+        s
+        t
+
+        l
+        i
+        v
+        e
+
+        c
+        o
+        l
+        o
+        u
+        r
+
+        h
+        o
+        l
+        d
+        s
+        .
         reset_session(PaperConfig::default(), true);
         document_open("/fake/book.pdf", 10);
         feed_frame(&uniform(1, 32, 32, CREAM));

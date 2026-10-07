@@ -1,13 +1,122 @@
-//! The look-ahead: resolve the pages the reader is approaching before the
-//! reader arrives. Per session — the planner reads, and the in-flight set
-//! lives on, the session's own paper state.
+/
+/
+!
+
+T
+h
+e
+
+l
+o
+o
+k
+-
+a
+h
+e
+a
+d
+:
+
+r
+e
+s
+o
+l
+v
+e
+
+t
+h
+e
+
+p
+a
+g
+e
+s
+
+t
+h
+e
+
+r
+e
+a
+d
+e
+r
+
+i
+s
+
+a
+p
+p
+r
+o
+a
+c
+h
+i
+n
+g
+.
 
 use super::{Paper, land_sample, publish, slot, spawn_engine};
 use crate::session::PdfSession;
 
-/// The pages whose colour the session wants known: the pair the reader
-/// is straddling plus the one after it, so the colour is resolved before
-/// the reader arrives. Pure — the test exercises exactly this choice.
+/
+/
+/
+
+T
+h
+e
+
+p
+a
+g
+e
+s
+
+w
+h
+o
+s
+e
+
+c
+o
+l
+o
+u
+r
+
+t
+h
+e
+
+s
+e
+s
+s
+i
+o
+n
+
+w
+a
+n
+t
+s
+
+k
+n
+o
+w
+n
+.
 pub(super) fn lookahead_wants(s: &Paper) -> Vec<u32> {
     if !s.blend_on || s.num_pages == 0 {
         return Vec::new();
@@ -25,9 +134,69 @@ pub(super) fn lookahead_wants(s: &Paper) -> Vec<u32> {
     wants
 }
 
-/// Resolve (offscreen) the pages [`lookahead_wants`] names, one spawn each,
-/// all session- and epoch-guarded so a sample for one document cannot land
-/// in the next, nor in a session disposed while it ran.
+/
+/
+/
+
+R
+e
+s
+o
+l
+v
+e
+
+t
+h
+e
+
+p
+a
+g
+e
+s
+
+[
+`
+l
+o
+o
+k
+a
+h
+e
+a
+d
+_
+w
+a
+n
+t
+s
+`
+]
+
+n
+a
+m
+e
+s
+,
+
+e
+p
+o
+c
+h
+-
+g
+u
+a
+r
+d
+e
+d
+.
 pub(super) fn ensure_lookahead(session: &PdfSession) {
     let (epoch, pages) = session.with_paper(|s| {
         let wants = lookahead_wants(s);
