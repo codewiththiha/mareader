@@ -1,10 +1,5 @@
-//! The shell's diagnostics surface: `window.__mareaderDiagnostics()` merges
-//! the manager's facts (which runtime is active, session create/dispose
-//! counts, doc status/error forwarded across the boundary) with the active
-//! runtime's last pushed digest (engine stats, virtualizer gauges, heap).
-//! The reader-side fields only exist while a reader session reports them —
-//! and `atBaseline` fails closed: a reader that never reported a drained
-//! digest keeps the baseline false.
+//! The shell's diagnostics surface, merging the manager's facts with the
+//! active runtime's digest.
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
@@ -29,13 +24,10 @@ fn install_web(state: ShellState) {
     };
     let probe = Closure::wrap(Box::new(move || {
         let mut value = serde_json::json!({
-            // The boot surface: which state the runtime host is showing, and
-            // the last failure with its runtime + stage (§6). A headless run
-            // (the browser suites) reads these instead of a screenshot.
+            // The boot surface: which state the host shows, and its failure.
             "bootState": state.manager.boot_state.lock().unwrap().clone(),
             "lastBootError": state.manager.boot_error.lock().unwrap().clone().unwrap_or(serde_json::Value::Null),
-            // The manager's own account: which runtime is active and what
-            // session identity has been created/disposed (§21's test hook).
+            // The manager's account: active runtime and session counts.
             "activeRuntime": match state.manager.active() {
                 Some(ActiveRuntime::Reader) => serde_json::json!("reader"),
                 Some(ActiveRuntime::Library) => serde_json::json!("library"),
@@ -46,9 +38,7 @@ fn install_web(state: ShellState) {
             "librarySessionsCreated": state.manager.library_sessions_created.load(std::sync::atomic::Ordering::Relaxed),
             "libraryDisposesCompleted": state.manager.library_disposes_completed.load(std::sync::atomic::Ordering::Relaxed),
             "readerRuntimeLive": state.manager.active() == Some(ActiveRuntime::Reader),
-            // DOM residency includes incoming and retiring realms, not
-            // merely whichever route is visible. No Reader may survive the
-            // Library baseline, even while the pointer stays on a card.
+            // DOM residency includes incoming and retiring realms.
             "readerFramesResident": state.manager.reader_frames_resident(),
             "libraryFramesResident": crate::app::frame::resident(crate::app::frame::FrameKind::Library),
             "paneFramesResident": crate::app::frame::document_frames_resident(),
@@ -56,9 +46,7 @@ fn install_web(state: ShellState) {
             "routePrewarmAllowed": false,
             "routeArtifacts": 5,
             "rasterLane": raster_snapshot(),
-            // The shell's cover baker: whether its page is currently mounted
-            // (it is torn down a few seconds after the last bake) and how
-            // many covers it has answered, either way, since boot.
+            // The cover baker: whether its page is mounted, and its answers.
             "bakeFrameResident": crate::app::bake::resident(),
             "coversAnswered": crate::app::bake::answered(),
             "staleFramesSeen": state.manager.stale_frames_seen.load(std::sync::atomic::Ordering::Relaxed),
@@ -70,17 +58,13 @@ fn install_web(state: ShellState) {
                 merge_runtime_digest(obj, d);
             }
         }
-        // After the merge: the reported runtime generation is shell-owned
-        // identity (§21), so the shell's reader-session count wins over the
-        // digest's per-frame copy.
+        // The reported runtime generation is shell-owned identity.
         let sessions = &state.manager.reader_sessions_created;
         report_runtime_generation(
             &mut value,
             sessions.load(std::sync::atomic::Ordering::Relaxed),
         );
-        // The phase's gate, decided by the SHELL from its own manager facts:
-        // no active reader AND the last reader digest said drained (or there
-        // never was one — nothing reader-owned to drain).
+        // The phase's gate, decided by the SHELL from its own facts.
         let digest_drained = state
             .manager
             .last_digest
@@ -133,14 +117,7 @@ fn raster_snapshot() -> serde_json::Value {
     read().unwrap_or(serde_json::Value::Null)
 }
 
-/// Fold a runtime's last digest into the shell's own diagnostics object.
-///
-/// Shell-authored keys win the merge, unconditionally: a digest reports its
-/// frame's local counters, and one of them shares `readerDisposesCompleted`
-/// with the shell's cross-runtime session accounting. The invariant this
-/// function exists to hold is that a runtime digest may never overwrite a
-/// Shell-owned diagnostic field — the digest keeps its own local value on
-/// its side of the boundary, the shell keeps its authority on its side.
+/// Fold a runtime's last digest into the shell's diagnostics.
 #[cfg(any(test, target_arch = "wasm32"))]
 fn merge_runtime_digest(
     shell: &mut serde_json::Map<String, serde_json::Value>,
@@ -154,13 +131,7 @@ fn merge_runtime_digest(
     }
 }
 
-/// Overwrite the merged runtime section's generation with the shell's
-/// reader-session count — the identity the application observes across
-/// frames. The digest's copy is seeded per frame from a wasm-static ordinal
-/// that restarts with every iframe, so it only proves "not the first
-/// runtime inside this frame"; the count below is bumped once per reader
-/// boot, never for the library, and never resets while the page lives. The
-/// runtime keeps its ordinal as its own internal lifetime stamp (§21).
+/// Overwrite the runtime generation with the shell's session count.
 #[cfg(any(test, target_arch = "wasm32"))]
 fn report_runtime_generation(value: &mut serde_json::Value, reader_sessions_created: u64) {
     if let Some(runtime) = value
@@ -178,12 +149,7 @@ fn report_runtime_generation(value: &mut serde_json::Value, reader_sessions_crea
 mod tests {
     use super::{merge_runtime_digest, report_runtime_generation};
 
-    /// The regression behind the rapid-transition CI failure: a reader
-    /// digest reporting its frame-local `readerDisposesCompleted = 1`
-    /// merged over the shell's authoritative `2` and the browser suite
-    /// then read "a session outlived its close". Shell-owned fields must
-    /// survive any digest, and the digest's own counters must stay intact
-    /// on its side of the merge.
+    /// The regression behind the rapid-transition CI failure.
     #[test]
     fn runtime_digest_never_overwrites_shell_owned_fields() {
         let mut shell: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
@@ -220,10 +186,7 @@ mod tests {
         assert_eq!(digest["readerDisposesCompleted"], 1);
     }
 
-    /// The split-run identity rule: a merged digest's per-frame generation
-    /// (every iframe's wasm world starts its counter over) is overwritten by
-    /// the shell's reader-session count, and a payload without a runtime
-    /// section is left untouched.
+    /// The split-run identity rule for merged digests.
     #[test]
     fn reported_generation_is_the_shell_session_count() {
         let mut value: serde_json::Value = serde_json::from_str(

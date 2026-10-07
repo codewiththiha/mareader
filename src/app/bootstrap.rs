@@ -1,6 +1,5 @@
-//! The shell's bootstrap: the durable settings load, the shell state, the
-//! bridge, and the shell's own effects. Runtimes create their own state
-//! inside their sessions (§16) — nothing here provides a global app context.
+//! The shell's bootstrap: the durable settings load, the state, and
+//! the shell's own effects.
 
 use leptos::prelude::*;
 
@@ -13,9 +12,7 @@ pub(crate) fn create_shell_state() -> ShellState {
     }
 }
 
-/// The shell's own effects: theme, typography, motion — the paints that must
-/// survive every runtime transition. Returns the appearance memo the effects
-/// share.
+/// The shell's own effects: theme, typography and motion.
 pub(crate) fn install_shell_effects(state: ShellState) {
     let appearance: app_state::AppearanceSignal =
         Memo::new(move |_| state.settings.with(|s| s.appearance));
@@ -24,9 +21,7 @@ pub(crate) fn install_shell_effects(state: ShellState) {
     crate::effects::app::theme::apply_theme(state, appearance);
 }
 
-/// Browser/native-webview back to Library is a real lifecycle transition,
-/// including while a Reader artifact is still booting. History stores only
-/// the launch DTO, never a live realm or an unmount handle.
+/// Back to Library is a real lifecycle transition.
 pub(crate) fn install_history(state: ShellState) {
     let listener = window_event_listener(leptos::ev::popstate, move |event| {
         let path = web_sys::window()
