@@ -1,6 +1,4 @@
-/* A shelf drawn as a folder: a 2×2 plate of the covers inside it, then the same two-line caption
-   a book card has. The plate is 3:4 rather than a cover's 210:297, so a folder and a book side by
-   side read as one shelf and are still told apart at a glance. */
+/* A shelf as a folder: a 2×2 plate of the covers, then the caption. */
 .folder-card {
   border-radius: 12px;
   padding: 8px;
@@ -19,10 +17,7 @@
   box-shadow: 0 0 0 2px var(--color-accent);
 }
 
-/* Layout only: the plate is recursive, so a cell that holds a folder holds
-   another one of these, and the shadow, the rounding and the hover lift belong
-   to the OUTERMOST plate — the ones below are scoped to the card's direct
-   child. A nested plate that lifted with the card would lift twice. */
+/* Layout only: the plate is recursive; the outer one owns the shadow. */
 .folder-thumb-grid {
   position: relative;
   display: grid;
@@ -32,14 +27,12 @@
   aspect-ratio: 3 / 4;
   overflow: hidden;
   border-radius: 8px;
-  /* The joinery is the theme's line nudged a fifth of the way toward the theme's MUTED: not the ink
-     (a seam at the ink's weight is a stroke, and a plate drawn in strokes is a table), and not the
-     line alone, which is invisible against the surface in the light base. */
+  /* The joinery nudges the theme's line toward its muted on a fifth. */
   --plate-seam: color-mix(in srgb, var(--color-line) 80%, var(--color-muted) 20%);
   background: var(--plate-seam);
 }
 .folder-card > .folder-thumb-grid {
-  /* A hairline of the joinery's own colour around the outside, so the plate is an object on the page rather than four cells happening to align. */
+  /* A hairline of the joinery's colour, so the plate reads as an object. */
   box-shadow:
     inset 0 0 0 1px var(--plate-seam),
     0 1px 3px rgb(0 0 0 / 0.10),
@@ -53,14 +46,13 @@
     0 12px 26px -8px rgb(0 0 0 / 0.38);
 }
 
-/* A cell holding a folder is that folder's own plate, edge to edge, so a preview answers "what is inside" the same way at every depth. No rounding and no shadow of its own — the outer plate clips. */
+/* A cell holding a folder is that folder's own plate, edge to edge. */
 .folder-thumb-cell > .folder-thumb-grid {
   position: absolute;
   inset: 0;
   aspect-ratio: auto;
   border-radius: 0;
-  /* A quarter of a quarter is small enough that the outer plate's gutters would
-     eat it; the deeper the plate, the tighter the joinery. */
+  /* A quarter of a quarter: the deeper the plate, the tighter the joinery. */
   gap: 1px;
 }
 
@@ -76,20 +68,17 @@
   object-fit: cover;
 }
 
-/* A book on the plate whose address died wears the same grey its card wears (`.book-missing` in grid.css). The img and not the cell, so the empty cell's recessed tone stays the empty cell's own. */
+/* A book whose address died wears the grey its card wears. */
 .folder-thumb-missing > .folder-thumb-img {
   filter: grayscale(1) opacity(0.62);
 }
 
-/* A cell with no cover in it is a flat quarter recessed toward the PAPER rather than toward the
-   line, so an empty cell and a seam are opposite moves in every base and never the same tone. */
+/* An empty cell recesses toward the paper, opposite to a seam. */
 .folder-thumb-empty {
   background: color-mix(in srgb, var(--color-surface) 72%, var(--color-paper));
 }
 
-/* The two cells a fold's preview lights, in the plate a drag carries. Filled is the accent's own
-   tint rather than a cover, because the shelf does not exist yet; the next cell holds the `+` that
-   says the plate is still taking items. */
+/* The cells a fold's preview lights: filled is the accent's tint. */
 .folder-thumb-fill {
   background: color-mix(in srgb, var(--color-accent) 34%, var(--color-surface));
 }
@@ -100,7 +89,7 @@
   background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
 }
 
-/* A folder deeper than the preview recurses: a few pixels of something is a smear, so it draws as a folder on a quieter ground than the empty cell. */
+/* A folder deeper than the preview draws as a folder on quieter ground. */
 .folder-thumb-deep {
   display: grid;
   place-items: center;
@@ -108,7 +97,7 @@
   background: color-mix(in srgb, var(--color-surface) 72%, var(--color-paper));
 }
 
-/* Whether the directory a folder-derived shelf was cut from is still watched. Where the books live needs no badge: the breadcrumb above the shelf already says which folder the reader is inside. */
+/* Whether the shelf's source directory is still watched. */
 .folder-badges {
   position: absolute;
   top: 14px;
@@ -119,7 +108,7 @@
   gap: 4px;
   pointer-events: none;
 }
-/* The folder's three states: pressing is the instant tint before the hold decides anything, selected is membership of the set, and drag-over is the drop this folder is about to accept — the loudest, because it is the one answer the reader is waiting for. */
+/* The folder's three states: pressing, selected, drag-over. */
 .folder-pressing > .folder-thumb-grid {
   transform: scale(0.97);
 }

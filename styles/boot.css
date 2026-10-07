@@ -1,9 +1,4 @@
-/* The shell's pre-runtime boot placeholder (#shell-boot in index.html).
-   This renders BEFORE the wasm shell exists, so it cannot use utilities the
-   Rust side emits — only the variables the stylesheet itself defines, with
-   literal fallbacks. The host's coverage watch takes the element away once a
-   runtime has painted (src/app/boot.rs), and the runtime's own loading and
-   error states live inside that host from then on. */
+/* The shell's pre-runtime boot placeholder (#shell-boot in index.html). */
 .shell-boot {
   position: fixed;
   inset: 0;
@@ -12,8 +7,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  /* The remembered paper (public/bootPaint.js) — this element only exists
-     before the shell's first theme paint, so it never goes stale here. */
+  /* The remembered paper (public/bootPaint.js), before the first paint. */
   background: var(--boot-paper, var(--color-paper, #ffffff));
   color: var(--color-ink, #1f2937);
   font-family:
@@ -37,33 +31,19 @@
   color: var(--color-muted, #6b7280);
 }
 
-/* Until the shell's first theme paint (which sets data-base on <html>), the
-   page itself wears the remembered paper, so nothing around the placeholder
-   flashes the default. After it, --color-paper is the live theme and the
-   remembered value — frozen at page load — must not win. */
+/* Until the shell's first theme paint, the page wears the remembered paper. */
 html:not([data-base]) {
   background: var(--boot-paper, transparent);
 }
 
-/* The wait is shown, not papered over. Both covers carry the app's own
-   loading mark and the words that say which stage is slow — on Windows the
-   webview can hold a blank window for seconds before the page's first paint,
-   and a screen that explains itself beats one that only looks clean. The mark
-   is the Loader component's (styles/components/animations.css, already in this
-   stylesheet), so the boot screen, the runtime cover and a pane's wait are one
-   shape; who stills it is that file's business, and `prefers-reduced-motion`
-   reaches it the same way. */
+/* The wait is shown: both covers carry the app's own loading mark. */
 .shell-boot__loader,
 .runtime-boot__loader {
   width: 40px;
   color: var(--color-muted, #6b7280);
 }
 
-/* Neither cover needs to announce itself to a machine that is not slow. The
-   mark and the words come in 200ms in, so a route handoff that lands inside a
-   frame or two stays still and a wait that is real gets its explanation. `both`
-   is what holds them back until the delay is spent — and it survives both motion
-   nets, which shorten this animation without moving its delay. */
+/* Neither cover announces itself until 200ms in. */
 #shell-boot > *,
 .runtime-boot[data-mareader-boot="load"] > * {
   animation: boot-reveal 120ms linear 200ms both;
@@ -78,9 +58,7 @@ html:not([data-base]) {
   }
 }
 
-/* A start that failed is not a start that is slow. shellBoot.js marks the
-   difference with data-shell-boot; the copy was always readable, so all that
-   changes is that the mark stops hopping underneath it. */
+/* A failed start is not a slow one: the mark stops hopping. */
 .shell-boot[data-shell-boot] .loader-dot {
   animation: none;
 }
@@ -89,11 +67,7 @@ html:not([data-base]) {
   opacity: 0.5;
 }
 
-/* The runtime host's own states (src/app/boot.rs): the shell's loading state
-   before a runtime mounts, and the error state when one cannot start (§6,
-   §11). Painted into #runtime-host, which fills the window. */
-/* Above the frames: the host stacks them, so the cover needs a layer of its
-   own to sit on top of whatever is underneath it. */
+/* The runtime host's states (loading, then error), above the frames. */
 .runtime-boot {
   position: absolute;
   inset: 0;
@@ -153,17 +127,12 @@ html:not([data-base]) {
   background: var(--color-accent-soft, #dbeafe);
 }
 
-/* A handoff briefly overlaps the outgoing route with a fresh incoming one.
-   Once the incoming frame paints, the outgoing realm is disposed/removed;
-   no route stays mounted behind another (docs/runtime-split.md). */
+/* A handoff briefly overlaps the outgoing route with a fresh incoming one. */
 #runtime-host {
   position: relative;
 }
 
-/* The runtime frame (§1): the hosted runtime's whole window. It takes the
-   host's full measure — the host itself is `h-full w-full` — so the frame's
-   document lays out exactly where the runtime would mount in the same-page
-   architecture; no border, no inline shrink-wrap. */
+/* The runtime frame: the hosted runtime's whole window. */
 .runtime-frame {
   display: block;
   position: absolute;
@@ -173,30 +142,19 @@ html:not([data-base]) {
   border: 0;
 }
 
-/* The incoming frame is laid out and painting, but not shown and not
-   hit-testable. `visibility` rather than `display`: a `display: none` iframe
-   gets no layout, and a runtime that cannot lay out cannot run the animation
-   frames its own painted handshake is made of. */
+/* The incoming frame lays out and paints but is not shown or hit-testable. */
 .runtime-frame[data-mareader-slot="incoming"],
 .runtime-frame[data-mareader-slot="retiring"] {
   visibility: hidden;
   pointer-events: none;
 }
 
-/* The revealed frame paints above the one it replaced: for one handoff both
-   are in the host, and DOM order alone would let the outgoing runtime paint
-   over its replacement. */
+/* The revealed frame paints above the one it replaced. */
 .runtime-frame[data-mareader-slot="active"] {
   z-index: 1;
 }
 
-/* The Shell's cover-bake page (src/app/bake.rs): a child document that
-   loads pdf.js alone and renders shelf covers while the shelf lacks them. It
-   sits on <body>, outside the runtime host, and is never shown. Hidden the
-   same way as an incoming runtime frame — laid out, `visibility: hidden`, not
-   hit-testable — because pdf.js paces a render on animation frames, and a
-   frame that gets no layout gets none of those; `display: none` would stall
-   every bake until its timeout. */
+/* The Shell's cover-bake page: hidden, laid out, never shown. */
 .bake-frame {
   position: fixed;
   inset: 0;
@@ -208,8 +166,7 @@ html:not([data-base]) {
   z-index: -1;
 }
 
-/* The first runtime's cover can mount before the shell's first theme paint:
-   until then it wears the remembered paper too. */
+/* The first runtime's cover can mount before the first theme paint. */
 html:not([data-base]) .runtime-boot {
   background: var(--boot-paper, var(--color-paper, #ffffff));
 }

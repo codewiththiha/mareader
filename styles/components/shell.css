@@ -6,8 +6,7 @@ body {
   height: 100%;
   margin: 0;
   overscroll-behavior: none;
-  /* Clips the auto-hide bottom bar's 12px off-screen translate so it can
-     never leak a phantom window scrollbar. */
+  /* Clips the auto-hide bar's off-screen translate, so no scrollbar leaks. */
   overflow: hidden;
 }
 
@@ -50,17 +49,12 @@ body {
   user-select: none;
 }
 
-/* Scope layout recalc to the aside: without it every frame of the 300ms
-   width transition reflows the whole flex row (viewer, toolbar, bottom
-   bar). `layout style`, NOT `content` — paint containment would create a
-   clipping context and disturb the absolute-inset panels inside and the
-   backdrop-filter toolbar above. */
+/* Scope layout recalc to the aside, so a width slide reflows nothing. */
 .sidebar-aside {
   contain: layout style;
 }
 
-/* Shared visual contract for floating surfaces (menus, popovers, context
-   menus, action bars). Components add their own layout utilities on top. */
+/* The shared visual contract for floating surfaces. */
 .surface-popover {
   border-radius: 0.75rem;
   border: 1px solid var(--color-line);
@@ -69,10 +63,7 @@ body {
   padding: 0.25rem;
 }
 
-/* Shared fit contract for the visual primitives, in `@layer components` so
-   per-instance Tailwind utilities keep winning. Values mirror the utilities
-   the primitives already emit; the classes give tests/overrides a stable
-   hook. */
+/* The shared fit contract for the visual primitives. */
 @layer components {
   .btn {
     display: inline-flex;
@@ -99,13 +90,7 @@ body {
     align-items: center;
     gap: 0.5rem;                /* gap-2 */
   }
-  /* The one centering mechanism for every toast host (app-root errors and
-     the gloss undo toast), lifted 4rem clear of the h-10 auto-hide bottom
-     bar. Flex-centered, NOT left:50% + translate: Tailwind v4 writes
-     translate-x-* to the `translate` property while entrance keyframes
-     animate `transform`, so a -translate-x-1/2 toast with a translateX(-50%)
-     keyframe sat half a width off-centre. With no transform in the geometry
-     the reduced-motion nets cannot move the panel either. */
+  /* The one centering mechanism for every toast host, flex-based. */
   .toast-anchor {
     position: fixed;
     inset-inline: 0;
@@ -131,27 +116,14 @@ body {
   display: none;
 }
 
-/* The reader backdrop. Positioning + stacking context for the scrub-window
-   cover below, and the cage for the pages' own stacking contexts (whose
-   texture layers paint the gutter in blend mode). Base colour is the
-   un-blended app paper: what a raw canvas live-blends against during a
-   baked scrub, and what every non-blend mode shows — the paper of the
-   GUTTERS between and around panes; each pane paints its own document's
-   paper on its root (PER-PANE PAPER below). */
+/* The reader backdrop: stacking context, cage, and the gutter paper. */
 .reader-bg {
   position: relative;
   z-index: 0;
   background-color: var(--color-paper);
 }
 
-/* PER-PANE PAPER — the paper is a PANE fact, keyed on the pane root's
-   data-format (crates/reader-runtime/src/pane/view.rs): one workspace can
-   show several formats at once, and each pane stands on its own document's
-   paper. A PDF pane stands on the app paper (its page hosts paint their
-   own cards); a reflowable pane's page IS the surface — a transparent
-   frame (text.css) over this paper, its own --tx-paper. --pane-paper
-   names the effective paper so the texture matte (textures.css) fades the
-   pattern toward whatever this rule resolved to. */
+/* PER-PANE PAPER: the paper is a pane fact, keyed on the pane's format. */
 [data-pane-root] {
   background-color: var(--color-paper);
   --pane-paper: var(--color-paper);
@@ -161,19 +133,12 @@ body {
   background-color: var(--tx-paper);
   --pane-paper: var(--tx-paper);
 }
-/* Ordinary blend (blend on, a PDF present, independent mode OFF): the
-   latest focused PDF's detected paper is intentionally repeated across every
-   pane and workspace gutter. The DOM still has a separate paper box per pane;
-   this shared CSS value is the illusion/contract, not one physical backdrop.
-   Independent mode below swaps these rules for one paper per pane. */
+/* Ordinary blend: the focused PDF's paper is repeated across every pane. */
 .reader-bg.blend:not(.independent-themes) [data-pane-root] {
   background-color: var(--pdf-paper-baked, var(--color-paper));
   --pane-paper: var(--pdf-paper-baked, var(--color-paper));
 }
-/* Split pane decoration belongs to the pane entry, outside the document's
-   page stack. Each entry gets a local stacking context; the focused entry is
-   raised above its neighbours, so its focus outline cannot disappear under a
-   later-painted pane. The shadow is on this outer box, never on PDF pages. */
+/* Split pane decoration belongs to the pane entry, outside the page stack. */
 .reader-bg.split-workspace [data-pane-id] {
   z-index: 1;
   isolation: isolate;
@@ -194,13 +159,7 @@ body {
   z-index: var(--z-popover);
 }
 
-/* PANE FRAMES — each pane's document runs in its own frame
-   (docs/pane-runtimes.md). A frame booting behind the one on screen waits
-   hidden (never display:none, so it lays out and paints) until its first
-   paint; a closed pane's entry stays in the document, hidden, until its
-   frame has finished its teardown. While the host drags something (a
-   divider, a lifted pane, a library row) the frames let the pointer
-   through to the host. */
+/* PANE FRAMES: each pane's document runs in its own frame. */
 .pane-frame {
   position: absolute;
   inset: 0;
@@ -227,9 +186,7 @@ body {
   background-color: var(--color-paper);
 }
 
-/* GRAB — empty space in a pane (gutters, gaps, the margin beside the text
-   stream) takes the hand: drag to pan in any direction, and in a split hold
-   still to lift the pane (crates/reader-runtime/src/host/grab.rs, installed inside each pane frame). */
+/* GRAB: empty space in a pane takes the hand; a still hold lifts the pane. */
 .pane-entry[data-pan="ready"],
 .pane-entry[data-pan="ready"] * {
   cursor: grab !important;
@@ -240,8 +197,7 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
-/* The hold ring: fills over the lift delay at the pressed point. It waits a
-   beat before showing so an ordinary pan never flashes it. */
+/* The hold ring fills over the lift delay at the pressed point. */
 .pane-entry[data-pan-hold]::after {
   content: "";
   position: absolute;
@@ -279,9 +235,7 @@ body {
   }
 }
 
-/* LIFT — the held pane rides the pointer as a shrunken card above the
-   others, which have already closed over its place; the box it would take
-   is outlined with what the release does. */
+/* LIFT: the held pane rides the pointer as a shrunken card. */
 .reader-bg.split-workspace .pane-entry.pane-lifted,
 .pane-entry.pane-lifted {
   z-index: var(--z-drag-overlay);
@@ -312,13 +266,7 @@ body {
   }
 }
 
-/* Independent mode preserves the same page/gutter blend inside a PDF pane,
-   but never lets that pane's detected paper recolour its neighbours or the
-   workspace gutters. The Rust appearance painter provides each pane's
-   --color-* / --canvas-* tokens; the engine publishes this pane's baked PDF
-   paper on the pane root itself. Isolation keeps CSS blend layers from
-   sampling an adjacent pane's backdrop (including the native macOS window
-   backdrop visible beneath the reader). */
+/* Independent mode keeps one pane's paper off its neighbours. */
 .reader-bg.independent-themes [data-pane-id] {
   overflow: hidden;
 }
@@ -329,38 +277,15 @@ body {
   background-color: var(--pane-pdf-paper-baked, var(--color-paper));
   --pane-paper: var(--pane-pdf-paper-baked, var(--color-paper));
 }
-/* BLEND PAPER — the backdrop must equal the canvas background: the PDF's
-   own paper run through the theme pipeline. The engine publishes it,
-   pre-computed through the same filter + blend it bakes with, as
-   --pdf-paper-baked (public/engine/theme/paper.ts); the base carries that
-   colour flat. Base and page hosts both being F (styles/page_host.css) is
-   what kills the 1px rim a fractional device-pixel page edge used to show:
-   the edge pixel mixes F with F. The flatness is only honest while the
-   baker owns the rasters — and it always does at rest: the theme is
-   pre-rendered into every raster, with real-time compositing confined to
-   the scrub window below. No texture on the backdrop: each
-   page's ::before overhangs and paints the gutter (textures.css, BLEND
-   BLEED), so page and gutter stay phase-locked by construction — and the
-   vertical strip's row gap is painted the same way, half from each
-   neighbour, so no stretch of base is left standing beside a page. No
-   transitions anywhere in this block — a tint scrub repaints it in
-   lockstep with the canvases, per tick, through the standing token watch
-   in public/engine/theme/paper.ts. */
+/* BLEND PAPER: the backdrop equals the PDF's own paper, pre-baked. */
 .reader-bg.blend:not(.independent-themes) {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
-/* SCRUB WINDOW — in ordinary shared mode a tint drag repaints the root
-   tokens per frame and the rasters composite live under the CSS filter +
-   blend. The publisher paper stays on --pdf-paper-baked through the window;
-   the token watch republishes it per tick. Independent mode instead keeps
-   each pane root on its own local baked paper. The page-host half of the
-   window (raw canvas' un-themed blend base) lives in page_host.css. */
+/* SCRUB WINDOW: a tint drag repaints the root tokens and live rasters. */
 
-/* Reflowable single/two-page modes: drop the scroller's opaque bg-surface
-   utility (correct for PDF gutters) so the pane's paper shows through.
-   Scoped to the pane root's data-format; PDF keeps its surface gutter. */
+/* Reflowable modes drop the opaque surface, showing the pane's paper. */
 [data-format="text"] .paginated-scroller,
 [data-format="markdown"] .paginated-scroller {
   background-color: transparent;
