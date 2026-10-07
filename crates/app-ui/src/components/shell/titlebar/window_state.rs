@@ -1,13 +1,5 @@
-//! Native maximized state for the active route's caption controls. The
-//! title bar owns this scoped subscription/probe; a response from a disposed
-//! route cannot write into a replacement Library/Reader signal.
-//!
-//! The trigger is Tauri's own `tauri://resize`, which a route receives because
-//! `public/tauri-relay.js` registers the frame's listeners on the main frame —
-//! a sub-frame's own event registry is never delivered to (Tauri's docs: an
-//! emitted event is scripted into the main frame). Maximizing, restoring and
-//! snapping all change the window's size, so that one event covers every way
-//! the state changes without going through the caption.
+//! Native maximized state for the route's caption controls, probed from
+//! Tauri's own `tauri://resize`.
 
 use leptos::prelude::*;
 
@@ -43,17 +35,7 @@ impl ProbeState {
 /// Publish the native window's actual maximized state:
 /// once at install, then on every window resize.
 pub(super) fn install(maximized: RwSignal<bool>) {
-    // No `has_tauri()` gate here, and no wait for one. Each runtime page loads
-    // `tauri-relay.js` in its own `<head>`, before the module script that boots
-    // this app, so the surface's presence is final by the time a bar mounts: a
-    // frame with none here is a plain browser and nothing will ever arrive to
-    // notify it. Both halves ask on their own and decline quietly —
-    // `is_window_maximized()` answers `None`, `tauri_listen` returns without
-    // registering — which leaves the glyph on the state this route can defend.
-    // Polling for the surface is the worse option: with none it never clears,
-    // and while it runs it holds this owner, so the frame cannot report
-    // disposal. `Deep CI` caught precisely that — eleven forced frame removals
-    // and a virtualizer stage whose look-ahead was never observed.
+    // No `has_tauri()` gate: a frame with no API is a plain browser.
     if !uses_frameless_controls() {
         return;
     }
@@ -66,11 +48,9 @@ pub(super) fn install(maximized: RwSignal<bool>) {
         wasm_bindgen_futures::spawn_local(async move {
             loop {
                 let answer = app_chrome::window::api::is_window_maximized().await;
-                // `None` is "the window did not say", not "the window is not
-                // maximized": the last known answer stays on screen.
+                // `None` is "the window did not say", not "not maximized".
                 if let Some(answer) = answer {
-                    // `try_set` answers `Some(value)` when the signal is gone,
-                    // which this loop's next line finds out for itself.
+                    // `try_set` answers `Some` when the signal is gone.
                     let _ = maximized.try_set(answer);
                 }
                 if probes.try_with_value(|_| ()).is_none() {

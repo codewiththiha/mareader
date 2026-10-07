@@ -1,18 +1,11 @@
-//! A labelled row: a name on the left, whatever answers it on the right.
-//!
-//! The smallest unit a settings panel or sheet is made of, and a primitive
-//! rather than a `<div>` each caller spells: the gap, padding and label
-//! colour are one look. Lives here rather than in the settings feature
-//! because the library's import sheet and removal receipt are built from the
-//! same rows.
+//! A labelled row: a name left, whatever answers it right.
 
 use leptos::prelude::*;
 
 /// One labelled row.
 #[component]
 pub fn Row(
-    /// The name on the left. `&'static str` because a row's label is a
-    /// sentence the code knows, not a value the reader typed.
+    /// The name on the left; a static string, not reader input.
     label: &'static str,
     /// The control, value or switch that answers it.
     children: Children,

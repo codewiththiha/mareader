@@ -1,20 +1,11 @@
-//! Thin divider.
-//!
-//! The divider owns its own margin, because at all nineteen of its call sites it
-//! was wrapped in a `<div>` that existed only to carry one — and four different
-//! margins had grown between them, which is what happens when the spacing is
-//! every caller's business rather than the rule's.
+//! Thin divider; it owns its own margin, so no caller wraps it.
 
 use leptos::prelude::*;
 
 #[component]
 pub fn Separator(
     #[prop(default = false)] vertical: bool,
-    /// The divider's own outer spacing, as a static utility class — `"my-1"`,
-    /// `"mt-5"`. A literal at the call site rather than a number, so the token is
-    /// one Tailwind can see: the stylesheet is built by scanning the source for
-    /// class names, and a margin computed at runtime is a margin that does not
-    /// exist.
+    /// The divider's own outer spacing, as a static utility class.
     #[prop(optional, into)]
     spacing: Option<String>,
 ) -> impl IntoView {
