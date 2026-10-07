@@ -142,5 +142,3 @@ pub fn shortcuts(
         }
     });
 }
-
-// only the changed file was rewritten

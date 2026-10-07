@@ -72,5 +72,3 @@ pub(crate) fn flush_read_point(ctx: &crate::context::ReaderContext) {
         author: ctx.reader.document.author.get_untracked(),
     });
 }
-
-// only the changed file was rewritten

@@ -631,6 +631,3 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
-
-
-# only the changed file was rewritten

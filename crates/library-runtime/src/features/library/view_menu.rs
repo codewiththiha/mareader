@@ -212,5 +212,3 @@ pub(crate) fn ViewMenu(state: crate::context::LibraryContext) -> impl IntoView {
         </div>
     }
 }
-
-// only the changed file was rewritten

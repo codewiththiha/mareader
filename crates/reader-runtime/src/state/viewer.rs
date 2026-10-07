@@ -282,5 +282,3 @@ mod tests {
         drops_exactly!(scroll_jumps -> scroll_glide);
     }
 }
-
-// only the changed file was rewritten

@@ -64,8 +64,5 @@ pub use crate::options::{Axis, LayoutShape, ScrollMode, VirtualizerOptions};
 pub use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 pub use crate::retention::RetentionPolicy;
 pub use crate::surface::{DomSurface, ScrollSurface};
-pub use crate::virtualizer::DRIFT_EPS_PX_S;
 pub use crate::virtualizer::Virtualizer;
 pub use virtual_list::{Align, BandWindow, Direction, FillPriority, Pipeline};
-
-// only the changed file was rewritten

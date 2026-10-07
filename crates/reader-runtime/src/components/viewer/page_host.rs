@@ -340,5 +340,3 @@ pub fn UniversalStreamHost(
         }}
     }
 }
-
-// only the changed file was rewritten

@@ -594,5 +594,3 @@ mod tests {
         assert!(!backdrop::test_has_palette(&a));
     }
 }
-
-// only the changed file was rewritten

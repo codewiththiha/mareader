@@ -346,5 +346,3 @@ impl MountedPdf {
         }
     }
 }
-
-// only the changed file was rewritten

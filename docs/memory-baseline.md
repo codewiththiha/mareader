@@ -344,7 +344,6 @@ index in `crates/pdf-engine/src/session/search.rs`, adopted by a reopen of the
 same bytes — and the backdrop session carries the epoch token that makes a late
 sample inert instead of misfiled.
 
-<!-- // only the changed file was rewritten -->
 
 ## What the engine's ledger counts (and what it does not)
 

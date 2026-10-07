@@ -68,5 +68,3 @@
     }, stage.at);
   });
 })();
-
-// only the changed file was rewritten

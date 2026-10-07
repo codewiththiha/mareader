@@ -241,5 +241,3 @@ pub fn ReaderMenu(
         </div>
     }
 }
-
-// only the changed file was rewritten

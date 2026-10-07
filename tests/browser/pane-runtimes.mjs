@@ -600,5 +600,3 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   console.log("PANE_RUNTIME_VERIFICATION_JSON " + JSON.stringify(report));
   return report;
 }
-
-// only the changed file was rewritten

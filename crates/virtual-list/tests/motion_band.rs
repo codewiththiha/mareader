@@ -302,5 +302,3 @@ fn the_landing_index_aims_a_prefetch_a_fill_latency_ahead() {
         "an unknown pitch is safe"
     );
 }
-
-// only the changed file was rewritten

@@ -187,5 +187,3 @@ pub fn AppearanceMenu(
         </div>
     }
 }
-
-// only the changed file was rewritten

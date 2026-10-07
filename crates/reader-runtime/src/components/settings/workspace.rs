@@ -164,5 +164,3 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
         </div>
     }
 }
-
-// only the changed file was rewritten

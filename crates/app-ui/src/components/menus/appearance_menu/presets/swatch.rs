@@ -117,5 +117,3 @@ pub(super) fn PresetSwatch(
         </div>
     }
 }
-
-// only the changed file was rewritten

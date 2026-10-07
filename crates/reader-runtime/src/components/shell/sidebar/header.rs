@@ -78,5 +78,3 @@ pub(crate) fn SidebarHeader(reader: ReaderState, sidebar: RwSignal<SidebarMode>)
         </div>
     }
 }
-
-// only the changed file was rewritten

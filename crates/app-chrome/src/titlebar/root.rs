@@ -378,5 +378,3 @@ mod tests {
         close(width, 100.0);
     }
 }
-
-// only the changed file was rewritten

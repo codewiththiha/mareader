@@ -509,5 +509,3 @@ async function prefetchThumbInternal(
     dying.unsubscribe();
   }
 }
-
-// only the changed file was rewritten

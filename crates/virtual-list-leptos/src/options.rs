@@ -213,5 +213,3 @@ impl VirtualizerOptions {
         self
     }
 }
-
-// only the changed file was rewritten

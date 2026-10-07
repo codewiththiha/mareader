@@ -596,5 +596,3 @@ mod tests {
         });
     }
 }
-
-// only the changed file was rewritten

@@ -308,5 +308,3 @@ design and the commit message for the decision — and neither is a comment.
    author ignores is not a guideline.
 5. The summary states what changed, what was verified and any limits. If a
    requirement cannot be met, report the blocker instead of dropping it.
-
-<!-- // only the changed file was rewritten -->

@@ -394,5 +394,3 @@ export async function bakeInto(
 ): Promise<void> {
   paintBaked(dst, await bakeFiltered(src, pipeline), pipeline, visibleTag);
 }
-
-// only the changed file was rewritten

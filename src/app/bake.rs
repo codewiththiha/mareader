@@ -331,7 +331,6 @@ fn mount_page(library: u64) {
     let iframe: web_sys::HtmlIFrameElement = element.unchecked_into();
     iframe.set_class_name("bake-frame");
     let _ = iframe.set_attribute("title", "MAReader cover baker");
-    let _ = iframe.set_attribute("data-mareader-bake-frame", "");
     let _ = iframe.set_attribute("aria-hidden", "true");
     let _ = iframe.set_attribute("tabindex", "-1");
     iframe.set_src(PAGE);

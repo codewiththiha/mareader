@@ -73,5 +73,3 @@ pub fn open_path(path: String, placement: Placement) {
     #[cfg(not(target_arch = "wasm32"))]
     let _ = (path, placement);
 }
-
-// only the changed file was rewritten

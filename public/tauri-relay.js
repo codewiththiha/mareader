@@ -251,5 +251,3 @@
     console.warn("[mareader] tauri-relay: publishing the facade failed", err);
   }
 })();
-
-// only the changed file was rewritten

@@ -1509,5 +1509,3 @@ Not all of them can be fixed with a path. `GlossMark::context` points at a
 struct field, and rustdoc has no link form for one at any prefix, so those are
 prose rewrites — and the eleven undocumented crates cannot be enumerated short
 of running rustdoc until they can.
-
-<!-- // only the changed file was rewritten -->
