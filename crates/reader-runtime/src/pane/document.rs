@@ -27,6 +27,25 @@ pub fn classify(path: &str) -> PaneFormat {
     tag(format_of(path))
 }
 
+/// The pane's reported tag: the requested format until a document
+/// lands, the real one after.
+pub(crate) fn reported_format(
+    document: &crate::state::document::DocumentState,
+    requested: PaneFormat,
+) -> PaneFormat {
+    if document
+        .path
+        .try_with_untracked(Option::is_none)
+        .unwrap_or(true)
+    {
+        return requested;
+    }
+    document
+        .format
+        .try_get_untracked()
+        .map_or(PaneFormat::Pending, tag)
+}
+
 fn tag(format: Format) -> PaneFormat {
     match format {
         Format::Pdf => PaneFormat::Pdf,
@@ -141,19 +160,7 @@ impl PaneRuntime for DocumentPane {
     }
 
     fn format(&self) -> PaneFormat {
-        let document = &self.ctx.reader.document;
-        if document
-            .path
-            .try_with_untracked(Option::is_none)
-            .unwrap_or(true)
-        {
-            // Nothing landed yet: the format it was asked to open.
-            return self.requested.get();
-        }
-        document
-            .format
-            .try_get_untracked()
-            .map_or(PaneFormat::Pending, tag)
+        reported_format(&self.ctx.reader.document, self.requested.get())
     }
 
     fn document(&self) -> Option<DocumentId> {

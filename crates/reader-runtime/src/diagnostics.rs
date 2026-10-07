@@ -255,8 +255,8 @@ pub(crate) struct Snapshot {
 }
 
 impl Snapshot {
-    /// The post-close baseline: nothing reader-owned live, engine drained.
-    pub(crate) fn at_baseline(&self) -> bool {
+    /// The reader-ownership half: nothing lives, and the pairs held.
+    fn reader_drained(&self) -> bool {
         !self.reader_runtime_live
             && self.pane_live == 0
             && self.virtualizer_live == 0
@@ -265,18 +265,17 @@ impl Snapshot {
             // FAIL CLOSED: a create/dispose pair that went impossible is
             // bookkeeping corruption, not a drained reader.
             && self.accounting_consistent
-            // FAIL CLOSED: an unreadable engine is not a drained engine.
-            && matches!(&self.engine, Some(engine) if engine.drained())
+    }
+
+    /// The post-close baseline: nothing reader-owned live, engine drained.
+    pub(crate) fn at_baseline(&self) -> bool {
+        // FAIL CLOSED: an unreadable engine is not a drained engine.
+        self.reader_drained() && matches!(&self.engine, Some(engine) if engine.drained())
     }
 
     /// The baseline of a realm without the engine: only the reader half.
     fn at_baseline_without_engine(&self) -> bool {
-        !self.reader_runtime_live
-            && self.pane_live == 0
-            && self.virtualizer_live == 0
-            && self.retained_virtual_items == 0
-            && self.lookahead_samples_active == 0
-            && self.accounting_consistent
+        self.reader_drained()
     }
 
     /// This realm's verdict: the full gate where the engine runs, else the
