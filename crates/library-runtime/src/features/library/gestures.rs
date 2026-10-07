@@ -194,7 +194,6 @@ pub(crate) fn use_shelf_item(
                 drag.begin(payload_for(state, &lift_id, container.clone()), x, y);
             }
         }),
-        on_drag_move: Callback::new(move |_| {}),
         // Both releases end the session; the first one there wins — this
         // handler bubbles ahead of the window's own.
         on_drag_end: Callback::new(move |(x, y)| {
