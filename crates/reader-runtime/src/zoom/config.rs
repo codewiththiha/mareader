@@ -8,15 +8,9 @@ use reader_core::zoom_math::{MAX_SCALE, MIN_SCALE};
 /// manual step feeling immediate while still reading as motion.
 const ZOOM_ANIM_MS: f64 = 120.0;
 
-/// How long an item evicted by ORDINARY SCROLLING stays mounted after it
-/// leaves the window, milliseconds. Applied where the strips are built
-/// (their virtualizers opt into retention with this grace); a zoom
-/// transaction raises it to `ZOOM_GRACE_MS` for its duration.
-pub const STRIP_SCROLL_GRACE_MS: u32 = 120;
-
 /// How long an item evicted by a ZOOM COMMIT stays mounted, milliseconds.
 /// Deliberately longer than the tween: the commit reinstalls geometry, the
-/// window jumps, and the pages it evicts are still on screen — the grace
+/// window jumps, and the pages it evicts are still on screen. The grace
 /// outlives the animation so the old surface never vanishes before the new
 /// geometry stabilises.
 pub const ZOOM_GRACE_MS: u32 = 300;
