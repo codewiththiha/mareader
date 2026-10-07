@@ -3,7 +3,7 @@
 
 use super::drop_target::Edge;
 use super::model::{PaneBounds, PaneId};
-use super::tree::{EVEN, Side, TreeLayout, split_fits, split_rects};
+use super::tree::{TreeLayout, split_fits};
 
 /// The hold before a pane lifts (ms); the browser suite encodes it.
 pub const HOLD_TO_LIFT_MS: u64 = 1000;
@@ -28,14 +28,7 @@ impl LiftTarget {
     pub fn predicted_rect(self, rect: PaneBounds) -> PaneBounds {
         match self {
             LiftTarget::Swap(_) => rect,
-            LiftTarget::Dock(_, edge) => {
-                let (axis, side) = edge.placement();
-                let (first, second) = split_rects(rect, axis, EVEN);
-                match side {
-                    Side::Before => first,
-                    Side::After => second,
-                }
-            }
+            LiftTarget::Dock(_, edge) => edge.half(rect),
         }
     }
 
@@ -93,7 +86,7 @@ pub fn resolve(lifted: PaneId, at: (f64, f64), layout: &TreeLayout) -> Option<Li
     let (pane, rect) = layout
         .panes
         .iter()
-        .find(|(_, rect)| contains(*rect, at))
+        .find(|(_, rect)| rect.contains(at))
         .copied()?;
     if pane == lifted {
         return None;
@@ -116,13 +109,9 @@ pub fn resolve(lifted: PaneId, at: (f64, f64), layout: &TreeLayout) -> Option<Li
     })
 }
 
-fn contains(rect: PaneBounds, at: (f64, f64)) -> bool {
-    at.0 >= rect.x && at.0 < rect.x + rect.width && at.1 >= rect.y && at.1 < rect.y + rect.height
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::tree::{PaneTree, SplitAxis};
+    use super::super::tree::{PaneTree, Side, SplitAxis};
     use super::*;
 
     fn p(n: u64) -> PaneId {
