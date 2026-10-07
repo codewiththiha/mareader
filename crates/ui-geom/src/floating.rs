@@ -56,12 +56,6 @@ impl Rect {
     pub fn top(self) -> f64 {
         self.y
     }
-    pub fn left(self) -> f64 {
-        self.x
-    }
-    fn center_y(self) -> f64 {
-        self.y + self.h * 0.5
-    }
 }
 
 /// The five-field box the spring drives (position + size + corner radius).
@@ -132,10 +126,9 @@ pub enum PlacementSide {
     /// bottom would overflow (the classic menu behaviour).
     #[default]
     Auto,
-    Below,
+    /// Always above, clamped into the viewport — for a panel whose anchor
+    /// sits too low for the flip to be a preference.
     Above,
-    Left,
-    Right,
 }
 
 /// Placement inputs for [`place_panel_from_anchor`].
@@ -189,9 +182,8 @@ fn clamp_rect_to_viewport(rect: Rect, viewport: Size, margin: f64) -> Rect {
 ///
 /// `Auto` opens below the anchor and flips above when the panel would
 /// overflow the bottom edge; the panel is right-aligned to the anchor and
-/// clamped into the viewport. Left/Right placements centre vertically on the
-/// anchor instead. The returned `transform_origin` matches the side the
-/// panel actually opened on.
+/// clamped into the viewport. The returned `transform_origin` matches the
+/// side the panel actually opened on.
 pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOptions) -> PlacedPanel {
     let m = opts.margin;
     let gap = opts.gap;
@@ -218,28 +210,9 @@ pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOption
     };
 
     let placed = match opts.side {
-        PlacementSide::Below => below,
         PlacementSide::Above => above,
         PlacementSide::Auto if fits_below => below,
         PlacementSide::Auto => above,
-        PlacementSide::Left => PlacedPanel {
-            rect: Rect::new(
-                anchor.x - gap - panel.w,
-                anchor.center_y() - panel.h * 0.5,
-                panel.w,
-                panel.h,
-            ),
-            transform_origin: "right center",
-        },
-        PlacementSide::Right => PlacedPanel {
-            rect: Rect::new(
-                anchor.right() + gap,
-                anchor.center_y() - panel.h * 0.5,
-                panel.w,
-                panel.h,
-            ),
-            transform_origin: "left center",
-        },
     };
     PlacedPanel {
         rect: clamp_rect_to_viewport(placed.rect, vp, m),
