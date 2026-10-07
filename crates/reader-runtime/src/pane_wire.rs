@@ -1,11 +1,5 @@
-//! The vocabulary a workspace host and its pane frames speak over the pane's
-//! `MessageChannel` (docs/pane-runtimes.md). Both ends are this crate: the
-//! host half is `crate::frame_pane`, the pane half `crate::pane_frame`.
-//!
-//! Every message but one is a JSON string of [`HostToPane`] or
-//! [`PaneToHost`]. The exception is a rendered thumbnail, which travels as a
-//! plain object carrying a transferred `ImageBitmap` (see
-//! [`THUMB_MESSAGE`]): pixels are not JSON.
+//! The vocabulary a host and its pane frames speak over the
+//! `MessageChannel`.
 
 use reader_core::appearance::Appearance;
 use reader_core::document::{DocStatus, PageSize};
@@ -21,12 +15,11 @@ pub use crate::host::contract::{LiftPhase, WorkspaceLook as Workspace};
 use crate::host::model::{PaneFormat, PaneLifecycle};
 use crate::host::tree::{MoveDirection, Moves, SplitAxis};
 
-/// The `kind` of the one window message that is not on the port: the host's
-/// `postMessage` that hands a freshly loaded pane frame its port.
+/// The kind of the one window message not on the port: the port
+/// hand-off.
 pub const PANE_CHANNEL_KIND: &str = "mareader.pane";
 
-/// The `kind` of a pane frame's one message to its parent window: "my
-/// document is up, hand me my port", with the nonce from the frame's URL.
+/// The kind of a pane's message to its parent: "hand me my port".
 pub const PANE_HELLO_KIND: &str = "mareader.pane.hello";
 
 /// The `t` of the object message that carries a thumbnail bitmap.
@@ -41,8 +34,7 @@ pub enum PaneKind {
 }
 
 impl PaneKind {
-    /// Choose an artifact only for an actual document path. A documentless
-    /// workspace slot has no document realm to classify or prewarm.
+    /// Choose an artifact only for a real document path.
     pub fn for_path(path: &str) -> Self {
         match crate::pane::document::classify(path) {
             PaneFormat::Pdf => Self::Pdf,
@@ -122,8 +114,7 @@ impl From<WireSidebar> for app_state::SidebarMode {
     }
 }
 
-/// The paper every pane shows in ordinary blend: the most recently focused
-/// PDF pane's engine colours.
+/// The paper panes show in ordinary blend.
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct Paper {
     pub raw: String,
@@ -159,8 +150,7 @@ pub struct Boot {
     pub settings_open: bool,
 }
 
-/// The chrome-facing state of a pane, sent whole whenever any of it changes.
-/// The host's mirror `ReaderState` is written from it.
+/// A pane's chrome-facing state, sent whole on any change.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Mirror {
     pub status: DocStatus,
@@ -187,12 +177,7 @@ pub struct Mirror {
 /// One outline entry: title, page, depth.
 pub type WireOutline = Vec<(String, u32, u32)>;
 
-/// A chrome write the host forwards to the pane that owns the state. Every
-/// variant but [`Write::Outline`] mirrors a value the pane also keeps — the
-/// host's copy of a pane signal — and is forwarded only when it differs from
-/// what the frame last reported; `Outline` is a one-shot directive instead,
-/// because a text document's page number cannot name a chapter (see
-/// `crate::effects::reader::outline_jump`).
+/// A chrome write the host forwards to the pane that owns it.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(tag = "w", rename_all = "snake_case")]
 pub enum Write {
@@ -214,9 +199,7 @@ pub enum Write {
     SearchVisible {
         on: bool,
     },
-    /// Scroll the continuous stream to outline entry `index` (a paginated
-    /// format answers a `Page` write instead). A one-shot: the pane applies
-    /// it on arrival, so the host clears its own copy as it hands it over.
+    /// Scroll the stream to outline entry `index`, a one-shot.
     Outline {
         index: u32,
     },
@@ -323,8 +306,7 @@ pub enum HostToPane {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum PaneToHost {
-    /// A press inside the pane: it takes focus, and the host's own
-    /// outside-press handlers (menus, popovers) see it.
+    /// A press inside the pane: it takes focus.
     Press,
     /// The pane's first frame is on screen.
     Painted,
@@ -332,8 +314,7 @@ pub enum PaneToHost {
     Outline {
         entries: WireOutline,
     },
-    /// The pane's own shell call (a read point, a cover, a digest…), as the
-    /// JSON of a `runtime_contract::protocol::RuntimeEnvelope`.
+    /// The pane's own shell call, as a `RuntimeEnvelope` JSON.
     Api {
         envelope: String,
     },
@@ -360,10 +341,7 @@ pub enum PaneToHost {
     },
     /// The engine's paper colours on the pane's root.
     Paper(Paper),
-    /// This pane's look was re-baked into its engine: every picture the
-    /// rail holds for it was baked against the look before this one. The
-    /// rail lives in the host, so the pane can only say so — the host
-    /// re-renders its cells (see `RemoteThumbs::invalidate`).
+    /// The look was re-baked: the rail must re-render its cells.
     ThumbsStale,
     ThumbFailed {
         req: u64,
