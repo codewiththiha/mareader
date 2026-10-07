@@ -1,6 +1,4 @@
-/* The bar's suggestions: the panel under the library's search pill. The surface, the placement
-   and the dismissal are the popover every bar menu hangs from — fixed, so the centre slot's
-   clipping cannot reach it. What is here is only the rows. */
+/* The bar's suggestions: the panel under the library's search pill. */
 .lib-suggest-list {
   display: flex;
   flex-direction: column;
@@ -14,13 +12,11 @@
   border-radius: 0.5rem;
   cursor: pointer;
 }
-/* The one chosen row — by the arrows or by the pointer, which move the same
-   cursor — in the app's one "this is the one" colour. */
+/* The one chosen row, in the app's "this is the one" colour. */
 .lib-suggest-row-active {
   background: var(--color-accent-soft);
 }
-/* The shelf's 3:4 plate, at a row's height: the cover the grid already
-   rendered when it has one, the title's first letter when it does not. */
+/* The shelf's 3:4 plate at a row's height. */
 .lib-suggest-thumb {
   display: flex;
   flex: none;
@@ -65,9 +61,7 @@
   line-height: 1rem;
   color: var(--color-muted);
 }
-/* The characters the query hit, in the accent: the fuzzy half of the search
-   has to SHOW its work, because a row that matched on letters the reader
-   cannot see lit is a row that looks like a mistake. */
+/* The characters the query hit, in the accent: the fuzzy half shows work. */
 .lib-suggest-hit {
   font-weight: 600;
   color: var(--color-accent);
@@ -80,10 +74,7 @@
   color: var(--color-muted);
 }
 
-/* A link row: the shelf's own card and row shape, worn by a pointer rather
-   than by a book. It is not a copy and must not read as one — no page-1 art
-   exists for it, so the plate keeps the fallback's letters and gains a dashed
-   frame, and the row steps back a little behind the books beside it. */
+/* A link row: a card shape worn by a pointer, dashed and stepped back. */
 .book-link .book-cover-wrap {
   opacity: 0.82;
 }

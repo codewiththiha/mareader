@@ -1,8 +1,4 @@
-/* Design tokens (light defaults). The @theme block emits the utilities
-   (bg-paper, text-ink, bg-surface, text-muted, border-line, bg-accent,
-   text-accent, bg-accent-soft, text-accent-soft). Base modes rewrite the
-   --base-* tokens under :root[data-base=...]; the colour tint overrides
-   --color-* inline from src/effects/app/theme.rs. */
+/* Design tokens, light defaults; base modes rewrite the --base-* tokens. */
 @theme {
   --color-paper: #ffffff;
   --color-ink: #1f2937;
@@ -19,12 +15,7 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
 
-  /* Z-index scale — the one layering decision for floating UI, embedded via
-     the constants in crates/app-chrome/src/layers.rs, which
-     tools/check-chrome-contracts.ts keeps in step with this table. Layer
-     intent lives here, not at call sites, and the order is the stacking
-     order: controls 30 · bars 40 · popover 50 · selection bar 60 ·
-     context menu 70 · AI selection 80 · drag overlay 90 · toast 100 */
+  /* Z-index scale: the one layering decision, mirrored by app-chrome's. */
   --z-controls: 30;
   --z-bar: 40;
   --z-popover: 50;
@@ -34,45 +25,24 @@
   --z-drag-overlay: 90;
   --z-toast: 100;
 
-  /* Elevation for floating surfaces (menus, context menus, action bars);
-     the gloss surfaces alias theirs to it. */
+  /* Elevation for floating surfaces; the gloss surfaces alias theirs. */
   --shadow-float:
     0 0 0 1px var(--color-line),
     0 8px 24px rgb(0 0 0 / 0.30);
-  /* Tint of the current search match. NOT derived from --color-accent:
-     every other match already wears the accent and the current one must
-     stay separable at a glance. Amber is far enough round the wheel from
-     every built-in accent and survives both blend directions. */
+  /* The current search match's tint, deliberately not the accent. */
   --match-current: #f59e0b;
 
-  /* The two grain tiles, as data URIs. Constants — no var() inside — so
-     they can live at the root: the grain is the fractal-noise page texture
-     (styles/textures.css) and the film grain (styles/noise.css), each of
-     which the appearance swatch in styles/components/appearance.css paints
-     a preview of. */
+  /* The two grain tiles as data URIs, constant so they can live at the root. */
   --grain-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
   --noise-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Lifted and warmed for the dark canvases, where screen washes a mid amber
-   toward the paper colour. */
+/* Lifted and warmed for dark canvases, where screen washes a mid amber. */
 :root.dark {
   --match-current: #fbbf24;
 }
 
-/* Reading themes — the ONLY place theme values live. Each base swaps the
-   seven colour tokens plus, for PDFs, a canvas filter pipeline and a blend
-   mode (multiply keeps light themes paper-like; screen suits inverted
-   canvases — it leaves near-white inverted text light over the dark page,
-   where multiply/soft-light would crush it back to dark).
-
-   The three bases are the STRUCTURE; the tint is computed in Rust and
-   pushed as inline custom properties (src/effects/app/theme.rs). Sepia,
-   Green and Night are presets — points in {base, hue, strength} space —
-   not CSS blocks, which is what lets a reader dial any hue. Each base
-   defines --base-* and aliases --color-* to it; the tint overrides
-   --color-* inline, mixing FROM the --base-* value, so the mix always
-   starts untinted and can never apply twice. */
+/* Reading themes: the only place theme values live. */
 :root {
   --base-paper: #ffffff;
   --base-ink: #1f2937;
@@ -91,8 +61,7 @@
   --base-accent: #60a5fa;
   --base-accent-soft: #1d2b3a;
 }
-/* Dim is NOT an inverted theme: it dims the page and keeps the document's
-   own colours — the reason to choose it over Dark. */
+/* Dim is not an inverted theme: it keeps the document's own colours. */
 :root[data-base="dim"] {
   --base-paper: #1a1c1f;
   --base-ink: #c3c6cb;
@@ -112,11 +81,7 @@
   --color-accent-soft: var(--base-accent-soft);
 }
 
-/* Text-page tokens — the reflowable formats' own paper/ink pipeline,
-   written by crates/reader-core/src/appearance/reflowable. The PDF filter
-   pipeline never touches these. Defaults alias the global tokens so
-   nothing breaks before the first paint; the precomposed ink tints fall
-   back to the full ink. */
+/* Text-page tokens: the reflowable formats' own paper and ink pipeline. */
 :root {
   --tx-paper: var(--color-paper);
   --tx-ink: var(--color-ink);
@@ -132,31 +97,13 @@
   --tx-ink-hr: var(--tx-ink);
 }
 
-/* The five texture patterns, defined ONCE and read by the three surfaces
-   that wear one: a PDF page's own layer, a reflowable document's scroller
-   (styles/textures.css) and an appearance swatch's miniature page
-   (styles/components/appearance.css).
-
-   They live here rather than beside the rules that use them because the
-   three surfaces are unrelated elements — none inherits from another — so
-   a definition on any one of them would have to be written three times,
-   which is how the grain tile and the five gradients came to be copied
-   into all three.
-
-   What CANNOT be hoisted is the pitch: --tex-unit and --tex-line are
-   derived from --tex-scale, and a custom property resolves the var()s in
-   its own value at computed-value time on the element that declares it.
-   Declaring them at the root would freeze them against the root's scale
-   and the pattern would stop following zoom, so every surface still
-   declares --tex-scale and --tex-stroke beside each other and these
-   patterns resolve against those. */
+/* The five texture patterns, defined once and read by three surfaces. */
 .pdf-page::before,
 .preset-page::before,
 :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"] {
   --tex-unit: calc(26px * var(--tex-scale));
   --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
-  /* One stroke token, so the swatch can preview its own rule colour while
-     the other two read the theme's. */
+  /* One stroke token, so a swatch can preview its own rule colour. */
   --tex-paper-image: var(--grain-tile);
   --tex-lined-image: repeating-linear-gradient(
     to bottom,

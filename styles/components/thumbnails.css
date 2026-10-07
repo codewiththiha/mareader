@@ -1,55 +1,24 @@
-/* The thumbnail grid: card backdrop, canvas and its blank state, the
-   page-number badge, and the render skeleton's crossfade and pulse. The
-   tag that themes a raw thumbnail canvas (.thumb-canvas.thumb-raw) is one
-   rule shared with the page canvas, in styles/page_host.css. */
+/* The thumbnail grid: card backdrop, canvas, badge, skeleton. */
 
-/* Thumbnail card backdrop — ONE permanent themed backdrop shared by the
-   skeleton and the loaded canvas, so a thumbnail never snaps colour when
-   the render resolves.
-
-   This MUST be --color-paper, NOT --color-surface: a thumbnail canvas is
-   blended (multiply in light) over this backdrop, and multiplying a white
-   page pixel by the backdrop yields the backdrop itself — so this variable
-   IS the "paper" the reader sees in every thumbnail, and the real page's
-   paper is --color-paper. The near-identical old fixed themes hid the
-   mismatch; the computed tint moves the two apart (paper keeps L=1.00,
-   surface sits lower with more chroma), so at high tint every thumbnail
-   rendered visibly darker and more saturated than the page it depicts. The
-   card keeps a distinct frame via its ring/border, so paper here costs no
-   separation against the chrome. (No dark-base --line mix either: the ring
-   provides the separation, and the page's backdrop is --color-paper in
-   every base.) */
+/* The thumbnail card's backdrop must be --color-paper, not --color-surface. */
 :root { --thumb-bg: var(--color-paper); }
 .thumb-card {
-  /* Clip the SQUARE canvas to the rounded card: without this the corners
-     poke past the radius, and in dim (soft-light of a light page) those
-     protrusions lighten the chrome as a pale square frame. ring-*
-     box-shadows are not clipped by overflow. */
+  /* Clip the square canvas to the rounded card, so corners never poke out. */
   overflow: hidden;
   background: var(--thumb-bg);
 }
 
-/* Thumbnails render without the .pdf-page host, so the engine BAKES the
-   per-theme filter/blend into the thumbnail bitmap before caching it: the
-   live canvas carries no filter and no blend — one plain texture per cell
-   over the backdrop the bake blended against. */
+/* The engine bakes the theme into the thumbnail bitmap before caching. */
 .thumb-canvas {
   border-radius: inherit;
 }
 
-/* An unpainted canvas must not composite at all: with no width/height
-   attributes it defaults to 300x150 — a 2:1 box stretched over a ~3:4
-   card — and as a blended layer it tinted the cell under the fading cover,
-   then changed shape when the real bitmap replaced it. Same rule as
-   .pdf-page: never blend a layer with no pixels. The class drops the
-   moment `loaded` flips, which is when the cover starts to fade, so the
-   bitmap is revealed by the cover's own crossfade. */
+/* An unpainted canvas must not composite at all. */
 .thumb-canvas-blank {
   visibility: hidden;
 }
 
-/* Permanent page badge, above the fading skeleton so the number stays
-   readable on every card. Tailwind utilities on the span theme the pill. */
+/* The permanent page badge, above the fading skeleton. */
 .thumb-num {
   pointer-events: none;
   position: absolute;
@@ -76,25 +45,7 @@
   border-color: transparent;
 }
 
-/* Render skeleton — the crossfade COVER, above the fully blended
-   .thumb-canvas. Fading the canvas itself interpolates between raw
-   un-blended pixels and the blend result (a neon flash settling to muted
-   in sepia/green); the cover is plain themed tint, so the crossfade runs
-   between two same-family colours.
-
-   The pulse animates background-color, NOT opacity: an opacity pulse on
-   the cover would be invisible (its tint equals the card's beneath) and
-   would fight the fade-out — removing an opacity animation the same frame
-   the opacity transition starts drives the before-change value to a random
-   mid-pulse opacity and can snap the cover off with no transition at all
-   on WebKit.
-
-   The pulse DARKENS, never brightens: a brightening keyframe is lighter
-   than --thumb-bg in the line-darker themes, and partially visible over
-   the darker multiply result during the fade it spiked bright mid-fade —
-   the residual sepia/green flicker. Darkening interpolates pulse → canvas
-   result on the same side of base in every theme, at a readable amplitude
-   (~25% toward black). */
+/* The render skeleton: a plain themed tint the canvas crossfades to. */
 .thumb-skeleton {
   background: var(--thumb-bg);
   border-radius: inherit;
@@ -111,11 +62,7 @@
   animation: thumb-skeleton-pulse 1.6s ease-in-out infinite;
 }
 
-/* The pulse, FROZEN for the fade: dropping the animation class mid-flight
-   would snap the property back to base in one frame, exactly as the fade
-   begins. Pausing holds the reached tint so the fade interpolates from a
-   continuous background; the PULSE_STOP_MS timer in thumbnail_cell.rs
-   drops both classes once the cover is invisible. */
+/* The pulse, frozen for the fade: pausing holds the reached tint. */
 .thumb-skeleton-settling {
   animation-play-state: paused;
 }
