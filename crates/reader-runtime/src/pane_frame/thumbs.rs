@@ -1,7 +1,5 @@
-//! The pane side of the host's thumbnail rail: page N rendered through the
-//! engine's own thumbnail lane (cache, theme bake, cancellation) into a
-//! proxy canvas in this document, then handed over as a transferred
-//! `ImageBitmap` (docs/pane-runtimes.md, "Thumbnails").
+//! The pane side of the host's thumbnail rail: page N through the
+//! engine's thumbnail lane.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -16,17 +14,11 @@ thread_local! {
     /// In-flight requests: the host's request id → the proxy canvas.
     static PENDING: RefCell<HashMap<u64, web_sys::HtmlCanvasElement>> =
         RefCell::new(HashMap::new());
-    /// Whether this pane's engine is inside an appearance scrub window
-    /// (`Hook::Scrub`). Mid-drag the engine shows RAW rasters under the live
-    /// CSS, so no look is baked into anything the rail could be holding —
-    /// and the drag's exit is the one bake at the values the drag landed on,
-    /// which says so itself. A re-bake request inside the window therefore
-    /// stays quiet: otherwise every drag frame would re-render the rail.
+    /// Whether the pane is inside an appearance scrub window.
     static SCRUBBING: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Track the scrub window the host broadcasts. Called from the pane's hook
-/// arm and from boot (a drag can be in flight when a pane opens).
+/// Track the scrub window the host broadcasts.
 pub(super) fn set_scrubbing(on: bool) {
     SCRUBBING.with(|s| s.set(on));
 }
@@ -98,8 +90,7 @@ async fn deliver(req: u64, page: u32, canvas: &web_sys::HtmlCanvasElement) {
         send_failed(req, false);
         return;
     };
-    // createImageBitmap owns a separate backing store: cancelling the proxy
-    // during that await must also close the eventual bitmap, not send it.
+    // Cancelling the proxy during the await must close the bitmap.
     if !current || super::realm::pane().is_none() {
         if let Some(bitmap) = bitmap.dyn_ref::<web_sys::ImageBitmap>() {
             bitmap.close();
@@ -118,8 +109,7 @@ async fn deliver(req: u64, page: u32, canvas: &web_sys::HtmlCanvasElement) {
     }
 }
 
-/// The host's cell unmounted: abort the render (the engine keeps its cached
-/// bitmap for an instant repaint).
+/// The host's cell unmounted: abort the render.
 pub(super) fn cancel(req: u64) {
     if forget(req).is_some()
         && let Some(pane) = super::realm::pane()
@@ -155,8 +145,7 @@ fn forget(req: u64) -> Option<web_sys::HtmlCanvasElement> {
     canvas
 }
 
-/// Out of the document with its backing store zeroed (WKWebView keeps a
-/// detached canvas's store until GC otherwise).
+/// Out of the document with its backing store zeroed.
 fn release(canvas: &web_sys::HtmlCanvasElement) {
     canvas.set_width(0);
     canvas.set_height(0);
@@ -167,10 +156,7 @@ fn send_failed(req: u64, cancelled: bool) {
     super::realm::send(&PaneToHost::ThumbFailed { req, cancelled });
 }
 
-/// This pane's look was re-baked into its engine. Every picture the rail
-/// holds is the HOST's copy of a raster baked against the look before this
-/// one, and only the host can re-render its cells: the frame says so, and
-/// the host's rail renders again (`RemoteThumbs::invalidate`).
+/// The look was re-baked: the host must re-render its cells.
 pub(super) fn pictures_stale() {
     if SCRUBBING.with(|s| s.get()) {
         return;
