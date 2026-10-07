@@ -1,23 +1,9 @@
-//! The persisted typography of the reflowable formats — the SCHEMA half. It
-//! sits with the rest of the persisted settings because the field names below
-//! ARE the storage contract: additive only, every field defaulted through the
-//! struct-level default, so a blob saved before a field existed loads with
-//! that field's default.
-//!
-//! The RESOLUTION half lives here too: [`css_variables`] turns the blob into
-//! the scale-1 `--tx-*` custom properties the stylesheet reads, and the font
-//! choices resolve into CSS stacks beside it. `reflow_core::typography`
-//! re-exports the schema so a layout caller imports the type and its maths
-//! from one place.
-//! Fonts are chosen from the system's faces today; [`BuiltInFont`] /
-//! [`builtin_fonts`] are the deliberately-empty extension point for faces
-//! shipped inside the app — the schema already serialises them
-//! (`builtin:<name>`), so adding one is a table row, not a migration.
+//! The persisted typography of the reflowable formats: schema plus the
+//! `--tx-*` resolution.
 
 use serde::{Deserialize, Serialize};
 
-/// to exactly one of them, and each family has its own override slot in the
-/// settings.
+/// Each family has its own override slot in the settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextFamily {
     Serif,
@@ -36,10 +22,7 @@ impl TextFamily {
     }
 }
 
-/// A font face that ships INSIDE the application, rather than one the OS
-/// provides. The table is empty today — this type is the seam a future
-/// release bolts bundled fonts onto: add a row, and every font picker and
-/// every saved `builtin:<name>` choice resolves it. Nothing else moves.
+/// A font face shipped inside the app; the table is empty today.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltInFont {
     /// Stable identity — the `builtin:<name>` persisted in settings.
@@ -59,8 +42,7 @@ pub fn builtin_fonts() -> &'static [BuiltInFont] {
     &[]
 }
 
-/// A system font face: one of the widely available cross-platform faces,
-/// plus the four generic stacks. The id is what settings persist.
+/// A system font face; the id is what settings persist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemFont {
     UiSerif,
@@ -180,8 +162,7 @@ impl SystemFont {
         }
     }
 
-    /// The CSS stack for this face: the face itself (quoted where a name
-    /// carries spaces) followed by its family's generic tail.
+    /// The CSS stack for this face.
     pub fn stack(self) -> String {
         let head = match self {
             Self::UiSerif => "ui-serif".to_string(),
@@ -207,10 +188,7 @@ impl SystemFont {
         format!("{}, {}", head, self.family().generic())
     }
 
-    /// Average glyph advance as a fraction of the font size. Feeds the
-    /// pagination ESTIMATE (before the DOM measures real heights): a
-    /// proportional face packs ~2 glyphs per em, a monospace face exactly
-    /// 0.6em per cell.
+    /// Average glyph advance as a fraction of the font size.
     pub fn avg_char_width(self) -> f64 {
         match self.family() {
             TextFamily::Monospace => 0.6,
@@ -220,15 +198,10 @@ impl SystemFont {
     }
 }
 
-/// One font choice, as persisted and as the pickers express it. The string
-/// encoding is the storage contract: `default` resolves through the
-/// surrounding context (the reading font for the body slot, the family's own
-/// stack for a family slot); `system:<id>` a [`SystemFont`]; `builtin:<id>` a
-/// [`BuiltInFont`] (future: fonts shipped in the app).
+/// One font choice, as persisted and as the pickers express it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum FontChoice {
-    /// Follow the context: the reader's default font in the body slot, or
-    /// the family's natural stack in a family slot.
+    /// Follow the context: the default font, or the family's stack.
     #[default]
     Default,
     System(SystemFont),
@@ -236,8 +209,7 @@ pub enum FontChoice {
 }
 
 impl FontChoice {
-    /// Parse the persisted form. Unknown ids fall back to [`FontChoice::Default`]
-    /// rather than failing the whole settings blob.
+    /// Parse the persisted form; unknown ids fall back to `Default`.
     fn from_storage(s: &str) -> FontChoice {
         match s {
             "default" | "" => FontChoice::Default,
@@ -294,10 +266,7 @@ pub const DEFAULT_LINE_HEIGHT: f64 = 1.7;
 /// Default body-ink intensity: the theme's full ink.
 pub const DEFAULT_INK_CONTRAST: f64 = 100.0;
 
-/// Where the reading column sits inside the viewport while a reflowable
-/// document streams continuously. The text keeps its natural alignment — this
-/// positions the COLUMN, the way a narrower book page sits left, centre or
-/// right on a desk.
+/// Where the reading column sits inside the viewport.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum TextColumnAlign {
     Left,
@@ -315,8 +284,7 @@ impl TextColumnAlign {
         }
     }
 
-    /// The stylesheet class that positions the stream's reading column
-    /// (defined in `styles/text.css` beside the stream itself).
+    /// The stylesheet class positioning the stream's reading column.
     pub fn container_class(&self) -> &'static str {
         match self {
             Self::Left => "tx-align-left",
@@ -326,16 +294,11 @@ impl TextColumnAlign {
     }
 }
 
-/// The persisted typography of the reflowable formats. Every knob is
-/// independent and additive; a blob missing any of them loads the defaults.
-/// The ranges are enforced by [`sanitize`], which the app runs on load AND on
-/// every write path.
+/// The persisted typography of the reflowable formats; all additive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TextSettings {
-    /// Render pages as an open book: a gutter margin faces the spine, and
-    /// in the two-up modes the pair reads as facing pages. Off, every page
-    /// carries symmetric margins.
+    /// Render pages as an open book: a gutter margin faces the spine.
     pub book_layout: bool,
     /// Space under a paragraph, in ems of the body font size.
     pub paragraph_margin: f64,
@@ -350,8 +313,7 @@ pub struct TextSettings {
     pub text_indent: f64,
     /// Stretch each line to both margins.
     pub justify: bool,
-    /// Let the shaper break words at line ends (needs a language-aware
-    /// hyphenator; the reader marks its text as English).
+    /// Let the shaper break words at line ends.
     pub hyphenation: bool,
     /// Body font size in CSS px at scale 1.
     pub font_size: f64,
@@ -369,13 +331,9 @@ pub struct TextSettings {
     /// Override for the monospace family (code). `Default` keeps the
     /// family's natural stack.
     pub mono_font: FontChoice,
-    /// Where the reading column sits in the viewport while a text document
-    /// streams continuously. The paginated modes ignore it — their pages
-    /// centre themselves the way every fixed sheet does.
+    /// Where the reading column sits while text streams continuously.
     pub column_align: TextColumnAlign,
-    /// Body-ink intensity, 0–100. 100 is the theme's full ink; below that the
-    /// ink mixes toward the paper colour. A comfort dial for long reading, not
-    /// a tint — the paper stays whatever the theme says.
+    /// Body-ink intensity, 0–100: 100 is the theme's full ink.
     pub ink_contrast: f64,
 }
 
@@ -402,8 +360,7 @@ impl Default for TextSettings {
     }
 }
 
-/// The serif stack the body falls back to when no default font is chosen:
-/// the classic book-reading faces, in availability order.
+/// The serif stack the body falls back to.
 const SERIF_STACK: &str =
     "Charter, \"Bitstream Charter\", \"Iowan Old Style\", Georgia, \"Times New Roman\", serif";
 const SANS_STACK: &str = "ui-sans, -apple-system, \"Segoe UI\", Helvetica, Arial, sans-serif";
@@ -419,15 +376,6 @@ fn family_default_stack(family: TextFamily) -> &'static str {
 }
 
 /// Resolve one font choice to a CSS stack.
-///
-/// * `Default` in a FAMILY slot resolves to that family's natural stack.
-/// * `Default` in the BODY slot (`family == None`) reads in the SERIF
-///   face — whatever the Serif slot currently resolves to, not the bare
-///   constant — so the Serif picker is what shapes default body text, and
-///   the Default picker is the override that takes body away from it.
-/// * A bundled font resolves to its own stack; a bundled id the build does
-///   not (yet) ship falls back the same way as `Default`, so a saved choice
-///   never renders nothing.
 fn resolve_stack(
     settings: &TextSettings,
     choice: &FontChoice,
@@ -452,8 +400,7 @@ fn resolve_stack(
     }
 }
 
-/// The stack body text renders in: the Default picker's choice, or the
-/// Serif slot when that choice is `Default` (see [`resolve_stack`]).
+/// The stack body text renders in.
 fn body_stack(settings: &TextSettings) -> String {
     resolve_stack(settings, &settings.default_font, None)
 }
@@ -468,20 +415,7 @@ fn family_stack(settings: &TextSettings, family: TextFamily) -> String {
     resolve_stack(settings, choice, Some(family))
 }
 
-/// The settings as CSS custom properties, all at SCALE 1 — the page applies
-/// its own `--ts` multiplier on top, so a zoom never repaints these.
-///
-/// The page-side contract: `--tx-font-size`, `--tx-line-height`,
-/// `--tx-para-margin`, `--tx-word-spacing`, `--tx-letter-spacing`,
-/// `--tx-text-indent`, `--tx-font-weight`, `--tx-text-align`,
-/// `--tx-hyphens`, `--tx-font-body`, `--tx-font-sans`, `--tx-font-mono`.
-///
-/// The ink dial is deliberately NOT here: it is resolved in Rust by the
-/// appearance pipeline ([`crate::appearance::reflowable`]), which mixes the
-/// palette ink toward the paper itself and paints a flat `--tx-ink` — the
-/// stylesheet never mixes live. Column alignment is also NOT here — it
-/// positions a container (a class on the stream column), not a value any
-/// rule of the type itself resolves through.
+/// The settings as CSS custom properties, all at SCALE 1.
 pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
     vec![
         (
@@ -526,8 +460,7 @@ pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
     ]
 }
 
-/// Trim a px value to at most 2 decimals, without trailing zeros the CSS
-/// does not need (`17`, `16.5`, `16.25`).
+/// Trim a px value to at most 2 decimals, no trailing zeros.
 fn format_px(v: f64) -> String {
     format_scaled(v, 2)
 }
@@ -735,8 +668,7 @@ mod tests {
         assert!(joined.contains("--tx-font-body:"), "{joined}");
         assert!(joined.contains("--tx-font-sans:"), "{joined}");
         assert!(joined.contains("--tx-font-mono:"), "{joined}");
-        // The ink dial is NOT part of this contract: it resolves in Rust
-        // (appearance::reflowable) and paints as a flat --tx-ink.
+        // The ink dial is NOT here: it resolves in Rust.
         assert!(!joined.contains("--tx-ink-contrast"), "{joined}");
     }
 

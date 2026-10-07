@@ -1,38 +1,11 @@
-//! The reader's search model, the scan both pipelines run, and the maths the
-//! search UI runs on.
-//!
-//! Both pipelines answer in this shape — the PDF side from the engine's
-//! page-text index (`pdf_core::search`), a reflowable document from
-//! `reflow_core::search` — and the results list, the cycling and the scroll
-//! reveal are the same code for either.
-//!
-//! The SCAN lives here because a match carries an ordinal and the painter
-//! counts occurrences again, independently, to find which of its boxes that
-//! ordinal names. Two scanners are two chances to disagree about what an
-//! occurrence is, so there is one ([`occurrence_spans`]), with the snippet
-//! window ([`snippet`]) beside it.
-//!
-//! The engine returns ONE ENTRY PER OCCURRENCE in document order, not one per
-//! page. A match's rect is in scale-1 CSS px relative to its page's top-left;
-//! the UI multiplies by the current scale to place it.
+//! The reader's search model, the scan both pipelines run, and the
+//! scroll maths.
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-/// Which occurrence of the query, in which block, of a document with no fixed
-/// page grid.
-///
-/// The two halves of a [`SearchMatch`] answer "where is this hit" for the two
-/// kinds of document. A page of pixels has a fixed grid, so a box in page
-/// space IS an identity (`x`/`y`/`w`/`h`). A document the reader lays out
-/// itself has no grid — every typography knob re-cuts its pages and a stored
-/// box would point at whatever moved underneath — so its answer is the block
-/// and the occurrence inside it, the same identity its gloss marks keep. The
-/// painter re-finds the query in the block row's rendered text and numbers
-/// occurrences in reading order, so the pair names one box on screen without
-/// geometry — the same deal the engine's text-layer painter makes with
-/// `page` + `index`.
+/// Which occurrence of the query, in which block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct BlockHit {
     pub block: u32,
@@ -45,21 +18,15 @@ pub struct BlockHit {
 pub struct SearchMatch {
     /// 1-based page holding this occurrence.
     pub page: u32,
-    /// Ordinal of this occurrence WITHIN its page, in reading order. The engine
-    /// stamps the same number onto the highlight box it paints, so this pair
-    /// names one box on screen without matching geometry.
+    /// Ordinal of this occurrence within its page, in reading order.
     pub index: u32,
-    /// Snippet of surrounding text, for the results list. Shared so a
-    /// 500-hit query does not clone 500 independent `String`s of the same
-    /// haystack windows.
+    /// Snippet of surrounding text for the results list, shared.
     pub text: Arc<str>,
     pub x: f64,
     pub y: f64,
     pub w: f64,
     pub h: f64,
-    /// Where the hit sits in a document the reader lays out itself; `None` for a
-    /// fixed-grid one, whose rect above is the whole answer. `#[serde(default)]`
-    /// because the engine's response has never carried it and never will.
+    /// Where the hit sits in a reflowable document; `None` for a PDF.
     #[serde(default)]
     pub block_hit: Option<BlockHit>,
 }
@@ -72,38 +39,18 @@ pub struct SearchResponse {
     pub matches: Vec<SearchMatch>,
 }
 
-/// Characters of context on each side of a hit in a results-list snippet. One
-/// number for both families, because one dropdown shows both: the row clips
-/// at 80 characters anyway (components/search/result_list.rs), so a wider
-/// window is text the reader never sees.
+/// Characters of context each side of a hit in a snippet.
 pub const SNIPPET_RADIUS: usize = 32;
 
-/// Every occurrence of `needle` in `haystack`, as character spans in reading
-/// order: the one scan, called by the PDF's page-text index, by a reflowable
-/// document's blocks, and by the layer that paints hits over a block's
-/// rendered text.
-///
-/// `folded` is `haystack.to_lowercase()`, passed in because the hot caller
-/// already holds it: the PDF index folds each page once at build and rescans
-/// on every keystroke.
-///
-/// Matching is case-insensitive and non-overlapping, advancing by the
-/// needle's length — "aa" in "aaa" is one hit, at 0 — matching
-/// `str::match_indices` and the engine's painter. An empty or whitespace-only
-/// needle matches nothing.
-///
-/// Case folding can change LENGTH ('İ' lowercases to two characters), and a
-/// span counted in the folded copy would then not be a span of the text the
-/// reader sees: when folding changed the character count the scan runs over
-/// the ORIGINAL, case-sensitively. A missed hit is a smaller lie than a box
-/// over characters nobody searched for.
+/// Every occurrence of `needle` in `haystack`, as character spans;
+/// case-insensitive, non-overlapping, by needle length.
 pub fn occurrence_spans(haystack: &str, folded: &str, needle: &str) -> Vec<(usize, usize)> {
     let needle = needle.trim();
     if needle.is_empty() {
         return Vec::new();
     }
-    // ASCII is the common case and the cheap one: folding is one character for
-    // one, so byte offsets are character offsets and neither side is copied.
+    // ASCII: folding is one character for one, so byte offsets are
+    // character offsets.
     if haystack.is_ascii() && folded.is_ascii() && needle.is_ascii() {
         let needle = needle.to_ascii_lowercase();
         let mut out = Vec::new();
@@ -139,13 +86,7 @@ pub fn occurrence_spans(haystack: &str, folded: &str, needle: &str) -> Vec<(usiz
     out
 }
 
-/// The context window around a hit for one results-list row:
-/// [`SNIPPET_RADIUS`] characters either side of `[start, end)`, elided at the
-/// edges the window does not reach, newlines folded to spaces (a row is one
-/// line). Offsets are CHARACTERS — the spans [`occurrence_spans`] reports —
-/// so no byte-boundary walking, and Latin prose and emoji read the same.
-/// Casing is the original's: the scan runs over a folded copy, the reader
-/// reads this.
+/// The context window around a hit for one results-list row.
 pub fn snippet(text: &str, start: usize, end: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
     let from = start.saturating_sub(SNIPPET_RADIUS).min(chars.len());
@@ -163,8 +104,7 @@ pub fn snippet(text: &str, start: usize, end: usize) -> String {
     out
 }
 
-/// Next active-result index with wrap-around. `dir > 0` forward, `dir < 0` back.
-/// `active = None` → first (dir > 0) or last (dir < 0).
+/// Next active-result index with wrap-around.
 pub fn next_search_index(len: usize, active: Option<usize>, dir: i32) -> Option<usize> {
     if len == 0 {
         return None;
@@ -179,23 +119,10 @@ pub fn next_search_index(len: usize, active: Option<usize>, dir: i32) -> Option<
     })
 }
 
-/// Fraction of the reading area to leave above a match when scrolling it into
-/// view, so it lands in comfortable reading position rather than jammed against
-/// the top edge.
+/// Fraction of the reading area left above a match.
 const MATCH_VIEW_BIAS: f64 = 0.35;
 
-/// Scroll offset that brings a match into view, or `None` if it already is.
-///
-/// Targets the MATCH, not the page top: jumping to the page put a hit near
-/// the bottom of a tall page off-screen. Deliberately lazy — while the match
-/// is comfortably inside the reading area the view does not move, so stepping
-/// through hits on one screen highlights in place instead of jerking.
-///
-/// Arguments are in the scroll container's coordinates: `match_top`/
-/// `match_bot` are the match's edges within the column, `scroll_top` the
-/// current offset, `viewport_h` the container height, `inset_top`/
-/// `inset_bottom` the parts hidden behind the toolbar / search bar, and
-/// `margin` keeps the match clear of those edges.
+/// Scroll offset bringing a match into view, or `None` if visible.
 pub fn scroll_to_reveal(
     match_top: f64,
     match_bot: f64,
@@ -208,16 +135,14 @@ pub fn scroll_to_reveal(
     // The genuinely readable band, in scroll coordinates.
     let view_top = scroll_top + inset_top + margin;
     let view_bot = scroll_top + viewport_h - inset_bottom - margin;
-    // A viewport too small for the insets (or a match taller than the band):
-    // fall back to putting the match's top at the top of the readable area.
+    // A viewport too small for the insets falls back to the match's top.
     if view_bot <= view_top || match_bot - match_top > view_bot - view_top {
         return Some((match_top - inset_top - margin).max(0.0));
     }
     if match_top >= view_top && match_bot <= view_bot {
         return None; // already comfortably visible — don't move
     }
-    // Off-screen (or clipped): place it at the bias line, which reads better
-    // than pinning it to whichever edge it left from.
+    // Off-screen or clipped: place it at the bias line.
     let band = view_bot - view_top;
     let target = match_top - inset_top - margin - band * MATCH_VIEW_BIAS;
     Some(target.max(0.0))
@@ -227,9 +152,8 @@ pub fn scroll_to_reveal(
 mod tests {
     use super::*;
 
-    /// Cycling through results: wrap in both directions, start at the first or
-    /// last when nothing is active, and treat a single result as its own
-    /// neighbour. `dir` carries only a sign, so a larger stride behaves the same.
+    /// Cycling through results: wrap both ways, and a lone result is its
+    /// own neighbour.
     #[test]
     fn cycles_and_wraps() {
         // (len, active, dir, expected)
@@ -266,13 +190,10 @@ mod tests {
         assert_eq!(next_search_index(3, None, 0), None);
     }
 
-    /// A match already sitting in the readable band does not move the view.
-    /// This is what lets several hits on one screen light up one after another
-    /// without the page twitching.
+    /// A match already in the readable band does not move the view.
     #[test]
     fn visible_match_does_not_scroll() {
-        // scroll 600, viewport 800, top inset 48, bottom inset 56, margin 24
-        // => readable band spans 672..1320 in scroll coordinates.
+        // scroll 600, viewport 800, insets 48/56, margin 24: band 672..1320.
         assert_eq!(
             scroll_to_reveal(700.0, 720.0, 600.0, 800.0, 48.0, 56.0, 24.0),
             None
@@ -288,8 +209,7 @@ mod tests {
         );
     }
 
-    /// A match under the fold, or hidden behind the top chrome, is brought to
-    /// the bias line — NOT to the edge it left from, and never past 0.
+    /// A match under the fold is brought to the bias line, never past 0.
     #[test]
     fn offscreen_match_scrolls_to_the_bias_line() {
         let band = 800.0 - 48.0 - 56.0 - 2.0 * 24.0; // 624
@@ -309,20 +229,16 @@ mod tests {
         assert!(scroll_to_reveal(10.0, 30.0, 600.0, 800.0, 48.0, 56.0, 24.0).unwrap() >= 0.0);
     }
 
-    /// A match partly clipped by the bottom edge counts as not visible: the
-    /// bug being fixed is precisely "the hit is on this page but off-screen".
+    /// A match partly clipped by the bottom edge counts as not visible.
     #[test]
     fn clipped_match_is_revealed() {
-        // Band is 672..1320; this straddles the bottom edge, so the reader can
-        // only see part of the hit.
+        // Band 672..1320; this straddles the bottom edge.
         assert!(scroll_to_reveal(1300.0, 1360.0, 600.0, 800.0, 48.0, 56.0, 24.0).is_some());
         // And this one is clipped by the top chrome.
         assert!(scroll_to_reveal(650.0, 690.0, 600.0, 800.0, 48.0, 56.0, 24.0).is_some());
     }
 
-    /// The engine's JSON has no `block_hit` in it, and a search response that
-    /// failed to deserialize would take the whole feature down — so the field is
-    /// optional on the wire and reads as `None` for a PDF.
+    /// The engine's JSON carries no `block_hit`; the field is optional.
     #[test]
     fn a_match_from_the_engine_deserializes_without_a_block_hit() {
         let json = r#"{"query":"dune","total":1,"matches":[
@@ -341,9 +257,8 @@ mod tests {
         assert_eq!(serde_json::from_str::<BlockHit>(&json).unwrap(), hit);
     }
 
-    /// The scan both pipelines and the highlight painter share: reading order,
-    /// non-overlapping, and counting CHARACTERS — an emoji is one of them, so a
-    /// hit after it starts where the reader would count, not where its bytes are.
+    /// The scan both pipelines and the painter share: reading order, by
+    /// character.
     #[test]
     fn occurrences_are_numbered_in_reading_order_without_overlapping() {
         let folded = |s: &str| s.to_lowercase();
@@ -362,9 +277,8 @@ mod tests {
         assert_eq!(spans("a target here", " target "), vec![(2, 8)]);
     }
 
-    /// 'İ' folds to two characters, so the folded copy's offsets are not the
-    /// original's. The scan refuses to guess: it drops back to a
-    /// case-sensitive read of the text the reader actually sees.
+    /// 'İ' folds to two characters, so the folded copy's offsets do not
+    /// transfer.
     #[test]
     fn a_fold_that_changes_length_never_reports_a_moved_offset() {
         let text = "İstanbul dune";
@@ -377,8 +291,7 @@ mod tests {
         assert!(occurrence_spans(text, &folded, "DUNE").is_empty());
     }
 
-    /// The window the results list shows: original casing, newlines folded, and
-    /// an ellipsis only on the edges it actually cut.
+    /// The window the results list shows: original casing, newlines folded.
     #[test]
     fn the_snippet_window_elides_only_the_edges_it_cuts() {
         let long = format!("{}target{}", "x".repeat(200), "y".repeat(200));
@@ -404,9 +317,7 @@ mod tests {
         );
     }
 
-    /// Degenerate geometry must still produce a usable offset rather than
-    /// panicking or returning None: a match taller than the band, and a
-    /// viewport smaller than its own insets.
+    /// Degenerate geometry still produces a usable offset.
     #[test]
     fn degenerate_geometry_falls_back_to_top_alignment() {
         assert_eq!(

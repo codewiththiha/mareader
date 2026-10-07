@@ -1,17 +1,5 @@
-//! The reader's view model, for any format: which view mode is on, which axis
-//! a strip scrolls, the gap between pages, how far ahead to mount, and the
-//! maths every strip shares with the zoom coordinator (spread arithmetic,
-//! holding the point under the reader's eyes still across a rescale, and the
-//! reading-progress fraction). A
-//! reflowable document is laid out through exactly the same model as a PDF,
-//! so none of this may name a format.
-//!
-//! The windowing arithmetic lives in `virtual-list` / `virtual-list-leptos`,
-//! and the reader runtime names those crates itself: nothing here may import
-//! them, or every consumer of a view constant would pull a virtualizer into
-//! its own graph (the library runtime's boundary is exactly that consumer).
-//! The PDF page frame's own constant (the toolbar band the search reveal
-//! must clear) stays at `pdf_core`'s root.
+//! The reader's view model for any format: modes, gaps, look-ahead and
+//! the shared zoom maths.
 
 /// Gap between pages in the continuous reader, in CSS px.
 pub const PAGE_GAP: f64 = 24.0;
@@ -43,17 +31,7 @@ impl ViewMode {
     }
 }
 
-/// Reading progress along one scroll axis: how far the offset has travelled
-/// through the strip's AVAILABLE travel — its total extent minus the viewport
-/// on that axis.
-///
-/// One definition because four surfaces show or persist the same number, and
-/// each used to guard the degenerate case its own way: `.max(0.0)`,
-/// `.max(1.0)`, or an `if`. Those disagree about a document that fits its
-/// viewport, which is exactly when two of them are on screen at once.
-///
-/// A strip that does not overflow has no travel to be a fraction of, so it
-/// reads as 0 rather than as a division by a non-positive number.
+/// Reading progress along one scroll axis.
 pub fn scroll_fraction(offset: f64, total: f64, viewport: f64) -> f64 {
     let travel = total - viewport;
     if travel > 0.0 {
@@ -63,26 +41,12 @@ pub fn scroll_fraction(offset: f64, total: f64, viewport: f64) -> f64 {
     }
 }
 
-/// The inverse of [`scroll_fraction`]: the offset a reading fraction names on a
-/// strip of this total and viewport.
-///
-/// Beside its inverse on purpose. A resume point is persisted as a fraction and
-/// restored as an offset, so the two must stay exact inverses — a drift between
-/// them does not show up as a wrong number, it quietly moves the reader's place
-/// in the book on the next open.
+/// The inverse of [`scroll_fraction`]: offset for a reading fraction.
 pub fn fraction_offset(fraction: f64, total: f64, viewport: f64) -> f64 {
     fraction.clamp(0.0, 1.0) * (total - viewport).max(0.0)
 }
 
-/// Where the document point that was under the viewport centre lands once
-/// the item it sits in has been scaled by `factor`, gaps left alone.
-///
-/// `index` is the anchored item (resolved O(log n) by the strip's
-/// `index_at`); `height` is its pre-scale height; `above_with_gap` the extent
-/// of the items above it including gaps; `height_sum` their heights alone —
-/// the part that scales. Shared by the PDF page strip and the text column:
-/// both rescale layout, not transforms, and both hold the point under the
-/// reader's eyes.
+/// Where the point under the viewport centre lands after a rescale.
 pub fn anchored_position(
     height: f64,
     above_with_gap: f64,
@@ -92,9 +56,7 @@ pub fn anchored_position(
     factor: f64,
     index: usize,
 ) -> f64 {
-    // Where the items above land at the new scale, plus this point's offset
-    // inside them. An anchor that fell in the gap keeps the unscaled
-    // remainder: the gap is fixed chrome and never scales.
+    // Where the items above land at the new scale.
     let above = height_sum * factor + index as f64 * gap;
     let offset_inside = centre_y_doc - above_with_gap;
     above
@@ -106,20 +68,16 @@ pub fn anchored_position(
 }
 
 /// First 1-based page of the two-up spread containing `page`.
-/// Pages 1 and 2 form the first spread, so both report 1; a 0 (no page yet)
-/// clamps to the first spread too.
 pub fn spread_start(page: u32) -> u32 {
     ((page.max(1) - 1) / 2) * 2 + 1
 }
 
-/// Zero-based index of the spread containing `page` — the `<For>` key the
-/// spread layout renders from. The inverse of [`spread_start`].
+/// Zero-based index of the spread containing `page`.
 pub fn spread_index(page: u32) -> u32 {
     (page.max(1) - 1) / 2
 }
 
-/// First 1-based page of the LAST spread of an `n`-page document. `n == 0`
-/// (no document) reports 1 so clamping still lands on page 1.
+/// First 1-based page of the LAST spread of an `n`-page document.
 pub fn last_spread_start(page_count: u32) -> u32 {
     if page_count == 0 {
         1
@@ -128,14 +86,12 @@ pub fn last_spread_start(page_count: u32) -> u32 {
     }
 }
 
-/// The page a "previous spread" step lands on: the start of the spread
-/// before `page`'s, saturating at the first spread.
+/// The page a "previous spread" step lands on.
 pub fn spread_step_prev(page: u32) -> u32 {
     spread_start(page).saturating_sub(2).max(1)
 }
 
-/// The page a "next spread" step lands on: the start of the spread after
-/// `page`'s, clamped so the last spread stays put.
+/// The page a "next spread" step lands on.
 pub fn spread_step_next(page_count: u32, page: u32) -> u32 {
     (spread_start(page) + 2).min(last_spread_start(page_count))
 }
@@ -144,33 +100,27 @@ pub fn spread_step_next(page_count: u32, page: u32) -> u32 {
 mod tests {
     use super::*;
 
-    /// A point inside a page moves with the page: page 0 spans 0..100, so 40
-    /// inside it lands at 80 after a 2× zoom.
+    /// A point inside a page moves with the page.
     #[test]
     fn an_anchor_on_a_page_scales_with_it() {
         assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 40.0, 2.0, 0), 80.0);
     }
 
-    /// The load-bearing case: the gap between pages is fixed chrome, so an
-    /// anchor that falls in it is carried along by the pages above it at their
-    /// scale and keeps the unscaled remainder of the gap. A uniform rescale of
-    /// the whole extent would put it at 110 × 2 = 220 instead.
+    /// The gap is fixed chrome: an anchor in it keeps the unscaled
+    /// remainder.
     #[test]
     fn an_anchor_in_a_gap_keeps_the_gap_unscaled() {
-        // Page 0 ends at 100, the gap spans 100..120; 110 is 10 into the gap,
-        // so after doubling, page 0 ends at 200 and the gap is still 20.
+        // Page 0 ends at 100, the gap spans 100..120, 110 is 10 into it.
         assert_eq!(
             anchored_position(100.0, 0.0, 0.0, 20.0, 110.0, 2.0, 0),
             210.0
         );
     }
 
-    /// Every gap above the reader counts, not just the one it is standing in:
-    /// deep in a long document the unscaled sum is what keeps the page still.
+    /// Every gap above the reader counts, not just the current one.
     #[test]
     fn gaps_above_the_anchor_hold_the_page_still() {
-        // Page 5 starts at 5 * (100 + 20) = 600; +30 into it is 630, which
-        // scales to 5 * 200 + 5 * 20 + 60 = 1160.
+        // Page 5 starts at 600; +30 into it scales to 1160.
         assert_eq!(
             anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5),
             1160.0
@@ -183,12 +133,10 @@ mod tests {
         );
     }
 
-    /// A centre past the end of a short document still lands at the scaled end,
-    /// keeping the overflow beyond the single page exactly as long as it was.
+    /// A centre past the end of a short document lands at the scaled end.
     #[test]
     fn a_centre_past_the_end_keeps_the_overflow_unscaled() {
-        // 900 is far past the single page: the page scales to 200 and the 800
-        // of overflow beyond it stays exactly as long as it was.
+        // 900 is past the single page: it scales to 200, overflow stays 800.
         assert_eq!(
             anchored_position(100.0, 0.0, 0.0, 20.0, 900.0, 2.0, 0),
             1000.0
@@ -244,14 +192,13 @@ mod tests {
         assert_eq!(spread_step_next(0, 1), 1);
     }
 
-    /// The pair is exact inverses, which is what lets a resume point be stored
-    /// as a fraction and restored as an offset.
+    /// The pair is exact inverses, so a resume point survives as a
+    /// fraction.
     #[test]
     fn reading_progress_is_travel_relative_and_round_trips() {
         assert_eq!(scroll_fraction(250.0, 1000.0, 500.0), 0.5);
         assert_eq!(fraction_offset(0.5, 1000.0, 500.0), 250.0);
-        // Both ends land back on themselves, so a fraction taken at the top or
-        // the bottom of a book restores to that same place.
+        // Both ends land back on themselves.
         let (total, viewport) = (1000.0, 500.0);
         for offset in [0.0, 250.0, 500.0] {
             let there = scroll_fraction(offset, total, viewport);
@@ -259,8 +206,7 @@ mod tests {
         }
     }
 
-    /// A strip that fits its viewport has no travel to be a fraction of. This
-    /// is the case the four call sites used to guard three different ways.
+    /// A strip that fits its viewport has no travel: it reads 0.
     #[test]
     fn a_strip_with_no_travel_reads_zero_rather_than_dividing() {
         assert_eq!(scroll_fraction(0.0, 500.0, 500.0), 0.0);

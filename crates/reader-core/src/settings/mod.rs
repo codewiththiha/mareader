@@ -1,13 +1,5 @@
-//! Persisted user settings.
-//!
-//! CONTRACT: field names below are the serde schema persisted to localStorage
-//! under `mareader.settings.v1`. Do not rename fields.
-//!
-//! SCHEMA EVOLUTION: the storage key outlives every schema change on purpose
-//! — bumping it would reset everyone's last-opened file and zoom. Unknown
-//! fields are ignored on the way in and every field carries a default, so a
-//! blob from any older build loads cleanly and stale keys fall away on the
-//! first write-back.
+//! Persisted user settings: the field names below are the serde schema
+//! in localStorage.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,16 +11,11 @@ mod gloss;
 mod layout;
 mod workspace;
 
-// The reflowable formats' typography SCHEMA lives with the rest of the
-// persisted settings, because the field names are the storage contract, and
-// the CSS it resolves into lives beside it. `reflow_core::typography`
-// re-exports these names so a component reads a knob and paints it from one
-// import — hence `pub`.
+// The reflowable typography schema lives here; the field names are
+// the storage contract.
 pub mod typography;
 
-/// The layout tab's and animations tab's schemas live in their own files;
-/// re-exported so every persisted knob is still reached as
-/// `reader_core::settings::<Type>`.
+/// The layout and animation schemas, re-exported from their own files.
 pub use animation::AnimationSettings;
 pub use layout::{
     DEFAULT_COLUMN_WIDTH_PCT, FloatingLabelStyle, LayoutSettings, MAX_COLUMN_WIDTH_PCT,
@@ -38,21 +25,15 @@ pub use typography::TextSettings;
 /// The reader workspace's knobs (the Workspace tab).
 pub use workspace::{LibraryClick, PaneCorners, PaneOutlineColor, WorkspaceSettings};
 
-/// The AI word card's knobs are part of the persisted schema, so the types
-/// live here rather than in `ai-core`, which stays free of anything the
-/// settings model owns.
+/// The AI word card's knobs, part of the persisted schema.
 pub use gloss::{GlossColor, GlossDensity, default_custom_gloss, default_gloss_opacity, is_hex6};
 
-/// Which pixels of a page carry the paper colour. Owned by `pdf-paper`;
-/// re-exported here because the settings model is the one place a reader's
-/// persisted knobs live.
+/// Which pixels carry the paper colour; owned by `pdf-paper`.
 pub use pdf_paper::PaperArea;
 
 pub const SETTINGS_KEY: &str = "mareader.settings.v1";
 
-/// The key this one replaced when the app was still named `pdf-reader`. Read
-/// once by [`crate::settings`] readers that find no blob under the current
-/// key; never written, so a reader who downgrades still finds what they saved.
+/// The key this one replaced; read, never written.
 pub const RETIRED_SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 /// `serde(default)` for the flags that were on before they were a switch.
@@ -66,37 +47,18 @@ pub struct Settings {
     pub appearance: Appearance,
     /// User-saved presets (built-ins are code, not storage).
     pub user_presets: Vec<Preset>,
-    /// One-shot gate for the doubled tint curve. Blobs written before
-    /// [`Appearance::tint_amount`] moved its full effect from 100 to 50
-    /// carry strengths calibrated against the old /100 slope, and would
-    /// load with every tint twice as strong as the look that was saved;
-    /// [`sanitize`] halves them once and raises this. Fresh settings
-    /// default RAISED — there is nothing to migrate — which is why the
-    /// field carries its own `serde(default)`: the flag on a persisted blob
-    /// that never heard of the field must be `false`, and the struct-level
-    /// default would hand it the fresh-install answer instead.
+    /// One-shot gate for the doubled tint curve.
     #[serde(default)]
     pub tint_strength_halved: bool,
-    /// One-shot gate for the startup-fit default moving from Fit Page to Fit
-    /// Width. Every install persisted the old default whether or not the
-    /// reader ever chose it, so a blob without the gate is moved once; a
-    /// choice made after that sticks. `false` for an old blob, like the tint
-    /// gate above.
+    /// One-shot gate for the startup-fit default change.
     #[serde(default)]
     pub startup_fit_width: bool,
     pub default_zoom: f64,
     pub last_path: Option<String>,
-    /// Pin the READER's titlebar open (no auto-hide). One field per bar
-    /// rather than one for both, because the two routes are two surfaces with
-    /// two lives: unhitching the bar out of a document's way says nothing
-    /// about the shelf, whose bar is navigation and starts pinned — see
-    /// [`Settings::library_titlebar_pinned`].
+    /// Pin the READER's titlebar open; one field per bar.
     #[serde(default)]
     pub titlebar_pinned: bool,
-    /// Pin the LIBRARY's own titlebar. The shelf's bar is how you move, so
-    /// it defaults to pinned: navigation a reader has to hover to find is
-    /// navigation the shelf is hiding. Blobs saved before the two bars had
-    /// separate memories load pinned.
+    /// Pin the LIBRARY's own titlebar; defaults pinned.
     #[serde(default = "default_library_titlebar_pinned")]
     pub library_titlebar_pinned: bool,
     #[serde(default)]
@@ -109,18 +71,13 @@ pub struct Settings {
     pub gloss_opacity: f64,
     #[serde(default = "default_custom_gloss")]
     pub gloss_custom: String,
-    /// The AI word card's spacing. Blobs saved before the field existed
-    /// deserialize as Compact — the denser layout is the better default even
-    /// for readers who never open Settings.
+    /// The AI word card's spacing; denser by default.
     #[serde(default)]
     pub gloss_density: GlossDensity,
-    /// Typography of the reflowable formats: fonts, spacing, justification,
-    /// the book layout. PDFs never read this — their type is baked into the
-    /// page. Blobs saved before the text formats existed load the defaults.
+    /// Typography of the reflowable formats; PDFs never read it.
     #[serde(default)]
     pub text: TextSettings,
-    /// The reader workspace: what a click in the rail's Library panel does.
-    /// Blobs saved before the panel existed load the default.
+    /// The reader workspace: what a Library-panel click does.
     #[serde(default)]
     pub workspace: WorkspaceSettings,
 }
@@ -162,29 +119,21 @@ impl Settings {
         v
     }
 
-    /// Record a manual appearance edit: clamp the knobs to their real
-    /// ranges. Whether the look still matches a preset is not stored — every
-    /// surface decides that by comparing the live look, so a preset can never
-    /// claim a selection the reader is not looking at.
+    /// Record a manual appearance edit: clamp the knobs to their ranges.
     pub fn touch_appearance(&mut self) {
         self.appearance.sanitize();
     }
 }
 
-/// The old tint curve's strength on the new one: half, rounded up. The
-/// rounding is the built-ins' own — Sepia's persisted 45 became 23 in
-/// `appearance/presets.rs` — so a migrated blob that sat exactly on a preset
-/// re-matches it instead of landing one point off.
+/// The old tint curve's strength on the new one: half, rounded up.
 fn halved_strength(v: u8) -> u8 {
     v.saturating_add(1) / 2
 }
 
 /// Ensures a persisted `Settings` is internally valid.
 pub fn sanitize(settings: &mut Settings) {
-    // The one-shot curve migration, before anything else reads a strength:
-    // values persisted under the old /100 tint slope halve onto the new one
-    // so a saved look loads as the look that was saved. User presets were
-    // saved against the same slope and migrate with it.
+    // The one-shot curve migration: old /100 strengths halve onto the new
+    // slope.
     if !settings.tint_strength_halved {
         settings.appearance.tint_strength = halved_strength(settings.appearance.tint_strength);
         for p in settings.user_presets.iter_mut() {
@@ -210,8 +159,7 @@ pub fn sanitize(settings: &mut Settings) {
         .layout
         .column_width_pct
         .clamp(layout::MIN_COLUMN_WIDTH_PCT, layout::MAX_COLUMN_WIDTH_PCT);
-    // A startup fit of `None` is meaningless (the reader would not know how
-    // to size the first page); fall back to the default startup fit.
+    // A startup fit of `None` falls back to the default.
     if settings.layout.default_fit == crate::zoom_math::FitMode::None {
         settings.layout.default_fit = layout::default_startup_fit();
     }
@@ -221,8 +169,7 @@ pub fn sanitize(settings: &mut Settings) {
         settings.gloss_custom = default_custom_gloss();
     }
 
-    // Drop user presets with empty ids/names or ids that shadow a built-in;
-    // both would make rows unselectable in the menu.
+    // Drop presets with empty ids or ids that shadow a built-in.
     let builtin_ids: Vec<String> = builtin_presets().into_iter().map(|p| p.id).collect();
     settings.user_presets.retain(|p| {
         !p.id.trim().is_empty() && !p.name.trim().is_empty() && !builtin_ids.contains(&p.id)
@@ -289,9 +236,7 @@ mod tests {
 
     #[test]
     fn an_old_blob_halves_its_tint_strengths_once() {
-        // A blob written before the doubled tint curve: no gate field, and
-        // strengths calibrated against the old /100 slope — Sepia's 45, and
-        // a user preset saved at 40.
+        // A blob written before the doubled tint curve: no gate field.
         let mut s: Settings = serde_json::from_str(
             r#"{"appearance": {"tint_hue": 34, "tint_strength": 45},
                 "user_presets": [
@@ -310,18 +255,14 @@ mod tests {
         );
         assert_eq!(s.user_presets[0].appearance.tint_strength, 20);
         assert!(s.tint_strength_halved);
-        // Once means once: the app sanitizes on load AND on every write, so
-        // a second pass must not halve again.
+        // Once means once: sanitizing runs on load and on every write.
         sanitize(&mut s);
         assert_eq!(s.appearance.tint_strength, 23);
     }
 
     #[test]
     fn fresh_settings_are_born_on_the_new_curve() {
-        // The in-memory default must not look like an old blob: a fresh
-        // install's dialled strength is already a new-curve number, and a
-        // migration that ran on it would halve a look the reader chose on
-        // purpose.
+        // The in-memory default must not look like an old blob.
         let mut s = Settings::default();
         s.appearance.tint_strength = 45;
         sanitize(&mut s);
@@ -347,9 +288,7 @@ mod tests {
         // Startup fit defaults to Fit Width.
         assert_eq!(s.default_fit, crate::zoom_math::FitMode::Width);
 
-        // A blob saved BEFORE `auto_resize` existed is exactly this shape, so
-        // these assertions are also the promise that an existing install keeps
-        // the behaviour it had.
+        // A blob saved before `auto_resize` existed has exactly this shape.
         let s: LayoutSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.page_margin, 0.0);
         assert!(s.auto_scale);
@@ -404,9 +343,7 @@ mod tests {
 
     #[test]
     fn a_blob_from_the_fixed_mode_era_still_loads() {
-        // Older builds persisted a paper mode and a scan budget alongside the
-        // switch. Both are gone; a blob that still carries them must load
-        // cleanly with the switch and area it named.
+        // Older blobs carry a paper mode and a scan budget; both are gone.
         let s: LayoutSettings = serde_json::from_str(
             r#"{"blend_mode":true,"blend_scope":"fixed","blend_area":"edges","blend_scan_pages":100}"#,
         )
@@ -422,12 +359,10 @@ mod tests {
         assert!(a.sidebar_slide && a.canvas_resize);
         assert!(a.zoom && a.scroll_jumps);
 
-        // A blob saved before this group existed deserialises like `{}`: the
-        // reader must keep animating across an update rather than freeze.
+        // A blob saved before this group existed deserialises like `{}`.
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert!(s.animations.enabled && s.animations.zoom);
-        // A half-written group defaults the fields it does not carry, one by
-        // one — a stored master-off must not silently turn the details on.
+        // A half-written group defaults the fields it does not carry.
         let a: AnimationSettings = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
         assert!(!a.enabled);
         assert!(a.zoom && a.sidebar_slide && a.canvas_resize);
