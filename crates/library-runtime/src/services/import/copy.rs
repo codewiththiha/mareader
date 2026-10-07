@@ -1,7 +1,4 @@
-//! The store batch: one `store_books` call for a run's whole copy list. The measurement
-//! rides home with each copy ([`library_core::wire::StoreResult::measured`] — the shell
-//! stamps a copy and reads its head in the same pass), so there is no second verify trip
-//! over the copies that landed.
+//! The store batch: one `store_books` call for a run's whole list.
 
 use std::collections::HashMap;
 
@@ -12,13 +9,10 @@ use library_core::wire::{BookFileRequest, StoreResult};
 use crate::services as ipc;
 use crate::services::{file_name, toast};
 
-/// What a landed copy comes home as: where it stands, and its own measurement (the row
-/// adopts it, so the source file's fingerprint stays free for the folder that reads it).
+/// A landed copy: where it stands, and its own measurement.
 pub(super) type Landed = (String, Option<Fingerprint>);
 
-/// One spelling for both batches the library copies — a folder walk's and a loose file
-/// drop's — because a per-file failure is the same news either way. `noun` is what the
-/// sentence counts.
+/// The per-file failure sentence for both batches; `noun` counts.
 pub(crate) fn partition_store_results(
     state: crate::context::LibraryContext,
     results: Vec<StoreResult>,

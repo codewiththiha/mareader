@@ -1,7 +1,4 @@
-//! The reader's own shelves: made, named, nested, reordered and taken apart. A shelf holds
-//! ids and never held a byte, so every operation here is a membership edit — with the
-//! departure's question asked of the moves that carry a read-at-place shelf off its folder's
-//! seat.
+//! The reader's own shelves: made, named, nested, reordered, taken apart.
 
 use leptos::prelude::*;
 
@@ -15,10 +12,7 @@ use runtime_contract::time::now_ms;
 use super::asking::ask_move_shelf;
 use super::shelf_departure::{SeamSide, ShelfSeam, screen_shelf_moves};
 
-/// `parent` is where the shelf hangs: `None` is the level the page is on, and `Some` is a
-/// shelf the reader named — a shelf made from inside a folder is that folder being subdivided,
-/// so the parent is the folder that was asked rather than the level the page happens to be
-/// on.
+/// `parent`: `None` is the level the page is on, `Some` a named shelf.
 pub fn create_shelf_and_enter(
     state: crate::context::LibraryContext,
     parent: Option<&str>,
@@ -32,8 +26,7 @@ pub fn create_shelf_and_enter(
     id
 }
 
-/// A new shelf under the open level, without drilling into it: the reader
-/// asked for the books to be on another shelf, not to navigate there.
+/// A new shelf under the open level, without drilling into it.
 pub fn create_shelf_here(state: crate::context::LibraryContext) -> String {
     let at = state.library.shelf.get_untracked();
     let parent = (at != ALL_SHELF).then_some(at);
@@ -46,19 +39,11 @@ fn create_shelf_at(state: crate::context::LibraryContext, parent: Option<String>
     state.library.shelves.update(|shelves| {
         shelves.push(Shelf::virtual_shelf(made, "New shelf", parent));
     });
-    // The folder list derives off `shelves` and the search filter off `query`, and both are
-    // read tracked inside the page's own derives — a new shelf re-runs them on its own; the
-    // old self-set of the query (a notification forced through a write of the same value)
-    // was belt-and-braces the derives did not need.
+    // A new shelf re-runs the page's own derives; no query self-set needed.
     id
 }
 
-/// The cycle check is `library_core::shelf::reparent`'s, not the caller's: a
-/// folder filed inside itself renders on no level and can never be opened
-/// again, so the rule has to hold for every caller.
-/// Screen a shelf move against the departure rule and ask about the ones that
-/// owe a copy. Answers the shelves that can move now; the departing ones are on
-/// the sheet and come back through [`super::asking`]'s own answer.
+/// Screen the move, ask about departing shelfs that owe a copy.
 fn screened(
     state: crate::context::LibraryContext,
     ids: &[String],
@@ -72,6 +57,7 @@ fn screened(
     clean
 }
 
+/// The cycle check is `shelf::reparent`'s, so every caller gets it.
 pub fn nest_shelf(
     state: crate::context::LibraryContext,
     folder_id: &str,
@@ -92,9 +78,7 @@ pub fn nest_shelf(
     moved
 }
 
-/// Books as memberships, folders as nestings, one persist for the batch. No
-/// name question is asked: a nesting writes no membership, so nothing arrives
-/// on the parent's level.
+/// Nestings for the batch, one persist, and no name question asked.
 pub fn nest_many(state: crate::context::LibraryContext, folder_ids: &[String], parent: &str) {
     if folder_ids.is_empty() {
         return;
@@ -116,9 +100,7 @@ pub fn nest_many(state: crate::context::LibraryContext, folder_ids: &[String], p
     }
 }
 
-/// What a drag onto a shelf row's edge commits — the sibling seam the list
-/// layout draws — a reorder rather than a filing wherever the two shelves
-/// already share a level, which is the common case.
+/// A drag onto a shelf row's edge: a reorder on the shared level.
 pub fn reorder_shelves_to_anchor(
     state: crate::context::LibraryContext,
     ids: &[String],
@@ -188,10 +170,7 @@ pub fn rename_shelf(state: crate::context::LibraryContext, shelf_id: &str, name:
     crate::services::persist_library(state.library);
 }
 
-/// A book's new title is LOCKED, and the lock is the difference between a name the reader
-/// chose and a name a document supplied. A service rather than a method on the state: the
-/// write is one half of the rename and the persist is the other, and a modal that touched
-/// storage directly was a second caller of the pair that could drift from the first.
+/// A book's new title is LOCKED: a chosen name, not a supplied one.
 pub fn rename_row(state: crate::context::LibraryContext, row_id: &str, name: &str) {
     state.library.books.update(|rows| {
         let Some(row) = library_core::book::find_row_mut(rows, row_id) else {
@@ -208,9 +187,7 @@ pub fn rename_row(state: crate::context::LibraryContext, row_id: &str, name: &st
     crate::services::persist_library(state.library);
 }
 
-/// The name is the target's own at this moment, which is what makes the row recognisable on
-/// the shelf beside the book it points at. A service for the same reason [`rename_row`] is:
-/// state holds signals, the rules (id, order, seat, persist) are a transaction.
+/// The link wears the target's name so the row reads beside its book.
 pub fn add_link(
     state: crate::context::LibraryContext,
     name: &str,
@@ -239,14 +216,10 @@ pub fn add_link(
     made
 }
 
-/// The books stay in the library — a shelf is a list of ids and never held a byte — and the page
-/// steps back out a level. The shelves inside it, and the books standing on it, come up exactly one
-/// level too, onto the nearest rung the folder's tree still stands on: a shelf a level was taken out
-/// from under is a shelf the folder's next scan cannot see, and the reader never put its books on
-/// the library's own top level.
+/// The page steps out a level; the books come up to the nearest rung.
 pub fn delete_shelf(state: crate::context::LibraryContext, shelf_id: &str) {
     let was_inside = state.library.shelf.get_untracked() == shelf_id;
-    // One read of the shelf list answers every fact about the shelf that is going: the level to step out to, which watched folder filed onto it, the rung it stood on, and the books that come up with it.
+    // One read answers every fact about the shelf that is going.
     let (stepped_out, detached, rung, stood_on) = state.library.shelves.with_untracked(|shelves| {
         shelf::find(shelves, shelf_id).map_or(
             (ALL_SHELF.to_string(), None, None, Vec::new()),
@@ -263,9 +236,7 @@ pub fn delete_shelf(state: crate::context::LibraryContext, shelf_id: &str) {
     state.library.shelves.update(|shelves| {
         shelf::lift_children(shelves, shelf_id);
         shelves.retain(|s| s.id != shelf_id);
-        // Then the folder's own rungs re-hang the way its next scan would hang them: a rung whose
-        // level is gone takes the nearest one still standing, so nothing is left pointing at a
-        // shelf that is not there.
+        // The folder's rungs re-hang the way its next scan would.
         if let Some(folder_id) = &detached {
             for (id, want) in shelf::rehang_moves(shelves, folder_id) {
                 if let Some(moved) = shelf::find_mut(shelves, &id) {
