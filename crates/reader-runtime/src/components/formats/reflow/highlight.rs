@@ -1,41 +1,4 @@
-//! Search hits, painted over the type of the block row that renders them.
-//!
-//! A PDF's hits belong to the engine: it re-finds the query in the page's text
-//! layer and appends one box per client rect (`public/engine/highlights.ts`),
-//! because the engine owns that layer's whole lifecycle. A reflowable document
-//! has no engine and no text layer — its rows are the reader's own components —
-//! so the same algorithm runs here, in the row that renders the block:
-//!
-//! > find the query in the row's rendered text, take a `Range` per occurrence,
-//! > and paint one box for each client rect that range reports.
-//!
-//! Two painters in two languages, one behaviour, and what can be shared is
-//! shared: the box look is one rule set covering both subtrees
-//! (`styles/components/search.css`), the markup is the engine's (`.highlight`,
-//! `.is-active`, `data-match`), the cap on painted boxes is the engine's number,
-//! and the identity of the match the reader has stepped to is the same kind of
-//! pair — a PDF's is page + per-page ordinal, a reflowable document's is
-//! `reader_core::search::BlockHit`, block + occurrence inside it. That pair is
-//! what lets the active box be found with no geometry crossing the seam: this
-//! row numbers its own occurrences in reading order, exactly as the search
-//! numbered its hits.
-//!
-//! WHY ONE LAYER PER ROW, where the gloss strokes use one layer per page. A
-//! stroke is placed from a stored identity and there are a handful of them, so a
-//! page-level layer resolving each on a refresh is the cheap shape. Hits are the
-//! opposite: a page of type can hold dozens, they exist only while a query does,
-//! and in the continuous stream the unit that mounts and unmounts is the ROW —
-//! where a page-level layer would have nothing to attach to, the same problem
-//! the stream's gloss layer solves by covering the whole column. A row paints
-//! its own hits, so a row that mounts has them and a row that unmounts drops
-//! them, with no bookkeeping on either side.
-//!
-//! A Markdown block is searched as RENDERED, which is the only text a reader can
-//! see: a hit the search found inside syntax the renderer drops — a link's URL,
-//! a fence's info string — has nothing on screen to cover, so no box is painted
-//! for it while the results list keeps counting it. Offsets are never exchanged
-//! between the two sides, so a mismatch can only leave a box out; it cannot
-//! misplace one.
+//! Search hits, painted over the row that renders their block.
 
 use leptos::prelude::*;
 
@@ -50,21 +13,13 @@ use crate::pane::dom::PaneDom;
 use crate::state::ReaderState;
 use app_ui::epoch::epoch_signal;
 
-/// Boxes one row will paint, mirroring the engine's cap on the boxes it paints
-/// per page (`MAX_HIGHLIGHTS_PER_PAGE` in `public/engine/highlights.ts`). A
-/// one-character query in a long paragraph is what this bounds, and the two
-/// families keep the same number so a document reads the same either way.
+/// Boxes one row will paint, mirroring the engine's per-page cap.
 const MAX_BOXES_PER_ROW: usize = 200;
 
 /// One painted box, in its row's own CSS px.
-///
-/// Nothing is scaled on the way out: a reflowable row's type is scaled through
-/// CSS custom properties, so the rects the browser reports are already the
-/// zoomed pixels, and a box that sits over them wants exactly those numbers.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct HitBox {
-    /// Which occurrence of the query in this block the box covers — the ordinal
-    /// a `reader_core::search::BlockHit` names.
+    /// Which occurrence of the query in this block the box covers.
     occurrence: u32,
     left: f64,
     top: f64,
@@ -75,27 +30,12 @@ struct HitBox {
 #[component]
 pub fn BlockSearchHits(
     state: ReaderState,
-    /// The block whose row this layer covers. The row is looked up by the id
-    /// scheme every reflowable row carries — the same lookup a gloss mark's
-    /// projection makes.
+    /// The block whose row this layer covers, found by its row id.
     block: usize,
 ) -> impl IntoView {
     let boxes: RwSignal<Vec<HitBox>> = RwSignal::new(Vec::new());
-    // Built once, outside the effect: a fingerprint signal made per run would be
-    // a new reactive node per frame.
-    //
-    // The boxes are positioned RELATIVE TO THEIR ROW, so scrolling can never
-    // misplace one — and this fingerprint deliberately contains nothing that
-    // moves while the reader scrolls. The old shape hashed the stream's
-    // extent too, and the extent shifts whenever a measurement lands, which
-    // on a fast fling through unmeasured country is every frame: every
-    // mounted row then re-walked its whole text (a string scan plus a layout
-    // read per occurrence) inside the scroll handler, which is the lag a
-    // huge document showed. What CAN move type inside a row is what re-wraps
-    // it: a re-cut (the cut's generation), any re-measure (the heights'
-    // identity), the reading column's width (the geometry and the
-    // container), and the margin that insets the stream's column. Zoom is
-    // read separately below, at its commit.
+    // Built outside the effect: a per-run fingerprint would be a new node
+    // per frame.
     let relayout = {
         let reflow = state.document.content.reflow;
         let container = state.viewer.container_size;
@@ -116,12 +56,8 @@ pub fn BlockSearchHits(
     Effect::new(move |_| {
         // Everything below is TRACKED: the walk re-runs when any of it moves.
         let query = state.search.query.get();
-        // The COMMITTED scale, not the live one. A tween relays the layout out
-        // every frame, and re-walking every mounted row per frame — each walk
-        // forcing a layout the tween just dirtied — would cost the animation the
-        // frames it is trying to hit. While a transition is in flight the boxes
-        // stand down and come back at the commit, which is what the engine's own
-        // boxes do: a zoom rebuilds the text layer they live in.
+        // The COMMITTED scale: per-frame walks would cost the tween its
+        // frames.
         let settled = state.viewer.zoom.committed.get();
         let mid_zoom = state.viewer.zoom.transition.get().is_some();
         // Everything that re-wraps the row without the reader scrolling.
@@ -135,17 +71,11 @@ pub fn BlockSearchHits(
         }
         let dom = state.dom;
         if dom.by_id(&row_id).is_none() {
-            // Created but not attached: an element exists before it is in the
-            // document, and an id lookup only finds what is. One frame from now it is
-            // there, so the walk is retried once — giving up here would leave the
-            // row bare until something invalidated it, and nothing invalidates
-            // for a reader who is only scrolling.
+            // Not yet attached: one frame from now it is, so retry once.
             clear_if_painted(boxes);
             let (id, needle) = (row_id.clone(), needle.to_string());
             request_animation_frame(move || {
-                // The retry can outlive the row (a close between the arm and
-                // the frame): the boxes are this row's own signal, so a
-                // disposed one ends the retry before any reader state is read.
+                // The retry can outlive the row; the row's own signal ends it.
                 if boxes.try_get_untracked().is_none() {
                     return;
                 }
@@ -156,9 +86,7 @@ pub fn BlockSearchHits(
         paint_row(dom, &row_id, needle, boxes);
     });
 
-    // The occurrence in THIS block that the reader has stepped to, if any. Read
-    // per box, so stepping through matches repaints classes and never re-walks
-    // the DOM.
+    // The occurrence in THIS block the reader stepped to, if any.
     let active_here = Signal::derive(move || {
         let index = state.search.active.get()?;
         let hit = state
@@ -200,15 +128,9 @@ pub fn BlockSearchHits(
     }
 }
 
-/// Walk `row_id`'s rendered text for `needle` and publish the boxes over it.
-///
-/// Deliberately free of signal READS: it is called from the effect above and
-/// from the one-frame retry, and a retry that subscribed would turn a frame
-/// callback into a reactive node of its own.
+/// Walk the row's text for `needle` and publish the boxes.
 fn paint_row(dom: PaneDom, row_id: &str, needle: &str, boxes: RwSignal<Vec<HitBox>>) {
-    // A row that is not mounted has no text to cover — the same answer a gloss
-    // stroke gets for a block the virtualizer has evicted, with the same
-    // consequence: nothing is painted until it comes back.
+    // A row that is not mounted has no text to cover.
     let Some(row) = dom.by_id(row_id) else {
         clear_if_painted(boxes);
         return;
@@ -217,9 +139,7 @@ fn paint_row(dom: PaneDom, row_id: &str, needle: &str, boxes: RwSignal<Vec<HitBo
     let origin = row.get_bounding_client_rect();
     let mut painted: Vec<HitBox> = Vec::new();
     for (occurrence, (start, end)) in match_spans(&row, needle).into_iter().enumerate() {
-        // The cap is on BOXES, which is what the engine caps: a hit that wraps
-        // lines reports one rect per fragment, so counting occurrences would
-        // still let a row paint several times what a PDF page would.
+        // The cap is on BOXES, which is what the engine caps.
         if painted.len() >= MAX_BOXES_PER_ROW {
             break;
         }
@@ -245,17 +165,13 @@ fn paint_row(dom: PaneDom, row_id: &str, needle: &str, boxes: RwSignal<Vec<HitBo
             });
         }
     }
-    // Compared before it is written: an unchanged walk — a re-measure that
-    // re-cut nothing, a retry after a frame that moved nothing — must not
-    // re-render every box in the row.
+    // Compared before written: an unchanged walk must not re-render.
     if boxes.get_untracked() != painted {
         boxes.set(painted);
     }
 }
 
-/// Drop the painted boxes, but only if there are any: writing an empty list over
-/// an empty list would notify the view for nothing, and this runs on every
-/// invalidation while no search is open.
+/// Drop the painted boxes, but only if there are any.
 fn clear_if_painted(boxes: RwSignal<Vec<HitBox>>) {
     if !boxes.get_untracked().is_empty() {
         boxes.set(Vec::new());
