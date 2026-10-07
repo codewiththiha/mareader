@@ -1,22 +1,4 @@
 //! The pane manager: the reactive layer over [`PaneManagerCore`].
-//!
-//! The core decides every transition (ids, lifecycle, the one active pane,
-//! the focus hand-over); this layer carries the decisions out on the pane
-//! runtimes and publishes the two facts the host's views follow: which panes
-//! are placed, and which one is active. Those two signals are PUBLICATIONS of
-//! the core's answer, written only here — there is no second focus store.
-//!
-//! Borrow discipline: the shared state is a `RefCell`, and no borrow is ever
-//! held across a call into a pane runtime (a pane may call back into the
-//! host — a focus request, a diagnostics snapshot — from inside any of its
-//! methods).
-//!
-//! Lifetime discipline: the manager never holds the session's reactive
-//! owner, and it lets go of a pane the moment the pane's dispose returns.
-//! The session's owner stays single-rooted — the unmount handle holds the
-//! only strong reference, so the unmount alone releases the whole tree,
-//! explicit disposal or not — and a disposing pane's tail owns only what
-//! it still has to release, never the pane object itself.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -31,15 +13,12 @@ use super::model::{
     FocusChange, PaneBounds, PaneError, PaneId, PaneLifecycle, PaneManagerCore, PaneRequest,
 };
 
-/// The manager's plain-Rust state. Reached through an `Rc` so a disposal
-/// tail can finish its bookkeeping after the host's arena is gone.
+/// The manager's plain-Rust state, `Rc`'d for disposal tails.
 pub(crate) struct ManagerState {
     pub(crate) core: PaneManagerCore,
-    /// The live pane runtimes, by id. A pane leaves this map the moment its
-    /// dispose begins: from then on its teardown tail alone holds it.
+    /// The live pane runtimes; a pane leaves when its dispose begins.
     pub(crate) panes: BTreeMap<PaneId, Rc<dyn PaneRuntime>>,
-    /// Disposal tails the session's runtime has yet to await (a workspace
-    /// disposal hands them over; an in-session close spawns its own).
+    /// Tails the runtime has yet to await.
     teardowns: Vec<PaneTeardown>,
     factory: PaneFactory,
 }
@@ -54,14 +33,13 @@ pub struct PaneManager {
     active: RwSignal<Option<PaneId>>,
     /// The live panes in placement order, as the core holds them.
     placed: RwSignal<Vec<PaneId>>,
-    /// Each live pane's box, as the core last recorded it: what the host's
-    /// view positions each pane's entry by. Pruned with the placement.
+    /// Each live pane's box, pruned with the placement.
     bounds: RwSignal<BTreeMap<PaneId, PaneBounds>>,
 }
 
 impl PaneManager {
-    /// A manager whose panes the injected factory builds. Call inside the
-    /// host's owner (its signals live in the host's arena).
+    /// A manager whose panes the injected factory builds; call inside
+    /// the host's owner.
     pub(crate) fn new(factory: PaneFactory) -> Self {
         let shared = Rc::new(RefCell::new(ManagerState {
             core: PaneManagerCore::new(),
@@ -97,8 +75,7 @@ impl PaneManager {
         self.placed.try_get().unwrap_or_default()
     }
 
-    /// The box the host last handed `id` (tracked). `None` until the host
-    /// measured one — the view falls back to filling the slot.
+    /// The box the host last handed `id` (tracked).
     pub fn bounds_of(&self, id: PaneId) -> Option<PaneBounds> {
         self.bounds
             .try_with(|bounds| bounds.get(&id).copied())
@@ -159,8 +136,7 @@ impl PaneManager {
         }
     }
 
-    /// Run one core transition for `id` and, when it succeeded, mirror the
-    /// resulting lifecycle into the pane.
+    /// Run one core transition, mirroring the lifecycle into the pane.
     fn transition(
         &self,
         shared: &Shared,
@@ -178,8 +154,7 @@ impl PaneManager {
         Ok(())
     }
 
-    /// Carry out one focus hand-over the core decided: the previous pane
-    /// blurs, the active publication moves, the new pane focuses.
+    /// Carry out the core's focus hand-over: blur, publish, focus.
     fn hand_over(&self, shared: &Shared, change: FocusChange) {
         if change.is_noop() {
             return;
@@ -193,18 +168,8 @@ impl PaneManager {
         }
     }
 
-    /// Create a pane for `request`: the core mints its id and records it,
-    /// the factory builds its runtime, and the pane enters `Mounting` (the
-    /// host's view mounts it and marks it ready). `env` receives the new id
-    /// so the host can derive the pane's view of the focus authority.
-    ///
-    /// Call inside the SESSION's root owner (the session start runs in it;
-    /// an in-session command re-enters it): the pane's own owner becomes
-    /// that owner's child and the env's derived signals land in its arena,
-    /// so both die with the session whatever else happens. The manager
-    /// keeps no copy of the owner to build in — a strong one stored in the
-    /// host's own arena would be a cycle that only an explicit disposal
-    /// breaks, and a session whose unmount alone could not release it.
+    /// Create a pane; call inside the SESSION's root owner, the
+    /// factory untracked.
     pub fn create(
         &self,
         request: PaneRequest,
@@ -212,8 +177,7 @@ impl PaneManager {
         env: impl FnOnce(PaneId) -> PaneEnv,
     ) -> Result<PaneId, PaneError> {
         if Owner::current().is_none() {
-            // Built here, the pane's owner and its env would belong to no
-            // scope at all: nothing would ever clean them up.
+            // Built here, the pane's owner would belong to no scope.
             return Err(PaneError::Unowned);
         }
         let shared = self.shared().ok_or(PaneError::HostDisposed)?;
@@ -236,9 +200,7 @@ impl PaneManager {
         self.transition(&shared, id, |core| core.mark_ready(id))
     }
 
-    /// `Ready → Suspended`: the pane keeps its document session but takes
-    /// no new work (the host suspends its panes while the frame is off
-    /// screen).
+    /// `Ready → Suspended`: session kept, no new work.
     pub fn suspend(&self, id: PaneId) -> Result<(), PaneError> {
         let shared = self.shared().ok_or(PaneError::HostDisposed)?;
         self.transition(&shared, id, |core| core.suspend(id))
@@ -258,9 +220,8 @@ impl PaneManager {
         Ok(())
     }
 
-    /// The request a pane holds to become active: it goes to the ONE focus
-    /// authority ([`Self::set_active`]), which may refuse it (a pane on its
-    /// way out) — the pane never flips focus itself.
+    /// A pane's request to become active, which the authority may
+    /// refuse.
     pub fn focus_request(&self, id: PaneId) -> Callback<()> {
         let manager = *self;
         Callback::new(move |_| {
@@ -296,17 +257,13 @@ impl PaneManager {
         }
     }
 
-    /// Close one pane inside a live session: `→ Disposing`, out of the
-    /// placement, focus handed to its successor (`prefer` when live: the
-    /// layout's nearest pane), then disposed NOW (the sync half runs here;
-    /// the async tail is spawned and finishes the bookkeeping).
+    /// Close a pane: disposed now, the async tail spawned.
     pub fn close(&self, id: PaneId, prefer: Option<PaneId>) -> Result<(), PaneError> {
         spawn_local(self.close_now(id, prefer)?);
         Ok(())
     }
 
-    /// [`Self::close`]'s synchronous half: everything up to and including
-    /// the pane's sync teardown. Returns the tail the caller must drive.
+    /// [`Self::close`]'s synchronous half; the caller drives the tail.
     pub fn close_now(&self, id: PaneId, prefer: Option<PaneId>) -> Result<PaneTeardown, PaneError> {
         let shared = self.shared().ok_or(PaneError::HostDisposed)?;
         let change = shared.borrow_mut().core.begin_close(id, prefer)?;
@@ -321,9 +278,7 @@ impl PaneManager {
         self.shared()?.borrow().core.lifecycle(id)
     }
 
-    /// Dispose the whole workspace: every live pane runs its dispose now
-    /// (sync half), and their tails wait in [`Self::take_teardown`] for the
-    /// session's runtime. Idempotent.
+    /// Dispose the workspace; the tails wait for [`Self::take_teardown`].
     pub fn dispose_all(&self) {
         let Some(shared) = self.shared() else {
             return;
@@ -336,29 +291,19 @@ impl PaneManager {
         self.publish(&shared);
     }
 
-    /// One pane's dispose, after the core moved it to `Disposing`: out of
-    /// the live map, the lifecycle mirrored, the pane's sync teardown run —
-    /// and the pane object released right there. Returns the tail that
-    /// awaits the pane's async teardown and then records `Disposed` in the
-    /// core — through the `Rc`, never the arena, because the session's
-    /// reactive scope may be gone by then.
+    /// One pane's dispose: the tail finishes the record through the
+    /// `Rc`.
     fn dispose_one(&self, shared: &Shared, id: PaneId) -> PaneTeardown {
         let pane = shared.borrow_mut().panes.remove(&id);
         let shared = Rc::clone(shared);
         let Some(pane) = pane else {
-            // Created and disposed without a runtime (a factory that never
-            // returned): nothing to tear down but the record.
+            // No runtime to tear down, only the record.
             let _ = shared.borrow_mut().core.finish_dispose(id);
             return Box::pin(async {});
         };
         pane.lifecycle_changed(PaneLifecycle::Disposing);
         let tail = pane.dispose();
-        // `dispose` is the last call the manager makes on a pane: the map
-        // entry is gone, and this was the manager's one remaining reference.
-        // Dropping it NOW frees the pane object (its owner shell, its
-        // context map) at the sync teardown, instead of pinning it for as
-        // long as the engine takes to destroy. The tail owns what it still
-        // has to release, and marks the pane's own gates `Disposed`.
+        // The last call on the pane: dropping it now frees it.
         drop(pane);
         Box::pin(async move {
             tail.await;
@@ -366,8 +311,7 @@ impl PaneManager {
         })
     }
 
-    /// The workspace disposal's tails, in placement order, as one future
-    /// (the session's runtime awaits it before it reports `Disposed`).
+    /// The disposal's tails as one future.
     pub fn take_teardown(&self) -> PaneTeardown {
         let tails = self
             .shared()
@@ -404,9 +348,7 @@ mod tests {
     type Launch = Option<LaunchDocument>;
     type Built = Rc<RefCell<Vec<Rc<FakePane>>>>;
 
-    /// A pane runtime that records every call the manager makes, and owns a
-    /// reactive scope of its own (a child of the host's, as the production
-    /// pane's is) whose cleanup it reports.
+    /// A pane runtime recording every call, with its own scope.
     struct FakePane {
         id: PaneId,
         document: Option<DocumentId>,
@@ -491,8 +433,7 @@ mod tests {
                 let cleaned = Rc::clone(&log);
                 let id = descriptor.pane_id;
                 pane_owner.with(|| {
-                    // A reactive resource the pane owns: its cleanup must
-                    // run when the pane is disposed, or with the host.
+                    // A pane-owned reactive resource: cleaned up with the pane.
                     let marker = StoredValue::new_local(Some(cleaned));
                     on_cleanup(move || {
                         if let Some(Some(log)) = marker.try_get_value() {
@@ -575,8 +516,7 @@ mod tests {
         owner.with(|| {
             let a = manager.create(request("/a.pdf", false), None, env).unwrap();
             let b = manager.create(request("/a.pdf", false), None, env).unwrap();
-            // Two panes on the SAME document are two panes: the id is the
-            // pane's, never the document's.
+            // Two panes on one document are two panes.
             assert_ne!(a, b);
             assert_eq!(manager.active_untracked(), Some(a));
             assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Mounting));
@@ -671,8 +611,7 @@ mod tests {
 
     #[test]
     fn the_host_owner_reaches_every_pane_scope() {
-        // Host disposal cascades even without the explicit path: a pane's
-        // reactive scope is the host's child.
+        // Host disposal cascades: a pane's scope is the host's child.
         let (owner, manager, log, _) = fixture();
         let a = owner.with(|| manager.create(request("/a.pdf", true), None, env).unwrap());
         owner.cleanup();
@@ -681,10 +620,7 @@ mod tests {
 
     #[test]
     fn dropping_the_session_owner_alone_releases_the_whole_workspace() {
-        // The unmount handle is the session owner's only strong holder: no
-        // explicit disposal ran, yet dropping it cleans every pane's scope
-        // and frees the host's arena (the manager's state with it). A
-        // manager that kept its own copy of the owner would pin all of it.
+        // No explicit disposal ran, yet dropping the owner cleans it all.
         let (owner, manager, log, _) = fixture();
         let a = owner.with(|| manager.create(request("/a.pdf", true), None, env).unwrap());
         assert!(manager.shared().is_some());
@@ -698,8 +634,7 @@ mod tests {
 
     #[test]
     fn the_manager_holds_no_pane_past_its_dispose() {
-        // Only the test's own record still holds the pane once its dispose
-        // returned — the tail owns what it has to release, not the pane.
+        // Only the test's record still holds the pane after dispose.
         let (owner, manager, _, built) = fixture();
         owner.with(|| {
             let a = manager.create(request("/a.pdf", true), None, env).unwrap();
@@ -713,8 +648,7 @@ mod tests {
 
     #[test]
     fn a_pane_is_never_built_outside_an_owner() {
-        // Outside every reactive owner the pane's scope and its env would be
-        // orphans nothing cleans up: refused before an id is minted.
+        // Outside every owner the pane's scope would be an orphan.
         let (_owner, manager, _, built) = fixture();
         assert_eq!(
             manager.create(request("/a.pdf", true), None, env),
@@ -745,8 +679,7 @@ mod tests {
             let a = manager.create(request("/a.pdf", true), None, env).unwrap();
             let b = manager.create(request("/b.pdf", false), None, env).unwrap();
             log.borrow_mut().clear();
-            // A pointer landing in pane b: the request blurs a, then b
-            // focuses — the same hand-over the host's own calls make.
+            // A pointer landing in pane b: a blurs, then b focuses.
             manager.focus_request(b).run(());
             assert_eq!(
                 *log.borrow(),
