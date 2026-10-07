@@ -1,14 +1,5 @@
-//! The virtualizer engine: a pure state machine over a [`virtual_list::Layout`].
-//!
-//! Every input is a transition (`on_scroll`, `flush`, ...), returning a
-//! [`Step`] that describes what the framework adapter must apply (range write,
-//! corrected scroll, layout-version bump). No signals, no DOM, and no timers
-//! live here — which is why the entire refresh engine is unit-tested on the
-//! host against a `TestSurface` test double.
-//!
-//! Coordinates are **content coordinates**: `0` is the top of the first item;
-//! negative offsets address the scrollable `padding_start` band that sits
-//! before it.
+//! The virtualizer engine: a pure state machine over a
+//! [`virtual_list::Layout`].
 
 use virtual_list::{
     Align, AnchorPolicy, BandWindow, Budget, FillPriority, GridLayout, Layout, LayoutKind,
@@ -40,9 +31,7 @@ pub struct CoreConfig {
     pub eps: f64,
     /// How many times an in-flight `scroll_to_index` may re-aim.
     pub max_retries: u32,
-    /// The render band, in viewport screens around the viewport: mounted
-    /// items outside it answer [`VirtualItemState::Blank`]. `0` disables the
-    /// band (pages mode: everything mounted renders fully).
+    /// The render band in viewport screens; 0 disables it.
     pub render_screens: f64,
 }
 
@@ -92,8 +81,7 @@ struct PendingScroll {
     attempts: u32,
 }
 
-/// The framework-free core: layout, windowing and scroll state in one
-/// value, driven by the adapter in [`crate::Virtualizer`].
+/// The framework-free core: layout, windowing and scroll state.
 pub struct VirtualizerCore {
     layout: LayoutKind,
     budget: Budget,
@@ -108,8 +96,7 @@ pub struct VirtualizerCore {
     motion: Motion,
     pipeline: Pipeline,
     band: BandWindow,
-    /// The stored [`Self::render_range`], and the version that lets the adapter
-    /// see a band move even when the mount window did not.
+    /// The stored [`Self::render_range`] and its version.
     render: Option<Window>,
     band_version: u64,
     hint: usize,
@@ -154,13 +141,7 @@ impl VirtualizerCore {
         this
     }
 
-    /// The container scrolled. `content_top` is in content coordinates.
-    ///
-    /// Sub-epsilon deltas (a scroll event that moved less than `eps` — the
-    /// browser fires scroll events for fractional-pixel wheel deltas) are
-    /// ignored wholesale: they cannot change the window, and adopting them
-    /// would wake every `scroll_top` consumer (dominant-page tracking,
-    /// navigation sync) for a movement the display cannot even show.
+    /// The container scrolled; `content_top` is in content coordinates.
     pub fn on_scroll(&mut self, content_top: f64) -> Step {
         if (content_top - self.scroll_top).abs() <= self.eps {
             return Step {
@@ -216,9 +197,7 @@ impl VirtualizerCore {
 
         let mut step = self.rewindow();
         step.layout_changed = rebuilt;
-        // The viewport's own scroll correction always wins over a pending
-        // scroll-to's landing write: the frame that moves the viewport IS the
-        // ground truth the pending target is being re-aimed against.
+        // The viewport's own correction wins over a pending scroll-to.
         if scroll_write.is_some() {
             if rebuilt {
                 self.refresh_pending_target();
@@ -273,8 +252,7 @@ impl VirtualizerCore {
         step
     }
 
-    /// Rebuild the layout at the current count from fresh sizes, preserving
-    /// the reader's anchor even when geometry changes without a count change.
+    /// Rebuild the layout from fresh sizes, preserving the anchor.
     pub fn rebuild(&mut self, sizes: &dyn Fn(usize) -> f64) -> Step {
         let count = self.layout.item_count();
         let anchor = if self.layout.is_empty() {
@@ -403,14 +381,7 @@ impl VirtualizerCore {
         self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.pending = None;
-        // Queued measurements were taken at the OLD scale, and `sizes` is the
-        // authority for the new one (the caller builds it from the same
-        // records those reports fed). Left queued, they flush on the next
-        // frame — or at the resume that closes a zoom — and write old-scale
-        // sizes over the rescaled layout: the items above the anchor shrink
-        // back, every page below them jumps, and the view shows a different
-        // page until fresh reports arrive. Measurements taken after this
-        // rescale queue normally.
+        // Queued measurements were taken at the OLD scale: drop them.
         self.queue.clear();
         if let Some(top) = new_top {
             self.scroll_top = top.clamp(self.min_scroll(), self.max_scroll());
@@ -422,22 +393,14 @@ impl VirtualizerCore {
         step
     }
 
-    /// Scroll to an absolute content offset (clamped).
-    ///
-    /// The surface is written once, here. An **instant** write is adopted
-    /// into the core state immediately, so a geometry rebuild in the same
-    /// tick (a document switch) anchors at the NEW position rather than the
-    /// stale pre-jump one — the returned [`Step`] lets the adapter apply the
-    /// new window without a second DOM write. A smooth write waits for the
-    /// browser echo (`on_scroll`) and returns `None`.
+    /// Scroll to an absolute content offset, clamped.
     pub fn scroll_to_offset(
         &mut self,
         content_top: f64,
         mode: ScrollMode,
         surface: &impl ScrollSurface,
     ) -> Option<Step> {
-        // An explicit offset always supersedes an in-flight programmatic
-        // scroll; otherwise a pending re-aim could fight the new position.
+        // An explicit offset supersedes an in-flight programmatic scroll.
         self.pending = None;
         let target = content_top.clamp(self.min_scroll(), self.max_scroll());
         let smooth = self.resolve_smooth(target, mode);
@@ -450,10 +413,7 @@ impl VirtualizerCore {
         }
     }
 
-    /// Same instant-adoption contract as [`Self::scroll_to_offset`]. The
-    /// pending-scroll bookkeeping is armed for BOTH behaviors so a
-    /// measurement that moves the target can re-aim an in-flight scroll;
-    /// only instant writes adopt locally.
+    /// Same instant-adoption contract as [`Self::scroll_to_offset`].
     pub fn scroll_to_index(
         &mut self,
         index: usize,
@@ -490,28 +450,12 @@ impl VirtualizerCore {
         self.range
     }
 
-    /// The render band: the window inside the mount window that carries real
-    /// content.
-    ///
-    /// It is derived from the measured scroll, not from a distance somebody
-    /// remembered: while the reader is moving fast enough that the pipeline
-    /// cannot have filled the next item in time, the band is the viewport
-    /// padded by the lead the motion earns (see
-    /// [`virtual_list::Motion::band`]) — more ahead of the reader than behind
-    /// them. At any other speed there is no band at all and the mount window
-    /// renders, which is why an ordinary scroll shows no placeholders.
-    /// [`VirtualizerOptions::render_band`](crate::VirtualizerOptions::render_band)
-    /// is a FLOOR under that band and never a cap over it, and every
-    /// partly-visible item is inside it by construction, so nothing the reader
-    /// is looking at is ever a placeholder.
+    /// The render band: the window inside the mount window carrying content.
     pub const fn render_range(&self) -> Option<Window> {
         self.render
     }
 
-    /// How many times the band has changed which items carry content. The
-    /// adapter publishes against this, so a band that moved inside an
-    /// unchanged window still republishes its items — and a band that did not
-    /// move still costs nothing.
+    /// How many times the band changed which items carry content.
     pub const fn band_version(&self) -> u64 {
         self.band_version
     }
@@ -530,9 +474,7 @@ impl VirtualizerCore {
         (first <= last).then_some(Window { first, last })
     }
 
-    /// The render state of a mounted index: [`VirtualItemState::Active`]
-    /// inside the render band, [`VirtualItemState::Blank`] outside it. The
-    /// adapter overrides it for retained zombies.
+    /// The render state of a mounted index.
     pub fn item_state(&self, index: usize) -> VirtualItemState {
         match self.render_range() {
             Some(band) if band.contains(index) => VirtualItemState::Active,
@@ -541,20 +483,12 @@ impl VirtualizerCore {
     }
 
     /// The scroll container, sampled with the caller's clock.
-    ///
-    /// The only difference from [`Self::on_scroll`] is that this feeds the
-    /// motion estimator first, so the band the reader is owed is computed from
-    /// the movement that just happened. The adapter calls it from the scroll
-    /// listener; a host test that only cares about geometry calls
-    /// [`Self::on_scroll`] and leaves the estimator at rest.
     pub fn on_scroll_at(&mut self, content_top: f64, now_ms: f64) -> Step {
         self.motion.update(content_top, now_ms);
         self.on_scroll(content_top)
     }
 
-    /// The scroller has stopped: `scrollend`, or the adapter's debounce
-    /// firing. The estimate goes to rest at once and the band closes with it,
-    /// which is what turns every mounted item back into real content.
+    /// The scroller has stopped: the estimate rests, the band closes.
     pub fn note_scroll_end(&mut self) -> Step {
         if self.motion.speed_px_s() == 0.0 && !self.motion.engaged() {
             return Step {
@@ -567,10 +501,7 @@ impl VirtualizerCore {
         self.rewindow()
     }
 
-    /// Point the band policy at the caller's measured pipeline: how long one
-    /// item's content takes to become real, and how many are made at once. A
-    /// reader that never calls this has no capacity to report, so engagement is
-    /// decided by the speed floor alone.
+    /// Point the band policy at the caller's measured pipeline.
     pub fn set_pipeline(&mut self, pipeline: Pipeline) {
         self.pipeline = pipeline;
         self.band = self.evaluate_band();
@@ -586,23 +517,17 @@ impl VirtualizerCore {
         self.pipeline
     }
 
-    /// Whether the current scroll is a seek — fast enough, and arriving faster
-    /// than the pipeline can fill, that a placeholder is the honest answer for
-    /// an item outside the band. `false` means every mounted item renders.
+    /// Whether the current scroll is a seek.
     pub const fn motion_engaged(&self) -> bool {
         self.motion.engaged()
     }
 
-    /// The band the estimator earned against the current layout and viewport,
-    /// as of the last window update.
+    /// The band the estimator earned at the last window update.
     pub const fn motion_band(&self) -> BandWindow {
         self.band
     }
 
-    /// How urgent one mounted index is right now: the viewport first, then the
-    /// side the reader is approaching, then behind them. A fill queue that
-    /// works in this order is the difference between a blank that never appears
-    /// and one that appears for the page the reader has already reached.
+    /// How urgent one mounted index is right now.
     pub fn fill_priority(&self, index: usize) -> FillPriority {
         let visible = self
             .layout
@@ -614,8 +539,7 @@ impl VirtualizerCore {
         self.motion.priority(index, visible, self.render_range())
     }
 
-    /// The index the viewport is expected to reach by the time the current fill
-    /// finishes, so a prefetch is aimed at a place. Clamped to the layout.
+    /// The index the viewport reaches by the time the fill finishes.
     pub fn landing_index(&self) -> usize {
         let pitch = self.pipeline.pitch.max(self.layout.item_size_hint());
         let at = self.layout.dominant(self.scroll_top, self.viewport.main);
@@ -668,10 +592,7 @@ impl VirtualizerCore {
         self.padding_start + self.layout.offset(index)
     }
 
-    /// Index of the item whose span contains `pos` (leading-edge semantics),
-    /// `O(log n)` over the layout's prefix sums. Positions past the end resolve
-    /// to the last item. The inverse of [`Self::offset_of`]: subtracting
-    /// `padding_start` keeps the two in the same coordinate frame.
+    /// Index of the item whose span contains `pos`, by leading edge.
     pub fn index_at(&self, pos: f64) -> usize {
         if self.layout.is_empty() {
             0
@@ -708,12 +629,7 @@ impl VirtualizerCore {
         &self.layout
     }
 
-    /// The mounted items, DOM-ready (`start` includes `padding_start`).
-    ///
-    /// An item's state says what the renderer owes it: [`VirtualItemState::Active`]
-    /// inside the render band, [`VirtualItemState::Blank`] for the rest of the
-    /// window when a band is on. Zombie retention is the adapter's layer on
-    /// top (it knows the grace clock this pure core does not).
+    /// The mounted items, DOM-ready.
     pub fn items(&self) -> Vec<VirtualItem> {
         let Some(window) = self.range else {
             return Vec::new();
@@ -730,10 +646,7 @@ impl VirtualizerCore {
             .collect()
     }
 
-    /// One item's render contract, window-independent: valid for any index
-    /// in the layout (the layout models every item; only MOUNTING is
-    /// windowed). The adapter uses this to keep freshly evicted items
-    /// rendered at their laid-out position for a short grace period.
+    /// One item's render contract, window-independent.
     pub fn item_at(&self, index: usize) -> VirtualItem {
         VirtualItem {
             index,
@@ -749,11 +662,7 @@ impl VirtualizerCore {
         }
     }
 
-    /// One row's render contract, addressed by ANY item index in the layout:
-    /// the geometry `rows()` reports for a windowed row, available for a row
-    /// the adapter is bridging across a window change. Windowing is the only
-    /// thing the core decides about what is mounted, so the row arithmetic
-    /// has exactly one home.
+    /// One row's render contract, by any item index.
     pub fn row_at(&self, index: usize) -> VirtualRow {
         match &self.layout {
             LayoutKind::Grid(grid) => {
@@ -820,12 +729,7 @@ impl VirtualizerCore {
             }
         };
         self.range = range;
-        // The band is derived from the same inputs the window was, so it is
-        // evaluated here and stored: `render_range` and `item_state` are then
-        // read-only and cannot disagree with the window they sit inside. The
-        // version exists because a band can move WITHOUT the window doing so —
-        // the lead growing across a page boundary mid-fling — and the adapter
-        // must still republish its items.
+        // The band is derived here and stored, with its own version.
         self.band = self.evaluate_band();
         let render = self.compute_render_range(range);
         if render != self.render {
@@ -839,10 +743,7 @@ impl VirtualizerCore {
         }
     }
 
-    /// Re-evaluate the content band from the estimator, the layout's own pitch
-    /// hint and the caller's floor. `BandWindow::placeholder` is the only
-    /// answer that ever makes a mounted item a placeholder, and it says so only
-    /// while the scroll outruns the reported pipeline.
+    /// Re-evaluate the content band from estimator, pitch hint and floor.
     fn evaluate_band(&mut self) -> BandWindow {
         let mut pipeline = self.pipeline;
         if pipeline.pitch <= 0.0 {
@@ -1095,10 +996,7 @@ mod tests {
 
     #[test]
     fn instant_scroll_is_adopted_before_a_geometry_rebuild() {
-        // The document-switch race: the app writes scroll_top = 0 (Instant)
-        // and the adapter's count-rebuild re-anchors in the same tick,
-        // before the DOM echo lands. The rebuild must anchor at the NEW
-        // position, not the stale pre-jump one.
+        // The document-switch race: the rebuild anchors at the NEW position.
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
         let _ = core.on_scroll(5_000.0); // old document, deep scroll
@@ -1141,10 +1039,7 @@ mod tests {
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
         let _ = core.on_scroll(1_000.0);
-        // Smooth scroll-to: NOT adopted locally — the browser echoes it, and
-        // until it does the core still works from the old position. That is
-        // the window the bounded re-aim protects: measurements keep moving
-        // the target before the echo lands.
+        // Smooth scroll-to is not adopted locally: the echo lands it.
         assert!(
             core.scroll_to_index(50, Align::Start, ScrollMode::Smooth, &surface)
                 .is_none()
@@ -1297,19 +1192,13 @@ mod tests {
 
     #[test]
     fn rescale_keeps_the_viewport_center_stable() {
-        // The zoom contract from the reader's side: whatever content point
-        // sits at the viewport CENTER before a rescale must still sit at the
-        // center after. A top-anchored rescale lets the focal point walk —
-        // the page slides under the reader while it scales — and a sidebar
-        // slide rescales per frame, so per-frame drift compounds into the
-        // visible mid-slide misalignment. This pins the invariant.
+        // The zoom contract: the point at the viewport center stays there.
         let vh = 500.0;
         let scroll = 10_000.0;
         let mut core = list_core(200, 100.0, vh);
         let _ = core.on_scroll(scroll);
 
-        // The content point at the viewport center, by hand for this
-        // uniform gapless list: item 102, 50px into it.
+        // The content point at the viewport center, by hand.
         let center = scroll + vh / 2.0;
         let item = (center / 100.0) as usize;
         let px = center - item as f64 * 100.0;
@@ -1319,8 +1208,7 @@ mod tests {
         let step = core.rescale(0.8, &|_index| 80.0);
         assert!(step.layout_changed);
 
-        // The same item still dominates, and the anchored content point is
-        // still at the viewport center.
+        // The same item still dominates, the point still centered.
         assert_eq!(core.dominant(), before);
         let anchored = core.offset_of(item) + px * 0.8;
         assert!(
@@ -1382,8 +1270,7 @@ mod tests {
         VirtualizerCore::new(
             LayoutKind::List(ListLayout::uniform(200, 100.0, 0.0)),
             CoreConfig {
-                // A mount budget WIDER than the band: two screens of overscan
-                // each way, so the band has something to blank.
+                // A mount budget WIDER than the band: two screens of overscan.
                 budget: Budget::screenfuls(2.0, 1_000),
                 viewport: Viewport::main_only(200.0),
                 render_screens,
@@ -1392,12 +1279,7 @@ mod tests {
         )
     }
 
-    /// The band is a *seeking* mechanism, not a smaller viewport. At rest every
-    /// mounted row is drawn — DOM that is already paid for must never be
-    /// blanked — and only while the reader is actually in flight do the fringes
-    /// fall back to placeholders. Either way the rows under the reader's eyes
-    /// are never blanks, and a placeholder keeps the layout's own size, so the
-    /// scrollbar and the anchors never see the band at all.
+    /// The band is a seeking mechanism, not a smaller viewport.
     #[test]
     fn the_band_blanks_the_mount_fringes_only_while_the_reader_is_seeking() {
         let mut core = stream_core(0.75);
@@ -1418,8 +1300,7 @@ mod tests {
             assert_eq!(item.size, 100.0);
         }
 
-        // A fling through the same list: a wheel notch is ~100 px in 16 ms, so
-        // this is well past any fill capacity the host could promise.
+        // A fling: a wheel notch is ~100 px in 16 ms, past any capacity.
         core.set_pipeline(Pipeline::default());
         for step in 1..=8u32 {
             core.on_scroll_at(2_000.0 + f64::from(step) * 900.0, f64::from(step) * 16.0);

@@ -1,11 +1,4 @@
-//! Where scroll writes go. The core engine decides *what* to scroll to;
-//! a [`ScrollSurface`] executes it. Splitting the two is what lets the
-//! whole refresh engine run in plain host-side unit tests.
-//!
-//! Coordinates: surfaces receive **content coordinates** (`0` = top of the
-//! first item). Negative values address the scrollable `padding_start` band.
-//! Implementations translate to their own coordinate space (the DOM surface
-//! adds `padding_start`).
+//! Where scroll writes go: the core decides, a surface executes.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -80,7 +73,6 @@ impl ScrollSurface for DomSurface {
 }
 
 /// Test double: records every write as `(content_top, smooth)`.
-/// Host-test only — compiled just for the crate's unit tests.
 #[derive(Default)]
 #[cfg(test)]
 pub(crate) struct TestSurface {
