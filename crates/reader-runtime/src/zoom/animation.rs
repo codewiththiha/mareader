@@ -11,23 +11,39 @@ use app_ui::components::primitives::motion::reduced_motion::prefers_reduced_moti
 use super::config;
 use super::coordinator::finish_transition;
 
-/// Land a transaction: relay the layout to its target, then show it.
-pub(crate) fn land(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransition) -> bool {
-    let cur = state.viewer.zoom.visual_scale();
-    if (t.to - cur).abs() < config::SETTLED_EPSILON {
-        return false;
-    }
-    show(state, actuator, t.to);
-    true
+/// Whether the displayed scale already sits at `to`.
+fn settled(state: &ReaderState, to: f64) -> bool {
+    (to - state.viewer.zoom.visual_scale()).abs() < config::SETTLED_EPSILON
 }
 
-/// The pair every scale change is: relay the layout, then show it.
-fn show(state: &ReaderState, actuator: &ZoomActuator, to: f64) {
+/// Relay the layout at `to`, then show it.
+fn relay(
+    state: &ReaderState,
+    actuator: &ZoomActuator,
+    to: f64,
+    detached: bool,
+) -> Option<PendingScroll> {
+    // A detached relay hands the scroll write back.
     let cur = state.viewer.zoom.visual_scale();
-    if !state.viewer.mode.get_untracked().is_paginated() {
+    let pending = if state.viewer.mode.get_untracked().is_paginated() {
+        None
+    } else if detached {
+        actuator.relayout_detached(state, to / cur)
+    } else {
         actuator.relayout_to(state, to / cur);
-    }
+        None
+    };
     state.viewer.zoom.display.set(to);
+    pending
+}
+
+/// Land a transaction: relay the layout to its target, then show it.
+pub(crate) fn land(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransition) -> bool {
+    if settled(state, t.to) {
+        return false;
+    }
+    relay(state, actuator, t.to, false);
+    true
 }
 
 /// The tween's curve: covers ground early, decelerates onto the
@@ -86,17 +102,10 @@ fn land_detached(
     actuator: &ZoomActuator,
     t: &ZoomTransition,
 ) -> Option<PendingScroll> {
-    let cur = state.viewer.zoom.visual_scale();
-    if (t.to - cur).abs() < config::SETTLED_EPSILON {
+    if settled(state, t.to) {
         return None;
     }
-    let pending = if state.viewer.mode.get_untracked().is_paginated() {
-        None
-    } else {
-        actuator.relayout_detached(state, t.to / cur)
-    };
-    state.viewer.zoom.display.set(t.to);
-    pending
+    relay(state, actuator, t.to, true)
 }
 
 /// The single tween loop owned by the zoom controller.
@@ -134,7 +143,7 @@ impl Tween {
             let duration = config::zoom_profile().duration_ms();
             let progress = ((js_sys::Date::now() - t.start_ms) / duration).clamp(0.0, 1.0);
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
-            show(&state, &actuator, visual);
+            relay(&state, &actuator, visual, false);
             if progress >= 1.0 {
                 // `show` can swap the signal for a newer transition;
                 // finishing follows it.
