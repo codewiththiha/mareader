@@ -1,27 +1,4 @@
-// The Tauri ⇄ CI build-contract check.
-//
-// The blank-window regression had one shape: CI built all three artifacts
-// (tools/build-dist.sh) while Tauri still ran `trunk build --release`, so the
-// packaged app carried a shell page whose dynamic imports resolved to nothing.
-// Two builds for one responsibility is the bug; this check makes the
-// divergence a red build instead of a review promise.
-//
-// It asserts, deterministically and without needing a built dist:
-//   1. tauri.conf.json packages `../dist` — the directory the canonical
-//      builder writes.
-//   2. both Tauri commands (beforeBuildCommand, beforeDevCommand) invoke the
-//      canonical builder / dev orchestrator through the npm script names that
-//      package.json defines, and those scripts point at the same files.
-//   3. beforeDevCommand cannot start a shell whose runtime artifacts are not
-//      guaranteed to exist (it must run the orchestrator, not `trunk serve`
-//      directly).
-//   4. devUrl's port is the port Trunk actually serves (Trunk.toml).
-//   5. CI runs that same builder — so "CI → build-dist.sh, Tauri → trunk build"
-//      cannot come back unnoticed.
-//
-// JavaScript, not TypeScript: it must run in the Web/contracts lane before
-// node_modules exists (see tools/check-runtime-artifacts.mjs for the same
-// reasoning).
+// The Tauri ⇄ CI contract: one canonical build, one dev URL, one port.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -75,10 +52,7 @@ const beforeBuild = String(build.beforeBuildCommand ?? "");
 const beforeDev = String(build.beforeDevCommand ?? "");
 
 const buildIndirect = /npm run build:dist\b/.test(beforeBuild);
-// The freshness-gated path (`cargo tauri run` / `tauri build` build only
-// when the inputs changed) is canonical too — but only if the gate script
-// runs the dev orchestrator in build-only mode, and that mode itself runs
-// the canonical builder. Anything else named "gate" is a new build path.
+// The freshness gate is canonical only if it runs the dev orchestrator.
 const buildGated = /npm run build:gate\b/.test(beforeBuild);
 const buildDirect = beforeBuild.includes(CANONICAL_BUILDER);
 if (!buildIndirect && !buildGated && !buildDirect) {
@@ -147,8 +121,7 @@ if (/trunk serve/.test(beforeDev)) {
   );
 }
 
-// 3. devUrl's port is Trunk's port. Trunk.toml owns the number; a divergence
-// means Tauri waits on a URL nothing serves.
+// devUrl's port is Trunk's: a divergence means Tauri waits on nothing.
 const trunk = readText("Trunk.toml");
 const servePort = /\[serve\][\s\S]*?port\s*=\s*(\d+)/.exec(trunk ?? "")?.[1];
 const devUrlPort = /^https?:\/\/[^/:]+:(\d+)/.exec(String(build.devUrl ?? ""))?.[1];
@@ -185,9 +158,7 @@ if (!builderScript.includes("check-runtime-artifacts")) {
   );
 }
 
-// 5. Neither Tauri command may assemble the frontend by hand. A `cp` in the
-// config is a second, unreviewed build path — the shape the merge belongs to
-// (tools/build-dist.sh) rather than to the config.
+// Neither command may assemble the frontend by hand; no second build path.
 const NATIVE_SMOKE = "tools/tauri-smoke.mjs";
 for (const [name, command] of [
   ["beforeBuildCommand", beforeBuild],
@@ -201,8 +172,7 @@ for (const [name, command] of [
   }
 }
 
-// 6. The native smoke is what makes "the window opened and showed nothing" a
-// red run; it must exist and be wired into a workflow.
+// The native smoke turns "the window opened and showed nothing" into a red run.
 if (!fs.existsSync(path.join(root, NATIVE_SMOKE))) {
   fail(`${NATIVE_SMOKE} is missing — nothing would fail on a native blank window`);
 }
@@ -219,9 +189,7 @@ if (!ciRunsNativeSmoke) {
   );
 }
 
-// 7. The lane that runs the smoke must not skip the paths the boot depends
-// on: a change to the shell, the Tauri config or the build script has to
-// reach it.
+// The smoke's lane must not skip the shell, the Tauri config or the builder.
 const requiredPaths = ["src/**", "src-tauri/**", "index.html", CANONICAL_BUILDER];
 for (const required of requiredPaths) {
   if (!deepText.includes(`"${required}"`)) {
@@ -243,8 +211,7 @@ if (!builderScript.includes("runtime-artifacts.mjs --build")) {
   fail("canonical builder does not use the shared runtime artifact layout");
 }
 
-// Copy-policy fixtures, not a build: strict naming, normalized Trunk names,
-// and first-leg staging are tested without cargo, Trunk or dependencies.
+// Copy-policy fixtures: strict naming, Trunk normalization, first-leg staging.
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "mareader-artifacts-"));
 try {
   for (const { name, page, directory } of RUNTIMES) {

@@ -1,30 +1,4 @@
-// Memory after a SPLIT read, measured the same way for any build of the app
-// (the method recorded in docs/frame-lifecycle-alternatives.md, "Method").
-//
-//   PORT=8123 DIST_DIR=dist node tests/browser/server.mjs &
-//   node tools/measure-split-return.mjs [label] [baseUrl] [--intent] [--webkit]
-//
-// One scenario, end to end, in a fresh browser context: seed the library
-// through `?open=`, boot the library fresh, click the book, split the
-// workspace into four panes (three PDFs and a Markdown document, through
-// the web build's `__mareaderOpenIn` hook — the one open command the split
-// menu drives), scroll every pane, close the book with the reader's Library
-// button, then sample for 70 s and once more after a forced GC. `--intent`
-// keeps a pointer moving over the shelf during the idle window (what a hand
-// resting on the mouse over the window does), hands off otherwise.
-//
-// Every sample is one JSON line: the renderer processes' PSS (Linux
-// `/proc/<pid>/smaps_rollup`), the frames in the host with their slots, and
-// the probe's memory fields. The last line is `RESULT {...}`. Absolute PSS
-// varies by ±20 MB between runs; read the deltas within a run and the
-// frame lists.
-//
-// `--webkit` runs the same scenario in Playwright's WebKit — JavaScriptCore,
-// the engine the macOS app's WKWebView runs — and sums the PSS of its
-// web content processes instead of Chromium's renderers (`WPEWebProcess`
-// in the headless WPE port Playwright runs on Linux, `WebKitWebProcess` in
-// the GTK port).
-// WebKit offers no forced GC, so its last sample is a settle, not a GC.
+// PSS after a split read: one scenario per fresh browser context.
 import { chromium, webkit } from "playwright";
 import { readFileSync, readdirSync } from "node:fs";
 
@@ -56,8 +30,7 @@ page.on("console", (m) => {
   consoleLines.push(`+${Date.now() - t0} [${m.type()}] ${t.slice(0, 160)}`);
 });
 
-/** PSS/RSS of every content process on the box — Chromium's renderers, or
- *  WebKit's web processes (one browser runs at a time). */
+/** PSS/RSS of every content process on the box. */
 function rendererMemory() {
   let pss = 0;
   let rss = 0;
@@ -97,9 +70,7 @@ const snap = () =>
 
 const frames = () =>
   page.evaluate(() => {
-    // Each runtime slot (an iframe in builds that framed their runtimes, a
-    // slot in the Shell's document in builds that mount them there), then
-    // each pane's own frame.
+    // Each runtime slot, then each pane's own frame.
     const kind = (f) =>
       f.tagName === "IFRAME"
         ? f.src.includes("reader.html") ? "reader" : f.src.includes("library.html") ? "library" : "?"
@@ -136,8 +107,7 @@ async function sample(tag) {
     heapHighWaterMB: s?.heapHighWaterBytes != null ? +(s.heapHighWaterBytes / 1048576).toFixed(1) : null,
   };
   if (row.renderers === 0) {
-    // A page is always loaded, so nothing matched means the matcher is
-    // wrong for this engine — a 0 MB row would read as a result.
+    // A page is always loaded, so nothing matched means the matcher is wrong.
     const seen = new Set();
     for (const p of readdirSync("/proc").filter((d) => /^\d+$/.test(d))) {
       try {
@@ -164,9 +134,7 @@ async function waitFor(what, pred, timeout = 60_000) {
   }
 }
 
-// The active runtime's slot: an iframe in builds that framed their
-// runtimes, an element of the Shell's document in builds that mount them
-// there. The replay measures both kinds of build.
+// The active runtime's slot: an iframe or an element of the Shell's document.
 const activeFrame = '#runtime-host .runtime-frame[data-mareader-slot="active"]';
 const framed = () =>
   page.evaluate((sel) => document.querySelector(sel)?.tagName === "IFRAME", activeFrame);
@@ -204,8 +172,7 @@ result.libraryAtRest = await sample("library at rest (fresh boot, before any rea
 // 3. open the book from the shelf
 await shelfIntent();
 await page.waitForTimeout(1500);
-// A real click first, as the lifecycle suite's `clickBook` does: the card
-// opens on the pointer sequence, which a bare `el.click()` does not carry.
+// A real click first: the card opens on the pointer sequence.
 try {
   const scope = (await framed()) ? page.frameLocator(activeFrame) : page.locator(activeFrame);
   await scope
@@ -285,9 +252,7 @@ for (const sec of IDLE_SAMPLES_S) {
     await page.waitForTimeout(Math.min(wait, INTENT ? 1000 : wait));
   }
   const row = await sample(`+${sec}s after returning to the library`);
-  // Pinned historical builds retain their historical policy for comparison.
-  // The current build MUST prove the new no-Reader policy in BOTH engines,
-  // even under continuous intent, well before the old 60-second eviction.
+  // Pinned builds keep their policy; the current build proves no-Reader.
   if (label === "current" && sec >= 2 &&
       (row.routeReturnPolicy !== "unload-both" || row.readerFramesResident !== 0 ||
        row.paneFramesResident !== 0 || row.libraryFramesResident !== 1 || row.atBaseline !== true ||

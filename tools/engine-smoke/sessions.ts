@@ -1,21 +1,4 @@
-// Two sessions in one realm: the engine-level half of the session-ownership
-// tests (docs/session-ownership.md). Every document call names its session;
-// these scenarios prove that naming is real isolation, not a label:
-//
-//   * two sessions render, prefetch and thumbnail side by side, and
-//     destroying one leaves the other fully usable;
-//   * a retired sid is refused everywhere — async calls resolve
-//     `no_session`, sync calls are no-ops — and can never be registered
-//     again (sids are monotonic);
-//   * work in flight when its session dies settles into THAT session's
-//     accounting and never lands in a session created afterwards;
-//   * an open racing its session's destroy resolves `no_session` and still
-//     tears its loading task (and worker) down;
-//   * one realm-level appearance change reaches every live session, and the
-//     root backdrop paper follows the publishing session only.
-//
-// The scenario ends with every session it made retired, so the teardown
-// baseline after it still proves the realm drains to zero.
+// Two sessions in one realm: naming a session is real isolation, not a label.
 
 import {
   FakeCanvas,
@@ -106,17 +89,13 @@ export async function run(): Promise<void> {
   if (!live.includes(sidA) || !live.includes(sidB)) {
     throw new Error("both sessions must be live, got " + JSON.stringify(live));
   }
-  // A second document in a session that holds one is refused: a new
-  // document is a new session.
+  // A session holds one document; a second document is a new session.
   const again = await PDFReader.open(sidA, "/fake/book.pdf");
   if (again.ok || again.error.name !== "session_in_use") {
     throw new Error("a second open in one session must be refused, got " + JSON.stringify(again));
   }
 
-  // Each session registers its own pages and pins a distinct appearance
-  // root. The two documents deliberately request opposite bake pipelines:
-  // this catches a realm-global cache that would make both pages use whichever
-  // pane wrote its tokens last.
+  // Each session pins a distinct appearance root, so a global cache would show.
   const rootA = themeRoot("none", "normal", "#ffffff", "a-v1");
   const rootB = themeRoot("invert(1)", "normal", "#000000", "b-v1");
   stubHost("two-a-pg", rootA);
@@ -144,15 +123,13 @@ export async function run(): Promise<void> {
   }
   console.log("two sessions ok: distinct pane-root filters bake independently", { pixelA, pixelB });
 
-  // Editing B's pane pipeline must rebake B alone; A's settled raster and
-  // generation remain unchanged even though refreshTheme is a realm broadcast.
+  // Editing B's pipeline rebakes B alone; A's raster stays untouched.
   const rootBNode = rootB as unknown as { _themeComputed: { "--canvas-filter": string; "--canvas-blend": string; paper: string }; _style: string };
   rootBNode._themeComputed = { "--canvas-filter": "brightness(0.5)", "--canvas-blend": "normal", paper: "#808080" };
   rootBNode._style = "b-v2";
   const rendersABefore = PDFReader.sessionStats(sidA)?.rendersCompleted;
   await PDFReader.refreshTheme();
-  // Untouched means untouched: A is not re-rendered either, however the
-  // broadcast reached it (a re-render to the same pixels still flashes).
+  // Untouched means untouched: A is not re-rendered, however it was reached.
   const rendersAAfter = PDFReader.sessionStats(sidA)?.rendersCompleted;
   if (rendersAAfter !== rendersABefore) {
     throw new Error(`B's pane edit re-rendered A: ${rendersABefore} -> ${rendersAAfter}`);
@@ -164,10 +141,7 @@ export async function run(): Promise<void> {
   }
   console.log("pane theme update ok: B rebaked while A remained unchanged", { pixelAAfter, pixelBAfter });
 
-  // Two panes showing the same mode carry the SAME page ids. A page
-  // registered with its own elements is pinned to them: each session paints
-  // its own canvas, and the element a document-wide id lookup would find
-  // (the decoy) is never touched.
+  // Two panes share page ids; each session pins its own canvas, not the decoy.
   const twinA = fakeDocument.createElement("canvas") as unknown as FakeCanvas & { width: number };
   const twinB = fakeDocument.createElement("canvas") as unknown as FakeCanvas & { width: number };
   const decoy = getEl("twin-cv") as unknown as { width: number };
@@ -207,8 +181,7 @@ export async function run(): Promise<void> {
   if (!localA || !localB || localA === localB) {
     throw new Error(`each PDF session must publish its own baked paper: A=${localA} B=${localB}`);
   }
-  // B opened last, so B publishes globally while both sessions retain their
-  // own pane-local baked-paper values.
+  // B opened last, so B publishes globally while both keep pane-local paper.
   const paperB = paper();
   PDFReader.presentSession(sidA);
   const paperA = paper();
@@ -221,13 +194,9 @@ export async function run(): Promise<void> {
   if (panePaper(rootB) === localB) throw new Error("a non-publishing session did not update its own pane paper");
   console.log("paper publisher ok: shared MRU paper and distinct per-session papers", { localA, localB });
 
-  // --- One appearance broadcast, every session ----------------------------
-  // Appearance is global; the rasters it is baked into are per session. One
-  // refreshTheme must re-bake BOTH sessions' pages, each on its own chain.
+  // One appearance broadcast re-bakes both sessions, each on its own chain.
   const savedTheme = { ...fakeComputed };
-  // From here the fake pane roots inherit the one global theme, matching the
-  // product with independent mode off. The earlier assertions deliberately
-  // gave them separate pipelines.
+  // From here the fake pane roots inherit the one global theme.
   const followsGlobal = new Proxy({}, {
     get: (_target, key: string) => (fakeComputed as unknown as Record<string, string | undefined>)[key],
   }) as typeof fakeComputed;
@@ -251,8 +220,7 @@ export async function run(): Promise<void> {
     expectedBakePixel(rawB, darkFilter, "screen", darkPaper),
     "session B re-baked by the broadcast",
   );
-  // The scrub window spans every session and the class leaves only once
-  // all of them have settled out of it.
+  // The scrub window spans every session and closes only when all have settled.
   await PDFReader.setScrubMode(true);
   if (!isScrubActive()) throw new Error("scrub must raise the appearance-scrubbing class");
   await PDFReader.setScrubMode(false);
@@ -265,25 +233,18 @@ export async function run(): Promise<void> {
   A.registerPage(2, "two-a2-cv", "two-a-pg");
   const inFlight = A.renderPage("two-a2-cv", 1.0, false);
   const pagesB = PDFReader.sessionStats(sidB)!.pages;
-  // Independent prefetch across a disposal: both sessions prefetch, A dies
-  // with its prefetch in flight, and B's prefetch still lands — in B.
+  // Prefetch across a disposal: A dies in flight, B's still lands.
   const prefetchA = A.prefetchThumb(5, 0.25);
   const prefetchB = B.prefetchThumb(5, 0.25);
   await PDFReader.destroySession(sidA);
-  // Retiring the publisher hands the backdrop to the most recently
-  // presented live session (B) — the split workspace keeps standing on the
-  // colour it was last given instead of dropping it.
+  // Retiring the publisher hands the backdrop to the newest live session.
   if (paper() !== "#e8e0d0") {
     throw new Error("retiring the publisher must fall back to the last presented session's paper, got " + paper());
   }
   const late = await inFlight;
   await Promise.all([prefetchA, prefetchB]);
   if (!B.hasThumb(5, 0.25)) throw new Error("B's prefetch must survive A's disposal");
-  // A look change re-bakes the cards a rail can SEE and leaves the rest one
-  // generation behind — a prefetched entry nobody ever showed has no canvas to
-  // repaint, so the synchronous probe reads a miss BY DESIGN (its raw is what
-  // makes that cheap). Disposal is what this checks: B must still HOLD the
-  // entry, and asking for the stale card must bring it current from that raw.
+  // A look change re-bakes visible cards; the raw serves the next ask.
   const heldB = PDFReader.sessionStats(sidB)!.thumbs;
   if (heldB < 2) {
     throw new Error("A's disposal must not evict B's thumbnails, B holds " + heldB);
@@ -308,8 +269,7 @@ export async function run(): Promise<void> {
   // B still works after A's teardown.
   const rb2 = await B.renderPage("two-b-cv", 1.2, false);
   if (!rb2.ok) throw new Error("B must keep rendering after A's teardown: " + JSON.stringify(rb2));
-  // C's open took the presentation with nothing detected yet — the
-  // backdrop HOLDS B's colour rather than flashing to the theme paper.
+  // C's open took the presentation: the backdrop holds B's colour.
   if (paper() !== "#e8e0d0") {
     throw new Error("a fresh presentation with no colour must hold the previous paper, got " + paper());
   }
@@ -350,8 +310,7 @@ export async function run(): Promise<void> {
   if (after.sessionsLive !== before.sessionsLive) {
     throw new Error(`sessions left live: ${after.sessionsLive} (was ${before.sessionsLive})`);
   }
-  // The scenario runs beside the other scenarios' current session, so the
-  // gauges must return to exactly what they were before it began.
+  // The scenario runs beside other sessions, so gauges return to baseline.
   const gaugeKeys = ["pages", "thumbs", "thumbTasks", "activeRenders", "pageQueue", "thumbQueue"] as const;
   for (const key of gaugeKeys) {
     if (after[key] !== before[key]) {
