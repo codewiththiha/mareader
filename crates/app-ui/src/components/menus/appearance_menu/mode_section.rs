@@ -1,11 +1,4 @@
-//! Base mode + colour tint — the two controls that replaced the six fixed
-//! themes.
-//!
-//! The base is a 3-way segmented choice (Light / Dark / Dim) because they are
-//! mutually exclusive structural options, not a list that will grow. The tint
-//! below it is hue + strength, and it is deliberately shown even at strength 0
-//! rather than hidden behind a "enable tint" toggle: a control that appears
-//! and disappears is harder to find than one that is simply at zero.
+//! Base mode and colour tint: the three-way base and hue plus strength.
 
 use leptos::prelude::*;
 
@@ -14,8 +7,8 @@ use crate::components::menus::appearance_menu::hue_picker::HuePicker;
 use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::primitives::form::slider::Slider;
 
-/// Text tuning goes through the settings signal; the typography effect owned
-/// by the running runtime paints it immediately.
+/// Text tuning goes through the settings signal; the typography effect
+/// paints it immediately.
 fn update_text(state: ChromeState, f: impl FnOnce(&mut reader_core::settings::TextSettings)) {
     state.settings.update(|s| f(&mut s.text));
 }
@@ -33,15 +26,12 @@ fn base_icon(b: BaseMode) -> IconName {
 
 #[component]
 pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
-    // The dials show and edit the THEME HANDLE's look: the active pane's
-    // own while independent themes are in effect, the window's otherwise.
+    // The dials show the HANDLE's look: the active pane's, or the window's.
     let seed = theme.look.read_untracked();
     let (hue, set_hue) = signal(seed.tint_hue as f64);
     let (strength, set_strength) = signal(seed.tint_strength as f64);
 
-    // Mirror external writes (applying a preset, another pane's edit) back
-    // into the local signals, or the sliders would keep showing the old
-    // look's numbers.
+    // Mirror external writes back into the local signals.
     Effect::new(move || {
         let a = theme.look.get();
         set_hue.set(a.tint_hue as f64);
@@ -86,13 +76,7 @@ pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 359.0);
                     set_hue.set(v);
-                    // Dragging the hue with no strength shows nothing, which
-                    // reads as a broken control. Give it a visible-but-gentle
-                    // default so the choice lands — locally AND in the scrub,
-                    // because Settings is not written until the drag pauses.
-                    // 18 rather than the old 35: the doubled tint curve
-                    // (Appearance::tint_amount) reaches the same look at half
-                    // the number.
+                    // Hue at zero strength shows nothing; default it gently.
                     let mut st = strength.get_untracked().round().clamp(0.0, 100.0) as u8;
                     if st == 0 {
                         st = 18;
@@ -128,12 +112,7 @@ pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
             />
         </div>
 
-        // The reflowable formats' own contrast dial, directly under the tint
-        // it complements. PDFs earn their look through the canvas pipeline —
-        // filters and blend modes over an always-light raster — and that
-        // pipeline must never touch DOM text (it would invert or double-tint
-        // it), so the row exists only while a text document is open. Text
-        // needs exactly one number, and the stylesheet does the rest.
+        // The reflowable contrast dial, under the tint; only text uses it.
         <Show when=move || state.reader.reflowable.get()>
             <div class="mt-3">
                 <TextInkSlider state=state />
@@ -142,16 +121,11 @@ pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
     }
 }
 
-/// The ink-intensity slider: how strong the body text's ink sits against
-/// the paper, from a comfortable grey to the theme's full ink. Writes
-/// through the shared typography path (sanitize included), so the live
-/// readout and the persisted value can never disagree.
+/// The ink-intensity slider, written through the shared typography path.
 #[component]
 fn TextInkSlider(state: ChromeState) -> impl IntoView {
     let (ink, set_ink) = signal(state.settings.with_untracked(|s| s.text.ink_contrast));
-    // Mirror external writes (a preset landing, another control's scrub)
-    // back into the local signal, or the slider would keep showing the old
-    // dial's number.
+    // Mirror external writes back into the local signal.
     Effect::new(move || {
         set_ink.set(state.settings.with(|s| s.text.ink_contrast));
     });
