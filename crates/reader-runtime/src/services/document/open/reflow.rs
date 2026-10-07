@@ -1,27 +1,4 @@
-//! Opening a reflowable document — plain text, Markdown, and whatever joins
-//! them later.
-//!
-//! The shape mirrors the PDF open (claim the pane's generation, replace the
-//! pane's document with this one's own session and await the old one's
-//! release, read, seed, flip the status), but the content never
-//! touches the pdf.js engine: the file is read
-//! through the shell's `read_file_text` command and handed to its format's
-//! parser. From here a text document and a PDF are the same object — pages of
-//! the same A4 sheet through the same scale pipeline — and the one difference
-//! is what paints inside a page (`components::formats::reflow`).
-//!
-//! Two things make this the whole format-specific surface of the open flow:
-//!
-//! * the PARSER is a match on the format, not a second pipeline: a third
-//!   reflowable format adds one arm here, not a copy of this file;
-//! * pagination starts from the pure estimate — character counts against the
-//!   column width — so the reader is up the instant the file is read; the
-//!   measurement pipeline then refines it block by block
-//!   (`crate::effects::reader::reflow_measure`).
-//!
-//! Markdown also gets an outline, and it is seeded rather than resolved: the
-//! headings are already in the text, so there is no resolver tail to race,
-//! which is why `outline_pending` goes false here.
+//! Opening a reflowable document: the PDF open's shape, reading text.
 
 use std::sync::Arc;
 
@@ -43,8 +20,7 @@ use runtime_contract::boundary::ShellApi;
 
 use crate::pane::session::{FormatSession, MdSession, TxtSession};
 
-/// What a format contributes to an open: its parsed blocks, what to call the
-/// document, and the headings its outline will be built from.
+/// What a format contributes: blocks, a title, and its headings.
 struct Parsed {
     blocks: Vec<TextBlock>,
     title: Option<String>,
@@ -53,12 +29,7 @@ struct Parsed {
     headings: Vec<MarkdownHeading>,
 }
 
-/// The document's bytes as text, through the shell's gated read command.
-/// Outside the desktop shell there is no filesystem to read from — the
-/// plain-browser build answers with the same "desktop only" error the open
-/// dialog gives, except for the bundled samples the page itself serves
-/// (the web build's `?open=/samples/…` hook, which the browser suite uses
-/// for its mixed-format workspace).
+/// The document's bytes as text, through the shell's gated read.
 async fn read_file_text(path: &str) -> Result<String, String> {
     if !tauri_bridge::has_tauri() {
         if path.starts_with("/samples/") {
@@ -80,9 +51,7 @@ async fn read_file_text(path: &str) -> Result<String, String> {
         .ok_or_else(|| "read_file_text returned no text".to_string())
 }
 
-/// A bundled sample's text, fetched from the page's own origin. A missing
-/// sample must fail as missing: the dev server answers unknown paths with
-/// the app's HTML (its SPA fallback), which is not the document.
+/// A bundled sample's text; a missing sample must fail as missing.
 async fn fetch_sample_text(path: &str) -> Result<String, String> {
     use wasm_bindgen::JsCast;
     let describe = |e: JsValue| e.as_string().unwrap_or_else(|| format!("{e:?}"));
@@ -123,10 +92,8 @@ async fn fetch_sample_text(path: &str) -> Result<String, String> {
         .ok_or_else(|| format!("{path}: not text"))
 }
 
-/// Shared open flow for the reflowable formats: replace the pane's document,
-/// read the file, parse it with the format's own parser, and populate the
-/// whole app state. Mirrors [`super::open_pdf`]: the same replace-then-load
-/// order, the same generation checks, the same abandon on failure.
+/// Shared flow for the reflowable formats: replace, read, parse,
+/// populate.
 pub(super) fn open_reflowable(
     state: crate::context::ReaderContext,
     path: String,
@@ -138,15 +105,8 @@ pub(super) fn open_reflowable(
     if !state.pane.admits_work() {
         return;
     }
-    // This document's own session becomes the pane's document owner through
-    // the pane's one replace path, before the file is read: the session it
-    // replaces — a PDF's engine session (its book, rasters, lanes and paper)
-    // or the previous text document's (which releases the pane's reflow
-    // content on the spot) — is disposed here, so the new text is never
-    // read and parsed while the old document still sits in memory. The
-    // retained PDF search index goes too: this format searches its own
-    // blocks, and a closed PDF's extracted text must not sit in the wasm
-    // heap while a text book is open.
+    // The session replaces the pane's owner before the read; the old one
+    // goes first.
     let reflow = state.reader.document.content.reflow;
     let session = match format {
         Format::Markdown => FormatSession::Markdown(MdSession::new(&path, reflow)),
@@ -156,8 +116,7 @@ pub(super) fn open_reflowable(
     #[cfg(feature = "pdf")]
     pdf_engine::session::drop_retained_search();
     spawn_local(async move {
-        // THIS pane's previous document is released before the new one
-        // loads; no other pane's session is awaited.
+        // THIS pane's previous document is released first.
         release.settled().await;
         if !state.pane.owns_generation(stamp) {
             return;
@@ -171,41 +130,30 @@ pub(super) fn open_reflowable(
                 return;
             }
         };
-        // The read finished — but a second open (or the pane's dispose) may
-        // have taken the document over while it worked.
+        // The read finished; a second open may have taken over.
         if !state.pane.owns_generation(stamp) {
             return;
         }
         let parsed = parse(format, &raw);
-        // The blocks own their text; the file's bytes are not needed past
-        // the parse, and holding both doubles the open's peak.
+        // The blocks own their text; the bytes are dropped.
         drop(raw);
         if parsed.blocks.is_empty() {
             super::abandon(state, "This file has no readable text.".to_string());
             return;
         }
-        // Everything below is synchronous, and the generation was just
-        // checked, so no tail of this flow can outlive its stamp.
+        // Everything below is synchronous, so no tail outlives its stamp.
         ready(state, path, format, parsed, saved_page, saved_fraction);
     });
 }
 
-/// The format's own step, and nothing else: normalise, parse, then cut
-/// oversized blocks so a page can be packed tightly.
-///
-/// The subdivision runs BEFORE anything downstream sees the blocks, so block
-/// identities are stable for the whole session and every consumer works in
-/// the same atoms. Plain text cuts at 40 lines — its hard breaks are natural
-/// boundaries and a fixed-line paragraph must not be chopped; Markdown cuts
-/// prose only, at [`reflow_core::block::SPLIT_MAX_LINES`], because a split
-/// inside a list, fence, table or quote re-opens that construct mid-page.
+/// The format's own step: normalise, parse, then split oversized
+/// blocks.
 fn parse(format: Format, raw: &str) -> Parsed {
     match format {
         Format::Markdown => {
             let blocks = md_core::subdivide_prose(md_core::parse_markdown(raw));
             // Keyed on the SUBDIVIDED blocks: a split shifts every index after
-            // it, and an outline entry that points at the wrong block is worse
-            // than no outline at all.
+            // it.
             let headings = md_core::headings_of_blocks(&blocks);
             Parsed {
                 blocks,
@@ -225,12 +173,7 @@ fn parse(format: Format, raw: &str) -> Parsed {
     }
 }
 
-/// The document read and parsed: seed the state, flip the route, and let the
-/// measurement pipeline refine the cut.
-///
-/// The steps shared with the PDF tail are [`super::enter`]'s, so the two
-/// cannot drift on what "open" means. What is left here is the reflowable
-/// half of the seeding: publish the blocks, estimate the cut.
+/// The document read and parsed: seed the state and flip the route.
 fn ready(
     state: crate::context::ReaderContext,
     path: String,
@@ -240,10 +183,8 @@ fn ready(
     saved_fraction: Option<f64>,
 ) {
     let settings = state.settings.get_untracked();
-    // The geometry the first cut is estimated against — resolved through the
-    // same two dials the measurement pipeline resolves, so the seed and the
-    // refine agree and the dialled document never opens against numbers it
-    // immediately re-cuts away from.
+    // The geometry the first cut is estimated against, from the same
+    // dials the refine uses.
     let geo = geometry(settings.text.book_layout)
         .with_extra_inline(state.reader.viewer.page_margin.get_untracked())
         .with_column_pct(state.reader.viewer.column_width_pct.get_untracked());
@@ -255,10 +196,8 @@ fn ready(
         headings,
     } = parsed;
 
-    // Document identity, through the shared handshake. A text page is the
-    // sheet `reflow_core::geometry` cuts into, and the outline starts SEEDED
-    // rather than pending: the headings are already in the blocks, so there
-    // is no resolver tail to race.
+    // Document identity through the shared handshake; the outline starts
+    // SEEDED.
     super::enter::identity(
         &state,
         super::enter::DocumentIdentity {
@@ -274,20 +213,12 @@ fn ready(
         },
     );
 
-    // The content is already empty (the replace at the door released any
-    // previous text document's); the reset is the guarantee that nothing a
-    // stale tail wrote in between survives into this document. Then this
-    // document's gloss highlights are loaded before anything mounts — exactly
-    // where the PDF open loads them, so the first paint already carries them.
-    // A reflowable mark is a block and a character range, so it is
-    // `set_initial_heights` below that makes it projectable; loading first
-    // and paginating second puts a mark on the right page at first paint
-    // instead of a frame later.
+    // The content is already empty; the reset guarantees no stale tail
+    // survives.
     state.reader.document.content.reflow.reset();
     super::enter::load_marks(&state);
 
-    // The reflowable content: blocks in, estimate cut out. Every later
-    // correction arrives through the measurement pipeline's `recut`.
+    // The content: blocks in, estimate cut out.
     let metrics = estimate_metrics(&settings.text, &geo);
     let heights = estimate_heights(&blocks, &metrics);
     state
@@ -308,14 +239,7 @@ fn ready(
     // The seed scale, from the same shared step the PDF seed uses.
     let (startup_fit, scale) = super::enter::startup_scale(&state, (geo.width, PAGE_HEIGHT));
 
-    // Reading position + zoom, seeded in the same order the PDF seed uses:
-    // anchor guard up BEFORE the page is written, zoom initialised BEFORE the
-    // heights are published at that scale. The stream's fractional resume
-    // rides along only when the document opens INTO the stream — a fraction
-    // saved by an earlier streamed session means nothing to a paged read, and
-    // letting it linger would hijack the anchor when the reader later flips
-    // the mode. Read the mode, not the fit it produced: `FitMode::None` would
-    // also be the answer for a persisted default that resolved to no fit.
+    // The reading position and zoom, seeded in the PDF open's order.
     let streaming = state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
     state
         .reader
@@ -329,8 +253,7 @@ fn ready(
     state.reader.viewer.zoom.initialize(scale);
     state.reader.viewer.scroll_top.set(0.0);
 
-    // The estimate's cut, published before the resume page is chosen: the
-    // clamp inside `resume_page` is against the page count this cut produced.
+    // The estimate's cut, before the resume page is chosen.
     let cut = state
         .reader
         .document
@@ -343,15 +266,8 @@ fn ready(
 
     super::enter::enter_ready(state);
 
-    // The shelf record is the last step, exactly as it is for a PDF. No cover
-    // and no thumbnail warmup follow it: both are page-1 rasters out of the
-    // pdf.js engine, and a reflowable document has no raster to hand them —
-    // its shelf card keeps the stylised fallback.
-    // The read record rides the boundary (the Shell's recorder writes or
-    // mints the rows): the saved fraction is carried across the open rather
-    // than dropped — this session's first scroll overwrites it, but a
-    // document closed before that first scroll must not lose the last read's
-    // position.
+    // The shelf record last, as for a PDF: no cover, no thumbnail
+    // warmup.
     state
         .api
         .read_point(&runtime_contract::boundary::ReadPoint {
