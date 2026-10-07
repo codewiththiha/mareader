@@ -1,37 +1,5 @@
-//! Where a reflowable gloss mark lives, and how its pixels are found again.
-//!
-//! A PDF mark stores a rect against a page host and is done: the page is fixed
-//! pixels. A plain-text or Markdown document has no fixed grid — a font-size
-//! change, a resize or a re-measure settling all re-cut the pages — so a
-//! page-space rect would drift onto whatever moved under it. The identity that
-//! survives every re-flow is the BLOCK the words sit in and how far into its
-//! rendered text they start ([`ReflowSpot`]).
-//!
-//! This module owns the two halves of that deal:
-//!
-//! * the ENVELOPE — a spot plus the sentence around it, serialized into
-//!   [`GlossMark::context`] behind a version tag, so the persisted schema stays
-//!   the one `PageAnchor` shape and a PDF's plain-sentence context can never be
-//!   mistaken for a spot;
-//! * the PROJECTION — `block + [start, end)` back to viewport pixels by asking
-//!   the DOM: block → the row element rendering it (by id; in the paginated
-//!   modes only if mounted under its page's host), then a real `Range` over the
-//!   row's text nodes.
-//!
-//! Projection is deliberately never cached: it runs on the watcher's frame and
-//! the stroke layer's memo, both of which already re-run for scroll and zoom,
-//! and a cached rect is exactly what a re-flow invalidates. The ENVELOPE is the
-//! opposite case — persisted, write-once content re-read on every one of those
-//! frames — so its parse is memoized ([`parse_spot`]) against the string it
-//! came from, in the PANE's memo (`crate::state::gloss::SpotMemo`): a second
-//! pane's dispose cannot clear it, and it dies with its own pane.
-//!
-//! The walk itself (a block's text nodes, the character offsets addressing
-//! them, the `Range` a span becomes) is shared with everything that paints over
-//! a reflowable document's type and lives in
-//! [`crate::components::formats::reflow::spot`]. What stays here is the mark's
-//! own arithmetic: [`union_box`] (client rects → one stroke box) and the
-//! envelope above it.
+//! Where a reflowable gloss mark lives, and how its pixels are
+//! found again.
 
 use ai_core::gloss::{GlossBox, PageAnchor, ReflowSpot};
 use leptos::prelude::*;
@@ -49,32 +17,22 @@ use app_chrome::hooks::dom::range_rects;
 use app_state::dom_contract::BLOCK_INDEX_ATTR;
 use app_ui::theme_paint::document_element;
 
-/// Version tag on the envelope in [`GlossMark::context`]. Bump it if the
-/// payload's meaning changes; an old mark then simply reads as having no spot
-/// and falls back to its stored rect rather than projecting wrongly.
+/// Version tag on the envelope in `context`; an older tag reads as no
+/// spot.
 const SPOT_TAG: &str = "rf1:";
 
-/// What a reflowable mark's `context` holds: the spot, and the sentence that
-/// was around it when the mark was made.
-///
-/// The sentence has to ride along because `context` is the field the model is
-/// handed to disambiguate the word (`ai_core::bridge::explain_word`), and a
-/// mark is re-explained long after its selection is gone — from storage, from
-/// a re-click on its stroke, after a restart. Storing the spot alone would
-/// have meant sending the model a JSON envelope instead of prose.
+/// A reflowable mark's `context`: the spot, and the sentence around it
+/// at capture time.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpotEnvelope {
     /// The durable identity: block, and the character range inside it.
     pub spot: ReflowSpot,
-    /// The surrounding sentence, as captured. Empty for a mark whose envelope
-    /// predates this field, which then explains from the word alone.
+    /// The surrounding sentence; empty for a mark that predates the field.
     #[serde(default)]
     pub text: String,
 }
 
-/// A mark's `context` as the string it is persisted with. Not a `Display` impl:
-/// this is a serialization format with a version tag, and reading it as text
-/// would make the tag look decorative.
+/// A mark's `context` as persisted; the tag makes it a format, not text.
 pub fn spot_envelope(spot: &ReflowSpot, sentence: &str) -> String {
     let payload = SpotEnvelope {
         spot: *spot,
@@ -92,29 +50,11 @@ fn parse_envelope(context: &str) -> Option<SpotEnvelope> {
     serde_json::from_str(payload).ok()
 }
 
-/// How far outside the viewport a stream row may sit and still be walked, as a
-/// fraction of the viewport's height.
-///
-/// A row's box is the slot the virtualizer reserved, not a tight bound on its
-/// text: a row can be re-laid after its measurement (a font arriving, an image
-/// decoding) and its last line can hang below the slot. A quarter screen of
-/// slack keeps the cull from ever hiding a stroke that is actually on screen —
-/// the one failure this could have — while still skipping rows the reader
-/// cannot see.
+/// How far outside the viewport a stream row may still be walked.
 const OFFSCREEN_SLACK: f64 = 0.25;
 
-/// The spot a mark carries, if it carries one.
-///
-/// A PDF's context is a sentence, which never starts with the tag, so this is
-/// `None` for every PDF mark. For a reflowable one it is `None` only when the
-/// mark predates spots (or its offsets could not be walked at capture), and
-/// such a mark has nothing durable to be placed by — see
-/// [`super::anchor::ReflowAnchorBridge`].
-///
-/// This sits on the per-frame path: the stroke layer re-resolves every mark on
-/// every scroll and zoom frame, so it answers from a memo instead of
-/// re-parsing the JSON each time. The projection below it is NOT memoized —
-/// that one must stay honest about the layout as it is right now.
+/// The spot a mark carries, from the pane's memo on the per-frame
+/// path.
 pub fn parse_spot(memo: SpotMemo, context: &str) -> Option<ReflowSpot> {
     if let Some(hit) = memo.get(context) {
         return hit;
@@ -124,19 +64,13 @@ pub fn parse_spot(memo: SpotMemo, context: &str) -> Option<ReflowSpot> {
     spot
 }
 
-/// The spot a context carries, parsed now with no memo — for the callers off
-/// the per-frame path (comparing two marks when one is added), which have no
-/// pane memo to hand and run once per gesture.
+/// The spot a context carries, parsed with no memo, off the frame path.
 pub fn read_spot(context: &str) -> Option<ReflowSpot> {
     parse_envelope(context).map(|envelope| envelope.spot)
 }
 
-/// The sentence to hand the model for a mark, whichever format made it: the
-/// envelope's for a reflowable mark, the plain `context` for a PDF's.
-///
-/// An envelope with no sentence in it explains from the word alone rather than
-/// falling back to the raw context, which is JSON and would only confuse the
-/// model.
+/// The sentence to hand the model: the envelope's, or a PDF's plain
+/// `context`.
 pub fn explain_context(mark: &ai_core::gloss::GlossMark) -> String {
     match parse_envelope(&mark.context) {
         Some(envelope) => envelope.text,
@@ -144,8 +78,7 @@ pub fn explain_context(mark: &ai_core::gloss::GlossMark) -> String {
     }
 }
 
-/// The page a block currently sits on, 1-based, or `None` before the document
-/// has been paginated at all.
+/// The page a block sits on, 1-based, or `None` before pagination.
 pub fn page_of_block(reflow: ReflowContent, block: usize) -> Option<u32> {
     reflow
         .block_page
@@ -153,45 +86,16 @@ pub fn page_of_block(reflow: ReflowContent, block: usize) -> Option<u32> {
         .map(|page| page + 1)
 }
 
-/// The mounted element rendering `block`, or `None` when it is virtualized
-/// away — the same answer a PDF gives for an unmounted page, with the same
-/// consequence: the mark hides until the reader scrolls back to it.
-///
-/// The lookup is one id read. In the paginated modes it answers only when the
-/// row is mounted under the host this mode puts its page in, so a stale row
-/// elsewhere cannot speak for a block the reader is not looking at; the
-/// continuous stream has no page hosts, so its rows answer wherever they are
-/// mounted.
-///
-/// Both halves are special-cased rather than left to a general search, for
-/// cost: this runs once per mark per refresh, and the stream's layer refreshes
-/// on every scroll frame. The version this replaced built an
-/// `[data-block-index='n']` selector per call and ran a scoped `querySelector`
-/// that — in the stream, where no host exists — always failed and was followed
-/// by a document-wide one: two DOM searches and two allocations per mark per
-/// frame, for an answer one id read gives.
+/// The mounted element rendering `block`, or `None` when it is
+/// virtualized away.
 fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sys::Element> {
-    // An id lookup, not a formatted attribute selector: this runs once per mark
-    // per refresh, the stream's layer refreshes on every scroll frame, and an
-    // attribute match is the expensive kind of search. The id is looked up in
-    // THIS pane's root (`#id` scoped to a subtree is the engine's id fast
-    // path), so another pane's twin row can never answer. The rows carry
-    // both handles — see `page_host::block_row_id` for why neither replaces the
-    // other.
+    // An id lookup, scoped to THIS pane's root, so no twin row answers.
     let id = block_row_id(block);
-    // The continuous stream renders one column of blocks with no page hosts in
-    // it, so there is nothing to scope the lookup to — and a block's page is
-    // meaningless there anyway (the stream is not paginated on screen). Every
-    // other mode scopes to the host first, which keeps a row that is mounted
-    // somewhere unexpected (a page mid-remount) from answering for a block the
-    // reader is not looking at.
+    // The continuous stream has no page hosts to scope the lookup to.
     let hostless = mode == ViewMode::ScrollVertical && state.reflowable_now();
     if !hostless && let Some(page) = page_of_block(state.document.content.reflow, block) {
-        // One lookup, not two: ask the row whether the host it is mounted
-        // under is the one this mode puts its page in. A row that is mounted
-        // somewhere else — a page mid-remount, a stale twin — answers `None`
-        // and the mark hides, which is what a scoped `querySelector` on the
-        // host used to say, without first fetching the host to search it.
+        // One lookup: a row under the wrong host answers `None`, like a
+        // scoped search.
         let scoped = format!("#{}", host_id_for_mode(mode, page));
         if let Some(row) = state.dom.by_id(&id)
             && row.closest(&scoped).ok().flatten().is_some()
@@ -203,13 +107,8 @@ fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sy
     state.dom.by_id(&id)
 }
 
-/// The viewport box a set of client rects covers, as the five fields a mark's
-/// stroke is painted with.
-///
-/// Pure over `(left, top, right, bottom)` tuples, so the union and the radius
-/// rule are testable without a DOM. Degenerate fragments — the zero-width rect
-/// a `Range` reports at a line-box edge — are ignored, and an empty set yields
-/// `None` rather than an infinite box.
+/// The viewport box a set of client rects covers; degenerate fragments
+/// are ignored.
 pub fn union_box(rects: &[(f64, f64, f64, f64)]) -> Option<GlossBox> {
     let mut left = f64::INFINITY;
     let mut top = f64::INFINITY;
@@ -245,32 +144,15 @@ fn spot_screen_box(state: ReaderState, spot: &ReflowSpot) -> Option<GlossBox> {
     spot_screen_box_in(state, spot, mode)
 }
 
-/// The viewport box a spot covers right now, or `None` when its block is not
-/// mounted (or holds no text). This is the reflowable half of
-/// [`super::anchor::anchor_screen_box`], and the whole reason a mark follows
-/// its words across a re-pagination instead of staying where the pixels were.
-///
-/// The mode is passed in rather than read: a stroke layer is mounted per page
-/// host and already knows which slot it is painting, and reading the viewer's
-/// mode inside every mark's memo would subscribe the layer to a signal it has
-/// no other use for.
+/// The viewport box a spot covers now, or `None` when its block is not
+/// mounted.
 pub fn spot_screen_box_in(
     state: ReaderState,
     spot: &ReflowSpot,
     mode: ViewMode,
 ) -> Option<GlossBox> {
     let el = block_node(state, spot.block, mode)?;
-    // The stream keeps its whole window's rows mounted and asks this of every
-    // mark on every scroll frame, so the walk below is skipped for a block
-    // nowhere near the viewport. That walk is the expensive half of placing a
-    // mark — it clones every text node's contents to count characters, builds
-    // a `Range` and reads its client rects — and for a mark a screenful away
-    // its answer was always `None`.
-    //
-    // Stream only: a paginated mode's rows are clipped and positioned by their
-    // page host, a row's own box does not bound its text, and only a handful
-    // of hosts are mounted at a time — nothing to win and a wrong `None` to
-    // lose.
+    // A block nowhere near the viewport skips the expensive walk.
     if mode == ViewMode::ScrollVertical {
         let viewport = document_element().map_or(0.0, |root| root.client_height() as f64);
         if viewport > 0.0 {
@@ -285,13 +167,7 @@ pub fn spot_screen_box_in(
     union_box(&range_rects(&range))
 }
 
-/// A live selection's spot and the page it sits on, for a reflowable document.
-///
-/// The engine's tracker does the same walk in TypeScript and ships the spot
-/// with the selection event — the path a normal selection takes, since it
-/// already has the range and doing it once keeps the two from disagreeing.
-/// This is the app-side capture, for the paths that need a spot without an
-/// event to hand.
+/// A live selection's spot and page, for a reflowable document.
 pub fn capture_selection(state: ReaderState) -> Option<(ReflowSpot, PageAnchor)> {
     let (range, el) = super::anchor::selection_start()?;
     let row = el
@@ -305,12 +181,8 @@ pub fn capture_selection(state: ReaderState) -> Option<(ReflowSpot, PageAnchor)>
     Some((spot, anchor_of(state, &spot)?))
 }
 
-/// The spot a live range covers inside its block row: the characters before
-/// the range's start, and the characters it spans.
-///
-/// Both are measured in the row's own rendered text (`textContent`), which is
-/// the same coordinate system [`range_for_span`] walks later — and the reason
-/// a Markdown mark stays put even though its source syntax is not rendered.
+/// The spot a live range covers in its row: the characters before
+/// and inside it.
 fn spot_of_range(
     range: &web_sys::Range,
     row: &web_sys::Element,
@@ -321,61 +193,30 @@ fn spot_of_range(
         return None;
     }
     let before = range.clone_range();
-    // `row` contains the range's start by construction (it is the ancestor the
-    // start container was found through), so this cannot fail; the Result is
-    // the DOM's, not a condition worth branching on.
+    // `row` contains the range's start by construction, so this cannot
+    // fail.
     let _ = before.select_node_contents(row);
     before
         .set_end(&range.start_container().ok()?, range.start_offset().ok()?)
         .ok()?;
-    // `Range::to_string` hands back the JS `String` object; the counts have to
-    // be in CHARACTERS, and `JsString` is UTF-16, so the conversion through
-    // `String` is what makes an emoji or a combining mark one character here
-    // and one character in the engine's tracker too.
+    // Counts are CHARACTERS, so an emoji is one character here and in
+    // the engine.
     let start = String::from(before.to_string()).chars().count();
     let span = String::from(range.to_string()).chars().count();
     let (start, end) = clamp_span(start, start + span, total);
     Some(ReflowSpot::new(block, start, end))
 }
 
-/// The anchor for a spot: the page it now sits on, plus the viewport box it
-/// covers right now.
-///
-/// The rect is a FALLBACK, not the identity — the spot is. A reflowable document
-/// has no durable page-space grid to store pixels against (that is the entire
-/// reason the spot exists), so this is the box at the moment of capture. It is
-/// read back only by a stroke layer serving a mark that carries no spot at all;
-/// everything else re-derives from the spot. Dedup compares spots, never these
-/// rects (see `crate::components::ai::gloss::controller::commands`).
+/// The anchor for a spot: the page it sits on, plus the viewport box
+/// now.
 pub fn anchor_of(state: ReaderState, spot: &ReflowSpot) -> Option<PageAnchor> {
-    // A block the cut has not placed yet answers page 1 rather than nothing —
-    // the same leniency a search hit gets (`effects::reader::search`), because
-    // the box below is what actually locates the selection, and refusing an
-    // anchor here would refuse the Explain pill over text that is plainly on
-    // screen. It happens only in the gap between a document opening and its
-    // first measure pass.
+    // A block the cut has not placed answers page 1, like a search hit.
     let page = page_of_block(state.document.content.reflow, spot.block).unwrap_or(1);
     let rect = spot_screen_box(state, spot)?;
     Some(PageAnchor { page, rect })
 }
 
-/// The box a reflowable stroke paints, in its own layer's coordinates.
-///
-/// A layer is always `position:absolute; inset:0` inside the element its
-/// resolver measured, so the viewport box loses that element's origin here: a
-/// `.tx-page` for a paginated mode, and the stream's scroller box for the
-/// continuous one, where a single layer serves the whole reading column.
-/// `host` is `None` only for a caller that wants the viewport box itself.
-///
-/// Neither case divides by the scale: a reflowable page's type is scaled
-/// through CSS custom properties, so `getBoundingClientRect` already reports
-/// the zoomed pixels, which is exactly what a stroke sitting over them needs.
-///
-/// `fallback` is the box the mark was captured with, kept for a mark that
-/// carries no spot at all (one made before spots existed). It is a viewport
-/// snapshot, so it is honest only while the layout has not moved — a mark whose
-/// spot cannot be resolved hides instead, which is what the reader wants when it
-/// is being asked where words are that are no longer there.
+/// The box a reflowable stroke paints in its layer's coordinates.
 pub fn stroke_box(
     state: ReaderState,
     spot: Option<ReflowSpot>,
@@ -399,10 +240,8 @@ pub fn stroke_box(
     let Some(spot) = spot else {
         return fallback.map(local);
     };
-    // A spot that cannot be resolved — a block virtualized away, or one a
-    // re-parse orphaned — yields no stroke at all. That is not a dead mark: the
-    // reader will scroll back, and the fallback box from capture time would
-    // only paint a stroke over whatever text is there now.
+    // An unresolvable spot yields no stroke; the capture-time box would
+    // paint over other text.
     spot_screen_box_in(state, &spot, mode).map(local)
 }
 
@@ -460,8 +299,7 @@ mod tests {
             },
         };
 
-        // Trimmed on the way in, so the envelope never stores the ragged edges
-        // a double-clicked selection brings with it.
+        // Trimmed on the way in, so ragged selection edges are never stored.
         let reflow = mark(&spot_envelope(
             &ReflowSpot::new(1, 0, 10),
             " scraped clean ",
@@ -472,8 +310,7 @@ mod tests {
         let pdf = mark("a manuscript page, scraped clean");
         assert_eq!(explain_context(&pdf), "a manuscript page, scraped clean");
 
-        // An envelope from before the sentence travelled with it explains from
-        // what is there rather than failing: `text` is `#[serde(default)]`.
+        // An envelope from before the sentence explains from an empty text.
         let legacy = mark("rf1:{\"spot\":{\"block\":1,\"start\":0,\"end\":2}}");
         assert_eq!(read_spot(&legacy.context), Some(ReflowSpot::new(1, 0, 2)));
         assert_eq!(explain_context(&legacy), "");
