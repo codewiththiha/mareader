@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::color::Rgb;
 use crate::config::PaperArea;
 
-/// A book's paper must own at least this share of the pixels.
+/// The share of sampled pixels a paper colour must own before it is published.
 pub const PAPER_SHARE: f64 = 0.1;
 
 #[derive(Default)]
@@ -15,7 +15,7 @@ struct Bucket {
     b: u64,
 }
 
-/// Accumulating bucket histogram over raw RGBA pixels.
+/// A running histogram of raw RGBA pixels, keyed by bucket.
 #[derive(Default)]
 pub struct PaperDetector {
     buckets: HashMap<u16, Bucket>,
@@ -63,7 +63,7 @@ impl PaperDetector {
 
     /// Count only the margin bands.
     fn feed_edges(&mut self, width: usize, height: usize, rgba: &[u8], edge_width: usize) -> usize {
-        // Two opposing strips of HALF the extent each tile the whole axis.
+        // At half the extent each, opposing strips tile the axis whole.
         let edge = edge_width.clamp(1, (width.min(height) / 4).max(1));
         let mut fed = 0;
         for y in 0..height {
@@ -108,7 +108,8 @@ impl PaperDetector {
     }
 
     fn count(&mut self, r: u8, g: u8, b: u8) {
-        // Five bits per channel; four merged margins into bodies.
+        // Five bits a channel: at four, a low-contrast margin merges
+        // into its body's bucket.
         let key = ((u16::from(r) >> 3) << 10) | ((u16::from(g) >> 3) << 5) | (u16::from(b) >> 3);
         let e = self.buckets.entry(key).or_default();
         e.n += 1;
@@ -123,13 +124,12 @@ impl PaperDetector {
 mod tests {
     use super::*;
 
-    /// The regression colours: a page body's cream against a scanned
-    /// margin's maroon.
+    /// The colours the regression cases build from: a body's cream, a
+    /// scanned margin's maroon.
     const CREAM: [u8; 3] = [0xfa, 0xf4, 0xe8];
     const MAROON: [u8; 3] = [0x80, 0x00, 0x00];
 
-    /// A `w × h` RGBA buffer: `fill` paints every pixel; `paint` and `ring`
-    /// overwrite regions.
+    /// A `w × h` RGBA buffer; `paint` and `ring` overwrite regions.
     fn frame(w: usize, h: usize, fill: [u8; 3]) -> Vec<u8> {
         let mut v = vec![255u8; w * h * 4];
         for i in (0..v.len()).step_by(4) {
@@ -167,7 +167,7 @@ mod tests {
         }
     }
 
-    /// The colour a test constant detects as.
+    /// A test constant's colour as an `Rgb`.
     fn rgb(c: [u8; 3]) -> Rgb {
         Rgb::new(c[0], c[1], c[2])
     }
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn dominant_means_round_to_nearest_channel_value() {
-        // A 0.5 mean exposes the old truncation.
+        // A 0.5 mean is where truncation and rounding disagree.
         let rgba = [0, 0, 0, 255, 1, 1, 1, 255];
         let mut d = PaperDetector::new();
         d.feed_rgba(&rgba);
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn a_margin_a_sixteenth_off_the_body_keeps_its_own_colour() {
-        // THE regression, in the dark: margins one 4-bit step off the body.
+        // A dark sheet whose margin sits one 4-bit step off the body.
         let mut buf = frame(40, 40, [0x1e, 0x1e, 0x1e]);
         ring(&mut buf, 40, 4, [0x10, 0x10, 0x10]);
         let mut whole = PaperDetector::new();

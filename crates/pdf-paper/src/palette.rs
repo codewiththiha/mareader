@@ -14,7 +14,7 @@ impl PagePalette {
         Self::default()
     }
 
-    /// Remember page `page`'s colour; a re-detection overwrites.
+    /// Record a page's colour; a re-detection overwrites it.
     pub fn set(&mut self, page: u32, colour: Rgb) {
         self.pages.insert(page, colour);
     }
@@ -88,14 +88,14 @@ mod tests {
         let mut p = PagePalette::new();
         p.set(1, CREAM);
         p.set(2, WHITE);
-        // The assertion compares against the same lerp.
+        // The expectation is the same blend the palette runs.
         let mid = p.colour_at(1.5).unwrap();
         assert_eq!(mid, lerp(CREAM, WHITE, 0.5));
     }
 
     #[test]
     fn a_weighted_position_carries_both_pages_shares() {
-        // 40% page 1 + 60% page 2: position 1.6, 60% of page 2.
+        // Position 1.6 is 60% of the way from page 1 to page 2.
         let mut p = PagePalette::new();
         p.set(1, CREAM);
         p.set(2, WHITE);
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn an_unknown_page_blends_across_the_gap() {
-        // Page 4 never resolved; 3.5 is half way between 3 and 5.
+        // Page 4 never resolved; 3.5 sits halfway between 3 and 5.
         let mut p = PagePalette::new();
         p.set(3, CREAM);
         p.set(5, INK);
