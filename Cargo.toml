@@ -122,15 +122,12 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 
-# comment-check: allow — the wasm size is why this profile exists.
-# `cargo tauri dev` builds the frontend unoptimized: 46MB of wasm against
-# 713KB, parsed and kept resident — roughly half the "400MB at idle" these
-# profiles prevent. Debug assertions and overflow checks stay on; set
-# `debug = 2` here to step through Rust in the browser devtools.
+# The iteration profile keeps route WASM responsive without release LTO.
 [profile.dev]
 opt-level = 1
 debug = false
 strip = "debuginfo"
+incremental = true
 
 # Dependencies are not what you debug, and optimising them is free after
 # one build.
@@ -138,9 +135,7 @@ strip = "debuginfo"
 opt-level = 2
 debug = false
 
-# comment-check: allow — where to get symbols when you need them.
-# `dev` is optimized (opt-level 1, stripped) for the size reason above; for
-# real symbols and step-through build with `--profile dev-debug`.
+# Use `--profile dev-debug` when symbols and Rust step-through debugging matter.
 [profile.dev-debug]
 inherits = "dev"
 opt-level = 0

@@ -25,13 +25,6 @@ ignore = [
     # Generated: `tools/*.ts` compiles into `scripts/*.js`, so one entry covers
     # every tool. Watching them rebuilds forever.
     "./scripts",
-    # comment-check: allow — two hazards: the hook's output restarting the
-    # build, and the sheet changing under a live app.
-    # Compiled by the hook on every build, so watching the sources buys a second
-    # rebuild per CSS edit — and that rebuild swaps `styles.css` under a running
-    # app, where a sheet arriving after boot paints an offscreen element for a
-    # frame. `npm run watch:css` iterates on CSS alone.
-    "./styles",
     "./public/pdfEngine.js",
     "./public/readerEngine.js",
     "./public/bake.worker.js",
