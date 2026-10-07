@@ -87,11 +87,7 @@ fn candidates(state: crate::context::LibraryContext, folder_id: &str) -> Vec<Res
 }
 
 /// `root` narrows the picker to one watched folder; `None` is the whole disk.
-fn from_files(
-    state: crate::context::LibraryContext,
-    target: Option<String>,
-    root: Option<String>,
-) {
+fn from_files(state: crate::context::LibraryContext, target: Option<String>, root: Option<String>) {
     spawn_local(async move {
         let picked = match root {
             Some(root) => pick_documents_in(root).await,
