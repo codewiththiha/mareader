@@ -1,5 +1,4 @@
-// window.PDFReader facade over public/engine/*, compiled to pdfEngine.js; it
-// holds no document, so every call names a sid.
+// window.PDFReader facade over public/engine/*, compiled to pdfEngine.js.
 
 export {};
 
@@ -170,8 +169,7 @@ async function destroySession(sid: Sid): Promise<void> {
   }
 }
 
-// The appearance broadcast: global settings, session-owned rasters, so a
-// change enqueues on every live session's theme chain.
+// The appearance broadcast: a change enqueues on every live session.
 
 // The appearance state a session opening mid-drag must start in.
 let appearanceScrub = false;

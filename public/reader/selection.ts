@@ -1,5 +1,4 @@
-// Selection page-range tracking and the rich detail the AI pill anchors
-// to; bundled on its own.
+// Selection page-range tracking and the AI pill's rich detail.
 
 import {
   AI_POPOVER_SELECTOR,
@@ -61,8 +60,8 @@ function findPageNumber(node: Node | null): number | null {
   return null;
 }
 
-// A reflowable document has no page grid: the mark remembers a BLOCK
-// and a character range.
+// A reflowable document has no page grid: the mark keeps a block and
+// a character range.
 type ReflowSpot = { block: number; start: number; end: number };
 
 function findReflowSpot(range: Range): ReflowSpot | null {
