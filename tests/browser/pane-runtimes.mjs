@@ -425,19 +425,21 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await page.waitForFunction(() => !!window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
   await chromeClick("Zoom in (+)");
   const zoomIn = await settle("the toolbar's zoom-in button never landed", (f) => f.scale > seated.scale);
-  await stable("the toolbar's zoom-in before the zoom-out", "scale", 500);
+  // A settle can catch a value mid-tween: the next press compares against
+  // what held still.
+  const zoomInSettled = await stable("the toolbar's zoom-in before the zoom-out", "scale", 500);
   await chromeClick("Zoom out (-)");
-  const zoomOut = await settle("the toolbar's zoom-out button never landed", (f) => f.scale < zoomIn.scale);
-  await stable("the toolbar's zoom-out before the Ctrl keys", "scale", 500);
+  const zoomOut = await settle("the toolbar's zoom-out button never landed", (f) => f.scale < zoomInSettled);
+  const zoomOutSettled = await stable("the toolbar's zoom-out before the Ctrl keys", "scale", 500);
   // An open popover owns its keys (a host menu is a typing surface to the key
   // forwarder), so the Cmd/Ctrl combos are checked with it closed.
   await chromeClick("View & tools");
   await page.waitForFunction(() => !window.__paneReaderDocument.defaultView.document.querySelector(".menu-popover"));
   await page.keyboard.press("Control+Equal");
-  const ctrlIn = await settle("Ctrl+= never zoomed in", (f) => f.scale > zoomOut.scale);
-  await stable("the Ctrl+= zoom before Ctrl+-", "scale", 500);
+  const ctrlIn = await settle("Ctrl+= never zoomed in", (f) => f.scale > zoomOutSettled);
+  const ctrlInSettled = await stable("the Ctrl+= zoom before Ctrl+-", "scale", 500);
   await page.keyboard.press("Control+Minus");
-  const ctrlOut = await settle("Ctrl+- never zoomed out", (f) => f.scale < ctrlIn.scale);
+  const ctrlOut = await settle("Ctrl+- never zoomed out", (f) => f.scale < ctrlInSettled);
   // Vim's home row scrolls the strip the arrows do: `j` nudges down (and
   // glides while held), `k` back up. Three things make the check land on
   // that meaning rather than on a neighbour: the pane is put in the
