@@ -128,6 +128,16 @@ impl AiError {
             AiErrorKind::Other(_) => self.message.as_str().into(),
         }
     }
+
+    /// Fallback for render paths that must show *something* even if the
+    /// error signal was (impossibly) cleared between phase and paint.
+    pub fn unknown() -> Self {
+        Self {
+            kind: AiErrorKind::Other("unknown".into()),
+            message: "Something went wrong.".into(),
+            retryable: false,
+        }
+    }
 }
 
 /// One chunk of an explanation. Mirrors `AiChunk` in
