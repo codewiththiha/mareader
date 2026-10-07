@@ -1,28 +1,12 @@
-//! The pane's own place in the DOM: its root element and the box the host
-//! handed it.
-//!
-//! Every element a pane renders lives under ONE root (the content wrapper
-//! `pane_content` builds), and every lookup a pane makes for its own
-//! elements — the strips, the page hosts, the block rows, the scrollers —
-//! runs INSIDE that root. The ids the elements carry (`page-list`, `sp-3`,
-//! a block row's id) stay what they were, because styles, the engine's
-//! canvas registry and the browser suite address them; what changed is that
-//! a pane can no longer find another pane's element by asking the whole
-//! document. Two panes showing the same mode carry the same ids, and each
-//! one's lookups answer with its own.
-//!
-//! The bounds are the host's measurement of the pane's box (`mount` hands
-//! the first, `resize` every later one). The pane sizes its root from them
-//! and seeds its first fit from them, so its geometry is the box it was
-//! given rather than something re-derived from the window.
+//! The pane's root and its host-given box; lookups run inside the
+//! root.
 
 use leptos::html;
 use leptos::prelude::*;
 
 use crate::host::model::PaneBounds;
 
-/// Copy handle onto the pane's root element and its host-given box. Created
-/// with the pane's reader state, in the pane's owner: both die with it.
+/// Copy handle onto the pane's root and host-given box.
 #[derive(Clone, Copy)]
 pub struct PaneDom {
     root: NodeRef<html::Div>,
@@ -44,9 +28,8 @@ impl PaneDom {
         self.root
     }
 
-    /// The pane's root element, when it is mounted. Untracked, and `try_`:
-    /// a frame or a timer armed before the pane's dispose can ask after the
-    /// ref is gone, and the answer then is "nothing mounted".
+    /// The root element, when mounted; untracked and `try_`, so a
+    /// disposed pane answers nothing.
     pub fn root(&self) -> Option<web_sys::Element> {
         self.root
             .try_get_untracked()
@@ -74,8 +57,7 @@ impl PaneDom {
         self.by_id(app_chrome::hooks::dom::H_PAGE_LIST_ID)
     }
 
-    /// The host handed the pane a box (its first at mount, each later one
-    /// at a resize).
+    /// The host handed the pane a box.
     pub(crate) fn set_bounds(&self, bounds: PaneBounds) {
         if self.bounds.try_get_untracked() != Some(bounds) {
             let _ = self.bounds.try_set(bounds);
@@ -87,9 +69,7 @@ impl PaneDom {
         self.bounds.try_get().unwrap_or_default()
     }
 
-    /// The box's size, once the host has measured one — `None` before the
-    /// first measurement (a pane created ahead of its slot's first layout,
-    /// or a frame parked out of layout). Untracked.
+    /// The box's size, once measured; untracked.
     pub fn measured_size(&self) -> Option<(f64, f64)> {
         let bounds = self.bounds.try_get_untracked()?;
         measured(bounds)
@@ -101,10 +81,7 @@ pub(crate) fn measured(bounds: PaneBounds) -> Option<(f64, f64)> {
     (bounds.width > 0.0 && bounds.height > 0.0).then_some((bounds.width, bounds.height))
 }
 
-/// The CSS selector for one id. The reader's ids are ASCII words joined by
-/// dashes (`page-list`, `sp-3`, `cont-12-pg`), which `#id` names directly;
-/// anything else is quoted as an attribute match so an unusual id can never
-/// turn into a malformed selector.
+/// The selector for one id: plain ids by hash, odd ones quoted.
 fn id_selector(id: &str) -> String {
     let plain = id
         .chars()
