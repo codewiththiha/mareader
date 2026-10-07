@@ -4,15 +4,11 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::phase::GlossPhase;
 
-/// The geometry phase of the surface: where the card's *box* is in its
-/// morph lifecycle, and whether the surface exists at all.
+/// Where the card's box is in its morph lifecycle.
 #[derive(Clone, Copy)]
 pub struct GlossGeometry {
     pub gphase: RwSignal<GlossPhase>,
-    /// Whether the morphing surface exists at all. Distinct from
-    /// `popover_open`: during processing the stroke IS the UI, and after the
-    /// outro morph the surface unmounts while the gloss stays "open" on its
-    /// mark.
+    /// Whether the surface exists at all.
     pub surface_visible: RwSignal<bool>,
 }
 

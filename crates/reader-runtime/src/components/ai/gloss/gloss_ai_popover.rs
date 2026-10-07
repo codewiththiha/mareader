@@ -1,37 +1,4 @@
-//! The gloss popover: the composition root. The state machine lives in
-//! [`controller`], card targeting in [`targeting`], placement math in
-//! [`placement`], pointer physics in [`drag`], window behaviour in
-//! [`interactions`], and stream/measure hooks in [`hooks`]. This module
-//! wires those together and renders: the measure twin, the morphing
-//! surface with its phase-driven content, and the mark-management chrome.
-//!
-//! Two orthogonal phases run together:
-//! * the **geometry phase** ([`GlossPhase`]): stroke → expanded card → chip;
-//! * the **data phase** ([`AiPhase`]): processing → streaming → done/error.
-//!
-//! Four things are load-bearing here and easy to undo by accident:
-//!
-//! * **The anchor is a [`GlossMark`], never a DOM node.** Every scroll, zoom,
-//!   page or mode change re-projects the mark's page-space rect through
-//!   whichever host currently renders that page, so the card sticks to the
-//!   *text* even across the virtualizer's unmounts. The mark is written to
-//!   localStorage at capture time and is deliberately NOT removed on dismiss:
-//!   closing the card leaves the word highlighted, and clicking that highlight
-//!   re-opens the card through the same spring.
-//! * **There is exactly one highlighter at a time.** The native `::selection`
-//!   tint is cleared the moment the gloss takes over; while the model works
-//!   there is NO surface at all (the in-page stroke pulses);
-//!   and after the outro the surface unmounts once it has settled onto the
-//!   stroke, so a chip can never sit on top of the mark it came from.
-//! * **Every close is an outro, not a cut.** Origin-exit, Escape and outside
-//!   clicks all run `collapse_to_mark`, and the spring is NOT snapped while
-//!   compact, so the card visibly morphs back down onto the word before
-//!   handing over to the persisted stroke.
-//! * **Re-opening is recall, not a rescan.** Snapshots are cached by mark id,
-//!   so clicking a stroke morphs the card open on `AiPhase::Done` content
-//!   without touching the backend. The spring is hard-reset onto the new
-//!   word's mark on every open so the morph never flies in from the previous
-//!   card's resting place.
+//! The gloss popover: the composition root.
 
 use leptos::prelude::*;
 
@@ -85,9 +52,7 @@ pub fn GlossAiPopover(state: crate::context::ReaderContext) -> impl IntoView {
     let expanded_sig = Signal::derive(move || card.expanded.get().unwrap_or_default());
     let progress_sig = Signal::derive(move || card.progress.get());
     let word_sig = Signal::derive(move || ctrl.content.word.get());
-    // The header's part of speech rides the same signal the sections patch
-    // through, so a snapshot that fills the POS lands in both places in one
-    // frame.
+    // The POS rides the same signal the sections patch through.
     let pos_sig = Signal::derive(move || {
         ctrl.content
             .word_info
@@ -126,9 +91,7 @@ pub fn GlossAiPopover(state: crate::context::ReaderContext) -> impl IntoView {
             </GlossSurface>
         </Show>
 
-        // Mark management chrome: the bottom-right selection bar, the
-        // right-click remove menu, and the undo toast. All three sit above
-        // the expanded surface (z 50): bar 60, menu/toast 70.
+        // Mark chrome: selection bar, remove menu, undo toast.
         <GlossSelectBar state=state ctrl=ctrl undo=sm.undo />
         <GlossContextMenu state=state ctrl=ctrl menu=sm.menu undo=sm.undo />
         <GlossUndoToast state=state ctrl=ctrl undo=sm.undo />

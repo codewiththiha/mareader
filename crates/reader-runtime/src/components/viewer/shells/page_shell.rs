@@ -8,15 +8,7 @@ use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use crate::state::ReaderState;
 use app_chrome::hooks::use_resize_observer::observe_content_size_with;
 
-/// Shared shell for Single & Spread. The child is centered with `margin:auto`
-/// in the true viewport, which degrades to start-alignment on overflow —
-/// so both axes scroll exactly to the page edge, never clipped, never with
-/// phantom space.
-///
-/// `progress_visible` wires the same reading-progress setting the scroll modes
-/// use: when on, a thin strip along the bottom advances with the current page
-/// (which in these modes IS the reading position — there is no scroll offset
-/// to divide).
+/// Shared shell for Single and Spread.
 #[component]
 pub fn PageShell(
     state: ReaderState,
@@ -24,9 +16,7 @@ pub fn PageShell(
     #[prop(into)] progress_visible: Signal<bool>,
     children: ChildrenFn,
 ) -> impl IntoView {
-    // The container observation dies with this shell, explicitly: an
-    // observer outliving its scroller retains the element and every canvas
-    // mounted inside it.
+    // The container observation dies with the shell.
     let dom = state.dom;
     let stop_observing =
         observe_content_size_with(move || dom.by_id(scroller_id), state.viewer.container_size);
@@ -39,8 +29,7 @@ pub fn PageShell(
         if n == 0 {
             return 0.0;
         }
-        // The current page over the total; page 1 is just off the start, the
-        // last page is 100%.
+        // The current page over the total.
         (state.viewer.page.get() as f64 / n as f64).clamp(0.0, 1.0)
     });
     view! {
