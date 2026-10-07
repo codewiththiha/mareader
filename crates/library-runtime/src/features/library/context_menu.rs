@@ -21,13 +21,10 @@ use app_ui::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 use app_ui::components::primitives::menu::separator::Separator;
 
-/// Carries the facts rather than an id: a row that asked the library what it
-/// pointed at would read a list a rescan can change between click and row.
+/// The facts, not an id: a rescan can change the list between click and row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuTarget {
-    /// The id is all an open needs — it says which row the reader meant when
-    /// the library holds two of one name — so the address beside it would be a
-    /// second answer.
+    /// The id alone says which of two rows of one name was meant.
     Book {
         id: String,
         missing: bool,
@@ -48,8 +45,7 @@ pub struct MenuRequest {
 
 #[derive(Clone, Copy)]
 pub struct LibraryMenuHost {
-    /// One signal for the whole page: exactly one menu is up at a time, and
-    /// asking for a second replaces the first.
+    /// One signal for the page: a second ask replaces the first.
     pub request: RwSignal<Option<MenuRequest>>,
 }
 
@@ -75,9 +71,8 @@ pub(crate) fn LibraryContextMenu(state: crate::context::LibraryContext) -> impl 
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let folders = use_context::<FolderOrder>().expect("the library content provides the folders");
     let request = menu.request;
-    // Handed to every row rather than left to each menu to remember: a row
-    // that acted without closing would leave a menu floating over the shelf
-    // it had just changed.
+    // Handed to every row: one acting without closing would float over the
+    // shelf it changed.
     let close = Callback::new(move |_| request.set(None));
 
     view! {
@@ -132,9 +127,7 @@ pub(crate) fn LibraryContextMenu(state: crate::context::LibraryContext) -> impl 
     }
 }
 
-/// The four menus here are the same rows in different orders — open, select,
-/// rename, duplicate, reveal, then whatever the target owns. One row builder,
-/// so the order, the disabled rule and the removal rule are written once.
+/// The same rows in different orders; one builder writes the order and rules.
 struct MenuItemSpec {
     icon: IconName,
     label: String,
@@ -143,8 +136,7 @@ struct MenuItemSpec {
     title: Option<String>,
     disabled: bool,
     tone: MenuItemTone,
-    /// Marks the row that takes something away, as distinct from the rows
-    /// that change the library.
+    /// Marks the row that takes something away, unlike the changing rows.
     ruled: bool,
 }
 
@@ -172,8 +164,7 @@ impl MenuItemSpec {
         self
     }
 
-    /// The row stays regardless: a menu whose shape changed with the card's
-    /// state would say something the reader has to work out.
+    /// The row stays: a shape that changed says what the reader must work out.
     fn off_when(self, off: bool) -> Self {
         Self {
             disabled: off,
@@ -192,9 +183,8 @@ impl MenuItemSpec {
     }
 }
 
-/// A book's, a folder's, the set's and the level's: what differs is which
-/// rows the list holds, and the list is built where the facts are. What is
-/// left here is the rule above a row.
+/// A book's, a folder's, the set's and the level's: rows built where the
+/// facts are.
 #[component]
 fn EntryMenu(
     #[prop(optional, into)] heading: Option<String>,
@@ -216,10 +206,8 @@ fn EntryMenu(
                         tone,
                         ruled,
                     } = item;
-                    // A second line is a different row shape, not a longer
-                    // one (see `app_ui::components::primitives::menu::menu_item`):
-                    // the two cases build two rows, and no tooltip passes the
-                    // empty one.
+                    // A second line is another row shape; no tooltip
+                    // passes an empty one.
                     let row = match sublabel {
                         Some(note) => view! {
                             <MenuItem
@@ -255,18 +243,14 @@ fn EntryMenu(
     }
 }
 
-/// The difference between the two menus is a word or a service call, not a
-/// shape — so it lives here rather than in two menus each keeping their own
-/// copy of the order.
+/// A word apart, so the order lives here rather than in two menus.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EntryKind {
     Row,
     Shelf,
 }
 
-/// The same five rows for a book, a link and a folder: two menus holding one
-/// list is how they drifted into two orders, two disabled rules and two
-/// removal rows for one gesture.
+/// The rows a book, a link and a folder share: one order, one rule.
 fn base_entry_items(
     state: crate::context::LibraryContext,
     id: &str,
@@ -309,9 +293,7 @@ fn base_entry_items(
         }),
     ));
 
-    // The sheet renames what the shelf shows, which every kind has: a book
-    // whose file died is exactly the one a reader may want to rename before
-    // hunting the file down.
+    // The sheet renames what the shelf shows, for every kind, dead included.
     let rename_id = id.to_string();
     let rename_title = match kind {
         EntryKind::Row => "The name the library shows — the file on disk keeps its own",
@@ -358,8 +340,7 @@ fn base_entry_items(
     };
     items.push(duplicate);
 
-    // An entry with nothing behind it gets no row rather than a disabled
-    // one: the menu is built per ask, so the answer cannot be stale.
+    // An entry with nothing behind it gets no row: the menu is built per ask.
     let path = match kind {
         EntryKind::Row => path_of_row(state, id),
         EntryKind::Shelf => path_of_shelf(state, id),
@@ -398,9 +379,7 @@ fn BookMenu(
             "Find again…",
             Callback::new(move |_| {
                 close.run(());
-                // Through the guarded door: one function decides between the
-                // dialog and the sheet, and a second caller of the raw picker
-                // was a second answer to drift.
+                // Through the guarded door: one function picks dialog or sheet.
                 ask_relink(state, find_id.clone());
             }),
         ));
@@ -421,9 +400,7 @@ fn BookMenu(
     view! { <EntryMenu items=items /> }
 }
 
-/// The one place a shelf can be taken apart without selecting it first, and
-/// the one place a shelf is subdivided from where it stands: "new shelf" on a
-/// folder is an answer about that folder.
+/// The one place a shelf is taken apart, and subdivided where it stands.
 #[component]
 fn FolderMenu(
     state: crate::context::LibraryContext,
@@ -432,8 +409,7 @@ fn FolderMenu(
     close: Callback<()>,
 ) -> impl IntoView {
     let mut items = base_entry_items(state, &id, EntryKind::Shelf, false, rename_sheet, close);
-    // The decision is the seat's — the rung this shelf stands on — so the
-    // row toggles the ground the reader is looking at.
+    // The decision is the seat's: the row toggles the rung's own ground.
     if let Some(watch) = shelf_watch(state, &id) {
         let on = watch.on;
         let deep = watch.rung_label.is_some();
@@ -496,10 +472,7 @@ fn FolderMenu(
     view! { <EntryMenu items=items /> }
 }
 
-/// The count is read when the menu is built rather than carried in the
-/// request, so the heading and the removal row cannot disagree. A number, not
-/// a signal: a row label is a `String` and the set cannot change while a menu
-/// is up.
+/// Read when the menu is built: the heading and the row cannot disagree.
 #[component]
 fn SelectionMenu(
     state: crate::context::LibraryContext,
@@ -553,8 +526,7 @@ fn SelectionMenu(
     view! { <EntryMenu heading=heading items=items /> }
 }
 
-/// Its second row's facts are read when the menu is built: a menu is asked
-/// for and drawn in the same breath, so nothing changes in between.
+/// Its second row is read when the menu is built: nothing changes in between.
 #[component]
 fn LevelMenu(
     state: crate::context::LibraryContext,
