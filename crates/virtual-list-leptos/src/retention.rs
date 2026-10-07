@@ -1,66 +1,24 @@
-//! Zombie retention: the pure bookkeeping that lets freshly evicted items
-//! stay rendered for a short bridge across the change that evicted them.
-//!
-//! A window moves for two reasons that benefit from a bridge: a seek (an item
-//! blinks out and back when the window jitters around a fling) and a zoom's
-//! geometry commit (the commit reinstalls geometry at the new scale and the
-//! window jumps, evicting pages still on screen). Retaining those items briefly
-//! — as [`RetainedItem`]s with a deadline — keeps their DOM alive across the
-//! change so nothing visibly pops.
-//!
-//! A bridge is a *cache*, so it has to pay for itself, and the whole design
-//! question is what earns one. Holding every eviction for a fixed number of
-//! frames buys nothing at reading speed: the reader never returns, the DOM is
-//! not needed, and the content behind it keeps the surface alive. That is
-//! [`RetentionPolicy::MotionGated`] — the bridge a seek earns and the end of the
-//! seek takes back. [`RetentionPolicy::Grace`] stays for the other case, where a
-//! known wall-clock operation is the reason: it can be raised around a commit
-//! and stood back down after, which is what [`crate::Virtualizer`] does with it.
-//!
-//! The bridge is measured in whichever unit fits the caller
-//! ([`RetentionPolicy`]): milliseconds for a caller pacing against wall-clock
-//! work, animation frames for a caller whose whole problem is frames. Both
-//! clocks are deadlines, so one [`RetainedItem::alive`] test serves them and an
-//! expired bridge always ends on a wake the adapter owns (a timer, or the
-//! frame chain) — never on an event that may not come.
-//!
-//! Pure and host-testable: the reactive adapter in [`crate::virtualizer`]
-//! owns the signals, the clocks and their timers; only the merge/diff
-//! arithmetic lives here. The set is always BOUNDED — `max` prunes oldest
-//! first — so retention can never turn windowing into "mount everything".
+//! Zombie retention: the pure bookkeeping that keeps freshly evicted
+//! items rendered briefly.
 
 use virtual_list::Window;
 
-/// The longest one frame may stand for in a frame-counted bridge,
-/// milliseconds. A frame is the unit a fling actually measures — four frames
-/// of a 60 Hz scroll and four frames of a stalled one are the same offer to
-/// scroll back into — but `requestAnimationFrame` stops entirely in a hidden
-/// tab, so `frames × this` bounds the bridge in time as well and a
-/// backgrounded reader cannot pin a surface indefinitely.
+/// The longest one frame may stand for in a frame-counted bridge.
 pub const FRAME_CEILING_MS: u32 = 120;
 
 /// How an item that leaves the mount window is retired.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetentionPolicy {
-    /// Unmounted in the same tick the window evicts it: no zombie DOM, and no
-    /// surface a detached node keeps alive.
+    /// Unmounted in the same tick the window evicts it.
     Immediate,
-    /// Kept rendered until `ms` after the eviction, at most `max` at a time.
-    /// The right unit when the bridge must outlast a known wall-clock
-    /// operation (a zoom's commit and the relayouts around it).
+    /// Kept rendered until `ms` after eviction, at most `max` at a time.
     Grace {
         /// How long an evicted item stays mounted, milliseconds.
         ms: u32,
         /// Ceiling on simultaneously retained items.
         max: usize,
     },
-    /// Kept rendered for the one frame that evicted it, and only while the
-    /// scroll is a seek: the bridge exists to cover the jitter of a fling, so
-    /// the motion that caused the eviction is what grants it and the end of
-    /// that motion takes it back. At reading speed nothing is bridged — an
-    /// unmounted row releases its DOM, and its content, in the same tick the
-    /// window moved. Bounded by [`FRAME_CEILING_MS`] as a watchdog for a frame
-    /// that never arrives, and by `max` items.
+    /// Kept for the one frame that evicted it, only while seeking.
     MotionGated {
         /// Ceiling on simultaneously retained items.
         max: usize,
@@ -82,19 +40,14 @@ impl RetentionPolicy {
     }
 }
 
-/// One evicted item, kept rendered until its deadline: out of `expires_at`
-/// (wall-clock milliseconds on the caller's monotonic clock) or past
-/// `frame_limit` on the adapter's frame counter, whichever comes first.
+/// One evicted item, kept until its deadline on either clock.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RetainedItem {
     /// The evicted item's index.
     pub index: usize,
-    /// When the bridge ends at the latest, in milliseconds. For a
-    /// frame-counted bridge this is the ceiling the frames are worth, so a
-    /// frozen rAF clock still releases the item.
+    /// When the bridge ends at the latest, in ms.
     pub expires_at: f64,
-    /// The frame count this item is retired at; [`u64::MAX`] for a policy that
-    /// counts milliseconds, so both clocks share one test.
+    /// The frame this item retires at; `u64::MAX` for a millisecond policy.
     pub frame_limit: u64,
 }
 
@@ -109,27 +62,14 @@ impl RetainedItem {
 fn deadline(policy: &RetentionPolicy, now_ms: f64, frame: u64) -> (f64, u64) {
     match *policy {
         RetentionPolicy::Grace { ms, .. } => (now_ms + f64::from(ms), u64::MAX),
-        // One frame, and the wall-clock ceiling only stands in for a frame
-        // that never arrives (a hidden tab): the seek is what granted the
-        // bridge, so the seek is also what ends it.
+        // One frame, with the ceiling standing in for a frame never arriving.
         RetentionPolicy::MotionGated { .. } => (now_ms + f64::from(FRAME_CEILING_MS), frame + 1),
-        // Unreachable through `retain_evicted` (no bridge, no deadlines);
-        // "already expired" is the honest answer for anything that asks.
+        // Unreachable through `retain_evicted`: already expired is the answer.
         RetentionPolicy::Immediate => (now_ms, frame),
     }
 }
 
 /// Diff two windows and schedule the evicted indices for retention.
-///
-/// `seeking` is the caller's motion verdict: a [`RetentionPolicy::MotionGated`]
-/// bridge is granted only while it says the reader is mid-seek, and any other
-/// policy ignores it entirely.
-///
-/// `None` windows (no layout yet / empty list) retain nothing. Indices that
-/// simply moved out of a `None`→`Some` transition are new mounts, not
-/// evictions, so only items that were IN the old window and are NOT in the
-/// new one are retained. Re-entering the window clears an item's retention:
-/// it is active again, and its DOM never left.
 pub fn retain_evicted(
     old: Option<Window>,
     new: Option<Window>,
@@ -156,18 +96,14 @@ pub fn retain_evicted(
         .collect();
     let max = policy.max();
     if evicted.len() > max {
-        // Bound the set by keeping the upper end of the (ascending) eviction
-        // list — the items just below the new window. For a one-sided scroll
-        // these are the ones closest to the viewport; on a two-sided shrink
-        // the lower stragglers are dropped first.
+        // Keep the upper end of the eviction list: the items just below.
         let drop = evicted.len() - max;
         evicted.drain(0..drop);
     }
     evicted
 }
 
-/// Drop retained items whose deadline has passed, and drop any that are back
-/// inside the active window (an active item needs no bridge).
+/// Drop retained items past their deadline, or back in the window.
 pub fn prune_retained(
     mut retained: Vec<RetainedItem>,
     active: Option<Window>,
@@ -181,19 +117,14 @@ pub fn prune_retained(
     retained
 }
 
-/// Whether `index` is inside an unexpired bridge. One test for the mounted
-/// items, the row list and the per-item state signal, so the three can never
-/// disagree about who is a zombie.
+/// Whether `index` is inside an unexpired bridge.
 pub fn is_retained(retained: &[RetainedItem], index: usize, now_ms: f64, frame: u64) -> bool {
     retained
         .iter()
         .any(|item| item.index == index && item.alive(now_ms, frame))
 }
 
-/// Milliseconds until the next deadline anyone is waiting on (always at least
-/// 1, so a timer is always armed into the future). A frame-counted bridge is
-/// woken by the adapter's frame chain; this is its ceiling and the only waker
-/// a millisecond bridge has.
+/// Milliseconds until the next deadline, at least 1.
 pub fn next_deadline_ms(retained: &[RetainedItem], now_ms: f64) -> u64 {
     retained
         .iter()
@@ -220,8 +151,7 @@ mod tests {
         let indices: Vec<usize> = retained.iter().map(|r| r.index).collect();
         assert_eq!(indices, vec![0, 1]);
         assert!((retained[0].expires_at - 1_300.0).abs() < 1e-9);
-        // A millisecond bridge is not bounded by frames at all, and a seek
-        // verdict changes nothing about it.
+        // A millisecond bridge is not bounded by frames at all.
         assert_eq!(retained[0].frame_limit, u64::MAX);
         let at_rest = retain_evicted(window(0, 4), window(2, 6), 1_000.0, 0, &GRACE, false);
         assert_eq!(at_rest, retained, "Grace does not ask about the scroll");
@@ -237,8 +167,7 @@ mod tests {
         assert!(evicted[0].alive(1_050.0, 7));
         assert!(!evicted[0].alive(1_050.0, 8), "and it is over next frame");
 
-        // The same eviction at reading speed retains nothing: this is the rule
-        // that stops a cache from being sized by the whole session.
+        // At reading speed the same eviction retains nothing.
         assert!(
             retain_evicted(window(0, 4), window(2, 6), 1_000.0, 7, &SEEK, false).is_empty(),
             "no seek, no bridge"
@@ -276,8 +205,7 @@ mod tests {
     #[test]
     fn an_empty_or_appearing_window_retains_nothing() {
         assert!(retain_evicted(None, window(0, 4), 0.0, 0, &GRACE, true).is_empty());
-        // A window disappearing unmounts everything; retaining the whole
-        // document would defeat virtualization, so nothing is kept.
+        // A window disappearing unmounts everything: nothing is kept.
         assert!(retain_evicted(window(0, 4), None, 0.0, 0, &GRACE, true).is_empty());
     }
 
@@ -292,8 +220,7 @@ mod tests {
 
     #[test]
     fn a_frozen_frame_clock_still_expires_the_bridge() {
-        // A hidden tab stops rAF entirely: the ceiling is the wake, so a
-        // bridge cannot pin a surface by frames that will never arrive.
+        // A hidden tab stops rAF: the ceiling is the wake.
         let retained = retain_evicted(window(0, 4), window(3, 6), 0.0, 0, &SEEK, true);
         assert!(retained[0].alive(0.0, 0));
         let ceiling = f64::from(FRAME_CEILING_MS);
@@ -350,8 +277,7 @@ mod tests {
             },
         ];
         assert_eq!(next_deadline_ms(&retained, 400.0), 100);
-        // A deadline already passed still reports a tick: the prune must run
-        // on the next one, not wait for a deadline that is behind us.
+        // A passed deadline still reports a tick, so the prune runs.
         assert_eq!(next_deadline_ms(&retained, 600.0), 1);
     }
 }

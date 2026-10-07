@@ -1,16 +1,10 @@
-//! A single column of variably-sized items: the [`Strip`] backend behind the
-//! [`Layout`] contract, plus per-item estimates.
+//! A single column of variably-sized items over a [`Strip`] backend.
 
 use crate::{Budget, Strip, StripBackend, Viewport, Window};
 
 use super::Layout;
 
-/// A column (or row, for horizontal axes) of variably-sized items with a
-/// fixed gap between them.
-///
-/// Backed by a [`StripBackend`] (default [`Strip`]). The windowing is written
-/// once against the trait (see [`crate::backend`]), so a custom backend can
-/// be substituted without touching this layer.
+/// A column of variably-sized items with a fixed gap.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ListLayout<B: StripBackend = Strip> {
     pub(crate) backend: B,
@@ -38,15 +32,7 @@ impl<B: StripBackend> ListLayout<B> {
         Self::new(core::iter::repeat_n(size, count), gap)
     }
 
-    /// Build from a **per-item** estimate, to be refined later with
-    /// [`set_size`](Self::set_size) as real sizes are measured.
-    ///
-    /// Every item is seeded from its OWN estimate — never from one global
-    /// fallback. In a mixed-size document, seeding every unknown item from
-    /// item 0's size mislocates everything below the first odd one, and the
-    /// corrections then shift the content under the scroll anchor (the
-    /// "landed on a different page after zoom-out" bug this API exists to
-    /// prevent).
+    /// Build from a per-item estimate, refined later by measurement.
     pub fn estimated(count: usize, estimate: impl Fn(usize) -> f64, gap: f64) -> Self
     where
         B: From<Strip>,
@@ -98,9 +84,7 @@ impl<B: StripBackend> Layout for ListLayout<B> {
     }
 
     fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
-        // The backend's hinted search: for the default `Strip` that is the
-        // neighbour-then-gallop answer, so the list rides the same amortized
-        // O(1) the grid's row windowing does.
+        // The backend's hinted search, amortized O(1) like the grid's.
         self.backend.index_at_hinted(pos, hint)
     }
 
@@ -175,9 +159,7 @@ mod tests {
 
     #[test]
     fn hinted_matches_unhinted() {
-        // The hint is now plumbing that actually runs (the backend's hinted
-        // leading-edge search), so the list owes the grid's guarantee: the
-        // hinted answers are the unhinted answers, at every position.
+        // The hint runs, so the list owes the grid's guarantee.
         let l: ListLayout = ListLayout::estimated(200, |i| 80.0 + (i % 7) as f64 * 13.0, 11.0);
         let mut hint = 0usize;
         let mut pos = 0.0;

@@ -5,25 +5,13 @@ use alloc::vec::Vec;
 use crate::units::{from_sub, to_sub};
 use crate::window::{Budget, Window};
 
-// The windowing/geometry math lives ONCE, in the `StripBackend` impl below
-// and the generic free functions in `super`. The inherent methods on `Strip`
-// are the documented f64 API; each delegates, none re-implements.
+// The math lives ONCE, in the impl and the shared free functions.
 use super::StripBackend;
 
 /// A column of variably-sized items separated by a fixed gap.
-///
-/// Construct one with [`Strip::new`] (explicit sizes) or [`Strip::uniform`]
-/// (all items the same size), then query it. Rebuild it when the sizes change,
-/// or — for finer-grained updates — call [`Strip::set_size`].
-///
-/// Internally the prefix-sum is stored as `i64` sub-pixels, so the public `f64`
-/// API is exact for every common UI coordinate (multiples of `1/65536` of a
-/// CSS pixel). See the crate-level docs for the rationale.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Strip {
-    /// `starts[i]` is the offset of item `i`, in sub-pixels; `starts[len]` is
-    /// the total extent including the trailing item but no trailing gap.
-    /// Always has `len + 1` entries, or is empty when there are no items.
+    /// `starts[i]` is item `i`'s offset in sub-pixels; `starts[len]` the total.
     starts: Vec<i64>,
     /// Gap between adjacent items, in sub-pixels.
     gap: i64,
@@ -54,11 +42,7 @@ impl Strip {
         }
     }
 
-    /// Build a strip of `count` items that all have the same size.
-    ///
-    /// The size may be an ESTIMATE the caller refines with [`Strip::set_size`]
-    /// as real measurements arrive — the placeholder-height pattern, and what
-    /// a strip of not-yet-rendered pages is built with.
+    /// Build a strip of `count` same-sized items.
     pub fn uniform(count: usize, size: f64, gap: f64) -> Self {
         Self::new(core::iter::repeat_n(size, count), gap)
     }
@@ -82,10 +66,6 @@ impl Strip {
     }
 
     /// Offset of the start of item `index`.
-    ///
-    /// Returns `0.0` for an empty strip, and the total extent for an index at
-    /// or past the end, so callers can position a trailing spacer without a
-    /// bounds check.
     #[inline]
     pub fn offset(&self, index: usize) -> f64 {
         StripBackend::offset(self, index)
@@ -97,8 +77,7 @@ impl Strip {
         StripBackend::size(self, index)
     }
 
-    /// Total extent of the column: every item plus the gaps between them, with
-    /// no trailing gap. `0.0` when empty.
+    /// Total extent of the column, no trailing gap; 0.0 when empty.
     #[inline]
     pub fn total(&self) -> f64 {
         StripBackend::total(self)
@@ -109,81 +88,33 @@ impl Strip {
         StripBackend::mean_size(self)
     }
 
-    /// Index of the item whose span contains `pos`.
-    ///
-    /// `pos` is treated as the *leading edge* of a viewport: an item ending
-    /// exactly at `pos` has scrolled out, and a position inside a gap
-    /// resolves to the item below — the same strict top edge
-    /// [`overlapping`](Self::overlapping) uses, so "the item at the top of
-    /// the scrollport" and "the first visible item" never disagree by one.
-    /// Positions past the end resolve to the last item, so this always names
-    /// a real item (given a non-empty strip); `0` when empty.
-    ///
-    /// `partition_point` over `i64` sub-pixels — `O(log n)` per call. For
-    /// continuous scrolling prefer [`Strip::index_at_hinted`], amortized
-    /// `O(1)` when the position is the same as or adjacent to the previous
-    /// frame.
+    /// Index of the item whose span contains `pos`, by leading edge.
     pub fn index_at(&self, pos: f64) -> usize {
         StripBackend::index_at(self, pos)
     }
 
-    /// [`Strip::index_at`] with a **hint** — the previous frame's result,
-    /// checked first. Continuous scrolling (trackpad, wheel, line-scroll)
-    /// almost always lands on the same index or one step away, reducing the
-    /// `O(log n)` search to amortized `O(1)`. A hint wrong by more than a
-    /// step or two (scrollbar drag, jump-to-anchor) falls back to a
-    /// **galloping** search: probe 1, 2, 4, 8, ... steps away to bracket the
-    /// answer, then binary-search inside it — worst case `O(log n)`, best
-    /// case one integer comparison.
-    ///
-    /// The hint is updated in place so callers can keep it across frames.
-    /// Delegates to the [`StripBackend`] override — the same galloping
-    /// search every generic hinted windowing path over this strip runs.
+    /// [`Strip::index_at`] with a hint, the previous frame's result.
     pub fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
         StripBackend::index_at_hinted(self, pos, hint)
     }
 
-    /// Inclusive range of items overlapping the span `[top, top + extent)`.
-    ///
-    /// An item that ends exactly at `top` has scrolled out and is excluded; an
-    /// item that starts exactly at the bottom edge is also excluded because the
-    /// lower bound is half-open. Returns `None` for an empty strip, a span with
-    /// no extent, or when the span lies entirely within a gap.
+    /// Inclusive range of items overlapping `[top, top + extent)`.
     pub fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
         super::overlapping(self, top, extent)
     }
 
-    /// Inclusive range of items that are at least partly on screen.
-    ///
-    /// Shorthand for [`overlapping`](Self::overlapping) with the raw viewport.
+    /// Inclusive range of items at least partly on screen.
     #[inline]
     pub fn visible(&self, scroll_top: f64, viewport: f64) -> Option<Window> {
         super::visible(self, scroll_top, viewport)
     }
 
-    /// Inclusive range of items to keep mounted.
-    ///
-    /// The window is everything overlapping
-    /// `[scroll_top - look, scroll_top + viewport + look]` where
-    /// `look` is derived from [`Budget::overscan`], trimmed to
-    /// `budget.max_items`.
-    ///
-    /// Two invariants hold for any `budget`:
-    ///
-    /// - every partly-visible item is always included, so no budget can blank
-    ///   out what the reader is looking at;
-    /// - trimming drops the item furthest from the viewport first and prefers
-    ///   to keep the item below, so the next item the reader reaches is the
-    ///   last one evicted.
+    /// Inclusive range of items to keep mounted, trimmed to the budget.
     pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
         crate::backend::window(self, scroll_top, viewport, budget)
     }
 
-    /// [`Strip::window`] using a hinted overlap search (amortized O(1) when
-    /// `hint` is the previous frame's first mounted index). Delegates to the
-    /// [`StripBackend`] default — the shared hinted windowing, which seeds
-    /// its leading-edge search with this strip's galloping `index_at_hinted`
-    /// and shares the budget trim with the unhinted path.
+    /// [`Strip::window`] with a hinted overlap search.
     pub fn window_hinted(
         &self,
         scroll_top: f64,
@@ -194,30 +125,12 @@ impl Strip {
         StripBackend::window_hinted(self, scroll_top, viewport, budget, hint)
     }
 
-    /// Index of the item occupying most of the viewport (area-of-viewport).
-    ///
-    /// Not "the item at the top edge": shrinking every item (zooming out)
-    /// slides more of the *previous* item into the top of the viewport, so
-    /// the top-edge answer keeps changing even though the reader never moved.
-    /// Area degrades gracefully at both extremes — one item filling the
-    /// screen trivially wins; with several visible, the one you see most of
-    /// wins — and a jump aligning item `i` with the top still reports `i`.
-    ///
-    /// Ties go to the lower index. Falls back to [`index_at`](Self::index_at)
-    /// when the viewport has no extent.
+    /// Index of the item occupying most of the viewport.
     pub fn dominant(&self, scroll_top: f64, viewport: f64) -> usize {
         super::dominant(self, scroll_top, viewport)
     }
 
-    /// Change the size of a single item in `O(n)` time — a measured size
-    /// replacing an estimate, or an interactive element resizing. After it,
-    /// [`Strip::offset`] and [`Strip::size`] reflect the new size, items
-    /// below shift, and the total updates.
-    ///
-    /// Returns the **delta** (new_size - old_size) in CSS pixels, which the
-    /// caller feeds to [`crate::anchor::correct`] to keep the viewport pinned
-    /// to whatever the reader was looking at. Does nothing if `index` is out
-    /// of range or the size is unchanged.
+    /// Change one item's size in `O(n)`, returning the delta.
     pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
         StripBackend::set_size(self, index, new_size)
     }
@@ -272,10 +185,7 @@ impl super::StripBackend for Strip {
         }
     }
 
-    /// The hinted leading-edge search: neighbour first, then a galloping
-    /// bracket. This is the override every generic hinted windowing path
-    /// over a [`Strip`] runs — the f64 entry point
-    /// [`Strip::index_at_hinted`] delegates here.
+    /// The hinted leading-edge search: neighbour, then a galloping bracket.
     fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
         let len = self.len();
         if len == 0 || pos <= 0.0 {
@@ -316,12 +226,10 @@ impl super::StripBackend for Strip {
 
         // 3) Galloping search: bracket the answer, then binary search inside.
         let target = if p < h_start {
-            // We jumped UPWARDS (back towards 0). Find the largest index `i`
-            // with `starts[i] <= p` and `i <= h`.
+            // Jumped UPWARDS: the largest i <= h with starts[i] <= p.
             let mut lo = 0usize;
             let mut step = 1usize;
-            // Probe 1, 2, 4, ... below h until we find an index whose start is
-            // > p (so the answer is below it).
+            // Probe 1, 2, 4, ... below h to bracket the answer.
             let mut probe = h;
             loop {
                 let next = probe.saturating_sub(step);
@@ -346,8 +254,7 @@ impl super::StripBackend for Strip {
                 .saturating_sub(1)
                 + lo
         } else {
-            // We jumped DOWNWARDS (forward). Find the largest index `i` with
-            // `starts[i] <= p` and `i >= h`.
+            // Jumped DOWNWARDS: the largest i >= h with starts[i] <= p.
             let mut hi = h;
             let mut step = 1usize;
             let mut probe = h;
@@ -375,8 +282,7 @@ impl super::StripBackend for Strip {
                 .saturating_sub(1)
         };
 
-        // Apply the same boundary rule as `index_at`: if pos is at or past the
-        // end of the candidate, the next item leads.
+        // Same boundary rule as `index_at`: past the candidate, next leads.
         let idx =
             if self.starts[target].saturating_add(self.size_sub(target)) <= p && target + 1 < len {
                 target + 1
@@ -397,11 +303,8 @@ impl super::StripBackend for Strip {
             return 0;
         }
         let delta = new_sub.saturating_sub(old_sub);
-        // O(n) suffix walk, run once per MEASURED page (each measurement
-        // lands in its own flush, not in a loop over `n`): a 2 000-page book
-        // pays ~2 000 cache-friendly i64 adds per measured page, faster than
-        // a Fenwick tree at this scale. If counts ever reach tens of
-        // thousands, switch `starts` to a Fenwick tree for O(log n).
+        // An O(n) suffix walk per measured page; a Fenwick tree beyond
+        // tens of thousands.
         for i in (index + 1)..=len {
             self.starts[i] = self.starts[i].saturating_add(delta);
         }
@@ -414,17 +317,10 @@ mod tests {
     use super::*;
     use crate::units::{SUBPIXEL_FACTOR, from_sub, to_sub};
 
-    /// Tolerance used everywhere an `i64`-derived `f64` (from
-    /// [`Strip::offset`] / [`Strip::size`] / [`Strip::total`]) is compared
-    /// against an independently-computed `f64`. The prefix-sum is held in
-    /// 1/65536 sub-pixel units, so a value with a non-power-of-2 denominator
-    /// (0.1, 0.333) is truncated in and out — worst-case round-trip error
-    /// just over 1.53e-5. `1e-3` is well above the precision floor and well
-    /// below any real arithmetic bug (a missing `+ gap` term is off by
-    /// ~24).
+    /// Tolerance for comparing an i64-derived f64 with a computed one.
     const APPROX_TOL: f64 = 1e-3;
 
-    /// Three items, sizes 100 / 200 / 100, gap 24 => starts 0 / 124 / 348.
+    // Sizes 100 / 200 / 100, gap 24: starts 0 / 124 / 348.
     fn fixture() -> Strip {
         Strip::new([100.0, 200.0, 100.0], 24.0)
     }
@@ -476,8 +372,7 @@ mod tests {
         assert_eq!(s.index_at(99.0), 0);
         // An item ending exactly at `pos` has scrolled out: the next one leads.
         assert_eq!(s.index_at(100.0), 1);
-        // 100..124 is the gap after item 0 — the item BELOW it now leads, so
-        // this agrees with `overlapping`, which uses the same strict top edge.
+        // 100..124 is the gap after item 0: the item BELOW leads.
         assert_eq!(s.index_at(110.0), 1);
         assert_eq!(s.index_at(124.0), 1);
         assert_eq!(s.index_at(347.0), 2);
@@ -486,8 +381,7 @@ mod tests {
         assert_eq!(s.index_at(10_000.0), 2);
     }
 
-    /// `index_at` and `overlapping` must agree about who leads the viewport,
-    /// including at exact boundaries and inside gaps.
+    /// `index_at` and `overlapping` agree about who leads.
     #[test]
     fn index_at_agrees_with_overlapping() {
         let s = Strip::new([100.0, 200.0, 100.0], 24.0);
@@ -554,9 +448,7 @@ mod tests {
             .unwrap();
         assert_eq!(win.len(), 4);
 
-        // `max_items: 0` is documented to behave as `1` — a budget of zero
-        // would blank out the entire list, which can never be correct (the
-        // reader always sees something).
+        // `max_items: 0` behaves as `1`: a zero budget would blank the list.
         let s0 = Strip::uniform(10, 1_000.0, 24.0);
         let win0 = s0.window(0.0, 100.0, Budget::screenfuls(0.0, 0)).unwrap();
         assert_eq!(win0.len(), 1);
@@ -573,7 +465,7 @@ mod tests {
 
     #[test]
     fn window_trims_furthest_first_and_keeps_the_item_below() {
-        // Items are 100 tall, gap 0. Viewport 100 tall parked exactly on item 5.
+        // Items are 100 tall, gap 0; viewport parked exactly on item 5.
         let s = Strip::uniform(20, 100.0, 0.0);
         let win = s.window(500.0, 100.0, Budget::screenfuls(2.0, 3)).unwrap();
         // Visible is item 5; with 3 slots we keep 5 and prefer below => 5,6,7.
@@ -600,8 +492,7 @@ mod tests {
         // Exactly 50/50 between items 0 and 1: ties go to the lower index.
         assert_eq!(s.dominant(50.0, 100.0), 0);
 
-        // A viewport with zero extent cannot compute area-of-coverage, so it
-        // falls back to the top edge — same answer as `index_at(scroll_top)`.
+        // A zero-extent viewport falls back to the top edge.
         let s2 = Strip::new([100.0, 200.0, 100.0], 24.0);
         assert_eq!(s2.dominant(130.0, 0.0), s2.index_at(130.0));
         assert_eq!(s2.dominant(130.0, 0.0), 1);
@@ -627,10 +518,7 @@ mod tests {
 
     #[test]
     fn offsets_are_consistent_with_sizes_for_ragged_input() {
-        // Power-of-2 denominators (7.5, 999.25, 0.25, 0.0625) round-trip
-        // EXACTLY through the i64 sub-pixel layer; non-power-of-2 ones (0.1,
-        // 0.333, 0.999, 123.456) round to the nearest 1/65536 and lose
-        // ~1.5e-5 — the documented trade-off for i64 storage.
+        // Power-of-2 denominators round-trip EXACTLY; others lose ~1.5e-5.
         let sizes = [
             13.0, 400.0, 7.5, 999.25, 1.0, 0.1, 0.333, 0.999, 123.456, 0.25, 0.0625,
         ];
@@ -654,10 +542,7 @@ mod tests {
         assert!((s.total() - (expect - 11.0)).abs() < APPROX_TOL);
     }
 
-    /// Demonstrates the i64 sub-pixel precision trade-off explicitly.
-    /// Power-of-2 denominators are exact (round-trip error 0); anything else
-    /// lands within `1 / SUBPIXEL_FACTOR` of the original value. This is what
-    /// makes `APPROX_TOL = 1e-3` the right tolerance everywhere else.
+    /// The i64 sub-pixel precision trade-off, demonstrated.
     #[test]
     fn subpixel_precision_for_non_binary_fractions() {
         // Exact: denominators are powers of 2.
@@ -667,8 +552,7 @@ mod tests {
                 "exact round-trip {x}"
             );
         }
-        // Approximate: non-power-of-2 denominators lose up to 1/SUBPIXEL_FACTOR.
-        // The bound is symmetric and tight (rounding to nearest, not truncating).
+        // Approximate: non-power-of-2 denominators lose up to one sub-pixel.
         let bound = 1.0 / (SUBPIXEL_FACTOR as f64);
         for &x in &[0.1, 0.333, 0.999, 123.456, 0.001, 0.789, 42.195] {
             let err = (from_sub(to_sub(x)) - x).abs();
@@ -736,8 +620,7 @@ mod tests {
         assert_eq!(s.offset(2), 124.0 + 300.0 + 24.0);
         assert_eq!(s.total(), 100.0 + 24.0 + 300.0 + 24.0 + 100.0);
 
-        // Out-of-range index is a no-op (returns 0.0, no panic, no mutation).
-        // Same for a size that equals the current size — early return, no work.
+        // Out-of-range index is a no-op; so is an unchanged size.
         let mut s2 = Strip::new([100.0, 200.0], 24.0);
         assert_eq!(s2.set_size(5, 200.0), 0.0);
         assert_eq!(s2.set_size(0, 100.0), 0.0);
@@ -748,9 +631,8 @@ mod tests {
 
     #[test]
     fn a_size_change_above_the_anchor_moves_the_item_by_the_delta() {
-        // The scroll correction itself is `crate::anchor::correct`, tested
-        // there; what a strip owes it is an honest delta and offsets that
-        // already reflect the new size.
+        // The correction itself is `crate::anchor::correct`; a strip owes a
+        // delta and honest offsets.
         let mut s = Strip::uniform(20, 100.0, 0.0);
         let before = s.offset(10);
         assert_eq!(s.set_size(5, 150.0), 50.0);

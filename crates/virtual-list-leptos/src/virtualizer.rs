@@ -1,8 +1,5 @@
-//! The reactive adapter: [`use_virtualizer`] wires the pure
-//! [`crate::engine::VirtualizerCore`] to Leptos signals, the scroll container,
-//! and two `ResizeObserver`s — applying the engine's [`crate::engine::Step`]s
-//! with write-if-changed guards so nothing downstream re-renders unless the
-//! mounted window actually changed.
+//! The reactive adapter: the pure core wired to Leptos signals, the
+//! container and two observers.
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
@@ -28,17 +25,13 @@ type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
 type ListenerCallback = Closure<dyn FnMut(Event)>;
 type IdleCallback = Rc<dyn Fn()>;
 
-/// One `ResizeObserver` and the wasm-bindgen closure that serves it. Named
-/// so the pairing is explicit: the callback must stay alive exactly as long
-/// as the observer is connected, and `dispose` drops both together.
+/// One `ResizeObserver` and the closure that serves it.
 pub(crate) struct ObserverBinding {
     observer: ResizeObserver,
     callback: ObserverCallback,
 }
 
-/// One event listener and the closure that serves it. Named for the same
-/// reason: removing the listener with the SAME closure identity is what
-/// releases the JS-side function (and the WASM closure behind it).
+/// One event listener and the closure that serves it.
 pub(crate) struct ListenerBinding {
     element: web_sys::Element,
     event: &'static str,
@@ -46,10 +39,7 @@ pub(crate) struct ListenerBinding {
 }
 
 impl VirtualizerInner {
-    /// Build the shared state for a fresh virtualizer. All signal/lazy
-    /// handles are created HERE, in the hook's owner, so their lifetimes are
-    /// the component's (a signal created inside an effect run would be
-    /// disposed with that run — see `use_virtualizer` for the full story).
+    /// Build the shared state for a fresh virtualizer.
     pub(crate) fn new(
         options: VirtualizerOptions,
         core: VirtualizerCore,
@@ -104,65 +94,38 @@ pub(crate) struct VirtualizerInner {
     pub surface: DomSurface,
 
     pub scroll_top: RwSignal<f64>,
-    /// Whether the scroller has been quiet for `scroll_end_delay_ms` — the
-    /// scroll-end timer's own notion of "the scroll ended", published. True
-    /// until the first real scroll moves it; the timer `arm_scroll_end`
-    /// re-arms on every scroll event restores it. Page strips gate a swept-in
-    /// page's FIRST paint on it, so a fling pays a handful of rasterisations
-    /// at its end instead of one per page it flew past.
+    /// Whether the scroller has been quiet for the scroll-end delay.
     pub settled: RwSignal<bool>,
     pub viewport: RwSignal<Viewport>,
     pub range: RwSignal<Option<Window>>,
     pub layout_version: RwSignal<u64>,
     pub last_epoch: Cell<u64>,
-    /// The core's band version as last published. A band change without a
-    /// window change is invisible to `range`, so this is what makes the items
-    /// (and the pages' Active/Blank state they carry) republish.
+    /// The core's band version as last published.
     pub last_band_version: Cell<u64>,
 
     pub pending_scroll: Rc<Cell<Option<f64>>>,
     pub scroll_armed: Rc<Cell<bool>>,
     pub flush_armed: Rc<Cell<bool>>,
 
-    /// The pre-paint flush's once-per-batch latch (see
-    /// [`VirtualizerInner::arm_now_flush`]). Separate from `flush_armed`: the
-    /// two are armed by different reports and land at different checkpoints,
-    /// so a batch that armed both must lose neither.
+    /// The pre-paint flush's once-per-batch latch.
     pub now_flush_armed: Rc<Cell<bool>>,
 
-    /// Measured sizes the scroller has not been told about: the anchored
-    /// scroll corrections a MEASUREMENT flush produced while the reader was
-    /// moving. The layout half of such a flush always lands (a stale model
-    /// paints rows on top of each other); the correction is the half that
-    /// fights momentum, so it is banked here and applied as ONE write when the
-    /// scroll-end window closes. The window always comes — it is what made
-    /// `settled` false — so this always drains.
+    /// Measured sizes whose anchored correction is banked until the settle.
     pub banked_scroll: Cell<f64>,
 
-    /// While false, the DOM scroll echo must not touch the core. A
-    /// programmatic scroll burst (zoom tween, sidebar slide, resize drag)
-    /// writes the surface every frame and the browser echoes a frame late, so
-    /// feeding the echo back would overwrite the core's anchor with a stale
-    /// value and the next anchored rescale would oscillate — visible jitter
-    /// during the animation. The app flips this off for the gesture and back
-    /// on at its commit.
+    /// While false, the DOM scroll echo must not touch the core.
     pub scroll_feedback: Cell<bool>,
 
     pub container_ro: RefCell<Option<ObserverBinding>>,
     pub listeners: RefCell<Vec<ListenerBinding>>,
     pub scroll_end_timer: RefCell<Option<TimeoutHandle>>,
 
-    /// Zombie retention bookkeeping (see `retention.rs`): evicted items
-    /// still mounted, the reactive version that items() tracks, the currently
-    /// effective policy (raised around a zoom commit), and the two wakers a
-    /// bridge is released by: the expiry timer, and — for a policy counted in
-    /// frames — the animation-frame chain.
+    /// Zombie retention bookkeeping and the two wakers that end a bridge.
     pub retained: RefCell<Vec<RetainedItem>>,
     pub retained_version: RwSignal<u64>,
     pub retention: Cell<RetentionPolicy>,
     pub retention_timer: RefCell<Option<TimeoutHandle>>,
-    /// The adapter's frame counter: advanced once per rAF while a bridge is
-    /// alive, and the only clock a `Frames` policy is measured against.
+    /// The frame counter a frame-counted bridge is measured against.
     pub frame_clock: Cell<u64>,
     /// Whether the frame chain is already queued (one chain at a time).
     pub frames_armed: Cell<bool>,
@@ -176,10 +139,7 @@ pub(crate) struct VirtualizerInner {
 }
 
 impl VirtualizerInner {
-    /// Republish the item list when the render band moved inside an unchanged
-    /// window. The lead grows and shrinks with the measured scroll, so this is
-    /// the path by which a page entering the band starts carrying content
-    /// without waiting for a window move or a timer.
+    /// Republish the items when the band moved inside an unchanged window.
     fn sync_band_version(self: &Rc<Self>) {
         let version = self.core.borrow().band_version();
         if self.last_band_version.replace(version) == version {
@@ -188,9 +148,7 @@ impl VirtualizerInner {
         self.retained_version.update(|v| *v += 1);
     }
 
-    /// Publish a new mount window: write-if-changed, and schedule zombie
-    /// retention for the items the change evicted. Every range write in the
-    /// adapter funnels through here so retention cannot miss a transition.
+    /// Publish a new mount window and schedule retention for the evicted.
     fn publish_range(self: &Rc<Self>, new: Option<Window>) {
         self.sync_band_version();
         let Some(old) = self.range.try_get_untracked() else {
@@ -200,8 +158,7 @@ impl VirtualizerInner {
             return;
         }
         let policy = self.retention.get();
-        // A motion-gated bridge is granted by the seek that moved the window;
-        // every other policy ignores the verdict.
+        // A motion-gated bridge is granted by the seek; others ignore it.
         let seeking = self.core.borrow().motion_engaged();
         if policy.bridges() {
             let now = now_ms();
@@ -209,8 +166,7 @@ impl VirtualizerInner {
             let evicted = retain_evicted(old, new, now, frame, &policy, seeking);
             if !evicted.is_empty() {
                 let mut retained = self.retained.borrow_mut();
-                // Merge: an index already retained keeps its original expiry
-                // only if it is still outside the new window; re-entry drops it.
+                // Merge: a retained index keeps its expiry.
                 *retained = prune_retained(std::mem::take(&mut *retained), new, now, frame);
                 for item in evicted {
                     if !retained.iter().any(|r| r.index == item.index) {
@@ -230,11 +186,7 @@ impl VirtualizerInner {
         self.range.set(new);
     }
 
-    /// Run one prune for both wakers: drop every bridge that has expired or
-    /// come back inside the window, and publish the change when it cost
-    /// something. `retained` is the state; the wakers only decide WHEN it is
-    /// asked again, so a bridge can never be released by one clock and
-    /// forgotten by the other.
+    /// Run one prune for both wakers and publish when it cost something.
     fn prune_retained_tick(self: &Rc<Self>) {
         let now = now_ms();
         let frame = self.frame_clock.get();
@@ -249,17 +201,13 @@ impl VirtualizerInner {
         }
     }
 
-    /// Arm both wakers a live bridge has. Each one is a no-op when nothing
-    /// is bridged in its unit, so a millisecond grace never queues frames and
-    /// a frame bridge never waits on a timer it does not need.
+    /// Arm both wakers a live bridge has.
     fn arm_retention_clocks(self: &Rc<Self>) {
         self.arm_retention_timer();
         self.arm_retention_frames();
     }
 
-    /// Arm (once) the timer that prunes expired zombies. Re-arms itself
-    /// while anything is still retained: it holds every bridge's wall-clock
-    /// deadline, including the ceiling a frame-counted one may not pass.
+    /// Arm the timer that prunes expired zombies.
     fn arm_retention_timer(self: &Rc<Self>) {
         if self.retention_timer.borrow().is_some() {
             return;
@@ -267,9 +215,7 @@ impl VirtualizerInner {
         let inner = self.clone();
         if let Ok(handle) = set_timeout_with_handle(
             move || {
-                // Flush-time fire: the owner's signals may already be
-                // purged (dispose runs later than the purge) — the retained
-                // write below belongs to a living reader only.
+                // Flush-time fire: the owner's signals may already be purged.
                 if inner.settled.try_get_untracked().is_none() {
                     return;
                 }
@@ -285,10 +231,7 @@ impl VirtualizerInner {
         }
     }
 
-    /// Whether any live bridge still owes a frame tick. A `Grace` item's
-    /// limit is `u64::MAX`, so this is exactly "a frame bridge is pending" —
-    /// and when it reads false the chain stops, leaving no rAF callback
-    /// registered against an idle list.
+    /// Whether any live bridge still owes a frame tick.
     fn waits_on_frames(self: &Rc<Self>) -> bool {
         let frame = self.frame_clock.get();
         self.retained
@@ -297,10 +240,7 @@ impl VirtualizerInner {
             .any(|item| item.frame_limit != u64::MAX && item.frame_limit > frame)
     }
 
-    /// Advance the frame clock one animation frame at a time while a
-    /// `Frames` bridge is alive. Frames, not milliseconds, are what the
-    /// bridge was bought for: a stalled renderer and a smooth one both spend
-    /// the same number of them, and the chain ends with the bridge.
+    /// Advance the frame clock while a `Frames` bridge is alive.
     fn arm_retention_frames(self: &Rc<Self>) {
         if self.frames_armed.get() || !self.waits_on_frames() {
             return;
@@ -308,8 +248,7 @@ impl VirtualizerInner {
         self.frames_armed.set(true);
         let inner = self.clone();
         raf(move || {
-            // The same purge window the timer guards: a disposed owner has
-            // no signals left to publish into, and no bridge to keep.
+            // The same purge window the timer guards.
             if inner.settled.try_get_untracked().is_none() {
                 return;
             }
@@ -322,8 +261,7 @@ impl VirtualizerInner {
         });
     }
 
-    /// The indices a live bridge keeps mounted: unexpired and outside the
-    /// active window (inside it, an item is simply active).
+    /// The indices a live bridge keeps mounted.
     fn bridged_indices(self: &Rc<Self>) -> Vec<usize> {
         let now = now_ms();
         let frame = self.frame_clock.get();
@@ -345,26 +283,15 @@ impl VirtualizerInner {
         self.apply_step(step, true);
     }
 
-    /// Publish a MEASUREMENT flush: the layout lands NOW, the scroll
-    /// correction waits for the reader to stop.
-    ///
-    /// The two halves of a flush pull in opposite directions. A size the
-    /// model has not learned yet is painted where the model says, so a row
-    /// whose own content is taller than its slot renders on top of its
-    /// neighbour — the stacked look a stream of text shows for as long as the
-    /// model lags, and the reason the measured size cannot wait for a settle.
-    /// The anchored scroll correction is the opposite: it is a write under the
-    /// reader's finger while momentum owns the scroller, the stutter every
-    /// native list avoids. So the correction is banked and one write lands
-    /// when the movement ends (see [`Self::flush_banked_scroll`]).
+    /// Publish a measurement flush: the layout now, the correction at the
+    /// settle.
     fn apply_measurements(self: &Rc<Self>, step: Step) {
         self.apply_step(step, self.settled.try_get_untracked() == Some(true));
     }
 
     fn apply_step(self: &Rc<Self>, step: Step, write_scroll: bool) {
-        // The writes below wake cross-subscribed effects; after the owner's
-        // purge every one of them belongs to a dead world. `settled` is the
-        // scope's liveness probe (same arena as range/scroll_top).
+        // These writes wake cross-subscribed effects; settled is the liveness
+        // probe.
         if self.settled.try_get_untracked().is_none() {
             return;
         }
@@ -380,10 +307,7 @@ impl VirtualizerInner {
             return;
         }
         if !write_scroll {
-            // The DOM stays where the reader left it and the core's own
-            // offset keeps following the scroll echoes; only the correction is
-            // held back, so what lands at the settle is the sum of the ones
-            // the movement outran.
+            // The DOM stays put; only the correction is held back.
             self.banked_scroll.set(self.banked_scroll.get() + delta);
             return;
         }
@@ -391,13 +315,7 @@ impl VirtualizerInner {
         write_if_changed(self.scroll_top, top);
     }
 
-    /// Apply every banked correction as one write. The scroll-end timer's cue,
-    /// and safe to call when nothing is banked.
-    ///
-    /// The core's offset is deliberately NOT written here: the browser fires a
-    /// scroll event for the write and the echo (`handle_scroll`) adopts what
-    /// the DOM actually holds — which is also how a write the browser clamped
-    /// at either end of the content is told apart from one that landed.
+    /// Apply every banked correction as one write.
     fn flush_banked_scroll(self: &Rc<Self>) {
         let banked = self.banked_scroll.replace(0.0);
         if banked.abs() <= self.options.measure_epsilon {
@@ -409,10 +327,7 @@ impl VirtualizerInner {
         self.surface.set_scroll((top + banked).max(0.0), false);
     }
 
-    /// Apply a step produced by a scroll COMMAND (the surface was already
-    /// written by the core): signals only, no second DOM write. Instant
-    /// writes carry the adopted position; smooth writes return no step and
-    /// surface later through `handle_scroll`.
+    /// Apply a step a scroll command produced: no second DOM write.
     fn apply_local(self: &Rc<Self>, step: Step) {
         if self.settled.try_get_untracked().is_none() {
             return;
@@ -425,32 +340,22 @@ impl VirtualizerInner {
     }
 
     fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
-        // Flush-time callers arrive with the owner's signals already gone
-        // (dispose runs later than the purge); a disposed `settled` ends
-        // the echo here before any write below.
+        // Flush-time callers arrive with the signals already gone.
         if self.settled.try_get_untracked().is_none() {
             return;
         }
         if !self.scroll_feedback.get() {
-            // A programmatic gesture owns the surface: its anchored writes are
-            // authoritative and the echo is one frame stale. Adopting it here
-            // would corrupt the anchor (see the field docs); the gesture's own
-            // `apply` already published the position to the scroll_top signal.
+            // A programmatic gesture owns the surface: the echo is stale.
             return;
         }
         let content = dom_top - self.options.padding_start;
-        // Sub-epsilon echo (fractional-pixel wheel deltas fire events whose
-        // movement is below measure_epsilon): the engine would ignore the
-        // rewindow anyway, so skip the signal write, the range publish and
-        // the idle-timer re-arm entirely — dominant-page tracking and
-        // navigation sync stay quiet during sub-pixel movement.
+        // Sub-epsilon echo: skip the signal write and the re-arm.
         if (content - self.core.borrow().scroll_top()).abs() <= self.options.measure_epsilon {
             return;
         }
         let step = self.core.borrow_mut().on_scroll_at(content, now_ms());
         write_if_changed(self.scroll_top, content);
-        // The strip is moving again: first paints wait for the scroll-end
-        // window this re-arms (see the field docs).
+        // The strip is moving again: first paints wait for the settle.
         write_if_changed(self.settled, false);
         self.publish_range(step.range);
         if let Some(top) = step.scroll_write {
@@ -480,8 +385,7 @@ impl VirtualizerInner {
         self.flush_armed.set(true);
         let inner = self.clone();
         raf(move || {
-            // Same dispose window as the scroll rAF: the frame can be the
-            // first thing that runs after the reader went away.
+            // Same dispose window as the scroll rAF.
             if inner.surface.element().is_none() || inner.settled.try_get_untracked().is_none() {
                 inner.flush_armed.set(false);
                 return;
@@ -494,16 +398,7 @@ impl VirtualizerInner {
         });
     }
 
-    /// Land the queued measurements before the frame paints, TOGETHER: the
-    /// pre-paint half of [`Self::arm_flush`], for reports the browser has
-    /// already batched — one `ResizeObserver` notification, or one measure
-    /// pass over the mounted window.
-    ///
-    /// The first report arms the latch and every report beside it rides along,
-    /// so a window of resized rows costs ONE layout rebuild instead of one per
-    /// row. The vehicle is the microtask checkpoint, which runs as soon as the
-    /// reporting callback returns and still precedes the paint — the guarantee
-    /// the synchronous flush gave, without the rebuild per row it also cost.
+    /// Land the queued measurements before the paint, together.
     fn arm_now_flush(self: &Rc<Self>) {
         if self.now_flush_armed.get() {
             return;
@@ -511,10 +406,7 @@ impl VirtualizerInner {
         self.now_flush_armed.set(true);
         let inner = self.clone();
         queue_microtask(move || {
-            // Same dispose window as the other armed flushes: this checkpoint
-            // can be the first thing that runs after the reader went away.
-            // The latch clears FIRST, so a row the new layout resized arms a
-            // fresh flush of its own.
+            // Same dispose window as the other armed flushes.
             inner.now_flush_armed.set(false);
             if inner.settled.try_get_untracked().is_none() {
                 return;
@@ -534,28 +426,18 @@ impl VirtualizerInner {
         let delay = Duration::from_millis(self.options.scroll_end_delay_ms as u64);
         if let Ok(handle) = set_timeout_with_handle(
             move || {
-                // Disposed while this was pending: the settled write and the
-                // idle callbacks belong to a reader that is gone. The signal
-                // read doubles as the guard — a disposed `settled` is the
-                // flush-time answer to "is this owner still here".
+                // Disposed while pending: the settled write belongs to nobody.
                 if inner.surface.element().is_none() || inner.settled.try_get_untracked().is_none()
                 {
                     return;
                 }
-                // The scroller has been quiet for the whole window: the strip
-                // is settled, and the first paints its gate held back run now.
+                // The scroller is quiet: the held-back first paints run.
                 write_if_changed(inner.settled, true);
-                // The motion is over: the band closes with it, so every
-                // mounted item becomes real content, and a bridge the seek had
-                // earned is earning nothing. Both changes are state changes
-                // without a range change, so they publish through the version
-                // `items()` tracks.
+                // The motion is over: the band closes, bridges earn nothing.
                 let step = inner.core.borrow_mut().note_scroll_end();
                 inner.publish_range(step.range);
                 inner.prune_retained_tick();
-                // Every correction the fling outran lands NOW, in the same
-                // window the first paints do — one write, against a scroller
-                // nobody is moving.
+                // Every correction the fling outran lands now, one write.
                 inner.flush_banked_scroll();
                 let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
                 for callback in callbacks {
@@ -568,9 +450,7 @@ impl VirtualizerInner {
         }
     }
 
-    /// Teardown, callable by the handle's dispose (the reader runtime's
-    /// sequence) and by the owning component's cleanup. Idempotent:
-    /// bindings, timers and observers tear down once.
+    /// Teardown, idempotent, callable by the handle or the component.
     pub(crate) fn dispose(&self) {
         self.teardown_bindings();
         if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {
@@ -582,11 +462,7 @@ impl VirtualizerInner {
         self.surface.detach();
     }
 
-    /// Drop listeners and observers associated with the bound container.
-    /// Removal happens with the SAME closure identity that was added (JS
-    /// `removeEventListener` matches by function reference) and the closure
-    /// is dropped immediately after — a rebound container never leaks a WASM
-    /// closure, and a disposed virtualizer releases every DOM handle.
+    /// Drop the bound container's listeners and observers.
     fn teardown_bindings(&self) {
         for binding in self.listeners.borrow_mut().drain(..) {
             let _ = binding.element.remove_event_listener_with_callback(
@@ -597,9 +473,7 @@ impl VirtualizerInner {
         if let Some(binding) = self.container_ro.borrow_mut().take() {
             let ObserverBinding { observer, callback } = binding;
             observer.disconnect();
-            // Release the wasm-bindgen closure AFTER the observer is dead;
-            // dropping it before disconnect would leave the observer holding
-            // a dangling JS callback.
+            // Release the closure AFTER the observer is dead.
             drop(callback);
         }
     }
@@ -617,10 +491,7 @@ impl Virtualizer {
     }
 }
 
-/// Handle identity: two handles are equal when they wrap the same inner
-/// virtualizer. The app's diagnostics registry uses this to remove exactly
-/// the handle that was disposed, so a registry entry can never outlive its
-/// owner's cleanup.
+/// Handle identity: equal when they wrap the same inner virtualizer.
 impl PartialEq for Virtualizer {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.inner, &other.inner)
@@ -631,9 +502,7 @@ fn write_if_changed<T>(signal: RwSignal<T>, value: T)
 where
     T: PartialEq + Copy + Send + Sync + 'static,
 {
-    // `try_get` keeps the flush-time callers honest: a disposed signal
-    // reads as None and the write into the dead world is skipped instead
-    // of panicking.
+    // `try_get` keeps flush-time callers honest.
     match signal.try_get_untracked() {
         Some(current) if current != value => signal.set(value),
         Some(_) => {}
@@ -641,12 +510,7 @@ where
     }
 }
 
-/// The retention clock, in milliseconds. `performance.now()` is monotonic
-/// and sub-millisecond, so a zombie's `expires_at` is a true duration — a
-/// wall-clock NTP step or DST switch cannot stretch or cut a grace period
-/// mid-zoom. `Date::now()` is the fallback where `performance` is
-/// unavailable. (The pure retention maths in `retention.rs` stays
-/// host-testable without this.)
+/// The retention clock, in milliseconds, from `performance.now()`.
 fn now_ms() -> f64 {
     web_sys::window()
         .and_then(|w| w.performance())
@@ -662,11 +526,7 @@ fn dom_scroll_offset(el: &web_sys::HtmlElement, axis: crate::options::Axis) -> f
 }
 
 impl Virtualizer {
-    /// Explicit teardown by the resource OWNER (the reader runtime's
-    /// dispose sequence, Phase 1): bindings, observers, timers and the
-    /// surface detach, and a late event frame finds nothing attached.
-    /// Idempotent — a virtualizer already disposed by its component's
-    /// cleanup tears down again as a no-op.
+    /// Explicit teardown by the resource owner, idempotent.
     pub fn dispose(&self) {
         self.inner.dispose();
     }
@@ -693,9 +553,7 @@ impl Virtualizer {
         {
             let inner_for_listener = inner.clone();
             let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
-                // The listener unbinds in dispose(), which runs one teardown
-                // beat after the signals are gone; an event landing in that
-                // window must not write into them.
+                // The listener unbinds in dispose(), after the signals go.
                 if inner_for_listener.settled.try_get_untracked().is_none() {
                     return;
                 }
@@ -711,12 +569,7 @@ impl Virtualizer {
                     inner_for_listener.scroll_armed.set(true);
                     let inner2 = inner_for_listener.clone();
                     raf(move || {
-                        // The frame is not tracked by dispose() (the closure
-                        // is handed to the browser uncancellable): a close or
-                        // swap can dispose the virtualizer while this frame
-                        // was pending, and every write below would land on a
-                        // disposed signal. A detached surface is the
-                        // "disposed" bit.
+                        // The frame is untracked: a detached surface is gone.
                         if inner2.surface.element().is_none()
                             || inner2.settled.try_get_untracked().is_none()
                         {
@@ -767,9 +620,7 @@ impl Virtualizer {
                 let _ = inner.layout_version.get();
                 let _ = inner.retained_version.get();
                 let active = inner.core.borrow().items();
-                // Zombies: retained, unexpired, outside the active window.
-                // Rendered with live layout geometry so they sit exactly
-                // where the layout says, at the committed scale.
+                // Zombies: retained, unexpired, outside the window.
                 let retained = inner.bridged_indices();
                 if retained.is_empty() {
                     return active;
@@ -795,10 +646,7 @@ impl Virtualizer {
                 let _ = inner.layout_version.get();
                 let _ = inner.retained_version.get();
                 let mut rows = inner.core.borrow().rows();
-                // A grid renders whole rows, so a bridge holds rows rather
-                // than items: a rail that flings past a row and comes back
-                // finds its own canvases still mounted, not the gap the window
-                // change cut out of the list.
+                // A grid bridges rows, not items.
                 for index in inner.bridged_indices() {
                     let row = inner.core.borrow().row_at(index);
                     if !rows.iter().any(|mounted| mounted.row == row.row) {
@@ -839,22 +687,12 @@ impl Virtualizer {
         self.inner.scroll_top
     }
 
-    /// Whether the scroller has settled: false while scroll events are still
-    /// arriving, true once `scroll_end_delay_ms` of quiet has passed. A
-    /// virtualized page strip's hosts gate an unpainted page's first render
-    /// on it — the fling shows the cached thumbnail while it sweeps past and
-    /// the crisp rasterisation lands, paced by the engine's render lane, once
-    /// the strip is quiet. Read-only on purpose: the timer that restores it
-    /// is the adapter's, not the app's.
+    /// Whether the scroller has settled.
     pub fn settled(&self) -> ReadSignal<bool> {
         self.inner.settled.read_only()
     }
 
-    /// [`settled`](Self::settled) as a plain, panic-free question, for callers
-    /// that can outlive their owner: a measurement pass scheduled on a rAF or
-    /// a scroll-end timer still runs after the strip it belongs to is torn
-    /// down, and a dead scroller reads `false` here instead of aborting the
-    /// wasm the way a bare read of a disposed signal would.
+    /// [`settled`](Self::settled) as a plain, panic-free question.
     pub fn settled_now(&self) -> bool {
         self.inner.settled.try_get_untracked().unwrap_or(false)
     }
@@ -869,22 +707,14 @@ impl Virtualizer {
         self.inner.surface.element().is_some()
     }
 
-    /// The bound container's scroll offset as the DOM reports it right now,
-    /// in content coordinates (padding removed); `None` while unbound. The
-    /// core's own offset is what the last command or echo made it; this is
-    /// what the browser actually holds, which differs when a write was
-    /// clamped against a box not yet laid out. A mount-time anchor compares
-    /// the two to know whether it landed.
+    /// The bound container's scroll offset as the DOM reports it.
     pub fn surface_offset(&self) -> Option<f64> {
         let el = self.inner.surface.element()?;
         let html = el.dyn_into::<web_sys::HtmlElement>().ok()?;
         Some(dom_scroll_offset(&html, self.inner.options.axis) - self.inner.options.padding_start)
     }
 
-    /// Re-read the bound container's viewport extent only, leaving the
-    /// scroll position to whoever is about to command it. The mount-time
-    /// anchor uses this: adopting the DOM offset there would rewindow to a
-    /// position the very next call replaces.
+    /// Re-read the container's viewport extent only.
     pub fn remeasure_viewport(&self) {
         let Some(el) = self.inner.surface.element() else {
             return;
@@ -920,19 +750,12 @@ impl Virtualizer {
         self.inner.core.borrow().offset_of(index)
     }
 
-    /// Index of the item whose span contains `pos` (leading-edge semantics),
-    /// `O(log n)` over the strip's prefix sums. The inverse of
-    /// [`offset_of`](Self::offset_of): a position handed back by that method
-    /// resolves to the same item it came from.
+    /// Index of the item whose span contains `pos`, by leading edge.
     pub fn index_at(&self, pos: f64) -> usize {
         self.inner.core.borrow().index_at(pos)
     }
 
     /// Reactive main-axis offset of one item, padding included.
-    ///
-    /// Create this once per mounted child. It depends only on the layout
-    /// version, so it recomputes when geometry changes and never on plain
-    /// scrolling.
     pub fn item_top(&self, index: usize) -> Signal<f64, LocalStorage> {
         let inner = self.inner.clone();
         Signal::derive_local(move || {
@@ -942,11 +765,6 @@ impl Virtualizer {
     }
 
     /// Reactive main-axis extent of one item.
-    ///
-    /// Same lifetime rules as [`Self::item_top`]: layout-version only. A
-    /// stream's blank placeholders read their height here — the layout's own
-    /// number, so a measurement landing under a blank patches one style
-    /// attribute instead of waiting for the row to render.
     pub fn item_size(&self, index: usize) -> Signal<f64, LocalStorage> {
         let inner = self.inner.clone();
         Signal::derive_local(move || {
@@ -956,13 +774,6 @@ impl Virtualizer {
     }
 
     /// Reactive render state of one mounted item.
-    ///
-    /// A `For` child does not re-run when its key persists, so the child
-    /// cannot read its state off the [`VirtualItem`] it was handed: a scroll
-    /// that crosses the row into or out of the render band would leave the
-    /// stale answer in place. This signal re-derives on the things that move
-    /// the band and the window — scroll, viewport, range, layout, retention —
-    /// and the view rebuilds only when the state itself crosses.
     pub fn item_state(&self, index: usize) -> Signal<VirtualItemState, LocalStorage> {
         let inner = self.inner.clone();
         Signal::derive_local(move || {
@@ -978,8 +789,7 @@ impl Virtualizer {
                 .map(|window| window.contains(index))
                 .unwrap_or(false);
             if !in_window {
-                // Retention is the adapter's clock: a zombie is whatever the
-                // retained set still holds, and its state outranks the band.
+                // Retention is the adapter's clock: a zombie outranks the band.
                 let frame = inner.frame_clock.get();
                 if is_retained(&inner.retained.borrow(), index, now_ms(), frame) {
                     return VirtualItemState::Zombie;
@@ -990,11 +800,6 @@ impl Virtualizer {
     }
 
     /// Scroll to an absolute content offset.
-    ///
-    /// Instant writes are adopted into the local signals immediately (the
-    /// core already wrote the DOM, so there is no second write); smooth
-    /// writes surface through the coalesced scroll handling once the
-    /// browser echoes them back.
     pub fn scroll_to_offset(&self, offset: f64, mode: ScrollMode) {
         let step = self
             .inner
@@ -1020,8 +825,7 @@ impl Virtualizer {
 
     /// Report a size directly.
     pub fn report_size(&self, index: usize, size: f64) {
-        // Belt-and-braces on top of the callers' guards: a report that
-        // outlived the owner queues a size into a dead flush cycle.
+        // Belt-and-braces: a report outliving the owner queues nothing.
         if self.inner.settled.try_get_untracked().is_none() {
             return;
         }
@@ -1029,18 +833,8 @@ impl Virtualizer {
         self.inner.arm_flush();
     }
 
-    /// [`report_size`](Self::report_size) applied in the frame it is reported
-    /// in, for a caller the browser has already batched — a row's
-    /// `ResizeObserver` notification arrives after layout and BEFORE paint, so
-    /// a size applied here is in the model by the time the row is painted.
-    /// That is the whole difference between a row of text whose real height is
-    /// correct in the frame it first paints and one that spends a frame
-    /// painted on top of the row below it.
-    ///
-    /// The size is QUEUED, not flushed: the reports of one browser-delivered
-    /// batch land together on a single pre-paint flush
-    /// ([`VirtualizerInner::arm_now_flush`]), so sweeping a whole window costs
-    /// the layout one rebuild rather than one per row.
+    /// [`report_size`](Self::report_size) applied in the frame it is
+    /// reported in.
     pub fn report_size_now(&self, index: usize, size: f64) {
         if self.inner.settled.try_get_untracked().is_none() {
             return;
@@ -1062,12 +856,7 @@ impl Virtualizer {
         }
     }
 
-    /// Ignore the DOM scroll echo until [`resume_scroll_feedback`]. Use around
-    /// a sustained programmatic scroll burst (zoom tween, sidebar slide,
-    /// resize drag): the browser echoes those writes one frame late, and
-    /// letting the echo overwrite the core's anchor position makes each
-    /// anchored rescale pin from a stale offset — the content oscillates
-    /// instead of gliding.
+    /// Ignore the DOM scroll echo until [`resume_scroll_feedback`].
     pub fn suspend_scroll_feedback(&self) {
         self.inner.scroll_feedback.set(false);
     }
@@ -1077,15 +866,7 @@ impl Virtualizer {
         self.inner.scroll_feedback.set(true);
     }
 
-    /// Choose how the items a window change evicts are retired.
-    ///
-    /// [`RetentionPolicy::Immediate`](crate::RetentionPolicy::Immediate) ends
-    /// a bridge in the tick that evicted it; a policy with a bridge keeps the
-    /// item's DOM (and the engine surface behind it) alive for a bounded
-    /// moment, so the change that moved the window is never visible. Items
-    /// already bridged keep the deadlines they were given: this decides the
-    /// NEXT eviction, which is what lets a caller raise a bridge around a
-    /// commit and stand it back down after.
+    /// Choose how evicted items are retired.
     pub fn set_retention_policy(&self, policy: RetentionPolicy) {
         self.inner.retention.set(policy);
     }
@@ -1096,9 +877,7 @@ impl Virtualizer {
         self.inner.retention.set(self.inner.options.retention);
     }
 
-    /// Every bridge ends THIS tick, however much of it is left: the hard
-    /// endpoint, for a caller that has stopped needing the pixels a bridge was
-    /// holding. The armed wakers are the soft endpoint (see `prune_retained_tick`).
+    /// Every bridge ends THIS tick: the hard endpoint.
     pub fn remove_retained_now(&self) {
         if self.inner.retained.borrow().is_empty() {
             return;
@@ -1107,56 +886,39 @@ impl Virtualizer {
         self.inner.retained_version.update(|v| *v += 1);
     }
 
-    /// Zoom: multiply every size by `factor` while keeping the viewport center pinned.
+    /// Zoom: rescale every size with the viewport center pinned.
     pub fn rescale(&self, factor: f64, new_sizes: impl Fn(usize) -> f64) {
         let step = self.inner.core.borrow_mut().rescale(factor, &new_sizes);
         self.inner.apply(step);
     }
 
-    /// [`Self::rescale`] without touching the surface: the layout, the window
-    /// and the scroll signal move now, the DOM scroll offset does not. The
-    /// caller writes it (`scroll_to_offset`) once the DOM that positions the
-    /// items has been patched from those signals — writing it first shows
-    /// the new offset over the old item positions for as long as the patch
-    /// takes to arrive.
+    /// [`Self::rescale`] without touching the surface.
     pub fn rescale_detached(&self, factor: f64, new_sizes: impl Fn(usize) -> f64) {
         let step = self.inner.core.borrow_mut().rescale(factor, &new_sizes);
         self.inner.apply_local(step);
     }
 
-    /// Report what one item's content costs on this machine (`fill_ms`) and how
-    /// many the caller makes at once (`lanes`); the content band is decided
-    /// against both, so a faster machine shows a placeholder less often for the
-    /// same scroll. Reporting nothing leaves the decision to the speed floor.
+    /// Report one item's fill cost and lane count.
     pub fn set_fill_profile(&self, fill_ms: f64, lanes: usize) {
         let mut pipeline = self.inner.core.borrow().pipeline();
         pipeline.fill_ms = fill_ms.max(0.0);
         pipeline.lanes = lanes;
         self.inner.core.borrow_mut().set_pipeline(pipeline);
-        // The band can open or close without the window moving: `items()`
-        // recomputes, the DOM does not move.
+        // The band can open or close without the window moving.
         self.inner.sync_band_version();
     }
 
-    /// Whether the current scroll outruns the reported pipeline: the state in
-    /// which a mounted item outside the band renders as a placeholder, and the
-    /// only state in which a retention bridge is granted.
+    /// Whether the current scroll outruns the reported pipeline.
     pub fn motion_engaged(&self) -> bool {
         self.inner.core.borrow().motion_engaged()
     }
 
-    /// Where a mounted index ranks in the fill order right now: the viewport,
-    /// then the side the reader is approaching, then behind them, then the
-    /// placeholders. A queue that works in this order fills the blank the
-    /// reader is about to look at first.
+    /// Where a mounted index ranks in the fill order right now.
     pub fn fill_priority(&self, index: usize) -> virtual_list::FillPriority {
         self.inner.core.borrow().fill_priority(index)
     }
 
-    /// The index the viewport is expected to reach by the time the current fill
-    /// finishes: the point the strip measures fill order from, so a lane that
-    /// can run two rasters spends them on the pages the eyes are arriving at
-    /// rather than on the pages the mount happened to add first.
+    /// The index the viewport reaches by the time the fill finishes.
     pub fn landing_index(&self) -> usize {
         self.inner.core.borrow().landing_index()
     }
@@ -1166,12 +928,7 @@ impl Virtualizer {
         self.inner.idle_cbs.borrow_mut().push(Rc::new(cb));
     }
 
-    /// How many items the live window currently mounts (diagnostics).
-    ///
-    /// The virtualizer keeps `budget`-worth of rows mounted; this is that
-    /// window's size right now, read untracked so a diagnostics snapshot can
-    /// take it without subscribing. Zero while nothing is bound or the list
-    /// is empty.
+    /// How many items the live window mounts, for diagnostics.
     pub fn live_window_items(&self) -> usize {
         match self.inner.core.borrow().range() {
             Some(window) => window.last.saturating_sub(window.first) + 1,
@@ -1179,25 +936,17 @@ impl Virtualizer {
         }
     }
 
-    /// How many evicted items are still kept rendered by the retention grace
-    /// (diagnostics). Zombies are bounded by `max_retained`, so this is the
-    /// reader's standing extra-DOM count, not a leak signal by itself — but
-    /// it must return to zero once the reader is gone.
+    /// How many evicted items the retention grace still keeps.
     pub fn retained_items(&self) -> usize {
         self.inner.retained.borrow().len()
     }
 
-    /// Live DOM/event bookkeeping counts (diagnostics): event listener
-    /// bindings, `ResizeObserver` bindings, and armed timers (the scroll-end
-    /// debounce and the zombie-retention expiry). The ownership document
-    /// lists these as resources the virtualizer holds; the baseline reads
-    /// them here so a dispose that left one behind is visible, not inferred.
+    /// Live DOM and event bookkeeping counts, for diagnostics.
     pub fn listener_bindings(&self) -> usize {
         self.inner.listeners.borrow().len()
     }
 
-    /// How many `ResizeObserver` bindings the virtualizer currently holds
-    /// (diagnostics; 0 or 1 — the container observer).
+    /// How many `ResizeObserver` bindings are held.
     pub fn observer_bindings(&self) -> usize {
         usize::from(self.inner.container_ro.borrow().is_some())
     }
