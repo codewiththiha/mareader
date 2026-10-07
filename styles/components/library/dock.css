@@ -1,6 +1,4 @@
-/* The import dock. Bottom-left, clear of the shelf's centre and of the app's one toast slot
-   (`.toast-anchor`, in styles/components/shell.css): an import is not a message, but a thing the
-   reader started and may want to glance at while doing something else. */
+/* The import dock, bottom-left, clear of the shelf's centre and toasts. */
 .import-dock {
   position: fixed;
   bottom: 1rem;
@@ -39,7 +37,7 @@
 }
 .import-ring {
   display: block;
-  /* Start the arc at twelve o'clock; the dash offset below counts from there. */
+  /* Start the arc at twelve o'clock; the dash offset counts from there. */
   transform: rotate(-90deg);
 }
 .import-ring-track,
@@ -53,18 +51,12 @@
 }
 .import-ring-fill {
   stroke: var(--color-accent);
-  /* 2 * pi * r(15), the product of `RING_RADIUS` in
-     crates/library-runtime/src/features/library/progress_dock.rs — CSS cannot read the const, so
-     `tools/check-chrome-contracts.ts` computes it and fails when the two
-     disagree. A drift leaves the ring stopping short of full at 100%. */
+  /* 2 * pi * r(15), the product of `RING_RADIUS`, guarded by the check. */
   stroke-dasharray: 94.248;
   stroke-dashoffset: var(--ring-offset, 94.248);
   transition: stroke-dashoffset 120ms linear;
 }
-/* A scan has no total, so there is no fraction to draw: the ring shows a fixed
-   quarter turn and spins. Both reduced-motion nets kill the animation globally
-   (styles/components/animations.css), and a frozen quarter arc still reads as
-   "working" because the label beside it says so in words. */
+/* A scan has no total: the ring shows a fixed quarter turn and spins. */
 .import-ring-spin {
   animation: import-ring-spin 1s linear infinite;
 }
@@ -93,7 +85,7 @@
   font-variant-numeric: tabular-nums;
   color: var(--color-ink);
 }
-/* The card's dismiss, on the shared ghost (shared.css): a size and a hover is all its own. */
+/* The card's dismiss, on the shared ghost: a size and a hover. */
 .import-card-close {
   width: 20px;
   height: 20px;
@@ -108,10 +100,7 @@
   color: var(--color-ink);
 }
 
-/* Where a folder's books live: "Copied" for books in the library's own store, "On disk" for
-   books read where they sit, and "Mixed" when both live on the same shelf. It shares a row with
-   the watched dot, and it is the quietest thing on the plate on purpose — it is true of nearly
-   every card. */
+/* Where a folder's books live: Copied, On disk, or Mixed. */
 .folder-mode {
   padding: 1px 6px;
   border: 1px solid var(--color-line);
@@ -124,16 +113,14 @@
   white-space: nowrap;
 }
 
-/* Mixed content: on-disk and stored books on the same shelf. Slightly louder than the
-   single-kind badges so the reader notices the shelf holds two kinds. */
+/* Mixed content: both kinds on the same shelf, slightly louder. */
 .folder-mode-mixed {
   border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-line));
   background: color-mix(in srgb, var(--color-accent) 12%, var(--color-paper) 88%);
   color: color-mix(in srgb, var(--color-ink) 80%, var(--color-muted));
 }
 
-/* A watched folder's dot. It breathes rather than blinks: the badge is chrome the reader is not
-   looking at directly, and a hard blink in the periphery is the one motion nobody asks for. */
+/* A watched folder's dot: it breathes rather than blinks. */
 .folder-watched {
   flex: 0 0 auto;
   width: 8px;
@@ -153,9 +140,7 @@
   }
 }
 
-/* A run that could not finish wears the app's failure colour on its ring, so the card reads as an
-   answer rather than as a progress bar that stopped early. Tailwind's red-400 token, the same one
-   `ToastTone::Error` wears, so a failure is one colour everywhere. */
+/* A failed run wears the app's failure colour on its ring. */
 .import-card-failed .import-ring-fill {
   stroke: var(--color-red-400);
 }

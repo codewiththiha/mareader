@@ -1,24 +1,4 @@
-// The frame-side window chrome check.
-//
-// The bar, the caption and the file dialogs all live in a ROUTE FRAME, and a
-// frame's Tauri surface differs by platform: macOS and Linux get no
-// initialization script in sub-frames (CVE-2024-35222), so
-// `public/tauri-relay.js` republishes the host frame's API there; Windows is
-// documented the other way round ("scripts are always added to subframes"), so
-// a frame holds its own real API there — which is also how the frame loses both
-// its drag region (Tauri's own script acts only on an element that carries the
-// attribute itself, and the bar is a CONTAINER) and its event listeners
-// (`emit` is delivered by scripting the MAIN frame, so a frame-local registry is
-// never read). Both failures shipped as "the window cannot be moved" and "the
-// caption never notices it is maximized".
-//
-// So this runs the REAL script — in a `vm`, against a two-class DOM — over the
-// three platform shapes, and asserts what a press and a listener registration
-// are allowed to do. A browser suite cannot cover this: it has no Tauri at all,
-// and a webview smoke has no window manager to honour a drag.
-//
-// JavaScript, not TypeScript: like tools/check-tauri-contract.mjs it must run
-// before node_modules exists.
+// The relay script in a vm: what a frame's press may do per platform.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -263,5 +243,3 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log("tauri relay: drag regions, the facade and the host-frame event registry behave on all three platforms");
-
-// only the changed file was rewritten

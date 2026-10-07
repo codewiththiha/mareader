@@ -1,10 +1,4 @@
-//! The import sheet: what a folder import is allowed to be.
-//!
-//! Every answer here is a `library_core::folder::FolderOpts` field — the
-//! sheet writes the options and the shell's walk reads them, so "what does
-//! larger than 30 KB mean" has no second copy in the app. The Books section
-//! is one control with three answers because there are three modes: copy,
-//! read at place, and read at place and watch.
+//! The import sheet: `FolderOpts` fields the walk reads, written once.
 
 use leptos::prelude::*;
 
@@ -21,10 +15,7 @@ use app_ui::components::primitives::menu::section_label::SectionLabel;
 use app_ui::components::primitives::overlay::modal_shell::ModalShell;
 use app_ui::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 
-/// A context rather than props: three surfaces can open it — the `+` card,
-/// the empty state's button and a folder dropped on the window — and
-/// threading signals through all of them would put the sheet's plumbing in
-/// every component between.
+/// A context, not props: three surfaces open it, so no chain carries it.
 #[derive(Clone, Copy)]
 pub struct ImportSheet {
     pub open: RwSignal<bool>,
@@ -67,19 +58,16 @@ pub(crate) fn ImportModal(
     state: crate::context::LibraryContext,
     sheet: ImportSheet,
 ) -> impl IntoView {
-    // The options outlive the open sheet: a second folder is usually
-    // imported the same way as the first.
+    // The options outlive the sheet: a second import often matches the first.
     let opts = RwSignal::new(FolderOpts::default());
 
-    // The mode control is a three-way choice; the fourth pair (a watching
-    // copy) is not one it can show, and every click writes both switches from
-    // the mode picked, so nothing needs to guard against it.
+    // Three-way mode: every click writes both switches, so no guard is needed.
     let mode = Signal::derive(move || opts.with(|o| o.mode()));
     let copies = Signal::derive(move || mode.get().copies_files());
     let reads_in_place = Signal::derive(move || mode.get().reads_in_place());
     let watched = Signal::derive(move || mode.get().tracks_new_files());
-    // Read reactively, so a folder whose tracking changed from its own menu
-    // answers on the frame it happens, not at the next open.
+    // Read reactively: tracking changed from a folder's menu answers at
+    // once.
     let ground = Signal::derive(move || {
         sheet
             .open
@@ -88,11 +76,8 @@ pub(crate) fn ImportModal(
             .flatten()
             .and_then(|root| ground_tracking(state, &root))
     });
-    // A ground the library already reads seeds the sheet rather than owning
-    // the display: on open, an effect reads the folder's own answers (shape,
-    // rung tracking) into the options, so the controls start at the folder's
-    // state and a pick moves it. Every other ground keeps the last import's
-    // answers, which is what a reader importing a second folder wants.
+    // A ground the library reads seeds the options; others keep the
+    // last answers.
     Effect::new(move |_| {
         if !sheet.open.get() {
             return;
@@ -100,9 +85,8 @@ pub(crate) fn ImportModal(
         let Some(root) = sheet.root.get() else {
             return;
         };
-        // The lists under `ground_tracking` are read untracked, so the seed
-        // re-runs on an open and on a changed folder only: re-firing on every
-        // folder write would undo the answer the reader just gave.
+        // The seed's reads are untracked: re-firing would undo the
+        // reader's answer.
         if let Some(watch) = ground_tracking(state, &root) {
             opts.set(FolderOpts {
                 watch: watch.on,
@@ -112,16 +96,14 @@ pub(crate) fn ImportModal(
     });
     let include = Signal::derive(move || opts.with(|o| o.include_selected));
     let grouped = Signal::derive(move || opts.with(|o| o.groups));
-    // The structure answer stands for the picked ground and the rungs below
-    // it — the promise the note under the buttons makes.
+    // The answer stands for the picked ground and the rungs below it.
     let in_tree = Signal::derive(move || ground.get().is_some_and(|watch| !watch.rung.is_empty()));
     let min_size = Signal::derive(move || opts.with(|o| o.min_size));
     let label = Signal::derive(move || opts.with(|o| o.min_size_label()));
     let at_floor = Signal::derive(move || min_size.get() == MIN_SIZE_FLOOR);
     let at_ceil = Signal::derive(move || min_size.get() >= MIN_SIZE_CEIL);
     let chosen = Signal::derive(move || sheet.root.with(|r| r.is_some()));
-    // A deep folder is exactly the path a reader needs to read before
-    // trusting the import with it, so the truncation has an adjuster.
+    // A deep path deserves reading before trusting it with an import.
     let path_open = RwSignal::new(false);
 
     view! {
@@ -254,10 +236,8 @@ pub(crate) fn ImportModal(
                             </div>
                         </div>
 
-                        // One control, three modes: two switches over one
-                        // choice let the sheet sit in a state its own options
-                        // say cannot exist (a watching copy), and the guard
-                        // that stopped it was a rule the reader could not see.
+                        // One control, three modes: two switches
+                        // could sit in an impossible state.
                         <SectionLabel text="Books" />
                         <div class="divide-y divide-line rounded-xl border border-line">
                             <div class="px-4 py-3.5">
@@ -375,9 +355,8 @@ pub(crate) fn ImportModal(
                                 ) else {
                                     return;
                                 };
-                                // The switch answers for the picked ground
-                                // (the rung a tree answers it with), never
-                                // for the tree's root.
+                                // The switch answers for the
+                                // picked ground, not the root.
                                 let watch = options
                                     .mode()
                                     .reads_in_place()

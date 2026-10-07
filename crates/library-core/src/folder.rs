@@ -1,9 +1,4 @@
-//! A watched folder: the options an import was made with, and the ledger of
-//! what that import already did.
-//!
-//! The ledger is why this is a struct and not a settings row: "which files did
-//! I already place" is not "which files are in the library", and a rescan runs
-//! on every window focus.
+//! A watched folder: the import options and the placement ledger.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -17,41 +12,33 @@ use crate::shape::ShapeTree;
 use crate::shelf::Shelf;
 use crate::tracking::{Track, TrackingTree};
 
-/// The size threshold the import sheet opens on: a PDF smaller than this is a
-/// stub, a placeholder or a corrupt download. A default, not a rule.
+/// The sheet's opening size threshold: smaller is a stub, not a book.
 const DEFAULT_MIN_SIZE: u64 = 30 * 1024;
 
-/// The −/+ step, counted in steps rather than bytes so no caller can invent a
-/// value the control could not have produced.
+/// The −/+ step, counted in steps so no caller invents a value.
 const MIN_SIZE_STEP: u64 = 10 * 1024;
 
-/// Bounds for the −/+ buttons; [`sanitize`] clamps a loaded blob back inside them.
+/// Bounds for the −/+ buttons; [`sanitize`] clamps back inside them.
 pub const MIN_SIZE_FLOOR: u64 = 0;
 pub const MIN_SIZE_CEIL: u64 = 500 * 1024;
 
-/// How one folder is scanned. Every field is a choice the import sheet offers
-/// and every one is honoured on every later rescan.
+/// How one folder is scanned; every field is honoured on each rescan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderOpts {
     /// Always a subset of [`selectable_formats`].
     #[serde(default = "default_formats")]
     pub formats: BTreeSet<Format>,
-    /// `true` = only these formats; `false` = everything but these. One set
-    /// and a flip rather than two lists that can contradict each other.
+    /// `true` = only these; `false` = all but these. One set and a flip.
     #[serde(default = "default_true")]
     pub include_selected: bool,
     /// Strict lower bound in bytes: a file of exactly this size is refused.
     #[serde(default = "default_min_size")]
     pub min_size: u64,
-    /// `true` links each book to the address it was found at; `false` copies
-    /// it into the app's store. Defaults to `true` so an upgrading reader keeps
-    /// the library they had.
+    /// Link each book to its address, or copy it in. Defaults to link.
     #[serde(default = "default_true")]
     pub in_place: bool,
-    /// Legacy mirror of the root rung's tracking answer (see
-    /// [`WatchedFolder::set_tracking`]); the sheet only offers it alongside
-    /// [`FolderOpts::in_place`].
+    /// Legacy mirror of the root rung's tracking answer.
     #[serde(default)]
     pub watch: bool,
     /// Cut a shelf per subfolder (`true`) or keep the whole tree on one shelf.
@@ -85,7 +72,7 @@ impl Default for FolderOpts {
 }
 
 impl FolderOpts {
-    /// Step the threshold by one press of the sheet's −/+, clamped to its bounds.
+    /// Step the threshold by one press, clamped to its bounds.
     pub fn step_min_size(&mut self, delta: i32) {
         let steps = delta as i64;
         let next = self.min_size as i64 + steps * MIN_SIZE_STEP as i64;
@@ -104,30 +91,24 @@ impl FolderOpts {
         admits(self, ext, size)
     }
 
-    /// The mode the two persisted switches add up to; callers ask this rather
-    /// than testing the pair apart.
+    /// The mode the two switches add up to.
     pub fn mode(&self) -> FolderMode {
         FolderMode::from_opts(self)
     }
 }
 
-/// The three ways a folder import can hold its books, computed from the two
-/// switches [`FolderOpts`] persists — a view over the pair rather than a
-/// fourth field to migrate.
+/// The ways an import holds its books, computed from the two switches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FolderMode {
     /// Copy every admitted file into the library's own store.
     Copy,
     LinkInPlace,
-    /// Read each book at the address it was found at, and walk the tree again
-    /// when the app opens or regains focus.
+    /// Read each book in place and re-walk on open or focus.
     LinkInPlaceWatched,
 }
 
 impl FolderMode {
-    /// A match over the pair so the folding of the unofferable combination is
-    /// visible in one place: a watching copy is a copy, because tracking is a
-    /// promise about the tree the books are read from.
+    /// A match over the pair: a watching copy is a copy.
     fn from_opts(opts: &FolderOpts) -> Self {
         match (opts.in_place, opts.watch) {
             (false, _) => FolderMode::Copy,
@@ -160,8 +141,7 @@ impl FolderMode {
         }
     }
 
-    /// Two-word form of [`FolderMode::label`] for a folder card's badge: where
-    /// the books are — the dot beside it is the watched signal.
+    /// Two-word badge form: where the books are.
     pub fn badge(self) -> &'static str {
         match self {
             FolderMode::Copy => "Copied",
@@ -174,33 +154,24 @@ impl FolderMode {
 #[serde(rename_all = "camelCase")]
 pub struct WatchedFolder {
     pub id: String,
-    /// Never rewritten by the app: a moved folder is a missing folder, and the
-    /// sheet offers a new path rather than guessing.
+    /// Never rewritten: a moved folder is a missing folder.
     pub root: String,
     #[serde(default)]
     pub opts: FolderOpts,
-    /// Fingerprints this folder has already placed. Membership is what makes a
-    /// rescan honest: a book the reader moved keeps its fingerprint here, so
-    /// the next scan skips it instead of putting it back.
+    /// Fingerprints already placed; a rescan skips a book the reader moved.
     #[serde(default)]
     pub placed: HashSet<Fingerprint>,
-    /// Books the reader deliberately removed, one [`Tombstone`] per removal:
-    /// the file is still on disk and still admitted by `opts`, so without one
-    /// the next rescan would re-add exactly what was just deleted. The
-    /// folder's import menu reads it too.
+    /// Books the reader removed, one [`Tombstone`] each, so a rescan does
+    /// not re-add them.
     #[serde(default)]
     pub ignored: Vec<Tombstone>,
-    /// What the latest scan saw, restricted to placed fingerprints:
-    /// fingerprint to the address it was found at. Lets the import menu open
-    /// instantly instead of walking the tree again.
+    /// What the latest scan saw: fingerprint to address.
     #[serde(default)]
     pub last_seen: Vec<(Fingerprint, String)>,
-    /// Rung key to shelf id, persisted so a rescan adds to the shelf the last
-    /// run created rather than minting a second one of the same name.
+    /// Rung key to shelf id, persisted so a rescan reuses the shelf.
     #[serde(default)]
     pub shelf_map: BTreeMap<String, String>,
-    /// `0` until the first scan completes. Diagnostic only: no decision reads
-    /// it, so a stale stamp can never suppress a scan.
+    /// `0` until the first scan; diagnostic only.
     #[serde(default)]
     pub scanned_ms: u64,
     /// Per-rung tracking answers. [`crate::tracking::TrackingTree`] owns the
@@ -216,10 +187,7 @@ pub struct WatchedFolder {
 }
 
 impl WatchedFolder {
-    /// A row that has never been walked: no placements, no logs, no rungs. One
-    /// constructor so every mint site starts with the same empty ledger — a
-    /// field added to the struct is a field this fills, not one every call site
-    /// has to remember.
+    /// A row never walked: one constructor for the empty ledger.
     pub fn new(id: impl Into<String>, root: impl Into<String>, opts: FolderOpts) -> Self {
         Self {
             id: id.into(),
@@ -236,10 +204,8 @@ impl WatchedFolder {
     }
 }
 
-/// `path` relative to `root`, `/`-separated, no leading or trailing separator.
-/// `Some("")` when the two name the same directory, `None` when `path` is not
-/// inside `root` — a directory edge rather than a string prefix, which keeps
-/// "/bookshelf" out of "/book".
+/// `path` relative to `root`, no edge separators; a directory edge,
+/// not a string prefix.
 pub fn rel_under(path: &str, root: &str) -> Option<String> {
     fn norm(p: &str) -> String {
         p.trim_end_matches(['/', '\\']).replace('\\', "/")
@@ -252,7 +218,7 @@ pub fn rel_under(path: &str, root: &str) -> Option<String> {
     (!rest.is_empty()).then(|| rest.to_string())
 }
 
-/// Every rung of a shelf key's path, root first and the key itself last: `""`, `"2"`, `"2/deep"`.
+/// Every rung of a key's path, root first, the key last.
 pub fn key_chain(key: &str) -> Vec<&str> {
     let mut out = vec![""];
     if key.is_empty() {
@@ -265,7 +231,7 @@ pub fn key_chain(key: &str) -> Vec<&str> {
     out
 }
 
-/// The rung a shelf key sits inside: `"2/deep"` is inside `"2"`, and the root is inside nothing.
+/// The rung a key sits inside; the root is inside nothing.
 pub fn parent_key(key: &str) -> Option<&str> {
     if key.is_empty() {
         return None;
@@ -276,9 +242,7 @@ pub fn parent_key(key: &str) -> Option<&str> {
     }
 }
 
-/// Whether a rung key stands inside a zone: the zone itself or anywhere below
-/// it. The empty zone is the whole tree. Directory-edge matching, the rule
-/// [`rel_under`] gives for addresses.
+/// Whether a key stands inside a zone; the empty zone is the tree.
 pub fn key_in_zone(key: &str, zone: &str) -> bool {
     if zone.is_empty() {
         return true;
@@ -289,9 +253,7 @@ pub fn key_in_zone(key: &str, zone: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
-/// The address a rung's directory stands at: [`rel_under`] run backwards. One
-/// function per direction, so a shelf's ground and its folder's map cannot
-/// drift about what a key names.
+/// The address a rung stands at: [`rel_under`] run backwards.
 pub fn dir_of_rung(root: &str, rel: &str) -> String {
     if rel.is_empty() {
         return root.to_string();
@@ -300,18 +262,12 @@ pub fn dir_of_rung(root: &str, rel: &str) -> String {
 }
 
 impl WatchedFolder {
-    /// The shelf shape at `key`: the deepest rung that answered for itself,
-    /// else the folder's own import answer. Per-rung rather than per-import, so
-    /// re-importing one nested folder moves that folder's books and leaves the
-    /// rest of the tree alone.
+    /// The shelf shape at `key`: the deepest rung that answered.
     pub fn shape_at(&self, key: &str) -> bool {
         self.shapes.at(key).unwrap_or(self.opts.groups)
     }
 
-    /// Record the shelf shape one rung answers with. The root's answer IS
-    /// [`FolderOpts::groups`] and stands for the whole tree, so setting it
-    /// takes every deeper answer with it; a rung below the root answers for
-    /// itself and its subtree only.
+    /// Record a rung's shape; the root's answer stands for the tree.
     pub fn set_shape(&mut self, rung: &str, grouped: bool) {
         if rung.is_empty() {
             self.opts.groups = grouped;
@@ -321,17 +277,12 @@ impl WatchedFolder {
         }
     }
 
-    /// Whether the shape cuts a rung at this key: the root is always cut; a
-    /// deeper rung is cut where the shape answers for a shelf per folder.
-    /// One rule for the walk, the re-shape and the fold, so the three cannot
-    /// disagree about where a book belongs.
+    /// Whether the shape cuts a rung here: the root is always cut.
     pub fn cuts(&self, key: &str) -> bool {
         key.is_empty() || self.shape_at(key)
     }
 
-    /// The rung an address's own folder answers for: the deepest rung of the
-    /// folder's chain that the shape cuts. A folder in a subfolder of a
-    /// one-shelf tree answers for the root rung.
+    /// The rung an address's own folder answers for.
     pub fn rung_for(&self, key: &str) -> String {
         key_chain(key)
             .into_iter()
@@ -341,22 +292,13 @@ impl WatchedFolder {
             .to_string()
     }
 
-    /// The ledger key for a found file: [`Self::rung_for`] the file's own
-    /// subfolder. One owner of the choice, so the walk, shelf creation and the
-    /// persisted map cannot disagree.
+    /// The ledger key for a found file: [`Self::rung_for`] its folder.
     pub fn shelf_key(&self, found: &FoundFile) -> String {
         self.rung_for(found.subfolder())
     }
 
-    /// The two shelves this folder's tree names for an address: the one the
-    /// address answers for under the shape, and the folder's root one. Both are
-    /// `None` when the address is not under this folder.
-    ///
-    /// Two answers because the questions differ: *where does this file come
-    /// back to* wants the root as a fallback, while *has this file left its
-    /// ground* wants the first alone — treating the root as a second home
-    /// would let a book be dragged rung to rung while still answering to the
-    /// folder that placed it.
+    /// The two shelves this tree names for an address: its rung's and the
+    /// root.
     pub fn rungs_for(&self, path: &str) -> (Option<&str>, Option<&str>) {
         let Some(rel) = rel_under(path, &self.root) else {
             return (None, None);
@@ -368,14 +310,7 @@ impl WatchedFolder {
         )
     }
 
-    /// The shelf a found file belongs on, minting every rung between the
-    /// folder's root shelf and the file's own subfolder and reporting each mint
-    /// through `made`.
-    ///
-    /// A walk reports files, not directories, so minting only the leaf would
-    /// hang a subfolder's shelf off the root with a hole above it. Rungs
-    /// already in [`WatchedFolder::shelf_map`] are reused, which is what makes
-    /// a rescan continue the tree instead of growing a twin beside it.
+    /// The shelf a found file belongs on, minting the rungs up to it.
     pub fn shelf_chain_for(
         &mut self,
         key: &str,
@@ -405,15 +340,12 @@ impl WatchedFolder {
         self.placed.insert(fp);
     }
 
-    /// Whether the tree is tracked from its root — the whole-tree answer the
-    /// single [`FolderOpts::watch`] flag used to be. Every surface that draws
-    /// a watch dot asks this rather than the flag.
+    /// Whether the whole tree is tracked from its root.
     pub fn tracked(&self) -> bool {
         self.tracking.tracked()
     }
 
-    /// The folder's [`FolderMode`]: what a run does with the files it finds,
-    /// and whether a later one walks the tree again.
+    /// The folder's [`FolderMode`]: what a run does, and re-walks.
     pub fn mode(&self) -> FolderMode {
         self.opts.mode()
     }
@@ -423,24 +355,17 @@ impl WatchedFolder {
         self.tracking.resolve(key)
     }
 
-    /// Whether this folder is watched anywhere: its root, or any rung turned
-    /// on under a root that is off. A tree only a subfolder of which is watched
-    /// still owes the walk.
+    /// Whether any rung is watched.
     fn tracks_anything(&self) -> bool {
         self.tracking.tracked() || self.tracking.any_on()
     }
 
-    /// Whether a walk is owed. Tracking is a promise about the folder books
-    /// are read from; a copying folder has none to keep, so only a
-    /// read-in-place folder with any rung on owes the walk.
+    /// Whether a walk is owed: in place, with some rung on.
     pub fn owes_walk(&self) -> bool {
         self.mode().reads_in_place() && self.tracks_anything()
     }
 
-    /// Turn tracking on or off for one rung, mirroring the root's answer back
-    /// onto [`FolderOpts::watch`] so the import sheet's switch agrees with the
-    /// tree. The flag is the legacy half of one decision, not a second source
-    /// of truth.
+    /// Turn tracking on for one rung, mirroring the root onto the flag.
     pub fn set_tracking(&mut self, key: &str, on: bool) {
         self.tracking
             .set(key, if on { Track::On } else { Track::Off });
@@ -453,9 +378,7 @@ impl WatchedFolder {
         self.opts.watch = on;
     }
 
-    /// Drop the map's pointers at shelves that no longer stand, answering
-    /// whether it dropped any. A dead pointer is a rung the walk reuses instead
-    /// of minting, and the placement that rides it lands on no shelf at all.
+    /// Drop map pointers at shelves that no longer stand.
     pub fn prune_shelf_map(&mut self, shelves: &[Shelf]) -> bool {
         let before = self.shelf_map.len();
         self.shelf_map
@@ -463,15 +386,12 @@ impl WatchedFolder {
         self.shelf_map.len() != before
     }
 
-    /// Whether this folder holds a removal against `fp`. A tombstone wins
-    /// over everything: the reader said no.
+    /// Whether a removal stands against `fp`.
     pub fn is_ignored(&self, fp: &Fingerprint) -> bool {
         self.ignored.iter().any(|entry| &entry.fp == fp)
     }
 
-    /// Remember what this scan saw, for placed fingerprints only. Written on
-    /// every scan, including one that changed nothing: the menu's "moved out
-    /// of this folder" answer is only as fresh as the last walk.
+    /// Remember what this scan saw, for placed fingerprints.
     pub fn record_seen(&mut self, found: &[FoundFile]) {
         let seen: Vec<(Fingerprint, String)> = found
             .iter()
@@ -482,46 +402,36 @@ impl WatchedFolder {
     }
 }
 
-/// A book the reader removed, remembered by the folder that placed it. Keeps
-/// the file out of every later rescan, and is the record the import menu reads
-/// to offer the book back.
+/// A removal, remembered by the folder that placed it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tombstone {
     pub fp: Fingerprint,
-    /// `None` for a book imported and never opened; the menu falls back to the
-    /// file's stem.
+    /// `None` for a book never opened; the menu uses the stem.
     #[serde(default)]
     pub title: Option<String>,
     pub format: Format,
-    /// A restore re-measures this address first: a file that has since moved
-    /// is a relink, not a restore.
+    /// A restore re-measures this address first.
     pub last_path: String,
-    /// A restore puts the book back on this shelf if it still exists, else on
-    /// the folder's root shelf.
+    /// A restore returns the book here, or to the root shelf.
     #[serde(default)]
     pub shelf_id: Option<String>,
     #[serde(default)]
     pub removed_ms: u64,
-    /// True when the removal was a move, not a deletion: the library still
-    /// holds the book, so the restore menu must not offer it back as gone.
+    /// The removal was a move, not a deletion.
     #[serde(default)]
     pub moved: bool,
-    /// The row that represents this file to the folder, when one came home: a
-    /// later import lights that row up instead of minting a neighbour beside it.
+    /// The row that represents this file, when one came home.
     #[serde(default)]
     pub returned_row: Option<String>,
 }
 
 impl Tombstone {
-    /// `shelf_id` is the first of the folder's shelves the book was on: a
-    /// book on three of them still comes back to one.
+    /// The first of the folder's shelves the book was on.
     pub fn of(book: &Book, shelf_id: Option<String>, now_ms: u64) -> Self {
         Self {
             fp: book.fp,
-            // The name the shelf showed, not the raw title field: an unopened
-            // stored book has no title of its own, and the log would otherwise
-            // label itself from the store's `source.pdf`.
+            // The name the shelf showed, not the title field.
             title: Some(book.title()),
             format: book.format,
             last_path: book.path().to_string(),
@@ -537,8 +447,7 @@ impl Tombstone {
     }
 }
 
-/// Lookup by id. A folder that is gone answers `None` everywhere rather than
-/// a silent no-match.
+/// Lookup by id; a folder that is gone answers `None`.
 pub fn find<'a>(folders: &'a [WatchedFolder], id: &str) -> Option<&'a WatchedFolder> {
     folders.iter().find(|f| f.id == id)
 }
@@ -547,9 +456,7 @@ pub fn find_mut<'a>(folders: &'a mut [WatchedFolder], id: &str) -> Option<&'a mu
     folders.iter_mut().find(|f| f.id == id)
 }
 
-/// Drop rows with no id or no root, dedupe by root (first wins), clamp the
-/// size threshold, and refill a format set that would admit nothing.
-/// Idempotent.
+/// Drop id-less and root-less rows, dedupe by root, clamp the threshold.
 pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
     let mut seen = HashSet::new();
     folders.retain(|f| {
@@ -560,18 +467,14 @@ pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
         if f.opts.formats.is_empty() {
             f.opts.formats = default_formats();
         }
-        // The legacy flag is carried into the rung tree the first time this
-        // build sees the folder, and kept equal to the tree's root so the two
-        // cannot drift. A watch on a copying folder is left alone: the source
-        // may still gain a file worth copying.
+        // Carry the legacy flag into the tree; keep it equal to the root.
         if f.tracking.is_empty() && f.opts.watch {
             f.tracking = TrackingTree::tracking_root();
         }
         f.opts.watch = f.tracking.tracked();
         f.shelf_map
             .retain(|k, v| !v.trim().is_empty() && !k.contains('\\'));
-        // One tombstone per fingerprint: a book removed twice must not offer
-        // the same file back from two rows.
+        // One tombstone per fingerprint.
         let mut stones = HashSet::new();
         f.ignored
             .retain(|t| !t.last_path.trim().is_empty() && stones.insert(t.fp));
@@ -609,8 +512,7 @@ mod tests {
         assert_eq!(rel_under("/books/", "/books/").as_deref(), Some(""));
         assert_eq!(rel_under("/bookshelf/a.pdf", "/book"), None);
         assert_eq!(rel_under("/other/a.pdf", "/books"), None);
-        // Windows paths answer in `/` like every other path in the ledger: a
-        // key holding a `\` would never match a found file again.
+        // Windows paths answer in `/`; a `\` key never matches again.
         assert_eq!(
             rel_under("C:\\books\\a\\b.pdf", "C:\\books").as_deref(),
             Some("a/b.pdf")
@@ -653,8 +555,7 @@ mod tests {
         };
         let deep = "/books/Fiction/SciFi/dune.pdf";
         assert_eq!(f.rungs_for(deep), (Some("shelf3"), Some("shelf1")));
-        // A drag from shelf3 to shelf2 has left the ground the tree names for
-        // this file — the whole of the departure rule.
+        // A drag off the tree's shelf for this file is the departure rule.
         assert_eq!(
             f.rungs_for("/books/Fiction/other.pdf"),
             (Some("shelf2"), Some("shelf1"))
@@ -686,8 +587,7 @@ mod tests {
             "one shelf files every address on its root rung"
         );
         assert_eq!(f.rungs_for("/books/Reference/x.pdf").0, Some("root"));
-        // The nested folder the re-import answered for cuts its own rungs;
-        // the tree above keeps the books never under it.
+        // The re-imported folder cuts its own rungs; above keeps the rest.
         f.set_shape("Fiction", true);
         assert_eq!(f.rung_for("Fiction"), "Fiction");
         assert_eq!(f.rung_for("Fiction/SciFi"), "Fiction/SciFi");
@@ -752,8 +652,7 @@ mod tests {
 
     #[test]
     fn the_rung_a_walk_names_and_the_rung_an_address_names_agree() {
-        // One key arithmetic behind both: a rescan and a drag cannot
-        // disagree about where a file belongs.
+        // One key arithmetic: rescan and drag cannot disagree.
         let f = WatchedFolder {
             shelf_map: BTreeMap::from([("Fiction/SciFi".to_string(), "shelf3".to_string())]),
             ..folder("/books")
@@ -944,9 +843,7 @@ mod tests {
 
     #[test]
     fn a_blob_from_before_tracking_was_a_tree_keeps_watching() {
-        // A folder from an older build carries `opts.watch` and no tree, and
-        // an empty tree tracks nothing — without carrying the flag across, a
-        // load would silently stop rescanning every watched folder.
+        // Carry the legacy flag into the tree, or a load stops rescanning.
         let raw = r#"{"id":"f1","root":"/books","opts":{"inPlace":true,"watch":true}}"#;
         let mut folders: Vec<WatchedFolder> = serde_json::from_str(&format!("[{raw}]")).unwrap();
         assert!(folders[0].tracking.is_empty(), "the old blob has no tree");
@@ -986,8 +883,7 @@ mod tests {
 
     #[test]
     fn turning_a_rung_off_below_a_watched_root_leaves_the_root_watching() {
-        // What the single flag could not express: the root keeps its answer,
-        // the rung below does not.
+        // The flag could not express this: root on, rung below off.
         let mut f = folder("/books");
         f.set_tracking("", true);
         assert!(f.tracked() && f.tracks_rung("Fiction") && f.tracks_rung("Fiction/SciFi"));
@@ -1028,8 +924,7 @@ mod tests {
 
     #[test]
     fn an_empty_format_set_is_not_a_folder_that_admits_nothing() {
-        // A hand-edited blob or a format removed from the registry must not
-        // silently turn a watched folder into a dead one.
+        // A hand-edited blob must not kill a watched folder.
         let mut folders = vec![WatchedFolder {
             opts: FolderOpts {
                 formats: BTreeSet::new(),
@@ -1043,8 +938,7 @@ mod tests {
 
     #[test]
     fn a_backslash_never_survives_into_the_shelf_map() {
-        // A `\` in a key means the writer did not normalise it; such a key
-        // would never match a found file again.
+        // A `\` in a key means it was never normalised.
         let mut folders = vec![WatchedFolder {
             shelf_map: BTreeMap::from([
                 ("scifi".to_string(), "s1".to_string()),
@@ -1059,8 +953,7 @@ mod tests {
 
     #[test]
     fn a_map_pointer_at_a_shelf_that_went_is_cut() {
-        // A dead pointer is a rung the walk reuses instead of minting; every
-        // placement that rides it lands on no shelf at all.
+        // A dead pointer is a rung the walk reuses.
         let standing = [crate::testkit::folder_shelf(
             "s1",
             "Books",
@@ -1100,8 +993,7 @@ mod tests {
 
     #[test]
     fn the_two_switches_add_up_to_one_mode_and_its_questions() {
-        // One of the four switch combinations is not offerable; the folding
-        // happens where the mode is computed.
+        // One switch combination is not offerable; it folds in `mode`.
         let opts = |in_place: bool, watch: bool| FolderOpts {
             in_place,
             watch,
@@ -1134,9 +1026,7 @@ mod tests {
 
     #[test]
     fn a_folder_the_library_copies_is_owed_no_walk_whatever_its_tree_says() {
-        // The unofferable pair (`in_place=false, watch=true`) folds into
-        // `Copy`: a tree left standing on a copying folder is chrome, not a
-        // second opinion.
+        // The unofferable pair folds into `Copy` at the mode.
         let copying = mode("f1", "/books", false, true);
         assert_eq!(
             copying.mode(),
@@ -1157,9 +1047,7 @@ mod tests {
         assert!(!quiet.owes_walk());
     }
 
-    /// The watch arrives as a tree, not the flag alone: the flag is now the
-    /// root rung's mirror, and a fixture setting only the flag would be a
-    /// folder this build never writes.
+    /// The watch arrives as a tree; the flag mirrors its root.
     fn mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
         let mut folder = WatchedFolder {
             id: id.into(),

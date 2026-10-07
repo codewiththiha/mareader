@@ -1,9 +1,4 @@
-//! What a folder scan found, and whether the folder's own options admit it.
-//!
-//! The shell walks the filesystem and produces [`FoundFile`] rows; this module
-//! decides which of them the configured folder wants. The decision is pure, so
-//! its awkward corners — the include/exclude flip and the size threshold's
-//! strictness — are host-testable.
+//! What a folder scan found, and whether its options admit it.
 
 use serde::{Deserialize, Serialize};
 
@@ -12,13 +7,12 @@ use reader_core::format::{Format, SUPPORTED, format_from_ext};
 use crate::book::Fingerprint;
 use crate::folder::FolderOpts;
 
-/// One file a walk turned up. Serialized: the shell produces these and the
-/// frontend's ledger consumes them.
+/// One file a walk turned up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FoundFile {
     pub path: String,
-    /// Relative to the watched root, `/`-separated on every platform; empty for a file at the root itself.
+    /// Relative to the watched root, `/`-separated; empty at the root.
     pub rel: String,
     pub ext: String,
     pub size: u64,
@@ -30,10 +24,7 @@ impl FoundFile {
         format_from_ext(&self.ext)
     }
 
-    /// The format the file was admitted by. A file the registry refused never
-    /// reaches a mint, so a `None` here means a hand-built [`FoundFile`]; the
-    /// fallback is named once rather than scattered `unwrap_or` shields at
-    /// every mint.
+    /// The format the file was admitted by, `None` hand-built.
     pub fn admitted_format(&self) -> Format {
         self.format().unwrap_or(Format::Pdf)
     }
@@ -43,10 +34,8 @@ impl FoundFile {
     }
 }
 
-/// Free function rather than a [`FoundFile`] method: a book already in the
-/// library has an address and no finding, and the two must agree about which
-/// rung an address belongs to — see
-/// [`crate::folder::WatchedFolder::rungs_for`].
+/// Free function: a book already in the library has an address, not a
+/// finding.
 pub fn subfolder_of(rel: &str) -> &str {
     match rel.rsplit_once('/') {
         Some((dir, _)) => dir,
@@ -54,9 +43,7 @@ pub fn subfolder_of(rel: &str) -> &str {
     }
 }
 
-/// Whether a folder's options admit one found file. `min_size` is a strict
-/// lower bound: "larger than 30 KB" rejects exactly 30 KB, which is what the
-/// import sheet's wording promises.
+/// Whether a folder's options admit one found file.
 pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
     let Some(fmt) = format_from_ext(ext) else {
         return false;
@@ -70,13 +57,12 @@ pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
     wanted && size > opts.min_size
 }
 
-/// The formats a folder may select, straight out of the registry and in its order.
+/// The formats a folder may select, in registry order.
 pub fn selectable_formats() -> Vec<Format> {
     SUPPORTED.iter().map(|kind| kind.format).collect()
 }
 
-/// The store sub-directory a format's copies go into: the pipeline's own
-/// name, so the directories read `pdf`, `text` and `markdown`.
+/// The store sub-directory a format's copies go into.
 pub fn store_dir(ext: &str) -> &'static str {
     format_from_ext(ext).map_or("other", |fmt| fmt.store_dir())
 }

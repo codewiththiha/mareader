@@ -1,9 +1,5 @@
-//! The library route (`/`): the shelf, and a title bar that is navigation
-//! rather than chrome.
-//!
-//! Left is where you are (the breadcrumb), centre is how to narrow it (the
-//! search), right is how it looks (the view menu) and the app's colours (the
-//! appearance menu).
+//! The library route (`/`): the shelf, and a title bar that is
+//! navigation.
 
 use leptos::prelude::*;
 
@@ -33,17 +29,14 @@ pub fn LibraryPage(state: crate::context::LibraryContext) -> impl IntoView {
     let shell = ShellController::titlebar_only(state.chrome);
     provide_context(shell);
 
-    // Installed before anything draggable, and a sibling of the content: a
-    // ghost inside a scrolling grid is a ghost that scrolls.
+    // Installed before anything draggable, and a sibling of the content.
     DragController::install(state);
 
-    // Provided here so the surfaces that can open it (the add card, the empty
-    // state, a dropped folder) never pass signals through the grid.
+    // Provided here so the openers pass no signals through the grid.
     let sheet = ImportSheet::provide();
     let remove_sheet = RemoveSheet::provide();
     let rename_sheet = RenameSheet::provide();
-    // Provided here, rendered by the content where the level's order lives: a
-    // menu row that says "select all" must mean all of what is on screen.
+    // Provided here; the content renders it where the order lives.
     LibraryMenuHost::provide();
 
     Effect::new(move |_| drain_sheet_toasts(state, sheet));
@@ -54,11 +47,8 @@ pub fn LibraryPage(state: crate::context::LibraryContext) -> impl IntoView {
                 <div
                     id=TOOLBAR_LEADING_ID
                     data-tauri-drag-region="true"
-                    // Squeezable on purpose: a cluster that refuses to shrink
-                    // overflows over the search field, so `min-w-0` makes the
-                    // cluster give instead and the breadcrumb folds itself to
-                    // the width it is given (see
-                    // `crate::features::library::breadcrumb`).
+                    // Squeezable on purpose: `min-w-0` folds the breadcrumb
+                    // instead of overflowing the search field.
                     class="flex min-w-0 items-center gap-1"
                 >
                     <Breadcrumb state=state />
@@ -81,8 +71,7 @@ pub fn LibraryPage(state: crate::context::LibraryContext) -> impl IntoView {
             <div class="relative h-full w-full overflow-hidden bg-paper text-ink">
                 <LibraryContent state=state />
             </div>
-            // A drag is over when a modal opens; a ghost floating on top of a
-            // receipt would ghost something the reader already put down.
+            // A drag is over when a modal opens.
             <DragLayer />
             <ImportModal state=state sheet=sheet />
             <RemoveBookModal state=state sheet=remove_sheet />

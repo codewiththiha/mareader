@@ -1,15 +1,5 @@
-//! Shared dismissal mechanics: Escape + outside-press handling with exclusion
-//! selectors, a suspend signal (dragging), and a "topmost overlay only"
-//! registry so two stacked surfaces don't both eat one Escape.
-//!
-//! Rules baked in:
-//! * outside events landing inside the surface's own refs are ignored
-//!   (`is_inside`);
-//! * outside events landing on an excluded selector are ignored (a search
-//!   input does not dismiss when its own result list is clicked);
-//! * `enabled` suspends dismissal entirely (a drag in flight never collapses
-//!   the card under the pointer);
-//! * `topmost_only` gives Escape to the most recently opened surface only.
+//! Dismissal mechanics: Escape, outside press, exclusions, suspension
+//! and a topmost-only registry.
 
 use std::cell::RefCell;
 
@@ -37,17 +27,13 @@ pub struct DismissPolicy {
     /// Elements matching these selectors count as "inside" (e.g.
     /// `".gloss-mark"`, `".gloss-select-bar"`).
     pub exclude_selectors: Vec<&'static str>,
-    /// Dismissal is live while this is true (or while the signal is absent).
-    /// Set `Some` to suspend it conditionally (drag in flight, processing…).
+    /// Dismissal is live while this is true.
     pub enabled: Option<Signal<bool>>,
     /// Only the most recently opened dismissable surface receives Escape.
     pub topmost_only: bool,
 }
 
-// The topmost-overlay registry. Deliberately `thread_local!`: the WASM UI is
-// single-threaded, so this is an application-global every dismissable surface
-// shares WITHOUT threading a registry handle through props. The cost is that
-// tests tolerate shared per-thread state — they push and pop symmetrically.
+// The topmost-overlay registry, thread-local by design.
 thread_local! {
     /// Stack of open dismissable ids, most recent last.
     static DISMISS_STACK: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
@@ -69,24 +55,12 @@ fn is_topmost(id: u64) -> bool {
     DISMISS_STACK.with(|s| s.borrow().last() == Some(&id))
 }
 
-/// Whether any dismissable surface (dropdown, card, context menu) is open.
-/// Windows that are dismissable-but-not-stacked — the app's modals, which
-/// answer to Escape through [`use_modal_escape`] — read this to defer to the
-/// layer above: one press peels one layer, the dropdown first and the modal
-/// only once nothing sits on top.
+/// Whether any dismissable surface is open.
 fn has_open_dismissable() -> bool {
     DISMISS_STACK.with(|s| !s.borrow().is_empty())
 }
 
-/// Escape closes a modal — unless a dismissable surface is open, in which case
-/// THIS press is that surface's and peeling both layers in one keydown would
-/// take the modal down with the menu.
-///
-/// One listener for the rule every modal shares: it exists exactly while
-/// `open` is true, so a closed modal hears nothing and two stacked modals
-/// cannot both eat one press (the lane registry keeps at most one modal open —
-/// see the app's overlay lanes). Install it inside the component that owns the
-/// signal, next to the lane registration.
+/// Escape closes a modal unless a dismissable surface is open.
 pub fn use_modal_escape(open: RwSignal<bool>) {
     Effect::new(move |_| {
         if !open.get() {
@@ -105,13 +79,7 @@ pub fn use_modal_escape(open: RwSignal<bool>) {
     });
 }
 
-/// Whether this Escape press already belongs to a layer above the page: an
-/// open modal or a dismissable surface. Page-level Escape actions (the
-/// reader's "close the sidebar") ask this first, so one press peels one
-/// layer — dismissing the settings sheet must not also fold the rail away.
-/// Window keydown listeners run in registration order, and the page's are
-/// installed long before any modal opens, so the modal cannot mark the event
-/// as consumed in time; the page asks instead.
+/// Whether this Escape already belongs to a layer above the page.
 pub fn escape_is_claimed() -> bool {
     OPEN_MODALS.with(|n| n.get() > 0) || has_open_dismissable()
 }
@@ -134,9 +102,7 @@ fn pop_stack(id: u64) {
     });
 }
 
-/// Dismiss a surface while `visible`, forwarding to `on_dismiss`. `is_inside`
-/// answers "is this node part of the surface itself?" (anchors, panel, scroll
-/// area) — presses there never dismiss.
+/// Dismiss a surface while `visible`, forwarding to `on_dismiss`.
 pub fn use_dismiss(
     visible: Signal<bool>,
     on_dismiss: Callback<()>,
@@ -162,8 +128,7 @@ pub fn use_dismiss(
         let on_dismiss = on_dismiss;
 
         if policy.escape {
-            // Parked-closure pattern: a re-run of this Effect cannot free a
-            // live wasm shim mid-queue (see the hook's docs).
+            // Parked-closure pattern: no free of a live shim mid-queue.
             use_window_event("keydown", move |ev: web_sys::Event| {
                 let ke = ev.unchecked_ref::<web_sys::KeyboardEvent>();
                 if ke.key() != "Escape" {
@@ -220,8 +185,7 @@ pub fn use_dismiss(
 mod tests {
     use super::*;
 
-    /// Push `ids`, run `body`, then pop them again so the shared stack is
-    /// exactly as we found it — later tests on this thread start clean.
+    /// Push `ids`, run `body`, pop them: the stack is left as found.
     fn with_stack<T>(ids: &[u64], body: impl FnOnce() -> T) -> T {
         for id in ids {
             push_stack(*id);

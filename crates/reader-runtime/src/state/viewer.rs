@@ -1,8 +1,5 @@
-//! The viewer signals: which page, which mode, how big the container is —
-//! and the live copy of the shared [`Motion`] projection that says which of
-//! the reader's movements are allowed to animate (the type itself is chrome
-//! state, `app_state::state`, because the shell and both runtimes hand it
-//! around; the SIGNAL is this session's).
+//! The viewer signals: page, mode, container size, and the live motion
+//! projection.
 
 use leptos::prelude::*;
 
@@ -18,50 +15,17 @@ pub struct ViewerSignals {
     pub mode: RwSignal<ViewMode>,
     /// 1-based current page.
     pub page: RwSignal<u32>,
-    /// The outline entry the reader just asked to see (`None` when nothing is
-    /// pending), as an index into `document.outline`.
-    ///
-    /// A page write cannot carry this. A text document's page is a CUT of the
-    /// stream — several chapters share one, a short document has one, and no
-    /// reader sees a page boundary — so the click's page write keeps the
-    /// counter, the chrome and the highlight honest but cannot move the
-    /// document; the heading's BLOCK is the exact address, and it never leaves
-    /// the pane (`effects::reader::outline_jump` resolves it).
-    ///
-    /// A pane realm renders its chrome host-side, so the panel that clicks and
-    /// the stream that scrolls can be on opposite sides of the frame boundary.
-    /// The directive travels the way the page does: the panel writes it, the
-    /// host hands it to a frame as `Write::Outline`, and the pane's own arm
-    /// consumes it. ONE-SHOT: whoever acts on it clears it, which is what makes
-    /// a second click on the same entry a change again.
+    /// The outline entry just asked for, as an index; ONE-SHOT.
     pub(crate) outline_jump: RwSignal<Option<u32>>,
-    /// The zoom step the reader just asked for (`None` when nothing is
-    /// pending): `1` zooms in, `-1` zooms out.
-    ///
-    /// A step is a directive for the same reason the outline jump above is:
-    /// there is no target scale to compare against, because the ladder step
-    /// resolves against the window, the view mode and the page — and only the
-    /// pane's own zoom coordinator knows those. So the host's toolbar writes
-    /// the press here, the host hands it to a frame as `Write::ZoomStep`, and
-    /// the pane's controller resolves and lands it. ONE-SHOT: the host clears
-    /// it as it sends, which is what makes a second press of `+` a change
-    /// again.
+    /// The zoom step just asked for: `1` in, `-1` out; ONE-SHOT.
     pub(crate) zoom_step: RwSignal<Option<i32>>,
     pub fit: RwSignal<FitMode>,
     pub scroll_top: RwSignal<f64>,
     pub zoom: ZoomState,
     /// (width, height) of the viewer content area in CSS px.
     pub container_size: RwSignal<(f64, f64)>,
-    /// Inclusive `(first, last)` 1-based page range of the reader's current
-    /// text selection, or `None` when no text is selected.
-    ///
-    /// The engine's selectionchange listener walks the DOM from the
-    /// selection's anchor and focus up to the nearest page host, parses the
-    /// page from its id, and dispatches `mareader:selection-pages`;
-    /// `effects::reader::page_selection` is the single writer of this signal,
-    /// and `features::virtualizers` merges the range into the
-    /// virtualizer's PINNED window so the selected pages stay mounted while
-    /// the selection lives.
+    /// Inclusive `(first, last)` page range of the current selection, or
+    /// `None`.
     pub selected_pages: RwSignal<Option<(u32, u32)>>,
     /// Continuous auto-scroll along the active strip (Continuous / Horizontal).
     pub auto_scroll: RwSignal<bool>,
@@ -69,47 +33,17 @@ pub struct ViewerSignals {
     pub page_gap: RwSignal<f64>,
     /// Horizontal inset around pages (CSS px). `0` removes the margin.
     pub page_margin: RwSignal<f64>,
-    /// The column-width dial, as the open reader resolves it (percent:
-    /// `100` is the natural column). Mirrored from the persisted setting by
-    /// the layout prefs so the surfaces that have no settings handle — the
-    /// stream's column, the fit maths — read one runtime number, the same
-    /// arrangement the page margin uses.
+    /// The column-width dial, in percent, as the open reader resolves it.
     pub column_width_pct: RwSignal<f64>,
-    /// Which motions animate. Written only by the runtime session's
-    /// projection of the frame's settings (`Motion::from_prefs`, in the
-    /// runtime's `lib.rs`); see the type's contract.
+    /// Which motions animate; written only by the session projection.
     pub motion: RwSignal<Motion>,
-    /// The pane's own appearance look while independent themes are on
-    /// (`None` = inherit the window's theme). Written only by the host's
-    /// appearance boundary push ([`crate::host::contract::PaneAppearance`]);
-    /// the pane root paints it in `crate::pane::view`.
+    /// The pane's own look while independent themes are on.
     pub look: RwSignal<Option<reader_core::appearance::Appearance>>,
-    /// True from the moment `page` is seeded for a freshly opened document
-    /// until a scrolling strip has anchored itself to that page on mount.
-    ///
-    /// The resume point is authored by the open flow, not by the strip, so
-    /// until the strip has been placed on it the strip's own dominant page
-    /// (still whatever offset it last held, usually the top) is not an
-    /// opinion worth listening to. The scroll→page sync stands down while
-    /// this is raised; the strip's mount anchor lowers it.
+    /// True from the resume seed until a strip has anchored to the page.
     pub awaiting_anchor: RwSignal<bool>,
-    /// Monotonic identity of the scrolling strip anchor that currently owns
-    /// `awaiting_anchor`. A replacement strip can start before the old
-    /// strip's queued animation frame runs; the identity keeps that stale
-    /// callback from releasing the replacement's guard.
+    /// Identity of the strip anchor that owns `awaiting_anchor`.
     pub(crate) anchor_generation: RwSignal<u64>,
-    /// The one-shot gate over this open's first VISIBLE frame — false in the
-    /// fresh state a document's realm builds with, until the page the reader
-    /// should see has actually PAINTED. The release is paint-driven, and each
-    /// surface owns its own: every PDF mode lifts it on a successful
-    /// current-page raster, even when its geometry is unchanged. Text
-    /// lifts it when its mount anchor lands (or, without an anchor, its
-    /// first mounted frame paints). Only text has a timed anchor net; PDF
-    /// startup deadlines report errors instead of pretending it painted. For
-    /// exactly that long an opaque cover the colour of the reader's paper
-    /// masks the viewer there, so the first renders — however healthy — are
-    /// never watched arriving: the reader appears already settled on the
-    /// resume page.
+    /// The one-shot gate over this open's first VISIBLE frame.
     pub first_paint: RwSignal<bool>,
 }
 
@@ -125,63 +59,42 @@ impl ViewerSignals {
         self.anchor_generation.get_untracked() == generation
     }
 
-    /// Ask for the outline entry at `index` — the outline panel's row click,
-    /// the one write that is not a mirrored value (see the field).
+    /// Ask for the outline entry at `index`, the panel's row click.
     pub fn ask_outline_jump(&self, index: u32) {
         self.outline_jump.set(Some(index));
     }
 
-    /// Take the pending outline jump, clearing it. Both ends take exactly one
-    /// — the host on its way to a frame, the pane's arm on its way to the
-    /// stream — and a taken directive is gone: `None` is also the answer for
-    /// one already acted on.
-    ///
-    /// The read is TRACKED, because every caller is an effect that must wake
-    /// for the next directive; the clear then wakes that same effect once with
-    /// nothing to do, which is what a directive that leaves no value standing
-    /// costs.
+    /// Take the pending outline jump, clearing it; the read is TRACKED.
     pub(crate) fn take_outline_jump(&self) -> Option<u32> {
         let index = self.outline_jump.get()?;
         self.outline_jump.set(None);
         Some(index)
     }
 
-    /// Ask for one zoom step: `1` zooms in, `-1` zooms out — the toolbar's
-    /// `+`/`-` buttons (see the field; the keyboard steps post straight into
-    /// the pane's own controller and need no directive).
+    /// Ask for one zoom step: `1` in, `-1` out (the toolbar's buttons).
     pub fn ask_zoom_step(&self, step: i32) {
         self.zoom_step.set(Some(step));
     }
 
-    /// Take the pending zoom step, clearing it: the host takes exactly one on
-    /// its way to a frame. The read is TRACKED, for the same reason
-    /// [`Self::take_outline_jump`]'s is — the caller is an effect that must
-    /// wake for the next press — and the clear wakes it once with nothing to
-    /// do, which is what a directive that leaves no value standing costs.
+    /// Take the pending zoom step, clearing it; the read is TRACKED.
     pub(crate) fn take_zoom_step(&self) -> Option<i32> {
         let step = self.zoom_step.get()?;
         self.zoom_step.set(None);
         Some(step)
     }
 
-    /// True while a zoom transaction is in flight: renders are suspended,
-    /// page/scroll synchronisation and geometry feedback are frozen, and the
-    /// mounted window is pinned around the dominant page.
+    /// True while a zoom transaction is in flight: renders are suspended.
     pub fn zooming(&self) -> Signal<bool> {
         let transition = self.zoom.transition;
         Signal::derive(move || transition.get().is_some())
     }
 
-    /// Untracked variant of [`Self::zooming`] for rAF/scroll callbacks and
-    /// effect guards that must not subscribe to the transition.
+    /// [`Self::zooming`] untracked, for callbacks that must not subscribe.
     pub fn zooming_now(&self) -> bool {
         self.zoom.transition.get_untracked().is_some()
     }
 
-    /// [`Self::zooming_now`] for callbacks that can outlive the reader's own
-    /// owner — a queued frame, a geometry report racing a close. `None` is
-    /// "this state is gone": there is no transition to be in, and the caller
-    /// returns instead of reading a disposed signal.
+    /// [`Self::zooming_now`] for callbacks that can outlive the owner.
     pub fn try_zooming_now(&self) -> Option<bool> {
         self.zoom
             .transition
@@ -189,15 +102,7 @@ impl ViewerSignals {
             .map(|t| t.is_some())
     }
 
-    /// True only while a manual zoom animation is in flight (fit is `None`,
-    /// so the reader is zooming by hand rather than re-fitting). When set,
-    /// the layouts hand the canvas to the gesture so a fit-driven refit can
-    /// never fight the pinch.
-    ///
-    /// A container follow is deliberately excluded even though it opens a
-    /// transition too: a window drag with a hand-picked zoom is not a gesture,
-    /// and pages must not start rasterising at a display scale that is already
-    /// obsolete two frames later.
+    /// True only while a manual zoom animation is in flight.
     pub fn gesture_owns(&self) -> Signal<bool> {
         let transition = self.zoom.transition;
         let fit = self.fit;
@@ -259,10 +164,8 @@ mod tests {
 
     #[test]
     fn each_detail_owns_exactly_the_motion_it_names() {
-        // `scroll_glide` is spelled `scroll_jumps` in the settings, so this
-        // projection is the only place the two vocabularies meet — a crossed
-        // wire there moves the wrong motion, which is why every line is
-        // exercised rather than the one that happens to share a name.
+        // `scroll_glide` is `scroll_jumps` in the settings; this projection
+        // joins them.
         macro_rules! drops_exactly {
             ($pref:ident -> $motion:ident) => {{
                 let mut prefs = AnimationSettings::default();
@@ -282,5 +185,3 @@ mod tests {
         drops_exactly!(scroll_jumps -> scroll_glide);
     }
 }
-
-// only the changed file was rewritten

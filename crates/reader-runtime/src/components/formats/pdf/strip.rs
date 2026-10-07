@@ -323,4 +323,3 @@ fn in_view_signal(
             .any(|item| item.index == index && item.state == VirtualItemState::Active)
     })
 }
-// only the changed file was rewritten

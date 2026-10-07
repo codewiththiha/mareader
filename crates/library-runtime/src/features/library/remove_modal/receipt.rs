@@ -1,8 +1,4 @@
-//! The removal's receipt: what a removal takes, counted over the set the
-//! confirm button will act on rather than over what was clicked.
-//!
-//! The tree arithmetic a cascade depends on is pure over the shelf list and
-//! host-tested at the bottom of this file.
+//! The removal's receipt: what the button will act on, not the click.
 
 use leptos::prelude::*;
 
@@ -14,27 +10,21 @@ use crate::services::memberships;
 
 pub(super) struct Receipt {
     pub(super) books: Vec<Book>,
-    /// A pointer costs nothing but itself — no resume point, highlights,
-    /// cover or store copy — and its book stays in the library: a sentence the
-    /// sheet owes a reader who clicked a link's ✕.
+    /// A link costs only itself: no marks, cover or copy, and its book stays.
     pub(super) links: Vec<String>,
     /// Separate from [`Self::books`]: the button needs ids, the rows need the
     /// rows' own facts.
     pub(super) book_ids: Vec<String>,
     pub(super) shelf_ids: Vec<String>,
     pub(super) cascade: bool,
-    /// A cascade pulls books and further shelves into the receipt; without
-    /// this the heading would answer "3 books" to a reader who clicked a
-    /// shelf.
+    /// Without this the heading would say "3 books" to a click on a shelf.
     pub(super) asked_name: Option<String>,
     // The switch's visibility is decided by these, so it cannot depend on
     // itself.
     pub(super) inside_books: usize,
     pub(super) inside_shelves: usize,
     pub(super) marks: usize,
-    /// How many books carry the reader's own work — a resume point or a name
-    /// they gave it. With the marks, this is the sheet's one question;
-    /// counting it here keeps the question's visibility off its own answer.
+    /// Books carrying the reader's own work, so the question's visibility stays
     pub(super) wrote: usize,
     pub(super) covers: usize,
     pub(super) placements: Vec<String>,
@@ -84,16 +74,12 @@ impl Receipt {
         }
     }
 
-    /// Whether there is anything of the reader's for the sheet's question to
-    /// decide: a control with nothing to decide is one the reader reads and
-    /// then ignores.
+    /// Whether the sheet's question has anything to decide.
     pub(super) fn offers_data(&self) -> bool {
         self.marks > 0 || self.wrote > 0
     }
 
-    /// A placeholder's "size" is the length of its path — a receipt number
-    /// that would mean nothing. A shelves-only receipt says the one thing a
-    /// reader worries about: nothing else goes with them.
+    /// A placeholder's size is its path length: a number that means nothing.
     pub(super) fn subtitle(&self) -> String {
         if self.books.is_empty() {
             if !self.links.is_empty() {
@@ -132,9 +118,7 @@ impl Receipt {
     }
 }
 
-/// How many of these books the reader left something in: a resume point or a
-/// name. Marks are counted apart from the rows because they are the one thing
-/// this file reads out of the store rather than off the row.
+/// Books the reader left something in; marks come from the store, not the row.
 fn wrote_in(books: &[Book]) -> usize {
     books
         .iter()
@@ -142,9 +126,7 @@ fn wrote_in(books: &[Book]) -> usize {
         .count()
 }
 
-/// The walk itself is `library_core::shelf::subtree_ids`: a cascade and a
-/// copy answering "which shelves go with this one" differently would be two
-/// rules wearing one name.
+/// The walk is `library_core::shelf::subtree_ids`, shared with the copy.
 fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
     subtree_ids(shelves, roots)
         .into_iter()
@@ -152,10 +134,7 @@ fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
         .collect()
 }
 
-/// `None` when none of the books or shelves are there any more, which makes
-/// a sheet left open across a removal harmless rather than a panic.
-/// Everything below is measured over the cascade's set, not over what was
-/// clicked.
+/// `None` when nothing is left: a sheet open across a removal, not a panic.
 pub(super) fn receipt(
     state: crate::context::LibraryContext,
     ids: &[String],
@@ -265,7 +244,7 @@ pub(super) fn receipt(
     let watched = measured
         && state.library.folders.with_untracked(|folders| {
             folders.iter().any(|f| {
-                // Asked exactly as the walk asks it (`library_core::folder::WatchedFolder::owes_walk`), because a note promising a scan the walk is not owed is a promise nothing keeps.
+                // Asked as the walk asks it, via `owes_walk`.
                 f.owes_walk()
                     && fingerprints
                         .iter()
@@ -346,9 +325,7 @@ mod tests {
 
     #[test]
     fn two_roots_sharing_a_descendant_count_it_once() {
-        // One removal takes a shared shelf apart once, and a receipt that listed
-        // it twice would be a receipt the reader could not reconcile with what
-        // actually went.
+        // A shared shelf goes once: a doubled line would not reconcile.
         let tree = tree();
         let under_both = ids(&subtree(&tree, &["a".to_string(), "b".to_string()]));
         assert_eq!(
@@ -367,9 +344,7 @@ mod tests {
 
     #[test]
     fn a_shelf_inside_itself_terminates_rather_than_repeating() {
-        // `sanitize` cuts cycles out of a loaded blob, but the receipt reads a
-        // signal that can be caught between two writes, and a walk that spun here
-        // would hang the sheet rather than answer it.
+        // A signal between writes can spin: the walk must terminate.
         let looped = vec![shelf("x", Some("y"), &[]), shelf("y", Some("x"), &[])];
         let mut found = ids(&subtree(&looped, &["x".to_string()]));
         found.sort();

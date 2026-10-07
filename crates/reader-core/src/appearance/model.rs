@@ -1,21 +1,12 @@
-//! The appearance data model: the three structural modes (base / texture /
-//! noise) and the [`Appearance`] look they compose into.
-//!
-//! The old six hand-written themes were one structure with different hues, so
-//! the tint is COMPUTED: three base modes decide the structural family and a
-//! {hue, strength} tint applies by the same maths on top. Sepia / Green /
-//! Night survive as presets.
-//!
-//! CONTRACT: the field names below are the serde schema persisted inside
-//! `mareader.settings.v1`. Do not rename them.
+//! The appearance data model: base, texture and noise modes, and the
+//! [`Appearance`] they compose.
 
 use serde::{Deserialize, Serialize};
 
 use super::base::base_tokens;
 
-/// The structural half of a look: what the canvas filter pipeline does, and
-/// which direction the grain/texture blends go. A tint can be layered on any
-/// of these; the tint never changes which family you are in.
+/// The structural half of a look: the filter family and blend
+/// direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BaseMode {
@@ -24,10 +15,7 @@ pub enum BaseMode {
     Light,
     /// Inverted canvas, textures lighten (screen).
     Dark,
-    /// NOT inverted — just dimmed: keeps the document's real colours (figures,
-    /// photos, syntax highlighting) instead of hue-rotating them, which is the
-    /// reason to pick it over Dark. Grain uses soft-light so it neither
-    /// crushes nor blows out the midtones.
+    /// NOT inverted, just dimmed: keeps the document's real colours.
     Dim,
 }
 
@@ -74,11 +62,7 @@ pub enum TextureMode {
 }
 
 impl TextureMode {
-    /// The CSS class a carrier element takes for this mode — the naming
-    /// contract `styles/textures.css` keys its patterns off. `None` when the
-    /// mode is off (the element carries no texture class). One definition,
-    /// shared by the PDF page host, the reflowable scroller and the preset
-    /// swatch, so the string is never re-assembled at several call sites.
+    /// The CSS class a carrier takes for this mode.
     pub fn css_class(&self) -> Option<&'static str> {
         match self {
             Self::None => None,
@@ -115,10 +99,7 @@ impl TextureMode {
     }
 }
 
-/// Film grain: off, static, or animated. Animated grain re-seeds the pattern
-/// every frame so it crawls like real film or sensor noise instead of sitting
-/// as a fixed dirt layer. A 3-way MODE rather than two booleans because
-/// "animated but disabled" is not a state worth persisting.
+/// Film grain: off, static, or animated, re-seeding per frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NoiseMode {
@@ -146,27 +127,19 @@ impl NoiseMode {
     }
 }
 
-/// A complete look: what a preset stores and what the DOM reflects. Every
-/// field is independent — the tint never changes the texture, the texture
-/// opacity never touches the grain. The only coupling is `base`, which
-/// selects the blend FAMILY for texture and grain, and that coupling is
-/// required: multiplying a light tint is a no-op and would render grain
-/// invisible on dark paper.
+/// A complete look: what a preset stores and the DOM reflects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
     pub base: BaseMode,
     /// Tint hue in degrees, 0..360.
     pub tint_hue: u16,
-    /// Tint strength 0..=100. 0 means "no tint at all" and short-circuits the
-    /// whole colour pipeline, so a plain Light/Dark/Dim stays byte-identical to
-    /// what it was before this feature existed.
+    /// Tint strength 0..=100; 0 short-circuits the pipeline.
     pub tint_strength: u8,
     pub texture: TextureMode,
     /// Texture opacity 0..=100.
     pub texture_opacity: u8,
-    /// Texture scale as a PERCENTAGE of the natural pitch, 25..=400. Stored as
-    /// an integer percent rather than a float so presets compare exactly.
+    /// Texture scale as a PERCENTAGE of the natural pitch, 25..=400.
     pub texture_scale: u16,
     pub noise: NoiseMode,
     /// Grain intensity 0..=100.
@@ -202,22 +175,12 @@ impl Appearance {
         self.tint_strength > 0
     }
 
-    /// The tint's effect amount, 0..=1 — the single number both pipelines
-    /// feed their curves. The dial runs 0..=100 but full effect lands at
-    /// 50: the old /100 mapping spent the whole first half of the drag on
-    /// movement nobody could see, so a point of slider now buys twice the
-    /// visible change. The clamp is load-bearing — past half, `t` would
-    /// exceed 1.0, overshooting the sepia cap and rotating token hues
-    /// around the circle instead of onto the requested one.
+    /// The tint's effect amount, 0..=1, fed to both pipelines' curves.
     pub fn tint_amount(&self) -> f64 {
         (self.tint_strength as f64 / 50.0).min(1.0)
     }
 
-    /// The exact hex (or oklch literal) the UI accent currently has. Computed
-    /// directly so a theme tick does not allocate the seven-token override
-    /// vector to pick one key: the base table is a Copy struct of &'static
-    /// strs and only the untinted arm reads it; a tinted look answers from its
-    /// overrides.
+    /// The exact hex (or oklch literal) the UI accent has now.
     pub fn accent_hex(&self) -> String {
         if let Some(value) = self.tinted_accent() {
             return value;

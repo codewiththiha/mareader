@@ -1,5 +1,4 @@
-//! The shared behaviours. Every path funnels through these instead of
-//! re-implementing a close, a persistence dance or a retry.
+//! The shared behaviours: one close, one persistence, one retry.
 
 use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
@@ -20,13 +19,9 @@ pub struct GlossCommands {
     pub reset: Callback<()>,
     /// The outro: fold the expanded card back down onto the word.
     pub collapse_to_mark: Callback<()>,
-    /// Record + persist a freshly captured mark, returning the CANONICAL one
-    /// (re-explaining the same word at the same spot reuses the existing
-    /// mark rather than stacking a second stroke on it).
+    /// Record and persist a captured mark, returning the canonical one.
     pub add_mark: Callback<GlossMark, GlossMark>,
-    /// Remove marks by id: persist, evict their cached answers, close the
-    /// card if it belonged to one of them. Returns the removed marks so the
-    /// caller can park them for undo.
+    /// Remove marks by id: persist, evict answers, close if open.
     pub remove_marks: Callback<Vec<String>, Vec<GlossMark>>,
     /// Re-insert previously removed marks (the Undo path) and persist.
     pub restore_marks: Callback<Vec<GlossMark>>,
@@ -34,13 +29,7 @@ pub struct GlossCommands {
     pub retry: Callback<()>,
 }
 
-/// Whether two marks denote the same glossed spot, across both formats.
-///
-/// A PDF's spot IS its page-space rect, so the anchor's own tolerance is the
-/// whole answer. A reflowable mark's rect is only the box it happened to be
-/// captured in — viewport pixels, which move when the reader scrolls — so two
-/// reflowable marks are the same spot when their envelopes are: same block,
-/// same characters.
+/// Whether two marks denote the same glossed spot, in either format.
 fn same_glossed_spot(a: &GlossMark, b: &GlossMark) -> bool {
     if a.word != b.word {
         return false;
@@ -51,15 +40,12 @@ fn same_glossed_spot(a: &GlossMark, b: &GlossMark) -> bool {
     );
     match (left, right) {
         (Some(left), Some(right)) => left == right,
-        // One carries a spot and the other does not: different pipelines, and
-        // nothing honest to compare but the anchors.
+        // Different pipelines: anchor tolerance decides.
         _ => a.same_spot(b),
     }
 }
 
-/// Build the commands over a controller's slices. Split from the slices
-/// themselves because these are behaviour, not state: the only place that
-/// writes to more than one slice at a time, and to the persisted marks.
+/// Build the commands over a controller's slices: behaviour, not state.
 pub(super) fn build_commands(
     state: crate::context::ReaderContext,
     content: GlossContent,
@@ -72,15 +58,8 @@ pub(super) fn build_commands(
     let processing_id = state.reader.gloss.processing_id;
     let marks = state.reader.gloss.marks;
 
-    // The marks' one write, and it is the Shell's: durable persistence is
-    // Shell-owned, so the pane hands the list over the boundary
-    // (`ShellApi::save_gloss`) instead of writing the store itself. There is
-    // no per-mark write: the stored shape is a document's list, so every
-    // mutation sends the whole list, and a document that is not open has
-    // nowhere to put it. The KEY is `crate::services::document::gloss_key`'s
-    // rather than the path, so a book of its own writes the list its own
-    // reader reads — the load at open asks the same question and the two
-    // cannot drift.
+    // The marks' one write is the Shell's: every mutation sends the whole
+    // list.
     let persist = move || {
         let key = crate::services::document::gloss_key(state);
         if key.is_empty() {
@@ -92,8 +71,7 @@ pub(super) fn build_commands(
         }
     };
 
-    // Full dismiss back to Idle. The mark itself is intentionally kept — the
-    // highlight is what reopens this card later.
+    // Full dismiss back to Idle; the mark is kept.
     let reset = Callback::new(move |_| {
         popover_open.set(false);
         content.clear();
@@ -101,13 +79,11 @@ pub(super) fn build_commands(
         drag.clear();
         processing_id.set(None);
         open.mark.set(None);
-        // A dismissed card has no run to wait on: a late chunk from the run
-        // it abandoned must not reopen it.
+        // A dismissed card has no run: a late chunk cannot reopen it.
         open.end_run();
     });
 
-    // Every close path funnels through here; the popover's settle watcher
-    // unmounts the surface once the spring has landed on the stroke.
+    // Every close path funnels through here.
     let collapse_to_mark = Callback::new(move |_| {
         if geometry.gphase.get_untracked() != GlossPhase::Expanded || drag.active.get_untracked() {
             return;
@@ -116,9 +92,7 @@ pub(super) fn build_commands(
         geometry.gphase.set(GlossPhase::Compact);
     });
 
-    // Hand back the CANONICAL mark: the id is what keys the processing glow
-    // and the answer cache, so the caller must not go on holding the
-    // discarded duplicate.
+    // Hand back the CANONICAL mark: the id keys the glow and cache.
     let add_mark = Callback::new(move |m: GlossMark| -> GlossMark {
         let existing =
             marks.with_untracked(|v| v.iter().find(|o| same_glossed_spot(o, &m)).cloned());
@@ -132,8 +106,7 @@ pub(super) fn build_commands(
                 evicted = Some(v.remove(0));
             }
         });
-        // The cap drops the oldest mark; its answer must go with it, or the
-        // session cache grows without the bound MARK_CAP exists to impose.
+        // The evicted oldest mark's answer goes with it.
         if let Some(old) = evicted {
             cache.remove(&old.id);
         }
@@ -141,9 +114,7 @@ pub(super) fn build_commands(
         m
     });
 
-    // The single removal path. Persist first, evict the session cache, then
-    // close the card if it belonged to one of the removed marks. Hands the
-    // batch back for undo.
+    // The single removal path; the batch comes back for undo.
     let remove_marks = Callback::new(move |ids: Vec<String>| -> Vec<GlossMark> {
         if ids.is_empty() {
             return Vec::new();
@@ -176,9 +147,7 @@ pub(super) fn build_commands(
         removed
     });
 
-    // Undo: re-insert (id-deduped) and persist. The session cache stays
-    // evicted — the next open of a restored mark re-fetches, which is the
-    // honest behaviour for a word whose answer might have improved.
+    // Undo re-inserts (id-deduped) and persists; the cache stays evicted.
     let restore_marks = Callback::new(move |restored: Vec<GlossMark>| {
         if restored.is_empty() {
             return;
@@ -193,24 +162,17 @@ pub(super) fn build_commands(
         persist();
     });
 
-    // The same opening ritual minus persistence (the mark is already
-    // canonical), so the stroke thinks again and the surface is reborn on
-    // the first fresh chunk.
+    // The opening ritual minus persistence: the mark is canonical.
     let retry = Callback::new(move |_| {
         let Some(mark) = open.mark.get_untracked() else {
             return;
         };
         if !tauri_bridge::has_tauri() {
-            // The environment cannot change mid-session, and the desktop-only
-            // verdict `begin_fetch` would reach is not retryable — so the
-            // button that got us here cannot be showing.
+            // The environment cannot change mid-session, so the button isn't
+            // showing.
             return;
         }
-        // A retry is a NEW run of the same opening ritual: `begin_fetch`
-        // starts the run (the failed one's late chunks are no longer this
-        // card's business), clears the last answer, and puts the stroke back
-        // into thinking. Persistence is not repeated — the mark is already
-        // canonical.
+        // A retry is a NEW run of the ritual, minus persistence.
         super::wiring::begin_fetch(content, geometry, open, processing_id, mark);
     });
 
@@ -286,9 +248,7 @@ mod tests {
 
     #[test]
     fn a_reflowable_mark_is_the_same_spot_at_the_same_characters_not_pixels() {
-        // The whole point of the envelope: re-glossing a word after the reader
-        // has scrolled (so the captured viewport box differs entirely) is the
-        // SAME mark, and must not stack a second stroke on it.
+        // The point of the envelope: same spot after a scroll, one stroke.
         let spot = ReflowSpot::new(12, 30, 40);
         let envelope = spot_envelope(&spot, "a manuscript page, scraped clean");
         let a = mark("g1", "palimpsest", &envelope, anchor(4, 100.0, 40.0));
@@ -307,9 +267,7 @@ mod tests {
 
     #[test]
     fn a_mark_with_no_envelope_is_compared_by_its_anchor_instead() {
-        // A PDF's sentence context and a reflowable envelope are different
-        // pipelines, so neither can read the other's identity: the anchors
-        // decide, exactly as they did before there were two.
+        // Different pipelines, so the anchors decide.
         let spot = spot_envelope(&ReflowSpot::new(1, 0, 4), "the word in a sentence");
         let a = mark("g1", "word", &spot, anchor(1, 10.0, 10.0));
         let b = mark(

@@ -1,25 +1,4 @@
-// Does a closed split pane give its memory back, or does the reader grow
-// with every split opened and closed?
-//
-//   node tools/measure-split-cycles.mjs [label] [baseUrl] [--webkit] [--cycles N]
-//
-// Workload: Programming Pearls open in the first pane for the whole run.
-// Then N cycles of: open a split beside it (rotating two PDFs and a Markdown
-// note, so both the pdf.js engine path and the reflow path are exercised),
-// read in the new pane with the wheel, close it through its own × control,
-// wait until the host lists one pane and the engine reports no session
-// beyond the first pane's, then force a GC (Chromium, over CDP) or settle
-// (WebKit has no forced GC) and sample.
-//
-// Each sample: content-process PSS (Linux `/proc/<pid>/smaps_rollup`, as in
-// measure-split-return.mjs), the reader wasm's linear memory and its Rust
-// heap high-water, the engine's live sessions and workers, and the reader
-// frame's DOM element and canvas counts. The last line is `RESULT {...}`
-// with a least-squares slope per cycle over the cycles after the warm-up
-// (then two more samples: 30 s idle, and after allocation pressure, which
-// is how WebKit — no forced GC — is made to collect),
-// which is the growth question: a slope near zero means a closed pane's
-// memory is reused by the next one; a steady positive slope is a leak.
+// Does a closed split pane give its memory back? N open/close cycles, sampled.
 import { chromium, webkit } from "playwright";
 import { readFileSync, readdirSync } from "node:fs";
 
@@ -68,11 +47,7 @@ function contentMemory() {
   return +(pss / 1048576).toFixed(1);
 }
 
-// The reader frame's own probe answers a fresh snapshot (the Shell's merges
-// the last pushed digest, a beat stale); the Shell's adds `bootState`. The
-// frame's `wasmHeapBytes` is the reader instance's linear memory
-// (`WebAssembly.Memory.buffer.byteLength`), which can only grow — so a flat
-// line across cycles means a closed pane's Rust memory is reused.
+// The frame's wasmHeapBytes is the reader's linear memory, which can only grow.
 const snap = () =>
   page.evaluate((sel) => {
     const read = (w) => {
@@ -206,11 +181,7 @@ for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
   result.afterClose.push({ cycle, file, ...(await sample(`cycle ${cycle}: ${file} closed`)) });
 }
 
-// Is what stays after the last close garbage the engine has not collected
-// yet, or memory it keeps? WebKit has no forced GC, so two ways to make it
-// collect: time (JSC's timer-driven collections after allocation), then
-// allocation pressure in the reader frame's realm (short-lived objects and
-// buffers well past its collection thresholds, all dropped at once).
+// Is what stays after the last close retained, or uncollected?
 await page.waitForTimeout(30_000);
 result.afterIdle30s = await sample("30 s after the last close");
 await inActive(() => {

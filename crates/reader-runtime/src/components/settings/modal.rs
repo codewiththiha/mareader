@@ -1,18 +1,4 @@
-//! Centered reader settings modal: the tab strip and the body that hosts one tab
-//! at a time. The tabs live in `layout`, `theme`, `animations`, `fonts` and
-//! `workspace`, and the SET of them is not fixed — see `shown`.
-//!
-//! The backdrop, the panel, the overlay lane and the Escape rule are
-//! [`ModalShell`]'s, which is what every other sheet in the app rides: one
-//! contract for how a modal opens and closes rather than one per surface, and
-//! the `role="dialog"` and `aria-label` that go with it. What is left here is
-//! this modal's own face — a strip of tabs where a sheet has a heading.
-//!
-//! The `open` signal belongs to the page (two things open this modal: the
-//! gear button and the reader menu's item), and the shell registers it, so
-//! opening a menu closes the modal and vice versa without either component
-//! knowing about the other — see
-//! [`lanes`](app_ui::components::primitives::overlay::lanes).
+//! The centered settings modal: the tab strip and one tab's body.
 
 use leptos::prelude::*;
 
@@ -34,17 +20,9 @@ pub fn SettingsModal(
     #[prop(default = "min(76vh, 640px)")] height: &'static str,
 ) -> impl IntoView {
     let tab = RwSignal::new(Tab::Layout);
-    // The Animations tab is offered only while the master switch in the Layout
-    // tab is on — an animations panel that cannot animate anything is worse
-    // than no panel. `shown` is the tab the strip displays and the body renders
-    // (rather than an effect writing `tab` back): turning the master off while
-    // that tab happens to be open falls back to Layout for as long as it is
-    // off, and the reader's own selection survives to be returned to.
+    // The Animations tab exists only while its master switch is on.
     let animations_on = Signal::derive(move || state.settings.with(|st| st.animations.enabled));
-    // The Fonts tab exists only while a reflowable document is open — a
-    // PDF carries none of the type it controls — and follows the same
-    // fallback rule as the Animations tab: selected while a PDF opens over
-    // it, the strip shows Layout, and the selection survives the return.
+    // The Fonts tab exists only for a reflowable document.
     let fonts_on = Signal::derive(move || state.reader.reflowable());
     let shown = Signal::derive(move || match tab.get() {
         Tab::Animations if !animations_on.get() => Tab::Layout,

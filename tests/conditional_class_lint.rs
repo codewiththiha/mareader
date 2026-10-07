@@ -1,5 +1,4 @@
-//! Compile-time-adjacent check: each `class=("…", cond)` token must be a
-//! single class name. A space-separated value throws a swallowed SyntaxError.
+//! Each `class=("…", cond)` token must be a single class name.
 
 #[cfg(test)]
 mod tests {

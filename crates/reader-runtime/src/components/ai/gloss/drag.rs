@@ -1,7 +1,4 @@
-//! Pointer physics for dragging the expanded card — a thin domain wrapper
-//! over the primitive drag mechanics ([`use_pointer_drag`]). Writes an
-//! anchor-relative offset (owned by the [`GlossController`]) so the card
-//! keeps gliding with the page on scroll: target = f(live_anchor) + offset.
+//! Pointer physics for dragging the expanded card.
 
 use ai_core::gloss::GlossBox;
 use leptos::prelude::*;
@@ -34,9 +31,7 @@ pub fn use_card_drag(ctrl: GlossController, expanded: Memo<Option<GlossBox>>) ->
                 return;
             };
             let (vw, vh) = viewport_size();
-            // Clamp the ABSOLUTE pointer-derived origin — the same clamp
-            // the spring target applies to the offset — then store the
-            // offset relative to the un-dragged expanded box.
+            // Clamp the pointer origin, then store the relative offset.
             let b = clamped_origin(e, mx - dx, my - dy, vw, vh);
             ctrl.drag.offset.set(Some((b.x - e.x, b.y - e.y)));
         },

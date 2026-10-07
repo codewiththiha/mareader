@@ -1,17 +1,5 @@
-//! Auto-center the current page in the thumbnail grid: the glide / grace /
-//! debounce machinery.
-//!
-//! Scrolls through the panel's virtualizer — content coordinates,
-//! layout-clamped — instead of hand-rolled offset arithmetic. One module,
-//! two sections:
-//!   * the pure timing rules below (`center_offset`, `glide_delay`,
-//!     `glide_verdict`): named and unit-tested rather than buried in
-//!     closures;
-//!   * the wiring at the bottom — the reveal-active gesture, the
-//!     open-snap + page-follow effect, the self-re-arming glide, and the
-//!     panel-lifetime cleanup.
-//!
-//! [`AutoCenter::install`] wires the two together.
+//! Auto-center the current page in the thumbnail grid: the glide and
+//! grace machinery.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -22,11 +10,9 @@ use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use super::geometry::CELL_W;
 
-/// Debounce for the auto-center glide: the scroll fires once this long after
-/// page writes have settled.
+/// The glide's debounce: fires this long after page writes settle.
 const GLIDE_DEBOUNCE_MS: u64 = 80;
-/// User-drive grace window: while the user has interacted with the thumb grid
-/// within this many ms, auto-center defers instead of yanking the panel away.
+/// User-drive grace: auto-center defers this long after an interaction.
 const GRACE_MS: f64 = 1500.0;
 use crate::state::ReaderState;
 use app_state::SidebarMode;
@@ -67,8 +53,7 @@ impl AutoCenter {
     }
 }
 
-/// Content-coordinate offset that vertically centers a row of height
-/// `cell_h` whose top sits at `row_top`, in a viewport `vh` tall.
+/// The offset that vertically centers a row of height `cell_h`.
 fn center_offset(row_top: f64, cell_h: f64, vh: f64) -> Option<f64> {
     (vh > 0.0).then(|| row_top + cell_h / 2.0 - vh / 2.0)
 }
@@ -82,13 +67,8 @@ fn center_target(v: &Virtualizer, page: u32, aspect: f64, vh: f64) -> Option<f64
     center_offset(v.offset_of(idx), CELL_W * aspect, vh)
 }
 
-/// Initial delay before an armed glide fires.
-///
-/// Inside the after-drive grace the glide waits out the remainder plus a
-/// beat (so a panel the reader just flicked doesn't start sliding under
-/// them); outside it, the plain debounce applies. The open path never
-/// reaches this — it snaps in [`snap_to_page`] — so there is
-/// no "just opened" delay here.
+/// Delay before an armed glide fires: the grace remainder plus a
+/// beat, else the debounce.
 fn glide_delay(in_grace_remaining_ms: Option<f64>) -> u64 {
     match in_grace_remaining_ms {
         Some(remaining) => (GRACE_MS - remaining + 60.0) as u64,
@@ -99,11 +79,9 @@ fn glide_delay(in_grace_remaining_ms: Option<f64>) -> u64 {
 /// One tick of the armed glide: what to do, given what changed since arming.
 #[derive(Debug)]
 enum GlideVerdict {
-    /// The panel closed, the page moved on, or the target is already
-    /// centered (within a px): cancel and drop the timer.
+    /// The panel closed, the page moved, or the target is centered.
     Cancel,
-    /// The reader drove the panel less than a grace period ago: hold for
-    /// this many ms, then run the step again.
+    /// The reader drove the panel recently: hold for this many ms.
     Hold(u64),
     /// Fire the glide onto this content offset.
     Fire(f64),
@@ -126,23 +104,16 @@ fn glide_verdict(
     GlideVerdict::Fire(target.unwrap())
 }
 
-/// Warm the thumbnail cache around the page the glide just centered on: the
-/// two before and eight after cover the next flick of scrolling. Warms THIS
-/// pane's frame only; the frame's engine queue drops the work when the pane
-/// stops holding the document.
+/// Warm the cache around the centered page: two before, eight after.
 fn prefetch_neighborhood(pane: crate::pane::handle::PaneHandle, page: u32) {
     crate::frame_pane::prefetch_thumbs(pane.id(), page.saturating_sub(2)..=page + 8);
 }
 
-/// One frame after the panel opens: re-measure (the aside now has real
-/// layout), then snap. Instant, not a glide — the reader should land
-/// centered on open, not watch the grid slide there. The 0ms-timer path
-/// this replaces was armed inside the effect, so the first viewport/page
-/// echo cancelled it before it ever fired.
+/// One frame after the panel opens: re-measure, then snap — instant,
+/// not a glide.
 fn snap_to_page(virtualizer: Virtualizer, state: ReaderState, page: u32) {
     request_animation_frame(move || {
-        // One frame after arming, the panel or the reader can be gone; the
-        // reads below panic on either purged owner.
+        // One frame later the panel or the reader can be gone.
         if virtualizer.viewport().try_get_untracked().is_none() {
             return;
         }
@@ -161,8 +132,7 @@ fn snap_to_page(virtualizer: Virtualizer, state: ReaderState, page: u32) {
     });
 }
 
-/// Everything the armed glide step needs, cloned out of [`AutoCenter`] so
-/// the step closure owns its world and the wiring stays readable.
+/// Everything the glide step needs, cloned out of [`AutoCenter`].
 struct Glide {
     state: ReaderState,
     sidebar: RwSignal<SidebarMode>,
@@ -171,16 +141,11 @@ struct Glide {
     timer: StoredValue<Option<TimeoutHandle>, LocalStorage>,
     step_slot: StoredValue<Option<GlideStep>, LocalStorage>,
     page: u32,
-    /// Aspect frozen at arming time (the tracked read happened in the
-    /// effect run that armed this glide; the step must not re-subscribe).
+    /// Aspect frozen at arming; the step must not re-subscribe.
     aspect: f64,
 }
 
-/// Arm (or re-arm) the debounced glide toward `page`'s centered position.
-///
-/// The step is self-cancelling via [`glide_verdict`]: it re-checks the
-/// panel, the page and the target before firing, waits out the after-drive
-/// grace, and only then scrolls and prefetches.
+/// Arm or re-arm the debounced glide toward `page`'s centered spot.
 fn arm_glide(g: Glide) {
     let Glide {
         state,
@@ -222,20 +187,15 @@ fn arm_glide(g: Glide) {
                 let _ = timer.try_set_value(None);
             }
             GlideVerdict::Hold(wait_ms) => {
-                // Re-read the CURRENT step (a newer arming may have replaced
-                // it) and re-arm under a fresh timer.
-                // Owner-scoped storage: a step whose panel is already gone
-                // finds nothing to re-arm rather than aborting the wasm.
+                // Re-read the CURRENT step: a newer arming may replace it.
                 let next = step_slot.try_get_value().flatten();
                 let handle = next.and_then(|next| {
                     set_timeout_with_handle(move || next(), Duration::from_millis(wait_ms)).ok()
                 });
                 let _ = timer.try_set_value(handle);
             }
-            // Auto, not Instant: the glide is the settle path, and Auto
-            // resolves to instant anyway when the distance is more than
-            // two screenfuls. The reader's scroll switch can shorten that to
-            // always-instant, which is the same landing without the ride.
+            // Auto, not Instant: the glide is the settle path; a reader switch
+            // can shorten it.
             GlideVerdict::Fire(target) => {
                 let mode = if state.viewer.motion.get_untracked().scroll_glide {
                     ScrollMode::Auto
@@ -261,9 +221,7 @@ fn arm_glide(g: Glide) {
     let _ = timer.try_set_value(handle);
 }
 
-/// The "take me to where I am" gesture: a `mareader:reveal-active`
-/// event (re-clicking the active sidebar tab) smooth-scrolls onto the
-/// current page and hands the panel back to the reader.
+/// Re-clicking the active tab scrolls onto the current page.
 fn install_reveal_listener(auto: &AutoCenter, state: ReaderState, sidebar: RwSignal<SidebarMode>) {
     let reveal_drive = auto.last_user_drive.clone();
     let v = auto.virtualizer.clone();
@@ -273,9 +231,7 @@ fn install_reveal_listener(auto: &AutoCenter, state: ReaderState, sidebar: RwSig
         let handle = window_event_listener(
             leptos::ev::Custom::new(app_ui::events::REVEAL_ACTIVE_EVENT),
             move |_: web_sys::CustomEvent| {
-                // Event listeners are removed with their owner, but the probe
-                // costs nothing and makes the two reads below disposal-safe on
-                // their own terms — the same rule the page read already follows.
+                // Listeners go with their owner; the probe keeps reads safe.
                 let Some(mode) = sidebar.try_get_untracked() else {
                     return;
                 };
@@ -292,9 +248,7 @@ fn install_reveal_listener(auto: &AutoCenter, state: ReaderState, sidebar: RwSig
                 let target = center_target(&v, page, state.document.page1_aspect(), vh);
                 if let Some(target) = target {
                     reveal_drive.set(f64::NEG_INFINITY);
-                    // "Take me to where I am" is a request to ARRIVE, and
-                    // the smooth scroll that expresses it is an animation
-                    // like any other: off, the rail lands there.
+                    // It asks to ARRIVE; the ride is optional.
                     let mode = if state.viewer.motion.get_untracked().scroll_glide {
                         ScrollMode::Smooth
                     } else {
@@ -308,8 +262,7 @@ fn install_reveal_listener(auto: &AutoCenter, state: ReaderState, sidebar: RwSig
     });
 }
 
-/// The open/page-follow effect: snap on a fresh open, then glide after
-/// the page signal moves (debounced, grace-aware).
+/// The open/page-follow effect: snap, then glide.
 fn install_center_effect(auto: &AutoCenter, state: ReaderState, sidebar: RwSignal<SidebarMode>) {
     let virtualizer = auto.virtualizer.clone();
     let centered = auto.centered;
@@ -318,27 +271,21 @@ fn install_center_effect(auto: &AutoCenter, state: ReaderState, sidebar: RwSigna
     let glide_step = auto.glide_step;
 
     Effect::new(move |_| {
-        // Tracks the virtualizer's LIVE viewport signal, so a viewport write
-        // in the close window re-runs this into a purged reader state —
-        // a disposed page read ends the run first.
+        // Tracks the LIVE viewport signal: a write during the close window
+        // ends the run.
         let Some(page) = state.viewer.page.try_get() else {
             return;
         };
         let in_thumbs = sidebar.get() == SidebarMode::Thumbs;
-        // Tracked: a real measurement writes the viewport signal, which
-        // re-arms this effect — so deferring here is safe.
+        // Tracked: a real measurement re-arms this effect, so deferring is
+        // safe.
         let vh = virtualizer.viewport().get().main;
         let (was_open, _prev_page) = centered.get_value();
         if !in_thumbs {
             centered.set_value((false, 0));
             return;
         }
-        // Not ready yet: the container isn't bound or the viewport is
-        // still unmeasured (a zero-size element, or geometry that has
-        // not been reported). Returning keeps `centered = (false, _)`,
-        // so the run that follows a real measurement is treated as a
-        // fresh open and snaps — instead of silently dropping a scroll
-        // against a placeholder viewport.
+        // Not ready yet: the run after a real measurement still snaps.
         if vh <= 1.0 {
             return;
         }
@@ -380,15 +327,8 @@ fn install_center_effect(auto: &AutoCenter, state: ReaderState, sidebar: RwSigna
     });
 }
 
-/// Timer + step cleanup belongs to the panel's lifetime, not to effect
-/// re-runs: a cleanup registered inside the effect would cancel the
-/// armed glide on the next viewport/page echo — which is exactly what
-/// killed the open snap. This runs only when the panel is disposed.
-///
-/// The order is load-bearing: the pending timer is cleared first (it may
-/// still hold a clone of the step), then the step slot is dropped, so the
-/// self-re-arming `Rc<dyn Fn()>` loses its last strong reference and the
-/// glide cannot keep re-arming after the panel is gone.
+/// Timer and step cleanup, on the panel's lifetime only: order is
+/// load-bearing.
 fn install_lifetime_cleanup(auto: &AutoCenter) {
     let timer = auto.glide_timer;
     let step_slot = auto.glide_step;
@@ -407,8 +347,7 @@ mod tests {
 
     #[test]
     fn center_offset_places_the_row_mid_viewport() {
-        // A 100px row whose top sits at 200, in a 500px viewport: the scroll
-        // offset that shows it centered is 200 + 50 - 250 = 0.
+        // A 100px row at 200 in a 500px viewport centers at offset 0.
         assert_eq!(center_offset(200.0, 100.0, 500.0), Some(0.0));
         // Same row further down: the offset moves with the row's midpoint.
         assert_eq!(center_offset(1000.0, 100.0, 500.0), Some(800.0));

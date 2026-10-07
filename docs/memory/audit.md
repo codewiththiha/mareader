@@ -9,8 +9,8 @@ teardown in the smoke suite and the browser lifecycle baseline.
 
 | Subsystem | Owner | Verdict | Evidence |
 | --- | --- | --- | --- |
-| Virtualizer windowing and retention | `crates/virtual-list-leptos` | Pass | Window = viewport + overscan; zombies bounded (`MAX_ZOMBIES = 12`, 120 ms grace); `dispose()` takes the retention timer (`virtualizer.rs:357`) |
-| Fling gate and in-view exemption | `components/formats/pdf/canvas.rs`, `strip.rs` | Pass | Speed-aware exemption with a timer wake; no placeholder pixels; see [fling-gate.md](fling-gate.md) |
+| Virtualizer windowing and retention | `crates/virtual-list-leptos` | Pass | Window = viewport + overscan; zombies bounded and motion-gated (`MAX_ZOMBIES = 12`; a bridge is granted only while the strip seeks, one `FRAME_CEILING_MS = 120` frame per eviction); `dispose()` clears the retention timer (`virtualizer.rs:454`) |
+| Fling gate and in-view exemption | `components/formats/pdf/canvas.rs`, `strip.rs` | Pass | The page starts its raster only while the virtualizer's motion band calls it Active; no placeholder pixels; see [fling-gate.md](fling-gate.md) |
 | Page render lane | `public/engine/renderer.ts`, `state.ts`, `public/rasterLane.ts` | Pass | Session/realm cap 2 plus window cap 2; host holds weak wakes/plain keys; session cancels pending permits; post-permit liveness check; frame removal reclaims only its nonce |
 | Lane pump registry | `public/engine/state.ts` | Pass (fixed) | `WeakRef` entries, pruned on every pump; session entry dropped first in `destroySession` |
 | Thumbnail lane and cache | `public/engine/thumbnails.ts` | Pass | Cache capped (`THUMB_CACHE_MAX`), entries released bitmap-first (`releaseThumbEntry`), prefetch epoch-guarded and cancelled on teardown |

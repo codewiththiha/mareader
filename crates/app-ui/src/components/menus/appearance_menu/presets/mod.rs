@@ -1,9 +1,5 @@
-//! Preset gallery: grouped rows of look thumbnails, plus save/delete.
-//!
-//! The parent owns composition; the specialized pieces own their controls
-//! (`swatch` renders one thumbnail, `gallery` the grouped rows, `editor`
-//! the save form). Preset domain logic (grouping, ids, builtins) stays in
-//! `pdf-core::presets`.
+//! Preset gallery: grouped rows of look thumbnails, plus save/delete;
+//! domain logic stays in `pdf-core::presets`.
 
 mod editor;
 mod gallery;

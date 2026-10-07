@@ -8,16 +8,15 @@ on:
       - "build/**"
   workflow_dispatch:
 
-# Serialize release runs, but never cancel one mid-flight — a killed release
-# leaves a tag pointing at a half-published set of artifacts.
+# Serialize release runs, never cancel mid-flight: a killed release
+# half-publishes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # Resolve the version, classify prerelease vs stable, and assemble the
-  # release name + body. One job feeding the build matrix keeps the tag
-  # naming and prerelease flag in exactly one place.
+  # Resolve the version and assemble name + body: one job owns the tag
+  # naming.
   metadata:
     name: Resolve version + release notes
     runs-on: ubuntu-latest
@@ -47,24 +46,21 @@ jobs:
               echo "::error::tag '$TAG' is not a recognised semver tag (vX.Y.Z or vX.Y.Z-suffix)"
               exit 1
             fi
-            # A tag that disagrees with the bundled version would publish
-            # artifacts stamped vX.Y.Z under a different release tag.
+            # A tag disagreeing with the bundled version would ship vX.Y.Z under
+            # another tag.
             if [[ "$TAG" != "v${VERSION}" ]]; then
               echo "::error::tag '$TAG' does not match the app version '${VERSION}' — bump the version (or move the tag) so they agree"
               exit 1
             fi
           else
-            # build/** branch or manual dispatch: build the current version as a
-            # prerelease. The tag matches the version so tauri-action attaches
-            # artifacts to the vX.Y.Z prerelease release.
+            # build/** or a dispatch: the current version as a prerelease.
             TAG="v${VERSION}"
             PRE=true
           fi
 
           if [[ -f "release-notes/${VERSION}.md" ]]; then
-            # Strip the notes' front-matter block (a leading --- delimited
-            # header); it is authoring metadata, not release-body content.
-            # Files without front matter pass through untouched.
+            # Strip the notes' front matter: it is authoring metadata, not body
+            # content.
             BODY=$(awk '
               /^---$/ && NR == 1 { fm = 1; next }
               fm == 1 && /^---$/ { fm = 2; next }
@@ -138,14 +134,12 @@ jobs:
           node-version: 20
           cache: npm
 
-      # `trunk build` (Tauri's beforeBuildCommand) runs the Tailwind pre_build
-      # hook (`npx @tailwindcss/cli`), which needs node_modules present.
+      # `trunk build` (Tauri's beforeBuildCommand) runs the Tailwind hook,
+            # which needs node_modules.
       - name: Install frontend dependencies
         run: npm ci
 
-      # Trunk bundles the Leptos frontend to wasm; tauri-cli drives the build.
-      # Both are installed from prebuilt binaries (install-action falls back to
-      # cargo-binstall). Pinned to major 2 to match the tauri 2.x dependency.
+      # Prebuilt binaries pinned to major 2 for the tauri 2.x dep.
       - name: Install Trunk and Tauri CLI
         uses: taiki-e/install-action@v2
         with:
@@ -155,13 +149,11 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
-      # Keys on the workspace root (Cargo.toml + Cargo.lock), which is where
-      # cargo resolves the shared target/ dir for all members.
+      # Keys on the workspace root, where cargo keeps the shared target/ dir.
       - uses: Swatinem/rust-cache@v2
 
-      # Builds, bundles, attaches artifacts to the release, and sets the
-      # draft/prerelease flags from the metadata job. macOS is ad-hoc signed
-      # (no APPLE_* secrets configured).
+      # Builds, bundles and attaches artifacts with the metadata job's flags;
+        # macOS is ad-hoc signed.
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:

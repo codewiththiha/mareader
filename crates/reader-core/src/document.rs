@@ -1,6 +1,4 @@
-//! The format-neutral document status and intrinsic page geometry shared by
-//! the workspace mirror and both pane runtimes. No engine is needed to name
-//! a page or report an open.
+//! The format-neutral document status and intrinsic page geometry.
 
 use serde::{Deserialize, Serialize};
 

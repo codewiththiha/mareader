@@ -1,18 +1,8 @@
-//! Texture mode -> the two custom properties the textures stylesheet resolves:
-//! the opacity dial and the user pitch multiplier. Shared by both carriers —
-//! the PDF page's per-page pattern (`.pdf-page::before`) and the reflowable
-//! scroller's background pattern — so the dials feed both formats.
-//!
-//! The `texture-*` carrier class is NOT emitted here:
-//! [`TextureMode::css_class`](crate::appearance::TextureMode::css_class) owns
-//! that naming, and the class rides on the carrier element rather than on
-//! `<html>`.
+//! Texture mode to the two properties the textures stylesheet resolves.
 
 use crate::appearance::Appearance;
 
-/// `--texture-opacity` and `--texture-scale-user`, written on `<html>` once
-/// per appearance change. The stylesheet multiplies the user pitch into the
-/// page's own `--scale-factor`, so the pattern zooms with the document.
+/// `--texture-opacity` and `--texture-scale-user`, written on `<html>`.
 pub fn css_vars(a: &Appearance) -> Vec<(&'static str, String)> {
     vec![
         (

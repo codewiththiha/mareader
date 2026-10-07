@@ -9,43 +9,17 @@ use crate::components::ai::gloss::mark_layer::request_gloss_open;
 use crate::components::ai::reflow_anchor::spot_envelope;
 use app_chrome::icon::{Icon, IconName};
 
-/// A small floating pill that appears near the user's text selection.
-/// Contains the "Explain" button that opens the AI popover.
-///
-/// Position is re-derived from a page-space anchor on every scroll/zoom/mode
-/// change, so the pill travels with the word and disappears once the origin
-/// fully leaves the viewport.
-///
-/// Length gate: word lookup is for words and short phrases. Past
-/// `ai_core::gloss::is_glossable`'s limit the pill stays visible but MUTED
-/// (disabled, explaining tooltip) up to the hint band's edge
-/// (`ai_core::gloss::is_hintable`), and vanishes beyond it — a disabled affordance reads as a rule, where a silently
-/// vanishing pill reads as a bug.
-///
-/// The Explain click does **not** flip `popover_open` and hope `detail` survives:
-/// it builds a self-contained [`GlossMark`] at click time and dispatches the
-/// same `mareader:gloss-open` event the persisted stroke uses. The popover's
-/// listener bumps `open.request` and sets `open.pending`, so the open effect is
-/// guaranteed to run with a mark in hand — no race against the exit-watch
-/// clearing `detail`, and no stale-`true` suppression across documents.
-///
-/// The root carries `data-ai-popover`: the engine's selection tracker
-/// treats mousedowns inside that attribute as AI-UI interaction and does
-/// NOT clear the selection detail — otherwise the button would swallow
-/// its own click (the press collapses the selection before click fires).
+/// A floating pill near the reader's text selection, with the
+/// Explain button.
 #[component]
 pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
     let detail = state.reader.ai_selection.detail;
     let popover_open = state.reader.ai_selection.popover_open;
 
-    // The pill follows the selection, so it resolves through whichever format
-    // the selection is in — and, for a reflowable one, through the spot the
-    // tracker walked out of the range, which is the only identity that survives
-    // a re-pagination.
+    // The pill follows the selection through whichever format owns it.
     let spot = Signal::derive(move || state.reader.ai_selection.detail.get().and_then(|d| d.spot));
     let resolve = anchor_resolver(state.reader, spot);
-    // A reflowable document re-cuts its pages when the typography or the column
-    // width moves, which relocates a selection without anything scrolling.
+    // A re-cut relocates a selection with nothing scrolling.
     let invalidate = if state.reader.reflowable_now() {
         reflow_invalidation(state.reader)
     } else {
@@ -60,8 +34,7 @@ pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
         invalidate,
     );
 
-    // Once the selection's origin leaves the viewport, the menu is gone for
-    // good (same as before: the next selection replaces it).
+    // Once the origin leaves the viewport, the menu is gone for good.
     Effect::new(move |_| {
         if watch.exited.get() && detail.get().is_some() {
             detail.set(None);
@@ -82,8 +55,7 @@ pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
         )
     });
 
-    // Selection past the word-lookup cap: the pill renders muted inside the
-    // hint band and not at all beyond it (see `visible` below).
+    // Past the word-lookup cap the pill renders muted, then not at all.
     let too_long = Signal::derive(move || detail.get().is_some_and(|s| !is_glossable(&s.text)));
 
     let visible = Signal::derive(move || {
@@ -111,10 +83,8 @@ pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
                         }
                     }
                     aria-label="Explain selected text with AI"
-                    // Preventing the mousedown default keeps the document
-                    // selection (and focus) alive, so the highlight stays
-                    // visible behind the card this button opens — and the
-                    // button can never be unmounted by its own press.
+                    // Preventing the default keeps the
+                    // selection alive behind the card.
                     on:mousedown=move |ev| ev.prevent_default()
                     on:click=move |_| {
                         // Disabled buttons don't fire; belt and braces.
@@ -124,27 +94,17 @@ pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
                         let Some(sel) = detail.get_untracked() else {
                             return;
                         };
-                        // Prefer the anchor captured with the selection; fall
-                        // back to a live DOM capture through the format that
-                        // owns this selection.
+                        // Prefer the captured anchor; else
+                        // a live DOM capture.
                         let captured = state.reader.ai_selection.anchor.get_untracked();
                         let reflow = sel.is_reflow();
                         let mark: Option<GlossMark> = captured
                             .map(|pa| {
-                                // Only a single word passes the `is_glossable`
-                                // gate this click is behind, so trimming the
-                                // edges yields the canonical token — the card
-                                // header and the persisted mark never carry a
-                                // stray surrounding space.
+                                // One word passes the gate, so
+                                // trimming gives the canonical token.
                                 let word = sel.text.trim();
-                                // A reflowable mark's context is an envelope:
-                                // the spot, so the stroke can find these exact
-                                // words again after a re-pagination, a font
-                                // change or a restart, plus this sentence, which
-                                // is what the model is handed when the mark is
-                                // re-explained from storage. A PDF's mark keeps
-                                // the bare sentence — its rect already is its
-                                // identity.
+                                // The context is an envelope: spot
+                                // plus sentence.
                                 let context = match sel.spot {
                                     Some(spot) if reflow => spot_envelope(&spot, &sel.context),
                                     _ => sel.context.trim().to_string(),
@@ -153,15 +113,8 @@ pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
                             })
                             .or_else(|| {
                                 if reflow {
-                                    // The selection arrived without a usable
-                                    // anchor (its block was not mounted yet, or
-                                    // the tracker could not walk its offsets), so
-                                    // walk the live range here. A reflowable mark
-                                    // is built from the spot it gets back plus
-                                    // the sentence the tracker did report: the
-                                    // envelope has to carry both, because the
-                                    // stroke needs the first and the model the
-                                    // second.
+                                    // No usable anchor: walk the live
+                                    // range and build the envelope here.
                                     ReflowAnchorBridge {
                                         state: state.reader,
                                         spot: None,
@@ -191,9 +144,8 @@ pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
                             });
                         let root = state.reader.dom.root();
                         if let (Some(m), Some(root)) = (mark, root) {
-                            // Self-contained open: bumps the open request with
-                            // the mark in hand. Never races detail being cleared.
-                            // Raised on this pane's root: only this pane opens.
+                            // Self-contained open: the mark
+                            // rides the request.
                             request_gloss_open(&root, &m);
                         } else {
                             // Don't leave a stale open flag if capture failed.

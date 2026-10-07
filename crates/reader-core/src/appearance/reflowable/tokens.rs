@@ -1,17 +1,4 @@
-//! The `--tx-*` CSS custom properties for the text page palette — what
-//! styles/text.css resolves a text/Markdown page's paper, ink, accents and
-//! rules through.
-//!
-//! Written on `<html>` alongside the PDF pipeline's `--canvas-*` / `--color-*`
-//! variables; the namespaces are disjoint, so painting both every appearance
-//! change costs nothing and a format swap repaints with no extra wiring.
-//!
-//! The ink dial resolves HERE, not in the stylesheet: `--tx-ink` is the
-//! palette ink mixed toward the paper by the dial's percentage, and the
-//! markdown ink tints are precomposed over the paper at their fixed
-//! percentages. A slider drag writes N flat custom properties instead of
-//! re-evaluating a chain of live `color-mix()` rules across every mounted
-//! block per tick.
+//! The `--tx-*` custom properties for the text page palette.
 
 use super::palette::{TextPalette, mix_toward_paper};
 use crate::appearance::Appearance;
@@ -21,13 +8,11 @@ fn ink_keep(ink_contrast: f64) -> f64 {
     ink_contrast.clamp(0.0, 100.0) / 100.0
 }
 
-/// The palette, flattened to the names the stylesheet consumes, with the
-/// ink dial (0..=100, 100 = the palette's full ink) applied.
+/// The palette flattened to the stylesheet's names, ink dial applied.
 pub fn css_variables(a: &Appearance, ink_contrast: f64) -> Vec<(&'static str, String)> {
     let p = TextPalette::compute(a);
     let ink = mix_toward_paper(&p.ink, &p.paper, ink_keep(ink_contrast));
-    // The markdown ink tints, composited over the paper at the same
-    // percentages the old color-mix() rules used.
+    // The markdown ink tints, composited over the paper.
     let ink_soft = mix_toward_paper(&ink, &p.paper, 0.78);
     let ink_border = mix_toward_paper(&ink, &p.paper, 0.25);
     let ink_code_bg = mix_toward_paper(&ink, &p.paper, 0.07);
@@ -99,8 +84,7 @@ mod tests {
                 .1
                 .clone()
         };
-        // Half contrast sits between the full ink and the paper (both are
-        // literals; parse lightness out of the oklch() forms and the hex).
+        // Half contrast sits between the full ink and the paper.
         let full_ink = ink(&full);
         let half_ink = ink(&half);
         let l_of = |v: &str| {
@@ -126,8 +110,7 @@ mod tests {
             css_variables(&a, 100.0)[1].1,
             "over-100 is the palette ink"
         );
-        // 0% flattens the ink into the paper: its lightness and chroma
-        // land on the paper's (the hue is kept, and irrelevant at C=0).
+        // 0% flattens the ink into the paper.
         let zeroed = css_variables(&a, 0.0);
         let (l, c, _) = parse_oklch(&zeroed[1].1).unwrap();
         let paper = TextPalette::compute(&a).paper;

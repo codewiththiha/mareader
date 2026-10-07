@@ -1,30 +1,4 @@
-// The canonical frontend build's artifact contract.
-//
-// `tools/build-dist.sh` produces the shell page plus every runtime artifact
-// the shell and its workspace load — and merges them into
-// `dist/`. Tauri packages exactly that directory
-// (`build.frontendDist: "../dist"`), and so does the browser suite's server.
-// The failure this check exists for is the one that shipped a blank window:
-// Tauri ran `trunk build --release`, which produces only the shell page, so
-// the packaged app served an `index.html` whose runtime artifacts resolved
-// to nothing and left the window empty — with no build error
-// anywhere, because a missing file is not a build failure in a static bundle.
-//
-// So: after the build, the artifact SET is asserted, not assumed. Every entry
-// must exist and be non-empty; the runtime artifacts carry a floor as well, so
-// a zero-byte stub or an HTML error page saved as `.wasm` cannot pass as a
-// build. Failures print the exact path the guide's incident reports — example:
-//
-//     Missing runtime artifact: dist/pdf_bg.wasm
-//
-// Run it after the build (build-dist.sh calls it) and in CI (the deep lane's
-// build step inherits it, and the Web/contracts lane runs it against nothing
-// only by omission — it has no dist to check).
-//
-// JavaScript, not TypeScript: this one has to run inside the build itself
-// (build-dist.sh) and in lanes that have not installed node_modules yet, so it
-// uses node's own modules and nothing else. `tools/*.mjs` is the repo's
-// existing pattern for exactly that (bundle-engine.mjs).
+// The build's contract: every runtime artifact exists and is non-empty.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -32,14 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** A runtime artifact must be a real bundle, not a placeholder. Both runtime
- *  wasm modules are megabytes in release; this floor only rejects stubs. */
+/** A runtime artifact must be a real bundle, not a zero-byte stub. */
 const RUNTIME_FLOOR_BYTES = 1024;
 
-/** The artifact contract, in the order the incident report names it.
- *  `floor` is 0 for anything whose only requirement is "exists and is not
- *  empty"; it is RUNTIME_FLOOR_BYTES for the four runtime bundles the shell
- *  loads and the shared assets the runtimes fetch at boot. */
+/** The artifact contract in the report's order; `floor` rejects stubs. */
 const REQUIRED = [
   ["dist/index.html", "the Shell page — Tauri's frontendDist entry", 0],
   // The persistent Shell contains no route runtime implementation.
@@ -53,42 +23,32 @@ const REQUIRED = [
   ["dist/reader.js", "the Reader host artifact", RUNTIME_FLOOR_BYTES],
   ["dist/reader_bg.wasm", "the Reader host wasm module", RUNTIME_FLOOR_BYTES],
   ["dist/readerHost.js", "the scoped shared-raster host bridge", RUNTIME_FLOOR_BYTES],
-  // The pane runtimes: the workspace host loads one frame per reader pane
-  // (docs/pane-runtimes.md) — `pdf.html` for a PDF, `reflow.html` for text.
+  // The pane runtimes: `pdf.html` for a PDF, `reflow.html` for text.
   ["dist/pdf.html", "the PDF pane page", 0],
   ["dist/pdf.js", "the PDF pane artifact", RUNTIME_FLOOR_BYTES],
   ["dist/pdf_bg.wasm", "the PDF pane wasm module", RUNTIME_FLOOR_BYTES],
   ["dist/reflow.html", "the text pane page", 0],
   ["dist/reflow.js", "the text pane artifact", RUNTIME_FLOOR_BYTES],
   ["dist/reflow_bg.wasm", "the text pane wasm module", RUNTIME_FLOOR_BYTES],
-  // Shared assets. The shell page links these and both runtimes fetch the
-  // engine bundles at session start; a missing one is a runtime failure with
-  // the same shape as a missing runtime artifact.
+  // Shared assets both runtimes fetch at start; a missing one is a failure.
   ["dist/styles.css", "the compiled stylesheet", RUNTIME_FLOOR_BYTES],
   ["dist/pdfEngine.js", "the imperative pdf.js wrapper (window.PDFReader)", RUNTIME_FLOOR_BYTES],
   ["dist/readerEngine.js", "the format-agnostic reader bundle", RUNTIME_FLOOR_BYTES],
   ["dist/rasterLane.js", "the host's weak full-page raster coordinator", RUNTIME_FLOOR_BYTES],
   ["dist/bake.worker.js", "the theme bake worker", RUNTIME_FLOOR_BYTES],
-  // The Shell's cover-bake page and its script (src/app/bake.rs): without
-  // them the shelf's covers never arrive — the Shell mounts this page for
-  // every bake queue instead of asking a reader frame.
+  // The Shell's cover-bake page and script; without them covers never arrive.
   ["dist/bake.html", "the Shell's cover-bake page", 0],
   ["dist/coverBake.js", "the cover-bake page's script", RUNTIME_FLOOR_BYTES],
   ["dist/shellBoot.js", "the shell page's boot watchdog", RUNTIME_FLOOR_BYTES],
   ["dist/bootPaint.js", "the shell page's remembered-paper first paint", RUNTIME_FLOOR_BYTES],
-  // The iframes' Tauri facade (public/tauri-relay.js): without it the
-  // runtimes see no `__TAURI__` (Tauri stopped injecting sub-frames in 2.0)
-  // and every local-file open degrades to a 404 fetch — the blank reader.
+  // The iframes' Tauri facade: without it a local-file open degrades to a 404.
   ["dist/tauri-relay.js", "the frames' Tauri IPC facade", RUNTIME_FLOOR_BYTES],
   ["dist/vendor/pdfjs/pdf.min.mjs", "pdf.js itself", RUNTIME_FLOOR_BYTES],
   ["dist/vendor/pdfjs/pdf.worker.min.mjs", "the pdf.js worker", RUNTIME_FLOOR_BYTES],
   ["dist/vendor/pdfjs/pdf_viewer.css", "the pdf.js text-layer stylesheet", 0],
 ];
 
-/** The shell page's own boot contract: the placeholder the user sees before
- *  any runtime loads (§5) and the id the shell removes on mount. Checked here
- *  because it is the same class of silent regression — the page still builds
- *  and still boots, and the user gets a blank window while the runtime loads. */
+/** The shell page's boot placeholder and the id the shell removes on mount. */
 const SHELL_BOOT_ID = 'id="shell-boot"';
 const SHELL_BOOT_COPY = "Loading MAReader";
 const SHELL_BOOT_MARK = 'class="loader shell-boot__loader"';
@@ -122,9 +82,7 @@ for (const [rel, what, floor] of REQUIRED) {
   }
 }
 
-// The shell page carries the immediate loading state, and it is the only file
-// in the contract that is hand-written rather than generated — so it is also
-// the one that can regress by edit.
+// The shell page's loading state: the one hand-written file that can regress.
 const indexHtml = path.join(root, "dist/index.html");
 if (fs.existsSync(indexHtml)) {
   const html = fs.readFileSync(indexHtml, "utf8");
@@ -143,10 +101,7 @@ if (fs.existsSync(indexHtml)) {
         `the loading state is the shell's own copy (see index.html)`,
     );
   }
-  // The wait is shown, not papered over: the placeholder carries the app's own
-  // loading mark, the class pair the Loader component uses. A build that drops
-  // it leaves a blank window for as long as the webview takes to start painting,
-  // which is the one thing this screen exists to prevent.
+  // The placeholder carries the Loader's class pair; dropping it blanks.
   if (!html.includes(SHELL_BOOT_MARK)) {
     problems.push(
       `dist/index.html's boot placeholder carries no ${SHELL_BOOT_MARK} — the boot ` +
@@ -162,17 +117,13 @@ if (fs.existsSync(indexHtml)) {
   }
 }
 
-// Library startup may not allocate temporary download buffers or warm
-// compiled document code through the page watchdog. Actual opens alone
-// fetch Reader/PDF/reflow; their lifetimes are asserted in the browser lane.
+// Library startup allocates no download buffers and warms no document code.
 const watchdogPath = path.join(root, "dist/shellBoot.js");
 if (fs.existsSync(watchdogPath) && /\bfetch\s*\(/.test(fs.readFileSync(watchdogPath, "utf8"))) {
   problems.push("Shell's boot watchdog fetches artifacts without a real Reader open");
 }
 
-// Shell, Library and the disposable Reader host are format-neutral. Their
-// wasm-bindgen glue must import nothing from PDFReader; only the PDF pane
-// artifact may reach that engine. Reflow also carries no PDF facade.
+// Shell and Library are format-neutral: only the PDF pane may reach PDFReader.
 const distDir = path.join(root, "dist");
 if (fs.existsSync(distDir)) {
   const glue = fs
@@ -221,9 +172,7 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-// The per-artifact sizes ride the log so the artifact audit trail is the CI
-// log itself: the dependency split's shrinking promise is checked against
-// these numbers, not against a build run someone once saw commit-side.
+// Per-artifact sizes ride the log; the split's promise is checked against them.
 const sizes = REQUIRED.map(
   ([rel]) => `    ${rel} ${fs.statSync(path.join(root, rel)).size}`,
 ).join("\n");
@@ -235,5 +184,3 @@ console.log(
   `runtime artifact contract OK: ${REQUIRED.length} files, ${total} bytes ` +
     `(Shell + Library + Reader host + PDF pane + reflow pane + shared assets)\n${sizes}`,
 );
-
-// only the changed file was rewritten

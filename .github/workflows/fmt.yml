@@ -1,9 +1,6 @@
 name: Format
 
-# Maintenance tool, NOT a PR gate: dispatch it and this writes the tree's
-# rustfmt output and pushes it as one normalization commit — the intentional
-# formatting change a new rustfmt version calls for. The format lane in
-# ci.yml is the actual gate; this only produces the commit it needs to exist.
+# Not a PR gate: a dispatch pushes rustfmt's output as one commit.
 on:
   workflow_dispatch:
 

@@ -1,6 +1,4 @@
-//! The reader's services: the document session (open/close/flush/seed) and
-//! the AI bridge. Library-side operations (import, arrange, the shelf) are
-//! the library runtime's; this tree reaches them only through the boundary.
+//! The reader's services: the document session and the AI bridge.
 
 pub mod ai;
 pub mod document;
@@ -12,5 +10,3 @@ use web_sys::Event;
 pub fn tauri_listen(event: &str, handler: impl FnMut(Event) + 'static) {
     app_state::tauri_listen::tauri_listen(event, handler);
 }
-
-// only the changed file was rewritten

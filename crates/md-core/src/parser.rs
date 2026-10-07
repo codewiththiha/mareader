@@ -3,26 +3,13 @@
 use reflow_core::block::{BlockKind, SPLIT_MAX_LINES, TextBlock, split_blocks, subdivide_with};
 use reflow_core::source::normalize;
 
-/// A Markdown file into its top-level blocks: blank lines separate blocks
-/// EXCEPT inside a fenced code block, where a blank line is content.
-///
-/// Fence awareness is the one rule that cannot be skipped — without it a
-/// paragraph's worth of code with a blank line in the middle becomes two
-/// blocks, and the renderer then closes and reopens every construct around it.
+/// A Markdown file into top-level blocks: blank lines split, except in a fence.
 pub fn parse_markdown(raw: &str) -> Vec<TextBlock> {
     let text = normalize(raw);
     split_blocks(&text, BlockKind::Markdown, true)
 }
 
-/// Cut oversized PROSE blocks into line-bounded chunks, leaving every
-/// construct with structure of its own whole.
-///
-/// A split inside a paragraph falls on a soft break, so the two chunks render
-/// exactly as the one paragraph did and only the second loses its paragraph
-/// space. A split inside a list, a fence, a table or a quote does not: those
-/// are re-opened by the renderer as their own construct, and a list that
-/// restarts its numbering mid-page is a worse reader experience than a page
-/// with a short band at the bottom. So the predicate is the classifier.
+/// Cut oversized prose into line-bounded chunks, leaving constructs whole.
 pub fn subdivide_prose(blocks: Vec<TextBlock>) -> Vec<TextBlock> {
     subdivide_with(blocks, SPLIT_MAX_LINES, crate::ast::is_prose_block)
 }
@@ -49,9 +36,7 @@ mod tests {
 
     #[test]
     fn prose_splits_and_structured_constructs_do_not() {
-        // Every sample is padded past the five-line budget, so being over it is
-        // common to all of them: the only thing that can keep a construct whole
-        // is the predicate that says it is not prose.
+        // All samples are over budget, so only the predicate keeps them whole.
         fn over_the_budget(head: &str) -> String {
             let mut text = head.to_string();
             while text.lines().count() < SPLIT_MAX_LINES * 2 + 2 {

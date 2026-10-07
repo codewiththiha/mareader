@@ -3,19 +3,17 @@ name = "mareader"
 version = "0.1.2"
 edition = "2024"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# Keys and definitions: https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-# What the app reaches for through web-sys: window/document/element access,
-# the html::Div node refs, classList + inline style writes, drag-drop
-# (DragEvent + DataTransfer), scroll anchoring, resize observation, the
-# reveal CustomEvent, and the non-passive wheel listener the horizontal strip
-# needs (AddEventListenerOptions). The navigator user-agent read behind the
-# platform probe is crates/app-chrome/src/platform.rs, and that crate
-# declares the features it needs on its own.
+# comment-check: allow — which web-sys features the app needs, and why.
+# web-sys: window/document/element access, html::Div refs, classList and
+# style writes, drag-drop (DragEvent + DataTransfer), scroll anchoring,
+# resize observation, the reveal CustomEvent and the non-passive wheel
+# listener. The platform probe's user-agent read is app-chrome's own.
 web-sys = { version = "0.3", features = [
   "Window",
   "Navigator",
@@ -40,9 +38,8 @@ web-sys = { version = "0.3", features = [
   "WheelEvent",
   "ResizeObserver",
   "ResizeObserverEntry",
-  # The runtime frame boundary (src/app/frame.rs): the hosted runtime is an
-  # iframe whose boot is a MessageChannel offer with an exact target origin,
-  # and the boundary traffic rides the port.
+  # The hosted runtime is an iframe; the boundary traffic rides its
+  # MessageChannel port.
   "HtmlIFrameElement",
   "MessageChannel",
   "MessageEvent",
@@ -51,8 +48,8 @@ web-sys = { version = "0.3", features = [
   "DomRectList",
   "Selection",
   "Range",
-  # The reflowable gloss anchor walks a block's text nodes to turn a character
-  # range back into a DOM Range (and reads each node's `data` to count them).
+  # The gloss anchor turns a character range into a DOM Range by walking
+  # text nodes.
   "Text",
   "PointerEvent",
   "EventTarget",
@@ -63,9 +60,7 @@ web-sys = { version = "0.3", features = [
   "DataTransferItemList",
   "ScrollToOptions",
   "ScrollBehavior",
-  # The library's reveal: taking the reader to a book means centering its card in
-  # the scroller, and `scroll_into_view` with no options cannot say "centered" or
-  # "smoothly".
+  # The reveal needs scroll_into_view's options: centering and smoothness.
   "ScrollIntoViewOptions",
   "ScrollLogicalPosition",
   "Storage",
@@ -73,8 +68,7 @@ web-sys = { version = "0.3", features = [
   "CustomEvent",
   "CustomEventInit",
   "console",
-  # The web test hook (services/launch.rs) reads `window.location.search`
-  # and parses it — browser builds only; the packaged app never reaches it.
+  # The web test hook reads window.location.search; browser builds only.
   "Location",
   "History",
   "PopStateEvent",
@@ -90,12 +84,10 @@ app-state = { path = "crates/app-state" }
 runtime-contract = { path = "crates/runtime-contract" }
 app-ui = { path = "crates/app-ui" }
 storage = { path = "crates/storage" }
-# The shell hosts runtimes; it owns none of what a runtime owns. Its only
-# domain reads are the persisted settings schema (`reader-core`) and the
-# runtime boundary itself (`runtime-contract`); the shelf's own domain
-# (`library-core`) reaches it only through `storage`, never directly. A
-# format engine, a paginator, a parser or a virtualiser appearing in this
-# manifest is a regression.
+# comment-check: allow — the dependency gate's rule, in one place.
+# The shell hosts runtimes and owns none of what they own: its only domain
+# reads are reader-core's settings and runtime-contract, library-core arrives
+# through storage, and an engine or paginator here is a regression.
 reader-core = { path = "crates/reader-core" }
 
 [workspace]
@@ -130,44 +122,33 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 
-# DEV BUILDS SHIP A REAL BINARY TOO.
-#
-# `cargo tauri dev` builds the frontend unoptimized, and an unoptimized wasm
-# build of this app is 46MB against 713KB for a release build. That is not just
-# download size: the module is parsed and kept resident, and it accounted for
-# roughly half of the "400MB at idle" this profile exists to prevent. Debug
-# assertions and overflow checks stay on -- this only turns on the optimiser
-# and strips the debug tables that make the module enormous.
-#
-# Set `debug = 2` here temporarily if you need to step through Rust in the
-# browser devtools.
+# comment-check: allow — the wasm size is why this profile exists.
+# `cargo tauri dev` builds the frontend unoptimized: 46MB of wasm against
+# 713KB, parsed and kept resident — roughly half the "400MB at idle" these
+# profiles prevent. Debug assertions and overflow checks stay on; set
+# `debug = 2` here to step through Rust in the browser devtools.
 [profile.dev]
 opt-level = 1
 debug = false
 strip = "debuginfo"
 
-# Dependencies are not what you are debugging, and optimising them costs
-# nothing after the first build.
+# Dependencies are not what you debug, and optimising them is free after
+# one build.
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
 
-# Debugging profile: the default `dev` profile is optimized (opt-level 1,
-# stripped) because an unoptimized wasm module was responsible for roughly
-# half of the "400MB at idle" footprint this profile set exists to prevent.
-# When you need real debug symbols + step-through, use this instead:
-#   trunk build --profile dev-debug   /   cargo build --profile dev-debug
+# comment-check: allow — where to get symbols when you need them.
+# `dev` is optimized (opt-level 1, stripped) for the size reason above; for
+# real symbols and step-through build with `--profile dev-debug`.
 [profile.dev-debug]
 inherits = "dev"
 opt-level = 0
 debug = 1
 strip = "none"
 
-# Keep the app memory-safe by construction; the workspace has no unsafe
-# outside the tauri shell crate.
+# Memory-safe by construction: no unsafe outside the tauri shell crate.
 [lints.rust]
-# Warnings are denied, not printed: a gate that only shows up in the log is a
-# gate that gets read past. The priority applies the group first, so the
-# individual levels below it remain deliberate overrides.
+# Warnings are denied, not printed: a gate only in a log gets read past.
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "deny"

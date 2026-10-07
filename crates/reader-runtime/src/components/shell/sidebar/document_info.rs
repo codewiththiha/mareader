@@ -1,5 +1,4 @@
-//! Row 2 of the sidebar: book identity (cover + title + author + info).
-//! Always visible while the sidebar is open and a document is Ready.
+//! Row 2 of the sidebar: book identity, while a document is Ready.
 
 use leptos::prelude::*;
 

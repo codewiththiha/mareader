@@ -1,13 +1,8 @@
-//! The look-ahead: resolve the pages the reader is approaching before the
-//! reader arrives. Per session — the planner reads, and the in-flight set
-//! lives on, the session's own paper state.
-
+//! The look-ahead: resolve the pages the reader is approaching.
 use super::{Paper, land_sample, publish, slot, spawn_engine};
 use crate::session::PdfSession;
 
-/// The pages whose colour the session wants known: the pair the reader
-/// is straddling plus the one after it, so the colour is resolved before
-/// the reader arrives. Pure — the test exercises exactly this choice.
+/// The pages whose colour the session wants known.
 pub(super) fn lookahead_wants(s: &Paper) -> Vec<u32> {
     if !s.blend_on || s.num_pages == 0 {
         return Vec::new();
@@ -25,9 +20,7 @@ pub(super) fn lookahead_wants(s: &Paper) -> Vec<u32> {
     wants
 }
 
-/// Resolve (offscreen) the pages [`lookahead_wants`] names, one spawn each,
-/// all session- and epoch-guarded so a sample for one document cannot land
-/// in the next, nor in a session disposed while it ran.
+/// Resolve the pages [`lookahead_wants`] names, epoch-guarded.
 pub(super) fn ensure_lookahead(session: &PdfSession) {
     let (epoch, pages) = session.with_paper(|s| {
         let wants = lookahead_wants(s);
@@ -37,11 +30,15 @@ pub(super) fn ensure_lookahead(session: &PdfSession) {
         (s.epoch, wants)
     });
     for page in pages {
-        spawn_engine(session, move |session| async move {
-            let frame = session.sample_paper_page(page).await.ok().flatten();
-            if land_sample(&session, epoch, page, frame.as_ref()) {
-                publish(&session);
-            }
-        });
+        sample_page(session, epoch, page);
     }
+}
+
+pub(super) fn sample_page(session: &PdfSession, epoch: u64, page: u32) {
+    spawn_engine(session, move |session| async move {
+        let frame = session.sample_paper_page(page).await.ok().flatten();
+        if land_sample(&session, epoch, page, frame.as_ref()) {
+            publish(&session);
+        }
+    });
 }

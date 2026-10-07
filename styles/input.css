@@ -1,28 +1,14 @@
-/* Stylesheet entry point — compiled to styles.css by the Tailwind v4 CLI
-   (Trunk pre_build hook). All visual values live in these files; Rust
-   stores only { id, label, is_dark } per theme and never duplicates
-   hex/filter values. */
+/* Stylesheet entry point, compiled to styles.css by the Tailwind CLI. */
 
 @import "tailwindcss";
 
-/* Tailwind's auto-detector skips .gitignore'd files; src/ is tracked so
-   this is belt-and-braces, but it keeps scanning explicit. Rule: every
-   Tailwind class token must appear as a static literal somewhere in the
-   source; dynamic strings may only concatenate known static fragments,
-   never build class names from runtime data. */
+/* Every Tailwind class token must be a static literal in the source. */
 @source "../src";
 @source "../crates";
-/* The shell page itself renders the pre-runtime boot placeholder
-   (.shell-boot), which exists before any wasm runs. */
+/* The shell page renders the pre-runtime boot placeholder itself. */
 @source "../index.html";
 
-/* The check scripts quote class names as prose — the chrome-contract checker
-   spells the z-scale's shape out in its failure messages and comments — and
-   the scanner reads every literal it meets as UI. Those quotes used to ship
-   dead rules into this file, and the wildcarded one (a `--z-*` standing in
-   for "any layer") produced an invalid custom-property reference the CSS
-   optimiser warned about on every build. Nothing under tools/ renders, so
-   nothing under it is a class source. */
+/* Nothing under tools/ renders, so nothing under it is a class source. */
 @source not "../tools";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -41,17 +27,7 @@
 @import "./components/ai.css";         /* AI blur-fade, shimmer, the Explain pill's entrance */
 @import "./components/gloss.css";      /* word-card morph surface + highlighter stroke */
 @import "./components/appearance.css"; /* hue strip, preset thumbnails, link layer */
-/* The library, one file per surface, in the order the cascade needs: a
-   rearranged split would be a split that changed the look. The CI web lane
-   compiles this through `npm run build:css`, so a missing file or a dead
-   @apply fails there.
-
-   One prefix for the feature: lib-, and the component prefixes under it
-   (book-, folder-, import-, row-, drag-). Neither spelling is written with
-   its leading dot here on purpose: a dead selector in a comment is a class
-   name nothing can grep for. The element ids keep their own scheme (crumb-…,
-   library-level); SeamVocab in `crates/library-runtime/src/features/library/shelf_item.rs` is the
-   one table that decides which state class a surface wears. */
+/* The library, one file per surface, in the order the cascade needs. */
 @import "./components/library/shared.css"; /* the ghost icon button every library surface reveals on hover */
 @import "./components/library/grid.css";     /* the shelf grid, the book card, its covers, a dead address, the add card */
 @import "./components/library/folder.css";   /* a shelf drawn as a folder: the 2x2 plate and its three states */

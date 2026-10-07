@@ -1,11 +1,5 @@
-//! The [`use_virtualizer`] hook: build the core from options, wire the
-//! reactive effects, register the owner cleanup, and materialize the derived
-//! signals. Everything the hook touches is the pure state machine in
-//! [`crate::engine`] plus a [`VirtualizerInner`] created here.
-//!
-//! Kept separate from the handle/glue code in [`crate::virtualizer`] so the
-//! hook itself stays a compact list of wiring steps: config → core → signals
-//! → effects → cleanup → materialize.
+//! The [`use_virtualizer`] hook: build the core, wire the effects, own
+//! the cleanup, materialize the signals.
 
 use leptos::prelude::*;
 
@@ -48,10 +42,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     {
         let inner = inner.clone();
         Effect::new(move |_| {
-            // A close resets the reader state this strip's options borrow
-            // while the strip itself is still mounted for the flush, and the
-            // epoch move re-runs THIS effect into that window: a disposed
-            // option reads as "the owner is going away" — run nothing.
+            // A close resets it: a disposed read is a no-op.
             let count = match inner.options.count.try_get() {
                 Some(count) => count,
                 None => return,
@@ -84,8 +75,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     if let Some(signal) = inner.options.pinned {
         let inner = inner.clone();
         Effect::new(move |_| {
-            // Same teardown window as the count/epoch effect: a disposed
-            // source reads as "not pinned" rather than re-entering apply.
+            // Same teardown window: a disposed source reads as not pinned.
             let Some(pinned) = signal.try_get() else {
                 return;
             };
@@ -101,17 +91,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
 
     let virtualizer = Virtualizer::from_inner(inner);
 
-    // MATERIALIZE THE DERIVED SIGNALS HERE, IN THIS OWNER. The reader's
-    // effects (navigation_sync's scroll->page sync, the reader pane's pinned
-    // window) call `v.dominant()`, and components call items()/rows()/
-    // total_size() lazily through these accessors. `Signal::derive_local`
-    // registers with the CURRENT owner, and a Leptos effect runs inside a
-    // per-run temporary owner disposed when the run ends — a signal first
-    // created there would be DISPOSED before the next run could read it,
-    // panicking "already been disposed" and killing the scroll->page sync,
-    // zoom pinning and thumbnail tracking at once. Created eagerly here,
-    // their lifetime is the component's. Memos are lazy: this is node
-    // registration only, no computation.
+    // Materialize the derived signals HERE, in this owner.
     let _ = virtualizer.items();
     let _ = virtualizer.rows();
     let _ = virtualizer.total_size();

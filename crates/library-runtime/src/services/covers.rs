@@ -1,13 +1,4 @@
-//! The shelf's covers, rendered away from the shelf.
-//!
-//! A cover is page 1 of a book as a small JPEG. The library carries no engine
-//! to render one, in either deployment: a hosted session ASKS the Shell
-//! across the boundary (`ShellApi::bake_cover`, answered by the `coverBaked`
-//! command — the Shell bakes in a pdf.js-only frame of its own), and the
-//! unhosted session, which has no Shell, bakes nothing (its covers arrive
-//! from the reader's open pipeline, which files one on every first open).
-//! The queue is a request/response drain, one path in flight, with one
-//! retry per path.
+//! The shelf's covers: a hosted session asks the Shell for them.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -46,17 +37,13 @@ thread_local! {
     static QUEUE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static DRAINING: RefCell<bool> = const { RefCell::new(false) };
     static DIRTY: RefCell<bool> = const { RefCell::new(false) };
-    /// Requests whose answer (a `coverBaked` command) has not come back yet.
-    /// Guards against a path being queued twice while its bake is in flight.
+    /// Requests whose `coverBaked` answer has not come back yet.
     static PENDING: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    /// One retry each: a cover can fail for a reason that is true for a second — a file still being copied, a worker still warming up — but a queue that re-attempts a genuinely unrenderable file forever never drains.
+    /// One retry each: a second failure drops the path.
     static RETRIES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
-/// Forget every in-flight bake and queued path: called when a session
-/// starts. The ledger belongs to this Library realm; explicit reset and
-/// dispose cleanup keep queued paths and in-flight replies from surviving
-/// their owner. Neither Library nor Reader realms are recycled.
+/// Forget queue, in-flight set and retries: called on session start.
 pub fn reset_ledger() {
     QUEUE.with(|queue| queue.borrow_mut().clear());
     DRAINING.with(|draining| *draining.borrow_mut() = false);
@@ -74,8 +61,7 @@ fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
 }
 
 pub fn backfill_missing(state: crate::context::LibraryContext) {
-    // No Shell, no baker: an unhosted session has nobody to ask, and a queue
-    // it started would only sit at its first path forever.
+    // No Shell, no baker: an unhosted queue would never drain.
     if matches!(state.api, crate::context::ApiHandle::Standalone) {
         return;
     }
@@ -149,9 +135,7 @@ fn drain(state: crate::context::LibraryContext) {
     let next = QUEUE.with(|queue| queue.borrow_mut().pop());
     let Some(path) = next else {
         DRAINING.with(|draining| *draining.borrow_mut() = false);
-        // Pruned HERE rather than after every insert: a sixty-cover backfill was sixty full
-        // recency sorts, and the queue running dry is exactly the moment the cap is worth
-        // enforcing — the covers that will compete for it have all landed.
+        // Pruned when the queue runs dry: per insert was sixty sorts.
         prune_now(state);
         if take_dirty() {
             crate::services::persist_covers(state.library);
@@ -170,21 +154,11 @@ fn drain(state: crate::context::LibraryContext) {
     PENDING.with(|pending| {
         pending.borrow_mut().insert(path.clone());
     });
-    // The request crosses the boundary, the answer comes back as
-    // `coverBaked` into this session (a stale generation is dropped
-    // Shell-side), and [`on_baked`] moves the queue on. The frame carries the
-    // round trip over its port — the boundary asks, the answer lands, one
-    // retry policy. Off the frame (the unhosted api, the host test lane)
-    // the ask goes nowhere and the path stays PENDING: exactly a hosted
-    // `bakeCover` whose answer never comes, which is what lets the host tests
-    // exercise the queue/retry policy without a baker.
+    // The frame carries the round trip; off the frame the path stays PENDING.
     state.api.bake_cover(&path);
 }
 
-/// One bake answer for `path`: files the art and clears the retry, or
-/// requeues once on the first failure and drops the path on the second —
-/// then moves the queue on. Called from the session command surface
-/// (`coverBaked`): one body, one retry policy.
+/// One bake answer: file the art, or retry once, then move the queue on.
 pub fn on_baked(
     state: crate::context::LibraryContext,
     path: String,
@@ -192,10 +166,7 @@ pub fn on_baked(
 ) {
     let requested = PENDING.with(|pending| pending.borrow_mut().remove(&path));
     if !requested {
-        // An answer this session never asked for (the request belonged to
-        // the session before it in the same frame). The art is still good,
-        // so file it — but this session's drain did not wait on it, and
-        // moving the queue from here would start a second drain beside it.
+        // An answer this session never asked for: the art is good, no drain.
         if let Some(image) = image {
             file_cover(state, path, image.data_url, image.width, image.height);
             if !DRAINING.with(|draining| *draining.borrow()) && take_dirty() {
@@ -227,9 +198,8 @@ mod answer_tests {
     #[test]
     fn a_success_files_the_art_and_clears_the_retry() {
         let state = crate::context::LibraryContext::default();
-        // A cover belongs to a shelf row: the drain's dry-queue prune throws
-        // out any art whose book is gone, so the success path is only
-        // observable over a library that holds the book.
+        // A cover belongs to a shelf row: the dry-queue prune drops art whose
+        // book went.
         state.library.books.update(|rows| {
             rows.push(Row::Book(Book::new(
                 "a".to_string(),
@@ -314,10 +284,7 @@ mod answer_tests {
             });
             PENDING.with(|pending| pending.borrow_mut().insert(path.to_string()));
             on_baked(state, path.to_string(), None);
-            // A requeued path does not sit in the queue for long: the drain
-            // that closes on_baked pops it straight back into PENDING to
-            // re-issue the bake. Pending is the observable form of "requeued";
-            // a path that already spent its retry is in neither set.
+            // A requeued path does not sit long: pending is its form.
             let outstanding = PENDING.with(|pending| pending.borrow().contains(&path.to_string()));
             assert_eq!(outstanding, !pre_seeded, "{path}");
             let queued_again = QUEUE.with(|queue| queue.borrow().contains(&path.to_string()));

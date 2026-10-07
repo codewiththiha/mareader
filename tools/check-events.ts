@@ -1,17 +1,4 @@
-// Window-event protocol sync check — the same cheap insurance as
-// `check-versions.ts`, for the fact written down in two languages.
-// The app and the imperative engine under `public/engine/` talk through
-// CustomEvents on `window` (the engine is a bundled IIFE that cannot hold a
-// Leptos signal and cannot be called from inside). The names cross that
-// boundary declared twice: crates/app-ui/src/events.rs (the app's whole table, and the
-// only place a Rust listener may take a name from) and
-// public/engine/events.ts (the engine's dispatched half). A disagreement is
-// not a compile error on either side — it is a dispatch into a window nobody
-// listens on, and the only symptom is silence. This script fails CI when the
-// tables drift, when a declared event lacks a dispatcher or listener, or
-// when a literal bypasses the tables entirely.
-// TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-events.js`.
+// Window-event sync check: the app's table and the engine's must agree.
 
 import { exportedStrings, isFile, read, walk } from "./repo.js";
 
@@ -20,11 +7,7 @@ const ALL_FILES = walk(".");
 const APP_TABLE = "crates/app-ui/src/events.rs";
 const ENGINE_TABLE = "public/engine/events.ts";
 
-// The two tables — parsed rather than imported, for the same reason as
-// check-formats.ts: the app's table is a const in a wasm-targeted crate, and
-// emitting JSON from it would be more machinery than the strings it guards.
-// Both patterns throw rather than return empty when the shape moves, so a
-// refactor cannot silently empty the check.
+// Both tables are parsed, not imported: emitting JSON would cost more.
 
 type Table = Map<string, string>;
 

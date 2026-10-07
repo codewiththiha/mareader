@@ -1,6 +1,5 @@
-//! The library's app-lifetime wiring: the measurement pass at startup, the rescan of every
-//! watched folder when the window comes back, and the sink that folds the shell's progress
-//! beats into the dock's task list. All three are installed once at the app root.
+//! The library's app-lifetime wiring: the startup pass, the folder
+//! rescan, and the progress sink.
 
 use std::cell::{Cell, RefCell};
 
@@ -12,22 +11,17 @@ use library_core::wire::ImportProgress;
 
 use crate::services::{PROGRESS_CHANNEL, backfill_missing, migrate_store_layout, rescan_watched};
 
-/// Focus events are not rare: alt-tabbing back and forth would otherwise
-/// walk every watched folder once per flick of the switcher.
+/// Focus events are not rare: a cooldown keeps alt-tabbing from
+/// walking every watched folder.
 const RESCAN_COOLDOWN_MS: u64 = 5_000;
 
-// The rule is `library_core::id`'s to hold and test; this file only says where the answer lives.
+// The rule lives in `library_core::id`; this is where it is held.
 thread_local! {
     static RESCAN: RefCell<Cooldown> = RefCell::new(Cooldown::new(RESCAN_COOLDOWN_MS));
 }
 
-/// Called once from the app root, after the theme and the AI bridge and
-/// before the OS file handoff: a double-clicked book must not land in the
-/// middle of the library's first measurement pass.
-///
-/// Incoming frames render before reveal, but startup passes write durable
-/// state. Defer them until the frame is visible; this is a bounded handoff,
-/// never a Library session retained behind an active Reader.
+/// Called once from the app root; an incoming frame defers its
+/// startup passes.
 pub fn library_effects(state: crate::context::LibraryContext, defer_startup: bool) {
     install_progress_sink(state);
     if defer_startup {
@@ -38,11 +32,10 @@ pub fn library_effects(state: crate::context::LibraryContext, defer_startup: boo
     startup_passes(state);
 }
 
-/// The passes a shown shelf owes its own state: migrate, measure, backfill,
-/// and keep the watched folders current while the window is in use.
+/// The passes a shown shelf owes its own state: migrate, measure,
+/// backfill.
 fn startup_passes(state: crate::context::LibraryContext) {
-    // The store migration changes the address rows hold, so measuring first
-    // would mark books `missing` for files this pass is about to move.
+    // Migration first: measuring first would mark rows `missing`.
     migrate_store_layout(state);
     rescan_watched(state);
     backfill_missing(state);
@@ -59,13 +52,11 @@ fn startup_passes(state: crate::context::LibraryContext) {
 }
 
 thread_local! {
-    /// Startup work awaiting this incoming frame's reveal. Cleared during
-    /// unmount so a late reveal timer cannot act on a disposed context.
+    /// Startup work awaiting reveal; cleared on unmount.
     static DEFERRED: Cell<Option<crate::context::LibraryContext>> = const { Cell::new(None) };
 }
 
-/// Start deferred passes once, after reveal. Repeated Refresh messages do
-/// not reinstall listeners or rescan the whole Library.
+/// Start deferred passes once, after reveal.
 pub fn run_deferred_startup() {
     let Some(state) = DEFERRED.with(|slot| slot.take()) else {
         return;
@@ -73,13 +64,8 @@ pub fn run_deferred_startup() {
     startup_passes(state);
 }
 
-/// The progress sink belongs to this Library realm. Native import jobs may
-/// finish after navigation, but the disposed shelf keeps no listener/task UI.
-/// A fresh Library reconstructs durable results from storage.
-///
-/// The listener is this sink's own, on the shell's channel, folded straight
-/// into the task list: one parse between the shell and the state, where the
-/// window-event re-broadcast it replaced was two.
+/// The realm's progress sink: shell beats folded straight into the
+/// task list.
 fn install_progress_sink(state: crate::context::LibraryContext) {
     crate::services::tauri_listen(PROGRESS_CHANNEL, move |ev: web_sys::Event| {
         let value: &JsValue = ev.as_ref();
@@ -107,8 +93,7 @@ fn rescan_once(state: crate::context::LibraryContext) {
     rescan_watched(state);
 }
 
-/// Only an explicit `true` counts as the reader being back: a focus event whose payload is
-/// missing or not a boolean is not a reason to walk every watched folder.
+/// Only an explicit `true` counts as the reader being back.
 fn focused(ev: &web_sys::Event) -> bool {
     let value: &JsValue = ev.as_ref();
     js_sys::Reflect::get(value, &"payload".into())

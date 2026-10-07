@@ -1,17 +1,4 @@
-//! Reusable window-aware anchored menu container, built on the shared
-//! floating internals:
-//!
-//! * placement + viewport clamping + upward flip + transform origin come from
-//!   [`position`](app_chrome::floating::position) (pure math in `ui_geom::floating`);
-//! * Escape / outside-press dismissal comes from [`dismiss`](app_chrome::floating::dismiss);
-//! * the open/close transition is reported through `on_open_change` rather
-//!   than the popover reaching into app chrome itself (the app-shell
-//!   `MenuPopover` owns the titlebar-hold behaviour).
-//!
-//! Width is a prop so each menu can size itself. `position: fixed` escapes
-//! the sidebar's `overflow-hidden`; the optional `coordinate_space` id
-//! compensates WebKit's `backdrop-filter` containing block when anchoring
-//! inside the glass toolbar row.
+//! Window-aware anchored menu container: placement, dismissal, width.
 
 use leptos::children::ChildrenFn;
 use leptos::html;
@@ -29,10 +16,8 @@ pub fn Popover(
     open: RwSignal<bool>,
     /// NodeRef of the trigger wrapper the panel anchors to.
     anchor: NodeRef<html::Div>,
-    /// Desired panel width in CSS px (custom per menu). Reactive because one
-    /// panel measures itself: the breadcrumb's folded chain takes its width
-    /// from an invisible ruler inside the panel, and the measurement lands a
-    /// frame after the open — the panel re-places itself when it does.
+    /// Desired panel width in CSS px; reactive for the menu that measures
+    /// itself.
     #[prop(into, default = Signal::stored(256u32))]
     width: Signal<u32>,
     /// Min distance from viewport edges.
@@ -45,15 +30,11 @@ pub fn Popover(
     /// bottom would overflow.
     #[prop(default = PlacementSide::Auto)]
     placement: PlacementSide,
-    /// Id of an element whose viewport offset must be subtracted — WebKit
-    /// makes `backdrop-filter` a containing block for `position: fixed`
-    /// descendants, so panels anchored inside the glass toolbar row need
-    /// row-relative coordinates.
+    /// Id of an element whose viewport offset is subtracted (WebKit's
+    /// containing block).
     #[prop(default = None)]
     coordinate_space: Option<&'static str>,
-    /// Called on every open-state transition. App-shell wrappers use this to
-    /// hold/release chrome (titlebar pin, hide delays) instead of the
-    /// primitive knowing about the shell.
+    /// Called on every open-state transition.
     #[prop(default = None)]
     on_open_change: Option<Callback<bool>>,
     children: ChildrenFn,
@@ -64,8 +45,7 @@ pub fn Popover(
     // Right-aligned to the trigger; clamping and the upward flip are the
     // shared math's (`place_at_anchor`).
     let place = move || {
-        // The trigger wrapper is the only anchor: a popover whose trigger is
-        // not mounted has nothing to be placed against.
+        // The trigger wrapper is the only anchor.
         let Some(a) = anchor.get() else { return };
         let panel = panel_size(
             panel_ref
@@ -96,9 +76,7 @@ pub fn Popover(
         }
         place();
         request_animation_frame(move || {
-            // The frame can outlive a disposed owner (a menu inside a runtime
-            // that just went away): a disposed `open` means there is nothing
-            // left to place.
+            // The frame can outlive its owner: a disposed `open` is nothing.
             if open.try_get_untracked().is_none() {
                 return;
             }
@@ -141,12 +119,7 @@ pub fn Popover(
         move |target| node_within_any(target, &[anchor, panel_ref]),
     );
 
-    // Static for the popover's lifetime, parked in a StoredValue — a Copy
-    // handle to a plain scoped cell. `Show`'s children closure must be an
-    // `Fn` and the class closure is moved into the element by value, so the
-    // captured handle has to be Copy; a signal would compile too but would
-    // pretend the class is reactive when only `style` actually is
-    // (re-written by `place`).
+    // Static for the popover's lifetime: a Copy handle to a scoped cell.
     let panel_class: StoredValue<String, LocalStorage> = StoredValue::new_local(format!(
         "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg {class}",
         app_chrome::layers::POPOVER

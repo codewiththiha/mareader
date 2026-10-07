@@ -462,7 +462,7 @@ generalised instead of the feature being forked per format.
   dark-theme `screen` swap is about the backdrop being dark, not about it being a
   bitmap.
 - **Order on open.** A reflowable document's marks are loaded from storage before
-  `apply_heights` publishes the block→page map, so the first page — or the first
+  `set_initial_heights` publishes the block→page map, so the first page — or the first
   stream window — already paints them instead of gaining them a frame later. Dedup
   compares spots rather than pixels (`same_glossed_spot`), which is what stops a
   re-gloss after a scroll from stacking a second stroke on the same word.
@@ -616,9 +616,11 @@ one failure mode a pointer has is pointing at nothing.
 
 Two rows can also stop being twins, and that is a mark on the row rather than a second kind of row.
 `Book::independent` is what the conflict sheet's *as new* answer writes, and it opts the row out of
-exactly half of the sharing above: its resume point becomes its own, and its highlights move to a
-key carrying its id (`Book::gloss_key`), so no other row can name them and a removal of either row
-takes nothing from the other. It does not opt out of the address's fate — whether the file resolves
+exactly half of the sharing above: `book::rows_for_read` stops folding it into the reads its address
+holds, so its resume point is its own and so are the highlights under its own row id — the gloss map
+(`storage::load_gloss`) is keyed by row id, and the open flow resolves an address to the row that is
+not independent (`library_runtime::services::open`), so a removal of either row takes nothing from
+the other. It does not opt out of the address's fate — whether the file resolves
 is a fact about the file, so `book::apply_check` still writes every row at it, and the cover stays
 the file's art. Which rows a read belongs to is one function (`book::rows_for_read`, indices so a
 caller can hold the answer across the write it is about to make), and the three writers of a resume
@@ -810,10 +812,10 @@ it would orphan both:
   stored copy of the dissolving row's very file (the provenance `src` is the check), the folders
   that placed the file take a moved-out log bound to the survivor, because here the library does
   NOT still hold the fingerprint, and an import of the file should light the copy up rather than
-  mint a neighbour. Its highlights travel first, while both keys can still be read
-  (`union_marks`, by `GlossMark::same_spot`, keeping their ids so the AI answers ride along): the
-  sweep a removal rides takes the dissolving row's list with it, so a fold that ran afterwards
-  would be a merge that deleted them.
+  mint a neighbour. Its highlights are the survivor's own list: the marks live under the row id
+  (`storage::load_gloss` is keyed by row id, and `drop_row` sweeps the dissolving row's list with
+  the row), and the address's shared list is the one its non-independent row holds — which is the
+  row an open resolves (`library_runtime::services::open`).
 - **Replace** sends the row that was here out of the library and seats the arrival in its SLOT —
   an overwrite stays where the thing it replaced was — and on every other shelf the displaced row
   was filed on, because a replace that quietly took a book off shelves the question never mentioned
@@ -1104,11 +1106,10 @@ lands among them are all counting the same level.
 
 The grid renders a folder as a cell of the same grid the books are cells of, which is the whole of
 what makes nesting drawable: the shelf tile this replaced spanned the grid to read as a row *of*
-books, and a row cannot be inside a row. The dense list draws the same level as a tree: a shelf is a
-row that unfolds in place — the shelves filed in it and its own books indenting under it, as deep as
-the forest goes — while an Open on the row drills the breadcrumb route, because unfolding is a way
-of looking and must not move the reader. The tree is `ShelfTree`, a plain prop bag over the same
-rows, which is the component the reader sidebar's shelf tab will mount at its own density.
+books, and a row cannot be inside a row. The list draws the same level as a tree: a shelf is a row
+that unfolds in place — the shelves filed in it and its own books indenting under it, as deep as the
+forest goes — while an Open on the row drills the breadcrumb route, because unfolding is a way of
+looking and must not move the reader.
 
 One relationship in this model can be wrong in a way no single row shows — a shelf filed inside
 itself, or inside one of its own children, is a folder that renders on no level and can never be
@@ -1145,9 +1146,10 @@ nobody wrote in gets no data switch — because a control that appears with noth
 control the reader has to read and then ignore. Two things follow from the cascade being a
 change of SET rather than of wording: the shelf rows switch from saying what survives to saying what
 goes, since the same words would mean the opposite, and the deletes run deepest-first so
-`lift_children` never moves a shelf to the level it was on moments before deleting it. The tree
-arithmetic that decides which shelves those are (`subtree`, `deepest_first`) is pure over the shelf
-list and host-tested, including the cycle a blob caught between two writes can still carry.
+`lift_children` never moves a shelf to the level it was on moments before deleting it. The walk that
+decides which shelves those are is `library_core::shelf::subtree_ids` — pure over the shelf list and
+host-tested, including the cycle a blob caught between two writes can still carry — and the order is
+one sort on depth in `arrange::asking::remove`.
 
 One row of that receipt is a question rather than a cost, and it is the only one. The app's own
 copy goes with the book: a file nothing will read again is not worth a switch, and removing a book
@@ -1475,18 +1477,14 @@ door to those acts beside the right-click's folder menu, and both renames — th
 the sheet — commit through the one service, so two doors to one act cannot differ about what it
 means.
 
-## Known gaps: two gates deliberately not run
+## Known gaps: one gate deliberately not run
 
-Both were built and tried. Both stay off for the same reason — a gate that is
-red on the day it lands teaches people to read past red — and both belong to a
-dedicated commit rather than to a check nobody can act on.
-
-### cargo fmt --check
-
-The codebase is hand-formatted in a style rustfmt >=1.9x would rewrite across
-roughly forty files, so the gate would fail on pre-existing code. The one-time
-formatting pass is the prerequisite, and it is a large mechanical diff that
-should not share a commit with anything else.
+`cargo fmt --check` was the first of the two and is a lane now: the one-time
+formatting pass landed with the gate itself (`#60`), so `Rust / format` runs
+`cargo fmt --all -- --check` on every push. What is left below is the gate the
+repo still does not run, for the same reason both were held back — a gate that
+is red on the day it lands teaches people to read past red — and it belongs to
+a dedicated commit rather than to a check nobody can act on.
 
 ### rustdoc's broken intra-doc links
 
@@ -1509,5 +1507,3 @@ Not all of them can be fixed with a path. `GlossMark::context` points at a
 struct field, and rustdoc has no link form for one at any prefix, so those are
 prose rewrites — and the eleven undocumented crates cannot be enumerated short
 of running rustdoc until they can.
-
-<!-- // only the changed file was rewritten -->

@@ -1,15 +1,4 @@
-//! The Fonts tab: typography for the reflowable formats (TXT, Markdown).
-//!
-//! PDF pages are rasters — their type was fixed at authoring time — so this
-//! tab exists only while a text document is open (the modal resolves that,
-//! the same way it resolves the Animations tab). Every control writes into
-//! `Settings::text`, which the typography effect paints onto `<html>` and
-//! the measurement pipeline turns into a re-cut — so a knob here moves the whole
-//! pipeline, and nothing in this file touches layout directly.
-//!
-//! The font pickers offer the system faces today; the choice type
-//! (`FontChoice`) already has a built-in variant, so shipping bundled fonts
-//! later is an options-list change, not a schema change.
+//! The Fonts tab: typography for the reflowable formats.
 
 use leptos::prelude::*;
 
@@ -20,10 +9,7 @@ use app_ui::components::primitives::controls::switch::Switch;
 use app_ui::components::primitives::form::row::Row;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 
-/// One write path for every knob: mutate, then sanitize — so a clamped
-/// range is enforced no matter which control produced the value. Shared
-/// with the Appearance menu, whose ink-intensity slider writes through the
-/// same path for the same reason.
+/// One write path for every knob: mutate, then sanitize.
 pub(crate) fn update_text(
     settings: leptos::prelude::RwSignal<reader_core::settings::Settings>,
     apply: impl Fn(&mut TextSettings) + 'static,
@@ -34,8 +20,7 @@ pub(crate) fn update_text(
     });
 }
 
-/// The picker's option list: `Default`, then every system face. Built-in
-/// fonts join this list the day the app ships any (`FontChoice::BuiltIn`).
+/// The picker's options: `Default`, then every system face.
 fn font_options() -> Vec<(FontChoice, &'static str)> {
     let mut options = vec![(FontChoice::Default, "Default")];
     for font in SystemFont::all() {
@@ -52,9 +37,7 @@ fn font_label(choice: &FontChoice) -> &'static str {
     }
 }
 
-/// One font picker row. The pickers all share one shape — read a slot of
-/// the settings, write a choice back — so the slot lives in two function
-/// pointers instead of four near-identical components.
+/// One font picker row: a read slot, a write slot, a label.
 #[component]
 fn FontPickerRow(
     state: crate::context::ReaderContext,

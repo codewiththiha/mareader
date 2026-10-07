@@ -1,8 +1,4 @@
-// Document loading. Local files are read via Tauri IPC (bytes). Web-served
-// samples use fetch. Open returns as soon as page 1 is known so the reader
-// is never stuck on "Opening…" — the chapter tree resolves separately
-// (`resolveOutline`), because flattening it costs one worker round trip per
-// destination and must not hold the first paint hostage.
+// Document loading: local files via Tauri IPC, web samples via fetch.
 
 import type {
   CoverResult,
@@ -71,31 +67,24 @@ function withTimeout<T>(
   });
 }
 
-// The pdf.js worker URL is resolved ONCE: getDocument and every text-layer
-// construction call getPdfjs, and re-resolving the URL plus re-assigning
-// GlobalWorkerOptions each time is pure busywork — the src never changes for
-// the app's lifetime.
+// The worker URL is resolved once; the src never changes.
 let workerSrcConfigured = false;
 
-/** Where pdf.js lives. Typed `string`, not a literal, on purpose: a literal
- *  specifier would have tsc resolve the module and esbuild bundle it, and
- *  this one must stay a runtime `import()` — see `ensurePdfjs`. */
+// Where pdf.js lives; a runtime `import()`, so the specifier stays a
+// `string`.
 const PDFJS_MODULE_URL: string = "/vendor/pdfjs/pdf.min.mjs";
 
 /** The one in-flight load of pdf.js, so concurrent first opens share it. */
 let pdfjsLoading: Promise<PdfjsLib> | null = null;
 
-/** pdf.js if some script has already put it on `globalThis` (a page that
- *  loads it with a script tag, the smoke harness's stub, or an earlier
- *  `ensurePdfjs`). */
+// pdf.js, if something already put it on `globalThis`.
 function presentPdfjs(): PdfjsLib | null {
   const l = globalThis.pdfjsLib as PdfjsLib | undefined;
   return l && typeof l.getDocument === "function" ? l : null;
 }
 
 function configureWorker(l: PdfjsLib): PdfjsLib {
-  // Absolute worker URL so Tauri's Worker constructor resolves against the
-  // webview origin, not a broken custom-protocol base.
+  // Absolute worker URL so Tauri's Worker resolves against the webview origin.
   if (l.GlobalWorkerOptions && !workerSrcConfigured) {
     workerSrcConfigured = true;
     try {
@@ -110,24 +99,15 @@ function configureWorker(l: PdfjsLib): PdfjsLib {
   return l;
 }
 
-/** pdf.js, loaded on first use. The reader page no longer loads it with a
- *  script tag: a reader session that never opens a PDF (a warm reader the
- *  shelf never clicked into, a Markdown or text session) then never fetches,
- *  compiles or holds it — the first PDF open pays the one fetch (cached by
- *  the browser after that), and the module lives for the frame's life like
- *  any other. A page that does load pdf.js itself (the Shell's bake page,
- *  which wants it in parallel with its own script) is found on `globalThis`
- *  and never loaded twice. A failed load is not cached: the next open
- *  retries. */
+// pdf.js, loaded on first use; a failed load is not cached.
 function ensurePdfjs(): Promise<PdfjsLib> {
   const present = presentPdfjs();
   if (present) return Promise.resolve(configureWorker(present));
   if (!pdfjsLoading) {
     pdfjsLoading = import(PDFJS_MODULE_URL)
       .then((mod: unknown) => {
-        // pdf.js's module build publishes itself on `globalThis.pdfjsLib`
-        // as it evaluates; the namespace is the fallback for a build that
-        // stops doing so.
+        // pdf.js publishes itself on `globalThis.pdfjsLib`; the namespace is a
+        // fallback.
         const lib = presentPdfjs() ?? (mod as PdfjsLib);
         if (!lib || typeof lib.getDocument !== "function") {
           throw new Error("pdf.js is not loaded");
@@ -143,9 +123,7 @@ function ensurePdfjs(): Promise<PdfjsLib> {
   return pdfjsLoading;
 }
 
-/** Resolve pdf.js off globalThis at call time — never at module evaluate.
- *  Synchronous, for the paths that only run once a document is open (the
- *  text layer): by then `ensurePdfjs` has loaded it. */
+// Resolve pdf.js off globalThis at call time, never at evaluate.
 function getPdfjs(): PdfjsLib {
   const l = presentPdfjs();
   if (!l) {
@@ -158,10 +136,8 @@ export async function getDocument(params: Record<string, unknown>) {
   return (await ensurePdfjs()).getDocument(params);
 }
 
-// A LoadingTask is destroyed at most once, ever: `open`'s own timeout and the
-// engine's teardown can race on the same task (timeout fires while destroy()
-// is running), and a second destroy() on a pdf.js task double-frees the
-// worker. The WeakSet makes both paths idempotent without keeping tasks alive.
+// A LoadingTask is destroyed at most once; the WeakSet keeps both paths
+// idempotent.
 const destroyedTasks = new WeakSet<LoadingTask>();
 
 export async function destroyTask(
@@ -171,10 +147,7 @@ export async function destroyTask(
   if (!task) return;
   if (destroyedTasks.has(task)) return;
   destroyedTasks.add(task);
-  // Only THE task registered on the session is taken off it. A background
-  // cover render destroys its own task; that must not detach the OPEN
-  // document's task from its teardown path — the open task's reference here
-  // is the only thing destroy() can later follow to kill its worker.
+  // Only THE task registered on the session is detached.
   if (s.loadingTask === task) {
     s.setLoadingTask(null);
   }
@@ -183,9 +156,7 @@ export async function destroyTask(
   } catch (_) {
     /* best-effort teardown */
   } finally {
-    // Counted only AFTER the worker shutdown round trip resolves — the
-    // counter says "terminated" when the worker actually is, which is what
-    // the reader's dispose-complete baseline asserts on.
+    // Counted after the shutdown resolves, so "terminated" is true.
     s.workersTerminated += 1;
     lifecycleEvent("pdf_worker:terminate");
   }
@@ -196,13 +167,7 @@ export function TextLayer(opts: ConstructorParameters<TextLayerCtor>[0]) {
   return new Ctor(opts);
 }
 
-/** The pdf.js open parameters every entry point in this engine shares.
- *  `isEvalSupported: false` is the CSP half: the app ships without
- *  unsafe-eval, so functions pdf.js would compile take the interpreter path
- *  instead of throwing. `disableAutoFetch` / `disableStream` are the memory
- *  half: a document opened for a cover thumbnail must not pull more bytes
- *  than it asked for. The c-map pair is what makes CID-keyed CJK fonts
- *  resolve at all. */
+// The open parameters: the CSP pair, the memory pair, the c-map pair.
 const BASE_PARAMS = {
   cMapUrl: "/vendor/pdfjs/cmaps/",
   cMapPacked: true,
@@ -211,25 +176,18 @@ const BASE_PARAMS = {
   isEvalSupported: false,
 };
 
-/** How long the worker may take to hand back a document before the open is
- *  declared dead. A worker that never initialises leaves task.promise pending
- *  forever and the UI on its spinner with nothing to report. */
+// The worker's deadline for handing back a document.
 const OPEN_TIMEOUT_MS = 8000;
 const OPEN_TIMEOUT_MSG = "Timed out opening this PDF (pdf.js worker failed to initialize)";
 
-/** The whole of "open a document": one task registered on the session so a
- *  teardown can find it, one ceiling on the worker, and a cleanup that runs if
- *  the ceiling wins. Only the source differs between callers. */
+// The whole of "open a document": one task, one ceiling, one cleanup.
 async function openTask(
   s: EngineSession,
   source: Record<string, unknown>
 ): Promise<PDFDocumentProxy> {
   const task = await getDocument({ ...BASE_PARAMS, ...source });
   noteWorkerCreated(s);
-  // The session may have been destroyed while pdf.js was still loading: its
-  // teardown could not see a task that did not exist yet, so the worker is
-  // this call's to kill — registering it would strand it on a retired
-  // session.
+  // The session may have died while pdf.js loaded: kill the worker here.
   if (s.disposed) {
     await destroyTask(s, task);
     throw Object.assign(new Error("Session destroyed during open"), { name: "SessionGone" });
@@ -257,10 +215,7 @@ function toUint8(bytes: unknown): Uint8Array {
     const v = bytes as ArrayBufferView;
     return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
   }
-  // The invoke may have run on the PARENT window (tauri-relay.js publishes
-  // the frame's Tauri facade there): `instanceof` is realm-bound, so a
-  // parent-realm ArrayBuffer fails both checks above. Ask the object tag —
-  // realm-independent — and build this realm's view over the same memory.
+  // The invoke may have run on the parent window; ask the object tag.
   if (Object.prototype.toString.call(bytes) === "[object ArrayBuffer]") {
     return new Uint8Array(bytes as ArrayBuffer);
   }
@@ -270,9 +225,7 @@ function toUint8(bytes: unknown): Uint8Array {
   });
 }
 
-/** Fetch a document's bytes from a web path or local filesystem via Tauri.
- *  Web-served paths go through fetch; native paths use Tauri's `read_file_bytes`
- *  command. Resolves to a Uint8Array ready for pdf.js. */
+// Fetch a document's bytes, via fetch or Tauri's `read_file_bytes`.
 async function fetchBytes(path: string): Promise<Uint8Array> {
   if (isWebServedPath(path)) {
     const url = path.startsWith("samples/") ? "/" + path : path;
@@ -283,9 +236,7 @@ async function fetchBytes(path: string): Promise<Uint8Array> {
     const bytes = await tauri.core.invoke("read_file_bytes", { path });
     return toUint8(bytes);
   }
-  // A filesystem path over plain fetch() is not a URL: it would resolve
-  // against the origin, 404 (or hang) and surface as a mysterious load
-  // error. Say what is actually missing instead.
+  // A filesystem path over plain fetch is not a URL.
   throw Object.assign(
     new Error(
       "no Tauri IPC in this frame — cannot read " +
@@ -296,8 +247,7 @@ async function fetchBytes(path: string): Promise<Uint8Array> {
   );
 }
 
-export /** Tauri `convertFileSrc` URL only — never a raw `/Users/...` path (that
- *  was treated as an HTTP URL and hung getDocument). */
+// Tauri `convertFileSrc` URL only, never a raw path.
 function localAssetUrl(path: string): string | null {
   const tauri = globalThis.__TAURI__;
   if (!tauri || !tauri.core || typeof tauri.core.convertFileSrc !== "function") {
@@ -339,8 +289,7 @@ async function openFromUrl(s: EngineSession, url: string): Promise<PDFDocumentPr
   return openTask(s, { url, disableRange: false, rangeChunkSize: 65536 });
 }
 
-/** Bytes already in memory (the Tauri IPC path, and the fallback when the asset
- *  protocol misbehaves): there is nothing to range over. */
+// Bytes already in memory: nothing to range over.
 async function openFromBytes(s: EngineSession, bytes: Uint8Array): Promise<PDFDocumentProxy> {
   return openTask(s, { data: bytes });
 }
@@ -351,10 +300,8 @@ async function openDocument(s: EngineSession, path: string): Promise<PDFDocument
     return await openFromUrl(s, url);
   }
 
-  // Prefer the asset protocol so pdf.js can Range-request instead of holding
-  // the whole file in V8. Windows `https://asset.localhost` intermittently
-  // fails ("Failed to fetch") — probe first and fall back to binary IPC
-  // (`read_file_bytes` returns an ArrayBuffer, not JSON/Base64).
+  // Prefer the asset protocol; the Windows form fails — probe and fall
+  // back to IPC.
   const asset = localAssetUrl(path);
   if (asset && (await probeAssetUrl(asset))) {
     try {
@@ -367,15 +314,12 @@ async function openDocument(s: EngineSession, path: string): Promise<PDFDocument
   return await openFromBytes(s, await fetchBytes(path));
 }
 
-/** Open `path` into `s`. The facade hands this a session with no document
- *  (a PDF session holds exactly one document; a new document is a new
- *  session), so there is nothing to tear down first. */
+// Open `path` into `s`; a session holds exactly one document.
 export async function open(s: EngineSession, path: string): Promise<OpenResult> {
   try {
     const doc = await openDocument(s, path);
-    // Destroyed while the worker was producing the document: the teardown
-    // already destroyed the task (which is what settles `doc` normally),
-    // but a document that won the race must not land on a retired session.
+    // Destroyed while the worker produced the document: do not land on a
+    // retired session.
     if (s.disposed) {
       await destroyTask(s, s.loadingTask);
       return fail("no_session", "Session destroyed during open");
@@ -384,24 +328,16 @@ export async function open(s: EngineSession, path: string): Promise<OpenResult> 
     s.setNumPages(doc.numPages);
     // The probed page boxes belong to the document that just died.
     s.clearIntrinsicSizes();
-    // The new document's thumbnail lane is open: generation bookkeeping
-    // records from here until this document's teardown clears it.
+    // The new document's thumbnail lane is open.
     beginThumbLane(s);
     s.setCurrentPath(path);
-    // One session per open document: counted only once the document proxy is
-    // in place, so a failed or timed-out open never counts a session that
-    // never existed (its worker is still counted, because it existed).
+    // Count a session only once the document proxy is in place.
     s.sessionsOpened += 1;
     lifecycleEvent("pdf_session:create");
-    // A new document means a fresh paper-detection budget and palette
-    // (engine/paper.ts) — plus, when the cache remembers this book, its
-    // colours published right away. Runs after setCurrentPath so the cache
-    // can key on the path.
+    // A fresh paper budget, and the cache's colours when it knows this book.
     resetPaperForDocument(s);
 
-    // Metadata and page 1 are independent worker round trips — asking for
-    // them together is one hop off every document open. Metadata failures are
-    // swallowed (exotic docs); page 1 failing IS an open failure.
+    // Metadata and page 1 are independent round trips; page 1 is the open.
     const [meta, page1] = await Promise.all([
       doc.getMetadata().catch(() => null),
       doc.getPage(1),
@@ -412,8 +348,7 @@ export async function open(s: EngineSession, path: string): Promise<OpenResult> 
     const vp = page1.getViewport({ scale: 1 });
     try { page1.cleanup(); } catch (_) { /* ignore */ }
 
-    // Seed every page with page-1's size so open returns immediately.
-    // A serial getPage(n) over a long book looked like a permanent hang.
+    // Seed every page with page 1's size so open returns immediately.
     const pageHeights: number[] = new Array(s.numPages);
     const pageWidths: number[] = new Array(s.numPages);
     for (let i = 0; i < s.numPages; i += 1) {
@@ -426,11 +361,7 @@ export async function open(s: EngineSession, path: string): Promise<OpenResult> 
       numPages: s.numPages,
       title,
       author,
-      // The permanent content fingerprint pdf.js derived from these exact
-      // bytes: the identity the Rust search index caches under, so a reopen
-      // of the same file adopts the retained index instead of re-extracting
-      // every page. The optional chain is for engine stubs without the field
-      // (the Node smoke harness's older fakes); they get the path fallback.
+      // The content fingerprint the search index caches under.
       fingerprint: doc.fingerprints?.[0] ?? null,
       // The outline is deliberately NOT resolved here — see resolveOutline.
       outline: [],
@@ -464,10 +395,7 @@ function outlineTitle(raw: string | null | undefined): string {
   return String(raw == null ? "" : raw).trim() || "(untitled)";
 }
 
-/** Run `fn` over `items` with at most `limit` in flight, keeping result
- *  order. Used by the outline flattening: each sibling's destination is an
- *  independent worker round trip, so a textbook-sized tree used to pay them
- *  one by one (400 chapters ≈ 400 serial round trips ≈ seconds). */
+// Run `fn` over `items` with at most `limit` in flight, keeping order.
 async function mapWithLimit<T, R>(
   items: T[],
   limit: number,
@@ -529,8 +457,7 @@ async function flattenOutline(
   depth: number,
 ): Promise<{ title: string; page: number; depth: number }[]> {
   const siblings = items || [];
-  // Siblings resolve concurrently (bounded), then concatenate in document
-  // order: the results list must read the way the bookmark tree reads.
+  // Siblings resolve concurrently, then concatenate in document order.
   const perSibling = await mapWithLimit(siblings, OUTLINE_CONCURRENCY, async (it) => {
     const entry = await resolveOutlineEntry(s, it, depth);
     const descendants = await flattenOutline(s, it.items, depth + 1);
@@ -545,8 +472,7 @@ export async function resolveOutline(s: EngineSession): Promise<{
 }> {
   if (!s.pdf) return { ok: true, outline: [] };
   try {
-    // Race the timer against getOutline() AND flattenOutline(). Awaiting
-    // getOutline() first meant a hung outline never started the 4s timeout.
+    // Race the timer against getOutline() AND flattenOutline().
     const outlinePromise = s.pdf.getOutline().then((items) =>
       flattenOutline(s, items, 0),
     );
@@ -557,20 +483,10 @@ export async function resolveOutline(s: EngineSession): Promise<{
   }
 }
 
-/**
- * JPEG quality for shelf covers. Small art at a small size; 0.82 is the knee
- * where further quality stops being visible on a 240px-wide cover.
- */
+// JPEG quality for shelf covers; 0.82 is the knee.
 const COVER_QUALITY = 0.82;
 
-/**
- * Encode a canvas as a JPEG data URL without blocking the frame. `toDataURL`
- * encodes AND base64-writes synchronously on the main thread — a visible
- * hitch for a cover that lands as the reader paints its first page. `toBlob`
- * hands the encode to the browser off-thread and FileReader does the base64
- * in a task of its own. Falls back to the synchronous path where either API
- * is missing (older webviews, the smoke harness's stub canvas).
- */
+// Encode a canvas as a JPEG data URL without blocking the frame.
 function encodeJpeg(canvas: HTMLCanvasElement): Promise<string> {
   const sync = () => canvas.toDataURL("image/jpeg", COVER_QUALITY);
   if (typeof canvas.toBlob !== "function" || typeof FileReader === "undefined") {
@@ -665,8 +581,7 @@ export async function coverDataUrl(
         result = await renderCoverFromPdf(doc, maxWidth, signal);
       } finally {
         signal?.removeEventListener("abort", cancel);
-        // The worker choke point is idempotent; await the original abort's
-        // shutdown rather than counting it twice or mistaking it for open.
+        // The choke point is idempotent; await the original abort's shutdown.
         await (cancelled ?? destroyTask(s, task));
       }
     }

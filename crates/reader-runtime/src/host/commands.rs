@@ -1,13 +1,4 @@
 //! Workspace commands: the one door a drop goes through.
-//!
-//! A pointer handler never mutates the tree. It produces a
-//! [`super::drag::DropIntent`]; the host turns it into a
-//! [`WorkspaceCommand`] and runs it (`ReaderHost::run`), and the command is
-//! validated HERE, against the workspace as it is at the drop, before
-//! anything changes: the geometry a drag measured may be stale by then (a
-//! pane closed, the window resized), and a refused command leaves the tree
-//! exactly as it was. What survives validation is a [`DropPlan`] the host
-//! executes through its one placement path (`open_document`).
 
 use super::drag::DocumentDragSource;
 use super::drop_target::DropTarget;
@@ -17,8 +8,7 @@ use super::tree::{PaneTree, Side, SplitAxis, TreeError, TreeLayout, split_fits};
 /// A typed workspace command.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkspaceCommand {
-    /// Open the dragged document where the drop landed: a new pane beside a
-    /// pane, or the empty pane itself.
+    /// Open the dragged document where the drop landed.
     OpenInDropTarget {
         source: DocumentDragSource,
         target: DropTarget,
@@ -38,10 +28,8 @@ pub enum DropPlan {
     Here { pane: PaneId },
 }
 
-/// The layout policy's room check for splitting `pane` along `axis`, against
-/// the layout as laid out now. A pane the layout has not measured yet (no
-/// box, or a zero box before the slot's first measurement) is not refused:
-/// there is nothing to judge it by, and the tree's ratio clamp still holds.
+/// The room check for splitting `pane` along `axis`; an unmeasured
+/// pane is not refused.
 pub fn check_room(layout: &TreeLayout, pane: PaneId, axis: SplitAxis) -> Result<(), PaneError> {
     match layout.bounds_of(pane) {
         Some(bounds) if bounds.width > 0.0 && bounds.height > 0.0 => {
@@ -55,8 +43,7 @@ pub fn check_room(layout: &TreeLayout, pane: PaneId, axis: SplitAxis) -> Result<
     }
 }
 
-/// Validate `target` against the workspace at the drop. `live` is the count
-/// of placed panes; `is_empty` answers whether a pane holds no document.
+/// Validate `target` against the workspace at the drop.
 pub fn plan(
     target: DropTarget,
     tree: &PaneTree,
@@ -70,8 +57,7 @@ pub fn plan(
     }
     match target {
         DropTarget::Here { pane } => {
-            // In place is only ever an EMPTY pane: a drop never replaces a
-            // document the user is reading.
+            // In place is only ever an EMPTY pane.
             if !is_empty(pane) {
                 return Err(PaneError::Layout(TreeError::Occupied(pane)));
             }
@@ -116,8 +102,7 @@ mod tests {
         DropTarget::Split { pane: p(n), edge }
     }
 
-    /// Carry out a plan on a tree the way the host does: the new pane is
-    /// placed by the tree's one split operation.
+    /// Carry out a plan on a tree the way the host does.
     fn apply(tree: &mut PaneTree, plan: DropPlan, new: PaneId) {
         match plan {
             DropPlan::Split { of, axis, side } => {
@@ -162,8 +147,7 @@ mod tests {
             tree.set_root(p(1)).unwrap();
             drop_on(&mut tree, split(1, edge), 2);
             assert_eq!(shape(tree.root().unwrap()), expected, "{edge:?}");
-            // The pane that was there stays where it was: only the new one
-            // is placed beside it.
+            // The pane that was there stays where it was.
             assert!(tree.contains(p(1)));
         }
     }

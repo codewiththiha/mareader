@@ -1,18 +1,11 @@
-//! Toggle button: the pressed/quiet control every selected-or-not button in
-//! the app consolidates onto. The component owns `aria-pressed` and the state
-//! classes; the caller owns only the layout (`variant_class`) and the content.
-//!
-//! The app has two shapes of "this is the one" — the bordered accent chip the
-//! option groups use, and the borderless filled chip the sidebar rail uses.
-//! [`ToggleVariant`] picks between them, so neither needs a second component.
+//! Toggle button: the pressed control every selected-or-not button uses.
 
 use leptos::prelude::*;
 
 /// Which of the two pressed-state treatments the button wears.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToggleVariant {
-    /// Bordered chip that tints to the accent when selected: the option
-    /// groups — base mode, texture, grain, import formats, sort direction.
+    /// Bordered chip tinting to the accent when selected: option groups.
     Outlined,
     /// Borderless chip that fills when active: the sidebar rail's toggles.
     Filled,
@@ -23,8 +16,7 @@ pub fn ToggleButton(
     active: Signal<bool>,
     on_click: impl Fn() + 'static,
     #[prop(into, optional)] title: Option<String>,
-    /// Caller layout classes (size, padding, shape). The state classes belong
-    /// to this component, so every call site renders the same pressed state.
+    /// Caller layout classes; the state classes belong to this component.
     #[prop(optional)]
     variant_class: &'static str,
     #[prop(default = ToggleVariant::Outlined)] variant: ToggleVariant,

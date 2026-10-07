@@ -1,28 +1,12 @@
-// The CSS-filter pixel kernel: parse a filter string into a 3x3 matrix +
-// offset and apply it to RGBA pixels with per-channel LUTs (16.16 fixed
-// point, no per-pixel multiply). Intentionally DOM-free: imported BOTH by
-// the main thread (the no-worker fallback) and by bake.worker.ts, so the two
-// paths are byte-identical by construction and the fallback — which the Node
-// smoke test exercises — IS the reference implementation. LUTs are memoized
-// per filter string: a bake builds 9 x Int32Array(256), and rebuilding them
-// per page per theme change was 9 allocations even when nothing had moved.
+// The CSS-filter pixel kernel: filter string to matrix, applied via LUTs.
 
 import type { FilterMatrix } from "../types";
 
 const LU_TSCALE = 1 << 16;
-// Add half a fixed-point unit before shifting so the final channel value is
-// rounded to nearest instead of floored. The compositor applies the same
-// pipeline with floating-point math; matching its rounding avoids a one-LSB
-// seam between baked page pixels and the CSS backdrop.
+// Add half a unit before shifting, so rounding matches the compositor.
 const LU_ROUND = 1 << 15;
 
-// The memo is capped. A tint drag mints a fresh filter string per animation
-// frame, and the per-tick backdrop republish (public/engine/theme/paper.ts)
-// runs each one through here: an uncapped map would trade nine small
-// allocations per tick for retaining every set the drag ever passed through,
-// none of which a later bake will ask for again. Clearing at the cap beats
-// an LRU here — a settled theme reuses one string, so whatever survives a
-// clear is refilled on the next call and stays.
+// The memo is capped; clearing at the cap beats an LRU here.
 const LUT_CACHE_MAX = 8;
 const lutCache = new Map<string, Int32Array[]>();
 
@@ -95,8 +79,7 @@ function matrixIsIdentity({ m, o }: FilterMatrix): boolean {
   );
 }
 
-/** Whether a filter string composes to the identity matrix — the single
- *  test every caller shares (the bake's early-out and the kernel's own). */
+// Whether a filter string composes to the identity matrix.
 export function isIdentityFilter(filterString: string): boolean {
   return matrixIsIdentity(composeFilter(filterString));
 }
@@ -143,8 +126,7 @@ function lutsFor(m: number[], filterString: string): Int32Array[] {
   return luts;
 }
 
-/** In-place RGB filter over `data` (RGBA, w×h). The identity matrix leaves
- *  the pixels untouched; a zero-size image is a no-op. */
+// In-place RGB filter over `data` (RGBA, w×h).
 export function applyFilterToData(
   data: Uint8ClampedArray,
   w: number,

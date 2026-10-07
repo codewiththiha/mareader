@@ -1,10 +1,4 @@
-//! The labeled slider: range input + optional label — with a live numeric
-//! readout and unit. Built on [`RangeInput`], so the low-level mechanics
-//! (parsing, a11y, thumb sync) live exactly once.
-//!
-//! A slider with no numeric feedback can only be dialled by eye, which is
-//! fine for "a bit more grain" but not for reproducing a look or reporting
-//! one.
+//! The labeled slider: a range input with a live numeric readout.
 
 use leptos::prelude::*;
 

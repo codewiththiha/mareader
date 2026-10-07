@@ -1,13 +1,8 @@
-//! The two strings more than one collision sheet needs, spelled once.
-//!
-//! The sentences themselves are built in the describers beside this file, off
-//! one snapshot of the library.
+//! The strings more than one collision sheet needs, spelled once.
 
 use library_core::shelf::ALL_SHELF;
 
-/// One spelling for every question that names the level: two sheets wording
-/// the same shelf differently would read as two places. An empty name means
-/// the shelf went while the sheet was up.
+/// One spelling per question naming the level; empty means it went.
 pub(super) fn where_line(state: crate::context::LibraryContext, shelf_id: &str) -> String {
     if shelf_id == ALL_SHELF {
         "in your library".to_string()

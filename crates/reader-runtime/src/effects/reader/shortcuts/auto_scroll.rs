@@ -4,8 +4,7 @@ use leptos::prelude::*;
 
 use crate::state::ReaderState;
 
-/// Shift+A arms or disarms the continuous drift, and only where a drift can
-/// run: the paginated modes have no scrollport to move.
+/// Shift+A arms the drift, only where a drift can run.
 pub(super) fn handle_auto_scroll_shortcut(state: ReaderState, ev: &leptos::ev::KeyboardEvent) {
     if ev.shift_key() && ev.key().to_lowercase() == "a" {
         ev.prevent_default();

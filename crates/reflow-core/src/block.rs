@@ -1,18 +1,4 @@
 //! The layout atom of a reflowable document, and the shared cutting rules.
-//!
-//! A block is one layout atom: a paragraph of plain text, or one top-level
-//! Markdown construct (heading, paragraph, list, code fence, table, quote,
-//! rule). Blocks are what the paginator packs into pages and what the vertical
-//! reader streams, so every reflowable format shares this shape while the
-//! *parsing* of each lives in its own crate (`txt-core`, `md-core`).
-//!
-//! Two rules are shared too, because both formats want them and neither owns
-//! them: [`split_blocks`] cuts a normalised source into blocks (blank lines
-//! are the boundary, code fences the one exception a Markdown parser must
-//! honour) and [`subdivide_with`] cuts oversized blocks on line boundaries so
-//! the paginator can fill a page without splitting a construct's render. Each
-//! format passes its own predicate for what may be cut — plain text cuts
-//! anywhere, Markdown only in running prose.
 
 /// Which renderer a block belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,13 +11,9 @@ pub enum BlockKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextBlock {
     pub kind: BlockKind,
-    /// The block's source text. Text blocks keep their internal newlines;
-    /// Markdown blocks keep exactly the lines of their construct.
+    /// The block's source text, internal newlines kept.
     pub text: String,
-    /// True when [`subdivide_with`] cut this block out of the MIDDLE of a
-    /// longer one. A continuation carries no paragraph space of its own (the
-    /// whole paragraph owns exactly one), so a paragraph split across a page
-    /// cut — or streamed as several chunks — still reads as one paragraph.
+    /// True when cut out of a longer block: carries no paragraph space.
     pub continuation: bool,
 }
 
@@ -50,9 +32,7 @@ impl TextBlock {
         self.text.split('\n').collect()
     }
 
-    /// The block's first line, trimmed — what a classifier looks at to decide
-    /// what the block is (`#` opens a heading, a tick opens a fence). Never
-    /// allocates, because every block is classified on the way to the screen.
+    /// The block's first line, trimmed — what a classifier looks at.
     pub fn first_line(&self) -> &str {
         match self.text.find('\n') {
             Some(end) => self.text[..end].trim(),
@@ -61,24 +41,10 @@ impl TextBlock {
     }
 }
 
-/// The most source lines a splittable block keeps after [`subdivide_with`].
-///
-/// Five lines is the balance point: at the default typography a chunk
-/// measures ≈150px of type, so the paginator can fill a page to within one
-/// chunk of its bottom edge instead of pushing a whole tall paragraph over
-/// and leaving a blank band behind — while a heading, a code fence, a list
-/// or a table still never splits.
+/// The most source lines a splittable block keeps after splitting: five.
 pub const SPLIT_MAX_LINES: usize = 5;
 
-/// Cut a normalised source into blocks on blank lines.
-///
-/// `fence_aware` is the whole difference between the two formats' top-level
-/// split: a Markdown fenced block keeps its interior blank lines (they are
-/// content) and ends at its closing fence (the line under it starts a new
-/// block), a plain-text file has no fences to honour. Otherwise this is
-/// exactly CommonMark's top-level block boundary for the constructs a reader
-/// cares about, and it keeps the pipeline free of a second Markdown
-/// dependency — the RENDER still goes through the real parser, block by block.
+/// Cut a normalised source on blank lines; `fence_aware` keeps a fence whole.
 pub fn split_blocks(text: &str, kind: BlockKind, fence_aware: bool) -> Vec<TextBlock> {
     let mut blocks = Vec::new();
     let mut current: Vec<&str> = Vec::new();
@@ -100,11 +66,7 @@ pub fn split_blocks(text: &str, kind: BlockKind, fence_aware: bool) -> Vec<TextB
         if fence_aware && fences.feed(trimmed) {
             current.push(line);
             if !fences.inside() {
-                // The closer ENDS the block: what follows opens a fresh one,
-                // without waiting for a blank line. CommonMark is explicit
-                // about it, and a paragraph glued under a code sample must not
-                // be swallowed into the fence — it would inherit the fence's
-                // "never cut" verdict and push a whole page over.
+                // The closer ENDS the block: what follows opens a fresh one.
                 flush(&mut blocks, &mut current);
             }
             continue;
@@ -123,8 +85,7 @@ pub fn split_blocks(text: &str, kind: BlockKind, fence_aware: bool) -> Vec<TextB
     blocks
 }
 
-/// Whether a trimmed line opens a fenced code block (``` or ~~~, optionally
-/// followed by an info string).
+/// Whether a trimmed line opens a fenced code block.
 pub fn is_fence_open(trimmed: &str) -> bool {
     !fence_marker_of(trimmed).is_empty()
 }
@@ -140,17 +101,7 @@ fn fence_marker_of(trimmed: &str) -> &'static str {
     }
 }
 
-/// One shared fence state machine — the open/close rules [`split_blocks`]
-/// follows — extracted so every scanner over Markdown lines (the block
-/// splitter, the outline's heading scan, the metadata reader's title
-/// fallback) answers the fence question identically instead of carrying its
-/// own copy.
-///
-/// A fence OPENS on ``` or ~~~ (three or more, optionally followed by an info
-/// string) when no fence is open, and CLOSES on a line that is nothing but the
-/// SAME marker characters (possibly longer, possibly spaced). An opener-looking
-/// line inside a fence is info-string noise, not a close — the rule a plain
-/// startswith toggle gets wrong.
+/// One shared fence state machine, so every Markdown scanner answers alike.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FenceTracker {
     marker: &'static str,
@@ -161,16 +112,10 @@ impl FenceTracker {
         !self.marker.is_empty()
     }
 
-    /// Feed one line, trimmed however the caller trims it (the rules only
-    /// look at the line's own bytes). Returns whether the line is fence
-    /// syntax — an opener or a closer — which the caller treats as
-    /// structure, never as content. After a `true` return,
-    /// [`inside`](Self::inside) says whether the fence just opened or just
-    /// closed.
+    /// Feed one line; returns whether it is fence syntax.
     pub fn feed(&mut self, trimmed: &str) -> bool {
         if self.inside() {
-            // A closing fence: the same marker char, nothing on the line
-            // but the fence itself (it may be longer than the opener).
+            // A closing fence: the same marker char, nothing else on the line.
             let marker_char = self.marker.chars().next().unwrap_or('`');
             let closes = trimmed.starts_with(self.marker)
                 && trimmed.trim_end_matches(marker_char).trim().is_empty();
@@ -187,21 +132,8 @@ impl FenceTracker {
     }
 }
 
-/// Cut oversized blocks into line-bounded chunks, so the paginator never
-/// chooses between splitting a block's render and leaving a near-empty page
-/// above it.
-///
-/// `splittable` is the format's answer to "may this block be cut?": plain
-/// text cuts every block (its hard breaks are the natural cut points);
-/// Markdown only running prose (a split there falls on a soft break, so the
-/// chunks render exactly as the one paragraph did, the second marked
-/// [`continuation`](TextBlock::continuation) so it carries no paragraph space
-/// of its own). Constructs with structure — headings, fences, lists, tables,
-/// quotes — pass through whole.
-///
-/// Runs once, right after parsing: the split depends only on the source (line
-/// count), never the live typography, so block identities are stable for the
-/// whole session however the settings move.
+/// Cut oversized blocks into line-bounded chunks, so a page never goes half
+/// empty.
 pub fn subdivide_with(
     blocks: Vec<TextBlock>,
     max_lines: usize,
@@ -249,19 +181,14 @@ mod tests {
         let md = "before\n\n```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```\nafter";
         let fence_free = split_blocks(md, BlockKind::Markdown, false);
         let fenced = split_blocks(md, BlockKind::Markdown, true);
-        // Without the fence rule the blank line inside the sample cuts it in
-        // half, so nothing there holds the opener and the body together. Counting
-        // blocks would not say: fence awareness joins the sample while the closer
-        // ends it, which is a wash on length and everything on content.
+        // Without it, the blank line inside the sample cuts it in half.
         assert!(
             !fence_free
                 .iter()
                 .any(|b| b.text.starts_with("```rust") && b.text.contains("println")),
             "the fence-free split kept the sample whole: {fence_free:?}"
         );
-        // With it: the sample is one block, and the line under the closing
-        // fence is its own — a paragraph glued to a code sample is still a
-        // paragraph.
+        // With it the sample is one block, and the next line its own.
         assert_eq!(fenced.len(), 3, "{fenced:?}");
         assert!(fenced[1].text.starts_with("```rust"));
         assert!(fenced[1].text.ends_with("```"));
@@ -282,8 +209,7 @@ mod tests {
 
     #[test]
     fn a_fence_marker_only_closes_a_fence() {
-        // ` ```rs ` after an opener is info-string noise, not a close; the
-        // bare marker is.
+        // An info string after an opener is noise, not a close.
         let md = "```\ncode\n```rs\nmore\n```\n";
         let blocks = split_blocks(md, BlockKind::Markdown, true);
         assert_eq!(blocks.len(), 1);
@@ -309,8 +235,7 @@ mod tests {
             source
         );
         assert!(!out[0].text.ends_with('\n'));
-        // A predicate that refuses every block leaves the list untouched, and
-        // a zero budget disables the pass outright.
+        // A predicate refusing every block leaves the list untouched.
         let same = vec![TextBlock::new(BlockKind::Text, source)];
         assert_eq!(subdivide_with(same.clone(), 5, |_, _| false), same);
         assert_eq!(subdivide_with(same.clone(), 0, |_, _| true), same);

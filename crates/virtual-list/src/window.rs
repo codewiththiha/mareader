@@ -1,10 +1,6 @@
-//! Shared windowing types: the mounted range, the viewport, and the
-//! overscan/budget policy that decides how much to keep warm around it.
+//! Shared windowing types: the mounted range, the viewport, the budget.
 
 /// An inclusive range of item indices, `first ..= last`.
-///
-/// Always non-empty: a `Window` is only ever produced when at least one item
-/// qualifies, so `first <= last` holds by construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Window {
     /// First item in the range (0-based, inclusive).
@@ -15,12 +11,6 @@ pub struct Window {
 
 impl Window {
     /// Number of items in the range.
-    ///
-    /// No `is_empty` companion: a `Window` is a non-empty range token, not a
-    /// collection — only ever produced when at least one item qualifies, so
-    /// an `is_empty` answering `false` unconditionally was a branch callers
-    /// could write but never take. The clippy lint is suppressed on
-    /// purpose.
     #[allow(clippy::len_without_is_empty)]
     #[inline]
     pub const fn len(&self) -> usize {
@@ -39,9 +29,7 @@ impl Window {
         self.first..=self.last
     }
 
-    /// Smallest window containing both `self` and `other` (union hull).
-    /// Used for pinning: selection pages / dominant-page pins extend the
-    /// mount window without touching the overscan math.
+    /// Smallest window containing both `self` and `other`.
     #[inline]
     pub const fn union(self, other: Window) -> Window {
         Window {
@@ -69,10 +57,6 @@ impl IntoIterator for Window {
 }
 
 /// The extents of the visible scrollport.
-///
-/// `main` is the extent along the scroll axis (height for a vertical list,
-/// width for a horizontal one); `cross` is the extent across it. Plain lists
-/// ignore `cross`; responsive grids resolve their column count from it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     /// Extent along the scroll axis.
@@ -100,31 +84,18 @@ impl From<f64> for Viewport {
 }
 
 /// How far past the viewport to keep mounted.
-///
-/// The policy is deliberately blind to *which* items it warms: it produces a
-/// symmetric pixel padding, and the window builder decides membership with
-/// two hard invariants — every partly-visible item is always mounted, and
-/// trimming evicts the item furthest from the viewport first (preferring the
-/// item below, in reading direction). Callers say how much slack they can
-/// afford; the top/below split falls out of wherever the reader is
-/// scrolled.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Overscan {
-    /// A multiple of the viewport extent (zoom-invariant). The right default
-    /// for expensive cells (canvases, rasters): one screenful ahead means
-    /// the same thing at any item size or zoom.
+    /// A multiple of the viewport extent, zoom-invariant.
     Screenfuls(f64),
-    /// A fixed number of items — or, for row-windowed grids, rows. The right
-    /// choice for cheap uniform cells (thumbnails): "pre-mount exactly two
-    /// rows" regardless of viewport height.
+    /// A fixed number of items, or rows for a row-windowed grid.
     Items(usize),
     /// A fixed pixel distance.
     Px(f64),
 }
 
 impl Overscan {
-    /// Resolve to a concrete pixel padding. `unit_hint` is the layout's
-    /// average item (or row) extent, used by [`Overscan::Items`].
+    /// Resolve to a concrete pixel padding.
     pub fn padding(self, viewport: f64, unit_hint: f64) -> f64 {
         match self {
             Self::Screenfuls(f) => f.max(0.0) * viewport.max(0.0),
@@ -134,13 +105,7 @@ impl Overscan {
     }
 }
 
-/// How much to keep mounted around the viewport. Two knobs, orthogonal by
-/// design:
-///
-/// - [`overscan`](Self::overscan) — how much slack around the visible range;
-/// - [`max_items`](Self::max_items) — a hard ceiling on mounted count, which
-///   only ever trims items that are **not** visible (for grids it counts
-///   *rows*, since a row's cells mount and unmount together).
+/// How much to keep mounted around the viewport: slack and a ceiling.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Budget {
     /// Read-around policy. See [`Overscan`].

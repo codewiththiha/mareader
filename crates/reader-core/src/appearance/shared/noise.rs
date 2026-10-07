@@ -1,12 +1,9 @@
-//! Grain mode -> the `body` classes and the opacity the noise overlay keys
-//! off. Shared by design: the grain is a body-level layer every format's
-//! page sits under, and no format pipeline gets to own it.
+//! Grain mode to the `body` classes and opacity the noise overlay keys
+//! off.
 
 use crate::appearance::{Appearance, NoiseMode};
 
-/// The two `body` classes the grain overlay's CSS keys off, as `(name, on)`:
-/// `noise-enabled` shows the layer, `noise-animated` makes it crawl. Off
-/// clears both, Static enables the layer, Animated enables both.
+/// The two `body` classes the grain overlay's CSS keys off.
 pub fn body_class_state(mode: NoiseMode) -> [(&'static str, bool); 2] {
     [
         ("noise-enabled", mode.is_on()),

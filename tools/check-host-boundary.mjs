@@ -1,34 +1,4 @@
-// The reader host's dependency boundary, asserted from its source.
-//
-// The workspace is split three ways inside the reader runtime:
-//
-//   crates/reader-runtime/src/host/**   the reader host: chrome placement,
-//                                       focus, bounds, pane create/remove,
-//                                       workspace commands, lifecycle dispatch
-//   crates/reader-runtime/src/pane/**   the production pane: one document
-//                                       session, format rendering, virtualizers
-//   crates/reader-runtime/src/lib.rs    the composition root that hands the
-//                                       host its pane factory
-//
-// and the dependency direction is `host → contract → format`. The host
-// speaks to panes only through `host/contract.rs`; it must never name a
-// format, an engine type, the pane implementation, or a pane's reader
-// state. The compiler cannot say that (they share a crate), so this check
-// does: every non-comment line under `host/` is scanned for the names that
-// would break the direction.
-//
-// A second rule keeps the legacy path removed: the old `ReaderPage`
-// workspace monolith must not come back as a name anywhere in the reader
-// runtime's code.
-//
-// A third keeps the Shell's side of the boundary the Shell's: durable
-// persistence and the window belong to the Shell, so reader code reaches
-// them only through `ShellApi`. Outside `context.rs` (whose `StandaloneApi`
-// stands in for the Shell when there is none) the reader may READ the
-// origin's store — the allowlist below — but never write it, and never
-// reload the window itself.
-//
-// Plain node modules only, so it runs in a lane that has not run `npm ci`.
+// The host speaks to panes only through host/contract.rs, never the store.
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -55,9 +25,7 @@ const HOST_FORBIDDEN = [
   [/\breader_core::(format|view|reflow)\b/, "document-format types belong to the pane"],
 ];
 
-/** The store reads reader code may make itself; every other `storage::`
- *  name is a write (or a new function nobody has classified yet) and goes
- *  through `ShellApi`. An allowlist, so a new writer fails closed. */
+/** Store reads the reader may make; other names go through `ShellApi`. */
 const STORAGE_READS = new Set([
   "get",
   "load_settings",
@@ -87,9 +55,7 @@ function walk(dir) {
   return out;
 }
 
-/** The file's code with line comments (`//`, `///`, `//!`) blanked out,
- *  line numbers preserved. String literals are left alone: none of the
- *  forbidden names belongs in a host string either. */
+/** The file's code with line comments blanked, line numbers preserved. */
 function codeLines(path) {
   return readFileSync(path, "utf8")
     .split("\n")
@@ -182,5 +148,3 @@ console.log(
   `host boundary: ${hostFiles.length} host sources clean; no legacy ReaderPage; ` +
     "reader writes go through ShellApi",
 );
-
-// only the changed file was rewritten

@@ -1,22 +1,5 @@
-//! The virtualized strip of reflowable pages — the counterpart of
-//! [`PdfPageStrip`](crate::components::formats::pdf::PdfPageStrip) for a document
-//! made of type.
-//!
-//! The shape is the same (mounted window, absolutely-positioned hosts at the
-//! virtualizer's offsets, device-pixel snapping), and one difference carries all
-//! the others: a text page's size is KNOWN — every page is A4 — so this strip
-//! never reports geometry back. There is no `on_geometry`, no render scale to
-//! reconcile, no bitmap to stretch: the host IS the content, sized from the live
-//! display scale, and the virtualizer's size model is seeded exact by the open
-//! flow.
-//!
-//! Both axes are honest here, exactly as in the PDF strip, and the page host picks
-//! this component by axis without knowing what it lays out. Vertical reading of a
-//! reflowable document is NOT this strip — it is the continuous block stream (see
-//! [`ReflowStreamLayout`](super::ReflowStreamLayout)); this is what the horizontal
-//! scroll mode and any future paged-with-gaps mode walk. Like its PDF twin, the
-//! strip is pure presentation: scroll policy and container binding live in
-//! [`ScrollShell`](crate::components::viewer::shells::scroll_shell::ScrollShell).
+//! The virtualized strip of reflowable pages: the PDF strip's twin,
+//! with a known page size.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -35,8 +18,7 @@ use crate::state::ReaderState;
 pub fn ReflowPageStrip(
     state: ReaderState,
     virtualizer: Virtualizer,
-    /// The strip's axis. The offsets, the scroll bars and the sizing rule all
-    /// follow it — the same three differences the PDF strip has.
+    /// The strip's axis; offsets, bars and sizing follow it.
     #[prop(default = Axis::Vertical)]
     axis: Axis,
     /// The scroller element this strip lays out into (owned by the shell).
@@ -49,9 +31,7 @@ pub fn ReflowPageStrip(
     let total_size = v.total_size();
     let page_scale = state.viewer.zoom.display.read_only();
 
-    // The strip is at least as tall as one A4 page at the live scale, so a zoom
-    // past fit-height yields real vertical scroll range as the zoom happens (the
-    // same rule as the PDF strip).
+    // At least one A4 page tall, so zoom-past-fit scrolls.
     let strip_h = Memo::new(move |_| PAGE_HEIGHT * state.viewer.zoom.display.get());
     let vertical = axis == Axis::Vertical;
     let texture_class = texture_class(state);
@@ -118,10 +98,7 @@ pub fn ReflowPageStrip(
                                 )
                             }
                         };
-                        // The host id is the slot's, shared with the PDF strip, so
-                        // the chrome that finds a page by id never asks who painted
-                        // it. Centring follows the axis: `mx-auto` on a page that
-                        // scrolls vertically, `my-auto` on one that scrolls past it.
+                        // The host id is the slot's; centring follows the axis.
                         view! {
                             <div id=wrapper_id(axis, index, page) style=style>
                                 <ReflowPage
@@ -140,8 +117,7 @@ pub fn ReflowPageStrip(
     }
 }
 
-/// Per-axis wrapper id, kept as a free function so both ends of the strip's
-/// `<For>` can name it without capturing anything by move.
+/// Per-axis wrapper id, a free function for both `<For>` ends.
 fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
     match axis {
         Axis::Vertical => format!("txv-{index}-wrap"),

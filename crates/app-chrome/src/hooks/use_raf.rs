@@ -1,18 +1,5 @@
-//! The two animation-frame primitives: one frame per event burst, and one
-//! loop that keeps its own next frame.
-//!
-//! [`raf_coalesce`] is for high-rate EVENTS. `scroll`, `pointermove` and
-//! `resize` fire several times between paints, and a handler that reads layout
-//! forces a synchronous style + layout pass per event — passes whose results
-//! are all discarded but the last, since nothing draws until the next frame.
-//! The coalescer runs such a handler at most once per frame, ON the frame,
-//! where the layout it reads is the layout about to be painted.
-//!
-//! [`FrameLoop`] is for animations, which have no event to hang off: the frame
-//! decides whether another is needed. It owns the machinery every loop in the
-//! app was hand-rolling — the re-arm slot, the alive flag, the cancellable
-//! frame id, owner cleanup — which the zoom tween and the floating-surface
-//! spring had each built separately: two places for a lifetime bug to live.
+//! The two animation-frame primitives: a per-burst coalescer and a
+//! self-rearming loop.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -21,19 +8,13 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
-/// Wrap `f` so any number of calls before the next animation frame schedule
-/// exactly one call, on that frame. The returned closure is cheap to clone, so
-/// several listeners (scroll and resize feeding one recompute) share the frame
-/// rather than each getting one. Must be called inside a reactive scope: the
-/// pending flag is owner-scoped, and a frame landing after the owner is gone
-/// is dropped instead of running `f` against disposed state.
+/// Wrap `f` so any number of calls before the next frame run once.
 pub fn raf_coalesce(f: impl Fn() + 'static) -> impl Fn() + Clone + 'static {
     let pending = StoredValue::new_local(false);
     let f = Rc::new(f);
 
     move || {
-        // `None` = the owner is gone; treat it as "already pending" so no
-        // further frames are queued.
+        // `None` = the owner is gone; treat it as already pending.
         if pending.try_get_value().unwrap_or(true) {
             return;
         }
@@ -41,8 +22,7 @@ pub fn raf_coalesce(f: impl Fn() + 'static) -> impl Fn() + Clone + 'static {
 
         let f = Rc::clone(&f);
         request_animation_frame(move || {
-            // Disposed between the schedule and the frame: there is nothing
-            // left for `f` to write to.
+            // Disposed between the schedule and the frame: nothing to write to.
             if pending.try_get_value().is_none() {
                 return;
             }
@@ -55,8 +35,7 @@ pub fn raf_coalesce(f: impl Fn() + 'static) -> impl Fn() + Clone + 'static {
 /// A slot holding the pending frame's id, so a stop can cancel it.
 type RafId = Rc<Cell<Option<i32>>>;
 
-/// The loop's own step, and the trampoline that keeps re-queueing it: one
-/// frame callback reads the slot and calls whatever is parked in it.
+/// The loop's own step and the trampoline that re-queues it.
 type Step = Rc<dyn Fn()>;
 
 fn cancel(raf: &RafId) {
@@ -67,8 +46,7 @@ fn cancel(raf: &RafId) {
     }
 }
 
-/// Queue `f` for the next frame, replacing any frame this loop already had
-/// queued: one loop, one pending frame, however often it is re-armed.
+/// Queue `f` for the next frame, replacing any already queued.
 fn queue(raf: &RafId, f: impl FnOnce() + 'static) {
     cancel(raf);
     let Some(w) = web_sys::window() else {
@@ -80,28 +58,11 @@ fn queue(raf: &RafId, f: impl FnOnce() + 'static) {
     }
 }
 
-/// One self-rearming animation-frame loop. [`arm`](Self::arm) hands it a step
-/// and queues exactly one frame; the step returns `true` for "another frame"
-/// and `false` for "done". Arming a running loop does NOT stack a second frame
-/// — it replaces the step and the live loop picks it up on the frame already
-/// queued, which is what makes a retarget cheap.
-///
-/// ## Why the flag and the id, not one or the other
-///
-/// A queued frame callback cannot always be cancelled (the owner that would
-/// cancel it may be gone), so the callback checks `alive` BEFORE reading
-/// anything reactive: reading a signal whose owner was cleaned up unwinds
-/// through a callback nobody owns. The flag lives in the loop's own `Rc` — the
-/// one evidence still safe to read. The id is the cheaper half: a `stop` that
-/// can cancel does, and the flag catches the frames it could not.
-///
-/// Build inside a reactive scope: cleanup is registered at construction, so a
-/// loop dies with the surface that armed it.
+/// One self-rearming animation-frame loop: a step returning true for
+/// another frame, false for done.
 #[derive(Clone)]
 pub struct FrameLoop {
-    /// The step, parked where the frame callback can find it. The callback
-    /// holds only a WEAK reference, so replacing this slot is what retargets a
-    /// running loop and dropping it is what ends one.
+    /// The step, parked where the frame callback finds it, weakly.
     slot: Rc<RefCell<Option<Step>>>,
     alive: Rc<Cell<bool>>,
     raf: RafId,
@@ -112,9 +73,7 @@ impl FrameLoop {
     pub fn new() -> Self {
         let alive = Rc::new(Cell::new(false));
         let raf: RafId = Rc::new(Cell::new(None));
-        // Parked through a stored value rather than captured directly: a
-        // cleanup closure may not hold an `Rc`, and the store is dropped before
-        // the closure could reach it, hence the `try_` read.
+        // Parked in a stored value: a cleanup closure may not hold an `Rc`.
         let store = StoredValue::new_local(Some((alive.clone(), raf.clone())));
         on_cleanup(move || {
             if let Some((alive, raf)) = store.try_get_value().flatten() {
@@ -149,9 +108,7 @@ impl FrameLoop {
                 cancel(&raf);
                 return;
             }
-            // Re-arm through the slot, not through this closure: whatever is
-            // in the slot NOW is the step that runs next — how a retarget
-            // mid-flight is adopted without a second loop.
+            // Re-arm through the slot: whatever is in it NOW runs next.
             if let Some(next) = weak.upgrade().and_then(|s| s.borrow().clone()) {
                 queue(&raf, move || next());
             }
@@ -165,8 +122,7 @@ impl FrameLoop {
         queue(&self.raf, move || trampoline());
     }
 
-    /// Stop: cancel the queued frame, drop the step, and let a later `arm`
-    /// start a fresh loop.
+    /// Stop: cancel the frame, drop the step; a later `arm` starts fresh.
     pub fn stop(&self) {
         self.alive.set(false);
         *self.slot.borrow_mut() = None;

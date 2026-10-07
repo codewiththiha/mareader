@@ -1,24 +1,5 @@
-//! The workspace layout, pure: a binary tree of splits whose leaves are
-//! [`PaneId`]s. No Leptos, no DOM, no engine — and nothing heavier than an
-//! id and a ratio: the tree never holds a session, a canvas, a virtualizer
-//! or a document buffer, so reshaping the workspace can never retain one.
-//! The runtimes live in the pane manager, keyed by the same ids.
-//!
-//! What the tree decides, and the host only carries out:
-//!
-//! * where a new pane goes ([`PaneTree::split`]: beside a pane, before or
-//!   after it, along an axis);
-//! * what closing a pane leaves ([`PaneTree::remove`]: its split collapses
-//!   into the sibling — no unary split can exist, the type has none — and
-//!   the pane that inherits focus is named, deterministically);
-//! * how a divider drag becomes a ratio ([`PaneTree::drag_ratio`]: clamped
-//!   so neither side becomes unusably small);
-//! * every pane's box and every divider's hit strip for a workspace rect
-//!   ([`PaneTree::layout`]), in whole pixels that tile the rect exactly.
-//!
-//! Ratios, not pixels, are the stored geometry: a window resize re-lays the
-//! same tree. Pixels enter only when a drag is converted (the minimum pane
-//! size depends on the room there is) and when the tree is laid out.
+//! The workspace layout, pure: a binary tree of splits over
+//! [`PaneId`]s.
 
 use serde::{Deserialize, Serialize};
 
@@ -30,8 +11,7 @@ const MIN_RATIO: f64 = 0.15;
 const MAX_RATIO: f64 = 1.0 - MIN_RATIO;
 /// The narrowest a pane may be dragged, when the split has room for two.
 const MIN_PANE_PX: f64 = 200.0;
-/// The width of a divider's pointer strip, centred on the seam. The strip
-/// overlays the two panes' edges; the panes themselves tile the rect.
+/// The width of a divider's pointer strip, centred on the seam.
 const DIVIDER_HIT_PX: f64 = 8.0;
 /// The ratio a fresh split starts at.
 pub const EVEN: f64 = 0.5;
@@ -55,8 +35,7 @@ pub enum Side {
     After,
 }
 
-/// Which way a pane is moved through the layout (the view menu's Move
-/// items): toward that side of the workspace.
+/// Which way a pane is moved through the layout.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MoveDirection {
@@ -75,8 +54,8 @@ impl MoveDirection {
         MoveDirection::Right,
     ];
 
-    /// The split axis the move crosses, and the side of such a split the
-    /// pane must START on for the move to go anywhere (`false`: `first`).
+    /// The split axis crossed, and the starting side (`false`:
+    /// `first`).
     fn crossing(self) -> (SplitAxis, bool) {
         match self {
             MoveDirection::Left => (SplitAxis::Horizontal, true),
@@ -111,8 +90,7 @@ impl Moves {
     }
 }
 
-/// A split's identity, for the divider that resizes it. Minted by the tree
-/// from a monotonic counter and never reused.
+/// A split's identity, minted and never reused.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize)]
 #[serde(transparent)]
 pub struct SplitId(u64);
@@ -135,9 +113,7 @@ pub struct SplitNode {
     pub second: LayoutNode,
 }
 
-/// A node of the layout: a pane, or a split of two nodes. There is no empty
-/// node and no one-child split — the shapes the phase forbids cannot be
-/// built.
+/// A pane, or a split of two nodes: no empty or unary split exists.
 #[derive(Clone, PartialEq, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LayoutNode {
@@ -189,8 +165,7 @@ impl LayoutNode {
     }
 
     fn find_split_mut(&mut self, id: SplitId) -> Option<&mut SplitNode> {
-        // One binding of the split: two match arms each binding it mutably
-        // (one returning it) is a double borrow to the checker.
+        // Two match arms each binding it mutably is a double borrow.
         let LayoutNode::Split(split) = self else {
             return None;
         };
@@ -220,9 +195,7 @@ impl LayoutNode {
         }
     }
 
-    /// Remove the leaf `pane` from the subtree under this SPLIT node,
-    /// collapsing its parent split into the sibling. Returns the pane that
-    /// inherits focus, or `None` when `pane` is not under here.
+    /// Remove `pane` under this SPLIT node, collapsing its split.
     fn remove_under(&mut self, pane: PaneId) -> Option<PaneId> {
         let LayoutNode::Split(split) = self else {
             return None;
@@ -237,9 +210,8 @@ impl LayoutNode {
                     .or_else(|| split.second.remove_under(pane));
             }
         };
-        // The pane nearest to where the closed one stood: the sibling's
-        // edge that touched it. A closed left/top pane hands over to the
-        // sibling's first leaf; a closed right/bottom pane to its last.
+        // The sibling's edge that touched it: first leaf for a
+        // closed left/top pane.
         let successor = if closed_first {
             sibling.first_leaf()
         } else {
@@ -249,8 +221,8 @@ impl LayoutNode {
         Some(successor)
     }
 
-    /// The route from this node down to `pane`: each split passed, as its
-    /// axis and whether the route takes its `second` child.
+    /// The route down to `pane`: each split passed, as its axis and
+    /// side.
     fn route_to(&self, pane: PaneId) -> Option<Vec<(SplitAxis, bool)>> {
         match self {
             LayoutNode::Leaf(id) => (*id == pane).then(Vec::new),
@@ -299,7 +271,7 @@ impl LayoutNode {
         match self {
             LayoutNode::Leaf(id) => out.panes.push((*id, rect)),
             LayoutNode::Split(split) => {
-                let (first, second) = divide(rect, split.axis, split.ratio);
+                let (first, second) = split_rects(rect, split.axis, split.ratio);
                 let seam = match split.axis {
                     SplitAxis::Horizontal => PaneBounds {
                         x: first.x + first.width - DIVIDER_HIT_PX / 2.0,
@@ -327,19 +299,10 @@ impl LayoutNode {
     }
 }
 
-/// Split `rect` along `axis` at `ratio`, in whole pixels: the first side is
-/// the rounded share, the second everything left, so the two tile the rect
-/// with no gap and no overlap at any size. Public for the drop preview: the
-/// box a preview draws is the box this lays out, never a second rounding.
-pub fn split_rects(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
-    divide(rect, axis, ratio)
-}
-
-/// The layout policy's answer to "may this pane be split along `axis`": a
-/// fresh split starts [`EVEN`], and both halves must keep `MIN_PANE_PX`
-/// along the axis. Measured in the boxes the layout itself would produce.
+/// Whether a fresh [`EVEN`] split keeps both halves at
+/// `MIN_PANE_PX`.
 pub fn split_fits(rect: PaneBounds, axis: SplitAxis) -> bool {
-    let (first, second) = divide(rect, axis, EVEN);
+    let (first, second) = split_rects(rect, axis, EVEN);
     let extent = |b: PaneBounds| match axis {
         SplitAxis::Horizontal => b.width,
         SplitAxis::Vertical => b.height,
@@ -347,7 +310,9 @@ pub fn split_fits(rect: PaneBounds, axis: SplitAxis) -> bool {
     extent(first) >= MIN_PANE_PX && extent(second) >= MIN_PANE_PX
 }
 
-fn divide(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
+/// Split `rect` in whole pixels; the sides tile it exactly, as the
+/// drop preview draws.
+pub fn split_rects(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
     match axis {
         SplitAxis::Horizontal => {
             let first_w = (rect.width * ratio).round().min(rect.width).max(0.0);
@@ -380,8 +345,7 @@ fn divide(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBou
     }
 }
 
-/// One divider as laid out: its pointer strip, and the box of the split it
-/// resizes (a drag's pointer position is converted against `span`).
+/// One divider: its pointer strip and its split's box.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize)]
 pub struct DividerLayout {
     pub split: SplitId,
@@ -390,8 +354,7 @@ pub struct DividerLayout {
     pub span: PaneBounds,
 }
 
-/// The whole workspace laid out: every pane's box (in leaf order) and every
-/// divider's strip (outermost first).
+/// The workspace laid out: pane boxes, then divider strips.
 #[derive(Clone, PartialEq, Debug, Default, Serialize)]
 pub struct TreeLayout {
     pub panes: Vec<(PaneId, PaneBounds)>,
@@ -420,14 +383,11 @@ pub enum TreeError {
     UnknownSplit(SplitId),
     /// A ratio that is not a finite number.
     InvalidRatio,
-    /// The layout policy refused a split: one half of the pane would be
-    /// narrower (or shorter) than `MIN_PANE_PX` ([`split_fits`]).
+    /// A half would be smaller than `MIN_PANE_PX`.
     NoRoom(PaneId),
-    /// A drop asked to open in a pane that already shows a document (only
-    /// an empty pane takes a document in place from a drop).
+    /// A drop onto a pane that already shows a document.
     Occupied(PaneId),
-    /// Nothing lies that way from the pane (or a pane was asked to trade
-    /// places with itself).
+    /// Nothing lies that way from the pane.
     NoMove(PaneId),
     /// A move between subtrees that are not disjoint.
     InvalidMove,
@@ -508,8 +468,7 @@ impl PaneTree {
         Ok(())
     }
 
-    /// Put `new` beside `target`, on `side` of it along `axis`, halving
-    /// `target`'s box. Returns the new split's id.
+    /// Put `new` beside `target`, halving its box.
     pub fn split(
         &mut self,
         target: PaneId,
@@ -542,11 +501,7 @@ impl PaneTree {
         Ok(id)
     }
 
-    /// Take `pane` out. Its split collapses into the sibling subtree (the
-    /// normalization: no split is ever left with one child). Returns the
-    /// pane that should inherit focus if `pane` had it — the nearest one,
-    /// the sibling's edge that touched the closed pane — or `None` when the
-    /// workspace is now empty.
+    /// Take `pane` out; its split collapses into the sibling.
     pub fn remove(&mut self, pane: PaneId) -> Result<Option<PaneId>, TreeError> {
         if matches!(self.root, Some(LayoutNode::Leaf(id)) if id == pane) {
             self.root = None;
@@ -559,16 +514,7 @@ impl PaneTree {
             .ok_or(TreeError::UnknownPane(pane))
     }
 
-    /// The two subtrees a move of `pane` toward `direction` exchanges, as
-    /// routes of sides from the root, and whether the exchange happens at
-    /// the crossed split itself (`true`) or deeper, between matching cells.
-    ///
-    /// The crossed split is the NEAREST ancestor along the move's axis that
-    /// has `pane` on the side the move leaves. Its other side is matched
-    /// against the route from that split down to `pane`, level by level,
-    /// while the other side is split the same way: a 2×2 grid swaps one
-    /// cell for the cell beside it, while a stacked pair moving past one
-    /// tall pane moves as a column and the tall pane takes its place.
+    /// The two subtrees a move exchanges, as routes of sides.
     fn move_plan(&self, pane: PaneId, direction: MoveDirection) -> Option<MovePlan> {
         let root = self.root.as_ref()?;
         let route = root.route_to(pane)?;
@@ -609,11 +555,8 @@ impl PaneTree {
         }
     }
 
-    /// Move `pane` one step toward `direction` (see `move_plan` for which
-    /// subtrees trade places). When whole sides of a split trade places the
-    /// split's ratio flips too, so each side keeps the size it had; a swap
-    /// between matching cells keeps every ratio. Refused (nothing changes)
-    /// when there is nothing that way.
+    /// Move `pane` one step; whole sides trading places flip the
+    /// ratio.
     pub fn move_pane(&mut self, pane: PaneId, direction: MoveDirection) -> Result<(), TreeError> {
         let plan = self
             .move_plan(pane, direction)
@@ -645,9 +588,7 @@ impl PaneTree {
         self.swap_nodes(&route_a, &route_b)
     }
 
-    /// Take `pane` out of its place and put it on `side` of `target` along
-    /// `axis`, halving `target`'s box. The pane keeps its id (and so its
-    /// session); only the layout changes.
+    /// Move `pane` beside `target`; it keeps its id and session.
     pub fn dock(
         &mut self,
         pane: PaneId,
@@ -706,11 +647,8 @@ impl PaneTree {
         Ok(split.ratio)
     }
 
-    /// The ratio a divider drag asks for: the pointer's position along the
-    /// divider's `span` (see [`DividerLayout`]), clamped so neither side
-    /// drops under `MIN_PANE_PX` when the span has room for two such
-    /// panes, and never outside `MIN_RATIO` and `MAX_RATIO`. Pure: the caller
-    /// stores it with [`PaneTree::set_ratio`].
+    /// The ratio a divider drag asks for, clamped to keep both panes
+    /// usable.
     pub fn drag_ratio(axis: SplitAxis, span: PaneBounds, pointer: (f64, f64)) -> Option<f64> {
         let (origin, extent, at) = match axis {
             SplitAxis::Horizontal => (span.x, span.width, pointer.0),
@@ -731,11 +669,7 @@ impl PaneTree {
         out
     }
 
-    /// The tree's invariants against the manager's live panes, checked by
-    /// the tests after every operation (and by the host in debug builds):
-    /// every leaf is a live pane and every live pane is a leaf, no pane
-    /// appears twice, split ids are unique, every ratio is in range, and the
-    /// active pane is in the tree exactly when the tree is not empty.
+    /// The tree's invariants against the manager's live panes.
     pub fn check_invariants(&self, live: &[PaneId], active: Option<PaneId>) -> Result<(), String> {
         let leaves = self.leaves();
         let mut seen = std::collections::BTreeSet::new();
@@ -780,8 +714,8 @@ impl PaneTree {
     }
 }
 
-/// Clamp a ratio for a split `extent` px long: the stored range, narrowed so
-/// both sides keep [`MIN_PANE_PX`] whenever the extent can afford two.
+/// Clamp a ratio so both sides keep `MIN_PANE_PX` when the extent
+/// affords two.
 fn clamp_ratio(ratio: f64, extent: f64) -> f64 {
     let (mut lo, mut hi) = (MIN_RATIO, MAX_RATIO);
     if extent >= 2.0 * MIN_PANE_PX {
@@ -984,8 +918,8 @@ mod tests {
 
     #[test]
     fn closing_a_pane_hands_focus_to_the_nearest_leaf_of_its_sibling() {
-        // [1 | [2 / 3]]: closing 1 (a first child) → the sibling's FIRST
-        // leaf, 2 — the one that touched it.
+        // Closing 1 (a first child) hands over to 2, the leaf that
+        // touched it.
         let mut tree = PaneTree::new();
         tree.set_root(p(1)).unwrap();
         tree.split(p(1), SplitAxis::Horizontal, Side::After, p(2))
@@ -993,8 +927,7 @@ mod tests {
         tree.split(p(2), SplitAxis::Vertical, Side::After, p(3))
             .unwrap();
         assert_eq!(tree.clone().remove(p(1)), Ok(Some(p(2))));
-        // [[1 / 2] | 3]: closing 3 (a second child) → the sibling's LAST
-        // leaf, 2.
+        // Closing 3 (a second child) hands over to 2.
         let mut tree = PaneTree::new();
         tree.set_root(p(1)).unwrap();
         tree.split(p(1), SplitAxis::Horizontal, Side::After, p(3))
@@ -1080,14 +1013,12 @@ mod tests {
             PaneTree::drag_ratio(SplitAxis::Vertical, span, (0.0, 350.0)),
             Some(0.5)
         );
-        // A quarter of a 600 px span would leave the upper pane 150 px:
-        // the drag stops where it keeps MIN_PANE_PX.
+        // The drag stops where it keeps MIN_PANE_PX.
         assert_eq!(
             PaneTree::drag_ratio(SplitAxis::Vertical, span, (0.0, 200.0)),
             Some(MIN_PANE_PX / 600.0)
         );
-        // Neither side under MIN_PANE_PX when the span affords two: 1000 px
-        // wide → [0.2, 0.8], tighter than the stored range.
+        // 1000 px wide → [0.2, 0.8], tighter than the stored range.
         assert_eq!(
             PaneTree::drag_ratio(SplitAxis::Horizontal, span, (150.0, 0.0)),
             Some(0.2)
@@ -1096,8 +1027,7 @@ mod tests {
             PaneTree::drag_ratio(SplitAxis::Horizontal, span, (1090.0, 0.0)),
             Some(0.8)
         );
-        // A span too small for two minimum panes falls back to the stored
-        // range rather than an empty one.
+        // Too small for two minimum panes: the stored range stands.
         let narrow = PaneBounds {
             width: 300.0,
             ..span
@@ -1140,8 +1070,7 @@ mod tests {
 
     #[test]
     fn a_pane_id_is_not_a_document_the_same_document_twice_is_two_panes() {
-        // The tree knows panes, never documents: two panes that happen to
-        // show one book are two leaves, closed independently.
+        // Two panes showing one book are two leaves.
         let mut tree = PaneTree::new();
         tree.set_root(p(1)).unwrap();
         tree.split(p(1), SplitAxis::Horizontal, Side::After, p(2))
@@ -1150,9 +1079,7 @@ mod tests {
         assert!(tree.contains(p(1)) && !tree.contains(p(2)));
     }
 
-    /// Random split / close / resize sequences against a plain model: the
-    /// invariants hold after every step, the leaf set is exactly the model's,
-    /// and every layout tiles the workspace.
+    /// Random sequences against a plain model.
     #[test]
     fn random_operations_keep_every_invariant() {
         let mut seed: u64 = 0x5eed_1234_abcd_0001;

@@ -1,39 +1,4 @@
-// Session ownership, asserted from source (docs/session-ownership.md).
-//
-// Every document a pane shows is owned by that pane's format session — a
-// `PdfSession` (crates/pdf-engine) or an `MdSession`/`TxtSession`
-// (crates/reader-runtime/src/pane/session.rs) — installed per opened
-// document and disposed with it. The compiler proves the types; it cannot
-// prove that nothing still routes around them. This check does, rule by
-// rule, so a regression back to a realm-wide document owner fails CI:
-//
-//   1. Reader code reaches the PDF engine only through its pane's session
-//      (`pane.pdf()`, `MountedPdf`). The `pdf_engine::api` names it may
-//      still use are the realm-wide ones — appearance broadcasts, engine
-//      diagnostics, the error/stats types — never document work.
-//   2. The paper state machine is per session: reader code names no
-//      `pdf_engine::backdrop` function except the realm's in-flight sample
-//      gauge (diagnostics).
-//   3. Sessions are created and installed by the open flow only: a
-//      `PdfSession::create` or `replace_document` anywhere else would be a
-//      second owner for a pane's document. The slot's raw moves
-//      (`install_session`, `take_session`) stay inside the pane handle, so
-//      every document change goes through its replace / abandon / end —
-//      the one dispose path every format and view mode shares.
-//   4. Async ownership stamps are per pane (`claim_generation` /
-//      `owns_generation`); the realm-wide epoch is a diagnostics label and
-//      appears nowhere else.
-//   5. The legacy realm-wide ownership names stay gone.
-//   6. The engine bridge is session-first: every `window.PDFReader` extern
-//      takes `sid: u32` first, except the realm-wide surface listed below.
-//   7. The PDF engine crate holds no realm state beyond the classified
-//      realm-shared statics below (everything else lives on a session).
-//
-// Test code is exempt — tests build sessions directly: an inline
-// `#[cfg(test)] mod tests { … }` (at the end of a file by this repo's
-// convention) and a whole file declared `#[cfg(test)] mod name;`.
-//
-// Plain node modules only, so it runs in a lane that has not run `npm ci`.
+// Session ownership from source: PDF work goes through a pane's session.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -107,8 +72,7 @@ function walk(dir) {
   return out;
 }
 
-/** Production code lines: line comments blanked, and everything from a
- *  `#[cfg(test)]`-gated `mod tests` on dropped. Line numbers preserved. */
+/** Production lines: comments blanked, `#[cfg(test)] mod tests` dropped. */
 function productionLines(path) {
   const lines = readFileSync(path, "utf8").split("\n");
   const out = [];
@@ -128,8 +92,7 @@ function productionLines(path) {
   return out;
 }
 
-/** Files that are test modules in their own right: declared
- *  `#[cfg(test)] mod name;` by their parent. */
+/** Test modules declared `#[cfg(test)] mod name;` by their parent. */
 function testFiles(files) {
   const out = new Set();
   for (const file of files) {
@@ -218,8 +181,7 @@ for (const file of engineFiles) {
       }
       const m = line.match(/\bpub\s+(?:async\s+)?fn\s+(\w+)\s*\(([^,)]*)/);
       if (!m) return;
-      // rustfmt breaks a long signature after `(`: the first parameter is
-      // then the whole next line.
+      // rustfmt breaks a long signature after `(`: the parameter moves down.
       const first = m[2].trim() === "" && /\(\s*$/.test(line)
         ? (bridgeLines[i + 1] ?? "").replace(/,\s*$/, "")
         : m[2];

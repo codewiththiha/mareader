@@ -1,9 +1,4 @@
 //! "This book is not where the library left it."
-//!
-//! The question a click on a missing book asks instead of opening the reader onto an error: two
-//! doors that point the row at the file it is now — pick the file yourself, or name a folder and
-//! let the app walk it looking for a file of the book's own name — plus a Cancel that changes
-//! nothing.
 
 use leptos::prelude::*;
 

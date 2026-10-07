@@ -1,24 +1,4 @@
-//! The reflowable half of the open document: its blocks, and the page cut the
-//! reader is currently reading them through.
-//!
-//! The PDF keeps its content in the engine; a plain-text or Markdown document
-//! keeps it HERE — the whole file parsed into blocks the moment it opens
-//! (`txt_core::parse_plain_text` / `md_core::parse_markdown`, both cutting
-//! through `reflow_core::block`). The paginator (`reflow_core::pager`) packs
-//! the blocks into A4 pages, published as three parallel signals the layouts
-//! read:
-//!
-//! * `heights` — every block's best-known height at scale 1, seeded by the
-//!   pure estimate at open, then refined as the reader's own rows report
-//!   measured heights (`reader_runtime::effects::reader::reflow_measure`);
-//! * `cuts` — the page split those heights produce;
-//! * `block_page` — the inverse map (block → page) navigation and search
-//!   resolve positions through.
-//!
-//! Heights and cuts move through two doors that always write the split and its
-//! map together — [`ReflowContent::set_initial_heights`] at open,
-//! [`ReflowContent::recut`] afterwards — because a split that disagrees with
-//! its map would send a page jump to the wrong block.
+//! The reflowable half of the document: its blocks and its page cut.
 
 use std::sync::Arc;
 
@@ -31,68 +11,33 @@ use reflow_core::pager::{BlockMetrics, PageCut, block_page_index, first_block_of
 use reflow_core::typography::TextSettings;
 use virtual_list_leptos::Virtualizer;
 
-/// The blocks, their heights and the current page cut of one reflowable
-/// document. The format, the title and the chapter tree live on
-/// [`super::DocumentState`] with every other document's identity.
+/// The blocks, heights and page cut of one reflowable document.
 #[derive(Clone, Copy)]
 pub struct ReflowContent {
-    /// The parsed document, in block order. A shared handle rather than a
-    /// `Vec` because Leptos clones a signal's value per reader: a novel is
-    /// thousands of blocks and a page turn re-reads the list (pages, stream,
-    /// highlight pass). Cloning the handle is a refcount bump; cloning the
-    /// list was several thousand allocations per notify.
+    /// The parsed document; a shared handle because Leptos clones per
+    /// reader.
     pub blocks: RwSignal<Arc<Vec<TextBlock>>>,
-    /// The document's headings, for a format that has them. Kept beside the
-    /// blocks rather than as a finished outline because a Markdown heading has
-    /// no page number until the cut says so — the outline is re-projected onto
-    /// `block_page` whenever the cut moves
-    /// (`reader_runtime::effects::reader::reflow_outline`).
+    /// The document's headings: no page number until the cut says so.
     pub headings: RwSignal<Arc<Vec<MarkdownHeading>>>,
     /// Block heights at scale 1 — estimate-seeded, measurement-refined.
     pub heights: RwSignal<Arc<Vec<f64>>>,
-    /// How many wholesale writes [`Self::heights`] has taken: the open-time
-    /// estimate ([`Self::set_initial_heights`]) and every re-estimate since
-    /// (a typography or width-dial move that re-prices every block at once).
-    /// The store has two kinds of writer, and its consumers need to tell them
-    /// apart. A measurement batch is an echo of numbers the reporting rows
-    /// have already handed the stream's own model, so a layout rebuild for it
-    /// re-seats text that was already right. A wholesale write moves heights
-    /// nothing else knows about. This count is the wholesale writers'.
+    /// Wholesale writes to `heights`: the open seed and every re-estimate.
     pub estimate_generation: RwSignal<u64>,
     /// The current page split of those heights.
     pub cuts: RwSignal<Arc<Vec<PageCut>>>,
-    /// Bumped every time the split is re-published, so a consumer that only
-    /// needs to know THAT the pages moved watches one integer instead of
-    /// comparing the whole cut — the gloss layer's invalidation fingerprint,
-    /// re-derived on every scroll frame of a reflowable document.
-    ///
-    /// It counts re-cuts, not changes: [`ReflowContent::recut`] bumps it
-    /// whenever it publishes, including the rare re-measure that lands on the
-    /// split it already had. Over-notifying costs one pass of the consumers —
-    /// what they would have paid to find nothing moved; under-notifying would
-    /// strand a mark on the wrong page.
+    /// Bumped on every re-publish of the split, for consumers that need
+    /// only "the pages moved".
     pub cut_generation: RwSignal<u64>,
     /// Block → 0-based page under the current split.
     pub block_page: RwSignal<Arc<Vec<u32>>>,
-    /// The geometry the current split was cut with (a book-layout toggle or a
-    /// width dial re-cuts through the measurement pipeline).
+    /// The geometry the current split was cut with.
     pub geometry: RwSignal<PageGeometry>,
-    /// The continuous stream's virtualizer while that layout is mounted
-    /// (`None` otherwise). The stream — not the page-cut strip — scrolls
-    /// reflowable documents vertically, and the readers that aim it (search
-    /// reveal, the bottom bar's scrubber) reach it through here rather than a
-    /// second wiring through the page virtualizers, which in this mode are
-    /// deliberately unbound.
+    /// The stream's virtualizer while that layout is mounted; `None`
+    /// otherwise.
     pub stream: StoredValue<Option<Virtualizer>, LocalStorage>,
-    /// The fractional reading position the open flow found in the library
-    /// (0..=1), for the stream to anchor on when it mounts. Consumed by the
-    /// anchor itself, so a later remount anchors on the page instead.
+    /// The library's fractional position to anchor the stream on.
     pub resume_fraction: RwSignal<Option<f64>>,
-    /// The stream's current extent (the virtualizer's total size), mirrored by
-    /// the stream layout as it changes. The virtualizer's own signals are
-    /// thread-local — unreadable from the `Send` closures the chrome builds
-    /// (progress strip, percentage indicator) — so the one number chrome needs
-    /// travels through this plain signal.
+    /// The stream's extent, mirrored for `Send` chrome closures.
     pub stream_total: RwSignal<f64>,
 }
 
@@ -115,18 +60,11 @@ impl Default for ReflowContent {
 }
 
 impl ReflowContent {
-    /// Back to the no-document state. Every field the open flow writes is
-    /// reset here, so a field added to the struct cannot be silently
-    /// forgotten by close.
-    ///
-    /// The handles are `Copy`, so this binds the signals the struct already
-    /// holds; `Self::default()` would allocate a fresh arena node per field on
-    /// every close and leak them.
+    /// Back to the no-document state; the handles are `Copy`, so no
+    /// arena node leaks.
     pub fn reset(&self) {
         // The geometry goes with the split: it is what the heights were cut
-        // against, and leaving the previous document's book-layout gutter
-        // behind would let a stale `geometry` claim a re-cut is needed — or
-        // not needed — for a document that has no blocks at all.
+        // against.
         let Self {
             blocks,
             headings,
@@ -153,44 +91,30 @@ impl ReflowContent {
         stream_total.set(0.0);
     }
 
-    /// The live stream virtualizer, when the continuous text stream is
-    /// mounted. (The handle lives in local storage — the virtualizer is not
-    /// `Send` — so callers read it where they run, on the UI thread.)
+    /// The live stream virtualizer, when the stream layout is mounted.
     pub fn stream_handle(&self) -> Option<Virtualizer> {
         self.stream.try_with_value(|v| v.clone()).flatten()
     }
 
-    /// How many blocks the open document has, read untracked. The pages, the
-    /// stream and the search pass all need it; none should subscribe to the
-    /// block list itself just to learn its length.
+    /// How many blocks the open document has, read untracked.
     pub fn block_count(&self) -> usize {
         self.blocks.with_untracked(|blocks| blocks.len())
     }
 
-    /// One block by index, read untracked (the render paths read it tracked
-    /// through their own `For`, which owns the key).
+    /// One block by index, read untracked (renders read it tracked).
     pub fn block_at(&self, index: usize) -> Option<TextBlock> {
         self.blocks
             .with_untracked(|blocks| blocks.get(index).cloned())
     }
 
-    /// The open document's identity as a `<For>` key: the block list's `Arc`
-    /// pointer. Keying on it means a different document remounts its blocks
-    /// instead of reusing index keys the outgoing file occupied — which is why
-    /// this read is TRACKED: the key is only worth having if a new document
-    /// can reach the closure that computes it.
+    /// The document's identity as a `<For>` key: the block list's `Arc`
+    /// pointer.
     pub fn document_id(&self) -> usize {
         self.blocks.with(|blocks| Arc::as_ptr(blocks) as usize)
     }
 
-    /// Open-time: install the given heights — the pure estimate — as the
-    /// standing truth, and publish the page cut they produce.
-    ///
-    /// Every later refinement arrives through [`Self::recut`]: measurements
-    /// write the heights, the re-estimate writes the heights, and the cut
-    /// follows the best-known numbers. Splitting the two doors lets a
-    /// measurement land without a full re-cut's paperwork when nothing moved,
-    /// and a dial move re-cut without a measurement in sight.
+    /// Open-time: install the estimate as the standing heights and
+    /// publish their cut.
     pub fn set_initial_heights(
         &self,
         state: crate::state::ReaderState,
@@ -199,28 +123,14 @@ impl ReflowContent {
     ) -> super::ReflowCut {
         let cuts = paginate(&heights, geo.content_height);
         self.heights.set(Arc::new(heights));
-        // A wholesale write, so consumers that track the geometry (the
-        // stream's epoch) rebuild for it — the seed can land over an already
-        // mounted layout when a document opens in place.
+        // A wholesale write: consumers tracking the geometry rebuild for it.
         self.estimate_generation
             .update(|generation| *generation += 1);
         self.publish_cut(state, cuts, geo)
     }
 
-    /// Re-cut the pages from the best-known heights at `geo`. Answers `None` —
-    /// writing nothing — when neither the split nor the geometry moved since
-    /// the last publish, so a jitter-sized measurement cannot wake the whole
-    /// paginated side of the reader.
-    ///
-    /// The caller owns the heights write (a measurement batch or re-estimate
-    /// lands first); this method owns the split, its inverse map and the
-    /// generation, and answers what the document's shared page machinery must
-    /// be told ([`super::ReflowCut`]). The page count and per-page sizes
-    /// belong to the document, so they are RETURNED rather than poked into a
-    /// sibling's signals: a document deciding its own pagination is a re-cut;
-    /// a document setting the reader's page count is one module writing
-    /// another's state. The caller hands the answer to
-    /// [`super::DocumentState::publish_cut`].
+    /// Re-cut from the best-known heights; `None` when nothing moved. The
+    /// caller owns the heights write.
     pub fn recut(
         &self,
         state: crate::state::ReaderState,
@@ -238,9 +148,8 @@ impl ReflowContent {
         Some(self.publish_cut(state, cuts, geo))
     }
 
-    /// The shared tail of both doors: write the split, its inverse map and
-    /// the generation, hold the reader on the block they were reading, and
-    /// assemble the answer for the document's page machinery.
+    /// The shared tail of both doors: the split, the map, the reader's
+    /// block.
     fn publish_cut(
         &self,
         state: crate::state::ReaderState,
@@ -263,12 +172,8 @@ impl ReflowContent {
         self.block_page.set(Arc::new(map));
         self.geometry.set(geo);
 
-        // The sheet is the cut's one fixed point: every page of a reflowable
-        // document is the same size, so the sizes travel as one page and one
-        // height, not two vectors of a repeated value. The WIDTH is the dialled
-        // card (the column-width dial grows the sheet with the column); the
-        // height is at the live display scale — the scale the cut was measured
-        // at.
+        // The sheet is the cut's fixed point: one page size, at the live
+        // display scale.
         super::ReflowCut {
             num_pages: n,
             page_size: reader_core::document::PageSize {
@@ -280,9 +185,7 @@ impl ReflowContent {
         }
     }
 
-    /// The stream's reading position as 0..=1, or `None` while no stream is
-    /// mounted. Purely a snapshot: persistence calls it inside its effect,
-    /// where the tracked reads that matter (the page, the mode) already run.
+    /// The stream's reading position as 0..=1, or `None` with no stream.
     pub fn stream_fraction(&self) -> Option<f64> {
         let v = self.stream_handle()?;
         let total = v.total_size().get_untracked();
@@ -292,9 +195,7 @@ impl ReflowContent {
     }
 }
 
-/// The estimate's block metrics for a typography + page geometry — the inputs
-/// of `reflow_core::pager::estimate_block_height`, gathered once per
-/// pagination run.
+/// The estimate's block metrics for a typography and page geometry.
 pub fn estimate_metrics(settings: &TextSettings, geo: &PageGeometry) -> BlockMetrics {
     BlockMetrics {
         content_width: geo.content_width,

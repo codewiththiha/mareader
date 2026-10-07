@@ -1,12 +1,4 @@
-//! Z-index layer tokens. The numeric values live in `styles/tokens.css` as
-//! `--z-*` custom properties; these class-name constants are what components
-//! embed, so layering is one decision instead of ten scattered numbers. The
-//! Tailwind compiler scans source text, so every token stays a static literal
-//! and `z-[var(--z-popover)]` etc. ship in `styles.css`. Owned here because
-//! the chrome surfaces are the layering's anchor; every floating surface,
-//! toast and overlay reads the table from `app_chrome::layers`. Both halves of
-//! the scale — these constants and the `--z-*` numbers — are checked against
-//! each other by `tools/check-chrome-contracts.ts`.
+//! Z-index layer tokens; the `--z-*` numbers live in `styles/tokens.css`.
 
 pub const CONTENT: &str = "z-0";
 pub const CONTROLS: &str = "z-[var(--z-controls)]";

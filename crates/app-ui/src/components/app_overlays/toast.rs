@@ -1,13 +1,4 @@
-//! App-global toast host. Renders the single current toast (if any) centered
-//! near the top of the app and auto-dismisses it. The open-flow (toolbar)
-//! emits error toasts here; the host is mounted at the app root (app.rs), so
-//! its `position: fixed` is relative to the viewport rather than a
-//! `backdrop-blur` ancestor's containing block.
-//!
-//! Everything except the state mapping is the `overlay` primitive: this file
-//! maps `state.ui.toast` onto the slot host (`use_toast_slot` + the primitive
-//! `ToastHost` view) — the toast id doubles as the equality guard, so a stale
-//! timer can never wipe a newer toast.
+//! App-global toast host: the slot host with the app's state mapping.
 
 use leptos::prelude::*;
 
@@ -27,9 +18,7 @@ pub fn ToastHost(state: ChromeState) -> impl IntoView {
             .map(|t| ToastData::new(t.id, t.message, ToastTone::Error))
     });
 
-    // Auto-dismiss, equality-guarded by id: whenever the toast changes, a
-    // timer for THAT toast's duration is armed; at fire time it clears only
-    // if the same toast is still current.
+    // Auto-dismiss, equality-guarded by id.
     use_toast_slot(
         source,
         move |id| {

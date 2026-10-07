@@ -1,7 +1,5 @@
-//! The name question: an arrival whose name a row on this level already
-//! carries. The answers are the import's or the move's, decided by what is
-//! arriving. Described rather than drawn —
-//! [`ConflictSheet`](crate::features::library::conflict_modal) draws it.
+//! The name question: three answers from the arrival's shape, drawn by
+//! `ConflictSheet`.
 
 use leptos::prelude::*;
 
@@ -12,19 +10,16 @@ use crate::services::conflict::{self, ConflictAsk};
 use super::info::{more_waiting, where_line};
 use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// Every sentence is built off one snapshot of the library: a row that
-/// counted one way and answered another is a receipt for something else.
+/// Every sentence comes off one snapshot of the library.
 pub(super) fn describe_name(state: crate::context::LibraryContext, ask: &ConflictAsk) -> SheetSpec {
     let where_line = where_line(state, &ask.arrival.shelf_id);
     let import = ask.arrival.is_import();
-    // The apply's own list rather than a re-derived condition, so a row the
-    // sheet renders is a row the answer will take.
+    // The apply's own list: a row rendered is a row the answer takes.
     let offers = conflict::offers_for(state, ask);
     let existing_name = ask.existing_name.clone();
     let (rows, shelves) = state.library.snapshot_rows();
     let new_name = next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name);
-    // A count from the address would promise a loss the merge cannot make: a
-    // twin still reading that address keeps its own marks.
+    // An address count would promise a loss a twin cannot make.
     let marks = storage::load_gloss()
         .get(&ask.existing_id)
         .map(Vec::len)
@@ -113,9 +108,7 @@ pub(super) fn describe_name(state: crate::context::LibraryContext, ask: &Conflic
         })
         .collect();
 
-    // Only the questions this sheet answers: covered and merge kinds wait
-    // behind other sheets, and counting them would promise an apply-all this
-    // sheet cannot run.
+    // Only this sheet's questions: counting the others would promise too much.
     let waiting = state
         .library
         .conflict_waiting

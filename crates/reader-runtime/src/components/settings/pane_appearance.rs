@@ -1,5 +1,4 @@
-//! Split-only appearance controls for pane boundaries. These live in the
-//! Reader Settings → Theme tab, not in the title-bar appearance popover.
+//! Split-only pane boundary controls, shown in Reader Settings → Theme.
 
 use leptos::prelude::*;
 
@@ -114,7 +113,6 @@ pub(crate) fn PaneAppearanceSection(
                             <input
                                 type="color"
                                 aria-label="Choose custom pane outline colour"
-                                data-pane-outline-color-input="custom"
                                 prop:value=move || settings.with(|s| s.workspace.pane_outline_custom.clone())
                                 on:click=move |_| settings.update(|s| s.workspace.pane_outline_color = PaneOutlineColor::Custom)
                                 on:input=move |ev| {

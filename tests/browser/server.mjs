@@ -1,14 +1,10 @@
-// Minimal static server for the built app (dist/), used by the browser-level
-// lifecycle baseline in Deep CI. No dependencies: correct MIME for the
-// artifacts Trunk emits — most importantly `application/wasm`, which the
-// strict streaming compile wants — plus the SPA fallback the router expects.
+// Minimal static server for the built app in dist/, with correct MIME.
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// `DIST_DIR` serves another build (a baseline artifact the memory replay
-// compares against); the suite itself always serves dist/.
+// `DIST_DIR` serves another build; the suite itself always serves dist/.
 const DIST = process.env.DIST_DIR
   ? resolve(process.env.DIST_DIR)
   : fileURLToPath(new URL("../../dist", import.meta.url));
@@ -29,12 +25,7 @@ const MIME = {
   ".bcmap": "application/octet-stream",
 };
 
-/** Failure injection for the boot-contract stage: a request carrying
- *  `mareader_boot_fail=mareader|pdf|reflow` gets that runtime's artifact 404'd, so
- *  the suite can drive the REAL missing-artifact path (the one that produced
- *  the blank window) instead of asserting it from the outside. Hard 404, and
- *  before the SPA fallback: a missing runtime artifact must look like a
- *  missing file, not like an HTML page served under a .js URL. */
+/** Failure injection: a flagged request gets that runtime's artifact 404'd. */
 function injectedFailure(req) {
   const cookies = req.headers.cookie ?? "";
   const match = /(?:^|;\s*)mareader_boot_fail=(mareader|pdf|reflow)/.exec(cookies);
@@ -65,9 +56,7 @@ createServer(async (req, res) => {
       served = join(DIST, "index.html");
       data = await readFile(served);
     }
-    // pdf.js Range-requests documents (disableStream + rangeChunkSize);
-    // answer with real 206s so the open path exercises the same code the
-    // packaged app's asset protocol does.
+    // pdf.js Range-requests documents: answer with real 206s.
     const type = MIME[extname(served).toLowerCase()] ?? "application/octet-stream";
     const range = req.headers.range;
     if (range) {

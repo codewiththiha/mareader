@@ -1,25 +1,14 @@
-/* The drag layer: what the pointer is carrying, drawn by the session rather than composited by
-   the engine. A browser drag image is one bitmap of the element the press started on, made before
-   the drag begins and unreachable from a stylesheet afterwards. */
+/* The drag layer: what the pointer carries, drawn by the session. */
 .lib-drag-layer {
   position: fixed;
   z-index: var(--z-drag-overlay);
-  /* The ghost hangs from the pointer rather than being centred on it: a card is
-     picked up by its top-left and the reader's eye is above and to the right of
-     the cursor, so a centred ghost hides the target the drop is aiming at. */
+  /* The ghost hangs from the pointer rather than centring on it. */
   transform: translate(-38%, -32%);
   pointer-events: none;
-  /* The transform is a CONSTANT while the ghost follows the pointer, so
-     transitioning it costs the follow nothing — and it is what makes the change
-     of anchor below a glide rather than a jump. `left` and `top` are not
-     constant, and transitioning them would put every frame of the follow 200ms
-     behind the hand, which reads as rubber-banding. */
+  /* The follow's transform is constant, so transitioning it is free. */
   transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* Sunk, which happens on one kind of target only: a title-bar crumb. At full size the ghost
-   covers the name of the very level the reader is aiming at, so the anchor moves to the crumb's
-   centre, the ghost shrinks to a third and goes translucent. A shrink needs no lane, which is why
-   the crumb stays readable without any z-step. */
+/* Sunk covers a title-bar crumb: the ghost shrinks to a third. */
 .lib-drag-sunk {
   transform: translate(-50%, -50%);
   transition:
@@ -31,25 +20,17 @@
   position: relative;
   width: 9rem;
   aspect-ratio: 210 / 297;
-  /* The scale only ever changes on a sink or a grow-back, never on a frame of the
-     follow, so this transition is free the rest of the time. */
+  /* The scale changes only on a sink or grow-back, never mid-follow. */
   transition:
     transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 200ms ease;
 }
-/* A sunk ghost is a third of its size and a little translucent, which is the whole
-   of how it keeps the crumb readable: a crumb sits inside the title bar and a fold
-   row inside a popover, and both of those lanes are BELOW the drag overlay, so no
-   z-step can put the ghost behind them without putting it behind everything else
-   too. A shrink needs no lane — it simply stops covering the label. */
+/* A sunk ghost is a third of its size: a shrink needs no lane. */
 .lib-drag-sunk .lib-drag-ghost {
   transform: scale(0.38);
   opacity: 0.85;
 }
-/* One fanned tile per held item. The fan is a custom property written per tile,
-   so four covers read as four covers and not as one slightly thicker rectangle —
-   and the rotation is small enough that the topmost tile is still recognisable as
-   the book the reader pressed. */
+/* One fanned tile per held item, the fan written per tile. */
 .lib-drag-tile {
   position: absolute;
   inset: 0;
@@ -70,9 +51,7 @@
   height: 100%;
   object-fit: cover;
 }
-/* A shelf has no cover, so its tile is the folder's own answer to "what is in
-   here" at the size a tile has: the glyph the deep plate of a folder card draws
-   when a preview has run out of depth to keep going. */
+/* A shelf has no cover, so its tile is the folder's own glyph. */
 .lib-drag-folder {
   display: grid;
   place-items: center;
@@ -101,9 +80,7 @@
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
 }
 
-/* The fold: the shelf a rest is about to make. A folder card's own plate and its
-   own four cells, so the preview is the thing that appears rather than a drawing
-   of it, with the label under it naming what the drop will do. */
+/* The fold: the shelf a rest is about to make. */
 .lib-drag-fold {
   display: flex;
   flex-direction: column;
@@ -122,9 +99,7 @@
   color: var(--color-accent);
 }
 
-/* A book that is the fold's partner wears the folder's ring rather than the
-   insertion line: the drop is about to make a shelf here, and a line at the edge
-   of the card would promise a position the drop does not honour. */
+/* The fold's partner wears the folder's ring, not the insertion line. */
 .book-fold-here .book-cover-wrap {
   box-shadow:
     0 0 0 2px var(--color-accent),
@@ -134,28 +109,20 @@
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
-/* A shelf row about to take the hold INSIDE itself: the list's answer to the
-   grid's folder-drag-over ring, as an inset rule plus a tint so the rows keep
-   their rhythm — an outer ring would shove its neighbours in a divide-y list. */
+/* A shelf row about to take the hold: an inset rule plus a tint. */
 .row-nest-here {
   background: color-mix(in srgb, var(--color-accent) 10%, transparent);
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
-/* A crumb under a drag: the level the held items are about to go to, marked with
-   the accent under it rather than around it, because a crumb is a line of prose in
-   a bar and a ring around one would be a ring around a word. */
+/* A crumb under a drag: marked with the accent under it, not around it. */
 .crumb-drop {
   border-radius: 6px;
   background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
-/* The width fold's ruler: one box per crumb plus one for the ellipsis itself,
-   wearing the live crumbs' own metrics — the button's padding, the outer gap,
-   the 10rem name cap — invisible and out of flow. The bar folds by THESE widths
-   against the cluster's live box, so a chain that just grew folds the same frame
-   it gets cramped, with no window event anywhere. */
+/* The width fold's ruler: one box per crumb plus the ellipsis. */
 .lib-crumb-probe {
   position: absolute;
   display: flex;

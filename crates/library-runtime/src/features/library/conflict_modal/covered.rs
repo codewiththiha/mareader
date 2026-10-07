@@ -1,9 +1,5 @@
-//! The two-answer question, and the two facts that raise it: a loose import
-//! of a file inside a folder the library reads in place whose book is alive,
-//! or of a file whose content the library already holds.
-//!
-//! Two answers rather than three: a pointer at a row on this level is not an
-//! option a covered file has.
+//! Two answers: a file an in-place tree holds, or a book the library
+//! already holds.
 
 use leptos::prelude::*;
 
@@ -15,8 +11,7 @@ use crate::services::folder_label;
 use super::info::{more_waiting, where_line};
 use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// The library's own stored copy on this level, or the book the library
-/// already holds — what is left after the stronger question has been asked.
+/// The stored copy on this level, or the book held elsewhere.
 pub(super) fn describe_covered(
     state: crate::context::LibraryContext,
     ask: &ConflictAsk,

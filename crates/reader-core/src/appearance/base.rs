@@ -1,13 +1,9 @@
-//! The base palettes: what Light / Dark / Dim mean as seven raw colours,
-//! before any tint or transform, so both format pipelines start from the same
-//! table. Mirrors the `:root[data-base=...]` blocks in styles/tokens.css;
-//! keep the two in sync.
+//! The base palettes: Light / Dark / Dim as seven raw colours, mirroring
+//! `styles/tokens.css`.
 
 use crate::appearance::{Appearance, BaseMode};
 
-/// The seven raw colours of a base mode. Each format pipeline applies its
-/// own transformation on top: PDF through a CSS filter chain over the
-/// raster plus UI-token overrides, text by shifting these values directly.
+/// The seven raw colours of a base mode, before any transform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BaseTokens {
     pub paper: &'static str,
@@ -68,11 +64,7 @@ pub(crate) fn base_tokens(mode: BaseMode) -> BaseTokens {
 }
 
 impl Appearance {
-    /// The base palette for a mode, as `(token, value)` pairs. Mirrors the
-    /// `:root[data-base=...]` blocks in styles/tokens.css; used by preset
-    /// thumbnails (which must carry their own look rather than inherit the
-    /// live tokens) and by the per-pane theme paint (a pane root's
-    /// `data-base` cannot re-declare the stylesheet's `:root` tables).
+    /// The base palette for a mode, as `(token, value)` pairs.
     pub fn base_palette(&self) -> [(&'static str, &'static str); 7] {
         base_tokens(self.base).entries()
     }

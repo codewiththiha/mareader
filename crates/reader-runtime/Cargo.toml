@@ -21,14 +21,11 @@ path = "src/bin/reflow.rs"
 required-features = ["reflow"]
 
 [features]
-# Host/unit tests compose every format; production pane artifacts explicitly
-# select just their document pipeline with no default features.
+# Host tests compose every format; production artifacts select one.
 default = ["pdf", "reflow"]
 pdf = ["dep:pdf-engine"]
 reflow = []
-# The document engines' live probes, for the artifacts that run documents
-# (the pane frames). The Reader host builds without any features, so no
-# document engine import reaches its artifact.
+# The engines' live probes, for the pane artifacts that run documents.
 engine = []
 
 [dependencies]
@@ -75,13 +72,10 @@ web-sys = { version = "0.3", features = [
 ] }
 
 [dev-dependencies]
-# The fixture builders (`library_core::testkit`) the Library panel's tree
-# tests build a library with. Dev-only: never in a release graph.
+# The fixture builders the panel's tree tests build a library with; dev only.
 library-core = { path = "../library-core", features = ["test-util"] }
 
-# Standalone artifact builds do not inherit the workspace Clippy command.
-# Keep warnings fatal for every target/feature selection, including the
-# format-free Reader host. This is the same policy as the other runtime crates.
+# Standalone artifact builds keep warnings fatal, like the other runtimes.
 [lints.rust]
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "deny"

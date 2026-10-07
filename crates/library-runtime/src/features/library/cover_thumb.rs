@@ -1,15 +1,13 @@
-//! The library's one cover painter: the cached art for an address, or the
-//! fallback the calling surface names. The grid's card, the list's row and the
-//! search bar's thumb each hand-rolled this subscription before.
+//! The library's one cover painter: cached art for an address, or the
+//! surface's fallback.
 
 use leptos::prelude::*;
 
 #[component]
 pub(crate) fn CoverThumb(
     state: crate::context::LibraryContext,
-    /// Read per frame, so a relink moves the art key and the surface follows.
-    /// Empty (the beat between a removal and the list catching up) paints the
-    /// fallback.
+    /// Read per frame, so a relink moves the art key; empty paints
+    /// the fallback.
     path: Signal<String>,
     alt: Signal<String>,
     img_class: &'static str,
@@ -26,9 +24,8 @@ pub(crate) fn CoverThumb(
             {
                 Some(cover) => {
                     view! {
-                        // An image is natively draggable: a press on the
-                        // cover would hand the pointer to the engine's own
-                        // drag, which used to swallow the release.
+                        // An image would hand the press to the engine's
+                        // drag and swallow the release.
                         <img
                             class=img_class
                             src=cover.data_url.clone()

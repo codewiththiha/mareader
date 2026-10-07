@@ -9,8 +9,7 @@ fn fp(n: u32) -> Fingerprint {
     library_core::testkit::fp_n(n)
 }
 
-/// The cover queue skips anything that is not a PDF, so a host test that
-/// lands a book never starts the wasm render chain.
+/// The cover queue skips non-PDFs, so host tests start no render chain.
 fn row(id: &str, title: &str, path: &str, n: u32) -> Row {
     Row::Book(Book {
         title: Some(title.to_string()),
@@ -66,7 +65,7 @@ fn file(name: &str, n: u32) -> library_core::scan::FoundFile {
     }
 }
 
-/// The pair a test has to hold, because a signal written under a dropped owner is a signal nobody can read.
+/// The pair a test holds: a signal's owner must outlive the write.
 fn library(rows: Vec<Row>, shelves: Vec<Shelf>) -> (Owner, LibraryContext) {
     let owner = Owner::new();
     owner.set();
@@ -185,7 +184,7 @@ fn already_imported_places_nothing_and_lights_the_row_it_names() {
     assert_eq!(first.id, "b1");
     assert!(!state.library.conflict.open.get_untracked());
 
-    // The nonce is what makes a second reveal of the same row a second gesture rather than an equal value nobody is told about.
+    // The nonce makes a second reveal a second gesture.
     let ask = the_ask(state, Arrival::import(file("dune", 2), "s", None));
     raise(state, vec![ask]);
     answer_placement(state, Placement::Open);
@@ -246,7 +245,7 @@ fn a_link_never_blocks_the_next_arrival_and_never_gets_opened() {
 
 #[test]
 fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
-    // The row already here survives — its id is what every shelf and every storage key names.
+    // The row already here survives: its id names every shelf.
     let (_owner, state) = library(
         vec![
             row_at("b1", "Dune", "/one/dune.md", 1, 12),
@@ -294,7 +293,7 @@ fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
 
 #[test]
 fn a_merge_after_a_move_leaves_the_level_the_book_departed() {
-    // The regression this guards: a drag from "t" onto "s" answered with merge used to file the survivor onto "t" — the very shelf the move departed.
+    // The regression: a merge after a move refiled onto the departed shelf.
     let (_owner, state) = library(
         vec![
             row_at("b1", "Dune", "/one/dune.md", 1, 12),
@@ -452,7 +451,7 @@ fn a_move_collision_is_the_other_question() {
         ],
         vec![shelf("s", &["b1"]), shelf("t", &["b2"])],
     );
-    // The sheet offers merge, replace and as new — and never a link, which is an answer for an arrival that has no row of its own to keep.
+    // The sheet offers merge, replace and as new, never a link.
     let (clean, asks) = screen(state, vec![Arrival::moved("b2", "Dune", "s", None)]);
     assert!(clean.is_empty());
     assert_eq!(asks.len(), 1);
@@ -510,7 +509,7 @@ fn add_as_new_renames_a_moved_row_and_then_moves_it() {
 
 #[test]
 fn a_link_answer_dissolves_the_dragged_row_into_a_pointer_and_binds_the_log() {
-    // The pointer shape: a read-at-place book meets the library's own stored copy of its content. The folder's moved-out log binds to the survivor, so a later import of the file highlights the copy instead of minting a neighbour.
+    // A read-at-place book meets the stored copy of its content.
     let (_owner, state) = library(
         vec![
             row("b1", "Dune", "/books/dune.md", 1),
@@ -589,7 +588,7 @@ fn a_merge_into_the_stored_copy_binds_the_folder_log_to_the_survivor() {
 
 #[test]
 fn a_merge_of_two_different_books_writes_no_log() {
-    // A log binding the folder to an unrelated survivor would send a re-import to the wrong row.
+    // A log bound to an unrelated survivor sends a re-import astray.
     let (_owner, state) = library(
         vec![
             row("b1", "Dune", "/books/dune.md", 1),

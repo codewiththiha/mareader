@@ -1,8 +1,5 @@
-//! The drag overlay: one fixed layer, no pointer events of its own, drawn
-//! from the controller and nothing else.
-//!
-//! A browser drag image cannot do this: it is one bitmap of the pressed
-//! element, made before the drag starts and composited by the engine.
+//! The drag overlay: one fixed layer, drawn from the controller and
+//! nothing else.
 
 use leptos::portal::Portal;
 use leptos::prelude::*;
@@ -10,8 +7,7 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 
 use crate::features::library::dnd::controller::{DragController, GhostTile};
-// The fold plate borrows the folder card's own cap rather than spelling a
-// second number beside it.
+// The fold plate borrows the folder card's own cap.
 use crate::features::library::folder_card::THUMB_CAP;
 
 #[component]
@@ -24,9 +20,8 @@ pub(crate) fn DragLayer() -> impl IntoView {
     let at = ctrl.pointer();
     let sunk = ctrl.sink();
     let several = Signal::derive(move || count.get() > 1);
-    // One signal for the whole sunk state — anchor, scale and transition —
-    // because they are one fact: a separate "is animating" flag could
-    // disagree on exactly the frame that matters.
+    // One signal for the whole sunk state — anchor, scale, transition —
+    // one fact.
     let is_sunk = Signal::derive(move || sunk.get().is_some());
     let style = Signal::derive(move || match sunk.get() {
         Some(spot) => format!("left:{:.2}px;top:{:.2}px", spot.x, spot.y),
@@ -97,8 +92,7 @@ fn GhostCard(fan: usize, tile: GhostTile) -> impl IntoView {
     }
 }
 
-/// Wears the folder card's own classes: the preview is a promise about what
-/// the card on this level will look like in a moment.
+/// Wears the folder card's own classes: the preview promises the card.
 #[component]
 fn FoldPlate(filled: usize) -> impl IntoView {
     view! {

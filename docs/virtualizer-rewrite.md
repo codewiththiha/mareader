@@ -91,8 +91,11 @@ saturates at `max_lead`; a stopped scroller decays to zero within a frame or two
    rest, an evicted row unmounts in the same tick — `RetentionPolicy::Immediate`
    behaviour regardless of what the policy says, and `retainedVirtualItems`
    decays to 0 without waiting for its deadline. `RetentionPolicy` keeps its
-   shape (consumers construct it) but gains `MotionGated`, which becomes the
-   default: `bridges_now(motion, commit)` decides per publish.
+   shape (consumers construct it) and gained `MotionGated`, which is what every
+   caller now passes (`features/virtualizers.rs` for the strips,
+   `thumbnails/panel.rs` for the rail): the per-publish gate is
+   `RetentionPolicy::bridges()` plus the engine's `seeking` flag handed to
+   `retain_evicted`, and `RetentionPolicy::max()` still caps the pool.
 
 ### 4. Content dies with the frame; the queue decides who goes first.
    A page's rasters, raw bitmap and canvas are released by the unmount the band
@@ -134,11 +137,14 @@ Every item in `crates/virtual-list-leptos/src/lib.rs`'s re-export list and every
 `pub fn` on `Virtualizer`/`VirtualizerCore` keeps its name, argument types and
 return type. `VirtualizerOptions` keeps its fields and builder methods; new knobs
 arrive as new builder methods (`pipeline`) and new read-only getters
-(`motion_engaged`, `motion_speed`, `fill_priority`, `landing_index`). The kernel
-keeps `Strip`, `Layout`, `ListLayout`, `GridLayout`, `GridSpec`,
-`GridDimension`, `window_for`, `Window`, `Viewport`, `Budget`, `Overscan`,
-`Align`, `AnchorPolicy`, `pin_at`, `correct`, `rescale_anchor`,
-`subpixel_factor`, `SUBPIXEL_FACTOR`.
+(`motion_engaged`, `fill_priority`, `landing_index`). The kernel's
+surface today is what `crates/virtual-list/src/lib.rs` re-exports —
+`Strip`/`StripBackend`; `Layout`/`LayoutKind`/`ListLayout`/`GridLayout`/
+`GridSpec`/`GridColumns`; `Window`/`Viewport`/`Budget`/`Overscan`/`Align`;
+`AnchorPolicy`/`pin_at`/`correct`/`rescale_anchor` — plus the motion
+additions the phases landed (`Motion`/`MotionConfig`, `Pipeline`,
+`BandWindow`/`BandRange`, `Direction`, `FillPriority`). The sub-pixel
+factor is `pub(crate)` now: a kernel implementation detail, not surface.
 
 ## Phase plan (each phase lands green on CI before the next)
 
@@ -154,8 +160,11 @@ keeps `Strip`, `Layout`, `ListLayout`, `GridLayout`, `GridSpec`,
 4. Gates: `tests/browser/lifecycle.mjs` — the look-ahead stage and the retention
    ceilings get *tighter* assertions (placeholder mode must not engage at normal
    speed; `retainedVirtualItems` must fall to 0 at rest without waiting for the
-   deadline), and `tools/check-memory-discipline.mjs` keeps every virtualizer
-   disposal in place.
+   deadline). The source check this phase planned
+   (`tools/check-memory-discipline.mjs`) was not added; virtualizer disposal is
+   asserted by the lifecycle suite's counts instead — `virtualizerLive`,
+   `virtualizerListeners`, `virtualizerObservers` and `virtualizerTimers` all
+   back to zero after every close.
 
 [api-docs]: https://virtuoso.dev/react-virtuoso/api-reference/common/
 
@@ -183,12 +192,12 @@ Refinements that came out of writing it, so the plan above and the code agree:
   `rank_signal` from `FillPriority::rank() × 2¹⁶ + |index − landing_index()|`.
   Read untracked at issue time: a rank change says who goes first, not what has
   to be drawn, so re-running a render effect for it would restart rasters.
-- `blend_backdrop`'s "am I moving" input becomes `motion_drifts` — true while
-  engaged, `false` once settled and slower than `drift_eps`, and nothing else —
-  replacing any speed *ratio* a caller might have invented. The engine-side
-  `retention::RetentionPolicy::MotionGated { max }` replaces `Frames` (whose
-  frame count was a guess) and becomes the strip default; `Grace { ms, max }`
-  stays for callers with a known wall-clock window, which is a zoom commit.
+- The engine-side `retention::RetentionPolicy::MotionGated { max }` replaces
+  `Frames` (whose frame count was a guess) and becomes the strip default;
+  `Grace { ms, max }` stays for callers with a known wall-clock window, which is
+  a zoom commit. `motion_engaged()` is the whole "am I moving" answer a caller
+  reads; `blend_backdrop` samples paper positions and asks no motion
+  question at all.
 - No `render_screens`-as-ceiling: a caller that sets a band asks for a floor
   under the motion-derived band, never a cap over it. `render_band(0)` keeps its
   meaning, which is that the mode is off.
@@ -206,9 +215,11 @@ rather than constrain a line:
   the anchor still re-asserts, it simply agrees on frame one. The reader's page is
   seeded by the open flow before the route flips (`enter_ready` last), so it is
   already the resume page here.
-- Zombie retention is timed in **milliseconds, not frames**: the bridge exists to
-  outlive a zoom commit's relayouts, which wall-clock timers pace, and
-  `MAX_ZOMBIES` is what stops a long fling mounting the whole document.
+- Zombie retention is a bridge, not a cache: at rest an evicted row unmounts in
+  the same tick, a fling keeps it for exactly the frame that evicted it
+  (`MotionGated`, which both callers pass), and a zoom commit raises a wall-clock
+  `Grace` long enough to outlive the relayouts it is there for — `MAX_ZOMBIES` is
+  what stops a long fling mounting the whole document.
 - The engine sweeps its rasters only inside render activity, so after a zoom-out or
   a mode flip nothing renders and the big rasters would stay pinned until the 30 s
   idle timer. The reader sweeps at scroll idle on both strips instead, registered
@@ -281,5 +292,3 @@ wants; at rest the bridge dissolves in the same frame the motion estimate
 decays. `CI` and `Deep CI` green on the gated SHA; the page lane's queue and
 active slots stay drained at quiescence, which `tests/browser/lifecycle.mjs`
 asserts.
-
-<!-- // only the changed file was rewritten -->

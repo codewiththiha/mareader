@@ -1,22 +1,4 @@
-//! The morphing surface component — a direct port of the Gloss reference's
-//! `gloss-surface`, composed on the generic [`FloatingCard`] primitive so the
-//! box morph mechanics, the no-reflow content wrapper and the drag-handle
-//! slot are shared with any future floating card.
-//!
-//! One fixed `div` whose `left/top/width/height/border-radius` come from the
-//! sprung box; the primitive owns that shell. This module keeps ONLY the
-//! gloss policy: the surface's neutral card chrome (opaque surface fill,
-//! standard floating elevation, progress-driven opacity/pointer-events), the
-//! drag-handle contents, and the header + scroll column.
-//!
-//! The card's look is deliberately PLAIN: an opaque panel on the page's
-//! colour tokens, the same elevation every menu in the app wears. It used to
-//! cross-fade through accent-tinted fills with a coloured halo while it
-//! morphed, which read as decoration rather than information; the morph's
-//! shape change plus the opacity ramp is the whole story now.
-//!
-//! Dismiss is not a button on the card: Escape / outside-tap / origin-exit are
-//! owned by the popover's window listeners.
+//! The morphing gloss surface, composed on `FloatingCard`.
 
 use std::sync::Arc;
 
@@ -40,15 +22,13 @@ pub fn GlossSurface(
     phase: Signal<GlossPhase>,
     /// The current sprung box — written per-frame by the spring.
     box_: Signal<GlossBox>,
-    /// The expanded target — the content wrapper is sized to THIS, not to the
-    /// current box, so the text never reflows as the box morphs.
+    /// The expanded target the content wrapper is sized to.
     expanded: Signal<GlossBox>,
     /// 0..1 morph progress; drives the content fade-in.
     progress: Signal<f64>,
     /// The selected word, for the card header.
     word: Signal<String>,
-    /// The word's part of speech, printed beside it in the header the way a
-    /// dictionary prints it.
+    /// The word's part of speech, printed beside it in the header.
     #[prop(into)]
     pos: Signal<String>,
     /// How much air the card's typography carries (Settings → Theme).
@@ -59,17 +39,12 @@ pub fn GlossSurface(
     /// Card body: word sections / error.
     children: Children,
 ) -> impl IntoView {
-    // The primitive speaks FloatBox; the domain speaks GlossBox. Convert at
-    // the seam — one place, one From impl, math shared in pdf_core.
+    // The primitive speaks FloatBox, the domain GlossBox; convert at the
+    // seam.
     let box_f = Signal::derive(move || FloatBox::from(box_.get()));
     let expanded_f = Signal::derive(move || FloatBox::from(expanded.get()));
 
-    // Gloss policy: the neutral card chrome plus the progress-driven
-    // opacity/pointer-events. The fill and elevation are the same in every
-    // phase — one card look — and the opacity is what makes the morph read:
-    // fade IN as the shape leaves the stroke, fade OUT as it returns onto it.
-    // The mark stroke underneath owns the fully-collapsed look, so the outro
-    // reads as "card shrinks AND dissolves back into the highlight".
+    // Gloss policy: neutral chrome; opacity makes the morph read.
     let surface_style = Signal::derive(move || {
         let pr = progress.get();
         let opacity = smoothstep(pr, 0.05, 0.5);
@@ -150,11 +125,7 @@ pub fn GlossSurface(
     }
 }
 
-/// The card body's density-dependent class sets: outer padding, the header's
-/// bottom margin, the word's type size and the separator's bottom margin.
-/// One tuple per density, shared with the measure twin through the
-/// component — the twin's height is only correct if it renders EXACTLY what
-/// the card renders.
+/// The density-dependent class sets, shared with the measure twin.
 fn body_classes(density: GlossDensity) -> (&'static str, &'static str, &'static str, &'static str) {
     match density {
         GlossDensity::Compact => (
@@ -172,20 +143,13 @@ fn body_classes(density: GlossDensity) -> (&'static str, &'static str, &'static 
     }
 }
 
-/// The card body: the dictionary header (word + part of speech on one
-/// baseline), a hairline rule, and the content column. ONE definition shared
-/// by the visible surface and the hidden measure twin in
-/// [`gloss_ai_popover`](super::gloss_ai_popover), so the twin's measured
-/// height can never drift from the real layout — that is what makes
-/// `content_height` correct. Block-flow container: the flex-squeeze
-/// protection lives on this root (`shrink-0`), so inner sections need none.
+/// The card body: header, rule, content column — one definition.
 #[component]
 fn GlossBody(
     /// The word being explained (header title).
     #[prop(into)]
     word: Signal<String>,
-    /// The word's part of speech, printed beside the word (hidden while the
-    /// model has not supplied one yet).
+    /// The part of speech, printed beside the word once known.
     #[prop(into)]
     pos: Signal<String>,
     /// The spacing preset for the whole body.
@@ -215,11 +179,7 @@ fn GlossBody(
     }
 }
 
-/// The invisible measurement twin: a pixel-exact replica of the surface's
-/// scroll column (same width, same density classes, same header, separator),
-/// so the measured height already includes chrome and wrap — that is what
-/// makes `content_height` correct. Rendered off-screen for the lifetime of
-/// the popover.
+/// The invisible measure twin: a pixel-exact replica of the column.
 #[component]
 pub fn GlossMeasureTwin(
     /// NodeRef of the twin; handed to the content-measure hook.
@@ -228,9 +188,8 @@ pub fn GlossMeasureTwin(
     #[prop(into)] word_info: Signal<Option<Arc<WordInfo>>>,
     #[prop(into)] density: Signal<GlossDensity>,
 ) -> impl IntoView {
-    // The header's POS line is derived here exactly as the surface derives
-    // it, so a streaming snapshot that fills the POS in mid-answer moves
-    // both headers in the same frame.
+    // The header's POS line is derived exactly as the surface derives
+    // it.
     let pos = Signal::derive(move || word_info.get().map(|i| i.pos.clone()).unwrap_or_default());
     view! {
         <div
@@ -249,18 +208,7 @@ pub fn GlossMeasureTwin(
     }
 }
 
-/// The card body by data phase: the word sections once anything is there
-/// (streaming or done), the friendly error — with a retry affordance when
-/// the failure is retryable — on failure. Pure presentation of the content
-/// signals; the lifecycle that produces them lives in the controller.
-///
-/// The phases are separate `<Show>`s rather than one reactive `match`, and
-/// Streaming and Done share ONE mount on purpose: a `match` re-runs its whole
-/// arm when the phase flips, and reading `word_info` at this level would
-/// re-run it on every streamed snapshot too — either way the sections
-/// remount, the entrance animation replays, and the card flickers. `Show`
-/// keeps the sections mounted while their condition holds, so snapshots
-/// patch the text in place.
+/// The card body by phase; Streaming and Done share ONE mount.
 #[component]
 pub fn GlossSurfaceContent(
     #[prop(into)] phase: Signal<AiPhase>,
@@ -282,9 +230,7 @@ pub fn GlossSurfaceContent(
     }
 }
 
-/// The friendly failure — with a retry affordance when the failure is
-/// retryable. Reads the error signal fine-grained, so a late-arriving
-/// failure text patches in rather than rebuilding the card.
+/// The friendly failure, with a retry affordance when retryable.
 #[component]
 fn GlossErrorCard(
     #[prop(into)] error: Signal<Option<AiError>>,

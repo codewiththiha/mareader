@@ -1,25 +1,11 @@
-//! Async command, synchronous truth: the second half of "the hide always
-//! lands".
-//!
-//! A hover machine decides synchronously, but some surfaces are switched by
-//! an async command — the native macOS traffic lights go through Tauri IPC.
-//! Between the decision and the command landing the truth can move, and the
-//! stale command would then settle the native side last, with nothing left
-//! to re-run the effect: lights up over a window that has no bar showing.
-//!
-//! The fix is the same shape every time, so it lives here: record what was
-//! sent, await the command, re-read the live truth, and answer a mismatch
-//! with one more command. Read the truth UNTRACKED inside the probe — it
-//! runs after the owner's effect has finished, where a tracked read would
-//! subscribe an owner that will not run again.
+//! Async command, synchronous truth: send, verify, correct once.
 
 use std::future::Future;
 use std::rc::Rc;
 
 use leptos::prelude::*;
 
-/// A verified async switch. `P` is whatever payload the command needs
-/// alongside the boolean (the lights carry their header height).
+/// A verified async switch, with whatever payload the command needs.
 #[derive(Clone)]
 pub struct VerifiedSwitch<P>
 where
@@ -33,17 +19,12 @@ impl<P> VerifiedSwitch<P>
 where
     P: Clone + 'static,
 {
-    /// The last decision handed to the command — including the correction a
-    /// verification pass sent. Callers gate on it so an unchanged state
-    /// costs no IPC.
+    /// The last decision handed to the command.
     pub fn last_sent(&self) -> Option<bool> {
         self.last_sent.try_get_value().flatten()
     }
 
-    /// Forget what was sent. The next decision goes out even if it matches
-    /// the last one — for when something ELSE may have moved the native side
-    /// (another runtime frame drove the same window resource while this one
-    /// was hidden).
+    /// Forget what was sent, so the next decision goes out regardless.
     pub fn forget(&self) {
         self.last_sent.try_set_value(None);
     }
@@ -54,10 +35,7 @@ where
     }
 }
 
-/// Build a verified switch owned by the current reactive owner: `command`
-/// performs the side effect, `truth` reports what the state should be right
-/// now (untracked reads only) — or `None` when this owner no longer gets a
-/// say (a hidden runtime frame), in which case no correction is sent.
+/// Build a verified switch owned by the current reactive owner.
 pub fn use_verified_switch<P, Fut>(
     truth: impl Fn() -> Option<bool> + 'static,
     command: impl Fn(bool, P) -> Fut + 'static,

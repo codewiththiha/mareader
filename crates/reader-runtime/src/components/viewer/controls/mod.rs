@@ -1,6 +1,4 @@
-//! Reader chrome: the controls only the reader page uses — the bottom bar and
-//! the page navigation inside it, the page indicator, the overlay scrollbar and
-//! the progress strip.
+//! Reader chrome: the bottom bar, page indicator, scrollbar and progress strip.
 
 pub mod bottom_bar;
 pub mod overlay_scrollbar;

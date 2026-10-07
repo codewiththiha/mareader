@@ -1,19 +1,4 @@
-//! The Animations tab: one switch per motion the reader interpolates. Not one
-//! per motion the reader HAS — the page following the sidebar is deliberately
-//! missing, because the alternative to following the rail's width is showing a
-//! page that does not fit it. The rows here are the frames a reader may not want
-//! to sit through, never a behaviour they may skip.
-//!
-//! This tab is only OFFERED while the master switch (Layout → Animations) is
-//! on, and the rows here are never the whole story: the master is ANDed into
-//! every one of them by `Motion::from_prefs`, which is what the reader's own
-//! pipeline reads. A detail switch therefore never lies about state — it is
-//! simply unreachable while the master is off, and the tab that would show it
-//! is gone.
-//!
-//! What each row turns off is the INTERPOLATION, never the change: the end
-//! frame still arrives, in the frame it is asked for — or, for a burst of window
-//! sizes with its switch off, once the burst goes quiet, in one step.
+//! The Animations tab: one switch per motion the reader interpolates.
 
 use leptos::prelude::*;
 

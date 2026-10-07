@@ -4,12 +4,7 @@ import vm from "node:vm";
 
 import { exportedStrings } from "../repo.js";
 
-// The READER bundle: the format-agnostic half of the browser side, today
-// the selection tracker. This scenario deliberately does NOT import
-// ./harness.js — the point is the opposite: the reader bundle must install
-// and report with no engine and no pdf.js in the sandbox at all, because a
-// TXT or Markdown document selects through exactly this code and loads
-// neither.
+// The reader bundle alone: it must install with no engine and no pdf.js.
 
 const readerSrc = readFileSync(
   new URL("../../public/readerEngine.js", import.meta.url),
@@ -44,8 +39,7 @@ class FakeEl {
   getAttribute(name: string): string | null {
     return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null;
   }
-  /** Raised here, the event bubbles to the window: record it there, with
-   *  this element as its target. */
+  /** Raised here, the event bubbles to the window: recorded there. */
   dispatchEvent(e: Dispatched): boolean {
     dispatched.push({ type: e.type, detail: e.detail, bubbles: e.bubbles, target: this });
     return true;
@@ -67,10 +61,7 @@ class FakeEl {
   }
 }
 
-// The host protocol's selectors come in four shapes: a bare attribute
-// (`[data-reader-host]`), an attribute compared with `=`, `^=` or `$=`
-// (`[id^='cont-']`), and a class (`.textLayer`). Anything else is a bug in
-// this stub, not a selector to support, so it throws instead of guessing.
+// Host selectors come in four shapes; anything else throws.
 function matchesSelector(el: FakeEl, sel: string): boolean {
   if (sel.startsWith(".")) return el.classes.includes(sel.slice(1));
   const attr = /^\[([\w-]+)([\^$]?=)?'?([^'\]]*)'?\]$/.exec(sel);
@@ -86,9 +77,7 @@ function matchesSelector(el: FakeEl, sel: string): boolean {
   return have.endsWith(value); // "$="
 }
 
-// One text node per row keeps the range arithmetic honest without modelling
-// a tree: toString() is the row's text between the offsets, which is what a
-// real Range returns when the row holds a single Text node.
+// One text node per row keeps the range arithmetic honest.
 class FakeRange {
   private row: FakeEl;
   startContainer: FakeText;
@@ -112,8 +101,7 @@ class FakeRange {
     this.endOffset = el.textContent.length;
   }
   setEnd(container: FakeText, offset: number): void {
-    // The real Range throws when the container is not in the range, and the
-    // tracker catches exactly that; mirror it rather than clamp.
+    // The real Range throws when the container is outside it; do not clamp.
     if (container !== this.startContainer) throw new Error("container not in range");
     this.endOffset = offset;
   }
@@ -194,9 +182,7 @@ function takeEvent(type: string): Dispatched {
   return dispatched.splice(at, 1)[0];
 }
 
-// Several panes listen on the window, each keeping only the events raised
-// inside its own root: a selection's events are raised ON its page host and
-// bubble; a clear is nobody's and goes to the window itself.
+// Several panes listen; each keeps only the events raised inside its own root.
 function takeFrom(type: string, origin: unknown): unknown {
   const e = takeEvent(type);
   if (e.target !== origin) {
@@ -231,14 +217,7 @@ export async function run(): Promise<void> {
   vm.createContext(sandbox);
   vm.runInContext(readerSrc, sandbox, { filename: "readerEngine.js" });
 
-  // The event names come from the engine's table rather than being spelled
-  // here: the module that declares them reaches the browser only inside the
-  // esbuild bundles, so there is no compiled events.js to import, and its
-  // source is parsed by the same helper `check-events.ts` reads it with. A
-  // rename then moves this scenario instead of failing it as a missing event.
-  // An absolute path, not a repo-relative one: this file is two directories
-  // down in both tools/ and scripts/, so import.meta.url is the only anchor
-  // that survives the compile.
+  // Event names come from the engine's table, read by check-events' helper.
   const events = exportedStrings(
     fileURLToPath(new URL("../../public/engine/events.ts", import.meta.url)),
   );
@@ -248,8 +227,7 @@ export async function run(): Promise<void> {
     throw new Error("selection smoke: public/engine/events.ts no longer declares both events");
   }
 
-  // Installing is the bundle's whole job: three listeners, and nothing on the
-  // window that belongs to the engine.
+  // Installing is the bundle's whole job: three listeners, none the engine's.
   for (const type of ["selectionchange", "mousedown"]) {
     if (!docListeners.has(type)) throw new Error("selection smoke: no document " + type);
   }
@@ -257,8 +235,7 @@ export async function run(): Promise<void> {
   if (sandbox.PDFReader !== undefined) throw new Error("selection smoke: reader bundle set PDFReader");
   console.log("reader bundle ok: tracker installed with no engine present");
 
-  // A reflowable selection reports its page range at once and, after the
-  // debounce, its detail with the block spot the app persists.
+  // A reflowable selection reports its range at once, then its detail.
   const sentence = "A sentence with a word worth explaining in it.";
   const start = sentence.indexOf("word");
   const reflow = host("reflow", 3, "7", sentence);
@@ -288,8 +265,7 @@ export async function run(): Promise<void> {
   }
   console.log("reflow selection ok: page 3, block 7, spot", JSON.stringify(detail.spot));
 
-  // The same drag inside a PDF's text layer reports the same shape with no
-  // spot — a PDF anchors on the page-space rect the app derives itself.
+  // A PDF drag reports the same shape with no spot: the app derives it.
   const pdf = host("pdf", 5, null, "Ink on a canvas, selectable through the text layer.");
   currentSelection = new FakeSelection(pdf.row, pdf.node, 0, 3);
   docListeners.get("selectionchange")!({});
@@ -304,15 +280,12 @@ export async function run(): Promise<void> {
   }
   console.log("pdf selection ok: page 5, host pdf, no block spot");
 
-  // Losing the selection clears the range once — the transition the sidebar's
-  // pinning and the pill's dismissal both wait for.
+  // Losing the selection clears the range once: the sidebar's cue.
   currentSelection = null;
   docListeners.get("selectionchange")!({});
   const cleared = takeFrom(PAGES, sandbox);
   if (cleared !== null) throw new Error("selection smoke: clear sent " + JSON.stringify(cleared));
-  // The debounced detail pass reports the collapse as a null detail, which
-  // dismisses the pill; waiting for it here also drains the tracker's timer
-  // so nothing fires during a later scenario.
+  // The debounced detail pass reports a null detail, which dismisses the pill.
   await wait(220);
   const clearedDetail = takeFrom(DETAIL, sandbox);
   if (clearedDetail !== null) {

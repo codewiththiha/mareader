@@ -1,11 +1,4 @@
-//! The document's chapter tree, in the shape the reader displays. One node
-//! type for every format: the outline panel, the floating label and the
-//! reveal-on-page-turn memo all take a `Vec<OutlineNode>` and never ask
-//! whether chapters came from a PDF's `/Outlines` dictionary
-//! (`pdf_core::outline`) or Markdown headings (`md_core::outline`). Nodes are
-//! stored flattened in document order with depth as a field — the panel
-//! indents rather than recurses, and a page change only needs the last entry
-//! whose page is at or before it.
+//! The document's chapter tree, one node type for every format.
 
 /// One chapter of the open document.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,27 +18,15 @@ impl OutlineNode {
     }
 }
 
-/// The deepest level the panel will indent. Deeper headings still appear, at
-/// the cap — a chapter the reader can see is worth more than a clean tree.
+/// The deepest level the panel will indent.
 const MAX_OUTLINE_DEPTH: u32 = 5;
 
-/// Clamp a raw depth into the range the panel draws. A negative-looking depth
-/// (an outline that numbers its levels from 1) is normalised by the caller
-/// that knows its own convention; this only guards the far end.
+/// Clamp a raw depth into the range the panel draws.
 pub fn clamp_depth(depth: u32) -> u32 {
     depth.min(MAX_OUTLINE_DEPTH)
 }
 
-/// The entry the reader is currently inside (the sidebar highlight and the
-/// floating label). A chapter owns every page from its own up to the next
-/// chapter that starts later, so the answer is the LAST entry whose page is
-/// at or before `page`; on ties the later — more specific — entry wins.
-/// `None` before the first chapter's page: a cover or preface belongs to no
-/// section.
-///
-/// Both producers sort by page, so one binary search answers it; a malformed
-/// file that flattens out of order takes the linear path and stays correct.
-/// An outline is document input, and document input gets no panic.
+/// The entry the reader is currently inside.
 pub fn active_entry(nodes: &[OutlineNode], page: u32) -> Option<usize> {
     if !nodes.is_sorted_by_key(|node| node.page) {
         return nodes.iter().rposition(|node| node.page <= page);

@@ -1,6 +1,5 @@
-// One full-page raster budget for the persistent window. Engines retain their
-// own jobs; the host retains only plain lease keys and WEAK wake callbacks.
-// At most two outstanding requests per frame, drained on cancel or retirement.
+// One full-page raster budget per window; two outstanding requests per
+// frame.
 import { WINDOW_RASTER_LIMIT, type RasterLane, type RasterLaneSnapshot } from "./raster-protocol";
 
 interface Waiting {
@@ -49,9 +48,7 @@ export class WindowRasterLane implements RasterLane {
     this.pump();
   }
 
-  // A removed Reader host may have live, incoming and retiring children.
-  // Plain scope keys let the Shell reclaim ALL of them without holding a
-  // window, document, callback or descendant registry alive.
+  // A removed host's children are reclaimed by plain scope keys.
   retireScope(scope: string): void {
     if (!scope) return;
     const prefix = `${scope}/`;

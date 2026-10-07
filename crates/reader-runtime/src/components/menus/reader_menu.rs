@@ -1,4 +1,4 @@
-//! Readest-style 3-dash reader menu: zoom, view modes, fit, auto-scroll, and tools.
+//! The 3-dash reader menu: zoom, view modes, fit, auto-scroll.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -62,9 +62,7 @@ fn move_item(direction: MoveDirection) -> (IconName, &'static str) {
     }
 }
 
-/// Show this pane's document again in a new pane beside it, at the page
-/// this pane is on. The host places it (and refuses it, with a toast, when
-/// the workspace is full); this pane keeps its own session untouched.
+/// Show this document again in a new pane, at this page.
 fn split_beside(state: crate::context::ReaderContext, axis: SplitAxis) {
     let Some(launch) = crate::pane::document::view_again(state) else {
         return;
@@ -140,15 +138,12 @@ pub fn ReaderMenu(
                     }
                 }}
                 <Separator vertical=false spacing="my-1" />
-                // ── The workspace: this document again beside itself, or
-                // (desktop, where there is a file dialog) another one ──
+                // ── The workspace: this document beside itself ──
                 {move || {
                     let full = !state.can_split.get();
                     let empty = state.launch.with(|launch| launch.path.is_empty());
                     let moves = state.moves.get();
-                    // In a split the menu moves THIS pane through the layout
-                    // (the drop-free way to rearrange); with one pane there is
-                    // nothing to move, so it offers the splits instead.
+                    // In a split the menu moves THIS pane.
                     let placement = if moves.any() {
                         MoveDirection::ALL
                             .into_iter()
@@ -241,5 +236,3 @@ pub fn ReaderMenu(
         </div>
     }
 }
-
-// only the changed file was rewritten

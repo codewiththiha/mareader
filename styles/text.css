@@ -1,43 +1,22 @@
-/* Text pages — the reflowable formats (TXT, Markdown).
-
-   .tx-page is the text counterpart of .pdf-page: an A4 box on the same
-   paper/token pipeline, filled with real DOM type instead of a raster.
-   Type resolves through the scale-1 custom properties on <html> (--tx-*,
-   painted by the typography and appearance effects) times the host's own
-   --ts multiplier. That split is the zoom contract: a zoom moves only
-   --ts, so every knob scales in one multiplication and the page cut —
-   measured at scale 1 — provably holds. */
+/* Text pages: the reflowable formats' A4 box on the same token pipeline. */
 
 .tx-page {
   position: relative;
-  /* Transparent on purpose: .reader-bg is the single source of truth for
-     the paper (it paints --tx-paper for reflowable documents, shell.css).
-     The host is a layout frame, not a painted card, so no second backdrop
-     ever stacks over the view mode's.
-
-     No --canvas-filter here either: that pipeline turns the PDF's
-     always-light raster into the base mode and tint, while a text page
-     paints its own paper and ink from its --tx-* tokens — filtering it
-     would invert an already-dark page (Dark) or double-tint it (Light +
-     tint). Text restyles through its tokens, which is also why blend mode
-     never needs to reach it. */
+  /* Transparent on purpose: .reader-bg is the paper for reflowable docs. */
   background-color: transparent;
   overflow: hidden;
   flex-shrink: 0;
   contain: content;
 
-  /* Textures zoom with the page (textures.css); for a text page the scale
-     factor is the type's own. */
+  /* Textures zoom with the page; for a text page that scale is the type's. */
   --scale-factor: var(--ts, 1);
 }
 
-/* .tx-page cards render only in the paginated modes (single, spread,
-   horizontal); vertical reading is the continuous stream below. */
+/* .tx-page cards render only in the paginated modes. */
 
 /* --- The content column: every typography knob resolves here. --- */
 .tx-content {
-  /* Above the texture: a text page's pattern is the scroller's background
-     (textures.css), so the type simply stacks over it. */
+  /* Above the texture: the type stacks over the scroller's pattern. */
   position: relative;
   z-index: 2;
   font-family: var(--tx-font-body, serif);
@@ -49,25 +28,17 @@
   text-align: var(--tx-text-align, start);
   hyphens: var(--tx-hyphens, none);
 
-  /* The ink dial is resolved in RUST: --tx-ink arrives pre-mixed toward
-     the paper, so a slider drag repaints final colours instead of
-     re-evaluating a color-mix across every mounted block. */
+  /* The ink dial is resolved in Rust; the slider repaints final colours. */
   color: var(--tx-ink);
 }
 
-/* One layout atom. Spacing rides padding-bottom, never margin, so the
-   measured offsetHeight and the page's flow always agree (margins
-   collapse, padding cannot). position:relative makes the row the
-   containing block for its search-hit boxes (components/search.css);
-   it changes nothing about layout or measurement. */
+/* One layout atom; spacing rides padding, never margin. */
 .tx-block {
   position: relative;
   padding-bottom: var(--tx-para-margin, 1em);
 }
 
-/* The tail of a paragraph the block splitter cut: the paragraph's one
-   space belongs to its first chunk, so a split paragraph reads as one in
-   every mode. */
+/* The tail of a split paragraph: its one space belongs to the first chunk. */
 .tx-block.tx-cont {
   padding-bottom: 0;
 }
@@ -79,14 +50,12 @@
   text-indent: var(--tx-text-indent, 0em);
 }
 
-/* --- Markdown constructs. Each .tx-md wraps exactly ONE top-level
-   construct, so these rules never reach past it. --- */
+/* --- Markdown constructs: each wraps exactly one top-level construct. --- */
 .tx-md {
   overflow-wrap: break-word;
 }
 
-/* Spacing between constructs comes from .tx-block; inside a construct only
-   the joints between its own children carry margin. */
+/* Spacing between constructs comes from .tx-block. */
 .tx-md > :first-child {
   margin-top: 0;
 }
@@ -122,9 +91,7 @@
 .tx-md h5 { font-size: 1em; }
 .tx-md h6 { font-size: 0.92em; color: var(--tx-muted); }
 
-/* The markdown ink tints are precomposed in Rust
-   (reader_core::appearance::reflowable) and painted flat — no live
-   color-mix() chains for a slider drag to re-evaluate. */
+/* The markdown ink tints are precomposed in Rust and painted flat. */
 
 .tx-md ul,
 .tx-md ol {
@@ -207,34 +174,24 @@
   font-weight: 600;
 }
 
-/* --- The continuous stream: vertical reading. The window is the page — no
-   cards, no gaps; the scroller paints the paper and the virtualizer-sized
-   blocks flow over it in one column
-   (components::formats::reflow::stream). --- */
+/* --- The continuous stream: vertical reading, the window is the page. --- */
 .tx-stream {
   /* Transparent, like the page host: .reader-bg paints the paper. */
   background-color: transparent;
 }
 
-/* The reading column: narrower than the viewport (width set inline from
-   zoom + page margin), positioned by the alignment classes below; blocks
-   are absolutely positioned inside it by the virtualizer. */
+/* The reading column, positioned by the alignment classes below. */
 .tx-stream-col {
   position: relative;
 }
 
-/* A row the render band has not reached: an empty box at the layout's own
-   height so the scrollbar and anchors never move while the type stands
-   down. A whisper of ink, not a skeleton. */
+/* A row the render band has not reached: an empty box at its own height. */
 .tx-blank {
   background: color-mix(in srgb, var(--tx-ink) 5%, transparent);
   border-radius: 4px;
 }
 
-/* Column alignment. The page margin is an inset (--tx-col-inset, written
-   inline by the stream), so Left/Right honour it exactly like Center, and
-   a zero margin still reaches the true window edge. PDF never mounts
-   .tx-stream-col. */
+/* Column alignment; the page margin is an inset, so all three honour it. */
 .tx-align-left {
   margin-left: var(--tx-col-inset, 0px);
   margin-right: auto;

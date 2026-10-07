@@ -1,5 +1,4 @@
-//! Pressables: the button family (plain and toggle) and the switch. One
-//! concept — a user press — three shapes, each with one job.
+//! Pressables: the button family and the switch.
 
 pub mod button;
 pub mod switch;

@@ -1,5 +1,4 @@
-// Run the HOST bundle, not a copied scheduler. The browser stage separately
-// proves PDF render jobs acquire these permits across actual iframe realms.
+// Run the HOST bundle, not a copied scheduler.
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 

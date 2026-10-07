@@ -1,19 +1,10 @@
-//! Appearance presets: the built-in looks plus user-saved combinations in
-//! named groups. Sepia, Green and Night used to be hard-coded themes; they are
-//! now points in the `Appearance` space — the argument for the refactor: if a
-//! preset reproduces them exactly, presets are expressive enough to be the
-//! only mechanism, and users can build their own without anyone writing CSS.
-//!
-//! CONTRACT: `Preset`/`PresetGroup` field names are the serde schema persisted
-//! inside `mareader.settings.v1`.
+//! Appearance presets: the built-in looks plus user-saved ones.
 
 use serde::{Deserialize, Serialize};
 
 use super::{Appearance, BaseMode, NoiseMode, TextureMode};
 
-/// A named look. `id` is stable and used for selection/highlighting; user
-/// presets get a generated id so two presets may share a label without the UI
-/// confusing them.
+/// A named look; `id` is stable for selection and highlighting.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Preset {
     pub id: String,
@@ -39,19 +30,12 @@ fn preset(id: &str, name: &str, group: &str, appearance: Appearance) -> Preset {
     }
 }
 
-/// The presets that ship with the app. The plain bases (Light / Dark / Dim)
-/// are deliberately NOT presets: the Mode section's three buttons are the one
-/// home for that choice, and a second copy as swatches was a row that did
-/// nothing the buttons did not. The tinted classics reproduce the retired
-/// hard-coded themes — the compatibility guarantee that lets those CSS blocks
-/// stay deleted.
+/// The presets that ship with the app; the plain bases are not among
+/// them.
 pub fn builtin_presets() -> Vec<Preset> {
-    // The strengths are on the doubled tint curve (full effect at 50 —
-    // `Appearance::tint_amount`), so each classic carries half the number
-    // it did under the old /100 mapping and renders the same look.
+    // Strengths are on the doubled tint curve, full effect at 50.
     vec![
-        // Sepia was `sepia(0.35) contrast(0.95) saturate(0.9)` on light paper:
-        // a warm brown at sepia()'s own hue, so no rotation and a mid strength.
+        // Sepia was a warm brown at sepia()'s own hue, mid strength.
         preset(
             "sepia",
             "Sepia",
@@ -63,7 +47,7 @@ pub fn builtin_presets() -> Vec<Preset> {
                 ..Default::default()
             },
         ),
-        // Green was sepia+hue-rotate(70deg) => 34 + 70 ≈ 104, a soft leaf green.
+        // Green was a soft leaf green at hue ~104.
         preset(
             "green",
             "Green",
@@ -123,10 +107,7 @@ pub fn is_builtin(id: &str) -> bool {
     builtin_presets().iter().any(|p| p.id == id)
 }
 
-/// Group presets for display, preserving first-seen group order so the menu
-/// does not reshuffle when a user renames or adds one. Ungrouped presets
-/// collect under "Custom": a menu with headed sections and a pile of unheaded
-/// rows reads as broken.
+/// Group presets for display, preserving first-seen group order.
 pub fn group_presets(presets: &[Preset]) -> Vec<PresetGroup> {
     let mut order: Vec<String> = Vec::new();
     let mut out: Vec<PresetGroup> = Vec::new();
@@ -150,12 +131,9 @@ pub fn group_presets(presets: &[Preset]) -> Vec<PresetGroup> {
     out
 }
 
-/// A URL-safe-ish slug for a user preset id, with a numeric suffix when the
-/// slug is already taken so ids stay unique even for duplicate names.
+/// A slug for a user preset id, with a numeric suffix when taken.
 pub fn make_preset_id(name: &str, existing: &[Preset]) -> String {
-    // Collapse RUNS of separators, not just map them: "Café / Nuit" has three
-    // non-alphanumerics in a row, and one dash per character would give
-    // "caf----nuit".
+    // Collapse runs of separators, not just map them: café----nuit.
     let mut slug = String::new();
     for c in name.trim().to_lowercase().chars() {
         if c.is_ascii_alphanumeric() {
@@ -209,15 +187,11 @@ mod tests {
 
     #[test]
     fn the_retired_themes_survive_as_presets() {
-        // This is the compatibility contract that allowed the sepia/green/night
-        // CSS blocks to be deleted. If any of these disappear, users lose looks
-        // they had selected.
+        // The compatibility contract: these keep the retired looks.
         for id in ["sepia", "green", "night"] {
             assert!(is_builtin(id), "missing reconstructed theme {id}");
         }
-        // And the plain bases are the Mode section's buttons now, not
-        // presets — a stale "light"/"dark"/"dim" selection must read as
-        // custom rather than dangling off a preset that no longer exists.
+        // The plain bases are the Mode section's buttons, not presets.
         for id in ["light", "dark", "dim"] {
             assert!(!is_builtin(id), "{id} is a mode button, not a preset");
         }
@@ -253,8 +227,7 @@ mod tests {
 
     #[test]
     fn presets_capture_every_axis_not_just_colour() {
-        // A preset has to restore the WHOLE look or switching to one leaves
-        // stray texture/grain from whatever was set before.
+        // A preset must restore the WHOLE look.
         let p = find("parchment");
         assert_eq!(p.appearance.texture, TextureMode::Paper);
         assert_eq!(p.appearance.noise, NoiseMode::Static);

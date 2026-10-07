@@ -1,9 +1,4 @@
-//! The bottom-right selection action bar: count + This page / All /
-//! Remove (n) / Done. Rendered by the popover's `SelectMode` (its `undo`
-//! signal is the undo pipeline); visible exactly while selection mode is
-//! active. Position + elevation come from the `ActionBar` primitive; the
-//! actions are the shared compact `Button` (quiet rows Ghost, the
-//! destructive one Danger) — no per-bar button styling remains.
+//! The bottom-right selection bar: count, This page / All / Remove / Done.
 
 use leptos::prelude::*;
 

@@ -1,33 +1,11 @@
 #!/usr/bin/env sh
-# The canonical frontend build: ONE command that produces the shell page and
-# every runtime artifact the shell dynamically imports, merged into dist/.
-#
-# This is the single source of truth for the frontend artifact set. Tauri's
-# build command runs it (via `npm run build:dist`), CI runs it, the dev
-# orchestrator (tools/dev.mjs) runs it, and the browser suites serve what it
-# writes. The blank-window regression was two builds for one responsibility —
-# CI ran this script while Tauri ran a bare `trunk build`, so the packaged app
-# carried a shell page with no runtimes — so there is exactly one build here.
-#
-# Trunk's own hooks (engine bundle, tools/*.ts -> scripts/*.js, Tailwind CSS)
-# fire inside each invocation, so no step below repeats them.
+# The one frontend build: shell page + runtime artifacts, into dist/.
 set -e
 
-# Run from the repo root regardless of the caller's cwd: Tauri may invoke this
-# from src-tauri/, and every path below is repo-relative.
+# Run from the repo root whatever the caller's cwd: every path is repo-relative.
 cd "$(dirname "$0")/.."
 
-# One dist/, one writer. The shell leg below is a `trunk build` straight into
-# dist/ — the very directory `trunk serve` owns and swaps wholesale at the end
-# of ITS builds — so a build started while a dev server is up races it: both
-# processes `remove_dir_all(dist)` and the loser dies with "error cleaning
-# final dist: No such file or directory", which reads as a broken build.
-# tools/dev.mjs sets MAREADER_DEV_BUILD=1 for the builds IT owns (its start-up
-# build runs after it clears a stale server, and its rebuild loop deliberately
-# runs beside its own `trunk serve`); every other caller is a second writer and
-# is refused here, before Trunk has touched anything. The port is the one
-# Trunk.toml serves on. MAREADER_DEV_PORT exists so the gate can be tested on
-# a spare port without a dev server.
+# One dist/, one writer: a second build beside a live server is refused.
 if [ -z "$MAREADER_DEV_BUILD" ]; then
   if node -e '
     const fs = require("node:fs"), net = require("node:net");
@@ -48,10 +26,7 @@ fi
 # One layout owns all five targets and the required, deterministic merge.
 node tools/runtime-artifacts.mjs --build "$@"
 
-# The build is not done until the artifact set it promises is actually there:
-# every runtime artifact present and non-empty, and the shell page carrying the
-# boot placeholder the user sees before any runtime mounts. A missing artifact
-# fails HERE, with the path in the message — never as a blank window later.
+# Done when every promised artifact exists and the boot placeholder is present.
 node tools/check-runtime-artifacts.mjs
 
 echo "dist merged:"

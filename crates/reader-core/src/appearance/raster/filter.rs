@@ -1,11 +1,5 @@
-//! The raster filter pipeline: the CSS filter chain that turns the
-//! always-light PDF raster into the reader's base mode and tint, and the
-//! blend mode compositing it over the page backdrop.
-//!
-//! A translucent colour wash would muddy the text, so the tint is a
-//! `sepia() saturate() hue-rotate()` chain; the UI tokens ride along in OKLCH
-//! (see [`super::tint`]), each emitted with its OWN lightness preserved —
-//! only hue and chroma move, so contrast ratios survive a 100% tint.
+//! The raster filter pipeline: the CSS chain theming a PDF raster, plus
+//! its blend mode.
 
 use crate::appearance::{Appearance, BaseMode};
 
@@ -30,15 +24,11 @@ impl Appearance {
 
         if self.has_tint() {
             let t = self.tint_amount();
-            // Cap sepia at 0.55: past that the collapse starts eating real
-            // colour in figures and photographs, and the page reads as a
-            // duotone print rather than tinted paper.
+            // Cap sepia at 0.55: past that it eats real colour.
             let sep = (t * 0.55).clamp(0.0, 0.55);
-            // Sepia flattens chroma; give it back proportionally so a strong
-            // tint reads as saturated rather than merely beige.
+            // Sepia flattens chroma; give it back proportionally.
             let sat = 1.0 + t * 0.6;
-            // sepia() lands around 34deg (a warm brown). Measure the requested
-            // hue from there so tint_hue is an absolute target, not an offset.
+            // sepia() lands near 34deg, so hues are measured from there.
             let rot = (self.tint_hue as f64) - 34.0;
             parts.push(format!("sepia({sep:.3})"));
             parts.push(format!("saturate({sat:.3})"));
@@ -52,12 +42,7 @@ impl Appearance {
         }
     }
 
-    /// Blend mode for the canvas against the page background. `multiply`
-    /// keeps light themes paper-like; inverted canvases need `screen`
-    /// (multiply can only darken and would crush near-white inverted text
-    /// back into the dark page). Dim is darkened but not inverted, and
-    /// soft-light preserves its midtones where multiply would double up the
-    /// darkening.
+    /// Blend mode for the canvas against the page background.
     pub fn canvas_blend(&self) -> &'static str {
         match self.base {
             BaseMode::Light => "multiply",
@@ -74,9 +59,7 @@ mod tests {
 
     #[test]
     fn no_tint_leaves_the_base_filters_untouched() {
-        // A plain Light page must have NO filter at all — an identity filter
-        // chain still forces a compositing layer and can shift colours through
-        // rounding, so "no tint" has to mean literally none.
+        // A plain Light page gets NO filter at all.
         assert_eq!(tinted(BaseMode::Light, 34, 0).canvas_filter(), "none");
 
         // Dark and Dim keep exactly the pipelines the old hand-written CSS had.
@@ -97,8 +80,7 @@ mod tests {
 
     #[test]
     fn the_tint_chain_is_appended_after_the_base_not_before() {
-        // Order is load-bearing: on Dark the invert must run FIRST so the tint
-        // lands on the visible (already inverted) paper.
+        // Order is load-bearing: on Dark the invert runs FIRST.
         let f = tinted(BaseMode::Dark, 200, 60).canvas_filter();
         let inv = f.find("invert").expect("invert present");
         let sep = f.find("sepia").expect("sepia present");
@@ -107,8 +89,7 @@ mod tests {
 
     #[test]
     fn hue_is_absolute_measured_from_sepias_own_output() {
-        // sepia() outputs ~34deg. Asking for 34 must therefore rotate by zero,
-        // which is what makes `tint_hue` mean the same angle on every base.
+        // sepia() outputs ~34deg, so asking for 34 rotates by zero.
         let f = tinted(BaseMode::Light, 34, 50).canvas_filter();
         assert!(f.contains("hue-rotate(0.0deg)"), "{f}");
 
@@ -137,9 +118,7 @@ mod tests {
 
     #[test]
     fn the_dial_saturates_at_half_way() {
-        // Full effect lands at 50 now, and everything past it must sit at
-        // the same firm ceiling: an unclamped t > 1.0 would overshoot the
-        // sepia cap and over-saturate the chain.
+        // Full effect lands at 50; past it the ceiling is firm.
         let half = tinted(BaseMode::Light, 34, 50).canvas_filter();
         let full = tinted(BaseMode::Light, 34, 100).canvas_filter();
         assert_eq!(half, full);
@@ -157,8 +136,7 @@ mod tests {
     #[test]
     fn dim_is_dark_for_the_ui_but_does_not_invert_the_page() {
         assert!(BaseMode::Dim.is_dark(), "Dim needs the dark UI palette");
-        // Dim must keep the document's own colours — that is the reason to
-        // pick it over Dark.
+        // Dim keeps the document's own colours.
         assert!(
             !tinted(BaseMode::Dim, 0, 0)
                 .canvas_filter()

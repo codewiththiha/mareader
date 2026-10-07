@@ -1,26 +1,5 @@
-//! The reader runtime: the SESSION's lifecycle owner, between the Shell's
-//! manager and the reader host.
-//!
-//! ```text
-//! session start  → ReaderRuntime::begin_mount → ReaderHost (panes mount) → mark_ready
-//! Library        → host: panes prepare to leave → Shell command: navigate
-//! session end    → host disposes every pane (explicit, observable)
-//!                → ReaderRuntime::dispose awaits the panes' tails → Disposed
-//! ```
-//!
-//! Ownership rule: the runtime owns the SESSION's lifetime and nothing
-//! document-shaped. Documents, virtualizers, engine sessions and the
-//! listeners around them belong to the panes (`crate::pane`), which the
-//! host (`crate::host`) creates and disposes; the runtime only refuses new
-//! work once the session is ending and reports its own completion after the
-//! panes' teardown tails resolved.
-//!
-//! Disposal is a state machine, not a flag pile: `New → Mounting → Ready →
-//! Disposing → Disposed`. Work-ops are refused once `Disposing` is entered;
-//! teardown-ops stay admitted until `Disposed`. A disposed runtime is never
-//! revived — the next session runs `begin_mount`, which starts a NEW
-//! generation. Async tails capture the generation they belong to and are
-//! stale-guarded by it.
+//! The session's lifecycle owner: New → Mounting → Ready →
+//! Disposing → Disposed.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -47,22 +26,18 @@ pub enum RuntimeLifecycle {
 }
 
 impl RuntimeLifecycle {
-    /// Whether reader WORK may start in this state (opens, renders, page
-    /// registrations, document close). Refused from `Disposing` on: new
-    /// work cannot start while disposal is progressing.
+    /// Whether reader WORK may start: refused from `Disposing` on.
     pub fn admits_work(self) -> bool {
         !matches!(self, Self::Disposing | Self::Disposed)
     }
 
-    /// Whether TEARDOWN work may run (engine destroy, sweeps). Admitted one
-    /// state longer than work: the disposing tail is teardown by definition.
+    /// Whether TEARDOWN may run: one state longer than work.
     pub fn admits_teardown(self) -> bool {
         self != Self::Disposed
     }
 }
 
-/// The runtime's mutable core: the current state plus the generation stamp
-/// every async tail captures. One generation per mount; never reused.
+/// The current state plus the generation stamp tails capture.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct RuntimeCore {
     pub lifecycle: RuntimeLifecycle,
@@ -70,12 +45,8 @@ pub struct RuntimeCore {
 }
 
 impl RuntimeCore {
-    /// `New | Disposing | Disposed → Mounting` as a NEW generation — a
-    /// disposed runtime is never revived, and a mount that lands while a
-    /// disposal tail is still awaiting the engine starts a fresh generation
-    /// the stale tail cannot touch (its completion is generation-guarded).
-    /// `Mounting → Mounting` is the idempotent re-entry; `Ready` refuses:
-    /// the runtime is already mounted.
+    /// → `Mounting` as a NEW generation; `Mounting` re-enters
+    /// idempotently, `Ready` refuses.
     pub fn begin_mount(&mut self) -> Result<u64, RuntimeLifecycle> {
         match self.lifecycle {
             RuntimeLifecycle::New | RuntimeLifecycle::Disposing | RuntimeLifecycle::Disposed => {
@@ -98,8 +69,7 @@ impl RuntimeCore {
         }
     }
 
-    /// Any live state → `Disposing`, exactly once. `false` from `Disposing`
-    /// (a dispose is already running) and `Disposed` (idempotent no-op).
+    /// Any live state → `Disposing`, once; `false` from `Disposing`.
     fn begin_dispose(&mut self) -> bool {
         if self.lifecycle.admits_work() {
             self.lifecycle = RuntimeLifecycle::Disposing;
@@ -109,11 +79,8 @@ impl RuntimeCore {
         }
     }
 
-    /// `Disposing → Disposed` FOR THIS GENERATION: the teardown tail's last
-    /// act, guarded by the generation the tail captured — a mount that
-    /// started a new generation while the engine destroy was still in
-    /// flight makes the stale completion a no-op instead of killing the
-    /// fresh runtime.
+    /// `Disposing → Disposed` for THIS generation: a stale tail's
+    /// completion no-ops.
     pub fn finish_dispose(&mut self, generation: u64) -> Result<(), RuntimeLifecycle> {
         if self.lifecycle == RuntimeLifecycle::Disposing && self.generation == generation {
             self.lifecycle = RuntimeLifecycle::Disposed;
@@ -124,11 +91,7 @@ impl RuntimeCore {
     }
 }
 
-/// The runtime's self-reported view, published to the diagnostics surface on
-/// every transition: the runtime itself reports its lifecycle, and disposal
-/// completion is observable from the runtime, not inferred from its
-/// surroundings. The resources it counts are the panes' (the host reports
-/// them).
+/// The runtime's self-reported view, published on every transition.
 #[derive(Clone, Copy, Debug)]
 pub struct RuntimeView {
     pub lifecycle: RuntimeLifecycle,
@@ -139,8 +102,7 @@ pub struct RuntimeView {
 // The runtime itself
 // ---------------------------------------------------------------------------
 
-/// The session's lifecycle owner. Copy by design: the host and every pane
-/// share ONE runtime through Copy handles onto the same core.
+/// The session's lifecycle owner, shared by Copy handles.
 #[derive(Clone, Copy)]
 pub struct ReaderRuntime {
     core: RwSignal<RuntimeCore>,
@@ -153,13 +115,8 @@ impl Default for ReaderRuntime {
 }
 
 impl ReaderRuntime {
-    /// A new runtime, one per session. Its reported generation is seeded from
-    /// the session's ORDINAL rather than from zero, so `begin_mount` publishes
-    /// ordinal `n` and no two sessions of one frame can claim the same
-    /// in-frame identity (§21). A disposal is therefore never mistaken for a
-    /// first mount. This stays the runtime's own lifetime stamp — the shell's
-    /// reader-session count, not this number, is the identity the browser
-    /// suite asserts across frames.
+    /// One per session, its generation seeded from the session ordinal
+    /// (§21).
     pub fn new() -> Self {
         let ordinal = crate::diagnostics::next_session_ordinal();
         let core = RuntimeCore {
@@ -172,11 +129,7 @@ impl ReaderRuntime {
         }
     }
 
-    /// The lifecycle as this runtime reports it. A runtime whose own arena
-    /// owner has been disposed reads as `Disposed`: the bookkeeping is gone
-    /// because the runtime is gone, and a caller asking after that gets the
-    /// truth rather than a panic — a wasm abort here would poison the
-    /// artifact for every later session.
+    /// The lifecycle as reported; a disposed owner reads `Disposed`.
     pub fn lifecycle(&self) -> RuntimeLifecycle {
         self.core
             .try_get_untracked()
@@ -184,10 +137,8 @@ impl ReaderRuntime {
             .unwrap_or(RuntimeLifecycle::Disposed)
     }
 
-    /// The generation stamp async tails capture to reject stale results.
-    /// Read through `try_` for the same reason the lifecycle is: a tail that
-    /// outlives the arena must not panic on it. A disposed runtime answers
-    /// with a stamp no live generation can carry.
+    /// The stamp tails capture to reject stale results; `try_`, and
+    /// `u64::MAX` once gone.
     pub fn generation(&self) -> u64 {
         self.core
             .try_get_untracked()
@@ -195,10 +146,8 @@ impl ReaderRuntime {
             .unwrap_or(u64::MAX)
     }
 
-    /// Write to the core and republish the diagnostics view. The async
-    /// disposal tail calls this AFTER its owner may already be disposed, and
-    /// a disposed signal must not turn a completed teardown into a panic. A
-    /// dead runtime's bookkeeping is dropped, not fatal.
+    /// Write to the core and republish; a disposed signal is dropped,
+    /// never fatal.
     fn set(&self, f: impl FnOnce(&mut RuntimeCore)) {
         let _ = self.core.try_update(|core| {
             f(core);
@@ -206,9 +155,7 @@ impl ReaderRuntime {
         });
     }
 
-    /// The session mount: start (or restart, as a NEW generation) the
-    /// runtime. The host and its first pane are built between this and
-    /// [`Self::mark_ready`].
+    /// Start (or restart, as a NEW generation) the session mount.
     pub fn begin_mount(&self) -> u64 {
         let mut started = None;
         self.set(|core| {
@@ -226,16 +173,8 @@ impl ReaderRuntime {
         });
     }
 
-    /// Dispose the runtime: enter `Disposing` (work refused from here), then
-    /// await the panes' teardown tails the host handed over — the engine
-    /// destroys, the virtualizers' final dispose — and only then mark
-    /// `Disposed` and report completion. Safe to call exactly once; later
-    /// calls are no-ops that return `false`. Never revives.
-    ///
-    /// The panes' SYNC teardown (read point, owner cleanup, listeners,
-    /// observers, timers) already ran when the host disposed them, while
-    /// the session was still alive; this function runs inside the session
-    /// unmount's cleanup and only owns the ordering of the async tails.
+    /// Enter `Disposing`, await the panes' tails, mark `Disposed`.
+    /// Later calls are no-ops; never revives.
     pub fn dispose(&self, api: crate::context::ApiHandle, panes: PaneTeardown) -> bool {
         let mut began = false;
         self.set(|core| {
@@ -251,21 +190,13 @@ impl ReaderRuntime {
             rt.set(|core| {
                 let _ = core.finish_dispose(generation);
             });
-            // The terminal report, published from OUTSIDE the arena. This tail
-            // resumes after the unmount that began it has disposed the session
-            // signals, so the `set` above is refused and the view would stay
-            // `Disposing` forever — a runtime that never says it finished,
-            // which is precisely what the Shell's manager awaits and what the
-            // baseline probe reads (§12, §21).
+            // Published outside the arena, where the signals are gone.
             crate::diagnostics::publish_runtime_view(RuntimeLifecycle::Disposed, generation);
-            // The final push for this session: the runtime is disposed, the
-            // panes are gone, and the Shell's baseline verdict reads this
-            // digest. It leaves BEFORE the completion: whoever awaits the
-            // completion may remove the frame, and the port with it.
+            // The digest leaves BEFORE the completion, which may remove the
+            // frame.
             crate::diagnostics::publish_digest(&api);
-            // The Shell's manager awaits the dispose export's promise before
-            // it removes or recycles the frame (§5): the tail's end resolves
-            // it, document or not.
+            // The tail resolves the promise the manager awaits before
+            // removing the frame (§5).
             crate::resolve_dispose();
         });
         true
@@ -276,8 +207,8 @@ impl ReaderRuntime {
 mod tests {
     use super::*;
 
-    /// create → dispose: the machine walks New → (mount skipped; dispose is
-    /// legal from any live state) → Disposing → Disposed, once.
+    /// New → Disposing → Disposed, once (dispose is legal from any
+    /// live state).
     #[test]
     fn a_new_runtime_disposes_once() {
         let mut core = RuntimeCore::default();
@@ -315,8 +246,7 @@ mod tests {
         assert!(!core.begin_dispose(), "dispose after disposed is a no-op");
     }
 
-    /// create → dispose → new runtime: the slot restarts as a NEW generation;
-    /// the old generation is never reused.
+    /// The slot restarts as a new generation; the old is never reused.
     #[test]
     fn a_disposed_slot_restarts_as_a_new_generation() {
         let mut core = RuntimeCore::default();
@@ -349,9 +279,8 @@ mod tests {
         assert!(!core.lifecycle.admits_teardown(), "Disposed admits nothing");
     }
 
-    /// The ready runtime refuses a second mount (no accidental restart while
-    /// live); the mounting runtime tolerates the re-entry (idempotent); a
-    /// disposing runtime restarts as a new generation (fast close→reopen).
+    /// A ready runtime refuses a second mount; mounting re-enters;
+    /// disposing restarts.
     #[test]
     fn mount_guards() {
         let mut core = RuntimeCore::default();
@@ -367,8 +296,7 @@ mod tests {
         );
     }
 
-    /// finish_dispose only completes from Disposing (the ordered tail's
-    /// marker): a live runtime cannot be marked Disposed out of order.
+    /// Only the ordered tail's marker completes a dispose.
     #[test]
     fn finish_requires_disposing() {
         let mut core = RuntimeCore::default();
@@ -379,9 +307,7 @@ mod tests {
         assert!(core.finish_dispose(core.generation).is_ok());
     }
 
-    /// A mount landing while a disposal tail is still in flight (the fast
-    /// close → reopen window) starts a NEW generation the stale tail cannot
-    /// finish: the tail's completion is generation-guarded and no-ops.
+    /// The stale tail's completion no-ops; the fresh generation stands.
     #[test]
     fn a_mount_during_disposal_orphans_the_stale_completion() {
         let mut core = RuntimeCore::default();

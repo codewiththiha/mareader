@@ -1,21 +1,5 @@
 //! The [`Layout`] contract: one geometry engine behind any virtualized
-//! surface — plain lists and uniform grids — plus the [`LayoutKind`]
-//! facade that lets the framework adapter hold either without `dyn` dispatch.
-//!
-//! # Coordinate model
-//!
-//! Every query works in **content coordinates** along the scroll axis:
-//! `0` is the start of the first item, [`Layout::total`] the end of the last.
-//! Content padding (a toolbar offset, a grid's `PAD`) belongs to the caller —
-//! add it when translating between scroll and content coordinates, and the
-//! math here stays exact.
-//!
-//! # Boundary semantics (all layouts)
-//!
-//! A position is a *leading edge*: an item ending exactly at the viewport's
-//! start has scrolled out; a position inside a gap resolves to the item
-//! below it. [`Layout::index_at`] and [`Layout::overlapping`] always agree
-//! about which item leads.
+//! surface.
 
 mod grid;
 mod list;
@@ -26,16 +10,6 @@ pub use list::ListLayout;
 use crate::{Budget, Viewport, Window};
 
 /// One geometry engine behind a virtualized surface.
-///
-/// Implementations answer, on every frame:
-///
-/// - where an item starts ([`offset`](Self::offset)) and how big it is
-///   ([`size`](Self::size)) — on both axes for grids;
-/// - which items to mount ([`window`](Self::window));
-/// - which item the reader is looking at ([`dominant`](Self::dominant)).
-///
-/// `viewport` parameters are [`Viewport`]s: `main` is the extent along the
-/// scroll axis; `cross` is the extent across it (lists ignore it).
 pub trait Layout {
     /// Number of items.
     fn item_count(&self) -> usize;
@@ -48,15 +22,13 @@ pub trait Layout {
     /// Total extent of the content along the scroll axis. `0.0` when empty.
     fn total(&self) -> f64;
 
-    /// Offset of the item's leading edge along the scroll axis. Returns the
-    /// total for indices at/past the end (trailing-spacer friendly).
+    /// Offset of the item's leading edge along the scroll axis.
     fn offset(&self, index: usize) -> f64;
 
     /// Extent of the item along the scroll axis. `0.0` out of range.
     fn size(&self, index: usize) -> f64;
 
-    /// Offset of the item along the cross axis (`0.0` for plain lists;
-    /// the column offset for grids).
+    /// Offset of the item along the cross axis.
     fn cross_offset(&self, index: usize) -> f64;
 
     /// Extent of the item along the cross axis (`0.0` for plain lists).
@@ -90,14 +62,10 @@ pub trait Layout {
         hint: &mut usize,
     ) -> Option<Window>;
 
-    /// The item occupying most of the viewport (area-of-viewport, ties to
-    /// the lower index). Stable across zoom — see [`crate::Strip::dominant`]
-    /// for why the top edge is the wrong question.
+    /// The item occupying most of the viewport, ties to the lower index.
     fn dominant(&self, scroll: f64, extent: f64) -> usize;
 
-    /// Resize one item; returns the signed delta (feed it to
-    /// [`crate::anchor::correct`]). Backends pick the cost: `O(n)` for
-    /// [`ListLayout`], `O(log n)` for a Fenwick-backed one.
+    /// Resize one item; returns the signed delta for the anchor.
     fn set_size(&mut self, index: usize, new_size: f64) -> f64;
 
     /// Average item extent along the scroll axis — resolves

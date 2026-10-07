@@ -1,6 +1,4 @@
-//! The compact sheet's question: one file of a folder import merging into a
-//! shelf the level already held. Three answers — one book, replace, or two
-//! books — and the switch that gives every waiting file the same answer.
+//! A folder import's per-file question: one book, replace, or two books.
 
 use leptos::prelude::*;
 
@@ -12,9 +10,7 @@ use super::{AskKind, ConflictAsk, answer_batch, member_slot, minted_name};
 use crate::services::arrange::{ReadingData, purge_books};
 use crate::services::covers;
 
-/// The three are [`Placement::FOLDER_MERGE`]: *merge*, *replace* and *keep both*. *Open* is not
-/// among them — the reader is importing the folder, so "go and look at the shelf" is not an
-/// answer to a file inside it.
+/// The three are [`Placement::FOLDER_MERGE`]; *open* is no answer here.
 pub fn answer_folder_merge(
     state: crate::context::LibraryContext,
     answer: Placement,
@@ -29,13 +25,10 @@ pub fn answer_folder_merge(
     );
 }
 
-/// Two of the three go through the unified apply: *merge* and *replace* were each written
-/// twice, once here and once for a row dragged onto a row, and the two disagreed about the
-/// edges. What a folder merge adds is the ledger write.
+/// *Merge* and *replace* use the unified apply; this adds the log.
 fn apply_folder_merge(state: crate::context::LibraryContext, ask: &ConflictAsk, answer: Placement) {
     let answer = withhold_keep_both_from_a_twin(state, ask, answer);
-    // Every answer here is about one arriving file; the two that do nothing are
-    // the two this sheet never offers.
+    // Every answer here is about one arriving file; two do nothing.
     let Some(file) = ask.arrival.file.clone() else {
         return;
     };
@@ -49,7 +42,7 @@ fn apply_folder_merge(state: crate::context::LibraryContext, ask: &ConflictAsk, 
             purge_existing(state, &ask.existing_id);
             land_answer_file(state, ask, file, None, slot);
         }
-        // The measurement only travels with the answer when the arriving file IS the row's file, which a re-import of one folder always is. A different folder's namesake is another content wearing one name.
+        // The measurement travels only when the arriving file is the row's.
         Placement::Merge => {
             if is_the_same_file(state, &ask.existing_id, &file.path) {
                 let existing = ask.existing_id.clone();
@@ -67,16 +60,13 @@ fn apply_folder_merge(state: crate::context::LibraryContext, ask: &ConflictAsk, 
     }
 }
 
-/// Through the removal's own sweep, receipt and all: a replace here costs
-/// the reader exactly what a replace anywhere else does.
+/// Through the removal's own sweep: a replace costs what one always costs.
 fn purge_existing(state: crate::context::LibraryContext, existing_id: &str) {
     let ids = [existing_id.to_string()];
     purge_books(state, &ids, ReadingData::Delete);
 }
 
-/// The sheet already withholds it; this is the write side of the same rule,
-/// because apply-to-all can carry an answer to a question whose sheet never
-/// offered it.
+/// The write side of the sheet's rule: apply-to-all can carry it too.
 fn withhold_keep_both_from_a_twin(
     state: crate::context::LibraryContext,
     ask: &ConflictAsk,
@@ -103,7 +93,7 @@ fn is_the_same_file(state: crate::context::LibraryContext, existing_id: &str, pa
         .with_untracked(|rows| find_by_id(rows, existing_id).is_some_and(|b| b.path() == path))
 }
 
-/// One spelling, so a placement cannot be recorded anywhere without the removal being spent beside it.
+/// One spelling, so a placement never lands without the ledger write.
 fn settle(state: crate::context::LibraryContext, ask: &ConflictAsk, fp: Fingerprint) {
     let folder_id = ask.kind.folder_id();
     crate::services::import::settle_ledger(state, folder_id, fp);
@@ -128,7 +118,7 @@ fn land_answer_file(
         crate::services::persist_library(state.library);
         return;
     }
-    // The import module's own single-file copy composition: the copy made and measured BEFORE the row is promised, and a copy that fails leaves the shelf untouched and the ledger unmarked.
+    // The import module's own single-file copy composition.
     let fp = file.fp;
     crate::services::import::land_stored_copy_settling(
         state,

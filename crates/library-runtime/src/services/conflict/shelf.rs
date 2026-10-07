@@ -1,5 +1,4 @@
-//! The folder's own question, asked before the walk: the level already holds
-//! the name the arriving folder would wear.
+//! The folder's own question, asked before the walk: the level holds the name.
 
 use leptos::prelude::*;
 
@@ -10,27 +9,20 @@ use library_core::shelf;
 use crate::services::reveal;
 use crate::services::toast;
 
-/// A separate ask rather than a variant of [`ConflictAsk`] because its answers are about
-/// a whole import run rather than about one placement: the ones that import start the run
-/// again with a plan.
+/// Its own ask: the answers are about a whole run, not one placement.
 #[derive(Clone, PartialEq)]
 pub struct ShelfConflictAsk {
-    /// The last segment of the arriving folder's path, the name the reader picked it by.
+    /// The arriving folder's last path segment, the name the reader picked.
     pub incoming_name: String,
     pub existing_id: String,
     pub existing_name: String,
     pub root: String,
     pub opts: FolderOpts,
-    /// Whether the shelf that holds the name is the arriving folder's OWN — the one its
-    /// previous run minted — because a re-import of one folder is a continuation rather than
-    /// an arrival, and the sheet words it as one.
+    /// Whether the named shelf is the folder's own, from a prior run.
     pub own: bool,
 }
 
-/// The arrival's MODE decides. A read-at-place arrival gets the pointer and the merge,
-/// its *keep both* withheld as the second instance of one ground the family gate exists
-/// to prevent, and *replace* with it — neither side a read-at-place collision is the
-/// level's to empty.
+/// The arrival's mode decides the rows: link, merge or replace.
 pub fn offers(ask: &ShelfConflictAsk) -> &'static [Placement] {
     if ask.opts.mode().reads_in_place() {
         Placement::SHELF_READ_IN_PLACE
@@ -39,9 +31,7 @@ pub fn offers(ask: &ShelfConflictAsk) -> &'static [Placement] {
     }
 }
 
-/// The shelf question on screen. Every answer reads it before writing
-/// anything, because the three that import take the interrupted run's root and
-/// options off it and the sheet comes down only after the write.
+/// The shelf question on screen; every answer reads it before writing.
 fn pending(state: crate::context::LibraryContext) -> Option<ShelfConflictAsk> {
     state
         .library
@@ -54,8 +44,7 @@ pub fn raise_shelf(state: crate::context::LibraryContext, ask: ShelfConflictAsk)
     state.library.shelf_conflict.raise(ask);
 }
 
-/// The sheet renders [`offers`] and hands back a [`Placement`]; the write is
-/// `super::apply_placement` on a shelf scope, the same dispatch a book collision reaches.
+/// The sheet renders [`offers`] and hands back a [`Placement`]; the write
 pub fn answer_shelf(state: crate::context::LibraryContext, answer: Placement) {
     let Some(ask) = pending(state) else {
         return;
@@ -74,8 +63,7 @@ pub fn answer_shelf(state: crate::context::LibraryContext, answer: Placement) {
         reveal::reveal_shelf(state, &ask.existing_id);
         return;
     }
-    // The apply runs BEFORE the sheet comes down, and the order is load-bearing: the three
-    // answers that import read the interrupted run's root and options off the sheet's ask.
+    // Apply before the sheet comes down, and the order is load-bearing.
     super::apply_placement(state, &placement, answer);
     cancel_shelf(state);
 }
@@ -89,9 +77,7 @@ pub(super) fn as_new_shelf(state: crate::context::LibraryContext, _ask: &Placeme
         .shelves
         .with_untracked(|shelves| next_shelf_name(shelves, None, &pending.incoming_name));
     if crate::services::import::copies_over_standing_tree(state, &pending.root, &pending.opts) {
-        // The unbound run copies the ground onto a shelf of the reader's own, under the counter
-        // name, and leaves the tree alone: the bound run would resolve onto the tree's row and
-        // flip it to copies.
+        // The unbound run copies the ground onto a shelf of the reader's own.
         crate::services::import::copies_beside_tree(
             state,
             pending.root,
@@ -150,9 +136,7 @@ pub(super) fn replace_shelf(
     let Some(pending) = pending(state) else {
         return;
     };
-    // The folder's OWN read-at-place tree is the import module's own sweep: the root's claim
-    // first, so a run the reader already started refuses the answer before anything is
-    // removed.
+    // The folder's own read-at-place tree uses the import module's own sweep.
     let own_in_place = pending.own
         && state.library.folders.with_untracked(|folders| {
             folders

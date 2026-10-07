@@ -1,15 +1,4 @@
-//! What kind of construct a block holds.
-//!
-//! One rule runs through this crate: a block may be *cut* only if cutting it
-//! cannot change what the renderer opens. That is a question about the
-//! construct, not the text's length, so it is settled here — `reflow-core`'s
-//! fence-aware splitter produced the blocks; this module says which have
-//! structure of their own.
-//!
-//! The check is deliberately conservative, and conservatism is cheap: a false
-//! "not prose" costs one tighter page pack; a false "prose" costs a broken
-//! construct. Anything that could open a block-level construct disqualifies a
-//! line, and a block is prose only when every one of its lines is.
+//! What kind of construct a block holds; only running prose may be cut.
 
 use reflow_core::block::{BlockKind, TextBlock};
 
@@ -27,28 +16,19 @@ enum MarkdownConstruct {
     Quote,
     /// A thematic break (`---`, `***`, `___`).
     Rule,
-    /// A raw HTML block. The reader refuses to render it, so it may not be cut
-    /// into pieces that render as prose either.
+    /// A raw HTML block: the reader refuses it, so it may not be cut.
     Html,
     /// Running prose — the only construct that may be split across a cut.
     Prose,
 }
 
 /// The construct `line` opens, or `None` when it carries no block marker.
-/// Only the first line can open a construct (the splitter already cut on
-/// blank lines), so this answers per line and [`classify`] folds a block's
-/// lines into one verdict. The scan is a MARKER sniff, deliberately coarser
-/// than CommonMark: a seventh `#` is not a heading and is still not prose —
-/// the only question is whether a line break may be cut, and every syntax the
-/// reader does not model refuses the cut.
 fn construct_of_line(line: &str) -> Option<MarkdownConstruct> {
     let trimmed = line.trim_start();
     if trimmed.is_empty() {
         return None;
     }
-    // An indented code block (4+ columns) is code, not prose. A tab counts as
-    // the four columns it advances to, so the check is on the indent's width
-    // rather than on the bytes in front of the text.
+    // An indented code block (4+ columns) is code, not prose.
     if indent_columns(line) >= 4 {
         return Some(MarkdownConstruct::Code);
     }
@@ -71,8 +51,7 @@ fn construct_of_line(line: &str) -> Option<MarkdownConstruct> {
             } else if is_bullet(trimmed) {
                 MarkdownConstruct::List
             } else {
-                // `-ish`, `*not a bullet`: no marker follows the character, so
-                // the line is prose and must stay cuttable.
+                // No marker follows: the line is prose and stays cuttable.
                 return None;
             }
         }
@@ -95,16 +74,12 @@ fn classify(block: &TextBlock) -> MarkdownConstruct {
     MarkdownConstruct::Prose
 }
 
-/// Whether the block is running prose and may therefore be cut at its line
-/// boundaries. A block whose lines are all prose has no structure for a split
-/// to break; anything else keeps its render whole.
+/// Whether the block is running prose and may be cut at its line boundaries.
 pub(crate) fn is_prose_block(block: &TextBlock, _lines: &[&str]) -> bool {
     block.kind == BlockKind::Text || classify(block) == MarkdownConstruct::Prose
 }
 
-/// How many columns the line is indented by, counting a tab as four — which is
-/// how Markdown measures the indent that opens an indented code block, and why
-/// one tab is enough here.
+/// Columns the line is indented by, counting a tab as four.
 fn indent_columns(line: &str) -> usize {
     line.chars()
         .take_while(|c| *c == ' ' || *c == '\t')
@@ -150,9 +125,7 @@ fn is_ordered_item(trimmed: &str) -> bool {
     digits > 0 && matches!(trimmed.chars().nth(digits), Some('.' | ')'))
 }
 
-/// One ATX heading line: its level (1–6) and its title with the markers and
-/// the emphasis noise stripped. `None` for anything else, including a seventh
-/// `#` (not a heading in CommonMark) and an empty one.
+/// One ATX heading line: its level (1-6) and marker-stripped title.
 pub(crate) fn heading_of_line(line: &str) -> Option<(u32, String)> {
     let trimmed = line.trim();
     let level = trimmed.chars().take_while(|c| *c == '#').count();
@@ -191,21 +164,18 @@ mod tests {
         assert_eq!(classify(&md("> quoted")), MarkdownConstruct::Quote);
         assert_eq!(classify(&md("---")), MarkdownConstruct::Rule);
         assert_eq!(classify(&md("Just a sentence.")), MarkdownConstruct::Prose);
-        // The FIRST marker wins, which is what a list that opens with a
-        // paragraph continuation line still reads as.
+        // The FIRST marker wins, as a leading continuation line reads.
         assert_eq!(classify(&md("- a\nmore text")), MarkdownConstruct::List);
     }
 
     #[test]
     fn the_marker_sniff_is_coarser_than_commonmark_on_purpose() {
-        // Seven hashes is not a heading, but it is still not prose either: the
-        // only question asked here is whether the block may be cut.
+        // Seven hashes is not a heading, but still not prose: may it be cut?
         assert_eq!(
             classify(&md("####### too deep")),
             MarkdownConstruct::Heading
         );
-        // A setext underline makes the whole block the heading it ends, and a
-        // raw HTML block is refused on the first line of its tag.
+        // A setext underline makes the block a heading; raw HTML is refused.
         assert_eq!(classify(&md("Title\n=====")), MarkdownConstruct::Heading);
         assert_eq!(
             classify(&md("<details>\n<summary>more</summary>\n</details>")),
@@ -229,8 +199,7 @@ mod tests {
             let block = md(structured);
             assert!(!is_prose_block(&block, &[]), "{structured}");
         }
-        // A plain-text block is always splittable: its hard breaks are the cut
-        // points, whatever the bytes look like.
+        // Plain text is always splittable: its hard breaks are the cut points.
         let plain = TextBlock::new(BlockKind::Text, "```\ncode");
         assert!(is_prose_block(&plain, &[]));
     }

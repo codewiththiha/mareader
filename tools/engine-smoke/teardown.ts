@@ -1,9 +1,6 @@
 import { PDFReader, type StatsPayload, R, openDoc, closeDoc } from "./harness.js";
 
-/** The engine half of the post-close baseline: every live gauge empty, and
- *  every lifecycle counter pair balanced — every session and worker died
- *  once, every started render resolved. A violation names the exact gauge,
- *  so a leaked page surface reads differently from an orphaned worker. */
+/** The post-close baseline: every gauge empty, every counter pair balanced. */
 function assertDrained(stats: StatsPayload, label: string): void {
   const problems: string[] = [];
   if (stats.pages !== 0) problems.push(`pages=${stats.pages}`);
@@ -41,30 +38,22 @@ function assertDrained(stats: StatsPayload, label: string): void {
 }
 
 export async function run(): Promise<void> {
-  // The lifecycle narration is dev-only wiring; flip it on and off here so
-  // the facade member and the flag are exercised, not just compiled.
+  // The narration is dev-only wiring: flip it on and off to exercise the flag.
   PDFReader.setLifecycleLog(true);
   PDFReader.setLifecycleLog(false);
 
-  // The settled-work sweep: the advisory worker cleanup plus the drop of any
-  // zoom mask a superseded render left on a host. The stub hosts carry no
-  // masks, so this walks the wiring — a facade member missing from the bundle
-  // throws HERE rather than silently skipping in the reader.
+  // The sweep walks the wiring: a member missing from the bundle throws here.
   R.sweep();
   R.sweepSnapshots();
   R.unregisterPage("cont-0-cv");
   R.unregisterPage("cont-1-cv");
   await closeDoc();
-  // Both are idempotent on an empty session: the shelf sweep after a close
-  // runs them with nothing registered and no document.
+  // Both are idempotent on an empty session, as the shelf sweep shows.
   R.sweep();
   R.sweepSnapshots();
   assertDrained(PDFReader.stats(), "first close");
 
-  // Rapid reopen: a second open/destroy cycle on the SAME session state.
-  // The session and worker counters must stay balanced after a reopen, not
-  // just after the first close — a monotonic drift here is exactly the
-  // open/close-cycle leak the baseline workloads look for.
+  // Rapid reopen: session and worker counters must stay balanced too.
   const reopened = await openDoc("/fake/book.pdf");
   if (!reopened.ok) throw new Error(`reopen failed: ${reopened.error.message}`);
   R.registerPage(1, "reopen-0-cv", "reopen-0");
@@ -72,10 +61,7 @@ export async function run(): Promise<void> {
   if (!rerendered.ok && rerendered.error.name !== "cancelled") {
     throw new Error(`reopen render failed: ${rerendered.error.message}`);
   }
-  // Prefetch is lane work now: a warmup/idle prefetch must be visible as
-  // active work while it runs and resolved (completed or dropped) after the
-  // document dies — an unaccounted side channel here is exactly the leak
-  // shape the baseline exists to catch.
+  // Prefetch is lane work: visible while it runs, resolved when it dies.
   await R.prefetchThumb(2, 0.25);
   const midPrefetchStats = PDFReader.stats();
   if (midPrefetchStats.prefetchesStarted < 1) {
@@ -85,14 +71,7 @@ export async function run(): Promise<void> {
   await closeDoc();
   assertDrained(PDFReader.stats(), "rapid reopen + prefetch + close");
 
-  // quiesce is the work-stop half of a close intent: the cancel a
-  // boundary-crossing teardown cannot make in time, run in the click's own
-  // task. An unawaited render is in flight when it lands; it must resolve
-  // cancelled/dropped AND be counted, while the session survives — the one
-  // teardown stays destroy's, and destroy after quiesce must still drain
-  // with every counter pair balanced (the shared sweep counts nothing
-  // twice). A facade member missing from the bundle throws HERE rather than
-  // silently skipping in the reader.
+  // quiesce is the work-stop half of a close: in-flight work is cancelled.
   const quiesceOpen = await openDoc("/fake/book.pdf");
   if (!quiesceOpen.ok) throw new Error(`quiesce open failed: ${quiesceOpen.error.message}`);
   R.registerPage(1, "quiesce-0-cv", "quiesce-0");
@@ -115,9 +94,7 @@ export async function run(): Promise<void> {
   await closeDoc();
   assertDrained(PDFReader.stats(), "quiesce + close");
 
-  // destroy() with nothing open (the open flow runs it as its first act):
-  // a no-op dispose must not count a session that never existed. quiesce
-  // guards the same way: without a document it is nothing, counts nothing.
+  // destroy() with nothing open counts no session; quiesce guards the same way.
   R.quiesce();
   await closeDoc();
   assertDrained(PDFReader.stats(), "destroy on an empty session");

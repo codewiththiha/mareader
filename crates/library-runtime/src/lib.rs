@@ -1,6 +1,4 @@
-//! The library runtime: the shelf — its state, services, effects and UI —
-//! compiled as its own WASM artifact. It has no reader state to hold: the
-//! reader is a different artifact this one can only ask the Shell for.
+//! The library runtime: the shelf as its own WASM artifact.
 
 pub mod context;
 pub mod effects_library;
@@ -8,11 +6,7 @@ pub mod features;
 #[cfg(target_arch = "wasm32")]
 pub mod frame;
 
-/// The frame boot is a wasm-artifact path: on the host lanes there is no
-/// iframe, no port, nothing to boot — the same rules as the memory probe's
-/// host shape. The stub keeps the frame's call sites compiling (`context`'s
-/// `ApiHandle::Frame` dispatch, the bin's boot gate) with the frame's own
-/// signatures: an api that never exists and a boot that is never hosted.
+/// The off-wasm stub, so the frame's call sites still compile.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod frame {
     /// The frame api never exists off-wasm: nothing to run `f` against.
@@ -38,10 +32,7 @@ use wasm_bindgen::JsCast;
 
 pub use context::LibraryContext;
 
-/// One live library session: the unmount handle. The manager starts and
-/// disposes it like the reader's; the library keeps no cross-session state —
-/// the durable copy in storage is what the next session seeds from
-/// (persist data ≠ retain live object).
+/// One live library session: the unmount handle.
 struct Session {
     id: u32,
     unmount: Box<dyn FnOnce()>,
@@ -50,15 +41,11 @@ struct Session {
 thread_local! {
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
     static NEXT_ID: Cell<u32> = const { Cell::new(1) };
-    /// The live session's context, for the Shell → runtime commands that
-    /// land outside any page event (a bake answer; an open handoff).
+    /// The live session's context, for commands outside any page event.
     static LIVE_CTX: RefCell<Option<LibraryContext>> = const { RefCell::new(None) };
 }
 
-/// Mount a library session into `host`.
-///
-/// An incoming hosted frame defers startup writes until visible paint;
-/// standalone starts them immediately. Every session owns a fresh realm.
+/// Mount a library session into `host`; the frame defers startup writes.
 pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, defer_startup: bool) -> u32 {
     let id = NEXT_ID.with(|n| {
         let id = n.get();
@@ -80,18 +67,13 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, defer_sta
     SEEN_STAMPS.with(|slot| slot.set(StoreStamps::read()));
     LIVE_CTX.with(|c| *c.borrow_mut() = Some(state));
     let handle = mount_to(host, move || {
-        // Scoped to THIS session: the state seeds from storage, the effects
-        // (grid gestures, dnd, import flows) install, the UI mounts.
+        // Scoped to THIS session: state, effects and UI mount and die here.
         provide_context(state.library.covers);
-        // One overlay registry for this session: the shelf's menus and modals
-        // arbitrate through it, and it dies with the unmount.
+        // The shelf's menus and modals arbitrate through one overlay board.
         provide_context(OverlayBoard::default());
-        // The library's session effects install INSIDE this scope: the
-        // listeners and timers die with the unmount (§5, §17).
+        // Session effects install inside this scope and die with the unmount.
         effects_library::library_effects(state, defer_startup);
-        // This frame's own `<html>`: the chrome pipeline only — the shelf has
-        // no raster and no reflowable page, so it writes neither token set
-        // and never addresses an engine. Edits go to the Shell to persist.
+        // This frame's `<html>`: chrome only; edits go to the Shell to persist.
         {
             use runtime_contract::boundary::ShellApi;
             let api = state.api;
@@ -115,8 +97,7 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, defer_sta
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum LibraryCommand {
-    /// A cover-bake request answered: the engine's raster, or `None` when
-    /// the bake failed (the queue's one-retry policy decides from there).
+    /// An answered bake: the engine's raster, or `None` when it failed.
     #[serde(rename_all = "camelCase")]
     CoverBaked {
         path: String,
@@ -125,20 +106,13 @@ pub enum LibraryCommand {
     },
     /// Newly revealed: reconcile late durable writes and start deferred work.
     Refresh,
-    /// Files dropped on the window from the OS: imported onto the shelf on
-    /// screen, exactly as the Add menu's picker would.
+    /// Files dropped on the window, imported as the picker would.
     ImportFiles { paths: Vec<String> },
 }
 
 /// Re-read the store into the live session's signals.
-///
-/// The outgoing Reader may flush a read point after this fresh Library
-/// seeded its store. Reconcile changed persisted slices without replacing
-/// this session's query/selection or unnecessarily rebuilding its cover map.
 fn refresh(ctx: LibraryContext) {
-    // Only what changed between incoming mount and reveal. Re-parsing the
-    // cover map — megabytes of data URLs — and re-setting it would re-render
-    // every cover on the shelf at the exact moment it is revealed.
+    // Only what changed since the mount: covers left as they are.
     let now = StoreStamps::read();
     let seen = SEEN_STAMPS.with(|slot| slot.replace(now));
     if now.library.is_none() || now.library != seen.library {
@@ -154,8 +128,7 @@ fn refresh(ctx: LibraryContext) {
     if now.settings.is_none() || now.settings != seen.settings {
         ctx.settings.set(storage::load_settings());
     }
-    // Start incoming-frame passes after visible paint, not during the
-    // handoff's own frame. The callback is cancelled with this session.
+    // Start deferred passes after paint; the timer dies with the session.
     after_reveal(effects_library::run_deferred_startup);
 }
 
@@ -178,8 +151,7 @@ impl StoreStamps {
 }
 
 thread_local! {
-    /// What the live session last read from the store (seeded at session
-    /// start, refreshed on every Refresh).
+    /// What the live session last read from the store.
     static SEEN_STAMPS: Cell<StoreStamps> = Cell::new(StoreStamps::default());
     #[cfg(target_arch = "wasm32")]
     static REVEAL_TIMER: Cell<Option<i32>> = const { Cell::new(None) };
@@ -222,13 +194,11 @@ fn cancel_reveal() {
     }
 }
 
-/// How long a revealed shelf gets to paint before its incoming-frame passes start.
+/// How long a revealed shelf gets to paint.
 #[cfg(target_arch = "wasm32")]
 const REVEAL_SETTLE_MS: i32 = 160;
 
-/// Run one command against the live session. Commands for a session id that
-/// is no longer live are dropped, not answered — the Shell's generation
-/// guard and this check are the two walls a stale frame's traffic hits.
+/// Run one command; a stale session id is dropped, not answered.
 pub fn command(id: u32, cmd: LibraryCommand) {
     let live = SESSION.with(|s| s.borrow().as_ref().is_some_and(|x| x.id == id));
     if !live {
@@ -249,8 +219,7 @@ pub fn command(id: u32, cmd: LibraryCommand) {
     }
 }
 
-/// Dispose the library session (the manager replaces runtimes; the reader is
-/// no different except in direction).
+/// Dispose the library session; the manager replaces runtimes.
 pub fn dispose(id: u32) -> js_sys::Promise {
     let mut resolve_fn: Option<js_sys::Function> = None;
     let mut executor = |resolve: js_sys::Function, _reject: js_sys::Function| {
@@ -265,9 +234,7 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     SESSION.with(|s| {
         if let Some(session) = s.borrow_mut().take() {
             LIVE_CTX.with(|c| *c.borrow_mut() = None);
-            // The library session owns no async engine tails: the unmount's
-            // cleanups are synchronous (listeners, observers, timers), so the
-            // promise resolves on the next microtask via a plain resolve.
+            // No async tails: the promise resolves on the next microtask.
             (session.unmount)();
         }
     });
@@ -277,8 +244,7 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     promise
 }
 
-/// The unhosted development entry uses the same production session as a
-/// hosted frame. Its standalone API writes durable data without a Shell.
+/// The unhosted development entry, on the production session.
 pub fn run_standalone() {
     console_error_panic_hook::set_once();
     let host = web_sys::window()

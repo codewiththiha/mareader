@@ -1,30 +1,14 @@
-/* The PDF page host: the `.pdf-page` box pdf.js's TextLayer needs, the
-   canvas inside it, the blend-mode unclip, the appearance-scrub tags and
-   the zoom snapshot overlay. Text-layer/selection/highlight styling lives
-   in components/pdfjs.css; the thumbnail grid's in components/thumbnails.css.
-   `.thumb-canvas.thumb-raw` stays in the scrub block below because
-   "a raw raster is themed, a baked one is not" is a statement about
-   rasters, not about which surface carries one. */
+/* The PDF page host: the box pdf.js needs, the canvas inside it, the tags. */
 .pdf-page {
   position: relative;
   background-color: var(--color-paper);
   overflow: hidden;
 
-  /* THEME PIPELINE (public/engine/theme): the theme is PRE-RENDERED — the
-     filter + blend burned into one opaque texture per render. The
-     `.canvas-raw` / `.thumb-raw` tags appear only while a scrub temporarily
-     exposes raw pixels under the compositor's live filter + blend (the
-     real-time compositing window). */
+  /* THEME PIPELINE: the theme is pre-rendered into one opaque texture. */
 
-  /* contain: content keeps page-internal repaints (text-layer swaps,
-     highlight boxes) from invalidating anything outside the page; the
-     element's own box-shadow is not clipped. */
+  /* contain: content keeps page-internal repaints inside the page. */
 
-  /* The host is a flex child with explicit inline width/height from
-     PageCanvas. flex-shrink: 0 keeps the browser from renegotiating that
-     geometry mid-zoom or mid-sidebar-slide (the letter-page squish); the
-     layout already follows the container per frame (follow_watcher), so
-     overflow scrolls rather than shrinks. */
+  /* The host is a flex child with explicit inline width and height. */
   flex-shrink: 0;
   contain: content;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 8px 24px -6px rgb(0 0 0 / 0.22);
@@ -36,40 +20,21 @@
   --scale-round-y: 1px;
 }
 
-/* BLEND UNCLIP — only in blend mode does the page's texture layer bleed
-   past the page box to paint the gutter (textures.css, BLEND BLEED), so
-   blend lifts the overflow clip and paint containment. Safe: nothing else
-   escapes the page rect — the canvas is exact-size, the vendored .textLayer
-   self-clips, link/gloss layers are inset:0. z-index:0 makes each page its
-   own stacking context so a later page's opaque canvas paints above an
-   earlier page's stray bleed. */
+/* BLEND UNCLIP: only in blend mode does the texture bleed past the page box. */
 .reader-bg.blend .pdf-page {
   overflow: visible;
   contain: layout style;
   z-index: 0;
 }
 
-/* BLEND PAPER FLATNESS — ordinary shared mode carries the MRU publisher's
-   baked paper. Independent mode carries this PDF session's local paper on
-   its pane root. Either way the page host and its corresponding backdrop
-   have identical flat F at fractional edges; non-blend pages keep the local
-   theme paper. */
+/* BLEND PAPER FLATNESS: page host and backdrop carry the same flat paper. */
 .reader-bg.blend:not(.independent-themes) .pdf-page {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
 .reader-bg.blend.independent-themes [data-pane-root][data-format="pdf"] .pdf-page {
   background-color: var(--pane-pdf-paper-baked, var(--color-paper));
 }
-/* A tint scrub exposes raw rasters that live-blend against their base, and
-   that blend is only correct over the UN-themed base. The host itself keeps
-   carrying the baked paper through the window — the standing token watch
-   (public/engine/theme/paper.ts) republishes it per tick, and edge parity
-   with the backdrop is exactly what kills the fractional-pixel seam — so
-   the texture layer lends the raw canvas its un-themed base instead: one
-   pixel in, so the page's own fractional edge still mixes baked with baked
-   against the gutter. The gutter bleed rests for the length of the drag,
-   and the opacity rises to 1 because the layer is a base here, not a
-   visible texture. */
+/* A tint scrub exposes raw rasters that blend over an un-themed base. */
 :is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .reader-bg.blend .pdf-page::before {
   inset: 1px;
   background-color: var(--color-paper);
@@ -85,72 +50,37 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* A settled canvas is pre-rendered and unfiltered; `.canvas-raw` below
-     opts a raw raster into the live CSS filter + blend for the duration of
-     a scrub. */
+  /* A settled canvas is pre-rendered and unfiltered; raw ones opt in. */
 }
 
-/* APPEARANCE SCRUB — raw rasters carry the tag as they are painted, and
-   only the tag enables the live filter/blend: a raw canvas is themed and a
-   baked one is not, regardless of async thumbnail/page work. The html class
-   is cosmetic: it only puts the texture behind an actively blending raw
-   page. A scrub scoped to one pane (independent themes) carries the class
-   on that pane's root instead, so no other pane's pages change. */
+/* APPEARANCE SCRUB: the tag enables the live filter and blend. */
 .pdf-page canvas.canvas-raw,
 .thumb-canvas.thumb-raw {
   filter: var(--canvas-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
 }
-/* The texture goes BEHIND the canvas only while a scrub exposes raw
-   rasters: the raw canvas blends against what is under it, and the texture
-   must not be caught in that blend — it belongs over the SETTLED paper,
-   matching how the blend backdrop composites its texture
-   (components/shell.css). soft-light in dim is not identity, so the two
-   orders would read as different stroke strengths. */
+/* The texture goes behind the canvas only while a scrub exposes raws. */
 :is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .pdf-page::before {
   z-index: 0;
 }
 
-/* Snapshot cover stacked by the appearance scrub while it rebuilds a page's
-   raws (public/engine/theme/scrub.ts) — its only producer: a zoom keeps the
-   old bitmap on screen by rendering into a scratch and swapping in one blit,
-   so it needs no cover. `.pdf-page canvas` supplies position/size/filter/
-   blend; this keeps it click-through. */
+/* The snapshot cover the appearance scrub stacks while it rebuilds raws. */
 .pdf-page canvas.page-snapshot {
   pointer-events: none;
 }
 
-/* LIVE-MODE SNAPSHOT THEMING — the snapshot is a raw drawImage copy of the
-   live canvas, so in LIVE mode it captures UN-themed pixels; without this
-   rule the cover would flash white. Keying off `.canvas-raw` ("this
-   canvas is themed by CSS") hands the snapshot the same filter + blend, so
-   it composites exactly like the canvas it copied. Baked canvases carry no
-   tag, the :has() stays false and the already-themed snapshot is left
-   alone. */
+/* LIVE-MODE SNAPSHOT THEMING: the cover inherits the canvas's filter. */
 .pdf-page:has(canvas.canvas-raw) canvas.page-snapshot {
   filter: var(--canvas-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 
-/* ONE BLENDED LAYER — while a cover and the live canvas coexist, BOTH
-   would carry filter + blend: two blended layers
-   composite as B*L*S instead of B*L (measured on sepia: rgb(238,230,206) →
-   rgb(232,224,197) for one frame; exactly 0 in light mode, which is why it
-   only showed in sepia/green/textured). Hiding the live canvas under the
-   snapshot leaves exactly one blended layer; the snapshot is a pixel copy,
-   so nothing disappears. `:has()` rather than a Rust-toggled class on
-   purpose: the rule stops matching the instant the snapshot leaves the DOM,
-   so a missed cleanup can never strand the page invisible, and engines
-   without :has() degrade to a double-blended frame, never a blank page. */
+/* ONE BLENDED LAYER: hiding the live canvas leaves one blend. */
 .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }
 
-/* The same cover, restated for the scrub window: entering a tint drag
-   snapshots every page that must re-render to recover its raw
-   (public/engine/theme/scrub.ts), and the wipe those re-renders begin with
-   is exactly the flash this hides. Spelled at the higher specificity so no
-   appearance-scrubbing rule can accidentally outvote it. */
+/* The same cover, restated for the scrub window's specificity. */
 :is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }

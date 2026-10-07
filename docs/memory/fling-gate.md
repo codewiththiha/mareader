@@ -27,21 +27,25 @@ Rasterising every page a fling flies past is exactly that churn.
 ## Speed-aware visibility
 
 `in_view_signal` (`crates/reader-runtime/src/components/formats/pdf/strip.rs`)
-derives visibility from the virtualizer's own model (scroll offset,
-viewport, item offsets) and is read tracked by the render effect:
+is the virtualizer's own answer — an item is visible while its state is
+`Active` — and the render effect reads it tracked, beside `settled`:
 
 | Situation | Behaviour |
 | --- | --- |
-| Page inside, or within `IN_VIEW_MARGIN_PX` of, the viewport at reading speed | Visible at once; renders while the strip moves |
-| Same, while the strip moves faster than `FLING_PX_PER_MS` | Visible after `IN_VIEW_DWELL_MS` continuously in the band; the clock restarts on every exit |
-| Fling stops inside the dwell window | A one-shot timer wakes the derive at the deadline; the page renders then |
-| Page outside the band | Renders at the scroll settle |
+| Page in the band at reading speed | Visible at once; renders while the strip moves |
+| Page in the band while the strip is engaged | Visible, because the band leads the reader: it opens on a smoothed velocity and widens with it |
+| Page the fling only sweeps past | Not in the band, so it renders at the scroll settle |
 | Zoom in flight | The effect's `anim` branch runs before the gate |
 | Page modes | No `in_view` signal; pages render immediately |
 
-The timer is what keeps the gate from stalling: visibility never depends on
-another scroll event arriving. It is an `ArcTrigger`, one per page at a
-time, at most one dwell long, so a wake after unmount notifies nothing.
+The band is a signal, not a deadline: it moves when the motion model moves,
+so visibility never waits on another scroll event arriving. Its shape is
+`MotionConfig` (`crates/virtual-list/src/motion.rs`) — a 32 ms smoothing
+constant, an entry floor of 1400 px/s (~2 screens/s on a 700 px window), a
+0.4 hysteresis so a settled reader lets go, and 0.5–2.0 screens of lead with
+0.25 of a screen warm behind. `Pipeline::enter_px_s` raises that floor to
+what the content lane can actually fill, so a slow pipeline is not handed a
+band it cannot keep up with.
 
 ## Never stuck at a stale scale
 
@@ -68,15 +72,15 @@ without waiting for an unrelated dependency change.
 
 | Constant | Value | Owner |
 | --- | --- | --- |
-| Scroll settle delay | 150 ms | virtualizer `scroll_end_delay` |
-| `IN_VIEW_MARGIN_PX` | 320 px | `formats/pdf/strip.rs` |
-| `FLING_PX_PER_MS` | 4 px/ms | `formats/pdf/strip.rs` |
-| `IN_VIEW_DWELL_MS` | 60 ms | `formats/pdf/strip.rs` |
+| Scroll settle delay | 150 ms | virtualizer `scroll_end_delay_ms` |
+| `enter_floor_px_s` / `hysteresis` | 1400 px/s / 0.4 | `virtual-list/src/motion.rs` |
+| `min_lead_screens` / `max_lead_screens` / `trail_screens` | 0.5 / 2.0 / 0.25 | `virtual-list/src/motion.rs` |
+| `tau_ms` / `flip_ratio` | 32 ms / 0.35 | `virtual-list/src/motion.rs` |
 | `CLEANUP_EVERY` | 5 renders | `engine/state.ts` |
 | `SWEEP_IDLE_MS` | 30 s | `engine/state.ts` |
 | `RAW_IDLE_MS` | 2 s | `engine/state.ts` |
-| `MAX_ZOMBIES` / `STRIP_SCROLL_GRACE_MS` | 12 / 120 ms | `zoom/config.rs` |
-| `PAGE_RENDER_LIMIT` / `REALM_PAGE_LIMIT` | 2 / 2 | `renderer.ts`, `state.ts` |
+| `MAX_ZOMBIES` / `ZOOM_GRACE_MS` | 12 / 300 ms | `reader-runtime/src/zoom/config.rs` |
+| `PAGE_RENDER_LIMIT` / `REALM_PAGE_LIMIT` | 2 / 2 | `engine/state.ts` |
 
 ## History
 
@@ -85,5 +89,6 @@ band. During a fling every page crosses, so each started a raster that was
 discarded frames later; the webview latched the higher footprint. A 120 ms
 dwell fixed the churn but left pages blurry on their thumbnail underlay
 whenever a scroll stopped inside the window, until the settle. The current
-design removes the underlay, renders immediately at reading speed, shortens
-the mid-fling dwell and wakes on a timer.
+design removes the underlay and takes visibility from the virtualizer's
+motion band, so a page is either in the band — and rendering — or waiting for
+the settle.

@@ -1,7 +1,4 @@
-//! The one question every copy asks: a book or a shelf the library reads in
-//! place leaves the ground that made it, becomes the library's own stored
-//! copy, and a copy is a cost the reader agrees to. One sheet for every door
-//! in, so no path stores a file in silence.
+//! The one question every copy asks: leaving the ground stores a copy.
 
 use std::collections::HashSet;
 
@@ -25,10 +22,7 @@ use super::shelf_departure::{
 };
 use super::shelves::delete_shelf;
 
-/// The action's own wording: the count belongs to the subject, and "1 Take
-/// shelf apart" is not a sentence. `text::plural` counts because a count is
-/// what a subject is for; this one refuses it for the same reason, and the
-/// two are not one helper.
+/// The action's own wording: "1 Take shelf apart" is not a sentence.
 fn doing(count: usize, one: &str, many: &str) -> String {
     if count == 1 {
         one.to_string()
@@ -37,16 +31,12 @@ fn doing(count: usize, one: &str, many: &str) -> String {
     }
 }
 
-/// What the reader is in the middle of, and everything the answer needs to
-/// finish it. One enum rather than a flag per door: the sheet names the
-/// action, and the answer resumes THAT gesture rather than a second one built
-/// from the same facts.
+/// The reader's gesture, and what the answer needs to finish it.
 #[derive(Clone, PartialEq)]
 enum CopyWork {
-    /// Books on the move, and the way back into the drag or filing that held them.
+    /// Books on the move, and the way back into the gesture that held them.
     Rows { ids: Vec<String>, hand: RowMove },
-    /// Shelves off the seat their folder's tree names, the level they were
-    /// dropped on, and the ones with a way home instead of a copy.
+    /// Shelves off their tree's seat, their level, and their way home.
     Shelf {
         ids: Vec<String>,
         target: Option<String>,
@@ -55,9 +45,7 @@ enum CopyWork {
     },
     /// A rung of a read-at-place tree coming apart.
     Rung { id: String },
-    /// The removal sheet's own gesture: the books going out of the library,
-    /// the shelves coming off the list, and the answer about the reading
-    /// data.
+    /// The removal's own gesture: books out, shelves off the list.
     Removal {
         purge: Vec<String>,
         shelves: Vec<String>,
@@ -65,9 +53,8 @@ enum CopyWork {
     },
 }
 
-/// One answer's button. Built at the raise rather than at the click, because
-/// the sheet's own wording is a fact about the gesture and not something the
-/// view recomputes.
+/// One answer's button, built at the raise: the wording is a fact about the
+/// gesture.
 #[derive(Clone, PartialEq)]
 pub struct CopyOption {
     pub label: String,
@@ -76,8 +63,7 @@ pub struct CopyOption {
     pub primary: bool,
 }
 
-/// The reader's answer: buy the copies, finish the gesture without them, or
-/// leave everything as it is.
+/// The reader's answer: copy, finish without them, or cancel.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CopyAnswer {
     Copy,
@@ -85,7 +71,7 @@ pub enum CopyAnswer {
     Cancel,
 }
 
-/// The question, ready for the sheet: what it is about, what it costs, and the answers.
+/// The question, ready for the sheet: subject, cost and answers.
 #[derive(Clone, PartialEq)]
 pub struct CopyAsk {
     /// The action the reader is in the middle of, in their own words.
@@ -101,7 +87,7 @@ pub struct CopyAsk {
 const UNTOUCHED: &str = "The folder on disk is untouched.";
 
 impl CopyAsk {
-    /// A book move: the rows the gate screened read in place, and the ground they are leaving.
+    /// A book move: the rows the gate screened in place, and their ground.
     fn of_rows(
         state: crate::context::LibraryContext,
         ids: &[String],
@@ -128,8 +114,7 @@ impl CopyAsk {
         })
     }
 
-    /// Shelves off the seat their folder's tree names: the level leaves the
-    /// tree, and everything read in place under it leaves the ground with it.
+    /// Shelves off their tree's seat: the level and its in-place books go.
     pub(super) fn of_shelf(
         state: crate::context::LibraryContext,
         departing: Vec<String>,
@@ -165,9 +150,7 @@ impl CopyAsk {
             if folder.is_empty() {
                 folder = folder_label(&placing.root);
             }
-            // Offered only for a drop inside the mover's FAMILY: anywhere else
-            // the copy is the only honest answer, because there is no tree to
-            // put the shelf back into.
+            // Offered only for a drop inside the mover's family.
             let ground = library_core::folder::dir_of_rung(&placing.root, one.kind.rung());
             if target_is_family(&shelves, &folders, level.as_deref(), &ground)
                 && let Some(path) = return_path(&shelves, &folders, id)
@@ -243,9 +226,7 @@ impl CopyAsk {
         })
     }
 
-    /// A rung of a read-at-place tree coming apart: the level's own books
-    /// leave the ground that made them, so they become the library's own
-    /// before it goes.
+    /// A rung coming apart: its books become copies before it goes.
     pub(super) fn of_apart(state: crate::context::LibraryContext, shelf_id: &str) -> Option<Self> {
         let books = books_the_rung_takes(state, shelf_id);
         if books.is_empty() {
@@ -283,9 +264,7 @@ impl CopyAsk {
         })
     }
 
-    /// A shelf coming off the list with books read in place on it: the same
-    /// copy, and the one removal that changes nothing — the folder's next
-    /// import makes the level again.
+    /// A shelf coming off the list with in-place books: the same copy.
     fn of_removal(
         state: crate::context::LibraryContext,
         purge: &[String],
@@ -372,18 +351,14 @@ fn listed(names: &[String]) -> String {
         .join(", ")
 }
 
-/// A copy takes the level's next free name, so the folder's own name stays free for the original.
+/// A copy takes the next free name, leaving the folder's own name free.
 pub(super) fn free_name(name: &str, promised: &mut HashSet<String>) -> String {
     let free = library_core::book::duplicate_title(name, promised);
     promised.insert(free.clone());
     free
 }
 
-/// The books read in place that a rung takes with it when its ground goes:
-/// the folder placed them, their own file answers to this rung, and they
-/// stand inside it. A book answering to a level that stays — a seat the tree
-/// still names — is not one of them, and neither is a book the library
-/// already stores.
+/// The books a rung takes: placed by the folder, standing inside it.
 pub(super) fn books_the_rung_takes(
     state: crate::context::LibraryContext,
     shelf_id: &str,
@@ -409,9 +384,7 @@ pub(super) fn books_the_rung_takes(
     departing_book_ids(&books, &shelves, folder, &going, &subtree)
 }
 
-/// Every book the named shelves take with them, and none the removal is
-/// taking anyway: a book going out of the library is not a book to copy
-/// first.
+/// Every book the named shelves take, and none the removal takes anyway.
 fn shelf_books(
     state: crate::context::LibraryContext,
     shelves: &[String],
@@ -428,8 +401,7 @@ fn shelf_books(
     taking
 }
 
-/// The folder whose ground these books leave: the first that placed one of
-/// them, and the one the sheet names.
+/// The folder whose ground these books leave, named by the sheet.
 fn ground_of(state: crate::context::LibraryContext, ids: &[String]) -> Option<String> {
     let books = state.library.books.get_untracked();
     let folders = state.library.folders.get_untracked();
@@ -444,9 +416,7 @@ fn ground_of(state: crate::context::LibraryContext, ids: &[String]) -> Option<St
     })
 }
 
-/// The gate every hand-move rides: a row that reads in place and is leaving
-/// the ground that made it becomes the library's own stored copy, and a copy
-/// is a question. `true` means the move waits on the sheet.
+/// The gate every hand-move rides: a copy is a question. `true` means wait.
 pub(super) fn ask_move_copy(
     state: crate::context::LibraryContext,
     ids: &[String],
@@ -464,8 +434,7 @@ pub(super) fn ask_move_copy(
     true
 }
 
-/// The shelf half of the move: one question per gesture, raised only for
-/// the shelves the folder's tree names a seat for.
+/// The shelf half: one question per gesture, for named seats only.
 pub(super) fn ask_move_shelf(
     state: crate::context::LibraryContext,
     departing: Vec<String>,
@@ -477,9 +446,7 @@ pub(super) fn ask_move_shelf(
     }
 }
 
-/// The removal sheet's own door: a shelf coming off the list that reads
-/// books in place buys their copies first, and a removal with nothing to
-/// copy runs at once.
+/// The removal's own door: in-place books buy copies first.
 pub fn remove_entries(
     state: crate::context::LibraryContext,
     purge: Vec<String>,
@@ -501,7 +468,7 @@ pub fn cancel_copy(state: crate::context::LibraryContext) {
     state.library.copy_ask.dismiss();
 }
 
-/// The sheet's own answer. One entry for every button, so the view holds no logic.
+/// The sheet's own answer, one entry per button, so the view holds no logic.
 pub fn answer_copy(state: crate::context::LibraryContext, answer: CopyAnswer) {
     let Some(ask) = state.library.copy_ask.ask.get_untracked() else {
         return;
@@ -521,9 +488,7 @@ pub fn answer_copy(state: crate::context::LibraryContext, answer: CopyAnswer) {
     }
 }
 
-/// The answer with no copies in it: a shelf with a way home takes it, a
-/// removal runs as it always did, and a gesture with no way home stays where
-/// the folder's tree put it.
+/// No copies: a shelf with a way home takes it, a removal runs as always.
 fn finish_without(state: crate::context::LibraryContext, ask: CopyAsk) {
     match ask.work {
         CopyWork::Shelf { returns, .. } => take_them_home(state, &returns),
@@ -536,14 +501,13 @@ fn finish_without(state: crate::context::LibraryContext, ask: CopyAsk) {
     }
 }
 
-/// The copies run in a spawned task — a shelf of fifty books is fifty files
-/// through the store — so the sheet is off the screen at once.
+/// The copies run in a spawned task, so the sheet leaves the screen at once.
 async fn copy_and_finish(state: crate::context::LibraryContext, ask: CopyAsk) {
     match ask.work {
         CopyWork::Rows { ids, hand } => {
             let converting = converting_rows(state, &ids, hand.to());
             let copies = depart(state, &converting).await;
-            // A copy that fails costs that book its move and nothing else: it stays where it was.
+            // A failed copy costs that book its move and nothing else.
             let failed: Vec<String> = converting
                 .iter()
                 .filter(|id| !copies.contains(id))
@@ -569,9 +533,7 @@ async fn copy_and_finish(state: crate::context::LibraryContext, ask: CopyAsk) {
     }
 }
 
-/// A removal, whole: the books go out of the library, and the shelves come
-/// off the list deepest first, because a shelf dissolved first is a shelf no
-/// sweep reaches.
+/// A removal, whole: shelves come off deepest first, or no sweep reaches them.
 fn remove(
     state: crate::context::LibraryContext,
     purge: &[String],

@@ -1,13 +1,8 @@
 //! Where the reader left off, and how a read is written down.
-//!
-//! A read updates a row rather than inserting into a second list; the old
-//! separate "recent books" record drifted from the library it described.
 
 use super::{Book, Fingerprint, Origin, Row, find_by_id};
 
-/// Where the reader is in a book: resume page, page count, and — for a
-/// reflowable document read as one stream — the fraction along it. One value
-/// because the three always travel together.
+/// Where the reader is in a book: page, count, and stream fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ReadPoint {
     pub page: u32,
@@ -24,9 +19,7 @@ impl ReadPoint {
         }
     }
 
-    /// The point with an impossible fraction dropped and the page clamped to
-    /// the first, so no writer can hand the library a resume point it has to
-    /// second-guess later.
+    /// The point with a bad fraction dropped and the page clamped.
     pub fn settled(self) -> Self {
         Self {
             page: self.page.max(1),
@@ -36,22 +29,17 @@ impl ReadPoint {
     }
 }
 
-/// Record a read: every book at `path` moves to `now_ms` with the reader's
-/// resume point, or the library gains a linked book when the reader opened
-/// something it did not know.
-///
-/// Every row at the path, because a shelf can hold two rows of one file (a
-/// duplicate the reader kept) and the reading position is a fact about the
-/// file, not the row: both copies resume together.
+/// Record a read on the rows it belongs to, or add a linked book.
 pub fn record_read(
     rows: &mut Vec<Row>,
+    book_id: Option<&str>,
     path: &str,
     title: Option<String>,
     author: Option<String>,
     point: ReadPoint,
     now_ms: u64,
 ) -> Option<Book> {
-    let at = rows_for_read(rows, None, path);
+    let at = rows_for_read(rows, book_id, path);
     if write_read(rows, &at, &title, &author, point, now_ms) {
         return None;
     }
@@ -80,8 +68,7 @@ pub fn record_read(
     Some(book)
 }
 
-/// Write one read to every row [`rows_for_read`] named, answering whether it
-/// wrote anything: a read that found no rows owes the library a new book.
+/// Write one read to every row it belongs to.
 fn write_read(
     rows: &mut [Row],
     at: &[usize],
@@ -97,8 +84,7 @@ fn write_read(
     let title = crate::text::non_blank(title.as_deref());
     let author = crate::text::non_blank(author.as_deref());
     for i in at {
-        // `rows_for_read` never names a link; the guard keeps that a property
-        // of this function rather than of its caller.
+        // `rows_for_read` never names a link.
         let Some(book) = rows.get_mut(*i).and_then(Row::as_book_mut) else {
             continue;
         };
@@ -119,9 +105,7 @@ fn write_read(
     true
 }
 
-/// The rows a reading position belongs to: the named row when it is
-/// independent (its resume point is that book's alone), otherwise every shared
-/// row at the address.
+/// The rows a reading position belongs to.
 pub fn rows_for_read(rows: &[Row], book_id: Option<&str>, path: &str) -> Vec<usize> {
     let named = book_id
         .and_then(|id| find_by_id(rows, id))
@@ -151,23 +135,4 @@ pub fn rows_for_read(rows: &[Row], book_id: Option<&str>, path: &str) -> Vec<usi
         .filter(|(_, r)| r.book().is_some_and(|b| b.path() == path))
         .map(|(i, _)| i)
         .collect()
-}
-
-/// [`record_read`] for an open that knows which row the reader meant — an id
-/// is the only thing that tells two rows of one address apart. A shared row
-/// answers as [`record_read`] does; an independent one moves alone.
-pub fn record_read_row(
-    rows: &mut Vec<Row>,
-    book_id: &str,
-    path: &str,
-    title: Option<String>,
-    author: Option<String>,
-    point: ReadPoint,
-    now_ms: u64,
-) -> Option<Book> {
-    let at = rows_for_read(rows, Some(book_id), path);
-    if write_read(rows, &at, &title, &author, point, now_ms) {
-        return None;
-    }
-    record_read(rows, path, title, author, point, now_ms)
 }

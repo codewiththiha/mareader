@@ -1,12 +1,4 @@
-//! The UI-token side of the PDF tint: the seven `--color-*` overrides the
-//! filter pipeline rides along with.
-//!
-//! The tint preserves each token's OWN lightness (which encodes the
-//! hierarchy) and moves only hue (rotated toward the tint hue by strength)
-//! and chroma (base + a strength-scaled amount, capped per token), so
-//! contrast ratios survive a 100% tint. The rotation and the ceiling table
-//! live in the shared kernel — the text palette reuses both, so the two
-//! formats tint to the same hue at the same strength.
+//! The UI-token side of the PDF tint: the seven `--color-*` overrides.
 
 use crate::appearance::Appearance;
 use crate::appearance::shared::tint::{chroma_ceiling, tinted_token, ui_hue_oklch};
@@ -27,10 +19,7 @@ impl Appearance {
         tinted_token(hex, target_h, t, chroma_ceiling("accent"))
     }
 
-    /// The seven UI colour tokens, tinted to match the page. Emitted as
-    /// `--color-*` pairs; empty when no tint is active. The per-token chroma
-    /// ceilings live in the shared kernel so the text palette hits the same
-    /// numbers.
+    /// The seven UI colour tokens, tinted to match the page.
     pub fn ui_overrides(&self) -> Vec<(&'static str, String)> {
         if !self.has_tint() {
             return Vec::new();
@@ -97,9 +86,7 @@ mod tests {
 
     #[test]
     fn the_tint_preserves_each_tokens_lightness_exactly() {
-        // THE BUG THIS PREVENTS: mixing toward the tint colour dragged paper,
-        // surface and line to a common lightness, merging page/sidebar/
-        // toolbar/thumbnails into one flat slab. Lightness must never move.
+        // THE BUG THIS PREVENTS: mixing dragged tokens to one lightness.
         for strength in [10u8, 50, 90, 100] {
             let o = tinted(BaseMode::Light, 104, strength).ui_overrides();
             for (token, base_hex) in [
@@ -120,8 +107,7 @@ mod tests {
 
     #[test]
     fn the_lightness_ladder_survives_a_full_strength_tint() {
-        // Page brighter than chrome, chrome brighter than its borders. If this
-        // collapses the UI loses all its edges.
+        // Page brighter than chrome, chrome brighter than its borders.
         let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
         let paper = token_lch(&o, "--color-paper").0;
         let surface = token_lch(&o, "--color-surface").0;
@@ -138,9 +124,7 @@ mod tests {
 
     #[test]
     fn the_accent_actually_follows_the_tint_hue() {
-        // REGRESSION: the accent used to stay blue on a green tint, because
-        // mixing a saturated blue 31% toward green barely moves its hue. At
-        // full strength every token must land ON the requested hue.
+        // REGRESSION: the accent stayed blue on a green tint.
         let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
         let want = ui_hue_oklch(104.0);
         for token in [
@@ -174,10 +158,7 @@ mod tests {
 
     #[test]
     fn the_ui_hue_matches_the_hue_the_page_filter_produces() {
-        // COLOUR-SPACE TRAP: `hue-rotate()` works in sRGB but the UI tokens
-        // are emitted in OKLCH, whose hue circle is rotated — feeding the raw
-        // angle in made the page tan while the chrome went pink at hue 34.
-        // `ui_hue_oklch` maps between them so both land on the same colour.
+        // COLOUR-SPACE TRAP: `hue-rotate()` is sRGB, tokens are OKLCH.
         let o = tinted(BaseMode::Light, 34, 100).ui_overrides();
         let h = o
             .iter()

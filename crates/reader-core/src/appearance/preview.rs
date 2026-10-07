@@ -1,29 +1,11 @@
-//! The preset-thumbnail preview: an inline `style` + class list that render a
-//! swatch in ITS OWN look rather than the one currently applied. Every
-//! variable the swatch consumes is emitted under a private `--ps-*` namespace
-//! (WKWebView's custom-property invalidation is name-based, not scope-based);
-//! the `.preset-canvas` uses solid colours — no CSS filter/blend — so it has
-//! zero GPU compositing layers to lose during a slider drag.
+//! The preset-thumbnail preview: an inline style plus classes, rendered
+//! in the preset's own look.
 
 use crate::appearance::{Appearance, NoiseMode};
 
 impl Appearance {
-    /// Inline `style` for a preset thumbnail, so the swatch renders in its own
-    /// look rather than the one currently applied.
-    ///
-    /// PRIVATE NAMESPACE (`--ps-*`): every variable the swatch consumes is
-    /// emitted under a name NEVER written on `<html>`. This is the fix for the
-    /// "preset text bars vanish during a tint drag" bug — WKWebView's
-    /// custom-property invalidation is NAME-BASED, not scope-based, so the
-    /// per-frame root writes during a drag invalidated even swatch-local
-    /// declarations that shadowed the names, repainting the swatch against a
-    /// mid-rebuild backdrop where its `filter` + `mix-blend-mode` layer sampled
-    /// the wrong paper and the bars dissolved into it. With every consumed
-    /// variable renamed `--ps-*`, the root writes invalidate NOTHING inside
-    /// the swatch. The `contain: layout paint` on `.preset-swatch`
-    /// (styles/components/appearance.css) is a second isolation layer: any
-    /// stray root-name dependency would have its repaint caged to the swatch's
-    /// own subtree.
+    /// Inline `style` for a preset thumbnail, in its own look under the
+    /// private `--ps-*` namespace.
     pub fn preview_style(&self) -> String {
         let mut out = String::new();
 
@@ -34,9 +16,7 @@ impl Appearance {
             out.push_str(&format!("{ps_name}:{v};"));
         }
 
-        // 2. Aliases: --ps-color-* defaults to --ps-* (the base palette).
-        //    If a tint is active, step 3 overrides these with the tinted
-        //    value; otherwise the alias resolves to the base.
+        // 2. Aliases: --ps-color-* defaults to the base palette.
         for token in [
             "paper",
             "ink",
@@ -49,16 +29,13 @@ impl Appearance {
             out.push_str(&format!("--ps-color-{token}:var(--ps-{token});"));
         }
 
-        // 3. Tinted UI token overrides (if any) in --ps-color-* namespace.
-        //    ui_overrides() emits --color-* names; rename to --ps-color-*.
+        // 3. Tinted UI token overrides in --ps-color-*, if any.
         for (k, v) in self.ui_overrides() {
             let ps_name = format!("--ps-color-{}", k.trim_start_matches("--color-"));
             out.push_str(&format!("{ps_name}:{v};"));
         }
 
-        // 4. Texture and noise scale/opacity, the grain blend and the
-        //    stroke family — the shared swatch tail, driven by the BASE's
-        //    darkness here (the PDF preview's paper IS the base mode's).
+        // 4. Texture and noise dials, the grain blend, the stroke family.
         out.push_str(&ps_surface_tail(self, self.base.is_dark()));
         out
     }
@@ -79,33 +56,15 @@ impl Appearance {
     }
 }
 
-/// The swatch tail every preview shares: texture and noise scale/opacity,
-/// the grain blend and the texture stroke family, all in the `--ps-*`
-/// namespace.
-///
-/// No --ps-filter / --ps-blend are emitted — the .preset-canvas does not
-/// use CSS filter or mix-blend-mode (those caused GPU compositor bugs on
-/// Dark/Dim themes without Noise during slider drags). Instead the swatch
-/// uses solid colours: --ps-color-paper for the page backdrop and
-/// --ps-color-ink for the "text" bars, so it has no GPU compositing
-/// layers to lose.
-///
-/// `dark_paper` picks the stroke family. The PDF preview keys it off the
-/// base mode (its paper IS the base mode's); the text preview keys it off
-/// the palette's own paper lightness, because a dim TEXT page sits on
-/// light-grey paper while its chrome is dark. The swatch carries its own
-/// look, so it must carry the matching grain blend and strokes too —
-/// inheriting the live theme's would render a dark preset's grain with
-/// the light rule (and vice versa), i.e. invisibly.
+/// The swatch tail every preview shares: texture and noise dials, grain
+/// blend, stroke family.
 pub(crate) fn ps_surface_tail(a: &Appearance, dark_paper: bool) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "--ps-tex-opacity:{:.3};",
         a.texture_opacity as f64 / 100.0
     ));
-    // Thumbnails are ~1/12 of a page; at the true pitch a 26px rule grid
-    // would be a solid block. Scale the pitch down with the swatch so the
-    // PATTERN is recognisable, which is what the thumbnail is for.
+    // Thumbnails are ~1/12 of a page: scale the pitch down.
     out.push_str(&format!(
         "--ps-tex-scale:{:.3};",
         (a.texture_scale as f64 / 100.0) * 0.34
@@ -137,8 +96,7 @@ mod tests {
 
     #[test]
     fn a_preview_carries_its_own_look_not_the_live_one() {
-        // The whole point of a thumbnail: it must render as ITS appearance
-        // while a different one is applied to the document.
+        // The point of a thumbnail: it renders as ITS appearance.
         let p = tinted(BaseMode::Dark, 110, 40).preview_style();
         assert!(p.contains("--ps-paper:#131316"), "{p}");
         assert!(
@@ -146,21 +104,15 @@ mod tests {
             "tint must reach the swatch"
         );
 
-        // An untinted preview still pins the palette, or it would inherit the
-        // live (possibly tinted) tokens and show the wrong colour.
+        // An untinted preview still pins the palette.
         let plain = tinted(BaseMode::Light, 34, 0).preview_style();
         assert!(
             plain.contains("--ps-color-paper:var(--ps-paper)"),
             "{plain}"
         );
 
-        // The swatch must consume ONLY --ps-* names — no root-mutated names
-        // (--canvas-filter, --color-*, --texture-*, --noise-*) — or WKWebView's
-        // name-based custom-property invalidation would repaint the swatch
-        // every frame during a slider drag, against a mid-rebuild backdrop,
-        // making the "text" bars vanish. Also, --ps-filter / --ps-blend are
-        // no longer emitted (the .preset-canvas uses solid colours, not CSS
-        // filter/blend) so the swatch has zero GPU compositing layers.
+        // The swatch consumes ONLY --ps-* names, so a slider drag never
+        // repaints it.
         for root_mutated in [
             "--canvas-filter:",
             "--canvas-blend:",

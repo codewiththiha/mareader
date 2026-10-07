@@ -1,24 +1,14 @@
 //! Scroll anchoring: keeping the reader's view pinned while the layout
-//! changes underneath it (measurements landing, zoom rescales). Pure
-//! functions over any [`Layout`] — the framework adapter applies their
-//! results as a single "set scroll" write per frame.
+//! changes under it.
 
 use crate::layout::Layout;
 
 /// What to hold visually fixed while sizes change.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AnchorPolicy {
-    /// Keep `item` at its current screen position. Corrections apply only
-    /// when the changed item is strictly above it. (The reader's page.)
+    /// Keep `item` at its current screen position.
     Item(usize),
-    /// Keep the point `frac` (0..=1) of the way down `item` fixed. A resize
-    /// of the anchor item itself shifts the scroll by `delta * frac`, so a
-    /// point mid-item stays mid-item.
-    ///
-    /// The `0..=1` bound is enforced by the consumers ([`correct`] and
-    /// [`pin_at`] clamp it), so the policy stays plain data; the debug
-    /// asserts make an out-of-range fraction fail loudly in debug builds
-    /// instead of silently reading as an edge-anchor.
+    /// Keep the point `frac` of the way down `item` fixed.
     Fractional {
         /// The anchor item.
         item: usize,
@@ -28,10 +18,6 @@ pub enum AnchorPolicy {
 }
 
 /// The corrected scroll position after a size change.
-///
-/// `changed` is the index that resized; `delta` is the signed change
-/// (the return value of [`Layout::set_size`]). Returns `scroll_top`
-/// unchanged when the change cannot move the anchor.
 #[inline]
 pub fn correct(scroll_top: f64, policy: AnchorPolicy, changed: usize, delta: f64) -> f64 {
     if delta == 0.0 {
@@ -61,9 +47,7 @@ pub fn correct(scroll_top: f64, policy: AnchorPolicy, changed: usize, delta: f64
     }
 }
 
-/// The content point to pin for a viewport-relative anchor: the item under
-/// the point `frac` of the way down the viewport (0.5 = center), and that
-/// point's offset from the item's top. Feed both into [`rescale_anchor`].
+/// The content point to pin for a viewport-relative anchor.
 pub fn pin_at<L: Layout + ?Sized>(
     layout: &L,
     scroll_top: f64,
@@ -82,13 +66,7 @@ pub fn pin_at<L: Layout + ?Sized>(
     (item, target - layout.offset(item))
 }
 
-/// New scroll position after multiplying **every** item size by `factor`,
-/// such that the point `anchor_px` below the top of `anchor_item` stays at
-/// the same viewport-relative position.
-///
-/// This is the zoom contract: the reader's eyes stay on the same content
-/// point while the whole column rescales. Round-trips exactly (out then back
-/// in returns the original scroll position) — see tests.
+/// New scroll position after a uniform rescale, the zoom contract.
 pub fn rescale_anchor<L: Layout + ?Sized>(
     layout: &L,
     scroll_top: f64,
@@ -99,9 +77,7 @@ pub fn rescale_anchor<L: Layout + ?Sized>(
     if layout.is_empty() || factor <= 0.0 || factor.is_nan() {
         return None;
     }
-    // A factor of one is a rebuild rather than a rescale: nothing above the
-    // anchor changes, so the walk below would sum the whole prefix only to
-    // rediscover the scroll position it was handed.
+    // A factor of one is a rebuild, not a rescale.
     if factor == 1.0 {
         return Some(scroll_top.max(0.0));
     }
@@ -112,10 +88,7 @@ pub fn rescale_anchor<L: Layout + ?Sized>(
     let pin_old = layout.offset(item) + clamped_anchor_px;
     let on_screen = pin_old - scroll_top;
 
-    // Only the item extents rescale; any gap between neighbouring items stays
-    // whatever the layout currently reports. Rebuild the anchored item's new
-    // offset from the old geometry instead of scaling the whole content point,
-    // which would incorrectly scale fixed chrome gaps as well.
+    // Only item extents rescale; gaps stay whatever the layout reports.
     let mut offset_new = 0.0;
     for index in 0..item {
         let size = layout.size(index).max(0.0);

@@ -1,27 +1,4 @@
-//! `PdfSession`: the one owner of an open PDF document.
-//!
-//! Everything a document holds — the engine's document proxy and its pdf.js
-//! worker, the page registry, the render and thumbnail lanes, the thumbnail
-//! cache, the prefetch state, the raster theme, the paper palette and its
-//! look-ahead, the search index — belongs to exactly one session. The JS
-//! engine keys all of it by the session's id (`sid`); this type is the only
-//! thing that mints a sid, and every document call goes through it.
-//!
-//! Lifecycle: [`PdfSession::create`] registers a fresh sid with the engine,
-//! [`PdfSession::open`] opens one document in it (a new document is a new
-//! session), and [`PdfSession::dispose`] tears it down: stop accepting
-//! (every op refuses from the first line of `dispose`), advance invalidation
-//! (the paper epoch, the look-ahead set; the engine's own lane epochs),
-//! cancel and destroy the engine side (document, worker, page registry,
-//! caches), and release. A disposed session answers every call with a no-op
-//! or a `no_session` error — it can never be reused, and a sid is never
-//! minted twice.
-//!
-//! The handle is a cheap `Rc` clone, so async work captures the session it
-//! was started for and re-checks [`PdfSession::is_live`] after every await:
-//! a result that outlives its session is dropped, never committed into
-//! whatever session came next.
-
+//! `PdfSession`: the one owner of an open PDF document, keyed by its //! sid.
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -49,9 +26,7 @@ enum State {
     Disposed,
 }
 
-/// The last sid minted in this realm. Monotonic: a sid names one session
-/// for the life of the realm, so a stale sid can never reach a newer
-/// session (the engine refuses a sid at or below the highest it has seen).
+/// The last sid minted in this realm; monotonic.
 static NEXT_SID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 fn mint_sid() -> u32 {
@@ -61,19 +36,14 @@ fn mint_sid() -> u32 {
 struct Inner {
     sid: u32,
     state: Cell<State>,
-    /// The engine accepted the sid (false on the host, where there is no
-    /// engine, and when the engine was not loaded yet).
+    /// The engine accepted the sid, false on the host.
     registered: bool,
     paper: RefCell<Paper>,
     search: RefCell<SearchState>,
 }
 
 impl Drop for Inner {
-    /// The safety net for a session dropped without `dispose` (an owner
-    /// swept by its arena), or whose dispose future was dropped before it
-    /// finished (`Disposing`). The engine side must still be released;
-    /// nothing can await here, so the destroy runs detached (the engine
-    /// ignores a sid it already forgot).
+    /// The safety net for a session dropped without `dispose`.
     fn drop(&mut self) {
         if self.state.get() != State::Disposed && self.registered && bridge::has_pdf_reader() {
             bridge::release_session_detached(self.sid);
@@ -81,9 +51,7 @@ impl Drop for Inner {
     }
 }
 
-/// A page's own elements, handed to [`PdfSession::register_page`] so the
-/// engine paints into THESE and never into whatever element in the document
-/// answers to the page's id — a second pane's page carries the same one.
+/// A page's own elements, so the engine paints into THESE.
 #[derive(Clone, Copy)]
 pub struct PageElements<'a> {
     pub canvas: &'a web_sys::Element,
@@ -113,9 +81,7 @@ fn no_session() -> EngineError {
 }
 
 impl PdfSession {
-    /// A fresh session with a never-used sid, registered with the engine
-    /// when one is attached. On the host (no engine) the session still
-    /// exists — its state machines are exercised directly by the tests.
+    /// A fresh session with a never-used sid.
     pub fn create() -> Self {
         let sid = mint_sid();
         let registered = bridge::has_pdf_reader() && bridge::create_session(sid);
@@ -174,28 +140,21 @@ impl PdfSession {
 
     // --- Document -------------------------------------------------------
 
-    /// Open `path` in this session. A session holds exactly one document:
-    /// a second open is refused by the engine (`session_in_use`).
+    /// Open `path` in this session; one document per session.
     pub async fn open(&self, path: &str) -> Result<OpenResult, EngineError> {
         let sid = self.require()?;
         let value = bridge::open(sid, path).await;
         let open: OpenResult = api::resolve(value, "open")?;
-        // Disposed while the engine worked: the engine has already torn the
-        // document down with the session; nothing lands here.
+        // Disposed while the engine worked: nothing lands here.
         if !self.is_live() {
             return Err(no_session());
         }
-        // The search index is scoped to the document's CONTENT identity
-        // before anything can query it: a retained index built for these
-        // exact bytes is adopted instead of re-extracted.
+        // The index is scoped to the document's content identity first.
         self.with_search(|s| s.scope(open.fingerprint.as_deref(), path, open.num_pages));
         Ok(open)
     }
 
     /// The document's chapter tree, flattened into wire entries.
-    ///
-    /// INVARIANT: `Ok(empty)` means "no engine, no outline, or no session"
-    /// — never an error. A genuine engine failure still surfaces as `Err`.
     pub async fn outline(&self) -> Result<Vec<OutlineEntry>, EngineError> {
         if !self.engine() {
             return Ok(Vec::new());
@@ -205,9 +164,7 @@ impl PdfSession {
         Ok(payload.outline)
     }
 
-    /// Page 1 of `path` as a small JPEG (the shelf cover for this session's
-    /// document). A standalone loading task inside the engine, counted on
-    /// and torn down within this session.
+    /// Page 1 of `path` as a small JPEG, the shelf cover.
     pub async fn cover_data_url(
         &self,
         path: &str,
@@ -227,11 +184,7 @@ impl PdfSession {
 
     // --- Pages ----------------------------------------------------------
 
-    /// Register a page's canvas with THIS session's page registry.
-    /// `host_id` `None` means the canvas id derives the host id. `elements`
-    /// are the page's own canvas and host when the caller holds them: the
-    /// engine then pins the page to them instead of looking the id up in the
-    /// document, where a second pane's page carries the same id.
+    /// Register a page's canvas with THIS session's registry.
     pub fn register_page(
         &self,
         page: u32,
@@ -259,8 +212,7 @@ impl PdfSession {
         }
     }
 
-    /// Cancel every in-flight page render of this session (the close path's
-    /// first act; the dispose remains the one teardown).
+    /// Cancel every in-flight page render of this session.
     pub fn cancel_page_renders(&self) {
         if self.engine() {
             bridge::cancel_page_renders(self.inner.sid);
@@ -285,11 +237,6 @@ impl PdfSession {
         Ok(result)
     }
 
-    /// The intrinsic (scale-1) box of one page, read from the document: one
-    /// worker round trip, no surface, no pixels. The reader's fit maths asks
-    /// BEFORE a page's first raster — this is what lets a fit re-resolve land
-    /// ahead of the raster instead of correcting a page that is already on
-    /// screen at the wrong size.
     /// Stand down one page's queued or in-flight raster, leaving its
     /// registration alone.
     pub fn cancel_page(&self, canvas_id: &str) {
@@ -298,6 +245,7 @@ impl PdfSession {
         }
     }
 
+    /// The intrinsic box of one page, read from the document.
     pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
         let sid = self.require()?;
         let value = bridge::probe_page_size(sid, page).await;
@@ -339,8 +287,7 @@ impl PdfSession {
         self.engine() && bridge::has_thumb(self.inner.sid, page, scale)
     }
 
-    /// Render a page into this session's thumbnail cache with no DOM canvas
-    /// (idle prefetch — the look-ahead of the thumbnail lane).
+    /// Render a page into the thumbnail cache with no DOM canvas.
     pub async fn prefetch_thumb(&self, page: u32, scale: f64) {
         if self.engine() {
             let _ = bridge::prefetch_thumb(self.inner.sid, page, scale).await;
@@ -378,15 +325,12 @@ impl PdfSession {
 
     // --- Search ---------------------------------------------------------
 
-    /// Build (or adopt) this session's search index. Returns the pages
-    /// indexed. `Err(no_session)` when the session died mid-build — a
-    /// half-built index is never recorded.
+    /// Build or adopt this session's search index.
     pub async fn build_search_index(&self, num_pages: u32) -> Result<u32, EngineError> {
         search::build(self, num_pages).await
     }
 
-    /// Query this session's index, then publish the query to its text
-    /// layers so mounted pages repaint their highlight boxes.
+    /// Query this session's index and publish the query.
     pub fn search(&self, query: &str) -> SearchResponse {
         let response = self.with_search(|s| s.query(query));
         if self.engine() {
@@ -424,8 +368,7 @@ impl PdfSession {
         }
     }
 
-    /// The document opened: the paper state machine starts for it. Nothing
-    /// is published until the first live frame lands.
+    /// The document opened: the paper state machine starts.
     pub fn paper_document_open(&self, path: &str, num_pages: u32) {
         if self.is_live() {
             backdrop::document_open(self, path, num_pages);
@@ -483,8 +426,7 @@ impl PdfSession {
 
     // --- Diagnostics ----------------------------------------------------
 
-    /// This session's own gauges and counters. `None` without an engine or
-    /// once the engine forgot the sid.
+    /// This session's own gauges and counters.
     pub fn stats(&self) -> Option<EngineStats> {
         if !(self.inner.registered && bridge::has_pdf_reader()) {
             return None;
@@ -494,18 +436,7 @@ impl PdfSession {
 
     // --- Teardown -------------------------------------------------------
 
-    /// Tear the session down. Idempotent; the returned future resolves once
-    /// the engine side is gone (never on a timer).
-    ///
-    /// The session stops being usable AT THIS CALL, not at the future's
-    /// first poll: the state leaves `Live` (every op above refuses), the
-    /// invalidation advances (the paper epoch; in-flight samples are
-    /// forgotten) and the search index is retained for a same-book reopen
-    /// before this returns. The future is only the engine's own teardown
-    /// (cancel lanes and prefetches, destroy the document and its worker,
-    /// clear the page registry and caches, forget the sid) → `Disposed`.
-    /// A future dropped unpolled still releases the engine: the `Inner`
-    /// drop net covers a `Disposing` session too.
+    /// Tear the session down; idempotent, resolving once the engine is gone.
     pub fn dispose(&self) -> impl std::future::Future<Output = ()> + use<> {
         let begun = self.inner.state.get() == State::Live;
         if begun {
@@ -594,5 +525,3 @@ mod tests {
         assert!(!backdrop::test_has_palette(&a));
     }
 }
-
-// only the changed file was rewritten

@@ -1,30 +1,18 @@
-//! The reading data a removal kept, put back on the book a later import
-//! lands.
-//!
-//! A non-destructive removal stows the marks, resume point and name under the
-//! file they came from (`storage::kept`); this is the other half of
-//! that promise — an import that mints a book of its own is that file coming
-//! back, and what waits lands on the new row.
-//!
-//! A merged-into row is not one of those: a book the library still holds has
-//! its own marks and place, and an arrival resolving to it is a second copy,
-//! not a book returning. Every minting path hands this the row it just made.
+//! The reading data a removal kept, put on the row a later import lands.
 
 use library_core::book::{Row, book_rows_mut};
 use library_core::scan::FoundFile;
 
 use storage::kept::{self as kept_store, KeptBook};
 
-/// Write a waiting record onto the row an import just made, and spend it: a
-/// second import of the same file is a second book, not a second helping of
-/// the same reading data.
+/// Write a waiting record onto the new row, and spend it.
 pub(super) fn reclaim(rows: &mut [Row], file: &FoundFile, row_id: &str) {
     if let Some(kept) = kept_store::claim(file) {
         apply(rows, row_id, kept);
     }
 }
 
-/// The write half, split out so a test can hand it a record without a store to have read one from.
+/// The write half, split out for a test to call.
 fn apply(rows: &mut [Row], row_id: &str, kept: KeptBook) {
     let Some(book) = book_rows_mut(rows).find(|each| each.id == row_id) else {
         return;
@@ -34,8 +22,7 @@ fn apply(rows: &mut [Row], row_id: &str, kept: KeptBook) {
     book.fraction = kept.fraction;
     book.last_read_ms = kept.last_read_ms;
     if let Some(title) = &kept.title {
-        // The reader typed this name, so it is locked again: the shelf must
-        // not show whatever the document calls itself on the next open.
+        // A name the reader typed is locked again.
         book.title = Some(title.clone());
         book.title_locked = true;
     }

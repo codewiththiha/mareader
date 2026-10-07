@@ -1,15 +1,6 @@
-/* AI word-card content styling. The card is a plain panel on the app's
-   tokens (neutral surface, standard floating elevation, dictionary-style
-   header); what lives here is only what sits INSIDE that shell: the
-   entrance reveal, section styling, and the loading shimmer. */
+/* AI word-card content: the entrance reveal, section styling, the shimmer. */
 
-/* Text reveal — each section that arrives from the AI stream gets this
-   class. Opacity + a two-pixel rise ONLY: both composite on the GPU, so
-   the reveal stays smooth while the card's spring writes geometry every
-   frame (an earlier blur filter re-rasterised the text per frame — the
-   jitter). Applied once via `both` fill; sections render from signals, so
-   streamed snapshots patch text in place and the entrance plays once on
-   mount, never per chunk. */
+/* Text reveal: opacity plus a two-pixel rise, both GPU-composited. */
 .ai-text-reveal {
   animation: ai-rise-in 0.3s cubic-bezier(0.25, 1, 0.35, 1) both;
 }
@@ -30,9 +21,7 @@
 .ai-reveal-delay-2 { animation-delay: 0.07s; }
 .ai-reveal-delay-3 { animation-delay: 0.12s; }
 
-/* "Explain" pill entrance — floats up from below the selection. The X
-   translate stays -50% in both keyframes because the pill is centered via
-   translateX(-50%). */
+/* "Explain" pill entrance: floats up from below the selection. */
 @keyframes ai-pill-in {
   from {
     opacity: 0;

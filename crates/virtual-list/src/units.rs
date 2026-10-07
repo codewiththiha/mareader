@@ -1,20 +1,14 @@
 //! Sub-pixel units: the integer representation behind [`crate::Strip`]'s
 //! prefix sums.
 
-/// Number of sub-pixel units per logical pixel. `2^16 = 65536` represents
-/// every value whose denominator is a power of two up to 65536 — every common
-/// UI coordinate — exactly, and keeps `i64` arithmetic exact for any total
-/// extent below ~4.2e9 CSS pixels.
+/// Sub-pixel units per logical pixel: 2^16 keeps common UI
+/// coordinates exact in i64.
 const SUBPIXEL_BITS: u32 = 16;
 
-/// `2 ** SUBPIXEL_BITS`. Multiply an `f64` pixel value by this to get its
-/// `i64` sub-pixel representation; divide an `i64` sub-pixel value by this to
-/// get back `f64` CSS pixels.
+/// `2 ** SUBPIXEL_BITS`, the multiply and divide factor.
 pub(crate) const SUBPIXEL_FACTOR: i64 = 1 << SUBPIXEL_BITS;
 
-/// Convert an `f64` measurement into `i64` sub-pixels. Clamps negative or NaN
-/// inputs to zero, and saturates anything past `i64::MAX` (including
-/// `+infinity`) so a malformed input cannot poison the prefix-sum.
+/// Convert an `f64` measurement into `i64` sub-pixels.
 #[inline]
 pub(crate) fn to_sub(px: f64) -> i64 {
     if px.is_nan() || px <= 0.0 {

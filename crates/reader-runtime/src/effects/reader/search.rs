@@ -1,24 +1,5 @@
-//! Search pipeline: build the index on the first query, run the query as the
-//! reader types, and step through matches — scrolling each into view rather
-//! than jumping to the top of its page.
-//!
-//! The pipeline forks by format at [`run_search`] and nowhere else: PDF
-//! indexes through the engine, text documents scan their own blocks in Rust.
-//! Both tails converge on the same flat `SearchMatch` list, so the results UI
-//! and the match-stepping maths serve either.
-//!
-//! The PDF index is lazy on purpose: extraction costs a worker round trip per
-//! page and the index lives on the wasm heap, which only ever grows, so an
-//! open-time build would ratchet the footprint of every book nobody searched.
-//! The build therefore belongs to the first search that needs it — one build
-//! at a time, guarded by `SearchState::building`.
-//!
-//! The tails answer "where is this hit" differently, and each `SearchMatch`
-//! carries the half its format has: a PDF a rect in page space (the engine
-//! multiplies by the scale and paints into the text layer); a reflowable
-//! document a block and an occurrence ordinal (`block_hit`), which the row
-//! rendering the block turns into boxes over its own text
-//! ([`crate::components::formats::reflow::highlight`]).
+//! Search pipeline: index on the first query, run as the reader types,
+//! step through matches.
 
 #[cfg(feature = "reflow")]
 use std::collections::HashMap;
@@ -33,11 +14,8 @@ use reader_core::search::BlockHit;
 use reader_core::search::{SearchMatch, scroll_to_reveal};
 use reader_core::view::ViewMode;
 
-/// Height of the floating search bar plus its gap, in CSS px. The bar hangs
-/// over the top-right of the viewer, so a match revealed underneath it would be
-/// covered; the reveal maths treats this as dead space.
-///
-/// Keep in sync with `FloatingSearch`'s `top-14` (56px) plus its ~48px body.
+/// The floating search bar's height plus its gap: dead space to the
+/// reveal.
 const SEARCH_BAR_H: f64 = 104.0;
 
 /// Breathing room left around a revealed match.
@@ -45,13 +23,8 @@ const REVEAL_MARGIN: f64 = 24.0;
 
 /// Run the query and store the flat match list.
 pub async fn run_search(state: ReaderState) {
-    // A build is the one search step that can still be running when the
-    // reader that asked for it is gone (a raced close disposes every signal
-    // this tail writes, and writing a disposed signal panics the wasm).
-    // spawn_local on wasm runs to completion — owner disposal does not stop
-    // it — so the pane's document generation is the stand-down: re-checked
-    // after every await, the same rule the open tails keep. Per pane: a
-    // document opening in ANOTHER pane never stands this run down.
+    // A build can outlive the reader that asked: the pane's generation is
+    // the stand-down.
     if state.reflowable_now() {
         #[cfg(feature = "reflow")]
         run_reflow_search(state);
@@ -66,27 +39,18 @@ async fn run_pdf_search(state: ReaderState) {
     let pane = state.pane;
     let stamp = pane.generation();
     if !state.search.index_built.get_untracked() {
-        // One build at a time. The first search of a big book takes seconds —
-        // a worker round trip per page, ~3 pages per turn (see
-        // pdf_engine::session::SEARCH_PAGE_CONCURRENCY) — and every
-        // keystroke meanwhile fires another run. A second concurrent
-        // extraction would be pure wasm churn, the exact heap ratchet the
-        // lazy build exists to avoid; the building task queries the LATEST
-        // text when it lands, so this run's whole job is to not duplicate
-        // it.
+        // One build at a time: a second extraction is pure wasm churn.
         if state.search.building.get_untracked() {
             return;
         }
         state.search.building.set(true);
-        // The page count comes from the open flow, which alone knows the
-        // document size.
         // The pane's OWN session builds into its own index.
         let pdf = pane.pdf();
         let built = pdf
             .build_search_index(state.document.num_pages.get_untracked())
             .await;
-        // Every session replacement (an open) and the pane's dispose claim
-        // a new generation, so this one check covers "same session" too.
+        // Every session replacement claims a new generation, so this check
+        // covers "same session".
         if !pane.owns_generation(stamp) {
             return;
         }
@@ -94,9 +58,7 @@ async fn run_pdf_search(state: ReaderState) {
         match built {
             Ok(_) => {
                 state.search.index_built.set(true);
-                // The heap probe at the one step that scales with the book:
-                // an index build's extraction lands entirely on the wasm
-                // side, and this line is the step it takes.
+                // The heap probe at the one step that scales with the book.
                 app_state::memory::log_heap("search index");
             }
             Err(e) => {
@@ -129,10 +91,8 @@ async fn run_pdf_search(state: ReaderState) {
     }
 }
 
-/// The reflowable tail of the pipeline: scan the open document's blocks, map each
-/// hit through the current page cut, and publish the same flat match list
-/// the engine tail produces. No index to build — the document IS the index
-/// — and no engine round-trip at all.
+/// The reflowable tail: scan the blocks, map hits through the cut,
+/// publish the same list.
 #[cfg(feature = "reflow")]
 fn run_reflow_search(state: ReaderState) {
     let query = state.search.query.get_untracked();
@@ -143,8 +103,9 @@ fn run_reflow_search(state: ReaderState) {
     let blocks = state.document.content.reflow.blocks.get_untracked();
     let hits = reflow_core::search::find_matches(&blocks, &query);
     let block_page = state.document.content.reflow.block_page.get_untracked();
-    // The per-page occurrence ordinal the PDF side gets from the engine;
-    // here it is bookkeeping the results list keeps for parity.
+    // The per-page occurrence ordinal
+    // the engine gives a PDF; here it is
+    // bookkeeping.
     let mut ordinal: HashMap<u32, u32> = HashMap::new();
     let mut matches = Vec::with_capacity(hits.len());
     for hit in hits {
@@ -154,9 +115,8 @@ fn run_reflow_search(state: ReaderState) {
             page,
             index: *index,
             text: hit.snippet.into(),
-            // No rect: a reflowable page is re-cut by every typography knob, so
-            // the durable answer is the block and the occurrence inside it, and
-            // the row that renders the block finds the pixels.
+            // No rect: block and occurrence are
+            // durable; the row finds the pixels.
             x: 0.0,
             y: 0.0,
             w: 0.0,
@@ -171,15 +131,13 @@ fn run_reflow_search(state: ReaderState) {
     state.search.total.set(total);
     state.search.matches.set(matches);
     state.search.active.set(None);
-    // The text pipeline has no build step; keep the flag honest so a
-    // document switch reads it correctly either way.
+    // No build step here; keep the flag honest for a document switch.
     state.search.index_built.set(true);
 }
 
 pub fn clear_search(state: ReaderState) {
-    // A reflowable document's boxes are painted by the rows themselves, off the
-    // query and the match list below, so there is nothing to clear on the engine
-    // side — and the call must not reach an engine that has no document.
+    // Reflowable boxes are painted by the rows themselves; nothing to
+    // clear.
     #[cfg(feature = "pdf")]
     if !state.reflowable_now() {
         state.pane.pdf().clear_highlights();
@@ -191,14 +149,8 @@ pub fn clear_search(state: ReaderState) {
 }
 
 pub fn dismiss_search(state: ReaderState) {
-    // Hiding the bar disposes the overlay's owner. The search runs are
-    // spawned through `leptos::task::spawn_local`, which on wasm RUNS TO
-    // COMPLETION — disposal does not stop a future mid-await — so the run
-    // tails stand themselves down on the document stamp instead, and this
-    // flag clear before disposal is what lets the next search rebuild
-    // rather than wait on a task that will never write again. The half-extracted
-    // index it leaves is safe — the engine records a build only when one
-    // COMPLETES, so the rebuild starts from a clear.
+    // Hiding the bar disposes the overlay's owner, so this clear lets the
+    // next search rebuild.
     state.search.building.set(false);
     state.search.visible.set(false);
 }
@@ -208,9 +160,8 @@ pub fn resume_search(state: ReaderState) {
 }
 
 fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
-    // Only the engine has to be TOLD which match is current: it owns the boxes
-    // it paints into the page's text layer. A reflowable document's rows read
-    // `search.active` themselves and re-class the box that answers to it.
+    // Only the engine owns boxes to be told; rows read `search.active`
+    // themselves.
     #[cfg(feature = "pdf")]
     if !state.reflowable_now() {
         state.pane.pdf().set_active_match(m.page, m.index as i32);
@@ -257,17 +208,8 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
         return;
     }
 
-    // The text tail of the vertical branch: the stream scrolls BLOCKS, so
-    // the match reveals through the stream's own virtualizer. (The page-cut
-    // virtualizer this function was handed has no container in this mode;
-    // its offsets describe a layout nothing is rendering.)
-    //
-    // A text hit carries no rect, so this is as precise as a reflowable
-    // document gets: the block the match is in, at the top of the viewport.
-    // That block is the one the match itself names; the page's first block is
-    // the fallback for a match whose cut has since been repacked by a
-    // typography change, where the stored block may no longer be the one on
-    // screen.
+    // The text tail: the stream scrolls BLOCKS, so the match reveals through
+    // its virtualizer.
     if state.reflowable_now() {
         let Some(stream) = state.document.content.reflow.stream_handle() else {
             return;
@@ -291,10 +233,8 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     let scale = state.viewer.zoom.visual_scale();
     let page_top = virtualizer.offset_of(m.page.saturating_sub(1) as usize);
 
-    // The strip starts at the scroller's origin (no toolbar band above the
-    // first page), so a match's scroll position is the page's own offset plus
-    // its position on the page. The overlay bar and search bar still cover
-    // the top of the VIEWPORT, which is what the reveal inset below models.
+    // A match's scroll position is its page's offset plus its place on the
+    // page.
     let top = page_top + m.y * scale;
     let bottom = top + (m.h * scale).max(1.0);
 

@@ -1,15 +1,4 @@
-//! Floating UI geometry: generic placement / clamping math for anchored
-//! panels, context menus, toasts and floating cards. Pure — no DOM, no
-//! leptos — unit-testable via `cargo test -p ui-geom floating`.
-//!
-//! The "mechanism" half of the floating system, whose views live in the app
-//! (src/components/primitives/floating) and whose DOM adapters live in
-//! `app-chrome`: placement *policy* (which side a panel prefers, what it
-//! contains) belongs to the callers; the math here only answers "given this
-//! anchor and this panel, where does it go, and is it inside the viewport?".
-//! The spring itself (stiffness / damping / Euler step) lives in
-//! [`crate::spring`] — one shared physics keeps the gloss card and the
-//! anchored surfaces feeling identical.
+//! Floating UI geometry: placement and clamping for anchored panels and cards.
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Size {
@@ -56,37 +45,21 @@ impl Rect {
     pub fn top(self) -> f64 {
         self.y
     }
-    pub fn left(self) -> f64 {
-        self.x
-    }
-    fn center_y(self) -> f64 {
-        self.y + self.h * 0.5
-    }
 }
 
-/// The five-field box the spring drives (position + size + corner radius).
-/// Named to avoid colliding with `std::boxed::Box`; the gloss domain's
-/// `ai_core::gloss::GlossBox` is field-identical and converts into this type
-/// at the domain boundary.
-///
-/// Not serializable, deliberately: this is a frame-to-frame value, and the box
-/// that gets persisted is the domain's own. Keeping serde out is what lets this
-/// crate have no dependencies at all.
+/// The five-field box the spring drives: position, size, corner radius.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FloatBox {
     pub x: f64,
     pub y: f64,
     pub w: f64,
     pub h: f64,
-    /// Corner radius — animated alongside the box so a pill can morph into a
-    /// card radius in the same motion that grows the box.
+    /// Corner radius, animated with the box so a pill can morph into a card.
     pub r: f64,
 }
 
 impl FloatBox {
-    /// One explicit-Euler spring step over all five fields, via
-    /// [`crate::spring::spring_axis`]; returns `(next_box, next_velocity)`.
-    /// The caller clamps `dt` to [`crate::spring::MAX_FRAME_S`].
+    /// One explicit-Euler spring step over all five fields.
     pub fn step(&self, vel: &FloatBox, target: &FloatBox, dt: f64) -> (FloatBox, FloatBox) {
         let (x, vx) = crate::spring::spring_axis(self.x, vel.x, target.x, dt);
         let (y, vy) = crate::spring::spring_axis(self.y, vel.y, target.y, dt);
@@ -128,14 +101,11 @@ impl FloatBox {
 /// Which side of the anchor the panel prefers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlacementSide {
-    /// Pick the side with room: below the anchor, flipping above when the
-    /// bottom would overflow (the classic menu behaviour).
+    /// Pick the side with room, flipping above when the bottom would overflow.
     #[default]
     Auto,
-    Below,
+    /// Always above, clamped into the viewport.
     Above,
-    Left,
-    Right,
 }
 
 /// Placement inputs for [`place_panel_from_anchor`].
@@ -147,22 +117,14 @@ pub struct PlacementOptions {
     pub viewport: Size,
 }
 
-/// A placed panel: the final rect plus the CSS `transform-origin` that makes
-/// a scale-in animation emerge from the anchor edge.
+/// A placed panel: the final rect plus its `transform-origin`.
 #[derive(Debug, Clone, Copy)]
 pub struct PlacedPanel {
     pub rect: Rect,
     pub transform_origin: &'static str,
 }
 
-/// Clamp one axis of a position so a box of `size` stays inside `extent`
-/// with `margin`. The allowed range collapses to the margin when the box
-/// cannot fit, so a degenerate extent never reaches `clamp` with min > max.
-///
-/// Every viewport clamp in the app goes through this: the point and rect
-/// variants below, and the gloss card's own placement in
-/// `ai_core::gloss::geometry::place_card`. Written once so the policy cannot
-/// drift between the surfaces that share it.
+/// Clamp one axis so a box of `size` stays inside `extent` with `margin`.
 pub fn clamp_axis(pos: f64, extent: f64, size: f64, margin: f64) -> f64 {
     pos.clamp(margin, (extent - size - margin).max(margin))
 }
@@ -174,9 +136,7 @@ pub fn clamp_point_to_viewport(p: Point, size: Size, viewport: Size, margin: f64
     }
 }
 
-/// Clamp `rect` inside the viewport margin, shrinking the allowed range when
-/// the panel is larger than the viewport allows (the range collapses to the
-/// margin rather than panicking on min > max).
+/// Clamp `rect` inside the viewport margin, shrinking when it cannot fit.
 fn clamp_rect_to_viewport(rect: Rect, viewport: Size, margin: f64) -> Rect {
     Rect {
         x: clamp_axis(rect.x, viewport.w, rect.w, margin),
@@ -186,12 +146,6 @@ fn clamp_rect_to_viewport(rect: Rect, viewport: Size, margin: f64) -> Rect {
 }
 
 /// Right-aligned below/above placement for anchored menu panels.
-///
-/// `Auto` opens below the anchor and flips above when the panel would
-/// overflow the bottom edge; the panel is right-aligned to the anchor and
-/// clamped into the viewport. Left/Right placements centre vertically on the
-/// anchor instead. The returned `transform_origin` matches the side the
-/// panel actually opened on.
 pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOptions) -> PlacedPanel {
     let m = opts.margin;
     let gap = opts.gap;
@@ -218,28 +172,9 @@ pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOption
     };
 
     let placed = match opts.side {
-        PlacementSide::Below => below,
         PlacementSide::Above => above,
         PlacementSide::Auto if fits_below => below,
         PlacementSide::Auto => above,
-        PlacementSide::Left => PlacedPanel {
-            rect: Rect::new(
-                anchor.x - gap - panel.w,
-                anchor.center_y() - panel.h * 0.5,
-                panel.w,
-                panel.h,
-            ),
-            transform_origin: "right center",
-        },
-        PlacementSide::Right => PlacedPanel {
-            rect: Rect::new(
-                anchor.right() + gap,
-                anchor.center_y() - panel.h * 0.5,
-                panel.w,
-                panel.h,
-            ),
-            transform_origin: "left center",
-        },
     };
     PlacedPanel {
         rect: clamp_rect_to_viewport(placed.rect, vp, m),
@@ -247,9 +182,7 @@ pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOption
     }
 }
 
-/// Clamp a cursor point so a context menu of `panel` size stays inside the
-/// viewport margin. `panel` should be the menu's *measured* size; callers
-/// fall back to a small guess before the menu has mounted.
+/// Clamp a cursor point so a context menu of `panel` size stays in view.
 pub fn place_context_menu(point: Point, panel: Size, viewport: Size, margin: f64) -> PlacedPanel {
     let p = clamp_point_to_viewport(point, panel, viewport, margin);
     PlacedPanel {

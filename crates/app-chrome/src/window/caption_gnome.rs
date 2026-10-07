@@ -1,7 +1,4 @@
-//! The circular GNOME-style caption cluster (Linux). Same three commands and
-//! `maximized` glyph swap as the Windows cluster; only the shape differs —
-//! 24px circles with a translucent fill tracking the theme ink. The style
-//! lives in `styles/components/title_bar.css` under `.gnome-btn`.
+//! The circular GNOME-style caption cluster (Linux).
 
 use leptos::prelude::*;
 

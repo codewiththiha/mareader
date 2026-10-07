@@ -1,6 +1,4 @@
-//! The departure: a read-at-place book leaving the ground that made it becomes the library's own
-//! stored copy on the way out — its bytes its own, the ORIGINAL fingerprint left free for the
-//! folder's log to keep, and its highlights following the address.
+//! A read-at-place book leaving its ground becomes the library's copy.
 
 use leptos::prelude::*;
 
@@ -18,7 +16,7 @@ use runtime_contract::time::now_ms;
 
 use super::folder_shelf_of;
 
-/// The rows a move to `to` takes into the store, in the order the gesture held them.
+/// The rows a move to `to` takes into the store, in gesture order.
 pub(super) fn converting_rows(
     state: crate::context::LibraryContext,
     ids: &[String],
@@ -32,7 +30,7 @@ pub(super) fn converting_rows(
         .collect()
 }
 
-/// The same question about one row, for the callers that hold a single id rather than a gesture.
+/// The same question for one row, rather than a whole gesture.
 pub(crate) fn converts_on_move_to(
     state: crate::context::LibraryContext,
     row_id: &str,
@@ -43,9 +41,7 @@ pub(crate) fn converts_on_move_to(
     converts_on_move(&books, &folders, row_id, to)
 }
 
-/// The three negatives are as load-bearing as the positive: a STORED book is already the
-/// library's own and simply moves, and a book no in-place folder placed is nobody's
-/// departure.
+/// A stored book simply moves; a book no in-place folder placed owes nothing.
 fn converts_on_move(books: &[Row], folders: &[WatchedFolder], row_id: &str, to: &str) -> bool {
     let Some((fp, path)) = find_row(books, row_id)
         .and_then(|row| row.book())
@@ -54,8 +50,7 @@ fn converts_on_move(books: &[Row], folders: &[WatchedFolder], row_id: &str, to: 
     else {
         return false;
     };
-    // Only a folder that placed this content owes a departure; a deleted
-    // rung answers `None` and so never matches the destination.
+    // A deleted rung answers `None`, so it never matches the destination.
     let placing: Vec<&WatchedFolder> = folders
         .iter()
         .filter(|f| f.mode().reads_in_place() && f.placed.contains(&fp))
@@ -66,19 +61,13 @@ fn converts_on_move(books: &[Row], folders: &[WatchedFolder], row_id: &str, to: 
     to == ALL_SHELF || !placing.iter().any(|f| f.rungs_for(&path).0 == Some(to))
 }
 
-/// The ONE "a book is leaving the ground that made it" primitive, so the copy a move buys, the copy
-/// a level coming apart buys and the copy a removal buys are one write. A book the store refused is
-/// left out of the answer, which is how the caller knows to leave that book where it was.
-///
-/// `task` names the card the copy's beats land on: a batch of departures shares one card, and a
-/// lone departure (a replace's conversion) carries one of its own.
+/// The one primitive every departure copy is made through.
 pub(super) async fn depart(state: crate::context::LibraryContext, rows: &[String]) -> Vec<String> {
     // Nothing to convert is no run to report — no card, no count.
     if rows.is_empty() {
         return Vec::new();
     }
-    // One card for the whole gesture: fifty books leaving their ground is one thing the
-    // reader asked for, not fifty, and every copy's beats land on this one card.
+    // One card for the whole gesture, not fifty.
     let label = match rows.len() {
         1 => state.library.row_name(&rows[0]),
         n => format!("{n} books"),
@@ -96,9 +85,7 @@ pub(super) async fn depart(state: crate::context::LibraryContext, rows: &[String
     departed
 }
 
-/// Make a read-at-place book the library's own stored copy: the departure half of a move, and
-/// the only byte a hand-move ever writes. Why a move copies: the book is leaving the ground
-/// that made it.
+/// Make a read-at-place book the library's own stored copy.
 pub(crate) async fn convert_to_stored(
     state: crate::context::LibraryContext,
     row_id: &str,
@@ -129,12 +116,7 @@ pub(crate) async fn convert_to_stored(
     Ok(())
 }
 
-/// Every folder that placed its fingerprint records that the book left as the library's own
-/// copy rather than died. `returned_row` names the row the file is represented by, for the two
-/// answers that dissolve a linked row into a book the library already holds.
-///
-/// Persists nothing itself: every caller — a departure, a merge, a link at the copy — ends its
-/// own transaction with a persist, and this row is one write inside it.
+/// Record that a placed book left as the library's own copy.
 pub(crate) fn write_moved_stones(
     state: crate::context::LibraryContext,
     book: &Book,
@@ -148,7 +130,7 @@ pub(crate) fn write_moved_stones(
             .find(|f| f.placed.contains(&book.fp))
             .and_then(|f| folder_shelf_of(&shelves, &f.id, &book.id))
     };
-    // Spelling all eight fields here would be a second place a new `Tombstone` field has to be remembered.
+    // Spelling eight fields would be a second place to remember a new one.
     let entry = Tombstone {
         moved: true,
         returned_row: returned_row.map(str::to_string),
@@ -160,13 +142,8 @@ pub(crate) fn write_moved_stones(
         .update(|folders| tombstone(folders, &entry));
 }
 
-/// The bind is by ADDRESS, and the address is the one thing a copy cannot change: the log's
-/// fp is the file's and the row's is its own copy's stamp, so the fingerprints can never
-/// meet again — but the log remembers where the file stood (`last_path`) and the row
-/// remembers where its bytes came from (`origin.source()`), and two books called "Dune"
-/// in one folder left two logs from two addresses. A row with no address to name — a
-/// legacy copy — falls back to the name, and only while it is still wearing its pending
-/// placeholder.
+/// The bind is by ADDRESS: the log's `last_path` meets the row's own
+/// `origin.source()`.
 pub(super) fn bind_returned(state: crate::context::LibraryContext, row_id: &str, shelf_id: &str) {
     if shelf_id == ALL_SHELF {
         return;

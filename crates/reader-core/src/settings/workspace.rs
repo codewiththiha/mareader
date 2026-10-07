@@ -2,9 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// What a click on a file in the rail's Library panel does. Dragging a file
-/// onto the workspace always opens a split, whatever this says; the click is
-/// the reader's own choice.
+/// What a click on a file in the Library panel does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum LibraryClick {
@@ -13,13 +11,11 @@ pub enum LibraryClick {
     Replace,
     /// Open the file in a new pane beside the focused one.
     Split,
-    /// Nothing: files are dragged, never clicked open. The keyboard's Enter
-    /// still opens beside, so a keyboard user is never stranded.
+    /// Nothing: files are dragged, never clicked open.
     DragOnly,
 }
 
-/// The active pane outline colour. Auto follows the reader's current accent;
-/// custom uses the separately persisted six-digit RGB value.
+/// The active pane outline colour: auto, or a custom hex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PaneOutlineColor {
@@ -33,8 +29,7 @@ pub enum PaneOutlineColor {
 }
 
 impl PaneOutlineColor {
-    /// Resolve a palette choice to CSS. Auto is returned as `None` so the
-    /// reader can keep following its live accent token.
+    /// Resolve a palette choice to CSS; Auto answers `None`.
     pub fn resolve(self, custom: &str) -> Option<&str> {
         match self {
             Self::Auto => None,
@@ -60,32 +55,17 @@ pub enum PaneCorners {
 #[serde(default, rename_all = "camelCase")]
 pub struct WorkspaceSettings {
     pub library_click: LibraryClick,
-    /// Independent theme per pane (split workspaces): while a split is on
-    /// screen, each pane shows its own look and the shared chrome keeps the
-    /// remembered global theme. Persisted as the toggle's rest state, so the
-    /// mode stands down with one pane left and comes back with the next
-    /// split; the per-pane colours themselves are temporary. The last pane's
-    /// colour is promoted to the window theme as the split collapses.
+    /// Independent theme per pane: each pane shows its own look while split.
     pub independent_themes: bool,
-    /// With independent themes on, keep Light / Dark / Dim shared: each pane
-    /// keeps its own colour, but switching the mode switches every pane. Off,
-    /// the mode is per pane too, like the rest of its look.
+    /// With independent themes on, keep the base mode shared.
     pub shared_base_mode: bool,
-    /// Independent page texture per pane (split workspaces): each pane keeps
-    /// its own texture mode and its own opacity / pitch, while the colour
-    /// stays the window's. The texture family alone — a page's pattern is a
-    /// decision about the paper, not about the look, and reading a Lined PDF
-    /// beside a plain-text page wants exactly that. Same lifetime as
-    /// `independent_themes`: persisted as the toggle's rest state, in effect
-    /// only while a split is on screen, and the last pane's texture is
-    /// promoted to the window theme as the split collapses.
+    /// Independent page texture per pane; the colour stays the window's.
     pub independent_textures: bool,
     /// Active-pane focus outline width, in CSS pixels. Zero hides the outline.
     pub pane_outline_width: u8,
     /// Active-pane outline palette selection.
     pub pane_outline_color: PaneOutlineColor,
-    /// User-picked outline colour, used only when `pane_outline_color` is
-    /// Custom. Kept as a CSS-safe six-digit hex value.
+    /// User-picked outline colour, used only for Custom.
     pub pane_outline_custom: String,
     /// Space between adjacent pane boxes and around all four workspace edges.
     pub pane_gap: u8,
@@ -140,5 +120,3 @@ mod tests {
         assert_eq!(PaneOutlineColor::Custom.resolve("#123abc"), Some("#123abc"));
     }
 }
-
-// only the changed file was rewritten

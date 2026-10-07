@@ -1,10 +1,5 @@
-//! Previous/next + page-number input — and the stream's screenful twin.
-//! Prev/Next clamp viewer.page to 1..=num_pages; the editable readout parses on
-//! commit and clamps the same way. In Dual mode the buttons step whole spreads.
-//!
-//! The "– / –" empty branch is a safety net: this control is only mounted
-//! from ReaderBottomBar on a Ready document, but the readout still has to
-//! survive a close mid-keystroke.
+//! Prev/next and a page-number input, with the stream's screenful
+//! twin.
 
 use leptos::prelude::*;
 
@@ -17,13 +12,7 @@ use reader_core::view::{
     ViewMode, last_spread_start, spread_start, spread_step_next, spread_step_prev,
 };
 
-/// One screenful step through the continuous text stream, with the
-/// percentage standing where the page readout sits in the paged modes.
-/// A page number means nothing where the stream flows, but the gesture —
-/// step forward, step back, see where you are — is the same gesture, so
-/// the control keeps the same seat and shape. The step keeps a sliver of
-/// the outgoing screen (the keyboard's PageDown keeps the same overlap) so
-/// a screen turn never loses the reading line.
+/// One screenful step through the stream, with a percentage readout.
 #[component]
 pub fn StreamPageNav(state: ReaderState) -> impl IntoView {
     view! {
@@ -49,8 +38,7 @@ pub fn StreamPageNav(state: ReaderState) -> impl IntoView {
     }
 }
 
-/// Scroll the stream one screenful in `direction` (-1 up, 1 down), keeping
-/// a tenth of the outgoing screen for continuity.
+/// Scroll the stream one screenful, keeping a tenth for continuity.
 fn step_screen(dom: PaneDom, direction: f64) {
     let Some(el) = dom.page_list() else {
         return;
@@ -67,8 +55,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
     let page = state.viewer.page;
     let mode = state.viewer.mode;
 
-    // Editable readout. A local signal holds the text so typing never fights the
-    // reactive `page` signal; the effect resyncs it when page/numpages change.
+    // A local signal holds the text; the effect resyncs it on change.
     let text = RwSignal::new("–".to_string());
     Effect::new(move || {
         let n = num_pages.get();
@@ -84,8 +71,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
     let next_state = state;
     let commit_state = state;
 
-    // Named closures (avoids the view! macro terminating a `move ||` body at a
-    // top-level `||` when comparing with `>=`).
+    // Named closures dodge the macro splitting a `move ||` body.
     let prev_disabled = move || {
         let n = num_pages.get();
         let p = page.get();
@@ -139,13 +125,13 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                             let max = commit_state.document.num_pages.get().max(1);
                             let clamped = n.clamp(1, max);
                             if commit_state.viewer.mode.get() == ViewMode::Spread {
-                                // Snap typed input onto the spread that contains it.
+                                // Snap onto the spread containing the input.
                                 commit_state.viewer.page.set(spread_start(clamped));
                             } else {
                                 commit_state.viewer.page.set(clamped);
                             }
                         }
-                        // Invalid input: snap the readout back to the current page.
+                        // Invalid input: snap back to the current page.
                         Err(_) => {
                             let cur = commit_state.viewer.page.get();
                             if commit_state.document.num_pages.get() == 0 {

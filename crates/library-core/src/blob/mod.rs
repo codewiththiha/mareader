@@ -1,10 +1,4 @@
-//! The persisted shape of the library, and the migration from the shape it
-//! replaced.
-//!
-//! One key holds books, shelves, watched folders and the view together because
-//! they are one invariant: a shelf member that names no book is a hole in the
-//! grid, and a folder ledger remembering a fingerprint no book carries is a
-//! book that can never come back.
+//! The persisted shape of the library, and its migration.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,22 +9,16 @@ use crate::view::LibraryView;
 
 pub mod migrate;
 
-/// The library's localStorage key. A new `v3` key rather than a schema edit
-/// under `v2`: the list changed from books to [`Row`]s, and a `v2` blob this
-/// build cannot parse must not be overwritten by the default before
-/// [`migrate::migrate_v2`] has read it.
+/// The library's localStorage key, new for `v3`.
 pub const LIBRARY_KEY: &str = "mareader.library.v3";
 
-/// The `v3` key as the pre-rebrand build wrote it. Same schema as
-/// [`LIBRARY_KEY`], so it is read as-is rather than migrated; kept so a
-/// reader who downgrades still finds the library the older build wrote.
+/// The `v3` key as the pre-rebrand build wrote it.
 pub const RETIRED_LIBRARY_KEY: &str = "pdfreader.library.v3";
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryBlob {
-    /// Every row, in the order the "All" level shows them. This list IS the
-    /// All order; there is no separate shelf for it (see [`crate::shelf`]).
+    /// Every row, in the order the "All" level shows them.
     #[serde(default)]
     pub books: Vec<Row>,
     #[serde(default)]
@@ -47,31 +35,19 @@ impl LibraryBlob {
     }
 }
 
-/// Make a persisted library internally valid, idempotently: the per-list
-/// rules ([`crate::book::sanitize`], [`crate::folder::sanitize`],
-/// [`crate::view::sanitize`], [`crate::shelf::sanitize`]) plus the two
-/// cross-list ones — a shelf member that names no book, and a folder shelf
-/// whose folder is gone.
-///
-/// [`crate::shelf::sanitize`] runs last on purpose: the cross-list rules can
-/// drop shelves, and members swept before that would be swept against a list
-/// that still holds them.
+/// Make a persisted library internally valid, idempotently.
 pub fn sanitize(blob: &mut LibraryBlob) {
     crate::book::sanitize(&mut blob.books);
     crate::folder::sanitize(&mut blob.folders);
     crate::view::sanitize(&mut blob.view);
 
-    // `book::sanitize` deduped by id, so shelves now resolve against a list
-    // with unique ids — but not unique fingerprints: a kept duplicate is two
-    // honest rows of one file.
+    // Ids are unique now, but fingerprints need not be.
     let known: std::collections::HashSet<&str> = blob.books.iter().map(|r| r.id()).collect();
     for shelf in blob.shelves.iter_mut() {
         shelf.books.retain(|m| known.contains(m.as_str()));
     }
 
-    // A folder shelf whose folder was removed has no rescan to refill it and
-    // no watch dot to explain it, so it goes; virtual and departed shelves are
-    // the reader's own.
+    // A folder shelf whose folder is gone goes.
     let folders: std::collections::HashSet<&str> =
         blob.folders.iter().map(|f| f.id.as_str()).collect();
     blob.shelves.retain(|s| match &s.kind {
@@ -81,8 +57,7 @@ pub fn sanitize(blob: &mut LibraryBlob) {
 
     crate::shelf::sanitize(&mut blob.shelves);
 
-    // Links can target shelves too; only here are both lists in hand to ask
-    // which shelves survived.
+    // Links can target shelves; both lists are in hand here.
     crate::book::drop_dead_shelf_links(&mut blob.books, &blob.shelves);
 }
 
@@ -165,8 +140,7 @@ mod tests {
             5,
         );
         assert!(book_rows(&blob.books).all(|b| b.fp_pending));
-        // Placeholders derive from the address, so migrated books never
-        // collide: the ledger's fingerprint index is first-wins.
+        // Placeholders derive from the address and never collide.
         assert_ne!(
             Fingerprint::placeholder("/a.pdf"),
             Fingerprint::placeholder("/b.pdf")

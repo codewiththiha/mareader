@@ -1,7 +1,4 @@
-//! The motion preferences, published from the shell so the class on `<html>`
-//! survives every runtime transition. This is the shell document's CSS half
-//! only: each runtime frame paints its own class (`install_frame_theme`), and
-//! the reader projects its own settings copy onto `viewer.motion`.
+//! The motion preferences, published from the shell onto `<html>`.
 
 use leptos::prelude::*;
 
@@ -10,8 +7,7 @@ use reader_core::settings::Settings;
 /// The `<html>` class that freezes every CSS animation and transition.
 const ANIMATIONS_OFF_CLASS: &str = "animations-off";
 
-/// Publish `settings.animations` as a class on `<html>` (the master's reach
-/// into the CSS the runtimes do not model themselves).
+/// Publish `settings.animations` as a class on `<html>`.
 pub fn publish_motion(settings: RwSignal<Settings>) {
     Effect::new(move |_| {
         let off = !settings.with(|s| s.animations.enabled);

@@ -1,7 +1,5 @@
-//! Seeding the app state for a freshly opened document. One synchronous batch,
-//! in a deliberate order, run while the status is still `Opening` and nothing
-//! is mounted. The order is the interesting part; each step says why it is
-//! where it is.
+//! Seeding the app state for a freshly opened document, in a
+//! deliberate order.
 
 use leptos::prelude::*;
 
@@ -17,8 +15,7 @@ pub(super) struct Seeded {
     pub num_pages: u32,
 }
 
-/// Write everything the fresh mount will read, the resume page included;
-/// the strip anchors itself to it on mount.
+/// Write everything the fresh mount reads, the resume page included.
 pub(super) fn seed(
     state: &crate::context::ReaderContext,
     path: &str,
@@ -28,12 +25,7 @@ pub(super) fn seed(
     let page1 = open.page1_size;
     let num_pages = open.num_pages;
 
-    // Document identity, through the step both open tails share
-    // ([`super::enter`]). The format flips BACK here: a PDF opening over a
-    // text document sheds the reflowable gates (blend, thumbnails, the Fonts
-    // tab) the same way a text open claims them. The chapter tree is `None`
-    // because a PDF's outline resolves AFTER the open — which is what keeps
-    // `outline_pending` true (see `super::outline`).
+    // Identity through the shared step; the format flips BACK here.
     enter::identity(
         state,
         enter::DocumentIdentity {
@@ -46,15 +38,11 @@ pub(super) fn seed(
         },
     );
 
-    // A text document's model must not survive the PDF that opens over it
-    // (the stream mounts while `reflow.blocks` is a document).
+    // A text document's blocks must not survive the PDF that opens over
+    // it.
     state.reader.document.content.reflow.reset();
     state.reader.document.num_pages.set(num_pages);
-    // The new session's paper state machine is configured, then opened for
-    // the book — synchronously, while the status is still `Opening` and
-    // nothing is mounted. Configure FIRST: the document's first frame only
-    // publishes if the session already knows blend is on. The session is
-    // new, so no previous book's colour can reach the reader's first frame.
+    // Configure the new paper session, then open it.
     crate::effects::reader::blend_backdrop::configure_session(state);
     state.pane.pdf().paper_document_open(path, num_pages);
     state.reader.document.content.metrics.clear_rendered();
@@ -71,29 +59,17 @@ pub(super) fn seed(
             num_pages,
         ));
 
-    // Gloss highlights for THIS document, loaded where the reflowable tail
-    // loads them: before anything mounts, so the first painted page already
-    // carries them. For a PDF they are page-space rects, not DOM state.
+    // Gloss highlights for THIS document, loaded before anything mounts.
     enter::load_marks(state);
 
     let resume = enter::resume_page(saved_page, num_pages);
 
-    // The reading position is authored HERE, once, and the strip anchors
-    // itself to it when it mounts (`ScrollShell`). Until that anchor lands the
-    // strip's dominant page is whatever offset it last held, so the
-    // scroll→page sync is told to stand down FIRST — before the page is
-    // written, so no effect can observe the new page against the old strip.
-    // Every other reader of `page` sees the resume point from the start;
-    // nothing passes through a transient page 1. ALL of this lands BEFORE
-    // `status = Ready` flips the route, so the fresh mount reads a fully
-    // seeded state.
+    // The reading position is authored HERE, once; the strip anchors to
+    // it.
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.page.set(resume);
     state.reader.viewer.scroll_top.set(0.0);
-    // Heights belong to the document that was just closed; leaving them would
-    // have the zoom coordinator anchor against a stale column on the first
-    // gesture. The pane re-seeds them from the intrinsic page sizes at the
-    // current scale.
+    // Stale heights would anchor the first gesture wrongly.
     state
         .reader
         .document
@@ -101,24 +77,16 @@ pub(super) fn seed(
         .metrics
         .css_heights
         .set(Vec::new());
-    // The seed scale comes from the step both open tails share: the same
-    // geometry the first live refit will use, including the stream exception
-    // that has no page to fit.
+    // The seed scale comes from the shared step.
     let (startup_fit, scale) = enter::startup_scale(state, (page1.width, page1.height));
     state.reader.viewer.fit.set(startup_fit);
-    // The zoom state is seeded HERE and nowhere else: the initial scale for a
-    // brand-new document, so there is no layout to animate from and nothing
-    // to anchor to. All three scales start in agreement, with no transition
-    // in flight.
+    // Seed the zoom state HERE: all three scales agree, no transition.
     state.reader.viewer.zoom.initialize(scale);
 
     Seeded { resume, num_pages }
 }
 
-/// Intrinsic (scale-1) size of every page, packed one `PageSize` each. The
-/// engine sends widths and heights as two parallel arrays; a book whose arrays
-/// do not both match the page count is not trustworthy per-page, so every page
-/// falls back to page 1's size rather than being read off by one.
+/// Intrinsic size of every page, packed one `PageSize` each.
 fn intrinsic_sizes(
     widths: &[f64],
     heights: &[f64],
@@ -158,8 +126,7 @@ mod tests {
 
     #[test]
     fn a_mismatched_array_falls_back_to_page_one_for_every_page() {
-        // Reading a short array off by one would give later pages the wrong
-        // geometry, which the virtualizer would then lay out against.
+        // A short array read off by one would misplace later pages.
         let sizes = intrinsic_sizes(&[10.0], &[100.0, 200.0], &size(612.0, 792.0), 2);
         assert_eq!(sizes.len(), 2);
         assert!(sizes.iter().all(|s| s.width == 612.0 && s.height == 792.0));

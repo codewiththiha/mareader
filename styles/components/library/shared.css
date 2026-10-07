@@ -1,8 +1,4 @@
-/* The one ghost of an icon button the library surfaces share: a quiet round ✕-shaped thing
-   that is not there until its surface is hovered or focused, and then is. The per-surface
-   rules (grid.css, list.css, dock.css) add size, position and ink — the four spellings this
-   replaced had drifted into three sizes and two transitions while each claimed to be the
-   same button. */
+/* The one ghost of an icon button the library surfaces share. */
 
 .icon-ghost {
   display: flex;
@@ -19,11 +15,7 @@
     border-color 0.14s ease;
 }
 
-/* The one format chip the library's two densities share: the uppercase kind
-   of a thing, in the footprint the cover would have had. grid.css adds the
-   list row's padding and list.css the sidebar's — the two chips used to be
-   written out in full, five declarations each, and only their padding had
-   ever meant to differ. */
+/* The one format chip the library's two densities share. */
 .lib-format {
   display: inline-flex;
   flex: 0 0 auto;

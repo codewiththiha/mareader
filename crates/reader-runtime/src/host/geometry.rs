@@ -1,29 +1,10 @@
-//! Drop geometry: the workspace and its panes as a drag sees them, and the
-//! one deterministic answer to "which target is the pointer choosing".
-//!
-//! Measured ONCE, when a drag starts (the workspace slot's client rect; the
-//! panes' boxes from the host's layout, which is the tree laid out over the
-//! same slot), and read from memory on every pointer move after that: a move
-//! costs a containment test per visible pane and four scores, never a DOM
-//! read. The preview never changes the layout (it is an overlay), so the
-//! stored geometry stays true for the whole drag.
-//!
-//! Scoring. The pane under the pointer is the only candidate pane (a pointer
-//! inside a target wins over every farther one). Each of its offered targets
-//! scores `1 − d`, `d` the pointer's distance to that edge normalised by the
-//! pane's extent along it, so the zones are the four triangles the pane's
-//! diagonals cut — derived from the pane's own box, no global pixel bands —
-//! and every edge stays reachable. Draws resolve by [`Edge::PRIORITY`].
-//! Hysteresis: the current target is kept until another target of the same
-//! pane beats it by [`HYSTERESIS`], or the pointer leaves its pane.
+//! Drop geometry: the workspace and panes as a drag sees them.
 
 use super::drop_target::{DropTarget, Edge};
 use super::model::{PaneBounds, PaneFormat, PaneId};
 use super::tree::split_fits;
 
-/// How much better (in normalised score) a rival target must be before the
-/// preview leaves the current one: a tenth of the pane's extent. Near a zone
-/// boundary the pointer's jitter is a few pixels; this is tens of them.
+/// How much better a rival target must be to take the preview.
 const HYSTERESIS: f64 = 0.1;
 
 /// One visible pane as a drag sees it.
@@ -48,35 +29,28 @@ pub struct DropGeometry {
 }
 
 impl DropGeometry {
-    /// The pointer in slot coordinates, or `None` outside the workspace.
-    /// Half-open: the workspace's right and bottom edges are outside.
+    /// The pointer in slot coordinates; half-open at the far edges.
     pub fn to_slot(&self, client: (f64, f64)) -> Option<(f64, f64)> {
         let at = (client.0 - self.workspace.x, client.1 - self.workspace.y);
-        contains(
-            PaneBounds {
-                x: 0.0,
-                y: 0.0,
-                ..self.workspace
-            },
-            at,
-        )
+        PaneBounds {
+            x: 0.0,
+            y: 0.0,
+            ..self.workspace
+        }
+        .contains(at)
         .then_some(at)
     }
 
-    /// The pane under a slot-coordinate point. Panes tile the slot, and the
-    /// half-open test gives a shared edge to exactly one of them.
+    /// The pane under a slot point; a shared edge goes to one pane.
     fn pane_at(&self, at: (f64, f64)) -> Option<&PaneGeometry> {
-        self.panes.iter().find(|pane| contains(pane.rect, at))
+        self.panes.iter().find(|pane| pane.rect.contains(at))
     }
 
     pub fn pane(&self, id: PaneId) -> Option<&PaneGeometry> {
         self.panes.iter().find(|pane| pane.pane == id)
     }
 
-    /// Every target `pane` offers, in priority order. An empty pane offers
-    /// only itself; a pane with a document offers the edges whose split
-    /// leaves both halves usable ([`split_fits`]), and none at all while the
-    /// workspace is full.
+    /// Every target `pane` offers, in priority order.
     fn targets_of(&self, pane: &PaneGeometry) -> Vec<DropTarget> {
         if pane.empty {
             return vec![DropTarget::Here { pane: pane.pane }];
@@ -94,16 +68,13 @@ impl DropGeometry {
             .collect()
     }
 
-    /// Whether the geometry offers `target` at all (a keyboard selection
-    /// and a commit are checked against this, never against a pointer).
+    /// Whether the geometry offers `target` at all.
     pub fn offers(&self, target: DropTarget) -> bool {
         self.pane(target.pane())
             .is_some_and(|pane| self.targets_of(pane).contains(&target))
     }
 
-    /// The target the pointer (client coordinates) chooses, given the one
-    /// currently shown. Deterministic: the same geometry, pointer and
-    /// current target always give the same answer.
+    /// The target the pointer chooses, given the current one.
     pub fn choose(&self, client: (f64, f64), current: Option<DropTarget>) -> Option<DropTarget> {
         let at = self.to_slot(client)?;
         let pane = self.pane_at(at)?;
@@ -129,14 +100,8 @@ impl DropGeometry {
     }
 }
 
-/// `at` inside `rect`, half-open.
-fn contains(rect: PaneBounds, at: (f64, f64)) -> bool {
-    at.0 >= rect.x && at.0 < rect.x + rect.width && at.1 >= rect.y && at.1 < rect.y + rect.height
-}
-
-/// A target's score for a pointer at `at` inside its pane's `rect`: 1 at the
-/// target's edge, 0 at the opposite edge. [`DropTarget::Here`] covers the
-/// whole pane and always scores 1.
+/// A target's score: 1 at its edge, 0 at the opposite; `Here`
+/// always scores 1.
 pub fn score(target: DropTarget, rect: PaneBounds, at: (f64, f64)) -> f64 {
     let DropTarget::Split { edge, .. } = target else {
         return 1.0;
@@ -258,8 +223,7 @@ mod tests {
 
     #[test]
     fn a_pane_too_small_both_ways_offers_nothing() {
-        // A narrow window with the rail open and the title bar taking height:
-        // the slot left over is 380×390.
+        // A narrow window with the rail open: 380×390.
         let g = DropGeometry {
             workspace: rect(260.0, 44.0, 380.0, 390.0),
             panes: vec![pane(1, rect(0.0, 0.0, 380.0, 390.0))],
@@ -271,8 +235,7 @@ mod tests {
 
     #[test]
     fn a_nested_pane_near_the_minimum_keeps_only_what_fits() {
-        // A|(B/C): B is 450×300 — wide enough to halve (225 ≥ 200), too short
-        // to stack (150 < 200).
+        // B is 450×300: wide enough to halve, too short to stack.
         let g = DropGeometry {
             workspace: rect(0.0, 0.0, 900.0, 600.0),
             panes: vec![
@@ -366,8 +329,8 @@ mod tests {
         let g = single();
         // The very corner: Left and Top both score 1 — Left outranks Top.
         assert_eq!(g.choose((40.0, 60.0), None), split(1, Edge::Left));
-        // Near a corner the nearer edge wins, however slightly: 1 px from
-        // the right against 5 px from the top.
+        // The nearer edge wins: 1 px from the right against 5 px from the
+        // top.
         assert_eq!(
             g.choose((40.0 + 999.0, 60.0 + 5.0), None),
             split(1, Edge::Right)
@@ -383,8 +346,7 @@ mod tests {
     #[test]
     fn beside_a_divider_the_pane_under_the_pointer_is_split() {
         let g = pair();
-        // Just left of the seam: pane 1's right edge; just right: pane 2's
-        // left edge. The seam itself (x = 600) belongs to pane 2.
+        // The seam belongs to pane 2.
         assert_eq!(g.choose((598.0, 400.0), None), split(1, Edge::Right));
         assert_eq!(g.choose((600.0, 400.0), None), split(2, Edge::Left));
         assert_eq!(g.choose((603.0, 400.0), None), split(2, Edge::Left));
@@ -392,8 +354,7 @@ mod tests {
 
     #[test]
     fn beside_a_divider_a_split_with_no_room_is_never_chosen() {
-        // Pane 2 is 399 wide: no side-by-side split. Hugging its left edge
-        // (right beside the divider) chooses a stack instead of a sliver.
+        // Pane 2 is 399 wide: hugging its left edge chooses a stack.
         let g = DropGeometry {
             workspace: rect(0.0, 0.0, 1000.0, 800.0),
             panes: vec![
@@ -419,8 +380,8 @@ mod tests {
 
     #[test]
     fn inside_the_workspace_but_outside_every_pane_offers_nothing() {
-        // A layout that has not caught up with the slot (a pane smaller than
-        // the workspace): the uncovered strip is no target.
+        // A pane smaller than the workspace: the uncovered strip is no
+        // target.
         let g = DropGeometry {
             workspace: rect(0.0, 0.0, 1000.0, 800.0),
             panes: vec![pane(1, rect(0.0, 0.0, 700.0, 800.0))],
@@ -458,8 +419,7 @@ mod tests {
         let y = 60.0 + 400.0;
         let current = g.choose((40.0 + 100.0, y), None);
         assert_eq!(current, split(1, Edge::Left));
-        // At x = 545 Right (0.545) leads Left (0.455) by 0.09: inside the
-        // margin, the preview stays.
+        // Right leads Left by 0.09: inside the margin, the preview stays.
         assert_eq!(g.choose((40.0 + 545.0, y), current), current);
         // At x = 560 Right leads by 0.12 > 0.1: the preview moves.
         assert_eq!(g.choose((40.0 + 560.0, y), current), split(1, Edge::Right));

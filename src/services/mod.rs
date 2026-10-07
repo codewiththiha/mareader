@@ -1,7 +1,5 @@
-//! The shell's services: the launch parser (the web test hook), the
-//! persistence writes the boundary funnels, the OS-open plumbing that
-//! forwards into the live runtime, and the OS import drop that hands files
-//! to the library.
+//! The shell's services: launch parsing, persistence, OS open and
+//! import drop.
 
 mod import_drop;
 mod launch;

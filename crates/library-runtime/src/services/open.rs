@@ -1,7 +1,5 @@
-//! Opening from the shelf: the row a surface named becomes a serialized
-//! launch descriptor across the boundary. The library computes what the
-//! reader needs (the row identity, the resume point, the name, the cover)
-//! from its own state — then the Shell owns the transition.
+//! Opening from the shelf: the row becomes a launch descriptor; the Shell
+//! owns the transition.
 
 use leptos::prelude::WithUntracked;
 
@@ -10,9 +8,7 @@ use library_core::book::resume_point;
 use runtime_contract::boundary::LaunchDocument;
 use runtime_contract::boundary::ShellApi;
 
-/// Open a library row — what every shelf surface calls (a card, a list row,
-/// the context menu's Open). A shelf target reveals; a book (or an unknown
-/// row id — a link's destination) becomes the reader launch.
+/// What every shelf surface calls: a shelf target reveals, a book opens.
 pub fn open_row(ctx: &LibraryContext, row_id: String) {
     let target = ctx
         .library
@@ -27,9 +23,8 @@ pub fn open_row(ctx: &LibraryContext, row_id: String) {
     }
 }
 
-/// Open a library book: the book's own address, and the row itself as the
-/// launch identity. A row the library KNOWS is dead asks the find-again
-/// question instead of opening onto an error screen.
+/// The book's own address, with the row as identity; a dead row asks
+/// find-again.
 fn open_book(ctx: &LibraryContext, book_id: String) {
     let Some(book) = ctx
         .library
@@ -45,9 +40,7 @@ fn open_book(ctx: &LibraryContext, book_id: String) {
     open_at(ctx, Some(book_id), book.path().to_string());
 }
 
-/// Open an address with no row (a link's target): the open settles onto the
-/// SHARED row the library already holds for the path, per the same rule the
-/// unified flow kept — a private twin never hijacks a drop.
+/// No row: the open settles onto the shared row for the path.
 pub fn open_path(ctx: &LibraryContext, path: String) {
     open_at(ctx, None, path);
 }
@@ -64,21 +57,14 @@ fn open_at(ctx: &LibraryContext, book_id: Option<String>, path: String) {
         .library
         .books
         .with_untracked(|books| resume_point(books, book_id.as_deref(), &path));
-    let display_name = book_id
-        .as_deref()
-        .and_then(|id| {
-            ctx.library
-                .books
-                .with_untracked(|books| library_core::book::find_by_id(books, id).cloned())
-        })
-        .map(|b| b.title());
-    let cover_data_url = book_id
-        .as_deref()
-        .and_then(|id| {
-            ctx.library
-                .books
-                .with_untracked(|books| library_core::book::find_by_id(books, id).cloned())
-        })
+    let row = book_id.as_deref().and_then(|id| {
+        ctx.library
+            .books
+            .with_untracked(|books| library_core::book::find_by_id(books, id).cloned())
+    });
+    let display_name = row.as_ref().map(|b| b.title());
+    let cover_data_url = row
+        .as_ref()
         .and_then(|row| {
             ctx.library
                 .covers

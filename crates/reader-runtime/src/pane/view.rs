@@ -1,12 +1,5 @@
-//! The document pane's own surface: the reader effects it installs and the
-//! content it renders inside the host's workspace slot.
-//!
-//! This is the per-pane half of what the old `ReaderPage` did. The other
-//! half — the title bar, the rail's mount points, the settings modal's
-//! placement, the shell controller, the backdrop — is the host's
-//! (`crate::host::view`). Everything here acts on ONE pane's state: its
-//! document, its virtualizers, its zoom, its overlays. Nothing here names
-//! the host.
+//! The document pane's own surface: its effects, its content, one pane's
+//! state only.
 
 use leptos::prelude::*;
 
@@ -20,34 +13,19 @@ use crate::features::virtualizers::{ReaderVirtualizers, use_reader_virtualizers}
 use reader_core::document::DocStatus;
 use reader_core::settings::PageIndicatorStyle;
 
-/// Install every reader effect the pane owns, in its reactive owner, and
-/// build its virtualizers. Called once, at mount, inside the pane's owner:
-/// everything created here dies with the pane's dispose.
-///
-/// The ORDER is load-bearing and unchanged from the page this came out of
-/// (see each comment).
+/// Install every reader effect the pane owns, in its reactive owner.
 pub(crate) fn install_pane_effects(
     state: ReaderContext,
     active: Signal<bool>,
 ) -> ReaderVirtualizers {
     let vs = state.reader;
 
-    // Reader-only event arms: they act on this pane's state only (page
-    // navigation, page selection, the AI selection anchor), so they are
-    // installed in the pane's owner and die with it — each arm's window
-    // listener unregisters with this scope.
-    // The events arrive on the window for every pane alike; each arm keeps
-    // only its own (`crate::pane::origin`).
+    // Reader-only event arms: each window listener dies with this scope.
     crate::effects::reader::link_navigation::link_navigation(state, active);
     crate::effects::reader::page_selection::page_selection(state, active);
     crate::effects::reader::selection_tracking::selection_tracking(state, active);
-    // The keyboard arm (page navigation, zoom steps, the sidebar toggles,
-    // Cmd/Ctrl+O) answers only while this pane is the host's active pane:
-    // the gate reads the host's one focus authority, never a copy of it.
-    // What it asks of the workspace goes through the HOST: the picked file
-    // through the host's open command (`open_dialog` ends in `ctx.open`),
-    // Escape's rail close through the host's shell controller (provided by
-    // the host in the session scope this pane's owner descends from).
+    // The keyboard arm answers only while this pane is the host's active
+    // pane.
     crate::effects::reader::shortcuts::shortcuts(
         state.reader,
         move || {
@@ -59,36 +37,28 @@ pub(crate) fn install_pane_effects(
 
     let rv = use_reader_virtualizers(vs, state.pane);
 
-    // The layout prefs (page gap, page margin) resolve their settings into the
-    // strips' size models. Installed BEFORE the reflow layout effect below,
-    // which reads the gap they resolve.
+    // The layout prefs resolve page gap and margin into the strips' size
+    // models.
     crate::effects::reader::layout_prefs::layout_prefs(
         state,
         rv.virtualizer.clone(),
         rv.h_virtualizer.clone(),
     );
 
-    // The paged text modes' A4 page model upkeep: page-unit sizes projected
-    // into the shared measurement store whenever the format, the mode or the
-    // cut moves, and reverted when they stop asking for it. Installed AFTER
-    // the gap effects so its relayout reads the gap they just resolved.
+    // The paged text modes' A4 page model upkeep, after the gap effects.
     #[cfg(feature = "reflow")]
     crate::effects::reader::reflow_layout::reflow_layout(state, rv.virtualizer.clone());
     // The reflowable measurement pipeline, beside the layout it feeds.
     #[cfg(feature = "reflow")]
     crate::effects::reader::reflow_measure::install_reflow_measure(state);
-    // The Markdown outline follows the same page cut: one re-cut republishes
-    // the pages AND moves the chapters.
+    // The Markdown outline follows the same page cut.
     #[cfg(feature = "reflow")]
     crate::effects::reader::reflow_outline::reflow_outline(state);
-    // The outline's jump into the stream. A clicked chapter has to land on its
-    // heading's block, which the click's page write cannot name (see the arm);
-    // installed beside the outline it moves.
+    // The outline's jump into the stream, beside the outline it moves.
     #[cfg(feature = "reflow")]
     crate::effects::reader::outline_jump::outline_jump(state.reader);
 
-    // What a mode flip owes: the incoming strip's anchor, the stream's zoom, the
-    // outgoing view's rasters, and the fit the next mode owns.
+    // What a mode flip owes: anchors, zoom, rasters, the next fit.
     crate::effects::reader::mode_change::mode_change(state);
 
     let actuator = crate::zoom::actuator::ZoomActuator::new(
@@ -96,29 +66,20 @@ pub(crate) fn install_pane_effects(
         rv.h_virtualizer.clone(),
         vs.dom,
     );
-    // Driven once at setup. What outlives the controller are the effects
-    // `drive` installs, which live as long as this pane's owner. Everything
-    // downstream only posts commands; nothing else writes a zoom scale or
-    // rescales a strip.
+    // Driven once at setup; the effects `drive` installs live with this
+    // owner.
     let zoom = crate::zoom::ZoomController::new(actuator);
     zoom.drive(vs);
-    // Installed BEFORE reading_progress, and that is a contract rather than a
-    // habit: Leptos runs effects in insertion order, so when a zoom
-    // transaction closes both wake in the same flush — this one replays its
-    // held jump first, and reading progress then persists the page the reader
-    // actually asked for instead of the stale dominant the strip still
-    // shows.
+    // Installed BEFORE reading_progress: effects run in insertion order, so
+    // the held jump replays first.
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
-    // The zoom sources come last, after the controller that consumes them: a
-    // container follow on every frame of a sidebar slide or window drag, and
-    // a debounced refit when a fit's other inputs move.
+    // The zoom sources come last, after the controller that consumes them.
     crate::effects::reader::zoom_watchers::follow_watcher(state, state.ui.sidebar);
     crate::effects::reader::zoom_watchers::fit_watcher(state);
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     reading_progress(state);
-    // The blend backdrop's geometry half: the viewport's ladder position per
-    // scroll tick (the engine owns the colours it drives). The SETTINGS half
-    // was installed with the pane, ahead of its first document open.
+    // The blend backdrop's geometry half: the ladder position per scroll
+    // tick.
     #[cfg(feature = "pdf")]
     crate::effects::reader::blend_backdrop::blend_backdrop(state);
 
@@ -127,19 +88,7 @@ pub(crate) fn install_pane_effects(
     rv
 }
 
-/// The pane's content for the host's workspace slot: the viewer, the
-/// first-paint cover, and the per-document overlays (floating title, page
-/// pill, bottom bar, find bar, selection pill, gloss popover). The host
-/// places this inside its entry for the pane; the wrapper is the PANE's
-/// root — sized to the bounds the host handed the pane (filling the entry
-/// until the first measurement), the element every pane-owned lookup is
-/// scoped to (`crate::pane::dom`), and the box every overlay's `absolute`
-/// resolves against.
-///
-/// A pointer or keyboard focus landing inside the pane asks the host's
-/// focus authority to make it active (`request_focus`); the authority
-/// decides. Bubbling listeners: a control that swallows its own pointerdown
-/// sits on a pane whose surface took the pointer first.
+/// The pane's content: the viewer, the first-paint cover, the overlays.
 pub(crate) fn pane_content(
     state: ReaderContext,
     rv: ReaderVirtualizers,
@@ -154,9 +103,7 @@ pub(crate) fn pane_content(
     let indicator_style =
         Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
-    // Continuous text reading has no meaningful page number: while the stream
-    // is live the badge is a percentage of the document whatever the indicator
-    // style says.
+    // Continuous text has no page number: the badge is a percentage.
     let stream_live = Signal::derive(move || vs.reflow_streaming());
     let stream_percent = Signal::derive(move || vs.stream_percent());
 
@@ -166,12 +113,7 @@ pub(crate) fn pane_content(
             // `crate::pane::origin::PANE_ROOT_ATTR`: an event raised inside
             // finds its pane by this.
             data-pane-root=""
-            // The open document's pipeline, tracked: the per-pane paper and
-            // texture rules key off it (styles/components/shell.css,
-            // styles/textures.css). The format lives on the pane root, not
-            // on `:root` — one workspace can show several formats at once,
-            // and the paper is a PANE fact. Reactive on purpose: an in-place
-            // open swaps the pipeline under the same pane.
+            // The open pipeline, tracked: paper and texture rules key off it.
             data-format=move || match vs.document.format.get() {
                 reader_core::format::Format::Pdf => "pdf",
                 reader_core::format::Format::Text => "text",
@@ -195,10 +137,7 @@ pub(crate) fn pane_content(
                     progress_visible=progress_visible
                 />
             </Show>
-            // The first-paint cover (the gate effect owns its timing): an
-            // opaque sheet of the paper the reader is about to paint, over
-            // everything the pane stacks, until the reading surface has landed
-            // on the resume point.
+            // The first-paint cover, whose timing the gate effect owns.
             <Show when=move || is_ready() && !state.reader.viewer.first_paint.get()>
                 <div
                     class=format!(
@@ -218,8 +157,7 @@ pub(crate) fn pane_content(
                 </div>
             </Show>
             <FloatingDocumentTitle state=state />
-            // Corner page counter, gated on a ready document; the indicator
-            // itself is reusable UI with no knowledge of the reader context.
+            // Corner page counter, gated on a ready document.
             <Show when=move || is_ready() && show_indicator.get()>
                 <div class=format!(
                     "pointer-events-none absolute bottom-3 right-3 {}",
@@ -261,13 +199,8 @@ pub(crate) fn pane_content(
         </div>
     };
 
-    // The independent-theme paint: while the host's appearance boundary
-    // hands this pane a look of its own, the pane root carries the look's
-    // tokens (base + tint + texture — grain stays global and inherits);
-    // with `None` the tokens are removed and the pane resolves to the
-    // window theme again. The ink dial is a global text setting, so the
-    // paint tracks it alongside the look. The root exists by the time this
-    // effect first runs (the view above built it).
+    // The independent-theme paint: the pane root carries the look's tokens
+    // while it owns one.
     let last_raster = StoredValue::new_local(None::<(String, String, String)>);
     Effect::new(move |_| {
         let look = vs.viewer.look.get();
@@ -293,10 +226,8 @@ pub(crate) fn pane_content(
                 Some(a) => app_ui::theme_paint::paint_pane_appearance(el, a, ink),
                 None => app_ui::theme_paint::clear_pane_appearance(el),
             }
-            // The PDF engine now discovers its pipeline at this pane root.
-            // Notify it only after the new scoped tokens land, and only when
-            // bake inputs changed: texture, grain, ink, and same-look seeding
-            // are CSS-only and must not redraw full PDF page surfaces.
+            // The engine discovers its pipeline here; notify only on changed
+            // bake inputs.
             if changed
                 && vs.document.format.get_untracked() == reader_core::format::Format::Pdf
                 && !app_ui::appearance::is_scrubbing()

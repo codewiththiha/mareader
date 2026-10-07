@@ -1,48 +1,28 @@
-// The paper pipeline's EYES. Every colour decision — detection, the per-page
-// palette, the scroll interpolation — lives in the `pdf-paper` crate behind
-// the Rust paper session; this module only moves pixels across the boundary:
-// * `stashPaperFrame` — the renderer parks each live raster's raw frame at
-//   the one moment the page's own paper is still unbaked; the Rust session
-//   drains it after each successful render via `takePaperFrame`.
-// * `samplePaperPage` — an offscreen render at a tiny scale for the
-//   look-ahead; resolves only after a yield, so a burst of samples never
-//   starves live renders.
-// * `setPaper` — publish (or clear) `--pdf-paper`.
-// Nothing is persisted: the palette is rebuilt from live frames every time a
-// book opens. Cost per frame: one <=96x96 downscale and one pixel readback —
-// and none while blend mode is off, the common case (the session gates the
-// stash from the Rust side, setPaperActive).
+// The paper pipeline's eyes: frames in, `--pdf-paper` out. Decisions live
+// in the `pdf-paper` crate.
 
 import type { EngineSession } from "./state";
 import type { PaperFrame } from "./types";
 import { releaseCanvas } from "./canvas";
 import { publishBakedPaper } from "./theme/paper";
 
-/** Longest edge of a frame handed to Rust. Small enough that a page render
- * for colour purposes is near-free, large enough that a paper/plain region
- * survives the downscale. */
+// Longest edge of a frame handed to Rust: a near-free render, a
+// survivable downscale.
 const SAMPLE_EDGE = 96;
 
-/** At most this many undrained stashed frames — one per recently rendered
- * canvas. The Rust session drains after every render, so this is a safety
- * valve, not a working set. */
+// At most this many undrained stashed frames; a safety valve, not a
+// working set.
 const STASH_MAX = 8;
 
-// The stash and its switch live on the session (`paperStash`,
-// `paperActive`): one pane's frames are its own paper session's answer and
-// never another's. `paperActive` defaults to true so a pure JS consumer sees
-// the old behaviour; the Rust paper session flips it with the blend switch,
-// because stashing a ≤96px downscale + readback per render for a session
-// that will ignore every frame is pure waste.
+// The stash and its switch live on the session; one pane's frames are
+// its own.
 
 /** The Rust session's word for "blend mode is on" — gates stashPaperFrame. */
 export function setPaperActive(s: EngineSession, on: boolean): void {
   s.paperActive = !!on;
 }
 
-/** One scratch canvas for every downscale, reused across renders: a live
- * render stashes on EVERY completion, and a ≤96px bitmap is not worth an
- * allocation per page flip. */
+// One scratch canvas for every downscale, reused across renders.
 let scratch: HTMLCanvasElement | null = null;
 
 /** Downscale `src` to ≤ SAMPLE_EDGE and read its pixels back. */
@@ -67,9 +47,7 @@ function downscale(src: HTMLCanvasElement): PaperFrame | null {
   return out;
 }
 
-/** Park a live raster's raw frame for the Rust session to drain. Called at
- * the renderer's raw-pixel moment, before the theme bake touches it. A no-op
- * while the session has blend mode off (see setPaperActive). */
+// Park a live raster's raw frame for the Rust session to drain.
 export function stashPaperFrame(
   s: EngineSession,
   canvasId: string,
@@ -91,9 +69,7 @@ export function stashPaperFrame(
   }
 }
 
-/** Drain the frame stashed for `canvasId` (null when there is none). The
- * stash is consumed exactly once: a frame is one render's answer, not a
- * standing fact about the canvas. */
+// Drain the frame stashed for `canvasId`; a frame is consumed once.
 export function takePaperFrame(
   s: EngineSession,
   canvasId: string,
@@ -105,19 +81,14 @@ export function takePaperFrame(
 
 // Public API (pdfEngine facade)
 
-/** Publish `hex` as `--pdf-paper` (empty string clears it). A baked
- *  backdrop cannot re-derive this colour with the compositor — its pages
- *  already carry the themed result — so the pre-themed paper rides out
- *  with it, in the same write. */
+// Publish `hex` as `--pdf-paper` (empty clears it), with the themed
+// variant riding along.
 export function setPaper(s: EngineSession, hex: string): void {
   s.setDetectedPaper(hex ? hex : null);
   publishBakedPaper(s);
 }
 
-/** Render `page` offscreen at a tiny scale and hand its frame back. The
- * promise resolves only after a macrotask yield, so a burst of samples
- * leaves live renders their turn. `{ok:true}` with no frame = the page had
- * no answer (the caller skips it). */
+// Render `page` offscreen at a tiny scale and hand its frame back.
 export async function samplePaperPage(s: EngineSession, page: number): Promise<
   | { ok: true; page: number; width: number; height: number; data: Uint8ClampedArray }
   | { ok: true }
@@ -137,9 +108,7 @@ export async function samplePaperPage(s: EngineSession, page: number): Promise<
     let frame: PaperFrame | null = null;
     try {
       await task.promise;
-      // The render canvas is already ≤ SAMPLE_EDGE on its long side — read
-      // it directly instead of paying a second drawImage through the
-      // scratch downscaler.
+      // The canvas is already ≤ SAMPLE_EDGE: read it directly.
       frame = {
         page,
         width: c.width,
@@ -152,8 +121,7 @@ export async function samplePaperPage(s: EngineSession, page: number): Promise<
       releaseCanvas(c);
       try { p.cleanup(); } catch { /* already cleaned */ }
     }
-    // Yield before answering so consecutive samples can never queue ahead
-    // of a live render that slipped in between them.
+    // Yield before answering so samples never queue ahead of a live render.
     await new Promise((resolve) => setTimeout(resolve, 0));
     if (!frame) return { ok: true };
     return { ok: true, page, width: frame.width, height: frame.height, data: frame.data };
@@ -163,9 +131,7 @@ export async function samplePaperPage(s: EngineSession, page: number): Promise<
   }
 }
 
-/** A new document: drop the previous book's undrained frames. Also the
- * teardown path — nothing here outlives the book (the Rust session holds
- * the decisions). */
+// A new document: drop the previous book's undrained frames.
 export function resetPaperForDocument(s: EngineSession): void {
   s.paperStash.clear();
 }

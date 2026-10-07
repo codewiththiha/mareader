@@ -1,6 +1,4 @@
-// Canvas backing-store helpers. A small pool + one scratch pad recycle
-// bake intermediates so theme changes do not allocate a new full-page
-// RGBA buffer on every page/thumb.
+// Canvas backing-store helpers: a small pool plus one scratch pad.
 
 import { SESSION_ATTR } from "./dom-contract";
 import type { MaybeCanvas, Raster } from "./types";
@@ -25,9 +23,7 @@ const POOL_MAX = 6;
 
 export function acquirePooledCanvas(w: number, h: number): HTMLCanvasElement {
   let c = canvasPool.pop();
-  // Guard against retaining an oversized texture: the pool caps COUNT, not
-  // pixels, and a returned 4K backing store is exactly the memory this pool
-  // exists to reuse — not to pin for a 48px thumbnail bake.
+  // Guard against retaining an oversized texture: the pool caps COUNT.
   if (c && c.width * c.height > 2 * Math.max(1, Math.floor(w)) * Math.max(1, Math.floor(h))) {
     releaseCanvas(c);
     c = undefined;
@@ -38,15 +34,7 @@ export function acquirePooledCanvas(w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
-/** A fresh offscreen canvas sized to a viewport, with its opaque 2d context.
- *  `scale` multiplies the viewport for supersampled callers; the
- *  Math.max(1, floor) guard keeps a degenerate viewport from handing pdf.js a
- *  zero-sized destination. `null` means the platform refused a context — a
- *  real failure mode once enough canvases are alive; the canvas is released
- *  before returning, so the caller has nothing to clean up. Deliberately NOT
- *  the pool: these canvases become retained rasters (a cover is encoded from
- *  one, a thumbnail keeps one as its unthemed raw), so their lifetime belongs
- *  to the caller, not to a recycler. */
+// A fresh offscreen canvas sized to a viewport, with its 2d context.
 export function offscreenFor(
   viewport: { width: number; height: number },
   scale = 1
@@ -76,15 +64,9 @@ export function releasePooledCanvas(c: HTMLCanvasElement | null | undefined): vo
 let scratch: HTMLCanvasElement | null = null;
 let scratchInUse = false;
 
-// The scratch is a single free/held tri-state, safe by construction:
-// acquireScratch hands the scratch to ONE caller (the flag flips), every
-// concurrent caller gets a POOLED canvas, and releaseScratch(owned) frees the
-// scratch only when the caller owns it — a second caller releasing its pooled
-// canvas can never free it out from under the first. Concurrent bakes do
-// happen: live pages re-bake on theme change alongside thumbnail bakes,
-// paced by the page lane's realm-wide raster cap.
+// The scratch is a free/held tri-state: one owner, others pooled.
 
-/** Borrow the shared bake scratchpad. Concurrent callers get a pooled canvas. */
+// Borrow the shared bake scratchpad; concurrent callers get a pooled one.
 export function acquireScratch(w: number, h: number): HTMLCanvasElement {
   if (scratchInUse) {
     return acquirePooledCanvas(w, h);
@@ -108,10 +90,7 @@ export function isSharedScratch(c: HTMLCanvasElement | null | undefined): boolea
   return !!c && c === scratch;
 }
 
-/** Estimated bytes the recycler holds RIGHT NOW: pooled canvases (parked
- *  at 1x1 placeholders) plus the scratch at its last bake size. Width x
- *  height x 4 RGBA — an estimate for the baseline, never a physical
- *  allocation query. */
+// Estimated bytes the recycler holds now: pooled canvases plus scratch.
 export function pooledIntermediateBytesEstimate(): number {
   let bytes = 0;
   for (const c of canvasPool) bytes += c.width * c.height * 4;
@@ -158,7 +137,7 @@ export function showRaw(dst: HTMLCanvasElement | null, raw: Raster | null, tag: 
   return shown;
 }
 
-/** Paint a baked raster and clear the raw marker in the same synchronous turn. */
+// Paint a baked raster and clear the raw marker in one turn.
 export function showBaked(
   dst: HTMLCanvasElement | null,
   baked: Raster | null,
@@ -174,19 +153,14 @@ export function el(id: string): HTMLElement | null {
   return document.getElementById(id);
 }
 
-/** Whether `node` may be painted by session `sid`: an element that names
- *  its session (`SESSION_ATTR`) belongs to that one only; one that names
- *  none is unclaimed. */
+// Whether `node` may be painted by session `sid`.
 export function ownedBy(node: Element | null, sid: number): boolean {
   if (!node) return false;
   const owner = typeof node.getAttribute === "function" ? node.getAttribute(SESSION_ATTR) : null;
   return owner === null || owner === String(sid);
 }
 
-/** The element with `id` that belongs to session `sid`. Two panes in one
- *  realm carry the same page and thumbnail ids, so the document's first
- *  match may be another session's: then the one tagged with this sid is
- *  looked up explicitly. */
+// The element with `id` that belongs to session `sid`.
 export function sessionEl(sid: number, id: string): HTMLElement | null {
   const first = el(id);
   if (!first || ownedBy(first, sid)) return first;

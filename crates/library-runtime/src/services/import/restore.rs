@@ -1,6 +1,4 @@
-//! The books a folder gives back: the restore menu's own answer, and the
-//! files a moved-out log represents — an import of those succeeds by lighting
-//! the row the log names rather than landing a neighbour beside it.
+//! The books a folder gives back, and the logs a landing spends.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -20,9 +18,7 @@ use crate::services::covers;
 use crate::state::library::ImportTask;
 use runtime_contract::time::now_ms;
 
-/// A file whose log binds itself to a living row is an import that succeeds
-/// by lighting that row up, not by landing a linked neighbour beside it.
-/// `scope` narrows the search to one folder's log.
+/// Light up the living row a log binds, instead of landing a neighbour.
 pub(super) fn take_represented(
     state: crate::context::LibraryContext,
     scope: Option<&str>,
@@ -55,9 +51,7 @@ pub(super) fn take_represented(
     represented
 }
 
-/// Not a rescan with the tombstone lifted: an explicit restore honours the
-/// folder's read-in-place-or-copy answer and ignores the format and size
-/// filters a passive scan applies.
+/// An explicit restore keeps the folder's own answer, filters aside.
 pub fn restore_deleted_book(
     state: crate::context::LibraryContext,
     folder_id: String,
@@ -121,17 +115,13 @@ pub fn restore_deleted_book(
         state.library.books.update(|books| {
             let before = books.len();
             placed_id = add_book(books, book);
-            // The library may still hold this content through another row,
-            // and `add_book` answers with that row: its marks and place stay
-            // its own, and what a removal kept waits for a landing of its
-            // own.
+            // `add_book` may answer an existing row; reclaim then waits.
             if books.len() > before {
                 super::kept::reclaim(books, &found, &placed_id);
             }
         });
 
-        // One write: a fingerprint the ledger skips with no book behind it
-        // is the one state a folder cannot recover from on its own.
+        // One write: a skip with no book behind it cannot recover.
         let stale = entry.fp;
         state.library.folders.update(|folders| {
             let Some(folder) = folder_ops::find_mut(folders, &folder_id) else {
@@ -140,9 +130,7 @@ pub fn restore_deleted_book(
             ledger::restore_deleted(folder, &stale);
             folder.mark_placed(found.fp);
             if found.fp != stale {
-                // The file changed while it was gone; a tombstone against the
-                // NEW fingerprint would suppress the restored book on the
-                // next rescan, so the landing wins over that log.
+                // The file changed: the landing wins over the old log.
                 folder.ignored.retain(|t| t.fp != found.fp);
             }
         });
@@ -170,12 +158,9 @@ pub fn restore_deleted_book(
 
 #[derive(Debug)]
 pub(super) enum CoveredFate {
-    /// A tree that covers the ground but never placed this file: the folder
-    /// places its own linked book on the walk that finds it.
+    /// A covering tree that never placed this file: the walk's own.
     Ordinary,
-    /// An explicit import spends the log the way a folder walk does: the book
-    /// comes back as the folder's own linked book, in its place, wearing the
-    /// name the shelf showed.
+    /// An explicit import spends the log, as a folder walk does.
     Restore {
         folder_id: String,
         stone: Tombstone,
@@ -186,9 +171,7 @@ pub(super) enum CoveredFate {
     },
 }
 
-/// A living row at the file's very address answers first — the walk's own
-/// order, not a preference: an explicit folder run reads the registry before
-/// the logs. One read of each collection answers the whole question.
+/// A living row at the file's address answers first, before the logs.
 pub(super) fn covered_fate(state: crate::context::LibraryContext, file: &FoundFile) -> CoveredFate {
     let folders = state.library.folders.get_untracked();
     let covering: Vec<&library_core::folder::WatchedFolder> = folders
@@ -243,10 +226,7 @@ pub(super) fn covered_fate(state: crate::context::LibraryContext, file: &FoundFi
     }
 }
 
-/// The folder's book comes back the way a folder walk brings it back — a
-/// linked book at the file's address, wearing the name the shelf showed, on
-/// the folder's own ground — and the landing spends the log. The shelf is
-/// the one the log remembers when it still stands.
+/// The folder's own book comes back and the landing spends the log.
 pub(super) fn restore_covered_file(
     state: crate::context::LibraryContext,
     file: &FoundFile,
@@ -272,16 +252,13 @@ pub(super) fn restore_covered_file(
             .or_else(|| standing(&root_rung))
             .or_else(|| root_shelf_of(shelves, folder_id))
     });
-    // The ledger's own settle: a fingerprint the ledger skips with no book
-    // behind it is the one state a folder cannot recover from alone.
+    // The ledger's own settle, as every landing does.
     settle_ledger(state, Some(folder_id), file.fp);
     let shelf_id = target.unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string());
     land_file(state, file, stone.title.clone(), &shelf_id, None)
 }
 
-/// The match is the fingerprint, not the address: a file removed from a
-/// folder, moved across the disk and dropped back into the library is the
-/// same file the log was written for.
+/// Matched by fingerprint, not address: same file, new place.
 pub(super) fn lift_stone_for(
     state: crate::context::LibraryContext,
     file: &FoundFile,

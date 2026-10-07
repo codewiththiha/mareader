@@ -1,21 +1,11 @@
-//! The wire protocol between the Tauri backend and the frontend: the chunk
-//! stream ([`AiChunk`]) and the typed error it can carry ([`AiError`]).
-//!
-//! The frontend's half is crates/ai-core/src/types.rs for the error and word
-//! payload — shared as a crate, so nothing to keep in step — and
-//! src/services/ai.rs for the chunk envelope it deserializes off the Tauri
-//! event. Keep THAT one's serde shape in sync; the test below pins this
-//! crate's half.
+//! The wire protocol between the backend and the frontend: chunks and errors.
 
 use futures::Stream;
 use std::pin::Pin;
 
 use super::schema::WordInfo;
 
-/// Machine-readable cause of an [`AiError`]. Branch on this, never on the
-/// human-facing `message`, whose wording may change between OS releases.
-/// Serializes flat — unit variants as `"snake_case"` strings — so the wire
-/// shape stays `{"kind":"model_not_ready"}` rather than nesting tags.
+/// Machine-readable cause; branch on this, never on the message wording.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(
@@ -23,7 +13,7 @@ use super::schema::WordInfo;
     allow(dead_code)
 )]
 pub enum AiErrorKind {
-    /// Apple Intelligence is switched off in System Settings; the user can fix it.
+    /// Apple Intelligence is off in System Settings; the user can fix it.
     NotEnabled,
     /// Model assets are still downloading/preparing; transient.
     ModelNotReady,
@@ -45,16 +35,12 @@ pub enum AiErrorKind {
     Other(String),
 }
 
-/// A typed error from the AI pipeline, serialized across the wire so the
-/// frontend shows the right message and a retry affordance exactly when
-/// retrying might help.
+/// A typed error serialized across the wire, so the frontend retries rightly.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct AiError {
     /// Machine-readable cause — the frontend's branch point.
     pub kind: AiErrorKind,
-    /// Human-readable detail. For [`AiErrorKind::Other`] this is written to
-    /// be shown directly (bounded in length); for the named kinds it is the
-    /// full provider/bridge text, kept for logs and devtools.
+    /// Human-readable detail; for `Other` this is shown directly.
     pub message: String,
     /// Mirrors `fm_bridge::Error::is_retryable` (plus schema-shape faults).
     pub retryable: bool,
@@ -70,13 +56,7 @@ pub enum AiChunk {
     Error(AiError),
 }
 
-/// What goes over the `ai-stream-chunk` event: a chunk plus the id of the
-/// run that produced it. The frontend can have more than one run in flight —
-/// a reader who glosses a second word before the first answer lands — and
-/// every run emits on the same event name; without the id, a late chunk from
-/// the abandoned run is indistinguishable from the live one's and gets
-/// rendered (and cached) against the wrong word. The id is chosen by the
-/// caller and echoed verbatim; the backend never interprets it.
+/// One `ai-stream-chunk`: a chunk plus the id of the run that produced it.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AiStreamEvent {
     /// The run id passed to `explain_word`.
@@ -84,8 +64,7 @@ pub struct AiStreamEvent {
     pub chunk: AiChunk,
 }
 
-/// The trait that all AI providers must implement.
-/// We use a pinned boxed stream to allow async streaming without lifetime hell.
+/// The trait every AI provider implements, over a pinned boxed stream.
 pub trait AiProvider: Send + Sync {
     fn explain_word(
         &self,
@@ -121,9 +100,7 @@ mod tests {
         assert_eq!(json["data"]["kind"]["other"], "helper crashed");
     }
 
-    /// The envelope must keep the chunk's own shape intact under `chunk` and
-    /// carry the run id beside it — the frontend gate reads `run` and then
-    /// parses `chunk` with the mirror asserted above.
+    /// The envelope keeps the chunk under `chunk`, with the run id beside it.
     #[test]
     fn the_envelope_carries_the_run_id_beside_the_chunk() {
         let event = AiStreamEvent {

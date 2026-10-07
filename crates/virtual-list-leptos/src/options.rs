@@ -17,14 +17,12 @@ pub enum Axis {
     Horizontal,
 }
 
-/// Layout shape. For [`Grid`](Self::Grid), `estimate_size` returns the
-/// uniform **row pitch** (cell height + gap below the row).
+/// Layout shape; for a grid the estimate is the row pitch.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LayoutShape {
     /// A single column of variably-sized items.
     List,
-    /// A uniform multi-column grid, windowed per row. Column count comes from
-    /// the spec (fixed, or responsive to the container width).
+    /// A uniform multi-column grid, windowed per row.
     Grid(GridSpec),
 }
 
@@ -35,8 +33,7 @@ pub enum ScrollMode {
     Instant,
     /// Browser-animated.
     Smooth,
-    /// Smooth when the target is within two viewports, instant beyond — the
-    /// glide heuristic: near page-turns animate, far jumps snap.
+    /// Smooth within two viewports, instant beyond.
     #[default]
     Auto,
 }
@@ -48,8 +45,7 @@ pub struct VirtualizerOptions {
     /// Reactive item count. Changes rebuild the layout and re-anchor the
     /// dominant item.
     pub count: Signal<usize>,
-    /// Per-item estimated size. MUST return each item's OWN estimate — never
-    /// one global fallback. For grids this returns the uniform row pitch.
+    /// Per-item estimated size; never one global fallback.
     pub estimate_size: Rc<dyn Fn(usize) -> f64>,
     /// List or grid.
     pub shape: LayoutShape,
@@ -63,8 +59,7 @@ pub struct VirtualizerOptions {
     pub padding_start: f64,
     /// Content padding after the last item.
     pub padding_end: f64,
-    /// Bump to force a layout rebuild when geometry changes without a count
-    /// change (a new row pitch, a font swap).
+    /// Bump to force a rebuild when geometry moves without a count change.
     pub epoch: Option<Signal<u64>>,
     /// Reactive extra indices that must stay mounted.
     pub pinned: Option<Signal<Option<(usize, usize)>>>,
@@ -75,27 +70,15 @@ pub struct VirtualizerOptions {
     /// Scroll-idle debounce, milliseconds. After this much quiet, a scroll
     /// burst is considered finished.
     pub scroll_end_delay_ms: u32,
-    /// How an item that leaves the window is retired. [`RetentionPolicy::Immediate`]
-    /// (the default) unmounts it in the same tick; [`RetentionPolicy::MotionGated`]
-    /// bridges a seek and nothing else; [`RetentionPolicy::Grace`] bridges a
-    /// known wall-clock operation, which is what a zoom commit is.
+    /// How an item that leaves the window is retired.
     pub retention: RetentionPolicy,
-    /// The content pipeline the render band is measured against. A strip reports
-    /// it at runtime with [`crate::Virtualizer::set_fill_profile`]; a `fill_ms`
-    /// of `0` means "not measured" and leaves engagement to the speed floor.
+    /// The content pipeline the render band is measured against.
     pub pipeline: Pipeline,
     /// Change-detection epsilon for measurements and viewport writes.
     pub measure_epsilon: f64,
     /// Max re-aims for an in-flight `scroll_to_index`.
     pub max_scroll_retries: u32,
-    /// The render band, in viewport screens around the viewport. Mounted items
-    /// inside the band carry real content ([`crate::VirtualItemState::Active`]);
-    /// mounted items outside it are [`crate::VirtualItemState::Blank`]
-    /// placeholders at the layout's own sizes. `0` disables the band — the
-    /// pages mode, where everything the window mounts renders fully. A stream
-    /// pairs a wide mount budget with a band narrower than it, so a fling
-    /// slides cheap placeholders past the reader's eyes and only the band
-    /// around the viewport ever lays out real content.
+    /// The render band in viewport screens; 0 disables it.
     pub render_screens: f64,
 }
 
@@ -138,16 +121,7 @@ impl VirtualizerOptions {
         options
     }
 
-    /// A continuous stream: a list whose mount window is wider than its
-    /// render band. Items the window mounts outside the band stay
-    /// [`crate::VirtualItemState::Blank`] placeholders — layout and scrollbar
-    /// honest, content free — until the band reaches them. The band is a
-    /// `0.75`-screen FLOOR, widened ahead of the reader by the scroll the
-    /// estimator measures, and it does not apply at all while the reader is
-    /// moving slowly enough for the reported pipeline to keep up: an ordinary
-    /// scroll renders everything it mounts. Pair it with a mount budget wider
-    /// than the floor; a budget narrower than it would mount nothing the band
-    /// does not already cover.
+    /// A continuous stream: a mount window wider than the render band.
     pub fn stream(
         count: impl Into<Signal<usize>>,
         estimate_size: impl Fn(usize) -> f64 + 'static,
@@ -205,13 +179,9 @@ impl VirtualizerOptions {
         self
     }
 
-    /// Sets [`Self::retention`]. A bridge can be raised and lowered later —
-    /// a zoom holds items across its geometry commit — with
-    /// [`Virtualizer::set_retention_policy`](crate::Virtualizer::set_retention_policy).
+    /// Sets [`Self::retention`], later adjustable at runtime.
     pub fn retention(mut self, policy: RetentionPolicy) -> Self {
         self.retention = policy;
         self
     }
 }
-
-// only the changed file was rewritten

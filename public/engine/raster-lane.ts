@@ -1,11 +1,9 @@
-// A session owns every pending permit callback. The host sees only weak wakes,
-// so its lifetime can never pin a removed pane's realm or document session.
+// A session owns every pending permit callback; the host sees weak wakes.
 import type { EngineSession } from "./state";
 import type { RasterLane, RasterPermit } from "../reader/raster-protocol";
 
 function parentLane(): { lane: RasterLane; owner: string } | null {
-  // Standalone engine smoke/cover realms have no pane parent. Their existing
-  // realm-wide two-slot gate remains the only page lane they need.
+  // Standalone smoke/cover realms have no pane parent.
   if (typeof window === "undefined" || !window.parent || window.parent === window) return null;
   const nonce = new URLSearchParams(window.location.search).get("pane");
   if (!nonce) return null;

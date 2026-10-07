@@ -25,10 +25,15 @@ bug in this document, not a note about the past. The disposal baseline
 | Virtualizer measurement store | the PANE's `DocumentState.content.metrics.css_heights` / `intrinsic` | open seeds | rewritten by the next document's seed within the pane; released with the pane's reactive owner at its dispose |
 | Reader reactive state | the PANE's `ReaderState` (`crates/reader-runtime/src/state/*`), every signal an arena node of the pane's owner | the pane's create | the pane's dispose (`owner.cleanup()`); within a live pane a new document re-seeds it (`open/enter.rs`: identity, gloss, search, position) and the replaced session releases its own content |
 | Gloss marks (in-memory) | the PANE's `GlossState.marks`; the durable copy per row id is written by the Shell (`ShellApi::save_gloss` → `storage::persist_encoded_gloss`) | open loads (a read) | `GlossState::reset` at the next open in the pane; with the pane's owner at its dispose (disk copy persists by design) |
-| Covers | `AppState.library.covers` + `services/library/covers.rs` cache (quota-capped) | import / open tail | persists across sessions by design (library state) |
+| Covers | the library runtime's `LibraryState.covers` (`RwSignal<CoverMap>`,
+`crates/library-runtime/src/state/library.rs`) + the queue and cache in
+`crates/library-runtime/src/services/covers.rs` (`COVER_CAP = 60`, pruned to
+the live rows) | import / open tail | persists for the mount by design
+(library state) |
 | Backdrop publication | `--pdf-paper` custom property on `<html>`, written only by the PRESENTING session (latest opened, or `presentSession` — a pane going Ready presents) | the session's paper state machine | a destroyed publisher clears it |
 | Theme bake worker | `public/engine/theme/bake.ts` — ONE stateless worker per realm (every buffer is transferred in and back out; it holds no document data), created lazily by the first bake | first worker bake | `releaseBakeWorker()` when the realm's last engine session is retired (none live or draining) and no bake is in flight; the next bake creates a fresh one |
-| App overlays, toasts, sidebar | `AppState.ui` | bootstrap | app lifetime (correct — shell chrome) |
+| App overlays, toasts, sidebar | the shell's `ChromeState.ui` (`app_state::UiState`:
+`sidebar`, `toast`, `window_maximized`) | bootstrap | app lifetime (correct — shell chrome) |
 
 ## Global / static / module-level owners (the retention inventory)
 
@@ -131,8 +136,8 @@ engine destroy (public/pdfEngine.ts)
 
 The baseline instruments this map — counters on the create/dispose edges, the
 `window.__mareaderDiagnostics()` snapshot, and the smoke-test assertions
-that the engine half drains. It does NOT change ownership: the single
-`AppState`, the engine session singleton, and the retained search index are
+that the engine half drains. It does NOT change ownership: the shell's
+`ChromeState`, the per-pane sessions, and the retained search index are
 exactly as they were, because they are the measured subject, not the fix.
 The runtime boundary that follows from this map is in
 `docs/memory-baseline.md`.
@@ -247,15 +252,17 @@ The route boundary is the runtime boundary
   dropped with the route, and a reset would be a second teardown path. The
   engine destroy is the long pole; everything after it is local and
   synchronous.
-- **Resources owned by the runtime** (`ReaderResources`): the virtualizer
-  registry — strips register where `use_virtualizer` returns and the
-  runtime's dispose disposes them explicitly; component cleanup stays as
-  the inner safety net. Engine document-level operations route through
-  `ReaderRuntime::pdf()` (`PdfSessionHandle`), whose guards snapshot the
-  lifecycle at capture: work ops no-op from `Disposing`, teardown ops until
-  `Disposed`. The three reader-only event arms (link navigation, page
-  selection, selection tracking) left the app-root bootstrap and are
-  installed inside the runtime's scope.
+- **Resources owned by the runtime**: the panes and their sessions, held by
+  the host's `PaneManager` (`pane/handle.rs::PaneCell` in the host's arena,
+  so a pane object outlives its own reactive owner mid-dispose). The
+  virtualizers register with the pane that owns them and the pane's dispose
+  releases them explicitly; component cleanup stays as the inner safety net.
+  Engine document-level operations go through the pane's session
+  (`pane.pdf()` / `MountedPdf`); the lifecycle gates live on
+  `RuntimeCore`/`PaneManagerCore`, which refuse work from `Disposing` on. The
+  three reader-only event arms (link navigation, page selection, selection
+  tracking) left the app-root bootstrap and are installed inside the
+  runtime's scope.
 - **Observable disposal** (§12): the runtime publishes every transition to
   the diagnostics surface (`runtime` in every snapshot: state, generation,
   activeDocument, activeRenderTasks, activePrefetch, registeredPages,
@@ -268,8 +275,10 @@ The disposal-completion assertion and the epoch stamping
 (`services::document::session`) are reused, not replaced; the baseline
 drain gates, counters and fail-closed accounting all still gate
 every close; look-ahead, virtualization and retention behavior are
-untouched. `AppState.reader` remains the signals bag (domain models stay in
-`ReaderState`); the shell's `AppState.runtime` handle is coordination-only.
+untouched. The shell's `ReaderSurface` (`app_state::ChromeState.reader`)
+stays the cross-boundary signal + command surface; the domain models stay in
+the pane's `ReaderState`, and the runtime's own state is the lifecycle and
+its generation, never a document handle.
 
 ## The reader host and its panes
 
@@ -383,5 +392,3 @@ several panes share the realm. Session-level by
 design, not pane state: the frame's boundary and parked opens
 (`frame_transport::artifact`), the live-session record (`lib.rs`), the
 diagnostics probes, and the host's `#viewer-slot` measurement.
-
-<!-- // only the changed file was rewritten -->

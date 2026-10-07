@@ -1,40 +1,8 @@
-// The compile-level runtime boundary, asserted from the dependency graph
-// itself.
-//
-// The guide's separation rule is not a grep rule ("the library must not load
-// engine scripts") — those catch imports, not graphs. The real requirement is
-// that no runtime or shared crate can pull an engine, a paginator, a parser
-// or a virtualizer it does not own, TRANSITIVELY: a `library-runtime` build
-// that reaches `pdf-engine` through three middle crates is exactly the
-// regression this gate exists to name. Only `cargo tree` answers that: it
-// walks the resolved graph, repeats included, so an engine arriving through
-// any chain still appears by name.
-//
-// One rule per (crate, forbidden set). The script shells out to
-// `cargo tree -p <crate>` and fails if any forbidden crate appears anywhere
-// in the output — direct or transitive. `--edges normal,build` on purpose:
-// dev-dependencies (host-only test tooling) do not ship in the artifact and
-// are not the boundary.
-//
-// A rule about a crate that does not exist yet fails the run, so a rename
-// cannot silently retire the gate.
-//
-// Run it wherever cargo and node both live (the CI lint lane does). Like the
-// runtime-artifacts check: plain node modules only, so no install step is
-// needed in a lane that has not run `npm ci` yet.
+// The boundary from `cargo tree`: no crate reaches an engine or parser.
 
 import { execFileSync } from "node:child_process";
 
-/** The workspace crates whose graphs carry the boundary. `forbid` names the
- *  crates that must NEVER appear in that graph, at any depth.
- */
-/** The crates only a READER owns: the PDF engine and its geometry, the
- *  reflowable paginator and its parsers, the virtualizer and its Leptos
- *  binding, the markdown renderer. Neither the Shell nor the shelf may reach
- *  any of them — the library route has to be able to run, and rest, with no
- *  reader code resident, and a graph that pulls one of these compiles reader
- *  code into the library artifact whether or not anything calls it.
- */
+/** Workspace crates carrying the boundary and the crates forbidden inside. */
 const READER_ONLY = [
   "pdf-engine",
   "pdf-core",
@@ -64,12 +32,7 @@ const RULES = [
     forbid: ["pdf-engine"],
   },
   {
-    // The shelf knows the PDF as FORMAT metadata only (`Format::Pdf`); the
-    // execution of one — engine and geometry both — belongs to the reader,
-    // and the shelf's covers are baked by the Shell's bake page. The shelf
-    // shares appearance and settings with the reader through persisted
-    // storage (`storage`, `reader-core::settings`) and nothing else, so this
-    // graph must carry no reader code at any depth.
+    // The shelf knows the PDF as format only; no reader code in its graphs.
     crate: "library-runtime",
     forbid: READER_ONLY,
   },
@@ -105,8 +68,7 @@ const RULES = [
   },
 ];
 
-/** The dependency names of one crate's graph: the crate itself first, then
- *  every resolved dependency line `cargo tree` prints. Duplicates collapse. */
+/** One crate's graph: the crate itself then every resolved dependency line. */
 function tree(crate, features = []) {
   let out;
   try {

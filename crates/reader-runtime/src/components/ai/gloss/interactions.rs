@@ -1,9 +1,4 @@
-//! Window-level interactions: Escape handling, outside-press dismissal,
-//! origin-exit collapse, the zoom guard, and the outro's settle-unmount.
-//! Each is a small self-contained hook so the popover stays wiring + view;
-//! the generic part of dismissal (outside press, topmost Escape, exclusion
-//! selectors) is the primitive `use_dismiss`, and only the two-step gloss
-//! semantics (first Escape collapses, second gives up) stay here.
+//! Window-level gloss interactions: Escape, outside press, origin exit.
 
 use ai_core::gloss::{GlossBox, boxes_close};
 use leptos::prelude::*;
@@ -15,13 +10,10 @@ use crate::components::ai::gloss::phase::GlossPhase;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_viewport::viewport_size;
 
-/// Escape collapses the expanded card; a second Escape on the bare chip gives
-/// up on the gloss entirely. Outside presses collapse too (only while
-/// expanded — a bare chip is reachable by design).
+/// Escape collapses the card; a second gives up on the gloss.
 pub fn use_dismiss_interactions(ctrl: GlossController) {
-    // Two-step Escape: the gloss owns its own meaning (collapse → reset), so
-    // the primitive is used for the outside-press half and the Escape half
-    // stays here as domain policy.
+    // Two-step Escape is domain policy; the primitive handles the press
+    // half.
     Effect::new(move |_| {
         if !ctrl.geometry.surface_visible.get() {
             return;
@@ -32,8 +24,7 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
                 return;
             }
             match ctrl.geometry.gphase.get_untracked() {
-                // First Escape closes the card (with the outro); a second one
-                // on the bare chip gives up on the gloss entirely.
+                // The first Escape closes the card with its outro.
                 GlossPhase::Expanded => ctrl.commands.collapse_to_mark.run(()),
                 _ => ctrl.commands.reset.run(()),
             }
@@ -41,12 +32,7 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
         on_cleanup(move || key.remove());
     });
 
-    // A press inside the surface is the card's own interaction; anywhere else
-    // collapses an expanded card (compact chips stay put). A press on the
-    // mark stroke is the SAME request as the card (it is what reopens it), so
-    // it is excluded too: without this it fired the outside-collapse on
-    // pointerdown and then REOPENED on the follow-up click — the card would
-    // fold and immediately pop back rather than toggle closed.
+    // A press inside is the card's; the mark stroke counts as inside.
     use_dismiss(
         ctrl.geometry.surface_visible.into(),
         ctrl.commands.collapse_to_mark,
@@ -61,22 +47,13 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
     );
 }
 
-/// Whether the origin has left the viewport entirely — fully above the top
-/// or fully below the bottom, identically in both directions. A `None` box
-/// (the mark's host unmounted) counts as gone no matter how the card opened.
+/// Whether the origin left the viewport entirely.
 fn origin_gone(origin: Option<GlossBox>, vh: f64) -> bool {
     origin_outside_band(origin, vh)
 }
 
-/// Scrolling does not kill the card while any part of its mark is on screen:
-/// the surface tracks its anchor until the origin fully leaves the viewport
-/// (either edge) or its host is virtualized away — then it collapses back
-/// onto the mark. Page flips need no rule of their own: in the paginated
-/// modes a flip unmounts the host (origin `None`), and in the continuous
-/// ones a boundary crossing is just scroll — the watcher re-resolves on the
-/// page signal and this rule stays the single source of exits. A collapsed
-/// card only reopens on an explicit click, so a mark riding the viewport
-/// edge cannot flicker.
+/// Scrolling does not kill the card while part of its mark is on
+/// screen.
 pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
     Effect::new(move |_| {
         if !ctrl.geometry.surface_visible.get()
@@ -91,10 +68,8 @@ pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
     });
 }
 
-/// The outro's hand-off: once the collapsing surface has morphed down onto
-/// the anchor, unmount it and let the in-page stroke take over. Doing this on
-/// SETTLE rather than on a timer is what keeps the two from being visible at
-/// once (the stroke is drawn on the same exact-fit box the surface lands on).
+/// The outro's hand-off: unmount on SETTLE, so stroke and surface
+/// never both show.
 pub fn use_settle_unmount(
     ctrl: GlossController,
     anchor: Signal<Option<GlossBox>>,
@@ -106,8 +81,7 @@ pub fn use_settle_unmount(
             return;
         }
         let Some(a) = anchor.get() else {
-            // The mark's page unmounted mid-morph: there is nothing left to
-            // land on, so drop the surface now.
+            // The page unmounted mid-morph: nothing left to land on.
             ctrl.geometry.surface_visible.set(false);
             return;
         };
@@ -117,15 +91,11 @@ pub fn use_settle_unmount(
     });
 }
 
-/// A zoom re-renders the textLayer; the mark survives it, but the open card
-/// would slide under the reader's hands mid-gesture — close it and leave the
-/// highlight behind.
+/// A zoom re-renders the textLayer; close the card, keep the
+/// highlight.
 pub fn use_zoom_reset(state: crate::context::ReaderContext, ctrl: GlossController) {
     Effect::new(move |_| {
-        // TRACKED: this must re-run when a transaction opens. The untracked
-        // form left the effect with no reactive dependency at all — it ran
-        // once at mount, found no zoom, and never fired again, so the card
-        // never actually closed on a zoom.
+        // TRACKED: the untracked form never fired again after mount.
         if !state.reader.viewer.zooming().get() {
             return;
         }

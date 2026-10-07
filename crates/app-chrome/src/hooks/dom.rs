@@ -1,10 +1,4 @@
-//! Small DOM lookups shared by the effects and views. `#page-list` (the
-//! continuous-scroll container) used to be resolved by an inlined
-//! `window -> document -> get_element_by_id` chain in nine places across five
-//! modules, each free to misspell the id; these helpers make the id a single
-//! constant and the lookup a single expression. Ids that anchor app chrome
-//! (toolbar clusters, viewer slot) are named constants here too, so a rename
-//! is one edit rather than a misspelling in nine.
+//! Small DOM lookups shared by the effects and views.
 
 /// Id of the continuous viewer's scroll container.
 pub const PAGE_LIST_ID: &str = "page-list";
@@ -24,22 +18,13 @@ pub const TOOLBAR_LEADING_ID: &str = "toolbar-leading";
 
 pub const TOOLBAR_TRAILING_ID: &str = "toolbar-trailing";
 
-/// Id of the center slot's content (the centered title). The shell reads its
-/// natural width to decide between exact-row-center and free-stretch
-/// placement, and observes it to re-measure when the name changes.
+/// Id of the center slot's content, the centered title.
 pub const TOOLBAR_CENTER_TITLE_ID: &str = "toolbar-center-title";
 
-/// Id of the slot that frames the page column (the floating document title
-/// budgets its width against this element's rect).
+/// Id of the slot that frames the page column.
 pub const VIEWER_SLOT_ID: &str = "viewer-slot";
 
-/// The client rects a `Range` covers, as `(left, top, right, bottom)` tuples
-/// in viewport CSS px. One range can report several rects (a span that wraps
-/// a line or crosses inline boxes) and everything painting over text needs
-/// all of them: a gloss stroke unions them, a search hit paints one box per
-/// rect. Both format families call this, so it lives with the shared lookups.
-/// An empty list (a range the browser will not give rects for) is a normal
-/// answer: "nothing to place".
+/// The client rects a `Range` covers, as edge tuples.
 pub fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
     let Some(rects) = range.get_client_rects() else {
         return Vec::new();
@@ -67,24 +52,13 @@ pub fn h_page_list() -> Option<web_sys::Element> {
     by_id(H_PAGE_LIST_ID)
 }
 
-/// Scroll `el`'s scroll parent so `el` is comfortably visible, but ONLY if it
-/// is currently out of view.
-///
-/// The reader has two jobs here: following along as the document scrolls, and
-/// landing somewhere sensible when the panel opens. Unconditionally centring
-/// on every page change would yank the list under the cursor mid-read;
-/// scrolling only when the target is off screen keeps the list still during
-/// normal browsing and still guarantees the active row is reachable.
-/// `margin` keeps the row off the very edge so there is visible context
-/// above/below it.
+/// Scroll `el`'s parent so `el` is visible, only if it is out of view.
 pub fn reveal_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element, margin: f64) {
     let parent_h = parent.client_height() as f64;
     if parent_h <= 0.0 {
         return;
     }
-    // offset_top is relative to the offset parent, which is not necessarily
-    // the scroller: measure through bounding rects instead — they share a
-    // viewport origin and always subtract correctly.
+    // Measure through bounding rects: they share a viewport origin.
     let er = el.get_bounding_client_rect();
     let pr = parent.get_bounding_client_rect();
     let scroll_top = parent.scroll_top() as f64;
@@ -112,11 +86,7 @@ pub fn reveal_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element,
     }
 }
 
-/// Centre `el` within its scroll `parent`, unconditionally — the deliberate
-/// "take me to where I am" gesture (re-clicking the active sidebar tab),
-/// where the reader explicitly asked to be moved and the gentler
-/// `reveal_in_scroll_parent` would do nothing if the row were barely on
-/// screen already.
+/// Centre `el` within its scroll parent, unconditionally.
 pub fn center_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element) {
     let parent_h = parent.client_height() as f64;
     if parent_h <= 0.0 {

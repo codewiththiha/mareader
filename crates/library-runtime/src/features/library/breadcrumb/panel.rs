@@ -1,6 +1,4 @@
-//! The ellipsis and its panel: the affordance standing for the levels the
-//! bar has folded, the hover intent that opens it one beat behind the
-//! pointer, and the chain inside packed into rows the window's width decides.
+//! The ellipsis and its panel: the folded levels, the hover intent, the rows.
 
 use std::time::Duration;
 
@@ -17,12 +15,10 @@ use app_ui::components::primitives::floating::menu_popover::MenuPopover;
 use super::fold::{pack_rows, row_widths, split_by_counts};
 use super::{Crumb, register_crumb};
 
-/// Deliberately not in the drag's registry: it stands for no level, and a
-/// measurement target would be a way to file books onto a ruler.
+/// Not in the drag's registry: a measurement target is not a drop.
 const ELIDED_MAX_DOM_ID: &str = "crumb-elided-max";
 
-/// The floor keeps a sliver of a window from producing a budget no crumb can
-/// be laid into; a crumb wider than the full budget gets a row to itself.
+/// The floor keeps a sliver of a window from producing no budget at all.
 fn elided_budget_px() -> f64 {
     web_sys::window()
         .and_then(|w| w.inner_width().ok())
@@ -31,15 +27,12 @@ fn elided_budget_px() -> f64 {
         .unwrap_or(0.0)
 }
 
-/// Deliberately not a `crumb-` id: sharing the crumbs' scheme would let a
-/// reader of the registry mistake it for one.
+/// Not a `crumb-` id: the registry would mistake it for a crumb.
 const ELLIPSIS_DOM_ID: &str = "crumb-elided";
 
 const MENU_CLOSE_GRACE_MS: u64 = 220;
 
-/// The close is a beat behind the leave, owned by an effect on `over` rather
-/// than a parked timer: exactly one timer, cancelled by the same thing that
-/// arms it.
+/// A beat behind the leave, owned by an effect on `over`: one timer.
 #[derive(Clone, Copy)]
 pub(super) struct HoverIntent {
     open: RwSignal<bool>,
@@ -59,9 +52,8 @@ impl HoverIntent {
             let open = this.open;
             let Ok(close) = set_timeout_with_handle(
                 move || {
-                    // A grace timer can outlive the panel's owner (the bar
-                    // closed mid-hover): a disposed signal means the menu went
-                    // with it, so the close is already done.
+                    // A grace timer can outlive the panel: a disposed
+                    // signal means the menu went too.
                     let _ = open.try_set(false);
                 },
                 Duration::from_millis(MENU_CLOSE_GRACE_MS),
@@ -88,8 +80,7 @@ impl HoverIntent {
     }
 }
 
-/// Not an arrow on a crumb (see the module docs for the confusion an arrow
-/// makes). A button, so a keyboard reaches the panel the way a pointer does.
+/// A button, not an arrow: a keyboard reaches the panel too.
 #[component]
 pub(super) fn EllipsisCrumb(
     state: crate::context::LibraryContext,
@@ -106,14 +97,11 @@ pub(super) fn EllipsisCrumb(
     let live = ctrl.live();
     let tooltip = format!("Show the {} levels above", elided.len());
     let aria = tooltip.clone();
-    // A component's children are an `Fn`; a children closure that owned the
-    // list would be an `FnOnce` after building one crumb.
+    // Children are an `Fn`; an owned list would be an `FnOnce`.
     let folded: StoredValue<Vec<Crumb>, LocalStorage> = StoredValue::new_local(elided);
     let rows: RwSignal<Vec<Vec<Crumb>>> = RwSignal::new(vec![folded.get_value()]);
 
-    // The panel's width is measured rather than picked, and its chain is
-    // packed rather than wrapped: rows render as surfaces of their own, so a
-    // short second row is a short rectangle, not a wide empty one.
+    // The width is measured, the chain packed: rows are surfaces of their own.
     let panel_width: RwSignal<f64> = RwSignal::new(0.0);
     let measure = move || {
         let Some(ruler) = by_id(ELIDED_MAX_DOM_ID) else {
@@ -143,9 +131,7 @@ pub(super) fn EllipsisCrumb(
             rows.set(split_by_counts(folded.get_value(), &counts));
         }
     };
-    // Measured once the panel and its ruler have mounted, re-measured on
-    // every resize while open: the width only moves when the chain or the
-    // window does.
+    // Measured on mount and on resize: the width moves with chain or window.
     Effect::new(move |_| {
         if !intent.open.get() {
             return;
@@ -155,9 +141,7 @@ pub(super) fn EllipsisCrumb(
         on_cleanup(move || handle.remove());
     });
 
-    // A drag cannot raise a `mouseenter` (the pressed card holds the pointer
-    // capture), so while a drag is live the panel opens from the session's
-    // hot target.
+    // A drag raises no `mouseenter`, so the live session opens the panel.
     Effect::new(move |_| {
         if live.get() && ctrl.over_ellipsis() {
             intent.enter();
@@ -190,9 +174,8 @@ pub(super) fn EllipsisCrumb(
             >
                 <Icon name=IconName::More size=14 />
             </button>
-            // The chain is built inside the popover's reactive child: each
-            // crumb registers a drop target that must leave the registry when
-            // the crumb unmounts.
+            // Each crumb registers a drop target that must
+            // leave the registry on unmount.
             <MenuPopover
                 open=intent.open
                 anchor=anchor
@@ -200,8 +183,7 @@ pub(super) fn EllipsisCrumb(
                 coordinate_space="toolbar-row"
                 class="lib-elided-panel max-h-80 overflow-y-auto".to_string()
             >
-                // The ruler wears the crumbs' own metrics; the pack reads
-                // its boxes, one width per crumb.
+                // The ruler wears the crumbs' metrics; one width per crumb.
                 <div id=ELIDED_MAX_DOM_ID class="lib-elided-probe" aria-hidden="true">
                     {move || {
                         let levels = folded.get_value();
@@ -269,9 +251,7 @@ pub(super) fn EllipsisCrumb(
     }
 }
 
-/// Drawn the way the bar draws it — name, chevron, name — so a reader who
-/// understands the breadcrumb already understands the panel, three levels
-/// wide where a list of rows would be three levels tall.
+/// Drawn as the bar draws it, so the panel needs no second reading.
 #[component]
 fn ElidedCrumb(
     state: crate::context::LibraryContext,

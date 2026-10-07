@@ -1,7 +1,4 @@
-//! The dock's cards: the run id every progress beat echoes, and the lifecycle
-//! of the card that reports the run. Written from the import modules, not the
-//! dock: a view that owned the lifecycle of what it renders would have to
-//! outlive the import it reports on.
+//! The dock's cards: the run id and the card's lifecycle.
 
 use leptos::prelude::*;
 
@@ -9,8 +6,7 @@ use crate::services::toast;
 use crate::state::library::ImportTask;
 use runtime_contract::time::now_ms;
 
-/// Minted by [`library_core::id`]'s own counter, like every other library id:
-/// two runs minted in one millisecond never share a card.
+/// Minted by the library's own counter, like every other id.
 pub(super) fn task_id() -> String {
     library_core::id::next_task_id(now_ms())
 }
@@ -19,10 +15,7 @@ pub(super) fn push_task(state: crate::context::LibraryContext, task: ImportTask)
     state.library.tasks.update(|tasks| tasks.push(task));
 }
 
-/// Mint the id and put the card up for a run that will report its own end.
-/// Single-book copies (a relink, a duplicate, a replace's conversion) go
-/// through here: a beat for an id the dock does not hold is dropped, and the
-/// shell's emissions would be wasted IPC telling nobody anything.
+/// Mint the id and put the card up for a run that ends itself.
 pub(crate) fn begin_task(
     state: crate::context::LibraryContext,
     label: impl Into<String>,
@@ -53,8 +46,7 @@ pub fn dismiss_task(state: crate::context::LibraryContext, id: &str) {
         .update(|tasks| tasks.retain(|t| t.id != id));
 }
 
-/// One spelling of "finished" for the runs that end with a count — a folder
-/// walk, a loose-file drop and a restore.
+/// One spelling of "finished" for runs that end with a count.
 pub(crate) fn finish_task(
     state: crate::context::LibraryContext,
     task: &str,
@@ -75,12 +67,7 @@ pub(crate) fn fail_task(state: crate::context::LibraryContext, task: &str, messa
     fail(state, task, message, FailMode::Toast);
 }
 
-/// One arithmetic for the two counts a run reports — the expected total the
-/// card opens with and the finish's — so the card cannot end past 100%.
-///
-/// `represented` rows (a log named them as already held) count at the finish,
-/// where the reader is told what the run lit up, and not in the expected
-/// total, where they would promise copies that were never going to be made.
+/// The expected total and the finish's, so the card cannot end past 100%.
 pub(super) fn run_total(landed: u32, reconciled: usize, represented: usize) -> u32 {
     landed + (reconciled + represented) as u32
 }
@@ -88,8 +75,7 @@ pub(super) fn run_total(landed: u32, reconciled: usize, represented: usize) -> u
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum FailMode {
     Toast,
-    /// A folder that cannot be read is not news the reader asked for, and it
-    /// fails again on the next focus.
+    /// A folder that cannot be read fails again on the next focus.
     ConsoleOnly,
 }
 

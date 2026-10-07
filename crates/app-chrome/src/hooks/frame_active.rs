@@ -1,18 +1,5 @@
-//! Is THIS runtime frame the one on screen?
-//!
-//! The Shell keeps up to three runtime frames alive at once — the active one,
-//! an incoming one booting behind it, and a retiring one being disposed — and
-//! marks each `<iframe>` with `data-mareader-slot`. Every frame mounts its own
-//! chrome, so anything that drives a WINDOW-level resource (the native macOS
-//! traffic lights are one pair per window, not per document) must only be
-//! driven by the active frame. Otherwise a hidden shelf with a pinned bar
-//! re-lights the buttons over a reader whose bar is hidden, or a hidden
-//! reader's hover-out hides them under a shelf whose bar is showing.
-//!
-//! Same-origin frames can read `window.frameElement`; the observer watches
-//! that element's slot attribute so a promotion flips the signal in the
-//! frame that was just revealed. A top-level document (standalone artifact,
-//! the unified dev build) has no frame element and is always active.
+//! Is THIS runtime frame the one on screen? Window-level resources read
+//! it.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -26,16 +13,12 @@ fn frame_element() -> Option<web_sys::Element> {
 }
 
 fn slot_is_active(el: &web_sys::Element) -> bool {
-    // No attribute yet means a frame the Shell has not classified: the frame
-    // element is only created as `incoming` and promoted from there, so an
-    // unclassified frame is one the Shell has not shown yet.
+    // No attribute yet means a frame the Shell has not classified.
     el.get_attribute(SLOT_ATTR)
         .is_none_or(|slot| slot == "active")
 }
 
-/// Whether this document is the frame on screen right now, as a reactive
-/// signal that flips when the Shell promotes or retires this frame. Owned by
-/// the calling component; the observer disconnects on cleanup.
+/// Whether this document is the frame on screen right now.
 pub fn use_frame_active() -> Signal<bool> {
     let Some(el) = frame_element() else {
         return Signal::derive(|| true);

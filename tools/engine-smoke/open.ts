@@ -4,15 +4,11 @@ export async function run(): Promise<void> {
   const opened = await openDoc("/fake/book.pdf");
   if (!opened.ok) throw new Error("open failed: " + JSON.stringify(opened));
   console.log("open ok:", opened.numPages, "pages");
-  // The open payload carries the document's PERMANENT content fingerprint —
-  // the identity the Rust search index caches under, so reopening the same
-  // bytes skips the full text re-extraction.
+  // The open payload carries the fingerprint the search index caches under.
   if (opened.fingerprint !== "smoke-permanent") {
     throw new Error("open must report the permanent fingerprint, got " + opened.fingerprint);
   }
-  // The chapter tree is no longer open's to resolve — it arrives on its own
-  // call once the reader is up (flattening it is a worker round trip per
-  // destination, which used to hold every open hostage).
+  // The chapter tree arrives on its own call once the reader is up.
   if (opened.outline.length !== 0) {
     throw new Error("open must not resolve the outline, got " + opened.outline.length);
   }
@@ -22,9 +18,7 @@ export async function run(): Promise<void> {
   }
   console.log("resolveOutline ok");
 
-  // The OS file handoff: not an engine surface anymore — the shell and the
-  // reached-for runtimes invoke the queued-path command straight through
-  // __TAURI__. The smoke still proves the command's queue/dequeue contract.
+  // The OS handoff: the shell invokes the queued-path command directly.
   const invoke = (cmd: string): Promise<unknown> => fakeWindow.__TAURI__!.core.invoke(cmd);
   const none = await invoke("take_pending_file");
   if (none !== null) throw new Error("take_pending_file should resolve null, got " + none);

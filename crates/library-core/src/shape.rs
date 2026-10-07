@@ -1,9 +1,4 @@
-//! The shelf shape as a tree, not a bool.
-//!
-//! A single root-level flag could not answer for a subtree: re-importing one
-//! nested folder asks for a shelf per folder from that folder down while the
-//! rest of the tree stays on its root rung. The tree stores a per-rung answer
-//! and lets every other rung inherit the nearest one above it.
+//! The shelf shape as a tree: a per-rung answer, inherited downward.
 
 use std::collections::BTreeMap;
 
@@ -11,15 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::folder::key_chain;
 
-/// Per-rung shelf-shape answers for one watched folder's tree, keyed by rung
-/// path like [`crate::folder::WatchedFolder::shelf_map`]. Only explicit answers
-/// are stored; an absent rung inherits the nearest ancestor that answered, and
-/// [`crate::folder::FolderOpts::groups`] when none did.
+/// Per-rung shelf-shape answers for one folder's tree.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShapeTree {
-    /// Rung path to the answer for that rung and its subtree. Inheriting rungs
-    /// store nothing, and blobs from before the shape was a tree have no key.
+    /// Rung path to its answer; inheriting rungs store nothing.
     #[serde(default)]
     overrides: BTreeMap<String, bool>,
 }
@@ -29,10 +20,7 @@ impl ShapeTree {
         Self::default()
     }
 
-    /// The deepest answer on `key`'s chain: `Some(true)` cuts a shelf per
-    /// folder from this rung down, `Some(false)` keeps the subtree on one
-    /// shelf, `None` when the whole chain inherits. A subfolder answered
-    /// against a one-shelf root wins for its own subtree.
+    /// The deepest answer on `key`'s chain, `None` when the chain inherits.
     pub fn at(&self, key: &str) -> Option<bool> {
         key_chain(key)
             .into_iter()
@@ -40,22 +28,18 @@ impl ShapeTree {
             .find_map(|rung| self.overrides.get(rung).copied())
     }
 
-    /// Record the answer one rung gives for itself and its subtree, until a
-    /// deeper rung answers for itself.
+    /// Record one rung's answer, until a deeper rung answers.
     pub fn set(&mut self, key: &str, grouped: bool) {
         self.overrides.insert(key.to_string(), grouped);
     }
 
-    /// Drop every answer inside `zone` (same zone arithmetic as
-    /// [`crate::folder::key_in_zone`]). Answers above the zone stand, so the
-    /// subtree falls back to inheriting them.
+    /// Drop every answer inside `zone`.
     pub fn prune_zone(&mut self, zone: &str) {
         self.overrides
             .retain(|key, _| !crate::folder::key_in_zone(key, zone));
     }
 
-    /// Whether the tree stores no answer of its own, so every rung takes the
-    /// answer its folder was imported with.
+    /// Whether the tree stores no answer of its own.
     pub fn is_empty(&self) -> bool {
         self.overrides.is_empty()
     }

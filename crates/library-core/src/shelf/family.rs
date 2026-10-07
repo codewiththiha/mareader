@@ -1,12 +1,8 @@
-//! The shelf-and-folder family rules: which in-place tree a directory belongs
-//! to, and which shelf moves are departures from their folder's ground rather
-//! than plain re-hangs.
+//! Which in-place tree a directory belongs to, and which moves depart.
 
 use super::{Shelf, ShelfKind, ancestors, find};
 
-/// The family a ground directory belongs to but is not standing in —
-/// [`crate::governance::Governance::family`] with the folder and shelf lists
-/// passed in.
+/// The family a ground belongs to but is not standing in.
 pub fn family_for(
     folders: &[crate::folder::WatchedFolder],
     shelves: &[Shelf],
@@ -15,13 +11,7 @@ pub fn family_for(
     crate::governance::Governance::new(folders, shelves).family(ground)
 }
 
-/// Whether moving this shelf under `parent` is a departure that owes a copy:
-/// a shelf cut from a read-at-place folder, leaving the seat the folder's
-/// ledger names for its rung.
-///
-/// Each negative is the book departure's rule one level up: a shelf that is
-/// nobody's rung is the reader's own, a copying folder's shelf is the
-/// library's own already, and a re-order on the current seat moves nothing.
+/// Whether a shelf move is a departure that owes a copy.
 pub fn departs_on_move(
     shelves: &[Shelf],
     folders: &[crate::folder::WatchedFolder],
@@ -49,10 +39,7 @@ pub fn departs_on_move(
     seat.map(String::as_str) != parent
 }
 
-/// Split a batch of requested shelf moves into the half that lands as it is
-/// and the half that owes the departure's ask, in the order the gesture gave.
-/// A departing shelf nested inside another departing shelf rides along rather
-/// than asking twice.
+/// Split shelf moves into the half that lands and the half that asks.
 pub fn departing_moves(
     shelves: &[Shelf],
     folders: &[crate::folder::WatchedFolder],
@@ -68,8 +55,7 @@ pub fn departing_moves(
             clean.push(id.clone());
         }
     }
-    // Riders collected before the retain: filtering against `departing`
-    // while the retain holds it would be two borrows of one list.
+    // Riders collected before the retain.
     let riders: Vec<String> = departing
         .iter()
         .filter(|id| {

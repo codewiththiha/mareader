@@ -1,7 +1,4 @@
-//! Floating action bar: a fixed pill (bottom-right by default) for bulk
-//! selection workflows — count readout, contextual actions, done/dismiss.
-//! The gloss selection bar is its first consumer; annotation selection,
-//! library item selection and future bulk ops can reuse it.
+//! Floating action bar: a fixed pill for bulk selection workflows.
 
 use leptos::prelude::*;
 
@@ -25,12 +22,8 @@ pub fn ActionBar(
         Some(c) => format!("{base} {c}"),
         None => base,
     };
-    // Static class + label for the bar's lifetime, parked in StoredValues —
-    // Copy handles to plain scoped cells. `Show`'s children closure must be
-    // an `Fn` and the attribute closures are moved into the element by
-    // value, so the captured handles have to be Copy; signals would compile
-    // too but would pretend static strings are reactive. Only visibility is
-    // actually reactive here.
+    // Static class and label, parked in StoredValues; only visibility is
+    // reactive.
     let pill_class: StoredValue<String, LocalStorage> = StoredValue::new_local(pill_class);
     let aria_label: StoredValue<Option<String>, LocalStorage> = StoredValue::new_local(aria_label);
 

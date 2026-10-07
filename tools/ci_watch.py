@@ -279,7 +279,7 @@ def fetch_failed_logs(repo: str, token: str, run: Run) -> str:
         zf = zipfile.ZipFile(buf)
     except zipfile.BadZipFile:
         return "(log archive was not a zip; logs may have expired)"
-    # Archive entries replace "/" in a job name: "Rust / format" -> "Rust _ format".
+    # Archive names replace "/" with "_": "Rust / format" -> "Rust _ format".
     for item in sorted(zf.namelist()):
         if item.endswith("/"):
             continue
@@ -383,7 +383,7 @@ def git_dir() -> str:
     try:
         out = subprocess.run(["git", "rev-parse", "--absolute-git-dir"],
                              capture_output=True, text=True, check=True)
-    except Exception:  # noqa: BLE001 - not a repository, or git is missing
+    except Exception:  # noqa: BLE001 - no repo, or git is missing
         return ""
     return out.stdout.strip()
 
@@ -469,7 +469,7 @@ def tail(lines: int) -> int:
     text = open(path, errors="replace").read().splitlines()
     for line in text[-lines:]:
         print(line)
-    # Only the newest run's verdict counts: the log accumulates across watchers.
+    # Only the newest run counts: the log spans watchers.
     start = max(i for i in range(len(text)) if text[i].startswith("== watching"))
     for line in reversed(text[start:]):
         if line.startswith("VERDICT GREEN"):
@@ -631,6 +631,3 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
-
-
-# only the changed file was rewritten

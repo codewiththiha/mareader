@@ -1,12 +1,4 @@
-//! The AI's appearance settings: the gloss highlight palette (with the
-//! native colour input on its Custom swatch), the highlight's opacity and the
-//! word card's density.
-//!
-//! These are the AI feature's knobs, so they live with the feature and the
-//! settings modal mounts them: `settings::theme::ThemeTab` composes
-//! [`AiAppearanceSection`] the way it composes any other section. What is NOT
-//! here is the reader's own colour — tint, textures and theme presets belong to
-//! the title bar's palette menu, and the tab says so at its foot.
+//! The gloss palette, its opacity and the word card's density.
 
 use leptos::prelude::*;
 
@@ -40,15 +32,11 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
                                     base.to_string()
                                 }
                             };
-                            // The native picker, the control the split-pane
-                            // outline row already uses: a transparent
-                            // `<input type="color">` over the swatch, so the
-                            // OS's own chooser opens on click.
+                            // Transparent <input type="color"> over the swatch.
                             view! {
                                 <label
                                     title="Custom highlighter colour"
                                     aria-label="Custom highlighter colour"
-                                    data-gloss-color="custom"
                                     class="relative flex cursor-pointer flex-col items-center gap-1.5 rounded-lg py-1 \
                                            focus-within:outline-none focus-within:ring-2 focus-within:ring-accent"
                                 >
@@ -70,7 +58,6 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
                                     <input
                                         type="color"
                                         aria-label="Choose custom highlighter colour"
-                                        data-gloss-color-input="custom"
                                         prop:value=move || s.with(|st| st.gloss_custom.clone())
                                         on:click=move |_| s.update(|st| st.gloss_color = GlossColor::Custom)
                                         on:input=move |ev| {
@@ -165,5 +152,3 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
         </div>
     }
 }
-
-// only the changed file was rewritten

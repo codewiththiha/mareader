@@ -1,27 +1,11 @@
-//! Lifting a pane: a press-and-hold on a pane's empty space picks the pane
-//! up, and dropping it on another pane docks it beside that pane's nearest
-//! edge. While it is held the workspace is laid out as if it were closed
-//! (`ReaderHost::layout`), so its neighbours fill its space and every target
-//! previews exactly the box the drop will give it.
-//!
-//! Pure data, like the document drag: the lifted pane, where the pointer is
-//! in slot coordinates, and the target that pointer resolves to. No DOM, no
-//! runtime. A drop is carried out by the host's layout-only commands
-//! (`ReaderHost::swap_panes` / `ReaderHost::dock_pane`), so a pane never
-//! loses its session by being moved.
+//! Lifting a pane: press-and-hold picks it up, a drop docks it
+//! beside a target edge.
 
 use super::drop_target::Edge;
 use super::model::{PaneBounds, PaneId};
-use super::tree::{EVEN, Side, TreeLayout, split_fits, split_rects};
+use super::tree::{TreeLayout, split_fits};
 
-/// How long a still press on a pane's empty space must hold before the pane
-/// lifts. Long enough that a reader resting the pointer while panning never
-/// lifts a pane by accident, short enough to feel deliberate rather than
-/// stuck; the hold ring shows it filling. (Five seconds was the first guess
-/// and read as stuck; two and a half still felt like waiting, so the gesture
-/// settles at one — the ring's fill is what tells the reader it is coming.
-/// The browser suite encodes this number — `tests/browser/pane-runtimes.mjs`
-/// — so a change here is a product change, not a tweak.)
+/// The hold before a pane lifts (ms); the browser suite encodes it.
 pub const HOLD_TO_LIFT_MS: u64 = 1000;
 
 /// Where a lifted pane would go if released now.
@@ -44,14 +28,7 @@ impl LiftTarget {
     pub fn predicted_rect(self, rect: PaneBounds) -> PaneBounds {
         match self {
             LiftTarget::Swap(_) => rect,
-            LiftTarget::Dock(_, edge) => {
-                let (axis, side) = edge.placement();
-                let (first, second) = split_rects(rect, axis, EVEN);
-                match side {
-                    Side::Before => first,
-                    Side::After => second,
-                }
-            }
+            LiftTarget::Dock(_, edge) => edge.half(rect),
         }
     }
 
@@ -78,8 +55,7 @@ impl LiftTarget {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Lift {
     pub pane: PaneId,
-    /// The pointer where the pane lifted, in slot coordinates: the lifted
-    /// card is drawn relative to it.
+    /// The pointer where the pane lifted, in slot coordinates.
     pub origin: (f64, f64),
     /// The pointer now, in slot coordinates.
     pub at: (f64, f64),
@@ -104,15 +80,13 @@ impl Lift {
     }
 }
 
-/// The target under slot point `at` for lifted pane `lifted`, resolved
-/// against the layout WITHOUT it: nothing outside every pane; otherwise a
-/// dock beside the target's nearest edge that it has room to be halved at.
-/// A pane too small to halve either way is traded places with instead.
+/// The target under slot point `at`, against the layout WITHOUT the
+/// lifted pane.
 pub fn resolve(lifted: PaneId, at: (f64, f64), layout: &TreeLayout) -> Option<LiftTarget> {
     let (pane, rect) = layout
         .panes
         .iter()
-        .find(|(_, rect)| contains(*rect, at))
+        .find(|(_, rect)| rect.contains(at))
         .copied()?;
     if pane == lifted {
         return None;
@@ -135,13 +109,9 @@ pub fn resolve(lifted: PaneId, at: (f64, f64), layout: &TreeLayout) -> Option<Li
     })
 }
 
-fn contains(rect: PaneBounds, at: (f64, f64)) -> bool {
-    at.0 >= rect.x && at.0 < rect.x + rect.width && at.1 >= rect.y && at.1 < rect.y + rect.height
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::tree::{PaneTree, SplitAxis};
+    use super::super::tree::{PaneTree, Side, SplitAxis};
     use super::*;
 
     fn p(n: u64) -> PaneId {
@@ -214,5 +184,3 @@ mod tests {
         assert_eq!(LiftTarget::Swap(p(2)).predicted_rect(rect), rect);
     }
 }
-
-// only the changed file was rewritten

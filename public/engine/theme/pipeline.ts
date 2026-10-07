@@ -1,16 +1,12 @@
-// Per-session theme pipeline discovery. Split panes share the engine realm,
-// but their pane roots may carry distinct base/tint/filter tokens. A cache
-// belongs to the EngineSession (not this module) so one pane's edit never
-// re-bakes another pane against the same global pipeline.
+// Per-session theme pipeline discovery; pane roots carry their own
+// tokens.
 
 import type { EngineSession } from "../state";
 import type { PipelineCache } from "../types";
 import { paperInfo } from "./paper";
 
 export function invalidatePipeline(s: EngineSession): void {
-  // The caller knows a theme boundary moved. Reset only the cheap token
-  // detector; the per-session generation still advances only if actual bake
-  // inputs changed on the next read.
+  // A boundary moved: reset only the cheap token detector.
   s.themePipeline.token = null;
 }
 
@@ -50,24 +46,13 @@ export function readPipeline(s: EngineSession): PipelineCache {
   cache.filter = filter;
   cache.blend = blend;
   cache.paperInfo = null;
-  // Resolve the paper against THIS pane root. The canvas compositing paper
-  // and the PDF's detected paper must be measured in the same CSS scope.
+  // Resolve the paper against THIS pane root.
   paperInfo(cache, root);
   cache.gen += 1;
   return cache;
 }
 
-/**
- * The generation every baked raster must be judged against: the pipeline as
- * it reads NOW. Never `s.themePipeline.gen` for a comparison — that is the
- * number left behind by whoever read last, and a look can move without a
- * call reaching this realm (a pane's own tokens are painted by another
- * task, and the engine is told about it a beat later). A freshness check
- * that trusts the stored number can therefore serve a bitmap baked against
- * a look that is already gone — the rail's thumbnails did exactly that
- * after a theme change. `readPipeline` is token-cached, so asking again
- * costs a few attribute reads.
- */
+// The generation a baked raster must be judged against: now, not stored.
 export function currentGen(s: EngineSession): number {
   return readPipeline(s).gen;
 }
@@ -81,5 +66,3 @@ export function pipelineIsIdentity(pipeline: PipelineCache): boolean {
   }
   return false;
 }
-
-// only the changed file was rewritten

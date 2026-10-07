@@ -37,28 +37,19 @@ web-sys = { version = "0.3", features = [
   "Location", "UrlSearchParams", "Storage", "CustomEvent",
   "AddEventListenerOptions", "EventTarget", "Navigator", "Performance",
   "PerformanceEntry", "console", "ScrollIntoViewOptions", "ScrollLogicalPosition", "VisibilityState", "MessageEvent", "MessagePort", "Worker",
-  # `ScrollIntoViewOptions::set_behavior` and the `ScrollBehavior` enum the
-  # level's scroll-to-selection uses. Declared here because this artifact's
-  # own graph has to provide it: it used to arrive through app-ui's unused
-  # virtual-list dependency, and a feature a crate needs is the crate's own
-  # to name (`cargo` unifies features per build, and the library build is
-  # its own build).
+  # `ScrollBehavior` for the level's scroll-to-selection; this artifact
+  # names its own features.
   "ScrollBehavior",
 ] }
 
 [dev-dependencies]
 # The import service's tests read gloss marks straight off ai-core's types.
 ai-core = { path = "../ai-core" }
-# The shelf's tests build their books and shelves with the domain crate's own
-# fixtures (`library_core::testkit`); the feature is a dev-only gate and never
-# reaches a release build. Declared here, by the crate that uses them — the
-# workspace root used to enable the feature for everyone as a side effect of
-# its own dev-dependency.
+# The domain crate's fixtures (`library_core::testkit`): dev-only, named
+# by the crate that uses it.
 library-core = { path = "../library-core", features = ["test-util"] }
 
-# Standalone artifact builds do not inherit the workspace Clippy command.
-# Keep warnings fatal for every target/feature selection, including the
-# format-free Reader host. This is the same policy as the other runtime crates.
+# Standalone artifact builds keep warnings fatal, like the other runtime crates.
 [lints.rust]
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "deny"

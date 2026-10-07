@@ -1,37 +1,5 @@
-//! The reader's one page interface. A layout says *which* page and *where* it
-//! sits; this module decides what drawing it means.
-//!
-//! Before this existed, every layout that could show a document carried its own
-//! fork — `if format.is_text() { <TextPage/> } else { <PageCanvas/> }` — and a
-//! fork is never one line for long. The spread grew a spine side, the single
-//! layout grew a gloss overlay, the shell grew a virtualizer parked in local
-//! storage, and all of it had to be copied in the next place that could show a
-//! page; adding a format meant finding them all with a grep. Here the fork is
-//! once, on a [`PageSlot`], and the layouts are dumb pipes again.
-//!
-//! Three hosts, one per shape the reader can take:
-//!
-//! * [`UniversalPageHost`] — a single page or one half of a spread. Both formats
-//!   get the same page, scale, host id and `class`, and the same texture from
-//!   context; the PDF's extras (canvas id, text layer, geometry callback, gloss
-//!   overlay) are constructed here from the slot rather than passed in by a
-//!   layout, and the spine side goes only to the pipeline that paints padding —
-//!   a raster's gutter is the spread's gap, not its page's style.
-//! * [`UniversalStripHost`] — the virtualized strip, both axes, either format.
-//! * [`UniversalStreamHost`] — continuous reading, where the two formats genuinely
-//!   disagree about the SURFACE: a reflowable document reads as one column of
-//!   blocks, a PDF as a strip of pages. This is the only place that difference is
-//!   allowed to live, which is why `ScrollVerticalLayout` mounts this instead of
-//!   choosing between them.
-//!
-//! Nothing here owns layout, scroll policy or animation: the shell does
-//! (`shells::scroll_shell`), and the reactive primitives live in `reader-core`'s
-//! `view` module. What this module DOES own is the DOM identity of a page —
-//! [`host_id_for_mode`] is the single definition of the `sp-`/`dp-`/`hp-`/`cont-`
-//! ids that the floating chapter label, a selection anchor and the engine's page
-//! registration all address pages by, format included. Two formats answering to
-//! one id per slot is the point: chrome that finds a page never has to know what
-//! it is made of.
+//! The reader's one page interface: a layout says which page, this
+//! picks the drawing.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -48,12 +16,7 @@ use crate::components::formats::reflow::{ReflowPage, ReflowPageStrip, ReflowStre
 use crate::components::viewer::shells::scroll_shell::ScrollShell;
 use crate::state::ReaderState;
 
-/// Where a page sits in the current layout — the only thing a layout has to say
-/// about itself that its pages cannot derive.
-///
-/// A slot, not a `ViewMode`: `SpreadLeft`/`SpreadRight` carry information the mode
-/// does not (which half of the pair this host is), and the mode would let a layout
-/// ask for a page in a mode it is not in.
+/// Where a page sits in the current layout, as a slot, not a mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageSlot {
     Single,
@@ -70,10 +33,8 @@ impl PageSlot {
         }
     }
 
-    /// Which side of the book spine this slot's page reads as, when a book layout
-    /// is on. A spread's pages are FIXED to their sides — the spine sits between
-    /// the two hosts, so a page's own parity is irrelevant there; every other
-    /// slot alternates with parity like a bound book.
+    /// Which side of the spine this slot's page reads as, with a book
+    /// layout.
     pub fn spine(self) -> SpineSide {
         match self {
             PageSlot::Single => SpineSide::Auto,
@@ -83,8 +44,7 @@ impl PageSlot {
     }
 }
 
-/// The host element id of `page` in `mode` — THE definition of the reader's page
-/// identity in the DOM, shared by both formats (see the module note).
+/// The host element id of `page` in `mode`: the one page identity.
 pub fn host_id_for_mode(mode: ViewMode, page: u32) -> String {
     match mode {
         ViewMode::Single => format!("sp-{page}-pg"),
@@ -95,30 +55,18 @@ pub fn host_id_for_mode(mode: ViewMode, page: u32) -> String {
     }
 }
 
-/// The element id of the row that renders `block` of a reflowable document, in
-/// any mode.
-///
-/// A block is the same element wherever it is mounted — a page's slot, the
-/// continuous stream's row — so its id carries no mode, unlike a host's. The
-/// gloss projection looks a mark's block up by this id rather than by a
-/// formatted `[data-block-index='n']` selector: it does so once per mark per
-/// refresh, the stream layer refreshes on every scroll frame, and an id lookup
-/// allocates nothing and searches nothing. The attribute stays: the engine's
-/// selection tracker walks up to it with `closest`, which an id cannot answer.
+/// The id of the row rendering `block`, in any mode.
 pub fn block_row_id(block: usize) -> String {
     format!("tx-block-{block}")
 }
 
-/// The canvas element id of `page` in `mode`: the host id with the canvas
-/// suffix. Kept next to [`host_id_for_mode`] because the pair must never drift —
-/// the engine registers a canvas against its host.
+/// The canvas id of `page` in `mode`: the host id plus a suffix.
 #[cfg(feature = "pdf")]
 pub(crate) fn canvas_id_for_mode(mode: ViewMode, page: u32) -> String {
     host_id_for_mode(mode, page).replacen("-pg", "-cv", 1)
 }
 
-/// The host id of a strip page, by axis — the same scheme as
-/// [`host_id_for_mode`], since an axis is a scroll mode with its paging.
+/// The host id of a strip page, by axis.
 pub(crate) fn host_id_for_axis(axis: Axis, page: u32) -> String {
     host_id_for_mode(
         match axis {
@@ -145,18 +93,15 @@ pub fn UniversalPageHost(
     /// 1-based page number to draw.
     page: u32,
     state: ReaderState,
-    /// Which half of the layout this page is. Named `page_slot` rather than
-    /// `slot` because `slot=` is a pseudo-attribute of the `view!` macro.
+    /// Which half of the layout this page is (`slot` is taken).
     page_slot: PageSlot,
     /// Extra classes, passed through to whichever component mounts (the
     /// cross-axis centring `mx-auto` both formats understand).
     #[prop(default = String::new(), into)]
     class: String,
 ) -> impl IntoView {
-    // Hosts live at the live display scale; the crisp raster follows
-    // `render_scale`, which only moves when a zoom lands. Both are read here so
-    // neither layout has to know that a page of type needs one and a page of
-    // pixels needs both.
+    // Hosts live at the display scale; the raster follows
+    // `render_scale`.
     #[cfg(any(feature = "pdf", feature = "reflow"))]
     let page_scale = state.viewer.zoom.display.read_only();
     #[cfg(feature = "pdf")]
@@ -222,12 +167,6 @@ pub fn UniversalPageHost(
 }
 
 /// The virtualized page strip, in either format.
-///
-/// The shell's closures must stay `Send`, and the `Rc`-backed `Virtualizer` is
-/// not, so the format branch below parks the handle it is given in local storage
-/// and resolves it at render time — the same move the shell makes one level up,
-/// and for the same reason: the parking belongs with the component that owns the
-/// capture, which here is this one.
 #[component]
 pub fn UniversalStripHost(
     state: ReaderState,
@@ -288,9 +227,7 @@ pub fn UniversalStripHost(
     }
 }
 
-/// Continuous reading: one column of blocks for a reflowable document, the
-/// page strip for a PDF. See the module note for why this is a host and not a
-/// detail of `ScrollVerticalLayout`.
+/// Continuous reading: a block column or a page strip.
 #[component]
 pub fn UniversalStreamHost(
     state: ReaderState,
@@ -340,5 +277,3 @@ pub fn UniversalStreamHost(
         }}
     }
 }
-
-// only the changed file was rewritten

@@ -1,12 +1,5 @@
-//! Reader close, through the host's real cascade: `PaneManager::dispose_all`
-//! reaches every pane's dispose, and every pane's dispose ends its document
-//! session with the same `PaneHandle::end_document` the production
-//! [`crate::pane::document::DocumentPane`] runs — so no session of any
-//! format outlives the host.
-//!
-//! Lives on the pane side: the host may not name panes, sessions or
-//! engines (tools/check-host-boundary.mjs), but a pane may use the host's
-//! contract.
+//! Reader close through the host's real cascade: every pane's dispose
+//! ends its document session.
 
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
@@ -27,8 +20,7 @@ use crate::pane::session::{FormatSession, MdSession, TxtSession};
 use crate::state::document::reflow::ReflowContent;
 use runtime_contract::boundary::LaunchDocument;
 
-/// A pane that owns nothing but a real pane handle, disposed the way the
-/// production pane disposes its document.
+/// A pane owning nothing but a real pane handle.
 struct SessionPane {
     id: PaneId,
     handle: PaneHandle,
@@ -146,8 +138,7 @@ fn manager() -> (PaneManager, Handles) {
     (PaneManager::new(factory), handles)
 }
 
-/// Drive the host's teardown to completion (every tail here is ready at
-/// once: no engine is attached on the host).
+/// Drive the host's teardown to completion.
 fn drive(mut tail: PaneTeardown) {
     let mut cx = Context::from_waker(Waker::noop());
     assert_eq!(tail.as_mut().poll(&mut cx), Poll::Ready(()));
@@ -185,8 +176,7 @@ fn dispose_all_disposes_every_pane_session() {
     });
 }
 
-/// Pane close through the host: removing ONE pane disposes its session and
-/// leaves the others' live.
+/// Removing ONE pane disposes its session and leaves the others' live.
 #[test]
 fn removing_one_pane_disposes_only_its_session() {
     let owner = Owner::new();

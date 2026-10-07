@@ -7,17 +7,10 @@ use ai_core::gloss::GlossMark;
 use ai_core::types::WordInfo;
 use leptos::prelude::*;
 
-/// Answers already fetched this session, keyed by mark id. Re-opening a
-/// stroke is recall, not a rescan.
+/// Answers fetched this session, keyed by mark id.
 #[derive(Clone, Copy)]
 pub struct GlossCache {
-    /// Answers behind an `Arc`: recalling one is a refcount bump, not a copy
-    /// of its prose, and the card, the measure twin and the cache all read the
-    /// one allocation.
-    ///
-    /// Deliberately a `StoredValue`, not a signal: `update_value` notifies
-    /// nobody, and nothing should re-render because a session answer was
-    /// recorded. The writes that matter are the ones to `content.word_info`.
+    /// Behind an `Arc`, so recall is a refcount bump.
     answers: StoredValue<HashMap<String, Arc<WordInfo>>, LocalStorage>,
 }
 
@@ -40,16 +33,14 @@ impl GlossCache {
         });
     }
 
-    /// Drop one answer — a failed run must not leave a stale partial
-    /// snapshot behind for the mark's next open to recall.
+    /// Drop one answer; a failure must not be recalled.
     pub fn remove(&self, id: &str) {
         self.answers.update_value(|c| {
             c.remove(id);
         });
     }
 
-    /// Evict the answers of removed marks, so re-opening them re-requests
-    /// instead of recalling an answer for a highlight that no longer exists.
+    /// Evict removed marks' answers so they re-request.
     pub fn evict(&self, marks: &[GlossMark]) {
         self.answers.update_value(|c| {
             for m in marks {

@@ -1,11 +1,7 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-// Minimal harness to smoke-test pdfEngine outside a browser. Stubs:
-// pdfjsLib, DOM (canvases), Tauri globals, rAF, getComputedStyle. Reads the
-// COMPILED public/pdfEngine.js (the same IIFE artifact the browser loads)
-// and evaluates it in a vm sandbox; the bundle carries no module syntax, so
-// it runs as-is with no source rewriting.
+// Smoke-test pdfEngine in a vm: stub pdf.js, DOM and Tauri, run the built IIFE.
 
 const engineSrc = readFileSync(
   new URL("../../public/pdfEngine.js", import.meta.url),
@@ -241,7 +237,6 @@ export function getEl(id: string): ReturnType<typeof makeElement> {
 const docEl: FakeCanvas & { id: string; width: number; height: number } = (() => {
   let _style: string | null = null;
   // Inline custom properties written by the engine (e.g. --pdf-paper).
-  // Recorded, not ignored: the render test asserts on them.
   const props = new Map<string, string>();
   const el: FakeCanvas & { id: string; width: number; height: number } = {
     id: "documentElement",
@@ -269,10 +264,7 @@ const docEl: FakeCanvas & { id: string; width: number; height: number } = (() =>
   return el;
 })();
 
-/** Whether the engine is inside a scrub window (real-time compositing), read
- * the way the browser reads it: the class that turns the CSS filter path on.
- * Smoke tests use it to avoid pretending the fake canvas can run a browser
- * compositor. */
+/** Whether the engine is scrubbing: the class that turns the filter on. */
 export function isScrubActive(): boolean {
   return docEl.classList.contains("appearance-scrubbing");
 }
@@ -333,8 +325,7 @@ export const fakeWindow: FakeWindow = {
   devicePixelRatio: 2,
   innerWidth: 1280,
   innerHeight: 800,
-  // Real-enough storage: a paper pipeline that touched it would be a
-  // regression, and the blend scenario asserts the map stays empty.
+  // Real-enough storage: the blend scenario asserts the map stays empty.
   localStorage: {
     getItem: (k: string) => fakeLocalStorage.get(k) ?? null,
     setItem: (k: string, v: string) => { fakeLocalStorage.set(k, v); },
@@ -372,11 +363,7 @@ export const fakeWindow: FakeWindow = {
   },
 };
 
-// pdf.js stub
-// Per-page paint colours, defaulting to paper white. The blend-scope test
-// paints distinct pages so detection and the continuous interpolation have
-// something to tell apart; every other scenario sees the same all-white
-// book.
+// pdf.js stub: per-page paint colours default to paper white.
 const fakePageColors = new Map<number, string>();
 export function setFakePageColors(colors: Record<number, string>): void {
   fakePageColors.clear();
@@ -406,8 +393,7 @@ function fakePage(n: number) {
 
 const fakePdf = {
   numPages: 5,
-  // Range-strict like the real pdf.js: an out-of-range page rejects, which
-  // the paper sampler must swallow into a frameless {ok:true} skip.
+  // Range-strict like real pdf.js: an out-of-range page rejects.
   getPage: async (n: number) => {
     if (n < 1 || n > fakePdf.numPages) {
       throw new Error("page out of range: " + n);
@@ -418,16 +404,11 @@ const fakePdf = {
   getOutline: async () => [],
   getPageIndex: async () => 0,
   getDestination: async () => null,
-  // [permanent, temporary] like the real pdf.js: the open payload must carry
-  // the PERMANENT one — the search index's cache identity.
+  // Like real pdf.js: the open payload carries the permanent fingerprint.
   fingerprints: ["smoke-permanent", "smoke-temporary"],
   cleanup: async () => {},
 };
-// A FRESH LoadingTask per getDocument call — pdf.js hands back a new task
-// (with its own worker lifetime) every time, and the engine's worker
-// counters are balanced per task. One shared object here would collapse
-// distinct opens into one identity and hide exactly the imbalance the
-// teardown baseline exists to catch.
+// A fresh LoadingTask per getDocument, so worker counters stay balanced.
 const fakeLoadingTask = () => ({ promise: Promise.resolve(fakePdf), destroy: async () => {} });
 
 const sandbox: Record<string, unknown> = {
@@ -536,9 +517,7 @@ type PaperFramePayload = {
   data: Uint8ClampedArray;
 };
 
-/** The facade as the smoke drives it: every document call names a session
- *  id first; the realm calls (stats, appearance broadcast, diagnostics)
- *  name none. */
+/** As the smoke drives it: document calls name a session id first. */
 interface PDFReaderHandle {
   createSession(sid: number): boolean;
   destroySession(sid: number): Promise<void>;
@@ -603,12 +582,7 @@ interface PDFReaderHandle {
 export const PDFReader = sandbox.PDFReader as PDFReaderHandle;
 if (!PDFReader) throw new Error("PDFReader not defined after eval");
 
-// --- Sessions -------------------------------------------------------------
-// The scenarios share one document at a time, as the reader pane does: the
-// CURRENT session. `openDoc` retires it and opens the next document in a
-// fresh session (a PDF session holds exactly one document); `R` is the
-// facade bound to the current sid, so a scenario reads like the reader's
-// own calls through its pane's `PdfSession`.
+// One document at a time; `R` binds the current sid.
 
 type RealmMethod =
   | "createSession"
@@ -636,9 +610,7 @@ export function newSession(): number {
   return sid;
 }
 
-/** A view of the facade that supplies the sid first. Only real facade
- *  members resolve: anything else (notably `then`, which `await` probes)
- *  is undefined, so a bound view is not mistaken for a thenable. */
+/** A facade view supplying the sid first; non-members stay undefined. */
 function boundView(sid: () => number): BoundReader {
   const api = PDFReader as unknown as Record<string, unknown>;
   return new Proxy({} as BoundReader, {
@@ -666,15 +638,12 @@ export async function openDoc(path: string): Promise<EngineResult<OpenPayload>> 
   return PDFReader.open(current.sid, path);
 }
 
-/** Retire the current session. Its sid stays current, so a later call
- *  through `R` proves a retired sid is refused. */
+/** Retire the session; its sid stays current, so calls still name it. */
 export async function closeDoc(): Promise<void> {
   if (current.sid) await PDFReader.destroySession(current.sid);
 }
 
-// Independent re-implementation of the CSS Filter Effects math, used to
-// compute the pixel the bake MUST produce — deliberately separate from the
-// engine's own code so the assertion is a real cross-check.
+// Independent re-implementation of the CSS filter math, not the engine's.
 export function expectedBakePixel(
   rgb: number[],
   filter: string,
@@ -752,9 +721,7 @@ export function assertClose(actual: Uint8ClampedArray, expected: number[], label
   }
 }
 
-// Canvas allocation tracking: render.ts turns this on; theme.ts
-// asserts against it (the identity-pipeline fast path must allocate zero
-// page-sized bake canvases).
+// Canvas allocation tracking, turned on by render.ts and asserted by theme.ts.
 export const created: FakeCanvas[] = [];
 
 export function trackCreatedCanvases(): void {

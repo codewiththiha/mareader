@@ -1,6 +1,4 @@
-//! One owner-scoped native event subscription. Pending registration and
-//! retirement share the same state, so unlisten always precedes closure
-//! release even when a route is disposed before Tauri answers.
+//! One owner-scoped native event subscription, unlistened before release.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -9,23 +7,11 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
-/// Subscribe to a Tauri event for the lifetime of the surrounding reactive
-/// owner, and unsubscribe when that owner is disposed.
-///
-/// A listener being registered may already be held by the parent window.
-/// Retirement makes its handler inert immediately, but retains the closure
-/// until the registration answer can be unlistened. No dropped WASM callback
-/// remains in the native registry.
+/// Subscribe to a Tauri event for the reactive owner's lifetime, then unlisten.
 pub fn tauri_listen(event: &str, mut handler: impl FnMut(Event) + 'static) {
-    // Scoped here: the prelude's value traits (`try_update_value`) are what
-    // this needs, and a module-level glob would shadow `web_sys::Event`.
+    // Scoped here: the prelude's value traits are needed, no global shadow.
     use leptos::prelude::{StoredValue, WithValue, on_cleanup};
-    // A plain browser has no `window.__TAURI__`: the async listen extern
-    // would throw the moment its import shim ran, and a throw inside a
-    // Leptos task aborts the whole task drain — every later spawn_local
-    // queued behind it (the document open among them) would never run.
-    // Tauri events simply do not exist off the webview, so subscribing is
-    // a no-op there.
+    // A plain browser has no `window.__TAURI__`: subscribing is a no-op there.
     if !tauri_bridge::has_tauri() {
         return;
     }

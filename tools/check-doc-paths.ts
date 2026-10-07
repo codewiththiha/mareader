@@ -1,15 +1,4 @@
-// Doc-path check — the third piece of cheap insurance in this pipeline,
-// after `check-versions.ts` and `check-formats.ts`.
-// Comments in this repo name the modules and files that make a design work,
-// and a rename leaves that prose pointing at nothing. So every module path
-// (`crate::a::b`, `super::x`) and every file path with a slash
-// (`effects/reader/zoom.rs`) in a Rust comment must resolve, and so must
-// every backticked path in README.md and Mareader.md. Resolution is
-// deliberately shallow — the module exists and the last name is declared or
-// re-exported there — and conservative: an unknown first segment is assumed
-// external and skipped, and a glob re-export passes anything.
-// TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-doc-paths.js` so CI can run it with plain `node`.
+// Doc-path check: every path named in a comment or prose doc must resolve.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -160,9 +149,7 @@ for (const file of RUST_FILES) {
       } else if (CRATE_ROOTS.has(first)) {
         base = CRATE_ROOTS.get(first)!;
       } else {
-        // Prose that names a module without its crate: try the crate root and
-        // the file's own neighbourhood. If nothing there has that name, it is
-        // somebody else's crate and none of this script's business.
+        // A bare module name: try the crate root and this file's neighbourhood.
         const known = ancestors.find((dir) => moduleFile(path.posix.join(dir, first)));
         if (!known) continue;
         base = known;
@@ -172,8 +159,7 @@ for (const file of RUST_FILES) {
       checked++;
       let { count, file: modFile } = resolveModules(base, segs);
       if (count === 0) {
-        // Nothing below the root is a module, but the root itself may re-export
-        // the name (a crate's facade `pub use`).
+        // Nothing below the root is a module; the root may re-export the name.
         const rootFile = rootModule(base);
         if (!rootFile) {
           problems.push(`${file}:${lineNo}: no module at \`${whole}\` (root ${base})`);
@@ -195,18 +181,14 @@ for (const file of RUST_FILES) {
       const token = m[0].replace(/^[./]+/, "");
       // An elided path ("readest/.../traffic_light.rs") is prose, not a claim.
       if (token.includes("...")) continue;
-      // Comments name a file by whatever tail is unambiguous, so match on the
-      // end of a real path rather than guessing its prefix.
+      // Comments name a file by its unambiguous tail; match path ends only.
       const exists = ALL_FILES.some((candidate) => candidate === token || candidate.endsWith(`/${token}`));
       if (!exists) problems.push(`${file}:${lineNo}: no such file: \`${token}\``);
     }
   });
 }
 
-// Stylesheet comments: the same claim, in files the Rust pass never reads. A
-// stylesheet names the module that writes its tokens, as often a directory
-// or extension-less path as a file — which FILE_PATH above cannot match — so
-// styles/*.css gets its own root-prefixed pattern.
+// Stylesheet comments name modules too, as directories or extension-less paths.
 
 /** Every directory in the tree, so an extension-less module path resolves. */
 const DIRS = new Set<string>();
@@ -216,15 +198,11 @@ for (const file of ALL_FILES) {
 
 const FILE_SET = new Set(ALL_FILES);
 const CSS_FILES = ALL_FILES.filter((file) => file.endsWith(".css") && file.startsWith("styles/"));
-/** A path token that starts at one of our roots. The extension is optional. */
-/** Roots a stylesheet would name. `tests` and `scripts` are left out on
- *  purpose: prose uses a slash for "or" ("a hook for tests/overrides"), and no
- *  stylesheet has ever pointed at either tree. */
+/** A path token starting at one of our roots; the extension is optional. */
 const CSS_PATH = /\b(?:src|crates|styles|public|src-tauri)\/[A-Za-z0-9_./-]+/g;
 const SOURCE_EXTS = [".rs", ".ts", ".css", ".js", ".mjs", ".json", ".toml", ".html"];
 
-/** Whether a token names a directory, a file, or a file whose extension the
- *  prose left off. */
+/** A directory, a file, or a file whose extension prose left off. */
 function sourcePathResolves(token: string): boolean {
   if (DIRS.has(token) || FILE_SET.has(token)) return true;
   return SOURCE_EXTS.some((ext) => FILE_SET.has(token + ext));
@@ -239,9 +217,7 @@ for (const file of CSS_FILES) {
     const raw = comment[0];
     const body = raw.includes("://") ? raw.slice(0, raw.indexOf("://")) : raw;
     for (const m of body.matchAll(CSS_PATH)) {
-      // The TOKEN's line, not the comment's: a stylesheet's header block can
-      // span fifteen lines, and a report that says line 1 sends the reader to
-      // the top of the file to hunt for it.
+      // Report the TOKEN's line, not the comment's: a header block spans many.
       const lineNo = text.slice(0, comment.index + m.index).split("\n").length;
       // Prose punctuation and a trailing slash are not part of the path.
       const token = m[0].replace(/[.,;:)]+$/, "").replace(/\/+$/, "");
@@ -252,17 +228,9 @@ for (const file of CSS_FILES) {
   }
 }
 
-// The two prose documents: the NAMES they put in backticks. Component names
-// are what a rename leaves behind most often, in prose no compiler reads.
-// Only README.md and Mareader.md are checked: a Rust doc comment names
-// external types constantly (`Closure`, `NSWindow`) and an allowlist for
-// those is unmaintainable, while these two documents describe this app — a
-// capitalised name in them is ours until proven otherwise.
+// README.md and Mareader.md only: a capitalised name there is ours.
 
-/** Capitalised names the documents use that are not workspace declarations:
- *  keyboard keys a shortcut table has to spell, and platform types the app
- *  talks to but does not define. Add only for those, never for something the
- *  tree should be declaring. */
+/** Capitalised names the documents use that are not workspace declarations. */
 const PROSE_NAMES = new Set(["Shift", "Space", "Escape", "Enter", "Range"]);
 
 const DECLARED = new Set<string>();
@@ -295,10 +263,7 @@ for (const file of ["README.md", "Mareader.md"].filter(isFile)) {
   });
 }
 
-// The documented engine surface. `window.PDFReader` is written down three
-// times: the TypeScript type, the Rust bridge (pinned against the built
-// facade by crates/pdf-engine/tests/engine_contract.rs), and the README's
-// Engine API table. This checks the third against the first.
+// The documented engine surface, checked against the README's Engine API table.
 
 /** The member names of the facade's type, as declared. */
 function apiMembers(): Set<string> {
@@ -318,10 +283,7 @@ if (apiAt >= 0) {
   const firstLine = readme.slice(0, apiAt).split("\n").length;
   const members = apiMembers();
   section.split("\n").forEach((line, index) => {
-    // The table's first column, and only that: a bare lowerCamel token there is
-    // a method name, while the prose around the table talks about envelope
-    // fields (`ok`, `error`) that are not methods and must not be checked as
-    // though they were.
+    // Only the table's first column: a bare lowerCamel token is a method.
     if (!line.startsWith("|")) return;
     const firstCell = line.split("|")[1] ?? "";
     for (const m of firstCell.matchAll(/`([a-z][A-Za-z0-9]+)`/g)) {
@@ -332,13 +294,7 @@ if (apiAt >= 0) {
   });
 }
 
-// The two prose documents: the PATHS they put in backticks. A module path in
-// prose carries no crate prefix to anchor it — `anchor::x` in a document
-// means "wherever anchor lives" — so resolution starts from the NAME: every
-// module is indexed by the name a document would call it, and a path is
-// tried against each module that could be its first segment (plus the crate
-// root when the name is a crate). An ambiguous name is not an error: the
-// path is good if ANY reading holds.
+// Prose module paths carry no crate prefix: resolve from the name.
 
 /** Every Rust module in the tree, by the name a document would call it. */
 const MODULES_BY_NAME = new Map<string, string[]>();
@@ -352,12 +308,8 @@ for (const file of RUST_FILES) {
 }
 
 /**
- * A document's module path, resolved against every base its first segment
- * could mean (`anchor` is two modules here, so ambiguity is not an error).
- * The near-miss is reported from the reading that got FURTHEST; `prefix` is
- * how many of the caller's segments the base itself consumed (one, for a
- * crate name).
- */
+ * A document's module path, resolved against every base its first
+ * segment could name. */
 function resolveDocModules(
   segs: string[],
 ): { ok: boolean; near: string | null } {
@@ -369,17 +321,14 @@ function resolveDocModules(
     attempts.push([path.posix.dirname(base), segs, 0]);
   }
 
-  // The near-miss from the reading that got FURTHEST: `anchor` is two modules in
-  // this tree, and reporting the one that resolved nothing would send whoever
-  // fixes it to the wrong file.
+  // Report the reading that got FURTHEST, not the one that resolved nothing.
   let near: string[] = [];
   let best = -1;
   for (const [base, rest, prefix] of attempts) {
     if (rest.length === 0) continue;
     const { count, file } = resolveModules(base, rest);
     if (count === 0) {
-      // No module below the base, but the base's own facade may re-export the
-      // name — which is how a crate's `lib.rs` answers for its whole surface.
+      // Nothing below the base, but its own facade may re-export the name.
       const rootFile = rootModule(base);
       if (rootFile && rest.length === 1 && declaresItem(rootFile, rest[0]!)) {
         return { ok: true, near: null };
@@ -390,9 +339,7 @@ function resolveDocModules(
     if (consumed >= segs.length) return { ok: true, near: null };
     const item = segs[consumed]!;
     if (file && declaresItem(file, item)) return { ok: true, near: null };
-    // Two modules can share a name (`anchor` is one here), so an invented tail
-    // is blamed on every reading that got this far, rather than on whichever
-    // happened to be indexed first.
+    // A shared name is blamed on every reading that got this far.
     if (consumed > best) {
       best = consumed;
       near = [];

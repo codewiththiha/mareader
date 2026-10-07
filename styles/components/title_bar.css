@@ -1,21 +1,6 @@
-/* Titlebar glass: the frosted overlay bar, the sidebar panel outro, the
-   one-frame glass rebuild on base-mode swaps, the status bar treatment and
-   the frameless caption buttons. */
+/* Titlebar glass, the sidebar panel outro, and the caption buttons. */
 
-/* TOOLBAR GLASS — the <header> in crates/reader-runtime/src/host/view.rs is absolutely
-   stacked over the viewer and pages scroll underneath it, so the blur has
-   real content to sample (a bar with nothing behind it reads as a flat
-   fill, however translucent). The background lives here rather than in a
-   bg-surface/60 utility so blur radius, saturation boost and alpha stay one
-   coherent unit no utility can half-override, and the no-backdrop-filter
-   fallback below has something to attach to. saturate() is what sells it as
-   glass rather than fog: blur alone averages colour toward grey.
-
-   Difference-blended glyphs are OPT-IN at the few call sites that genuinely
-   sit over scrolling content with no background of their own: mid-greys
-   (--color-muted) difference against light glass to near-white and vanish.
-   Everything else keeps its themed colour — the tint preserves each token's
-   own lightness, so contrast survives any hue. */
+/* TOOLBAR GLASS: the header stacks over the viewer, so the blur has content. */
 .toolbar-glass {
   background-color: color-mix(in oklab, var(--color-surface) 72%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -30,10 +15,7 @@
   }
 }
 
-/* Sidebar panel outro/intro — same 300ms ease-in-out as the aside width
-   slide. `.is-outro` is held for the whole close so the fade lands with the
-   clip and the rail labels; `.is-intro` is a two-frame paint marker whose
-   removal starts the cells' opacity transition alongside the aside. */
+/* The sidebar panel outro and intro, on the aside's own ease. */
 .sidebar-panel {
   transition: opacity 300ms ease-in-out;
 }
@@ -44,41 +26,27 @@
   opacity: 0;
 }
 
-/* Rebuild the glass ONLY on the one frame a base mode swaps: dropping the
-   filter destroys WKWebView's cached backdrop layer, and re-adding it next
-   frame re-samples the new page colours. Menus stay frosted throughout. */
+/* Rebuild the glass only on the frame a base mode swaps. */
 html.theme-switching .toolbar-glass {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background-color: var(--color-surface);
 }
 
-/* One-frame mute of color transitions so a base/preset swap cannot leave a
-   button interpolated between old and new tokens. Toggled from
-   src/effects/app/theme.rs around the appearance paint. */
+/* One-frame mute of colour transitions around an appearance paint. */
 html.theme-switching,
 html.theme-switching * {
   transition: none !important;
 }
 
-/* The status bar keeps the auto-inverting treatment: it floats directly over
-   the page with no background at all, so its backdrop really is arbitrary. */
+/* The status bar keeps the auto-inverting treatment: it floats bare. */
 
-/* FRAMELESS CAPTION BUTTONS — tauri.windows.conf.json /
-   tauri.linux.conf.json strip the native title bar; the toolbar's
-   window-controls cluster replaces it (macOS keeps its traffic lights and
-   never mounts it). Windows draws square full-height buttons (.win-btn),
-   Linux GNOME-style circles (.gnome-btn); the dispatcher is
-   crates/app-chrome/src/window/caption.rs and exactly one variant ever
-   mounts. Sizing follows the platform convention — 46px full-height hit
-   targets flush to the window edge, hover-only backgrounds — not the app's
-   36px rounded ghosts. */
+/* FRAMELESS CAPTION BUTTONS: the toolbar replaces the native title bar. */
 .window-controls {
   display: flex;
   align-items: stretch;
   height: 100%;
-  /* Cancel the row's pr-2 so the close button's hit area runs flush to the
-     window edge. */
+  /* Cancel the row's pr-2 so the close button runs flush to the edge. */
   margin-right: -8px;
 }
 .win-btn {
@@ -102,8 +70,7 @@ html.theme-switching * {
 .win-btn:active {
   opacity: 0.72;
 }
-/* The one Windows convention worth keeping everywhere: close warns red on
-   hover, darker red on press. */
+/* The one Windows convention kept everywhere: close warns red on hover. */
 .win-btn-close:hover {
   background: #e81123;
   color: #fff;
@@ -114,9 +81,7 @@ html.theme-switching * {
   color: #fff;
 }
 
-/* GNOME-style circles (Linux): same three commands, translucent fills mixed
-   from the theme ink so they adapt to any light/dark/tinted theme without
-   per-theme rules; close warms to the GNOME red. */
+/* GNOME-style circles: same commands, theme-mixed translucent fills. */
 .window-controls.gnome {
   align-items: center;
   gap: 8px;

@@ -9,8 +9,6 @@ license = "MIT"
 reflow-core = { path = "../reflow-core" }
 
 [lints.rust]
-# Warnings are denied, not printed: a gate that only shows up in the log is a
-# gate that gets read past. The priority applies the group first, so the
-# individual levels below it remain deliberate overrides.
+# Warnings are denied, not printed: a gate only in the log gets read past.
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "forbid"

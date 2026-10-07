@@ -1,5 +1,4 @@
-//! `prefers-reduced-motion` helpers: a non-reactive snapshot and a reactive
-//! signal kept in sync by the underlying `MediaQueryList`.
+//! `prefers-reduced-motion` helpers: a snapshot and a reactive signal.
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
@@ -15,24 +14,15 @@ pub fn prefers_reduced_motion() -> bool {
         .unwrap_or(false)
 }
 
-/// A reactive `prefers-reduced-motion` signal: read once, then kept in sync
-/// by a `change` listener on the underlying `MediaQueryList`.
-///
-/// The JS objects live in `StoredValue`s for the owner's lifetime (the same
-/// registration pattern as the observers). The `Closure` (not `Clone`) is held
-/// in its own slot and only cleared; the `Clone`-able `MediaQueryList` and
-/// callback `Function` are retrieved *inside* the cleanup so the listener is
-/// removed before the closure is freed.
+/// A reactive `prefers-reduced-motion` signal, kept in sync by a
+/// `change` listener.
 pub fn reduced_motion_signal() -> RwSignal<bool> {
     let s = RwSignal::new(prefers_reduced_motion());
     let mql_store = StoredValue::new_local(None::<web_sys::MediaQueryList>);
     let cb_store = StoredValue::new_local(None::<Closure<dyn FnMut()>>);
     let f_store = StoredValue::new_local(None::<js_sys::Function>);
     Effect::new(move |_| {
-        // Once only. The effect has no reactive dependencies, so it should
-        // never re-run — but a second registration would overwrite the stores
-        // and strand the first listener, which is exactly the leak the
-        // cleanup below exists to prevent.
+        // Once only: a second registration would strand the first listener.
         if mql_store.try_get_value().flatten().is_some() {
             return;
         }
@@ -44,8 +34,7 @@ pub fn reduced_motion_signal() -> RwSignal<bool> {
         };
         let mql_for_cb = mql.clone();
         let cb: Closure<dyn FnMut()> = Closure::new(move || {
-            // The media-query listener fires outside any reactive owner: a
-            // change landing after teardown must not write a disposed signal.
+            // The listener fires outside any owner: no disposed writes.
             let _ = s.try_set(mql_for_cb.matches());
         });
         let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();

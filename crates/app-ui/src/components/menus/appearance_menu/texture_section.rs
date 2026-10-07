@@ -1,16 +1,4 @@
-//! Texture picker + its two new controls: opacity and scale.
-//!
-//! The mode list is a compact grid rather than the old full-width rows — with
-//! two sliders underneath, six stacked rows pushed everything else off-screen.
-//! Opacity and scale are disabled (not hidden) when the texture is None, so
-//! the controls stay in place and the panel does not resize as you click
-//! around the list.
-//!
-//! The whole section is scoped `Texture` (see [`crate::appearance`]): while a
-//! per-pane mode is in effect it edits the focused pane's own texture, and the
-//! modes are the reader's choice — independent themes carry the texture family
-//! with the colour, and `independent_textures` carries the family on its own
-//! for a reader who wants a pattern per pane and a colour for all.
+//! Texture picker plus its opacity and scale controls.
 
 use leptos::prelude::*;
 
@@ -65,8 +53,7 @@ pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
                 .collect_view()}
         </div>
 
-        // Sliders stay mounted but inert without a texture: hiding them would
-        // make the popover jump in height every time the texture is toggled.
+        // Sliders stay mounted but inert without a texture.
         <div
             class=move || {
                 if has_texture() { "mt-3 space-y-3" } else { "mt-3 space-y-3 opacity-40" }
@@ -112,5 +99,3 @@ pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
         </div>
     }
 }
-
-// only the changed file was rewritten

@@ -1,17 +1,4 @@
-//! The "Removed n highlights — Undo" toast, composed on the unified toast
-//! shell ([`ToastData`] + [`ToastPanel`]). Parking through
-//! [`super::selection_mode::park_undo`] means EVERY removal path (context menu,
-//! bar) gets undo for free; the batch is pinned to its document path so an
-//! undo after a document switch drops instead of resurrecting marks into the
-//! wrong file.
-//!
-//! Auto-dismiss rides the host's id-guarded `use_toast_slot` (the toast id
-//! IS the batch generation): a second removal replaces the batch, and the
-//! first one's timer can never clear it. Position is the app's shared
-//! `.toast-anchor` — the same bottom-center wrapper the app-root host uses,
-//! clear of the reader's auto-hide bottom bar — because a toast that centers
-//! itself with a transform can be pulled off-axis by anything else that writes
-//! one (see the note in `styles/components/shell.css`).
+//! The "Removed n highlights — Undo" toast on the shared shell.
 
 use leptos::prelude::*;
 
@@ -28,10 +15,7 @@ pub fn GlossUndoToast(
     ctrl: GlossController,
     undo: RwSignal<Option<UndoBatch>>,
 ) -> impl IntoView {
-    // The toast the batch projects to, built ONCE per batch: id = generation
-    // (the host's equality guard sees a replacement as a different toast).
-    // The same value feeds the auto-dismiss slot and the render, so they can
-    // never disagree about the message or the action.
+    // The toast for the batch, built once.
     let toast = Memo::new(move |_| {
         undo.with(|u| {
             u.as_ref().map(|batch| {
@@ -46,9 +30,7 @@ pub fn GlossUndoToast(
                     action: Some(ToastAction {
                         label: "Undo".into(),
                         on_click: Callback::new(move |_| {
-                            // A batch belongs to the document it came from;
-                            // after a switch, drop it instead of resurrecting
-                            // marks into the wrong file.
+                            // A batch belongs to its document; else drop it.
                             if state.reader.document.path.get_untracked() == batch_path {
                                 ctrl.commands.restore_marks.run(restored.clone());
                             }

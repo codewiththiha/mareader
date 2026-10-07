@@ -1,10 +1,4 @@
-//! The one-time move of every stored copy into the book's own item folder.
-//!
-//! The store used to be flat and name-derived
-//! (`<Library>/<format>/<stem>_<id>.<ext>`) and is now one folder per book
-//! (`<Library>/items/<id>/source.<ext>`, [`library_core::store`]). Older
-//! copies keep the address recorded in their row and still open; this pass
-//! moves them.
+//! The one-time move of stored copies into the book's item folder.
 
 use std::collections::HashMap;
 
@@ -16,8 +10,7 @@ use library_core::wire::{BookFileRequest, RelocateResult};
 
 use crate::services as ipc;
 
-/// Fire and forget: a book whose copy could not be moved still opens at the
-/// address it has — no reason to interrupt a launch.
+/// Fire and forget: an unmoved copy still opens where it is.
 pub fn migrate_store_layout(state: crate::context::LibraryContext) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -36,9 +29,7 @@ pub fn migrate_store_layout(state: crate::context::LibraryContext) {
     });
 }
 
-/// The candidate list is built without the store root: `<app_data_dir>` is
-/// the shell's answer, so rows are filtered against the paths the shell
-/// actually answered for.
+/// Candidates are filtered against the paths the shell answered for.
 async fn run(state: crate::context::LibraryContext, candidates: Vec<(String, String)>) {
     let requests: Vec<BookFileRequest> = candidates
         .iter()
@@ -59,11 +50,7 @@ async fn run(state: crate::context::LibraryContext, candidates: Vec<(String, Str
     if answer.root.is_empty() {
         return;
     }
-    // id -> (old address, new address) for the rows whose address actually
-    // changed: the shell answers an already-migrated row with the address it
-    // wore, and rewriting that row would be a write, a persist and a cover
-    // re-key for nothing. Matched by id rather than zipped by position, so
-    // answer order is not a contract across a process boundary.
+    // id -> (old, new) for the rows whose address actually changed.
     let by_id: HashMap<String, &library_core::wire::StoreResult> = answer
         .results
         .iter()
@@ -80,8 +67,7 @@ async fn run(state: crate::context::LibraryContext, candidates: Vec<(String, Str
         return;
     }
 
-    // The address is the only thing that moves: fingerprint, provenance and
-    // resume point describe bytes that have not changed.
+    // Only the address moves; the bytes have not changed.
     let mut rewritten = 0usize;
     state.library.books.update(|rows| {
         for book in book_rows_mut(rows) {
@@ -101,12 +87,7 @@ async fn run(state: crate::context::LibraryContext, candidates: Vec<(String, Str
     crate::services::persist_library(state.library);
 }
 
-/// Carry each moved book's cover across to its new address.
-///
-/// The cover cache is keyed by address, so a move orphans the art under a key
-/// nothing asks about and the card shows a fallback until the book is opened
-/// again. A re-key rather than a re-render: same bytes, same page — forty
-/// migrated books are not forty renders.
+/// Carry each moved book's cover to its new address.
 fn rekey_covers(state: crate::context::LibraryContext, moved: &HashMap<String, (String, String)>) {
     let mut changed = false;
     state.library.covers.update(|covers| {

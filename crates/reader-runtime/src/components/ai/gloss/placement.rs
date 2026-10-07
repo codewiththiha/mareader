@@ -1,6 +1,4 @@
-//! Card targeting: where the sprung box wants to be right now. The heavy
-//! lifting — side choice, viewport clamping, shrink-to-fit — lives in
-//! [`ai_core::gloss::place_card`] so it is unit-testable on the host.
+//! Card targeting: where the sprung box wants to be.
 
 use ai_core::gloss::{GlossBox, place_card};
 use leptos::prelude::*;
@@ -10,30 +8,18 @@ use app_chrome::floating::types::{Point, Size, clamp_point_to_viewport};
 
 /// Preferred card width before viewport clamping.
 pub const CARD_WIDTH: f64 = 360.0;
-/// Card corner radius — the spring morphs the chip's pill into this. A
-/// standard card radius rather than an oversized one: the card is a panel,
-/// not a bubble.
+/// Card corner radius: the chip's pill morphs into this.
 const CARD_RADIUS: f64 = 12.0;
 /// Gap between the highlighter stroke and the card's near edge.
 const CARD_GAP: f64 = 16.0;
-/// Floor for the card's expanded content height. While the twin has not been
-/// measured yet `content_height` reads `0.0`, which would size the card's
-/// target to the anchor box (a flash of collapsed card on first open). The
-/// floor is the shimmer's resting height, so a not-yet-measured card opens at
-/// about the size the loading state occupies rather than at nothing.
+/// Floor for the expanded content height until the twin measures.
 const MIN_CARD_CONTENT_H: f64 = 120.0;
 /// Viewport margin the expanded card must stay inside.
 const CARD_MARGIN: f64 = 12.0;
-/// How far the card's midline sits BELOW the word's midline. Dead-centre on
-/// the line reads as pasted over it; a touch lower reads as attached to the
-/// word and hanging off it, the way a footnote hangs off its referent. The
-/// earlier 12 px felt closer to centred on the highlighted text; a larger
-/// drop makes the card visibly hang BELOW the word rather than straddle it.
+/// How far the card's midline sits below the word's.
 const CARD_Y_BIAS: f64 = 30.0;
 
-/// Side-aware placement: the card goes on whichever side of the highlight has
-/// more free space, never covering the stroke, hanging a touch below the
-/// mark's midline and clamped into the viewport margin.
+/// Side-aware placement, clamped into the viewport margin.
 pub fn expanded_target(
     anchor: Signal<Option<GlossBox>>,
     content_height: RwSignal<f64>,
@@ -42,10 +28,8 @@ pub fn expanded_target(
     Memo::new(move |_| {
         let a = anchor.get()?;
         let (vw, vh) = viewport.get();
-        // Measured height is the full scroll column (header + separator +
-        // body + paddings) — no chrome guess. See the measure twin. Floor it so
-        // a not-yet-measured card targets the shimmer's height instead of
-        // collapsing onto the anchor box.
+        // Measured height is the full scroll
+        // column, floored.
         let h = content_height.get().max(MIN_CARD_CONTENT_H);
         Some(place_card(
             a,
@@ -61,11 +45,8 @@ pub fn expanded_target(
     })
 }
 
-/// The expanded box re-origined at `(x, y)` and clamped back inside the
-/// viewport margin — one definition shared by the spring target (which
-/// applies a drag OFFSET) and the drag pointer path (which applies an
-/// absolute pointer position), so the two can never disagree about where a
-/// dragged card is allowed to sit.
+/// The expanded box re-origined and clamped, one definition for
+/// spring and drag.
 pub(crate) fn clamped_origin(e: GlossBox, x: f64, y: f64, vw: f64, vh: f64) -> GlossBox {
     let p = clamp_point_to_viewport(
         Point::new(x, y),
@@ -80,8 +61,7 @@ pub(crate) fn clamped_origin(e: GlossBox, x: f64, y: f64, vw: f64, vh: f64) -> G
     }
 }
 
-/// Expanded box is always f(live_anchor) + stored_offset, so a dragged card
-/// still glides with the page on scroll. Compact/processing hug the mark.
+/// Expanded box is f(anchor) + offset, so a drag glides on scroll.
 pub fn spring_target(
     anchor: Signal<Option<GlossBox>>,
     gphase: RwSignal<GlossPhase>,
@@ -131,7 +111,8 @@ mod tests {
     #[test]
     fn a_drag_past_the_edges_stops_at_the_margin() {
         let e = card();
-        // Fully off the right/bottom: pinned to (vw - w - margin, vh - h - margin).
+        // Fully off: pinned to the
+        // viewport margin.
         let far = clamped_origin(e, 5000.0, 5000.0, 1440.0, 900.0);
         assert_eq!(
             (far.x, far.y),
@@ -144,8 +125,8 @@ mod tests {
 
     #[test]
     fn a_viewport_tighter_than_the_card_collapses_to_the_margin() {
-        // The clamp's max collapses to the margin instead of panicking on
-        // min > max — the card just can't go anywhere.
+        // The clamp collapses to the
+        // margin, not a panic.
         let e = card();
         let pinned = clamped_origin(e, 0.0, 0.0, 200.0, 100.0);
         assert_eq!((pinned.x, pinned.y), (CARD_MARGIN, CARD_MARGIN));

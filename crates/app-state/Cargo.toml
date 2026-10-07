@@ -7,9 +7,7 @@ edition = "2024"
 leptos = { version = "0.8", features = ["csr"] }
 reader-core = { path = "../reader-core" }
 tauri-bridge = { path = "../tauri-bridge" }
-# Not target-gated: the host lanes (clippy/test) compile `tauri_listen` and
-# `memory` too, and leptos csr already pulls this stack on every target — the
-# gate saved nothing while breaking the workspace's host compile.
+# Not target-gated: host lanes compile it too, and the gate saved nothing.
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Window", "Performance", "PerformanceEntry", "console"] }

@@ -1,9 +1,4 @@
-//! One book on the shelf: a cover in a frame, a title, a drag handle, and a
-//! way back when the address the book points at dies.
-//!
-//! The cover sits in a frame (`.book-cover-wrap` in
-//! `styles/components/library/grid.css`) rather than carrying its own shadow,
-//! spine gradient and fore-edge.
+//! One book on the shelf: cover, title, drag handle, relink.
 
 use leptos::prelude::*;
 
@@ -58,8 +53,7 @@ pub(crate) fn BookCard(
     });
     let check_id = id.clone();
 
-    // Opening names the row, not its address: the library can hold two rows
-    // of one file, and the address cannot say which was clicked.
+    // Opening names the row, not its address: two rows can share one file.
     let entry = EntryDescriptor {
         id: id.clone(),
         vocab: SeamVocab::GridCard,
@@ -183,10 +177,7 @@ pub(crate) fn BookCard(
                             aria-label="Find this book again"
                             on:click=move |ev: leptos::ev::MouseEvent| {
                                 ev.stop_propagation();
-                                // One function owns which door an open
-                                // takes (picker from the reader, sheet
-                                // from the library), so the card and the
-                                // menu cannot differ.
+                                // One function owns which door an open takes.
                                 ask_relink(state, at.clone());
                             }
                         >

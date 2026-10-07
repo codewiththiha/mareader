@@ -1,10 +1,4 @@
-//! The copies run that touches no ledger: a copies import of ground a
-//! read-at-place tree still reads.
-//!
-//! Every other folder run walks on a [`library_core::folder::WatchedFolder`]
-//! — resolve the row, diff against its ledger, write it back. That is the
-//! right shape for a tree the library reads and the wrong one for a copies
-//! import.
+//! The copies run: ground a read-at-place tree reads, with no ledger.
 
 use std::collections::BTreeMap;
 
@@ -30,16 +24,13 @@ use runtime_contract::time::now_ms;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CopiesDest {
-    /// Spliced right behind the shelf whose name the arrival collided with:
-    /// a copy appended to the end of the level is a shelf the reader has to go
-    /// and find.
+    /// Spliced behind the shelf whose name collided, not found at the end.
     NewShelf { name: String, after: Option<String> },
     /// The *replace*'s target, whose books the sweep has just taken out.
     Into { shelf_id: String },
 }
 
-/// The one shape this module exists for; every other copies run keeps the
-/// ordinary bound walk.
+/// The one shape this module exists for.
 pub(crate) fn copies_over_standing_tree(
     state: crate::context::LibraryContext,
     root: &str,
@@ -95,10 +86,7 @@ async fn run_copies(
     };
     let mut books = state.library.books.get_untracked();
     let registry = ledger::registry_of(&books);
-    // Off the ledger's own pure table: every file but the copy the library
-    // already made, one book per fingerprint. The copy list is asked again
-    // for the heal's skip set: a file the library reads in place is owed a
-    // copy.
+    // The ledger's own table: one book per fingerprint, copies excepted.
     let copy_paths = ledger::copy_over_paths(&found, &registry, &books);
     let mut adds = ledger::unbound_copies(&found, &registry, &books);
     let healed = heal_by_address(&mut books, &mut adds, &copy_paths);
@@ -119,8 +107,7 @@ async fn run_copies(
         Err(message) => return fail(state, &task, message, FailMode::Toast),
     };
 
-    // The batch the landing takes: one entry per copy that came home, with the measurement
-    // the shell sent beside it.
+    // The landing's batch: one entry per copy that came home.
     let batch: Vec<PendingCopy> = pending
         .iter()
         .filter_map(|(book_id, file)| {
@@ -136,9 +123,7 @@ async fn run_copies(
         })
         .collect();
 
-    // The seat each copy lands on, resolved in batch order before the
-    // landing writes: the root shelf is minted once and a grouped run cuts
-    // each file's rung under it.
+    // The seat each copy lands on, resolved before the landing writes.
     let mut root_shelf: Option<String> = None;
     let mut rungs: BTreeMap<String, String> = BTreeMap::new();
     let seats: Vec<String> = batch
@@ -197,8 +182,7 @@ fn dest_shelf(state: crate::context::LibraryContext, dest: &CopiesDest, now: u64
     }
 }
 
-/// The bound run's chain rule, on a local map instead of a ledger's. A
-/// folder that does not group has no rungs.
+/// The chain rule on a local map; a folder without groups has no rungs.
 fn rung_shelf(
     state: crate::context::LibraryContext,
     root: &str,

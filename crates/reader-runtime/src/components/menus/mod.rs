@@ -2,5 +2,3 @@
 //! settings entry.
 
 pub mod reader_menu;
-
-// only the changed file was rewritten

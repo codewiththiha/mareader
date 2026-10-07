@@ -1,26 +1,5 @@
-//! The runtime host's boot states: what the user sees in `#runtime-host` while
-//! a runtime is loading, and what they see when one cannot start.
-//!
-//! Two invariants live here (§5, §6, §11):
-//!
-//! * the host is NEVER uncovered — it holds a loading state, an active runtime,
-//!   or an error state at every moment the window is on screen (an uncovered
-//!   host is a blank window). "The runtime became active" is NOT the same
-//!   moment as "the runtime painted": `mount_to` clears the container it is
-//!   handed, and a runtime whose first render is a suspense anchor paints no
-//!   elements for a frame or more, so the shell keeps its loading card up
-//!   until the frame's own `Painted` (or its bounded grace) says it [[crate::app::frame]]);
-//! * a failure is VISIBLE and NAMED — runtime, stage (module load / init /
-//!   start) and the underlying failure — while the console keeps the detail.
-//!
-//! The shell page carries its own placeholder (`#shell-boot` in index.html)
-//! for the window before the shell wasm has mounted anything; it is page-owned
-//! on purpose, because everything else needs a runtime to exist first. This
-//! module is the second half of that: once the shell is running, the host
-//! paints its own states, and the page placeholder steps aside.
-//!
-//! This is the ONLY legitimate fallback. If a runtime cannot start, the user
-//! gets this error surface, which names what failed and where.
+//! The runtime host's boot states: the loading cover and the error
+//! card.
 
 use serde_json::json;
 use wasm_bindgen::JsCast;
@@ -54,8 +33,7 @@ impl RuntimeName {
 /// Where in the boot sequence a runtime failed (§6).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BootStage {
-    /// The outgoing session is being torn down; the replacement must not
-    /// become active until it is gone (§10).
+    /// The outgoing session is being torn down.
     Dispose,
     /// The runtime's session never answered its offer.
     ModuleLoad,
@@ -76,7 +54,7 @@ impl BootStage {
         }
     }
 
-    /// The machine-readable form (`data-mareader-stage`, diagnostics).
+    /// The machine-readable form the native boot report and `to_json` carry.
     pub const fn slug(self) -> &'static str {
         match self {
             BootStage::Dispose => "dispose",
@@ -86,9 +64,7 @@ impl BootStage {
         }
     }
 
-    /// What the boot was doing, in the user's terms. The artifact name is part
-    /// of the module-load wording because that is the step a missing file
-    /// breaks, and the path is what the user can check.
+    /// What the boot was doing, in the user's terms.
     pub fn doing(self, runtime: RuntimeName) -> String {
         let name = runtime.artifact();
         match self {
@@ -100,8 +76,7 @@ impl BootStage {
     }
 }
 
-/// A runtime that did not start, with everything the UI needs to name it and
-/// everything the console needs to explain it.
+/// A runtime that did not start.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BootError {
     pub runtime: RuntimeName,
@@ -109,14 +84,12 @@ pub struct BootError {
     pub message: String,
 }
 
-/// The longest failure text the UI shows. The console is where the full value
-/// goes; a wall of stack trace in the window is not an error message (§6).
+/// The longest failure text the UI shows.
 const MAX_DETAIL: usize = 240;
 
 impl BootError {
     pub fn new(runtime: RuntimeName, stage: BootStage, message: impl AsRef<str>) -> Self {
-        // One line, bounded: the first line is where the useful part is, and a
-        // wasm panic's "unreachable" plus a minified trace is not.
+        // One line, bounded: the first line holds the useful part.
         let text = message.as_ref().lines().next().unwrap_or("").trim();
         let text = if text.is_empty() {
             "no further detail was reported"
@@ -148,8 +121,7 @@ impl BootError {
         format!("Failed during {} — {doing}.", self.stage.label())
     }
 
-    /// What the console gets. The runtime and stage appear in the same words
-    /// the UI uses, so a report of one can be matched to the other.
+    /// What the console gets, in the words the UI uses.
     pub fn console_line(&self) -> String {
         let doing = self.stage.doing(self.runtime);
         format!("[mareader] boot failed: {doing} — {}", self.message)
@@ -164,8 +136,7 @@ impl BootError {
     }
 }
 
-/// The shell's boot phase, published as a signal so the page's own placeholder
-/// can step aside exactly when the host starts painting — and not before.
+/// The shell's boot phase, published as a signal.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum BootPhase {
     /// The shell wasm is up; nothing has been painted into the host yet.
@@ -200,11 +171,7 @@ impl BootPhase {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The DOM. Everything the host paints carries `data-mareader-boot`, which is
-// also how it is cleared: the cleanup removes ONLY these nodes, so it can never
-// take out a mounted runtime's subtree.
-// ---------------------------------------------------------------------------
+// --- the DOM: everything the host paints carries `data-mareader-boot` ---
 
 const BOOT_ATTR: &str = "data-mareader-boot";
 /// Set on the host itself once a runtime is mounted (the active state).
@@ -220,10 +187,7 @@ fn element(tag: &str) -> Option<web_sys::Element> {
     document().and_then(|d| d.create_element(tag).ok())
 }
 
-/// The app's own loading mark, in the shape `app_ui`'s Loader component uses
-/// (`styles/components/animations.css`), so the page's boot placeholder, this
-/// cover and a pane's wait are one mark instead of three that almost match. The
-/// card itself is the `role=status` region, hence aria-hidden here.
+/// The app's own loading mark, `app_ui`'s Loader shape.
 fn loader_mark(parent: &web_sys::Element) {
     let Some(mark) = element("div") else {
         return;
@@ -248,8 +212,7 @@ fn text_node(parent: &web_sys::Element, tag: &str, class: &str, text: &str) {
     let _ = parent.append_child(&node);
 }
 
-/// The loading card itself. Separate from painting it because the coverage
-/// watch re-appends it after a runtime's `mount_to` cleared the container.
+/// The loading card itself.
 fn loading_card(runtime: RuntimeName) -> Option<web_sys::Element> {
     let card = element("div")?;
     let _ = card.set_attribute("class", "runtime-boot");
@@ -263,18 +226,14 @@ fn loading_card(runtime: RuntimeName) -> Option<web_sys::Element> {
     Some(card)
 }
 
-/// The shell's loading state, painted into the host before any await. A start
-/// also retires the previous runtime's active marker: nothing is active while
-/// the replacement is loading.
+/// The shell's loading state, painted before any await.
 pub fn paint_loading(host: &web_sys::Element, runtime: RuntimeName) {
     let _ = host.remove_attribute(ACTIVE_ATTR);
     clear_loading(host);
     cover(host, runtime);
 }
 
-/// Put the loading state back if the host has none. Idempotent on purpose: it
-/// is what every coverage tick calls, and it must never stack a second card or
-/// touch anything a runtime painted.
+/// Put the loading state back if the host has none.
 pub fn cover(host: &web_sys::Element, runtime: RuntimeName) {
     let Ok(nodes) = host.query_selector_all(&format!("[{BOOT_ATTR}]")) else {
         return;
@@ -287,9 +246,7 @@ pub fn cover(host: &web_sys::Element, runtime: RuntimeName) {
     }
 }
 
-/// Remove the shell's LOADING state only. `clear` takes every boot node, which
-/// after a failure includes the error card — the coverage watch must never do
-/// that.
+/// Remove the shell's LOADING state only.
 pub fn clear_loading(host: &web_sys::Element) {
     let Ok(nodes) = host.query_selector_all(&format!("[{BOOT_ATTR}=\"{LOADING}\"]")) else {
         return;
@@ -304,11 +261,7 @@ pub fn clear_loading(host: &web_sys::Element) {
     }
 }
 
-/// Remove the page's own placeholder (`#shell-boot`, index.html). The shell
-/// does this — not the page — because the shell is what knows a runtime has
-/// painted: uncover too early and the window is blank, too late and the
-/// placeholder covers the app (public/shellBoot.js keeps the 20 s watchdog for
-/// the case where the shell never runs at all).
+/// Remove the page's own placeholder (`#shell-boot`).
 pub fn uncover_page() {
     let Some(document) = document() else {
         return;
@@ -321,9 +274,7 @@ pub fn uncover_page() {
     }
 }
 
-/// The error state (§6). The button reloads the window: a failed dynamic
-/// import is cached by the browser's module map, so re-importing in the same
-/// document is not a retry — a fresh document is.
+/// The error state; the button reloads the window.
 pub fn paint_error(host: &web_sys::Element, error: &BootError) {
     clear(host);
     let Some(card) = element("div") else {
@@ -331,10 +282,8 @@ pub fn paint_error(host: &web_sys::Element, error: &BootError) {
     };
     let _ = card.set_attribute("class", "runtime-boot runtime-boot--error");
     let _ = card.set_attribute(BOOT_ATTR, "error");
-    // The machine-readable half of the message: the browser suites assert on
-    // these, and a support report can quote them.
+    // The browser suites assert on this, and a support report can quote it.
     let _ = card.set_attribute("data-mareader-runtime", error.runtime.artifact());
-    let _ = card.set_attribute("data-mareader-stage", error.stage.slug());
     let _ = card.set_attribute("role", "alert");
     text_node(&card, "p", "runtime-boot__title", &error.headline());
     text_node(&card, "p", "runtime-boot__hint", &error.context());
@@ -344,8 +293,7 @@ pub fn paint_error(host: &web_sys::Element, error: &BootError) {
         let _ = card.append_child(&button);
     }
     let _ = host.append_child(&card);
-    // The console keeps the detail (§6): one line, with the artifact, the stage
-    // and the actual failure the browser reported.
+    // The console keeps the detail: one line, with the failure.
     web_sys::console::error_1(&JsValue::from_str(&error.console_line()));
 }
 
@@ -359,21 +307,12 @@ fn retry_button(on_click: &js_sys::Function, label: &str) -> Option<web_sys::Ele
     Some(button.unchecked_into())
 }
 
-/// Mark the host as holding a live runtime: the machine-readable fact (§11)
-/// the lifecycle suites and diagnostics read. In the frame world the
-/// runtime's DOM lives inside the iframe this host carries, so the host's
-/// own active stamp is what the diagnostics and suites read — set once the
-/// frame announced `Ready`. The loading cover still lifts only on the
-/// frame's own `Painted` (or its bounded grace expiring in the driver): the
-/// same rule the coverage watch used to keep when the runtime mounted
-/// straight into the host.
+/// Mark the host as holding a live runtime.
 pub fn set_active(host: &web_sys::Element, runtime: RuntimeName) {
     let _ = host.set_attribute(ACTIVE_ATTR, runtime.artifact());
 }
 
-/// Remove the shell's boot markup only — the loading card and the error card.
-/// The frames are the manager's to clear (`src/app/manager.rs`): a warm
-/// runtime's iframe is not boot markup and must survive a host clear.
+/// Remove the shell's boot markup only.
 pub fn clear_boot(host: &web_sys::Element) {
     let Ok(nodes) = host.query_selector_all(&format!("[{BOOT_ATTR}]")) else {
         return;
@@ -388,12 +327,8 @@ pub fn clear_boot(host: &web_sys::Element) {
     }
 }
 
-/// Remove the shell's boot markup and the active stamp. Scoped to
-/// `[data-mareader-boot]`: a mounted runtime's own DOM does not carry the
-/// attribute and is never touched.
+/// Remove the shell's boot markup and the active stamp.
 pub fn clear(host: &web_sys::Element) {
     let _ = host.remove_attribute(ACTIVE_ATTR);
     clear_boot(host);
 }
-
-// only the changed file was rewritten

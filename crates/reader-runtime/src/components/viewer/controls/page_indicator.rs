@@ -1,14 +1,4 @@
-//! Corner page counter ("25 / 300" or "42%"). Solid translucent backdrop
-//! instead of the old mix-blend-difference footer: the reference shows a
-//! rounded badge sitting on the page corner, readable over any document color.
-//!
-//! `bg-black/60 text-white` is deliberately theme-independent (same reason the
-//! old footer used white + difference): it must read on light paper, dark
-//! paper, and every tint.
-//!
-//! Takes plain signals, not `ReaderContext`: the indicator is reusable UI and
-//! knows nothing about the app's state shape. The caller gates on
-//! `DocStatus::Ready` and positions the badge.
+//! Corner page counter ("25 / 300" or "42%") on a translucent badge.
 
 use leptos::prelude::*;
 
@@ -19,8 +9,7 @@ pub fn PageIndicator(
     #[prop(into)] current: Signal<u32>,
     #[prop(into)] total: Signal<u32>,
     #[prop(into)] style: Signal<PageIndicatorStyle>,
-    /// Fade out while a bottom overlay (gloss selection bar) is up, so the
-    /// two never stack over each other.
+    /// Fade out while a bottom overlay is up, so the two never stack.
     #[prop(into, default = Signal::derive(|| false))]
     hidden: Signal<bool>,
 ) -> impl IntoView {

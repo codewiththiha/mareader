@@ -1,6 +1,4 @@
-//! How a shelf is ordered: one comparator over [`Row`], driven by a key and a
-//! direction. No secondary key, deliberately — ties break on the address,
-//! which is stable, deterministic and free.
+//! How a shelf is ordered: one comparator, ties on the address.
 
 use std::cmp::Ordering;
 
@@ -11,7 +9,7 @@ use crate::book::{Book, Row};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SortKey {
-    /// The order the reader arranged. The default, and the one a drag writes to.
+    /// The order the reader arranged: the default.
     #[default]
     Manual,
     Title,
@@ -31,25 +29,19 @@ impl SortKey {
         }
     }
 
-    /// Whether the key leaves the reader's arrangement alone. What disables a
-    /// drag: a drop into a sorted list would be undone by the next render.
+    /// Whether the key leaves the reader's arrangement alone.
     pub fn is_manual(self) -> bool {
         matches!(self, SortKey::Manual)
     }
 }
 
-/// The comparison one key makes, ascending, ties breaking on the address so
-/// the order is total and stable.
-///
-/// A link answers every key too: its name sorts as a title, it has no author,
-/// it was added when it was made, and its tie-break is its own id.
+/// The comparison one key makes; ties break on the address.
 fn ascending(a: &Row, b: &Row, key: SortKey) -> Ordering {
     let primary = match key {
         SortKey::Manual => Ordering::Equal,
         SortKey::Title => natural(&a.display_name(), &b.display_name()),
         SortKey::Author => match (author_of(a), author_of(b)) {
-            // No author sorts after every author, so a shelf of named books
-            // has no blanks in it.
+            // No author sorts after every author.
             (None, None) => Ordering::Equal,
             (None, Some(_)) => Ordering::Greater,
             (Some(_), None) => Ordering::Less,
@@ -78,9 +70,7 @@ fn tiebreak(row: &Row) -> &str {
     }
 }
 
-/// Case-insensitive compare that puts "chapter 2" before "chapter 10": digit
-/// runs compare by value; everything else is `eq_ignore_ascii_case`. Non-ASCII
-/// keeps its byte order.
+/// Natural compare: digit runs by value, the rest case-insensitive.
 fn natural(a: &str, b: &str) -> Ordering {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     let (mut i, mut j) = (0, 0);
@@ -95,8 +85,7 @@ fn natural(a: &str, b: &str) -> Ordering {
             while j < b.len() && b[j].is_ascii_digit() {
                 j += 1;
             }
-            // Leading zeros are not significant: "01" and "1" are the same
-            // number, and stripped runs keep them adjacent.
+            // Leading zeros are not significant.
             let na = strip_zeros(&a[si..i]);
             let nb = strip_zeros(&b[sj..j]);
             let ord = na.len().cmp(&nb.len()).then_with(|| na.cmp(nb));
@@ -123,8 +112,7 @@ fn strip_zeros(digits: &[u8]) -> &[u8] {
     &digits[first.min(digits.len().saturating_sub(1))..]
 }
 
-/// Sort a level's rows in place. [`SortKey::Manual`] leaves the reader's
-/// arrangement as it is. `asc` inverts the key's order but never the tie-break.
+/// Sort a level's rows in place; Manual leaves them as they are.
 pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
     if key.is_manual() {
         return;
@@ -135,11 +123,7 @@ pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
     });
 }
 
-/// The order a shelf renders in: the member ids, resolved to rows, sorted.
-///
-/// Members naming a row the library no longer has are dropped, and a member
-/// naming a link resolves to the link, which the shelf renders like any other
-/// row.
+/// The order a shelf renders in: member ids, resolved and sorted.
 pub fn ordered(rows: &[Row], members: &[String], key: SortKey, asc: bool) -> Vec<Row> {
     let index = crate::book::index_by_id(rows);
     let mut out: Vec<Row> = members

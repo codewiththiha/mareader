@@ -1,16 +1,4 @@
-//! The modal sheet's chrome: one backdrop, one panel, one lane registration
-//! and one Escape rule, in one place.
-//!
-//! Every sheet used to hand-roll the same four things: the dimmed backdrop
-//! that closes on a click, the panel that stops the click from reaching it,
-//! the overlay lane's arbitration and the Escape rule that peels one layer
-//! at a time. Four copies of one contract is four places a sheet can quietly
-//! differ about how it closes — and a sheet that closes differently from its
-//! siblings is one the reader has to relearn.
-//!
-//! The sheet's own face is not here: header, body and footer are the
-//! children, because those genuinely differ. The panel is a flex column with
-//! a scrollable middle, the shape all of them already were.
+//! The modal sheet's chrome: backdrop, panel, lane registration, Escape.
 
 use leptos::children::ChildrenFn;
 use leptos::html;
@@ -53,8 +41,7 @@ fn focusable_elements(dialog: &web_sys::HtmlElement) -> Vec<web_sys::HtmlElement
 }
 
 fn focus_dialog(dialog: &web_sys::HtmlElement) {
-    // Native `autofocus` runs while the children mount. If a consumer used
-    // it, that focus is already inside the dialog and remains untouched.
+    // Native `autofocus` runs while the children mount.
     if active_element().is_some_and(|active| contains(dialog, &active)) {
         return;
     }
@@ -98,35 +85,25 @@ fn trap_tab(dialog: &web_sys::HtmlElement, event: &web_sys::KeyboardEvent) {
 
 #[component]
 pub fn ModalShell(
-    /// Whether the sheet is up. The lane registry and the Escape rule both
-    /// read this signal and the backdrop's click writes it — a sheet whose
-    /// closing means more than "not open" (the conflict sheet's payload has
-    /// to go with it) watches the signal in an effect of its own.
+    /// Whether the sheet is up: the lane and Escape rules both read it.
     open: RwSignal<bool>,
     /// What the dialog calls itself to a screen reader.
     aria_label: &'static str,
-    /// The panel's width as a CSS value — `min(92vw, 420px)` — one sheet's
-    /// width is its own fact and the chrome's job is to wear it.
+    /// The panel's width as a CSS value.
     width: &'static str,
-    /// The panel's height, for a sheet that sizes ITSELF rather than its
-    /// content — the reader's settings modal, whose tabs share one box. `None`
-    /// lets the body decide, under the shell's own `max-h-[86vh]`.
+    /// The panel's height, for a sheet that sizes itself.
     #[prop(optional)]
     height: Option<&'static str>,
-    /// `ChildrenFn`, not `Children`: `Show`'s children closure must be an
-    /// `Fn`, and only children that can be called from inside one may ride
-    /// it — the reason the sidebar's overlay rail gives for the same choice.
+    /// `ChildrenFn`, not `Children`: `Show`'s closure must be an `Fn`.
     children: ChildrenFn,
 ) -> impl IntoView {
     let dialog_ref = NodeRef::<html::Div>::new();
     let previous_focus = StoredValue::new_local(None::<web_sys::HtmlElement>);
     let was_open = StoredValue::new_local(false);
 
-    // One modal at a time, and a menu replaces it rather than stacking under
-    // it — the same arbitration the reader's settings modal joins.
+    // One modal at a time; a menu replaces it rather than stacking.
     use_overlay_lane(open, OverlayPolicy::MODAL);
-    // A popover opened inside the sheet owns the press; the shared rule peels
-    // one layer at a time.
+    // A popover inside the sheet owns the press; one layer peels at a time.
     use_modal_escape(open);
 
     Effect::new(move |_| {
@@ -135,8 +112,7 @@ pub fn ModalShell(
         if is_open && !was {
             previous_focus.set_value(active_element());
             request_animation_frame(move || {
-                // The frame can outlive the sheet's owner: a disposed `open`
-                // means the dialog went with it.
+                // The frame can outlive the owner: a disposed `open` is gone.
                 if open.try_get_untracked().is_none() {
                     return;
                 }

@@ -1,17 +1,4 @@
-//! Multi-select management for gloss marks: the shared state helpers, the
-//! long-press gesture constants (the gesture itself lives in
-//! [`super::mark_layer`], implemented by the primitive `long_press`), the exit
-//! paths (Escape / clean tap outside), the right-click context-menu
-//! listener, and the undo pipeline every removal path parks through.
-//!
-//! Selection state itself lives on `state.reader.gloss` so every page's
-//! `GlossMarkLayer` and the reader-level bar share one source of truth.
-//! Marks mutate it directly (toggling is high-frequency); only the context
-//! menu travels as a CustomEvent, mirroring `GLOSS_OPEN_EVENT`.
-//!
-//! Dismissal (Escape / outside press) comes from the primitive `use_dismiss`;
-//! this module owns only the semantics (exit selection, close menu, park
-//! undo).
+//! Multi-select for gloss marks: helpers, gestures, exits, undo.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,10 +15,7 @@ use app_ui::events::dispatch_typed_event_on;
 
 pub use app_ui::events::GLOSS_CONTEXT_EVENT;
 
-/// How long a press must hold before it becomes a selection gesture, and how far
-/// it may drift. Re-exported from the primitive that owns them, so the library's
-/// shelf and a page's highlights answer "how long is a long press?" with one
-/// number rather than two that happen to match.
+/// How long a press must hold, and how far it may drift.
 pub use app_ui::components::primitives::interactions::long_press::{
     SELECT_PRESS_MS as LONG_PRESS_MS, SELECT_SLOP_PX as LONG_PRESS_SLOP_PX,
 };
@@ -39,8 +23,7 @@ pub use app_ui::components::primitives::interactions::long_press::{
 /// How long the undo toast stays up before the removal is final.
 pub const UNDO_WINDOW_MS: i32 = 6000;
 
-/// Payload of [`GLOSS_CONTEXT_EVENT`]: where the menu should open and which
-/// mark it acts on. Client coordinates.
+/// The context-menu event's payload: where, and which mark.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextTarget {
     pub x: f64,
@@ -48,9 +31,7 @@ pub struct ContextTarget {
     pub id: String,
 }
 
-/// A removed batch parked for undo. `path` pins the batch to the document it
-/// came from: undoing after a document switch would resurrect marks into the
-/// wrong file, so a stale batch is dropped instead.
+/// A removed batch parked for undo, pinned to its document.
 #[derive(Debug, Clone)]
 pub struct UndoBatch {
     pub generation: u64,
@@ -58,12 +39,10 @@ pub struct UndoBatch {
     pub marks: Vec<GlossMark>,
 }
 
-/// Monotonic batch id: the auto-dismiss timer only clears ITS batch, so a
-/// quick second removal can never be eaten by the first one's timer.
+/// Monotonic batch id, so only ITS batch's timer clears it.
 static UNDO_GEN: AtomicU64 = AtomicU64::new(1);
 
-/// Dispatch [`GLOSS_CONTEXT_EVENT`] (fired by a mark's contextmenu handler)
-/// ON the mark, bubbling: only the pane the mark is in opens its menu.
+/// Dispatch the context event ON the mark, bubbling.
 pub fn dispatch_gloss_context(origin: &web_sys::EventTarget, x: f64, y: f64, id: &str) {
     dispatch_typed_event_on(
         origin,
@@ -111,15 +90,13 @@ pub struct SelectMode {
     pub undo: RwSignal<Option<UndoBatch>>,
 }
 
-/// Selection-mode wiring that lives at the popover level: entry guard, exit
-/// paths, the context-menu listener + dismissal, and the undo signal.
+/// The popover-level selection wiring: guard, exits, undo.
 pub fn use_select_mode(state: crate::context::ReaderContext, ctrl: GlossController) -> SelectMode {
     let selecting = state.reader.gloss.selection_active;
     let menu = RwSignal::new(None::<ContextTarget>);
     let undo = RwSignal::new(None::<UndoBatch>);
 
-    // Entering selection mode folds any open card: selection is about the
-    // strokes, and the bar wants its corner of the screen to itself.
+    // Entering folds any open card.
     Effect::new(move |_| {
         if selecting.get() {
             ctrl.commands.collapse_to_mark.run(());
@@ -127,9 +104,7 @@ pub fn use_select_mode(state: crate::context::ReaderContext, ctrl: GlossControll
         }
     });
 
-    // Escape exits selection mode; a clean tap anywhere that is not a mark,
-    // the bar, or a menu exits too. (Mark clicks stop propagation;
-    // drag-scrolls never synthesize clicks.)
+    // Escape, or a clean tap elsewhere, exits.
     use_dismiss(
         selecting.into(),
         Callback::new(move |_| exit_selection(state)),
@@ -143,10 +118,7 @@ pub fn use_select_mode(state: crate::context::ReaderContext, ctrl: GlossControll
         |_| false,
     );
 
-    // Right-click on a mark asks for the remove menu — only outside
-    // selection mode; inside it, right-click toggles selection (marks.rs).
-    // Placement (cursor point) + viewport clamping + dismissal are the
-    // `ContextMenu` primitive's job; this listener only delivers the payload.
+    // Right-click asks for the remove menu, outside selection mode.
     use_typed_event_from::<ContextTarget>(GLOSS_CONTEXT_EVENT, move |t, origin| {
         if selecting.get_untracked() || !raised_in(&state.reader.dom, origin.as_ref()) {
             return;

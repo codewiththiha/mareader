@@ -1,13 +1,8 @@
-/* The elided levels: the chain behind the breadcrumb's ellipsis.
-   A chain and not a list, in the bar's own grammar — name, chevron, name — and PACKED rather than
-   wrapped: the panel measures the ruler's crumb boxes and lays them out against a budget of the
-   whole window. */
+/* The elided levels: the chain behind the breadcrumb's ellipsis. */
 .lib-elided-panel {
-  /* A hard ceiling under the popover's measured width, so a measurement that
-     overshoots — or a window that narrowed between the open and the place —
-     still keeps the panel on the screen it opened on. */
+  /* A hard ceiling under the popover's measured width. */
   max-width: calc(100vw - 1.5rem);
-  /* The rows own the surface now, each at its own width. Unlayered on purpose: these have to outrank the popover's bg/border/rounded/shadow utilities, which live in Tailwind's layer. */
+  /* The rows own the surface; unlayered, so they outrank the utilities. */
   padding: 0;
   background: transparent;
   border: 0;
@@ -22,9 +17,7 @@
   width: max-content;
   max-width: 100%;
 }
-/* One packed row: its own little surface, hugging its labels. No wrapping in
-   here — the wrap already happened, in Rust, against the measured budget — and
-   the column gap stays zero because the chevron is the spacing. */
+/* One packed row hugging its labels; wrapping happened in Rust. */
 .lib-elided-row {
   display: flex;
   flex-wrap: nowrap;
@@ -38,14 +31,11 @@
   background: var(--color-surface);
   box-shadow: var(--shadow-float);
 }
-/* One crumb and the chevron that trails it, in ONE flex item: a packed row ends
-   on `4 >` and the next begins on `5`, which is how a chain reads when it breaks.
-   Split them and every row but the first starts with a stray chevron. */
+/* One crumb and its trailing chevron, in one flex item. */
 .lib-elided-crumb {
   display: inline-flex;
   min-width: 0;
-  /* A cap so one long shelf name cannot stretch a row: a name that will not
-     wrap should not decide the panel's width either. */
+  /* A cap so a long shelf name cannot stretch the row. */
   max-width: 14rem;
   align-items: center;
   gap: 0.125rem;
@@ -53,7 +43,7 @@
 .lib-elided-crumb > button {
   min-width: 0;
 }
-/* The ruler: the same chain drawn invisible and unwrapped, so its natural width can be measured before the panel commits to one. Out of flow, never painted, pointer-events none, so a hover can never land on a measurement. */
+/* The ruler: the same chain, invisible, so its width can be measured. */
 .lib-elided-probe {
   position: absolute;
   visibility: hidden;
@@ -61,9 +51,7 @@
   pointer-events: none;
   width: max-content;
 }
-/* The ruler's label: the live button's own box — the same font, padding, corner
-   and cap — without any of its behaviour. Measuring anything else measures the
-   wrong width. */
+/* The ruler's label: the live button's own box, without its behaviour. */
 .lib-elided-probe-label {
   display: flex;
   min-width: 0;

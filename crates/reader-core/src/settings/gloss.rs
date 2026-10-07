@@ -1,21 +1,14 @@
-//! The AI word card's user-facing settings types. These ride on the persisted
-//! `Settings` struct (`reader_core::settings`) as FLAT `gloss_*` fields — the
-//! names are the serde schema saved to localStorage, so they stay flat;
-//! nesting them behind a new `ai` block would silently drop every install's
-//! saved values on load. This crate owns the types; the persisted struct owns
-//! the storage.
+//! The AI word card's settings types, riding on `Settings` as flat
+//! `gloss_*` fields.
 
 use serde::{Deserialize, Serialize};
 
-/// The highlighter's default fill opacity for a new install (or a blob that
-/// predates the knob).
+/// The highlighter's default fill opacity for a new install.
 pub fn default_gloss_opacity() -> f64 {
     0.4
 }
 
-/// The default custom highlighter colour — the hex the old fixed `violet`
-/// swatch had, so installs predating the colour picker land on the look they
-/// had.
+/// The default custom highlighter colour, the old fixed violet hex.
 pub fn default_custom_gloss() -> String {
     "#a58af0".into()
 }
@@ -79,9 +72,7 @@ impl GlossColor {
     }
 }
 
-/// How much air the AI word card carries: the padding, line heights and
-/// section gaps of the gloss card's body. Compact is the default because a
-/// definition is scanned, not read like a page.
+/// How much air the AI word card carries; Compact is the default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum GlossDensity {
@@ -115,5 +106,3 @@ mod tests {
         );
     }
 }
-
-// only the changed file was rewritten

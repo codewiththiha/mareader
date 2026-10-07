@@ -1,16 +1,9 @@
-//! Serde types that mirror the pdf.js engine's return shapes. The engine
-//! resolves `{ok:true, ...}` objects whose field names are camelCase (straight
-//! from JS); these structs are deserialized via serde_wasm_bindgen after
-//! `crate::api::resolve` checks the `ok` flag.
-//!
-//! CONTRACT: field names are the wire contract with pdfEngine.js.
-
+//! Serde types mirroring the engine's return shapes.
 use serde::{Deserialize, Serialize};
 
 pub use reader_core::document::{DocStatus, PageSize};
 
-/// `{ok:true, width, height}` — engine.probePageSize(): one page's intrinsic
-/// (scale-1) box, read from the document instead of from a raster.
+/// `{ok, width, height}`: one page's intrinsic box.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PageSizeResult {
@@ -18,39 +11,25 @@ pub struct PageSizeResult {
     pub height: f64,
 }
 
-/// One flattened chapter, exactly as `pdfEngine.js` resolves it. The type is
-/// `pdf-core`'s rather than the engine's: the entries cross this boundary on
-/// the wire and land in the reader's outline with one conversion in between,
-/// and a wire shape duplicated on both sides is how a field rename becomes a
-/// silent `depth: 0` instead of a compile error.
+/// One flattened chapter, exactly as the engine resolves it.
 pub use pdf_core::outline::OutlineEntry;
 
-/// `{ok:true, numPages, title, author, fingerprint, outline, page1Size, pageHeights}` — engine.open().
+/// `{ok, numPages, title, author, fingerprint, outline, ...}`: engine.open().
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenResult {
     pub num_pages: u32,
     pub title: Option<String>,
     pub author: Option<String>,
-    /// The document's permanent pdf.js content fingerprint — the identity the
-    /// search index caches under, so reopening the same bytes adopts the
-    /// retained index instead of re-extracting every page. Null only for
-    /// engine builds predating the field; the index falls back to the path.
+    /// The document's permanent content fingerprint, the index's key.
     #[serde(default)]
     pub fingerprint: Option<String>,
     pub outline: Vec<OutlineEntry>,
     pub page1_size: PageSize,
-    /// Intrinsic (scale-1) height of every page, in document order.
-    ///
-    /// Empty only for engines predating this field; callers fall back to
-    /// `page1_size.height` for every page in that case.
+    /// Intrinsic height of every page, in document order.
     #[serde(default)]
     pub page_heights: Vec<f64>,
-    /// Intrinsic (scale-1) width of every page, in document order. Fit /
-    /// shrink-to-fit must use the page the reader is LOOKING AT, not page 1: a
-    /// landscape plate in an otherwise-A4 book is cropped if the ceiling is
-    /// computed from the letter pages around it. Empty only for engines
-    /// predating this field; callers fall back to `page1_size.width`.
+    /// Intrinsic width of every page, in document order.
     #[serde(default)]
     pub page_widths: Vec<f64>,
 }
@@ -63,12 +42,7 @@ pub struct RenderResult {
     pub scale: f64,
 }
 
-/// The old `cached` flag (the engine blitted an already-rendered bitmap
-/// synchronously) arrived with the promise — too late for the cell's first
-/// composited frame — and was left unread. What actually removed the flicker
-/// is `has_thumb`, the same question asked synchronously while the cell is
-/// still being built (thumbnails/thumbnail_cell.rs). The blit is still
-/// synchronous; only the reporting of it is gone.
+/// The old `cached` flag, left unread; `has_thumb` replaced it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThumbResult {
@@ -77,10 +51,7 @@ pub struct ThumbResult {
     pub scale: f64,
 }
 
-/// `{ok:true, dataUrl, width, height}` — engine.coverDataUrl. Page 1 of the
-/// current document rendered to a small JPEG, for the library shelf's
-/// book-cover art. `width`/`height` are CSS px so the shelf keeps the cover's
-/// real proportions (portrait vs landscape).
+/// `{ok, dataUrl, width, height}`: engine.coverDataUrl.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoverResult {
@@ -89,12 +60,7 @@ pub struct CoverResult {
     pub height: f64,
 }
 
-/// `{ok:true, page, width, height, data}` — the raw page frame the paper
-/// pipeline runs on: the raster downscaled to a <=96px long edge, `data` its
-/// RGBA pixels (`width * height * 4`). Produced by `takePaperFrame` (a live
-/// render's stash) and `samplePaperPage` (an offscreen sample). The pixels
-/// travel as a typed array rather than JSON, so this shape is parsed by hand
-/// in `crate::api::paper::parse_frame`, not through serde.
+/// `{ok, page, width, height, data}`: the raw page frame.
 pub struct PaperFrame {
     pub page: u32,
     pub width: u32,

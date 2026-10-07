@@ -1,16 +1,5 @@
-//! The disposable Reader workspace-host iframe. The URL authenticates the
-//! Shell's channel offer; the host's own WASM owns workspace chrome and
-//! independent PDF/reflow child realms. Removing this iframe retires them all.
-//!
-//! The boot every artifact frame shares — the URL marker, the channel offer,
-//! the boundary, the runtime root, the paint report — is
-//! [`frame_transport::artifact`]. Two reader-only shapes sit on top:
-//!
-//! - The launch descriptor rides the Shell's `init`: the frame cannot mount
-//!   before it arrives (a reader IS the document it was opened with), so the
-//!   session starts inside the init handler, not at adoption.
-//! - In-session path opens await one port-owned launch future. Disposal
-//!   cancels/wakes it; there is no synchronous miss or duplicate open map.
+//! The disposable Reader workspace-host iframe; removing it retires
+//! the realms.
 
 use frame_transport::wasm::PortWire;
 use leptos::prelude::Callable;
@@ -25,26 +14,18 @@ pub use frame_transport::artifact::{
     with_api,
 };
 
-/// Boot through the frame when this artifact's URL names one. `true` as soon
-/// as the marker stands: a hosted boot never falls back to standalone (§6).
+/// Boot through the frame when the URL names one.
 pub fn boot_if_hosted() -> bool {
     frame_transport::artifact::boot_if_hosted(adopt)
 }
 
-/// The Shell's channel offer, adopted: from here the boundary is live, the
-/// adoption's own status has gone out (that emission is how the Shell learns
-/// which of its offered channels this boot took) and every envelope this
-/// generation carries reaches [`on_frame`]. A re-offer for the same boot
-/// adopts nothing — the first channel answered first.
+/// The Shell's channel offer, adopted; the boundary is live from
+/// here.
 fn adopt(wire: PortWire, generation: u64) {
     frame_transport::artifact::adopt(wire, generation, move |body| on_frame(body, generation));
 }
 
-/// One Shell envelope for this frame, already generation-guarded.
-///
-/// The reader cannot mount before the Shell's `init` (a reader IS its
-/// document), so an envelope that arrives first has no session to address and
-/// is dropped by the protocol, not by accident.
+/// One Shell envelope, already generation-guarded.
 fn on_frame(body: ShellFrame, generation: u64) {
     match body {
         ShellFrame::Init {
@@ -59,16 +40,16 @@ fn on_frame(body: ShellFrame, generation: u64) {
             }
         }
         ShellFrame::Launch { document } => {
-            // An in-session open keeps this workspace and targets an
-            // independent document pane, never a retained host.
+            // An in-session open targets an
+            // independent document pane.
             app_ui::frame_theme::mark_frame_hidden(false);
             if let Some(id) = frame_session() {
                 crate::command(id, *document);
             }
         }
         ShellFrame::Refresh => {
-            // Refresh activates the Library, never a Reader host. Reader
-            // document state stays in its independent panes.
+            // Refresh activates the Library,
+            // never a Reader host.
         }
         ShellFrame::ResolveLaunchAnswer { request, document } => {
             with_api(|api| api.settle_launch(request, document.map(|document| *document)));
@@ -83,9 +64,7 @@ fn on_frame(body: ShellFrame, generation: u64) {
                     emit(RuntimeFrame::DisposeComplete);
                 });
             } else {
-                // Nothing mounted (an init never arrived, or a duplicate
-                // dispose): the answer is still owed, or the Shell waits out
-                // its forced-removal timeout.
+                // Nothing mounted: the answer is still owed.
                 emit(RuntimeFrame::DisposeComplete);
             }
         }
@@ -95,9 +74,8 @@ fn on_frame(body: ShellFrame, generation: u64) {
     }
 }
 
-/// The Shell's `init`: the frame's one launch. Mounts the runtime root the
-/// handshake names (§9) and starts the session; everything after is the boot
-/// stages on the port. Every Reader host is a fresh realm.
+/// The Shell's `init`: mounts the runtime root and starts the
+/// session.
 fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     if frame_session().is_some() {
         return;
@@ -124,13 +102,7 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     report_painted();
 }
 
-/// The frame-side open flow: ask the Shell to resolve `path` against the
-/// persisted library and await the answer before placing the document. The
-/// frame has no synchronous boundary query — the only honest async form of
-/// "open, resumed where the library says" is to wait for the answer.
-///
-/// The awaiting continuation keeps its placement: where the document goes was
-/// decided when the user asked, not when the answer lands.
+/// The frame-side open flow: ask the Shell, await, then place.
 pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement) {
     if frame_session() != Some(ctx.id) || !ctx.pane.admits_work() {
         return;

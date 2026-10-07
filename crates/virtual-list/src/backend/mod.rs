@@ -1,10 +1,4 @@
-//! Shared backend trait: `StripBackend` defines the primitives every geometry
-//! engine provides (`offset_sub`, `size_sub`, `total_sub`, `index_at_sub`,
-//! `set_size_sub`). All windowing logic (`overlapping`, `visible`, `window`,
-//! `dominant`) is written once against this trait, so a new backend — a tree,
-//! a chunked column — only implements the primitives. The math stays in `i64`
-//! sub-pixels (`to_sub` / `from_sub`) so boundary behavior is bit-for-bit
-//! identical across backends.
+//! The backend trait: five primitives, all windowing written once.
 
 use crate::units::{from_sub, to_sub};
 use crate::window::{Budget, Window};
@@ -33,10 +27,9 @@ pub trait StripBackend {
     fn total_sub(&self) -> i64;
 
     /// Index of the item whose span contains sub-pixel position `p`.
-    /// Same leading-edge boundary rules as `Strip::index_at`.
     fn index_at_sub(&self, p: i64) -> usize;
 
-    /// Set item `index` to `new_sub` (sub-pixels). Returns signed delta in sub-px.
+    /// Set item `index` to `new_sub`; returns the signed delta.
     fn set_size_sub(&mut self, index: usize, new_sub: i64) -> i64;
 
     // f64 convenience wrappers (default implementations, can be overridden)
@@ -55,8 +48,7 @@ pub trait StripBackend {
         from_sub(self.size_sub(index))
     }
 
-    /// Total extent of the column: every item plus the gaps between them,
-    /// with no trailing gap. `0.0` when empty.
+    /// Total extent of the column, no trailing gap; 0.0 when empty.
     fn total(&self) -> f64 {
         from_sub(self.total_sub())
     }
@@ -79,29 +71,22 @@ pub trait StripBackend {
         self.index_at_sub(to_sub(pos))
     }
 
-    /// Set item `index` to `new_size` (f64). Returns signed delta in CSS pixels.
+    /// Set item `index` to `new_size`; returns the signed delta.
     fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
         let new_sub = to_sub(new_size);
         let delta_sub = self.set_size_sub(index, new_sub);
         from_sub(delta_sub)
     }
 
-    /// [`index_at`](Self::index_at) with a per-frame hint — the previous
-    /// frame's answer, checked first. The default ignores the hint as a
-    /// search seed and simply records the unhinted answer into it, so a
-    /// custom backend that does not opt into the fast path still gets
-    /// correct answers AND honest hint bookkeeping; [`Strip`] overrides it
-    /// with the neighbour-then-gallop search.
+    /// [`index_at`](Self::index_at) with a per-frame hint; the default
+    /// records the unhinted answer.
     fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
         let index = self.index_at(pos);
         *hint = index;
         index
     }
 
-    /// [`window`](window) with a per-frame hint. The default routes through
-    /// the generic hinted windowing, which is correct for any backend — it
-    /// leans on [`index_at_hinted`](Self::index_at_hinted), whose own
-    /// default is simply the unhinted answer.
+    /// [`window`](window) with a per-frame hint.
     fn window_hinted(
         &self,
         scroll_top: f64,
@@ -113,8 +98,7 @@ pub trait StripBackend {
     }
 }
 
-/// Shared `overlapping` — written once, identical for every backend.
-/// Keeps the boundary-critical math in `i64` sub-pixels.
+/// Shared `overlapping`, identical for every backend.
 pub fn overlapping<B: StripBackend + ?Sized>(b: &B, top: f64, extent: f64) -> Option<Window> {
     let len = b.len();
     if len == 0 {
@@ -134,11 +118,7 @@ pub fn overlapping<B: StripBackend + ?Sized>(b: &B, top: f64, extent: f64) -> Op
     overlapping_from_first(b, first, bottom_sub)
 }
 
-/// [`overlapping`] with a per-frame hint for the LEADING item — the same
-/// boundary rules, with the leading-edge search seeded from the previous
-/// frame's answer (amortized `O(1)` for continuous scrolling). The trailing
-/// binary search is shared with the unhinted path, so the two can never
-/// disagree about where the window ends.
+/// [`overlapping`] with a hint for the LEADING item.
 pub fn overlapping_hinted<B: StripBackend + ?Sized>(
     b: &B,
     top: f64,
@@ -163,11 +143,7 @@ pub fn overlapping_hinted<B: StripBackend + ?Sized>(
     overlapping_from_first(b, first, bottom_sub)
 }
 
-/// The tail half of an overlap query, once the leading item is known:
-/// boundary-check it, then binary-search the last item whose start is
-/// strictly below `bottom_sub`. In `i64` sub-pixels so the boundary
-/// behaviour is bit-for-bit identical for every backend and every entry
-/// point.
+/// The tail half of an overlap query, leading item known.
 fn overlapping_from_first<B: StripBackend + ?Sized>(
     b: &B,
     first: usize,
@@ -249,12 +225,7 @@ pub fn window<B: StripBackend + ?Sized>(
     Some(trim_to_budget(padded, vis, budget.max_items))
 }
 
-/// Shared `window_hinted` — [`window`] with a per-frame hint (amortized
-/// `O(1)`). Everything except the leading-edge seed is the unhinted path:
-/// the padded range resolves through [`overlapping_hinted`], the
-/// strictly-visible range through the unhinted [`visible`], and the budget
-/// trim is the one shared implementation — so the hinted and unhinted
-/// windows can never disagree about what stays mounted.
+/// Shared `window_hinted`: [`window`] with a per-frame hint.
 pub fn window_hinted<B: StripBackend + ?Sized>(
     b: &B,
     scroll_top: f64,
@@ -284,11 +255,7 @@ pub fn window_hinted<B: StripBackend + ?Sized>(
     Some(trim_to_budget(padded, vis, budget.max_items))
 }
 
-/// The one budget trim — the invariant every windowing path answers
-/// identically. What is strictly visible survives; the item furthest from
-/// the viewport is evicted first; the item below it (in reading direction)
-/// is the last to go. `vis` of `None` means nothing was strictly on screen,
-/// so the padded range stands as it came.
+/// The one budget trim every windowing path answers identically.
 fn trim_to_budget(padded: Window, vis: Option<Window>, max_items: usize) -> Window {
     let max = max_items.max(1);
     let mut first = padded.first;
@@ -317,11 +284,7 @@ pub use strip::Strip;
 mod tests {
     use super::*;
 
-    /// The trait's primitive half ONLY — no hinted overrides. A backend that
-    /// opts out of the fast path must still get correct answers out of the
-    /// default `index_at_hinted` / `window_hinted`. It forwards to a [`Strip`]
-    /// through the f64 conveniences, which round-trip exactly for the clean
-    /// sizes these tests use.
+    /// The trait's primitive half only, no hinted overrides.
     struct Bare(Strip);
 
     impl Bare {

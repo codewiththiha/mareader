@@ -1,8 +1,4 @@
 //! The rescan ledger: what a scan of a watched folder does.
-//!
-//! A rescan runs on every window focus, so a wrong answer is not a crash — it
-//! is a deleted book coming back, or a duplicate added on every click.
-//! [`diff_folder`] is pure, so the edge cases are testable.
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,27 +7,20 @@ use crate::folder::{Tombstone, WatchedFolder};
 use crate::scan::FoundFile;
 use crate::shelf::Shelf;
 
-/// What the ledger needs to know about a book already in the library: id,
-/// address, whether the address is known dead, and — for a stored copy — the
-/// address it was made from.
+/// What the ledger knows about a book: id, address, and its source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KnownBook {
     pub id: String,
     pub path: String,
     pub missing: bool,
-    /// `None` for a linked row: its source is its own address, and the rule
-    /// this feeds is about a copy and its original.
+    /// `None` for a linked row: its source is its own address.
     pub source: Option<String>,
 }
 
-/// Derived from the book list on every scan rather than persisted; a derived
-/// index cannot go stale.
+/// Derived from the book list every scan, so it cannot go stale.
 pub type Registry = HashMap<Fingerprint, KnownBook>;
 
-/// The [`Registry`] for a row list, built from its book rows: a link has no
-/// fingerprint, so a scan never sees or places one. Two rows can share a
-/// fingerprint (duplicates the reader kept); shared rows are registered
-/// before independent ones, so a scan always resolves to the shared copy.
+/// The [`Registry`] for a row list: a link has no fingerprint.
 pub fn registry_of(rows: &[Row]) -> Registry {
     let mut out = Registry::with_capacity(rows.len());
     let books: Vec<&Book> = book_rows(rows).collect();
@@ -44,15 +33,12 @@ pub fn registry_of(rows: &[Row]) -> Registry {
     out
 }
 
-/// The row the library already holds for this content, if any: "are these
-/// bytes already a book somewhere", not "is this name on the level I am
-/// dropping onto" (that is [`crate::conflict::collide`]).
+/// The row the library already holds for this content, if any.
 pub fn existing_for(rows: &[Row], fp: Fingerprint) -> Option<ExistingContent> {
     if fp.mtime_ms == 0 {
         return None;
     }
-    // Bound rather than chained: the registry is a temporary, and borrowing
-    // out of one in the same expression drops it.
+    // Bound, not chained: the registry is a temporary.
     let registry = registry_of(rows);
     let known = registry.get(&fp)?;
     if known.path.is_empty() {
@@ -75,8 +61,7 @@ fn known_of(book: &crate::book::Book) -> KnownBook {
         id: book.id.clone(),
         path: book.path().to_string(),
         missing: book.missing,
-        // A stored row's provenance only: a link's source IS its address, so
-        // carrying it would make every linked book look like a copy of itself.
+        // A stored row's provenance only.
         source: match &book.origin {
             Origin::Stored { src, .. } => src.clone(),
             Origin::Linked { .. } => None,
@@ -86,19 +71,15 @@ fn known_of(book: &crate::book::Book) -> KnownBook {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScanAction {
-    /// A book the library does not have. The caller mints the row and records
-    /// the fingerprint in [`crate::folder::WatchedFolder::placed`].
+    /// A book the library does not have.
     Add(FoundFile),
-    /// A known book whose address moved on disk: rewrite the address; leave
-    /// the id, resume point and shelf memberships alone.
+    /// A known book whose address moved on disk.
     Relink { book_id: String, to: String },
     /// The common case: a rescan of an unchanged folder is a list of these.
     Skip,
 }
 
-/// Decide what a folder's scan does, file by file, in walk order. Pure: reads
-/// the folder's ledger and the global registry, answers one [`ScanAction`]
-/// per found file.
+/// Decide what a scan does, file by file, in walk order.
 pub fn diff_folder(
     folder: &WatchedFolder,
     registry: &Registry,
@@ -111,26 +92,21 @@ pub fn diff_folder(
     out
 }
 
-/// One file's decision, split out of [`diff_folder`] so a test can name the
-/// case it asserts instead of building a whole walk for it.
+/// One file's decision, split out of [`diff_folder`] for tests.
 pub fn decide(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> ScanAction {
-    // A tombstone wins over everything, including content this folder never
-    // placed: the reader removed this file and it is still on disk.
+    // A tombstone wins over everything, including a never-placed file.
     if folder.is_ignored(&file.fp) {
         return ScanAction::Skip;
     }
     match registry.get(&file.fp) {
         None => {
-            // Content this folder placed before whose row is gone (a storage
-            // trim, a hand-edited blob): do not resurrect it.
+            // A placed row that is gone stays gone.
             if folder.placed.contains(&file.fp) {
                 ScanAction::Skip
             } else if folder.tracks_rung(&folder.shelf_key(file)) {
                 ScanAction::Add(file.clone())
             } else {
-                // An untracked rung adds nothing: a subfolder turned off
-                // under a watched root is off for the walk too. An explicit
-                // import answers through [`decide_import`] instead.
+                // An untracked rung adds nothing.
                 ScanAction::Skip
             }
         }
@@ -144,13 +120,11 @@ fn known_action(folder: &WatchedFolder, known: &KnownBook, file: &FoundFile) -> 
     if known.path == file.path {
         return ScanAction::Skip;
     }
-    // The registry named the library's own copy of the file this walk stands
-    // on: two addresses, not a move — stay quiet.
+    // The library's own copy stands here: quiet, not a move.
     if known.source.as_deref() == Some(file.path.as_str()) {
         return ScanAction::Skip;
     }
-    // The address moved, and this folder placed the book or it is already
-    // known missing: relink.
+    // The address moved and this folder placed the book: relink.
     if folder.placed.contains(&file.fp) || known.missing {
         ScanAction::Relink {
             book_id: known.id.clone(),
@@ -161,19 +135,14 @@ fn known_action(folder: &WatchedFolder, known: &KnownBook, file: &FoundFile) -> 
     }
 }
 
-/// An explicit import's decision: the same questions as [`decide`], except a
-/// tombstone is lifted rather than honoured (the lift lands via
-/// [`restore_deleted`]) and content another folder placed is still added.
+/// An import's decision: the same as [`decide`], tombstones lifted.
 fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> ScanAction {
     match registry.get(&file.fp) {
         None => ScanAction::Add(file.clone()),
         Some(known) => {
             let action = known_action(folder, known, file);
-            // The one answer the two tables share differently: a rescan stays
-            // quiet about content another folder placed, but an explicit
-            // import is the reader asking for THIS folder, and a
-            // byte-identical copy of another folder's book is still a file
-            // this folder has.
+            // A rescan stays quiet about another folder's content; an import
+            // adds it.
             match action {
                 ScanAction::Skip if known.path != file.path => ScanAction::Add(file.clone()),
                 other => other,
@@ -195,10 +164,7 @@ pub fn diff_import(
     out
 }
 
-/// The found files an explicit copies run owes a book of its own: the ones
-/// the library already reads in place. This filter is the whole of what
-/// separates "a second instance the reader asked for" from "the instance the
-/// library already has".
+/// The found files a copies run owes a book, the in-place ones.
 pub fn copy_over_paths(found: &[FoundFile], registry: &Registry, rows: &[Row]) -> HashSet<String> {
     found
         .iter()
@@ -213,11 +179,7 @@ pub fn copy_over_paths(found: &[FoundFile], registry: &Registry, rows: &[Row]) -
         .collect()
 }
 
-/// The files an unbound copies run owes a book of its own: one per
-/// fingerprint, first found wins. "Unbound" means the run must not touch a
-/// standing tree's ledger — a copies import of ground a read-at-place tree
-/// still reads, whose *as new* answer is a second shelf rather than a rewrite
-/// of the first.
+/// The unbound copies run's files: one per fingerprint, first wins.
 pub fn unbound_copies(found: &[FoundFile], registry: &Registry, rows: &[Row]) -> Vec<FoundFile> {
     let copy_paths = copy_over_paths(found, registry, rows);
     let mut seen: HashSet<Fingerprint> = HashSet::new();
@@ -242,8 +204,7 @@ pub fn unbound_copies(found: &[FoundFile], registry: &Registry, rows: &[Row]) ->
     out
 }
 
-/// The linked rows a *replace* of this tree sweeps through the removal pass
-/// first, so the copies that land come back in the names the shelves showed.
+/// The linked rows a replace sweeps first, so copies keep their names.
 pub fn linked_rows_of(rows: &[Row], placed: &HashSet<Fingerprint>) -> Vec<String> {
     book_rows(rows)
         .filter(|b| matches!(b.origin, Origin::Linked { .. }) && placed.contains(&b.fp))
@@ -251,16 +212,12 @@ pub fn linked_rows_of(rows: &[Row], placed: &HashSet<Fingerprint>) -> Vec<String
         .collect()
 }
 
-/// Drop the relinks that would point a book at an address another row reads.
-/// Two rows can hold one fingerprint, so a walk of the other folder would
-/// rewrite the first one's address out from under it.
+/// Drop relinks that would point a book at another row's address.
 pub fn keep_healable_relinks(relinks: &mut Vec<(String, String)>, rows: &[Row]) {
     relinks.retain(|(_, to)| !book_rows(rows).any(|b| b.path() == to.as_str()));
 }
 
-/// Record a deliberate removal so the next rescan stays quiet about the file.
-/// Only folders that placed the book take the tombstone: removing a book added
-/// by hand must not poison a watched folder holding the same file.
+/// Record a removal so the next rescan stays quiet about the file.
 pub fn tombstone(folders: &mut [WatchedFolder], entry: &Tombstone) {
     for folder in folders.iter_mut() {
         if folder.placed.contains(&entry.fp) && !folder.is_ignored(&entry.fp) {
@@ -269,34 +226,25 @@ pub fn tombstone(folders: &mut [WatchedFolder], entry: &Tombstone) {
     }
 }
 
-/// Drop the tombstones whose books came back: a fingerprint can rejoin the
-/// library by any route, and a stale tombstone is a restore row offering what
-/// the reader already has. Moved-out logs are kept — both their jobs outlive
-/// the copy.
+/// Drop tombstones whose books came back; moved-out logs stay.
 pub fn prune_tombstones(folder: &mut WatchedFolder, registry: &Registry) {
     folder
         .ignored
         .retain(|entry| entry.moved || !registry.contains_key(&entry.fp));
 }
 
-/// Peeks without consuming: a restore measures the file before it promises
-/// anything, and a removal that stays put when the measurement fails is the
-/// difference between "that file is gone" and a book quietly lost.
+/// Peeks without consuming: a restore measures before it promises.
 pub fn find_tombstone<'a>(folder: &'a WatchedFolder, fp: &Fingerprint) -> Option<&'a Tombstone> {
     folder.ignored.iter().find(|entry| &entry.fp == fp)
 }
 
-/// Lift a tombstone. Does not touch `placed`: the import that follows marks
-/// the placement when the book lands, and marking it here would leave a
-/// fingerprint the ledger skips with no book behind it.
+/// Lift a tombstone; `placed` is marked when the book lands.
 pub fn restore_deleted(folder: &mut WatchedFolder, fp: &Fingerprint) -> Option<Tombstone> {
     let at = folder.ignored.iter().position(|entry| &entry.fp == fp)?;
     Some(folder.ignored.remove(at))
 }
 
-/// Borrowed rather than cloned: the menu asking this opens on a click, and
-/// copying a whole library to answer one question is a frame drop. Duplicates
-/// resolve to the first row.
+/// Borrowed, not cloned: the menu asks on a click.
 pub fn index_by_fp(rows: &[Row]) -> HashMap<Fingerprint, &Book> {
     let mut out = HashMap::with_capacity(rows.len());
     for book in book_rows(rows) {
@@ -308,36 +256,20 @@ pub fn index_by_fp(rows: &[Row]) -> HashMap<Fingerprint, &Book> {
 /// A book this folder could give the reader back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Recovered {
-    /// Removed by the reader and still not in the library. The file may or
-    /// may not still be on disk; a restore measures before it promises.
+    /// Removed by the reader, still not in the library.
     Deleted(Tombstone),
-    /// Still in the library and still inside this folder on disk, but no
-    /// longer on any shelf this folder owns: the reader moved it elsewhere in
-    /// the app. Nothing is re-imported — the offer is to show it here as well,
-    /// or to go look at where it went.
+    /// Still in the library, but off this folder's shelves.
     Moved {
         book_id: String,
-        /// The name the shelf shows: the document's title when it had one,
-        /// else the stem the reader knows — a stored book's source, never the
-        /// store's own `source.pdf`.
+        /// The name the shelf shows, never the store's `source.pdf`.
         title: Option<String>,
         path: String,
-        /// The first shelf the book is on, by name, for the row's "now in
-        /// Fiction" half. `None` when the book is on no shelf.
+        /// The first shelf the book is on, or `None`.
         home_shelf: Option<String>,
     },
 }
 
 /// What this folder's import menu can offer to give back.
-///
-/// Pure and synchronous by design: the menu opens on a click and answers from
-/// the last scan's `last_seen` plus the folder's tombstones — a walk over two
-/// short lists, not over a directory tree. A restore re-measures the one file
-/// it is about to import, which is where freshness actually matters.
-///
-/// Takes the shelf list rather than a membership callback: which shelves a
-/// book is on, and which the folder owns, are rules [`crate::shelf`] owns.
-/// "First membership" is shelf order, so the row's home is deterministic.
 pub fn recoverables(
     folder: &WatchedFolder,
     books_by_fp: &HashMap<Fingerprint, &Book>,
@@ -345,8 +277,7 @@ pub fn recoverables(
 ) -> Vec<Recovered> {
     let mut out = Vec::new();
 
-    // Removed books first: an offer to give something back outranks an offer
-    // to show you what you already have.
+    // Removed books first: giving back outranks showing.
     for entry in &folder.ignored {
         if books_by_fp.contains_key(&entry.fp) {
             continue;
@@ -363,8 +294,7 @@ pub fn recoverables(
         let Some(book) = books_by_fp.get(fp) else {
             continue;
         };
-        // The card already offers a relink; a second door here would not know
-        // the address is bad.
+        // The card already offers a relink.
         if book.missing {
             continue;
         }
@@ -374,8 +304,7 @@ pub fn recoverables(
         }
         out.push(Recovered::Moved {
             book_id: book.id.clone(),
-            // The display name: the menu's `path` fallback would read the
-            // store's own `source.pdf` for a stored book.
+            // The display name; `path` would read the store's `source.pdf`.
             title: Some(book.title()),
             path: path.clone(),
             home_shelf: on.first().map(|shelf| shelf.name.clone()),
@@ -384,9 +313,7 @@ pub fn recoverables(
     out
 }
 
-/// Apply a `Relink`: rewrite the address, clear `missing`, keep everything
-/// else. A stored book does not take the new address — its bytes are the app's
-/// own copy — so only its recorded source moves.
+/// Apply a linking: rewrite the address, clear `missing`.
 pub fn relink(rows: &mut [Row], book_id: &str, to: &str) -> bool {
     // A link has no address to move, so `book_rows_mut` is the whole guard.
     let Some(book) = book_rows_mut(rows).find(|b| b.id == book_id) else {
@@ -413,8 +340,7 @@ mod tests {
     use reader_core::format::Format;
     use std::collections::{BTreeMap, HashSet};
 
-    /// A test-local helper rather than a method: nothing in the app asks
-    /// whether an action changes anything.
+    /// A test-local helper: the app never asks.
     fn changes(action: &ScanAction) -> bool {
         !matches!(action, ScanAction::Skip)
     }
@@ -425,8 +351,7 @@ mod tests {
 
     #[test]
     fn content_the_library_holds_is_a_question_before_it_is_a_second_copy() {
-        // A folder walk has always asked through the registry; a loose file
-        // dropped on the library never did.
+        // A walk asks through the registry; a dropped file never did.
         let rows = vec![crate::testkit::row_at("b1", "/books/dune.pdf")];
         let held = existing_for(&rows, fp(1)).expect("the library holds this content");
         assert_eq!(held.row_id, "b1");
@@ -445,8 +370,7 @@ mod tests {
 
     #[test]
     fn an_unmeasured_fingerprint_matches_nothing() {
-        // A placeholder carries `mtime_ms == 0`: matching a real measurement
-        // against one would either miss every book or claim one it does not.
+        // A placeholder carries `mtime_ms == 0` and never matches.
         let pending = vec![Row::Book(Book {
             fp: Fingerprint::placeholder("/books/dune.pdf"),
             fp_pending: true,
@@ -457,15 +381,14 @@ mod tests {
             None
         );
         assert_eq!(existing_for(&pending, fp(1)), None);
-        // A measured row answers: the guard is about the fingerprint, not the row.
+        // A measured row answers; the guard is the fingerprint.
         let measured = vec![crate::testkit::row_at("b1", "/books/dune.pdf")];
         assert!(existing_for(&measured, fp(1)).is_some());
     }
 
     #[test]
     fn a_book_whose_address_died_is_still_the_book_the_library_holds() {
-        // `missing` rides the answer because it changes what the answer
-        // means: an offer to open, or an offer to find the file again.
+        // `missing` rides the answer: open, or find the file again.
         let gone = vec![Row::Book(Book {
             missing: true,
             ..crate::testkit::book_at("b1", "/books/dune.pdf")
@@ -513,8 +436,7 @@ mod tests {
             shelf_map: BTreeMap::new(),
             last_seen: Vec::new(),
             scanned_ms: 0,
-            // The ledger's tables answer for a folder the walk is on: a tree
-            // that tracks from its root.
+            // The tables answer for a tree tracked from its root.
             tracking: TrackingTree::tracking_root(),
             shapes: crate::shape::ShapeTree::default(),
         }
@@ -549,8 +471,7 @@ mod tests {
             .collect()
     }
 
-    /// A registry whose rows are the library's own copies: each entry carries
-    /// the address its bytes were made from.
+    /// A registry of the library's own copies, by source address.
     fn copied_registry(rows: &[(u32, &str, &str, &str)]) -> Registry {
         rows.iter()
             .map(|(n, id, store, source)| {
@@ -576,9 +497,7 @@ mod tests {
         );
     }
 
-    /// The tracking tree's quiet half: a rung turned off under a watched root
-    /// adds nothing on a rescan, while an explicit import of the same ground
-    /// still adds what it finds.
+    /// A rung turned off adds nothing on a rescan, but an import does.
     #[test]
     fn a_rung_nobody_watches_adds_nothing_on_a_rescan() {
         let mut f = folder(&[], &[]);
@@ -643,9 +562,7 @@ mod tests {
         assert_eq!(decide(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
     }
 
-    /// The rule the whole ledger exists for: a book the reader moved off this
-    /// folder's shelf is still in the library, and a rescan must not put it
-    /// back.
+    /// A book moved off this folder's shelf must not be put back.
     #[test]
     fn a_book_moved_off_the_folder_shelf_is_never_re_added() {
         let f = folder(&[1], &[]);
@@ -673,8 +590,7 @@ mod tests {
         );
     }
 
-    /// A removal answers "should this come back on its own", not "the reader
-    /// is asking for it again".
+    /// A removal answers for a rescan, not for an import.
     #[test]
     fn an_explicit_import_overrides_the_removals_that_wrote_the_tombstones() {
         let f = folder(&[], &[1]);
@@ -689,10 +605,7 @@ mod tests {
         );
     }
 
-    /// The import table keeps the rows about this folder: held at this
-    /// address is still a Skip, held at another address this folder placed is
-    /// still a Relink. It drops only the row that made a second folder's
-    /// identical copy invisible.
+    /// The import table keeps this folder's rows.
     #[test]
     fn an_explicit_import_duplicates_nothing_this_folder_placed() {
         let f = folder(&[1], &[]);
@@ -723,9 +636,7 @@ mod tests {
         assert_eq!(decide_import(&placed, &r, &file(1, "/books/a.pdf")), relink);
     }
 
-    /// The exception both tables carry: the registry named the library's own
-    /// copy of the file the walk stands on. Two addresses, not a move — the
-    /// copy is in the store, its source is here.
+    /// Both tables carry it: the library's own copy stands here.
     #[test]
     fn a_copy_never_relinks_its_own_source() {
         let f = folder(&[1], &[]);
@@ -759,9 +670,7 @@ mod tests {
         );
     }
 
-    /// The one case where the two tables part company: an import is the
-    /// reader asking for THIS file, and the library's copy is not it, so the
-    /// quiet answer becomes an `Add`.
+    /// The one split: an import wants THIS file, so quiet becomes `Add`.
     #[test]
     fn an_explicit_import_of_a_copy_source_asks_for_the_files_own_book() {
         let f = folder(&[1], &[]);
@@ -778,8 +687,7 @@ mod tests {
         );
     }
 
-    // A linked book's source IS its path, so the copy's exception can never
-    // swallow a move heal.
+    // A linked book's source is its path.
     #[test]
     fn a_linked_book_is_never_a_copy_of_itself() {
         let rows = vec![Row::Book(Book::new(
@@ -916,8 +824,7 @@ mod tests {
         );
     }
 
-    /// The unbound copies run's table: what the bound explicit run owes,
-    /// minus everything a ledger would have answered.
+    /// The unbound run's table: the bound one minus the ledger.
     #[test]
     fn an_unbound_copies_run_owes_every_file_but_the_copy_the_library_made() {
         let linked = |id: &str, path: &str, n: u32| {
@@ -1038,8 +945,7 @@ mod tests {
 
     #[test]
     fn a_relink_onto_an_address_a_row_already_reads_is_dropped() {
-        // Two rows, one fingerprint: a walk of the other folder would
-        // rewrite b1's address out from under it.
+        // Two rows, one fingerprint.
         let rows = vec![
             Row::Book(Book::new(
                 "b1".into(),
@@ -1213,8 +1119,7 @@ mod tests {
 
     #[test]
     fn a_moved_out_log_is_not_offered_back_as_a_removal() {
-        // The book a moved-out log belongs to is still in the library as its
-        // own stored copy; the way back is an import, which spends the log.
+        // The log's book is still in the library; an import spends the log.
         let mut f = folder(&[1], &[2]);
         f.ignored.push(Tombstone {
             moved: true,
@@ -1248,9 +1153,7 @@ mod tests {
         assert_eq!(left, vec![fp(2)], "only the book that is really gone stays");
     }
 
-    /// A moved-out log outlives the copy carrying its fingerprint: it keeps a
-    /// rescan quiet about a file the library answered for once, and an import
-    /// of that file spends it.
+    /// A moved-out log outlives its copy and keeps a rescan quiet.
     #[test]
     fn pruning_keeps_a_moved_out_log_whatever_the_registry_says() {
         let mut f = folder(&[1, 2], &[]);
@@ -1276,8 +1179,7 @@ mod tests {
         );
     }
 
-    /// The log's spend is a restore's landing: afterwards the file has a
-    /// linked book again and the folder needs no log.
+    /// The log is spent when a restore lands.
     #[test]
     fn a_moved_out_log_is_spent_by_the_restore_that_brings_the_book_back() {
         let mut f = folder(&[1], &[]);
@@ -1508,16 +1410,14 @@ mod tests {
         let found = vec![file(1, "/books/1.pdf"), file(2, "/books/2.pdf")];
         f.record_seen(&found);
         assert_eq!(f.last_seen, vec![(fp(1), "/books/1.pdf".to_string())]);
-        // A second scan replaces the first: the menu answers "where is it
-        // now", not "where has it ever been".
+        // A second scan replaces the first.
         f.record_seen(&[]);
         assert!(f.last_seen.is_empty());
     }
 
     #[test]
     fn a_scan_that_changed_nothing_still_refreshes_what_was_seen() {
-        // `record_seen` is not behind the "did anything change" check: a book
-        // moved out between two quiet scans is what the menu has to see.
+        // `record_seen` is not behind the change check.
         let mut f = folder(&[1], &[]);
         f.record_seen(&[file(1, "/books/1.pdf")]);
         f.record_seen(&[file(1, "/books/moved/1.pdf")]);
@@ -1526,8 +1426,7 @@ mod tests {
 
     #[test]
     fn a_link_is_invisible_to_a_scan() {
-        // A pointer is not a copy of a file: no fingerprint to match, no
-        // address to relink, nothing a folder could place.
+        // A pointer is not a copy.
         let rows = vec![
             Row::link("l1".into(), "Dune".into(), "b1".into(), 5),
             book(

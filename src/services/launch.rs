@@ -1,11 +1,8 @@
-//! Launch parsing: the URL (`?open=/samples/…&blend=1` — the web test hook's
-//! exact contract, now owned by the shell) and the OS-open plumbing (Tauri's
-//! pending-file handoff), forwarded into whichever runtime is live.
+//! Launch parsing: the URL hook and the OS-open plumbing.
 
 use runtime_contract::boundary::LaunchDocument;
 
-/// The URL launch for a reader boot. Samples-only guard included: the hook
-/// opens exactly the fixtures the repository ships.
+/// The URL launch for a reader boot, samples-only.
 pub fn launch_from_url() -> LaunchDocument {
     #[cfg(target_arch = "wasm32")]
     {
@@ -33,8 +30,7 @@ pub fn launch_from_url() -> LaunchDocument {
     }
 }
 
-/// The unnamed launch: no book, no resume point — the URL overrides and the
-/// OS-open handoff fill in what they know.
+/// The unnamed launch: no book, no resume point.
 fn blank_launch() -> LaunchDocument {
     LaunchDocument {
         book_id: None,
@@ -47,10 +43,7 @@ fn blank_launch() -> LaunchDocument {
     }
 }
 
-/// The OS-open plumbing (shell-lifetime): pull the pending file once at boot
-/// and forward the push stream — into the LIVE runtime via its command
-/// export. The old `init_open_file_handling` moved here: OS events are
-/// window services (§2), and they outlive every runtime session.
+/// The OS-open plumbing: the pending file and its push stream.
 pub fn install_os_open_handling(state: crate::state::ShellState) {
     #[cfg(target_arch = "wasm32")]
     {

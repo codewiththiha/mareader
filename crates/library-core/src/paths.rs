@@ -1,21 +1,9 @@
-//! Path-part spelling: the one place a file name, an extension or a folder
-//! label is taken apart.
-//!
-//! These jobs used to be done by six functions in three idioms across the
-//! services, the shell and the import, and a Windows path answered
-//! differently depending on which door it came in. Everything here is pure,
-//! host-tested, and shared by the frontend and the shell. (The stem — the
-//! name without its extension — is `reader_core::filename`'s job, where the
-//! title fallback lives.)
+//! Path-part spelling: name, extension and folder label, once.
 
-/// The last segment of a path, either separator, no trailing empties: what a
-/// shelf shows a file by. Empty for an all-separator path and for a bare drive
-/// root (`C:\`) — a root has no last segment to show.
+/// The last segment of a path, either separator.
 pub fn file_name(path: &str) -> String {
     let trimmed = path.trim_end_matches(['/', '\\']);
-    // A drive root only looks like a segment once its trailing separator is
-    // trimmed: "C:" is a letter wearing its colon, not a name. The letter is
-    // checked because a colon is legal in a Unix name — "ab:" is one.
+    // A drive root is not a segment.
     let bytes = trimmed.as_bytes();
     if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
         return String::new();
@@ -27,8 +15,7 @@ pub fn file_name(path: &str) -> String {
         .to_string()
 }
 
-/// Lower case, no dot: the key the format registry answers by. Empty for a
-/// name with no extension (`Makefile`, `.gitignore`).
+/// Lower case, no dot: the registry's key.
 pub fn extension(path: &str) -> String {
     let name = file_name(path);
     match name.rsplit_once('.') {
@@ -37,8 +24,7 @@ pub fn extension(path: &str) -> String {
     }
 }
 
-/// The last segment a folder goes by, falling back to the whole path for a
-/// root ("/", "C:\\") that has no segment to show.
+/// The last segment a folder goes by.
 pub fn dir_label(path: &str) -> String {
     let name = file_name(path);
     if name.is_empty() {

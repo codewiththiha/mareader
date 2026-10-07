@@ -1,7 +1,4 @@
 //! One question, described — and the one renderer that draws all four.
-//!
-//! Four questions wear this chrome: the level's own name, a merged folder's
-//! per-file ask, a covered file's ground, and a folder's name collision.
 
 use leptos::prelude::*;
 
@@ -11,9 +8,7 @@ use crate::services::conflict;
 use app_ui::components::primitives::menu::choice_row::ChoiceRow;
 use app_ui::components::primitives::overlay::question_sheet::QuestionSheet;
 
-/// The four asks are raised on two states and dropped by two functions;
-/// naming the route rather than carrying a closure per row makes "which ask
-/// is this" and "which call answers it" one fact.
+/// Naming the route makes "which ask" and "which call answers it" one fact.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum AnswerRoute {
     Placement,
@@ -28,8 +23,7 @@ pub(super) struct ChoiceSpec {
     pub(super) placement: Placement,
 }
 
-/// A value rather than a component: the four questions differ in their words
-/// and rows and in nothing else.
+/// A value, not a component: the four differ in words and rows only.
 pub(super) struct SheetSpec {
     pub(super) heading: String,
     pub(super) subtitle: String,
@@ -41,8 +35,7 @@ pub(super) struct SheetSpec {
     pub(super) choices: Vec<ChoiceSpec>,
 }
 
-/// The ✕, the backdrop, the Escape key and Cancel all end in [`close`]: the
-/// one place that answers "what does dropping this question mean".
+/// The ✕, backdrop, Escape and Cancel all end in [`close`].
 #[component]
 pub(super) fn ConflictSheet(
     state: crate::context::LibraryContext,

@@ -1,13 +1,5 @@
-//! The remove sheet: what a removal costs, itemised.
-//!
-//! A removal is not a dismissal: every shelf placement goes, the app's own
-//! copy of the file goes, and the cached cover goes (the next import rebuilds
-//! it from the file).
-//!
-//! What the reader wrote in the book is the one thing the sheet asks about:
-//! highlights, resume point and any name they gave it are kept for the file's
-//! return (`storage::kept`). The switch drops them instead — the only
-//! part of a removal that is not a receipt.
+//! The remove sheet: placement, copy and cover go; marks stay unless
+//! the switch drops them.
 
 mod receipt;
 
@@ -26,22 +18,17 @@ use app_ui::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 
 use receipt::{Receipt, receipt as build_receipt};
 
-/// A context for the same reason the import sheet is one: remove affordances
-/// live on a grid card, a list row and the selection bar.
+/// A context like the import sheet's: cards, rows and the bar can remove.
 #[derive(Clone, Copy)]
 pub struct RemoveSheet {
     pub open: RwSignal<bool>,
-    /// One id for a card's ✕, several for a selection; empty means the sheet has nothing to ask about and closes itself.
+    /// One id from a card, several from a selection; empty closes the sheet.
     pub books: RwSignal<Vec<String>>,
-    /// Separate from [`Self::books`]: different operations under one
-    /// confirmation — a shelf is taken apart and keeps every book.
+    /// Not [`Self::books`]: taking a shelf apart keeps every book.
     pub shelves: RwSignal<Vec<String>>,
-    /// Reset by every ask: a cascade is a decision about one removal, and a
-    /// switch that persisted would be a preference the sheet never offered.
+    /// Reset each ask: a persisted switch would be a preference never offered.
     pub cascade: RwSignal<bool>,
-    /// Off by default and reset by every ask, for the cascade's reason with
-    /// more at stake: a removal that quietly kept destroying the reader's
-    /// marks would answer a question nobody was asked this time.
+    /// Off and reset by every ask: a removal must not quietly destroy marks.
     pub delete_data: RwSignal<bool>,
 }
 
@@ -58,8 +45,7 @@ impl RemoveSheet {
         sheet
     }
 
-    /// A card's ✕ is never a question about a shelf, so the shelf half is
-    /// cleared rather than left over from the last selection.
+    /// A card's ✕ is no shelf question: the shelf half clears.
     pub fn ask(&self, book_id: &str) {
         self.books.set(vec![book_id.to_string()]);
         self.shelves.set(Vec::new());
@@ -85,8 +71,7 @@ pub(crate) fn RemoveBookModal(
     state: crate::context::LibraryContext,
     sheet: RemoveSheet,
 ) -> impl IntoView {
-    // In an effect rather than the view: a view that writes a signal can be
-    // asked to render and mutate in the same pass.
+    // An effect, not the view: a write during render is the trap.
     Effect::new(move |_| {
         if !sheet.open.get() {
             return;
@@ -117,10 +102,7 @@ pub(crate) fn RemoveBookModal(
                 {move || {
                     let ids = sheet.books.get();
                     let shelf_ids = sheet.shelves.get();
-                    // Read here rather than inside the sheet, so flipping
-                    // the cascade switch rebuilds receipt and sheet together:
-                    // every row, the switch and the button's wording answer
-                    // about one set of books.
+                    // Read here, so a cascade flip rebuilds the sheet whole.
                     let cascade = sheet.cascade.get();
                     let info = build_receipt(state, &ids, &shelf_ids, cascade)?;
                     let cover_path = info
@@ -143,9 +125,7 @@ pub(crate) fn RemoveBookModal(
     }
 }
 
-/// Split out so the body takes the receipt by value: the outer view answers
-/// "is there still anything to talk about?" per run, this one is built once
-/// per answer.
+/// Split out so the body takes the receipt by value, once per answer.
 #[component]
 fn ReceiptSheet(
     state: crate::context::LibraryContext,
@@ -161,8 +141,7 @@ fn ReceiptSheet(
     let inside_books = info.inside_books;
     let inside_shelves = info.inside_shelves;
     let offers_cascade = inside_books > 0 || inside_shelves > 0;
-    // A `view!` body is a builder, not a place to compute: an attribute and
-    // a child needing the same string each need their own copy.
+    // A `view!` body builds, it does not compute.
     let heading = info.heading();
     let tooltip = heading.clone();
     let subtitle = info.subtitle();
@@ -200,15 +179,11 @@ fn ReceiptSheet(
                 .to_string()
         }
     });
-    // Hoisted out of the view: an `if` in attribute position is an
-    // expression the macro has to guess the end of. "Cover art" rather than
-    // "cached covers": the cache is the app's business, the picture the
-    // reader's.
+    // Hoisted out of the view; "Cover art" is the reader's word for the cache.
     let covers_label = "Cover art";
     let covers_line = plural(covers, "image", "images");
     let books_line = plural(info.books.len(), "book", "books");
-    // A cascade is already counted in both numbers, except where a shelf
-    // holds no books and only empty folders.
+    // The cascade counts in both numbers except for empty folders.
     let remove_label = match (info.books.len(), info.shelves.len()) {
         (1, 0) => "Remove".to_string(),
         (0, 1) if cascade && inside_shelves > 0 => {
@@ -223,8 +198,7 @@ fn ReceiptSheet(
         (b, s) => format!("Remove {b} books and {s} shelves"),
     };
     let show_cover = !many && !info.books.is_empty();
-    // Without the cascade the row says what survives it; with it, what goes.
-    // The same words would otherwise mean the opposite thing.
+    // Without the cascade the row says what survives; with it, what goes.
     let shelf_rows: Vec<(String, String)> = info
         .shelves
         .iter()
@@ -449,9 +423,7 @@ fn ReceiptSheet(
                         } else {
                             ReadingData::Keep
                         };
-                        // The shelf half is the take-apart the menus offer
-                        // too: a shelf reading books in place buys their
-                        // copies through the same question.
+                        // The shelf half is the menus' take-apart too.
                         remove_entries(state, purge_ids.clone(), delete_ids.clone(), data);
                     }
                     variant=ButtonVariant::Toolbar

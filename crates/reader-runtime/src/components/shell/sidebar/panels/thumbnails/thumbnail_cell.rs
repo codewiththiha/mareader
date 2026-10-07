@@ -1,15 +1,8 @@
-//! A single thumbnail cell.
-//!
-//! Split out of `panel.rs`: the cell owns its own render lifecycle (the
-//! request to its pane's frame, the cached fast path, the skeleton crossfade
-//! and cancellation on unmount). The panel above it only decides WHICH
-//! cells exist.
+//! A single thumbnail cell owning its render lifecycle: request, cached
+//! fast path, unmount cancellation.
 
-// The registry, generation guard, and render slot are shared with
-// `on_cleanup` callbacks and the spawned render task, which Leptos stores in
-// a `Send + Sync` slot — so these stay `Arc` + `Mutex`/atomics. This is
-// single-threaded UI code, but the owner's cleanup contract demands
-// thread-safe handles; `Rc` would not compile here.
+// These cross into `Send + Sync` cleanup slots, so they stay `Arc`
+// (with locks).
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -29,20 +22,14 @@ use super::geometry::CELL_W;
 /// resolves.
 const PULSE_STOP_MS: u64 = 400;
 
-/// Registry of pages whose canvases are currently engine-bound. A `HashSet`
-/// keeps the per-cell mount/unmount bookkeeping O(1); `Arc<Mutex>` because
-/// the handles cross into `Send + Sync` `on_cleanup` slots (see the note at
-/// the top of this file).
+/// Pages whose canvases are engine-bound: `Arc<Mutex<HashSet>>` (see the
+/// top of this file).
 pub type ThumbRegistry = Arc<Mutex<HashSet<u32>>>;
 
-/// The render lifecycle of one cell, as a pure state machine: the DOM side
-/// (canvas blit, cover crossfade, pulse timer) reacts to the transitions while
-/// the machine stays free of web types, so its rules are unit-testable in the
-/// native test runs.
+/// One cell's render lifecycle: a pure state machine, unit-testable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ThumbRenderState {
-    /// Mounted, and no render has completed yet. A failed render returns
-    /// here, and the next heal sweep retries it while attempts remain.
+    /// Mounted, no render completed yet; a failure returns here.
     Pending,
     /// A `render_thumb` is in flight; no second render may start.
     Rendering,
@@ -52,14 +39,11 @@ pub(crate) enum ThumbRenderState {
     Unmounted,
 }
 
-/// How many times a cell may (re)start a render before it gives up and the
-/// pulsing skeleton persists as the fallback.
+/// How many times a cell may restart a render before it gives up.
 const MAX_RENDER_ATTEMPTS: u8 = 3;
 
 impl ThumbRenderState {
-    /// A render may only start from `Pending`, and only while attempts
-    /// remain: `Rendering` blocks a concurrent render, `Settled` is a
-    /// terminal success, and `Unmounted` is terminal for everything.
+    /// A render starts only from `Pending`, while attempts remain.
     fn may_start(self, attempts: u8) -> bool {
         self == Self::Pending && attempts < MAX_RENDER_ATTEMPTS
     }
@@ -73,20 +57,17 @@ impl ThumbRenderState {
         Self::Settled
     }
 
-    /// A failed paint goes back to `Pending`; the next heal sweep retries it
-    /// while attempts remain.
+    /// A failed paint returns to `Pending` for the next sweep.
     fn fail(self) -> Self {
         Self::Pending
     }
 
-    /// Unmounting wins over every other state, including a render still in
-    /// flight when the cell leaves the window.
+    /// Unmounting wins over every other state, in-flight renders included.
     fn unmount(self) -> Self {
         Self::Unmounted
     }
 
-    /// Atomic storage: the cell keeps the machine in one `AtomicU8` so the
-    /// render task and the cleanup callback share it without a lock.
+    /// Atomic storage: one `AtomicU8` shared by the task and the cleanup.
     fn as_u8(self) -> u8 {
         self as u8
     }
@@ -101,104 +82,62 @@ impl ThumbRenderState {
     }
 }
 
-/// One thumbnail cell: a fully-opaque, fully-blended `.thumb-canvas` under a
-/// themed `.thumb-skeleton` cover that fades out once the engine render
-/// resolves. Registers its canvas on mount and unregisters it on `on_cleanup`
-/// (which fires when the cell scrolls out of the window, the document changes,
-/// or the app tears down).
+/// One thumbnail cell: a blended canvas under a themed cover.
 #[component]
 pub fn ThumbCell(
     state: ReaderState,
     /// 1-based page number this cell renders.
     page: u32,
-    /// Document generation guard, bumped on document change so a stale
-    /// in-flight render can't paint into a fresh document's canvas.
+    /// Document generation guard: a stale render cannot paint a new document.
     generation: Arc<AtomicU32>,
-    /// Registry of pages whose canvases are currently engine-bound, kept so a
-    /// cell can remove itself from it on unmount.
+    /// Pages whose canvases are engine-bound; the cell removes itself.
     bound: ThumbRegistry,
-    /// Bumped when the panel's heal sweep runs, so a cell whose render lost a
-    /// cache or cancellation race can retry without remounting.
+    /// Bumped by the panel's heal sweep: a lost race retries in place.
     #[prop(into)]
     heal: Signal<u64>,
-    /// Panel-wide staleness flag: this cell sets it when its render fails so
-    /// the panel schedules a heal sweep. The sweep — not the scroll stream —
-    /// is what drives healing.
+    /// Set when a render fails: the panel's sweep drives healing.
     needs_heal: RwSignal<bool>,
 ) -> impl IntoView {
-    // SYNCHRONOUS cache probe, read while the view is being built — BEFORE the
-    // cell's first frame is composited. When this page's bitmap is already in
-    // the engine's thumbnail cache, the render blits it in the same task the
-    // cell mounts in, so the cell must mount ALREADY "loaded": cover
-    // transparent, no pulse, no opacity transition.
-    //
-    // This is the fix for the residual scroll flicker. The grid is virtualized,
-    // so scrolling up re-mounts rows rendered moments earlier; every such
-    // remount used to replay the full skeleton→crossfade over a bitmap about
-    // to be painted instantly — a faint brightness blip on the row entering
-    // view, most visible on the 2nd row from the scroll edge (buffer row 1
-    // mounts off-screen) and on both its columns, since both cells remount in
-    // the same row node. A cached cell now has no cover state to animate.
-    //
-    // The cell asks its pane's frame for the picture (the rail lives in the
-    // workspace host, the engine in the pane's frame): the probe, the render
-    // and the cleanup's cancel all reach that one pane — never another's.
-    // `req` holds the request in flight, for the cleanup's cancel.
+    // Cached bitmaps mount already loaded, so a re-entering row never
+    // replays the skeleton crossfade.
     let thumbs = expect_context::<crate::frame_pane::thumbs::RemoteThumbs>();
     let starts_cached = thumbs.has(page);
     let req = Arc::new(AtomicU64::new(0));
     let loaded = RwSignal::new(starts_cached);
-    // A NodeRef onto the cover (the timer removes the pulse class from the
-    // real DOM node). The pending removal is parked in a scope-owned timer
-    // slot, so on_cleanup cancels it and the timer can never fire on a
-    // detached cover.
+    // A NodeRef onto the cover; the pulse removal is parked in a scoped
+    // timer slot.
     let cover_ref: NodeRef<html::Div> = NodeRef::new();
     let pulse_timer = use_timeout_slot();
-    // Async work can outlive a virtualized cell: the render slot and attempt
-    // counter are the machine's state, shared between the spawned render task
-    // and the cleanup callback. They keep "engine painted" separate from
-    // `loaded` — cached cells start visually loaded but still need one render
-    // call to blit their bitmap.
+    // The render slot and attempts are shared by the task and the cleanup.
     let render = Arc::new(AtomicU8::new(ThumbRenderState::Pending.as_u8()));
     let attempts = Arc::new(AtomicU8::new(0));
-    // Current page drives the accent ring + badge. The badge is a z-10 overlay
-    // so it stays visible on every card, not just the active one.
+    // The current page drives the accent ring and badge.
     let is_current = move || state.viewer.page.get() == page;
-    // The cell's own canvas, by reference: the cleanup below zeroes THIS
-    // canvas even when it has already left the document (an id lookup only
-    // finds attached elements — and would find another pane's twin).
+    // The cell's own canvas by reference: an id lookup could find another
+    // pane's twin.
     let canvas_ref: NodeRef<html::Canvas> = NodeRef::new();
 
-    // Page-1 aspect drives the fixed cell geometry; the shared helper falls
-    // back to a 3:4 portrait default if page1_size isn't populated yet.
+    // Page-1 aspect drives the geometry; 3:4 portrait is the fallback.
     let aspect = move || state.document.page1_aspect();
     let cell_h = move || CELL_W * aspect();
 
-    // Release the engine binding when this cell unmounts (scrolled out of the
-    // window, document switch, or app teardown). `cancel_thumb` aborts an
-    // in-flight render but deliberately KEEPS the cached bitmap, so scrolling
-    // this row back into view repaints it instantly instead of re-rendering.
+    // Release the binding on unmount; the cached bitmap is kept, so a
+    // return repaints instantly.
     let req_cleanup = req.clone();
     let page_cleanup = page;
     let bound_cleanup = bound.clone();
     let render_cleanup = render.clone();
     on_cleanup(move || {
-        // Terminal for the machine: the in-flight task (if any) sees
-        // `Unmounted` when it next wakes and drops its result. Routed
-        // through the transition (not a raw store) so every state change
-        // flows through the machine.
+        // Terminal: an in-flight task sees `Unmounted` when it wakes.
         let current = ThumbRenderState::from_u8(render_cleanup.load(Ordering::Relaxed));
         render_cleanup.store(current.unmount().as_u8(), Ordering::Relaxed);
         thumbs.cancel(req_cleanup.swap(0, Ordering::Relaxed));
-        // WKWebView does not release a canvas backing store on DOM removal
-        // alone — every close/open cycle would otherwise leak a batch of
-        // IOSurfaces until GC gets around to it. Zero the backing store so
-        // the panel's close costs a constant, never growth.
+        // WKWebView does not free a canvas backing store on DOM removal; zero
+        // it on close.
         if let Some(cv) = canvas_ref.try_get_untracked().flatten() {
             cv.set_width(0);
             cv.set_height(0);
-            // Symmetry with the engine's `releaseCanvas`: it zeroes the
-            // dimensions AND clears the context, so do both here.
+            // Symmetry with the engine's `releaseCanvas`: zero it and clear it.
             if let Ok(Some(ctx)) = cv.get_context("2d")
                 && let Some(ctx2d) = ctx.dyn_ref::<web_sys::CanvasRenderingContext2d>()
             {
@@ -210,9 +149,8 @@ pub fn ThumbCell(
         }
     });
 
-    // Render on mount and after a heal sweep. A prefetch may populate the
-    // cache after `starts_cached` was sampled; every successful engine reply
-    // therefore reveals the cover, cached or fresh.
+    // Render on mount and after a heal sweep; a prefetch may fill the cache
+    // late.
     let doc_gen = generation.clone();
     let bound_render = bound.clone();
     let try_render = {
@@ -239,10 +177,8 @@ pub fn ThumbCell(
                     return;
                 };
                 let result = thumbs.render(page, canvas, req_async).await;
-                // The cell may have unmounted (or the document changed) while
-                // the render was in flight: `Unmounted` is terminal, and the
-                // generation double-guard keeps a stale paint out of a fresh
-                // document's canvas.
+                // `Unmounted` is terminal, and the generation guard bars
+                // a stale paint.
                 let slot_now = ThumbRenderState::from_u8(render_async.load(Ordering::Relaxed));
                 if slot_now == ThumbRenderState::Unmounted
                     || gen_async.load(Ordering::Relaxed) != gen_now
@@ -251,9 +187,8 @@ pub fn ThumbCell(
                 }
                 match result {
                     Ok(_) => {
-                        // A concurrent prefetch can turn this request into a
-                        // cache hit after mount. The engine has painted either
-                        // way, so cached must not leave the cover opaque.
+                        // A prefetch cache hit lands after mount;
+                        // cached must not leave the cover opaque.
                         render_async.store(slot_now.paint().as_u8(), Ordering::Relaxed);
                         if !loaded.get_untracked() {
                             loaded.set(true);
@@ -263,9 +198,8 @@ pub fn ThumbCell(
                             let render_pulse = render_async.clone();
                             if let Ok(h) = set_timeout_with_handle(
                                 move || {
-                                    // The scope cleanup clears the handle, but
-                                    // the guard keeps even a leaked timer from
-                                    // touching a detached cover.
+                                    // The cleanup clears the handle;
+                                    // leaked timers are also guarded.
                                     if render_pulse.load(Ordering::Relaxed)
                                         == ThumbRenderState::Unmounted.as_u8()
                                     {
@@ -286,31 +220,28 @@ pub fn ThumbCell(
                         }
                     }
                     Err(cancelled) => {
-                        // A cache probe can have seeded `loaded` before a stale
-                        // cancellation prevents the actual canvas blit. Put the
-                        // cover back in that case; the next sweep retries it.
+                        // A stale cancel can leave `loaded` set with
+                        // no blit; put the cover back.
                         if loaded.get_untracked() {
                             loaded.set(false);
                         }
                         render_async.store(slot_now.fail().as_u8(), Ordering::Relaxed);
-                        // A stale cancellation against a recycled canvas id is
-                        // retried by the next heal sweep. Keep genuine errors
-                        // visible without turning cancellation into noise.
+                        // Keep genuine errors visible; a stale
+                        // cancel is not noise.
                         if !cancelled {
                             web_sys::console::warn_1(
                                 &format!("[thumbnails] render page {page} failed").into(),
                             );
                         }
-                        // Tell the panel a cell is stale so it schedules a
-                        // sweep — nothing else should trigger one.
+                        // Only a stale cell schedules a heal sweep.
                         needs_heal.set(true);
                     }
                 }
             });
         }
     };
-    // A new look or another document makes every picture stale: a settled
-    // cell renders again (the frame's cache answers what it still holds).
+    // A new look or document makes every picture stale; a settled cell
+    // renders again.
     let epoch = thumbs.epoch;
     let render_epoch = render.clone();
     let attempts_epoch = attempts.clone();
@@ -335,24 +266,13 @@ pub fn ThumbCell(
         <button
             type="button"
             class="group flex w-full cursor-pointer flex-col items-center"
-            // Jumping to a page does NOT close the panel: browsing thumbnails
-            // is a navigation loop (jump, look, jump again), and closing the
-            // sidebar on every click forces the reader to reopen it each time.
+            // Jumping does NOT close the panel: thumbnail browsing is a loop.
             on:click=move |_| {
                 state.viewer.page.set(page);
             }
         >
-            // The card holds ONE permanent themed backdrop (`thumb-card`) under
-            // an always-opaque, always-blended `.thumb-canvas`. The crossfade
-            // is inverted: fading the canvas itself in would interpolate
-            // between the raw un-blended canvas and the multiply result — the
-            // sepia/green "neon flash" settling to muted. Instead a plain
-            // themed `.thumb-skeleton` cover sits ABOVE the canvas and fades
-            // OUT once the render resolves, so the crossfade interpolates
-            // between two same-family themed colors. The cover pulses while
-            // the render is in flight; the canvas is transparent until the
-            // engine paints it (so the cover shows through), and the first
-            // painted frame is already fully filtered + multiply-blended.
+            // A themed backdrop under a blended canvas; the cover fades
+            // OUT over it.
             <div
                 class="thumb-card relative w-[120px] rounded-md"
                 class=("ring-2", is_current)
@@ -361,62 +281,14 @@ pub fn ThumbCell(
                 class=("ring-line", move || !is_current())
                 style:height=move || format!("{}px", cell_h())
             >
-                // The frame's bitmap is drawn here at its own resolution;
-                // CSS sizes it to the card.
+                // The frame's bitmap at its own resolution; CSS sizes the card.
                 <canvas
                     node_ref=canvas_ref
                     class="thumb-canvas absolute inset-0 block h-full w-full"
                     class=("thumb-canvas-blank", move || !loaded.get())
                 />
-                // The fade-out cover: plain themed tint (no filter, no blend),
-                // mounted after the canvas so it stacks above it. It pulses
-                // (background-tint, see .thumb-skeleton-loading) — a STATIC
-                // class, NOT gated on `loaded` — and fully covers the card
-                // while the render is in flight, then fades to transparent
-                // once `loaded` flips — interpolating between two same-family
-                // themed colors, never between the raw and the blended
-                // canvas. The pulse is deliberately NOT dropped at resolve:
-                // removing the class on the same frame the fade starts would
-                // CANCEL the running `background-color` animation mid-flight,
-                // and a cancelled CSS animation snaps its property back to
-                // the base value in one frame — the cover jumps from its
-                // mid-pulse tint to base `--thumb-bg` just as the fade
-                // begins (a residual snap). Left alive, the pulse continues
-                // smoothly under the fade and is simply invisible at opacity
-                // 0.
-                //
-                // The pulse 50% keyframe DARKENS (color-mix toward black),
-                // never brightens. A brightening pulse was the root cause of
-                // the sepia/green scroll flicker: in those themes --color-line
-                // is darker than --color-surface, so the old "lighter line-mix"
-                // 50% keyframe produced a tint LIGHTER than the base --thumb-bg,
-                // and during the 300ms opacity fade-out that lighter tint was
-                // partially visible over the multiply-blended canvas (which is
-                // DARKER — multiply darkens a white page toward the
-                // backdrop tint), spiking the visible color brighter mid-fade
-                // before settling to the canvas result — the "high brightness
-                // then fall back to normal" flicker the user observed on
-                // scroll. Darker pulse keeps both ends of the crossfade on
-                // the dark side of base, so no theme peaks bright during the
-                // fade. Two-phase stop: the pulse stays live THROUGH the fade
-                // so the background is continuous at resolve, and
-                // `PULSE_STOP_MS` (~400ms) later — once the opacity
-                // transition has run its full duration — the cover is fully
-                // invisible, so the timer drops the class to halt the
-                // now-invisible infinite animation (a deterministic timer
-                // instead of `transitionend`, which WebKit <13.1 never fires,
-                // bubbles from descendant transitions, and throttled renderers
-                // can drop). If the render never resolves, `loaded` stays
-                // false — no fade, no timer, no removal — and the pulsing
-                // skeleton persists as the intended fallback. aria-hidden: the
-                // page number is announced by the permanent `.thumb-num`
-                // badge, so the cover must not carry a second copy.
-                // A cell that mounts with a CACHED bitmap gets neither the
-                // pulse animation nor the opacity transition: it is already
-                // painted, so there is nothing to cover and nothing to fade.
-                // Attaching either would make a re-entering row blip — the
-                // subtle scroll flicker. Only a genuinely new render mounts
-                // the animated cover.
+                // The pulse stays DARKER than base through the fade; a
+                // stop timer ends it.
                 <div
                     node_ref=cover_ref
                     class="thumb-skeleton absolute inset-0 flex items-center justify-center pointer-events-none"
@@ -427,11 +299,7 @@ pub fn ThumbCell(
                     class=("opacity-100", move || !loaded.get())
                     class=("opacity-0", move || loaded.get())
                 />
-                // Permanent page badge. The skeleton used to own the only
-                // number and faded to opacity-0 once loaded (and hid it with
-                // `invisible` on the current page), so every card except the
-                // active one lost its label. This overlay stays at z-10 on
-                // every cell after the cover is gone.
+                // Permanent page badge: stays at z-10 after the cover is gone.
                 <div
                     class="thumb-num pointer-events-none absolute bottom-1.5 inset-x-0 z-10 flex justify-center"
                     class=("is-current", is_current)

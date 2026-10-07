@@ -23,9 +23,7 @@ pub(crate) fn SidebarThumbs(
             class=("is-outro", move || outro.get())
             class=("is-intro", move || intro.get())
         >
-            // The engine owns thumbnails; a text document never reaches it,
-            // so the panel mounts nothing for one (the rail's redirect keeps
-            // it un-shown besides).
+            // The engine owns thumbnails, so a text document mounts nothing.
             <Show when=move || !state.reflowable()>
                 <ThumbnailsPanel state=state live=live sidebar=sidebar />
             </Show>

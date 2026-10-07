@@ -1,9 +1,5 @@
-//! Long-press gesture: press-start bookkeeping, movement slop, the hold
-//! timer, cancellation on up/cancel/slop, and one-shot suppression of the
-//! `click` / synthetic `contextmenu` that a completed press generates.
-//!
-//! Extracted from the gloss mark layer, where it was inline; the same
-//! gesture serves annotations, thumbnails and future touch interactions.
+//! Long-press gesture: bookkeeping, slop, the hold timer, and the
+//! one-shot click suppression that follows.
 
 use std::rc::Rc;
 
@@ -12,17 +8,10 @@ use wasm_bindgen::JsCast;
 
 use super::press_core::{self, PendingTimer};
 
-/// How long a press must hold before it becomes a SELECTION gesture.
-///
-/// Owned here rather than by either feature that uses it, because the two — a
-/// highlight on a page and a book on a shelf — are the same gesture to a reader,
-/// and two constants with the same meaning in two feature directories are two
-/// numbers that eventually stop matching.
+/// How long a press must hold to become a SELECTION gesture.
 pub const SELECT_PRESS_MS: i32 = 450;
 
-/// How far the pointer may drift during that hold without cancelling it. A touch
-/// drag is never perfectly still, and a slop tight enough to demand stillness is a
-/// gesture that feels broken on a trackpad.
+/// How far the pointer may drift during that hold.
 pub const SELECT_SLOP_PX: f64 = 8.0;
 
 /// What the gesture needs from the caller.
@@ -31,8 +20,7 @@ pub struct LongPressOptions {
     pub press_ms: i32,
     /// Pointer may drift this far (px) without cancelling the gesture.
     pub slop_px: f64,
-    /// Take pointer capture on press so the gesture survives drifting off the
-    /// element (e.g. a 12-px stroke).
+    /// Take pointer capture on press, so a drift off the element survives.
     pub capture_pointer: bool,
     /// When false, a pointerdown starts nothing (e.g. selection mode active).
     pub enabled: Signal<bool>,
@@ -40,8 +28,7 @@ pub struct LongPressOptions {
     pub on_press: Callback<()>,
 }
 
-/// Handlers to spread onto the element, plus the live "pressing" tint and the
-/// one-shot suppression probes for the events that follow a completed press.
+/// Handlers to spread onto the element, plus the live tint.
 pub struct LongPressHandlers {
     pub on_pointerdown: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
     pub on_pointermove: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
@@ -52,16 +39,11 @@ pub struct LongPressHandlers {
     /// One-shot: `true` when the click following a completed press must be
     /// swallowed; resets on read.
     pub swallow_click: Rc<dyn Fn() -> bool>,
-    /// One-shot: `true` when the synthetic contextmenu after a completed
-    /// press must be swallowed; resets on read.
+    /// One-shot: true when the synthetic contextmenu must be swallowed.
     pub swallow_context: Rc<dyn Fn() -> bool>,
 }
 
-/// Stop an in-flight press: the finger lifted, drifted past slop, or the
-/// gesture already completed. The timer half is [`press_core::clear_timer`]'s —
-/// the same clear the drag wrapper's hold uses, because a stale `setTimeout`
-/// calling into a dropped wasm shim is a crash rather than a wrong answer, and
-/// there is one right way to drop it.
+/// Stop an in-flight press; the timer half is `clear_timer`'s.
 fn cancel_press(
     press_active: StoredValue<bool, LocalStorage>,
     timer: StoredValue<PendingTimer, LocalStorage>,
@@ -70,10 +52,7 @@ fn cancel_press(
     press_core::clear_timer(timer);
 }
 
-/// Whether a pointer that started at the press origin has stayed within the
-/// slop radius. The arithmetic is [`press_core::outside_radius`]'s, shared with
-/// the drag wrapper's threshold: a slop and a threshold are the same question
-/// asked of two gestures — has this pointer left where it landed.
+/// Whether a pointer has stayed within the slop radius, squared.
 fn within_slop(dx: f64, dy: f64, slop_px: f64) -> bool {
     !press_core::outside_radius(dx, dy, slop_px)
 }

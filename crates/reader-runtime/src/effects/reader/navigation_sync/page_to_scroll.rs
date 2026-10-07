@@ -1,8 +1,4 @@
-//! Page → scroll: a page write commands the strip. One arm per axis; they
-//! differ only in the view mode they answer for and where the page lands (the
-//! column starts pages at the top, the horizontal strip centres them). The
-//! interesting decisions are [`JumpGate`]'s: whether a given run is a
-//! navigation at all.
+//! Page → scroll: a page write commands the strip, one arm per axis.
 
 use std::rc::Rc;
 
@@ -33,23 +29,11 @@ pub(super) fn install(
         if mode.get() != axis {
             return;
         }
-        // A page write means a page-cut strip in this mode only for PDFs:
-        // the continuous text stream scrolls blocks, and a page number
-        // commanded at its (unbound) page virtualizer would be a no-op at
-        // best. The stream's layout is placed by its anchor, its search
-        // reveal, its scrubber and the outline's chapter jump — and each of
-        // those aims the stream's own handle; the page write a chapter click
-        // also makes is the counter's and the highlight's, not this arm's.
+        // A page write means a page-cut strip only for PDFs here.
         if axis == ViewMode::ScrollVertical && state.reflowable() {
             return;
         }
-        // Scroll restoration is the transaction's job while one is open;
-        // letting a page write fight the anchor mid-zoom is the other half of
-        // the loop. The gate holds the write instead of losing it, and the
-        // tracked `zooming` read brings this effect back on the frame the
-        // transaction closes, to replay it.
-        // Same dispose window as the dominant arm: a woken run with the
-        // reader state already purged must stand down before any read.
+        // The gate holds the write mid-zoom and replays it after.
         let Some(page_now) = page.try_get() else {
             return;
         };
@@ -57,18 +41,13 @@ pub(super) fn install(
             return;
         };
         let Some((target, reassert)) = gate.admit(page_now, zooming) else {
-            // A stand-down consumed the run. The echo flag's scroll event is
-            // never coming (both arms and the DOM echo stand down for the
-            // transaction's duration), so it must not survive to eat the
-            // replay either.
+            // A stand-down consumed the run; drop the echo flag.
             if zooming {
                 suppress.set(false);
             }
             return;
         };
-        // A replay against a clobbered page signal re-asserts the page:
-        // the counter must lead the strip, or the next scroll event would
-        // "correct" the strip right back off the jumped-to page.
+        // A replay re-asserts the page it jumped to.
         if reassert {
             suppress.set(false);
             page.set(target);
@@ -80,18 +59,11 @@ pub(super) fn install(
         if target == 0 {
             return;
         }
-        // A strip still being placed on `viewer.page` by its shell
-        // (`ScrollShell::anchor_to_page`) will read the page itself, on a
-        // bound container and instantly; a glide commanded here on top would
-        // only fight it. UNTRACKED: the anchor landing is not a navigation,
-        // so it must not replay this arm.
+        // The shell is still placing the strip; do not fight it.
         if state.viewer.awaiting_anchor.get_untracked() {
             return;
         }
-        // The glide is the animation; the jump is not. With the reader's
-        // scroll switch off the column lands on the page in one write
-        // (`Auto` is what resolves to a smooth scroll when the distance is
-        // short, so this is the only decision to make here).
+        // The glide is the animation; the jump is not.
         v.scroll_to_index((target - 1) as usize, align, scroll_mode(state));
     });
 }

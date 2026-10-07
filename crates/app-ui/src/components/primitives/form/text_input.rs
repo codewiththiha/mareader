@@ -1,6 +1,4 @@
-//! Shared text input: one contract for value/input/keydown/aria so the
-//! preset editor, the search query and future settings fields stop
-//! duplicating the same `prop:value` + `on:input` + focus ring markup.
+//! Shared text input: one contract for value, input, keydown and aria.
 
 use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;

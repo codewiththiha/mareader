@@ -1,5 +1,4 @@
-// Bundle the browser-side TypeScript to single IIFEs.
-// Invoked via `node` so Trunk can spawn it on Windows (no npx / .cmd).
+// Bundle the browser TypeScript to single IIFEs, spawnable by Trunk on Windows.
 
 import * as esbuild from "esbuild";
 import { dirname, join } from "node:path";
@@ -7,8 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** One IIFE bundle. The entry and the output are the only facts that differ
- *  between the three; every other option was repeated in each. */
+/** One IIFE bundle; only the entry and output differ between the three. */
 function bundle(entryPoints, outfile) {
   return esbuild.build({
     absWorkingDir: root,
@@ -21,29 +19,18 @@ function bundle(entryPoints, outfile) {
   });
 }
 
-// The persistent host's format-neutral full-page budget, loaded by index.html
-// only. It holds no engine or document, and never strongly holds a pane wake.
+// The host's format-neutral full-page budget, loaded by index.html alone.
 await bundle(["public/rasterLane.ts"], "public/rasterLane.js");
 await bundle(["public/readerHost.ts"], "public/readerHost.js");
 
 // The pdf.js-facing engine.
 await bundle(["public/pdfEngine.ts"], "public/pdfEngine.js");
 
-// The reader bundle: the format-agnostic browser side (the selection
-// tracker). Separate from the engine so a document that never touches pdf.js
-// does not carry it, and so nothing in here can import the pdf.js-facing
-// modules.
+// The reader bundle: the format-agnostic browser side, kept from the engine.
 await bundle(["public/readerEngine.ts"], "public/readerEngine.js");
 
-// The theme bake worker: a separate classic worker file so the per-pixel
-// filter loop runs off the main thread. Shares the filter kernel module with
-// the main bundle, so worker and inline fallback cannot drift. Emitted next
-// to pdfEngine.js so index.html can copy-file it to the dist root — copying
-// public/engine/ wholesale would ship the TypeScript sources.
+// The theme bake worker: a classic worker file, off the main thread.
 await bundle(["public/engine/theme/bake.worker.ts"], "public/bake.worker.js");
 
-// The Shell's cover-bake page script (public/bake.html): the engine's cover
-// render alone, for the hidden frame the Shell mounts to bake shelf covers
-// without a reader. Its own bundle so the bake page never loads the reader
-// facade, and the facade never learns about the bake wire.
+// The Shell's cover-bake page script, bundled alone, loading no reader facade.
 await bundle(["public/coverBake.ts"], "public/coverBake.js");

@@ -1,5 +1,4 @@
-//! The level's own name question, and the answers it has: an import's three (go to
-//! the row that is here, add as new, make a link) and a move's four.
+//! The level's own name question: an import's three answers, a move's four.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -16,14 +15,12 @@ use crate::services::arrange::{
 use crate::services::covers;
 use crate::services::import;
 
-/// The one answer function the name sheet calls, whichever shape the question is: an
-/// import's three and a move's three are the same five answers read against a different
-/// offer list, and [`super::apply_placement`] is what the click reaches.
+/// The name sheet's one answer: [`super::apply_placement`] runs it.
 pub fn answer_placement(state: crate::context::LibraryContext, answer: Placement) {
     let Some(ask) = state.library.conflict.ask.get_untracked() else {
         return;
     };
-    // A move whose arrival names no row has nothing to write: the row went while the sheet was up.
+    // No row to write: it went while the sheet was up.
     if ask.arrival.moving.is_none() && !ask.arrival.is_import() {
         advance(state);
         return;
@@ -32,9 +29,7 @@ pub fn answer_placement(state: crate::context::LibraryContext, answer: Placement
     advance(state);
 }
 
-// Four entry points, one per answer that has a row on the other side of it, each the
-// existing rule with the question read off a [`PlacementAsk`] instead of the sheet's own
-// ask type.
+// Four entry points, one per answer that has a row on the other side.
 
 pub(super) fn as_new_placement(state: crate::context::LibraryContext, ask: &PlacementAsk) {
     as_new(state, &ask_of(ask));
@@ -42,10 +37,7 @@ pub(super) fn as_new_placement(state: crate::context::LibraryContext, ask: &Plac
 
 pub(super) fn link_to_row(state: crate::context::LibraryContext, ask: &PlacementAsk, row_id: &str) {
     let own = ask_of(ask);
-    // A MOVE's *make link* is not the import's: the row the reader was holding goes, the
-    // pointers at it go with it, and — when the survivor is the library's own copy of the
-    // file that row read — the folder that placed it takes a moved-out log naming the
-    // survivor.
+    // A move's *make link* is not the import's: the held row goes.
     let Some(gone_id) = own.arrival.moving.clone() else {
         add_link_at_target(state, &own, row_id);
         return;
@@ -59,7 +51,7 @@ pub(super) fn link_to_row(state: crate::context::LibraryContext, ask: &Placement
     {
         write_moved_stones(state, book, Some(row_id));
     }
-    // The pointers at the dissolved row go with it, as they do in every removal.
+    // The pointers at the dissolved row go with it, as in every removal.
     unlist_row(state, &gone_id);
     add_link_at_target(state, &own, row_id);
     crate::services::persist_library(state.library);
@@ -73,9 +65,7 @@ pub(super) fn replace_row(state: crate::context::LibraryContext, ask: &Placement
     replace(state, &ask_of(ask));
 }
 
-/// A bridge rather than a rewrite: every rule below was written against [`ConflictAsk`],
-/// and the two carry the same three facts — the arrival, the id of the thing already
-/// there, and its name.
+/// A bridge, not a rewrite: [`ConflictAsk`] carries the same three facts.
 fn ask_of(ask: &PlacementAsk) -> ConflictAsk {
     ConflictAsk {
         arrival: ask.arrival.clone(),
@@ -85,12 +75,7 @@ fn ask_of(ask: &PlacementAsk) -> ConflictAsk {
     }
 }
 
-/// Whether the row that survives is the library's own copy OF the row that dissolves.
-/// One question in one place, because the two answers that dissolve a row — a merge into
-/// the copy and a link at it — both write the folder's moved-out log on this condition
-/// and nothing else.
-/// File a row onto every shelf named, in one write: the shelves a dissolved row
-/// held are the shelves its survivor takes over.
+/// Files a row onto every shelf named, in one write.
 fn file_on_all(state: crate::context::LibraryContext, row_id: &str, shelves_named: &[String]) {
     state.library.shelves.update(|shelves| {
         for one in shelves.iter_mut() {
@@ -101,6 +86,7 @@ fn file_on_all(state: crate::context::LibraryContext, row_id: &str, shelves_name
     });
 }
 
+/// Whether the survivor is the library's own copy of the row that dissolves.
 fn survivor_is_the_copy_of(
     state: crate::context::LibraryContext,
     survivor: &str,
@@ -111,9 +97,7 @@ fn survivor_is_the_copy_of(
     })
 }
 
-/// The survivor is the row the reader can already see here, and its id is what every
-/// shelf holding it and every key in storage already names, so it is the one that stays.
-/// The marks move while both rows can still be read.
+/// The survivor is the row the reader sees, and what every key names.
 fn merge(state: crate::context::LibraryContext, ask: &ConflictAsk) {
     let survivor = ask.existing_id.clone();
     let Some(gone_id) = ask.arrival.moving.clone() else {
@@ -130,9 +114,7 @@ fn merge(state: crate::context::LibraryContext, ask: &ConflictAsk) {
             }
         });
     }
-    // A read-at-place book folding into the library's own stored copy of ITS content leaves
-    // the folder's file with no row to answer for it, so the folder takes a moved-out log
-    // bound to the survivor.
+    // Folding into the library's copy leaves the folder's file no row.
     if let Some(gone) = &gone_book
         && survivor_is_the_copy_of(state, &survivor, gone)
     {
@@ -141,28 +123,25 @@ fn merge(state: crate::context::LibraryContext, ask: &ConflictAsk) {
     let inherited: Vec<String> = memberships(state, &gone_id)
         .into_iter()
         .map(|(id, _)| id)
-        // The level the move left is the one shelf the survivor does NOT take over: the departure
-        // is the point of the move.
+        // The level the move left is the one shelf the survivor does not take.
         .filter(|id| ask.arrival.from.as_deref() != Some(id.as_str()))
         .collect();
     file_on_all(state, &survivor, &inherited);
     drop_row(state, &gone_id);
 }
 
-/// The arrival takes the displaced row's SLOT and every OTHER shelf it was filed on:
-/// a replace that quietly took a book off shelves the question never mentioned is a
-/// removal the reader did not ask for.
+/// The arrival takes the displaced row's slot and every other shelf it was on.
 fn replace(state: crate::context::LibraryContext, ask: &ConflictAsk) {
     let Some(moved_id) = ask.arrival.moving.clone() else {
         return;
     };
-    // Read the world before writing any of it: the slot and the memberships are about the row that is about to go.
+    // Read the world before writing: the slot is about the row about to go.
     let seat = member_slot(state, &ask.arrival.shelf_id, &ask.existing_id);
     let inherited: Vec<String> = memberships(state, &ask.existing_id)
         .into_iter()
         .map(|(id, _)| id)
         .collect();
-    // The sheet said what this answer costs — the row going, and its highlights with it.
+    // The sheet said the cost: the row going, and its highlights with it.
     purge_books(
         state,
         std::slice::from_ref(&ask.existing_id),
@@ -170,12 +149,11 @@ fn replace(state: crate::context::LibraryContext, ask: &ConflictAsk) {
     );
     let shelf_id = ask.arrival.shelf_id.clone();
     let index = seat.or(ask.arrival.index);
-    // A read-at-place arrival becomes the library's own copy before it is seated, and the seating waits for the copy.
+    // A read-at-place arrival becomes a copy before it is seated.
     if tauri_bridge::has_tauri() && converts_on_move_to(state, &moved_id, &shelf_id) {
         let name = state.library.row_name(&moved_id);
         spawn_local(async move {
-            // A card of its own: the replace's copy is one file through the store, and its
-            // beats deserve a ring exactly as an import's do.
+            // A card of its own: the copy is one file through the store.
             let task = import::begin_task(state, name);
             let departed = match convert_to_stored(state, &moved_id, &task).await {
                 Ok(()) => {
@@ -195,8 +173,7 @@ fn replace(state: crate::context::LibraryContext, ask: &ConflictAsk) {
     seat_replace(state, &moved_id, &shelf_id, index, &inherited, Departed::No);
 }
 
-/// `departed` is the replace's own copy of the gate's answer, and it travels because a
-/// departure must not bind the moved-out log it just wrote.
+/// `departed` travels because a departure must not bind the log it wrote.
 fn seat_replace(
     state: crate::context::LibraryContext,
     moved_id: &str,
@@ -210,8 +187,7 @@ fn seat_replace(
     crate::services::persist_library(state.library);
 }
 
-/// One spelling for the two answers that leave a link behind, because the name is the
-/// whole of what makes the row recognisable beside the book it points at.
+/// One spelling for the two answers that leave a link behind.
 fn add_link_at_target(state: crate::context::LibraryContext, ask: &ConflictAsk, target: &str) {
     let name = state.library.row_name(target);
     let name = if name.trim().is_empty() {
@@ -222,8 +198,7 @@ fn add_link_at_target(state: crate::context::LibraryContext, ask: &ConflictAsk, 
     crate::services::arrange::add_link(state, &name, target, &ask.arrival.shelf_id);
 }
 
-/// A moved row is renamed and then moved: the rename is what frees the collision, and a
-/// move that did not rename would ask the same question again on the way in.
+/// A moved row is renamed then moved: the rename frees the collision.
 fn as_new(state: crate::context::LibraryContext, ask: &ConflictAsk) {
     let name = minted_name(state, ask);
     match &ask.arrival.moving {

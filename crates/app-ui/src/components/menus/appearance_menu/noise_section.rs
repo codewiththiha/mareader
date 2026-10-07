@@ -1,8 +1,4 @@
 //! Film grain: Off / Static / Animated, plus intensity.
-//!
-//! This replaced a boolean toggle. "Animated" is a third mode rather than a
-//! second checkbox because "animated but off" is not a meaningful state, and a
-//! 3-way choice makes that unrepresentable instead of merely discouraged.
 
 use leptos::prelude::*;
 
@@ -14,9 +10,7 @@ use reader_core::appearance::NoiseMode;
 
 #[component]
 pub fn NoiseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
-    // Grain is the one GLOBAL dial whatever the theme routing says: the
-    // noise layer is window-level and every pane inherits it, so its dials
-    // read and write Settings directly (ThemeScope::Global).
+    // Grain is the one GLOBAL dial whatever the theme routing says.
     let seed = state.settings.read_untracked().appearance;
     let (intensity, set_intensity) = signal(seed.noise_intensity as f64);
 

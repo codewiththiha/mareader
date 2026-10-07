@@ -1,21 +1,11 @@
-//! Positioning glue: the pure placement math lives in `ui_geom::floating`
-//! (host-testable); this module adapts it to living DOM nodes and viewport
-//! reads, plus the coordinate-space compensation that WebKit's
-//! `backdrop-filter` containing blocks force on us.
+//! Positioning glue: the pure maths live in `ui_geom::floating`.
 
 use super::types::{
     PlacedPanel, PlacementOptions, Rect, Size, place_panel_from_anchor, rect_from_element,
 };
 
-/// Place a panel of `panel_w` x `panel_h` at the given anchor element within
-/// the viewport, optionally compensating a transformed/backdrop container.
-///
-/// `coordinate_space` names an element whose viewport offset must be
-/// subtracted: WebKit treats `backdrop-filter` as a containing block for
-/// `position: fixed` descendants, so a panel anchored inside a
-/// `backdrop-blur` row would otherwise be positioned relative to that row.
-/// When the anchor is inside the named element both axes shift to
-/// row-relative; otherwise the viewport placement stands.
+/// Place a panel at an anchor within the viewport, optionally
+/// compensating a container.
 pub fn place_at_anchor(
     anchor: &web_sys::Element,
     panel_w: f64,

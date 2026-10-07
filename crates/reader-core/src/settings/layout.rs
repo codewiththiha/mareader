@@ -1,7 +1,4 @@
-//! The reader's layout policy: what the chrome shows, how pages are framed,
-//! and how the paper blends into the backdrop. Split out of the settings
-//! barrel so the Layout tab's schema is one file; the persisted field names
-//! are the storage contract and did not move.
+//! The reader's layout policy: chrome, framing and the paper backdrop.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,16 +12,13 @@ fn default_page_margin() -> f64 {
 fn default_label_max_pct() -> f64 {
     100.0
 }
-/// The fit mode a document opens with. `FitMode::None` is not a startup mode,
-/// which is why [`super::sanitize`] retries it.
+/// The fit mode a document opens with; `None` is not valid.
 pub(super) fn default_startup_fit() -> FitMode {
     FitMode::Width
 }
 /// The column-width dial's resting point: the natural column.
 pub const DEFAULT_COLUMN_WIDTH_PCT: f64 = 100.0;
-/// The column-width dial's floor. Kept beside the setting (rather than in
-/// the reflow geometry that also clamps it) because the persisted knob lives
-/// here and the two crates do not see each other.
+/// The column-width dial's floor, kept beside the setting.
 pub const MIN_COLUMN_WIDTH_PCT: f64 = 60.0;
 /// The column-width dial's ceiling. See [`MIN_COLUMN_WIDTH_PCT`].
 pub const MAX_COLUMN_WIDTH_PCT: f64 = 140.0;
@@ -46,9 +40,7 @@ pub enum FloatingLabelStyle {
     Chapter,
 }
 
-/// Which pixels of a page raster the blend backdrop's paper pipeline trusts.
-/// The `pdf-paper` crate owns the type; the barrel re-exports it so the
-/// settings model stays the one place the reader's persisted knobs live.
+/// Which pixels the backdrop's paper pipeline trusts.
 use pdf_paper::PaperArea;
 
 /// The persisted knob's default: the natural column.
@@ -68,9 +60,7 @@ pub struct LayoutSettings {
     pub floating_label_style: FloatingLabelStyle,
     #[serde(default = "on_true")]
     pub progress_bar: bool,
-    /// The fit mode applied when a document opens (or resumes): `Page` fits
-    /// the whole page, `Width` the width. `None` is not a valid startup
-    /// mode.
+    /// The fit mode applied when a document opens or resumes.
     #[serde(default = "default_startup_fit")]
     pub default_fit: FitMode,
     /// Remove the vertical gap between pages in scroll view.
@@ -78,43 +68,29 @@ pub struct LayoutSettings {
     pub no_gap: bool,
     #[serde(default = "on_true")]
     pub auto_scale: bool,
-    /// Let a page turn change the scale. On, arriving at a differently sized
-    /// page re-resolves the zoom: an active fit re-fits and a hand-picked zoom
-    /// is held to the new page's fit-width ceiling. Off, a page turn touches
-    /// nothing and a page wider than the window overflows and scrolls. The
-    /// WINDOW still re-fits either way; this switch is only about the page
-    /// under the eyes.
+    /// Let a page turn change the scale.
     #[serde(default = "on_true")]
     pub auto_resize: bool,
     #[serde(default = "on_true")]
     pub page_shadow: bool,
     #[serde(default)]
     pub sidebar_overlay: bool,
-    /// Paint the reader background with the page's own paper colour, a
-    /// colour per page blended along the scroll.
+    /// Paint the background with the page's own paper colour.
     #[serde(default)]
     pub blend_mode: bool,
-    /// Which pixels of a page raster the detector trusts: the whole page, or
-    /// just the thin edge margins around all four sides, where artwork-heavy
-    /// pages still show honest paper.
+    /// Which pixels the detector trusts: whole page, or margins.
     #[serde(default)]
     pub blend_area: PaperArea,
     /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
     #[serde(default = "default_page_margin")]
     pub page_margin: f64,
-    /// Scale of the reading column in percent of its natural width: the
-    /// text/Markdown column (and the reflowable page card) grows and shrinks
-    /// with it, while a PDF's fit-width budget resolves against the dialled
-    /// share of the window. 100 is the natural width the typography and page
-    /// geometry already agreed on.
+    /// Scale of the reading column, as percent of its natural width.
     #[serde(default = "default_column_width_pct")]
     pub column_width_pct: f64,
-    /// Keep the floating label on screen even when the sidebar or title bar
-    /// would normally hide it, and ignore the width budget.
+    /// Keep the floating label on screen, ignoring the width budget.
     #[serde(default)]
     pub floating_label_persist: bool,
-    /// Share of the measured width budget (in percent) the floating label may
-    /// consume before it fades out. `100` hides it only on a true overflow.
+    /// Share of the width budget the floating label may consume.
     #[serde(default = "default_label_max_pct")]
     pub floating_label_max_pct: f64,
 }

@@ -1,13 +1,11 @@
-//! Chrome-facing signal projection from the document's reports. Keeping
-//! this separate makes iframe handoff and teardown read as lifetime code.
+//! Chrome-facing projection of the document's reports.
 
 use leptos::prelude::*;
 
 use super::{Inner, Mirror, put};
 
 impl Inner {
-    /// The live frame's report, written into the mirror. `reported` is set
-    /// first, so the write-forwarding effects see their own value.
+    /// The frame's report into the mirror; `reported` goes first.
     pub(super) fn apply_mirror(&self, m: Mirror) {
         *self.reported.borrow_mut() = Some(m.clone());
         let reader = self.ctx.reader;

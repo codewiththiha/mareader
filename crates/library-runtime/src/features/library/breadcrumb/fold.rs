@@ -1,19 +1,12 @@
-//! The fold's arithmetic: how many crumbs the bar keeps, which the width
-//! hides, and how the panel packs the hidden ones into rows. Pure, so the
-//! fold's shape is host-tested rather than eyeballed.
+//! The fold's arithmetic: the crumbs kept, and the panel's row packing.
 
-/// Three: the left cluster shares a row with a search box that must stay
-/// usable in a window that can be 640px wide. Once the probe has measured,
-/// the live split is the widths' answer.
+/// Three: the left cluster shares a row with a search box in a 640px window.
 const CRUMB_KEEP: usize = 3;
 
-/// A shallower chain never folds, however cramped — its crumbs truncate
-/// against each other instead: the smallest fold hides two levels, and below
-/// four that leaves one lonely crumb beside the ellipsis.
+/// A shallower chain never folds: the smallest fold hides two levels.
 const FOLD_MIN_DEPTH: usize = 4;
 
-/// The panel's row packing charges the same gap; its CSS runs a column gap
-/// of zero (the chevron is the spacing).
+/// The panel's packing charges the same gap; its CSS column gap is zero.
 const CRUMB_GAP_PX: f64 = 2.0;
 
 const ROW_CHROME_PX: f64 = 14.0;
@@ -61,16 +54,13 @@ pub(super) fn split_by_counts<T>(chain: Vec<T>, counts: &[usize]) -> Vec<Vec<T>>
     rows
 }
 
-/// Never one: a single elided level costs a hover to reach and the same bar
-/// width as showing it, so the ellipsis earns its slot from two levels up.
+/// Never one: one hidden level costs a hover for the same bar width.
 fn elide_at(len: usize) -> usize {
     let split = len.saturating_sub(CRUMB_KEEP);
     if split == 1 { 0 } else { split }
 }
 
-/// Beyond the depth gate, the smallest split (never exactly one — the rule
-/// [`elide_at`] keeps) whose ellipsis and kept crumbs fit the cluster's live
-/// box; 0 when the whole chain already fits.
+/// The smallest split whose ellipsis and kept crumbs fit; 0 when all fit.
 pub(super) fn choose_split(widths: &[f64], available: f64, len: usize) -> usize {
     if len < FOLD_MIN_DEPTH {
         return 0;

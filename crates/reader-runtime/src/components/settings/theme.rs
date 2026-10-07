@@ -1,11 +1,4 @@
-//! The Theme tab of the reader settings modal.
-//!
-//! The tab itself owns almost nothing: its two sections belong to the features
-//! they configure, and this module is the composition — the AI's appearance
-//! knobs ([`crate::components::ai::settings::AiAppearanceSection`]), the raster
-//! paper knobs ([`crate::components::settings::paper::PaperSection`], which
-//! gate themselves on a PDF being open), and the pointer to the palette menu
-//! for everything about the reader's own colour.
+//! The Theme tab, composing the AI and paper sections and the palette pointer.
 
 use leptos::prelude::*;
 

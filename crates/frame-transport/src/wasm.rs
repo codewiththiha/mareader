@@ -1,6 +1,4 @@
-//! The wasm half of the transport: the `MessagePort` wire and the channel
-//! adoption that pairs a hosted boot with its Shell (§7, §8). Compiled only
-//! for `wasm32` — the artifacts are the only place this can run.
+//! The wasm half of the transport: the port wire and the channel adoption.
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
@@ -16,17 +14,14 @@ pub struct PortWire {
     port: web_sys::MessagePort,
 }
 
-/// The host-compile shape: the port is a wasm artifact, so off wasm there is
-/// only the name (a runtime's frame context compiles on the host test lanes,
-/// where no adoption ever happens and so no wire ever exists).
+/// The host-compile shape: off wasm there is only the port's name.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
 pub struct PortWire;
 
 #[cfg(target_arch = "wasm32")]
 impl PortWire {
-    /// The raw port, for the session's command side (the Shell's envelopes
-    /// arriving IN). The transport itself only ever posts OUT.
+    /// The raw port, for the session's command side.
     pub fn port(&self) -> &web_sys::MessagePort {
         &self.port
     }
@@ -35,9 +30,7 @@ impl PortWire {
 #[cfg(target_arch = "wasm32")]
 impl Wire for PortWire {
     fn post_json(&self, json: String) {
-        // A post can only fail on a closed port — the Shell swapped or
-        // removed the frame's other end from under us. Dropping is the
-        // answer: nothing on this side of a dead port can leave it alive.
+        // A post can only fail on a closed port; dropping is the answer.
         let _ = self.port.post_message(&JsValue::from_str(&json));
     }
 }
@@ -48,9 +41,7 @@ impl Wire for PortWire {
     fn post_json(&self, _json: String) {}
 }
 
-/// What the Shell's `postMessage` identifies the frame with. Everything else
-/// on the wire is port traffic under the protocol vocabulary; THIS is the
-/// one message a hosted runtime ever accepts without the port.
+/// The one message a hosted runtime accepts without the port.
 #[cfg(target_arch = "wasm32")]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,19 +51,7 @@ struct ChannelOffer {
     nonce: String,
 }
 
-/// Adopt the channel the Shell pairs with this frame: listen for the
-/// nonce+generation offer matching the IDENTITY THIS BOOT PARSED FROM ITS
-/// OWN URL. A message from any other generation or with another nonce is not
-/// the Shell this frame was built for — dropped, never adopted (§8: the init
-/// nonce authenticates the channel establishment itself). `on_adopted` runs
-/// with the port wire; the runtime boots its session only inside it, so a
-/// frame the Shell never claims never becomes a runtime.
-///
-/// The listener is never unregistered on purpose: it guards the handoff and
-/// dies with the frame's document at disposal — one closure per frame
-/// lifetime, exactly its own garbage collection (§14's rule that cleanup
-/// never depends on the iframe removal is about RUNTIME work; this listener
-/// owns no runtime work until the offer arrives).
+/// Adopt the channel whose nonce and generation match this boot's URL.
 #[cfg(target_arch = "wasm32")]
 pub fn adopt_channel(generation: u64, nonce: String, on_adopted: impl FnOnce(PortWire) + 'static) {
     let Some(window) = web_sys::window() else {
@@ -116,15 +95,12 @@ pub fn adopt_channel(generation: u64, nonce: String, on_adopted: impl FnOnce(Por
     let added =
         window.add_event_listener_with_callback("message", listener.as_ref().unchecked_ref());
     if added.is_ok() {
-        // Leaks the closure until the frame's document is gone — by design,
-        // see the doc comment above.
+        // Leaks the closure until the document is gone — by design.
         listener.forget();
     }
 }
 
-/// Off wasm there is no channel to adopt: the function stays so the runtime
-/// frame modules compile on the host lanes, and it never calls the closure —
-/// no Shell, no port, no boot.
+/// Off wasm there is no channel to adopt; the function never calls `f`.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn adopt_channel(
     _generation: u64,

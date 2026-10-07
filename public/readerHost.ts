@@ -1,6 +1,4 @@
-// The disposable host borrows the Shell's coordinator, not a second budget.
-// Descendant engine wakes remain weak in that coordinator. The scope is
-// plain boot identity, so forced host removal can reclaim every child owner.
+// The disposable host borrows the Shell's coordinator.
 import { WindowRasterLane } from "./reader/raster-coordinator";
 
 const params = new URLSearchParams(window.location.search);
