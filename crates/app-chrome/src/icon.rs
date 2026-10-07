@@ -298,4 +298,3 @@ pub fn Icon(
     }
 }
 
-// only the changed file was rewritten

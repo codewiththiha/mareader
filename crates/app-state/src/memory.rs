@@ -57,4 +57,3 @@ pub fn log_heap(tag: &str) {
     }
 }
 
-// only the changed file was rewritten

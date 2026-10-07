@@ -188,4 +188,3 @@ pub fn AppearanceMenu(
     }
 }
 
-// only the changed file was rewritten

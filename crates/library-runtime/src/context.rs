@@ -185,4 +185,3 @@ impl ShellApi for StandaloneApi {
     fn publish_digest(&self, _json: String) {}
 }
 
-// only the changed file was rewritten

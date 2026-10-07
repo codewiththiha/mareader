@@ -186,4 +186,3 @@ export async function verifyWindowState({ browser, base }) {
   }
 }
 
-// only the changed file was rewritten

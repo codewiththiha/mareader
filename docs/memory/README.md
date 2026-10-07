@@ -20,4 +20,3 @@ Supporting records one level up:
 | [../architecture.md](../architecture.md) | How the reader is built and what the tests enforce. |
 | [../session-ownership.md](../session-ownership.md) | Ownership table for every engine resource. |
 
-<!-- // only the changed file was rewritten -->

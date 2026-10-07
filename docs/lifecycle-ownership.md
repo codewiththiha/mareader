@@ -384,4 +384,3 @@ design, not pane state: the frame's boundary and parked opens
 (`frame_transport::artifact`), the live-session record (`lib.rs`), the
 diagnostics probes, and the host's `#viewer-slot` measurement.
 
-<!-- // only the changed file was rewritten -->

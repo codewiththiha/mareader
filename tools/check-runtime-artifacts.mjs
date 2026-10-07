@@ -236,4 +236,3 @@ console.log(
     `(Shell + Library + Reader host + PDF pane + reflow pane + shared assets)\n${sizes}`,
 );
 
-// only the changed file was rewritten

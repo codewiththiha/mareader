@@ -870,4 +870,3 @@ fn dispose(live: Live) {
     }
 }
 
-// only the changed file was rewritten

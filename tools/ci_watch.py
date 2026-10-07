@@ -633,4 +633,3 @@ if __name__ == "__main__":
         sys.exit(130)
 
 
-# only the changed file was rewritten

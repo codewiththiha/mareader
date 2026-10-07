@@ -74,4 +74,3 @@ pub fn open_path(path: String, placement: Placement) {
     let _ = (path, placement);
 }
 
-// only the changed file was rewritten

@@ -618,4 +618,3 @@ globalThis.PDFReader = {
 // extensibility, so freeze the object (has_pdf_reader only checks existence).
 Object.freeze(globalThis.PDFReader);
 
-// only the changed file was rewritten

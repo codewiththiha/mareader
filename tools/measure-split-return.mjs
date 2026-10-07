@@ -310,4 +310,3 @@ console.log(`RESULT ${JSON.stringify(result)}`);
 console.log(`CONSOLE ${JSON.stringify(consoleLines.filter((l) => /mareader\]|evict|forced|panick|error/i.test(l)).slice(0, 40))}`);
 await browser.close();
 
-// only the changed file was rewritten

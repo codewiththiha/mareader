@@ -205,4 +205,3 @@ when:
 
 Test code (`#[cfg(test)]` modules and files) is exempt.
 
-<!-- // only the changed file was rewritten -->

@@ -370,4 +370,3 @@ export async function run(): Promise<void> {
   console.log("two-session teardown ok: realm balanced");
 }
 
-// only the changed file was rewritten

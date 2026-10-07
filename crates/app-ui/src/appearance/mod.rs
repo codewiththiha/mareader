@@ -377,4 +377,3 @@ pub fn schedule_save(settings: Settings) {
     SAVE_TIMER.with(|t| *t.borrow_mut() = handle);
 }
 
-// only the changed file was rewritten

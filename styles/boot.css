@@ -214,4 +214,3 @@ html:not([data-base]) .runtime-boot {
   background: var(--boot-paper, var(--color-paper, #ffffff));
 }
 
-/* only the changed file was rewritten */

@@ -284,4 +284,3 @@ pub fn release_session_detached(sid: u32) {
     }
 }
 
-// only the changed file was rewritten

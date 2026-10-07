@@ -127,4 +127,3 @@ impl EngineStats {
     }
 }
 
-// only the changed file was rewritten

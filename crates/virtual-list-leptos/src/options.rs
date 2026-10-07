@@ -214,4 +214,3 @@ impl VirtualizerOptions {
     }
 }
 
-// only the changed file was rewritten

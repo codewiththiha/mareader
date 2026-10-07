@@ -266,4 +266,3 @@ pub(crate) fn use_reader_virtualizers(
     }
 }
 
-// only the changed file was rewritten

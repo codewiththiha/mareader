@@ -720,4 +720,3 @@ pub fn PdfPageCanvas(
     }
 }
 
-// only the changed file was rewritten

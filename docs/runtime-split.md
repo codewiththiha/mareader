@@ -192,4 +192,3 @@ own owner. Native subscriptions become inert on retirement, unlisten before
 freeing callbacks, and retain pending registration callbacks until their
 native handle can be released. This replaces an undeclared, unwired bridge.
 
-<!-- // only the changed file was rewritten -->

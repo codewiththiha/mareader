@@ -787,4 +787,3 @@ export async function rerenderLivePages(s: EngineSession): Promise<void> {
   await Promise.all(jobs);
 }
 
-// only the changed file was rewritten

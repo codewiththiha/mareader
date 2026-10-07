@@ -601,4 +601,3 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   return report;
 }
 
-// only the changed file was rewritten

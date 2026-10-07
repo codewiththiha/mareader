@@ -395,4 +395,3 @@ export async function bakeInto(
   paintBaked(dst, await bakeFiltered(src, pipeline), pipeline, visibleTag);
 }
 
-// only the changed file was rewritten

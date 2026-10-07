@@ -386,4 +386,3 @@ export type PDFReaderApi = {
   setAppearanceMenuOpen: (on: boolean) => void;
 };
 
-// only the changed file was rewritten

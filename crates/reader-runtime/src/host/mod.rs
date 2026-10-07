@@ -1668,4 +1668,3 @@ fn snapshot_of(
     }
 }
 
-// only the changed file was rewritten

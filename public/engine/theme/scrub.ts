@@ -271,4 +271,3 @@ export async function setScrubModeInternal(s: EngineSession, on: boolean): Promi
   releaseAllEntrySnapshots(s);
 }
 
-// only the changed file was rewritten

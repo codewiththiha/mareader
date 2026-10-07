@@ -510,4 +510,3 @@ async function prefetchThumbInternal(
   }
 }
 
-// only the changed file was rewritten

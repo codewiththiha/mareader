@@ -242,4 +242,3 @@ pub fn ReaderMenu(
     }
 }
 
-// only the changed file was rewritten

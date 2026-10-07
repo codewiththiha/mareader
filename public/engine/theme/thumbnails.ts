@@ -182,4 +182,3 @@ export function paintCached(
   return { width: entry!.cssW, height: entry!.cssH };
 }
 
-// only the changed file was rewritten

@@ -118,4 +118,3 @@ pub(super) fn PresetSwatch(
     }
 }
 
-// only the changed file was rewritten

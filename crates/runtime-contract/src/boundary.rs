@@ -151,4 +151,3 @@ impl ShellApi for RecordApi {
     fn publish_digest(&self, _json: String) {}
 }
 
-// only the changed file was rewritten

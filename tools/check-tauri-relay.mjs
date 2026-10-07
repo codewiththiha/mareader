@@ -264,4 +264,3 @@ if (problems.length > 0) {
 }
 console.log("tauri relay: drag regions, the facade and the host-frame event registry behave on all three platforms");
 
-// only the changed file was rewritten

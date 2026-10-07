@@ -82,4 +82,3 @@ export function pipelineIsIdentity(pipeline: PipelineCache): boolean {
   return false;
 }
 
-// only the changed file was rewritten

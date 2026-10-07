@@ -183,4 +183,3 @@ console.log(
     "reader writes go through ShellApi",
 );
 
-// only the changed file was rewritten

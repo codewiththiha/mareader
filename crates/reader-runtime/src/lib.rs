@@ -560,4 +560,3 @@ fn web_launch() -> LaunchDocument {
     launch
 }
 
-// only the changed file was rewritten

@@ -172,4 +172,3 @@ fn TextInkSlider(state: ChromeState) -> impl IntoView {
     }
 }
 
-// only the changed file was rewritten

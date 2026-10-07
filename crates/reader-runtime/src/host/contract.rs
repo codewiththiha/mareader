@@ -337,4 +337,3 @@ pub struct OpenRequest {
     pub placement: Placement,
 }
 
-// only the changed file was rewritten

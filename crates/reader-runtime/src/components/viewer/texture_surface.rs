@@ -54,4 +54,3 @@ pub fn zoom_style(state: ReaderState) -> Signal<String> {
     })
 }
 
-// only the changed file was rewritten

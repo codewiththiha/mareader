@@ -73,4 +73,3 @@ pub(crate) fn flush_read_point(ctx: &crate::context::ReaderContext) {
     });
 }
 
-// only the changed file was rewritten

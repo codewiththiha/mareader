@@ -341,4 +341,3 @@ sessions constant at 2 and `coverRelay {covers: 1, ms: 1}`; v3 (Deep CI
    satisfied by a side effect of another assertion. An assertion earns its
    place by being able to fail.
 
-<!-- // only the changed file was rewritten -->
