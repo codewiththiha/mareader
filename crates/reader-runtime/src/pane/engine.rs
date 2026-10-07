@@ -1,5 +1,5 @@
 //! The pane's guarded view of its PDF session: work stops at
-disposal, teardown stays admitted.
+//! disposal, teardown stays admitted.
 
 use leptos::prelude::{LocalStorage, StoredValue, WithValue, use_context};
 use pdf_engine::api::EngineError;
