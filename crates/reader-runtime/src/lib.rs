@@ -102,7 +102,6 @@ pub fn start_session(
             "a reader session is already live — the manager disposes before it starts"
         );
     });
-    diagnostics::note_session_create(id);
 
     let host: web_sys::HtmlElement = host.clone().unchecked_into();
     let handle = mount_to(host, {
@@ -235,7 +234,6 @@ pub fn dispose(id: u32) -> js_sys::Promise {
         // Already gone (double dispose): resolve immediately, never revive.
         return js_sys::Promise::resolve(&wasm_bindgen::JsValue::from_bool(true));
     }
-    diagnostics::note_dispose_request(id);
     if let Some(resolve) = resolve {
         PENDING_DISPOSE.with(|p| *p.borrow_mut() = Some(resolve));
     }

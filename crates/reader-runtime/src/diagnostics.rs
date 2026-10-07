@@ -122,7 +122,7 @@ pub(crate) fn note_reader_runtime_create() {
 }
 
 /// A pane's dispose began: its session started tearing the document down.
-pub(crate) fn note_reader_runtime_dispose_begin(_stamp: u64) {
+pub(crate) fn note_reader_runtime_dispose_begin() {
     event("reader_runtime:dispose_begin");
 }
 
@@ -591,31 +591,6 @@ pub fn install() {
 /// Without a window the probe is a no-op.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn install() {}
-
-thread_local! {
-    /// Session facts the wasm exports report; the Shell holds the authoritative
-    /// counts.
-    static SESSION_FACTS: std::cell::RefCell<SessionFacts> =
-        std::cell::RefCell::new(SessionFacts::default());
-}
-
-#[derive(Default)]
-struct SessionFacts {
-    created: u64,
-    dispose_requests: u64,
-}
-
-/// A session was created (the wasm start export ran).
-pub fn note_session_create(id: u32) {
-    let _ = id;
-    SESSION_FACTS.with(|f| f.borrow_mut().created += 1);
-}
-
-/// The shell asked this runtime to dispose.
-pub fn note_dispose_request(id: u32) {
-    let _ = id;
-    SESSION_FACTS.with(|f| f.borrow_mut().dispose_requests += 1);
-}
 
 #[cfg(test)]
 mod tests {

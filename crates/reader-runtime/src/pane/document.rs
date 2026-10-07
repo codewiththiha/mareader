@@ -286,7 +286,7 @@ impl PaneRuntime for DocumentPane {
             .is_some_and(|status| status != DocStatus::Idle);
         let (generation, teardown) = handle.end_document();
         if doc_open {
-            crate::diagnostics::note_reader_runtime_dispose_begin(generation);
+            crate::diagnostics::note_reader_runtime_dispose_begin();
         }
         // (3)
         let virtualizers = handle.take_virtualizers();
