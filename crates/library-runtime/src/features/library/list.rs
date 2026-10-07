@@ -294,8 +294,6 @@ fn ListRow(
     /// flat section, which the session resolves at the drop, not the mount.
     parent: Option<String>,
 ) -> impl IntoView {
-    let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
-
     let remove_sheet = use_context::<RemoveSheet>();
 
     // The prop supplies the identity; everything that can move is read back

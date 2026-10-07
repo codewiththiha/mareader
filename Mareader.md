@@ -1104,11 +1104,10 @@ lands among them are all counting the same level.
 
 The grid renders a folder as a cell of the same grid the books are cells of, which is the whole of
 what makes nesting drawable: the shelf tile this replaced spanned the grid to read as a row *of*
-books, and a row cannot be inside a row. The dense list draws the same level as a tree: a shelf is a
-row that unfolds in place — the shelves filed in it and its own books indenting under it, as deep as
-the forest goes — while an Open on the row drills the breadcrumb route, because unfolding is a way
-of looking and must not move the reader. The tree is `ShelfTree`, a plain prop bag over the same
-rows, which is the component the reader sidebar's shelf tab will mount at its own density.
+books, and a row cannot be inside a row. The list draws the same level as a tree: a shelf is a row
+that unfolds in place — the shelves filed in it and its own books indenting under it, as deep as the
+forest goes — while an Open on the row drills the breadcrumb route, because unfolding is a way of
+looking and must not move the reader.
 
 One relationship in this model can be wrong in a way no single row shows — a shelf filed inside
 itself, or inside one of its own children, is a folder that renders on no level and can never be
