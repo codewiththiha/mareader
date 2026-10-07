@@ -7,6 +7,7 @@ pub mod selection_pill;
 pub mod settings;
 
 /// Fixtures this feature's tests share: the gloss origin box.
+#[cfg(test)]
 pub(crate) mod fixture {
     use ai_core::gloss::GlossBox;
 

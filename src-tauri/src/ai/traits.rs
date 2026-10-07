@@ -6,6 +6,9 @@ use std::pin::Pin;
 use super::schema::WordInfo;
 
 /// Machine-readable cause; branch on this, never on the message wording.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(
     not(all(feature = "ai", target_os = "macos", target_arch = "aarch64")),
     allow(dead_code)
 )]
@@ -33,6 +36,7 @@ pub enum AiErrorKind {
 }
 
 /// A typed error serialized across the wire, so the frontend retries rightly.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct AiError {
     /// Machine-readable cause — the frontend's branch point.
     pub kind: AiErrorKind,
@@ -53,6 +57,7 @@ pub enum AiChunk {
 }
 
 /// One `ai-stream-chunk`: a chunk plus the id of the run that produced it.
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct AiStreamEvent {
     /// The run id passed to `explain_word`.
     pub run: String,
@@ -96,6 +101,7 @@ mod tests {
     }
 
     /// The envelope keeps the chunk under `chunk`, with the run id beside it.
+    #[test]
     fn the_envelope_carries_the_run_id_beside_the_chunk() {
         let event = AiStreamEvent {
             run: "g3-1712#4".into(),

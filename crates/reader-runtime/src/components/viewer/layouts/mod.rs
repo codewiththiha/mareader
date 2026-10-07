@@ -10,6 +10,7 @@ use leptos::prelude::*;
 use crate::state::ReaderState;
 
 /// Shared chrome the four layouts used to copy: inset, gap, progress strip.
+#[derive(Clone, Copy)]
 pub struct LayoutChrome {
     pub inset: Signal<f64>,
     pub gap: Signal<f64>,

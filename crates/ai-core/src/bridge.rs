@@ -4,7 +4,7 @@ use std::thread::LocalKey;
 
 use wasm_bindgen::JsValue;
 
-/// Hoisted `explain_word` argument keys, built once as `thread_local!` consts.
+// Hoisted `explain_word` argument keys, built once as `thread_local!` consts.
 thread_local! {
     static KEY_WORD: JsValue = JsValue::from_str("word");
     static KEY_CONTEXT: JsValue = JsValue::from_str("context");

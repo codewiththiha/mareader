@@ -1,59 +1,4 @@
-/
-/
-!
-
-P
-e
-r
-s
-i
-s
-t
-e
-d
-
-a
-p
-p
-
-s
-t
-a
-t
-e
-
-o
-v
-e
-r
-
-l
-o
-c
-a
-l
-S
-t
-o
-r
-a
-g
-e
-,
-
-p
-l
-u
-s
-
-`
-k
-e
-p
-t
-`
-.
-
+//! Persisted app state over localStorage, plus `kept`.
 pub mod kept;
 
 use std::collections::HashMap;
@@ -65,78 +10,7 @@ use ai_core::gloss::GlossMark;
 use wasm_bindgen::JsValue;
 
 use runtime_contract::covers::{CoverImage, CoverMap};
-/
-/
-
-T
-h
-e
-
-l
-i
-b
-r
-a
-r
-y
-'
-s
-
-k
-e
-y
-s
-,
-
-s
-h
-a
-p
-e
-
-a
-n
-d
-
-m
-i
-g
-r
-a
-t
-i
-o
-n
-
-l
-i
-v
-e
-
-i
-n
-
-`
-l
-i
-b
-r
-a
-r
-y
-_
-c
-o
-r
-e
-:
-:
-b
-l
-o
-b
-`
-.
+// The library's keys, shape and migration live in `library_core::blob`.
 use library_core::blob::migrate::{BlobV2, LEGACY_KEY, RecentBook, V2_KEY, migrate_v1, migrate_v2};
 use library_core::blob::sanitize as sanitize_library;
 use library_core::blob::{LIBRARY_KEY, LibraryBlob, RETIRED_LIBRARY_KEY};
@@ -144,411 +18,33 @@ use reader_core::settings::{RETIRED_SETTINGS_KEY, SETTINGS_KEY, Settings, saniti
 
 const COVERS_KEY: &str = "mareader.covers.v1";
 
-/
-/
-/
-
-T
-h
-e
-
-k
-e
-y
-
-t
-h
-e
-
-a
-p
-p
-
-r
-e
-a
-d
-
-b
-e
-f
-o
-r
-e
-
-i
-t
-
-w
-a
-s
-
-r
-e
-n
-a
-m
-e
-d
-.
+/// The key the app read before it was renamed.
 const RETIRED_COVERS_KEY: &str = "pdfreader.covers.v1";
 
-/
-/
-/
-
-G
-l
-o
-s
-s
-
-h
-i
-g
-h
-l
-i
-g
-h
-t
-s
-,
-
-k
-e
-y
-e
-d
-
-b
-y
-
-t
-h
-e
-
-R
-O
-W
-
-I
-D
-
-t
-h
-e
-
-l
-i
-b
-r
-a
-r
-y
-
-h
-o
-l
-d
-s
-.
+/// Gloss highlights, keyed by the ROW ID the library holds.
 const GLOSS_KEY: &str = "mareader.gloss.v2";
 
 /// [`GLOSS_KEY`] before the rename.
 const RETIRED_GLOSS_KEY: &str = "pdfreader.gloss.v2";
 
-/
-/
-/
-
-T
-h
-e
-
-a
-d
-d
-r
-e
-s
-s
--
-k
-e
-y
-e
-d
-
-m
-a
-p
-
-t
-h
-i
-s
-
-b
-u
-i
-l
-d
-
-m
-i
-g
-r
-a
-t
-e
-d
-
-f
-r
-o
-m
-.
+/// The address-keyed map this build migrated from.
 const GLOSS_V1_KEY: &str = "pdfreader.gloss.v1";
 
-/
-/
-/
-
-O
-n
-e
--
-s
-h
-o
-t
-
-g
-a
-t
-e
-
-f
-o
-r
-
-t
-h
-e
-
-a
-d
-d
-r
-e
-s
-s
--
-t
-o
--
-r
-o
-w
-
-m
-i
-g
-r
-a
-t
-i
-o
-n
-.
+/// One-shot gate for the address-to-row migration.
 const GLOSS_V2_MIGRATED_KEY: &str = "mareader.gloss.v2.migrated";
 
-/
-/
-/
-
-T
-h
-e
-
-g
-a
-t
-e
-
-a
-s
-
-t
-h
-e
-
-p
-r
-e
--
-r
-e
-b
-r
-a
-n
-d
-
-b
-u
-i
-l
-d
-
-s
-e
-t
-
-i
-t
-.
+/// The gate as the pre-rebrand build set it.
 const RETIRED_GLOSS_V2_MIGRATED_KEY: &str = "pdfreader.gloss.v2.migrated";
 
-/
-/
-/
-
-A
-
-p
-e
-r
-s
-i
-s
-t
-e
-n
-c
-e
-
-f
-a
-i
-l
-u
-r
-e
-:
-
-q
-u
-o
-t
-a
-,
-
-b
-l
-o
-c
-k
-e
-d
-
-s
-t
-o
-r
-a
-g
-e
-,
-
-s
-e
-r
-i
-a
-l
-i
-z
-a
-t
-i
-o
-n
-.
+/// A persistence failure: quota, blocked storage, serialization.
+#[derive(Debug)]
 pub struct StorageError {
     op: &'static str,
     detail: String,
 }
 
 impl StorageError {
-    /
-    /
-    /
-
-    S
-    u
-    r
-    f
-    a
-    c
-    e
-
-    t
-    h
-    e
-
-    f
-    a
-    i
-    l
-    u
-    r
-    e
-
-    o
-    n
-
-    t
-    h
-    e
-
-    c
-    o
-    n
-    s
-    o
-    l
-    e
-
-    w
-    i
-    t
-    h
-    o
-    u
-    t
-
-    i
-    n
-    t
-    e
-    r
-    r
-    u
-    p
-    t
-    i
-    n
-    g
-
-    t
-    h
-    e
-
-    U
-    I
-    .
+    /// Surface the failure on the console without interrupting the UI.
     pub fn report(&self) {
         #[cfg(target_arch = "wasm32")]
         web_sys::console::warn_1(&JsValue::from_str(&format!("[storage] {self}")));
@@ -568,61 +64,7 @@ fn warn(op: &'static str, detail: &str) {
     let _ = (op, detail);
 }
 
-/
-/
-/
-
-T
-h
-e
-
-b
-r
-o
-w
-s
-e
-r
-'
-s
-
-o
-w
-n
-
-k
-e
-y
--
-v
-a
-l
-u
-e
-
-s
-t
-o
-r
-e
-,
-
-`
-N
-o
-n
-e
-`
-
-o
-f
-f
-
-w
-a
-s
-m
-.
+/// The browser's own key-value store, `None` off wasm.
 fn local() -> Option<web_sys::Storage> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -634,56 +76,7 @@ fn local() -> Option<web_sys::Storage> {
     }
 }
 
-/
-/
-/
-
-R
-e
-a
-d
-
-a
-
-r
-a
-w
-
-J
-S
-O
-N
-
-b
-l
-o
-b
-,
-
-i
-f
-
-p
-r
-e
-s
-e
-n
-t
-
-a
-n
-d
-
-r
-e
-a
-d
-a
-b
-l
-e
-.
+/// Read a raw JSON blob, if present and readable.
 pub(crate) fn get(key: &str) -> Option<String> {
     local().and_then(|s| s.get_item(key).ok().flatten())
 }
@@ -700,65 +93,7 @@ pub(crate) fn set(key: &str, value: &str) -> Result<(), StorageError> {
     })
 }
 
-/
-/
-/
-
-S
-e
-r
-i
-a
-l
-i
-z
-e
-
-f
-o
-r
-
-s
-t
-o
-r
-a
-g
-e
-,
-
-n
-a
-m
-i
-n
-g
-
-t
-h
-e
-
-o
-p
-e
-r
-a
-t
-i
-o
-n
-
-o
-n
-
-f
-a
-i
-l
-u
-r
-e
-.
+/// Serialize for storage, naming the operation on failure.
 fn encode<T: serde::Serialize + ?Sized>(
     op: &'static str,
     value: &T,
@@ -769,78 +104,7 @@ fn encode<T: serde::Serialize + ?Sized>(
     })
 }
 
-/
-/
-/
-
-R
-e
-a
-d
-
-a
-
-s
-t
-o
-r
-e
-
-u
-n
-d
-e
-r
-
-i
-t
-s
-
-c
-u
-r
-r
-e
-n
-t
-
-k
-e
-y
-,
-
-f
-a
-l
-l
-i
-n
-g
-
-b
-a
-c
-k
-
-t
-o
-
-t
-h
-e
-
-r
-e
-t
-i
-r
-e
-d
-
-o
-n
-e
-.
+/// Read a store under its current key, falling back to the retired one.
 fn load_keyed<T: serde::de::DeserializeOwned + Default>(
     op: &'static str,
     key: &str,
@@ -856,70 +120,7 @@ fn parse<T: serde::de::DeserializeOwned + Default>(op: &'static str, raw: &str) 
     match serde_json::from_str(raw) {
         Ok(v) => v,
         Err(e) => {
-            /
-            /
-
-            C
-            o
-            r
-            r
-            u
-            p
-            t
-
-            s
-            t
-            a
-            t
-            e
-
-            m
-            u
-            s
-            t
-
-            n
-            o
-            t
-
-            b
-            r
-            i
-            c
-            k
-
-            t
-            h
-            e
-
-            a
-            p
-            p
-            ,
-
-            n
-            o
-            r
-
-            d
-            i
-            s
-            a
-            p
-            p
-            e
-            a
-            r
-
-            s
-            i
-            l
-            e
-            n
-            t
-            l
-            y
-            .
+            // Corrupt state must not brick the app, nor disappear silently.
             warn(op, &format!("invalid JSON, falling back to default ({e})"));
             T::default()
         }
@@ -937,65 +138,7 @@ pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
     set(SETTINGS_KEY, &encode("save_settings", settings)?)
 }
 
-/
-/
-/
-
-L
-o
-a
-d
-
-t
-h
-e
-
-l
-i
-b
-r
-a
-r
-y
-,
-
-m
-i
-g
-r
-a
-t
-i
-n
-g
-
-t
-h
-e
-
-p
-r
-e
-v
-i
-o
-u
-s
-
-s
-c
-h
-e
-m
-a
-'
-s
-
-b
-l
-o
-b
-.
+/// Load the library, migrating the previous schema's blob.
 pub fn load_library() -> LibraryBlob {
     if let Some(raw) = get(LIBRARY_KEY) {
         let mut blob: LibraryBlob = parse("library", &raw);
@@ -1028,68 +171,7 @@ pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
     set(LIBRARY_KEY, &encode("save_library", blob)?)
 }
 
-/
-/
-/
-
-A
-
-c
-h
-e
-a
-p
-
-i
-d
-e
-n
-t
-i
-t
-y
-
-f
-o
-r
-
-o
-n
-e
-
-s
-t
-o
-r
-e
-'
-s
-
-c
-u
-r
-r
-e
-n
-t
-
-c
-o
-n
-t
-e
-n
-t
-s
-:
-
-a
-
-h
-a
-s
-h
-.
+/// A cheap identity for one store's current contents: a hash.
 fn stamp_of(key: &str) -> Option<u64> {
     use std::hash::{Hash, Hasher};
     let raw = get(key)?;
@@ -1123,67 +205,7 @@ pub fn load_covers() -> CoverMap {
         .collect()
 }
 
-/
-/
-/
-
-S
-a
-v
-e
-
-t
-h
-e
-
-c
-o
-v
-e
-r
--
-a
-r
-t
-
-m
-a
-p
-,
-
-t
-h
-r
-o
-u
-g
-h
-
-a
-
-m
-a
-p
-
-o
-f
-
-B
-O
-R
-R
-O
-W
-E
-D
-
-c
-o
-v
-e
-r
-s
-.
+/// Save the cover-art map, through a map of BORROWED covers.
 pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     let borrowed: HashMap<&str, &CoverImage> = covers
         .iter()
@@ -1192,128 +214,10 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     set(COVERS_KEY, &encode("save_covers", &borrowed)?)
 }
 
-/
-/
-/
-
-A
-p
-p
-l
-y
-
-a
-
-r
-e
-a
-d
-
-p
-o
-i
-n
-t
-
-t
-o
-
-t
-h
-e
-
-p
-e
-r
-s
-i
-s
-t
-e
-d
-
-l
-i
-b
-r
-a
-r
-y
-
-b
-l
-o
-b
-.
+/// Apply a read point to the persisted library blob.
 pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     let mut blob = load_library();
-    /
-    /
-
-    T
-    h
-    e
-
-    s
-    a
-    m
-    e
-
-    r
-    e
-    c
-    o
-    r
-    d
-    e
-    r
-
-    t
-    h
-    e
-
-    r
-    e
-    a
-    d
-    e
-    r
-    '
-    s
-
-    t
-    a
-    i
-    l
-
-    u
-    s
-    e
-    d
-    :
-
-    i
-    t
-
-    m
-    i
-    n
-    t
-    s
-
-    a
-
-    l
-    i
-    n
-    k
-    e
-    d
-
-    r
-    o
-    w
-    .
+    // The same recorder the reader's tail used: it mints a linked row.
     let lib_point = library_core::book::ReadPoint {
         page: point.page,
         num_pages: point.num_pages,
@@ -1331,70 +235,7 @@ pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     let _ = save_library(&blob);
 }
 
-/
-/
-/
-
-C
-a
-r
-r
-y
-
-a
-d
-d
-r
-e
-s
-s
--
-k
-e
-y
-e
-d
-
-h
-i
-g
-h
-l
-i
-g
-h
-t
-s
-
-o
-n
-t
-o
-
-t
-h
-e
-
-r
-o
-w
-s
-
-t
-h
-a
-t
-
-r
-e
-a
-d
-
-t
-h
-e
-m
-.
+/// Carry address-keyed highlights onto the rows that read them.
 pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
     if get(GLOSS_V2_MIGRATED_KEY)
         .or_else(|| get(RETIRED_GLOSS_V2_MIGRATED_KEY))
@@ -1415,56 +256,7 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
             continue;
         }
         let id = match key.split_once("::") {
-            /
-            /
-
-            A
-
-            p
-            r
-            i
-            v
-            a
-            t
-            e
-
-            r
-            o
-            w
-            '
-            s
-
-            o
-            w
-            n
-
-            l
-            i
-            s
-            t
-            :
-
-            r
-            e
-            -
-            k
-            e
-            y
-            e
-            d
-
-            o
-            n
-            t
-            o
-
-            t
-            h
-            e
-
-            i
-            d
-            .
+            // A private row's own list: re-keyed onto the id.
             Some((id, _)) => library_core::book::find_by_id(books, id)
                 .map(|b| b.id.clone())
                 .unwrap_or_else(|| id.to_string()),
@@ -1477,65 +269,7 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
         if id.is_empty() {
             continue;
         }
-        /
-        /
-
-        T
-        w
-        o
-
-        o
-        l
-        d
-
-        k
-        e
-        y
-        s
-
-        c
-        a
-        n
-
-        l
-        a
-        n
-        d
-
-        o
-        n
-
-        o
-        n
-        e
-
-        r
-        o
-        w
-        :
-
-        t
-        h
-        e
-
-        m
-        a
-        r
-        k
-        s
-
-        a
-        r
-        e
-
-        u
-        n
-        i
-        o
-        n
-        e
-        d
-        .
+        // Two old keys can land on one row: the marks are unioned.
         let existing = carried.entry(id).or_default();
         for mark in marks {
             if !existing.iter().any(|kept| kept.same_spot(&mark)) {
@@ -1561,115 +295,12 @@ fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError>
     set(GLOSS_KEY, &encode("save_gloss", all)?)
 }
 
-/
-/
-/
-
-D
-r
-o
-p
-
-o
-n
-e
-
-r
-o
-w
-'
-s
-
-m
-a
-r
-k
-s
-:
-
-t
-h
-e
-
-r
-e
-a
-d
-e
-r
-'
-s
-
-d
-a
-t
-a
-
-g
-o
-e
-s
-
-w
-i
-t
-h
-
-t
-h
-e
-
-b
-o
-o
-k
-.
+/// Drop one row's marks: the reader's data goes with the book.
 pub fn remove_gloss(row_id: &str) {
     take_gloss(row_id);
 }
 
-/
-/
-/
-
-T
-a
-k
-e
-
-o
-n
-e
-
-r
-o
-w
-'
-s
-
-m
-a
-r
-k
-s
-
-o
-u
-t
-
-o
-f
-
-t
-h
-e
-
-s
-t
-o
-r
-e
-.
+/// Take one row's marks out of the store.
 pub fn take_gloss(row_id: &str) -> Vec<GlossMark> {
     let mut all = load_gloss();
     let Some(marks) = all.remove(row_id) else {
@@ -1681,63 +312,7 @@ pub fn take_gloss(row_id: &str) -> Vec<GlossMark> {
     marks
 }
 
-/
-/
-/
-
-R
-e
-p
-l
-a
-c
-e
-
-o
-n
-e
-
-r
-o
-w
-'
-s
-
-m
-a
-r
-k
-s
-
-a
-n
-d
-
-w
-r
-i
-t
-e
-
-t
-h
-e
-
-w
-h
-o
-l
-e
-
-m
-a
-p
-
-b
-a
-c
-k
-.
+/// Replace one row's marks and write the whole map back.
 pub fn persist_gloss(row_id: &str, marks: &[GlossMark]) {
     let mut all = load_gloss();
     all.insert(row_id.to_string(), marks.to_vec());
@@ -1746,73 +321,7 @@ pub fn persist_gloss(row_id: &str, marks: &[GlossMark]) {
     }
 }
 
-/
-/
-/
-
-O
-n
-e
-
-r
-o
-w
-'
-s
-
-m
-a
-r
-k
-s
-
-c
-r
-o
-s
-s
-i
-n
-g
-
-t
-h
-e
-
-r
-e
-a
-d
-e
-r
-
-t
-o
-
-S
-h
-e
-l
-l
-
-b
-o
-u
-n
-d
-a
-r
-y
-,
-
-a
-s
-
-J
-S
-O
-N
-.
+/// One row's marks crossing the reader to Shell boundary, as JSON.
 pub fn encode_gloss(marks: &[GlossMark]) -> Result<String, StorageError> {
     encode("encode_gloss", marks)
 }
@@ -1824,68 +333,7 @@ fn decode_gloss(encoded: &str) -> Result<Vec<GlossMark>, StorageError> {
     })
 }
 
-/
-/
-/
-
-T
-h
-e
-
-w
-r
-i
-t
-e
-r
-'
-s
-
-h
-a
-l
-f
-
-o
-f
-
-`
-e
-n
-c
-o
-d
-e
-_
-g
-l
-o
-s
-s
-`
-:
-
-d
-e
-c
-o
-d
-e
-,
-
-t
-h
-e
-n
-
-p
-e
-r
-s
-i
-s
-t
-.
+/// The writer's half of `encode_gloss`: decode, then persist.
 pub fn persist_encoded_gloss(row_id: &str, encoded: &str) {
     match decode_gloss(encoded) {
         Ok(marks) => persist_gloss(row_id, &marks),
@@ -1893,51 +341,7 @@ pub fn persist_encoded_gloss(row_id: &str, encoded: &str) {
     }
 }
 
-/
-/
-/
-
-O
-n
-e
-
-r
-o
-w
-'
-s
-
-m
-a
-r
-k
-s
-,
-
-c
-o
-p
-i
-e
-d
-
-o
-n
-t
-o
-
-a
-n
-o
-t
-h
-e
-r
-
-r
-o
-w
-.
+/// One row's marks, copied onto another row.
 pub fn copy_gloss(from_id: &str, to_id: &str) {
     let mut all = load_gloss();
     let Some(marks) = all.get(from_id) else {
@@ -1955,64 +359,7 @@ pub fn copy_gloss(from_id: &str, to_id: &str) {
     }
 }
 
-/
-/
-/
-
-T
-h
-e
-
-m
-a
-r
-k
-s
-
-a
-
-d
-u
-p
-l
-i
-c
-a
-t
-e
-
-w
-e
-a
-r
-s
-,
-
-u
-n
-d
-e
-r
-
-f
-r
-e
-s
-h
-l
-y
-
-m
-i
-n
-t
-e
-d
-
-i
-d
-s
-.
+/// The marks a duplicate wears, under freshly minted ids.
 fn re_ided(marks: &[GlossMark], now_ms: u64) -> Vec<GlossMark> {
     marks
         .iter()
@@ -2024,66 +371,7 @@ fn re_ided(marks: &[GlossMark], now_ms: u64) -> Vec<GlossMark> {
         .collect()
 }
 
-/
-/
-/
-
-B
-u
-i
-l
-d
-
-a
-
-r
-e
-a
-d
-e
-r
-
-l
-a
-u
-n
-c
-h
-
-d
-e
-s
-c
-r
-i
-p
-t
-o
-r
-
-f
-o
-r
-
-a
-n
-
-i
-n
--
-s
-e
-s
-s
-i
-o
-n
-
-o
-p
-e
-n
-.
+/// Build a reader launch descriptor for an in-session open.
 pub fn resolve_launch(path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
     use library_core::book::resume_point;
     let blob = load_library();
@@ -2166,68 +454,7 @@ mod tests {
 
     #[test]
     fn an_empty_list_never_reaches_storage() {
-        /
-        /
-
-        T
-        h
-        e
-
-        g
-        u
-        a
-        r
-        d
-
-        t
-        h
-        e
-
-        c
-        a
-        l
-        l
-        e
-        r
-
-        r
-        i
-        d
-        e
-        s
-        :
-
-        n
-        o
-        t
-        h
-        i
-        n
-        g
-
-        t
-        o
-
-        c
-        o
-        p
-        y
-
-        w
-        r
-        i
-        t
-        e
-        s
-
-        n
-        o
-        t
-        h
-        i
-        n
-        g
-        .
+        // The guard the caller rides: nothing to copy writes nothing.
         assert!(re_ided(&[], 5).is_empty());
     }
 }

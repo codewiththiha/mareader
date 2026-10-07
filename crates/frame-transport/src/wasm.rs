@@ -15,6 +15,8 @@ pub struct PortWire {
 }
 
 /// The host-compile shape: off wasm there is only the port's name.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
 pub struct PortWire;
 
 #[cfg(target_arch = "wasm32")]
@@ -40,6 +42,9 @@ impl Wire for PortWire {
 }
 
 /// The one message a hosted runtime accepts without the port.
+#[cfg(target_arch = "wasm32")]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ChannelOffer {
     kind: String,
     generation: u64,
@@ -47,6 +52,7 @@ struct ChannelOffer {
 }
 
 /// Adopt the channel whose nonce and generation match this boot's URL.
+#[cfg(target_arch = "wasm32")]
 pub fn adopt_channel(generation: u64, nonce: String, on_adopted: impl FnOnce(PortWire) + 'static) {
     let Some(window) = web_sys::window() else {
         return;
@@ -95,6 +101,7 @@ pub fn adopt_channel(generation: u64, nonce: String, on_adopted: impl FnOnce(Por
 }
 
 /// Off wasm there is no channel to adopt; the function never calls `f`.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn adopt_channel(
     _generation: u64,
     _nonce: String,

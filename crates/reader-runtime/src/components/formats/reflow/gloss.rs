@@ -10,6 +10,7 @@ use crate::state::ReaderState;
 pub fn ReflowGlossLayer(
     state: ReaderState,
     /// The host's own page, so the resolver places only this page's marks.
+    #[prop(optional)]
     page: Option<u32>,
     /// The element id the strokes are positioned against: the page host, or the
     /// stream's scroller.

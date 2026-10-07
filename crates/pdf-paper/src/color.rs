@@ -1,57 +1,4 @@
-/
-/
-!
-
-T
-h
-e
-
-t
-i
-n
-y
-
-c
-o
-l
-o
-u
-r
-
-a
-l
-g
-e
-b
-r
-a
-
-t
-h
-e
-
-p
-a
-p
-e
-r
-
-p
-i
-p
-e
-l
-i
-n
-e
-
-n
-e
-e
-d
-s
-.
-
+//! The tiny colour algebra the paper pipeline needs.
 use serde::{Deserialize, Serialize};
 
 /// A straight RGB colour. No alpha: paper is opaque by definition.
@@ -74,47 +21,7 @@ impl Rgb {
     }
 }
 
-/
-/
-/
-
-L
-i
-n
-e
-a
-r
-
-b
-l
-e
-n
-d
-
-o
-f
-
-t
-w
-o
-
-c
-o
-l
-o
-u
-r
-s
-,
-
-c
-l
-a
-m
-p
-e
-d
-.
+/// Linear blend of two colours, clamped.
 pub fn lerp(a: Rgb, b: Rgb, t: f64) -> Rgb {
     let t = t.clamp(0.0, 1.0);
     let mix = |x: u8, y: u8| (f64::from(x) + (f64::from(y) - f64::from(x)) * t).round() as u8;
@@ -128,69 +35,7 @@ mod tests {
     #[test]
     fn hex_is_lowercase_and_zero_padded() {
         assert_eq!(Rgb::new(0x40, 0xa0, 0xff).to_hex(), "#40a0ff");
-        /
-        /
-
-        T
-        h
-        e
-
-        w
-        i
-        r
-        e
-
-        f
-        o
-        r
-        m
-        a
-        t
-
-        b
-        o
-        t
-        h
-
-        t
-        h
-        e
-
-        e
-        n
-        g
-        i
-        n
-        e
-
-        a
-        n
-        d
-
-        t
-        h
-        e
-
-        C
-        S
-        S
-
-        p
-        r
-        o
-        p
-        e
-        r
-        t
-        y
-
-        e
-        x
-        p
-        e
-        c
-        t
-        .
+        // The wire format both the engine and the CSS property expect.
         assert_eq!(Rgb::new(0x00, 0x0a, 0xff).to_hex(), "#000aff");
     }
 

@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use serde::{Deserialize, Serialize};
 
 /// The structured word information the AI returns; mirrors backend `WordInfo`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WordInfo {
     pub pos: String,
     pub meaning: String,
@@ -58,6 +59,8 @@ impl WordInfo {
 }
 
 /// Mirror of the backend's `AiErrorKind`: branch on `kind`, never wording.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AiErrorKind {
     NotEnabled,
     ModelNotReady,
@@ -113,6 +116,8 @@ impl AiError {
 }
 
 /// One chunk of an explanation; mirrors `AiChunk`, same tagging.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum AiChunk {
     Snapshot(WordInfo),
     Done,
@@ -121,6 +126,7 @@ pub enum AiChunk {
 }
 
 /// One `ai-stream-chunk` payload: a chunk plus the id of its run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiChunkEvent {
     /// The id passed to the `explain_word` invoke, echoed by the backend.
     pub run: String,
@@ -175,6 +181,7 @@ mod tests {
     }
 
     // The exact JSON shapes the backend emits from `AiChunk`'s serde tagging.
+    #[test]
     fn chunk_wire_shapes_parse() {
         let snapshot: AiChunk = serde_json::from_str(
             r#"{"type":"Snapshot","data":{"pos":"noun","meaning":"lasting briefly","synonyms":["fleeting"],"usages":["ephemeral beauty"]}}"#,
@@ -218,6 +225,7 @@ mod tests {
     }
 
     /// The emitted envelope: the chunk under `chunk`, the run id beside it.
+    #[test]
     fn the_envelope_carries_the_run_id() {
         let event: AiChunkEvent = serde_json::from_str(
             r#"{"run":"g3-1712#4","chunk":{"type":"Snapshot","data":{"pos":"adj","meaning":"short-lived","synonyms":[],"usages":[]}}}"#,

@@ -54,6 +54,8 @@ pub trait Wire: Clone + 'static {
 }
 
 /// A recording sink for the host lanes: every posted string.
+#[cfg(test)]
+#[derive(Clone, Default)]
 pub struct TestWire {
     pub posted: Rc<RefCell<Vec<String>>>,
 }
@@ -74,6 +76,7 @@ struct ResolveState {
 type ResolveMap = RefCell<HashMap<u64, Rc<RefCell<ResolveState>>>>;
 
 /// One registry owns every outstanding launch query.
+#[derive(Default)]
 struct PendingResolves {
     next: Cell<u64>,
     pending: Rc<ResolveMap>,

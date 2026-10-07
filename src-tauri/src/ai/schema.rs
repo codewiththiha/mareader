@@ -15,6 +15,7 @@ pub struct WordInfo {
 }
 
 /// Forces the model into constrained decoding, matching the WordInfo shape.
+#[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub fn word_info_schema() -> Schema {
     Schema::new(
         "WordInfo",

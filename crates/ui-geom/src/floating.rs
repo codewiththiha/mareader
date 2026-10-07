@@ -48,6 +48,7 @@ impl Rect {
 }
 
 /// The five-field box the spring drives: position, size, corner radius.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FloatBox {
     pub x: f64,
     pub y: f64,
@@ -101,6 +102,7 @@ impl FloatBox {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlacementSide {
     /// Pick the side with room, flipping above when the bottom would overflow.
+    #[default]
     Auto,
     /// Always above, clamped into the viewport.
     Above,
@@ -116,6 +118,7 @@ pub struct PlacementOptions {
 }
 
 /// A placed panel: the final rect plus its `transform-origin`.
+#[derive(Debug, Clone, Copy)]
 pub struct PlacedPanel {
     pub rect: Rect,
     pub transform_origin: &'static str,

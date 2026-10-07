@@ -81,6 +81,7 @@ impl Progress {
 }
 
 /// Runs on the blocking pool: a walk is a syscall per entry.
+#[tauri::command]
 pub async fn scan_folder(
     app: AppHandle,
     task: String,
@@ -195,6 +196,7 @@ fn scan(
 }
 
 /// One row per path asked about, in the order asked; a refusal answers `false`.
+#[tauri::command]
 pub async fn verify_paths(paths: Vec<String>) -> Result<Vec<PathCheck>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         paths
@@ -234,6 +236,7 @@ fn check_path(path: &str) -> PathCheck {
 }
 
 /// A failure is per-file: one locked file does not stop the other ninety-nine.
+#[tauri::command]
 pub async fn store_books(
     app: AppHandle,
     task: String,
@@ -323,6 +326,7 @@ fn own_stamp(target: &Path) {
 }
 
 /// Only a path inside the app's own store is removed, canonicalised.
+#[tauri::command]
 pub async fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || delete(&app, &path))
         .await
@@ -372,6 +376,7 @@ fn sweep_the_books_folder(root: &Path, deleted: &Path) {
 }
 
 /// Which path a row reveals is the frontend's answer, not this one's.
+#[tauri::command]
 pub async fn reveal_in_folder(path: String) -> Result<(), String> {
     let target = Path::new(&path);
     if !target.exists() {
@@ -415,6 +420,7 @@ pub async fn reveal_in_folder(path: String) -> Result<(), String> {
 
 /// The store moved to `<root>/items/<id>/source.<ext>`; older copies
 /// keep their recorded address.
+#[tauri::command]
 pub async fn relocate_stored(
     app: AppHandle,
     requests: Vec<BookFileRequest>,
@@ -685,6 +691,7 @@ mod tests {
     }
 
     /// Two of the three hosts carry the source's stamp across a copy.
+    #[test]
     fn a_copy_takes_its_own_modification_time() {
         let dir = std::env::temp_dir().join(format!("mareader-stamp-{}", std::process::id()));
         fs::create_dir_all(&dir).expect("a scratch directory");
@@ -730,6 +737,7 @@ mod tests {
     }
 
     /// Paths are resolved before the sweep, as the command resolves them.
+    #[test]
     fn a_removed_book_takes_its_own_folder_and_nothing_above_it() {
         let root = std::env::temp_dir().join(format!("mareader-sweep-{}", std::process::id()));
         let item = root.join("items").join("b1");
