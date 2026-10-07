@@ -1,16 +1,10 @@
-//! How two books that turn out to be one fold back into one: the fold keeps
-//! the further read point, whichever name is real, and both shelves'
-//! memberships.
+//! How two books that are one fold back into one.
 
 use super::{Book, ReadPoint};
 
-/// Fold one book into another: `gone` dissolves and `survivor` keeps its id,
-/// name and address, taking everything the survivor does not already know.
-/// Placement, read point and measurement travel from whichever row knows more;
-/// a name the survivor already has wins.
+/// Fold one book into another; the survivor keeps its id and name.
 pub fn fold_books(survivor: &mut Book, gone: &Book) {
-    // The resume point travels as one unit: a page without its count is a
-    // position the progress bar cannot draw.
+    // The resume point travels as one unit.
     let mine = ReadPoint {
         page: survivor.page,
         num_pages: survivor.num_pages,
@@ -36,8 +30,7 @@ pub fn fold_books(survivor: &mut Book, gone: &Book) {
     survivor.added_ms = earliest_known(survivor.added_ms, gone.added_ms);
     survivor.last_read_ms = survivor.last_read_ms.max(gone.last_read_ms);
     survivor.missing = survivor.missing && gone.missing;
-    // The pending flag is the survivor's own before the fold: two placeholders
-    // stay one, but a placeholder yields to a measured row.
+    // The pending flag is the survivor's own.
     let was_pending = survivor.fp_pending;
     survivor.fp_pending = was_pending && gone.fp_pending;
     if was_pending && !gone.fp_pending {
@@ -45,9 +38,7 @@ pub fn fold_books(survivor: &mut Book, gone: &Book) {
     }
 }
 
-/// The further of two read points: higher page wins, and on a tie the deeper
-/// stream fraction. A full tie keeps `mine`, so "came from the other row" is
-/// a fact rather than a coin toss.
+/// The further of two read points; a tie keeps `mine`.
 pub(crate) fn further_point(mine: ReadPoint, theirs: ReadPoint) -> ReadPoint {
     use std::cmp::Ordering;
     match theirs.page.cmp(&mine.page) {
@@ -67,9 +58,7 @@ pub(crate) fn further_point(mine: ReadPoint, theirs: ReadPoint) -> ReadPoint {
     }
 }
 
-/// The earlier of two stamps, treating `0` as "unknown": a migrated row has
-/// no join stamp, and folding zero as the epoch would date every touched book
-/// to 1970.
+/// The earlier of two stamps, treating `0` as unknown.
 fn earliest_known(mine: u64, theirs: u64) -> u64 {
     match (mine, theirs) {
         (0, other) | (other, 0) => other,

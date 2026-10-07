@@ -1,21 +1,15 @@
-//! Shelf membership: the ids a shelf holds, the level query that answers
-//! for the root, and the edits a placement, a filing and a removal make.
+//! Shelf membership: the ids a shelf holds, and the edits over them.
 
 use super::{ALL_SHELF, Shelf};
 
-/// Put `id` on a member list at `index`, or move it there when it is already a
-/// member; `None` appends. Moving within a list removes first and then inserts,
-/// so dropping a book on its own neighbour does not shift the tail.
+/// Put `id` on a member list at `index`, or move it there.
 pub fn place(members: &mut Vec<String>, id: &str, index: Option<usize>) {
     members.retain(|m| m != id);
     let at = index.unwrap_or(members.len()).min(members.len());
     members.insert(at, id.to_string());
 }
 
-/// The ids of the rows one level holds, in the order it holds them: the one
-/// answer to "what is on this level", read by the collision check, the count,
-/// the render and the purge. A shelf answers with its member list; the root
-/// answers with the rows no shelf holds.
+/// The ids one level holds, in order.
 pub fn members_of<'a>(
     rows: &'a [crate::book::Row],
     shelves: &'a [Shelf],
@@ -27,8 +21,7 @@ pub fn members_of<'a>(
     if shelf_id != ALL_SHELF {
         return Vec::new();
     }
-    // One pass over the memberships rather than one per row: this is asked per
-    // arrival and per render.
+    // One pass over the memberships.
     let filed: std::collections::HashSet<&str> = shelves
         .iter()
         .flat_map(|s| s.books.iter().map(String::as_str))
@@ -39,9 +32,7 @@ pub fn members_of<'a>(
         .collect()
 }
 
-/// Put `id` on a shelf unless it is already there. Not [`place`]: a restore and
-/// a "show it here as well" may add a book that is already a member, and
-/// appending it again would move a book for no reason.
+/// Put `id` on a shelf unless it is already there.
 pub fn shelf_add(shelf: &mut Shelf, book_id: &str) {
     if !shelf.books.iter().any(|member| member == book_id) {
         shelf.books.push(book_id.to_string());
@@ -54,8 +45,7 @@ pub fn forget(members: &mut Vec<String>, id: &str) -> bool {
     members.len() != before
 }
 
-/// Drop a book from every shelf at once. Membership is per shelf, so the sweep
-/// is the only way to be sure no shelf keeps pointing at a row that is gone.
+/// Drop a book from every shelf at once.
 pub fn forget_everywhere(shelves: &mut [Shelf], book_id: &str) {
     for shelf in shelves.iter_mut() {
         forget(&mut shelf.books, book_id);
