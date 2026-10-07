@@ -160,8 +160,11 @@ factor is `pub(crate)` now: a kernel implementation detail, not surface.
 4. Gates: `tests/browser/lifecycle.mjs` — the look-ahead stage and the retention
    ceilings get *tighter* assertions (placeholder mode must not engage at normal
    speed; `retainedVirtualItems` must fall to 0 at rest without waiting for the
-   deadline), and `tools/check-memory-discipline.mjs` keeps every virtualizer
-   disposal in place.
+   deadline). The source check this phase planned
+   (`tools/check-memory-discipline.mjs`) was not added; virtualizer disposal is
+   asserted by the lifecycle suite's counts instead — `virtualizerLive`,
+   `virtualizerListeners`, `virtualizerObservers` and `virtualizerTimers` all
+   back to zero after every close.
 
 [api-docs]: https://virtuoso.dev/react-virtuoso/api-reference/common/
 
@@ -212,9 +215,11 @@ rather than constrain a line:
   the anchor still re-asserts, it simply agrees on frame one. The reader's page is
   seeded by the open flow before the route flips (`enter_ready` last), so it is
   already the resume page here.
-- Zombie retention is timed in **milliseconds, not frames**: the bridge exists to
-  outlive a zoom commit's relayouts, which wall-clock timers pace, and
-  `MAX_ZOMBIES` is what stops a long fling mounting the whole document.
+- Zombie retention is a bridge, not a cache: at rest an evicted row unmounts in
+  the same tick, a fling keeps it for exactly the frame that evicted it
+  (`MotionGated`, which both callers pass), and a zoom commit raises a wall-clock
+  `Grace` long enough to outlive the relayouts it is there for — `MAX_ZOMBIES` is
+  what stops a long fling mounting the whole document.
 - The engine sweeps its rasters only inside render activity, so after a zoom-out or
   a mode flip nothing renders and the big rasters would stay pinned until the 30 s
   idle timer. The reader sweeps at scroll idle on both strips instead, registered
