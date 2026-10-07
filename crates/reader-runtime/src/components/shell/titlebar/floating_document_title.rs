@@ -1,54 +1,4 @@
-//! Difference-blend floating document name, parked TOP-LEFT.
-//!
-//! Overlap policy: the label may sit over the page canvas, but may cover at
-//! most `MAX_CANVAS_OVERLAP` of the canvas width. Its budget is the blank gap
-//! left of the page plus that overlap allowance (minus a safety margin); the
-//! name shows in full only when its NATURAL width fits that budget, otherwise
-//! it disappears entirely — it never truncates over the page. "Label Width
-//! Limit" scales that budget down; "Always Show Label" opts out of the
-//! auto-hide rules — except the one that matters most:
-//!
-//! THE RAIL ALWAYS WINS. The label is portaled to `<body>` and sits at the
-//! window's top-left, which is exactly where the rail's header is, so a label
-//! that ignores the rail reads as text laid over the sidebar (docked) or
-//! floating above it (overlay). "Always" means the title bar and the width
-//! budget stop being reasons to hide; the rail is still a reason. It follows
-//! [`ShellController::rail_present`], so the label stays out of the way for the
-//! whole close slide rather than reappearing on the frame the mode flips.
-//!
-//! Shown only when a document is open, the sidebar is off, and — unless
-//! "Always Show Label" is on — the titlebar is not visible (the bar contains
-//! the name) and the name fits its budget.
-//!
-//! Blend contract: `mix-blend-difference` blends only against what is painted
-//! *inside the element's isolation group* (its nearest ancestor stacking
-//! context). The shell subtree creates such contexts freely (toolbar glass
-//! `backdrop-filter`, `opacity` fades, z-token wrappers, `prop:inert`
-//! toggling), and whenever the group happened to exclude the pages the
-//! backdrop read transparent — `white difference transparent = white` — with
-//! the blend snapping back only when an unrelated animation forced the
-//! compositor to re-invalidate the layer. So the label is PORTALED to
-//! `<body>` and `position: fixed`: its only ancestors are body/html, its
-//! isolation group is the root canvas group, and that group always contains
-//! the pages' pixels — deterministic, with no ancestor able to isolate it.
-//!
-//! Rules that keep it working forever:
-//! 1. `mix-blend-difference` must sit on the SAME element that is
-//!    `position: fixed`. `fixed` creates a stacking context, so a fixed
-//!    wrapper around a blended child isolates the child against a transparent
-//!    backdrop (`white difference transparent = white`) — that exact shape is
-//!    what made the portaled label read white in the browser.
-//! 2. The blending node and its ancestors up to `<body>` must otherwise stay
-//!    stacking-context-FREE: no z-index, opacity, transform, filter,
-//!    backdrop-filter, isolation, contain or will-change. Above/below is
-//!    solved with DOM order, never z-index.
-//! 3. The fade (`opacity-0`) stays on the inner span, a DESCENDANT of the
-//!    blending node: a descendant's opacity never isolates the blend.
-//!    Mid-fade the text simply fades; the blend stays live.
-//! 4. If it ever reads white again: DevTools → blending node → walk the
-//!    ancestors to `<body>` and look for the properties in rule 2, and make
-//!    sure no `position: fixed|sticky` or stacking-context ancestor sits
-//!    BETWEEN the blend and `<body>` other than the blending node itself.
+//! Floating document name, difference-blended, top-left.
 
 use leptos::html;
 use leptos::portal::Portal;
@@ -71,8 +21,8 @@ const MIN_LABEL_W: f64 = 40.0;
 pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
     let shell = use_context::<ShellController>().expect("the page provides the shell controller");
-    // The blending node is the positioned <div> (see the view's CRITICAL
-    // note); scroll_width() there is the natural text width, as before.
+    // The blending node is the positioned <div>; its scroll_width is the
+    // natural text width.
     let label_ref: NodeRef<html::Div> = NodeRef::new();
     // Allowed total width in px, or None = hide.
     let budget = RwSignal::new(None::<f64>);
@@ -81,19 +31,12 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
 
     let measure = move || {
         request_animation_frame(move || {
-            // Mid-zoom relayout: geometry is moving; the effect re-runs when
-            // the zoom transition ends, so skipping here loses nothing. The
-            // probe is the TRY variant because a frame armed here can run
-            // after the reader's owner is gone (closing the document
-            // unmounts this titlebar with a frame still queued): `None` is
-            // that disposed state, not a zoom.
+            // Mid-zoom: the effect re-runs when the transition ends.
             if state.reader.viewer.try_zooming_now() != Some(false) {
                 return;
             }
 
-            // THE page under the eyes, by id — never an arbitrary mounted
-            // page. The id format is the anchor module's; duplicating it here
-            // once drifted from the single-page host convention.
+            // THE page under the eyes, by id — never an arbitrary mounted page.
             let Some(page) = state.reader.viewer.page.try_get_untracked() else {
                 return;
             };
@@ -101,12 +44,7 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
                 return;
             };
             let page = page.max(1);
-            // A missing host is the ordinary virtualization gap (the page
-            // under the eyes is between mounts), so this stays a silent
-            // miss. Both elements are THIS pane's: the page host is looked
-            // up inside the pane's root, and the gap is measured against the
-            // pane's own box — never the host's workspace slot, which a
-            // pane has no business discovering from the document.
+            // A missing host is the ordinary virtualization gap: a silent miss.
             let dom = state.reader.dom;
             let Some(doc_el) = dom.by_id(&host_id_for_mode(mode, page)) else {
                 return;
@@ -123,10 +61,7 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
             } // not laid out yet: keep last budget
 
             let gap = (pr.left() - vr.left()).max(0.0);
-            // Overlap allowance only when there is a real blank margin. When
-            // the page spans the viewer (fit-width, zoomed-in), the label
-            // would sit on the page and must disappear entirely instead of
-            // covering up to 25% of it.
+            // Overlap allowance only when there is a real blank margin.
             let overlap = if gap > 1.0 {
                 MAX_CANVAS_OVERLAP * canvas_w
             } else {
@@ -134,10 +69,7 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
             };
             let new_budget = gap + overlap - SAFETY;
 
-            // Only write on a real change — avoids class/style closure churn
-            // every rAF during the sidebar slide. The rAF can outlive this
-            // component (closing the document unmounts it while a frame is in
-            // flight), so try-accessors make a stale frame a silent no-op.
+            // Only write on a real change; stale frames are a silent no-op.
             if budget
                 .try_get_untracked()
                 .flatten()
@@ -156,16 +88,9 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
     };
 
     // Re-measure whenever geometry or identity can change, and on resize.
-    //
-    // The zoom transition is tracked so the effect re-runs when a gesture SETTLES
-    // (the rAF below skips while the flag is up): a zoom-in that fills the
-    // viewer with the page must collapse the budget and hide the label, a
-    // zoom-out must bring it back. Without this the label would sit over the
-    // page indefinitely after zooming, because zooming does not move
-    // `page`/`container_size` (the anchored page stays dominant).
     Effect::new(move |_| {
-        // The pane's own box: a pane resized inside the workspace (no window
-        // resize at all) re-measures its gap too.
+        // The pane's own box: a pane resized in the workspace re-measures
+        // too.
         _ = state.reader.dom.bounds();
         _ = state.reader.viewer.container_size.get();
         _ = state.reader.viewer.page.get();
@@ -207,18 +132,13 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
         if !enabled() || state.reader.document.status.get() != DocStatus::Ready {
             return false;
         }
-        // The label is portaled to the body, so the first-paint cover
-        // inside the viewer slot cannot mask it — it stands down for the
-        // same gate and fades in with the settled reader.
+        // The label is portaled to the body, so the cover cannot mask it.
         if !state.reader.viewer.first_paint.get() {
             return false;
         }
-        // The rail owns the top-left corner in either mode: docked, its
-        // identity row already shows the name; floating, it is painted right
-        // under this label.
+        // The rail owns the top-left corner in either mode.
         let rail_off = !shell.rail_present().get();
-        // Persist means auto-hide does not: the title bar and the width budget
-        // stop being reasons to disappear. The rail is not a budget.
+        // Persist means auto-hide does not; the rail is not a budget.
         if state.settings.with(|st| st.layout.floating_label_persist) {
             return rail_off;
         }
@@ -231,31 +151,16 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
 
     view! {
         // Portal to <body>: root canvas group = pages + label, always.
-        //
-        // CRITICAL: `mix-blend-difference` lives on the SAME node as
-        // `position: fixed`. `fixed` creates a stacking context, so a fixed
-        // *wrapper* around a blended child would isolate the child (its only
-        // backdrop would be the transparent wrapper -> white). On the fixed
-        // node itself, the backdrop is the portal/body group = the whole app.
-        // opacity-0 (not `hidden`) keeps the inner span measurable.
         <Portal>
             <div
                 node_ref=label_ref
                 class="pointer-events-none fixed block truncate text-sm font-medium \
                        text-white mix-blend-difference"
-                // The top-left corner of THIS pane's box (a `left-3 top-3`
-                // inset from it): a split's right or lower pane labels its
-                // own corner, not the window's. Plain offsets — rule 2 bars
-                // a transform on this node.
+                // The top-left corner of THIS pane's box, a plain inset.
                 style:left=move || format!("calc(0.75rem + {}px)", state.reader.dom.bounds().x)
                 style:top=move || format!("calc(0.75rem + {}px)", state.reader.dom.bounds().y)
                 style:max-width=move || {
-                    // Persist must beat the width clamp too. When the page
-                    // fills the viewer the gap is ~0, so the budget falls
-                    // under MIN_LABEL_W and this returned "0px" — the label
-                    // was truncated to nothing no matter what `shown` said.
-                    // The rail case never reaches here: `shown` is already off
-                    // and the fade hides the text.
+                    // Persist must beat the width clamp too.
                     if state.settings.with(|st| st.layout.floating_label_persist) {
                         return "min(70vw, 560px)".to_string();
                     }
