@@ -1,82 +1,59 @@
 [build]
 target = "./index.html"
-# Unhashed asset names, like the two runtime configs. dist/ is ONE directory
-# merged from three builds and served statically (the packaged app serves it
-# through Tauri's protocol, the dev server and CI serve it from disk): a
-# content-hashed `styles-<hash>.css` is a name the other two builds cannot
-# reference, so the runtime pages' `styles.css` had nothing to resolve to in
-# the merged dist. Stable names keep the three builds interchangeable, which is
-# what tools/check-runtime-artifacts.mjs asserts.
+# Unhashed names so every build resolves `styles.css` in the merged dist;
+# tools/check-runtime-artifacts.mjs asserts the set.
 filehash = false
 
 [watch]
-# Generated artifacts are excluded from the watcher to prevent a rebuild
-# loop (hook writes the file -> trunk notices -> trunk rebuilds -> hook
-# writes again -> ...). `./src-tauri` is excluded because it's a separate
-# Cargo crate the frontend doesn't need to react to.
+# comment-check: allow — two startup rules an edit here would break silently.
 #
-# IMPORTANT: every path in this list MUST exist on disk when `trunk serve`
-# starts. Trunk 0.21.x canonicalizes each entry at startup, and a missing path
-# is a hard error (https://github.com/trunk-rs/trunk/issues/256) — so these are
-# real paths, not globs, and an entry matches its whole subtree (the watcher
-# compares against every ancestor of the changed path). `scripts/` and the three
-# bundles are generated and gitignored, which is why `beforeDevCommand` runs
-# `npm run build:ts` first: on a fresh clone nothing would otherwise exist for
-# the watcher to canonicalize. (Trunk's main branch has since switched this list
-# to globset patterns, where a bare directory no longer matches its children —
-# if that release is ever adopted, `./scripts` becomes `./scripts/**`.)
+# Every path below MUST exist on disk when `trunk serve` starts: Trunk 0.21.x
+# canonicalizes each entry at startup, and a missing path is a hard error
+# (trunk-rs/trunk#256). So these are real paths and not globs, an entry matches
+# its whole subtree, and `beforeDevCommand` runs `npm run build:ts` first —
+# generated, gitignored `scripts/` would otherwise have nothing to canonicalize.
+# (Trunk's main branch moved to globset patterns, where a bare directory no
+# longer matches its children; if that release is adopted, `./scripts` becomes
+# `./scripts/**`.)
 #
-# Trunk's watcher uses mtime to decide whether to fire a rebuild — NOT
-# file content — so even though tsc's output is byte-identical across
-# runs, each pre_build emission touches the .js files' mtime and would
-# retrigger a rebuild without these ignore entries. Keeping them in the
-# list is load-bearing.
+# The watcher fires on mtime and not on content, so each pre_build emission
+# touches a generated file and would retrigger the rebuild that wrote it.
+# `./src-tauri` is a separate Cargo crate the frontend never consumes.
 ignore = [
     "./src-tauri",
     "./styles.css",
-    # Generated tooling output, and ONLY that: `tools/*.ts` compiles to
-    # `scripts/*.js` (see tsconfig.tools.json), so ignoring the directory
-    # covers every tool that exists and every tool added later. This used to be
-    # a list of the individual .js files, which is a list that has to be
-    # updated by hand each time a tool is added — and forgetting it is not a
-    # warning, it is an endless rebuild: the pre_build hook rewrites the file,
-    # Trunk's mtime watcher fires, the build runs the hook again. Adding
-    # `scripts/repo.js` without adding it here is exactly how that happened.
+    # Generated: `tools/*.ts` compiles into `scripts/*.js`, so one entry covers
+    # every tool. Watching them rebuilds forever.
     "./scripts",
-    # The Tailwind sources are compiled by the pre_build hook on EVERY build,
-    # so watching them only bought a second rebuild per CSS edit — one for the
-    # source change and one for the hook's own output. Worse, that rebuild
-    # swapped `styles.css` under a running app, and a stylesheet arriving after
-    # the wasm has booted is exactly the window in which an offscreen element
-    # that hides itself through the cascade paints for a frame. Ignoring the
-    # directory leaves the compiled sheet stable for the life of a session;
-    # `npm run watch:css` is the tool for iterating on CSS alone.
+    # comment-check: allow — two hazards: the hook's output restarting the
+    # build, and the sheet changing under a live app.
+    # Compiled by the hook on every build, so watching the sources buys a second
+    # rebuild per CSS edit — and that rebuild swaps `styles.css` under a running
+    # app, where a sheet arriving after boot paints an offscreen element for a
+    # frame. `npm run watch:css` iterates on CSS alone.
     "./styles",
     "./public/pdfEngine.js",
     "./public/readerEngine.js",
     "./public/bake.worker.js",
     "./public/coverBake.js",
-    # The repo root is the default watch path, so these were all live: every
-    # cargo run writes `target/` (Trunk's own release build, the DevCommand's
-    # debug build, and build-dist.sh's five targets), and build-dist.sh
-    # builds the disposable route/pane targets into their own dist trees
-    # — each of those writes queued a rebuild after the build that made it,
-    # and with the cooldown off by default the cycle never settled.
+    # comment-check: allow — the default watch path is the repo root, and six
+    # build trees live directly under it.
+    # Every cargo run and every build-dist.sh leg writes one of these; each
+    # write queued a rebuild after the build that made it.
     "./target",
     "./dist-library",
     "./dist-reader",
     "./dist-pdf",
     "./dist-reflow",
-    # Trees that move without a source edit: npm's store during an
-    # install, and the freshness manifest dev.mjs rewrites after each
-    # canonical build. Ignoring them keeps those events out of the loop;
-    # `dev.mjs` forces the rebuilds that actually matter itself.
+    # comment-check: allow — npm's store and dev.mjs's freshness manifest move
+    # without a source edit, and both sit under the default watch path; dev.mjs
+    # forces the rebuilds that matter itself.
     "./node_modules",
     "./.dev-artifacts",
 ]
 
-# Bundle the engine with esbuild (IIFE, no import graph). `node` runs the
-# JS API so Windows Trunk can spawn it (no npx / .cmd).
+# Bundle the engine with esbuild (IIFE, no import graph) through `node`, not
+# `npx`.
 [[hooks]]
 stage = "pre_build"
 command = "node"
@@ -87,41 +64,35 @@ stage = "pre_build"
 command = "node"
 command_arguments = ["./node_modules/typescript/bin/tsc", "-p", "tsconfig.tools.json"]
 
-# Compile Tailwind v4 (CSS-first) before every trunk build (dev + prod).
-# Invoke the CLI's JS entry point through `node` directly rather than `npx`.
-# On Windows, npm shims are `.cmd` batch files (npx.cmd / tailwindcss.cmd),
-# which Trunk's `Command::new()` cannot spawn (it only resolves real
-# executables), so the hook failed with "program not found" on the Windows
-# release leg. `node` is a real `node.exe` on every platform, and the CLI is
-# just `dist/index.mjs`, so this is the cross-platform-safe spelling.
+# comment-check: allow — the Windows spawn rule that broke this hook.
+# Compile Tailwind v4 (CSS-first) through `node`, never `npx`: on Windows the
+# npm shims are `.cmd` files that `Command::new()` cannot spawn (it resolves
+# real executables), so the hook died with "program not found" on the release
+# leg. `node` is a real executable everywhere and the CLI is `dist/index.mjs`.
 [[hooks]]
 stage = "pre_build"
 command = "node"
 command_arguments = ["./node_modules/@tailwindcss/cli/dist/index.mjs", "-i", "styles/input.css", "-o", "styles.css", "--minify"]
 
-# Stage the merged runtime artifacts INTO the distribution Trunk is about to
-# apply. `trunk serve` swaps dist/ wholesale on every rebuild, and the shell's
-# staging tree carries only the shell — without this, every apply drops
-# reader/library until the orchestrator's next restore, and that window is a
-# 404 on the exact file the shell is importing ("MAReader could not start the
-# Library runtime … failed during module load"). post_build runs just before
-# the staging directory is copied over dist/, with the staging path in
-# $TRUNK_STAGING_DIR. The reader/library legs use their own config files and
-# never run this hook, so staging those builds would be pointless; a missing
+# comment-check: allow — the staging contract and the fresh-clone skip.
+# Stage the merged runtime artifacts INTO the tree Trunk is about to apply:
+# `trunk serve` swaps dist/ wholesale, and the shell's staging tree carries the
+# shell alone, so without this every apply drops reader/library until the next
+# restore — a 404 on the file the shell imports. post_build runs before the
+# staging directory is copied over dist/, with the path in $TRUNK_STAGING_DIR;
+# the runtime legs use their own configs and never run this hook, and a missing
 # source (fresh clone, shell leg builds first) is a skip, not an error.
 [[hooks]]
 stage = "post_build"
 command = "node"
 command_arguments = ["./tools/stage-merged.mjs"]
 
-# Deliberately no `[tools]` table: its `wasm_opt` key pins the *binaryen
-# release* Trunk downloads, so `wasm_opt = "z"` here made every release build
-# fetch `binaryen-z-<platform>.tar.gz` and die on a 404 before the bundle was
-# produced. The size pass it was meant to enable is not lost — a *level*
-# belongs on the rust link in `index.html`, which already asks for it
-# (`data-wasm-opt="z"`), and Trunk runs wasm-opt on release builds from there.
-# Add `[tools] wasm_opt = "<version>"` only if a specific binaryen build ever
-# has to be pinned for reproducibility.
+# comment-check: allow — why the absent table is deliberate, not unfinished.
+# No `[tools]` table on purpose: `wasm_opt` pins the binaryen RELEASE Trunk
+# downloads, so `wasm_opt = "z"` 404s on `binaryen-z-<platform>.tar.gz` before a
+# bundle exists. The optimise level belongs on the rust link in `index.html`
+# (`data-wasm-opt="z"`), which is where Trunk reads it on release builds; add a
+# real version here only to pin binaryen for reproducibility.
 
 [serve]
 port = 1420

@@ -979,7 +979,8 @@ tools/                    engine bundling, the engine smoke test, the
                           consistency checks CI runs (versions, formats, doc
                           paths, event names, the DOM contract, the chrome
                           contracts, the host boundary, session ownership,
-                          the dependency gate, the runtime artifacts)
+                          the dependency gate, the Tauri build contract and
+                          relay, the runtime artifacts the build must ship)
 scripts/                  generated only: the compiled tools above. Gitignored,
                           and ignored wholesale by Trunk's watcher, so the hook
                           rewriting them on every build cannot retrigger one
@@ -1140,8 +1141,8 @@ covering open, render, theme baking, scrub mode, thumbnails, search, teardown, a
 bundle's selection tracker — the last in a sandbox with no engine and no pdf.js in scope,
 which is the point of it.
 
-Six small scripts guard facts that are written down more than once, where nothing else
-would notice a drift: `check-versions.ts` (the app version in its four manifests, plus
+Six small TypeScript scripts guard facts that are written down more than once, where
+nothing else would notice a drift: `check-versions.ts` (the app version in its four manifests, plus
 the two lockfile entries cargo derives from them),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
@@ -1162,6 +1163,17 @@ is five chances for one tool to start scanning `node_modules`. `scripts/` holds 
 but their compiled output, which is why git ignores the
 directory and Trunk's watcher does too: the hook rewrites those files on every build, and a
 watcher that notices would rebuild forever.
+
+Five more checks are hand-written `.mjs` files, run straight from `tools/` with no compile
+step and no shared prelude. Three ride the `Rust / lint` lane: `check-dependency-gate.mjs`
+(no crate in the workspace may reach an engine or a parser), `check-host-boundary.mjs` (the
+reader host talks to its panes only through its contract) and `check-session-ownership.mjs`
+(a pane's PDF work goes through the session that owns it). Two ride `Web / contracts`:
+`check-tauri-contract.mjs` (one canonical build, one dev URL, one port) and
+`check-tauri-relay.mjs` (what a frame's press may do, per platform). The twelfth,
+`check-runtime-artifacts.mjs`, is not a CI step at all — it rides `tools/build-dist.sh`, so
+every canonical build, locally and in the deep lane alike, fails on an artifact that is
+missing, empty or a stub.
 
 The test count above is read from the Rust test lane's own summary, not counted by a script:
 it is the one number here that no check can fail on, so it carries the lane it came from.
