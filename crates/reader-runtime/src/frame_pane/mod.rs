@@ -892,20 +892,10 @@ impl PaneRuntime for FramePane {
     }
 
     fn format(&self) -> PaneFormat {
-        let document = &self.inner.ctx.reader.document;
-        if document
-            .path
-            .try_with_untracked(Option::is_none)
-            .unwrap_or(true)
-        {
-            return self.inner.requested.get();
-        }
-        match document.format.try_get_untracked() {
-            Some(reader_core::format::Format::Pdf) => PaneFormat::Pdf,
-            Some(reader_core::format::Format::Markdown) => PaneFormat::Markdown,
-            Some(reader_core::format::Format::Text) => PaneFormat::Text,
-            None => PaneFormat::Pending,
-        }
+        crate::pane::document::reported_format(
+            &self.inner.ctx.reader.document,
+            self.inner.requested.get(),
+        )
     }
 
     fn document(&self) -> Option<DocumentId> {
