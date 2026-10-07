@@ -1,6 +1,5 @@
-//! Window chrome: the commands the frameless caption cluster fires, the
-//! cluster itself (Windows squares, GNOME circles), and the macOS native
-//! traffic lights. Nothing here knows what a document format is.
+//! Window chrome: the caption commands, the clusters and the native
+//! lights.
 
 pub mod api;
 pub mod caption;

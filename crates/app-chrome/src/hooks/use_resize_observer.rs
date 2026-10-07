@@ -1,13 +1,4 @@
-//! ResizeObserver plumbing: one install, one teardown, no closure leaks. Three
-//! consumers each carried an identical ~45-line block (two `StoredValue`s, a
-//! run-once guard, a `Closure::wrap`, the observer, and an `on_cleanup` that
-//! MUST disconnect before the closure is dropped); only the observed elements
-//! differed.
-//!
-//! The disconnect is load-bearing: unmounting removes the observed element,
-//! which queues a resize notification into a closure about to be freed —
-//! without the explicit `disconnect()` the wasm runtime aborts with "closure
-//! invoked recursively or after being dropped".
+//! ResizeObserver plumbing: one install, one teardown, no closure leaks.
 
 use std::rc::Rc;
 
@@ -19,13 +10,7 @@ use web_sys::ResizeObserverEntry;
 
 use super::dom::by_id;
 
-/// One installed observer: the observer itself, and the wasm closure keeping
-/// its JS callback alive. Two `StoredValue` slots, not one pair, because the
-/// closure is not `Clone` and the read side of a slot (`try_get_value`)
-/// requires it — the observer slot answers "what is connected", the closure
-/// slot only ever gets swapped out, which hands the old closure back for the
-/// drop. Both handles are `Copy` and `Send + Sync`, so a teardown can reach
-/// them from any owner — including a `stop` handle the installer hands out.
+/// One installed observer and the wasm closure keeping it alive.
 type ObserverSlot = (
     StoredValue<Option<web_sys::ResizeObserver>, LocalStorage>,
     StoredValue<Option<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>, LocalStorage>,
@@ -38,10 +23,7 @@ fn new_slot() -> ObserverSlot {
     )
 }
 
-/// Disconnect an installed observer and drop its closure. The closure goes
-/// AFTER the disconnect: dropping it first would leave the observer holding
-/// a dangling JS callback. Idempotent, and safe against a slot whose arena
-/// item is already gone (`try_*`).
+/// Disconnect an installed observer and drop its closure, in that order.
 fn stop_observing(slot: ObserverSlot) {
     if let Some(observer) = slot.0.try_get_value().flatten() {
         observer.disconnect();
@@ -50,10 +32,7 @@ fn stop_observing(slot: ObserverSlot) {
     let _ = slot.1.try_set_value(None);
 }
 
-/// Observe `elements` into `slot`, replacing any previous install. The
-/// replace-first is what makes an effect re-run safe: the old observer is
-/// disconnected before the new one exists, so a node identity change can
-/// never leave two observers (or two retained closures) on the tree.
+/// Observe `elements` into `slot`, replacing any previous install.
 fn install_observer(
     slot: ObserverSlot,
     elements: &[web_sys::Element],
@@ -75,9 +54,7 @@ fn install_observer(
     }
 }
 
-/// Install one observer over the given elements for the current reactive
-/// owner, forwarding every callback batch to `on_resize` (the browser already
-/// coalesces the notifications). The disconnect rides this owner's cleanup.
+/// Install one observer over `elements` for the current owner.
 pub fn observe_elements(
     elements: Vec<web_sys::Element>,
     on_resize: impl Fn(Vec<ResizeObserverEntry>) + 'static,
@@ -92,15 +69,7 @@ pub fn observe_elements(
     on_cleanup(move || stop_observing(slot));
 }
 
-/// Report an element's content-box size into `sink` for as long as the caller
-/// holds the returned stopper (looked up by id; see [`super::dom::by_id`]).
-///
-/// The teardown is the CALLER's, explicitly: register the returned function
-/// with `on_cleanup` where the observation is mounted. Letting the disconnect
-/// ride the install effect's own owner made the observer's lifetime a fact
-/// about effect-disposal order instead — and an observer that outlives its
-/// shell retains the observed element, which for a page scroller means every
-/// canvas ever mounted inside it.
+/// Report an element's content-box size into `sink`.
 pub fn observe_content_size(
     element_id: &'static str,
     sink: RwSignal<(f64, f64)>,
@@ -108,10 +77,7 @@ pub fn observe_content_size(
     observe_content_size_with(move || by_id(element_id), sink)
 }
 
-/// [`observe_content_size`] for an element the caller finds itself — a
-/// lookup scoped to one subtree (a reader pane's root) rather than the whole
-/// document. `find` runs once, when the observation arms after the mount;
-/// the same explicit stop comes back.
+/// [`observe_content_size`] for an element the caller looks up itself.
 pub fn observe_content_size_with(
     find: impl Fn() -> Option<web_sys::Element> + 'static,
     sink: RwSignal<(f64, f64)>,
@@ -133,8 +99,7 @@ pub fn observe_content_size_with(
     move || stop_observing(slot)
 }
 
-/// Observe a `NodeRef` element and forward each resize entry to `on_resize`.
-/// Re-arms when the node identity changes (remounts create a fresh element).
+/// Observe a `NodeRef` element, re-arming when the node changes.
 pub fn use_resize_observer(
     target: NodeRef<html::Div>,
     on_resize: impl Fn(ResizeObserverEntry) + 'static,
@@ -149,10 +114,7 @@ pub fn use_resize_observer(
         let Some(el) = target.get() else {
             return;
         };
-        // Compare/observe through the base Element type (the NodeRef is typed
-        // Div; the observer takes web_sys::Element). Unchecked is sound: an
-        // HtmlDivElement IS an Element — the same JS object through the base
-        // interface.
+        // Compare through the base Element type: an HtmlDivElement IS one.
         let el: web_sys::Element = el.unchecked_into::<web_sys::Element>();
         if callback_handle.with_value(|c| c.is_some()) {
             if observed.with_value(|o| o.as_ref().is_some_and(|o| o == &el)) {

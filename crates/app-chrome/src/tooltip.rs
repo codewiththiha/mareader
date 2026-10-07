@@ -1,6 +1,4 @@
-//! Minimal tooltip: wraps children and exposes the text via a native `title`
-//! attribute. Native tooltips are the most reliable cross-webview option and
-//! avoid positioning bugs.
+//! Minimal tooltip: children plus a native `title` attribute.
 
 use leptos::prelude::*;
 

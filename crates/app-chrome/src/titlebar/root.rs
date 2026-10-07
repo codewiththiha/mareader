@@ -1,15 +1,4 @@
-//! Generic hover/grab titlebar shell. `left`/`right` are render-prop slots so
-//! each page composes its own controls; the shell owns the hover/pin state,
-//! the hide timers, the drag/hover band, and the center slot's resolved box
-//! (`resolve_center_slot`).
-//!
-//! It WRAPS its children so descendants (the floating doc title, the slot
-//! menus' popovers) can read the shared [`TitleBarCtx`] — leptos context flows
-//! down the reactive tree, so a sibling overlay would not see it.
-//!
-//! The shell knows nothing about the application: pin state, the traffic
-//! lights, the caption cluster (`end`), sidebar insets and search holds
-//! arrive as props computed by `app_title_bar.rs`.
+//! Generic hover and grab titlebar shell with render-prop slots.
 
 use leptos::children::ViewFn;
 use leptos::html;
@@ -31,14 +20,8 @@ const CENTER_GAP: f64 = 8.0;
 /// Below this width a centered title is a stub ("R…") — hide it instead.
 const MIN_CENTER_SLOT: f64 = 60.0;
 
-/// The box the center content renders in, in row coordinates `(start,
-/// width)`, centered inside. Two tiers: the whole row while the content fits
-/// at the row's EXACT center (center ± w/2 clears both clusters), else the
-/// free stretch between the clusters, where the content centers and truncates.
-///
-/// Pure geometry so the tiers stay unit-testable; [`measure_center_slot`]
-/// feeds it live DOM. The cluster edges already reserve whatever sits on
-/// either side, so there is no platform branch here.
+/// The box the center content renders in, `(start, width)` in row
+/// coordinates.
 fn resolve_center_slot(
     row_width: f64,
     left: f64,
@@ -46,8 +29,7 @@ fn resolve_center_slot(
     title_width: Option<f64>,
 ) -> (f64, f64) {
     let center = row_width * 0.5;
-    // At the row center the content spans center ± w/2; it fits while both
-    // ends clear the clusters.
+    // At the row center it spans center ± w/2; fits while both ends clear.
     let fits_center =
         title_width.is_some_and(|w| w <= 2.0 * (center - left) && w <= 2.0 * (right - center));
     if fits_center {
@@ -57,10 +39,7 @@ fn resolve_center_slot(
     (start, (right - start).max(0.0))
 }
 
-/// The live measurement behind [`resolve_center_slot`]: the row rect, both
-/// cluster edges (row coordinates, breathing gap applied) and the title's
-/// natural width — `scroll_width` on the truncate span reports the full
-/// content even while clipped. `None` while any anchor is absent.
+/// The live measurement behind [`resolve_center_slot`].
 fn measure_center_slot() -> Option<(f64, f64)> {
     let row = by_id(TOOLBAR_ROW_ID)?;
     let row_rect = row.get_bounding_client_rect();
@@ -80,8 +59,7 @@ fn measure_center_slot() -> Option<(f64, f64)> {
     ))
 }
 
-/// Coalesced slot re-measure (write-if-changed, so a sidebar slide costs
-/// one style update per frame, not a notify storm).
+/// Coalesced slot re-measure, written only when the value changes.
 fn schedule_slot_measure(center_slot: RwSignal<Option<(f64, f64)>>) {
     request_animation_frame(move || {
         let next = measure_center_slot();
@@ -96,19 +74,8 @@ fn schedule_slot_measure(center_slot: RwSignal<Option<(f64, f64)>>) {
     });
 }
 
-/// Wires the center slot's resolved box: a signal kept current by observing
-/// the row, both clusters and the title, a window-resize re-measure, and an
-/// immediate first pass. See [`resolve_center_slot`] for the box itself.
-///
-/// The shell's own anchors are read through NodeRefs, and the effect WAITS
-/// for the row's ref before installing: a route swap runs the incoming page's
-/// bodies a whole tick before it exchanges the DOM, so the first pass after a
-/// remount runs while the document still shows the OUTGOING page. Ids would
-/// resolve to that page's nodes, and the one-install observer would latch
-/// onto nodes one tick from death — the new page's slot never re-measured
-/// again. The refs are set when this shell's own elements build, which wakes
-/// the effect for the real install; the page-owned leading cluster is looked
-/// up by id on that re-run, once the swap has completed.
+/// Wire the center slot's resolved box from row, cluster and title
+/// observations.
 fn use_center_slot(
     row_ref: NodeRef<html::Div>,
     trailing_ref: NodeRef<html::Div>,
@@ -116,8 +83,7 @@ fn use_center_slot(
 ) -> RwSignal<Option<(f64, f64)>> {
     let center_slot = RwSignal::new(None::<(f64, f64)>);
     Effect::new(move |_| {
-        // No row yet, nothing to measure against: the build that sets this
-        // ref re-runs the effect for the install.
+        // No row yet: the build that sets this ref re-runs the effect.
         let Some(row) = row_ref.get() else {
             return;
         };
@@ -148,10 +114,7 @@ pub struct TitleBarCtx {
     pub held_count: RwSignal<usize>,
     /// The resolved center-title node, reactive across conditional remounts.
     pub center_title_ref: NodeRef<html::Span>,
-    /// The row's node, reactive across page remounts. Descendants that
-    /// measure against the row (the traffic lights' live header height) read
-    /// it instead of the row's id, which names the outgoing page's row for
-    /// the tick a route swap runs page bodies (see `use_center_slot`).
+    /// The row's node, reactive across page remounts.
     pub row_ref: NodeRef<html::Div>,
 }
 
@@ -163,30 +126,18 @@ pub fn TitleBar(
     on_pin_change: Callback<bool>,
     /// Extra hold from outside the bar (e.g. the open floating search).
     extra_hold: Signal<bool>,
-    /// True while a docked sidebar owns the left inset, so the hover band
-    /// starts at `left-72` (the rail's `w-72`). A floating rail paints above
-    /// the band instead, and the band keeps the full window width.
+    /// True while a docked sidebar owns the left inset.
     band_inset: Signal<bool>,
-    /// The row's left padding in px — the 88px traffic-light gutter while
-    /// the bar owes the lights one, the resting padding once the corner
-    /// belongs to something else. Computed by the shell controller's
-    /// `titlebar_left_gutter`, which owns the rule.
+    /// The row's left padding in px: the light gutter, or the resting one.
     #[prop(into)]
     left_gutter: Signal<f64>,
     #[prop(into)] left: ViewFn,
-    /// Center slot (e.g. the document title). Dead center while the
-    /// content's natural width clears both clusters, else the free stretch
-    /// between them (centered, truncated) — so the caption cluster, pin and
-    /// traffic-light gutter are reserved on every platform. Defaults to
-    /// empty.
+    /// Center slot; dead center while it clears both clusters, else the
+    /// stretch between them.
     #[prop(into, default = ViewFn::from(|| ()))]
     center: ViewFn,
     #[prop(into)] right: ViewFn,
-    /// The row's far-edge cluster — the frameless caption buttons on
-    /// Windows/Linux, rendered after the right cluster and flush to the
-    /// window's right edge. Empty wherever the OS draws its own controls, so
-    /// the shell stays platform-agnostic; `app_title_bar.rs` decides what
-    /// runs here.
+    /// The row's far-edge cluster: the frameless caption buttons.
     #[prop(into, default = ViewFn::from(|| ()))]
     end: ViewFn,
     children: Children,
@@ -194,16 +145,10 @@ pub fn TitleBar(
     let held_count = RwSignal::new(0usize);
     let is_held = Signal::derive(move || held_count.get() > 0);
     let center_title_ref = NodeRef::<html::Span>::new();
-    // Refs rather than ids: a route swap runs this body a tick before its
-    // DOM exists, and the observers must latch onto THIS bar's nodes (see
-    // `use_center_slot`).
+    // Refs rather than ids: this body runs a tick before its DOM exists.
     let row_ref = NodeRef::<html::Div>::new();
     let trailing_ref = NodeRef::<html::Div>::new();
-    // Show on enter, hide after a grace period unless a hold (an open
-    // popover, the floating search) or the pin keeps the bar up. The shared
-    // reveal owns the timer and the recheck; the shell owns the hold
-    // definition. Non-short-circuiting `|`: the effect must track BOTH holds,
-    // or a release of the untracked one never settles.
+    // Show on enter, hide after a grace unless a hold or the pin keeps it.
     let hover = use_hover_reveal(HoverConfig {
         delay: DEFAULT_HOVER_DELAY,
         hold: Some(Signal::derive(move || is_held.get() | extra_hold.get())),
@@ -228,9 +173,7 @@ pub fn TitleBar(
     view! {
         <>
             {children()}
-            // The hover band never sits over a DOCKED sidebar (`left-72`
-            // while one is open); a floating rail paints above it, so the
-            // band stays full width under either.
+            // The hover band never sits over a DOCKED sidebar.
             <div
                 class=format!("absolute top-0 right-0 {BAR} h-12")
                 class=("left-72", sidebar_open)
@@ -240,21 +183,10 @@ pub fn TitleBar(
                 on:mouseleave=move |_| leave_band()
             >
                 <div
-                    // #toolbar-row: the centered slot's measurement anchor
-                    // (see `measure_center_slot`); the page's
-                    // #toolbar-leading and this shell's #toolbar-trailing
-                    // complete it. The ref carries the same node to the
-                    // observers, which must not resolve it by id on a
-                    // remount's first tick.
+                    // #toolbar-row: the centered slot's measurement anchor.
                     id=TOOLBAR_ROW_ID
                     node_ref=row_ref
-                    // "deep", not "true": this row is a CONTAINER — every pixel
-                    // of it is a child's — so a region that claims only the
-                    // element carrying it (Tauri's default) is a region nobody
-                    // can press. "deep" claims the subtree, and the drag
-                    // script's own rule still exempts anything clickable, so
-                    // the bar's buttons stay buttons. See public/tauri-relay.js
-                    // for the frame-side copy of that script.
+                    // "deep", not "true": the row is a CONTAINER of children.
                     data-tauri-drag-region="deep"
                     prop:inert=move || !visible.get()
                     on:mouseenter=move |_| enter_bar()
@@ -267,12 +199,7 @@ pub fn TitleBar(
                 >
                     {left.run()}
                     <div
-                        // pointer-events-none is load-bearing: in the
-                        // exact-center tier this overlay spans the whole row
-                        // above the in-flow controls, and left interactive it
-                        // would swallow their clicks. The title span
-                        // re-enables events for its drag region + tooltip; the
-                        // row behind stays the drag region for the rest.
+                        // pointer-events-none is load-bearing: it spans the row
                         class="absolute inset-y-0 flex items-center justify-center overflow-hidden pointer-events-none"
                         style=move || {
                             match center_slot.get() {
@@ -290,9 +217,7 @@ pub fn TitleBar(
                         </Show>
                     </div>
                     <div
-                        // #toolbar-trailing: the trailing cluster (right slot
-                        // + pin) and the centered slot's right anchor.
-                        // Everything right of this edge sits outside the slot.
+                        // #toolbar-trailing: the trailing cluster.
                         id=TOOLBAR_TRAILING_ID
                         node_ref=trailing_ref
                         class="ml-auto flex shrink-0 items-center gap-1"

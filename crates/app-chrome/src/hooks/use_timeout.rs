@@ -1,34 +1,23 @@
-//! Timeout / debounce / hide-delay primitives. The two families in use —
-//! debounced triggers and hover-reveal + hide-after-grace — used to be
-//! re-implemented per surface, each with its own pending-handle slot and
-//! cleanup dance.
+//! Timeout, debounce and hide-delay primitives, shared by every surface.
 
 use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-/// A debounced trigger: repeated calls postpone the fire; a call after the
-/// last postponed window fires `on_fire` (or the pending fire is cancelled on
-/// cleanup). `Copy` — the handle fields are owner-scoped storage, so consumers
-/// move it into event closures and cleanup hooks freely.
+/// A debounced trigger: repeated calls postpone the fire, `Copy`.
 #[derive(Clone, Copy)]
 pub struct Debouncer {
     trigger: StoredValue<Rc<dyn Fn()>, LocalStorage>,
     handle: StoredValue<Option<TimeoutHandle>, LocalStorage>,
-    /// `alive` is what lets the owner's cleanup disarm a pending fire without
-    /// capturing a non-`Send` handle in the cleanup closure (which must be
-    /// `Send + Sync`): the fire closure is cloned into the timer and probes it.
+    /// `alive` lets the owner's cleanup disarm a pending fire.
     alive: StoredValue<bool, LocalStorage>,
 }
 
 impl Debouncer {
     /// (Re)schedule the fire `duration` from now.
     pub fn trigger(&self) {
-        // Try, not plain: a trigger can land during a dispose flush (an
-        // effect re-running as the owner tears down re-arms the debounce),
-        // after the owner's cleanup already ran. Writing a disposed stored
-        // value panics the wasm; dropping the arm is the correct no-op.
+        // Try, not plain: a trigger can land during a dispose flush.
         self.trigger.try_with_value(|f| f());
     }
 
@@ -49,15 +38,7 @@ pub fn use_debounce(duration: Duration, on_fire: impl Fn() + 'static) -> Debounc
     use_debounce_for(move || duration, on_fire)
 }
 
-/// A single pending-timer slot owned by the current reactive scope, handed
-/// back with the cleanup already registered: clear the pending fire and drop
-/// the slot so a timer can never fire on a detached node. (The thumbnail
-/// cell's pulse-stop timer and the outline panel's reveal retry each
-/// re-implemented this dance.)
-///
-/// Call from a component body, not an effect: an effect's owner scope is
-/// disposed after each run, which would clear the slot out from under a timer
-/// the component still owns.
+/// A pending-timer slot owned by the current reactive scope.
 pub fn use_timeout_slot() -> StoredValue<Option<TimeoutHandle>, LocalStorage> {
     let handle = StoredValue::new_local(None::<TimeoutHandle>);
     let cleanup = handle;
@@ -70,12 +51,7 @@ pub fn use_timeout_slot() -> StoredValue<Option<TimeoutHandle>, LocalStorage> {
     handle
 }
 
-/// The duration-getter flavour of [`use_debounce`]: the wait is read at every
-/// trigger, so one debouncer can land different fires at different delays (the
-/// shell controller's close hold waits out a slide or a fade depending on the
-/// rail's layout). The getter runs synchronously inside whatever calls
-/// `trigger` — read signals UNTRACKED in it if the caller must not gain a
-/// dependency.
+/// The duration-getter flavour of [`use_debounce`].
 pub fn use_debounce_for(
     duration: impl Fn() -> Duration + 'static,
     on_fire: impl Fn() + 'static,
@@ -93,12 +69,7 @@ pub fn use_debounce_for(
             let f = Rc::clone(&on_fire);
             let h = set_timeout_with_handle(
                 move || {
-                    // The timer can outlive its owner even though cleanup
-                    // clears the pending slot: a trigger during the dispose
-                    // flush re-arms AFTER that cleanup ran. A disposed
-                    // stored value must read as "not alive" (try_, never a
-                    // panic) — the fire is then a no-op, which is exactly
-                    // what a dead owner's debounce owes.
+                    // It can outlive its owner: a disposed read is a no-op.
                     if alive.try_get_value() == Some(true) {
                         f();
                     }
@@ -123,10 +94,7 @@ pub fn use_debounce_for(
     debouncer
 }
 
-/// The hover-reveal / hide-after-grace pair shared by the title bar and the
-/// bottom bar: `show` cancels a pending hide and reveals; `hide_later`
-/// schedules a hide after `delay` unless `postpone` says the surface is held
-/// open (an open popover, an open search, a pin…).
+/// The hover-reveal and hide-after-grace pair the bars share.
 #[derive(Clone)]
 pub(crate) struct HoverVisibility {
     pub visible: RwSignal<bool>,
@@ -134,9 +102,7 @@ pub(crate) struct HoverVisibility {
     pub hide_later: Rc<dyn Fn()>,
 }
 
-/// Build a hover-visibility controller owned by the current reactive owner.
-/// The postponed check runs both when the hide is scheduled and when the
-/// timer fires, so a hold acquired mid-grace also keeps the surface up.
+/// Build a hover-visibility controller for the current owner.
 pub(crate) fn use_hover_visibility(
     delay: Duration,
     postpone: impl Fn() -> bool + 'static,
@@ -151,8 +117,7 @@ pub(crate) fn use_hover_visibility(
                 h.clear();
             }
             handle.try_set_value(None);
-            // A show can be invoked by a callback that outlived the owner
-            // (a pointerenter straddling a dispose); try, never panic.
+            // A show can come from a callback that outlived the owner: try.
             let _ = visible.try_set(true);
         }
     });
