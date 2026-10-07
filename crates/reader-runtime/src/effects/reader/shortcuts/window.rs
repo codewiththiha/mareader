@@ -7,7 +7,7 @@ use reader_core::document::DocStatus;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
-use super::zoom::zoom_by;
+use super::zoom::handle_zoom_shortcut;
 
 /// One Cmd/Ctrl combo; `on_open` is injected.
 pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
@@ -44,14 +44,7 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
             state.viewer.mode.set(ViewMode::ScrollVertical);
         }
         // Zoom, re-aimed at the document on every platform.
-        "+" | "=" => {
-            ev.prevent_default();
-            zoom_by(state, 1);
-        }
-        "-" | "_" => {
-            ev.prevent_default();
-            zoom_by(state, -1);
-        }
+        "+" | "=" | "-" | "_" => handle_zoom_shortcut(state, ev),
         _ => {}
     }
 }

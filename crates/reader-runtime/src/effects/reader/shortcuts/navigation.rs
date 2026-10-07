@@ -172,7 +172,8 @@ fn end_line_hold(dir: f64) {
     });
 }
 
-fn stop_line_hold() {
+/// Stops the glide: focus lost, or the pane is going away.
+pub(super) fn stop_hold() {
     HOLD_DIR.with(|d| d.set(0.0));
     HOLD_TARGET.with(|t| t.borrow_mut().take());
 }
@@ -250,11 +251,6 @@ pub(super) fn end_hold_for(key: &str) {
         "ArrowDown" | "ArrowRight" => end_line_hold(1.0),
         _ => {}
     }
-}
-
-/// Stops the glide: focus lost, or the pane is going away.
-pub(super) fn stop_hold() {
-    stop_line_hold();
 }
 
 #[cfg(test)]
