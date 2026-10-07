@@ -208,7 +208,6 @@ impl Placement {
     /// Offered for a read-at-place folder arrival under a different folder's
     /// name.
     pub const SHELF_READ_IN_PLACE: &'static [Placement] = &[Placement::LinkOnly, Placement::Merge];
-
 }
 
 /// Which thing the reader's answer is about: the row already there, or the
@@ -226,7 +225,6 @@ impl Scope {
             Scope::Shelf { shelf_id } => shelf_id,
         }
     }
-
 }
 
 /// One question about an arrival that met something the library already
@@ -361,7 +359,7 @@ mod tests {
             import("dune", "s1"),
             "s2".into(),
             "Sci-fi".into(),
-            Placement::FILE,
+            Placement::SHELF_STORED,
         );
         assert_eq!(shelf.existing.id(), "s2");
         assert!(matches!(shelf.existing, Scope::Shelf { .. }));
