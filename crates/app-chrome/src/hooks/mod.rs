@@ -27,7 +27,7 @@ pub mod verified_switch;
 // The auto-hide composite is re-exported flat: it is the entry point most
 // callers want, and `hooks::use_hover_reveal` is the name they reach for.
 pub use hover_reveal::{
-    DEFAULT_HOVER_DELAY, HoverConfig, HoverReveal, HoverRevealSurface, use_drag_hold,
-    use_hover_reveal, use_hover_reveal_with,
+    DEFAULT_HOVER_DELAY, HoverConfig, HoverReveal, use_drag_hold, use_hover_reveal,
+    use_hover_reveal_with,
 };
 pub use verified_switch::{VerifiedSwitch, use_verified_switch};
