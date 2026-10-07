@@ -1,5 +1,5 @@
-//! The persistent host's plain-data raster leases. Frame removal reclaims
-//! only that frame's keys; the coordinator holds no strong realm references.
+//! The host's plain-data raster leases; frame removal reclaims its
+//! keys.
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};

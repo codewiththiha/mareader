@@ -1,12 +1,5 @@
-//! The slice every pane implementation starts from.
-//!
-//! A pane — the in-process [`crate::pane::document::DocumentPane`] or the
-//! host-side [`crate::frame_pane::FramePane`] over a pane realm — builds the
-//! same three things before it renders anything: the pane handle's reader
-//! state, the [`ReaderContext`] the reader functions receive, and the
-//! neutral [`PaneSurface`] projection of that state the host publishes. The
-//! two implementations differ in where the document runs, never in this
-//! base, so it has one owner here.
+//! The state, context and surface slice every pane implementation
+//! starts from.
 
 use leptos::prelude::*;
 use runtime_contract::boundary::LaunchDocument;
@@ -17,8 +10,7 @@ use crate::pane::handle::PaneHandle;
 use crate::state::ReaderState;
 use reader_core::document::DocStatus;
 
-/// A launch for a pane with nothing to open: a documentless host slot, or a
-/// pane whose first open has not been named yet.
+/// A launch for a pane with nothing to open.
 pub(crate) fn empty_launch() -> LaunchDocument {
     LaunchDocument {
         book_id: None,
@@ -41,11 +33,8 @@ fn status_word(status: DocStatus) -> PaneDocStatus {
     }
 }
 
-/// Build the pane's state, context and surface under the caller's reactive
-/// owner: `handle` is provided as a context (the components a pane mounts
-/// register what they create with it), the reader state is created on it,
-/// and the surface derives from that state so the host publishes live
-/// facts rather than a snapshot.
+/// Build the pane's state, context and surface under the caller's
+/// owner.
 pub(crate) fn contexts(
     env: PaneEnv,
     handle: PaneHandle,
