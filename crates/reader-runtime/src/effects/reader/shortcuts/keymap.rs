@@ -1,16 +1,5 @@
-//! What a navigation key MEANS, as a pure function.
-//!
-//! The dispatch used to be a chain of `match ev.key()` arms testing the view
-//! mode, the chrome-scroller check, the key-repeat flag and Shift inline
-//! against `web_sys` types — decisions that were all interesting (Space pages
-//! the column but must still click a focused button; arrows turn pages in the
-//! paginated modes and scroll in the continuous ones; a chrome scroller owns
-//! its own arrows) and none reachable from a test without a browser.
-//!
-//! So the decision is separated from the doing: [`resolve`] takes a plain
-//! description of the keypress and the world it landed in and answers with an
-//! outcome; `navigation.rs` reads the event, calls this, and performs it. A
-//! future custom keymap edits this table.
+//! What a navigation key MEANS, as a pure function of the world it
+//! landed in.
 
 use reader_core::view::ViewMode;
 
@@ -25,8 +14,7 @@ pub(super) enum NavAction {
     PagePrev,
     /// Turn to the next page (paginated modes).
     PageNext,
-    /// Start the rAF scroll hold: one nudge now, a continuous glide if the
-    /// key stays down.
+    /// Start the rAF scroll hold: one nudge now, a glide if held.
     HoldLine { dir: Dir, horizontal: bool },
     /// One near-screen step along the strip.
     PageStep { dir: Dir, horizontal: bool },
@@ -37,25 +25,18 @@ pub(super) enum NavAction {
 pub(super) struct NavKey<'a> {
     pub key: &'a str,
     pub shift: bool,
-    /// The browser's auto-repeat is firing. The hold engine, not the browser,
-    /// owns a held key, so a repeat must not restart it.
+    /// The browser's auto-repeat is firing; the hold engine owns a held
+    /// key.
     pub repeat: bool,
     pub mode: ViewMode,
-    /// The key landed inside a chrome scroller (thumbnails, outline, a
-    /// popover). Those own their own arrow keys; the reader must not steal
-    /// them.
+    /// The key landed inside a chrome scroller, which owns its arrows.
     pub in_chrome: bool,
-    /// The key landed on a button. Space has to activate it rather than page
-    /// the document out from under it.
+    /// The key landed on a button, so Space must activate it instead.
     pub on_button: bool,
 }
 
-/// What to do about a keypress: whether the browser's own handling must be
-/// suppressed, and which action (if any) to run. The two are genuinely
-/// independent — an arrow inside a horizontal strip is claimed even when
-/// nothing comes of it (letting the browser scroll as well would move the
-/// strip twice), while a repeat of the same key is claimed and deliberately
-/// dropped because the hold engine is already gliding.
+/// What to do about a keypress: suppress the browser, and which
+/// action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct NavOutcome {
     pub prevent_default: bool,
@@ -71,8 +52,7 @@ impl NavOutcome {
         }
     }
 
-    /// Not ours: leave the key to the browser (or to whatever chrome the
-    /// focus is in).
+    /// Not ours: leave the key to the browser.
     const fn passed() -> Self {
         Self {
             prevent_default: false,
@@ -81,12 +61,7 @@ impl NavOutcome {
     }
 }
 
-/// The physical keys that mean an arrow. Vim's home row names the same four
-/// directions; resolving the alias HERE, in the pure table, is what gives
-/// `h`/`j`/`k`/`l` every rule the arrows already have — the paginated modes
-/// turn pages, the continuous ones start the hold, chrome scrollers keep
-/// their own keys — and `end_hold_for` shares the table, so a held `j`
-/// releases the glide like a held ArrowDown.
+/// The physical keys that mean an arrow, vim's home row included.
 pub(super) fn arrow_key(key: &str) -> Option<&'static str> {
     match key {
         "h" => Some("ArrowLeft"),
@@ -98,8 +73,7 @@ pub(super) fn arrow_key(key: &str) -> Option<&'static str> {
 }
 
 pub(super) fn resolve(k: NavKey<'_>) -> NavOutcome {
-    // One canonicalisation, and every arm below is the arrows' rules: vim's
-    // home row and the arrow keys are the same intent with different names.
+    // One canonicalisation: every arm below is the arrows' rules.
     let key = arrow_key(k.key).unwrap_or(k.key);
     match key {
         // Left/right: a page turn everywhere except the horizontal strip,
@@ -116,8 +90,7 @@ pub(super) fn resolve(k: NavKey<'_>) -> NavOutcome {
                 NavOutcome::claimed(Some(page_turn(dir)))
             }
         }
-        // Up/down: a page turn in the paginated modes, a reading nudge (and
-        // then a glide) down the column in the continuous one.
+        // Up/down: a page turn in paged modes, a glide down the column.
         "ArrowUp" | "ArrowDown" => {
             let dir: Dir = if key == "ArrowUp" { -1 } else { 1 };
             if k.mode.is_paginated() {
@@ -136,8 +109,7 @@ pub(super) fn resolve(k: NavKey<'_>) -> NavOutcome {
             let dir: Dir = if k.key == "PageUp" { -1 } else { 1 };
             page_step(&k, dir)
         }
-        // Space pages the column, Shift+Space pages back — but only when it is
-        // not activating something.
+        // Space pages the column, Shift+Space back — when not activating.
         " " => {
             if k.on_button {
                 return NavOutcome::passed();
@@ -156,8 +128,7 @@ const fn page_turn(dir: Dir) -> NavAction {
     }
 }
 
-/// A near-screen step along whichever strip is scrollable, or nothing at all
-/// in the paginated modes and inside chrome.
+/// A near-screen step, or nothing in the paginated modes and chrome.
 fn page_step(k: &NavKey<'_>, dir: Dir) -> NavOutcome {
     if k.in_chrome {
         return NavOutcome::passed();
@@ -249,8 +220,7 @@ mod tests {
         k.in_chrome = true;
         assert_eq!(resolve(k), NavOutcome::passed());
 
-        // The horizontal strip is the exception: the key is claimed either
-        // way, because letting the browser scroll it too would move it twice.
+        // The horizontal strip claims the key either way.
         let mut k = key("ArrowRight", ViewMode::ScrollHorizontal);
         k.in_chrome = true;
         let out = resolve(k);
@@ -312,9 +282,7 @@ mod tests {
         );
     }
 
-    /// The aliases are the whole point of the table: one row of names, and
-    /// every rule the arrows have. Deriving one from the other is what keeps
-    /// them from drifting.
+    /// The aliases are the whole point: one row of names, every rule.
     #[test]
     fn the_vim_home_row_is_the_arrows_by_another_name() {
         for mode in [
@@ -328,9 +296,7 @@ mod tests {
             assert_eq!(resolve(key("h", mode)), resolve(key("ArrowLeft", mode)));
             assert_eq!(resolve(key("l", mode)), resolve(key("ArrowRight", mode)));
         }
-        // Only the bare letters: a capital is another key (Shift+A is auto
-        // scroll, so the table must not swallow it) and a chrome scroller
-        // keeps its own keys, exactly as it does for the arrows.
+        // Only the bare letters: a capital is another key.
         assert_eq!(
             resolve(key("J", ViewMode::ScrollVertical)),
             NavOutcome::passed()
@@ -340,5 +306,3 @@ mod tests {
         assert_eq!(resolve(k), NavOutcome::passed());
     }
 }
-
-// only the changed file was rewritten

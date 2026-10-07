@@ -1,30 +1,15 @@
-//! The window commands: minimize, maximize/restore, close, the
-//! maximized probe that picks the caption's glyph, and the macOS
-//! traffic-light visibility switch.
-//!
-//! `tauri.windows.conf.json` / `tauri.linux.conf.json` remove the native title
-//! bar (`decorations: false`) and the caption cluster ([`super::caption`])
-//! replaces it; macOS keeps its traffic lights, which [`set_traffic_lights`]
-//! shows and hides.
-//!
-//! Defensive like the rest of the chrome: outside Tauri (`trunk serve`) the
-//! calls are silent no-ops, and a window object without the expected method
-//! resolves to `None` instead of unwinding the caller.
+//! The window commands: minimize, maximize, close, the maximized probe
+//! and the macOS lights switch.
 
 use wasm_bindgen::JsValue;
 
-// Hoisted invoke-arg keys: `set_traffic_lights` runs on every hover
-// transition, and `JsValue::from_str` would allocate a fresh JS string per
-// key per call; these are created once.
+// Hoisted invoke-arg keys: re-created per call would allocate per key.
 thread_local! {
     static KEY_VISIBLE: JsValue = JsValue::from_str("visible");
     static KEY_HEADER_HEIGHT: JsValue = JsValue::from_str("headerHeight");
 }
 
-/// The current Tauri window handle, or `None` outside Tauri. Same probe
-/// contract as [`set_traffic_lights`]: `get_current_window` dereferences the
-/// `window.__TAURI__` chain, and the wasm-bindgen shim throws when the global
-/// is absent — so the guard must come first.
+/// The current Tauri window handle, or `None` outside Tauri.
 fn window() -> Option<JsValue> {
     if !tauri_bridge::has_tauri() {
         return None;
@@ -37,11 +22,7 @@ fn window() -> Option<JsValue> {
     }
 }
 
-/// Call a no-arg method on the window handle and return its RESOLVED value.
-/// Tauri v2 window methods return Promises, so the await is load-bearing:
-/// handing the Promise back would make `isMaximized` read as
-/// `as_bool() == None` — always false — and the caption would never swap to
-/// its restore glyph.
+/// Call a no-arg window method and return its RESOLVED value.
 async fn invoke_method(win: &JsValue, name: &str) -> Option<JsValue> {
     let method = js_sys::Reflect::get(win, &JsValue::from_str(name)).ok()?;
     if !method.is_function() {
@@ -52,10 +33,7 @@ async fn invoke_method(win: &JsValue, name: &str) -> Option<JsValue> {
     if result.is_undefined() || result.is_null() {
         return Some(result);
     }
-    // The cast is unchecked by design: js-sys's `Promise::try_from` cannot
-    // fail (its error type is `Infallible`), and a Tauri v2 window method
-    // returning a non-Promise is not a shape the API ships — if one ever did,
-    // the await below surfaces it as `None`, not a panic.
+    // The cast is unchecked: `Promise::try_from` cannot fail.
     let promise = js_sys::Promise::from(result);
     wasm_bindgen_futures::JsFuture::from(promise).await.ok()
 }
@@ -67,10 +45,7 @@ pub async fn minimize_window() {
     }
 }
 
-/// Maximize ↔ restore. The drag region's built-in double-click runs the same
-/// toggle (Tauri's injected `internal_toggle_maximize`) — one command behind
-/// two triggers, so the bar and the caption can never disagree about what a
-/// double-click does.
+/// Maximize and restore, the same command behind two triggers.
 pub async fn toggle_maximize_window() {
     if let Some(win) = window() {
         invoke_method(&win, "toggleMaximize").await;
@@ -84,22 +59,13 @@ pub async fn close_window() {
     }
 }
 
-/// Whether the window is maximized — drives the maximize/restore glyph.
-/// `None` when no answer could be had (no Tauri surface in this frame yet, a
-/// window object without the method, a rejected call). `false` was the old
-/// answer for all three, and it is a lie the caption cannot recover from: the
-/// chrome's Tauri surface is published by a script, so a frame that mounts
-/// before it lands used to paint "restore" as a fact and then only learn
-/// better on the next resize.
+/// Whether the window is maximized, for the glyph.
 pub async fn is_window_maximized() -> Option<bool> {
     let win = window()?;
     invoke_method(&win, "isMaximized").await?.as_bool()
 }
 
-/// Show/hide the native macOS traffic lights via the backend command. The
-/// backend is a no-op outside macOS, and outside Tauri there is nothing to
-/// invoke, so this is safe to call unconditionally (the lights component
-/// drives it from the hover-reveal signal).
+/// Show or hide the native macOS traffic lights.
 pub async fn set_traffic_lights(visible: bool, header_height: f64) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -113,5 +79,3 @@ pub async fn set_traffic_lights(visible: bool, header_height: f64) {
     });
     _ = tauri_bridge::invoke("set_traffic_lights", args).await;
 }
-
-// only the changed file was rewritten

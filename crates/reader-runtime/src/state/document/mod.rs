@@ -1,32 +1,5 @@
-//! The open document: what it is, which pipeline it renders through, how big
-//! its pages are, and the one fallback policy every fixed-geometry surface
-//! shares.
-//!
-//! The struct is three groups, named for what they hold rather than for the
-//! format they came from:
-//!
-//! * the identity — path, the library row it is, title, author, the format,
-//!   the load status;
-//! * the outline — the chapter tree, whatever produced it;
-//! * the content — [`page_metrics::PageMetrics`] (the page sizes BOTH pipelines
-//!   publish) and [`reflow::ReflowContent`] (the blocks, heights and page cut
-//!   that only a reflowable document has).
-//!
-//! The page sizes are named for what they measure rather than for the format
-//! that used to own them, because a reflowable document publishes A4 into
-//! exactly the same fields, through [`DocumentState::publish_cut`]. Each leaf
-//! stayed its own signal on purpose: one payload enum inside one signal would
-//! notify every reader of the document on every geometry write, including the
-//! ones that only wanted its title. The format is already the tag that says
-//! which half is live; a second one in the state could only disagree with it.
-//!
-//! Lifetime: this is the PANE's state, so a close releases all of it at once
-//! with the pane's owner (every signal here is an arena node of that owner).
-//! Within a live pane, a new document replaces it field by field: the
-//! reflowable content is released by the text session's dispose
-//! (`crate::pane::session`), the PDF's heavy state lives in its engine
-//! session, and the page metrics and identity are rewritten by the next
-//! document's seed.
+//! The open document: its identity, its outline, and the pages both
+//! pipelines publish.
 
 pub mod page_metrics;
 pub mod reflow;
@@ -46,61 +19,35 @@ pub use reflow::ReflowContent;
 #[derive(Clone, Copy)]
 pub struct DocumentState {
     pub status: RwSignal<DocStatus>,
-    /// Which pipeline the open document renders through. PDF while nothing
-    /// is open (the historical default), so chrome that branches on it has
-    /// a sane answer on the empty shelf.
+    /// Which pipeline renders the document; PDF while nothing is open.
     pub format: RwSignal<Format>,
     pub error: RwSignal<Option<String>>,
     pub path: RwSignal<Option<String>>,
-    /// The library row the reader opened, when the open named one — a card, a
-    /// list row, the context menu's Open all carry an id, while a drop, an
-    /// "open with" and a dialog carry nothing but an address.
-    ///
-    /// The address cannot tell two rows of one file apart, and the library
-    /// can hold two. Every reader of a resume point and every writer of a
-    /// highlight asks which row this is rather than guessing from the path —
-    /// see `reader_runtime::services::document::gloss_key` and
-    /// `library_core::book::rows_for_read` (the shelf's side of it).
+    /// The library row the open named, when it named one.
     pub book_id: RwSignal<Option<String>>,
     pub title: RwSignal<Option<String>>,
     pub author: RwSignal<Option<String>>,
-    /// How many pages the reader is currently navigating. Both pipelines
-    /// publish it, because every surface that shows or clamps a page reads
-    /// this and none of them may care who counted.
+    /// Pages the reader is navigating; both pipelines publish it.
     pub num_pages: RwSignal<u32>,
-    /// The document's flattened chapter tree, behind a shared handle. `Arc`
-    /// rather than a plain `Vec` because Leptos hands every reader its own
-    /// clone of a signal's value, and the panel reads the list on every page
-    /// turn: cloning the handle is a refcount bump, cloning the list was
-    /// several hundred allocations per notify.
+    /// The chapter tree behind a shared handle; Leptos clones per reader.
     pub outline: RwSignal<Arc<Vec<OutlineNode>>>,
-    /// True while the (lazy) outline resolution is in flight — the panel
-    /// shows "resolving" instead of a definitive "No outline" for a book
-    /// whose chapters are merely not back yet.
+    /// True while the lazy outline resolution is in flight.
     pub outline_pending: RwSignal<bool>,
     /// The pages, per format. Exactly one half belongs to the open document.
     pub content: DocumentContent,
 }
 
-/// The pages of the open document: two grouped signals, not one enum (see
-/// the module docs for why the halves stay separate signals).
+/// The pages of the open document: one half belongs to the open file.
 #[derive(Clone, Copy, Default)]
 pub struct DocumentContent {
-    /// Page sizes at scale 1 and as laid out. Shared: a PDF fills these from
-    /// the file, a reflowable document from its page cut.
+    /// Page sizes at scale 1 and as laid out; both pipelines fill these.
     pub metrics: PageMetrics,
     /// The reflowable pipeline's blocks, heights and current page cut.
     pub reflow: ReflowContent,
 }
 
-/// What a reflowable re-cut tells the document: how many pages it now has,
-/// how big each one is, and which page the reader lands on.
-///
-/// Every page is the same size — A4 is the cut's one fixed point — so this
-/// carries ONE size and ONE height rather than two vectors of a repeated
-/// value, and [`DocumentState::publish_cut`] expands them. The page count is
-/// the cut's, not the reader's: a cut that changes the count must say so
-/// before anything clamps a page against it.
+/// What a re-cut tells the document: the count, the size, the landing
+/// page.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReflowCut {
     /// Pages the cut produced.
@@ -109,8 +56,7 @@ pub struct ReflowCut {
     pub page_size: PageSize,
     /// Laid-out CSS-px height of every page, at the scale the cut was made at.
     pub css_height: f64,
-    /// The page the reader lands on: the one holding the block the PREVIOUS
-    /// cut's current page started on, so a re-cut never strands the position.
+    /// The page the reader lands on: the PREVIOUS cut's current page.
     pub page: u32,
 }
 
@@ -133,9 +79,7 @@ impl Default for DocumentState {
 }
 
 impl DocumentState {
-    /// Height-over-width aspect of page 1 (tracked read). Every
-    /// fixed-geometry surface that sizes itself against the first sheet goes
-    /// through here, so the fallback policy lives in exactly one place.
+    /// Height-over-width aspect of page 1, with one fallback policy.
     pub fn page1_aspect(&self) -> f64 {
         page_aspect(self.content.metrics.page1_size.get())
     }
@@ -152,33 +96,22 @@ impl DocumentState {
         )
     }
 
-    /// The document's human-facing name (tracked read): its usable title,
-    /// else the file stem, else "No document". The three surfaces that show
-    /// the name used to hand-roll this with three different fallbacks; the
-    /// policy lives here.
+    /// The document's name: usable title, else file stem, else "No
+    /// document".
     pub fn display_name(&self) -> String {
         reader_core::filename::display_name(self.title.get().as_deref(), self.path.get().as_deref())
             .unwrap_or_else(|| NO_DOCUMENT.to_string())
     }
 
-    /// File the engine's flattened outline entries into the reader's outline.
-    /// The PDF pipeline's last format-specific act: from here the panel
-    /// cannot tell these chapters from the ones `md_core` derives, and the
-    /// `page_count` clamp stops an outline authored against a re-saved file
-    /// from jumping past the last sheet.
+    /// File the engine's flattened entries into the reader's outline, with
+    /// the page-count clamp.
     pub fn set_pdf_outline(&self, entries: Vec<OutlineEntry>, page_count: u32) {
         self.outline
             .set(Arc::new(pdf_core::outline::to_nodes(entries, page_count)));
     }
 
-    /// Publish a reflowable cut to the shared page machinery: the page count
-    /// and per-page sizes, fed exactly as a PDF feeds them.
-    ///
-    /// The one place the two pipelines meet, and what lets the paged modes,
-    /// the zoom ladder and the progress chrome never ask which format is
-    /// open. The reflow half decides the numbers
-    /// ([`reflow::ReflowContent::recut`]) and the document writes them,
-    /// because they are the document's fields.
+    /// Publish a reflowable cut's count and sizes, exactly as a PDF feeds
+    /// them.
     pub fn publish_cut(&self, cut: &ReflowCut) {
         self.num_pages.set(cut.num_pages);
         self.content
@@ -187,20 +120,14 @@ impl DocumentState {
     }
 }
 
-// The 3:4 portrait aspect the fixed-geometry surfaces fall back to lives in
-// `runtime-contract`: the shelf's placeholder tiles must draw the same box
-// the reader's unmeasured pages do, and neither runtime may import the
-// other to share it.
+// The 3:4 aspect lives in `runtime-contract`, which both runtimes may
+// import.
 pub use runtime_contract::covers::DEFAULT_PAGE_ASPECT;
 
-/// Name shown when a document has neither a usable title nor a path (the
-/// reader shell with nothing open).
+/// Name shown when there is neither a title nor a path.
 pub const NO_DOCUMENT: &str = "No document";
 
-/// Height-over-width aspect of a page size, falling back to
-/// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not
-/// positive — dividing by a zero-width sheet would poison every height
-/// derived from it.
+/// Height-over-width aspect, falling back when unmeasured or degenerate.
 fn page_aspect(size: Option<PageSize>) -> f64 {
     match size {
         Some(s) if s.width > 0.0 => s.height / s.width,

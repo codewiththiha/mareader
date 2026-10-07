@@ -1,14 +1,4 @@
-//! In-document search for reflowable documents: the shared scan over the
-//! blocks.
-//!
-//! The PDF side indexes through the engine; a text document already holds its
-//! content as Rust strings, so the index IS the document and a query is a
-//! scan. The scan and snippet window are `reader_core::search`'s, shared with
-//! the PDF index and the layer that paints hits over a block's rendered text,
-//! so an occurrence ordinal means the same thing everywhere. What is left
-//! here is the shape of the answer: a hit carries its block and which
-//! occurrence inside it, and the caller maps blocks to pages (the cut changes
-//! with typography).
+//! Search over a reflowable document: the shared scan over its blocks.
 
 use reader_core::search::{occurrence_spans, snippet};
 
@@ -18,35 +8,23 @@ use crate::block::TextBlock;
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextHit {
     pub block: usize,
-    /// Which occurrence of the query this is inside its own block, counting
-    /// from zero.
-    ///
-    /// The highlight that covers a block's row re-finds the query in the row's
-    /// RENDERED text and numbers what it finds the same way, so this ordinal —
-    /// not a rectangle — is what names one box on screen. It travels out as
-    /// `reader_core::search::BlockHit`, the reflowable half of a match's
-    /// "where" (a fixed-grid format answers with a rect instead).
+    /// Which occurrence of the query this is inside its own block, from zero.
     pub occurrence: usize,
     /// Surrounding context for the results list, newlines folded to spaces.
     pub snippet: String,
 }
 
-/// Matches per query are capped: a pathological haystack (a one-character
-/// query in a megabyte file) must not produce a match list that dwarfs the
-/// document.
+/// Matches per query are capped, so a pathological haystack cannot swamp it.
 const MAX_MATCHES: usize = 2000;
 
-/// Every occurrence of `query` in the document, in reading order. An empty
-/// or whitespace-only query matches nothing.
+/// Every occurrence of `query`, in reading order; blank queries match nothing.
 pub fn find_matches(blocks: &[TextBlock], query: &str) -> Vec<TextHit> {
     if query.trim().is_empty() {
         return Vec::new();
     }
     let mut hits = Vec::new();
     for (index, block) in blocks.iter().enumerate() {
-        // Folded once per block per query, and handed to the scan rather than
-        // computed inside it: the PDF index keeps its folds for the life of the
-        // document, and this is the same deal at a smaller scale.
+        // Folded once per block per query and handed to the scan.
         let folded = block.text.to_lowercase();
         let spans = occurrence_spans(&block.text, &folded, query);
         for (occurrence, (start, end)) in spans.into_iter().enumerate() {
@@ -86,8 +64,7 @@ mod tests {
         assert_eq!(hits[2].block, 2);
     }
 
-    /// The ordinal a highlight painter pairs its own occurrences with: it counts
-    /// within a block and starts over at the next one, in reading order.
+    /// The ordinal a highlight painter pairs its own occurrences with.
     #[test]
     fn occurrences_are_numbered_within_their_own_block() {
         let blocks = [block("dune dune dune"), block("nothing"), block("dune")];

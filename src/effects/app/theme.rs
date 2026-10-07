@@ -1,9 +1,5 @@
-//! The durable theme applier: settings' appearance slice, painted onto
-//! `<html>` and re-painted on every change — for the whole window's life,
-//! which is why THIS surface is the shell's and no runtime's (§17: an effect
-//! that must survive the reader boundary belongs to the shell). The pure
-//! painters live in `app_ui::theme_paint`; the effect here owns the
-//! subscription and the engine-rebake gating (a scrub leaves rasters alone).
+//! The durable theme applier: the appearance slice painted onto `<html>`
+//! for the window's life.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -15,44 +11,22 @@ use app_ui::theme_paint::{document_element, paint_appearance_now};
 use crate::state::ShellState;
 
 pub fn apply_theme(state: ShellState, appearance: AppearanceSignal) {
-    // One effect, one paint: hue / texture / grain all live on Appearance and
-    // the live-preview path writes the same properties, so splitting them
-    // into three effects tripled the work per settings write. The blend
-    // backdrop needs nothing from here: it is pure CSS over the variables
-    // this effect paints plus --pdf-paper, which the engine publishes on the
-    // first render of each document.
-    //
-    // Subscribes to the appearance MEMO, not `settings`: reading the whole
-    // blob had a layout toggle, a gloss colour and `last_path` on every open
-    // repainting eight properties and re-baking the rasters for a look that
-    // had not moved.
+    // One effect, one paint: hue, texture and grain share Appearance.
 
-    // What the engine's rasters are baked against: the filter, the blend mode
-    // and the base palette. Texture, grain and the UI tokens are CSS layers
-    // over the canvas, so they repaint without touching a single bitmap.
+    // What the engine's rasters are baked against.
     let baked = StoredValue::new(None::<(String, String, String)>);
 
-    // The reflowable formats' ink dial, resolved in Rust into a flat --tx-ink,
-    // so the appearance paint needs it alongside the look. Its own memo keeps
-    // a dial nudge from subscribing the paint to the whole settings blob —
-    // and the engine rebake signature below ignores it, so an ink nudge never
-    // re-bakes a raster.
+    // The reflowable formats' ink dial, its own memo.
     let ink_contrast: Memo<f64> = Memo::new(move |_| state.settings.with(|s| s.text.ink_contrast));
 
-    // Warm the style pipeline once after the first paint: the first slider
-    // drag on a text document used to pay the cold-start cost of resolving
-    // every custom property (and every colour mix) on the mounted blocks.
-    // One forced layout read moves that cost to boot.
+    // Warm the style pipeline once after the first paint.
     let warmed = StoredValue::new(false);
 
     Effect::new(move || {
         let a = appearance.get();
         paint_appearance_now(a, ink_contrast.get());
-        // The engine bakes the theme into its rasters (pages + thumbnails);
-        // re-bake them at the freshly painted variables. Skipped while a scrub
-        // is in flight (scrub mode owns the canvases; its exit bakes once at
-        // the settled values). Only when the BAKE changed, though: grain and
-        // texture sliders move an overlay, not the pixels underneath.
+        // The engine bakes the theme into its rasters; re-bake at the painted
+        // variables.
         let signature = (
             a.canvas_filter(),
             a.canvas_blend().to_string(),
@@ -60,16 +34,13 @@ pub fn apply_theme(state: ShellState, appearance: AppearanceSignal) {
         );
         if baked.try_get_value().flatten().as_ref() != Some(&signature) {
             baked.set_value(Some(signature));
-            // Not while a slider scrub is in flight: the drag repaints these
-            // variables every frame and the scrub exit performs the one final
-            // bake at the settled values.
+            // Not while a slider scrub is in flight.
             if !is_scrubbing() {
                 raster::refresh_theme();
             }
         }
 
-        // Not mid-scrub: a drag repaints every frame, and the value only
-        // matters at the next launch — its exit paint lands here again.
+        // Not mid-scrub: the value only matters at the next launch.
         if !is_scrubbing() {
             remember_boot_paint();
         }
@@ -82,10 +53,7 @@ pub fn apply_theme(state: ShellState, appearance: AppearanceSignal) {
         }
     });
 
-    // The reading surface resolves its paper per PANE (`data-format` on the
-    // pane root, written by the reader runtime itself). The theme's own
-    // durable writes end here: a settings edit anywhere persists the blob
-    // the shell owns the key for.
+    // The reading surface resolves its paper per PANE.
     Effect::new(move || {
         let settings = state.settings.get_untracked();
         schedule_save(settings);
@@ -95,13 +63,7 @@ pub fn apply_theme(state: ShellState, appearance: AppearanceSignal) {
 /// localStorage key public/bootPaint.js reads before the shell exists.
 const BOOT_PAINT_KEY: &str = "mareader.boot-paint.v1";
 
-/// Remember the paper just painted, for the next launch's first frame.
-///
-/// The page's boot placeholder paints before any Rust runs, so it can only
-/// know the theme from what an earlier session left behind: the resolved
-/// `--color-paper` and colour scheme, as `paper|scheme`. Read back from the
-/// computed style rather than re-derived, so it is exactly what this paint
-/// produced — base, tint and all. Written only when it changed.
+/// Remember the paper just painted, for the next launch.
 fn remember_boot_paint() {
     let Some(window) = web_sys::window() else {
         return;

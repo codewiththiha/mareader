@@ -1,7 +1,4 @@
-//! Gloss's card-content measurement: a thin domain wrapper over the generic
-//! [`use_content_size`] hook. The twin rules (pixel-exact replica of the
-//! surface's scroll column) live here; the effect mechanics (defer one frame,
-//! squash jitter under 2 px) live in the primitive.
+//! The card-content measurement twin, a wrapper over `use_content_size`.
 
 use std::sync::Arc;
 
@@ -11,8 +8,7 @@ use leptos::prelude::*;
 
 use super::use_content_size::use_content_size;
 
-/// Returns the node ref for the invisible measure twin plus the live height
-/// signal it feeds.
+/// The measure twin's node ref plus the live height signal it feeds.
 pub fn use_content_measure(
     word: RwSignal<String>,
     word_info: RwSignal<Option<Arc<WordInfo>>>,

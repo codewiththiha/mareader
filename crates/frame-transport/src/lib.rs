@@ -1,19 +1,4 @@
 //! The frame transport: the wire half of the frame protocol (§7, §8).
-//!
-//! `runtime-contract::protocol` owns the VOCABULARY every side serializes;
-//! this crate owns how it moves: a cloneable message sink both runtime
-//! runtimes call their [`ShellApi`] through ([`PortShellApi`]), the request
-//! owned launch futures that pair queries with async port answers, and —
-//! behind `wasm32` — the `MessagePort` wire itself
-//! ([`wasm::PortWire`]). Hosted route artifacts adopt a nonce/generation
-//! authenticated channel offer from their actual same-origin parent; the
-//! boot those artifacts share on top of that adoption — the marker, the
-//! boundary, the runtime root, the paint report — is [`artifact`].
-//!
-//! Host tests exercise everything except the DOM: the wire is a trait with a
-//! recording double, so the envelope stamping (generation on every message,
-//! request ids pairing resolve answers to their questions) is asserted off
-//! the browser entirely.
 
 #![forbid(unsafe_code)]
 
@@ -63,15 +48,12 @@ pub fn parse_boot_marker(search: &str) -> BootMarker {
 
 pub const CHANNEL_KIND: &str = "mareader.channel";
 
-/// A destination a serialized envelope can be posted to. The production
-/// implementation is the frame's `MessagePort`; the tests' is a `Vec`.
+/// A destination a serialized envelope can be posted to.
 pub trait Wire: Clone + 'static {
     fn post_json(&self, json: String);
 }
 
-/// A recording sink for the host lanes: every posted string, shared with the
-/// clone the api holds (a frame's wire is `Clone` so the session's context
-/// stays free of lifetimes).
+/// A recording sink for the host lanes: every posted string.
 #[cfg(test)]
 #[derive(Clone, Default)]
 pub struct TestWire {
@@ -93,8 +75,7 @@ struct ResolveState {
 
 type ResolveMap = RefCell<HashMap<u64, Rc<RefCell<ResolveState>>>>;
 
-/// One registry owns every outstanding launch query. Responses, disposal
-/// and dropped futures all remove their entry before waking a continuation.
+/// One registry owns every outstanding launch query.
 #[derive(Default)]
 struct PendingResolves {
     next: Cell<u64>,
@@ -147,9 +128,7 @@ impl PendingResolves {
     }
 }
 
-/// An awaited launch answer, not a synchronous miss. Its drop cancels the
-/// outstanding request; a late response cannot retain data for an abandoned
-/// continuation. The owning API cancels/wakes all futures during disposal.
+/// An awaited launch answer, not a synchronous miss.
 pub struct ResolveTicket {
     id: u64,
     state: Rc<RefCell<ResolveState>>,
@@ -184,10 +163,7 @@ impl Drop for ResolveTicket {
     }
 }
 
-/// `ShellApi` over the frame port: every boundary command serialized onto
-/// the wire behind its frame's generation (§8 — a message without ITS
-/// generation cannot leave this api, so a stale generation is unmakeable
-/// here and the Shell's drop log reads it there).
+/// `ShellApi` over the frame port, every command stamped with its generation.
 pub struct PortShellApi<W: Wire> {
     wire: W,
     generation: u64,
@@ -203,9 +179,7 @@ impl<W: Wire> PortShellApi<W> {
         }
     }
 
-    /// Post one bound message. The runtime's boot handshake messages (ready /
-    /// painted / status / dispose-complete) ride this too — same envelope,
-    /// same guard, one serialization path for everything the frame emits.
+    /// Post one bound message: one envelope and guard for every frame emission.
     pub fn emit(&self, body: RuntimeFrame) {
         let envelope = RuntimeEnvelope {
             generation: self.generation,
@@ -216,8 +190,7 @@ impl<W: Wire> PortShellApi<W> {
         }
     }
 
-    /// Resolve a path over the port. The future distinguishes pending from
-    /// an answered miss; callers must await it before opening the document.
+    /// Resolve a path over the port, telling pending from an answered miss.
     pub fn resolve_launch(&self, path: &str) -> ResolveTicket {
         let (request, ticket) = self.resolves.issue();
         self.emit(RuntimeFrame::ResolveLaunch {
@@ -461,5 +434,3 @@ mod tests {
         assert_eq!(poll(&mut second, &wake), Poll::Ready(None));
     }
 }
-
-// only the changed file was rewritten

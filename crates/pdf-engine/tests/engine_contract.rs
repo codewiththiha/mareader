@@ -1,14 +1,4 @@
 //! Wire-contract guard for the `window.PDFReader` facade.
-//!
-//! `bridge.rs` is the only place the JS engine surface is declared, and a
-//! rename on either side fails at RUNTIME (the wasm shim resolves `undefined`)
-//! with no build error. The browser-side smoke test covers runtime behaviour;
-//! this test keeps the two surfaces textually in sync on every `cargo test`.
-//!
-//! The facade is the esbuild output `public/pdfEngine.js`, produced only by
-//! `build:ts` — when it is missing (a bare `cargo test` on a fresh clone) the
-//! check reports and skips; CI runs it with the artifact present.
-
 use std::path::PathBuf;
 
 fn repo_root() -> PathBuf {
@@ -23,17 +13,12 @@ fn bridge_pdfreader_names() -> Vec<String> {
     let bridge = std::fs::read_to_string(repo_root().join("crates/pdf-engine/src/bridge.rs"))
         .expect("bridge.rs must exist next to the test");
     let mut names = Vec::new();
-    // The last `#[wasm_bindgen(...)]` attribute seen: its namespace decides
-    // whether the NEXT fn declaration belongs to the PDFReader surface, and
-    // its `js_name` (when present) is the JS-side spelling.
+    // The last `#[wasm_bindgen(...)]` attribute seen.
     let mut attr: Option<(bool, Option<String>)> = None; // (pdfreader ns, js_name)
     for line in bridge.lines() {
         if line.contains("#[wasm_bindgen(") {
             let pdfreader = line.contains("js_namespace = [\"window\", \"PDFReader\"]");
-            // Match `js_name = "X"` ONLY: `js_namespace = ["window", ...]`
-            // also contains the substring "js_name", so splitting on the
-            // bare token would eat the namespace arm. The em-space spelling
-            // (`js_name = "`) is unique to the attribute we want.
+            // Match `js_name = "X"` only; `js_namespace` holds it too.
             let js_name = line
                 .split("js_name = \"")
                 .nth(1)
@@ -59,9 +44,7 @@ fn bridge_pdfreader_names() -> Vec<String> {
     names
 }
 
-/// True when `name` appears in `facade` as a property key: a word boundary
-/// before it and `,` or `:` after (the esbuild IIFE spells the facade
-/// `globalThis.PDFReader = { version: ..., open, ... }`).
+/// True when `name` appears in the facade as a property key.
 fn facade_has_key(facade: &str, name: &str) -> bool {
     if name.is_empty() {
         return false;

@@ -1,17 +1,14 @@
 import { R } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // The search extraction surface — the data source of the Rust index.
-  // The harness pdf has no text items, so an extraction must still resolve
-  // `{ok:true, page, items:[]}` (an empty book page is a valid page).
+  // The extraction behind the Rust index; a text-less page yields no items.
   const extracted = await R.extractPageText(1);
   if (!extracted.ok) throw new Error("extractPageText failed: " + JSON.stringify(extracted));
   if (extracted.page !== 1) throw new Error("extractPageText echoed the wrong page: " + extracted.page);
   if (!Array.isArray(extracted.items)) throw new Error("extractPageText items missing");
   console.log("extractPageText ok:", extracted.items.length, "items");
 
-  // Publishing a query context and marking/clearing matches must be no-ops
-  // on this text-layerless harness (the highlight pass is span-driven).
+  // Query context and match marking are no-ops without a text layer.
   R.setSearchContext("test");
   R.setActiveMatch(1, 0);
   R.clearHighlights();

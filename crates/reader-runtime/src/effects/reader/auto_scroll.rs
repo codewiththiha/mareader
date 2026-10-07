@@ -1,11 +1,4 @@
-//! Continuous auto-scroll along the active strip (vertical or horizontal).
-//!
-//! The drift is a [`FrameLoop`]: one frame at a time, each frame deciding
-//! whether it needs another. It used to be a free `fn tick` re-arming itself
-//! from two `thread_local!` cells — the only loop in the app that could not
-//! be stopped from the outside, so a document closed mid-drift left a queued
-//! frame reading signals whose reactive graph was already disposed (the flag
-//! that could have caught it lived in a thread-local outliving its reader).
+//! Continuous auto-scroll along the active strip.
 
 use leptos::prelude::*;
 
@@ -17,17 +10,14 @@ use app_ui::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_de
 const AUTO_SCROLL_PX_PER_SEC: f64 = 72.0;
 
 pub fn auto_scroll(state: ReaderState) {
-    // Paginated modes can't scroll: force the toggle off so the menu row
-    // never shows an active-but-dead option.
+    // Paginated modes cannot scroll; force the toggle off.
     Effect::new(move |_| {
         if state.viewer.auto_scroll.get() && !state.viewer.mode.get().can_scroll() {
             state.viewer.auto_scroll.set(false);
         }
     });
 
-    // The previous frame's stamp belongs to ONE drift: it is reset when the
-    // toggle goes on, so the first frame of a new drift passes no time and the
-    // second starts moving at a real rate.
+    // The frame stamp is reset when the toggle goes on.
     let last_ms = StoredValue::new_local(f64::NAN);
     let frames = FrameLoop::new();
     Effect::new(move |_| {
@@ -40,8 +30,7 @@ pub fn auto_scroll(state: ReaderState) {
     });
 }
 
-/// One frame of drift. `false` ends the loop: the toggle went off, the mode
-/// stopped being scrollable, or the strip ran out.
+/// One frame of drift; `false` ends the loop.
 fn tick(state: ReaderState, last_ms: StoredValue<f64, LocalStorage>) -> bool {
     let mode = state.viewer.mode.get_untracked();
     if !state.viewer.auto_scroll.get_untracked() || !mode.can_scroll() {
@@ -49,8 +38,7 @@ fn tick(state: ReaderState, last_ms: StoredValue<f64, LocalStorage>) -> bool {
         return false;
     }
     let now = js_sys::Date::now();
-    // A frame after the tab was backgrounded reports seconds of gap; clamped,
-    // so returning to the window resumes the drift instead of leaping.
+    // A backgrounded tab reports a gap; clamp it.
     let dt = frame_delta(last_ms.get_value(), now, MAX_SCROLL_FRAME_S);
     last_ms.set_value(now);
     let delta = AUTO_SCROLL_PX_PER_SEC * dt;

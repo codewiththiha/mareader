@@ -1,7 +1,4 @@
-//! "That folder is already a shelf here."
-//!
-//! The answer a read-at-place import gets when the ground it picked is ground the library already
-//! reads: a linked shelf IS the OS folder, so there is no second instance to make.
+//! "That folder is already a shelf here" — a linked shelf IS the OS folder.
 
 use leptos::prelude::*;
 

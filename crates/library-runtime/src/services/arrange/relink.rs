@@ -1,7 +1,4 @@
-//! A dead address, re-pointed: the reader picks a file — or a FOLDER, and the app walks it
-//! looking for the book's own name — and the book reads from there. A linked book takes the
-//! address, a stored book takes a fresh copy of it, made before anything is written so a
-//! failure leaves the row exactly as it was.
+//! A dead address, re-pointed: a fresh copy for a stored book.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -18,22 +15,12 @@ use crate::services::import;
 use crate::services::toast;
 use crate::state::library::RelinkAsk;
 
-/// A linked book takes the new address. A stored book does NOT become linked — that would
-/// quietly turn "the app keeps its own copy" back into "the app reads your folder again" —
-/// so the pick is copied into the store once more, from wherever the file lives now.
-///
-/// The new copy is MEASURED before the row is written to it: the backend stamps a copy with
-/// its own time, so healing the row with the PICKED file's fingerprint would leave it
-/// describing a file it does not stand at — the next verify pass would mark and heal it
-/// unpredictably, and the ledger's placed-matching could mis-fire. The measurement the
-/// copy came home with is the row's, exactly as every other landing takes it.
+/// A stored book does not become linked; the pick is copied into the store.
 fn relink_book(state: crate::context::LibraryContext, book_id: String, path: String) {
     relink_book_on(state, book_id, path, None);
 }
 
-/// [`relink_book`] when a card for the gesture is already up — a Find-again search that
-/// ends in a relink keeps the one card its scan started, rather than lighting a second
-/// beside the first for the copy the first was leading to.
+/// As [`relink_book`], onto an existing card: a Find-again keeps its one.
 fn relink_book_on(
     state: crate::context::LibraryContext,
     book_id: String,
@@ -83,9 +70,7 @@ fn relink_book_on(
                     *src = Some(path.clone());
                     if let Some((store, measured)) = stored.as_ref() {
                         *at = store.clone();
-                        // A copied file's own measurement supersedes the
-                        // picked source's fingerprint. With no measurement,
-                        // healing keeps the same fallback as before.
+                        // The copy's measurement supersedes the source's.
                         if measured.is_some() {
                             book.adopt_measurement(*measured);
                         }
@@ -102,10 +87,7 @@ fn relink_book_on(
     });
 }
 
-/// The platform's picker rather than a second dialog implementation: the
-/// same question with the same filter. Cancel is compared against
-/// chrome's constant, so a wording change on either side is a compile error
-/// rather than a cancel that quietly turns into an error toast.
+/// The platform's picker, and chrome's own cancel constant.
 pub fn relink_dialog(state: crate::context::LibraryContext, book_id: String) {
     spawn_local(async move {
         match app_chrome::dialog::pick_document().await {
@@ -116,20 +98,18 @@ pub fn relink_dialog(state: crate::context::LibraryContext, book_id: String) {
     });
 }
 
-/// A reader-page open (the sheet lives on the library page) falls back to
-/// the file picker itself — the answer the sheet's first row would have run.
+/// A reader-page open falls back to the file picker itself.
 pub fn ask_relink(state: crate::context::LibraryContext, book_id: String) {
     let name = state.library.row_name(&book_id);
     state.library.relink.raise(RelinkAsk { book_id, name });
 }
 
-/// The book stays missing, its row and its shelf memberships stay exactly as they were.
+/// The book stays missing; row and memberships stay as they were.
 pub fn cancel_relink(state: crate::context::LibraryContext) {
     state.library.relink.dismiss();
 }
 
-/// The walk is the shell's own (`scan_folder`: one measurement per file,
-/// every format, no size floor — a lost book is not a file to filter).
+/// The shell's own `scan_folder`: every format, no size floor.
 pub fn relink_search_folder(state: crate::context::LibraryContext, book_id: String) {
     spawn_local(async move {
         let known = state.library.books.with_untracked(|rows| {
@@ -145,8 +125,7 @@ pub fn relink_search_folder(state: crate::context::LibraryContext, book_id: Stri
             Ok(None) => return,
             Err(message) => return toast(state, message),
         };
-        // One card for the whole gesture: the scan's beats and the copy's beats land on it
-        // in sequence, which is what "looking for the book, then bringing it home" reads as.
+        // One card for the whole gesture: the scan's beats, then the copy's.
         let task = import::begin_task(state, name.clone());
         let opts = FolderOpts {
             formats: selectable_formats().into_iter().collect(),
@@ -170,17 +149,14 @@ pub fn relink_search_folder(state: crate::context::LibraryContext, book_id: Stri
                     state,
                     format!("Nothing called “{name}” inside that folder."),
                 );
-                // Nothing found is no run to report: the toast carries the news, and the
-                // card goes rather than finishing on a count it never counted.
+                // Nothing found: the toast carries the news.
                 import::dismiss_task(state, &task);
             }
         }
     });
 }
 
-/// Case aside: a folder that answers in capitals is still the folder the
-/// book lives in. Content is nobody's question here — the relink that
-/// follows re-measures the file.
+/// Case aside; the relink that follows re-measures the file.
 fn is_the_book(found_path: &str, name: &str, old_path: &str) -> bool {
     let stem = stem_of(found_path);
     let file = file_name(found_path);

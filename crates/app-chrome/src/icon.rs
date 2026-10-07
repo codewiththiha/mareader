@@ -1,5 +1,4 @@
-//! Inline SVG icon sprite (lucide-style strokes), rendered via inner_html so
-//! nothing ever touches the svg element nodes.
+//! Inline SVG icon sprite, rendered via `inner_html`.
 
 use leptos::prelude::*;
 
@@ -27,8 +26,7 @@ pub enum IconName {
     SplitRight,
     /// A pane with a second one below it (split the workspace down).
     SplitDown,
-    /// An arrow out of a pane, one per side: the view menu's Move items,
-    /// which move the focused pane through a split workspace.
+    /// An arrow out of a pane: the view menu's Move items.
     MoveLeft,
     MoveRight,
     MoveUp,
@@ -53,33 +51,19 @@ pub enum IconName {
     Drop,
     /// Counter-clockwise arrow — the undo affordance on toasts.
     Undo,
-    /// Two chain links — a library row that points at a book rather than being
-    /// one. Its own glyph rather than a borrowed arrow, because the row it sits
-    /// on is the one thing on a shelf that is not a file.
+    /// Two chain links: a library row pointing at a book, not being one.
     Link,
-    /// Two sheets, one behind the other — the shelf's "Duplicate": a second
-    /// instance of the row under the pointer. A copy of a document rather than
-    /// a folder or a link, because what it makes is one more book.
+    /// Two sheets, one behind the other: the shelf's "Duplicate".
     Copy,
-    /// A plain folder — the "Reveal in folder" row: the OS's own file manager,
-    /// opened on the item inside the directory it lives in. `Open`'s folder
-    /// wears a line across it because that one opens a book; this one is the
-    /// directory itself, and the two rows sit in the same menu.
+    /// A plain folder: the "Reveal in folder" row.
     Folder,
-    /// A plain document sheet with a folded corner — a file row in the
-    /// reader rail's Library panel, beside the format badge that names it.
+    /// A plain document sheet: a file row in the rail's Library panel.
     File,
-    /// An open eye — the row that turns a folder's watch ON: the library looking
-    /// at a directory, which is the whole of what watching one is. A pair with
-    /// [`IconName::EyeOff`] rather than one glyph on a flipping label, because
-    /// the row names the action and not the state, and the two actions are
-    /// opposites.
+    /// An open eye: the row that turns a folder's watch ON.
     Eye,
     /// The same eye, struck through — the row that turns a folder's watch OFF.
     EyeOff,
-    /// A pencil — the row that renames the thing under the pointer: a name is
-    /// written rather than a document edited, which is the whole of what the
-    /// row does.
+    /// A pencil: the row that renames the thing under the pointer.
     Pencil,
     Settings,
     Layout,
@@ -88,9 +72,7 @@ pub enum IconName {
     /// The settings tab for motion: a rail that eases, a page that follows.
     Motion,
     Minus,
-    // The frameless caption glyphs (Windows/Linux titlebar). Their own family
-    // on purpose: the minimize glyph is `Minus`'s twin but lives in window
-    // chrome, so swapping one must never silently re-skin the other.
+    // The frameless caption glyphs, their own family.
     WindowMinimize,
     WindowMaximize,
     WindowRestore,
@@ -297,5 +279,3 @@ pub fn Icon(
         />
     }
 }
-
-// only the changed file was rewritten

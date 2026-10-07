@@ -6,11 +6,8 @@ on:
   push:
     branches: ["**"]
     tags-ignore: ["v*"]
-    # Nothing in these five lanes reads docs/ as an input — the contract
-    # scripts parse SOURCE comments, never the documents they point at — so a
-    # push that only writes prose has nothing to compile, lint or type-check.
-    # Any push that also touches code runs the lot: the filter drops a run
-    # only when every changed path matches.
+    # Contract scripts parse SOURCE comments, never docs, so a code path
+    # opens a run.
     paths-ignore:
       - "docs/**"
   pull_request:
@@ -21,9 +18,8 @@ on:
 permissions:
   contents: read
 
-# Incremental artifacts are useless across runners; debug info stays out of
-# the dev profile (Cargo.toml asks for the same), which is what keeps the
-# caches ~360MB rather than multiple GB.
+# Incremental artifacts and debug info bloat the caches; the dev profile
+# keeps both out.
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
@@ -36,8 +32,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Five independent lanes; the wall clock is the slowest of them, not the sum.
-# Each Cargo lane owns its cache key. Rationale: docs/ci-architecture.md.
+# Five independent lanes; the wall clock is the slowest, not the sum
+# (docs/ci-architecture.md).
 jobs:
   format:
     name: Rust / format
@@ -63,44 +59,36 @@ jobs:
           targets: wasm32-unknown-unknown
           cache-key: lint-cache
 
-      # Cheap early failure: --locked everywhere below rejects a lockfile
-      # that no longer matches the manifests; this names it first.
+      # Names a stale lockfile first: --locked below rejects it.
       - name: Lockfile resolves without updates
         run: cargo metadata --format-version 1 --locked --no-deps > /dev/null
 
-      # No allow-list: a warning anywhere in the workspace is a red run. The
-      # shell crate is linted natively by the macOS lane.
+      # No allow-list: any workspace warning is red; the shell crate sits on
+      # macOS.
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets --exclude mareader-shell --locked -- -D warnings
 
-      # The only lane that compiles the wasm32-only sites the host builds
-      # never see. Denies ride each crate's own lints table.
+      # The only lane that compiles wasm32-only sites. Denies ride each
+      # crate's own lints table.
       - name: Check the wasm frontend
         run: cargo check --target wasm32-unknown-unknown --workspace --locked --exclude mareader-shell
 
-      # Workspace feature unification hides under-declared dependencies;
-      # app-chrome is the crate meant to be reused, so check it alone.
+      # Feature unification hides under-declared deps; app-chrome is the
+      # crate meant to be reused.
       - name: Check app-chrome standalone
         run: cargo check -p app-chrome --target wasm32-unknown-unknown --locked
 
-      # The runtime boundary as a graph rule, not a grep rule: an engine or a
-      # paginator arriving transitively in a graph that must not own it is a
-      # failure grep cannot see. Ubuntu images carry node; this lane has cargo.
+      # A graph rule, not a grep rule: a transitively arriving engine escapes
+      # grep.
       - name: Dependency gate
         run: node tools/check-dependency-gate.mjs
 
-      # The reader host's direction (host → pane contract → format) inside
-      # one crate, where the graph gate cannot see it: the host names no
-      # engine, format or pane-implementation type, and the legacy
-      # ReaderPage workspace owner stays gone.
+      # The host's direction inside one crate: it names no engine, format or
+      # pane type.
       - name: Reader host boundary
         run: node tools/check-host-boundary.mjs
 
-      # Session ownership: every document a pane shows is owned by that
-      # pane's format session. Reader code reaches the engine only through
-      # its pane's session, only the open flow creates/installs sessions,
-      # async stamps are per pane, the bridge is session-first, and the
-      # engine crate holds no unclassified realm state.
+      # Session ownership: the engine is reached through a pane's own session.
       - name: Session ownership
         run: node tools/check-session-ownership.mjs
 
@@ -113,9 +101,8 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: test-cache
-      # --workspace, not a bare run: the root package would silently skip
-      # every member crate. The shell is tested on the macOS lane (its
-      # tauri context needs a frontend dist to compile against).
+      # --workspace, not a bare run: the root package would skip every
+      # member crate.
       - name: Tests
         run: cargo test --workspace --exclude mareader-shell --locked
 
@@ -131,22 +118,17 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      # One type-check + emission; the steps below consume the artifacts
-      # (contract scripts, engine bundle) built from current source here.
+      # One type-check + emission; the steps below consume what it builds.
       - name: Build TypeScript and the engine bundle
         run: npm run build:ts
       - name: Build CSS
         run: npm run build:css
-      # Static, and deliberately so: it asserts the CONTRACT (one canonical
-      # frontend build for Tauri, CI and dev; no bare `trunk build`; devUrl
-      # matching Trunk; the native smoke wired in) without needing a dist.
+      # Static: one canonical frontend build, no bare `trunk build`, devUrl
+      # matching Trunk.
       - name: Tauri build contract
         run: node tools/check-tauri-contract.mjs
-      # Behavioural, unlike the steps around it: it runs public/tauri-relay.js
-      # against a minimal DOM for each platform's frame shape, because a browser
-      # lane has no Tauri at all and a webview smoke has no window manager to
-      # honour a drag — so this is the only place the frame-side window chrome
-      # (regions, the facade, where a frame's listeners register) can be proven.
+      # Behavioural: public/tauri-relay.js runs against a minimal DOM per
+      # platform's frame shape.
       - name: Frame-side Tauri relay
         run: node tools/check-tauri-relay.mjs
       - name: Versions in sync
@@ -181,8 +163,8 @@ jobs:
         with:
           components: clippy
           cache-key: macos-cache
-      # generate_context! resolves frontendDist at compile time; the frontend
-      # itself is built by the release pipeline, so a stub is enough here.
+      # generate_context! resolves frontendDist at compile time, so a stub
+      # does.
       - name: Stub the frontend dist
         run: |
           mkdir -p dist

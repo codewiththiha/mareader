@@ -1,25 +1,13 @@
-//! The reader's typography as the layout maths need it.
-//!
-//! The settings themselves (`reader_core::settings::typography`) are the
-//! persisted schema, and the bridge from that schema to the interface (a
-//! font choice becoming a CSS stack, the whole setting becoming the scale-1
-//! custom properties) lives with it in the same crate — presentation of a
-//! settings blob, not page layout. What stays here is the one number the
-//! PAGINATOR reaches in for ([`body_char_width`]), which is why the estimate
-//! and the rendered text can never drift apart on the font.
-//!
-//! The schema types are re-exported so a component that reads a knob and
-//! paints it imports from one crate.
-
-pub use reader_core::settings::typography::{FontChoice, TextFamily, TextSettings, builtin_fonts};
+//! The one number the paginator needs from the reader's typography.
 
 pub use reader_core::settings::typography::{
-    BuiltInFont, DEFAULT_FONT_SIZE, DEFAULT_INK_CONTRAST, DEFAULT_LINE_HEIGHT,
-    DEFAULT_PARAGRAPH_MARGIN, SystemFont, TextColumnAlign, sanitize,
+    FontChoice, SystemFont, TextColumnAlign, TextSettings, sanitize,
 };
 
-/// Average glyph advance (fraction of the font size) for the body font —
-/// the pagination estimate's per-character width.
+// This module's own needs: the family table `body_char_width` reads.
+use reader_core::settings::typography::{TextFamily, builtin_fonts};
+
+/// Average glyph advance of the body font: the estimate's per-char width.
 pub fn body_char_width(settings: &TextSettings) -> f64 {
     match &settings.default_font {
         FontChoice::System(f) => f.avg_char_width(),

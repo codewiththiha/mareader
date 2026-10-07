@@ -96,11 +96,10 @@ shape is in `docs/frame-lifecycle-alternatives.md`.
   its full-resolution render lands, and a bitmap left at a stale scale asks
   for its crisp render at once. The strip's fling gate keeps pages a fling
   sweeps past from rasterising; its speed-aware visibility
-  (`in_view_signal` in `formats/pdf/strip.rs`) lets a page inside, or
-  within 320 px of, the viewport render immediately at reading speed, and
-  after a 60 ms dwell (`IN_VIEW_DWELL_MS`) mid-fling. A timer re-checks at
-  the dwell deadline, so a page never waits for another scroll event. See
-  `docs/memory/fling-gate.md`.
+  (`in_view_signal` in `components/formats/pdf/strip.rs`) is the
+  virtualizer's own motion band, so a page in the band renders immediately
+  and a page the fling only sweeps past waits for the settle — never for
+  another scroll event. See `docs/memory/fling-gate.md`.
 - In the disposable Reader host: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
@@ -110,9 +109,10 @@ shape is in `docs/frame-lifecycle-alternatives.md`.
   pane (its own `ReaderState`, effects, virtualizers, document session).
   The host never names a PDF type or a pane's state
   (`tools/check-host-boundary.mjs`, CI lint lane); pane content reaches the
-  chrome only through `ChromeSlot` views. Panes never see `AppState` or
-  Shell state; the Shell reads the host through the `host` block of the
-  diagnostics digest.
+  chrome only through `ChromeSlot` views. A pane holds no Shell store: it
+  gets the shared chrome signals (`ChromeState`) and a commands-only
+  boundary (`ApiHandle`), and the Shell reads the host through the `host`
+  block of the diagnostics digest.
 - The Shell loads **no Reader or Library implementation**. Its two-slot
   raster coordinator holds weak wakes/plain leases; Reader hosts borrow the
   same object. Dependency/artifact gates keep runtime code out of Shell and
@@ -395,7 +395,7 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   shelf's "Open in Reader" zone and the Shell's shelf → reader carry were
   removed.
 - **Open panes.** With more than one pane, the panel's top lists them
-  (`[data-open-tabs]`): a click focuses the pane, × closes it; no drag.
+  (`[data-open-tab]` rows): a click focuses the pane, × closes it; no drag.
 - **Row click.** A workspace setting (Settings → Workspace,
   `WorkspaceSettings::library_click`): open in the focused pane (default,
   `Replace`), open as a new split (`Split`), or nothing (`DragOnly`; the
@@ -674,7 +674,7 @@ texture with colour because a look they own is a whole look.
   Whether the window obeys is the desktop's business.
 - The drag overlay is the SHELL's, not a component: `install_import_drop`
   (`src/services/import_drop.rs`) listens for the native drag events and
-  returns the hover signal the Shell paints its `data-import-drop` hint from
+  returns the hover signal the Shell paints its drop hint from
   (`src/app/mod.rs`). The app-ui `DragOverlay` that lost its caller in the
   runtime split was deleted with its stylesheet block. The frameless
   caption's maximize/restore glyph is live again through the titlebar's own
@@ -688,5 +688,3 @@ texture with colour because a look they own is a whole look.
   so presence is already decided when the bar mounts — a frame with no surface
   there is a plain browser, and a poll timer waiting for one never clears and
   keeps the route's owner, which is how a Reader frame stops reporting disposal.
-
-<!-- // only the changed file was rewritten -->

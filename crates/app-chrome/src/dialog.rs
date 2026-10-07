@@ -1,21 +1,11 @@
-//! The native open-file dialog (Tauri dialog plugin), admitting every format
-//! the reader opens.
-//!
-//! A window-integration surface, which is why it lives in chrome and not in
-//! any engine: the library's relink flow and the reader's open flow both
-//! need it, and neither should have to import a document engine to ask the
-//! OS for a path.
+//! The native open-file dialog, admitting every format the reader opens.
 
 use wasm_bindgen::JsValue;
 
-/// The sentence a cancelled pick answers with. A constant rather than a string
-/// matched in place at each caller: the two sides of the comparison are in
-/// different crates, and a wording change on one side must show up here
-/// rather than silently turn cancels into error toasts.
+/// The sentence a cancelled pick answers with.
 pub const CANCELLED: &str = "Open cancelled";
 
-/// Native open-file dialog, filtered to the formats the reader opens.
-/// Returns the chosen path, or `Err` on cancel / no plugin.
+/// Native open-file dialog, filtered to the reader's formats.
 pub async fn pick_document() -> Result<String, String> {
     if !tauri_bridge::has_tauri() {
         return Err(

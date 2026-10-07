@@ -1,7 +1,4 @@
-/* Library bookshelf. A book is a cover in a frame with a line of prose under it, and a folder is a
-   2×2 plate of the covers inside it with the same line under it — one shape for both, at every
-   depth. Colours come from the themed tokens. */
-/* The column count is a custom property rather than a class per count: the view menu writes one token (--lib-cols, from `library_core::view::LibraryView::columns_token`) and the grid reads it. */
+/* Library bookshelf: a card per book, at the view menu's column count. */
 .lib-grid {
   display: grid;
   grid-template-columns: repeat(var(--lib-cols, auto-fill), minmax(9.5rem, 1fr));
@@ -9,8 +6,7 @@
   padding-bottom: 2rem;
 }
 
-/* The two card kinds share a column and a rhythm, and differ in what fills the
-   box: the frame is the book's, the plate is the folder's. */
+/* Both card kinds share a column and rhythm; the box differs. */
 .book-card,
 .folder-card {
   position: relative;
@@ -29,9 +25,7 @@
   box-shadow: 0 0 0 2px var(--color-accent);
 }
 
-/* The frame: one element owns the clip, the radius, the shadow and the lift, so the cover inside
-   can be whatever ratio its document has and the progress bar can sit flush with the bottom of the
-   ART. The lift is a straight translate, not the old lean and rotate. */
+/* The frame owns the clip, radius, shadow and lift. */
 .book-cover-wrap {
   position: relative;
   width: 100%;
@@ -56,9 +50,7 @@
   transform: translateY(-2px) scale(0.99);
 }
 
-/* The cover's own ratio is written inline per book by
-   `crates/library-runtime/src/features/library/book_card.rs` (clamped there, so a pathological page
-   cannot break the grid); this is only the default and the fill. */
+/* The cover's ratio is written inline per book, clamped in Rust. */
 .book-cover {
   position: relative;
   width: 100%;
@@ -74,8 +66,7 @@
   object-fit: fill;
 }
 
-/* Fallback when no page-1 render is cached: a themed generated cover
-   carrying the title, so a book is never a bare rectangle. */
+/* Fallback with no cached render: a themed cover carrying the title. */
 .book-cover-fallback {
   position: absolute;
   inset: 0;
@@ -99,8 +90,7 @@
   letter-spacing: 0.01em;
 }
 
-/* The line under the box. Two rows and no more: a shelf is scanned by its art
-   and a card that grows a third row makes every other card's art move. */
+/* The line under the box: two rows and no more. */
 .book-info,
 .folder-meta {
   display: flex;
@@ -132,10 +122,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Reading progress, flush with the bottom of the frame rather than under the
-   title: it is a fact about the cover the reader is looking at, and the frame is
-   the box that gives it something to be flush with. Rounded on the right only,
-   so a full bar meets the frame's own radius instead of overhanging it. */
+/* Progress, flush with the frame's bottom, rounded on the right only. */
 .book-progress-track {
   position: absolute;
   bottom: 0;
@@ -152,7 +139,7 @@
   transition: width 0.3s ease;
 }
 
-/* The remove button, and the relink a missing book grows, wear one chrome: revealed on hover/focus and kept inside the card, because the frame clips. The per-button rules are position and ink only. */
+/* The remove button and the relink share one chrome. */
 .book-remove,
 .book-relink {
   position: absolute;
@@ -182,29 +169,25 @@
   color: var(--color-ink);
 }
 
-/* Covers: the two treatments the view menu offers. "Fit" is the shelf the app has always had —
-   every cover at its document's own aspect ratio, clamped in `crates/library-runtime/src/features/library/book_card.rs`;
-   "crop" is one ratio for all of them. Only the fill changes here, because the box's ratio is the
-   card's inline style. */
+/* Covers: Fit keeps each document's ratio, crop gives them one. */
 .book-cover-crop .book-cover-img,
 .book-cover-crop .lib-row-img {
   object-fit: cover;
 }
 
-/* The author line, which a list has room for and a card only has room for
-   instead of the resume hint. One row, because the title already takes two. */
+/* The author line: a list has room, a card does not. */
 .book-author {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The format chip lives on the row only: at list density a reader scans names rather than art, so the kind of thing a row is earns its place there. */
+/* The format chip lives on the row only, where names matter more than art. */
 .lib-row-format {
   padding: 1px 5px;
 }
 
-/* A book whose address died. The card stays: a missing book is not a removed one, and the reader decides between finding it again and letting it go. */
+/* A missing book's card stays: the reader decides what to do. */
 .book-missing .book-cover-wrap,
 .row-missing .lib-row-cover {
   filter: grayscale(1) opacity(0.62);
@@ -226,7 +209,7 @@
   color: var(--color-muted);
 }
 
-/* The remove button's twin, one button to its left. Two affordances on a missing card and one on a healthy one, which is the whole of the difference. */
+/* The relink button, one to the left of remove. */
 .book-relink {
   right: 32px;
 }
@@ -235,7 +218,7 @@
   color: var(--color-accent);
 }
 
-/* On the card rather than on the frame, so it can stand in the gutter to the card's left instead of crossing the art. */
+/* On the card, so it stands in the gutter rather than crossing the art. */
 .book-drop-before {
   position: relative;
 }
@@ -252,12 +235,12 @@
 .row-drop-before {
   box-shadow: inset 0 2px 0 var(--color-accent);
 }
-/* The mirror seam: the bottom half of a list row is "after". The top rule and this one are the two halves of one row, never both lit, because the band that paints them is the band the commit resolves its index from. */
+/* The mirror seam: the bottom half of a row, never lit with the top rule. */
 .row-drop-after {
   box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
-/* The add card: a cover's shape with nothing on it. Same box as a book, dashed instead of painted, and no shadow — an add affordance casting a book's shadow would read as an empty volume. */
+/* The add card: a cover's shape, dashed, and casting no shadow. */
 .book-add {
   cursor: default;
 }

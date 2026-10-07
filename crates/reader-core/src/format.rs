@@ -1,24 +1,8 @@
-//! What the reader can open — the one registry every entry point consults:
-//! the open dialog's filter, the drop target's feedback and the OS handoff
-//! all answer the same question. Adding a format is adding a row to
-//! [`SUPPORTED`].
-//!
-//! Two declarations outside this crate derive from that row and cannot see
-//! it: the Tauri shell's filesystem gate (`DOCUMENT_EXTENSIONS`) and the
-//! bundle's file associations (`tauri.conf.json`). tools/check-formats.ts
-//! fails CI when the three disagree.
+//! What the reader can open: one registry every entry point consults.
 
 use serde::{Deserialize, Serialize};
 
-/// One openable document kind: its file extensions (lower-case, no dot), the
-/// MIME types a drag may advertise it under before its name is known, and the
-/// pipeline it opens through.
-///
-/// The [`Format`] is a FIELD of the row rather than something recovered from
-/// `name` by a match: a match with a catch-all arm answers for a row nobody
-/// wrote yet, so a fourth kind would have resolved to [`Format::Pdf`]
-/// silently. Carrying it means the table cannot be extended without saying
-/// which pipeline the new kind uses.
+/// One openable document kind: extensions, MIME types and pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocumentKind {
     pub name: &'static str,
@@ -49,17 +33,7 @@ pub const SUPPORTED: &[DocumentKind] = &[
     },
 ];
 
-/// The pipeline a path opens through. PDF renders through the pdf.js engine;
-/// the two reflowable formats share `reflow-core`'s maths and differ only in
-/// how source becomes blocks (`txt-core`, `md-core`). Page, zoom and
-/// navigation machinery is the same for all three, so this enum names
-/// pipelines rather than file types: adding a format is a row in [`SUPPORTED`]
-/// plus a handler, not a branch in the viewer.
-///
-/// Ordered and hashable because a persisted library keeps one set of formats
-/// per watched folder and one book per fingerprint; serializable because that
-/// set is storage. The serde names are the lower-case pipeline names, so a
-/// blob reads as `"pdf"` rather than as the variant's capitalisation.
+/// The pipeline a path opens through: pdf.js, or the reflowable pair.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
 )]
@@ -72,16 +46,12 @@ pub enum Format {
 }
 
 impl Format {
-    /// True for the reflowable formats — the ones with typography settings,
-    /// measurement-driven pagination and no pdf.js involvement. Named for
-    /// what they share rather than for not being a PDF.
+    /// True for the reflowable formats, which carry typography settings.
     pub fn is_reflowable(self) -> bool {
         matches!(self, Self::Text | Self::Markdown)
     }
 
-    /// The kind's display name, for sentences that name one document's format
-    /// ("Could not open this Markdown"). The registry's `DocumentKind::name`
-    /// and this must agree — a test holds them together.
+    /// The kind's display name, for sentences naming a format.
     pub fn label(self) -> &'static str {
         match self {
             Format::Pdf => "PDF",
@@ -91,11 +61,6 @@ impl Format {
     }
 
     /// The sub-directory the app's store files this format's copies under.
-    ///
-    /// Its own column rather than the lower-cased [`label`](Self::label): a
-    /// display name is copy a writer may reword, and rewording one must not
-    /// orphan every copy already on disk. The match is exhaustive, so a fourth
-    /// pipeline has to name its own directory here.
     pub fn store_dir(self) -> &'static str {
         match self {
             Format::Pdf => "pdf",
@@ -105,12 +70,7 @@ impl Format {
     }
 }
 
-/// The format a bare extension names, if the registry knows it. Accepts the
-/// extension with or without its leading dot, in any case. The one place an
-/// extension is turned into a [`Format`]: [`format_of`] and
-/// [`is_supported_path`] both answer through it, and the answer is the row's
-/// own column, so a fourth kind in [`SUPPORTED`] is admitted by every caller
-/// with no edit anywhere else.
+/// The format a bare extension names, if the registry knows it.
 pub fn format_from_ext(ext: &str) -> Option<Format> {
     let ext = ext.trim().trim_start_matches('.').to_ascii_lowercase();
     if ext.is_empty() {
@@ -122,16 +82,13 @@ pub fn format_from_ext(ext: &str) -> Option<Format> {
         .map(|kind| kind.format)
 }
 
-/// The last dotted segment of a path, if it has one. Split on both separators
-/// so a Windows path resolves under every host.
+/// The last dotted segment of a path, if it has one.
 fn extension_of(path: &str) -> Option<&str> {
     let name = path.trim_end().rsplit(['/', '\\']).next().unwrap_or("");
     name.rsplit_once('.').map(|(_, ext)| ext)
 }
 
-/// The format of a path, by extension. Callers check [`is_supported_path`]
-/// first; a name the registry does not know answers PDF (the historical
-/// default — and the format an extension-less handoff can only be).
+/// The format of a path, by extension; unknown names answer PDF.
 pub fn format_of(path: &str) -> Format {
     extension_of(path)
         .and_then(format_from_ext)
@@ -145,17 +102,13 @@ pub fn extensions() -> impl Iterator<Item = &'static str> {
         .flat_map(|kind| kind.extensions.iter().copied())
 }
 
-/// Every supported kind's display name, in registry order ("PDF", "Text", ...).
-/// UI copy is generated from the registry rather than typed out: a fourth row
-/// appears in every sentence that lists the kinds with no edit to any of
-/// them.
+/// Every supported kind's display name, in registry order.
 pub fn kind_names() -> impl Iterator<Item = &'static str> {
     SUPPORTED.iter().map(|kind| kind.name)
 }
 
-/// The supported kinds as a reading list: "PDF, Text or Markdown". Two kinds
-/// read "A or B", one reads its name alone. No oxford comma — this ends up
-/// inside short UI sentences.
+/// The supported kinds as a reading list, e.g. "PDF, Text or
+/// Markdown".
 pub fn kind_list() -> String {
     let names: Vec<&str> = kind_names().collect();
     match names.len() {
@@ -169,15 +122,12 @@ pub fn kind_list() -> String {
     }
 }
 
-/// Whether `path` names a file the reader can open, by extension. Case- and
-/// trailing-whitespace-insensitive; a name without an extension is not.
+/// Whether `path` names a file the reader can open.
 pub fn is_supported_path(path: &str) -> bool {
     extension_of(path).and_then(format_from_ext).is_some()
 }
 
-/// Whether a drag advertising `mime` may be carrying a supported document.
-/// An EMPTY type is accepted: browsers omit it for files whose kind they do
-/// not know at drag time, and the drop itself is still checked by path.
+/// Whether a drag advertising `mime` may carry a supported document.
 pub fn is_supported_mime(mime: &str) -> bool {
     mime.is_empty()
         || SUPPORTED
@@ -257,8 +207,7 @@ mod tests {
                     Some(kind.format),
                     "{ext} must map back to its own row"
                 );
-                // The row's display name and the pipeline's label are one fact
-                // spelled in two places; a reword of either has to move both.
+                // The row's display name and the pipeline's label are one fact.
                 assert_eq!(
                     kind.format.label(),
                     kind.name,
@@ -286,9 +235,7 @@ mod tests {
 
     #[test]
     fn a_format_persists_under_its_pipeline_name() {
-        // The library blob stores a format per book and a set per watched
-        // folder; the names are storage, so they are the lower-case pipeline
-        // names rather than the variant's capitalisation.
+        // The library blob stores a format per book and per folder.
         assert_eq!(serde_json::to_string(&Format::Pdf).unwrap(), "\"pdf\"");
         assert_eq!(serde_json::to_string(&Format::Text).unwrap(), "\"text\"");
         assert_eq!(
@@ -302,12 +249,10 @@ mod tests {
 
     #[test]
     fn the_kind_list_is_read_out_of_the_registry() {
-        // UI copy is generated, never typed: a row added to `SUPPORTED` shows
-        // up here with no edit.
+        // UI copy is generated, never typed.
         assert_eq!(kind_list(), "PDF, Text or Markdown");
         assert_eq!(kind_names().count(), SUPPORTED.len());
-        // Every extension resolves to a kind whose label is in that list, so no
-        // document can fail with a sentence that does not name its own format.
+        // Every extension resolves to a kind whose label is in that list.
         for kind in SUPPORTED {
             for ext in kind.extensions {
                 let path = format!("/books/sample.{ext}");

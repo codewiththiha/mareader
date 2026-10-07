@@ -1,38 +1,4 @@
-// The native boot smoke (§14): launch the packaged app for real and prove it
-// put a RUNTIME on screen — not just a window.
-//
-// Why this is a separate gate from every other one: the browser suite drives
-// the same `dist/` through a static server, and CI builds it with the
-// canonical build script. The failure that shipped a blank window lived in
-// neither of those — `tauri.conf.json`'s build command produced a shell page
-// with no runtime artifacts, so the packaged app could open a native window
-// whose runtime host stayed empty and whose terminal said nothing. A compiler
-// cannot see that, and neither can a check that only reads files.
-//
-// So this driver asks the running application three questions and fails on any
-// answer other than the expected one:
-//
-//   1. behavioural — did the shell bring the Library runtime up? The shell
-//      reports each boot transition to the native host (`boot_report`,
-//      src/app/manager.rs -> src-tauri), which prints one `[mareader] boot:`
-//      line. A blank window cannot print `boot: library`, because that line is
-//      only emitted once the runtime's start export returned.
-//   2. visual — did the window actually draw? A screenshot of the X display
-//      must contain real content (colour count + luminance spread), which a
-//      blank frame cannot fake.
-//   3. handoff — open a document the way the OS does (a second launch, whose
-//      argv the single-instance plugin forwards to the running window) and
-//      require the READER runtime to come up AND the document's own status
-//      to reach `doc: Ready` — the bytes crossing the same IPC relay (and
-//      asset protocol) the desktop app relies on. A Reader that mounts but
-//      cannot read a file never prints that line, so a green run now proves
-//      the read path, not just the boot.
-//
-// Environment: Linux with Xvfb (the runner provides DISPLAY), `xwd` for the
-// screenshot and `convert` (ImageMagick) to summarise it. Both are installed
-// by .github/workflows/deep-ci.yml's tauri-smoke job.
-//
-// Usage: node tools/tauri-smoke.mjs [--binary <path>] [--sample <pdf>]
+// The native boot smoke: prove the packaged app put a runtime on screen.
 
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -53,9 +19,7 @@ const SAMPLE = flag(
   path.join(root, "public/samples/Programming Pearls (2nd Edition) - Jon Bentley.pdf"),
 );
 
-/** The packaged binary, where `cargo build -p mareader-shell --release` puts
- *  it: the workspace root target dir (the crate is a workspace member), or
- *  src-tauri/target when it was built from inside that directory. */
+/** The packaged binary, where the release `cargo build` puts it. */
 function findBinary() {
   const candidates = [
     path.join(root, "target/release/mareader-shell"),
@@ -95,8 +59,7 @@ function launch(extraArgs = []) {
     cwd: root,
     env: {
       ...process.env,
-      // WebKitGTK on a software-rendered X server: the compositor needs to be
-      // off, or the window never paints a frame we can screenshot.
+      // WebKitGTK on software-rendered X: the compositor must be off to paint.
       WEBKIT_DISABLE_COMPOSITING_MODE: "1",
       LIBGL_ALWAYS_SOFTWARE: "1",
       GDK_BACKEND: "x11",
@@ -111,7 +74,7 @@ function launch(extraArgs = []) {
     child,
     output,
     text: () => output.join(""),
-    /** Wait for a `[mareader] <line>` (boot phase or doc truth) matching `pattern`. */
+    /** Wait for a `[mareader]` line matching `pattern`. */
     async waitForBoot(pattern, timeoutMs, label) {
       const started = Date.now();
       for (;;) {
@@ -142,8 +105,7 @@ function launch(extraArgs = []) {
   };
 }
 
-/** The window's pixels: colour count and luminance spread over a downscaled
- *  screenshot. A blank (uniform) window yields one colour and a spread of 0. */
+/** The window's pixels: colour count and luminance spread, downscaled. */
 function screenshotStats() {
   const shot = spawnSync("xwd", ["-root", "-silent"], { maxBuffer: 64 * 1024 * 1024 });
   if (shot.status !== 0 || !shot.stdout || shot.stdout.length === 0) {
@@ -186,9 +148,7 @@ try {
   const libraryLine = await app.waitForBoot(/boot: library$/, T_LIBRARY_MS, "library boot");
   if (libraryLine) {
     log(`library boot reported: ${libraryLine}`);
-    // Let the first real frame land before the screenshot: the report is
-    // emitted when the runtime's start export returned, which is up to a
-    // frame before the window shows it.
+    // Let a frame land before the screenshot: the report precedes paint.
     await sleep(SETTLE_MS);
     const stats = screenshotStats();
     report.pixels = stats;
@@ -196,9 +156,7 @@ try {
       fail(`could not read the window's pixels: ${stats.error}`);
     } else {
       log(`window pixels: ${stats.colors} colours, luminance deviation ${stats.deviation?.toFixed(2)}`);
-      // A blank window is a single colour (and, at most, the title bar and
-      // shadow of a decorated frame): this is the §14 "merely opens a native
-      // blank window" gate, measured rather than assumed.
+      // A blank window is one colour: the §14 gate, measured not assumed.
       if (!(stats.colors >= 4) || !(stats.deviation >= 2)) {
         fail(
           `the window looks blank (${stats.colors} colours, deviation ${stats.deviation}) — ` +
@@ -218,11 +176,7 @@ try {
     report.boot.reader = readerLine;
     if (readerLine) {
       log(`reader boot reported: ${readerLine}`);
-      // The file must actually be READ, not merely mounted: the shell
-      // relays the document's own status to this terminal, and `doc: Ready`
-      // only lands after the bytes crossed the IPC relay (or the asset
-      // protocol) and pdf.js opened them. A Reader that boots but cannot
-      // read reports `doc: Error — …` or never settles — both fail here.
+      // The file must be READ: `doc: Ready` lands only after the bytes cross.
       const docLine = await app.waitForBoot(
         /doc: (Ready|Error)\b/,
         T_READER_MS,
@@ -245,9 +199,7 @@ try {
     }
   }
 
-  // A second instance that did NOT forward the file would leave the app at
-  // the library, so the reader line above is also the single-instance path's
-  // assertion.
+  // A second instance that did not forward would leave the app at the library.
   report.boot.lines = app.bootLines();
   await kill(app.child);
 } catch (e) {

@@ -1,9 +1,5 @@
-//! One question for every copy the library is about to make.
-//!
-//! A book or a shelf the library reads in place leaves the ground that made
-//! it — a move, a lift out, a level coming apart, a shelf coming off the
-//! list — and the copy it becomes is a cost the reader agrees to
-//! (`crate::services::arrange`).
+//! One question for every copy the library is about to make, asked
+//! through `crate::services::arrange`.
 
 use leptos::prelude::*;
 

@@ -1,7 +1,5 @@
-//! The host half of the rail's thumbnails (docs/pane-runtimes.md,
-//! "Thumbnails"): a cell asks its pane's frame for page N and draws the
-//! `ImageBitmap` that comes back. Provided as context to the rail a
-//! `FramePane` builds.
+//! The host half of the rail's thumbnails, provided as context to
+//! the rail.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Weak;
@@ -25,18 +23,17 @@ struct ThumbState {
     pane: Weak<Inner>,
     next: u64,
     waiting: HashMap<u64, Waiting>,
-    /// Pages painted since the last reset: a cell remounting over one of
-    /// them starts uncovered (the frame's cache answers it at once).
+    /// Pages painted since the reset: a remounting cell starts
+    /// uncovered.
     painted: HashSet<u32>,
 }
 
-/// One pane's remote thumbnail lane. Copy; the state lives in the pane's
-/// owner and goes with it.
+/// One pane's remote thumbnail lane, Copy; the state dies with the
+/// pane.
 #[derive(Clone, Copy)]
 pub struct RemoteThumbs {
     state: StoredValue<ThumbState, LocalStorage>,
-    /// Bumped whenever every picture is stale (another document, another
-    /// look): the cells watch it and render again.
+    /// Bumped when every picture is stale; the cells watch it.
     pub epoch: RwSignal<u64>,
 }
 
@@ -59,9 +56,8 @@ impl RemoteThumbs {
             .unwrap_or(false)
     }
 
-    /// Render page `page` into `canvas`. `slot` receives the request id, so
-    /// the cell's cleanup can [`Self::cancel`] it. `Err(true)` is a
-    /// cancellation, `Err(false)` a failure.
+    /// Render `page` into `canvas`; `slot` takes the request id for
+    /// cancellation.
     pub async fn render(
         &self,
         page: u32,
@@ -100,8 +96,7 @@ impl RemoteThumbs {
         let Ok(bitmap) = bitmap.dyn_into::<web_sys::ImageBitmap>() else {
             return Err(false);
         };
-        // Delivery can win a race with unmount/reset, then resume afterwards.
-        // Never resurrect a detached or already-zeroed canvas.
+        // Delivery can race unmount/reset: never resurrect a zeroed canvas.
         if slot.load(Ordering::Relaxed) != req
             || !canvas.is_connected()
             || self.epoch.try_get_untracked() != Some(epoch)

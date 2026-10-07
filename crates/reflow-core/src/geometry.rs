@@ -1,18 +1,6 @@
-//! The reflowable page's geometry: the one fixed point of a text document.
-//!
-//! Reflowable documents are cut into fixed-size pages — A4 at 96dpi — so the
-//! paginated modes (single, spread, horizontal strip) reuse the reader's
-//! whole page machinery: fit, zoom, navigation, progress. The page size is
-//! the one fixed point; everything inside it (type, margins) is the
-//! typography settings' job.
-//!
-//! Book layout swaps the symmetric margins for a gutter: the facing edge
-//! carries extra air, and which side that is is [`SpineSide`]'s business —
-//! the parity of the page in a strip, or the half of a spread the host stands
-//! in. Both rules live here so no component has to know the pair of paddings
-//! a spine implies.
+//! The reflowable page's geometry: A4 at 96dpi, and the book gutter.
 
-pub const PAGE_WIDTH: f64 = 794.0;
+const PAGE_WIDTH: f64 = 794.0;
 pub const PAGE_HEIGHT: f64 = 1123.0;
 
 const PAD: f64 = 72.0;
@@ -21,22 +9,16 @@ const EDGE: f64 = 56.0;
 
 const MIN_COLUMN_PCT: f64 = 60.0;
 const MAX_COLUMN_PCT: f64 = 140.0;
-/// The narrowest text column any dial combination may leave: a page that
-/// cannot hold a line of body type is a page that cannot be read.
+/// The narrowest text column any dial combination may leave.
 const MIN_CONTENT_WIDTH: f64 = 160.0;
 
-/// Where one page sits relative to the book spine while a book layout is on.
-///
-/// A gutter is geometry, not a style: it decides which paddings the page host
-/// carries, and therefore where the spine falls between two facing hosts.
+/// Where a page sits relative to the spine while a book layout is on.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SpineSide {
-    /// Derive the side from the page's parity — single pages and the scroll
-    /// strip alternate recto/verso exactly like a bound book.
+    /// Derive the side from the page's parity, recto/verso like a bound book.
     #[default]
     Auto,
-    /// Fixed LEFT of the spine (a spread's left-hand page): the gutter faces
-    /// right, toward its neighbour.
+    /// Fixed LEFT of the spine: the gutter faces right, toward its neighbour.
     Left,
     /// Fixed RIGHT of the spine (a spread's right-hand page): the gutter faces
     /// left.
@@ -51,19 +33,14 @@ pub struct PageGeometry {
     pub pad_block: f64,
     pub pad_inline_left: f64,
     pub pad_inline_right: f64,
-    /// Reader margin spent INSIDE the card, on both inline sides, on top of
-    /// the pads above. The shells already spend the same dial as air around
-    /// the page; this is the half that widens the text block's own margins,
-    /// so a reflowable page answers the dial in every mode, paginated or not.
+    /// Reader margin spent inside the card, on top of the pads above.
     pub extra_inline: f64,
     pub content_width: f64,
     pub content_height: f64,
 }
 
 impl PageGeometry {
-    /// The inline paddings of page `page` (0-based). With a book layout the
-    /// gutter faces the spine: page 0 is a recto (gutter on the LEFT), and
-    /// it alternates from there. Without one, both sides are symmetric.
+    /// Inline paddings of `page`: the gutter faces the spine in book layout.
     fn inline_pads(&self, book_layout: bool, page: usize) -> (f64, f64) {
         if !book_layout {
             return (self.pad_inline_left, self.pad_inline_right);
@@ -75,11 +52,7 @@ impl PageGeometry {
         }
     }
 
-    /// The inline paddings of a page FIXED to one side of a spread: a
-    /// left-hand page reads as a verso (gutter on the RIGHT), a right-hand
-    /// page as a recto (gutter on the LEFT) — the spine sits between the
-    /// two hosts, so the page's own parity is irrelevant there. Without a
-    /// book layout both sides stay symmetric.
+    /// Inline paddings of a page fixed to one side of a spread.
     fn spread_pads(&self, book_layout: bool, right_page: bool) -> (f64, f64) {
         if !book_layout {
             return (self.pad_inline_left, self.pad_inline_right);
@@ -91,12 +64,7 @@ impl PageGeometry {
         }
     }
 
-    /// Spend `extra` CSS px of margin on BOTH inline sides, inside the same
-    /// page box: the pads grow, the text column shrinks to match, and the
-    /// paginator packs against the narrower column. The dial cannot push the
-    /// column under the readable floor, and the card equation — width is
-    /// exactly the column plus its pads — holds whichever order the dials
-    /// land in.
+    /// Spend `extra` px on both sides: the pads grow, the column shrinks.
     pub fn with_extra_inline(mut self, extra: f64) -> Self {
         self.extra_inline = extra.max(0.0);
         self.content_width = (self.content_width - 2.0 * self.extra_inline).max(MIN_CONTENT_WIDTH);
@@ -105,10 +73,7 @@ impl PageGeometry {
         self
     }
 
-    /// Scale the text column to `pct` percent of its width in this geometry,
-    /// growing the page box with it so the card always wraps the column: a
-    /// wider line count is a wider sheet, not smaller type. Height is
-    /// untouched — the dial is about measure, not fit.
+    /// Scale the text column to `pct`, growing the page box with it.
     pub fn with_column_pct(mut self, pct: f64) -> Self {
         let factor = (pct / 100.0).clamp(MIN_COLUMN_PCT / 100.0, MAX_COLUMN_PCT / 100.0);
         self.content_width = (self.content_width * factor).max(MIN_CONTENT_WIDTH);
@@ -119,10 +84,7 @@ impl PageGeometry {
 }
 
 impl PageGeometry {
-    /// The inline paddings of `page` (0-based) as it sits on the spine. The
-    /// single entry point a page host needs: `Auto` alternates with parity,
-    /// a fixed side reads as that half of a spread. The reader margin rides
-    /// on top of whichever pair this resolves to.
+    /// The inline paddings of `page` as it sits on the spine.
     pub fn pads(&self, book_layout: bool, page: usize, spine: SpineSide) -> (f64, f64) {
         let (left, right) = match spine {
             SpineSide::Auto => self.inline_pads(book_layout, page),
@@ -198,8 +160,7 @@ mod tests {
     #[test]
     fn a_fixed_spine_side_overrides_the_parity() {
         let g = geometry(true);
-        // The spread's left host is a verso whatever page number it carries,
-        // so `pads` and `spread_pads` must never disagree.
+        // The spread's left host is a verso whatever page number it carries.
         for page in 0..4usize {
             assert_eq!(g.pads(true, page, SpineSide::Left), (EDGE, GUTTER));
             assert_eq!(g.pads(true, page, SpineSide::Right), (GUTTER, EDGE));
@@ -218,8 +179,7 @@ mod tests {
         assert_eq!(g.width, base.width);
         assert_eq!(g.pads(false, 3, SpineSide::Auto), (PAD + 16.0, PAD + 16.0));
         assert!((g.content_width - (base.content_width - 32.0)).abs() < 1e-9);
-        // The gutter side carries it too, so a book layout answers the dial
-        // on every page of the strip.
+        // The gutter side carries it too, so a book answers the dial.
         let book = geometry(true).with_extra_inline(8.0);
         assert_eq!(
             book.pads(true, 0, SpineSide::Auto),
@@ -264,8 +224,7 @@ mod tests {
         let g = geometry(true)
             .with_extra_inline(12.0)
             .with_column_pct(120.0);
-        // Whatever order the dials land in, the card is exactly the column
-        // plus its pads — margin included.
+        // Whatever order the dials land in, the card is column plus pads.
         assert!((g.width - (GUTTER + 12.0 + g.content_width + EDGE + 12.0)).abs() < 1e-9);
         assert!((g.content_width - (PAGE_WIDTH - GUTTER - EDGE - 24.0) * 1.2).abs() < 1e-9);
     }

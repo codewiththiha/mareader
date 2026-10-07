@@ -204,5 +204,3 @@ when:
    set (`NEXT_SID`, `SAMPLES_IN_FLIGHT`, `RETAINED`, `BUILD_ACTIVE`).
 
 Test code (`#[cfg(test)]` modules and files) is exempt.
-
-<!-- // only the changed file was rewritten -->

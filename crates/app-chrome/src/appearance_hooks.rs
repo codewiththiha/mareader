@@ -1,26 +1,10 @@
-//! The appearance menu's downstream raster hooks, owned by whoever hosts a
-//! raster pipeline — never by the menu itself.
-//!
-//! The appearance surfaces (sliders, presets, the popover lifetime) are
-//! shared chrome: the library shows the same menu the reader does. But three
-//! of the menu's side effects address a live raster engine — re-baking the
-//! theme into mounted pages, the scrub window's raw-raster mode, and the
-//! "menu is open, keep the unbaked raws" hint — and only the runtime that
-//! OWNS an engine may answer them. Wiring those calls into the shared chrome
-//! would put the PDF engine in every runtime's dependency graph, library
-//! included.
-//!
-//! So the direction is inverted: a runtime that hosts an engine installs the
-//! hooks for the length of its session, and the chrome calls the slot. No
-//! installed hooks is a well-defined state — the menu still drives every CSS
-//! variable it owns; the raster follow-ups are what a library session has no
-//! business doing.
+//! The appearance menu's raster hooks, owned by whoever hosts an
+//! engine.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// What a raster engine owes the appearance surfaces. Implemented per
-/// runtime that owns one; today that is the reader's PDF session.
+/// What a raster engine owes the appearance surfaces.
 pub trait AppearanceEngineHooks {
     /// Re-bake the theme into every raster the engine already holds.
     fn refresh_theme(&self);
@@ -36,9 +20,7 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-/// Install the engine hooks for the lifetime of one runtime session. The
-/// caller drops the returned guard on teardown, which is what makes a closed
-/// reader's hooks unreachable rather than silently stale.
+/// Install the engine hooks for one runtime session's lifetime.
 pub fn install(hooks: Rc<dyn AppearanceEngineHooks>) -> AppearanceHooksGuard {
     HOOKS.with(|slot| *slot.borrow_mut() = Some(hooks));
     AppearanceHooksGuard

@@ -1,8 +1,4 @@
-//! The real provider: Apple Intelligence via the `fm-bridge` helper. Every
-//! `fm_bridge::Error` is mapped onto a typed [`AiError`] before it crosses
-//! the wire, so the frontend branches on the *cause* — and shows a retry
-//! affordance exactly when retrying might help — instead of string-matching
-//! prose that may change between OS releases.
+//! The real provider: Apple Intelligence via the `fm-bridge` helper.
 
 use async_stream::stream;
 use fm_bridge::Bridge;
@@ -24,11 +20,7 @@ pub struct AppleAiProvider {
 
 impl AppleAiProvider {
     pub fn new() -> Result<Self, String> {
-        // Reads FM_BRIDGE_BIN from the .env file. Concurrency stays small on
-        // purpose: the on-device model is one shared resource and each slot
-        // is its own helper process. The timeout covers queue wait AND
-        // generation, so a stuck or saturated model surfaces as a retryable
-        // Timeout instead of hanging the UI.
+        // Reads FM_BRIDGE_BIN from .env; the timeout covers queue wait.
         let bridge = Bridge::from_env()
             .map_err(|e| e.to_string())?
             .max_concurrency(2)
@@ -38,9 +30,7 @@ impl AppleAiProvider {
     }
 }
 
-/// Maps a typed bridge error onto the wire error. Retryability comes
-/// straight from `fm_bridge` (ModelNotReady / Timeout / "already responding"
-/// only), with schema-shape failures treated as worth one more try.
+/// Maps a typed bridge error onto the wire error, retryability included.
 fn map_err(e: BridgeError) -> AiError {
     let retryable = e.is_retryable();
     let kind = match &e {
@@ -59,8 +49,7 @@ fn map_err(e: BridgeError) -> AiError {
         // Request/schema faults on OUR side, not the model's.
         BridgeError::BadRequest(_) | BridgeError::InvalidSchema(_) => AiErrorKind::BadResponse,
         other => {
-            // Keep the full text in the logs; only a bounded summary
-            // travels to the UI (and `Other` shows `message` directly).
+            // Full text stays in the logs; only a summary travels to the UI.
             eprintln!("[ai] unmapped bridge error: {other}");
             AiErrorKind::Other(short(other))
         }
@@ -76,10 +65,7 @@ fn map_err(e: BridgeError) -> AiError {
     }
 }
 
-/// Fold whatever fields a (partial) snapshot already contains into the
-/// running answer. Later chunks only overwrite a field once it has real
-/// content, so a chunk that echoes an empty array never wipes the synonyms
-/// that arrived earlier.
+/// Fold a partial snapshot into the running answer, never wiping real content.
 fn merge_partial(acc: &mut WordInfo, val: &serde_json::Value) {
     if let Some(s) = val.get("pos").and_then(|v| v.as_str())
         && !s.trim().is_empty()
@@ -143,18 +129,9 @@ impl AiProvider for AppleAiProvider {
 
         Box::pin(stream! {
             let mut stream = Box::pin(bridge.stream(request));
-            // The UI opens the card the MOMENT the first real content
-            // arrives. Structured streaming hands over partial snapshots, so
-            // instead of dropping them until the object happens to be
-            // complete (which deferred the card until the model was nearly
-            // finished), accumulate the partial fields and surface the
-            // running answer on the FIRST chunk that carries a `meaning`,
-            // re-publishing as later chunks fill in. The frontend patches
-            // sections in place, so the card streams.
+            // The card opens on the first chunk with a `meaning`.
             let mut acc = WordInfo::default();
-            // The FINAL structured payload must still carry real content: a
-            // stream that ends before a `meaning` ever landed is a shape
-            // failure — the UI would show an empty card with no recourse.
+            // A stream that ends before a `meaning` lands is a shape failure.
             let mut saw_usable = false;
 
             while let Some(event) = stream.next().await {

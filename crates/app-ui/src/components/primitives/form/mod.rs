@@ -1,5 +1,4 @@
-//! Form controls: the low-level range input, the labeled slider built on it,
-//! the shared text input, and the labelled row a panel of them is made of.
+//! Form controls: range input, slider, text input, labelled row.
 
 pub mod range_input;
 pub mod row;

@@ -1,6 +1,5 @@
-//! The shell artifact's entry. The shell is the persistent host: routing,
-//! the runtime manager, persistence, diagnostics. Library and reader are
-//! separate artifacts it loads and disposes (docs/runtime-split.md).
+//! The shell artifact's entry: the persistent host of routing, managers,
+//! persistence and diagnostics.
 
 mod app;
 mod diagnostics;

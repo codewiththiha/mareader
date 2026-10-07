@@ -7,9 +7,7 @@ use ai_core::gloss::is_glossable;
 
 use crate::ai::{AiChunk, AiError, AiErrorKind, AiProvider, AiStreamEvent, create_provider};
 
-/// One provider for the process's lifetime. `create_provider` reads the env
-/// and builds the bridge (with its shared concurrency budget); doing that on
-/// every invoke wasted both.
+/// One provider for the process's lifetime; the env read happens once.
 static PROVIDER: OnceLock<Box<dyn AiProvider>> = OnceLock::new();
 
 fn provider() -> &'static dyn AiProvider {
@@ -28,11 +26,7 @@ fn emit(app: &AppHandle, run: &str, chunk: AiChunk) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-/// Start a streaming explanation for `word`. `run` is the caller's id for
-/// this request, echoed on every chunk. Runs are not cancelled when a newer
-/// one starts — the model is already working and the answer may still be
-/// wanted — so the frontend needs the id to tell an abandoned run's chunks
-/// from the live one's.
+/// Start a streaming explanation for `word`; `run` is echoed on every chunk.
 #[tauri::command]
 pub async fn explain_word(
     app: AppHandle,
@@ -40,8 +34,7 @@ pub async fn explain_word(
     context: String,
     run: String,
 ) -> Result<(), String> {
-    // The UI already mutes over-long selections, so this only ever fires on
-    // a direct invoke — answer it with a typed error, not a model run.
+    // The UI mutes over-long selections, so this fires only on a direct invoke.
     if !is_glossable(&word) {
         return emit(
             &app,
@@ -56,9 +49,7 @@ pub async fn explain_word(
 
     let mut stream = provider().explain_word(word, context);
 
-    // Coalesce Snapshot chunks so a 10k-token stream does not pay one IPC
-    // emit per ~100 characters: flush after 4 snapshots or 64 ms, whichever
-    // comes first; Done/Error always flush immediately.
+    // Coalesce Snapshot chunks: flush after 4 or 64 ms; Done flushes now.
     let mut pending: Option<AiChunk> = None;
     let mut batch = 0u8;
     let mut last_flush = std::time::Instant::now();

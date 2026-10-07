@@ -1,12 +1,5 @@
-//! The pane domain, pure: identities, the descriptor, the lifecycle machine
-//! and the manager's bookkeeping core. No Leptos, no DOM, no engine — every
-//! rule the reader host enforces about panes is decided here and tested on
-//! the host (`cargo test`), separately from the browser suite.
-//!
-//! The reactive layer (`super::manager`) wraps [`PaneManagerCore`] and
-//! drives the pane runtimes from the transitions it returns: the core says
-//! WHAT happens (which pane blurs, which focuses, which may still take
-//! work); the reactive layer only carries it out.
+//! The pane domain, pure: identities, the descriptor, the lifecycle
+//! machine and the manager's core.
 
 use std::collections::BTreeMap;
 
@@ -16,10 +9,8 @@ use serde::{Deserialize, Serialize};
 // Identities
 // ---------------------------------------------------------------------------
 
-/// A pane's identity inside one reader host. Minted by the manager core from
-/// a monotonic counter and never reused — not after the pane is disposed,
-/// and not for a pane showing the same document. It is NOT a document id, a
-/// path, or an index into any list.
+/// A pane's identity inside one host: minted from a monotonic
+/// counter, never reused.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PaneId(u64);
@@ -30,15 +21,13 @@ impl PaneId {
         self.0
     }
 
-    /// The id a pane frame was booted with: the host minted it, the frame
-    /// only names it back.
+    /// The id a pane frame was booted with.
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn from_raw(n: u64) -> Self {
         Self(n)
     }
 
-    /// A pane id out of thin air, for the pure layout tests only: ids are
-    /// otherwise minted by the manager core and never forged.
+    /// A pane id out of thin air, for the pure layout tests only.
     #[cfg(test)]
     pub(crate) fn for_tests(n: u64) -> Self {
         Self(n)
@@ -51,17 +40,14 @@ impl std::fmt::Display for PaneId {
     }
 }
 
-/// Which document a pane shows: the library row when the library names one,
-/// the address otherwise. Two panes may show one document; a pane's document
-/// may change (an in-place open) while its [`PaneId`] does not.
+/// Which document a pane shows: the library row, else the address.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct DocumentId(String);
 
 impl DocumentId {
-    /// The document identity for a launch: `book:<row id>` when the library
-    /// named a row, `path:<address>` otherwise, and `None` for a launch with
-    /// nothing to open (a warm reader waiting for its document).
+    /// The document identity for a launch: `book:<row id>`, else
+    /// `path:<address>`.
     pub fn from_launch(book_id: Option<&str>, path: &str) -> Option<Self> {
         match book_id {
             Some(id) if !id.is_empty() => Some(Self(format!("book:{id}"))),
@@ -75,8 +61,7 @@ impl DocumentId {
     }
 }
 
-/// The document a pane is asked to show, as data: identity plus the address
-/// the pane's open flow resolves. No session, no handle, no engine object.
+/// The document a pane is asked to show, as data.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentRef {
@@ -84,14 +69,11 @@ pub struct DocumentRef {
     pub path: String,
 }
 
-/// The format tag a pane reports. Format-neutral on purpose: the host reads
-/// it as a label (diagnostics, a DOM attribute) and never branches on it —
-/// the fork into format behaviour lives behind the pane contract.
+/// The format tag a pane reports; a label the host never branches on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PaneFormat {
-    /// No document yet (a warm pane waiting for its launch), or one whose
-    /// format has not been decided.
+    /// No document yet, or one whose format is not decided.
     #[default]
     Pending,
     Pdf,
@@ -99,10 +81,7 @@ pub enum PaneFormat {
     Text,
 }
 
-/// A pane's box inside the host's workspace slot, in CSS px, relative to the
-/// slot. The host measures the slot and hands every pane its bounds
-/// explicitly; the pane owns everything inside them (its own viewport
-/// geometry, scroll extents, zoom fits).
+/// A pane's box in the host's slot, in CSS px.
 #[derive(Clone, Copy, PartialEq, Debug, Default, Serialize)]
 pub struct PaneBounds {
     pub x: f64,
@@ -120,6 +99,15 @@ impl PaneBounds {
             width: width.max(0.0),
             height: height.max(0.0),
         }
+    }
+
+    /// Whether `at` is inside; half-open, so a far edge belongs to
+    /// the next pane along.
+    pub fn contains(&self, at: (f64, f64)) -> bool {
+        at.0 >= self.x
+            && at.0 < self.x + self.width
+            && at.1 >= self.y
+            && at.1 < self.y + self.height
     }
 }
 
@@ -140,9 +128,7 @@ pub struct PaneRequest {
     pub request_focus: bool,
 }
 
-/// The pane as the manager records it: the request plus the identity the
-/// manager minted. Data only — the heavy objects (the document session, the
-/// virtualizers, the engine handle) belong to the pane runtime, never here.
+/// The pane as the manager records it: request plus minted id.
 #[derive(Clone, PartialEq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaneDescriptor {
@@ -155,8 +141,7 @@ pub struct PaneDescriptor {
 }
 
 impl PaneDescriptor {
-    /// The descriptor a pane frame rebuilds from its boot message: the host
-    /// minted the id and the request, the frame hands them to its pane.
+    /// The descriptor a pane frame rebuilds from its boot message.
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn remote(pane_id: PaneId, request: PaneRequest) -> Self {
         Self::minted(pane_id, request)
@@ -178,9 +163,8 @@ impl PaneDescriptor {
 // The lifecycle
 // ---------------------------------------------------------------------------
 
-/// A pane's lifecycle: `New → Mounting → Ready → (Suspended) → Disposing →
-/// Disposed`. Disposed is terminal: a disposed pane is never revived and its
-/// id is never handed out again.
+/// `New → Mounting → Ready → (Suspended) → Disposing → Disposed`;
+/// terminal and never reused.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PaneLifecycle {
@@ -194,14 +178,13 @@ pub enum PaneLifecycle {
 }
 
 impl PaneLifecycle {
-    /// Whether new pane WORK (opens, renders, registrations) may start.
-    /// Refused while suspended and from `Disposing` on.
+    /// Whether new pane WORK may start: refused while suspended, from
+    /// `Disposing` on.
     pub fn admits_work(self) -> bool {
         matches!(self, Self::New | Self::Mounting | Self::Ready)
     }
 
-    /// Whether TEARDOWN work (engine destroy, sweeps) may still run: one
-    /// state longer than work, because the disposing tail is teardown.
+    /// Whether TEARDOWN may run: one state longer than work.
     pub fn admits_teardown(self) -> bool {
         self != Self::Disposed
     }
@@ -227,24 +210,18 @@ pub enum PaneError {
     Illegal { pane: PaneId, from: PaneLifecycle },
     /// The host itself is disposed: it creates nothing any more.
     HostDisposed,
-    /// A pane was asked for outside every reactive owner: its scope would
-    /// belong to nothing and never be cleaned up.
+    /// A pane was asked for outside every reactive owner.
     Unowned,
     /// The workspace already holds [`MAX_PANES`] live panes.
     WorkspaceFull,
-    /// The layout refused the placement (the pane it was to go beside is
-    /// not in the workspace).
+    /// The layout refused the placement.
     Layout(super::tree::TreeError),
 }
 
-/// The most live panes one workspace holds. Every pane is a live format
-/// session (a PDF one with its own worker and render queue), so the bound is
-/// a resource bound first; the layout's minimum pane size is the other.
+/// The most live panes one workspace holds: a resource bound first.
 pub const MAX_PANES: usize = 4;
 
-/// One focus hand-over, as the single focus authority decided it: the pane
-/// to blur (if any) and the pane to focus (if any). The reactive layer calls
-/// `blur` on the first, then `focus` on the second — never anything else.
+/// One focus hand-over: blur the first, then focus the second.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct FocusChange {
     pub blur: Option<PaneId>,
@@ -269,16 +246,13 @@ pub struct PaneRecord {
     pub bounds: PaneBounds,
 }
 
-/// The pane manager's bookkeeping: every pane it ever created (disposed ones
-/// stay as tombstones, so an operation on a disposed pane is answered
-/// `Gone` rather than `Unknown`), the placement order, and the ONE active
-/// pane. Nothing here assumes a single pane; nothing here knows a format.
+/// The manager's bookkeeping: tombstones included, placement order,
+/// the one active pane.
 #[derive(Clone, Debug, Default)]
 pub struct PaneManagerCore {
     next_id: u64,
     records: BTreeMap<PaneId, PaneRecord>,
-    /// Live panes in placement order (the future split order). Disposing and
-    /// disposed panes leave it the moment their dispose begins.
+    /// Live panes in placement order; disposing panes leave at once.
     order: Vec<PaneId>,
     active: Option<PaneId>,
     host_disposed: bool,
@@ -289,10 +263,7 @@ impl PaneManagerCore {
         Self::default()
     }
 
-    /// Create a pane: mint a fresh id, record the descriptor in `New`, and —
-    /// when the request asks for focus or there is no active pane — make it
-    /// the active one. Returns the descriptor and the focus hand-over the
-    /// caller must carry out once the pane exists.
+    /// Create a pane; a request for focus hands it over.
     pub fn create(
         &mut self,
         request: PaneRequest,
@@ -380,9 +351,7 @@ impl PaneManagerCore {
         }
     }
 
-    /// Make `id` the active pane. The ONE focus authority: the previous
-    /// active pane is named for a blur, the new one for a focus, and asking
-    /// for the pane that is already active changes nothing.
+    /// Make `id` the active pane: the one focus authority.
     pub fn focus(&mut self, id: PaneId) -> Result<FocusChange, PaneError> {
         self.live_record(id)?;
         Ok(self.hand_focus_to(Some(id)))
@@ -397,8 +366,7 @@ impl PaneManagerCore {
         FocusChange { blur, focus: next }
     }
 
-    /// Record the bounds the host measured for `id`. `Ok(false)` when they
-    /// did not change (the caller skips the pane's resize).
+    /// Record measured bounds; `Ok(false)` when they did not change.
     pub fn resize(&mut self, id: PaneId, bounds: PaneBounds) -> Result<bool, PaneError> {
         let record = self.live_record(id)?;
         if record.bounds == bounds {
@@ -408,11 +376,7 @@ impl PaneManagerCore {
         Ok(true)
     }
 
-    /// Begin closing `id`: `→ Disposing`, out of the placement order, and —
-    /// if it was active — focus handed to its successor: `prefer` when that
-    /// is a live pane (the layout's choice, the pane nearest the closed
-    /// one), else the next live pane in placement order (the one that took
-    /// its place, else the one before it), or nobody.
+    /// Begin closing `id`: out of the order, focus handed on.
     pub fn begin_close(
         &mut self,
         id: PaneId,
@@ -436,8 +400,8 @@ impl PaneManagerCore {
                     .copied()
             })
         });
-        // The closing pane is already out of the running: it is blurred as
-        // part of its own dispose, not by the hand-over.
+        // The closing pane is blurred by its own dispose, not the
+        // hand-over.
         self.active = successor;
         Ok(FocusChange {
             blur: None,
@@ -445,8 +409,7 @@ impl PaneManagerCore {
         })
     }
 
-    /// `Disposing → Disposed`: the pane's teardown finished. The record stays
-    /// as a tombstone so later operations on it answer `Gone`.
+    /// `Disposing → Disposed`; the record stays as a tombstone.
     pub fn finish_dispose(&mut self, id: PaneId) -> Result<(), PaneError> {
         match self.records.get_mut(&id) {
             None => Err(PaneError::Unknown(id)),
@@ -461,10 +424,7 @@ impl PaneManagerCore {
         }
     }
 
-    /// Dispose the whole workspace: the host refuses new panes from here,
-    /// nobody is active, and every live pane enters `Disposing`. Returns the
-    /// panes the caller must tear down, in placement order. Idempotent: a
-    /// second call returns nothing.
+    /// Dispose the workspace: every live pane disposes, idempotently.
     pub fn dispose_all(&mut self) -> Vec<PaneId> {
         self.host_disposed = true;
         self.active = None;
@@ -512,9 +472,7 @@ impl PaneManagerCore {
         self.records.len()
     }
 
-    /// The core's invariants, checked by the tests after every operation:
-    /// at most one active pane, and it is live and placed; the placement
-    /// order holds exactly the live panes, each once.
+    /// The invariants the tests check after every operation.
     pub fn check_invariants(&self) -> Result<(), String> {
         if let Some(active) = self.active {
             let lifecycle = self.lifecycle(active);
@@ -693,8 +651,7 @@ mod tests {
         let b = ready(&mut core, "/b.pdf");
         let c = ready(&mut core, "/c.pdf");
         core.focus(b).expect("focus b");
-        // The layout names a (b's nearest neighbour on screen), though c
-        // took b's place in the order: the layout wins.
+        // The layout's preference wins over the order.
         let change = core.begin_close(b, Some(a)).expect("close b");
         assert_eq!(
             change,
@@ -704,8 +661,7 @@ mod tests {
             }
         );
         ok(&core);
-        // A preference that is not live (the closing pane itself, a pane
-        // already gone) falls back to the order.
+        // A preference that is not live falls back to the order.
         let change = core.begin_close(a, Some(a)).expect("close a");
         assert_eq!(change.focus, Some(c));
         ok(&core);
@@ -842,8 +798,7 @@ mod tests {
         ok(&core);
     }
 
-    /// No operation sequence can produce two active panes, an active pane
-    /// that is not live, or a disposed pane back in the placement order.
+    /// No operation sequence can break single-active ownership.
     #[test]
     fn no_sequence_of_operations_breaks_single_active_ownership() {
         let mut core = PaneManagerCore::new();

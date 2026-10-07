@@ -1,7 +1,4 @@
-//! The shell's persistence writes for what crosses the boundary: settings,
-//! read points, single covers and a reader's gloss marks. The library blob
-//! and the cover cache are the shelf's own writes, made in its frame through
-//! the origin's one store — they never cross to the Shell.
+//! The shell's persistence writes for what crosses the boundary.
 
 use runtime_contract::boundary::ReadPoint;
 
@@ -13,19 +10,16 @@ pub fn save_settings(settings: &reader_core::settings::Settings) {
     let _ = storage::save_settings(settings);
 }
 
-/// One document's marks, as the reader encoded them (`ShellApi::save_gloss`):
-/// decoded here, so a malformed list is refused rather than written.
+/// One document's marks, as the reader encoded them.
 pub fn save_gloss(key: &str, marks: &str) {
     storage::persist_encoded_gloss(key, marks);
 }
 
 pub fn save_cover(path: &str, image: runtime_contract::covers::CoverImage) {
-    // The same quota rule the library's import queue kept: the cap is
-    // enforced by whoever writes, not by whoever happens to prune next.
+    // The same quota rule the library's import queue kept.
     let mut map = storage::load_covers();
     if !map.contains_key(path) && map.len() >= runtime_contract::covers::COVER_CAP {
-        // Drop the oldest entry (insertion-ordered map): the least recently
-        // COVERED file loses its art, never its rows.
+        // Drop the oldest entry: the least recently covered file loses its art.
         if let Some(oldest) = map.keys().next().cloned() {
             map.remove(&oldest);
         }

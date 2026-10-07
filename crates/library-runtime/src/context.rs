@@ -1,20 +1,15 @@
-//! The library session's context: the library state, the session's settings
-//! copy, its UI chrome slice, and the boundary to the Shell. No field on
-//! this type can name reader state — the reader is another artifact.
+//! The library session's context: state, settings, chrome, the boundary.
 
 use app_state::state::UiState;
 use leptos::prelude::*;
 use reader_core::settings::Settings;
 use runtime_contract::boundary::ShellApi;
 
-/// Which ShellApi implementation backs this session: the hosted frame or
-/// the unhosted storage API (the test lane, no Shell). A Copy handle
-/// so the context itself stays Copy — every library service passes it by value.
+/// Which ShellApi backs this session: the hosted frame or the storage API.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ApiHandle {
     Standalone,
-    /// The hosted frame: the boundary calls leave over the frame's port,
-    /// stamped with the boot's generation (`crate::frame`).
+    /// The hosted frame: calls leave over the frame's port.
     Frame,
 }
 
@@ -59,9 +54,7 @@ impl ShellApi for ApiHandle {
             }
         }
     }
-    /// The shelf never glosses: a mark is made in a reader, and the shelf's
-    /// own gloss upkeep (a removed or duplicated row's marks) is row data it
-    /// writes in its own frame, like the library blob. Nothing is sent.
+    /// The shelf never glosses; its own row data is written in its frame.
     fn save_gloss(&self, _key: &str, _marks: String) {}
     fn bake_cover(&self, path: &str) {
         match self {
@@ -92,23 +85,18 @@ impl ShellApi for ApiHandle {
 #[derive(Clone, Copy)]
 pub struct LibraryContext {
     pub library: crate::state::LibraryState,
-    /// The session's settings copy: seeded from storage at start, persisted
-    /// through the boundary when the library edits it (the appearance menu).
+    /// The session's settings copy, persisted through the boundary.
     pub settings: RwSignal<Settings>,
     pub ui: UiState,
     pub api: ApiHandle,
-    /// The shared-chrome handles this session provides: its settings + ui
-    /// slices with a dormant reader surface (the reader is another runtime).
+    /// The shared-chrome handles: settings, ui and a dormant reader.
     pub chrome: app_state::ChromeState,
 }
 
 impl LibraryContext {
     pub fn new(api: ApiHandle) -> Self {
         let library_blob = storage::load_library();
-        // One-time, before any pane can ask for a row's marks: carry the
-        // address-keyed highlights a build before the row-id scheme wrote
-        // onto the rows that were reading them. The migration is guarded by
-        // its own durable flag, so every later session is a single read.
+        // One-time gloss-key migration, guarded by its own durable flag.
         storage::migrate_gloss_keys(&library_blob.books);
         let settings = RwSignal::new(storage::load_settings());
         let sidebar = RwSignal::new(app_state::SidebarMode::None);
@@ -147,16 +135,13 @@ impl LibraryContext {
 
 #[cfg(test)]
 impl Default for LibraryContext {
-    /// The unhosted session context unit tests build on: no shell bridge, so
-    /// every boundary call is the deliberate no-op — the same shape the
-    /// unhosted api has.
+    /// The unhosted context unit tests build on: every call a no-op.
     fn default() -> Self {
         Self::new(ApiHandle::Standalone)
     }
 }
 
-/// The unhosted substitute (no Shell, as in unit tests): durable writes
-/// go straight to the browser store.
+/// The unhosted substitute: durable writes go to the browser store.
 struct StandaloneApi;
 
 impl ShellApi for StandaloneApi {
@@ -176,13 +161,8 @@ impl ShellApi for StandaloneApi {
     fn save_gloss(&self, key: &str, marks: String) {
         storage::persist_encoded_gloss(key, &marks);
     }
-    /// No Shell, no baker: an unhosted session has nobody to ask, so the
-    /// ask goes nowhere and the shelf shows the covers it already holds
-    /// (`covers.rs` never starts an unhosted drain — this is only reached
-    /// by the host tests' queue policy).
+    /// No Shell, no baker: the ask goes nowhere.
     fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
 }
-
-// only the changed file was rewritten

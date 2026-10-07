@@ -1,10 +1,4 @@
-//! Toast data model + visual. The gloss undo toast and the app-global error
-//! toast used to be two separate shells with two separate timers; both are
-//! now `ToastData` through [`toast_host`](super::toast_host).
-//!
-//! Data is deliberately separate from the auto-dismiss controller: the gloss
-//! undo keeps its own *generation-guarded* timer (undo semantics — a steal
-//! must not clear a newer batch), while ordinary toasts use the host's timer.
+//! Toast data model and visual; the auto-dismiss controller is separate.
 
 use std::time::Duration;
 
@@ -12,12 +6,7 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 
-/// Visual tone of a toast.
-///
-/// `Error` is the app-global failure toast (open-flow, toolbar); `Undo` is
-/// the gloss "Removed n highlights — Undo" style (neutral with an accent
-/// action). That is the whole current surface; a new tone lands with its
-/// producer.
+/// Visual tone of a toast: the global error, or the gloss undo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ToastTone {
     #[default]
@@ -33,20 +22,14 @@ pub struct ToastAction {
     pub on_click: Callback<()>,
 }
 
-/// Equality by label only: the callback is deliberately excluded (it is a
-/// new closure per batch). This exists so a `Memo<Option<ToastData>>` can
-/// dedupe identical batches without the callback identity entering the
-/// comparison.
+/// Equality by label only; the callback is excluded.
 impl PartialEq for ToastAction {
     fn eq(&self, other: &Self) -> bool {
         self.label == other.label
     }
 }
 
-/// One toast. `id` is monotonic per producer so a stale timer can never wipe
-/// a newer toast (the host's equality guard). `PartialEq` (via
-/// [`ToastAction`]'s label-only comparison) lets a memo dedupe identical
-/// batches.
+/// One toast; `id` is monotonic so a stale timer cannot wipe a newer one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToastData {
     pub id: u64,

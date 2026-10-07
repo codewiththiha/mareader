@@ -1,11 +1,11 @@
-//! The numbers the library shows as words: how big a file is, how long ago something happened, and how many of a thing there are.
+//! The numbers the library shows as words: size, age, and counts.
 
-/// `None`, `""` and a run of spaces all answer `None`; anything else answers itself, untrimmed.
+/// Blank answers `None`; anything else answers itself.
 pub fn non_blank(text: Option<&str>) -> Option<&str> {
     text.filter(|t| !t.trim().is_empty())
 }
 
-/// Binary units, decimal spelling, and one decimal below 10 of a unit so every size keeps the same width in a menu column.
+/// Binary units, decimal spelling, one decimal below ten.
 pub fn human_size(bytes: u64) -> String {
     const STEP: f64 = 1024.0;
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -25,7 +25,7 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
-/// Deliberately coarse past a day, and a stamp in the future (a clock that moved, a hand-edited blob) reads as "just now" rather than as a negative.
+/// Coarse past a day; a future stamp reads as "just now".
 pub fn human_age(then_ms: u64, now_ms: u64) -> String {
     const MINUTE: u64 = 60_000;
     const HOUR: u64 = 60 * MINUTE;

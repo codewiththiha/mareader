@@ -1,9 +1,5 @@
-//! The reusable "glued to the page, dies when the origin leaves" behaviour.
-//!
-//! One watcher serves both floating surfaces — the selection pill and the
-//! gloss card — and both die by one rule: the origin is out when NO PART of
-//! it is on screen (or its host unmounted), identically above the top edge
-//! and below the bottom edge, identically for PDF and reflow.
+//! The reusable "glued to the page, dies when the origin leaves"
+//! behaviour.
 
 use ai_core::gloss::{GlossBox, PageAnchor};
 use leptos::prelude::*;
@@ -14,16 +10,8 @@ use app_chrome::hooks::use_window_event::{add_window_capture_listener, use_windo
 
 use super::MarkResolver;
 
-/// One exit rule for every anchored surface (pill and card, PDF and reflow):
-/// the surface stays open while any part of its mark is on screen, and exits
-/// only once the mark has fully left the viewport — above the top edge or
-/// below the bottom edge. `None` (the mark's host is unmounted) always counts
-/// as out.
-///
-/// The old rule mixed two bands: fully-out at the top but `y > vh * 0.8` at
-/// the bottom. Scrolling up moves the mark toward the bottom edge, so the
-/// card collapsed while the mark was still visible; scrolling down looked
-/// correct only because the top edge used the strict rule.
+/// One exit rule for every anchored surface: out when fully off
+/// screen.
 pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64) -> bool {
     match origin {
         None => true,
@@ -35,28 +23,14 @@ pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64) -> bool {
 pub struct AnchorWatch {
     /// Live viewport-space box of the anchor (None = page not mounted).
     pub screen: RwSignal<Option<GlossBox>>,
-    /// Origin left the viewport: fully above the top edge or fully below
-    /// the bottom edge (or its host unmounted). See [`origin_outside_band`].
+    /// Origin left the viewport: fully above or below it.
     pub exited: RwSignal<bool>,
-    /// Synchronous re-derive (reads the DOM now). Call before using `screen`
-    /// inside the same tick that the mark changed.
+    /// Synchronous re-derive, reading the DOM now.
     pub refresh: Callback<()>,
 }
 
-/// Reusable "glued to the page, dies when the origin leaves" behaviour.
-///
-/// The screen box is re-derived whenever scroll / zoom / view mode / page /
-/// container size change (plus a capture-phase scroll listener so *any*
-/// scroller is caught, and window resize), and `exited` follows the one
-/// symmetric rule ([`origin_outside_band`]).
-///
-/// `resolve` is the format's answer to "where is this anchor in the viewport
-/// right now" — [`super::anchor_resolver`] builds the right one for whichever
-/// document is open. `invalidate` is the format's answer to "something moved that scroll
-/// and zoom do not cover": a reflowable document re-cuts its pages when the
-/// typography or the column width changes, and a mark that stayed put through
-/// that would be pointing at the wrong words. A PDF has nothing to add, so it
-/// passes [`super::no_invalidation`].
+/// Reusable "glued to the page, dies when the origin leaves"
+/// behaviour.
 pub fn watch_page_anchor(
     anchor: Signal<Option<PageAnchor>>,
     resolve: MarkResolver,
@@ -93,12 +67,7 @@ pub fn watch_page_anchor(
         refresh.run(());
     });
 
-    // Scroll and resize both fire faster than the screen updates, and each
-    // re-derive reads layout twice (the page host's rect, the viewport size).
-    // Coalescing to one recompute per frame drops the passes whose results
-    // were overwritten before anything was painted; the card is spring-driven
-    // at frame rate anyway, so it cannot tell the difference. Anything that
-    // needs the anchor NOW (an open, mid-tick) calls `refresh` directly.
+    // Coalesce scroll and resize to one recompute per frame.
     let queue_refresh = raf_coalesce(move || tick.update(|n| *n += 1));
     let on_scroll = queue_refresh.clone();
     add_window_capture_listener("scroll", move |_| on_scroll());

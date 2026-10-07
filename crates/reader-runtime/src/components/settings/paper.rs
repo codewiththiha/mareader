@@ -1,11 +1,4 @@
-//! The paper section of the reader settings modal's Theme tab: what colour
-//! the reader looks at.
-//!
-//! Both rows act on the PDF's bitmaps — blend sampling and edge detection —
-//! so the component gates itself on the document being a raster one and the
-//! tab can mount it unconditionally. The theme itself is always pre-rendered
-//! into those bitmaps; the real-time compositing a tint drag needs is the
-//! scrub window's business, not a reader-facing choice.
+//! The paper section of the Theme tab: what colour the reader looks at.
 
 use leptos::prelude::*;
 
@@ -20,10 +13,8 @@ use app_ui::components::primitives::menu::separator::Separator;
 /// The raster-only half of the Theme tab: the paper blend and its detection.
 #[component]
 pub(crate) fn PaperSection(state: crate::context::ReaderContext) -> impl IntoView {
-    // Blend sampling and edge detection act on the PDF's always-light bitmaps;
-    // a reflowable document paints its paper and ink straight from the theme
-    // tokens, so the section is not merely inert while one is open — it
-    // describes machinery that does not run.
+    // PDF-only machinery, so the section hides while a reflowable
+    // document is open.
     let reflowable = Signal::derive(move || state.reader.reflowable());
     let s = state.settings;
     let blend_off = Signal::derive(move || !s.with(|st| st.layout.blend_mode));

@@ -1,19 +1,4 @@
 //! The per-page palette and the interpolation that walks it.
-//!
-//! Continuous mode's question is "what colour is the reader looking at RIGHT
-//! NOW?", and the honest answer is a position along the book, not a page
-//! pair. The shell reports the viewport's visible-paint-weighted mean page
-//! index — exactly `N.0` resting on page N, `N + 0.6` straddling N and N+1 at
-//! 40/60 — and [`PagePalette::colour_at`] resolves it like a ladder:
-//! piecewise-linear between neighbouring pages, held flat past either end.
-//!
-//! The ladder is what the old page-pair blend could not do: a pair is blind
-//! to the page BEFORE the dominant one, so right after a handover — the
-//! previous page still filling half the window — the backdrop snapped to the
-//! new colour while the eye still saw the old one. A weighted position
-//! carries every visible page's share, so the backdrop meets the pages where
-//! they are, with no seam at the handover.
-
 use std::collections::BTreeMap;
 
 use crate::color::{Rgb, lerp};
@@ -29,9 +14,7 @@ impl PagePalette {
         Self::default()
     }
 
-    /// Remember page `page`'s colour. A re-detection overwrites: the newest
-    /// sample wins, so a page whose colour was guessed while its raster was
-    /// still streaming corrects itself on the next frame.
+    /// Record a page's colour; a re-detection overwrites it.
     pub fn set(&mut self, page: u32, colour: Rgb) {
         self.pages.insert(page, colour);
     }
@@ -44,10 +27,6 @@ impl PagePalette {
         self.pages.contains_key(&page)
     }
 
-    pub fn len(&self) -> usize {
-        self.pages.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.pages.is_empty()
     }
@@ -56,12 +35,7 @@ impl PagePalette {
         self.pages.clear();
     }
 
-    /// The colour at a fractional page `position` (1-based): exactly page N's
-    /// colour at `N.0`, the linear blend of N and N+1 at `N + t`, clamped to
-    /// the first/last known page outside the palette's span. Pages whose
-    /// colour is still unknown are skipped over, not treated as blanks — the
-    /// ladder runs between the nearest known pages on either side. `None`
-    /// only when no page's colour is known at all.
+    /// The colour at a fractional page `position` (1-based).
     pub fn colour_at(&self, position: f64) -> Option<Rgb> {
         if self.pages.is_empty() || !position.is_finite() {
             return None;
@@ -70,8 +44,7 @@ impl PagePalette {
         let last = *self.pages.keys().next_back()? as f64;
         let pos = position.clamp(first, last);
 
-        // The greatest known page at or below `pos`, and the smallest known
-        // page above it — the two knots the position falls between.
+        // The nearest known page at or below `pos`, and the one above.
         let floor = pos.floor() as u32;
         let (lo_key, lo_colour) = self.pages.range(..=floor).next_back()?;
         let hi = self.pages.range(floor + 1..).next();
@@ -115,16 +88,14 @@ mod tests {
         let mut p = PagePalette::new();
         p.set(1, CREAM);
         p.set(2, WHITE);
-        // The assertion compares against the same lerp, so the test pins the
-        // BEHAVIOUR (midpoint blend) without hard-coding rounding.
+        // The expectation is the same blend the palette runs.
         let mid = p.colour_at(1.5).unwrap();
         assert_eq!(mid, lerp(CREAM, WHITE, 0.5));
     }
 
     #[test]
     fn a_weighted_position_carries_both_pages_shares() {
-        // 40% page 1 + 60% page 2 → position 1.6 → 60% of page 2's colour.
-        // This is the case the old pair blend got wrong after handovers.
+        // Position 1.6 is 60% of the way from page 1 to page 2.
         let mut p = PagePalette::new();
         p.set(1, CREAM);
         p.set(2, WHITE);
@@ -144,8 +115,7 @@ mod tests {
 
     #[test]
     fn an_unknown_page_blends_across_the_gap() {
-        // Page 4's colour never resolved; a reader at 3.5 is half way
-        // between page 3 and page 5 in every sense that matters.
+        // Page 4 never resolved; 3.5 sits halfway between 3 and 5.
         let mut p = PagePalette::new();
         p.set(3, CREAM);
         p.set(5, INK);

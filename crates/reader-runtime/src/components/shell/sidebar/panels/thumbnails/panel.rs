@@ -1,11 +1,5 @@
-//! Thumbnail grid: low-scale canvases (no text layer) for every page, rendered
-//! through the engine's cached thumbnail lane. Clicking jumps to that page.
-//!
-//! Scroll-windowed by `virtual-list-leptos`: the virtualizer owns the row
-//! window, spacer extent, scroll coalescing, and container measurement. This
-//! component keeps the UX policy layered on top: healing, generation guards,
-//! drive listeners, and the `live` gate that drops every cell once the close
-//! slide finishes.
+//! Thumbnail grid: low-scale canvases, one per page, in a
+//! scroll-windowed rail.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -31,34 +25,16 @@ use super::auto_center::AutoCenter;
 use super::geometry::{CELL_W, GAP_CROSS, MIN_VIEWPORT_H, PAD, ROW_BUFFER, row_height};
 use super::thumbnail_cell::{ThumbCell, ThumbRegistry};
 
-/// The drive `Closure`, kept alive for the panel's lifetime: dropping it
-/// frees the wasm shim the listeners reference, so it may only go once its
-/// listeners are removed (see the cleanup below).
+/// The drive closure, alive for the panel's lifetime.
 type DriveClosureSlot = StoredValue<Option<Closure<dyn FnMut(web_sys::Event)>>, LocalStorage>;
-/// The drive listeners' `js_sys::Function` plus the element they are bound
-/// to, parked so `on_cleanup` can remove them with the same function that
-/// was added. A listener left on a detached node would keep firing, and the
-/// rail remounts when it moves between the docked and overlay layouts —
-/// without the removal, every remount accumulated three more listeners.
+/// The drive listeners' function and their element, parked for
+/// removal.
 type DriveFnSlot = StoredValue<Option<(js_sys::Function, web_sys::Element)>, LocalStorage>;
 
 /// The three drive events, listed once so bind and unbind cannot drift apart.
 const DRIVE_EVENTS: [&str; 3] = ["wheel", "pointerdown", "touchstart"];
 
-/// How many animation frames a row the window has left behind keeps its
-/// painted canvases. The rail's own drive is a glide: a fling that turns
-/// around at once would otherwise ask the pane's engine for every card it
-/// just passed (a wire post, a raster, a bitmap transfer per card) for DOM
-/// that was alive one frame ago. Motion-gated rather than always-on because a
-/// rail being dragged through the document is the only case the bridge pays
-/// for: at reading speed the grid unmounts in the tick it evicts, and the crate
-/// bounds the one bridged frame in wall-clock time too, so a hidden tab still
-/// releases the canvases.
-/// Ceiling on simultaneously bridged cells — three rows of the rail's two
-/// columns. Retention counts items, and a grid's window moves whole rows at
-/// a time, so the bound is stated in cells: rows the glide re-enters drop out
-/// on the spot, and this is what keeps the rail inside the reader's zombie
-/// policy (the two page strips already allow `MAX_ZOMBIES` each).
+/// Frames a row the window left behind keeps its painted canvases.
 const BRIDGE_CELLS: usize = 6;
 
 #[component]
@@ -84,10 +60,7 @@ pub fn ThumbnailsPanel(
             .epoch(layout_epoch.into())
             .retention(RetentionPolicy::MotionGated { max: BRIDGE_CELLS }),
     );
-    // The thumbnail grid's virtualizer joins the diagnostics registry for
-    // its lifetime, like every other reader-surface strip. The handle rides
-    // a StoredValue because a cleanup closure must be Send + Sync, which
-    // the Rc inside a Virtualizer is not.
+    // The grid's virtualizer joins the diagnostics registry.
     crate::diagnostics::track_virtualizer(&v);
     // The PANE owns the instance (its dispose disposes it); the cleanup
     // pairs.
@@ -102,10 +75,7 @@ pub fn ThumbnailsPanel(
     let rows = v.rows();
     let total_size = v.total_size();
 
-    // A cell that fails to paint (a cache or cancellation race) sets
-    // `needs_heal`; only then is a sweep scheduled. The scroll stream no
-    // longer re-arms the debounce on every tick — the sweep is a recovery
-    // path for stale cells, not a heartbeat.
+    // A failed cell sets `needs_heal`; only then is a sweep scheduled.
     let needs_heal = RwSignal::new(false);
     let heal = RwSignal::new(0u64);
     let heal_debounce = use_debounce(Duration::from_millis(500), move || {
@@ -139,8 +109,7 @@ pub fn ThumbnailsPanel(
                 gen_doc.fetch_add(1, Ordering::Relaxed);
                 doc_key.update(|key| *key += 1);
                 layout_epoch.update(|epoch| *epoch += 1);
-                // The registry is cleared wholesale on a document switch
-                // instead of drained one retired page at a time.
+                // Cleared wholesale on a document switch.
                 if let Ok(mut guard) = bound_reset.lock() {
                     guard.clear();
                 }
@@ -164,11 +133,7 @@ pub fn ThumbnailsPanel(
         };
         let el: web_sys::Element = div.clone().unchecked_into();
         v_bind.bind_container(el.clone());
-        // Measure NOW so the auto-center glide has a true viewport on its
-        // first run. The container ResizeObserver only fires on size
-        // CHANGES, and the panel's height is constant across the sidebar
-        // slide, so a seed taken before layout settled would never
-        // self-correct and the glide would compute against a placeholder.
+        // Measure NOW: the observer only fires on size CHANGES.
         v_bind.remeasure_container();
         if drive_fn_slot.with_value(|slot| slot.is_some()) {
             return;
@@ -185,24 +150,19 @@ pub fn ThumbnailsPanel(
             .unchecked_ref::<js_sys::Function>()
             .clone();
         for event in DRIVE_EVENTS {
-            // A failed bind means the drive listeners silently never fire;
-            // say so in debug instead of swallowing the Result.
+            // A failed bind means the listeners never fire; say so in debug.
             debug_assert!(
                 el.add_event_listener_with_callback(event, &drive_fn)
                     .is_ok(),
                 "drive listener bind failed for {event} on #thumb-scroll"
             );
         }
-        // Owner-scoped storage: an effect that re-runs inside a teardown
-        // flush finds it gone rather than aborting the wasm.
+        // Owner-scoped storage: a re-run during teardown finds it gone.
         let _ = drive_fn_slot.try_set_value(Some((drive_fn, el.clone())));
         let _ = drive_closure_slot.try_set_value(Some(drive_closure));
     });
 
-    // Remove the drive listeners with the same function that was added, and
-    // only THEN drop the Closure: freeing the wasm shim while a listener
-    // still references it would abort on the next event. Emptying the slots
-    // releases both the Closures and the parked references.
+    // Remove the listeners, and only THEN drop the closure.
     let drive_closure_cleanup = drive_closure_slot;
     let drive_fn_cleanup = drive_fn_slot;
     on_cleanup(move || {
@@ -215,10 +175,7 @@ pub fn ThumbnailsPanel(
         let _ = drive_closure_cleanup.try_set_value(None);
     });
 
-    // Size changes are the ResizeObserver's job alone (the virtualizer also
-    // observes the container from `bind_container`); the `live` gate drops or
-    // restores cells but never changes the container's size, so a manual
-    // remeasure on it was a duplicate read.
+    // Size changes are the observer's job alone.
     let v_resize = v.clone();
     use_resize_observer(scroll_ref, move |_| {
         v_resize.remeasure_container();
@@ -241,9 +198,7 @@ pub fn ThumbnailsPanel(
                     if !live.get() {
                         return Vec::new();
                     }
-                    // Tracked: a document change bumps `doc_key`, which
-                    // rebuilds the keys below and remounts every row even
-                    // when the rebuilt rows compare equal.
+                    // Tracked: a document change remounts every row.
                     let _ = doc_key.get();
                     rows.get()
                 }
@@ -286,5 +241,3 @@ pub fn ThumbnailsPanel(
         </div>
     }
 }
-
-// only the changed file was rewritten

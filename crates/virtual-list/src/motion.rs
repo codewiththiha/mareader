@@ -1,45 +1,5 @@
-//! Scroll motion: what the reader is doing to the scrollbar, and what the
-//! content pipeline therefore owes them.
-//!
-//! A placeholder is only a win when filling the item genuinely would not have
-//! made it in time. That single sentence needs two numbers a virtualizer
-//! historically does not have — how fast this scroller is moving, and how fast
-//! this machine can make content — and it is why a distance band, applied to
-//! every scroll at every speed, both shows blanks during ordinary reading and
-//! buys nothing when it does.
-//!
-//! [`Motion`] measures the first number: signed velocity in pixels per second,
-//! estimated over the adapter's frame samples with a time-constant blend, so a
-//! 30 Hz renderer and a 120 Hz one read the same speed for the same scroll.
-//! [`Pipeline`] carries the second, measured by the caller: what one item's
-//! content costs and how many items it fills at once. [`Motion::band`] joins them, and
-//! engagement requires *both* conditions — the reader is genuinely flicking, and
-//! pages are arriving faster than the pipeline can make them:
-//!
-//! - a fast machine reading short pages never shows a placeholder, because the
-//!   content is ready before the reader arrives;
-//! - a fling through a large PDF that outruns the raster lanes shows placeholders
-//!   for the items it is flying past, and spends its budget on the
-//!   [`FillPriority`] classes that matter, in order.
-//!
-//! The band's leading pad is `speed × fill_ms` — the distance the reader covers
-//! while one fill is in flight, which is exactly how far ahead of them the warm
-//! region has to reach — clamped to a floor and a ceiling in viewport screens.
-//! There is no magic overscan constant to tune: stop scrolling and the band
-//! closes to the window, and a slower pipeline widens it by itself.
-//!
-//! The [`Direction`] latch and the engagement latch are both hysteretic for the
-//! same reason: a boundary that flips on one sample is a boundary the reader
-//! sees. A direction only turns when a sample's own sign clears the flip floor,
-//! so the rubber-band recoil at the end of a flick cannot move the lead side to
-//! the wrong end for a frame; engagement only lets go well below where it took
-//! hold, so a scroll that slows across the threshold does not strobe the
-//! placeholder mode.
-//!
-//! Pure arithmetic: no clocks, no DOM, no framework, no `std`. The adapter owns
-//! the frame chain that calls [`Motion::update`] and the scroll-end event that
-//! calls [`Motion::settle`]. The rules here are tested against the sample
-//! streams those produce — see `tests/motion_band.rs`.
+//! Scroll motion: the measured speed, the pipeline's capacity, and the
+//! band that follows.
 
 use core::f64::consts::{LN_2, LOG2_E};
 
@@ -58,15 +18,13 @@ pub enum Direction {
     Backward,
 }
 
-/// How soon the reader will look at a mounted item — the order a fill queue
-/// works in, which during a scroll is never the document order.
+/// How soon the reader will look at a mounted item, as a rank.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FillPriority {
     /// Overlapping the viewport. Nothing outranks it.
     #[default]
     Visible,
-    /// Outside the viewport, inside the band, on the side being approached:
-    /// fill it while the reader is still traveling toward it.
+    /// Outside the viewport, inside the band, on the side approached.
     Ahead,
     /// Inside the band, behind the reader: cheap to keep, last of the band.
     Behind,
@@ -75,8 +33,7 @@ pub enum FillPriority {
 }
 
 impl FillPriority {
-    /// Sort key, lower first — so a caller orders a queue with one comparison
-    /// instead of matching on the enum at every pop.
+    /// Sort key, lower first.
     pub const fn rank(self) -> u8 {
         match self {
             Self::Visible => 0,
@@ -87,35 +44,22 @@ impl FillPriority {
     }
 }
 
-/// Tuning for [`Motion`]. The speed gates are px/s because that is the unit a
-/// scroller reports; the band's limits are viewport screens because a
-/// pixel is not a unit a reader scrolls in, and the same flick crosses far more
-/// of a short window than a tall one.
+/// Tuning for [`Motion`]: px/s gates, screen-sized band limits.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MotionConfig {
-    /// Smoothing time constant, milliseconds. The blend in [`Motion::update`]
-    /// weights a sample by `1 - e^(-dt/tau)`, so `tau` is how many
-    /// milliseconds of movement it takes the estimate to reach ~63 % of a
-    /// constant-speed scroll.
+    /// Smoothing time constant in ms: the blend's `1 - e^(-dt/tau)` weight.
     pub tau_ms: f64,
-    /// Speed at which a scroll counts as a seek, px/s — the *floor*, and the
-    /// estimate must also outrun the pipeline's capacity before placeholders
-    /// engage.
+    /// Speed at which a scroll counts as a seek, px/s.
     pub enter_floor_px_s: f64,
-    /// The fraction of the entry gate an engaged scroll must fall below to let
-    /// go. Below 1.0 by construction, because the gap between the two gates is
-    /// what stops a slowing scroll from strobing the placeholder mode; clamped
-    /// into `0.05..=0.99` where it is read, so a bad value cannot make the
-    /// latch open and close on the same sample.
+    /// The fraction of the entry gate an engaged scroll falls below to
+    /// let go.
     pub hysteresis: f64,
     /// The fraction of `enter_floor_px_s` a sample's own movement must clear to
     /// turn the [`Direction`] around.
     pub flip_ratio: f64,
     /// Smallest lead while engaged, in viewport screens.
     pub min_lead_screens: f64,
-    /// Largest lead, in viewport screens. Warming past this buys RAM and
-    /// nothing else: no pipeline fills that far ahead in time, so those items
-    /// are placeholders either way.
+    /// Largest lead, in viewport screens; past it buys only RAM.
     pub max_lead_screens: f64,
     /// How much of a screen stays warm behind the reader while engaged.
     pub trail_screens: f64,
@@ -125,9 +69,7 @@ impl Default for MotionConfig {
     fn default() -> Self {
         Self {
             tau_ms: 32.0,
-            // ~2 screens/s on a 700 px window: a deliberate flick, not wheel
-            // stepping. A reader with a smaller window engages later in pixels,
-            // which is the point of expressing it in screens.
+            // ~2 screens/s on a 700 px window: a deliberate flick.
             enter_floor_px_s: 1_400.0,
             hysteresis: 0.4,
             flip_ratio: 0.35,
@@ -138,15 +80,10 @@ impl Default for MotionConfig {
     }
 }
 
-/// What the caller's content pipeline can do, measured rather than assumed: the
-/// recent cost of one item, and the lane count it actually runs.
-/// This is the input that makes engagement a fact about the machine instead of
-/// a constant copied from a demo.
+/// What the caller's content pipeline can do, measured not assumed.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Pipeline {
-    /// Time to make one item's content real, milliseconds, as recently measured.
-    /// `0` means the caller has not measured it yet, which reads as "no
-    /// capacity" and leaves the decision to the speed floor.
+    /// Time to make one item's content real, in ms; 0 means unmeasured.
     pub fill_ms: f64,
     /// The layout's average item extent, pixels. `0` is the same unknown.
     pub pitch: f64,
@@ -168,18 +105,12 @@ impl Pipeline {
         self.items_per_s() * self.pitch.max(0.0)
     }
 
-    /// The gate that opens the placeholder mode: the reader must beat the
-    /// pipeline's throughput *and* the config's speed floor. Beating only one
-    /// of them is not a reason to show an empty page — a huge fling a fast
-    /// machine keeps up with should still be real content, and a slow pipeline
-    /// nudged at reading speed should not be blanked either.
+    /// The gate that opens the placeholder mode.
     pub fn enter_px_s(&self, config: &MotionConfig) -> f64 {
         config.enter_floor_px_s.max(self.capacity_px_s())
     }
 
-    /// The gate that closes it, strictly below the entry gate. Derived from it
-    /// rather than fixed, so a reader on a slow pipeline holds the band while
-    /// demand stays high and lets go as soon as the content can catch up.
+    /// The gate that closes it, strictly below the entry gate.
     pub fn exit_px_s(&self, config: &MotionConfig) -> f64 {
         self.enter_px_s(config) * config.hysteresis.clamp(0.05, 0.99)
     }
@@ -195,16 +126,11 @@ pub struct BandRange {
     pub end: f64,
 }
 
-/// The band policy for one frame: the slice of the document that carries real
-/// content, and whether the rest of the mount window is a placeholder.
-///
-/// `placeholder` is the whole answer: `false` means every mounted item renders,
-/// so a caller must not consult `active` for culling (it still reports the
-/// padded viewport, so a diagnostic can show what the band would have been).
+/// The band policy for one frame: the content slice and the
+/// placeholder flag.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct BandWindow {
-    /// The content band, in content coordinates. The caller intersects it with
-    /// its mount window to get the indices that render.
+    /// The content band, in content coordinates.
     pub active: BandRange,
     /// Whether items outside `active` render as placeholders.
     pub placeholder: bool,
@@ -219,12 +145,6 @@ pub struct BandWindow {
 }
 
 /// The estimated motion of one scroller.
-///
-/// [`Motion::update`] is the only input to the estimate and takes nothing but
-/// position and time; [`Motion::band`] is the policy evaluator and owns the
-/// engagement latch, because engagement is only meaningful against a pipeline.
-/// [`Motion::engaged`] therefore reports the latch as of the last `band` call —
-/// `false` before the first one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Motion {
     config: MotionConfig,
@@ -275,13 +195,6 @@ impl Motion {
     }
 
     /// Fold one scroll sample into the estimate.
-    ///
-    /// Call it once per animation frame from the adapter's frame chain, and
-    /// again from the scroll listener: the displacement over the interval is
-    /// what counts, so a burst of scroll events inside one frame reads as the
-    /// one movement it is. A non-positive interval (a duplicate timestamp, a
-    /// clock that went backwards across a document swap) records the position
-    /// and leaves the estimate alone rather than dividing by it.
     pub fn update(&mut self, offset: f64, now_ms: f64) {
         let dt = now_ms - self.at_ms;
         let delta = offset - self.offset;
@@ -296,11 +209,7 @@ impl Motion {
         let alpha = one_minus_exp_neg(dt / tau);
         self.velocity_px_s += (instantaneous - self.velocity_px_s) * alpha;
 
-        // The sample's own sign turns the direction, but only past the flip
-        // floor, and only if the estimate is still moving: a recoil is a stop,
-        // not a turn. The floor comes from the config's speed floor rather than
-        // `Pipeline::enter_px_s` because `update` deliberately knows nothing
-        // about the pipeline — it is a measurement, not a policy.
+        // The sample's sign turns the direction, past the flip floor only.
         let flip = self.config.enter_floor_px_s.max(1.0) * self.config.flip_ratio;
         self.direction = if self.speed_px_s() < flip {
             Direction::Still
@@ -315,9 +224,7 @@ impl Motion {
         };
     }
 
-    /// The scroll ended: `scrollend`, or the adapter's debounce firing. The
-    /// browser has said so in words, so the estimate goes to rest at once
-    /// instead of smoothing toward it over the frames that will not come.
+    /// The scroll ended: the estimate goes to rest at once.
     pub fn settle(&mut self) {
         self.velocity_px_s = 0.0;
         self.direction = Direction::Still;
@@ -325,17 +232,6 @@ impl Motion {
     }
 
     /// The band this frame deserves.
-    ///
-    /// `offset` and `viewport` are the scroller's; `overscan_px` is the padding
-    /// the mount policy already applies, which the band never goes under — a
-    /// band narrower than what is already mounted would blank items whose DOM
-    /// is paid for; `pipeline` is the caller's measured throughput.
-    ///
-    /// Engagement needs both conditions behind [`Pipeline::enter_px_s`]: a
-    /// genuinely quick scroll, and one arriving faster than the pipeline can
-    /// fill. [`Pipeline::exit_px_s`] is the same latch, lower, so a fling dying
-    /// away does not strobe the placeholder mode; [`Motion::settle`] ends the
-    /// state outright.
     pub fn band(
         &mut self,
         offset: f64,
@@ -375,8 +271,7 @@ impl Motion {
         let trail = (self.config.trail_screens * screens)
             .max(overscan)
             .min(lead);
-        // The lead goes where the reader is going; at Still it has to cover
-        // both ends, because a stalled fling may resume either way.
+        // The lead goes where the reader is going; Still covers both ends.
         let (before, after) = match self.direction {
             Direction::Forward => (trail, lead),
             Direction::Backward => (lead, trail),
@@ -395,13 +290,7 @@ impl Motion {
         }
     }
 
-    /// The index the viewport is expected to reach by the time one fill
-    /// finishes, so a prefetch is aimed at a place rather than at a direction.
-    ///
-    /// The partial item is rounded *toward* the reader (`trunc`), which is the
-    /// conservative choice: a prefetch that arrives early is free, one that
-    /// arrives late is a blank. Never below zero; the caller clamps to its own
-    /// item count.
+    /// The index the viewport reaches by the time one fill finishes.
     pub fn landing_index(&self, index: usize, pitch: f64, fill_ms: f64) -> usize {
         let pitch = pitch.max(1.0);
         let moved = self.velocity_px_s * (fill_ms.max(0.0) / 1_000.0);
@@ -409,10 +298,7 @@ impl Motion {
         if landed <= 0.0 { 0 } else { landed as usize }
     }
 
-    /// The urgency of one mounted index. `visible` is the window overlapping
-    /// the viewport; `band` is the window that must carry content, or `None`
-    /// when the whole mount window does — the ordinary-speed case, where every
-    /// item is [`FillPriority::Visible`] because nothing may be a placeholder.
+    /// The urgency of one mounted index.
     pub fn priority(&self, index: usize, visible: Window, band: Option<Window>) -> FillPriority {
         let Some(band) = band else {
             return FillPriority::Visible;
@@ -438,17 +324,14 @@ impl Motion {
                     FillPriority::Behind
                 }
             }
-            // Engaged with no direction: the reader may go either way, so
-            // nothing outranks anything else inside the band.
+            // Engaged with no direction: nothing outranks anything else.
             Direction::Still => FillPriority::Behind,
         }
     }
 }
 
-/// `1 - e^(-x)` for `x >= 0`, evaluated without `libm` so the kernel stays
-/// `no_std`: `e^x = 2^n * e^r` with `r` reduced to `[-ln2/2, ln2/2]` and a
-/// factorial series there, which converges to better than one part in 10^9 in
-/// nine terms. `x >= 20` is 1.0 to double precision anyway.
+/// `1 - e^(-x)` for `x >= 0`, without `libm` so the kernel stays
+/// `no_std`.
 fn one_minus_exp_neg(x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
@@ -458,8 +341,7 @@ fn one_minus_exp_neg(x: f64) -> f64 {
     }
     let n = (x * LOG2_E + 0.5) as i32;
     let r = f64::from(n) * LN_2 - x;
-    // e^r = sum r^k / k!, and the `k = 0` term is exactly the `1` that
-    // `1 - e^-x` takes back off, so only k >= 1 is accumulated.
+    // e^r = sum r^k / k!; the k = 0 term is taken back
     let mut term = 1.0;
     let mut sum = 0.0;
     let mut k = 1;
@@ -468,8 +350,7 @@ fn one_minus_exp_neg(x: f64) -> f64 {
         sum += term;
         k += 1;
     }
-    // e^-x = 2^-n * e^r, so 1 - e^-x = 1 - 2^-n - 2^-n * sum. Scaling by a
-    // power of two is an exponent edit, not a multiplication.
+    // e^-x = 2^-n * e^r: scaling by a power of two edits the exponent.
     let scale = f64::from_bits((1_023 - n as u64) << 52);
     (1.0 - scale) - scale * sum
 }
@@ -480,18 +361,13 @@ mod tests {
 
     #[test]
     fn the_exp_helper_matches_the_definition() {
-        // Reference values computed once, so the test needs no `std` float
-        // intrinsics in a `no_std` build. `x = n * ln 2` reduces to `r = 0`,
-        // where the result is exact by construction: 1 - 2^-n.
+        // Reference values, so the test needs no float intrinsics.
         assert_eq!(one_minus_exp_neg(0.0), 0.0);
         assert_eq!(one_minus_exp_neg(25.0), 1.0);
         assert_eq!(one_minus_exp_neg(LN_2), 0.5);
         assert_eq!(one_minus_exp_neg(2.0 * LN_2), 0.75);
         assert_eq!(one_minus_exp_neg(3.0 * LN_2), 0.875);
-        // And the in-between samples against the definition itself: `e^-x` from
-        // its series, evaluated here so the test shares no code with the
-        // reduction under test. Up to x = 7 the raw series is still exact to
-        // better than 1e-12 in f64, and 1e-9 is the bar the blend cares about.
+        // And the in-between samples against the definition itself.
         for x in [0.05, 0.4, 1.0, 3.0, 5.0, 7.0] {
             let mut term = 1.0;
             let mut sum = 1.0;
@@ -508,5 +384,3 @@ mod tests {
         }
     }
 }
-
-// only the changed file was rewritten

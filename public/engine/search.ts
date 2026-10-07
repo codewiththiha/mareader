@@ -1,11 +1,5 @@
-// Search support, engine side. Matching no longer happens here: the Rust
-// index (pdf-core's SearchIndex, fed by `extractPageText`) owns the query.
-// This module only extracts one page's text runs for the index builder (the
-// only JS work a search still does), publishes the active query so the DOM
-// text layers repaint their highlight boxes (`setSearchContext`), and
-// toggles the active-match emphasis or clears highlights (`setActiveMatch`,
-// `clearHighlights`) — painting itself happens on the text-layer spans in
-// highlights.ts.
+// Search, engine side: text extraction for the Rust index and highlight
+// toggles.
 
 import type { TextItem } from "./types";
 import { fail, failFrom } from "./errors";
@@ -24,14 +18,10 @@ function itemRect(item: TextItem, pageH: number): { x: number; y: number; w: num
   };
 }
 
-/** One text run extracted from a page: the string and its bounding rect in
- *  scale-1 CSS px, relative to the page's top-left. */
+// One text run: the string and its rect in scale-1 CSS px.
 type ExtractedPageItem = { str: string; x: number; y: number; w: number; h: number };
 
-/** Extract `page`'s text runs, normalised to scale-1 CSS px relative to the
- *  page's top-left. `{ok:true}` with no items is a valid empty page; an
- *  unreadable page is `{ok:false, error}` — the Rust builder skips it, the
- *  same way the old streaming search did. */
+// Extract `page`'s text runs, normalised to scale-1 CSS px.
 export async function extractPageText(
   s: EngineSession,
   page: number,
@@ -41,11 +31,7 @@ export async function extractPageText(
 > {
   const doc = s.pdf;
   if (!doc || page < 1) return fail("no_document", "No document open");
-  // A close can land while an extraction is in flight. The awaits below go
-  // to the pdf.js worker — a worker destroy() is killing — so they race the
-  // document-gone signal and fail fast instead of hanging on a promise the
-  // dead worker never settles (which would hold the search-build gauge up
-  // forever and block the disposal baseline).
+  // A close can land mid-extraction: the awaits race document-gone.
   const dying = s.documentGoneSignal();
   try {
     const pg = await Promise.race([
@@ -79,9 +65,7 @@ export async function extractPageText(
   }
 }
 
-/** Publish the active query so mounted text layers repaint their highlight
- *  boxes immediately (they paint from the DOM spans, not from the match
- *  list, so the index result alone would leave the page unmarked). */
+// Publish the active query so text layers repaint.
 export function setSearchContext(s: EngineSession, query: string): void {
   s.setSearchQuery(String(query || "").toLowerCase().trim());
   refreshHighlights(s);

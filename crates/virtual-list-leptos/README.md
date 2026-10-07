@@ -33,11 +33,9 @@ line that decides whether the virtualizer kills on eviction or caches:
 
 Both bridges are bounded by `max` ITEMS (for a grid, cells — state the bound
 in cells and the row count follows from the column count), oldest-first, and
-re-entering the window drops the bridge on the spot. The handle exposes the two ends of the same
-mechanism directly: `kill_retained()` ends every bridge whose clock ran out
-(what the armed wakers do anyway), and `remove_retained_now()` ends every
-bridge THIS tick — for a caller that knows the change the bridge was bought
-for has landed.
+re-entering the window drops the bridge on the spot. The handle exposes
+`remove_retained_now()`, which ends every bridge THIS tick — for a caller that
+knows the change the bridge was bought for has landed.
 
 ## Continuous-list sketch
 
@@ -82,5 +80,3 @@ Use `VirtualizerOptions::grid(...)` and render `v.rows()` instead of `v.items()`
 ## License
 
 MIT
-
-<!-- // only the changed file was rewritten -->

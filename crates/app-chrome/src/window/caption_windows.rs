@@ -1,8 +1,4 @@
-//! The square, full-height Windows caption cluster. Sizing follows the
-//! platform convention, not the app's icon buttons: 46px-wide full-height hit
-//! targets flush to the window edge, no rounding, no borders, hover-only
-//! backgrounds. The style lives in `styles/components/title_bar.css` under
-//! `.win-btn`.
+//! The square, full-height Windows caption cluster.
 
 use leptos::prelude::*;
 

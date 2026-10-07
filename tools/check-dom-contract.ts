@@ -1,20 +1,4 @@
-// DOM-contract sync check — the same cheap insurance as `check-events.ts`,
-// for the other half of the boundary between the app and the engine.
-// The app builds the page hosts; the engine under `public/engine/` paints
-// into them. They never call each other, so everything they share is a name
-// in the DOM: attributes, attribute values, class names and the shape of the
-// element ids, spelled in crates/app-state/src/dom_contract.rs (the names Rust uses as
-// values) and public/engine/dom-contract.ts (the names the engine reads). A
-// disagreement is not an error on either side — it is a `closest` that
-// returns null, a missing pill or a blank page, with a green build and a
-// clean console. Two attribute NAMES (`data-host-page`, `data-ai-popover`)
-// cross as view-macro literals rather than constants; the check reads them
-// out of the Rust source and requires some host to write them. Id shapes are
-// read out of the builders in crates/reader-runtime/src/components/viewer/page_host.rs (the
-// format! templates and the suffix swap) rather than compared against a
-// copy — a prefix on one side only is a rename half done.
-// TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-dom-contract.js`.
+// DOM-contract sync check: names the engine queries must be the app's.
 
 import { read, walk } from "./repo.js";
 
@@ -71,13 +55,10 @@ const problems: string[] = [];
 const RUST_TEXT = new Map<string, string>();
 for (const file of RUST_SOURCES) RUST_TEXT.set(file, read(file));
 
-// 1. Every name the engine declares must be the app's, spelled the same way.
-// The engine is the side that queries, so it must not invent; a name the app
-// declares but the engine never reads is fine — the app owns the vocabulary.
+// The engine may not invent names; the app owns the vocabulary.
 
 for (const [name, value] of engine) {
-  // An id fragment is not spelled anywhere in Rust either: it is assembled by a
-  // `format!`, and section 2 reads it out of the builder that assembles it.
+  // An id fragment is assembled by `format!`; section 2 reads the builder.
   if (kindOf(name) === "prefix" || kindOf(name) === "suffix") continue;
   const declared = app.get(name);
   if (declared !== undefined) {
@@ -86,9 +67,7 @@ for (const [name, value] of engine) {
     }
     continue;
   }
-  // Not a Rust constant, so it can only be a view-macro literal: require
-  // that some host actually writes it — a name nothing writes is a query
-  // that always comes back empty.
+  // A view-macro literal must be written by some host, or the query is empty.
   const written =
     kindOf(name) === "attr"
       ? [...RUST_TEXT.values()].some((text) => text.includes(`${value}=`))
@@ -101,8 +80,7 @@ for (const [name, value] of engine) {
   }
 }
 
-// The other direction: a Rust constant nothing references is a name written
-// down and then forgotten — how the two tables start to disagree.
+// A Rust constant nothing references is how the two tables start to disagree.
 for (const name of app.keys()) {
   const used = RUST_SOURCES.some(
     (file) => file !== APP_TABLE && new RegExp(`\\b${name}\\b`).test(RUST_TEXT.get(file) ?? ""),
@@ -302,8 +280,7 @@ const tableText = ENGINE_TEXT.get(ENGINE_TABLE) ?? "";
 for (const name of engine.keys()) {
   const own = new RegExp(`\\b${name}\\b`, "g");
   const declaredHere = (tableText.match(own) ?? []).length;
-  // One occurrence is the declaration itself; more means the table's own
-  // selectors and parsers are built from it, which counts as a use.
+  // One occurrence is the declaration; more means the table's own code uses it.
   if (declaredHere > 1) continue;
   const elsewhere = ENGINE_SOURCES.some(
     (file) => file !== ENGINE_TABLE && new RegExp(`\\b${name}\\b`).test(ENGINE_TEXT.get(file) ?? ""),

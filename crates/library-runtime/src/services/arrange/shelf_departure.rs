@@ -1,6 +1,4 @@
-//! The shelf's departure: a hand taking a read-at-place shelf off the seat its folder's tree names.
-//! Everything here answers that one gesture — which shelves owe it, what the copies cost, and the
-//! landing once the reader has bought them (`crate::services::arrange`).
+//! The shelf's departure: a folder shelf taken off its seat by hand.
 
 use leptos::prelude::*;
 
@@ -15,8 +13,7 @@ use super::departure::depart;
 use super::shelves::{nest_shelf, reorder_shelves_to_anchor};
 use crate::services::reveal;
 
-/// A value rather than a boolean: "the drop was after" and "insert after
-/// the anchor" are one fact said at three call sites.
+/// One fact said at three call sites: "the drop was after".
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SeamSide {
     Before,
@@ -30,24 +27,20 @@ pub struct ShelfSeam {
     pub side: SeamSide,
 }
 
-/// Where the gesture's shelves were going: a shelf the reader named, or the root, which is the level
-/// that is not a shelf.
+/// Where the gesture's shelves were going: a named shelf, or the root.
 #[derive(Clone, PartialEq)]
 pub(super) enum ReturnPath {
-    /// A displaced root shelf whose ground a family tree covers at a free rung goes home by the fold,
-    /// which hangs it on the rung its directory names and folds the folder that was reading it into
-    /// the tree's ledger.
+    /// A displaced root shelf with a family tree over its ground folds back.
     Reclaim {
         tree: String,
         gone: String,
         rel: String,
     },
-    /// Any other off-seat rung goes home by the reseat: back under the shelf its directory names.
+    /// Any other off-seat rung reseats under its directory's shelf.
     Reseat { seat: Option<String> },
 }
 
-/// The seam's anchor answers with the level that holds IT, a filing answers with its target, and
-/// the root is the level that is not a shelf.
+/// The seam answers with the level that holds the anchor; a filing, its target.
 pub(super) fn landing_level(
     shelves: &[Shelf],
     target: &Option<String>,
@@ -59,10 +52,7 @@ pub(super) fn landing_level(
     }
 }
 
-/// A rung of an in-place tree whose root covers the mover's ground directory — the mover's
-/// own tree included, whose rungs are its first family. A read-at-place shelf lives on the seat
-/// its directory stands on, so a move inside the tree it belongs to can answer with the seat
-/// instead of a copy.
+/// A rung of an in-place tree over the mover's ground: the seat, not a copy.
 pub(super) fn target_is_family(
     shelves: &[Shelf],
     folders: &[WatchedFolder],
@@ -85,10 +75,7 @@ pub(super) fn target_is_family(
     })
 }
 
-/// Two shapes, and which one a shelf owes is a fact about where its folder stands. The
-/// folder's ROOT shelf whose ground a family tree covers at a free rung goes home by the fold:
-/// `reclaim_rung`, which hangs the shelf on the rung its directory names and folds the folder
-/// that was reading it into the tree's ledger.
+/// Which shape a shelf owes is a fact about where its folder stands.
 pub(super) fn return_path(
     shelves: &[Shelf],
     folders: &[WatchedFolder],
@@ -117,9 +104,7 @@ pub(super) fn return_path(
     (one.parent != seat).then_some(ReturnPath::Reseat { seat })
 }
 
-/// The subtree is every shelf below the one the hand named — it rides with the copy the way a
-/// directory's tree rides with the directory — and the rungs are the folder's OWN shelves
-/// inside that subtree, which go free of the folder's map.
+/// The shelf below the hand and its rungs; the rungs go free of the map.
 pub(super) fn departing_sets(
     shelves: &[Shelf],
     folder_id: &str,
@@ -142,9 +127,7 @@ pub(super) fn departing_sets(
     (subtree, rungs)
 }
 
-/// The linked books the folder placed whose own rung is one of the departing ones, and who are
-/// members of the departing subtree. The two conditions each rule out a real shape: a book
-/// whose rung stands OUTSIDE the subtree, and a book the folder placed but no longer holds.
+/// The folder's linked books inside the departing subtree, by their rungs.
 pub(super) fn departing_book_ids(
     books: &[Row],
     shelves: &[Shelf],
@@ -169,9 +152,7 @@ pub(super) fn departing_book_ids(
         .collect()
 }
 
-/// One spelling for the three hand-moves, because a drag, a bulk filing and a sibling reorder
-/// are one rule and one question. The rule itself is [`shelf::departing_moves`]' — pure, and
-/// host-tested.
+/// One spelling for the three hand-moves; [`shelf::departing_moves`] rules.
 pub(super) fn screen_shelf_moves(
     state: crate::context::LibraryContext,
     ids: &[String],
@@ -187,9 +168,7 @@ pub(super) fn screen_shelf_moves(
         .with_untracked(|folders| shelf::departing_moves(&shelves, folders, ids, parent))
 }
 
-/// No copies: every mover that has a way home takes it, and a mover that has none stays where
-/// the tree put it. The fold is the import's own `reclaim_rung`, and the reseat rides the very
-/// `nest_shelf` the gesture did.
+/// No copies: every mover with a way home takes it.
 pub(super) fn take_them_home(
     state: crate::context::LibraryContext,
     returns: &[(String, ReturnPath)],
@@ -213,9 +192,7 @@ pub(super) fn take_them_home(
     }
 }
 
-/// The landing the reader bought: the copies are made and the departing rungs are converted BEFORE
-/// any shelf write happens, and the copies run in a spawned task — a shelf of fifty books is fifty
-/// files through the store.
+/// The landing the reader bought: copies first, before any shelf write.
 pub(super) async fn take_shelves_out(
     state: crate::context::LibraryContext,
     departing: Vec<String>,
@@ -251,8 +228,7 @@ pub(super) async fn take_shelves_out(
             let Some(folder) = folders.iter().find(|f| &f.id == folder_id) else {
                 continue;
             };
-            // The rule is asked again, because the sheet was up while the library went on living:
-            // a shelf that no longer owes a departure is skipped silently.
+            // Asked again: the sheet was up while the library lived.
             if !shelf::departs_on_move(&shelves, &folders, id, level.as_deref()) {
                 continue;
             }
@@ -278,9 +254,7 @@ pub(super) async fn take_shelves_out(
         return;
     }
 
-    // Bytes into the store, a moved-out log into every folder that placed the book, the name
-    // pinned into the title, and one cover ask for the batch. What is left here is the shelf's own
-    // bookkeeping.
+    // Bytes into the store, a log per folder, a pinned name, one cover ask.
     let mut landed: Vec<String> = Vec::new();
     for dep in &departures {
         let copied = depart(state, &dep.books).await;
@@ -304,8 +278,7 @@ pub(super) async fn take_shelves_out(
         .filter(|dep| landed.iter().any(|id| id == &dep.id))
         .collect();
 
-    // The rungs leave the tree with the copy they paid for, the other folders' shelves that rode
-    // along take the hand's mark, and the folder lets the departed zone go.
+    // The rungs leave with the copy they paid for; the rest take the mark.
     let mut promised: std::collections::HashSet<String> =
         state.library.shelves.with_untracked(|shelves| {
             shelf::children_of(shelves, level.as_deref())

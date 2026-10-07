@@ -1,24 +1,16 @@
-//! The paper pipeline's frame parser. The colour DECISIONS live in
-//! `crate::backdrop` (each session's state machine); the bridge calls that
-//! carry frames and papers are [`crate::session::PdfSession`]'s. This module
-//! only turns the engine's frame payloads into [`PaperFrame`]s.
-
+//! The paper pipeline's frame parser; colours live in `crate::backdrop`.
 use wasm_bindgen::JsValue;
 
 use super::{EngineError, KEY_DATA, KEY_HEIGHT, KEY_OK, KEY_PAGE, KEY_WIDTH, reflect_get, resolve};
 
-/// A raw page frame handed over by the engine: the raster downscaled to a
-/// ≤96px long edge, with its pixels — the input every colour decision in the
-/// `pdf-paper` crate runs on.
+/// A raw page frame: the raster downscaled to a ≤96px long edge.
 pub use crate::types::PaperFrame;
 
-/// The shape `resolve` deserialises a frameless `{ok:false, error}` into:
-/// nothing but the envelope, which `resolve` itself consumes.
+/// The shape a frameless error envelope deserialises into.
 #[derive(Debug, serde::Deserialize)]
 struct Empty {}
 
-/// Parse a `{ok, page, width, height, data}` frame payload. The pixels come
-/// back as a typed array, not JSON, so the fields are read by hand.
+/// Parse a `{ok, page, width, height, data}` frame payload.
 pub(crate) fn parse_frame(value: &JsValue) -> Option<PaperFrame> {
     let ok = reflect_get(value, &KEY_OK)
         .ok()
@@ -47,8 +39,7 @@ pub(crate) fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFr
     if let Some(frame) = parse_frame(&value) {
         return Ok(Some(frame));
     }
-    // `{ok:true}` with no frame is the engine's "no answer for this page" —
-    // a skipped page, not a failure to communicate.
+    // `{ok:true}` with no frame is "no answer for this page".
     let ok = reflect_get(&value, &KEY_OK)
         .ok()
         .and_then(|v| v.as_bool())
@@ -56,10 +47,7 @@ pub(crate) fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFr
     if ok {
         return Ok(None);
     }
-    // `{ok:false, error}` — surface it through the shared error path.
-    // `resolve` errs whenever the envelope's `ok` is false, which the check
-    // above has just established, so the success arm never runs and its
-    // payload is discarded.
+    // `{ok:false, error}`: surface it through the shared error path.
     resolve::<Empty>(value, what)?;
     Ok(None)
 }

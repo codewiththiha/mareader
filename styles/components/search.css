@@ -1,31 +1,13 @@
-/* Search hits — one visual language, two painters. A PDF's boxes are
-   appended by the engine into the page's text layer
-   (public/engine/highlights.ts); a reflowable row paints its own
-   (crates/reader-runtime/src/components/formats/reflow/highlight.rs) with the same algorithm —
-   Range per occurrence, one box per client rect. Both emit the same
-   markup (.highlight, .is-active on the stepped-to one, data-match with
-   the ordinal), which is why both are styled here and nowhere else: every
-   rule lists the two hosts, .pdf-page .textLayer and .tx-hits.
+/* Search hits: one visual language, two painters. */
 
-   The PDF half keeps its three-class shape on purpose: the vendored
-   pdf_viewer.css (linked ahead of this sheet) styles .textLayer .highlight
-   for pdf.js's own find controller, and the engine's boxes match that rule
-   too — out-specify it rather than rely on link order. */
-
-/* The reflowable half's layer: covers its row, never intercepts a click,
-   paints above the type WITHOUT becoming a stacking context — a z-index
-   here would isolate the boxes, and their mix-blend-mode needs to reach
-   the glyphs underneath. The PDF half needs no such rule: the engine
-   appends into an already-positioned text layer. */
+/* The reflowable half's layer: above the type, never a stacking context. */
 .tx-hits {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-/* Every hit: the accent laid OVER the glyphs, not replacing them. The box
-   is a sibling of the text, so it can cover span boundaries (a wrapped
-   hit, a styled run) with one rect per line fragment. */
+/* Every hit: the accent laid over the glyphs, one rect per line fragment. */
 .pdf-page .textLayer .highlight,
 .tx-hits .highlight {
   position: absolute;
@@ -36,10 +18,7 @@
   user-select: none;
 }
 
-/* The current match switches HUE rather than deepening the accent: a
-   stronger blue among blues is hard to pick out on a page holding dozens
-   of hits. The ring adds a shape cue for anyone who cannot rely on hue.
-   --match-current lives in tokens.css. */
+/* The current match switches hue rather than deepening the accent. */
 .pdf-page .textLayer .highlight.is-active,
 .tx-hits .highlight.is-active {
   background: color-mix(in srgb, var(--match-current) 58%, transparent);
@@ -47,24 +26,20 @@
   border-radius: 2.5px;
 }
 
-/* A box must never join a text selection: a decorative div inside a
-   selectable container would paint its own ::selection rectangle. */
+/* A box must never join a text selection. */
 .pdf-page .textLayer .highlight::selection,
 .tx-hits .highlight::selection {
   background: transparent;
 }
 
-/* Multiply darkens light paper correctly but drives the highlight toward
-   black on inverted dark surfaces; screen keeps it a visible glow. */
+/* Multiply darkens light paper; screen keeps dark surfaces a glow. */
 :root.dark .pdf-page .textLayer .highlight,
 :root.dark .tx-hits .highlight {
   mix-blend-mode: screen;
   background: color-mix(in srgb, var(--color-accent) 26%, transparent);
 }
 
-/* Re-state the current match for dark themes: the rule above is equally
-   specific and comes later, so without this it would repaint the active
-   hit in the ordinary accent. */
+/* Re-state the current match for dark themes. */
 :root.dark .pdf-page .textLayer .highlight.is-active,
 :root.dark .tx-hits .highlight.is-active {
   background: color-mix(in srgb, var(--match-current) 46%, transparent);

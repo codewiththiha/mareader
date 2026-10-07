@@ -69,8 +69,9 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 1,021 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
-  layer, and six scripts that keep facts written down twice from drifting.
+- 1,224 Rust tests across the workspace (the count the CI test lane reports), plus a
+  stub-vm smoke suite for the TypeScript layer, and six scripts that keep facts written
+  down twice from drifting.
 
 ---
 
@@ -808,14 +809,15 @@ stays visible.
 |  Tauri v2 shell (Rust)                                       |
 |  native window, file dialog, asset protocol, fullscreen      |
 +-------------------------------------------------------------+
-|  Shell (Leptos 0.8 CSR, src/) — never reloads                |
-|  title bar, sidebar, settings, menus, layout; the library    |
-|  (crates/library-runtime) and the workspace host             |
-|  (crates/reader-runtime) mount in its own document           |
+|  Shell page (Leptos 0.8 CSR, src/) — mounted once, never     |
+|  reloaded: title bar, sidebar, settings, menus, the import   |
+|  drop, and the slots the runtime frames are placed in        |
 +-------------------------------------------------------------+
-|  Pane frames (iframes, one WASM realm per pane)              |
-|  /pdf.html     a PDF pane: strips, pages, zoom, gestures     |
-|  /reflow.html  a Markdown or text pane                       |
+|  Runtime frames (shell-owned iframes, one WASM realm each)   |
+|  /library.html  the library: shelves, imports, covers        |
+|  /reader.html   the disposable Reader host, which places:    |
+|    /pdf.html     a PDF pane: strips, pages, zoom, gestures   |
+|    /reflow.html  a Markdown or text pane                     |
 +-------------------------------------------------------------+
 |  Engine (JavaScript, loaded in each PDF pane frame)          |
 |  window.PDFReader (public/pdfEngine.js): render lanes,       |
@@ -836,12 +838,12 @@ its measurements are in
 `docs/runtime-split.md` and `docs/frame-lifecycle-alternatives.md`. The shell
 page itself loads no engine code and no pdf.js.
 
-Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`,
-`md-core`,
-`ui-geom` and `ai-core` — no DOM and no Leptos — so the view-mode arithmetic, the zoom
-ladder, filename rules, colour conversion, the search index, text typography and pagination,
-settings migration, the floating-panel placement and the AI word-card's geometry and spring
-are all unit-testable on the host.
+Pure logic lives in `reader-core`, `library-core`, `pdf-core`, `reflow-core`,
+`txt-core`, `md-core`, `ui-geom`, `ai-core` and `runtime-contract` — no DOM and no Leptos — so
+the view-mode arithmetic, the zoom ladder, filename rules, colour conversion, the search index,
+text typography and pagination, the library's scan and merge rules, the wire records an edge
+shares, the floating-panel placement and the AI word-card's geometry and spring are all
+unit-testable on the host.
 The layering is a fan with a rule: `reader-core` knows no format at all, the format cores
 depend on it, and no core depends on another format's core — which is why adding a format is
 a new crate plus a new directory, not an edit to the ones already there. `virtual-list` is the
@@ -859,77 +861,45 @@ strips, so view modes, zoom and navigation are format-agnostic.
 ```
 src/
   main.rs                 mount entry point
-  app/                    bootstrap, routes, the shell that hosts the sidebar
-  components/
-    primitives/           button, switch, popover, floating positioning,
-                          motion and interaction hooks (the long-press, the
-                          pointer-drag stream, and the card wrapper that
-                          decides between a tap, a hold and a drag; the
-                          chrome's own primitives — icon, icon button,
-                          tooltip, the generic DOM/timer hooks — live in
-                          app-chrome)
-    shell/                the unified application shell: the ShellController
-                          (one source of truth for layout), the titlebar
-                          family, the sidebar rail family
-    menus/                app menu, appearance menu, reader menu
-    settings/             the settings modal and its tabs (layout, theme,
-                          animations, fonts); the theme tab composes sections
-                          it does not own — the AI's from ai/, the raster ones
-                          from its own paper module
-    viewer/               the SHAPE of reading: the mode dispatch, the four
-                          layouts (single, two-page, continuous, horizontal),
-                          the shells that own the scroll container,
-                          page_host — the one seam that picks a format —
-                          refresh, the fingerprints an overlay repaints on,
-                          and controls/ (bottom bar, overlay scrollbar, page
-                          indicator, page navigation)
-    formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
-                          reflow/ (A4 page host, continuous stream, strip,
-                          the spot walk that finds a block's
-                          characters in the DOM, and the search-hit layer that
-                          paints over them), txt/ and md/ block views, and
-                          block_render, the renderer dispatch
-    search/               floating search bar and result list
-    ai/                   selection pill, word card, gloss popover, the anchor
-                          resolvers that place a mark's stroke, and the AI
-                          appearance section of the settings modal
-    app_overlays/         drag-and-drop feedback, toast host
-  effects/
-    app/                  window title, shortcuts, persistence wiring,
-                          drag-and-drop admission, and the library's
-                          app-lifetime wiring (startup measurement, focus
-                          rescan, the progress sink)
-    reader/               fit and zoom follow, page tracking
-    appearance/           the appearance-to-CSS bridge (shared, raster,
-                          reflow)
-  features/
-    library/              the library page: its three-slot bar (breadcrumb,
-                          search, view menu), the grid and the list, book cards
-                          and the folder cards a shelf nests in, the two ways in
-                          (add card, empty state) and the sheet they open, the
-                          import dock, and the drag both views share (the
-                          session and its sink, the targets, the table that
-                          decides what a drop means, and the layer that
-                          draws it)
-    reader/               the reader page and its two virtualizers
-  state/                  the reactive state tree: app (chrome + UI), reader
-                          (document, viewer, zoom, search, gloss, AI selection),
-                          library
-  services/               the document open pipeline, the AI chunk bridge, and
-                          the library's filesystem wire (the shell's invoke
-                          wrappers and progress bridge, the import orchestration
-                          that runs the ledger, and the moves a reader makes by
-                          hand)
-  storage/                loads and saves over localStorage (settings,
-                          library, covers, gloss marks)
-  zoom/                   the zoom pipeline: posted commands, target
-                          resolution, the tween, and the actuator that owns
-                          the one relayout path over both strips
-  dom_contract.rs         the attribute, class and element-id names the engine
-                          reads and the app writes — one table, both sides
-  events.rs               the window-event names the engine dispatches and the
-                          app listens for
+  app/                    the Shell: bootstrap and the boot screen, the frame
+                          manager and its routes, the cover-bake page, the
+                          diagnostics surface
+  effects/app/            the Shell's own paints: theme, motion, typography
+  services/               the Shell's wires: launch parsing, persistence, the
+                          OS import drop
+  state.rs, effects.rs, diagnostics.rs
+                          the Shell's chrome/UI signals and the counters it
+                          reports
 crates/
+  runtime-contract/       the wire types and the `ShellApi` every runtime edge
+                          shares with the Shell (boundary, covers, protocol)
+  frame-transport/        the frame boot handshake and the port wrapper a
+                          runtime frame and the Shell meet through
+  storage/                the durable blobs over localStorage (settings,
+                          library, covers, gloss)
+  app-state/              the chrome/UI signals both sides of an edge read
+                          (`ChromeState`, `UiState`, `ReaderSurface`), plus
+                          the heap probe behind the `[mem]` lines
+  app-ui/                 the components the runtimes mount: primitives,
+                          overlays, menus, the ShellController and the shell
+                          chrome
+  app-chrome/             format-agnostic window chrome: the platform probe,
+                          the window commands, the caption cluster (Windows
+                          squares, GNOME circles), the native macOS traffic
+                          lights, the generic titlebar shell, the floating
+                          surface adapters (placement glue, shared dismissal),
+                          the icons and the DOM/timer hooks
+  library-runtime/        the library artifact: the shelf's features (bar,
+                          grid, list, sheets, drag), its services (import,
+                          arrange, conflict, covers, duplicate, reveal, open)
+                          and its state
+  reader-runtime/         the reader artifact: `runtime.rs` (the lifecycle
+                          owner), `host/` (workspace tree, panes, focus, drag
+                          and drop, grab, the chrome placement), `pane/` (one
+                          document: its session, dom and engine handle),
+                          `components/` (viewer, formats, settings, ai,
+                          search, titlebar and rail), `services/` (document
+                          open/close, the AI bridge), `state/`, `zoom/`
   ai-core/                the format-agnostic AI core: the word-explanation
                           wire types (WordInfo, AiError, the chunk envelope),
                           the gloss card's geometry (stepping `ui-geom`'s
@@ -969,7 +939,7 @@ crates/
                           area, dominant-colour detection (whole page or edge
                           margins), the per-page palette
   virtual-list/           generic windowing math: the prefix-sum strip,
-                          windows, budgets, anchor correction
+                          windows, budgets, anchor correction, the motion model
   virtual-list-leptos/    the Leptos adapter: virtualizer, rows, retention
   ui-geom/                pure geometry for the surfaces that float: panel
                           placement and viewport clamping, plus the damped
@@ -977,13 +947,6 @@ crates/
   tauri-bridge/           the raw window.__TAURI__ externs (invoke, event
                           listen, window handle, dialog) + the has_tauri
                           probe, declared once for every frontend crate
-  app-chrome/             format-agnostic window chrome: the platform probe,
-                          the window commands, the caption cluster (Windows
-                          squares, GNOME circles), the native macOS traffic
-                          lights, the generic titlebar shell, the floating
-                          surface adapters (placement glue, shared dismissal),
-                          and the shared UI primitives + hooks those surfaces
-                          render with
 public/
   readerEngine.ts         the format-agnostic bundle (the selection tracker),
                           loaded first and needing no pdf.js
@@ -1015,11 +978,14 @@ tools/                    engine bundling, the engine smoke test, the
                           repo-reading prelude the checks share, and the
                           consistency checks CI runs (versions, formats, doc
                           paths, event names, the DOM contract, the chrome
-                          contracts)
+                          contracts, the host boundary, session ownership,
+                          the dependency gate, the Tauri build contract and
+                          relay, the runtime artifacts the build must ship)
 scripts/                  generated only: the compiled tools above. Gitignored,
                           and ignored wholesale by Trunk's watcher, so the hook
                           rewriting them on every build cannot retrigger one
-tests/                    source-level tests (e.g. the conditional-class lint)
+tests/                    the browser lifecycle suite and source-level tests
+                          (e.g. the conditional-class lint)
 release-notes/            one file per version; the release workflow publishes
                           the one matching the tag as the release body
 ```
@@ -1166,7 +1132,7 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-1,021 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+Most of the workspace's tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
 the animation loops share, and the virtual-list windowing invariants. On top of that, the
@@ -1175,8 +1141,8 @@ covering open, render, theme baking, scrub mode, thumbnails, search, teardown, a
 bundle's selection tracker — the last in a sandbox with no engine and no pdf.js in scope,
 which is the point of it.
 
-Six small scripts guard facts that are written down more than once, where nothing else
-would notice a drift: `check-versions.ts` (the app version in its four manifests, plus
+Six small TypeScript scripts guard facts that are written down more than once, where
+nothing else would notice a drift: `check-versions.ts` (the app version in its four manifests, plus
 the two lockfile entries cargo derives from them),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
@@ -1198,10 +1164,19 @@ but their compiled output, which is why git ignores the
 directory and Trunk's watcher does too: the hook rewrites those files on every build, and a
 watcher that notices would rebuild forever.
 
-One more fact is guarded, and not by a script: the test count this document states. The step
-that checks it runs in the test lane beside the run it counts, because that is the only lane
-with both halves — `cargo test`'s output, and a place to read the document. The web lane has
-the toolchain to compile a checker and no Rust to count with.
+Five more checks are hand-written `.mjs` files, run straight from `tools/` with no compile
+step and no shared prelude. Three ride the `Rust / lint` lane: `check-dependency-gate.mjs`
+(no crate in the workspace may reach an engine or a parser), `check-host-boundary.mjs` (the
+reader host talks to its panes only through its contract) and `check-session-ownership.mjs`
+(a pane's PDF work goes through the session that owns it). Two ride `Web / contracts`:
+`check-tauri-contract.mjs` (one canonical build, one dev URL, one port) and
+`check-tauri-relay.mjs` (what a frame's press may do, per platform). The twelfth,
+`check-runtime-artifacts.mjs`, is not a CI step at all — it rides `tools/build-dist.sh`, so
+every canonical build, locally and in the deep lane alike, fails on an artifact that is
+missing, empty or a stub.
+
+The test count above is read from the Rust test lane's own summary, not counted by a script:
+it is the one number here that no check can fail on, so it carries the lane it came from.
 
 ---
 
@@ -1247,5 +1222,3 @@ Released under the MIT License. See [LICENSE](LICENSE) for the full text.
 
 This project bundles [pdf.js](https://github.com/mozilla/pdf.js), which is distributed under the
 Apache License 2.0.
-
-<!-- // only the changed file was rewritten -->

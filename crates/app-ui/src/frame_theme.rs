@@ -1,29 +1,5 @@
-//! The runtime document's own theme applier.
-//!
-//! Every runtime lives in its own iframe, so it owns a separate `<html>`:
-//! the Shell's theme effect paints the SHELL document and nothing inside the
-//! frames. Before this module a runtime's appearance menu wrote its session
-//! settings and nothing painted them (only the slider scrub's per-frame
-//! preview reached the frame's root, which is why a tint drag looked alive
-//! and a preset click did not), and nothing persisted them either — so the
-//! look snapped back to whatever the runtime booted with.
-//!
-//! Each runtime installs this once per session, choosing its pipeline:
-//!
-//! - [`FramePipeline::Library`] paints the chrome layer only (shared + UI
-//!   tokens). The shelf has no raster and no reflowable page, so it never
-//!   writes `--canvas-*` / `--tx-*` and never addresses an engine.
-//! - [`FramePipeline::Reader`] and [`FramePipeline::Pane`] paint both document token sets (they are
-//!   disjoint, so whichever format is open finds its own), the reflowable
-//!   typography, and re-bakes the raster engine's pixels when — and only
-//!   when — the baked signature moved. A reflowable document repaints from
-//!   CSS alone; the engine hook is a no-op without a PDF session.
-//!
-//! Only route documents install global grain; a pane would composite it a
-//! second time under its Reader host's overlay.
-//!
-//! All publish the motion class and persist edits through the runtime's
-//! boundary (`persist`), debounced, never on the boot read.
+//! The runtime document's theme applier: each frame's own `<html>`,
+//! painted per pipeline.
 
 use std::time::Duration;
 
@@ -37,20 +13,13 @@ use crate::theme_paint::{
     set_paint_pipeline,
 };
 
-/// How long after the last settings edit the runtime hands the blob to the
-/// Shell for persistence.
+/// How long before the runtime hands the blob to the Shell.
 const PERSIST_MS: u64 = 350;
 
-/// The `<html>` class that freezes every CSS animation and transition (the
-/// Shell publishes the same class on its own document).
+/// The `<html>` class freezing every CSS animation and transition.
 const ANIMATIONS_OFF_CLASS: &str = "animations-off";
 
-/// The `<html>` class a runtime document wears while its frame is not on
-/// screen (incoming before reveal or retiring during disposal). A
-/// hidden frame is `visibility: hidden` in the Shell, which stops painting
-/// but not CSS animation: the animated grain's crawl would keep running its
-/// compositor work in a document nobody sees. `styles/noise.css` pauses the
-/// crawl under this class; the Shell's reveal message clears it.
+/// The `<html>` class a runtime wears while its frame is off screen.
 const FRAME_HIDDEN_CLASS: &str = "frame-hidden";
 
 /// The runtime's persistence callback, held for the session.
@@ -66,12 +35,7 @@ pub enum FramePipeline {
     Pane,
 }
 
-/// Install the document's theme, typography, motion and persistence effects
-/// in the current reactive owner (the runtime session).
-///
-/// `persist` hands an edited blob to the Shell; `reconcile` re-applies the
-/// session-local overrides (the reader's per-launch blend) to a blob adopted
-/// from storage.
+/// Install the document's theme, typography, motion and persistence.
 pub fn install_frame_theme(
     settings: RwSignal<Settings>,
     pipeline: FramePipeline,
@@ -94,8 +58,7 @@ pub fn install_frame_theme(
             Effect::new(move |_| paint_chrome_appearance(appearance.get()));
         }
         FramePipeline::Reader | FramePipeline::Pane => {
-            // What the engine's rasters are baked against. Texture, grain and
-            // the UI tokens are CSS layers over the canvas and never re-bake.
+            // What the engine's rasters are baked against.
             let baked = StoredValue::new(None::<(String, String, String)>);
             Effect::new(move |_| {
                 let a = appearance.get();
@@ -108,8 +71,7 @@ pub fn install_frame_theme(
                 if baked.try_get_value().flatten().as_ref() != Some(&signature) {
                     let first = baked.try_get_value().flatten().is_none();
                     baked.set_value(Some(signature));
-                    // The boot paint precedes any raster, so there is nothing
-                    // to re-bake yet; a scrub's exit performs its own bake.
+                    // The boot paint precedes any raster: nothing to re-bake.
                     if !first && !is_scrubbing() {
                         raster::refresh_theme();
                     }
@@ -139,10 +101,7 @@ pub fn install_frame_theme(
         }
     });
 
-    // Persistence: the runtime is the only writer of its own session's
-    // settings, so it is the one that must hand them on. Skips the first run
-    // (the boot read is already what storage holds) and debounces a drag into
-    // one write.
+    // Persistence: the runtime hands on its session's settings, debounced.
     let timer = StoredValue::new_local(None::<TimeoutHandle>);
     let pending = StoredValue::new_local(None::<Settings>);
     let booted = StoredValue::new_local(false);
@@ -176,12 +135,7 @@ pub fn install_frame_theme(
         let handle = set_timeout_with_handle(flush, Duration::from_millis(PERSIST_MS)).ok();
         let _ = timer.try_set_value(handle);
     });
-    // Cross-frame sync. All runtime documents share the Shell's origin and
-    // so its localStorage; the Shell's write of the active frame's edit fires
-    // `storage` in every OTHER document, the frames included. An incoming
-    // frame adopts it before reveal so its look matches the latest settings. The active frame receives the echo of its own edit:
-    // it is equal (skipped), or superseded by a newer local edit still
-    // waiting to persist (skipped — the local one wins and lands next).
+    // Cross-frame sync: an adopted blob is followed by the storage echo.
     use wasm_bindgen::JsCast;
     let reconcile: ReconcileFn = StoredValue::new_local(Box::new(reconcile));
     app_chrome::hooks::use_window_event::use_window_event("storage", move |ev| {
@@ -199,22 +153,16 @@ pub fn install_frame_theme(
         if settings.try_with_untracked(|cur| *cur == fresh) != Some(false) {
             return;
         }
-        // Adopted, not edited: the persistence effect must not bounce the
-        // blob straight back through the Shell.
+        // Adopted, not edited: the persistence effect must not bounce it back.
         adopting.set_value(true);
         settings.set(fresh);
     });
 
-    // Flush rather than drop: a change made in the last beat before the
-    // runtime was retired is still the user's change.
+    // Flush rather than drop: a late change is still the user's.
     on_cleanup(flush);
 }
 
-/// Tell this document whether its frame is on screen. Runtimes call it from
-/// their frame boot (`hidden` while incoming) and from the Shell's reveal
-/// message (`Launch` for the reader,
-/// `Refresh` for the shelf). Idempotent; a standalone document never calls
-/// it and never carries the class.
+/// Tell this document whether its frame is on screen. Idempotent.
 pub fn mark_frame_hidden(hidden: bool) {
     let Some(el) = document_element() else {
         return;
@@ -227,12 +175,7 @@ pub fn mark_frame_hidden(hidden: bool) {
     };
 }
 
-/// The film-grain layer, in THIS document. The noise classes and variables
-/// are painted onto the frame's own `<body>` (`paint_shared`), and the grain
-/// has to live next to them: an overlay in the Shell sat above the frames
-/// but followed the Shell's body classes, not the runtime's — so the
-/// animated grain never animated and a toggle made in a frame never reached
-/// it. Exactly one per route document.
+/// The film-grain layer, in THIS document.
 fn ensure_noise_overlay() {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;

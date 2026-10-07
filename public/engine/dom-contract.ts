@@ -1,17 +1,4 @@
-// The engine's half of the DOM contract. The app builds the page hosts; the
-// engine paints into them. They never call each other — they meet in the DOM
-// through attribute names and values, two class names, and the shape of
-// element ids. A name that disagrees is not an error anywhere: it is a
-// `closest` that returns null — a selection stops producing an "Explain"
-// pill, or a canvas stops finding its host — and the only symptom is a
-// reader that quietly does nothing.
-// The app's half is `crates/app-state/src/dom_contract.rs`. Two attribute NAMES
-// (`data-host-page`, `data-ai-popover`) cannot live there — a Leptos view
-// takes an attribute's name from the markup, only its value from an
-// expression — so the hosts write them as literals and the check reads those
-// out of the Rust source, as it reads the id shapes out of the builders'
-// format! strings. `tools/check-dom-contract.ts` fails CI when the halves
-// disagree. Nothing outside this file should spell any of these names.
+// The engine's half of the DOM contract: the names the app writes.
 
 /** Names the format family that painted a host: `pdf` or `reflow`. */
 export const HOST_ATTR = "data-reader-host";
@@ -19,36 +6,25 @@ export const HOST_ATTR = "data-reader-host";
 /** The 1-based page a host is showing. The id shape is only the fallback. */
 export const HOST_PAGE_ATTR = "data-host-page";
 
-/** On a rendered block of a reflowable document: its index in document order. */
+// On a rendered block: its index in document order.
 export const BLOCK_INDEX_ATTR = "data-block-index";
 
-/** On the AI pill's root: a press here is not a click that clears a selection. */
+// On the AI pill's root: a press here is not a clearing click.
 export const AI_POPOVER_ATTR = "data-ai-popover";
 
-// The engine session a thumbnail canvas belongs to (its sid). The theme
-// repaint walks the document's thumbnail canvases, and with two PDF panes in
-// one realm a canvas it finds may be another session's: it touches only the
-// ones carrying its own sid.
+// The session a thumbnail canvas belongs to (its sid).
 export const SESSION_ATTR = "data-engine-sid";
 
-/**
- * The engine only ever branches on `reflow`: a PDF host is the path it has
- * always taken, and the app decides what to do with a `host` value it does
- * not recognise. `HOST_PDF` is therefore the app's to declare
- * (`crates/app-state/src/dom_contract.rs`), and the check forbids spelling either value as a
- * literal all the same.
- */
+// The engine only branches on `reflow`; the app declares `HOST_PDF`.
 export const HOST_REFLOW = "reflow";
 
 /** The text layer inside a PDF host: the app builds it, the engine fills it. */
 export const TEXT_LAYER_CLASS = "textLayer";
 
-/** The still-bitmap overlay a zoom stretches while a re-render is on its way. */
+// The still-bitmap overlay a zoom stretches.
 export const PAGE_SNAPSHOT_CLASS = "page-snapshot";
 
-// `components/viewer/page_host.rs` builds these. Three of the four prefixes
-// number their pages from 1; the continuous strip indexes its window from 0,
-// and so do its ids — the one asymmetry a caller has to know.
+// Four id prefixes; the continuous strip indexes from 0, the rest from 1.
 
 export const ID_PREFIX_SINGLE = "sp";
 export const ID_PREFIX_SPREAD = "dp";
@@ -70,8 +46,7 @@ export const PAGE_SNAPSHOT_SELECTOR = `.${PAGE_SNAPSHOT_CLASS}`;
 /** A selection in the gap between two pages of the strip lands on a wrapper. */
 export const STREAM_WRAP_SELECTOR = `[id^='${ID_PREFIX_STREAM}-'][id$='${STREAM_WRAP_SUFFIX}']`;
 
-// Compiled once, not per call: `pageFromCanvasId` runs on the fallback path of
-// every unmounted-id resolution, which on a fast scroll is per row.
+// Compiled once: `pageFromCanvasId` runs per row on a fast scroll.
 
 const PREFIX_GROUP = [ID_PREFIX_SINGLE, ID_PREFIX_SPREAD, ID_PREFIX_HSCROLL, ID_PREFIX_STREAM].join(
   "|"
@@ -88,13 +63,13 @@ function pageOf(prefix: string | undefined, raw: string | undefined): number | n
   return prefix === ID_PREFIX_STREAM ? n + 1 : n;
 }
 
-/** The 1-based page a host id names, or null when the id is not a page host's. */
+// The 1-based page a host id names, or null.
 export function pageFromHostId(id: string): number | null {
   const m = HOST_PAGE_RE.exec(id);
   return m ? pageOf(m[1], m[2]) : null;
 }
 
-/** The 1-based page a canvas id names, or null when the id is not a canvas's. */
+// The 1-based page a canvas id names, or null.
 export function pageFromCanvasId(id: string): number | null {
   const m = CANVAS_PAGE_RE.exec(id);
   return m ? pageOf(m[1], m[2]) : null;

@@ -1,15 +1,5 @@
-//! The pane's own handle onto what it owns, carried in the pane's
-//! [`crate::context::ReaderContext`]: its identity, its lifecycle gate, its
-//! document session and its resource registry.
-//!
-//! The registry lives in the HOST's arena, not the pane's: a pane's reactive
-//! owner is cleaned up in the middle of its own disposal, and the registry
-//! must still answer the teardown after that (the virtualizers it hands to
-//! the tail were registered from inside the owner being cleaned). The
-//! pane's disposal tail releases the slot the moment its teardown finished
-//! ([`PaneHandle::release`]) — a pane closed inside a live session costs the
-//! host's arena nothing afterwards — and the host's owner sweeps whatever a
-//! tail never reached.
+//! The pane's handle onto its own state: identity, lifecycle, session,
+//! resources.
 
 use leptos::prelude::*;
 
@@ -19,9 +9,7 @@ use crate::pane::engine::PdfPane;
 use crate::pane::session::{FormatSession, Retiring};
 use crate::runtime::ReaderRuntime;
 
-/// Everything a pane owns that must die with it and is not a reactive
-/// node or its document session: the virtualizers (disposed BY the pane's
-/// dispose — the component cleanups are the inner safety net).
+/// Everything a pane owns that must die with it and is no reactive node.
 #[derive(Default)]
 pub(crate) struct PaneResources {
     virtualizers: Vec<virtual_list_leptos::Virtualizer>,
@@ -41,21 +29,14 @@ impl PaneResources {
     }
 }
 
-/// The pane's slot in the host arena: the lifecycle the manager last
-/// published for it, its document session, and its resources.
+/// The pane's slot in the host arena: lifecycle, session, resources.
 #[derive(Default)]
 pub(crate) struct PaneCell {
-    /// Written ONLY by the manager, right after the core's transition — a
-    /// publication of the core's answer, not a second authority.
+    /// Written ONLY by the manager, as a publication of the core's answer.
     lifecycle: PaneLifecycle,
-    /// The ONE owner of the document this pane shows (`crate::pane::session`).
-    /// Replaced — and the old one disposed — by every open; taken by the
-    /// pane's dispose.
+    /// The ONE owner of the document this pane shows.
     session: FormatSession,
-    /// The pane's document generation: claimed by every open and by the
-    /// dispose, so an open's async tail commits only while it is still the
-    /// pane's latest document attempt. Per pane — another pane's open never
-    /// stales this one's.
+    /// The pane's document generation: claimed by every open and dispose.
     generation: u64,
     resources: PaneResources,
     /// The zoom the pane's descriptor asked for, until the first document's
@@ -63,9 +44,7 @@ pub(crate) struct PaneCell {
     pending_zoom: Option<f64>,
 }
 
-/// The pane's Copy handle. Every access is `try_`: a handle captured by a
-/// straggling callback can outlive the host's arena, and a dead slot must
-/// answer "nothing here", never abort the artifact.
+/// The pane's Copy handle. Every access is `try_` against a dead slot.
 #[derive(Clone, Copy)]
 pub struct PaneHandle {
     id: PaneId,
@@ -74,8 +53,7 @@ pub struct PaneHandle {
 }
 
 impl PaneHandle {
-    /// A new slot, allocated in the CURRENT owner — the host calls this
-    /// inside its own owner, so the slot outlives the pane's.
+    /// A new slot, allocated in the CURRENT owner (the host's).
     pub(crate) fn new(id: PaneId, runtime: ReaderRuntime) -> Self {
         Self {
             id,
@@ -107,10 +85,7 @@ impl PaneHandle {
         self.lifecycle().admits_work() && self.runtime.lifecycle().admits_work()
     }
 
-    /// The pane's PDF session, guarded. Capture it FRESH at each use — the
-    /// guards snapshot the pane's (and the runtime's) lifecycle, and the
-    /// session is whichever one the pane holds right now (none for a
-    /// reflowable document, or before the first open).
+    /// The pane's PDF session, guarded; capture it FRESH at each use.
     #[cfg(feature = "pdf")]
     pub fn pdf(&self) -> PdfPane {
         let pane = self.lifecycle();
@@ -126,12 +101,7 @@ impl PaneHandle {
         )
     }
 
-    /// The guarded view onto a SPECIFIC session captured earlier — a page
-    /// canvas binds to the session it was mounted for. Work is admitted
-    /// only while the pane still holds exactly that session (a page left
-    /// over from a replaced document can never register into, or render
-    /// from, the next one); teardown always reaches it (the engine ignores
-    /// a retired sid).
+    /// The guarded view onto a session captured earlier, a page's own.
     #[cfg(feature = "pdf")]
     pub fn pdf_for(&self, session: Option<&pdf_engine::PdfSession>) -> PdfPane {
         let pane = self.lifecycle();
@@ -144,11 +114,7 @@ impl PaneHandle {
         )
     }
 
-    /// Install `session` as the pane's document owner and return the one it
-    /// replaces, undisposed — the building block of [`Self::replace_document`]
-    /// (production goes through that; the tests drive this directly).
-    /// Refused (returns `session` back as the "replaced" one, so it is
-    /// disposed at once) when the slot is gone.
+    /// Install `session` as the document owner; returns the one it replaces.
     #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn install_session(&self, session: FormatSession) -> FormatSession {
         let mut incoming = Some(session);
@@ -161,66 +127,46 @@ impl PaneHandle {
         }
     }
 
-    /// The ONE way this pane changes documents, for every format: `next`
-    /// becomes the pane's document owner and the session it replaces is
-    /// disposed on the spot (from this line nothing reaches it through the
-    /// pane, and it refuses every call). Its release — a PDF's document,
-    /// worker, rasters and caches — comes back as a [`Retiring`] the open
-    /// awaits BEFORE it loads, so this pane never holds two documents at
-    /// once.
-    ///
-    /// Scoped to THIS pane: another pane's session is never disposed,
-    /// awaited or delayed by it. A pane with no document yet (a fresh split
-    /// pane) gets an already-settled `Retiring` and loads at once.
+    /// The ONE way this pane changes documents: install `next`, dispose the
+    /// session it replaces.
     #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn replace_document(&self, next: FormatSession) -> Retiring {
         self.install_session(next).dispose()
     }
 
-    /// A failed open: the session it installed owns nothing worth keeping,
-    /// so the pane goes back to holding no document. Returns the release.
+    /// A failed open: the pane goes back to holding no document.
     #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn abandon_document(&self) -> Retiring {
         self.take_session().dispose()
     }
 
-    /// Stop the pane's in-flight document work without ending the document
-    /// (the pane is about to leave; its dispose follows). Format-agnostic:
-    /// the session decides what it has in flight.
+    /// Stop in-flight document work without ending the document.
     pub(crate) fn quiesce(&self) {
         let _ = self.cell.try_with_value(|cell| cell.session.quiesce());
     }
 
-    /// Take the pane's session out of the slot (the dispose). From here no
-    /// call through this handle reaches it.
+    /// Take the session out of the slot; nothing reaches it from here.
     pub(crate) fn take_session(&self) -> FormatSession {
         self.cell
             .try_update_value(|cell| std::mem::take(&mut cell.session))
             .unwrap_or_default()
     }
 
-    /// The id of the pane's live reflowable session (Markdown or text), if
-    /// that is what it holds — the identity a text document's async work
-    /// captures and later hands to [`Self::admits_reflow`].
+    /// The id of the pane's live reflowable session, if that is what it holds.
     pub(crate) fn reflow_session(&self) -> Option<u64> {
         self.cell
             .try_with_value(|cell| cell.session.reflow_id())
             .flatten()
     }
 
-    /// The pane's document ends — its dispose. The generation is claimed
-    /// first (an open still in flight can no longer land), then the format
-    /// session is taken out of the slot and disposed; what is still in
-    /// flight (a PDF's engine teardown) is the returned [`Retiring`], for
-    /// the caller's tail to await. From this call on, nothing reaches the
-    /// session through the pane. Returns the generation it claimed.
+    /// The pane's document ends: claim the generation, take and dispose the
+    /// session.
     pub(crate) fn end_document(&self) -> (u64, Retiring) {
         let generation = self.claim_generation();
         (generation, self.take_session().dispose())
     }
 
-    /// Whether the reflowable session `id` is still the pane's live
-    /// document — the commit check for a text document's async tails.
+    /// Whether reflowable session `id` is still the pane's live document.
     pub(crate) fn admits_reflow(&self, id: u64) -> bool {
         self.admits_work()
             && self
@@ -239,10 +185,7 @@ impl PaneHandle {
                 .unwrap_or(false)
     }
 
-    /// Claim the pane's document generation for a new attempt (an open or
-    /// the dispose) and return it. Every earlier generation of THIS pane is
-    /// stale from here on; other panes are untouched. The value comes from
-    /// the realm mint, so it also serves as the diagnostics epoch.
+    /// Claim the pane's document generation for a new attempt and return it.
     pub(crate) fn claim_generation(&self) -> u64 {
         let generation = crate::services::document::session::next_generation();
         let _ = self
@@ -251,9 +194,7 @@ impl PaneHandle {
         generation
     }
 
-    /// Whether `generation` is still this pane's latest document attempt —
-    /// false once a later open or the dispose claimed it, or the slot is
-    /// gone.
+    /// Whether `generation` is still this pane's latest document attempt.
     pub(crate) fn owns_generation(&self, generation: u64) -> bool {
         self.cell
             .try_with_value(|cell| cell.generation == generation)
@@ -267,14 +208,12 @@ impl PaneHandle {
             .unwrap_or(0)
     }
 
-    /// Record the zoom the pane was created with (its descriptor's
-    /// `initial_zoom`; `None` leaves the fit to the settings).
+    /// Record the zoom the pane was created with (`None` leaves the fit).
     pub(crate) fn seed_initial_zoom(&self, zoom: Option<f64>) {
         let _ = self.cell.try_update_value(|cell| cell.pending_zoom = zoom);
     }
 
-    /// The requested zoom, handed out ONCE: the first document that seeds
-    /// takes it, every later open fits as the settings say.
+    /// The requested zoom, handed out ONCE: the first document takes it.
     #[cfg(any(feature = "pdf", feature = "reflow"))]
     pub(crate) fn take_initial_zoom(&self) -> Option<f64> {
         self.cell
@@ -305,18 +244,12 @@ impl PaneHandle {
             .unwrap_or(false)
     }
 
-    /// The pane's last word: its teardown finished, so its slot leaves the
-    /// host's arena. From here every gate reads the released slot as
-    /// `Disposed` (the `try_` reads' fallback), which is exactly the
-    /// lifecycle a pane with nothing left owns — no separate write needed,
-    /// and a stale task still holding the handle is refused, not revived.
-    /// Releasing a slot the host's owner already swept is a no-op.
+    /// The pane's teardown finished: its slot leaves the host's arena.
     pub(crate) fn release(&self) {
         self.cell.dispose();
     }
 
-    /// Hand every registered virtualizer to the disposal tail: the registry
-    /// is out of the picture from this moment.
+    /// Hand every registered virtualizer to the disposal tail.
     pub(crate) fn take_virtualizers(&self) -> Vec<virtual_list_leptos::Virtualizer> {
         self.cell
             .try_update_value(|cell| std::mem::take(&mut cell.resources.virtualizers))
@@ -400,8 +333,7 @@ mod tests {
             assert!(a.holds_pdf(&sa) && !a.holds_pdf(&sb));
             assert!(b.holds_pdf(&sb) && !b.holds_pdf(&sa));
             assert_eq!(a.pdf().session().map(PdfSession::sid), Some(sa.sid()));
-            // Reopen in A: the new session replaces the old, which comes
-            // back to be disposed — B never notices.
+            // Reopen: the new session replaces the old, which is disposed.
             let next = PdfSession::create();
             let replaced = a.install_session(FormatSession::Pdf(next.clone()));
             assert!(replaced.pdf().is_some_and(|s| s.same(&sa)));
@@ -439,8 +371,7 @@ mod tests {
         });
     }
 
-    /// Pane close: closing the PDF pane disposes ITS session only — the text
-    /// pane's session stays live and keeps admitting its own work.
+    /// Pane close: the PDF pane's session is disposed, the text pane's live.
     #[test]
     fn closing_the_pdf_pane_leaves_the_text_pane_live() {
         use crate::pane::session::tests::block_on;
@@ -469,9 +400,7 @@ mod tests {
         });
     }
 
-    /// Reopen: open A, close A, open B in the same pane — every handle
-    /// captured for A (a view, a page's bound view, the open's generation)
-    /// is refused, and none of it lands on B.
+    /// Reopen: every handle captured for A is refused, none landing on B.
     #[test]
     fn nothing_captured_for_a_reaches_the_next_document() {
         use crate::pane::session::FormatSession;
@@ -513,10 +442,7 @@ mod tests {
         });
     }
 
-    /// Replacing a document is scoped to the pane doing it: the replaced
-    /// session refuses from the call on (before its release is awaited),
-    /// and the other pane's session is never disposed, awaited or touched —
-    /// split panes open documents concurrently.
+    /// Replacing is pane-scoped: the replaced session refuses at once.
     #[test]
     fn a_replace_disposes_only_that_panes_session() {
         use crate::pane::session::FormatSession;
@@ -539,8 +465,7 @@ mod tests {
         });
     }
 
-    /// A pane with no document yet — a fresh split pane — has nothing to
-    /// wait for.
+    /// A pane with no document yet has nothing to wait for.
     #[test]
     fn a_fresh_pane_loads_without_waiting() {
         use crate::pane::session::FormatSession;
@@ -554,8 +479,7 @@ mod tests {
         });
     }
 
-    /// Every format ends through the same replace: a text document's
-    /// content is released synchronously, before the next document loads.
+    /// A replaced text document releases its content synchronously.
     #[test]
     fn a_replaced_text_document_releases_its_content_at_once() {
         use crate::pane::session::{FormatSession, MdSession};
@@ -577,8 +501,7 @@ mod tests {
         });
     }
 
-    /// A failed open leaves the pane with no document at all — never the
-    /// previous one behind an error, and never the half-opened one.
+    /// A failed open leaves no document at all, not the previous one.
     #[test]
     fn an_abandoned_open_leaves_no_document() {
         use crate::pane::session::{FormatSession, TxtSession};
@@ -596,5 +519,3 @@ mod tests {
         });
     }
 }
-
-// only the changed file was rewritten

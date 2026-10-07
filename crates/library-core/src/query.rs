@@ -1,16 +1,11 @@
-//! The titlebar search: which books a query keeps, which shelves, and which
-//! books the bar suggests while the reader is still typing.
-//!
-//! Client-side over three fields — title, author, address. Nothing is indexed:
-//! a few thousand string comparisons per keystroke is well inside a frame.
+//! The titlebar search: which books and shelves a query keeps.
 
 use crate::book::{Book, Row, book_rows};
 
 /// Seven rows fill the suggestion panel without scrolling.
 pub const SUGGEST_LIMIT: usize = 7;
 
-/// Whether `at` starts a word, so a match there is a match on a boundary the
-/// reader can see.
+/// Whether `at` starts a word.
 fn is_boundary(hay: &[char], at: usize) -> bool {
     at == 0 || matches!(hay[at - 1], ' ' | '-' | '_' | '.' | '/' | ':' | '(' | ')')
 }
@@ -20,8 +15,7 @@ fn fold(c: char) -> char {
     c.to_lowercase().next().unwrap_or(c)
 }
 
-/// One match: its score and the character spans it lit up, merged so a
-/// consecutive run is one span.
+/// One match: its score and the spans it lit up.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Match {
     score: i32,
@@ -39,12 +33,7 @@ fn merge_spans(indices: &[usize]) -> Vec<(usize, usize)> {
     spans
 }
 
-/// Match `term` against `field`: substring first, then a scored subsequence.
-/// `None` when the term is not in the field, or only in a subsequence too
-/// scattered to be a match.
-///
-/// The scatter floor is two points per term character — a dropped-vowel shape
-/// (`mthmtcl`, `dne`) clears it; a sprinkle across a long field does not.
+/// Match `term` against `field`: substring first, then a subsequence.
 fn term_match(field: &str, term: &str) -> Option<Match> {
     let term: Vec<char> = term.chars().map(fold).collect();
     let q = term.len();
@@ -109,9 +98,7 @@ fn term_match(field: &str, term: &str) -> Option<Match> {
     })
 }
 
-/// Whether a book survives `query`: every whitespace-separated term must
-/// match some field — title, author or address — in any order, so "herbert
-/// dune" and "dune herbert" answer the same.
+/// Whether a book survives `query`: every term must match some field.
 pub fn matches(book: &Book, query: &str) -> bool {
     if !is_active(query) {
         return true;
@@ -128,9 +115,7 @@ pub fn matches(book: &Book, query: &str) -> bool {
     })
 }
 
-/// [`matches`] without the book: a shelf on the page is searched by the same
-/// bar as the books on it, and the two must agree or a query would hide a
-/// shelf whose name it matched.
+/// [`matches`] for a shelf, by the same bar as the books.
 pub fn matches_terms(text: &str, query: &str) -> bool {
     if !is_active(query) {
         return true;
@@ -156,13 +141,10 @@ pub struct Suggestion {
     pub score: i32,
 }
 
-/// One term's best field hit: the weighted score, which field won it, and
-/// the spans that field lit up.
+/// One term's best field hit: score, field, and spans.
 type BestHit = (i32, usize, Vec<(usize, usize)>);
 
-/// Score one book against every term, keeping the best field per term and
-/// weighting them as a reader means them: name first, author second, address
-/// last. `None` when any term misses every field.
+/// Score one book: best field per term, weighted by field.
 fn rank(book: &Book, query: &str) -> Option<Suggestion> {
     let title = book.title();
     let author = book.author();
@@ -204,8 +186,7 @@ fn rank(book: &Book, query: &str) -> Option<Suggestion> {
     })
 }
 
-/// Fold overlapping and adjacent spans, so painting a field's hits is one
-/// walk with no double-lit characters.
+/// Fold overlapping and adjacent spans.
 fn sort_merge(spans: &mut Vec<(usize, usize)>) {
     spans.sort_unstable_by_key(|s| s.0);
     let mut merged: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
@@ -218,9 +199,7 @@ fn sort_merge(spans: &mut Vec<(usize, usize)>) {
     *spans = merged;
 }
 
-/// The books the bar suggests for a query, best first: score, then recency,
-/// then title, so a tie between two editions lands on the one opened last.
-/// Links are not suggested; the book a link points at is.
+/// The books the bar suggests, best first; links are not suggested.
 pub fn suggest(rows: &[Row], query: &str, limit: usize) -> Vec<Suggestion> {
     if !is_active(query) {
         return Vec::new();
@@ -236,10 +215,7 @@ pub fn suggest(rows: &[Row], query: &str, limit: usize) -> Vec<Suggestion> {
     ranked
 }
 
-/// The rows a query keeps, in the given order — the shelf's own sort has
-/// already run. A book is kept by [`matches`]; a link by its name, through
-/// [`matches_terms`], because a search that hid a visible row would quietly
-/// drop results.
+/// The rows a query keeps, in the given order.
 pub fn filter(rows: &[Row], query: &str) -> Vec<Row> {
     if !is_active(query) {
         return rows.to_vec();
@@ -357,8 +333,7 @@ mod tests {
 
     #[test]
     fn a_link_is_found_by_its_name_and_never_suggested() {
-        // A link is a visible row, so a search that hid it would drop
-        // results — and it is not a book, so the bar does not suggest it.
+        // A link is a visible row, but not a book.
         let rows = vec![
             row("Dune", Some("Frank Herbert"), "/books/dune.pdf"),
             Row::link("l1".into(), "Dune".into(), "b1".into(), 5),
@@ -386,8 +361,7 @@ mod tests {
         assert!(m.spans.len() >= 2, "runs merge, gaps split: {:?}", m.spans);
         assert!(term_match("Dune", "dne").is_some());
         assert!(term_match("The Left Hand of Darkness", "tlhod").is_some());
-        // A word boundary is worth four, so the same term scores higher where
-        // it starts a word.
+        // A word boundary is worth four.
         let boundary = term_match("mathematical proofs", "math").unwrap();
         let midword = term_match("xxmathxx", "math").unwrap();
         assert!(boundary.score > midword.score);
@@ -395,9 +369,7 @@ mod tests {
 
     #[test]
     fn a_subsequence_too_scattered_is_not_a_match() {
-        // The floor is two points a character; a sprinkle across a long field
-        // earns that minus its gaps. One point lower and fuzzy would match
-        // everything.
+        // The floor is two points a character.
         assert!(term_match("A Brief Collection of Zebra Essays", "xyz").is_none());
         assert!(term_match("Dune", "nud").is_none(), "order still matters");
         assert!(term_match("Dune", "dunee").is_none(), "so does count");

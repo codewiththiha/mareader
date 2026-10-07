@@ -1,38 +1,23 @@
-//! Where a book's bytes live on disk: one folder per book, keyed by an id
-//! that never changes.
-//!
-//! The folder is the unit a removal sweeps whole, and nothing on disk wears a
-//! title: renaming a book moves nothing. Covers and highlights are NOT files
-//! here — they persist in the app's own storage — so the only byte this module
-//! names is the stored source.
+//! Where a book's bytes live: one folder per book, keyed by its id.
 
 const ITEMS_DIR: &str = "items";
 
-/// The stem a stored book's bytes wear inside its item folder (`source.pdf`,
-/// `source.md`): one predictable name, the format carried by the suffix.
+/// The stem a stored book's bytes wear: `source.<ext>`.
 const SOURCE_STEM: &str = "source";
 
-/// The item-folder root under a store root: `<store_root>/items`. Keeping
-/// everything below one root is what the delete command's containment check
-/// guards.
+/// The item-folder root under a store root: `<store_root>/items`.
 pub fn items_root(store_root: &str) -> String {
     join(trim_sep(store_root), ITEMS_DIR)
 }
 
-/// The folder one book owns: `<items_root>/<id>`. The id is sanitised into a
-/// single component rather than trusted: a hand-edited blob must not turn a
-/// folder name into a traversal.
+/// The folder one book owns: `<items_root>/<id>`.
 fn item_dir(items_root: &str, book_id: &str) -> String {
     join(trim_sep(items_root), &component(book_id))
 }
 
-/// Where a stored book's bytes live: `<items_root>/<id>/source.<ext>`. An
-/// empty extension yields a bare `source`; no admitted format asks for one —
-/// the registry refuses an extension-less name.
+/// Where a stored book's bytes live: `<items_root>/<id>/source.<ext>`.
 pub fn source_path(items_root: &str, book_id: &str, ext: &str) -> String {
-    // The emptiness check is on the raw extension: `component` maps an empty
-    // string to its fallback, which is right for a folder name and wrong for
-    // "this source has no suffix".
+    // The emptiness check is on the raw extension.
     let file = if ext.trim().is_empty() {
         SOURCE_STEM.to_string()
     } else {
@@ -41,10 +26,7 @@ pub fn source_path(items_root: &str, book_id: &str, ext: &str) -> String {
     join(&item_dir(items_root, book_id), &file)
 }
 
-/// The extension a migrated source keeps in its new name: every supported
-/// extension lower-cased. `None` for one the registry does not know, which
-/// keeps its old name rather than being renamed into something no reader can
-/// open.
+/// The extension a migrated source keeps in its new name.
 pub fn migrated_ext(ext: &str) -> Option<&'static str> {
     match crate::scan::store_dir(ext) {
         "other" => None,
@@ -52,8 +34,7 @@ pub fn migrated_ext(ext: &str) -> Option<&'static str> {
     }
 }
 
-/// Drop trailing separators so a join never produces `root//child`. Both
-/// separators are trimmed: a store root arrives from the host's path API.
+/// Drop trailing separators so a join never produces `root//child`.
 fn trim_sep(path: &str) -> &str {
     path.trim_end_matches(['/', '\\'])
 }
@@ -66,10 +47,7 @@ fn join(parent: &str, child: &str) -> String {
     }
 }
 
-/// One path component, made safe to write: separators, Windows-reserved
-/// characters and control characters become `_`; the result is trimmed of the
-/// dots and spaces that would make it relative, capped, and replaced with a
-/// fallback when nothing is left.
+/// One path component, made safe to write.
 fn component(raw: &str) -> String {
     let cleaned: String = raw
         .chars()
@@ -141,8 +119,7 @@ mod tests {
 
     #[test]
     fn an_id_cannot_escape_its_folder() {
-        // Defence in depth: the crate mints an id as an alphanumeric token, but a
-        // hand-edited blob must not turn a folder name into a traversal.
+        // Defence in depth: a hand-edited id must not traverse.
         let root = "/app/Library/items";
         assert_eq!(item_dir(root, "../../etc"), format!("{root}/_.._etc"));
         assert_eq!(item_dir(root, "a/b\\c:d"), format!("{root}/a_b_c_d"));

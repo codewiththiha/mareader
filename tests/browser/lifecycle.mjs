@@ -1,18 +1,4 @@
-// The browser-level Phase 0 lifecycle baseline: the REAL reader in a REAL
-// browser — the built wasm app, the real pdf.js worker, real renders, the
-// real look-ahead, real prefetch — driven through the workload matrix
-// `docs/memory-baseline.md` defines: normal lifecycle, large book, fast
-// scroll (with the raster bound), zoom, look-ahead, close DURING active
-// work (render / prefetch / search — raced, not assumed), rapid reopen.
-//
-// The engine smoke suite (web lane) proves the engine state machine's
-// counters on stubs; THIS proves the whole application drains: reader
-// runtime, panes, virtualizers, look-ahead samples, prefetch, and the
-// engine's session and worker behind the real pdf.js.
-//
-// The measurement table this prints (markers below) is the recorded
-// baseline: paste it into docs/memory-baseline.md for the environment that
-// ran it.
+// The browser-level lifecycle baseline: the real reader, in a real browser.
 import { chromium } from "playwright";
 import { verifyPaneRuntimes } from "./pane-runtimes.mjs";
 import { verifyCleanupRuntime } from "./cleanup-runtime.mjs";
@@ -24,35 +10,11 @@ const DEEP_OUTLINE = "/samples/Deep Outline.pdf";
 const pearlsUrl = `${BASE}/?blend=1&open=${encodeURIComponent(PEARLS)}`;
 const outlineUrl = `${BASE}?blend=1&open=${encodeURIComponent(DEEP_OUTLINE)}`;
 
-// The bounded-surface policy the workloads assert against, with its source —
-// the test enforces the implementation's live numbers, not invented ones:
-//   window ceiling    reader_runtime::features::virtualizers::RENDER_BUDGET =
-//                     screenfuls(0.5, 3): at most 3 pages mounted per strip. Read
-//                     LIVE from every snapshot as `renderBudgetMaxItems`.
-//   zombie retention  src/zoom/config.rs MAX_ZOMBIES = 12, grace 120 ms —
-//                     items evicted mid-fling stay mounted briefly; a
-//                     transient allowance that must expire by settle time.
-//   page lane         public/engine/renderer.ts PAGE_RENDER_LIMIT = 2 slots;
-//                     renders execute inside a slot, so activeRenders and
-//                     pageActive are hard-bounded by it.
-//   thumbnail lane    public/engine/thumbnails.ts THUMB_RENDER_LIMIT = 3.
-// Peak vs settled bounds are DIFFERENT and both are policy-derived:
-//   hosts at peak   = window ceiling + zombie cap — a host stays registered
-//                     while its item rides out the retention grace, so a
-//                     swapped window plus the grace population is the legal
-//                     maximum (15); once settled, exactly the ceiling (3).
-//   retention peak  = the zombie cap is PER STRIP and this workload can
-//                     legitimately hold zombies on up to three strips (page,
-//                     horizontal, thumbnails) across a document swap, so 36
-//                     at peak and ZERO at settle.
-// documentPages is a different number entirely (the fixture's real page
-// count) and is gated separately.
+// Bounds read live from the implementation: ceiling 3, zombies 12, lanes 2/3.
 const MAX_ZOMBIES = 12;
 const PAGE_LANE_SLOTS = 2;
 const THUMB_LANE_SLOTS = 3;
-// Both workhorse fixtures ship 40 pages (verified against the committed
-// PDFs). A distant jump must cross >= 12x the window budget, and the 16
-// thumb warmup needs a book of this size to be meaningful.
+// Both fixtures ship 40 pages, so a distant jump crosses 12x the window.
 const MIN_FIXTURE_PAGES = 40;
 
 process.on("unhandledRejection", async (err) => {
@@ -77,17 +39,13 @@ let currentStage = "boot";
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
 const page = await context.newPage();
-// TEST-ONLY query adapter over REAL route and document iframes. Older
-// single-pane assertions address one surface; queries compose the actual
-// host document and visible child documents without inventing div/iframe
-// facades in production. Frame identities, resources and teardown remain real.
+// A test-only query adapter over real route and document iframes.
 await context.addInitScript(() => {
   if (window !== window.top) return;
   const panes = (slot) =>
     [...slot.querySelectorAll("iframe.pane-frame")]
       .filter((f) => !f.hasAttribute("data-frame-hidden") && f.contentDocument);
-  // `[data-pane-id="N"] <rest>` crosses the pane boundary: the entry is the
-  // Shell's, what it holds is the pane frame's.
+  // `[data-pane-id="N"] <rest>` crosses the pane boundary into the frame.
   const scoped = (slot, sel) => {
     const m = /^(\[data-pane-id="[^"]+"\])\s+(.+)$/.exec(sel);
     const entry = m && slot.querySelector(m[1]);
@@ -176,12 +134,9 @@ const errorLog = [];
 // Monotonic, unlike the capped ring above it: stages assert "no panic SINCE
 // my marker", and a sliding window cannot answer that.
 let panicCount = 0;
-// Console errors that are NOT the disposal/panic class (a blanket "any error
-// fails the stage" gate would red a run over a benign library that logs as
-// `error`): counted and reported, never asserted.
+// Console errors outside the disposal class: counted, never asserted.
 let otherErrorCount = 0;
-// Trap-hunt ring: every console line, wide, dumped only on failure so the
-// statements around a wasm trap survive the run's noise.
+// Trap-hunt ring: every console line, dumped only on failure.
 const huntLog = [];
 page.on("console", (msg) => {
   const line = `[${msg.type()}] ${msg.text()}`;
@@ -189,9 +144,7 @@ page.on("console", (msg) => {
   huntLog.push(`[${currentStage}] ${line}`);
   if (huntLog.length > 6000) huntLog.shift();
   if (consoleLog.length > 400) consoleLog.shift();
-  // A release wasm panic routes through console_error_panic_hook — the one
-  // line that names the file and function. Keep it out of the sliding
-  // window's reach.
+  // A wasm panic routes through console_error_panic_hook; keep its line.
   if (msg.type() === "error") {
     if (PANIC_CLASS.test(line)) panicCount += 1;
     else otherErrorCount += 1;
@@ -203,23 +156,11 @@ page.on("response", (res) => {
   if (res.status() >= 400) badResponses.push(`${res.status()} ${res.url()}`);
 });
 page.on("requestfailed", (req) => {
-  // A close that races in-flight work aborts the document's open range
-  // fetch (net::ERR_ABORTED) — that is the race WORKING, not a failure.
+  // A close racing an open range fetch aborts it: the race working.
   failedRequests.push(`${req.failure()?.errorText ?? "?"} ${req.url()}`);
 });
 
-/** One diagnostics snapshot (the dev probe the app installs at boot), plus
- *  the browser-side memory categories. They are kept separate ON PURPOSE —
- *  none of them is "the browser's total RAM", and each answers a different
- *  question:
- *    wasmHeapBytes   — the wasm LINEAR memory (Rust-side allocations).
- *    liveCanvasBytes — backing stores of live <canvas> elements: raster
- *                      surfaces the wasm heap cannot see. This is the
- *                      category the original fast-scroll complaint was
- *                      about, not a footprint total.
- *    jsHeapBytes     — the browser-reported JS heap (Chromium's
- *                      performance.memory), best-effort: null wherever the
- *                      environment does not provide it. */
+/** One diagnostics snapshot plus the browser's memory categories. */
 let lastSnap = null;
 async function snap() {
   const value = await page.evaluate(() => {
@@ -227,18 +168,14 @@ async function snap() {
     if (!raw) return null;
     const s = JSON.parse(raw);
     let liveCanvasBytes = 0;
-    // Runtime DOM lives inside the host's frame now: canvases count across
-    // both documents (§21's sampling is byte-faithful, not frame-blind).
+    // Runtime DOM lives inside the host's frame now, canvases included.
     const docs = [document];
-    // Every frame, not only the visible one: a non-active runtime's canvases
-    // are real backing stores even though nothing is showing them, and a
-    // byte-faithful memory sample cannot be frame-blind.
+    // Every frame, not only the visible one: hidden canvases are real too.
     for (const frame of document.querySelectorAll("#runtime-host .runtime-frame")) {
       const route = frame.contentDocument?.defaultView.document;
       if (!route) continue;
       docs.push(route);
-      // Actual incoming/retiring document canvases count too. The visible
-      // single-pane query adapter must not hide their backing stores.
+      // Incoming and retiring canvases count too; no adapter may hide them.
       for (const pane of route.querySelectorAll("iframe.pane-frame")) {
         if (pane.contentDocument) docs.push(pane.contentDocument);
       }
@@ -256,10 +193,7 @@ async function snap() {
   return value;
 }
 
-// --- Peak sampling ---------------------------------------------------------
-// The settled snapshot at the end of a workload cannot see a burst that came
-// and went while it was moving; every workload therefore samples DENSELY
-// while it runs and asserts the MAXIMA against the policy constants above.
+// --- Peak sampling: a burst must fail while it runs, not at settle. ---
 const PEAK_KEYS = [
   "enginePages", "activeRenders", "pageActive", "pageQueue",
   "thumbActive", "thumbQueue", "retainedVirtualItems", "liveWindowItems",
@@ -296,9 +230,7 @@ function samplePeaks(peaks, s) {
   for (const k of PEAK_KEYS) peaks[k] = Math.max(peaks[k], values[k]);
 }
 
-/** The bounded-surface policy, asserted on the PEAKS a workload observed —
- *  so "mount everything the jump flew over, release it, look innocent at
- *  settle" cannot pass: the burst itself is what fails here. */
+/** The bounded policy, asserted on the peaks a workload observed. */
 function assertSurfacePolicy(label, peaks, windowCeiling) {
   if (peaks.activeRenders > PAGE_LANE_SLOTS) {
     throw new Error(`[${label}] peak ${peaks.activeRenders} active renders exceeds the ${PAGE_LANE_SLOTS}-slot page lane`);
@@ -343,8 +275,7 @@ async function waitFor(label, predicate, timeoutMs = 120_000) {
     if (s && predicate(s)) return s;
     if (Date.now() - started > timeoutMs) {
       dumpDiagnosis(s);
-      // Piped stdout drains asynchronously; give the dump a moment before
-      // the throw or the process exit truncates it.
+      // Piped stdout drains asynchronously; let the dump land before throwing.
       await page.waitForTimeout(1_000);
       throw new Error(`timed out waiting for ${label}`);
     }
@@ -352,10 +283,7 @@ async function waitFor(label, predicate, timeoutMs = 120_000) {
   }
 }
 
-/** No stage may pass while the page logged a disposal panic. Counter-based, so
- *  a stage asserts "none SINCE my marker" — and a panic is caught by nothing
- *  else: the counters can settle after a trap that killed the owner of a
- *  queued callback, and that trap is the thing being prevented. */
+/** No stage may pass while the page logged a disposal panic. */
 function assertNoNewPanics(label, sinceCount) {
   if (panicCount > sinceCount) {
     throw new Error(`[${label}] ${panicCount - sinceCount} disposal panic(s) during the stage:\n${errorLog.join("\n")}`);
@@ -364,8 +292,7 @@ function assertNoNewPanics(label, sinceCount) {
 
 async function openBook(url) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  // Reader live AND the document actually open AND the first page rendered
-  // AND the runtime itself reporting Ready (it publishes its own lifecycle).
+  // Reader live, document open, first page rendered, runtime Ready.
   const s = await waitFor("the reader to open and first-render", (s) =>
     s.readerRuntimeLive === true &&
     s.runtime?.state === "ready" &&
@@ -377,18 +304,14 @@ async function openBook(url) {
     s.host?.panes?.[0]?.lifecycle === "ready");
   assertHostWorkspace(s, "open");
   await assertPaneBox(s, "open");
-  // Session ownership: the one pane owns exactly one engine session — its
-  // PdfSession's — and nothing else in the realm holds a document.
+  // Session ownership: the one pane owns exactly one engine session.
   if (s.engine.sessionsLive !== 1) {
     throw new Error(`[open] ${s.engine.sessionsLive} live engine sessions, expected the pane's one`);
   }
   return s;
 }
 
-/** The host's bounds are what the pane is actually laid out in: its entry in
- *  the workspace slot renders at the box the host reports for it (the
- *  entry is positioned from the manager's per-pane bounds, not by filling
- *  the slot on its own). */
+/** The pane is laid out in the box the host reports for it. */
 async function assertPaneBox(s, label, pane = s.host.panes[0]) {
   const box = await page.evaluate((id) => {
     const frame = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]");
@@ -405,10 +328,7 @@ async function assertPaneBox(s, label, pane = s.host.panes[0]) {
   }
 }
 
-/** The production path, observed: the reader runtime's host reports a live
- *  workspace of exactly one READY pane, that pane is the one active pane,
- *  it holds the document session and its virtualizers, and its identity is
- *  a pane id — never the document's. */
+/** The production path: one READY pane holding the document session. */
 function assertHostWorkspace(s, label) {
   const host = s.host;
   if (!host) throw new Error(`[${label}] the snapshot carries no host block`);
@@ -434,8 +354,7 @@ function assertHostWorkspace(s, label) {
   }
 }
 
-/** The workspace teardown, observed: the host is disposed, no pane is left
- *  (every pane's dispose finished), nobody is active. */
+/** The workspace teardown, observed: host disposed, no pane left. */
 function assertHostDisposed(s, label) {
   const host = s.host;
   if (!host) throw new Error(`[${label}] the snapshot carries no host block`);
@@ -444,9 +363,7 @@ function assertHostDisposed(s, label) {
   }
 }
 
-/** Wait for the warmup's prefetch fire to pass through the thumbnail lane.
- *  HARD on this fixture: a 40+ page book always warms 16 thumbs, so a run
- *  where the warmup never starts is a failure, not a skip. */
+/** Wait for the warmup's prefetch to pass through the thumbnail lane. */
 async function waitForWarmup() {
   const started = await waitFor("thumbnail warmup to start", (s) =>
     s.engine.prefetchesStarted >= 1, 25_000);
@@ -458,10 +375,7 @@ async function waitForWarmup() {
 }
 
 async function clickCloseNow() {
-  // The toolbar sits under the window drag-region overlay (window chrome
-  // that only means anything inside Tauri), so a hit-tested click is
-  // swallowed in a plain browser. Dispatch on the button itself: same
-  // handler, same close path the packaged app runs.
+  // The toolbar sits under the window drag region, so dispatch on it.
   await page.evaluate(() => {
     const btn = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector('button[title*="Close this book"]');
     if (!btn) throw new Error("close button not found");
@@ -469,9 +383,7 @@ async function clickCloseNow() {
   });
 }
 
-/** The disposal baseline after a close, with every pairing asserted.
- *  Every cycle here boots fresh, so the open claims epoch 1 and the close
- *  claims epoch 2 — exactly one advance per cycle. */
+/** The disposal baseline after a close, every pairing asserted. */
 async function closeAndWaitBaseline(label, settledWork, expectedEpoch = 2) {
   const panicsBefore = panicCount;
   if (!settledWork) await clickCloseNow();
@@ -479,8 +391,7 @@ async function closeAndWaitBaseline(label, settledWork, expectedEpoch = 2) {
     x.atBaseline === true && x.runtime?.state === "disposed", 45_000);
   assertDrained(s, label, expectedEpoch);
   assertHostDisposed(s, label);
-  // The runtime itself reports disposal completion (Phase 1 §12): state
-  // Disposed with a generation stamp — disposal is owned, not inferred.
+  // The runtime reports disposal completion, not an inferred one.
   if (s.runtime?.state !== "disposed" || (s.runtime?.generation ?? 0) < 1) {
     throw new Error(`[${label}] runtime did not report disposal (state ${s.runtime?.state}, generation ${s.runtime?.generation})`);
   }
@@ -492,11 +403,7 @@ function assertDrained(s, label, expectedEpoch = 2) {
   if (!s.atBaseline) throw new Error(`[${label}] baseline not reached`);
   if (s.readerRuntimeLive !== false) throw new Error(`[${label}] reader runtime still live`);
   if (s.engine.hasDocument !== false) throw new Error(`[${label}] engine still holds a document`);
-  // FAIL CLOSED on accounting: `paneLive` derives from saturating
-  // subtraction, so a double dispose would read as a quiet zero. The
-  // cumulative pairs must balance exactly and the live counts must equal
-  // created-minus-disposed — "actually zero" and "accounting broke" are
-  // different answers and only the first may pass.
+  // Fail closed on accounting: the pairs must balance exactly.
   if (s.accountingConsistent === false) {
     throw new Error(`[${label}] create/dispose accounting inconsistent (a dispose exceeded its create)`);
   }
@@ -515,10 +422,7 @@ function assertDrained(s, label, expectedEpoch = 2) {
   if (s.disposalEpoch !== expectedEpoch) {
     throw new Error(`[${label}] disposal epoch ${s.disposalEpoch}, expected ${expectedEpoch} (one claim per open and per close)`);
   }
-  // The engine's per-document raster categories must be EMPTY in bytes, not
-  // just in counts — the byte estimate is what a released-but-unshrunk
-  // surface would hide. (The recycler is module-bounded, not per-document;
-  // the same-page workload gates its per-cycle drift instead.)
+  // The engine's raster categories must be empty in bytes, not counts.
   if (s.engine.pageCanvasBytesEst !== 0) {
     throw new Error(`[${label}] page render surfaces still hold ${s.engine.pageCanvasBytesEst} bytes`);
   }
@@ -531,8 +435,7 @@ function assertDrained(s, label, expectedEpoch = 2) {
   if (s.engine.sessionsOpened !== s.engine.sessionsDestroyed) {
     throw new Error(`[${label}] session counters unbalanced`);
   }
-  // Every pane's PdfSession was disposed with its pane: no engine session is
-  // left registered in the realm.
+  // Every pane's PdfSession went with it: no session left registered.
   if (s.engine.sessionsLive !== 0) {
     throw new Error(`[${label}] ${s.engine.sessionsLive} engine sessions still live after the dispose`);
   }
@@ -550,8 +453,7 @@ function assertDrained(s, label, expectedEpoch = 2) {
   if (s.lookaheadSamplesActive !== 0) {
     throw new Error(`[${label}] look-ahead samples survived the close`);
   }
-  // The lanes must be EMPTY, not merely quiet: queued closures retain
-  // canvases, scales and caller resolvers across the dispose.
+  // The lanes must be empty, not quiet: queued closures retain canvases.
   if (s.engine.pageQueue !== 0 || s.engine.pageActive !== 0) {
     throw new Error(`[${label}] page lane not drained (queue ${s.engine.pageQueue}, active ${s.engine.pageActive})`);
   }
@@ -566,15 +468,8 @@ function assertDrained(s, label, expectedEpoch = 2) {
   }
 }
 
-/** Observe-and-close in ONE js turn: the close lands microseconds after the
- *  activity check, so a caught render/prefetch cannot settle in between.
- *  This is what makes "close during active work" a manufactured race
- *  instead of a hope. */
-// The race helper reads the artifact's OWN diagnostics probe (its window,
-// fresh snapshots) — the Shell-side global merges the runtime's last pushed
-// digest one digest beat behind, so a render it reports "active" may have
-// finished. The close click below then lands while the render the close is
-// meant to interrupt is actually in flight.
+/** Observe and close in one js turn, so the race is manufactured. */
+// The race helper reads the artifact's own diagnostics probe.
 async function raceCloseDuringRender() {
   return page.evaluate(() => {
     const frame = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]");
@@ -636,19 +531,10 @@ const summary = {
   samePageCycles: 0,
 };
 
-// --- Stage 0: the production boot contract ---------------------------------
-// Everything below this point proves the app works once it is UP. This stage
-// proves it GETS there, on the same build Tauri packages (`frontendDist:
-// ../dist`, served here by tests/browser/server.mjs), and that a boot which
-// cannot finish says so instead of leaving an empty window. It is the browser
-// half of §8/§9/§10/§11; the native half is tools/tauri-smoke.mjs plus
-// .github/workflows/deep-ci.yml's tauri-smoke job.
+// --- Stage 0: the production boot contract, on the packaged build. ---
 currentStage = "stage0-boot-contract";
 
-/** The runtime artifacts — the Shell's own, and the pane frames' — with the
- *  status the browser actually got (§9 — "resolves 200 when LOADED", not "the file is
- *  on disk"). Tauri serves these through its custom protocol and the dev
- *  server serves them from dist/; a missing one is the incident. */
+/** The runtime artifacts with the status the browser actually got. */
 const artifactStatuses = new Map();
 page.on("response", (res) => {
   const { pathname } = new URL(res.url());
@@ -664,9 +550,7 @@ function assertArtifactLoaded(path, label) {
   }
 }
 
-/** §5: the placeholder is part of the BUILT page and the shell takes it away
- *  once the host paints. Recorded from the very first document, with the
- *  timer starting at DOMContentLoaded. */
+/** The placeholder is part of the built page; the shell removes it. */
 async function armShellBootWatcher() {
   await page.addInitScript(() => {
     window.__shellBoot = { copy: null, removedAt: null, background: null, titleWidth: null, mark: null };
@@ -676,9 +560,7 @@ async function armShellBootWatcher() {
         window.__shellBoot.copy = (boot.textContent ?? "").replace(/\s+/g, " ").trim();
         window.__shellBoot.background = getComputedStyle(boot).backgroundColor;
         window.__shellBoot.titleWidth = boot.querySelector(".shell-boot__title")?.getBoundingClientRect().width ?? null;
-        // The mark is the wait's other half: present, and ANIMATING — a
-        // placeholder that only exists for assistive tech is how a slow launch
-        // read as a hung one, and a mark stuck still reads the same way.
+        // The mark is the wait's other half: present, and animating.
         const dot = boot.querySelector(".shell-boot__loader > .loader-dot");
         window.__shellBoot.mark = dot
           ? { count: boot.querySelectorAll(".shell-boot__loader > .loader-dot").length, animation: getComputedStyle(dot).animationName }
@@ -696,10 +578,7 @@ async function armShellBootWatcher() {
   });
 }
 
-/** Dense sampling of the invariants a screenshot cannot see (§11): the host
- *  is never empty, and two runtimes are never live in it at once. 10 ms is
- *  fast enough to catch a paint gap that lasts a frame and cheap enough to
- *  run across a whole transition. */
+/** Dense sampling of the invariants a screenshot cannot see. */
 async function startHostSampler() {
   await page.evaluate(() => {
     const sample = () => {
@@ -710,10 +589,7 @@ async function startHostSampler() {
       } catch {
         diag = null;
       }
-      // Every frame carries one of the Shell's three slots. Anything else
-      // throws here instead of being bucketed: the retired route "warm" slot
-      // is the value this used to read, and a slot this lane does not know is
-      // a bug, not a frame to sort.
+      // Every frame carries one of the Shell's three slots, or fails.
       const slotOf = (f) => {
         const slot = f.getAttribute("data-mareader-slot");
         if (slot !== "active" && slot !== "incoming" && slot !== "retiring") {
@@ -724,11 +600,7 @@ async function startHostSampler() {
         }
         return slot;
       };
-      // Two frames are legal now (the on-screen one and the one booted
-      // behind it), so the sampler sorts them by slot instead of assuming a
-      // single runtime. Every DOM fact below is read from the ACTIVE frame:
-      // an incoming or retiring runtime's grid and page host are on screen
-      // nowhere.
+      // Two frames are legal across a handoff, sorted by slot.
       const frames = host ? [...host.querySelectorAll(".runtime-frame")] : [];
       let activeDoc = null;
       let actives = 0;
@@ -742,8 +614,7 @@ async function startHostSampler() {
           actives += 1;
         } else if (slot === "incoming") incoming += 1;
         else retiring += 1;
-        // A frame that is not the active one must be invisible: a runtime
-        // that rendered on screen would be two apps at once.
+        // A frame that is not the active one must be invisible.
         if (slot !== "active" && getComputedStyle(f).visibility !== "hidden") leaked += 1;
       }
       return {
@@ -785,36 +656,22 @@ async function stopHostSampler() {
     const samples = window.__hostSamples ?? [];
     window.__hostSampleContext = [];
     const violations = { empty: [], twoLive: [], mixed: [], unmarked: [], tooManyFrames: [], leakedHidden: [], twoActive: [] };
-    // The samples around a violation are the diagnostic that matters — a bare
-    // host is only meaningful next to what came before and after it.
+    // The samples around a violation are the diagnostic that matters.
     for (const s of samples) {
-      // Before the shell's view mounts there is no host to be empty: the
-      // page's own placeholder is the whole window, and §5 owns that state.
+      // Before the shell's view mounts there is no host to be empty.
       if (!s.host) continue;
-      // §10: one runtime at a time, and the host's own marker must agree
-      // with what is mounted.
-      // One runtime's DOM in the frame that is on screen — an incoming or
-      // retiring runtime rendering its own shelf or page host beside it is
-      // not "two live runtimes"; `leakedHidden` below is what catches the
-      // case where that second frame is not hidden.
+      // §10: one runtime at a time, and the host's marker must agree.
       if (s.library + s.reader > 1) violations.twoLive.push(s);
       if (s.active === "library" && s.reader > 0) violations.mixed.push(s);
       if (s.active === "reader" && s.library > 0) violations.mixed.push(s);
-      // The host may hold two frames (the one on screen and the incoming or
-      // retiring one behind it) and briefly two more (a retirement in flight
-      // and the one before it that a back-to-back handoff outran), but never
-      // a fifth — an unbounded frame count is the leak this bound exists to
-      // catch. And never two frames claiming to be the one on screen.
+      // The host may hold two frames, briefly more, but never a fifth.
       if (s.frames > 4) violations.tooManyFrames.push(s);
       if (s.actives > 1) violations.twoActive.push(s);
       if (s.leaked > 0) violations.leakedHidden.push(s);
-      // §11: never a blank window. An empty host is legal only while the
-      // page placeholder covers it — that is the loading state before the
-      // first paint, and it is visible.
+      // §11: never a blank window, unless the placeholder covers it.
       const covered = s.bootNodes > 0 || s.placeholder;
       if (s.empty && !covered) violations.empty.push(s);
-      // Nothing identifiable anywhere: not a boot state, not a marked
-      // runtime, not a runtime's DOM, not the placeholder.
+      // Nothing identifiable anywhere: no boot state, no runtime's DOM.
       if (s.bootNodes === 0 && s.active === null && s.library + s.reader === 0 && !covered) {
         violations.unmarked.push(s);
       }
@@ -842,8 +699,7 @@ function firstViolation(violations, context = []) {
         (s) =>
           `t=${s.t} nodes=${s.nodes} boot=${s.bootNodes} active=${s.active} lib=${s.library} reader=${s.reader} frames=${s.frames} actives=${s.actives} inc=${s.incoming} ret=${s.retiring} leaked=${s.leaked} placeholder=${s.placeholder}`,
       );
-      // NOT named `context`: the module has one of those (the Playwright
-      // browser context) and a same-scope binding would shadow the parameter.
+      // NOT named `context`: it would shadow the Playwright parameter.
       const aroundText = around.length > 0 ? "\n  around: " + around.join("\n          ") : "";
       const counts = Object.entries(violations)
         .filter(([, list]) => list.length > 0)
@@ -855,14 +711,11 @@ function firstViolation(violations, context = []) {
   return null;
 }
 
-/** The library's own DOM marker, not an HTTP 200: the grid is only there
- *  when the Library runtime really mounted and rendered (§8). */
+/** The library's own DOM marker, not an HTTP 200. */
 async function libraryDomState() {
   return page.evaluate(() => {
     const host = document.getElementById("runtime-host");
-    // Every frame carries one of the Shell's three slots; anything else
-    // fails here rather than reading as a frame that is simply absent. The
-    // retired route "warm" slot is the value this used to read.
+    // Every frame carries one of the Shell's three slots, or fails here.
     const slotOf = (f) => {
       const slot = f.getAttribute("data-mareader-slot");
       if (slot !== "active" && slot !== "incoming" && slot !== "retiring") {
@@ -876,8 +729,7 @@ async function libraryDomState() {
     const frames = [...(host?.querySelectorAll(".runtime-frame") ?? [])];
     const slots = frames.map(slotOf);
     const pick = (slot) => frames.find((_, i) => slots[i] === slot)?.contentDocument?.defaultView.document;
-    // The runtime roots themselves, in the slots: a pane frame renders a
-    // document surface of its own, which is not a second runtime.
+    // The runtime roots themselves, in the slots: a pane frame is not one.
     const runtimeDoc = pick("active") ?? null;
     return {
       path: location.pathname,
@@ -895,10 +747,7 @@ async function libraryDomState() {
   });
 }
 
-/** The frame identities, straight off the DOM. The generation is the proof
- *  that every handoff booted a fresh realm — a reused boot would show up as
- *  an active generation repeating. A slot outside the Shell's three throws
- *  here instead of counting as a frame this lane knows. */
+/** The frame identities off the DOM; a repeated generation is a reuse. */
 async function frameSlots() {
   return page.evaluate(() => {
     const host = document.getElementById("runtime-host");
@@ -936,8 +785,7 @@ function assertSessionBalance(s, label) {
   }
 }
 
-/** The outgoing runtime is retired behind the reveal, so its disposal is no
- *  longer ordered before the handoff — but it must still COMPLETE. */
+/** The outgoing runtime is retired behind the reveal, but must finish. */
 async function waitForRetirement(label, kind, before, timeoutMs = 45_000) {
   return waitFor(
     `${label}: the ${kind} finished disposing`,
@@ -946,11 +794,7 @@ async function waitForRetirement(label, kind, before, timeoutMs = 45_000) {
   );
 }
 
-/** Poll the DOM until it reaches a settled state. The manager reports a
- *  runtime active the moment its start export returned; the runtime's own
- *  content (the library grid, the reader's page host) renders a frame later,
- *  so the assertion waits for the DOM rather than assuming one tick. The
- *  sampler's invariants cover what must NOT happen in between. */
+/** Poll the DOM until it settles: the runtime renders a frame later. */
 async function waitForDom(label, predicate, timeoutMs = 30_000) {
   const started = Date.now();
   let state = await libraryDomState();
@@ -968,8 +812,7 @@ async function clickBook(title, label, timeout = 45_000) {
   try {
     await page.frameLocator('.runtime-frame[data-mareader-slot="active"]').locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
   } catch {
-    // The grid's tap is pointerup-owned; HTMLElement.click only swallows a
-    // completed hold. The row's Enter handler is the real alternate open.
+    // The grid's tap is pointerup-owned; Enter is the alternate open.
     await page.evaluate((needle) => {
       const doc = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
       const el = [...(doc?.querySelectorAll(".book-title") ?? [])]
@@ -986,8 +829,7 @@ async function clickBook(title, label, timeout = 45_000) {
     x.engine.activeRenders === 0, timeout);
 }
 
-/** Exercise the pointer path that formerly prewarmed Reader. It must now
- *  leave Library alone; only an actual open may instantiate a Reader. */
+/** The pointer path that prewarmed Reader must now leave Library alone. */
 function assertLibraryOnly(s, label) {
   if (s.activeRuntime !== "library" || s.routeReturnPolicy !== "unload-both" ||
       s.routePrewarmAllowed !== false || s.readerFramesResident !== 0 || s.libraryFramesResident !== 1 ||
@@ -1026,13 +868,7 @@ async function signalShelfIntent(label) {
   }
 }
 
-// ---- 0: the library is seeded the way a user seeds it ---------------------
-// A fresh browser context has an EMPTY library: there is no grid to assert and
-// no book to open, so the stage that proves the boot contract has to run on a
-// library that holds something. Opening a document from the URL is that path
-// (the Shell disposes the library and loads the reader for `?open=`), and it
-// doubles as the first assertion that the PRODUCTION boot path renders a
-// runtime into the host rather than only returning HTTP 200s.
+// ---- 0: the library is seeded the way a user seeds it. ---
 currentStage = "stage0-seed";
 await page.goto(`${BASE}/?blend=1&open=${encodeURIComponent(PEARLS)}`, {
   waitUntil: "domcontentloaded",
@@ -1050,16 +886,7 @@ summary.bootContract.seedOpen = {
   readerDom: seededDom.reader,
 };
 
-// ---- 0a: `/` boots the Library runtime ------------------------------------
-// The reader files a book's cover on its first open (its open pipeline: a
-// second, small render of page 1 that lands shortly AFTER the first page is
-// on screen), and a shelf that finds its cover never asks for a bake. The
-// cover block below is the one proof the Shell's bake page works end to
-// end, so the shelf must start without one. Let the seed's own cover land
-// first — clearing the key while that write is still in flight would only
-// have it reappear a moment later — then drop the persisted covers before
-// the library boots. A seed whose cover never lands (a failed render leaves
-// the stylised fallback) has nothing to drop, and the shelf bakes anyway.
+// ---- 0a: `/` boots the Library runtime. ---
 {
   const started = Date.now();
   while (Date.now() - started < 15_000) {
@@ -1080,8 +907,7 @@ await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
 await startHostSampler();
 const libraryBoot = await waitFor("the library runtime to boot at /", (x) =>
   x.bootState === "library" && x.activeRuntime === "library", 60_000);
-// The settled library: its grid rendered, its loading state gone, and the
-// page's own placeholder (which covered the window until then) removed.
+// The settled library: grid rendered, loading gone, placeholder removed.
 const libraryDom = await waitForDom("/: the library rendered", (s) =>
   s.library >= 1 && s.reader === 0 && !s.placeholder);
 if (libraryDom.path !== "/") {
@@ -1105,11 +931,7 @@ if (libraryDom.placeholder) {
 if (libraryDom.hosts !== 1) {
   throw new Error(`[/] expected exactly one runtime host, found ${libraryDom.hosts}`);
 }
-// One frame ON SCREEN and nothing behind it: the library route at rest is
-// the library alone. A reader is booted behind the shelf on the shelf's
-// intent signal (a pointer over the grid), never on the shelf's paint — a
-// reader kept "just in case" is exactly the memory the library route is
-// meant to give back, and nothing in this stage has reached into the shelf.
+// One frame on screen and nothing behind it: the library alone.
 if (libraryDom.actives !== 1) {
   throw new Error(`[/] expected exactly one active runtime frame, found ${libraryDom.actives}`);
 }
@@ -1131,9 +953,7 @@ if (!shellBoot?.copy?.includes("Loading MAReader")) {
 if (shellBoot.removedAt === null) {
   throw new Error("[/] the shell never removed the page's boot placeholder");
 }
-// A healthy boot SHOWS its wait: the app's own loading mark, running, and the
-// stage line under it — the webview can hold an unpainted window for seconds on
-// Windows, and the one thing that screen must not be is blank.
+// A healthy boot shows its wait: the loading mark, running.
 if (!(shellBoot.titleWidth !== null && shellBoot.titleWidth > 1)) {
   throw new Error(`[/] the boot placeholder's copy is not laid out on a healthy start (title width ${shellBoot.titleWidth})`);
 }
@@ -1142,13 +962,7 @@ if (!(shellBoot.titleWidth !== null && shellBoot.titleWidth > 1)) {
 if (!(shellBoot.mark?.count === 3 && /^loader-(hop|fade)/.test(shellBoot.mark.animation ?? ""))) {
   throw new Error(`[/] the boot placeholder does not run the app's own loading mark: ${JSON.stringify(shellBoot.mark)}`);
 }
-// The shelf's cover bakes: neither the Shell nor the library loads a PDF
-// engine, and no reader is booted for them — a cover can only exist if the
-// Shell's own bake page works end to end: shelf asks, Shell mounts
-// `bake.html` (pdf.js alone, no wasm), the page bakes, the Shell hands the
-// art back, the shelf files and persists it. The seeded book must get its
-// cover, and the bake page must be GONE a few seconds after: it is a
-// transient worker, not a resident.
+// The shelf's cover bakes: only the Shell's own bake page can make it.
 {
   const started = Date.now();
   let covers = 0;
@@ -1173,9 +987,7 @@ if (!(shellBoot.mark?.count === 3 && /^loader-(hop|fade)/.test(shellBoot.mark.an
   if ((baked?.readerFramesResident ?? 0) !== 0) {
     throw new Error(`[/] baking a cover booted a reader (readerFramesResident ${baked.readerFramesResident})`);
   }
-  // The covers were cleared before this boot, so the only way one exists now
-  // is the bake page: it must have been seen resident. (It stays for the
-  // idle grace after the drain, well above the poll interval above.)
+  // The covers were cleared, so a cover now proves the bake page ran.
   if (!sawBakeFrame && baked?.bakeFrameResident !== true) {
     throw new Error("[/] a cover arrived without the Shell's bake page ever being resident");
   }
@@ -1228,8 +1040,7 @@ if (revealedSlots.active === intentSlots.active || revealedSlots.active === null
 }
 assertArtifactLoaded("/reader.js", "library → reader");
 assertArtifactLoaded("/reader_bg.wasm", "library → reader");
-// The shelf the user left is retired BEHIND the reveal — so its disposal is
-// no longer ordered before the handoff, but it must still run to completion.
+// The shelf is retired behind the reveal, but must still finish.
 const libraryRetired = await waitForRetirement("library → reader", "library",
   beforeHandoff.libraryDisposesCompleted ?? 0);
 assertReaderOnly(libraryRetired, "library → reader");
@@ -1269,13 +1080,7 @@ const readerRetired = await waitForRetirement("reader → library", "reader",
 assertSessionBalance(readerRetired, "reader → library");
 assertLibraryOnly(readerRetired, "reader → library");
 
-// ---- 0c: the same handoff, back to back ----------------------------------
-// One pair of transitions proves the mechanism; repetition is what finds the
-// hole that only racing starts open — a click that lands while a retirement
-// is still settling, an incoming boot still in flight when the user asks
-// for it, a queued start draining into the same host. The sampler from 0a is
-// still running, so its invariants cover every instant of all of these too,
-// not just the first pair.
+// ---- 0c: the same handoff, back to back. ---
 currentStage = "stage0-rapid-transitions";
 const cycles = [];
 for (let cycle = 0; cycle < 4; cycle += 1) {
@@ -1305,9 +1110,7 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
   if (libraryDomNow.library !== 1 || libraryDomNow.reader !== 0) {
     throw new Error(`[rapid ${cycle}] host holds library ${libraryDomNow.library} / reader ${libraryDomNow.reader}`);
   }
-  // The retirement is behind the reveal now, so wait for it to land rather
-  // than expecting it to have happened already — then hold the accounting
-  // to the exact number of runtimes that exist.
+  // Wait for the retirement, then hold the accounting exact.
   const retired = await waitForRetirement(`rapid ${cycle}`, "reader",
     intoReader.readerDisposesCompleted ?? 0);
   assertSessionBalance(retired, `rapid ${cycle}`);
@@ -1344,20 +1147,6 @@ console.log(
 );
 
 // The invariants across the whole transition.
-//
-// §10 used to be an ORDERING rule — "a runtime is only marked active once
-// its predecessor's dispose promise has resolved" — because the outgoing
-// runtime was disposed before the replacement was built. The handoff
-// inverts that on purpose: the replacement is revealed first and the
-// predecessor is retired behind it, which is what makes a route change a
-// reveal instead of a rebuild. What must still hold, and still does, is
-// every property that ordering was protecting:
-//
-//   * one runtime on screen at every sampled instant (twoLive / mixed /
-//     twoActive), and any other frame hidden (leakedHidden);
-//   * the host never blank (empty / unmarked);
-//   * every runtime that was ever shown finishes disposing (waitForRetirement
-//     and assertSessionBalance above).
 const sampled = await stopHostSampler();
 const violation = firstViolation(sampled.violations, sampled.context);
 if (violation) {
@@ -1368,9 +1157,7 @@ const librarySamples = sampled.samples.filter((s) => s.active === "library");
 if (readerSamples.length === 0 || librarySamples.length === 0) {
   throw new Error(`the sampler saw no ${readerSamples.length === 0 ? "reader" : "library"} active sample`);
 }
-// A handoff shows up as a sample where two frames coexist — the one on
-// screen and the incoming or retiring one behind it. That is the policy
-// working, not a leak; the frame ceiling above is its bound.
+// A handoff shows two frames coexisting: the policy, not a leak.
 const peakFrames = Math.max(...sampled.samples.map((s) => s.frames ?? 0));
 const overlapSamples = sampled.samples.filter((s) => s.retiring > 0).length;
 if (peakFrames < 2) {
@@ -1474,8 +1261,7 @@ for (let i = 0; i < 2; i += 1) {
   await page.waitForTimeout(700);
   assertLibraryOnly(await snap(), `fresh host ${i} after pointer`);
 }
-// Returning while the Reader WASM itself is still loading cancels that
-// incoming host; unblocking a late response must never resurrect it.
+// Returning while the Reader WASM still loads must cancel the host.
 let unblock;
 const held = new Promise((resolve) => { unblock = resolve; });
 let sawBlockedReader;
@@ -1486,9 +1272,7 @@ const delayReader = async (route) => {
   await route.continue().catch(() => {});
 };
 await page.route("**/reader_bg.wasm", delayReader);
-// Focus the real row and use its Enter action. Shelf taps are decided at
-// pointerup (click only swallows holds); the low-level keyboard API also
-// cannot wait for the WASM navigation this test is deliberately holding.
+// Focus the real row and use its Enter action.
 await page.evaluate(() => {
   const doc = document.querySelector('.runtime-frame[data-mareader-slot="active"]').contentDocument;
   const row = doc.querySelector('.book-title[title*="Programming Pearls"]');
@@ -1546,8 +1330,7 @@ await page.waitForTimeout(800);
 assertReaderOnly(await snap(), "late Library boot response");
 if ((await frameSlots()).active !== originalReader) throw new Error("cancelled Library boot replaced the still-visible Reader host");
 
-// Hold a real cover's file read in the JS-only baker. Opening Reader must
-// kill that Library-owned queue/page, not let it finish behind the reader.
+// Hold a cover's file read in the baker: the close must kill it.
 await page.evaluate(() => localStorage.setItem("mareader.covers.v1", "{}"));
 let releaseCover;
 const heldCover = new Promise((resolve) => { releaseCover = resolve; });
@@ -1570,13 +1353,7 @@ await Promise.race([requestedCover,
 const bakingLibrary = await snap();
 if (!bakingLibrary.bakeFrameResident) throw new Error("held cover had no resident bake page");
 await clickBook("Programming Pearls", "Reader closes baking Library");
-// The reader this stage opens replaces the one whose retirement was still
-// finishing behind the reveal when the Library came back — the host is
-// allowed two frames across a transition (the sampler's "peak 2 frames"), and
-// a retiring driver is registered until its teardown runs. So the wait below
-// asks for the READER's side of the rest shape too, exactly as the handoff
-// stages do through `waitForRetirement`, and the assertion that follows still
-// holds it to one frame at rest.
+// The reader opens over a still-retiring one: wait for its rest shape.
 const bakerClosed = await waitFor("Library and held cover page gone", (x) =>
   x.libraryFramesResident === 0 && !x.bakeFrameResident && x.readerFramesResident === 1 &&
   x.librarySessionsCreated === x.libraryDisposesCompleted);
@@ -1598,12 +1375,7 @@ assertNoNewPanics("Library route lifetimes", 0);
 console.log("boot contract: Reader holds no Library WASM or cover bake; both routes remount fresh without Shell reload");
 
 
-// ---- 0f: a boot that cannot finish is VISIBLE ------------------------------
-// With a runtime artifact missing, the user must see a named error state,
-// never a blank pane or an endless placeholder. The server 404s the artifact
-// for the injected context, so this drives the real code path an incomplete
-// build produces: a missing pane artifact fails that pane (the Shell and its
-// chrome stay up), and a missing Shell artifact fails the page placeholder.
+// ---- 0f: a boot that cannot finish is visible. ---
 currentStage = "stage0-missing-artifact";
 async function failureProbe(value, url, label, read, check) {
   const failContext = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -1698,18 +1470,7 @@ summary.bootContract.missingShell = await failureProbe(
 );
 console.log("boot contract: a missing runtime artifact shows a named error state, never a blank window");
 
-// --- Stage 0c: the frameless window's own chrome --------------------------
-// The bar and the caption live in the ROUTE frame, and on Windows a route frame
-// is also injected with its OWN Tauri API — the configuration that used to cost
-// both halves of the chrome: the frame's `event.listen` registrations went to a
-// registry the backend never scripts into (so `tauri://resize` was swallowed and
-// the maximize glyph froze), and the frame's bar had a drag region no listener
-// could act on (so nothing was grabbable). The stub below reproduces that shape
-// — an API in EVERY document — and the UA is pinned so the frameless cluster is
-// mounted whichever machine runs the suite. A real browser cannot move a window
-// or maximize one, so this stage asserts the COMMANDS, which is where the bug
-// lived; `tools/tauri-smoke.mjs` (Linux, no window manager) can prove nothing
-// about either.
+// --- Stage 0c: the frameless window's own chrome. ---
 currentStage = "stage0-window-chrome";
 {
   const chromeContext = await browser.newContext({
@@ -1718,9 +1479,7 @@ currentStage = "stage0-window-chrome";
       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   });
   await chromeContext.addInitScript(() => {
-    // One recorder, in the main frame's realm, because every document's stub
-    // has to feed the same list: on Windows a frame gets its own injected API
-    // and this is the shape that produces.
+    // One recorder in the main frame's realm, fed by every document.
     const isTop = window.top === window;
     const shared = isTop
       ? (window.__chromeTauri = { calls: [], listeners: [], maximized: false })
@@ -1771,8 +1530,7 @@ currentStage = "stage0-window-chrome";
   const chromePage = await chromeContext.newPage();
   try {
     await chromePage.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
-    // Hover-reveal the bar (the band's own mouseenter is what raises it), so the
-    // presses below land where the user's would.
+    // Hover-reveal the bar, so the presses land where a user's would.
     await chromePage.waitForFunction(() => {
       const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]')?.contentDocument;
       const row = doc?.getElementById("toolbar-row");
@@ -1790,9 +1548,7 @@ currentStage = "stage0-window-chrome";
       const recorder = window.__chromeTauri;
       const press = (el, detail, type) => {
         const from = recorder.calls.length;
-        // dispatchEvent returns false once preventDefault() has been called: the
-        // drag script's own claim on the press, and the proof a control was NOT
-        // swallowed by it.
+        // dispatchEvent returns false once a control claimed the press.
         const allowed = el.dispatchEvent(new MouseEvent(type ?? "mousedown", {
           bubbles: true, composed: true, cancelable: true, button: 0,
           detail: detail ?? 1, clientX: 40, clientY: 20,
@@ -1811,10 +1567,7 @@ currentStage = "stage0-window-chrome";
       }
       const button = row.querySelector("button, [role='button'], input, a[href]");
       const optOut = row.querySelector("[data-tauri-drag-region='false']");
-      // A double-click: Windows and Linux maximize on the press, macOS defers
-      // to the release so a drag away can cancel it (the native title bar's
-      // grace). Either way EXACTLY ONE toggle must come out of the pair, on
-      // whichever host runs the suite.
+      // A double-click toggles exactly once, whichever host runs the suite.
       const dbl = deep ? { down: press(deep, 2), up: press(deep, 2, "mouseup") } : null;
       return {
         bandAttr: band?.getAttribute("data-tauri-drag-region") ?? null,
@@ -1868,9 +1621,7 @@ currentStage = "stage0-window-chrome";
     }
     await chromePage.waitForFunction(() => window.__chromeTauri.calls.includes("window:toggleMaximize"), null, { timeout: 10_000 });
     const emitResize = (width, height) => chromePage.evaluate(([w, h]) => {
-      // The backend delivers an emitted event by scripting the MAIN frame, so a
-      // frame's listener has to be registered there to be reachable at all —
-      // which is what the caption's whole state machine depends on.
+      // The backend scripts the MAIN frame, so a listener must be registered.
       window.__chromeTauri.listeners
         .filter((l) => l.name === "tauri://resize")
         .forEach((l) => l.handler({ event: "tauri://resize", id: 1, payload: { width: w, height: h } }));
@@ -1895,8 +1646,7 @@ currentStage = "stage0-window-chrome";
     if (stateAfterMaximize.maximized !== true) {
       throw new Error(`[window chrome] the caption says Restore while the window says otherwise: ${JSON.stringify(stateAfterMaximize)}`);
     }
-    // And back again, same path, no reload: a probe that answered once and never
-    // again is exactly what the report described.
+    // And back again, same path, no reload.
     await chromePage.evaluate(() => {
       const doc = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]').contentDocument;
       const restore = [...doc.querySelectorAll(".window-controls button")]
@@ -1929,10 +1679,7 @@ currentStage = "stage1-open";
 const opened = await openBook(pearlsUrl);
 stages.afterOpen = opened;
 if (opened.disposalEpoch < 1) throw new Error("open did not claim the document state");
-// The workload gate: documentPages is the fixture's REAL page count (the
-// document proxy's numPages), not engine.pages (registered page hosts). A
-// book too small to jump across would make the fast-scroll policy trivially
-// untestable.
+// The workload gate: documentPages is the fixture's real page count.
 if (((opened.engine ?? {}).documentPages ?? 0) < MIN_FIXTURE_PAGES) {
   throw new Error(`fixture has ${opened.engine?.documentPages} pages, need >= ${MIN_FIXTURE_PAGES} for the jump workload`);
 }
@@ -1952,9 +1699,7 @@ console.log("warmup drained:", warmed.engine.prefetchesCompleted, "prefetches");
 
 // --- Stage 3: pressure — fast navigation, look-ahead, zoom ----------------
 currentStage = "stage3-scroll-zoom";
-// The scroll surface must own the input: one click into the page area puts
-// the viewer in front of the keyboard and the wheel, exactly where a real
-// reading session starts from.
+// The scroll surface must own the input: one click into the page area.
 await page.mouse.click(700, 450);
 await page.waitForTimeout(120);
 const scrollStart = await snap();
@@ -1966,11 +1711,7 @@ for (let i = 0; i < 24; i += 1) {
   await page.keyboard.press("PageDown");
   await page.mouse.move(700, 450);
   await page.mouse.wheel(0, 2200);
-  // Fast flicks with a reader's micro-pauses: the virtualizer mounts page
-  // hosts during the flicks and the render lane drains on the pauses (a
-  // continuous synthetic storm never yields, so nothing would ever raster).
-  // A look-ahead sample is live only for a blink, so the pause is watched
-  // densely rather than sampled once.
+  // Fast flicks with micro-pauses, so the render lane can drain.
   const settle = i % 5 === 4 ? 700 : 130;
   const deadline = Date.now() + settle;
   let s = null;
@@ -1994,10 +1735,7 @@ if (maxRenders <= scrollStart.engine.rendersStarted) {
 if (!sawLookahead) {
   throw new Error("the look-ahead was never observed active during scroll (blend was on)");
 }
-// Zoom pressure through the app's real zoom pipeline, ending back at the
-// original zoom (workload D: rapid zoom, return near original). Sampled
-// through every step: a zoom re-raster is exactly where canvas backing
-// storage and the render lane spike.
+// Zoom pressure through the app's real pipeline, ending where it began.
 const zoomPeaks = newPeaks();
 for (const key of ["+", "-"]) {
   for (let i = 0; i < 3; i += 1) {
@@ -2020,9 +1758,7 @@ if (zoomRenders <= maxRenders) {
 
 // --- Stage 4: fast-scroll raster bound (the original complaint, measured) -
 currentStage = "stage4-fast-jump";
-// A distant jump must rasterise the DESTINATION window, not every page it
-// flew over: observed jumps cost ~2 renders on this build. The bound pins
-// the policy; the later virtualizer phase has to keep or improve it.
+// A distant jump rasters the destination window, not the pages flown over.
 await page.mouse.click(700, 450);
 const jumpTargets = ["end", "top", "quarter"];
 const jumpPeaks = newPeaks();
@@ -2031,8 +1767,7 @@ for (const where of jumpTargets) {
   const beforeSnap = await snap();
   const before = beforeSnap.engine.rendersStarted;
   const fromPage = beforeSnap.readerPage;
-  // A new measurement generation: every raster the engine starts from now
-  // carries this id, so the trace assertion reads exactly this jump.
+  // A new measurement generation: every raster started now carries its id.
   const gen = await page.evaluate(() =>
     document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader.beginRenderGeneration());
   await page.evaluate((w) => {
@@ -2041,10 +1776,7 @@ for (const where of jumpTargets) {
       : w === "top" ? 0
       : list.scrollHeight / 4;
   }, where);
-  // The burst IS the measurement: sample the first 600 ms densely (that is
-  // where a broken skip policy would rasterise the ~37 pages this jump
-  // crosses), then give the settle policy its full window before the
-  // settled assertions.
+  // The burst is the measurement: sample the first 600 ms densely.
   const peakDeadline = Date.now() + 600;
   while (Date.now() < peakDeadline) {
     await page.waitForTimeout(30);
@@ -2057,8 +1789,7 @@ for (const where of jumpTargets) {
   summary.fastJumpRenderDeltas.push(delta);
   stages.duringFastJump = after;
   if (delta < 1) throw new Error(`fast jump to ${where} rendered nothing`);
-  // The jump's cost is the DESTINATION window, not the ~37 pages it flew
-  // over: ceiling + one swap of overlap.
+  // The jump's cost is the destination window plus one swap of overlap.
   if (delta > WINDOW_CEILING * 2) {
     throw new Error(`fast jump to ${where} rasterised ${delta} pages — the skip policy is gone (bound ${WINDOW_CEILING * 2})`);
   }
@@ -2069,13 +1800,7 @@ for (const where of jumpTargets) {
   if (after.retainedVirtualItems !== 0) {
     throw new Error(`fast jump to ${where} left ${after.retainedVirtualItems} retained virtual items after settle`);
   }
-  // PAGE-IDENTITY PROOF: every page the engine actually rasterized during
-  // this jump generation must sit inside the destination window the policy
-  // allows. The allowed range comes from the same policy constants the host
-  // bound uses — mounted window ceiling on each side plus the zombie
-  // retention cap — not from an invented page count. Render COUNTS cannot
-  // catch a skipped page being rasterized (a small burst looks identical);
-  // the trace names the pages.
+  // Page-identity proof: every rasterized page must sit in the allowed window.
   const trace = await page.evaluate((g) =>
     {
       const api = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader;
@@ -2102,10 +1827,7 @@ console.log("fast-jump peaks:", JSON.stringify(jumpPeaks));
 // --- Stage 5: close DURING an active page render (raced, then proven) -----
 currentStage = "stage5-render-race";
 const panicsBeforeRenderRace = panicCount;
-// Zoom commits keep the render lane fed; the atomic racer closes the book
-// in the same js turn that observes an in-flight render. The interrupted
-// work must show up as rendersCancelled/rendersDropped — a close that
-// raced nothing proves nothing.
+// Zoom commits keep the lane fed; the racer closes mid-render.
 let renderRaceWon = false;
 let renderRaceSnapshot = null;
 for (let attempt = 1; attempt <= 3 && !renderRaceWon; attempt += 1) {
@@ -2145,8 +1867,7 @@ console.log("close-during-render race WON; cancelled+dropped:",
 // --- Stage 6: close DURING an active thumbnail prefetch -------------------
 currentStage = "stage6-prefetch-race";
 const panicsBeforePrefetchRace = panicCount;
-// The warmup fires ~1.5s after ready; dense polling catches the first
-// prefetch early, and the atomic close lands inside its render window.
+// The warmup fires ~1.5s after ready; the close lands inside it.
 let prefetchRaceWon = false;
 let prefetchSnapshot = null;
 for (let attempt = 1; attempt <= 3 && !prefetchRaceWon; attempt += 1) {
@@ -2178,11 +1899,7 @@ console.log("close-during-prefetch race WON; prefetches dropped:",
 // --- Stage 7: close DURING a search index build (raced, then proven) ------
 currentStage = "stage7-search-race";
 const panicsBeforeSearchRace = panicCount;
-// The build is search's long async half — a worker round trip per page,
-// ~3 pages per turn — and the engine gauges it (searchActive). Same-turn
-// observe-and-close like the other races. Each attempt uses a book whose
-// index was never built: an adopted index skips extraction, so a retry on
-// an already-searched book can never catch the gauge up.
+// Search is the long async half: a worker round trip per page.
 const searchBooks = [pearlsUrl, outlineUrl, `${BASE}?blend=1&open=${encodeURIComponent("/samples/Good Title Book.pdf")}`];
 let searchRaceWon = false;
 let searchSnapshot = null;
@@ -2281,23 +1998,14 @@ console.log("large PDF lifecycle x5 drained; peaks:", JSON.stringify(largePeaks)
 
 // --- Stage 10: workload G — rapid reopen x10 -------------------------------
 currentStage = "stage10-rapid-reopen";
-// The wasm heap only ratchets up (the platform never shrinks it); judge
-// LEAK versus LATCH by the per-cycle step, so the steps are recorded and
-// the level gets a generous ceiling rather than a flatness demand.
+// The wasm heap only ratchets up; judge the per-cycle step.
 for (let cycle = 1; cycle <= 10; cycle += 1) {
   const openedCycle = await openBook(pearlsUrl);
   summary.rapidReopenHeaps.push(openedCycle.wasmHeapBytes);
   await closeAndWaitBaseline(`rapid reopen ${cycle}`);
   summary.rapidCycles = cycle;
 }
-// The wasm heap never shrinks, so the invariant is NOT "back to first
-// reading" — it is: resources disappear every cycle (asserted by the
-// per-cycle baselines above) AND no NEW ownership accumulates per cycle.
-// Over the ten recorded samples that separates a one-time allocator
-// ratchet (one step, then flat) from a per-cycle leak (a sustained climb):
-// a least-squares slope over the cycles plus a total-drift ceiling, both
-// tolerant of environment noise but both requiring the flat-after-ratchet
-// shape.
+// No new ownership per cycle: slope and drift separate ratchet from leak.
 const heaps = summary.rapidReopenHeaps;
 const n = heaps.length;
 const meanY = heaps.reduce((a, b) => a + b, 0) / n;
@@ -2324,39 +2032,14 @@ stages.afterRapidReopen = await snap();
 
 // --- Stage 11: workload H — SAME-PAGE lifecycle x10 (no reload) ------------
 currentStage = "stage11-same-page-x10";
-// Stages 8-10 proved the RELOAD matrix: every cycle began with page.goto,
-// which discards the whole JS/wasm world. The resources that live at
-// APPLICATION scope — the wasm module and its heap ratchet, the engine's
-// raster recycler, the library's caches — never felt a cycle. This workload
-// rides the real application path instead: click the book open from the
-// library (the row the reader recorded on open), work the pages, click the
-// toolbar close, and repeat in the SAME live page.
-// Every close must still return every reader-owned resource to baseline.
-// The Shell RECYCLES a reader frame after a close: the session is disposed
-// (fully drained — that is what this stage asserts) and a fresh warm session
-// mounts in the same document, so the wasm world, and with it the disposal
-// epoch, carries on. The epoch rule is therefore per frame: a fresh frame's
-// open claims 1; a recycled frame's open claims the previous close + 1; and
-// every close claims exactly one more than its open.
-/** Open the fixture from the library and wait for THAT open: a runtime
- *  generation `fresh` accepts, live with its document and no render in
- *  flight. Waiting on liveness alone raced the click — the reader kept from
- *  the previous close already satisfies it, so a fast run read the old
- *  session back before the new one existed. A generation that never becomes
- *  fresh times out here into the latest snapshot, and the caller's own
- *  assertion names the failure. */
-// The generation of the last reader an open actually landed in. A stage's
-// "new runtime" base must be this, not the generation snapped after a close:
-// by then the warm slot may already have booted the NEXT reader, whose
-// generation is minted before the click that opens it.
+// Stages 8-10 proved the reload matrix; this rides the live app path.
 let lastOpenedGeneration = 0;
 async function openFromLibrary(cycle, fresh = () => true) {
   const card = page.frameLocator('.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
   try {
     await card.click({ timeout: 5_000 });
   } catch {
-    // The grid's tap is pointerup-owned; HTMLElement.click only swallows a
-    // completed hold. The row's Enter handler is the real alternate open.
+    // The grid's tap is pointerup-owned; Enter is the alternate open.
     await page.evaluate(() => {
       const t = [...document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelectorAll(".book-title")]
         .find((el) => (el.textContent ?? "").includes("Programming Pearls"));
@@ -2378,15 +2061,7 @@ async function openFromLibrary(cycle, fresh = () => true) {
   lastOpenedGeneration = o.runtime?.generation ?? lastOpenedGeneration;
   return o;
 }
-// The shell-relative base is the runtime generation only: every same-page
-// open must be a NEW runtime generation (a disposed runtime is never revived
-// in place). The warm slot changes WHEN that generation is minted — the
-// reader boots before the click now, so the generation no longer advances on
-// the click — which is why the assertion is "never repeats" rather than
-// "+1 per cycle". The disposal epoch belongs to the frame's wasm world:
-// a fresh frame opens at 1, a recycled one continues from its last close
-// (the session is new — the generation check above proves that — but the
-// module is the one the frame already loaded).
+// Every same-page open is a new generation; the epoch belongs to the frame.
 const generationBase = (await snap()).runtime?.generation ?? 1;
 const usedGenerations = new Set();
 console.log("same-page stage: runtime generation base", generationBase);
@@ -2599,11 +2274,7 @@ function assertSplitWorkspace(s, label, pdfPane) {
   return { pdf, md, split };
 }
 
-/** Wait for `predicate` AND for the layout to have landed: every pane's
- *  rendered entry measures the box the host reports for it. The digest is
- *  pushed on a beat, so right after a re-layout (a split, a drag's last
- *  frame, a close) the snapshot and the DOM can each be one frame from the
- *  other; a box that never converges still fails, at the deadline. */
+/** Wait for `predicate` and for the layout to have landed. */
 async function waitForSettledLayout(label, predicate, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
@@ -2649,9 +2320,7 @@ async function paneEntries() {
 
 {
   const panicsBefore = panicCount;
-  // This stage proves fully per-pane looks — each pane its own Light / Dark
-  // / Dim — so it runs with the shared-mode setting (on by default) off.
-  // Settings are read at boot; the open below reboots on them.
+  // Fully per-pane looks, so this stage runs with the shared mode off.
   await page.evaluate(() => {
     const key = "mareader.settings.v1";
     let s = {};
@@ -2701,9 +2370,7 @@ async function paneEntries() {
     throw new Error(`[pane focus] the active outline is not painted above every pane: ${JSON.stringify(focusPaint)}`);
   }
 
-  // Pane decoration belongs in Settings → Theme, not the title-bar palette
-  // menu. The independent-theme toggle remains there, after every appearance
-  // dial, so it is easy to find without displacing the main palette controls.
+  // Pane decoration belongs in Settings → Theme, not the palette menu.
   await frameClick('button[title="Appearance"]', "appearance menu placement");
   await page.waitForFunction((sel) =>
     !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="independent-themes"]'), activeFrame, { timeout: 5_000 });
@@ -2722,9 +2389,7 @@ async function paneEntries() {
   }
   await frameClick('button[title="Appearance"]', "close appearance menu");
 
-  // Split decoration is mounted only while two panes are placed. Exercise
-  // the controls in the Theme tab, including the requested uniform outer
-  // margin and internal gutter.
+  // Split decoration mounts only while two panes are placed.
   await frameClick('button[title="Reader settings"]', "split pane appearance");
   await frameClick('button[aria-label="Theme"]', "split pane appearance");
   const decorationVisible = await page.evaluate((sel) =>
@@ -2825,8 +2490,7 @@ async function paneEntries() {
   }
   if (entries.filter((e) => e.active).length !== 1) throw new Error(`[split] ${JSON.stringify(entries)} marks not exactly one active entry`);
 
-  // Focus follows the pointer: a press inside the PDF pane makes it the
-  // one active pane (the host's capture listener, before the content).
+  // Focus follows the pointer: a press inside a pane makes it active.
   await page.evaluate(([sel, id]) => {
     const f = document.querySelector(sel);
     const target = f.contentDocument.querySelector(`[data-pane-id="${id}"] [data-pane-root]`);
@@ -2836,8 +2500,7 @@ async function paneEntries() {
   await waitFor("[split] the pressed PDF pane became active", (s) =>
     s.host?.activePane === pdfPane && s.host.panes.filter((p) => p.focused).length === 1, 10_000);
 
-  // The divider: a real pointer drag moves the split's RATIO; both panes
-  // are handed their new boxes and neither is recreated.
+  // The divider: a real drag moves the ratio without recreating panes.
   const handle = await page.evaluate((sel) => {
     const f = document.querySelector(sel);
     const d = f.contentDocument.querySelector('[role="separator"][data-split-id]');
@@ -2866,10 +2529,7 @@ async function paneEntries() {
   await assertPaneBox(dragged, "split: dragged pdf", afterDrag.pdf);
   await assertPaneBox(dragged, "split: dragged markdown", afterDrag.md);
 
-  // Independent themes are a real pane-local appearance path, not merely a
-  // per-pane map. Exercise the visible switch and base controls, and emulate
-  // the engine's two published paper scopes while blend is active: the PDF's
-  // local paper must not bleed into the MD pane or the shared workspace base.
+  // Independent themes are pane-local: the PDF's paper must not bleed out.
   const appearance = 'button[title="Appearance"]';
   await page.evaluate(([sel, appearance]) => {
     const doc = document.querySelector(sel)?.contentDocument;
@@ -2885,9 +2545,7 @@ async function paneEntries() {
   await page.waitForFunction(([sel]) =>
     document.querySelector(sel)?.contentDocument?.querySelector(".reader-bg")?.classList.contains("independent-themes"), [activeFrame]);
 
-  // The new MD pane had focus after the divider interaction/open. Explicitly
-  // request it through the real pane capture path, then choose Dark in the
-  // actual appearance menu.
+  // The new MD pane had focus; request it through the pane's capture path.
   await page.evaluate(([sel, id]) => {
     const f = document.querySelector(sel);
     const target = f.contentDocument.querySelector(`[data-pane-id="${id}"] [data-pane-root]`);
@@ -2916,8 +2574,7 @@ async function paneEntries() {
     throw new Error(`[pane themes] MD's selected Dark paper/menu state did not land: ${JSON.stringify({ mdDark, selectedMdBase })}`);
   }
 
-  // Deliberately divergent test colours make the ownership contract obvious:
-  // shared red on :root, local green on the PDF root, and MD's own dark base.
+  // Divergent colours make the ownership contract obvious.
   const blendScopes = await page.evaluate(([sel, pdfId, mdId]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     const workspace = doc?.querySelector(".reader-bg");
@@ -2925,8 +2582,7 @@ async function paneEntries() {
     const mdRoot = doc?.querySelector(`[data-pane-id="${mdId}"] [data-pane-root]`);
     doc.documentElement.style.setProperty("--pdf-paper-baked", "#d02020");
     pdfRoot.style.setProperty("--pane-pdf-paper-baked", "#a0c060");
-    // Blend is workspace state every pane frame mirrors onto its own
-    // `.reader-bg`: the poke lands on all of them, as the mirror would.
+    // Blend is workspace state every pane frame mirrors onto its own bg.
     doc.querySelectorAll(".reader-bg").forEach((bg) => bg.classList.add("blend"));
     return {
       sharedBackdrop: getComputedStyle(workspace).backgroundColor,
@@ -2946,10 +2602,7 @@ async function paneEntries() {
     doc?.querySelectorAll("[data-pane-root]").forEach((root) => root.style.removeProperty("--pane-pdf-paper-baked"));
   }, [activeFrame]);
 
-  // Now theme the PDF itself. This checks that changing the focused PDF
-  // edits its own scoped canvas pipeline, while the adjacent Markdown retains
-  // its distinct look. The engine smoke separately asserts independent pixel
-  // baking for two simultaneously live PDF sessions.
+  // Now theme the PDF: its own scoped pipeline, its neighbour untouched.
   await page.evaluate(([sel, id]) => {
     const f = document.querySelector(sel);
     f.contentDocument.querySelector(`[data-pane-id="${id}"] [data-pane-root]`)
@@ -2985,9 +2638,7 @@ async function paneEntries() {
   if (!pdfLook.independent || !pdfLook.pdfFilter || pdfLook.pdfPaper === pdfLook.mdPaper || selectedPdfBase !== "true") {
     throw new Error(`[pane themes] PDF's own Dim look/menu state did not diverge from MD: ${JSON.stringify({ pdfLook, selectedPdfBase })}`);
   }
-  // Exercise the opposite family in that SAME focused PDF pane. It must be
-  // possible to choose Light for the PDF while the adjacent Markdown remains
-  // Dark; this catches a global base control masquerading as per-pane UI.
+  // The opposite family in the same pane: Light for the PDF, MD stays Dark.
   await page.evaluate((sel) => document.querySelector(sel)?.contentDocument?.querySelector('button[title="Light"]')?.click(), activeFrame);
   await page.waitForFunction(([sel, pdfId, mdId]) => {
     const doc = document.querySelector(sel)?.contentDocument;
@@ -3018,9 +2669,7 @@ async function paneEntries() {
     !document.querySelector(sel)?.contentDocument?.querySelector(".reader-bg")?.classList.contains("independent-themes"), [activeFrame]);
   console.log(`[pane themes] independent MD/PDF looks, mixed-format blend isolation: ${JSON.stringify({ mdDark, blendScopes, pdfLook, splitLooks })}`);
 
-  // Close the PDF pane through the host's own control: the Markdown pane
-  // keeps its session, takes focus and the whole slot; the PDF's engine
-  // session and every raster it owned go with its pane.
+  // Close the PDF pane through the host's own control.
   await page.evaluate(([sel, id]) => {
     const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
     if (!btn) throw new Error(`pane ${id} has no close control`);
@@ -3065,11 +2714,7 @@ async function paneEntries() {
 
 // --- Stage 13b: independent themes at the split boundary -----------------
 currentStage = "stage13b-pane-theme-boundary";
-// The mode needs the split it serves. Closing back to ONE pane stands it
-// down and hands the surviving pane's colour to the window theme, so the
-// pane left and the shared chrome around it agree; the stored toggle
-// survives, so the next split brings the mode back by itself, with the
-// survivor's colour untouched and the new pane in a colour of its own.
+// The mode needs the split it serves; closing one stands it down.
 {
   const panicsBefore = panicCount;
   const openedTheme = await openLight(PEARLS);
@@ -3077,14 +2722,7 @@ currentStage = "stage13b-pane-theme-boundary";
 
   // --- Stage 13c: the rail's thumbnails follow the theme -----------------
   currentStage = "stage13c-rail-thumb-themes";
-  // The rail's canvases live in the workspace host and hold a picture the
-  // PANE's engine baked for the look in force when it was requested. A
-  // theme change must reach them: the host re-renders every settled cell
-  // when its pane says the look was re-baked, and the frame re-bakes that
-  // cell's raster from the raw one instead of answering with a picture of
-  // the look before it. The rail is measured by DOWN-SAMPLING the painted
-  // cards' own pixels in the active frame's document, so the numbers are
-  // the engine's bake and nothing a CSS layer paints over it.
+  // The rail's canvases hold the pane's bakes; a theme change must reach them.
   {
     const panicsBeforeThumbs = panicCount;
     await frameClick('button[title="Toggle sidebar"]', "[thumb themes] the thumbnail rail");
@@ -3126,9 +2764,7 @@ currentStage = "stage13b-pane-theme-boundary";
     };
     // The cards: painted, uncovered, at least a row of them.
     const first = await waitRail("the rail painted its first thumbnails", () => true);
-    // Which way to move the base: the dials are a 3-way choice, and the
-    // window's look is whatever the run left behind, so the stage reads the
-    // current base and flips it rather than assuming one.
+    // Read the current base and flip it rather than assuming one.
     await frameClick('button[title="Appearance"]', "[thumb themes] the appearance menu");
     const baseNow = await page.evaluate((sel) => {
       const doc = document.querySelector(sel)?.contentDocument;
@@ -3140,8 +2776,7 @@ currentStage = "stage13b-pane-theme-boundary";
     }, activeFrame);
     if (!baseNow) throw new Error("[thumb themes] the appearance menu shows no base to move");
     const moved = baseNow === "Light" ? "Dark" : "Light";
-    // Dark inverts the bake and Dim darkens it; both read far darker than
-    // Light, which is the direction this stage asserts.
+    // Dark inverts the bake and Dim darkens it: both read darker than Light.
     const darker = moved !== "Light";
     await frameClick(`button[title="${moved}"]`, `[thumb themes] the ${moved} base`);
     const after = await waitRail(`the thumbs follow the ${moved} base`,
@@ -3151,8 +2786,7 @@ currentStage = "stage13b-pane-theme-boundary";
     const back = await waitRail("the thumbs follow the base back",
       (t) => (darker ? t.mean > first.mean - 15 : t.mean < first.mean + 15));
     await frameClick('button[title="Appearance"]', "[thumb themes] close the appearance menu");
-    // The rail closes from its own header — the toolbar's toggle only exists
-    // while the rail is shut — and the cards release with the slide.
+    // The rail closes from its own header; cards release with the slide.
     await frameClick('button[title="Close sidebar"]', "[thumb themes] close the thumbnail rail");
     await page.waitForFunction((sel) => {
       const doc = document.querySelector(sel)?.contentDocument;
@@ -3178,18 +2812,11 @@ currentStage = "stage13b-pane-theme-boundary";
   const mdTheme = themed.host.panes.find((p) => p.paneId !== themePane);
   if (themed.host.activePane !== mdTheme.paneId) throw new Error(`[theme boundary] active pane ${themed.host.activePane}, expected the new Markdown pane ${mdTheme.paneId}`);
 
-  /** The window's paper and every pane's own, in the active frame's
-   *  document. A pane root with no look of its own carries no tokens, and
-   *  a custom property inherits, so it answers the window's value — which
-   *  is exactly what the single-pane state must show. */
+  /** The window's paper and every pane's own, in the active frame. */
   const papers = () => page.evaluate((sel) => {
     const doc = document.querySelector(sel)?.contentDocument;
     if (!doc) return null;
-    // A custom property's value is raw text, and one colour has more than one
-    // spelling in this app: the window's root reads `#fff` where a pane root
-    // reads `#ffffff`. Every value therefore goes through a colour property
-    // and comes back as the browser's own computed form before anything is
-    // compared, so equal colours compare equal and different ones differ.
+    // A custom property's value is raw text: compare computed colours.
     const paper = (el) => {
       if (!el) return "";
       const raw = getComputedStyle(el).getPropertyValue("--color-paper").trim();
@@ -3205,9 +2832,7 @@ currentStage = "stage13b-pane-theme-boundary";
     const panes = {};
     for (const entry of doc.querySelectorAll("[data-pane-id]")) {
       const frame = entry.querySelector("iframe.pane-frame:not([data-frame-hidden])");
-      // The root is under the entry, or in the pane frame that entry holds
-      // (the pane's surface and its document frame are separate documents;
-      // only one of them carries the root).
+      // The root is under the entry, or in the pane frame it holds.
       const root = entry.querySelector("[data-pane-root]")
         ?? frame?.contentDocument?.querySelector("[data-pane-root]");
       panes[entry.dataset.paneId] = paper(root);
@@ -3229,14 +2854,7 @@ currentStage = "stage13b-pane-theme-boundary";
     throw new Error(`[theme boundary] ${label}: ${JSON.stringify(last)}`);
   };
 
-  // Which pane keeps the window's look is the host's ACTIVE pane at the
-  // moment the mode comes on, so hand the Markdown pane focus the way a
-  // reader does before flipping the switch: a press on the pane's own root.
-  // The root is looked up the same way `papers()` looks it up — under the
-  // pane entry, or in the pane frame that entry holds — because the pane's
-  // surface and the pane's document frame are separate documents and only
-  // one of them carries the root. The event is built by the constructor of
-  // the window that owns that root.
+  // The pane that keeps the window's look is the host's active pane.
   await page.evaluate(([sel, id]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     const entry = doc?.querySelector(`[data-pane-id="${id}"]`);
@@ -3251,10 +2869,7 @@ currentStage = "stage13b-pane-theme-boundary";
 
   await frameClick('button[title="Appearance"]', "[theme boundary] the appearance menu");
   await frameClick('[data-setting="independent-themes"] [role="switch"]', "[theme boundary] independent themes on");
-  // The pane the open created is focused, so IT keeps the window's look and
-  // the PDF already on screen takes a tint of its own: the two panes and the
-  // window are three different papers, which is the state that must not
-  // survive the collapse.
+  // The pane the open created is focused, so IT keeps the window's look.
   const split = await waitPapers("the split shows a look of its own, apart from the window",
     (p) => p.independent && p.panes[mdTheme.paneId] === p.window && p.panes[themePane] !== p.window);
 
@@ -3270,8 +2885,7 @@ currentStage = "stage13b-pane-theme-boundary";
   const collapsed = await waitPapers("the mode stood down and the window took the pane's colour",
     (p) => !p.independent && p.window === split.panes[themePane] && p.panes[themePane] === split.panes[themePane]);
 
-  // The stored toggle is on: the next split brings the mode back, the
-  // survivor keeps the colour it had, and the new pane gets its own.
+  // The stored toggle is on: the next split brings the mode back.
   if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[theme boundary] the host refused the pane that carries the mode back");
   const resumed = await waitForSettledLayout("[theme boundary] the mode returns with the split", (s) =>
     s.host?.panes?.length === 2 &&
@@ -3281,17 +2895,14 @@ currentStage = "stage13b-pane-theme-boundary";
     (p) => p.independent && p.panes[themePane] === split.panes[themePane] &&
       p.panes[newcomer.paneId] !== p.panes[themePane]);
 
-  // The facts, before anything is put back: a failure in the restore below
-  // still leaves the numbers this stage proved in the log.
+  // The facts first, so a failure in the restore still leaves them logged.
   summary.paneThemeBoundary = {
     pane: themePane, window: split.window, split: split.panes,
     collapsedWindow: collapsed.window, resumed: again.panes,
   };
   console.log(`pane theme boundary: the split's papers ${JSON.stringify(split.panes)} against the window ${split.window}; the collapse promoted ${collapsed.window} and stood the mode down; the next split brought it back as ${JSON.stringify(again.panes)}`);
 
-  // Restore the toggle for the stages that follow. The popover the mode-on
-  // click opened is still on screen — a press inside a pane does not dismiss
-  // it — so the menu is reopened only if that stopped being true.
+  // Restore the toggle for the stages that follow.
   const switchOnScreen = () => page.evaluate((sel) =>
     !!document.querySelector(sel)?.contentDocument
       ?.querySelector('[data-setting="independent-themes"] [role="switch"]'), activeFrame);
@@ -3309,17 +2920,7 @@ currentStage = "stage13b-pane-theme-boundary";
 
 // --- Stage 13d: independent textures at the split boundary ----------------
 currentStage = "stage13d-pane-texture-boundary";
-// The texture family has its own per-pane mode, the same shape as the colour
-// one and routed by the same rule: turning it on keeps the focused pane's
-// pattern and hands every other pane a mode of its own; a routed pick — the
-// mode or either dial — lands on the focused pane alone and on nothing beside
-// it; and switching the mode off folds the window's texture back over every
-// pane. The last split's collapse promotes the survivor's texture into the
-// window theme, the way the colour stage proves one turn earlier, so the
-// texture a reader ends on is the texture the next launch opens with. A
-// Markdown pane is on stage deliberately: its pattern rides the scroller that
-// IS its paper, which is the half of the contract that used to be missing —
-// and the half whose absence used to hide the picker entirely.
+// The texture family has its own per-pane mode, routed by the same rule.
 {
   const panicsBeforeTexture = panicCount;
   const openedTextured = await openLight(PEARLS);
@@ -3331,10 +2932,7 @@ currentStage = "stage13d-pane-texture-boundary";
   const mdPane = textured.host.panes.find((p) => p.paneId !== pdfPane).paneId;
   if (textured.host.activePane !== mdPane) throw new Error(`[texture boundary] active pane ${textured.host.activePane}, expected the new Markdown pane ${mdPane}`);
 
-  // The `texture-*` class is the naming contract `styles/textures.css` and
-  // `TextureMode::css_class` share, restated here on purpose: a mode that
-  // renames its class in Rust without renaming it in the stylesheet paints
-  // nothing, and that is exactly the bug class this stage exists to catch.
+  // The `texture-*` class is the naming contract the stylesheet shares.
   const CLASS_OF = {
     None: null,
     "Real paper": "texture-paper",
@@ -3344,13 +2942,7 @@ currentStage = "stage13d-pane-texture-boundary";
     Cross: "texture-cross",
   };
 
-  // Per pane: the class its carriers wear — a PDF page host, or the reflowable
-  // scroller for a text document — and the two dials its root paints as its
-  // OWN. A pane with no look of its own paints neither and reads null,
-  // inheriting the window; that difference is what turns this probe into a
-  // routing assert rather than a look at the same number twice. `chosen` is
-  // the menu's own answer: which mode the picker marks pressed, read from the
-  // same `aria-pressed` the reader sees.
+  // Per pane: the class its carriers wear and the two dials it paints.
   const textures = () => page.evaluate((sel) => {
     const doc = document.querySelector(sel)?.contentDocument;
     if (!doc) return null;
@@ -3367,9 +2959,7 @@ currentStage = "stage13d-pane-texture-boundary";
     const panes = {};
     for (const entry of doc.querySelectorAll("[data-pane-id]")) {
       const frame = entry.querySelector("iframe.pane-frame:not([data-frame-hidden])");
-      // The root is under the entry, or in the pane frame that entry holds —
-      // the pane's surface and the pane's document frame are separate
-      // documents, and only one of them carries the root.
+      // The root is under the entry, or in the pane frame it holds.
       const root = entry.querySelector("[data-pane-root]")
         ?? frame?.contentDocument?.querySelector("[data-pane-root]");
       panes[entry.dataset.paneId] = root
@@ -3395,9 +2985,7 @@ currentStage = "stage13d-pane-texture-boundary";
     }
     throw new Error(`[texture boundary] ${label}: ${JSON.stringify(last)}`);
   };
-  // The picker's own clicks, by the label a reader reads: the mode chips carry
-  // no test-only attribute, and the button whose text says "Grid" is the
-  // button the menu offers for Grid.
+  // The picker's own clicks, by the label a reader reads.
   const clickTexture = (name) => page.evaluate(([sel, name]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     const buttons = [...(doc?.querySelectorAll('[data-appearance-section="page-texture"] .grid-cols-3 button') ?? [])];
@@ -3415,29 +3003,20 @@ currentStage = "stage13d-pane-texture-boundary";
   }, [activeFrame, value]);
 
   await frameClick('button[title="Appearance"]', "[texture boundary] the appearance menu");
-  // The picker is there for the Markdown pane: the section used to stand down
-  // while the focused document was reflowable, on the theory that only a
-  // raster can carry a pattern.
+  // The picker is there for the Markdown pane: it must not stand down.
   await waitTextures("the texture section shows while a Markdown pane is focused", (p) => p.section);
   const atRest = await waitTextures("the split rests on the window's own texture",
     (p) => p.chosen in CLASS_OF && p.panes[pdfPane].mode === p.panes[mdPane].mode
       && p.panes[pdfPane].opacity === null && p.panes[mdPane].opacity === null);
 
-  // The mode comes on. The pane in front — the Markdown one the reader just
-  // opened and is looking at — keeps the texture it shows; the PDF beside it
-  // is handed a different mode, chosen at random out of the ones not already
-  // on screen, and each pane now paints its own two dials.
+  // The mode comes on; the pane in front keeps the texture it shows.
   await frameClick('[data-setting="independent-textures"] [role="switch"]', "[texture boundary] independent textures on");
   const perPane = await waitTextures("each pane took a texture of its own",
     (p) => p.panes[mdPane].mode === atRest.panes[mdPane].mode
       && p.panes[pdfPane].mode !== p.panes[mdPane].mode
       && p.panes[pdfPane].opacity !== null && p.panes[mdPane].opacity !== null);
 
-  // Both per-pane modes at once, in the order a reader would try them. Colour
-  // independence joining a split that already textures per pane must give every
-  // pane a colour of its own WITHOUT shuffling the patterns it is showing: a
-  // switch owns the family it re-seeds, and the map survives the colour mode
-  // folding for the same reason — the texture preference never asked for either.
+  // Both per-pane modes at once: a switch owns the family it re-seeds.
   await frameClick('[data-setting="independent-themes"] [role="switch"]', "[texture boundary] independent themes beside the texture mode");
   const both = await waitTextures("each pane took a colour of its own, patterns unchanged",
     (p) => p.independent && p.panes[pdfPane].mode === perPane.panes[pdfPane].mode
@@ -3448,16 +3027,11 @@ currentStage = "stage13d-pane-texture-boundary";
       && p.panes[mdPane].mode === both.panes[mdPane].mode
       && p.panes[pdfPane].mode !== p.panes[mdPane].mode);
 
-  // A pick, then a dial, with the Markdown pane in front: both move THAT pane
-  // and leave its neighbour exactly as the mode left it. Before the fix the
-  // class never moved at all — a per-pane edit lands in the pane's own look,
-  // not in the settings a pane's copy of the world is read from.
+  // A pick, then a dial: both move that pane and leave its neighbour alone.
   const options = await page.evaluate((sel) => [...(document.querySelector(sel)?.contentDocument
     ?.querySelectorAll('[data-appearance-section="page-texture"] .grid-cols-3 button') ?? [])]
     .map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim()), activeFrame);
-  // A mode the Markdown pane is not already wearing and the PDF pane will not
-  // be caught wearing either, so the pick below can only pass by moving one
-  // pane; "None" is out because its dials are inert by design.
+  // A mode neither pane is already wearing, so the pick can only move one.
   const target = options.find((name) => name !== atRest.chosen
     && CLASS_OF[name] && CLASS_OF[name] !== perPane.panes[pdfPane].mode);
   if (!target) throw new Error(`[texture boundary] the grid offers nothing to switch to: ${JSON.stringify(options)}`);
@@ -3471,10 +3045,7 @@ currentStage = "stage13d-pane-texture-boundary";
       && p.panes[pdfPane].opacity === perPane.panes[pdfPane].opacity
       && p.panes[pdfPane].opacity === p.windowDial);
 
-  // The collapse: the Markdown pane, whose texture the window never saw,
-  // goes. The surviving PDF pane's own texture is promoted into the window
-  // theme as the mode stands down, and the pane stops painting dials of its
-  // own because the window now says the same thing.
+  // The collapse: the Markdown pane goes; the PDF's texture is promoted.
   await page.evaluate(([sel, id]) => {
     const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
     if (!btn) throw new Error(`pane ${id} has no close control`);
@@ -3486,9 +3057,7 @@ currentStage = "stage13d-pane-texture-boundary";
     (p) => p.panes[pdfPane].mode === perPane.panes[pdfPane].mode
       && p.panes[pdfPane].opacity === null && p.windowDial === perPane.panes[pdfPane].opacity);
 
-  // The stored preference survived the stand-down, so the next split brings
-  // the mode back by itself: the survivor keeps what the window just learned
-  // from it, and the pane born beside it is handed a mode of its own.
+  // The stored preference survived, so the next split brings the mode back.
   if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[texture boundary] the host refused the pane that carries the mode back");
   const back = await waitForSettledLayout("[texture boundary] the mode returns with the split", (s) =>
     s.host?.panes?.length === 2 &&
@@ -3498,10 +3067,7 @@ currentStage = "stage13d-pane-texture-boundary";
     (p) => p.panes[pdfPane].mode === promoted.panes[pdfPane].mode
       && p.panes[newcomer].mode !== p.panes[pdfPane].mode);
 
-  // Switch the mode off by hand: one texture for every pane again — the
-  // window's, which is the promoted one — and no pane paints dials. Then put
-  // the window back where the stage found it, so the stages that follow read
-  // the workspace they expect.
+  // Switch the mode off by hand, then put the window back as found.
   await frameClick('[data-setting="independent-textures"] [role="switch"]', "[texture boundary] independent textures off");
   await waitTextures("one texture for every pane, the window's own",
     (p) => p.panes[pdfPane].mode === p.panes[newcomer].mode
@@ -3530,16 +3096,7 @@ currentStage = "stage13d-pane-texture-boundary";
 
 // --- Stage 14: the Library panel, the one split-drag source --------------
 currentStage = "stage14-drag-drop";
-// The production drag: a file row of the reader's Library panel (the rail's
-// third tab, a compact tree of the library) carries its file to a split of
-// the REAL workspace — the host measures its slot and its panes, the
-// preview is geometry only (nothing opens until the drop), and the drop is
-// the host's one workspace command, whose pane takes focus. Escape, a
-// release back over the rail and a full workspace change nothing. The same
-// panel lists the open panes once there is more than one (a click focuses,
-// × closes), and a plain click on a row opens the file in the focused pane
-// (the default of the tree-click setting). A light Markdown fixture
-// throughout: this proves the drag, not a PDF's render timing.
+// The production drag: a library row carried into a real workspace split.
 
 /** A light document opened from the URL, in one ready pane. */
 async function openLight(path) {
@@ -3588,8 +3145,7 @@ async function waitPreview(label, predicate, timeoutMs = 10_000) {
   throw new Error(`[${label}] the preview never matched: ${JSON.stringify(last)}`);
 }
 
-/** What the Library panel shows: its file rows and its open-pane tabs
- *  (`null` while the panel is not the rail's shown tab). */
+/** What the Library panel shows: file rows and open-pane tabs. */
 async function libraryPanel() {
   return page.evaluate((sel) => {
     const doc = document.querySelector(sel)?.contentDocument;
@@ -3619,9 +3175,7 @@ async function waitPanel(label, predicate, timeoutMs = 10_000) {
   throw new Error(`[${label}] the Library panel never matched: ${JSON.stringify(last)}`);
 }
 
-/** Open the rail on its Library tab. The title bar's toggle sits under the
- *  window drag region (a plain browser swallows a hit-tested click there),
- *  so both clicks are dispatched on the buttons: the same handlers. */
+/** Open the rail on its Library tab; both clicks are dispatched. */
 async function openLibraryPanel(label, needles) {
   await page.evaluate((sel) => {
     document.querySelector(sel)?.contentDocument?.querySelector('button[title="Toggle sidebar"]')?.click();
@@ -3663,8 +3217,7 @@ async function rowBox(needle) {
   }, [activeFrame, needle]);
 }
 
-/** Press the Library row naming `needle` with the real mouse and carry the
- *  pointer to `to` (page coordinates) in steps. The button stays down. */
+/** Press the row naming `needle` and carry the pointer to `to`. */
 async function liftRow(needle, to) {
   const box = await rowBox(needle);
   if (!box) throw new Error(`the Library panel has no row for ${needle}`);
@@ -3686,8 +3239,7 @@ async function liftRow(needle, to) {
   return from;
 }
 
-/** A plain click (the real mouse, no movement) on the row naming `needle`
- *  (its name, or its path exactly). */
+/** A plain click on the row naming `needle`. */
 async function clickRow(needle) {
   const box = await rowBox(needle);
   if (!box) throw new Error(`the Library panel has no row for ${needle}`);
@@ -3723,8 +3275,7 @@ async function chooseLibraryClick(choice) {
     if (Date.now() > deadline) throw new Error(`[${label}] the choice never took`);
     await page.waitForTimeout(50);
   }
-  // Close it, and wait for the dialog itself to be gone: a sheet still
-  // fading out would take the next click meant for the rail.
+  // Close it and wait for the dialog to be gone.
   const dialogUp = () => page.evaluate((sel) =>
     !!document.querySelector(sel)?.contentDocument?.querySelector('[role="dialog"][aria-label="Reader settings"]'), activeFrame);
   await page.evaluate((sel) => document.querySelector(sel).contentWindow.focus(), activeFrame);
@@ -3740,8 +3291,7 @@ async function chooseLibraryClick(choice) {
     await frameClick('[role="dialog"][aria-label="Reader settings"] button[title="Close"]', label, 2_000);
   }
   await page.waitForTimeout(150);
-  // One Escape peels one layer: the press that dismissed the sheet is not
-  // also the sidebar's, so the Library tab is still there to click.
+  // One Escape peels one layer: the Library tab is still there.
   if (railWasOpen && (await libraryPanel()) === null) {
     throw new Error(`[${label}] closing the settings sheet folded the rail away too`);
   }
@@ -3785,8 +3335,7 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
   if (two.host.layout?.split?.axis !== "horizontal" || layoutLeaves(two.host.layout).join() !== `${first.paneId},${second.paneId}`) {
     throw new Error(`[drag] a right drop laid out ${JSON.stringify(two.host.layout)}`);
   }
-  // The row's file in a pane of its own, not a move. (Its document id is the
-  // library row's; the URL open that seeded the first pane names the path.)
+  // The row's file in a pane of its own, not a move.
   if (second.format !== "markdown" || !second.documentId) throw new Error(`[drag] the new pane shows ${second.format} ${second.documentId}`);
   if (two.host.drag !== "idle" || (await dropPreview()) !== null) throw new Error("[drag] the drag outlived its drop");
   await assertPaneBox(two, "drag: first", two.host.panes.find((p) => p.paneId === first.paneId));
@@ -3812,10 +3361,7 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
     throw new Error(`[drag] a bottom drop laid out ${JSON.stringify(three.host.layout)}`);
   }
 
-  // Escape mid drag: the preview goes, the release does nothing. Aimed at
-  // the first pane's bottom as it is now: beside the docked rail and two
-  // splits it is too narrow for a side split, which is correctly not
-  // offered.
+  // Escape mid drag: the preview goes, the release does nothing.
   const firstNow = await frameBox(`[data-pane-id="${first.paneId}"]`);
   const firstBottom = { x: firstNow.x + firstNow.width * 0.5, y: firstNow.y + firstNow.height * 0.93 };
   await liftRow("Split Notes", firstBottom);
@@ -3863,19 +3409,14 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
     throw new Error("[click] the other pane changed");
   }
 
-  // The row-click setting, changed where a user changes it (Settings →
-  // Workspace). "Open as a new split": a file that is not open gets a new
-  // pane beside the focused one — BELOW it here, since beside the docked
-  // rail the column has no room for another side split. "Do nothing": a
-  // click is ignored, even on a file that is open in another pane.
+  // The row-click setting, changed in Settings → Workspace.
   const others = (await libraryPanel()).files.filter((f) =>
     !/Split Notes|Programming Pearls/.test(`${f.name} ${f.path}`));
   if (others.length === 0) throw new Error("[click] the library holds no third file to open");
   await chooseLibraryClick("split");
   const beforeSplitClick = await snap();
   await clickRow(others[0].path);
-  // On a failure, say what the click left behind: whether a pane was made
-  // at all, and in what state.
+  // On a failure, say what the click left behind.
   const splitClick = await waitForSettledLayout("click: a new split beside the focused pane", (s) => everyReady(s, 3), 45_000)
     .catch(async (error) => {
       const now = await snap();
@@ -3889,8 +3430,7 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
   const clicked = splitClick.host.panes.find((p) => p.paneId !== first.paneId && p.paneId !== second.paneId);
   const firstAfter = splitClick.host.panes.find((p) => p.paneId === first.paneId);
   if (splitClick.host.activePane !== clicked.paneId) throw new Error(`[click] the split's pane did not take focus (${splitClick.host.activePane})`);
-  // Beside the focused pane: to its right when a side split fits, else below
-  // it (the column beside the docked rail may be too narrow).
+  // Beside the focused pane: right when a side split fits, else below.
   const rightOf = Math.abs(clicked.bounds.x - (firstAfter.bounds.x + firstAfter.bounds.width)) <= 2 && Math.abs(clicked.bounds.y - firstAfter.bounds.y) <= 2;
   const below = Math.abs(clicked.bounds.y - (firstAfter.bounds.y + firstAfter.bounds.height)) <= 2 && Math.abs(clicked.bounds.x - firstAfter.bounds.x) <= 2;
   if (!rightOf && !below) {
@@ -3905,10 +3445,7 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
   }
   await chooseLibraryClick("replace");
 
-  // A full workspace offers nothing: with a fourth pane (MAX_PANES) a drag
-  // finds no target over any pane, and its release changes nothing. Beside
-  // the docked rail the columns are too narrow for another side split, so
-  // the second column — focused from its tab — is split down.
+  // A full workspace offers nothing: a fourth pane has no target.
   await page.evaluate(([sel, id]) => {
     document.querySelector(sel)?.contentDocument?.querySelector(`[data-open-tab="${id}"] [role="tab"]`)?.click();
   }, [activeFrame, second.paneId]);
@@ -3934,14 +3471,12 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
     tabsAfterClose: closedTab.host.panes.map((p) => p.paneId),
     clickReplaced: replaced.host.panes.find((p) => p.paneId === first.paneId)?.format,
   };
-  // The reader disposed mid-drag: the button is still down, the session
-  // live, when the workspace goes — and the disposed host reports no drag.
+  // The reader disposed mid-drag: the host reports no drag.
   await liftRow("Split Notes", { x: leftBox.x + leftBox.width * 0.5, y: leftBox.y + leftBox.height * 0.5 });
   await page.waitForTimeout(200);
   const held = await snap();
   if (held.host.drag === "idle") throw new Error("[drag] the drag before the dispose never went live");
-  // One mint per open and per pane dispose: what the live workspace has
-  // claimed so far, plus one for each pane the close disposes.
+  // One mint per open and per pane dispose.
   const disposed = await closeAndWaitBaseline("drag and drop", false, held.disposalEpoch + held.host.panes.length);
   await page.mouse.up();
   if (disposed.host.drag !== "idle") throw new Error(`[drag] the disposed host still reports drag ${disposed.host.drag}`);
@@ -3950,10 +3485,7 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
 
 // --- Stage 15: split workspace memory and lifecycle -----------------------
 currentStage = "stage15-split-memory";
-// A PDF pane stays open while a Markdown pane is split beside it and closed
-// three times: the PDF's session is the same one throughout, and each close
-// takes the workspace back to its PDF-only baseline. Then PDF + Markdown +
-// TXT, and the reader's dispose releases every pane owner.
+// A PDF pane stays open while Markdown panes split and close beside it.
 const PLAIN_NOTES = "/samples/Plain Notes.txt";
 
 async function openIn(path, target) {
@@ -4036,15 +3568,12 @@ async function openIn(path, target) {
     threeFormats: all.host.panes.map((p) => ({ paneId: p.paneId, format: p.format })),
   };
   stages.afterSplitMemory = all;
-  // Twelve mints: the PDF, three Markdown opens and their three pane
-  // disposes, the Markdown and TXT opens, and the three panes' disposes.
+  // Twelve mints: four opens and their disposes, plus three pane disposes.
   await closeAndWaitBaseline("split memory", false, 12);
   console.log(`split memory: the PDF kept its session across 3 Markdown split/close cycles (heap after each close ${heapAfterClose.join(", ")}); PDF + Markdown + TXT disposed clean`);
 }
 
-// --- Zoom with animation off, and the noise layer's runtime state ---------
-// Both stages reboot the app per settings state: settings are read at boot,
-// so a reload is the one way to put a runtime in a known motion state.
+// --- Zoom with animation off, and the noise layer's runtime state. ---
 const SETTINGS_KEY = "mareader.settings.v1";
 const plainPearlsUrl = `${BASE}/?open=${encodeURIComponent(PEARLS)}`;
 
@@ -4059,11 +3588,7 @@ async function writeSettings(patch) {
   }, [SETTINGS_KEY, patch]);
 }
 
-/** Install a per-rAF sampler in the active reader frame. Every frame it
- *  records the scroll offset, the vertical strip's extent, and the page host
- *  under the viewport centre: its CSS width, its `--scale-factor`, its
- *  canvas' pixel grid, and whether that canvas is BLANK (zero-sized, or one
- *  flat colour when downsampled — a cleared canvas, never a rendered page). */
+/** Install a per-rAF sampler in the active reader frame. */
 async function startZoomSampler() {
   await page.evaluate(() => {
     const f = document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"]');
@@ -4089,8 +3614,7 @@ async function startZoomSampler() {
     const samples = [];
     w.__zoomSamples = samples;
     w.__zoomSampling = true;
-    // Ground truth for ordering: every style write under the strip, every
-    // scroll event and the keydown, stamped with the frame they fell in.
+    // Ground truth for ordering: style writes, scroll and keydown, stamped.
     let frameNo = 0;
     const events = [];
     w.__zoomEvents = events;
@@ -4109,18 +3633,14 @@ async function startZoomSampler() {
     w.__zoomMo = mo;
     sc.addEventListener("scroll", () => events.push(`${frameNo}:${Math.round(w.performance.now())}:scroll${Math.round(sc.scrollTop)}`));
     d.addEventListener("keydown", () => events.push(`${frameNo}:${Math.round(w.performance.now())}:key`), true);
-    // Recorded AFTER each frame, not in its rAF callback: rAF runs before
-    // the frame's layout and ResizeObserver delivery, both of which can still
-    // move things before the paint. A macrotask posted from rAF runs once the
-    // frame is out, so each sample is the state that was actually painted.
+    // Record after each frame, not in its rAF: layout and observers follow rAF.
     const chan = new w.MessageChannel();
     const record = () => {
       if (!w.__zoomSampling) return;
       events.push(`${frameNo}:${Math.round(w.performance.now())}:S${samples.length}`);
       const r = sc.getBoundingClientRect();
       const cy = r.top + r.height / 2;
-      // The page under the centre line; when the line falls in the gap
-      // between two pages, the nearer of them.
+      // The page under the centre line, or the nearer of two in a gap.
       const gap = (h) => {
         const b = h.getBoundingClientRect();
         return b.top > cy ? b.top - cy : b.bottom < cy ? cy - b.bottom : 0;
@@ -4168,9 +3688,7 @@ async function stopZoomSampler() {
 
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
-/** Read the page at the centre once the zoom's renders have landed: the
- *  engine reports no render in flight, and the centre host carries a painted
- *  canvas whose `--scale-factor` holds still across two reads. */
+/** Read the centre page once the zoom's renders have landed. */
 async function waitCrisp(label, timeoutMs = 20_000) {
   const started = Date.now();
   let prev = null;
@@ -4210,8 +3728,7 @@ currentStage = "zoom-animation-off";
   }
   const before = await waitCrisp("zoom-off baseline");
 
-  // Tests 1-5: one "+", sampled every frame from before the press until the
-  // commit's render has landed.
+  // Tests 1-5: one "+", sampled every frame until the render lands.
   await startZoomSampler();
   await waitFrames(3);
   await page.keyboard.press("+");
@@ -4255,23 +3772,19 @@ currentStage = "zoom-animation-off";
   if (blanks.length > 0) {
     throw new Error(`zoom-off: ${blanks.length} frame(s) showed a blank canvas: ${JSON.stringify(blanks[0])}`);
   }
-  // 4/5: the scroll offset is final ON the landing frame (no clamped write
-  // corrected a frame later), and nothing moves it afterwards.
+  // 4/5: the scroll offset is final on the landing frame.
   const landing = xs[firstPost];
   const settled = post[post.length - 1];
   if (!near(landing.top, settled.top, 2)) {
     throw new Error(`zoom-off: the landing frame's scroll ${landing.top} was corrected later to ${settled.top}`);
   }
-  // The document point under the viewport centre stays put (gaps do not
-  // scale, hence the tolerance).
+  // The document point under the centre stays put (gaps do not scale).
   const f = after.scale / before.scale;
   const expected = (before.top + before.vh / 2) * f - before.vh / 2;
   if (!near(settled.top, expected, before.vh * 0.03 + 24)) {
     throw new Error(`zoom-off: scroll ${settled.top} does not hold the centre anchor (expected ~${expected.toFixed(1)})`);
   }
-  // The landing frame already shows the settled page, at its settled size:
-  // the same host under the viewport centre, as wide as it ends up. (Pages
-  // in a scanned book differ in size, so the comparison is per host.)
+  // The landing frame shows the settled page, at its settled size.
   if (landing.host !== settled.host || !near(landing.hostW, settled.hostW, 2)) {
     const around = xs.slice(Math.max(0, firstPost - 2), firstPost + 4)
       .map((x) => `${x.host} w=${x.hostW} s=${x.scale} ext=${x.ext} top=${x.top} cw=${x.canvasW} pages=[${x.pages}]`);
@@ -4279,9 +3792,7 @@ currentStage = "zoom-animation-off";
     throw new Error(`zoom-off: landing frame ${landing.host} w=${landing.hostW} != settled ${settled.host} w=${settled.hostW}; frames: ${around.join(" | ")}`);
   }
 
-  // Test 9: a rapid "+ + - +" burst ends at a final, settled state, with no
-  // blank frame on the way. Every step commits synchronously, so the burst
-  // equals the steps one by one: two more "-" land back on `after`.
+  // Test 9: a rapid "+ + - +" ends settled, with no blank frame.
   await startZoomSampler();
   for (const k of ["+", "+", "-", "+"]) await page.keyboard.press(k);
   await page.waitForTimeout(900);
@@ -4303,8 +3814,7 @@ currentStage = "zoom-animation-off";
   }
   summary.zoomOffBurst = { frames: burst.length, endScale: burstEnd.scale, backScale: back.scale };
 
-  // Test 8: animation ON is unchanged — the same "+" still interpolates
-  // through intermediate layouts and lands on a crisp render.
+  // Test 8: animation on is unchanged, landing on a crisp render.
   await writeSettings({ animations: { enabled: true } });
   await openBook(plainPearlsUrl);
   await page.mouse.click(700, 450);
@@ -4332,11 +3842,7 @@ console.log("zoom with animation off is one discrete commit: no intermediate fra
 
 currentStage = "noise-runtime-state";
 {
-  // The animated grain, proven in the running frames rather than read off
-  // the stylesheet: overlay count, the classes that drive it, the ::after's
-  // computed animation, and its transform sampled over time. A computed
-  // animation whose transform moves here, while the app shows still grain,
-  // is a compositor problem; one that does not run is a cascade problem.
+  // The animated grain, proven in the running frame rather than the sheet.
   const probeNoise = () => page.evaluate(async () => {
     const read = (slot) => {
       const f = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="${slot}"]`);
@@ -4367,10 +3873,7 @@ currentStage = "noise-runtime-state";
       libraryFrames: document.querySelectorAll('iframe[data-mareader-runtime-frame="library"]').length,
       distinctTransforms: transforms.size };
   });
-  // The loading mark, the same way: the real markup mounted in the live
-  // frame, its first dot's computed animation and transform sampled. It
-  // chases (travels) unless the OS asks for reduced motion — the app's own
-  // animations switch must not freeze it into three still dots.
+  // The loading mark the same way: computed animation and transform.
   const probeLoader = () => page.evaluate(async () => {
     const f = document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"]');
     const d = f.contentDocument;
@@ -4422,8 +3925,7 @@ currentStage = "noise-runtime-state";
       if (r.active?.overlays !== 1) throw new Error(`noise ${key}: ${r.active?.overlays} overlays in the active frame`);
       if (!/\bnoise-animated\b/.test(r.active.body)) throw new Error(`noise ${key}: body lacks noise-animated (${r.active.body})`);
       if (r.otherRoutes !== 0) throw new Error(`noise ${key}: ${r.otherRoutes} Library/extra route frames survived while reading`);
-      // The grain is content, not UI motion: it crawls unless the OS asks for
-      // reduced motion, whatever the app's animation switch says.
+      // The grain is content, not UI motion: it crawls unless the OS asks.
       const shouldRun = !reduced;
       const runs = r.active.name !== "none" && r.distinctTransforms > 1;
       if (runs !== shouldRun) {
@@ -4450,9 +3952,7 @@ console.log("the loading mark chases unless the OS asks for reduced motion");
 
 currentStage = "boot-paint";
 {
-  // The next launch's first frame wears the paper this one painted: seed a
-  // remembered paper, reload, and the placeholder must show it before any
-  // wasm runs; once the shell has painted, the real paper replaces the seed.
+  // The next launch's first frame wears the paper this one painted.
   const BOOT_PAINT_KEY = "mareader.boot-paint.v1";
   const seed = "rgb(12, 34, 56)";
   await page.evaluate(([k, v]) => localStorage.setItem(k, v), [BOOT_PAINT_KEY, `${seed}|dark`]);
@@ -4545,5 +4045,3 @@ console.log(JSON.stringify(summary));
 console.log("PHASE0_BASELINE_JSON " + JSON.stringify(summary));
 console.log("=== END PHASE0 BROWSER BASELINE ===");
 console.log("\nBROWSER LIFECYCLE BASELINE PASSED");
-
-// only the changed file was rewritten

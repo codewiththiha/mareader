@@ -92,11 +92,12 @@ can SEE are re-baked for the change; the rest of the cache stays one
 generation behind and re-bakes from raw when its cell next asks, which is the
 same lazy path a cold card takes.
 
-A row the rail's window leaves behind keeps its canvases for
-`BRIDGE_FRAMES` animation frames, up to `BRIDGE_CELLS` cells at a time (the
-rail's two columns, so three rows), so a glide that turns around finds the row
-it passed still mounted instead of paying a post, a raster and a bitmap
-transfer per card.
+An item the rail's window leaves behind keeps its canvases under the
+motion-gated retention policy — the one frame that evicted it, and only while
+the rail is still moving — up to `BRIDGE_CELLS` cells at a time (the rail's
+two columns, so three rows), so a glide that turns around finds the row it
+passed still mounted instead of paying a post, a raster and a bitmap transfer
+per card.
 
 ## Appearance and blend
 
@@ -232,5 +233,3 @@ layout/session preservation and final balanced teardown. It saves desktop
 these browser runs, not local build/dependency installations, validate the
 change. Native traffic-light appearance still needs a real macOS visual
 check; native smoke and chrome-contract checks do not prove shape/blink.
-
-<!-- // only the changed file was rewritten -->

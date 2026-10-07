@@ -1,5 +1,4 @@
-// The split-close-cycles table for the Deep CI step summary, from the
-// `RESULT {...}` lines tools/measure-split-cycles.mjs printed to cycles.log.
+// The split-close-cycles table for the CI summary, from the RESULT lines.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
 const file = process.argv[2] ?? "cycles.log";

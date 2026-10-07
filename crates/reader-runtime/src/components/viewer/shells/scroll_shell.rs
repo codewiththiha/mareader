@@ -1,9 +1,5 @@
-//! Shared shell for the two scrolling modes, the scroll-mode counterpart of
-//! [`PageShell`]. It owns everything the family shares — the scroller element
-//! and its container binding, the horizontal wheel translation, the overlay
-//! scrollbar, and the thin reading-progress strip — so the axis-generic
-//! [`UniversalStripHost`] it wraps, which mounts the format's own strip, stays
-//! purely presentational.
+//! Shared shell for the two scrolling modes: scroller, wheel, progress
+//! strip.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -31,26 +27,19 @@ pub fn ScrollShell(
         Axis::Vertical => PAGE_LIST_ID,
         Axis::Horizontal => H_PAGE_LIST_ID,
     };
-    // The container observation's teardown belongs to THIS shell's owner,
-    // explicitly: an observer that outlived its scroller would retain the
-    // element — and every page canvas mounted inside it — for the life of
-    // the app.
+    // The observer's teardown belongs to THIS shell's owner, or it
+    // retains the scroller.
     let dom = state.dom;
     let stop_observing =
         observe_content_size_with(move || dom.by_id(scroller_id), state.viewer.container_size);
     on_cleanup(stop_observing);
-    // This strip is about to be placed on `viewer.page` (see `anchor_to_page`);
-    // until it is, the scroll→page sync must not read it. Idempotent with the
-    // open flow and the mode flip, which raise the flag before the mount.
+    // The strip is about to be placed on `viewer.page`; the sync waits.
     state.viewer.awaiting_anchor.set(true);
     let chrome = layout_chrome(state, progress_visible);
     let _gap = chrome.gap;
     let _inset = chrome.inset;
 
-    // The vertical strip mirrors its scroll offset into `viewer.scroll_top`
-    // (the horizontal strip has no scroll_top to mirror). The virtualizer's
-    // offset is the one source: it already follows the DOM, and it is the
-    // offset every relayout anchors against.
+    // The vertical strip mirrors its offset into `viewer.scroll_top`.
     if axis == Axis::Vertical {
         let scroll_top = state.viewer.scroll_top;
         let offset = virtualizer.scroll_offset();
@@ -60,9 +49,7 @@ pub fn ScrollShell(
     let list_ref: NodeRef<html::Div> = NodeRef::new();
     {
         let v = virtualizer.clone();
-        // The listener is retained by JS (leaked into a Function), so the
-        // element it is attached to is remembered so it can be detached on
-        // re-bind or unmount.
+        // The listener is retained by JS, so the element is remembered.
         let wheel_guard = StoredValue::new_local(None::<(web_sys::Element, js_sys::Function)>);
         Effect::new(move |_| {
             let Some(div) = list_ref.get() else {
@@ -84,12 +71,7 @@ pub fn ScrollShell(
         });
     }
 
-    // THE reading-position anchor for a scrolling strip. It answers every
-    // way a strip can find itself needing a position: the mount itself
-    // (document open, back from the library, a switch into this mode), and a
-    // document opened over a mounted reader (drag-drop, "Open with"), which
-    // re-raises the flag without remounting anything. Installed AFTER the
-    // bind effect above so the first run finds the container bound.
+    // THE reading-position anchor for a scrolling strip.
     {
         let v = virtualizer.clone();
         Effect::new(move |_| {
@@ -105,11 +87,8 @@ pub fn ScrollShell(
 
     let total_size = virtualizer.total_size();
     let scroll_offset = virtualizer.scroll_offset();
-    // One reading-progress definition for both axes: the strip offset divided by
-    // the AVAILABLE travel along the strip's own axis (total extent minus the
-    // viewport's extent on that axis). Horizontal uses the width, vertical the
-    // height — the axis-generic `container_size` holds both so the same math
-    // serves either.
+    // One progress definition for both axes: offset over available
+    // travel.
     let progress = move || {
         let st = scroll_offset.get();
         let (cw, ch) = state.viewer.container_size.get();
@@ -122,17 +101,9 @@ pub fn ScrollShell(
 
     view! {
         <div class="relative h-full w-full">
-            // The strip is the page host's choice: PDF streams rasters, type streams
-            // real-type pages. Both bind the SAME scroller id and the SAME virtualizer,
-            // so the shell's anchor, wheel and scroll→page machinery drives either
-            // without knowing which one is mounted. (The text strip walks A4 cards, which
-            // is the horizontal mode's shape; a reflowable document in the VERTICAL mode
-            // never reaches this shell — the layout above that mount point asks the
-            // stream host instead, and gets the continuous block column.)
-            //
-            // The virtualizer comes out of local storage exactly as it did before the
-            // host took over the branch: the dynamic child's closure must be Send, and
-            // the `Rc`-backed handle is not — the same parking `Viewer` does.
+            // The strip is the page host's choice; the
+            // scroller id and virtualizer are
+            // shared.
             <UniversalStripHost
                 state=state
                 virtualizer=virtualizer
@@ -153,24 +124,10 @@ pub fn ScrollShell(
     }
 }
 
-/// How many frames the mount anchor re-checks itself before it trusts the
-/// strip. One is what a settled layout needs; the rest cover a container
-/// whose box the browser has not committed on the frame it was bound (a
-/// scroller that measures 0 tall, a spacer that has not taken its height yet,
-/// so the scroll write is clamped to the top).
+/// Frames the mount anchor re-checks itself before trusting the strip.
 const ANCHOR_SETTLE_FRAMES: u32 = 3;
 
-/// Put the strip on `viewer.page` — the ONE place a freshly mounted strip
-/// takes its position from, whether the mount is a document open (resume),
-/// a return from the library, or a switch into this mode.
-///
-/// The jump is instant and re-asserted for a few frames, by the settle loop
-/// both scrolling surfaces share ([`super::anchor_settle`]): the first write
-/// happens the moment the container is bound, when the browser may not have
-/// laid the scroller out yet, and a `scrollTop` written into a box that is
-/// still 0 tall is silently clamped. The aim re-runs every frame, so the page
-/// is re-read as it settles and a navigation issued mid-settle wins over the
-/// value the mount started with.
+/// Put the strip on `viewer.page`, re-asserted over a few frames.
 fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis) {
     let align = match axis {
         Axis::Vertical => Align::Start,
@@ -183,13 +140,7 @@ fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis) {
     });
 }
 
-/// Horizontal wheel policy. The strip is a horizontal scrollport in a world
-/// where the wheel is vertical, so exactly one case needs help: a plain
-/// vertical tick while the strip fits vertically, where the browser would
-/// otherwise do nothing. It is translated into `scrollLeft`. Every other
-/// input keeps the native scroll chain (shift+wheel is already horizontal,
-/// a trackpad `deltaX` already pans, and a zoom past fit-height lets the
-/// vertical pan happen for free).
+/// Horizontal wheel policy: only a plain vertical tick needs help.
 fn install_wheel_to_hscroll(
     el: &web_sys::Element,
     wheel_guard: &StoredValue<Option<(web_sys::Element, js_sys::Function)>, LocalStorage>,

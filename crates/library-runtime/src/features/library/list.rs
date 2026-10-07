@@ -1,9 +1,4 @@
-//! The list: one row per book and one row per shelf — the level as a tree
-//! that unfolds in place, for scanning rather than browsing.
-//!
-//! Same books, order and drag rules as the grid; only the row shape changes,
-//! so the order arrives from the same context signal rather than being
-//! derived twice.
+//! The list: the level as a tree of shelf and book rows.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -32,20 +27,9 @@ use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
 
-/// A plain prop bag on purpose: the sidebar's shelf tab mounts the same tree
-/// inside its own panel.
-#[derive(Clone, Default)]
-pub struct ShelfTree {
-    /// `None` follows the level the page is on: the list is a view of that
-    /// level, and the disclosure goes deeper without leaving it.
-    pub root: Option<String>,
-    pub dense: bool,
-}
-
 #[derive(Clone, Copy)]
 struct TreeCtx {
     expanded: RwSignal<HashSet<String>>,
-    dense: bool,
 }
 
 pub(crate) fn row_indent(depth: usize) -> String {
@@ -55,22 +39,15 @@ pub(crate) fn row_indent(depth: usize) -> String {
 const AUTO_EXPAND_MS: u64 = 650;
 
 #[component]
-pub(crate) fn ListView(
-    state: crate::context::LibraryContext,
-    #[prop(optional)] tree: ShelfTree,
-) -> impl IntoView {
+pub(crate) fn ListView(state: crate::context::LibraryContext) -> impl IntoView {
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let crop = Signal::derive(move || state.library.view.with(|v| v.cover == CoverFit::Crop));
     let expanded: RwSignal<HashSet<String>> = RwSignal::new(HashSet::new());
-    provide_context(TreeCtx {
-        expanded,
-        dense: tree.dense,
-    });
+    provide_context(TreeCtx { expanded });
 
-    // One query for both densities
-    // (`crate::features::library::content::level_folders`), so a search
-    // cannot narrow one and not the other.
-    let roots = Signal::derive(move || level_folders(state, tree.root.clone()));
+    // The tree and the leaves share one query, so a search
+    // narrows both or neither.
+    let roots = Signal::derive(move || level_folders(state, None));
 
     view! {
         <div
@@ -96,19 +73,13 @@ fn TreeRow(
     crop: Signal<bool>,
 ) -> impl IntoView {
     let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
-    // The sidebar mounts this tree with no library page under it: the shell
-    // asks for the hosts itself and stands the gestures down when absent.
     let drag = use_context::<DragController>();
 
-    // The prop is the shelf the `For` keyed this row on, and a keyed row is
-    // not re-created when the shelf's contents change. The prop supplies the
-    // identity; everything that can move is read back out of the state by id
-    // (the grid's folder-card rule, see
-    // `crate::features::library::folder_card`).
+    // Identity only: a keyed row survives, so movable facts are read by id.
     let id = shelf.id.clone();
 
-    // Hiding matching shelves while keeping the ones between them would
-    // filter the leaves and not the tree.
+    // Hiding a matching shelf but keeping its children filters
+    // the leaves and not the tree.
     let kids_id = id.clone();
     let kids = Signal::derive(move || {
         let terms = state.library.query.get();
@@ -149,8 +120,7 @@ fn TreeRow(
         let expanded = ctx.expanded;
         let handle = set_timeout_with_handle(
             move || {
-                // A queued expand can outlive the row list (a refresh or a
-                // close between the arm and the fire).
+                // A queued expand can outlive the row list.
                 let _ = expanded.try_update(|set| {
                     set.insert(at);
                 });
@@ -185,8 +155,8 @@ fn TreeRow(
         });
     });
 
-    // The same wiring the grid's cards wear, with the disclosure's own
-    // answers: a tap unfolds, a hold selects, a movement lifts.
+    // The grid's press contract with the disclosure's answers:
+    // tap unfolds, hold selects, movement lifts.
     let entry = EntryDescriptor {
         id: id.clone(),
         vocab: SeamVocab::FolderRow,
@@ -195,8 +165,8 @@ fn TreeRow(
     };
 
     let nav_id = id.clone();
-    // In a `StoredValue` because the member rows are built inside the
-    // unfold's `Show`, whose children closure must stay an `Fn`.
+    // In a `StoredValue` because the unfold's `Show` children
+    // closure must stay an `Fn`.
     let members_parent: StoredValue<Option<String>, LocalStorage> =
         StoredValue::new_local(Some(id.clone()));
     let indent = row_indent(depth);
@@ -233,11 +203,9 @@ fn TreeRow(
                     {move || name.get()}
                 </span>
                 <FolderBadge state=state shelf_id=badge_id class="folder-mode ml-2" />
-                <Show when=move || !ctx.dense>
-                    <span class="shrink-0 text-xs text-muted">
-                        {move || summary((members.with(|m| m.len()), kids.get().len()))}
-                    </span>
-                </Show>
+                <span class="shrink-0 text-xs text-muted">
+                    {move || summary((members.with(|m| m.len()), kids.get().len()))}
+                </span>
                 <button
                     class="icon-ghost lib-row-action"
                     type="button"
@@ -253,8 +221,8 @@ fn TreeRow(
             </EntryShell>
             <Show when=move || open.get()>
                 <For each=move || kids.get() key=|s| s.id.clone() let:child>
-                    // Through `AnyView`: a recursive component whose children
-                    // named its own opaque return type would never resolve.
+                    // Through `AnyView`: a recursive component's opaque
+                    // return type would never resolve.
                     {view! { <TreeRow state=state shelf=child depth=depth + 1 crop=crop /> }
                         .into_any()}
                 </For>
@@ -266,9 +234,8 @@ fn TreeRow(
     }
 }
 
-/// The shelf's own order with the view's sort over it — the same
-/// `library_core::sort::ordered` the page's level runs — so an unfolded row
-/// and the page it mirrors cannot disagree about what comes first.
+/// The shelf's own order under the view's sort, the same call the
+/// page's level runs.
 fn row_view(
     state: crate::context::LibraryContext,
     row: Row,
@@ -311,26 +278,20 @@ fn ListRow(
     book: Book,
     crop: Signal<bool>,
     depth: usize,
-    /// The tree's own id for a row inside an expanded branch; `None` for the
-    /// flat section, which the session resolves at the drop, not the mount.
+    /// The tree's own id for an expanded row; `None` for the flat
+    /// section.
     parent: Option<String>,
 ) -> impl IntoView {
-    let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
-    let dense = ctx.dense;
-
     let remove_sheet = use_context::<RemoveSheet>();
 
-    // The prop supplies the identity; everything that can move is read back
-    // by id, because a keyed row is not re-created when its content changes.
+    // Identity only: a keyed row survives, so movable facts are read by id.
     let id = book.id.clone();
     let facts = book_facts(state, &id);
     let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
-    let ext = book.format.label();
 
     let check_id = id.clone();
 
-    // The same press contract the grid's cards wear. A movement is always a
-    // drag here, including from inside a selection.
+    // The grid's press contract. A movement is always a drag here.
     let entry = EntryDescriptor {
         id: id.clone(),
         vocab: SeamVocab::ListRow,
@@ -350,31 +311,21 @@ fn ListRow(
             style=indent
             extra_classes=vec![("row-missing".to_string(), missing_class)]
         >
-            {if dense {
-                view! { <span class="lib-format lib-row-ext">{ext}</span> }.into_any()
-            } else {
-                view! {
-                    <span
-                        class="lib-row-cover"
-                        class=("book-cover-crop", move || crop.get())
-                    >
-                        <SelectionCheck state=state id=check_id />
-                        <CoverThumb
-                            state=state
-                            path=Signal::derive(move || {
-                                facts
-                                    .with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
-                            })
-                            alt=Signal::derive(move || {
-                                facts
-                                    .with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-                            })
-                            img_class="lib-row-img"
-                        />
-                    </span>
-                }
-                    .into_any()
-            }}
+            <span class="lib-row-cover" class=("book-cover-crop", move || crop.get())>
+                <SelectionCheck state=state id=check_id />
+                <CoverThumb
+                    state=state
+                    path=Signal::derive(move || {
+                        facts
+                            .with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
+                    })
+                    alt=Signal::derive(move || {
+                        facts
+                            .with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+                    })
+                    img_class="lib-row-img"
+                />
+            </span>
             <span class="min-w-0 flex-1">
                 <span
                     class="block truncate text-sm font-semibold text-ink"
@@ -386,41 +337,25 @@ fn ListRow(
                         facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
                     }}
                 </span>
-                {if dense {
-                    None
-                } else {
-                    Some(
-                        view! {
-                            <span
-                                class="block truncate text-xs text-muted"
-                                title=move || {
-                                    facts.with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
-                                }
-                            >
-                                {move || {
-                                    facts.with(|f| {
-                                        f.as_ref().map(|x| x.author_line.clone()).unwrap_or_default()
-                                    })
-                                }}
-                            </span>
-                        },
-                    )
-                }}
+                <span
+                    class="block truncate text-xs text-muted"
+                    title=move || {
+                        facts.with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
+                    }
+                >
+                    {move || {
+                        facts.with(|f| {
+                            f.as_ref().map(|x| x.author_line.clone()).unwrap_or_default()
+                        })
+                    }}
+                </span>
             </span>
-            {if dense {
-                None
-            } else {
-                chip.map(|label| view! { <span class="lib-format lib-row-format">{label}</span> })
-            }}
-            {if dense {
-                None
-            } else {
-                Some(move || {
-                    facts.get().and_then(|f| f.percent()).map(|p| {
-                        view! {
-                            <span class="shrink-0 text-xs tabular-nums text-muted">{p}</span>
-                        }
-                    })
+            {chip.map(|label| view! { <span class="lib-format lib-row-format">{label}</span> })}
+            {move || {
+                facts.get().and_then(|f| f.percent()).map(|p| {
+                    view! {
+                        <span class="shrink-0 text-xs tabular-nums text-muted">{p}</span>
+                    }
                 })
             }}
             {move || {

@@ -1,27 +1,12 @@
-//! Toast hosts: the auto-dismiss wiring around [`ToastData`](super::toast::ToastData)
-//! plus the host view.
-//!
-//! The app is deliberately **single-slot**: one current toast, replace-on-push,
-//! equality-guarded expiry so a stale timer never wipes a newer toast
-//! ([`use_toast_slot`] with [`ToastHost`]). A concurrent stack (bulk
-//! operations that push several toasts at once) can be layered on the same
-//! `ToastData` plus id-guarding rules when a real consumer appears; the
-//! gloss undo deliberately keeps its own *generation-guarded* batch
-//! semantics (undo cannot be a bare auto-dismiss) but renders through
-//! [`ToastPanel`](super::toast::ToastPanel).
+//! Toast hosts: the auto-dismiss wiring around [`ToastData`].
 
 use leptos::prelude::*;
 
 use super::toast::ToastData;
 use app_chrome::layers::TOAST;
 
-/// Arm an auto-dismiss for the *current* slot toast.
-///
-/// Whenever the slot value changes, a timer for that toast's duration is
-/// armed (previous one cleared). At fire time, `still_current` decides
-/// whether the toast it was armed for is still the one on screen — the
-/// equality guard that keeps a stale timer from wiping a newer toast.
-/// `on_expire` performs the actual clear.
+/// Arm an auto-dismiss for the *current* slot toast; `still_current`
+/// guards the fire.
 pub fn use_toast_slot(
     source: Signal<Option<ToastData>>,
     still_current: impl Fn(u64) -> bool + 'static,
@@ -56,13 +41,7 @@ pub fn use_toast_slot(
     });
 }
 
-/// Single-slot toast host, bottom-center of the viewport (click-through
-/// wrapper; each toast is interactive).
-///
-/// All the centering lives in the shared `.toast-anchor` class — see
-/// `styles/components/shell.css` for why that is a flex wrapper rather than
-/// `left-1/2` plus a transform. The gloss undo toast uses the same anchor, so
-/// the app's two toast hosts cannot drift apart in either placement or offset.
+/// Single-slot toast host, bottom-center of the viewport.
 #[component]
 pub fn ToastHost(toasts: Signal<Option<ToastData>>) -> impl IntoView {
     view! {

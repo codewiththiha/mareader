@@ -1,20 +1,4 @@
-/* Texture modes, in reading order:
-     tokens   — stroke/paper/blend variables, flipped by :root.dark
-     per-page — .pdf-page::before: a PDF page owns its texture
-     scroller — text/Markdown: the scroller IS the surface and carries one
-                background pattern
-     bleed    — blend mode: the per-page texture overhangs the page box and
-                paints the gutter itself
-
-   A mode is a class on its carrier, and WHICH look supplies that class — the
-   window's or the pane's own — is decided where the carriers are built: the
-   PDF page host and the reflowable scroller, both through
-   `components::viewer::texture_surface`. Both dials here read the same two
-   variables, so a pane that owns its texture owns its opacity and scale too,
-   and a split can put grid on one document and none on its neighbour.
-
-/* Dark themes flip to LIGHT strokes: the canvas inverts its page to dark
-   paper and dark strokes would vanish against it. */
+/* Texture modes: tokens, per-page, scroller, bleed. */
 :root {
   --texture-line: rgba(15, 23, 42, 0.16); /* lined / grid / dotted / cross strokes */
   --texture-paper: rgba(15, 23, 42, 0.05); /* paper-grain tint */
@@ -23,34 +7,22 @@
 :root.dark {
   --texture-line: rgba(255, 255, 255, 0.22);
   --texture-paper: rgba(255, 255, 255, 0.08);
-  /* multiply of a near-white tint can only darken, so the light grain would
-     stay invisible; screen lightens it onto the dark paper. */
+  /* Multiply can only darken a near-white tint, so screen lightens it. */
   --texture-blend: screen;
 }
 
-/* PER-PAGE TEXTURE (PDF) — layered over the baked canvas, below the text
-   layer. Reflowable formats texture the scroller instead (below); there is
-   no .tx-page arm here. */
+/* PER-PAGE TEXTURE: over the baked canvas, below the text layer. */
 .pdf-page::before {
   content: "";
   position: absolute;
   inset: 0;
-  /* Above the opaque baked canvas (z 0), below the text layer (z 2). The
-     theme is pre-rendered into the raster, so the texture multiplies over
-     it — commutative with the old behind-the-canvas order, same composite.
-     During a tint scrub the canvas is raw + live-blended again and the
-     scrub rule in page_host.css returns this layer to z-index 0 for that
-     window, matching how the blend backdrop composites its texture
-     (components/shell.css) — soft-light is not identity on the paper, so
-     the two orders would read as different stroke strengths in dim. */
+  /* Above the baked canvas, below the text layer; same composite as before. */
   z-index: 1;
   pointer-events: none;
   /* User texture strength; 0.9 was the old hard-coded default. */
   opacity: var(--texture-opacity, 0.9);
 
-  /* The user's pitch multiplier composes with the page scale: the texture
-     is part of the page and zooms with the document. The five patterns and
-     the pitch they resolve against are declared once, in styles/tokens.css. */
+  /* The pitch multiplier composes with the page scale, so textures zoom. */
   --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
   --tex-stroke: var(--texture-line);
   background-origin: border-box;
@@ -59,13 +31,10 @@
 
 .pdf-page.texture-paper::before {
   background-image: var(--tex-paper-image);
-  /* Tint the gray fractal noise toward the theme grain without losing the
-     pattern: multiply in the light family, screen on dark (multiply alone
-     could never lighten). */
+  /* Tint the fractal noise toward the theme grain, multiply or screen. */
   background-color: var(--texture-paper);
   background-blend-mode: var(--texture-blend, multiply);
-  /* Tile authored 180x180; background-size zooms the grain with the page
-     instead of holding a fixed screen-space pitch. */
+  /* Tile authored 180x180; background-size zooms the grain with the page. */
   background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
 
@@ -90,22 +59,11 @@
     var(--tex-unit) var(--tex-unit);
 }
 
-/* REFLOWABLE SCROLLER TEXTURE (text/Markdown) — no page card exists, so the
-   pattern rides the scroller as a background with `background-attachment:
-   local`: anchored to the content, scrolling with it, behind all type by
-   ordinary stacking. The pitch zooms with the type: the scroller writes
-   --tx-zoom inline (crates/reader-runtime/src/components/viewer/texture_surface.rs) into the same
-   --tex-scale formula the page texture uses, so both formats stay
-   pitch-identical. The opacity dial is emulated with --tx-matte below: a
-   background layer has no element opacity to fade. */
+/* REFLOWABLE SCROLLER TEXTURE: the pattern rides the scroller's background. */
 
 [data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"],
 [data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"] {
-  /* A matte of the live paper colour at alpha (1 - p) over the pattern
-     composites to exactly what `opacity: p` gives the PDF ::before: over
-     the pane's effective paper (--pane-paper — the --tx-paper look, or the
-     blend colour the whole split stands on) the visible strength is
-     p × pattern, and the matte is invisible wherever the pattern is not. */
+  /* A matte of the live paper composites as the missing element opacity. */
   --tx-opacity: var(--texture-opacity, 0.9);
   --tx-matte: linear-gradient(
     color-mix(in srgb, var(--pane-paper, var(--tx-paper)) calc((1 - var(--tx-opacity)) * 100%), transparent),
@@ -121,8 +79,7 @@
 
 [data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper,
 [data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper {
-  /* The matte is the FIRST layer, so it paints above the pattern it stands
-     in for the element opacity a background layer has no way to fade. */
+  /* The matte is the first layer, so it paints above the pattern. */
   background-image: var(--tx-matte), var(--tex-paper-image);
   background-color: var(--texture-paper);
   /* normal: matte over grain; the grain keeps its own tint blend. */
@@ -133,10 +90,7 @@
 [data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined,
 [data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined {
   background-image: var(--tx-matte), var(--tex-lined-image);
-  /* Explicit one-period tile: under `background-attachment: local` the
-     positioning area is the whole scrollable extent, and an auto-sized
-     repeating `to bottom` gradient fails to paint along that axis in WebKit
-     (lined rendered nothing; grid kept only its vertical layer). */
+  /* An explicit one-period tile: an auto-sized gradient fails in WebKit. */
   background-size: 100% 100%, var(--tex-unit) var(--tex-unit);
 }
 
@@ -166,25 +120,7 @@
     var(--tex-unit) var(--tex-unit);
 }
 
-/* BLEND BLEED (PDF) — the blend backdrop carries no texture of its own;
-   each page's texture layer overhangs the page box and paints the gutter,
-   so page and gutter are one layer: same pitch and phase at every zoom and
-   scroll position. The overhang is one viewport per side; #viewer-slot's
-   overflow-hidden clips the rest. Only axes facing the BACKDROP bleed — an
-   axis facing a neighbour page would double-expose that neighbour's edge —
-   with one exception: a neighbour axis that carries a GAP bleeds half of it,
-   so the two facing edges meet in the middle of the gap instead of leaving a
-   bare band of untextured backdrop between the pages. The background-
-   position shift re-anchors the tile origin to the page edge, so the
-   on-page pattern matches inset:0. */
-/* Continuous vertical: gutters left/right, neighbours above/below. Those
-   neighbours are separated by the strip's row gap — the one stretch of
-   backdrop a page here does not otherwise reach — so the overhang runs half
-   a gap up and half a gap down, meeting the page above and the page below in
-   the middle. The gap is published as --page-gap by the effect that resolves
-   it (crates/reader-runtime/src/effects/reader/layout_prefs.rs) and is zero in No Gap mode, where
-   the pages are pulled together to overlap by a device pixel and the two
-   halves collapse to the plain rule this was before. */
+/* BLEND BLEED: each page's texture overhangs and paints the gutter. */
 .reader-bg.blend .pdf-page[id^="cont-"]::before {
   left: -100vw;
   right: -100vw;
@@ -203,15 +139,7 @@
   inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }
-/* Spread: the bands above/below and the OUTER side, one half at a time. The
-   inner axes face the partner and must not bleed at all (gap-0 leaves no
-   gutter there to paint): a partner's opaque box hides an inner bleed only
-   across its own rect, while above and below that rect it carries a
-   translucent gutter overhang of its own — so an inner bleed shows through
-   under it and the two texture layers add up. That sum is the grey band
-   around the right page with a texture set, and it needs a texture to show:
-   with texture None the layer paints nothing, which is why only the
-   textured looks ever read as the culprit. */
+/* Spread: the inner axes must not bleed, so the two layers never add up. */
 .reader-bg.blend .pdf-page[id^="dp-"]:first-child:not(:only-child)::before {
   top: -100vh;
   bottom: -100vh;
@@ -224,13 +152,8 @@
   right: -100vw;
   background-position: 0 100vh;
 }
-/* An odd last page mounts alone, so every side faces the backdrop. The two
-   rules above stand down for it — a lone page is both first and last child,
-   and would take the later background-position, shifting its tile a whole
-   viewport sideways. */
+/* An odd last page mounts alone: every side faces the backdrop. */
 .reader-bg.blend .pdf-page[id^="dp-"]:only-child::before {
   inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }
-
-/* only the changed file was rewritten */

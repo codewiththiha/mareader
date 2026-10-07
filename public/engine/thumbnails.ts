@@ -6,19 +6,14 @@ import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
 import { currentGen, readPipeline } from "./theme/pipeline";
 import { cacheDisplay, ensureEntryCurrent, paintCached } from "./theme/thumbnails";
-import { lifecycleEvent, THUMB_CACHE_MAX } from "./state";
+import { lifecycleEvent, THUMB_CACHE_MAX, worldEndedSignal } from "./state";
 import type { EngineSession } from "./state";
-// A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
-// raster work, not clicks: queued jobs are invalidated on unmount and cached
-// paths still paint immediately.
+// Cold sidebar: limit pdf.js work, not clicks.
 const THUMB_RENDER_LIMIT = 3;
 
-// The lane's state lives on the session (`EngineSession.thumbLane`): one
-// pane's teardown bumps only ITS epoch, one pane's suspend only ITS era.
+// The lane's state lives on the session.
 
-/** Tear the session's lane down: bump the epoch (every queued job and every
- *  parked prefetch await sees it), close generation bookkeeping, and pump
- *  so the queue drains through its own guards. */
+// Tear the session's lane down: bump the epoch, drain the queue.
 export function resetThumbLane(s: EngineSession): void {
   const lane = s.thumbLane;
   lane.epoch += 1;
@@ -30,9 +25,7 @@ export function resetThumbLane(s: EngineSession): void {
   pumpThumbQueue(s);
 }
 
-/** Stop this session's speculative prefetches (its pane is suspended):
- *  queued prefetches drop, in-flight ones race the era signal. Live
- *  thumbnail renders are untouched. */
+// Stop this session's prefetches; live renders are untouched.
 export function suspendPrefetches(s: EngineSession): void {
   const lane = s.thumbLane;
   lane.suspended = true;
@@ -46,59 +39,25 @@ export function resumePrefetches(s: EngineSession): void {
   s.thumbLane.suspended = false;
 }
 
-function eraMovedSignal(s: EngineSession, era: number): {
-  promise: Promise<void>;
-  unsubscribe: () => void;
-} {
+type WorldEnded = { promise: Promise<void>; unsubscribe: () => void };
+
+/// The session's era moved (a suspend) — the world a prefetch was born in.
+function eraMovedSignal(s: EngineSession, era: number): WorldEnded {
   const lane = s.thumbLane;
-  if (era !== lane.era) {
-    return { promise: Promise.resolve(), unsubscribe: () => {} };
-  }
-  let resolve!: () => void;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
-  });
-  const waiter = () => resolve();
-  lane.eraWaiters.push(waiter);
-  return {
-    promise,
-    unsubscribe: () => {
-      const at = lane.eraWaiters.indexOf(waiter);
-      if (at >= 0) lane.eraWaiters.splice(at, 1);
-    },
-  };
+  return worldEndedSignal(lane.eraWaiters, era !== lane.era);
 }
 
-function epochMovedSignal(s: EngineSession, epoch: number): {
-  promise: Promise<void>;
-  unsubscribe: () => void;
-} {
+/// The session's lane epoch moved (a teardown or document swap).
+function epochMovedSignal(s: EngineSession, epoch: number): WorldEnded {
   const lane = s.thumbLane;
-  if (epoch !== lane.epoch) {
-    return { promise: Promise.resolve(), unsubscribe: () => {} };
-  }
-  let resolve!: () => void;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
-  });
-  const waiter = () => resolve();
-  lane.epochWaiters.push(waiter);
-  return {
-    promise,
-    unsubscribe: () => {
-      const at = lane.epochWaiters.indexOf(waiter);
-      if (at >= 0) lane.epochWaiters.splice(at, 1);
-    },
-  };
+  return worldEndedSignal(lane.epochWaiters, epoch !== lane.epoch);
 }
 
 export function thumbLaneGauge(s: EngineSession): { thumbQueue: number; thumbActive: number } {
   return { thumbQueue: s.thumbLane.queue.length, thumbActive: s.thumbLane.active };
 }
 
-/** The generation map's size for the stats surface: per-canvas bookkeeping
- *  the lane keeps until document teardown. The baseline measures it so a
- *  long scrolling session cannot grow it unseen. */
+// The generation map's size for stats.
 export function thumbGenerationSize(s: EngineSession): number {
   return s.thumbLane.generation.size;
 }
@@ -125,8 +84,7 @@ function pumpThumbQueue(s: EngineSession): void {
     next();
   }
 }
-/** Insert a thumbnail entry into the cache, releasing any previous entry for
- *  the page and evicting the LRU entry if the cache is full. */
+// Insert a thumbnail entry, releasing the previous and the LRU.
 function cachePut(s: EngineSession, page: number, entry: ThumbEntry): void {
   if (s.thumbCache.has(page)) {
     const prev = s.thumbCache.get(page);
@@ -146,18 +104,11 @@ function cachePut(s: EngineSession, page: number, entry: ThumbEntry): void {
 export function hasThumb(s: EngineSession, page: number, scale: number): boolean {
   const hit = s.thumbCache.get(page);
   if (!hit || Math.abs(hit.scale - scale) >= 1e-9) return false;
-  // While a scrub runs, the raw raster under the live CSS is the picture.
-  // Otherwise the cache only ANSWERS when the entry is current: a look that
-  // moved since it was baked reads as a miss, so the cell covers the card
-  // and the render path re-bakes from raw instead of the rail flashing the
-  // colours of the look before it.
+  // Under a scrub the raw IS the picture; otherwise only current answers.
   return s.themeScrubActive || hit.gen === currentGen(s);
 }
 
-/** The canvas `canvasId` names FOR THIS SESSION: a registered page's own
- *  (pinned) canvas when the id is a page's — the blurry first paint lands
- *  on page canvases too — otherwise the element with that id this session
- *  owns. Never another pane's twin. */
+// The canvas `canvasId` names FOR THIS SESSION.
 function targetCanvas(s: EngineSession, canvasId: string): HTMLCanvasElement | null {
   const pageState = s.stateByCanvasId.get(canvasId);
   if (pageState && pageState.pinned) return pageState.dead ? null : pageState.canvas;
@@ -174,8 +125,7 @@ export async function renderThumb(
   const generation = nextThumbGeneration(s, canvasId);
   s.thumbCancelled.delete(canvasId);
 
-  // Cache hits are synchronous blits or a small display refresh; they do not
-  // create pdf.js raster work and should never wait behind cold renders.
+  // Cache hits are blits; they never wait behind cold renders.
   if (hasThumb(s, page, scale)) {
     try {
       return await renderThumbInternal(s, canvasId, page, scale);
@@ -192,9 +142,7 @@ export async function renderThumb(
         lane.active -= 1;
         pumpThumbQueue(s);
       };
-      // The cell disappeared, a newer mount re-used this id, or the document
-      // was torn down while the job waited, before the job reached the front
-      // of the queue. Drop it without touching pdf.js.
+      // The cell went, the id was reused, or the document died: drop it.
       if (
         epoch !== lane.epoch
         || s.thumbCancelled.has(canvasId)
@@ -227,10 +175,7 @@ async function renderThumbInternal(
 
   const hit = s.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    // Whether the entry may paint as it stands, or must be re-baked from its
-    // raw raster first — the same two facts `hasThumb` answers. Under a scrub
-    // the raw IS the picture, so staleness cannot strand it, and `paintCached`
-    // picks raw or baked off that flag: one paint path for both cases.
+    // Whether the entry may paint, or must re-bake from its raw.
     const current = s.themeScrubActive || hit.gen === currentGen(s);
     if (current || (await ensureEntryCurrent(s, hit))) {
       const size = paintCached(s, canvas, hit);
@@ -271,10 +216,7 @@ async function renderThumbInternal(
     s.thumbTasks.delete(canvasId);
     pg.cleanup();
 
-    // Keep `off` as the unbaked raw for every later theme rebake. Never
-    // alias raw === display and never release `off` here: cacheDisplay /
-    // createImageBitmap used to zero the only unthemed copy, so a theme
-    // change could not update visible thumbs until a full pdf.js re-render.
+    // Keep `off` as the unbaked raw for later rebakes.
     const raw = off;
     const pipeline = s.themeScrubActive ? null : readPipeline(s);
     let display: MaybeCanvas = pipeline ? await bakeRaster(raw, pipeline) : raw;
@@ -329,20 +271,7 @@ export function cancelThumb(s: EngineSession, canvasId: string): void {
   releaseCanvas(targetCanvas(s, canvasId));
 }
 
-/** Render a page into the cache with no DOM canvas (idle prefetch). A
- *  cache-warm cell asks `hasThumb` while it is still being built, mounts
- *  already loaded, and its first render call is a synchronous blit — zero
- *  skeleton, zero waiting. Rendering the pages AROUND the reader while idle
- *  means every remount after a fling to page N answers that probe true.
- *
- *  Prefetch is FIRST-CLASS lane work, not a side channel: it waits in the
- *  same bounded queue as cell renders, its pdf.js task is registered under
- *  a `prefetch-<page>` id so a document teardown cancels it like any
- *  other, and the lane epoch is re-checked after every await — a prefetch
- *  started for one document can never land in the next one's cache. The
- *  lifecycle is visible in `stats()` (activePrefetches plus the
- *  started/completed/dropped trio), so the reader's disposal baseline can
- *  prove no prefetch work outlived the document. */
+// Render a page into the cache with no DOM canvas (idle prefetch).
 export async function prefetchThumb(s: EngineSession, page: number, scale: number): Promise<void> {
   if (!s.pdf) return;
   const hit = s.thumbCache.get(page);
@@ -363,9 +292,7 @@ export async function prefetchThumb(s: EngineSession, page: number, scale: numbe
           lane.active -= 1;
           pumpThumbQueue(s);
         };
-        // The document was torn down (or replaced) while this prefetch
-        // waited for a lane slot. Drop it without touching pdf.js — the
-        // same guard a queued cell render gets.
+        // The document was torn down while this prefetch waited: drop it.
         if (epoch !== lane.epoch || era !== lane.era || !s.pdf || s.disposed) {
           s.prefetchesDropped += 1;
           lifecycleEvent("thumb_prefetch:drop");
@@ -398,12 +325,7 @@ export async function prefetchThumb(s: EngineSession, page: number, scale: numbe
   }
 }
 
-/// A combined cancellable signal for "this prefetch's world ended": the
-/// lane epoch moved (teardown or swap ran before this await started), or
-/// the document's destroy began while the await was in flight. The
-/// document-gone half covers the destroy window the epoch alone cannot
-/// see: a prefetch enqueued into the NEW epoch, onto a worker whose death
-/// is already underway, awaiting a promise it will never see settle.
+/// A cancellable signal for "this prefetch's world ended".
 function prefetchWorldEnded(s: EngineSession, epoch: number, era: number): {
   promise: Promise<void>;
   unsubscribe: () => void;
@@ -425,11 +347,7 @@ function prefetchWorldEnded(s: EngineSession, epoch: number, era: number): {
   };
 }
 
-/** The lane-slot half of a prefetch: render offscreen, bake, cache. Resolves
- *  `true` only when the entry landed in THIS document's cache; every stale
- *  or failed path cleans up after itself and resolves `false`. The pdf.js
- *  task rides `s.thumbTasks` under a synthetic id, so `destroySession`'s
- *  cancel-everything sweep reaches it and `stats().thumbTasks` counts it. */
+// The lane-slot half of a prefetch: render, bake, cache.
 async function prefetchThumbInternal(
   s: EngineSession,
   page: number,
@@ -469,16 +387,12 @@ async function prefetchThumbInternal(
     } catch (_) {
       rendered = false; // cancelled by teardown, or a failed raster — best-effort either way
     } finally {
-      // The usual path is a normal settle: remove this prefetch's waiters,
-      // or each successful prefetch would leak two resolvers into the
-      // cancellation arrays for the rest of the document's lifetime.
+      // The usual path: remove this prefetch's waiters.
       rendering.unsubscribe();
     }
     s.thumbTasks.delete(taskId);
     if (epochMoved) {
-      // The teardown sweep had already run when this task was created, so
-      // the cancel-everything pass never reached it — cancel it here, or it
-      // would render into a canvas this prefetch is about to release.
+      // The teardown sweep never saw this task: cancel it here.
       try { task.cancel(); } catch (_) { /* ignore */ }
     }
     if (!rendered || epochMoved || stale()) {
@@ -491,9 +405,7 @@ async function prefetchThumbInternal(
     const pipeline = s.themeScrubActive ? null : readPipeline(s);
     let display: MaybeCanvas = pipeline ? await bakeRaster(raw, pipeline) : raw;
     if (display !== raw) display = await cacheDisplay({ display });
-    // The epoch check AGAIN: a bake can wait on the theme queue, and a
-    // document swap in that window must not file this book's colours into
-    // the next document's cache.
+    // The epoch check again: a bake can wait on the theme queue.
     if (stale()) {
       releaseCanvas(off);
       return false;
@@ -509,5 +421,3 @@ async function prefetchThumbInternal(
     dying.unsubscribe();
   }
 }
-
-// only the changed file was rewritten

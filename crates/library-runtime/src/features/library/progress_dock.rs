@@ -1,8 +1,4 @@
-//! The import dock: bottom-left, one card per run, a ring per card.
-//!
-//! Not a toast: an import is something the reader started and watches while
-//! doing something else, so the dock sits clear of the shelf's centre and the
-//! toast slot.
+//! The import dock: a card per run, clear of the shelf's centre.
 
 use std::time::Duration;
 
@@ -16,17 +12,12 @@ use crate::state::library::TaskPhase;
 
 const HOLD_MS: u64 = 1600;
 
-/// The ring's radius, written once: the SVG draws it, the circumference is
-/// derived from it, and `styles/components/library/dock.css` spells the same
-/// product in its `stroke-dasharray`. CSS cannot read this const, so
-/// `tools/check-chrome-contracts.ts` computes the product and fails CI when
-/// the two disagree.
+/// The ring's radius: the SVG and `dock.css` derive it, and CI checks both.
 const RING_RADIUS: f64 = 15.0;
 const CIRCUMFERENCE: f64 = 2.0 * std::f64::consts::PI * RING_RADIUS;
 
-/// `inner_html` rather than `view!` because it makes the transition work:
-/// the circles are created once and the percentage is a custom property, so a
-/// beat moves a number the browser interpolates instead of replacing nodes.
+/// `inner_html`, not `view!`: one set of circles, a property the browser
+/// interpolates.
 const RING: &str = "<svg viewBox='0 0 36 36' width='36' height='36' aria-hidden='true'>\
 <circle class='import-ring-track' cx='18' cy='18' r='15'/>\
 <circle class='import-ring-fill' cx='18' cy='18' r='15'/>\
@@ -47,9 +38,7 @@ pub(crate) fn ProgressDock(state: crate::context::LibraryContext) -> impl IntoVi
     }
 }
 
-/// Reads its task back by id rather than rendering the row it was handed:
-/// `For` keys on the id, so a beat that only changes a count would otherwise
-/// never reach the card.
+/// Reads the task back by id: `For` keys on it, so a count still reaches.
 #[component]
 fn DockCard(state: crate::context::LibraryContext, id: String) -> impl IntoView {
     let timer_id = id.clone();
@@ -71,8 +60,8 @@ fn DockCard(state: crate::context::LibraryContext, id: String) -> impl IntoView 
         let finished_id = timer_id.clone();
         let handle = set_timeout_with_handle(
             move || {
-                // The hold can outlive the dock: a disposed library has no
-                // task list left to prune.
+                // The hold can outlive the dock: a disposed library
+                // has no tasks.
                 if state.library.tasks.try_get_untracked().is_none() {
                     return;
                 }
@@ -100,8 +89,7 @@ fn DockCard(state: crate::context::LibraryContext, id: String) -> impl IntoView 
                 <span
                     class=move || {
                         // The ring spins without a fraction: a scan has no
-                        // total to draw one of, and the label says "working"
-                        // in words.
+                        // total.
                         let base = "import-ring";
                         let Some(current) = task.get() else {
                             return base.to_string();
@@ -182,9 +170,7 @@ fn DockCard(state: crate::context::LibraryContext, id: String) -> impl IntoView 
                 </span>
             </span>
 
-            // Not offered while the run is going: a dismiss that silently
-            // no-ops is a button that lies, and a running card leaves on its
-            // own when it finishes.
+            // Not offered while running: a dismiss that no-ops is a lie.
             <Show when=move || task.get().is_some_and(|t| t.phase.is_finished())>
                 <button
                     class="icon-ghost import-card-close"
@@ -192,8 +178,8 @@ fn DockCard(state: crate::context::LibraryContext, id: String) -> impl IntoView 
                     title="Dismiss"
                     aria-label="Dismiss this import"
                     on:click={
-                        // The children closure re-runs, so the handler takes
-                        // a copy it can own rather than the card's id.
+                        // The children closure re-runs, so the
+                        // handler owns a copy.
                         let id = close_id.clone();
                         move |_| {
                             dismiss_task(state, &id);

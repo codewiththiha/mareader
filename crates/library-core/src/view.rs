@@ -1,9 +1,4 @@
-//! How the library is looking at the moment: the layout, the cover treatment,
-//! the column count and the sort.
-//!
-//! Deliberately NOT part of `reader_core::settings::Settings`: every write
-//! there re-runs the theme projection and re-serialises the whole settings
-//! JSON, which is why `src/state/library.rs` keeps the library out of it.
+//! How the library looks now: layout, cover treatment, columns, sort.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,10 +39,10 @@ impl CoverFit {
 pub struct LibraryView {
     #[serde(default)]
     pub layout: LibraryLayout,
-    /// `None` is Auto (as many as fit). Ignored in the list layout, where the count is kept for the next visit to the grid.
+    /// `None` is Auto. Kept for the next visit to the grid.
     #[serde(default)]
     pub columns: Option<u8>,
-    /// The count the auto flow currently produces, so the menu can show it live and the stepper's first press can pin it.
+    /// The count the auto flow produces, shown live in the menu.
     #[serde(default = "default_auto_fit")]
     pub auto_fit: u8,
     #[serde(default)]
@@ -62,7 +57,7 @@ fn default_asc() -> bool {
     true
 }
 
-/// A mid-range guess, for a blob written before the grid reported the flow's count.
+/// A mid-range guess for an old blob.
 fn default_auto_fit() -> u8 {
     5
 }
@@ -81,7 +76,7 @@ impl Default for LibraryView {
 }
 
 impl LibraryView {
-    /// The value the grid's `--lib-cols` property takes, spelled once so the CSS and the control cannot drift.
+    /// The grid's `--lib-cols` value, spelled once.
     pub fn columns_token(&self) -> String {
         match self.columns {
             Some(n) => n.to_string(),
@@ -89,13 +84,12 @@ impl LibraryView {
         }
     }
 
-    /// Auto is a real target: the first press pins the count the flow is showing, so only the list layout kills the stepper.
+    /// Auto is a target: the first press pins the flowing count.
     pub fn columns_enabled(&self) -> bool {
         !self.is_list()
     }
 
-    /// From Auto the first press pins what the flow was showing and steps from that.
-    /// A no-op in the list, so a control rendered disabled cannot be driven by a stray key.
+    /// From Auto the first press pins the flowing count.
     pub fn step_columns(&mut self, delta: i32) {
         if self.is_list() {
             return;
@@ -105,12 +99,12 @@ impl LibraryView {
         self.columns = Some(next as u8);
     }
 
-    /// One spelling, read by [`report_auto_fit`](Self::report_auto_fit) and by the grid that decides whether a report is worth a write.
+    /// One spelling, read by `report_auto_fit` and the grid.
     pub fn clamped_fit(fit: u8) -> u8 {
         fit.clamp(COLUMNS_MIN, COLUMNS_MAX)
     }
 
-    /// The only writer of `auto_fit`; `columns` is the reader's pin and a measurement must not move it.
+    /// The only writer of `auto_fit`; `columns` is the reader's pin.
     pub fn report_auto_fit(&mut self, fit: u8) {
         self.auto_fit = Self::clamped_fit(fit);
     }
@@ -119,7 +113,7 @@ impl LibraryView {
         self.columns = None;
     }
 
-    /// A sorted shelf re-sorts on the next render, so a drop would be undone before the reader saw it land.
+    /// A sorted shelf re-sorts, so a drop would be undone.
     pub fn drag_reorders(&self) -> bool {
         self.sort.is_manual()
     }
@@ -212,9 +206,7 @@ mod tests {
 
     #[test]
     fn a_report_never_pins_the_count_it_reports() {
-        // The grid measures the flow while Auto owns the layout. A report that
-        // pinned would freeze the count on the first resize after a launch, and
-        // the reader's Auto would silently stop being auto.
+        // A report that pinned would freeze Auto on the first resize.
         let mut v = LibraryView::default();
         v.report_auto_fit(6);
         assert_eq!(v.auto_fit, 6);

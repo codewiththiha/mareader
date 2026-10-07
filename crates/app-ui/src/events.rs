@@ -1,14 +1,5 @@
-//! The app's window-`CustomEvent` protocol: every event name in one table,
-//! plus the typed dispatchers.
-//!
-//! Window CustomEvents are the app's cross-cutting message mechanism — they
-//! cross layer boundaries (services → components, engine JS → Rust) without
-//! either side holding a signal from the other. Three of these names are also
-//! a protocol with the imperative engine, which dispatches them from plain JS
-//! and declares them in `public/engine/events.ts`. `tools/check-events.ts`
-//! fails CI when the two tables disagree or when a name is spelled as a
-//! literal elsewhere — a mismatch is not a compile error on either side, only
-//! a dispatch into a window nobody is listening on.
+//! The app's window-`CustomEvent` protocol: one name table and typed
+//! dispatchers, checked against the engine's `events.ts`.
 
 use serde::Serialize;
 
@@ -26,11 +17,7 @@ pub const SELECTION_PAGES_EVENT: &str = "mareader:selection-pages";
 pub const SELECTION_DETAIL_EVENT: &str = "mareader:selection-detail";
 /// One-shot "scroll the sidebar to where the reader is" gesture.
 pub const REVEAL_ACTIVE_EVENT: &str = "mareader:reveal-active";
-/// Ask the library's title-bar search to take focus. Dispatched by the global
-/// Cmd/Ctrl+F when no document is open — the shortcut means "search what you are
-/// looking at", and on the library page that is the shelf, not a document. A
-/// window event rather than a signal because the bar owns its own input node and
-/// the shortcut layer must not know the library page exists.
+/// Ask the library's title-bar search to take focus.
 pub const FOCUS_LIBRARY_SEARCH_EVENT: &str = "mareader:focus-library-search";
 
 /// Dispatch a typed CustomEvent on `window` with `payload` as its detail.
@@ -48,10 +35,7 @@ pub fn dispatch_typed_event<T: Serialize>(name: &str, payload: &T) {
     }
 }
 
-/// Dispatch a typed CustomEvent ON `target`, bubbling to `window`: the
-/// listeners are still window listeners, but the event's target says where
-/// it came from — how one of several panes tells its own requests from
-/// another pane's.
+/// Dispatch a typed CustomEvent on `target`, bubbling to `window`.
 pub fn dispatch_typed_event_on<T: Serialize>(
     target: &web_sys::EventTarget,
     name: &str,
@@ -68,8 +52,7 @@ pub fn dispatch_typed_event_on<T: Serialize>(
     }
 }
 
-/// Dispatch a payload-less CustomEvent on `window` — a one-shot gesture with
-/// no state to carry (e.g. [`REVEAL_ACTIVE_EVENT`]).
+/// Dispatch a payload-less CustomEvent on `window`.
 pub fn dispatch_event(name: &str) {
     let Some(win) = web_sys::window() else {
         return;

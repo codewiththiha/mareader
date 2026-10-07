@@ -1,49 +1,5 @@
-//! The native macOS traffic lights: on while the bar is pinned/hovered, or
-//! while the rail is painted. A short hide grace absorbs the end-of-close
-//! hover-band handoff: the rail releases chrome, then the expanded band can
-//! immediately put the stationary pointer back over the bar.
-//!
-//! TWO HOSTS, ONE PAIR OF LIGHTS. The lights are native and pinned to the
-//! window's top-left, so whichever surface owns that corner is the one they
-//! sit on: the title bar's 88px gutter when the rail is down, the rail's
-//! own header gutter when it is up — docked or floating, the header
-//! reserves the same 88px either way. The app computes those two hosting
-//! facts and passes them down as `rail_hosted` / `bar_hosted`: this
-//! component stays chrome, not app — it does not know what a sidebar is.
-//!
-//! The grace at the hide is the BAR's, so it only applies where the bar can
-//! take the lights back (`bar_hosted`): in an overlay layout there is no
-//! gutter to hand off to and nothing hover-gated coming back, so the hide
-//! lands in the same frame the floating rail finishes fading — which is the
-//! whole point of the fade's timing.
-//!
-//! THE HIDE ALWAYS LANDS. The lights follow the bar's hover-reveal through
-//! [`TitleBarCtx::visible`], and the bar's hide is re-checked at both ends
-//! of its hold — so the decision here is sound, but the command is async IPC
-//! while the decision is synchronous: a
-//! decision that changes mid-flight could otherwise let a stale command land
-//! last, leaving the native lights up with nothing left to re-run the
-//! effect. Every send therefore re-checks the live truth once its promise
-//! resolves and answers a mismatch — the lights' version of the bar's own
-//! recheck, and why an unfocus always ends with the lights gone.
-//!
-//! ONE WINDOW, SEVERAL FRAMES. Every runtime frame mounts its own title bar
-//! and therefore its own `TrafficLights`, but the lights are one pair per
-//! window. Only the frame the Shell has marked active may drive them
-//! ([`use_frame_active`]): a warm frame's pinned bar must not re-light them
-//! and a retiring frame's hover-out must not hide them. On promotion the
-//! frame forgets what it last sent — the other frame may have moved the
-//! native side meanwhile — and re-sends its own truth, pin included.
-//!
-//! Dynamic `y` (Tahoe-proof centering) — mirrors `readest` `traffic_light.rs`
-//! `compute_traffic_light_y + OnceLock + ResizeObserver`. The bar is `h-12`
-//! (48px, [`TITLE_BAR_H`](crate::TITLE_BAR_H)) but `y` is NOT
-//! `tauri.conf.json:trafficLightPosition` (that's only the pre-mount
-//! fallback). The live header height is measured from `#toolbar-row` via
-//! `ResizeObserver`; every `visible=true` invoke carries it as
-//! `headerHeight`, and the Rust command owns
-//! `y = ((h - btn_h)/2 + natural_origin_y).max(0)` with a cached
-//! `natural_origin_y` (~5pt Sonoma, ~7pt Tahoe), so no per-OS branch.
+//! The native macOS traffic lights: two hosts, one pair, and a hide
+//! that always lands.
 
 use std::time::Duration;
 
@@ -58,14 +14,9 @@ use crate::window::api::set_traffic_lights;
 
 #[component]
 pub fn TrafficLights(
-    /// The rail (or its close motion) owns the lights' corner right now:
-    /// their host is the rail's header gutter, independent of the bar's
-    /// visibility.
+    /// The rail or its close motion owns the lights' corner right now.
     rail_hosted: Signal<bool>,
-    /// The bar may host the lights in this layout (it owes them a gutter).
-    /// While true the lights follow the bar's visibility, and a hide waits
-    /// out the handoff grace; while false a hide lands immediately, because
-    /// there is no bar corner for the lights to hand back to.
+    /// The bar may host the lights in this layout.
     bar_hosted: Signal<bool>,
 ) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
@@ -75,17 +26,7 @@ pub fn TrafficLights(
     // `#toolbar-row`; `on_cleanup` in `observe_elements` disconnects it.
     let header_height: RwSignal<f64> = RwSignal::new(TITLE_BAR_H);
 
-    // Keep `header_height` in sync with the real bar height, replacing the
-    // static `tauri.conf.json {y:25}` with a live value. The observer fires
-    // once on `observe()` with the current size, so the first `visible=true`
-    // invoke already carries the centered `y`.
-    //
-    // The row arrives through the shell's ref rather than its id: a route
-    // swap runs this body a whole tick before the router exchanges the DOM,
-    // and in that window the id still names the outgoing page's row, which
-    // one install would then latch onto for good. The ref is set when the
-    // shell's own row builds, and that wakes this effect for the real
-    // install (the same window `use_center_slot` waits out).
+    // Keep `header_height` in sync with the real bar height.
     Effect::new(move |_| {
         let Some(row) = ctx.and_then(|c| c.row_ref.get()) else {
             return;
@@ -101,13 +42,9 @@ pub fn TrafficLights(
         });
     });
 
-    // The live truth about whether the lights should be on, read WITHOUT
-    // subscribing — the verification pass probes it after the command has
-    // landed, where a tracked read would create a dependency on an owner
-    // that no longer runs it.
+    // The live truth about the lights, read untracked.
     let truth = move || {
-        // A hidden frame abstains: its correction would fight the active
-        // frame's decision over the same native buttons.
+        // A hidden frame abstains: its correction would fight the active one.
         if !active.try_get_untracked().unwrap_or(false) {
             return None;
         }
@@ -116,9 +53,7 @@ pub fn TrafficLights(
                 || (bar_hosted.get_untracked() && ctx.is_some_and(|c| c.visible.get_untracked())),
         )
     };
-    // Send-and-verify lives in the shared hook: the decision is recorded,
-    // the IPC awaited, and a truth that moved mid-flight answered with one
-    // more command — so a stale send can never settle the native side last.
+    // Send-and-verify lives in the shared hook.
     let lights = use_verified_switch(truth, |want, height: f64| set_traffic_lights(want, height));
 
     Effect::new(move |_| {
@@ -132,18 +67,13 @@ pub fn TrafficLights(
             }
         };
         if !active.get() {
-            // Not on screen: drop any pending hide and forget what was sent,
-            // so the promotion that reveals this frame re-sends its truth
-            // even when it matches the stale record.
+            // Not on screen: drop the pending hide and forget what was sent.
             clear_grace();
             lights.forget();
             return;
         }
         let on = rail_hosted.get() || (bar_hosted.get() && ctx.visible.get());
-        // Re-read header_height so every transition (hover in/out,
-        // sidebar slide, resize) carries the current centered `y` — Rust
-        // re-applies `ThemeChanged` without IPC, but JS must send the
-        // height on each visibility toggle.
+        // Re-read header_height so every transition carries the centered `y`.
         let h = header_height.get();
         if on {
             // Never send the end-of-slide false if hover re-enters on the
@@ -159,12 +89,7 @@ pub fn TrafficLights(
             if lights.last_sent() == Some(false) || hide_grace.get_value().is_some() {
                 return;
             }
-            // The grace exists for the docked handoff (rail releases chrome,
-            // the re-widened band can re-light them under a stationary
-            // pointer). Where the bar never hosts the lights there is
-            // nothing to wait for — and waiting would leave three native
-            // buttons floating over the rail that has just finished fading
-            // out from under them.
+            // The grace exists for the docked handoff.
             if !bar_hosted.get_untracked() {
                 lights.send(false, h);
                 return;

@@ -15,8 +15,7 @@ pub(crate) fn raf(f: impl FnOnce() + 'static) {
     let _ = win.request_animation_frame(cb.unchecked_ref());
 }
 
-/// The scrollport extents of an element as a [`Viewport`] for `axis`: `main`
-/// is the scroll-axis extent, `cross` the extent across it.
+/// The scrollport extents of an element as a [`Viewport`] for an axis.
 pub(crate) fn viewport_of(el: &web_sys::Element, axis: Axis) -> Viewport {
     let Ok(html) = el.clone().dyn_into::<web_sys::HtmlElement>() else {
         return Viewport::main_only(0.0);

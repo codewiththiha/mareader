@@ -1,12 +1,4 @@
-// Mutable engine session state, one instance PER DOCUMENT SESSION. The
-// facade (public/pdfEngine.ts) holds no document: every document call names
-// a session id (`sid`), minted by the Rust `PdfSession` that owns it, and
-// this module's registry is the only way from a sid to its state. A sid is
-// accepted once, never reused, and dropped by `retireSession` — so a call
-// captured against a disposed session finds nothing and does nothing. The
-// maps below are window-bound (the virtualizer keeps `budget` pages live) or
-// LRU-bounded (thumbCache <= THUMB_CACHE_MAX), so a session never grows with
-// document length. docs/session-ownership.md is the ownership record.
+// Mutable engine session state, one instance per document session.
 
 import type {
   ActiveMatch,
@@ -21,33 +13,18 @@ import type {
 import { disposeScratch, releaseCanvas } from "./canvas";
 import { PAGE_SNAPSHOT_SELECTOR, TEXT_LAYER_SELECTOR } from "./dom-contract";
 
-// The engine's own API version, served as `PDFReader.version()`. It tracks the
-// JS surface rather than the app release, and unlike the six sources
-// `tools/check-versions.ts` compares, nothing here checks it against them.
+// `PDFReader.version()`, the JS surface's version; uncompared.
 export const ENGINE_VERSION = "0.7.0";
 
-/** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
- *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
+// Cap kept tight: each thumb is a pair of rasters; 16 keeps several
+// scroll-windowfuls warm.
 export const THUMB_CACHE_MAX = 16;
 
-/** Max pixels per canvas layer. The 12M base (~48 MB RGBA) is the ceiling,
- *  not the target: US-Letter at 100% zoom on a 2x display is ~1.5M px, at
- *  200% ~7.8M, so 12M keeps the FULL native devicePixelRatio through ~245%
- *  zoom — past where anyone is inspecting rather than reading — while every
- *  transient surface a zoom commit stacks (scratch, bake output, snapshot
- *  mask) is a quarter smaller than the 16M this used to be. The footprint
- *  latches onto the session's dirty high-water mark and never hands it back,
- *  so the cheapest megabyte is the one a transient never allocates; total
- *  GPU memory is bounded by the 3-page mounted ceiling (RENDER_BUDGET), not
- *  by this. The ceiling used to DOUBLE on machines reporting >= 8 GB; that
- *  bought no visible sharpness and made every transient twice the cost,
- *  permanently. Low-memory devices still get half the base. */
+// Max pixels per canvas layer: 12M keeps full devicePixelRatio to ~245%.
 const PAGE_MAX_PIXELS_BASE = 12 * 1024 * 1024;
 
 function memoryScaledPixelCeiling(): number {
-  // Guarded end to end: `navigator` is absent in the Node smoke harness and
-  // in old webview sandboxes, and `deviceMemory` is Chromium-only — both
-  // must fall back to the base ceiling without throwing at module load.
+  // Guarded end to end: `navigator` and `deviceMemory` may be absent.
   const nav = typeof navigator !== "undefined" ? (navigator as { deviceMemory?: number }) : undefined;
   const memory = nav && nav.deviceMemory;
   if (typeof memory !== "number" || !(memory > 0)) return PAGE_MAX_PIXELS_BASE;
@@ -57,22 +34,14 @@ function memoryScaledPixelCeiling(): number {
 
 export const PAGE_MAX_PIXELS = memoryScaledPixelCeiling();
 
-// A retained raw is only worth its full-page surface while a tint scrub can
-// still plausibly restore it; the idle timer is the short tail of that
-// window, not a standing keep-alive.
+// A retained raw is worth its surface only while a tint scrub can restore
+// it.
 const RAW_IDLE_MS = 2_000;
-/** How long after a scrub transition a bake still retains its unbaked raw,
- *  so back-to-back drags restore without a re-render. Outside the window the
- *  raw is dropped at the bake and the scrub path re-renders on demand
- *  (preparePagesForScrub) — a raw nobody will ask for is pure peak
- *  inflation, and the footprint latches onto the peak. */
+// How long a bake retains its unbaked raw after a scrub.
 const SCRUB_RAW_RETAIN_MS = 30_000;
 const SWEEP_IDLE_MS = 30_000;
 
-/** Drop every scrub cover (`.page-snapshot`) a host still carries, zeroing the
- *  backing stores before the nodes go: WKWebView does not release a canvas
- *  IOSurface on DOM removal alone, so a cover dropped without this keeps its
- *  full-page RGBA buffer alive. */
+// Drop every `.page-snapshot`, zeroing the backing store first.
 function releaseSnapshots(host: HTMLElement): void {
   host.querySelectorAll(PAGE_SNAPSHOT_SELECTOR).forEach((n) => {
     releaseCanvas(n as HTMLCanvasElement);
@@ -105,14 +74,10 @@ function zeroCounters(): Record<CounterKey, number> {
 /** Realm totals over every session that ever lived — diagnostics only. */
 export const realmCounters: Record<CounterKey, number> = zeroCounters();
 
-/** One queued raster: its fill rank (see `rank_signal` in
- *  `components/formats/pdf/strip.rs`), the request order behind it, and the job. */
+// One queued raster: its fill rank, request order, and job.
 type QueuedRaster = { rank: number; seq: number; run: () => void };
 
-/** The page render lane: at most PAGE_RENDER_LIMIT rasters of THIS session in
- *  flight, the rest queued by rank, harshest first. A raster that has started is
- *  never preempted. Per session: a burst in one pane never queues behind
- *  another's pages, and a teardown drains only its own queue. */
+// The page render lane: PAGE_RENDER_LIMIT rasters, queued by rank.
 class PageLane {
   active = 0;
   readonly queue: QueuedRaster[] = [];
@@ -124,8 +89,7 @@ class PageLane {
     wake: () => void;
   }>();
 
-  /** Insert ahead of everything looser-ranked, stable inside a rank: a page
-   *  window is a handful of jobs, so scanning beats sorting on every push. */
+  // Insert ahead of looser-ranked jobs, stable inside a rank.
   push(rank: number, run: () => void): void {
     const job: QueuedRaster = { rank, seq: this.seq++, run };
     let at = this.queue.length;
@@ -140,24 +104,11 @@ class PageLane {
   }
 }
 
-/** Full-page rasters are MAIN-THREAD work — pdf.js draws the page into the
- *  canvas synchronously; only parsing/decoding runs in pdf.js's worker — so
- *  their concurrency cap is realm-wide, not per session: four panes
- *  rasterising or re-theming together queue as one paced sweep instead of
- *  stacking up to eight concurrent stalls on the one thread. A single pane
- *  sees the same two slots it always had. The per-session QUEUE (and its
- *  drain on teardown) stays — the realm cap only decides when a queued job
- *  may start. */
+// Full-page rasters are main-thread work, so the cap is realm-wide.
 export const REALM_PAGE_LIMIT = 2;
 export const realmLane = { active: 0 };
 
-/** Sessions with a page queue a freed realm slot should re-offer the lane
- *  to. Held by WEAK REFERENCE on purpose: this registry is module state
- *  that outlives any one session, and a strong handle here would pin the
- *  whole EngineSession — page surfaces, thumb cache, pdf proxy — past its
- *  teardown if an unregister were ever skipped. The renderer walks the
- *  refs and prunes any whose session is gone (collected) or retired
- *  (`disposed`), so a stale entry cannot even receive a pump. */
+// Sessions a freed realm slot may re-offer the lane to; weak on purpose.
 const lanePumpSessions = new Set<WeakRef<EngineSession>>();
 
 export function registerLanePump(s: EngineSession): () => void {
@@ -168,9 +119,7 @@ export function registerLanePump(s: EngineSession): () => void {
   };
 }
 
-/** Walk the lane-pump registrants: `pump` every session still alive and
- *  not yet retired, prune the refs that are not. The renderer supplies the
- *  pump (its own `pumpPageQueue`); this module must not import it. */
+// Walk the lane-pump registrants: pump the live ones, prune the rest.
 export function pumpLaneRegistrants(pump: (s: EngineSession) => void): void {
   for (const ref of [...lanePumpSessions]) {
     const s = ref.deref();
@@ -182,9 +131,7 @@ export function pumpLaneRegistrants(pump: (s: EngineSession) => void): void {
   }
 }
 
-/** The thumbnail lane and its prefetch bookkeeping, per session: the lane
- *  epoch (bumped by this session's teardown), the prefetch era (bumped by
- *  this pane's suspend), and the per-canvas generations. */
+// The thumbnail lane and its prefetch bookkeeping, per session.
 class ThumbLane {
   active = 0;
   readonly queue: Array<() => void> = [];
@@ -205,24 +152,40 @@ class ScrubState {
   readonly entrySnapshots = new Map<string, HTMLCanvasElement>();
 }
 
-/** The engine's per-document session state: the pdf.js document proxy, live
- *  page surfaces, thumbnail cache, search context, and theme pipeline state.
- *  One instance per document session, created by `createSession(sid)` and
- *  retired by the facade's `destroySession(sid)`. */
+/** A raceable "world ended" promise: `unsubscribe` on every normal settle. */
+export function worldEndedSignal(
+  waiters: Array<() => void>,
+  ended: boolean,
+): { promise: Promise<void>; unsubscribe: () => void } {
+  if (ended) return { promise: Promise.resolve(), unsubscribe: () => {} };
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  const waiter = () => resolve();
+  waiters.push(waiter);
+  return {
+    promise,
+    unsubscribe: () => {
+      const at = waiters.indexOf(waiter);
+      if (at >= 0) waiters.splice(at, 1);
+    },
+  };
+}
+
+// The engine's per-document state: proxy, surfaces, thumbs, theme.
 export class EngineSession {
   /** The session id the Rust owner minted. Immutable, never reused. */
   readonly sid: number;
   /** Set by `retireSession`; every lane checks it before committing. */
   disposed = false;
-  /** Recent page-raster cost in ms: exponential mean over COMPLETED rasters,
-   *  timed inside the lane slot, so it excludes queue wait. `0` means nothing
-   *  has completed yet. The reader's virtualizer reads this back as `fill_ms`. */
+  // Recent raster cost in ms, over completed rasters; `0` before one lands.
   fillMs = 0;
 
   readonly pageLane = new PageLane();
   readonly thumbLane = new ThumbLane();
   readonly scrub = new ScrubState();
-  /** Each PDF session bakes against the appearance tokens on its own pane root. */
+  // Each session bakes against the tokens on its own pane root.
   readonly themePipeline: PipelineCache = {
     token: null,
     inputs: null,
@@ -231,17 +194,15 @@ export class EngineSession {
     paperInfo: null,
     gen: 0,
   };
-  /** The first registered page pins this session to its pane's appearance root. */
+  // The first registered page pins the session to its pane's root.
   themeRoot: HTMLElement | null = null;
   /** Serialized theme mutations of THIS session's rasters. */
   themeChain: Promise<void> = Promise.resolve();
-  /** The realm lane registry's handle for this session's page-queue pump;
-   *  set when the session registers with the engine, cleared by its
-   *  destroy. Null for a session nobody registered (the host's stubs). */
+  // The realm registry's handle for this session's queue pump; null
+  // unregistered.
   unregisterLanePump: (() => void) | null = null;
 
-  /** Raw frames parked for the Rust paper session (engine/paper.ts), and
-   *  whether that session wants them (its blend switch). */
+  // Raw frames parked for the paper session, and whether it wants them.
   readonly paperStash = new Map<string, PaperFrame>();
   paperActive = true;
 
@@ -254,24 +215,13 @@ export class EngineSession {
   numPages = 0;
   currentPath: string | null = null;
 
-  /** The dominant raster colour of the open document — the PDF's own paper —
-   *  or null until the paper session (the Rust side of the pipeline) resolves
-   *  one. During a scrub the blend backdrop re-derives from this through the
-   *  same live CSS filter + blend the raw canvases use; settled, it paints
-   *  the pre-rendered twin the engine derives from it (--pdf-paper-baked,
-   *  theme/paper.ts), so backdrop and page are the same composite by
-   *  construction either way. */
+  // The document's dominant raster colour, or null until resolved.
   detectedPaper: string | null = null;
 
-  /** Live page surfaces, keyed by canvas id. Bounded by the virtualizer's
-   *  live window; `unregisterPage` removes and releases on unmount. */
+  // Live page surfaces by canvas id, bounded by the live window.
   readonly stateByCanvasId = new Map<string, PageState>();
 
-  /** Intrinsic (scale-1) boxes probed from the document, keyed by page. The
-   *  reader's fit maths reads a page's true box BEFORE its first raster
-   *  (`probePageSize`), and a page's box never changes while a document is
-   *  open — so a scroll that remounts a page must not probe it twice. Cleared
-   *  by every open: the cache belongs to one document. */
+  // Intrinsic (scale-1) page boxes, probed once per open.
   readonly intrinsicByPage = new Map<number, { width: number; height: number }>();
 
   /** Forget the probed page boxes: a new document is being opened. */
@@ -289,44 +239,25 @@ export class EngineSession {
   searchQuery = "";
   activeMatch: ActiveMatch = null;
 
-  /** Heuristic sweep counter: every CLEANUP_EVERY renders, release worker
-   *  caches so memory drops during long reading sessions. */
+  // Heuristic sweep counter: every CLEANUP_EVERY renders, release caches.
   renderCount = 0;
 
-  // Lifecycle counters (Phase 0 diagnostics), per session. Monotonic; read
-  // via stats(). They are accessors (installed below from COUNTER_KEYS):
-  // every write lands in this session's record AND in the realm totals in
-  // the same statement, so the aggregate never loses an increment — not
-  // even one a late settle makes after the session retired. The pairing
-  // rules the teardown baseline asserts:
-  //   sessionsOpened   == sessionsDestroyed   (every open document dies once)
-  //   workersCreated   == workersTerminated   (every LoadingTask destroyed once)
-  //   rendersStarted   == rendersCompleted + rendersCancelled + rendersFailed
-  //   prefetchesStarted == prefetchesCompleted + prefetchesDropped
+  // Lifecycle counters, per session; writes also land in realm totals.
   readonly counts: Record<CounterKey, number> = zeroCounters();
   // Thumbnail prefetch gauge: must read zero after teardown.
   prefetchesActive = 0;
 
   themeScrubActive = false;
 
-  /** The last scrub-mode transition (Date.now()), recorded by the theme
-   *  queue on the way in AND out. A bake retains its unbaked raw only while
-   *  a scrub inside SCRUB_RAW_RETAIN_MS of this is plausible. */
+  // The last scrub-mode transition (Date.now()).
   lastScrubAt = 0;
 
-  /** Whether the appearance popover is open, told by the app over the
-   *  bridge (`setAppearanceMenuOpen`). The menu is where a scrub is born:
-   *  while it is open, a bake retains its unbaked raw even with no recent
-   *  scrub, so the FIRST drag of a session blits retained pixels under the
-   *  live CSS instead of re-rendering every page; closing arms the idle
-   *  tail that frees them. */
+  // Whether the appearance menu is open; it keeps a bake's raw.
   appearanceMenuOpen = false;
 
   private idleTimer: ReturnType<typeof setTimeout> | 0 = 0;
   private rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();
-  /** Live raw-retention timers (armed, unfired, uncleared). The WeakMap
-   *  above is uncountable by design; this mirror counter is what the stats
-   *  surface reads, and teardown must return it to zero. */
+  // Live raw-retention timers; teardown returns this to zero.
   private rawTimerCount = 0;
 
   setLoadingTask(t: LoadingTask | null): void {
@@ -339,12 +270,7 @@ export class EngineSession {
     if (!doc) this.setDetectedPaper(null); // document gone → re-detect on next open
   }
 
-  /// The document's liveness as a waited-on flag, not just a field: an
-  /// await inside the destroy window (a task born after the cancel sweep
-  /// but before the document nulls) sits on a worker that never answers,
-  /// so the awaits race this instead of trusting the promise. Set false by
-  /// `noteDocumentGone` the moment a destroy BEGINS — by completion would
-  /// be too late for those awaits — and true again by the next open.
+  /// The document's liveness as a waited-on flag.
   private documentAlive = false;
   private documentGoneWaiters: Array<() => void> = [];
 
@@ -354,33 +280,12 @@ export class EngineSession {
     for (const wake of waiters) wake();
   }
 
-  /// Subscribe to "this document is dying". The unsubscribe is the leak
-  /// guard: a prefetch that settles NORMALLY (the usual case) must remove
-  /// its waiter, or every successful prefetch leaves a resolver parked here
-  /// for the document's whole lifetime — exactly the async bookkeeping
-  /// growth a memory baseline exists to catch.
+  /// Subscribe to "this document is dying" (see `worldEndedSignal`).
   documentGoneSignal(): { promise: Promise<void>; unsubscribe: () => void } {
-    if (!this.documentAlive) {
-      return { promise: Promise.resolve(), unsubscribe: () => {} };
-    }
-    let resolve!: () => void;
-    const promise = new Promise<void>((r) => {
-      resolve = r;
-    });
-    const waiter = () => resolve();
-    this.documentGoneWaiters.push(waiter);
-    return {
-      promise,
-      unsubscribe: () => {
-        const at = this.documentGoneWaiters.indexOf(waiter);
-        if (at >= 0) this.documentGoneWaiters.splice(at, 1);
-      },
-    };
+    return worldEndedSignal(this.documentGoneWaiters, !this.documentAlive);
   }
 
-  /// Cancel the idle sweeper: a close must not leave a document-scoped
-  /// timer that later fires `sweepPdf` over whatever document is open by
-  /// then. `noteActivity` re-arms it for the living document.
+  /// Cancel the idle sweeper; `noteActivity` re-arms it.
   clearIdleTimer(): void {
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
@@ -388,8 +293,7 @@ export class EngineSession {
     }
   }
 
-  /** Whether the document-scoped idle sweeper is armed (0/1 for stats).
-   *  Destroy cancels the timer, so the baseline requires 0 after a close. */
+  // Whether the idle sweeper is armed (0/1 for stats).
   sweepTimerArmed(): number {
     return this.idleTimer ? 1 : 0;
   }
@@ -399,8 +303,7 @@ export class EngineSession {
     return this.rawTimerCount;
   }
 
-  /** Record this session's paper. The realm publisher updates the shared
-   *  fallback; pane-local publication is handled by theme/paper.ts. */
+  // Record this session's paper.
   setDetectedPaper(hex: string | null): void {
     this.detectedPaper = hex;
     if (publisher === this) writeRootPaper(hex);
@@ -426,16 +329,12 @@ export class EngineSession {
     this.themeScrubActive = on;
   }
 
-  /** Remember a scrub transition: bakes landing inside the retention window
-   *  keep their unbaked raw so the next drag restores without a re-render. */
+  // Remember a scrub transition, so a bake inside the window keeps its raw.
   noteScrub(): void {
     this.lastScrubAt = Date.now();
   }
 
-  /** Open/close the appearance menu's half of the retention gate. Closing
-   *  re-arms the idle timer on every raw the open menu was holding, so the
-   *  surfaces leave on the same short tail a scrub's raws do — the flag
-   *  alone would strand them until the next bake or teardown. */
+  // Open/close the menu's half of the retention gate.
   setAppearanceMenuOpen(on: boolean): void {
     if (this.appearanceMenuOpen === on) return;
     this.appearanceMenuOpen = on;
@@ -445,11 +344,7 @@ export class EngineSession {
     }
   }
 
-  /** Whether a tint scrub is plausible right now — the retention gate for
-   *  the unbaked raw a bake just produced. An open appearance menu counts
-   *  on its own: the dials are on screen, so a drag can start with no
-   *  scrub ever having happened this session. Zero means "never scrubbed
-   *  this session", which alone is not plausible. */
+  // Whether a tint scrub is plausible: a recent one, or an open menu.
   scrubIsPlausible(): boolean {
     if (this.appearanceMenuOpen) return true;
     return this.lastScrubAt > 0 && Date.now() - this.lastScrubAt < SCRUB_RAW_RETAIN_MS;
@@ -460,15 +355,7 @@ export class EngineSession {
     return this.renderCount;
   }
 
-  /**
-   * Reset the idle sweeper (pdf.cleanup + scratch/pool drain).
-   *
-   * Document-scoped by definition: with no document there is nothing left to
-   * sweep, and a timer armed here would outlive the close. `destroySession` clears
-   * the sweeper, but it cannot un-arm a render still resuming from an await —
-   * and `sweepTimerArmed` is a field the teardown baseline reads, so a stray
-   * re-arm is a close that never reads drained.
-   */
+  // Reset the idle sweeper (pdf.cleanup + pool drain).
   noteActivity(): void {
     if (!this.pdf || this.disposed) return;
     if (this.idleTimer) clearTimeout(this.idleTimer);
@@ -515,8 +402,7 @@ export class EngineSession {
       clearTimeout(rawTimer);
       this.rawTimerCount -= 1;
     }
-    // Delete the (now dead) handle so a second release of the same state
-    // cannot decrement the mirror counter twice.
+    // Drop the dead handle so a second release cannot double-decrement.
     this.rawTimers.delete(st);
     if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
     st.rawCanvas = null;
@@ -538,12 +424,7 @@ export class EngineSession {
     }
   }
 
-  /** Drop the zoom masks every live host still carries — a mask whose render
-   *  was superseded, or never landed, keeps a full-page RGBA surface alive
-   *  until the host unmounts. The app-side `remove_snapshots` clears a host
-   *  when ITS render completes; this is the engine-side net for the hosts
-   *  whose completion never came. Fired where reading work ends, alongside
-   *  `sweepPdf`. */
+  // Drop the zoom masks every live host carries.
   sweepSnapshots(): void {
     for (const st of this.stateByCanvasId.values()) {
       if (!st.host) continue;
@@ -555,11 +436,7 @@ export class EngineSession {
     }
   }
 
-  /** Keep the unbaked raw briefly so a tint slider can restore it, then free
-   *  it. The next theme change / scrub without a raw re-renders from pdf.js.
-   *  The timer is a no-op while scrubbing is active or the appearance menu
-   *  is open (both are the raw's reason to exist; the menu's close re-arms
-   *  this), and teardown (releasePageSurfaces) clears it outright. */
+  // Keep the unbaked raw until a tint slider's window passes.
   dropRawIfIdle(st: PageState): void {
     const prev = this.rawTimers.get(st);
     if (prev) {
@@ -571,8 +448,7 @@ export class EngineSession {
       st,
       setTimeout(() => {
         this.rawTimerCount -= 1; // this timer just fired
-        // Drop the dead handle so a later release of the same state cannot
-        // decrement the mirror counter a second time.
+        // Drop the dead handle to keep the mirror counter honest.
         this.rawTimers.delete(st);
         if (st.dead || this.themeScrubActive || this.appearanceMenuOpen) return;
         if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
@@ -582,8 +458,7 @@ export class EngineSession {
   }
 }
 
-// The counter accessors (declared through the interface merge so
-// `s.rendersStarted += 1` type-checks like a plain field).
+// The counter accessors (interface merge, so `s.x += 1` type-checks).
 export interface EngineSession extends Record<CounterKey, number> {}
 for (const key of COUNTER_KEYS) {
   Object.defineProperty(EngineSession.prototype, key, {
@@ -597,19 +472,13 @@ for (const key of COUNTER_KEYS) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// The session registry. The only realm-level document structure left: a map
-// from sid to its session, plus which session publishes the root paper.
+// The session registry: sid to session, plus the root-paper publisher.
 
 const sessions = new Map<number, EngineSession>();
-/** The highest sid ever accepted: sids are monotonic, so a retired sid can
- *  never be registered again and a stale caller can never alias a new
- *  session by reusing its number. */
+// The highest sid accepted; sids are monotonic, so none is reused.
 let highestSid = 0;
 
-/** Register a new session. Refuses a sid that is not a positive integer
- *  above every sid seen so far (reuse is how a stale call would alias a
- *  live session). */
+// Register a new session, refusing a sid at or below one already seen.
 export function createSession(sid: number): EngineSession | null {
   if (!Number.isInteger(sid) || sid <= highestSid) return null;
   highestSid = sid;
@@ -632,22 +501,17 @@ export function liveSessions(): EngineSession[] {
 
 let sessionsRetired = 0;
 
-/** Sessions whose teardown has begun but not finished: no longer reachable
- *  by sid (nothing new is accepted), still counted by the aggregate gauges
- *  until their worker and surfaces are gone. */
+// Sessions whose teardown has begun but not finished.
 const draining = new Set<EngineSession>();
 
-/** Step one of retirement, the first act of destroySession: stop accepting
- *  (the sid stops resolving) and advance the invalidation state every lane
- *  checks (`disposed`). The root paper goes with a publishing session. */
+// Step one of retirement: stop accepting, advance `disposed`, drop the
+// paper.
 export function beginRetire(s: EngineSession): boolean {
   if (sessions.get(s.sid) !== s) return false;
   s.disposed = true;
   sessions.delete(s.sid);
   draining.add(s);
-  // The root paper goes with a presenting session — but only that session:
-  // another open document's colour takes over the backdrop (the split
-  // workspace's focus-blind fallback), and only an empty realm clears it.
+  // The root paper goes with a presenting session — only that session.
   releasePresentation(s);
   lifecycleEvent("engine_session:dispose_begin");
   return true;
@@ -678,23 +542,15 @@ export function registryCounts(): { live: number; retired: number } {
 /** The session whose paper the root backdrop shows. */
 let publisher: EngineSession | null = null;
 
-/** Presentation recency: the sessions that have presented their paper, most
- *  recent first. The focus-blind fallback the split workspace needs — when
- *  the publisher's session goes away while other documents are still open
- *  (the focus sits on a reflowable pane and cannot present), the backdrop
- *  falls back to the most recently presented live session's colour instead
- *  of dropping to the theme paper. Bounded by the live session count;
- *  entries leave in `beginRetire` and dead ones prune on every fallback. */
+// Presentation recency, most recent first: the split workspace's
+// focus-blind fallback.
 const presented: EngineSession[] = [];
 
 export function paperPublisher(): EngineSession | null {
   return publisher;
 }
 
-/** Make `s` the root-paper publisher (null = nobody) and restate its paper.
- *  The latest document to open presents by default; the host can name a
- *  session explicitly (`presentSession`). A presentation also records the
- *  recency the destroy-time fallback walks. */
+// Make `s` the root-paper publisher and restate its paper.
 export function setPaperPublisher(s: EngineSession | null): void {
   if (s && s.disposed) return;
   publisher = s;
@@ -703,18 +559,13 @@ export function setPaperPublisher(s: EngineSession | null): void {
     if (at >= 0) presented.splice(at, 1);
     presented.unshift(s);
   }
-  // A presenting session with nothing detected yet HOLDS the previous
-  // colour: a fresh open beside a coloured workspace must not flash the
-  // backdrop to the theme paper — the session's first detected colour
-  // lands the swap. A null publisher is deliberate: clear.
+  // A presenting session with nothing detected yet holds the previous
+  // colour.
   if (!s) writeRootPaper(null);
   else if (s.detectedPaper) writeRootPaper(s.detectedPaper);
 }
 
-/** `s` is going away: forget its presentation. When it was presenting, the
- *  most recently presented live session takes over the backdrop — or the
- *  paper clears, when no other document is open. Returns the fallback (or
- *  null) so the caller's `publishBakedPaper` lands on the new publisher. */
+// `s` is going away: forget its presentation; returns the fallback.
 function releasePresentation(s: EngineSession): void {
   const at = presented.indexOf(s);
   if (at >= 0) presented.splice(at, 1);
@@ -741,20 +592,8 @@ function writeRootPaper(hex: string | null): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Lifecycle diagnostics (Phase 0 baseline).
-//
-// Counters over the resources THIS module owns: the document session, the
-// pdf.js worker behind its loading task, and the page render lane. They are
-// the production signal — cheap, always on, read through `stats()` — and the
-// open/teardown paths bump them where the resource is actually created or
-// released, so a teardown that misses a resource is visible as an unbalanced
-// pair rather than as a claim.
-//
-// `lifecycleEvent` is the narration half: silent unless a development
-// surface opts in (`setLifecycleLog`), because create/dispose events are
-// rare but render events are not, and per-render logs are noise in normal
-// operation.
+// Lifecycle diagnostics (Phase 0 baseline): counters over this module's
+// resources, plus silent narration.
 
 let lifecycleLog = false;
 
@@ -778,5 +617,3 @@ export function noteWorkerCreated(s: EngineSession): void {
 }
 
 export const CLEANUP_EVERY = 5;
-
-// only the changed file was rewritten

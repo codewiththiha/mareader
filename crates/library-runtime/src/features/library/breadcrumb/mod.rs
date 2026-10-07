@@ -1,20 +1,8 @@
-//! The breadcrumb: the library page's only prose, and it is navigation.
-//!
-//! One crumb per level, `Home` first and the open shelf last. Every crumb is
-//! a button — a folder three levels down is three clicks from the root only
-//! if the reader can see all three.
+//! The breadcrumb: the page's only prose, and it is navigation.
 
-//! ## Crumbs are drop targets
-//!
-//! Every crumb — elided ones included — is a drop target, so a book can be
-//! filed onto a level the reader is not standing on. The ellipsis is not: it
-//! stands for several levels and the reader cannot see which one they would
-//! be choosing.
+//! Every crumb is a drop target, elided ones included; the ellipsis is not.
 
-//! ## The shelf's own menu
-//!
-//! The last crumb is a button for a second reason: it is where a shelf the
-//! reader made gets renamed (inline) or taken apart.
+//! The last crumb renames its shelf inline or takes it apart.
 
 mod fold;
 mod panel;
@@ -38,15 +26,12 @@ use panel::{EllipsisCrumb, HoverIntent};
 
 const ALL_CRUMB_DOM_ID: &str = "crumb-all";
 
-/// `Clone` because the chain crosses a signal, and a `Signal` hands out
-/// copies rather than references.
+/// `Clone` because the chain crosses a signal.
 #[derive(Clone)]
 struct Crumb {
     id: String,
     name: String,
-    /// The one consequence of a removal worth a sentence under the menu row:
-    /// the reader cannot see it coming — the shelf comes back when the folder
-    /// places again.
+    /// Worth a sentence under the row: the shelf returns on the next import.
     watched: bool,
 }
 
@@ -55,8 +40,7 @@ fn current_shelf_id(state: crate::context::LibraryContext) -> Option<String> {
     (id != ALL_SHELF).then_some(id)
 }
 
-/// Read when an action runs rather than when the crumb is built, so renaming
-/// the same shelf twice starts from its current name.
+/// Read when the action runs, so renaming twice starts from the current name.
 fn shelf_name_now(state: crate::context::LibraryContext, shelf_id: &str) -> String {
     state.library.shelf_name(shelf_id)
 }
@@ -94,8 +78,7 @@ fn crumb_dom_id(shelf_id: &str) -> String {
     }
 }
 
-/// One call rather than a `NodeRef` and a rect reader: a target that
-/// outlived its crumb would be a way to file onto a level no longer shown.
+/// Registering the crumb here, so a target cannot outlive its crumb.
 fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
     let dom_id = crumb_dom_id(shelf_id);
     ctrl.registry.register(DropTargetEntry {
@@ -106,8 +89,7 @@ fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
     dom_id
 }
 
-/// A computed string rather than a conditional class: the hot state is the
-/// third of three things deciding the look.
+/// A computed string: the hot state is the third thing deciding the look.
 fn crumb_class(current: bool, hot: bool) -> String {
     let base = "flex min-w-0 max-w-40 items-center gap-1 rounded-md px-1.5 py-0.5 \
                 transition-colors focus:outline-none focus-visible:ring-2 \
@@ -141,9 +123,7 @@ pub(crate) fn Breadcrumb(state: crate::context::LibraryContext) -> impl IntoView
         }
     });
 
-    // Both move without a window resize: a crumb renamed, a level drilled
-    // into, the trailing cluster growing, the flex squeeze settling after the
-    // fold's answer.
+    // All move without a window resize: a rename, a drill, the fold's answer.
     let nav_ref: NodeRef<html::Nav> = NodeRef::new();
     let probe_ref: NodeRef<html::Span> = NodeRef::new();
     let widths: RwSignal<Vec<f64>> = RwSignal::new(Vec::new());
@@ -191,9 +171,8 @@ pub(crate) fn Breadcrumb(state: crate::context::LibraryContext) -> impl IntoView
             class="flex min-w-0 items-center gap-0.5 text-sm"
             aria-label="Library location"
         >
-            // Plain spans with no ids: a ruler is not a crumb, and a second
-            // element carrying a crumb's id would be a second answer for the
-            // hit-test and the reveal's scroll.
+            // Plain spans, no ids: an element wearing a crumb's id would answer
+            // the hit-test too.
             <span node_ref=probe_ref class="lib-crumb-probe" aria-hidden="true">
                 <span class="lib-crumb-probe-item">
                     <Icon name=IconName::More size=14 />
@@ -253,9 +232,7 @@ pub(crate) fn Breadcrumb(state: crate::context::LibraryContext) -> impl IntoView
     }
 }
 
-/// Always a button — the way back — and a target with an empty id, the
-/// library's spelling of "no shelf", which makes a drop here take a book off
-/// the shelf it was dragged out of.
+/// Always a button, and a target with the empty id that spells "no shelf".
 #[component]
 fn AllCrumb(state: crate::context::LibraryContext, ctrl: DragController) -> impl IntoView {
     let dom_id = register_crumb(&ctrl, "");
@@ -287,8 +264,7 @@ fn AllCrumb(state: crate::context::LibraryContext, ctrl: DragController) -> impl
     }
 }
 
-/// Its own component so the last crumb's menu state stays out of it: a link
-/// with a rename field inside is two controls fighting over one click.
+/// Its own component: a link with a rename field inside fights over one click.
 #[component]
 fn LevelCrumb(
     state: crate::context::LibraryContext,
@@ -319,8 +295,7 @@ fn LevelCrumb(
     }
 }
 
-/// Still a drop target: releasing a held book here files it onto the level
-/// the reader is already looking at.
+/// Still a drop target: a release here files onto the open level.
 #[component]
 fn ShelfCrumbMenu(
     state: crate::context::LibraryContext,
@@ -461,10 +436,7 @@ fn RenameField(
     }
 }
 
-/// The one child-width measurement loop, shared by the bar's probe and the
-/// panel's ruler: two engines measuring the same shape with their own loops
-/// is how they drift, and the panel packs rows from the same numbers the bar
-/// splits by.
+/// One child-width loop, shared by the bar's probe and the panel's ruler.
 pub(crate) fn measure_children_widths(node: &web_sys::Element) -> Vec<f64> {
     let kids = node.children();
     let mut widths = Vec::with_capacity(kids.length() as usize);

@@ -1,25 +1,12 @@
-//! Paints the reflowable formats' typography onto `<html>` whenever it
-//! changes — the text counterpart of `apply_theme`.
-//!
-//! The contract is `reader_core::settings::typography::css_variables`: every knob the
-//! settings own is written as a SCALE-1 custom property (`--tx-font-size`,
-//! `--tx-line-height`, ...). Page hosts never read the settings for type —
-//! they set their own `--ts` multiplier and let the stylesheet resolve
-//! `calc(var(--tx-...) * var(--ts))`. That split is why a zoom never repaints
-//! typography (only `--ts` moves) and a settings change repaints everywhere
-//! at once.
+//! Paints the reflowable formats' typography onto `<html>`.
 
 use leptos::prelude::*;
 
 use app_ui::theme_paint::html_style;
 
-/// Install the typography painter. Runs once at boot (the persisted
-/// typography must be live before the first text document renders) and on
-/// every change afterwards.
+/// Install the typography painter: at boot, and on every change.
 pub fn apply_typography(settings: RwSignal<reader_core::settings::Settings>) {
-    // The reflowable typography narrowed out of the settings blob, once,
-    // here in the shell: the durable text tokens repaint from this
-    // subscription the way they always did.
+    // The reflowable typography narrowed out of the settings blob.
 
     Effect::new(move |_| {
         let t = settings.with(|s| s.text.clone());

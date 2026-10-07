@@ -1,5 +1,4 @@
-/* Noise overlay — app-wide film grain, independent toggle + intensity.
-   body.noise-enabled shows it; --noise-opacity drives strength. */
+/* Noise overlay: app-wide film grain, toggled and dialled from the settings. */
 .noise-overlay {
   position: fixed;
   inset: 0;
@@ -7,11 +6,7 @@
   pointer-events: none;
   display: none;
   opacity: var(--noise-opacity, 0);
-  /* Blend direction follows the paper-texture family rule: flat `overlay`
-     is a near no-op at both ends (mid-gray over white stays white, over
-     near-black stays black), so the dial would do nothing on exactly the
-     backgrounds people read on. multiply darkens light paper; screen
-     lightens dark paper. */
+  /* Blend direction follows the paper-texture family rule. */
   mix-blend-mode: var(--noise-blend, multiply);
   background-image: var(--noise-tile);
 }
@@ -21,42 +16,25 @@ body.noise-enabled .noise-overlay {
   display: block;
 }
 
-/* The grain stays on screen during every slider drag (it is never
-   force-hidden): removing the layer measured identically, and a reader
-   judging colour/tint needs to see them against the texture they read
-   through. */
+/* The grain stays on screen during every slider drag. */
 
-/* ANIMATED GRAIN — the static tile comes off the overlay and the same
-   noise moves on an ::after, jittered through the eight discrete positions
-   of noise-crawl; steps(1) because grain re-rolls rather than interpolates.
-   Only one layer carries the tile at a time: both at once would composite
-   the same noise over itself and double its contrast. */
+/* ANIMATED GRAIN: the tile moves to an ::after, jittered in eight steps. */
 body.noise-animated .noise-overlay {
   background-image: none;
 }
 body.noise-animated .noise-overlay::after {
   content: "";
   position: absolute;
-  /* The crawl travels ≤14px, so a 24px overhang hides the tile edge.
-     inset:-100% would make this a 3×-viewport compositor surface under
-     every filtered page. */
+  /* The crawl travels 14px, so a 24px overhang hides the tile edge. */
   inset: -24px;
   background-image: var(--noise-tile);
   animation: noise-crawl 0.66s steps(1) infinite;
 }
-/* will-change unconditionally: nothing pauses the crawl from Rust, and a
-   rule gated on an "idle" class the app does not own would be a second,
-   unreachable state machine. */
+/* will-change unconditionally: nothing pauses the crawl from Rust. */
 body.noise-animated .noise-overlay::after {
   will-change: transform;
 }
-/* Exempt from Settings → Animations off (components/animations.css), like
-   the loader: that master collapses every animation to one 0.01ms
-   iteration, which froze the crawl on its first keyframe — "Animated" grain
-   that never moved. The grain has its own explicit choice (Static is grain
-   without motion), so the specific setting wins over the general one.
-   Specificity beats the master's `html.animations-off *::after`; the OS
-   reduced-motion net below still stops it. */
+/* Exempt from the animations master: Static is grain without motion. */
 html.animations-off body.noise-animated .noise-overlay::after {
   animation-duration: 0.66s !important;
   animation-iteration-count: infinite !important;
@@ -72,17 +50,11 @@ html.animations-off body.noise-animated .noise-overlay::after {
   87.5% { transform: translate3d(-8px, -13px, 0); }
   100%  { transform: translate3d(0, 0, 0); }
 }
-/* A runtime document whose frame is off screen (warm behind the active
-   runtime, or rearmed after a recycle — `app_ui::frame_theme::
-   mark_frame_hidden`): the Shell hides the frame with `visibility: hidden`,
-   which stops its paint but not its animations, so the crawl would keep
-   ticking a compositor layer nobody can see. Paused, not removed: the
-   reveal clears the class and the crawl resumes where it was. */
+/* A frame that is off screen pauses the crawl: nobody can see the layer. */
 html.frame-hidden body.noise-animated .noise-overlay::after {
   animation-play-state: paused;
 }
-/* Constant peripheral motion is exactly what triggers vestibular
-   discomfort: the grain stays, it just stops moving. */
+/* Constant peripheral motion triggers vestibular discomfort. */
 @media (prefers-reduced-motion: reduce) {
   body.noise-animated .noise-overlay::after { animation: none; }
 }

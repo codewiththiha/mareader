@@ -1,10 +1,4 @@
-//! Book, shelf and folder ids: a timestamp plus a counter, which is all the
-//! guarantee the library needs — ids must be stable across sessions and unique
-//! within one, never unpredictable or sortable across machines.
-//!
-//! The counter belongs to this crate, not the caller: two folder imports can
-//! run concurrently, and a seq derived from a caller's snapshot of a list is
-//! the same number minted twice in one millisecond.
+//! Book, shelf and folder ids: a timestamp plus a crate-owned counter.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -27,15 +21,12 @@ pub fn next_folder_id(now_ms: u64) -> String {
     new_folder_id(now_ms, next_seq())
 }
 
-/// Import-run ids for the dock. The `t` prefix keeps them out of the
-/// book/shelf/folder namespaces the ledger and shelves key by.
+/// Import-run ids for the dock; the `t` prefix separates them.
 pub fn next_task_id(now_ms: u64) -> String {
     format!("t{now_ms:x}-{}", next_seq())
 }
 
-/// One tested "has enough time passed" rule shared by the app's cooldowns (a
-/// rescan per focus, a picker's just-closed grace). Not a static: the caller
-/// owns where the cooldown lives, this type only owns the rule.
+/// One tested "has enough time passed" rule for the app's cooldowns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cooldown {
     last_ms: Option<u64>,
@@ -50,8 +41,7 @@ impl Cooldown {
         }
     }
 
-    /// Whether `now` is past the span since the last arm. Arms itself when it
-    /// is, so asking is the whole protocol; an unarmed cooldown holds nothing back.
+    /// Whether the span since the last arm has passed; arms itself.
     pub fn due(&mut self, now_ms: u64) -> bool {
         let due = match self.last_ms {
             None => true,
@@ -63,34 +53,30 @@ impl Cooldown {
         due
     }
 
-    /// Start the span at `now` without asking — the picker's just-closed grace
-    /// is armed by the close, not by a question.
+    /// Start the span at `now`.
     pub fn arm(&mut self, now_ms: u64) {
         self.last_ms = Some(now_ms);
     }
 
-    /// Whether `now` sits inside the span since the last arm. Unlike [`Self::due`]
-    /// this never extends the span, for callers that poll (every window focus
-    /// polls the picker's grace).
+    /// Whether `now` sits inside the span; never extends it.
     pub fn within(&self, now_ms: u64) -> bool {
         self.last_ms
             .is_some_and(|last| now_ms.saturating_sub(last) < self.span_ms)
     }
 }
 
-/// Whether a token is a shelf id. The letter prefix is what keeps the id kinds disjoint.
+/// Whether a token is a shelf id.
 pub fn is_shelf(id: &str) -> bool {
     id.starts_with('s')
 }
 
-/// Explicit-seq mint, public only for the `v1` migration
-/// ([`crate::blob::migrate::migrate_v1`]), which must be deterministic: running
-/// it twice over the same blob has to produce the same ids.
-pub fn new_id(now_ms: u64, seq: u32) -> String {
+/// Explicit-seq mint for the `v1` migration, which must be
+/// deterministic.
+pub(crate) fn new_id(now_ms: u64, seq: u32) -> String {
     format!("b{now_ms:011x}{seq:04x}")
 }
 
-/// Crate-private: an id must mint off this crate's counter, or a concurrent mint cannot be sure it differs.
+/// Crate-private: ids mint off this crate's counter.
 fn new_shelf_id(now_ms: u64, seq: u32) -> String {
     format!("s{now_ms:011x}{seq:04x}")
 }
@@ -106,9 +92,7 @@ mod tests {
     #[test]
     fn mints_of_one_tick_never_share_an_id() {
         let now = 1_700_000_000_000;
-        // The explicit-seq half mints at a DIFFERENT tick on purpose: the
-        // counter below hands out seq 0..3 — and an explicit seq 3 at the
-        // same tick would be the very double-mint this test forbids.
+        // The explicit-seq half mints at a different tick on purpose.
         let other = now + 1;
         let mut all = vec![
             next_id(now),

@@ -1,6 +1,4 @@
-//! The moves a reader makes by hand: a drag between shelves, a lift out to the root, a second
-//! membership, and the gesture a copy question hands back to the sheet that asked it
-//! ([`super::asking`]).
+//! The moves a reader makes by hand: a drag, a lift, a second seat.
 
 use leptos::prelude::*;
 
@@ -13,9 +11,7 @@ use crate::services::conflict;
 use super::asking::ask_move_copy;
 use super::departure::bind_returned;
 
-/// A whole drag in one call, whatever it held. The blob is written once for it — the rule
-/// [`purge_books`] gives for a bulk removal, for the same reason: a reader who closes the
-/// window halfway through a move should find all of it or none of it.
+/// A whole drag, one call: the blob holds all of it or none.
 pub fn move_many_to_shelf(
     state: crate::context::LibraryContext,
     book_ids: &[String],
@@ -26,10 +22,7 @@ pub fn move_many_to_shelf(
     seat_many(state, book_ids, from, to, index, &[]);
 }
 
-/// The public entry has converted nothing yet, so it passes an empty list and every stored
-/// book it lands can bind a folder's moved-out log as a return. The departure gate's retry
-/// passes the rows it just copied, and those land without binding: a departure is not a
-/// return.
+/// `departed` marks rows a copy question already took: no return binds.
 fn seat_many(
     state: crate::context::LibraryContext,
     book_ids: &[String],
@@ -41,11 +34,7 @@ fn seat_many(
     if book_ids.is_empty() {
         return;
     }
-    // A re-order leaves nothing behind — the rows are arriving where they already are — and every
-    // other hand-move is screened by the one departure rule, which reads the book's own rung and not
-    // the shelf it happens to stand on. A copy that fails costs that book its move and nothing else:
-    // it stays where it was, and every screen and shelf write downstream sees the books as what they
-    // are about to be.
+    // Moving in place asks nothing; a failed copy costs that book its move.
     let arriving_elsewhere = match from.as_deref() {
         Some(from) => from != to,
         None => to != ALL_SHELF,
@@ -112,9 +101,7 @@ fn seat_many(
     conflict::raise(state, conflicts);
 }
 
-/// A drag of four books is four arrivals, and a row that went between the lift and the drop
-/// is not one of them. The name is read here rather than by the rule, because the rule is pure
-/// and holds no rows.
+/// Four books are four arrivals; a row that left is not one of them.
 fn moved_arrivals(
     state: crate::context::LibraryContext,
     row_ids: &[String],
@@ -145,35 +132,30 @@ fn clean_move_ids(clean: Vec<Arrival>) -> Vec<String> {
     clean.into_iter().filter_map(|a| a.moving).collect()
 }
 
-/// A value rather than a boolean at the call site: a departure writes a
-/// moved-out log and the copy then lands, often on another shelf of the very
-/// folder it left.
+/// A value, not a boolean: a copy lands with no return to bind.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Departed {
     ThisGesture,
     No,
 }
 
-/// The gesture a copy question interrupted, so the sheet's own answer can finish it: the same rows
-/// land, and the copies land marked — a departure is not a return, so a copied book binds no
-/// folder's moved-out log, and a book the move already took off its seat stays off it.
+/// The gesture a copy question interrupted, finished by the sheet's answer.
 #[derive(Clone, PartialEq)]
 pub(super) enum RowMove {
-    /// A drag or a bulk filing: the rows land on `to`, lifted off `from` where the two differ.
+    /// A drag or a bulk filing: land on `to`, lifted off `from`.
     Seat {
         from: Option<String>,
         to: String,
         index: Option<usize>,
     },
-    /// One row's own move, the form the conflict sheet rides as well as a drag of a single book.
+    /// One row's own move; the conflict sheet rides this form too.
     Row { to: String, index: Option<usize> },
     /// Out of every shelf the row was on, to the library's own top level.
     Unfile { shelf: String },
 }
 
 impl RowMove {
-    /// Where the rows are going: the gate screens the gesture against it, and the answer screens
-    /// again, because the sheet was up while the library went on living.
+    /// Where the rows go: the gate and the sheet's answer both screen it.
     pub(super) fn to(&self) -> &str {
         match self {
             RowMove::Seat { to, .. } | RowMove::Row { to, .. } => to,
@@ -204,9 +186,7 @@ impl RowMove {
     }
 }
 
-/// Off every shelf it was on and onto the one named, at the slot the drop
-/// pointed at. The root has no member list, so a move there is a lift out of
-/// every shelf.
+/// Onto the named shelf; the root is a lift out of every shelf.
 pub fn move_row(
     state: crate::context::LibraryContext,
     row_id: &str,
@@ -250,8 +230,7 @@ pub fn move_row(
     }
 }
 
-/// The books stay in the library — a shelf holds ids and never held a byte —
-/// and the folder ledger is untouched.
+/// The books stay in the library; the folder ledger is untouched.
 pub fn unfile_books(state: crate::context::LibraryContext, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
@@ -282,9 +261,7 @@ pub fn unfile_books(state: crate::context::LibraryContext, book_ids: &[String], 
     conflict::raise(state, conflicts);
 }
 
-/// Membership only, so the same rule covers a bulk filing and a drag:
-/// nothing here touches a filesystem, and a book already on the shelf is not
-/// moved to the end for being named twice.
+/// Membership only: the same rule covers a filing and a drag.
 pub fn file_many(state: crate::context::LibraryContext, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
@@ -309,16 +286,12 @@ pub fn file_many(state: crate::context::LibraryContext, book_ids: &[String], she
     conflict::raise(state, conflicts);
 }
 
-/// One book, two memberships, nothing copied. The folder's ledger is
-/// untouched: the book stays placed where it was placed, which keeps the next
-/// rescan quiet about it.
+/// One book, two memberships, nothing copied; the ledger stays quiet.
 pub fn also_show(state: crate::context::LibraryContext, book_id: &str, shelf_id: &str) {
     file_many(state, &[book_id.to_string()], shelf_id);
 }
 
-/// Lifted out and put back together rather than one at a time: each removal
-/// shifts the tail left, so moving four in sequence would have the second
-/// one's index mean something the first already changed.
+/// Lifted out and put back together, not one at a time: indexes hold.
 pub(super) fn reorder_root(rows: &mut Vec<Row>, row_ids: &[String], index: Option<usize>) {
     let mut lifted: Vec<(usize, Row)> = row_ids
         .iter()
@@ -345,9 +318,7 @@ pub(super) fn reorder_root(rows: &mut Vec<Row>, row_ids: &[String], index: Optio
     insert_many(rows, lifted.into_iter().map(|(_, row)| row), index, shift);
 }
 
-/// [`shelf::place`] for one book, this for a drag: the same two steps, but
-/// per-book placement would leave each index counting a list the last one
-/// already changed.
+/// [`shelf::place`] for a drag, so each index counts one changed list.
 pub(super) fn place_many(members: &mut Vec<String>, book_ids: &[String], index: Option<usize>) {
     let shift = index.map_or(0, |at| {
         book_ids
@@ -366,7 +337,7 @@ pub(super) fn place_many(members: &mut Vec<String>, book_ids: &[String], index: 
     insert_many(members, book_ids.iter().cloned(), index, shift);
 }
 
-/// Each one after the last rather than each one at the same place, which would put them back reversed.
+/// Each one after the last, or the batch lands reversed.
 pub(super) fn insert_many<T>(
     list: &mut Vec<T>,
     items: impl Iterator<Item = T>,

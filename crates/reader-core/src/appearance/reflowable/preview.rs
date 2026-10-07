@@ -1,19 +1,12 @@
-//! The preset thumbnail in the TEXT palette — what a text/Markdown page will
-//! actually get when the preset is applied. The PDF swatch previews the raster
-//! pipeline; this one previews [`TextPalette`], so a preset read while a text
-//! document is open shows the page the reader would paint. Same `--ps-*`
-//! private namespace and texture/noise tail as the PDF swatch (see
-//! `appearance::preview`); only the colour tokens differ.
+//! The preset thumbnail in the TEXT palette: what a text page would
+//! actually get.
 
 use super::palette::TextPalette;
 use crate::appearance::Appearance;
 use crate::appearance::preview::ps_surface_tail;
 
 impl Appearance {
-    /// Inline `style` for a preset thumbnail, rendered with the text-page
-    /// palette instead of the PDF token path. Everything else — the
-    /// `--ps-*` namespace discipline, the texture and noise vars — is the
-    /// shared swatch tail.
+    /// Inline `style` for a preset thumbnail in the text-page palette.
     pub fn text_preview_style(&self) -> String {
         let p = TextPalette::compute(self);
         let mut out = String::new();
@@ -28,9 +21,7 @@ impl Appearance {
         ] {
             out.push_str(&format!("--ps-color-{token}:{value};"));
         }
-        // The texture strokes key off the page's OWN paper, not the chrome
-        // base: a dim TEXT page is medium-dark paper, so it takes the dark
-        // family like the Dark palette does.
+        // The strokes key off the page's OWN paper, not the chrome base.
         out.push_str(&ps_surface_tail(self, p.paper_l < 0.5));
         out
     }
@@ -55,9 +46,7 @@ mod tests {
             style.contains(&format!("--ps-color-ink:{};", p.ink)),
             "{style}"
         );
-        // Private namespace only, like the PDF swatch: no root-mutated
-        // names may leak in, or WKWebView repaints the swatch every frame
-        // of a slider drag (see appearance::preview).
+        // Private namespace only, like the PDF swatch.
         for root_mutated in ["--canvas-filter:", "--color-paper:", "--tx-paper:"] {
             assert!(
                 !style.contains(root_mutated),
@@ -68,8 +57,7 @@ mod tests {
 
     #[test]
     fn the_texture_strokes_follow_the_paper_not_the_chrome() {
-        // Dim TEXT pages sit on medium-dark paper (L 0.40), so their
-        // strokes take the dark family, same as the Dark palette's.
+        // Dim TEXT pages sit on medium-dark paper: the dark stroke family.
         let a = tinted(BaseMode::Dim, 0, 0);
         let style = a.text_preview_style();
         assert!(style.contains("--ps-texture-blend:screen"), "{style}");

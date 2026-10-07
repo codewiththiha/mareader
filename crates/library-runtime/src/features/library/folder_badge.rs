@@ -1,19 +1,10 @@
-//! The badge saying where a folder's books live, painted once for both shelf
-//! surfaces.
-//!
-//! What the shelf HOLDS decides the badge — a folder whose books are stored
-//! copies says so even when its seat still reads in place — and a folder with
-//! no books of its own falls back to the governance mode, the promise its
-//! import answered with. The fallback borrows the content side's sentences,
-//! so a wording lives in `library_core::shelf::ContentKind` and nowhere else.
+//! The badge saying where a folder's books live.
 
 use leptos::prelude::*;
 
 use library_core::shelf::ContentKind;
 
-/// `class` is the surface's own layout (`"folder-mode"` on the card,
-/// `"folder-mode ml-2"` on the row); everything else about the badge is the
-/// same on both, which is the point of there being one of them.
+/// `class` is the surface's own layout; the rest is shared.
 #[component]
 pub(crate) fn FolderBadge(
     state: crate::context::LibraryContext,

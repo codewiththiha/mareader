@@ -1,14 +1,4 @@
-//! The question sheet: the one face every "the library has a question" sheet
-//! wears — a heading with the queue's count, the question in one sentence,
-//! the answers as [`ChoiceRow`]s, the apply-to-all switch when questions
-//! queue, and a Cancel that means the same thing everywhere.
-//!
-//! The question's words and answers stay the sheet's; this is the skeleton
-//! they hang on, composed of the same [`SheetHeader`], [`SheetBody`] and
-//! [`SheetFooter`] a custom-shaped sheet composes itself. It renders the
-//! sheet's inside, not its [`ModalShell`]: the conflict modal's one host
-//! shell dispatches between three of these by kind, and a shell per question
-//! would be three lane registrations where one was asked for.
+//! The question sheet: heading, question, [`ChoiceRow`]s, apply-to-all.
 
 use leptos::prelude::*;
 
@@ -17,10 +7,7 @@ use crate::components::primitives::controls::switch::Switch;
 
 use super::sheet::{SheetBody, SheetFooter, SheetHeader};
 
-/// The "apply to all" row: one switch that gives every waiting question of
-/// the same kind the answer being clicked. Rendered only when questions are
-/// actually waiting — a switch offering to answer nothing is a control that
-/// lies about its reach.
+/// The "apply to all" row, rendered only while questions wait.
 #[component]
 fn ApplyToAll(
     /// How many MORE questions wait behind the one on screen.
@@ -49,27 +36,21 @@ pub fn QuestionSheet(
     /// The title — usually the arriving name.
     #[prop(into)]
     heading: String,
-    /// The muted line under it: where the collision is, and how many more
-    /// waits behind this one.
+    /// The muted line: where the collision is, and how many wait.
     #[prop(into)]
     subtitle: String,
     /// The question, in one sentence.
     #[prop(into)]
     question: String,
-    /// What the ✕, the backdrop, the Escape key and the Cancel button all
-    /// do: the sheet's one close, so all four end in one place.
+    /// The sheet's one close: ✕, backdrop, Escape and Cancel.
     on_close: Callback<()>,
-    /// What cancelling promises, as the button's tooltip — "leave the shelf
-    /// as it is" for a placement, "import nothing" for a folder.
+    /// What cancelling promises, as the button's tooltip.
     #[prop(default = "Leave the shelf as it is".to_string())]
     cancel_title: String,
-    /// The apply-to-all row's facts, for the sheets whose questions queue:
-    /// how many wait, and the switch the answers read.
+    /// The apply-to-all row's facts: how many wait, and the switch.
     #[prop(optional)]
     apply_all: Option<(usize, RwSignal<bool>)>,
-    /// The answers: [`ChoiceRow`](crate::components::primitives::menu::choice_row::ChoiceRow)s,
-    /// in the order the sheet means them to be read. Passed as the component's
-    /// inner content, which is what the `children` name is for.
+    /// The answers, in the order the sheet means them to be read.
     children: Children,
 ) -> impl IntoView {
     view! {

@@ -1,19 +1,5 @@
-//! The lifecycle/memory diagnostics surface: one home for the Phase 0
-//! baseline counters instead of scattered debug prints.
-//!
-//! Two halves: Rust-owned counters (reader runtime lifecycle, reader pane,
-//! live virtualizers, the disposal epoch, the wasm heap high-water mark) and
-//! engine-owned counters (PDF session, worker, render lane, thumbnails),
-//! read through `pdf_engine::api::engine_stats` at snapshot time because
-//! those resources are created and released inside the engine — counting
-//! them anywhere else would count a secondhand story.
-//!
-//! Counters are cheap atomics, always on. Console narration is opt-in
-//! (`window.__mareaderDiagnostics()` in the app webview turns it on and
-//! returns the JSON snapshot), so ordinary operation logs nothing. The
-//! pairing rules the snapshot exposes — every session/worker/pane dies once,
-//! every started render resolves — are what the teardown baseline asserts;
-//! see `docs/memory-baseline.md`.
+//! Lifecycle/memory diagnostics: always-on counters for reader runtime,
+//! panes, virtualizers, heap, plus the engine's own.
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -29,58 +15,39 @@ static PANES_DISPOSED: AtomicU64 = AtomicU64::new(0);
 static VIRTUALIZERS_CREATED: AtomicU64 = AtomicU64::new(0);
 static VIRTUALIZERS_DISPOSED: AtomicU64 = AtomicU64::new(0);
 
-/// The largest heap sample ever observed. The wasm heap only ever grows
-/// (`Memory.grow` is monotonic), so the high water mark is mostly the current
-/// size — but it makes a heap that stepped up during a workload visible even
-/// when a later reading of the same process caught it lower, and it is the
-/// number the baseline workloads chart.
+/// The largest heap sample ever observed; the wasm heap only grows.
 static HEAP_HIGH_WATER: AtomicU64 = AtomicU64::new(0);
 static READER_PAGE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static READER_LIVE: AtomicBool = AtomicBool::new(true);
-/// Whether this realm runs the PDF engine and so must report it drained:
-/// every engine build does, until a pane realm that renders text says it
-/// does not (`expect_engine`).
+/// Whether this realm runs the PDF engine and must report it drained.
 static ENGINE_EXPECTED: AtomicBool =
     AtomicBool::new(cfg!(all(feature = "engine", feature = "pdf")));
 
-/// Whether lifecycle events are narrated to the console. Off in normal
-/// operation; the dev surface flips it on.
+/// Whether lifecycle events are narrated to the console.
 static EVENT_LOG: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
-    /// The live virtualizers, so a snapshot can read their window and
-    /// zombie counts from the handles that own them. Entries are added where
-    /// a virtualizer is created and removed in the SAME owner's cleanup, so
-    /// the registry only ever holds handles their owner still holds too —
-    /// it never extends a lifetime past disposal.
+    /// The live virtualizers: a snapshot reads their window and zombie counts.
     static LIVE_VIRTUALIZERS: RefCell<Vec<virtual_list_leptos::Virtualizer>> =
         const { RefCell::new(Vec::new()) };
-    /// The reader runtime's self-reported lifecycle view (Phase 1 §12): the
-    /// runtime itself publishes every state transition with its generation
-    /// and its live resource count, and the snapshot relays it. `None` off
-    /// the app (host tests) — reported, not guessed.
+    /// The runtime's own lifecycle view, published on each transition.
     static RUNTIME_VIEW: RefCell<Option<crate::runtime::RuntimeView>> =
         const { RefCell::new(None) };
     /// The live reader host's workspace probe (see [`install_host_probe`]).
     static HOST_PROBE: RefCell<Option<HostProbe>> = const { RefCell::new(None) };
 }
 
-/// What the snapshot asks about the workspace: the live host's probe while
-/// a session runs, then — once the host's teardown finished — the final
-/// answer as plain data. The frame outlives its sessions (a recycled frame
-/// hosts the next one), so a probe left holding the host's state would keep
-/// it for as long as the frame sits between sessions.
+/// What a snapshot asks the workspace: the live probe, then the settled
+/// answer.
 enum HostProbe {
-    /// Reads the manager's state through a WEAK reference: the probe never
-    /// extends the host's lifetime, it only answers while the host exists.
+    /// Reads the manager's state through a WEAK reference, never extending the
+    /// host's lifetime.
     Live(Box<dyn Fn() -> Option<crate::host::HostSnapshot>>),
     /// The workspace as its teardown left it (`disposed`, no panes).
     Settled(crate::host::HostSnapshot),
 }
 
-/// The runtime publishes its lifecycle here on every transition; this is
-/// what makes disposal completion observable BY the runtime, not inferred
-/// from its surroundings.
+/// The runtime publishes its lifecycle here, making disposal observable.
 pub fn publish_runtime_view(lifecycle: crate::runtime::RuntimeLifecycle, generation: u64) {
     RUNTIME_VIEW.with(|cell| {
         *cell.borrow_mut() = Some(crate::runtime::RuntimeView {
@@ -90,19 +57,13 @@ pub fn publish_runtime_view(lifecycle: crate::runtime::RuntimeLifecycle, generat
     });
 }
 
-/// The reader host installs its probe here for the session's life: a
-/// snapshot asks it for the workspace — the panes, their lifecycle, the one
-/// active pane, what each pane holds. The probe reads plain Rust state (the
-/// manager core), never the arena, so a snapshot taken after the session's
-/// reactive scope is gone still gets an answer instead of a panic. It must
-/// hold that state weakly (it answers `None` once the state is gone).
+/// The host installs its probe here for the session; it reads plain state,
+/// weakly.
 pub(crate) fn install_host_probe(probe: impl Fn() -> Option<crate::host::HostSnapshot> + 'static) {
     HOST_PROBE.with(|cell| *cell.borrow_mut() = Some(HostProbe::Live(Box::new(probe))));
 }
 
-/// The host's teardown finished: replace its probe with the final answer,
-/// so the session's last digest (and every snapshot until the next session)
-/// reports the torn-down workspace without anything of the host kept alive.
+/// The host's teardown finished: the probe becomes the final answer.
 pub(crate) fn settle_host_probe(last: crate::host::HostSnapshot) {
     HOST_PROBE.with(|cell| *cell.borrow_mut() = Some(HostProbe::Settled(last)));
 }
@@ -114,8 +75,7 @@ fn host_probe() -> Option<crate::host::HostSnapshot> {
     })
 }
 
-/// Narrate one lifecycle event when the dev surface opted in. Counters tick
-/// regardless; this is only the narration half.
+/// Narrate one lifecycle event when the dev surface opted in.
 fn event(name: &str) {
     if !EVENT_LOG.load(Ordering::Relaxed) {
         return;
@@ -146,18 +106,7 @@ fn note_heap_sample(bytes: u64) {
     HEAP_HIGH_WATER.fetch_max(bytes, Ordering::Relaxed);
 }
 
-/// The ordinal for the reader session about to start: one per session this
-/// iframe instance hosts, monotonic for the frame's life — a replacement
-/// frame starts the count over.
-///
-/// This is the runtime's in-frame identity (§21), never the application's
-/// cross-frame one: the shell's reader-session count identifies which
-/// runtime the page is observing. Two sessions inside one frame — the
-/// frame mounts the runtime per open — must never both answer
-/// "generation 1": a fresh runtime is a NEW number, so a revived one would
-/// be visible as a repeated number rather than as a plausible first mount.
-/// Distinct from
-/// [`note_reader_runtime_create`], which counts document opens.
+/// The ordinal for the session about to start: monotonic per frame.
 pub fn next_session_ordinal() -> u64 {
     READER_SESSIONS_STARTED.fetch_add(1, Ordering::Relaxed) + 1
 }
@@ -165,37 +114,20 @@ pub fn next_session_ordinal() -> u64 {
 /// Sessions this artifact has started (the identity counter above).
 static READER_SESSIONS_STARTED: AtomicU64 = AtomicU64::new(0);
 
-/// An open flow CLAIMED the document state — the boundary hook today's
-/// architecture has for "a reader runtime began". Counted once per attempt,
-/// failed opens included, because the claim is what the hook observes; a
-/// failed attempt is a create whose dispose never needs to run, so the
-/// pairing these counters prove is not liveness (that is
-/// `reader_runtime_live` / the engine's `hasDocument`) but the close path's
-/// completion count. Phase 1's explicit runtime object replaces this hook
-/// with a real lifetime.
+/// An open flow CLAIMED the document state; counted per attempt, failed
+/// opens included.
 pub(crate) fn note_reader_runtime_create() {
     READER_RUNTIMES_CREATED.fetch_add(1, Ordering::Relaxed);
     event("reader_runtime:create");
 }
 
-/// A pane's dispose began: its document session started tearing the
-/// engine document down and resetting the reader slice. The caller passes
-/// its claim stamp so the completion assertion can tell its own moment from
-/// a later open's.
-pub(crate) fn note_reader_runtime_dispose_begin(_stamp: u64) {
+/// A pane's dispose began: its session started tearing the document down.
+pub(crate) fn note_reader_runtime_dispose_begin() {
     event("reader_runtime:dispose_begin");
 }
 
-/// The reader runtime's dispose completed: the engine destroy+sweep tail
-/// resolved. This is the moment the baseline asserts on — unless a newer
-/// open or close claimed the state meanwhile, in which case this dispose's
-/// evidence is stale and the assertion belongs to whoever holds the state
-/// now (a fast close → reopen must not read as a broken baseline).
-///
-/// A pane closed while others read on is not the reader draining: the
-/// reader-wide baseline cannot hold with documents open, so it is asked only
-/// once no pane of a live workspace remains (and on the workspace's own
-/// dispose). Asking it per split close reported a leak that was not one.
+/// The runtime's dispose completed: the engine tail resolved, and the
+/// baseline is asserted.
 pub(crate) fn note_reader_runtime_dispose_complete(stamp: u64) {
     READER_DISPOSES_COMPLETED.fetch_add(1, Ordering::Relaxed);
     observe_heap();
@@ -206,15 +138,11 @@ pub(crate) fn note_reader_runtime_dispose_complete(stamp: u64) {
     event("reader_runtime:dispose_complete");
 }
 
-/// The dispose tail's assertion (Phase 0's gate): after the sweeps, nothing
-/// reader-owned is reachable and the engine half is drained. A broken
-/// baseline is an actionable lifecycle failure — the one report this
-/// surface emits uninvited, with the full snapshot as evidence. A passing
-/// baseline is only narrated when the dev surface opted in.
+/// The dispose tail's assertion: nothing reader-owned reachable, engine
+/// drained.
 fn assert_dispose_baseline() {
-    // The reader slice was reset synchronously before the dispose tail ran,
-    // so the runtime is no longer live by construction; the snapshot's
-    // engine half and the live gauges are what the assertion really reads.
+    // The reader slice was reset before the tail ran; the gauges are what
+    // is read.
     let snap = snapshot();
     if snap.realm_at_baseline() {
         if EVENT_LOG.load(Ordering::Relaxed) {
@@ -231,8 +159,7 @@ fn assert_dispose_baseline() {
     eprintln!("[lifecycle] reader dispose left resources behind:\n{json}");
 }
 
-/// The reader host's pane manager created a pane (and will dispose it: the
-/// pair is the manager's, not a component's mount/unmount).
+/// The host's manager created a pane; the dispose pair is the manager's.
 pub(crate) fn note_pane_create() {
     PANES_CREATED.fetch_add(1, Ordering::Relaxed);
     event("pane:create");
@@ -244,16 +171,14 @@ pub(crate) fn note_pane_dispose() {
     event("pane:dispose");
 }
 
-/// Register a live virtualizer with the diagnostics registry. Called right
-/// where `use_virtualizer` returns; pair with [`untrack_virtualizer`] in the
-/// same owner's cleanup.
+/// Register a live virtualizer; pair with [`untrack_virtualizer`] in the
+/// same owner.
 pub(crate) fn track_virtualizer(v: &virtual_list_leptos::Virtualizer) {
     LIVE_VIRTUALIZERS.with(|live| live.borrow_mut().push(v.clone()));
     VIRTUALIZERS_CREATED.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Drop a virtualizer from the diagnostics registry. Handles compare by
-/// identity, so exactly the disposed entry goes.
+/// Drop a virtualizer from the registry; handles compare by identity.
 pub(crate) fn untrack_virtualizer(v: &virtual_list_leptos::Virtualizer) {
     let removed = LIVE_VIRTUALIZERS.with(|live| {
         let mut list = live.borrow_mut();
@@ -265,11 +190,7 @@ pub(crate) fn untrack_virtualizer(v: &virtual_list_leptos::Virtualizer) {
     }
 }
 
-/// The runtime's self-reported ownership view (Phase 1 §12), folded into
-/// every snapshot: the lifecycle state, the generation stamp, and the
-/// resource counts the runtime itself owns or reads from the engine. The
-/// important field is `state` — the runtime REPORTS its own disposal
-/// completion instead of the surroundings inferring it.
+/// The runtime's own ownership view, folded into the snapshot.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimeSnapshot {
@@ -285,8 +206,7 @@ pub(crate) struct RuntimeSnapshot {
     worker_count: u64,
 }
 
-/// One point-in-time reading of every resource the reader owns, plus the
-/// engine's half where an engine is attached.
+/// One reading of every resource the reader owns, plus the engine's.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Snapshot {
@@ -294,63 +214,40 @@ pub(crate) struct Snapshot {
     reader_runtimes_created: u64,
     /// Reader runtimes whose dispose tail completed.
     reader_disposes_completed: u64,
-    /// Whether a reader runtime is live right now (a document is open or
-    /// opening) — supplied by the caller, which reads it from the document
-    /// status.
+    /// Whether a runtime is live now (a document is open or opening).
     reader_runtime_live: bool,
-    /// The document session's claim stamp: it moves on every open and close,
-    /// so a snapshot can be attributed to a moment in the lifecycle.
+    /// The claim stamp: moves on every open and close.
     disposal_epoch: u64,
-    /// The reader's current page (the viewer's own counter). The fast-jump
-    /// workload reads it to name the destination window it asserts the
-    /// render trace against — the destination comes from the app, not from
-    /// a scroll-position guess.
+    /// The reader's current page, for the fast-jump workload's assertions.
     reader_page: u32,
-    /// False when a create/dispose pair went impossible (disposed > created:
-    /// a double dispose). `pane_live` derives from saturating subtraction,
-    /// so accounting corruption would otherwise read as a quiet zero — the
-    /// baseline must fail on it instead.
+    /// False when a create/dispose pair went impossible; the baseline must
+    /// fail on it.
     accounting_consistent: bool,
     /// Live panes, and the panes that ever mounted/disposed.
     pane_live: u64,
     panes_created: u64,
     panes_disposed: u64,
-    /// Live virtualizers, their currently-mounted window items, and their
-    /// zombie-retained items — the virtualizer state that must all read
-    /// zero once the reader is gone.
+    /// Live virtualizers, their mounted window items and retained items.
     virtualizer_live: usize,
     virtualizers_created: u64,
     virtualizers_disposed: u64,
     live_window_items: usize,
     retained_virtual_items: usize,
-    /// The virtualizers' live DOM/event bookkeeping: event listener
-    /// bindings, `ResizeObserver` bindings, and armed timers (scroll-end
-    /// debounce + retention expiry). The ownership document lists these as
-    /// held resources; a dispose that leaked one now shows here instead of
-    /// being inferred from the handle count.
+    /// The virtualizers' live bookkeeping: listeners, observers and timers.
     virtualizer_listeners: usize,
     virtualizer_observers: usize,
     virtualizer_timers: usize,
-    /// The reader's mounted-window ceiling ([`crate::features::virtualizers::RENDER_BUDGET`]
-    /// max items). The browser baseline asserts its observed peaks against
-    /// this number, so the test enforces the live policy rather than a
-    /// copy of it.
+    /// The mounted-window ceiling (`RENDER_BUDGET` max items), which the
+    /// baseline asserts peaks against.
     render_budget_max_items: u32,
-    /// Look-ahead (paper colour) samples in flight — the prefetch work the
-    /// baseline must see and see drained.
+    /// Look-ahead (paper colour) samples in flight, which must drain.
     lookahead_samples_active: usize,
-    /// The engine's half (PDF session, worker, render lane, thumbnails).
-    /// `None` without an engine — reported, not guessed.
+    /// The engine's half (session, worker, render lane, thumbnails).
     engine: Option<pdf_core::diagnostics::EngineStats>,
-    /// The runtime's self-reported view, when one has published (the app
-    /// runtime publishes from birth; host tests without a runtime report
-    /// `None` rather than inventing a state).
+    /// The runtime's self-reported view, when one has published.
     #[serde(skip_serializing_if = "Option::is_none")]
     runtime: Option<RuntimeSnapshot>,
-    /// The reader host's workspace: its panes (id, document, format,
-    /// lifecycle, bounds, resources) and the one active pane — the
-    /// production path `ReaderRuntime → ReaderHost → PaneManager → pane`
-    /// made observable. `None` before a host installed its probe.
+    /// The host's workspace: its panes and the one active one.
     #[serde(skip_serializing_if = "Option::is_none")]
     host: Option<crate::host::HostSnapshot>,
     wasm_heap_bytes: Option<u64>,
@@ -358,15 +255,8 @@ pub(crate) struct Snapshot {
 }
 
 impl Snapshot {
-    /// The post-close baseline this phase's acceptance is written against:
-    /// nothing reader-owned is live and the engine half is drained. The
-    /// monotonic create/dispose counters are deliberately NOT a liveness
-    /// test — a failed open consumes a create without ever needing a
-    /// dispose — the liveness they could assert is already carried by the
-    /// engine's own `hasDocument`. The wasm heap's level is likewise not
-    /// part of this: the arena never shrinks; what matters is that
-    /// ownership does not survive.
-    pub(crate) fn at_baseline(&self) -> bool {
+    /// The reader-ownership half: nothing lives, and the pairs held.
+    fn reader_drained(&self) -> bool {
         !self.reader_runtime_live
             && self.pane_live == 0
             && self.virtualizer_live == 0
@@ -375,29 +265,21 @@ impl Snapshot {
             // FAIL CLOSED: a create/dispose pair that went impossible is
             // bookkeeping corruption, not a drained reader.
             && self.accounting_consistent
-            // FAIL CLOSED: an engine the diagnostics bridge cannot read is
-            // not a drained engine. A missing/broken engine surface must
-            // never launder itself into "at baseline" — unverifiable is its
-            // own failure mode, and exactly the one this gate exists to
-            // catch.
-            && matches!(&self.engine, Some(engine) if engine.drained())
     }
 
-    /// The baseline of a realm without the engine (the workspace host in
-    /// the Shell, a text pane): each PDF pane's engine answers for itself in
-    /// that frame's digest, so only the reader-owned half is this realm's to
-    /// report.
+    /// The post-close baseline: nothing reader-owned live, engine drained.
+    pub(crate) fn at_baseline(&self) -> bool {
+        // FAIL CLOSED: an unreadable engine is not a drained engine.
+        self.reader_drained() && matches!(&self.engine, Some(engine) if engine.drained())
+    }
+
+    /// The baseline of a realm without the engine: only the reader half.
     fn at_baseline_without_engine(&self) -> bool {
-        !self.reader_runtime_live
-            && self.pane_live == 0
-            && self.virtualizer_live == 0
-            && self.retained_virtual_items == 0
-            && self.lookahead_samples_active == 0
-            && self.accounting_consistent
+        self.reader_drained()
     }
 
-    /// This realm's verdict: where the engine runs, the full gate; where it
-    /// does not (the Shell, a text pane), the reader-owned half.
+    /// This realm's verdict: the full gate where the engine runs, else the
+    /// reader half.
     fn realm_at_baseline(&self) -> bool {
         if ENGINE_EXPECTED.load(Ordering::Relaxed) {
             self.at_baseline()
@@ -407,14 +289,12 @@ impl Snapshot {
     }
 }
 
-/// The viewer's page, pushed by the reading-progress sync so the digest
-/// carries it without the probe needing a signal handle.
+/// The viewer's page, pushed by the reading-progress sync.
 pub fn set_reader_page(page: u32) {
     READER_PAGE.store(page, Ordering::Relaxed);
 }
 
-/// Declare whether this realm runs the PDF engine (a pane realm knows its
-/// kind at boot): a realm that never loads it has no engine to drain.
+/// Declare whether this realm runs the PDF engine.
 pub fn expect_engine(on: bool) {
     ENGINE_EXPECTED.store(
         on && cfg!(all(feature = "engine", feature = "pdf")),
@@ -422,14 +302,12 @@ pub fn expect_engine(on: bool) {
     );
 }
 
-/// The digest is built only while a session owns this artifact; the flag is
-/// set at session start and cleared at session end.
+/// Whether a session owns this artifact; set at session start and end.
 pub fn set_reader_live(live: bool) {
     READER_LIVE.store(live, Ordering::Relaxed);
 }
 
-/// Take a snapshot. `reader_runtime_live` comes from the caller because the
-/// authoritative bit (document status) is reactive state, not a global.
+/// Take a snapshot; `reader_runtime_live` comes from the caller.
 pub(crate) fn snapshot() -> Snapshot {
     observe_heap();
     let runtime_view = RUNTIME_VIEW.with(|cell| *cell.borrow());
@@ -526,9 +404,7 @@ pub(crate) fn snapshot() -> Snapshot {
 /// Where the runtime's document-session epoch count starts.
 static EPOCH_OFFSET: AtomicU64 = AtomicU64::new(0);
 
-/// Start the runtime's epoch count. A fresh runtime counts from zero; a
-/// recycled one carries on from where its previous session ended, as one
-/// realm's document session would.
+/// Start the runtime's epoch count: fresh from zero, recycled carries on.
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn begin_epoch(carry: bool) {
     if !carry {
@@ -537,8 +413,7 @@ pub(crate) fn begin_epoch(carry: bool) {
     }
 }
 
-/// True while the engine still has a render or a thumbnail prefetch in
-/// flight: work a dispose cancelled settles a beat after it.
+/// True while a render or thumbnail prefetch is in flight.
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn engine_in_flight() -> bool {
     engine_probe().is_some_and(|e| {
@@ -546,10 +421,7 @@ pub(crate) fn engine_in_flight() -> bool {
     })
 }
 
-/// The engine's live counters, or `None` where there is no engine to read:
-/// the probe talks only on wasm in an artifact that runs documents (the
-/// `engine` feature), and a host test must not walk into the wasm-bindgen
-/// stubs.
+/// The engine's live counters, or `None` where there is no engine.
 fn engine_probe() -> Option<pdf_core::diagnostics::EngineStats> {
     #[cfg(all(target_arch = "wasm32", feature = "engine", feature = "pdf"))]
     {
@@ -561,20 +433,14 @@ fn engine_probe() -> Option<pdf_core::diagnostics::EngineStats> {
     }
 }
 
-/// The digest as the Shell's probe receives it: the SAME JSON field set the
-/// unified app's snapshot carried, built here (the reader owns every field
-/// the reader measures) and pushed through the boundary on changes. The
-/// Shell layers its own manager facts on top.
+/// The digest as the Shell's probe receives it, pushed on changes.
 pub(crate) fn snapshot_json() -> String {
     let snap = snapshot();
     let mut value = match serde_json::to_value(&snap) {
         Ok(value) => value,
         Err(_) => return "{}".to_string(),
     };
-    // The verdict rides the snapshot so an automated baseline check asserts
-    // one field instead of re-deriving the rule on the consumer side. The
-    // consumer (the Shell) ANDs this with its own manager facts: a drained
-    // reader digest means nothing while the manager still holds a session.
+    // The verdict rides the snapshot; the Shell ANDs it with its own facts.
     let (live, finals) = crate::frame_pane::digests();
     let mut at_baseline = merge_pane_digests(&mut value, snap.realm_at_baseline(), &live, &finals);
     if let Some(lane) = crate::frame_pane::raster::snapshot() {
@@ -594,8 +460,7 @@ fn number(n: f64) -> serde_json::Value {
     }
 }
 
-/// The document counters a pane frame's realm keeps, summed into the
-/// host's digest. (Pane create/dispose are the host's own books.)
+/// The document counters a pane realm keeps, summed into the host's.
 const PANE_COUNTERS: &[&str] = &[
     "readerRuntimesCreated",
     "readerDisposesCompleted",
@@ -614,10 +479,7 @@ const PANE_GAUGES: &[&str] = &[
     "lookaheadSamplesActive",
 ];
 
-/// Fold the pane frames' digests into the host's (docs/pane-runtimes.md,
-/// "Diagnostics"): counters over live panes and the final digests of
-/// disposed ones, gauges over live panes, the engine halves summed. The
-/// verdict holds only when the host AND every pane realm report baseline.
+/// Fold the pane frames' digests into the host's: counters, gauges, engine.
 fn merge_pane_digests(
     value: &mut serde_json::Value,
     host_baseline: bool,
@@ -688,9 +550,7 @@ fn merge_pane_digests(
     baseline
 }
 
-/// Reduce closed realms to one plain-data record. Lifetime counters remain
-/// monotonic, but the record's size is independent of the number of closes.
-/// A failed or unverifiable final verdict is never erased by a later close.
+/// Reduce closed realms to one bounded record; counters stay monotonic.
 pub(crate) fn fold_terminal_digest(total: Option<&str>, terminal: &str) -> String {
     let mut value = match total {
         None => serde_json::json!({ "atBaseline": true }),
@@ -705,23 +565,13 @@ pub(crate) fn fold_terminal_digest(total: Option<&str>, terminal: &str) -> Strin
     serde_json::to_string(&value).unwrap_or_else(|_| "{\"atBaseline\":false}".to_string())
 }
 
-/// Push the digest across the boundary NOW. Called on the moments the
-/// consumer waits on: lifecycle transitions, document status changes, page
-/// turns, virtualizer registration, and the dispose beats. Bookkeeping, not
-/// logging: no output unless someone is listening.
+/// Push the digest across the boundary now, on the moments waited on.
 pub fn publish_digest(api: &dyn runtime_contract::boundary::ShellApi) {
     api.publish_digest(snapshot_json());
 }
 
-/// The artifact's own `__mareaderDiagnostics()` probe, installed in its own
-/// window (the frame's in the hosted case). It answers a FRESH snapshot —
-/// the Shell-side global merges this runtime's last pushed digest with the
-/// manager's facts, which is one digest beat stale; a probe that has to race
-/// in-flight engine work (the deep CI's close-during-render race) reads this
-/// window's probe so "active" means active at the moment of the read, not at
-/// the moment of the last beat. The probe carries the reader's own fields
-/// only — the session create/dispose accounting and the AND-ed baseline
-/// verdict belong to the Shell's global (§21).
+/// The artifact's own `__mareaderDiagnostics()` probe: a FRESH snapshot, so
+/// "active" is true at the read.
 #[cfg(target_arch = "wasm32")]
 pub fn install() {
     use wasm_bindgen::JsCast;
@@ -737,36 +587,9 @@ pub fn install() {
     _ = js_sys::Reflect::set(&target, &name, &probe);
 }
 
-/// HTML-less hosts compile the artifact without a window: the probe is a
-/// no-op there (`snapshot_json` already covers that half).
+/// Without a window the probe is a no-op.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn install() {}
-
-thread_local! {
-    /// Session facts the wasm exports report: creations, dispose requests.
-    /// The shell's own manager keeps the authoritative counts; these mirror
-    /// them inside the artifact for the digest (§21).
-    static SESSION_FACTS: std::cell::RefCell<SessionFacts> =
-        std::cell::RefCell::new(SessionFacts::default());
-}
-
-#[derive(Default)]
-struct SessionFacts {
-    created: u64,
-    dispose_requests: u64,
-}
-
-/// A session was created (the wasm start export ran).
-pub fn note_session_create(id: u32) {
-    let _ = id;
-    SESSION_FACTS.with(|f| f.borrow_mut().created += 1);
-}
-
-/// The shell asked this runtime to dispose.
-pub fn note_dispose_request(id: u32) {
-    let _ = id;
-    SESSION_FACTS.with(|f| f.borrow_mut().dispose_requests += 1);
-}
 
 #[cfg(test)]
 mod tests {
@@ -777,8 +600,7 @@ mod tests {
         let created_before = READER_RUNTIMES_CREATED.load(Ordering::Relaxed);
         let disposed_before = READER_DISPOSES_COMPLETED.load(Ordering::Relaxed);
         note_reader_runtime_create();
-        // A stamp no epoch can match: the completion assertion is the close
-        // tail's business, not this counter test's.
+        // A stamp no epoch can match: the assertion is the tail's business.
         note_reader_runtime_dispose_complete(u64::MAX);
         assert_eq!(
             READER_RUNTIMES_CREATED.load(Ordering::Relaxed),
@@ -812,11 +634,9 @@ mod tests {
             .expect("the runtime view rides the snapshot");
         assert_eq!(runtime["state"], "ready");
         assert_eq!(runtime["generation"], 3);
-        // No host installed in this test: the runtime counts no pane
-        // resources rather than inventing some.
+        // No host installed here: no pane resources are counted.
         assert_eq!(runtime["virtualizerCount"], 0);
-        // The snapshot's runtime half reports the resource counts the
-        // baseline gates on (Phase 1 §12) — present even with no engine.
+        // The runtime half reports the counts the baseline gates on.
         for field in [
             "activeDocument",
             "activeRenderTasks",
@@ -857,10 +677,7 @@ mod tests {
         }
     }
 
-    /// A synthetic drained snapshot. Built by hand rather than read from the
-    /// global counters: sibling tests tick those concurrently, and the
-    /// baseline question is about the SHAPE, not about this process's
-    /// moment.
+    /// A synthetic drained snapshot, built by hand: the question is the shape.
     fn drained_engine() -> pdf_core::diagnostics::EngineStats {
         pdf_core::diagnostics::EngineStats::default()
     }
@@ -901,8 +718,7 @@ mod tests {
 
     #[test]
     fn an_unreadable_engine_fails_closed() {
-        // "Cannot inspect the engine" is not "the engine is drained": a
-        // broken diagnostics bridge must never pass the gate it guards.
+        // Cannot inspect is not drained: the gate must fail closed.
         let mut snap = drained_snapshot();
         snap.engine = None;
         assert!(!snap.at_baseline());
@@ -925,10 +741,7 @@ mod tests {
         let mut snap = drained_snapshot();
         snap.lookahead_samples_active = 1;
         assert!(!snap.at_baseline());
-        // A create whose dispose never ran is deliberately NOT a baseline
-        // break: a failed open consumes a create without needing a dispose,
-        // and the liveness that inequality tried to assert is carried by
-        // the engine's own hasDocument instead.
+        // A create with no dispose is deliberately not a baseline break.
         let mut snap = drained_snapshot();
         snap.reader_disposes_completed = 6;
         assert!(snap.at_baseline());

@@ -1,21 +1,4 @@
-//! The shared maths of laying reflowable text out, whatever wrote it.
-//!
-//! A raw file becomes [`block`](block)s — that part belongs to the format, so
-//! it lives in `txt-core` and `md-core` — and from there everything is
-//! common: blocks are packed into fixed-size [`page`](pager)s by a greedy
-//! cutter, [geometry](geometry) says how wide a page's column is and where a
-//! book's gutter falls, [`typography`](typography) resolves the persisted
-//! knobs into the CSS the interface paints and the one number the height
-//! estimate needs, and [`search`](search) is the substring index over the
-//! same blocks.
-//!
-//! Nothing here knows what Markdown *is* — that is the seam: a format crate
-//! parses and classifies, this crate measures, paginates and paints. A third
-//! reflowable format brings a parser and reuses all of this.
-//!
-//! Pure computation: no wasm, no DOM, no leptos; `cargo test -p reflow-core`.
-//! The one `reader-core` dependency is the persisted typography schema, whose
-//! resolution this crate owns.
+//! The shared maths of laying reflowable text out: blocks, pages, typography.
 
 #![forbid(unsafe_code)]
 
@@ -26,13 +9,5 @@ pub mod search;
 pub mod source;
 pub mod typography;
 
-pub use block::{
-    BlockKind, FenceTracker, SPLIT_MAX_LINES, TextBlock, split_blocks, subdivide_with,
-};
-pub use geometry::{PAGE_HEIGHT, PAGE_WIDTH, PageGeometry, SpineSide, geometry};
-pub use pager::{
-    BlockMetrics, PageCut, block_page_index, estimate_block_height, estimate_heights,
-    first_block_of_page, paginate,
-};
-pub use search::{TextHit, find_matches};
-pub use source::normalize;
+// Only `reflow_core::geometry(book_layout)` is read through the root path.
+pub use geometry::geometry;

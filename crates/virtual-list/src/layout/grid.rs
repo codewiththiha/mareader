@@ -1,29 +1,4 @@
-//! Uniform multi-column grids, windowed **per row**.
-//!
-//! Rows are the windowing unit because a row's cells mount and unmount
-//! together — evicting half a row would leave torn grids. [`Budget`]
-//! therefore counts rows for a grid: [`Overscan::Items(n)`](crate::Overscan::Items)
-//! pre-mounts `n` rows on each side (the thumbnail `ROW_BUFFER` pattern),
-//! and `max_items` caps mounted rows.
-//!
-//! # Viewport awareness
-//!
-//! - **Height** decides *how many rows mount*: the window is derived as
-//!   `visible rows + overscan`, so a taller viewport simply mounts more —
-//!   nothing is hardcoded ("6 rows at this height" is a measurement, not a
-//!   setting).
-//! - **Width** decides *how many columns exist*: [`GridSpec::columns_at`]
-//!   resolves the column count from the cross extent, either fixed or
-//!   responsive (`floor((width + gap) / (min_col + gap))`). Column count is
-//!   resolved at construction, so all queries stay O(1)/O(log n); a live
-//!   container re-resolves by rebuilding the layout when its width changes.
-//!
-//! # Geometry
-//!
-//! `row_pitch` is the full row stride — cell height **plus** the gap below
-//! the row (the thumbnails' `row_height()`). Item `i` lives in row
-//! `i / columns`, column `i % columns`; its scroll-axis offset is its row's
-//! offset and its cross offset is `col * (cell_width + gap_cross)`.
+//! Uniform multi-column grids, windowed per row.
 
 use crate::units::{from_sub, to_sub};
 use crate::{Budget, Strip, Viewport, Window};
@@ -35,8 +10,7 @@ use super::Layout;
 pub enum GridColumns {
     /// A fixed number of columns (thumbnails: 2).
     Fixed(usize),
-    /// Fit as many columns of at least `min_width` as the cross extent
-    /// allows: `max(1, floor((cross + gap_cross) / (min_width + gap_cross)))`.
+    /// Fit as many columns of at least `min_width` as the extent allows.
     Responsive {
         /// Minimum column width, in the same unit as everything else.
         min_width: f64,
@@ -61,8 +35,7 @@ impl GridSpec {
         }
     }
 
-    /// A spec that fits as many columns of at least `min_width` as the
-    /// cross extent allows.
+    /// A spec fitting as many columns of at least `min_width` as fit.
     pub const fn responsive(min_width: f64, gap_cross: f64) -> Self {
         Self {
             columns: GridColumns::Responsive { min_width },
@@ -88,8 +61,7 @@ impl GridSpec {
 /// A uniform grid of `items` cells in `columns` columns, windowed per row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GridLayout {
-    /// One strip entry per row, each sized `row_pitch`, zero gap (the pitch
-    /// already includes the gap below the row).
+    /// One strip entry per row, sized `row_pitch`, zero gap.
     rows: Strip,
     spec: GridSpec,
     columns: usize,
@@ -99,12 +71,7 @@ pub struct GridLayout {
 }
 
 impl GridLayout {
-    /// Resolve `spec` against the live cross extent (viewport width) and
-    /// build the grid. `row_pitch` is the full row stride (cell height +
-    /// the gap below the row).
-    ///
-    /// For [`GridColumns::Responsive`], cells are sized to fill the width:
-    /// `cell_width = (cross - (cols - 1) * gap_cross) / cols`.
+    /// Resolve `spec` against the live cross extent and build the grid.
     pub fn resolve(spec: GridSpec, items: usize, row_pitch: f64, cross_extent: f64) -> Self {
         let columns = spec.columns_at(cross_extent);
         let row_pitch = from_sub(to_sub(row_pitch));
@@ -179,8 +146,7 @@ impl GridLayout {
         self.rows.offset(row)
     }
 
-    /// The **row** window for this scroll position — what a row-rendering
-    /// consumer (a `<For>` over rows) mounts directly.
+    /// The row window for this scroll position.
     fn rows_window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window> {
         self.rows.window(scroll, viewport.main, budget)
     }
@@ -322,7 +288,7 @@ mod tests {
     fn mapping_and_partial_last_row() {
         let g = thumbs(5);
         assert_eq!(g.columns(), 2);
-        // Three rows for five items in two columns: the last item sits in row 2.
+        // Three rows for five items in two columns.
         assert_eq!(g.row_of(4), 2);
         assert_eq!(g.row_of(3), 1);
         assert_eq!(g.col_of(3), 1);
@@ -397,8 +363,7 @@ mod tests {
         assert_eq!(g.columns(), 4);
         assert_eq!(g.row_of(99), 24);
         assert_eq!(g.col_of(5), 1);
-        // The resolved cell width, read the way a consumer reads it: as the
-        // cross extent of a cell, and as the stride between two columns.
+        // The resolved cell width, as a cell extent and a column stride.
         assert!((g.cross_size(0) - 126.0).abs() < 1e-9);
         assert!((g.cross_offset(5) - 138.0).abs() < 1e-9);
     }

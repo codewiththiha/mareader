@@ -1,6 +1,4 @@
 // One layout for canonical builds, Trunk staging and dev restoration.
-// Trunk may preserve the target page's name or normalize it to index.html;
-// neither case permits guessing another HTML file in the output directory.
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";

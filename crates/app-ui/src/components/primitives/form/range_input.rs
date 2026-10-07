@@ -1,13 +1,5 @@
-//! Low-level reusable range control. The appearance sliders, the hue strip,
-//! the grain intensity and the bottom-bar scrubber each used to carry their
-//! own `<input type="range">` with repeated parsing, styling and
-//! accessibility wiring; this owns the contract once:
-//!
-//! * min/max/step are signals (the bottom-bar scrubber's max tracks a live
-//!   column height — a fixed `f64` can't express that);
-//! * `prop:value` keeps the thumb glued to the controlling signal;
-//! * `aria-label` is required for the control to be announceable;
-//! * class pass-through (the hue strip paints its own gradient track).
+//! Low-level reusable range control: parsing, styling and accessibility
+//! in one place.
 
 use leptos::prelude::*;
 

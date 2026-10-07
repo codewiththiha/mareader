@@ -206,7 +206,7 @@ this?** If not, cut it and put what it said in the commit message. Measure it wi
 from the left margin, fifteen words per block by default, all three raisable with
 `--max-lines`, `--max-line`, `--max-words`. Run it on the files you touched, not on
 the repository: the style this rule replaces is still in the tree, and the tool
-names 6,246 blocks across 714 files today. A comment that genuinely needs more than the ceiling states so
+names 6 blocks across 714 files today — the vendored pdf.js banners. A comment that genuinely needs more than the ceiling states so
 itself with `comment-check: allow` on the line above it, which the tool honours and
 a reviewer can read as a claim, not an escape.
 
@@ -308,5 +308,3 @@ design and the commit message for the decision — and neither is a comment.
    author ignores is not a guideline.
 5. The summary states what changed, what was verified and any limits. If a
    requirement cannot be met, report the blocker instead of dropping it.
-
-<!-- // only the changed file was rewritten -->
