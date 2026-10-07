@@ -1,9 +1,4 @@
-//! Name collisions on a level: does the shelf this is going to already hold a
-//! book called that?
-//!
-//! Nothing else about duplicates is a dialog. A second copy of one file is a
-//! naming problem with a naming answer; a reader who wants a pointer rather
-//! than a copy gets a [`crate::book::Row::Link`].
+//! Name collisions on a level: does the shelf already hold that name?
 
 use std::collections::HashSet;
 
@@ -11,24 +6,18 @@ use crate::book::{Row, duplicate_title, stem_of};
 use crate::scan::FoundFile;
 use crate::shelf::Shelf;
 
-/// What is arriving, and where it is going. One value for both routes in, so
-/// an import and a drag cannot disagree about what a collision is.
+/// What is arriving, and where: one value for both routes in.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arrival {
-    /// The name being placed, as the shelf shows it: a file's stem for an
-    /// import, the moved row's own name for a drag.
+    /// The name being placed, as the shelf shows it.
     pub name: String,
     pub moving: Option<String>,
-    /// The file being imported: the address and measurement the row is minted
-    /// from. `None` for a move.
+    /// The file being imported, `None` for a move.
     pub file: Option<FoundFile>,
     pub shelf_id: String,
-    /// The level the arrival leaves, when it leaves one: a drag's source
-    /// shelf, or the shelf a lift-out takes a book off. `None` for an import,
-    /// a filing, or a drag that began at the root.
+    /// The level the arrival leaves, if it leaves one.
     pub from: Option<String>,
-    /// The slot the drop pointed at; `None` appends. Carried rather than
-    /// re-derived, because the level it was aimed at may have moved.
+    /// The slot the drop pointed at; `None` appends.
     pub index: Option<usize>,
 }
 
@@ -45,9 +34,7 @@ impl Arrival {
         }
     }
 
-    /// A row being moved or filed onto a level. `name` is the row's own
-    /// [`Row::display_name`]; the caller reads it because the caller holds the
-    /// row list.
+    /// A row being moved or filed onto a level.
     pub fn moved(
         row_id: impl Into<String>,
         name: impl Into<String>,
@@ -64,16 +51,13 @@ impl Arrival {
         }
     }
 
-    /// Name the level this arrival leaves, so an answer that dissolves the
-    /// moving row knows the survivor does not inherit that membership.
+    /// Name the level this arrival leaves, for the survivor's sake.
     pub fn leaving(mut self, from: impl Into<String>) -> Self {
         self.from = Some(from.into());
         self
     }
 
-    /// A folder arriving under a name its level already holds: nothing
-    /// measured, nothing moving. The answers are about a whole import run
-    /// rather than one placement.
+    /// A folder arriving under a name its level already holds.
     pub fn folder(name: impl Into<String>, shelf_id: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -90,17 +74,12 @@ impl Arrival {
     }
 }
 
-/// Whether two names are the same name. Case-insensitive and nothing else:
-/// `Report` beside `report` is one name however the filesystem spells them.
+/// Whether two names are the same: case-insensitive only.
 pub fn same_name(a: &str, b: &str) -> bool {
     a.trim().eq_ignore_ascii_case(b.trim())
 }
 
-/// The row already on the target level whose name this arrival carries, if
-/// any.
-///
-/// Only book rows on the target level are compared: a link never collides, and
-/// the collision is the level's.
+/// The row on the target level whose name this arrival carries.
 pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> {
     let index = crate::book::index_by_id(rows);
     crate::shelf::members_of(rows, shelves, &at.shelf_id)
@@ -114,10 +93,7 @@ pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> 
         })
 }
 
-/// The next free name on one level, or `name` itself when the level does not
-/// hold it. Only a colliding level gets the file-manager counter
-/// (`1` → `1_1` → `1_2`), counted against that level's names rather than the
-/// whole library.
+/// The next free name on one level, or `name` itself.
 pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) -> String {
     let index = crate::book::index_by_id(rows);
     let in_use: Vec<String> = crate::shelf::members_of(rows, shelves, shelf_id)
@@ -128,9 +104,7 @@ pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) ->
     free_name(name, &in_use)
 }
 
-/// The shelf already at one level whose name an arriving folder carries, if
-/// any: the shelf half of [`collide`], asked before a folder import mints its
-/// root shelf.
+/// The shelf at one level whose name an arriving folder carries.
 pub fn collide_shelf(shelves: &[Shelf], parent: Option<&str>, name: &str) -> Option<String> {
     crate::shelf::children_of(shelves, parent)
         .into_iter()
@@ -138,8 +112,7 @@ pub fn collide_shelf(shelves: &[Shelf], parent: Option<&str>, name: &str) -> Opt
         .map(|shelf| shelf.id.clone())
 }
 
-/// The next free shelf name on one level (`Books` → `Books_1` → `Books_2`),
-/// counted against the shelf names that level holds rather than its rows.
+/// The next free shelf name on one level.
 pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> String {
     let in_use: Vec<String> = crate::shelf::children_of(shelves, parent)
         .into_iter()
@@ -148,8 +121,7 @@ pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> S
     free_name(name, &in_use)
 }
 
-/// One spelling of the file manager's copy-into-directory rule for both the
-/// book and the shelf side; they differ only in whose names the level holds.
+/// The file manager's copy-into-directory rule, once for both sides.
 fn free_name(name: &str, in_use: &[String]) -> String {
     let trimmed = name.trim();
     if !trimmed.is_empty() && !in_use.iter().any(|held| same_name(held, trimmed)) {
@@ -159,17 +131,14 @@ fn free_name(name: &str, in_use: &[String]) -> String {
     duplicate_title(name, &pool)
 }
 
-/// What the reader decided to do about a thing the library already holds.
-/// Every collision sheet offers some subset of these five.
+/// What the reader decided about a thing the library already holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Placement {
     /// Place nothing: take the reader to the thing that is already there.
     Open,
     /// Land it beside what is there, under the next free name.
     KeepBoth,
-    /// Fold the arrival into the thing that is there: the further read point
-    /// wins, the arrival's shelves and marks join the survivor, and the
-    /// arrival goes ([`crate::book::fold_books`]).
+    /// Fold the arrival into what is there: the further read point wins.
     Merge,
     /// The thing that is there goes and the arrival takes its place.
     Replace,
@@ -192,16 +161,14 @@ impl Placement {
     pub const MOVE_KEEPING_BOTH: &'static [Placement] =
         &[Placement::Merge, Placement::LinkOnly, Placement::KeepBoth];
 
-    /// Offered for a covered file: the library's own copy on this level, or
-    /// the book the folder already holds.
+    /// Offered for a covered file.
     pub const COVERED: &'static [Placement] = &[Placement::Open, Placement::KeepBoth];
 
     /// Offered per file of a merging folder on the compact sheet.
     pub const FOLDER_MERGE: &'static [Placement] =
         &[Placement::Merge, Placement::Replace, Placement::KeepBoth];
 
-    /// Offered for a stored folder arrival — copies the library owns, so the
-    /// question is the level's own.
+    /// Offered for a stored folder arrival.
     pub const SHELF_STORED: &'static [Placement] =
         &[Placement::Open, Placement::Replace, Placement::KeepBoth];
 
@@ -210,8 +177,7 @@ impl Placement {
     pub const SHELF_READ_IN_PLACE: &'static [Placement] = &[Placement::LinkOnly, Placement::Merge];
 }
 
-/// Which thing the reader's answer is about: the row already there, or the
-/// shelf already there.
+/// Which thing the answer is about: the row, or the shelf.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Scope {
     Book { row_id: String },
@@ -227,20 +193,14 @@ impl Scope {
     }
 }
 
-/// One question about an arrival that met something the library already
-/// holds: the arrival, the thing it met, that thing's name, and the subset of
-/// [`Placement`] offered. A sheet renders `offers` and does not need to know
-/// why.
+/// One collision question: the arrival, the thing it met, and the offers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlacementAsk {
-    /// Kept whole: an answer places it, and a placement needs the file or row
-    /// and the level it was going to.
+    /// Kept whole: an answer places it.
     pub arrival: Arrival,
-    /// The thing already there: *open* reveals it, *merge* folds into it,
-    /// *replace* purges it, *link* points at it.
+    /// The thing already there: reveal, fold, purge, or point at it.
     pub existing: Scope,
-    /// Derived once: a sheet prints it in a heading and on buttons, and three
-    /// derivations of one string can disagree.
+    /// Derived once: a sheet prints it in headings and buttons.
     pub existing_name: String,
     pub offers: &'static [Placement],
 }
@@ -307,12 +267,9 @@ mod tests {
         assert!(!Placement::MOVE_KEEPING_BOTH.contains(&Placement::Replace));
         assert!(Placement::MOVE_KEEPING_BOTH.contains(&Placement::LinkOnly));
         assert!(Placement::MOVE_KEEPING_BOTH.contains(&Placement::Merge));
-        // A covered file is two answers: a second linked row of one
-        // read-at-place file is the one thing that rule can never make.
+        // A covered file is two answers.
         assert_eq!(Placement::COVERED, &[Placement::Open, Placement::KeepBoth]);
-        // A folder's offers depend on its mode: stored gets the level's own
-        // three; read-at-place under another folder's name gets pointer and
-        // merge.
+        // A folder's offers depend on its mode.
         assert_eq!(
             Placement::SHELF_STORED,
             &[Placement::Open, Placement::Replace, Placement::KeepBoth]
@@ -452,8 +409,7 @@ mod tests {
 
     #[test]
     fn a_counter_copy_beside_its_original_never_asks() {
-        // A minted name is not a reason to ask again: `1_1` beside `1` is a
-        // second book.
+        // A minted name is not a reason to ask again.
         let rows = vec![
             titled("b1", "/books/1.pdf", "1"),
             titled("b2", "/copies/1.pdf", "1_1"),
@@ -497,8 +453,7 @@ mod tests {
 
     #[test]
     fn a_twin_on_another_shelf_is_not_this_shelfs_question() {
-        // The collision is a name on a level: a `1` on Fiction says nothing
-        // about a `1` arriving on Sci-Fi.
+        // A collision is a name on one level.
         let rows = vec![titled("b1", "/books/1.pdf", "1")];
         let shelves = vec![shelf("fiction", &["b1"]), shelf("scifi", &[])];
         assert_eq!(collide(&rows, &shelves, &import("1", "scifi")), None);
@@ -529,8 +484,7 @@ mod tests {
         // `1` and `1_1` are taken on s, so the next free counter is `1_2`.
         assert_eq!(next_name(&rows, &shelves, "s", "1"), "1_2");
         assert_eq!(next_name(&rows, &shelves, "t", "1"), "1_1");
-        // An empty level holds no name: a free name lands as itself, not as a
-        // counter of a collision that never happened.
+        // An empty level holds no name.
         assert_eq!(next_name(&rows, &shelves, "empty", "1"), "1");
         assert_eq!(next_name(&rows, &shelves, "t", " 1 "), "1_1");
         assert_eq!(next_name(&rows, &shelves, "s", "1_1"), "1_2");
@@ -558,8 +512,7 @@ mod tests {
 
     #[test]
     fn a_move_names_the_level_it_leaves_and_nothing_else_does() {
-        // A merge inherits the shelves the moved row keeps; the level it
-        // lifts off is the one membership it does not keep.
+        // A merge keeps every shelf but the one it lifts off.
         let leaving = Arrival::moved("b1", "Dune", "s", None).leaving("t");
         assert_eq!(leaving.from.as_deref(), Some("t"));
         assert_eq!(
