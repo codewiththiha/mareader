@@ -462,7 +462,7 @@ generalised instead of the feature being forked per format.
   dark-theme `screen` swap is about the backdrop being dark, not about it being a
   bitmap.
 - **Order on open.** A reflowable document's marks are loaded from storage before
-  `apply_heights` publishes the block→page map, so the first page — or the first
+  `set_initial_heights` publishes the block→page map, so the first page — or the first
   stream window — already paints them instead of gaining them a frame later. Dedup
   compares spots rather than pixels (`same_glossed_spot`), which is what stops a
   re-gloss after a scroll from stacking a second stroke on the same word.
@@ -616,9 +616,11 @@ one failure mode a pointer has is pointing at nothing.
 
 Two rows can also stop being twins, and that is a mark on the row rather than a second kind of row.
 `Book::independent` is what the conflict sheet's *as new* answer writes, and it opts the row out of
-exactly half of the sharing above: its resume point becomes its own, and its highlights move to a
-key carrying its id (`Book::gloss_key`), so no other row can name them and a removal of either row
-takes nothing from the other. It does not opt out of the address's fate — whether the file resolves
+exactly half of the sharing above: `book::rows_for_read` stops folding it into the reads its address
+holds, so its resume point is its own and so are the highlights under its own row id — the gloss map
+(`storage::load_gloss`) is keyed by row id, and the open flow resolves an address to the row that is
+not independent (`library_runtime::services::open`), so a removal of either row takes nothing from
+the other. It does not opt out of the address's fate — whether the file resolves
 is a fact about the file, so `book::apply_check` still writes every row at it, and the cover stays
 the file's art. Which rows a read belongs to is one function (`book::rows_for_read`, indices so a
 caller can hold the answer across the write it is about to make), and the three writers of a resume
@@ -810,10 +812,10 @@ it would orphan both:
   stored copy of the dissolving row's very file (the provenance `src` is the check), the folders
   that placed the file take a moved-out log bound to the survivor, because here the library does
   NOT still hold the fingerprint, and an import of the file should light the copy up rather than
-  mint a neighbour. Its highlights travel first, while both keys can still be read
-  (`union_marks`, by `GlossMark::same_spot`, keeping their ids so the AI answers ride along): the
-  sweep a removal rides takes the dissolving row's list with it, so a fold that ran afterwards
-  would be a merge that deleted them.
+  mint a neighbour. Its highlights are the survivor's own list: the marks live under the row id
+  (`storage::load_gloss` is keyed by row id, and `drop_row` sweeps the dissolving row's list with
+  the row), and the address's shared list is the one its non-independent row holds — which is the
+  row an open resolves (`library_runtime::services::open`).
 - **Replace** sends the row that was here out of the library and seats the arrival in its SLOT —
   an overwrite stays where the thing it replaced was — and on every other shelf the displaced row
   was filed on, because a replace that quietly took a book off shelves the question never mentioned
@@ -1144,9 +1146,10 @@ nobody wrote in gets no data switch — because a control that appears with noth
 control the reader has to read and then ignore. Two things follow from the cascade being a
 change of SET rather than of wording: the shelf rows switch from saying what survives to saying what
 goes, since the same words would mean the opposite, and the deletes run deepest-first so
-`lift_children` never moves a shelf to the level it was on moments before deleting it. The tree
-arithmetic that decides which shelves those are (`subtree`, `deepest_first`) is pure over the shelf
-list and host-tested, including the cycle a blob caught between two writes can still carry.
+`lift_children` never moves a shelf to the level it was on moments before deleting it. The walk that
+decides which shelves those are is `library_core::shelf::subtree_ids` — pure over the shelf list and
+host-tested, including the cycle a blob caught between two writes can still carry — and the order is
+one sort on depth in `arrange::asking::remove`.
 
 One row of that receipt is a question rather than a cost, and it is the only one. The app's own
 copy goes with the book: a file nothing will read again is not worth a switch, and removing a book

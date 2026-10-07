@@ -301,7 +301,7 @@ retained OWNERSHIP, not a synchronous return of bytes to the OS.
 1. **The wasm heap never shrinks** — `Memory.grow` is monotonic. The
    search index retained across close (2), the parsed library blob and the
    heap's high-water allocations live inside that ratchet.
-2. **The search index survives close** (`api/search.rs`, keyed by content
+2. **The search index survives close** (`session/search.rs`, keyed by content
    fingerprint) so a reopen adopts it instead of re-extracting every page.
    A different book's open drops it. This is the deliberate trade the
    baseline kept; it is now a content-keyed, realm-wide index
