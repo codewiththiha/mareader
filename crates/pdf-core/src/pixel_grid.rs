@@ -10,6 +10,7 @@ fn snap_to(v: f64, dpr: f64) -> f64 {
 }
 
 /// The display's current device-pixel ratio, defaulting to 1.0 off-browser.
+#[cfg(target_arch = "wasm32")]
 fn device_pixel_ratio() -> f64 {
     web_sys::window()
         .map(|w| w.device_pixel_ratio())
@@ -18,6 +19,7 @@ fn device_pixel_ratio() -> f64 {
 }
 
 /// The same answer with no display to ask: nothing snapped, nothing harmed.
+#[cfg(not(target_arch = "wasm32"))]
 fn device_pixel_ratio() -> f64 {
     1.0
 }

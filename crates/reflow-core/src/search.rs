@@ -65,6 +65,7 @@ mod tests {
     }
 
     /// The ordinal a highlight painter pairs its own occurrences with.
+    #[test]
     fn occurrences_are_numbered_within_their_own_block() {
         let blocks = [block("dune dune dune"), block("nothing"), block("dune")];
         let hits = find_matches(&blocks, "dune");

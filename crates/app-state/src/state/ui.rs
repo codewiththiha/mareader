@@ -32,6 +32,7 @@ impl Toast {
 }
 
 /// Which sidebar panel is open: UI chrome state, not viewer state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarMode {
     None,
     Outline,
@@ -41,6 +42,7 @@ pub enum SidebarMode {
 }
 
 /// Which of the reader's motions animate, projected from the settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Motion {
     /// The rail animates its open/close: docked tweens width, floating fades.
     pub sidebar_slide: bool,
@@ -77,6 +79,7 @@ impl Default for Motion {
 }
 
 /// UI chrome state: the sidebar, the toast surface, the window flag.
+#[derive(Clone, Copy)]
 pub struct UiState {
     pub sidebar: RwSignal<SidebarMode>,
     pub toast: RwSignal<Option<Toast>>,

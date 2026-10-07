@@ -102,6 +102,7 @@ fn fence_marker_of(trimmed: &str) -> &'static str {
 }
 
 /// One shared fence state machine, so every Markdown scanner answers alike.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FenceTracker {
     marker: &'static str,
 }

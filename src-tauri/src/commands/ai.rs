@@ -27,6 +27,7 @@ fn emit(app: &AppHandle, run: &str, chunk: AiChunk) -> Result<(), String> {
 }
 
 /// Start a streaming explanation for `word`; `run` is echoed on every chunk.
+#[tauri::command]
 pub async fn explain_word(
     app: AppHandle,
     word: String,

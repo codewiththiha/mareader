@@ -4,6 +4,8 @@ use reader_core::outline::{OutlineNode, clamp_depth};
 use serde::{Deserialize, Serialize};
 
 /// One flattened chapter as the engine reports it; `page` is 1-based.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OutlineEntry {
     pub title: String,
     pub page: u32,

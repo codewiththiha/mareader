@@ -1,178 +1,11 @@
-/
-/
-!
-
-W
-h
-i
-c
-h
-
-p
-i
-x
-e
-l
-s
-
-c
-a
-r
-r
-y
-
-t
-h
-e
-
-b
-l
-e
-n
-d
-
-b
-a
-c
-k
-d
-r
-o
-p
-'
-s
-
-p
-a
-p
-e
-r
-
-c
-o
-l
-o
-u
-r
-.
-
+//! Which pixels carry the blend backdrop's paper colour.
 use serde::{Deserialize, Serialize};
 
-/
-/
-/
-
-E
-d
-g
-e
--
-s
-t
-r
-i
-p
-
-b
-o
-u
-n
-d
-s
-,
-
-i
-n
-
-s
-a
-m
-p
-l
-e
-d
--
-r
-a
-s
-t
-e
-r
-
-p
-i
-x
-e
-l
-s
-.
+/// Edge-strip bounds, in sampled-raster pixels.
 const MIN_EDGE_WIDTH: u32 = 2;
 const MAX_EDGE_WIDTH: u32 = 32;
 
-/
-/
-/
-
-T
-h
-e
-
-d
-e
-f
-a
-u
-l
-t
-
-e
-d
-g
-e
--
-s
-t
-r
-i
-p
-
-t
-h
-i
-c
-k
-n
-e
-s
-s
-:
-
-a
-
-t
-h
-i
-n
-
-s
-l
-i
-c
-e
-
-o
-f
-
-e
-a
-c
-h
-
-s
-i
-d
-e
-.
+/// The default edge-strip thickness: a thin slice of each side.
 pub const DEFAULT_EDGE_WIDTH: u32 = 10;
 
 /// Which pixels of a page raster carry the paper colour.
@@ -193,62 +26,8 @@ impl PaperArea {
     }
 }
 
-/
-/
-/
-
-E
-v
-e
-r
-y
-
-k
-n
-o
-b
-
-t
-h
-e
-
-p
-a
-p
-e
-r
-
-p
-i
-p
-e
-l
-i
-n
-e
-
-e
-x
-p
-o
-s
-e
-s
-,
-
-i
-n
-
-o
-n
-e
-
-v
-a
-l
-u
-e
-.
+/// Every knob the paper pipeline exposes, in one value.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PaperConfig {
     #[serde(default)]
     pub area: PaperArea,
@@ -270,48 +49,7 @@ impl Default for PaperConfig {
 }
 
 impl PaperConfig {
-    /
-    /
-    /
-
-    C
-    l
-    a
-    m
-    p
-
-    e
-    v
-    e
-    r
-    y
-
-    k
-    n
-    o
-    b
-
-    i
-    n
-    t
-    o
-
-    i
-    t
-    s
-
-    l
-    e
-    g
-    a
-    l
-
-    r
-    a
-    n
-    g
-    e
-    .
+    /// Clamp every knob into its legal range.
     pub fn sanitize(&mut self) {
         self.edge_width = self.edge_width.clamp(MIN_EDGE_WIDTH, MAX_EDGE_WIDTH);
     }
@@ -341,68 +79,7 @@ mod tests {
 
     #[test]
     fn a_stale_blob_loads_and_fills_in_the_defaults() {
-        /
-        /
-
-        A
-        n
-
-        o
-        l
-        d
-        e
-        r
-
-        b
-        l
-        o
-        b
-
-        c
-        a
-        r
-        r
-        i
-        e
-        s
-
-        r
-        e
-        t
-        i
-        r
-        e
-        d
-
-        k
-        e
-        y
-        s
-        ;
-
-        d
-        e
-        f
-        a
-        u
-        l
-        t
-        s
-
-        f
-        i
-        l
-        l
-
-        t
-        h
-        e
-
-        r
-        e
-        s
-        t
-        .
+        // An older blob carries retired keys; defaults fill the rest.
         let c: PaperConfig = serde_json::from_str(r#"{"mode":"fixed","scan_pages":100}"#).unwrap();
         assert_eq!(c.area, PaperArea::WholePage);
         assert_eq!(c.edge_width, DEFAULT_EDGE_WIDTH);

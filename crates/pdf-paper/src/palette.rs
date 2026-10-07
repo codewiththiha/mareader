@@ -1,65 +1,4 @@
-/
-/
-!
-
-T
-h
-e
-
-p
-e
-r
--
-p
-a
-g
-e
-
-p
-a
-l
-e
-t
-t
-e
-
-a
-n
-d
-
-t
-h
-e
-
-i
-n
-t
-e
-r
-p
-o
-l
-a
-t
-i
-o
-n
-
-t
-h
-a
-t
-
-w
-a
-l
-k
-s
-
-i
-t
-.
-
+//! The per-page palette and the interpolation that walks it.
 use std::collections::BTreeMap;
 
 use crate::color::{Rgb, lerp};
@@ -75,67 +14,7 @@ impl PagePalette {
         Self::default()
     }
 
-    /
-    /
-    /
-
-    R
-    e
-    m
-    e
-    m
-    b
-    e
-    r
-
-    p
-    a
-    g
-    e
-
-    `
-    p
-    a
-    g
-    e
-    `
-    '
-    s
-
-    c
-    o
-    l
-    o
-    u
-    r
-    ;
-
-    a
-
-    r
-    e
-    -
-    d
-    e
-    t
-    e
-    c
-    t
-    i
-    o
-    n
-
-    o
-    v
-    e
-    r
-    w
-    r
-    i
-    t
-    e
-    s
-    .
+    /// Remember page `page`'s colour; a re-detection overwrites.
     pub fn set(&mut self, page: u32, colour: Rgb) {
         self.pages.insert(page, colour);
     }
@@ -156,63 +35,7 @@ impl PagePalette {
         self.pages.clear();
     }
 
-    /
-    /
-    /
-
-    T
-    h
-    e
-
-    c
-    o
-    l
-    o
-    u
-    r
-
-    a
-    t
-
-    a
-
-    f
-    r
-    a
-    c
-    t
-    i
-    o
-    n
-    a
-    l
-
-    p
-    a
-    g
-    e
-
-    `
-    p
-    o
-    s
-    i
-    t
-    i
-    o
-    n
-    `
-
-    (
-    1
-    -
-    b
-    a
-    s
-    e
-    d
-    )
-    .
+    /// The colour at a fractional page `position` (1-based).
     pub fn colour_at(&self, position: f64) -> Option<Rgb> {
         if self.pages.is_empty() || !position.is_finite() {
             return None;
@@ -221,69 +44,7 @@ impl PagePalette {
         let last = *self.pages.keys().next_back()? as f64;
         let pos = position.clamp(first, last);
 
-        /
-        /
-
-        T
-        h
-        e
-
-        n
-        e
-        a
-        r
-        e
-        s
-        t
-
-        k
-        n
-        o
-        w
-        n
-
-        p
-        a
-        g
-        e
-
-        a
-        t
-
-        o
-        r
-
-        b
-        e
-        l
-        o
-        w
-
-        `
-        p
-        o
-        s
-        `
-        ,
-
-        a
-        n
-        d
-
-        t
-        h
-        e
-
-        o
-        n
-        e
-
-        a
-        b
-        o
-        v
-        e
-        .
+        // The nearest known page at or below `pos`, and the one above.
         let floor = pos.floor() as u32;
         let (lo_key, lo_colour) = self.pages.range(..=floor).next_back()?;
         let hi = self.pages.range(floor + 1..).next();
@@ -327,116 +88,14 @@ mod tests {
         let mut p = PagePalette::new();
         p.set(1, CREAM);
         p.set(2, WHITE);
-        /
-        /
-
-        T
-        h
-        e
-
-        a
-        s
-        s
-        e
-        r
-        t
-        i
-        o
-        n
-
-        c
-        o
-        m
-        p
-        a
-        r
-        e
-        s
-
-        a
-        g
-        a
-        i
-        n
-        s
-        t
-
-        t
-        h
-        e
-
-        s
-        a
-        m
-        e
-
-        l
-        e
-        r
-        p
-        .
+        // The assertion compares against the same lerp.
         let mid = p.colour_at(1.5).unwrap();
         assert_eq!(mid, lerp(CREAM, WHITE, 0.5));
     }
 
     #[test]
     fn a_weighted_position_carries_both_pages_shares() {
-        /
-        /
-
-        4
-        0
-        %
-
-        p
-        a
-        g
-        e
-
-        1
-
-        +
-
-        6
-        0
-        %
-
-        p
-        a
-        g
-        e
-
-        2
-        :
-
-        p
-        o
-        s
-        i
-        t
-        i
-        o
-        n
-
-        1
-        .
-        6
-        ,
-
-        6
-        0
-        %
-
-        o
-        f
-
-        p
-        a
-        g
-        e
-
-        2
-        .
+        // 40% page 1 + 60% page 2: position 1.6, 60% of page 2.
         let mut p = PagePalette::new();
         p.set(1, CREAM);
         p.set(2, WHITE);
@@ -456,64 +115,7 @@ mod tests {
 
     #[test]
     fn an_unknown_page_blends_across_the_gap() {
-        /
-        /
-
-        P
-        a
-        g
-        e
-
-        4
-
-        n
-        e
-        v
-        e
-        r
-
-        r
-        e
-        s
-        o
-        l
-        v
-        e
-        d
-        ;
-
-        3
-        .
-        5
-
-        i
-        s
-
-        h
-        a
-        l
-        f
-
-        w
-        a
-        y
-
-        b
-        e
-        t
-        w
-        e
-        e
-        n
-
-        3
-
-        a
-        n
-        d
-
-        5
-        .
+        // Page 4 never resolved; 3.5 is half way between 3 and 5.
         let mut p = PagePalette::new();
         p.set(3, CREAM);
         p.set(5, INK);

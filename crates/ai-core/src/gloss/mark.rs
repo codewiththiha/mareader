@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 use super::geometry::GlossBox;
 
 /// A persisted gloss highlight: the word plus its document-space rect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlossMark {
     pub id: String,
     pub word: String,
     pub context: String,
     /// Persisted identity: flattened so the schema keeps `page` and `rect`.
+    #[serde(flatten)]
     pub anchor: PageAnchor,
 }
 
@@ -34,6 +36,7 @@ pub fn mark_id(page: u32, stamp_ms: u64) -> String {
 }
 
 /// Where a mark sits: a page number plus a rect in unscaled page space.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct PageAnchor {
     pub page: u32,
     pub rect: GlossBox,
@@ -55,6 +58,7 @@ impl PageAnchor {
 }
 
 /// A reflowable spot: block index plus character range, since pages re-cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ReflowSpot {
     pub block: usize,
     pub start: usize,

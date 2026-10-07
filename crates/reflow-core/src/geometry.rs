@@ -13,8 +13,10 @@ const MAX_COLUMN_PCT: f64 = 140.0;
 const MIN_CONTENT_WIDTH: f64 = 160.0;
 
 /// Where a page sits relative to the spine while a book layout is on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SpineSide {
     /// Derive the side from the page's parity, recto/verso like a bound book.
+    #[default]
     Auto,
     /// Fixed LEFT of the spine: the gutter faces right, toward its neighbour.
     Left,

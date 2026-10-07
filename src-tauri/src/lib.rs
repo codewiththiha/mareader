@@ -35,6 +35,7 @@ fn queue_pending(app: &tauri::AppHandle, path: String) {
 }
 
 /// The pending OS-opened document path, cleared on read.
+#[tauri::command]
 fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
     state.0.lock().ok().and_then(|mut g| g.take())
 }
@@ -59,6 +60,7 @@ pub(crate) fn ensure_readable_document(path: &str) -> Result<(), String> {
 }
 
 /// Read a file's bytes as an IPC `Response`, on the blocking pool.
+#[tauri::command]
 async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     ensure_readable_document(&path)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -71,6 +73,7 @@ async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 }
 
 /// Read a text document as UTF-8; undecodable bytes are replaced, not refused.
+#[tauri::command]
 async fn read_file_text(path: String) -> Result<String, String> {
     ensure_readable_document(&path)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -83,6 +86,7 @@ async fn read_file_text(path: String) -> Result<String, String> {
 }
 
 /// Show or hide the native macOS traffic lights, centred on the header.
+#[tauri::command]
 fn set_traffic_lights(window: tauri::Window, visible: bool, header_height: Option<f64>) {
     #[cfg(target_os = "macos")]
     {
@@ -93,6 +97,7 @@ fn set_traffic_lights(window: tauri::Window, visible: bool, header_height: Optio
 }
 
 /// The frontend's boot report, one stderr line per transition.
+#[tauri::command]
 fn boot_report(report: String) {
     let line = report
         .lines()
@@ -141,6 +146,7 @@ pub fn run() {
 
     app.run(|app_handle, event| match event {
         // macOS: Finder double-clicks and `open -a` arrive here.
+        #[cfg(target_os = "macos")]
         RunEvent::Opened { urls } => {
             for url in urls {
                 let path = url

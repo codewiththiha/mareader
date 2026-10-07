@@ -75,6 +75,7 @@ pub fn adopt(wire: PortWire, generation: u64, on_frame: impl FnMut(ShellFrame) +
 }
 
 /// The Shell's envelopes arriving over the port, behind the generation guard.
+#[cfg(target_arch = "wasm32")]
 fn install_listener(
     port: web_sys::MessagePort,
     generation: u64,

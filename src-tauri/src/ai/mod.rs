@@ -1,6 +1,7 @@
 //! AI provider wiring: Apple Intelligence when available, a mock otherwise.
 
 // Only the Apple provider reads prompts, so the module is gated with it.
+#[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub mod prompts;
 
 pub mod schema;

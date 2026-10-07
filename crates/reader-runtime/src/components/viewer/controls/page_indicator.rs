@@ -10,6 +10,7 @@ pub fn PageIndicator(
     #[prop(into)] total: Signal<u32>,
     #[prop(into)] style: Signal<PageIndicatorStyle>,
     /// Fade out while a bottom overlay is up, so the two never stack.
+    #[prop(into, default = Signal::derive(|| false))]
     hidden: Signal<bool>,
 ) -> impl IntoView {
     view! {

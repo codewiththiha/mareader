@@ -37,6 +37,7 @@ pub(crate) fn PanelSwitcher(
     library_active: Option<Signal<bool>>,
     on_reveal: fn(),
     /// The Thumbs toggle exists only while the engine has pages to thumb.
+    #[prop(into, default = Signal::derive(|| true))]
     thumbs_visible: Signal<bool>,
 ) -> impl IntoView {
     view! {

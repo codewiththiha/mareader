@@ -6,6 +6,7 @@ use crate::state::ui::{Motion, UiState};
 use reader_core::settings::Settings;
 
 /// What chrome reads about the active surface: reflow gating, search, motion.
+#[derive(Clone, Copy)]
 pub struct ReaderSurface {
     pub reflowable: Signal<bool>,
     pub search_visible: Signal<bool>,

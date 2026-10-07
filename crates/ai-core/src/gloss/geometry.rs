@@ -18,6 +18,7 @@ impl From<GlossBox> for ui_geom::floating::FloatBox {
 }
 
 /// The five fields the spring drives; serialized because a mark persists one.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct GlossBox {
     pub x: f64,
     pub y: f64,
@@ -60,6 +61,7 @@ const MIN_CARD_H: f64 = 140.0;
 const MAX_CARD_H_FRAC: f64 = 0.8;
 
 /// Side-aware placement with the card hung just below the mark's midline.
+#[allow(clippy::too_many_arguments)]
 pub fn place_card(
     anchor: GlossBox,
     size_w: f64,
@@ -295,6 +297,7 @@ mod tests {
     }
 
     /// The fields must land in the floating box in the order they are read.
+    #[test]
     fn the_floating_conversion_keeps_the_fields_in_order() {
         let box_ = GlossBox {
             x: 1.0,

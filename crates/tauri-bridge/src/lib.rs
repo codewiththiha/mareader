@@ -4,6 +4,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
 // Every async extern carries `catch`, so rejections resolve as `Err`.
+#[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], js_name = invoke, catch)]
     pub async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;

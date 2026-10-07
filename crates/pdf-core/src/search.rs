@@ -40,6 +40,7 @@ pub struct PageText {
 }
 
 /// The document's full-text index: every extracted page, keyed by page.
+#[derive(Debug, Default)]
 pub struct SearchIndex {
     pages: std::collections::BTreeMap<u32, PageText>,
 }
