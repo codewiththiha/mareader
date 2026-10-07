@@ -1,12 +1,58 @@
-//! Persisted app state (settings, library, covers) over localStorage, plus the
-//! one store that is not app state at all: what a removal kept of the
-//! reader's own work ([`kept`]).
-//!
-//! Plain functions, not a trait: there is one localStorage backend, and a
-//! second one can bring the abstraction back with it.
-//!
-//! Failures are NOT silent: loads warn about what was dropped, saves return a
-//! [`StorageError`] the caller decides how to handle.
+/
+/
+!
+
+P
+e
+r
+s
+i
+s
+t
+e
+d
+
+a
+p
+p
+
+s
+t
+a
+t
+e
+
+o
+v
+e
+r
+
+l
+o
+c
+a
+l
+S
+t
+o
+r
+a
+g
+e
+,
+
+p
+l
+u
+s
+
+`
+k
+e
+p
+t
+`
+.
 
 pub mod kept;
 
@@ -19,9 +65,78 @@ use ai_core::gloss::GlossMark;
 use wasm_bindgen::JsValue;
 
 use runtime_contract::covers::{CoverImage, CoverMap};
-// The library's key names, its persisted shape and the migration from the shape
-// it replaced all live in `library_core::blob`, so the schema and the rules that
-// keep it valid are one crate's business rather than two.
+/
+/
+
+T
+h
+e
+
+l
+i
+b
+r
+a
+r
+y
+'
+s
+
+k
+e
+y
+s
+,
+
+s
+h
+a
+p
+e
+
+a
+n
+d
+
+m
+i
+g
+r
+a
+t
+i
+o
+n
+
+l
+i
+v
+e
+
+i
+n
+
+`
+l
+i
+b
+r
+a
+r
+y
+_
+c
+o
+r
+e
+:
+:
+b
+l
+o
+b
+`
+.
 use library_core::blob::migrate::{BlobV2, LEGACY_KEY, RecentBook, V2_KEY, migrate_v1, migrate_v2};
 use library_core::blob::sanitize as sanitize_library;
 use library_core::blob::{LIBRARY_KEY, LibraryBlob, RETIRED_LIBRARY_KEY};
@@ -29,65 +144,411 @@ use reader_core::settings::{RETIRED_SETTINGS_KEY, SETTINGS_KEY, Settings, saniti
 
 const COVERS_KEY: &str = "mareader.covers.v1";
 
-/// The key the app read and wrote before it was renamed. Every store below
-/// reads its retired key as a fallback and writes only the current one: the
-/// contents are the same schema, so the first save after a load is what moves
-/// a reader onto the new name, and a downgrade still finds the data it wrote.
+/
+/
+/
+
+T
+h
+e
+
+k
+e
+y
+
+t
+h
+e
+
+a
+p
+p
+
+r
+e
+a
+d
+
+b
+e
+f
+o
+r
+e
+
+i
+t
+
+w
+a
+s
+
+r
+e
+n
+a
+m
+e
+d
+.
 const RETIRED_COVERS_KEY: &str = "pdfreader.covers.v1";
 
-/// Gloss highlights, keyed by the ROW ID the library holds for a book.
-///
-/// A PDF's mark is a page-space rect in CSS px — stable across zoom and
-/// sessions, but NOT across a change in how a page is laid out. If page
-/// rendering metrics ever change, bump this rather than let old marks drift
-/// onto the wrong words. A reflowable mark carries its identity in `context`
-/// instead (a tagged envelope in `components::ai::reflow_anchor`), versioned
-/// by its own tag, so a change there needs no new storage key.
-///
-/// The row id rather than the address is what makes this `v2`: a `v1` map is
-/// keyed by address, and the two shapes cannot be told apart entry by entry,
-/// so [`migrate_gloss_keys`] reads the old key and writes the new one rather
-/// than overwriting a map this build cannot parse.
+/
+/
+/
+
+G
+l
+o
+s
+s
+
+h
+i
+g
+h
+l
+i
+g
+h
+t
+s
+,
+
+k
+e
+y
+e
+d
+
+b
+y
+
+t
+h
+e
+
+R
+O
+W
+
+I
+D
+
+t
+h
+e
+
+l
+i
+b
+r
+a
+r
+y
+
+h
+o
+l
+d
+s
+.
 const GLOSS_KEY: &str = "mareader.gloss.v2";
 
 /// [`GLOSS_KEY`] before the rename.
 const RETIRED_GLOSS_KEY: &str = "pdfreader.gloss.v2";
 
-/// The address-keyed map this build migrated from. Read once, left alone: a
-/// reader who downgrades should still find the highlights the build they
-/// downgraded to wrote.
+/
+/
+/
+
+T
+h
+e
+
+a
+d
+d
+r
+e
+s
+s
+-
+k
+e
+y
+e
+d
+
+m
+a
+p
+
+t
+h
+i
+s
+
+b
+u
+i
+l
+d
+
+m
+i
+g
+r
+a
+t
+e
+d
+
+f
+r
+o
+m
+.
 const GLOSS_V1_KEY: &str = "pdfreader.gloss.v1";
 
-/// One-shot gate for the address-to-row migration. The v1 data itself stays
-/// in place so an older build can still read it after a downgrade.
+/
+/
+/
+
+O
+n
+e
+-
+s
+h
+o
+t
+
+g
+a
+t
+e
+
+f
+o
+r
+
+t
+h
+e
+
+a
+d
+d
+r
+e
+s
+s
+-
+t
+o
+-
+r
+o
+w
+
+m
+i
+g
+r
+a
+t
+i
+o
+n
+.
 const GLOSS_V2_MIGRATED_KEY: &str = "mareader.gloss.v2.migrated";
 
-/// The gate as the pre-rebrand build set it. Read alongside the current one so
-/// a reader who already carried their `v1` marks across is not made to do it
-/// twice.
+/
+/
+/
+
+T
+h
+e
+
+g
+a
+t
+e
+
+a
+s
+
+t
+h
+e
+
+p
+r
+e
+-
+r
+e
+b
+r
+a
+n
+d
+
+b
+u
+i
+l
+d
+
+s
+e
+t
+
+i
+t
+.
 const RETIRED_GLOSS_V2_MIGRATED_KEY: &str = "pdfreader.gloss.v2.migrated";
 
-/// A persistence failure (quota exceeded, storage blocked, serialization
-/// error). The UI must never crash on these — but they must not vanish.
-///
-/// One handling rule, no per-call judgment: every save failure is reported
-/// through [`StorageError::report`] at the call site. Covers could arguably
-/// be dropped silently (they regenerate), but a single rule beats a
-/// case-by-case call.
-#[derive(Debug)]
+/
+/
+/
+
+A
+
+p
+e
+r
+s
+i
+s
+t
+e
+n
+c
+e
+
+f
+a
+i
+l
+u
+r
+e
+:
+
+q
+u
+o
+t
+a
+,
+
+b
+l
+o
+c
+k
+e
+d
+
+s
+t
+o
+r
+a
+g
+e
+,
+
+s
+e
+r
+i
+a
+l
+i
+z
+a
+t
+i
+o
+n
+.
 pub struct StorageError {
     op: &'static str,
     detail: String,
 }
 
 impl StorageError {
-    /// Surface the failure on the console without interrupting the UI.
-    ///
-    /// Off wasm there is no console and the wasm-bindgen stubs abort when
-    /// called, so a failure is dropped rather than printed. That is what
-    /// makes the library's services testable on the host at all: a placement
-    /// writes the blob, and a write that aborted would take the test runner
-    /// with it.
+    /
+    /
+    /
+
+    S
+    u
+    r
+    f
+    a
+    c
+    e
+
+    t
+    h
+    e
+
+    f
+    a
+    i
+    l
+    u
+    r
+    e
+
+    o
+    n
+
+    t
+    h
+    e
+
+    c
+    o
+    n
+    s
+    o
+    l
+    e
+
+    w
+    i
+    t
+    h
+    o
+    u
+    t
+
+    i
+    n
+    t
+    e
+    r
+    r
+    u
+    p
+    t
+    i
+    n
+    g
+
+    t
+    h
+    e
+
+    U
+    I
+    .
     pub fn report(&self) {
         #[cfg(target_arch = "wasm32")]
         web_sys::console::warn_1(&JsValue::from_str(&format!("[storage] {self}")));
@@ -107,9 +568,61 @@ fn warn(op: &'static str, detail: &str) {
     let _ = (op, detail);
 }
 
-/// The browser's own key-value store, and `None` wherever there is not one —
-/// which is every host test this crate runs, and the reason a save off wasm is
-/// a reported no-op rather than a panic.
+/
+/
+/
+
+T
+h
+e
+
+b
+r
+o
+w
+s
+e
+r
+'
+s
+
+o
+w
+n
+
+k
+e
+y
+-
+v
+a
+l
+u
+e
+
+s
+t
+o
+r
+e
+,
+
+`
+N
+o
+n
+e
+`
+
+o
+f
+f
+
+w
+a
+s
+m
+.
 fn local() -> Option<web_sys::Storage> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -121,8 +634,56 @@ fn local() -> Option<web_sys::Storage> {
     }
 }
 
-/// Read a raw JSON blob, if present and readable; the crate's own store
-/// access, not part of the surface other crates see.
+/
+/
+/
+
+R
+e
+a
+d
+
+a
+
+r
+a
+w
+
+J
+S
+O
+N
+
+b
+l
+o
+b
+,
+
+i
+f
+
+p
+r
+e
+s
+e
+n
+t
+
+a
+n
+d
+
+r
+e
+a
+d
+a
+b
+l
+e
+.
 pub(crate) fn get(key: &str) -> Option<String> {
     local().and_then(|s| s.get_item(key).ok().flatten())
 }
@@ -139,8 +700,65 @@ pub(crate) fn set(key: &str, value: &str) -> Result<(), StorageError> {
     })
 }
 
-/// Serialize for storage, naming the operation a failure is reported against.
-/// The four savers were four copies of this one `map_err`.
+/
+/
+/
+
+S
+e
+r
+i
+a
+l
+i
+z
+e
+
+f
+o
+r
+
+s
+t
+o
+r
+a
+g
+e
+,
+
+n
+a
+m
+i
+n
+g
+
+t
+h
+e
+
+o
+p
+e
+r
+a
+t
+i
+o
+n
+
+o
+n
+
+f
+a
+i
+l
+u
+r
+e
+.
 fn encode<T: serde::Serialize + ?Sized>(
     op: &'static str,
     value: &T,
@@ -151,12 +769,78 @@ fn encode<T: serde::Serialize + ?Sized>(
     })
 }
 
-/// Read a store under its current key, falling back to the name it wore before
-/// the rename, then to the type's default when neither is present or parses.
-///
-/// The retired key is read and never written: the first save after a load is
-/// what moves a reader onto the new name, and a downgrade still finds the data
-/// it wrote.
+/
+/
+/
+
+R
+e
+a
+d
+
+a
+
+s
+t
+o
+r
+e
+
+u
+n
+d
+e
+r
+
+i
+t
+s
+
+c
+u
+r
+r
+e
+n
+t
+
+k
+e
+y
+,
+
+f
+a
+l
+l
+i
+n
+g
+
+b
+a
+c
+k
+
+t
+o
+
+t
+h
+e
+
+r
+e
+t
+i
+r
+e
+d
+
+o
+n
+e
+.
 fn load_keyed<T: serde::de::DeserializeOwned + Default>(
     op: &'static str,
     key: &str,
@@ -172,8 +856,70 @@ fn parse<T: serde::de::DeserializeOwned + Default>(op: &'static str, raw: &str) 
     match serde_json::from_str(raw) {
         Ok(v) => v,
         Err(e) => {
-            // Corrupt persisted state must not brick the app — but it must
-            // not disappear either: the user just lost a saved value.
+            /
+            /
+
+            C
+            o
+            r
+            r
+            u
+            p
+            t
+
+            s
+            t
+            a
+            t
+            e
+
+            m
+            u
+            s
+            t
+
+            n
+            o
+            t
+
+            b
+            r
+            i
+            c
+            k
+
+            t
+            h
+            e
+
+            a
+            p
+            p
+            ,
+
+            n
+            o
+            r
+
+            d
+            i
+            s
+            a
+            p
+            p
+            e
+            a
+            r
+
+            s
+            i
+            l
+            e
+            n
+            t
+            l
+            y
+            .
             warn(op, &format!("invalid JSON, falling back to default ({e})"));
             T::default()
         }
@@ -191,14 +937,65 @@ pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
     set(SETTINGS_KEY, &encode("save_settings", settings)?)
 }
 
-/// Load the library: the current blob when there is one, else the previous
-/// schema's, migrated on the spot. Invalid values fall back to empty rather
-/// than bricking the page, and every load is sanitised — a blob can arrive
-/// with a shelf member naming no row, and the grid would render a hole.
-///
-/// Each migration leaves the key it read alone: a reader who downgrades
-/// should still find the library the older build wrote, and the first save
-/// after this load is what puts the new blob under its own key.
+/
+/
+/
+
+L
+o
+a
+d
+
+t
+h
+e
+
+l
+i
+b
+r
+a
+r
+y
+,
+
+m
+i
+g
+r
+a
+t
+i
+n
+g
+
+t
+h
+e
+
+p
+r
+e
+v
+i
+o
+u
+s
+
+s
+c
+h
+e
+m
+a
+'
+s
+
+b
+l
+o
+b
+.
 pub fn load_library() -> LibraryBlob {
     if let Some(raw) = get(LIBRARY_KEY) {
         let mut blob: LibraryBlob = parse("library", &raw);
@@ -231,12 +1028,68 @@ pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
     set(LIBRARY_KEY, &encode("save_library", blob)?)
 }
 
-/// A cheap identity for one store's current contents: a hash of the raw
-/// string under its CURRENT key, `None` when that key is absent (a store
-/// still on a retired key or a legacy shape always reloads). A runtime that
-/// seeded its signals from the store compares stamps before re-reading: the
-/// parse — and the re-render that follows a signal set — is the expensive
-/// part, and most of the time nothing changed.
+/
+/
+/
+
+A
+
+c
+h
+e
+a
+p
+
+i
+d
+e
+n
+t
+i
+t
+y
+
+f
+o
+r
+
+o
+n
+e
+
+s
+t
+o
+r
+e
+'
+s
+
+c
+u
+r
+r
+e
+n
+t
+
+c
+o
+n
+t
+e
+n
+t
+s
+:
+
+a
+
+h
+a
+s
+h
+.
 fn stamp_of(key: &str) -> Option<u64> {
     use std::hash::{Hash, Hasher};
     let raw = get(key)?;
@@ -270,9 +1123,67 @@ pub fn load_covers() -> CoverMap {
         .collect()
 }
 
-/// Save the cover-art map. Serialized through a map of BORROWED covers: the
-/// images are the largest thing the app persists, and an owned `HashMap`
-/// would copy every data URL for no reason.
+/
+/
+/
+
+S
+a
+v
+e
+
+t
+h
+e
+
+c
+o
+v
+e
+r
+-
+a
+r
+t
+
+m
+a
+p
+,
+
+t
+h
+r
+o
+u
+g
+h
+
+a
+
+m
+a
+p
+
+o
+f
+
+B
+O
+R
+R
+O
+W
+E
+D
+
+c
+o
+v
+e
+r
+s
+.
 pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     let borrowed: HashMap<&str, &CoverImage> = covers
         .iter()
@@ -281,15 +1192,128 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     set(COVERS_KEY, &encode("save_covers", &borrowed)?)
 }
 
-/// Apply a reader session's read point to the persisted library blob: the rows
-/// `library_core::book::rows_for_read` names take the page and fraction. This
-/// is the Shell's recorder body AND the standalone substitute's.
+/
+/
+/
+
+A
+p
+p
+l
+y
+
+a
+
+r
+e
+a
+d
+
+p
+o
+i
+n
+t
+
+t
+o
+
+t
+h
+e
+
+p
+e
+r
+s
+i
+s
+t
+e
+d
+
+l
+i
+b
+r
+a
+r
+y
+
+b
+l
+o
+b
+.
 pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     let mut blob = load_library();
-    // The same recorder the reader's own tail used when the tree was unified
-    // (`library_core::book::record_read`): it writes every row the read
-    // belongs to and, for a file the library never knew, mints the linked
-    // book row — a drop-open still lands on the shelf after the session.
+    /
+    /
+
+    T
+    h
+    e
+
+    s
+    a
+    m
+    e
+
+    r
+    e
+    c
+    o
+    r
+    d
+    e
+    r
+
+    t
+    h
+    e
+
+    r
+    e
+    a
+    d
+    e
+    r
+    '
+    s
+
+    t
+    a
+    i
+    l
+
+    u
+    s
+    e
+    d
+    :
+
+    i
+    t
+
+    m
+    i
+    n
+    t
+    s
+
+    a
+
+    l
+    i
+    n
+    k
+    e
+    d
+
+    r
+    o
+    w
+    .
     let lib_point = library_core::book::ReadPoint {
         page: point.page,
         num_pages: point.num_pages,
@@ -307,17 +1331,70 @@ pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     let _ = save_library(&blob);
 }
 
-/// Carry the address-keyed highlights a previous build wrote onto the rows
-/// that were reading them.
-///
-/// Runs once at load with the row list in hand: an `"<id>::<address>"` entry
-/// is a private row's own list and is re-keyed onto that id, and a bare
-/// address is the list every shared row at it read, which goes to the first
-/// such row.
-///
-/// An entry no row answers for is left where it is rather than dropped: a
-/// later load that finds the row again picks it up, and a removal that never
-/// comes costs one localStorage entry rather than a reader's highlights.
+/
+/
+/
+
+C
+a
+r
+r
+y
+
+a
+d
+d
+r
+e
+s
+s
+-
+k
+e
+y
+e
+d
+
+h
+i
+g
+h
+l
+i
+g
+h
+t
+s
+
+o
+n
+t
+o
+
+t
+h
+e
+
+r
+o
+w
+s
+
+t
+h
+a
+t
+
+r
+e
+a
+d
+
+t
+h
+e
+m
+.
 pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
     if get(GLOSS_V2_MIGRATED_KEY)
         .or_else(|| get(RETIRED_GLOSS_V2_MIGRATED_KEY))
@@ -338,9 +1415,56 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
             continue;
         }
         let id = match key.split_once("::") {
-            // A private row's own list: re-keyed onto the id in front of the
-            // seam whether or not the address it wore is still the one it
-            // reads.
+            /
+            /
+
+            A
+
+            p
+            r
+            i
+            v
+            a
+            t
+            e
+
+            r
+            o
+            w
+            '
+            s
+
+            o
+            w
+            n
+
+            l
+            i
+            s
+            t
+            :
+
+            r
+            e
+            -
+            k
+            e
+            y
+            e
+            d
+
+            o
+            n
+            t
+            o
+
+            t
+            h
+            e
+
+            i
+            d
+            .
             Some((id, _)) => library_core::book::find_by_id(books, id)
                 .map(|b| b.id.clone())
                 .unwrap_or_else(|| id.to_string()),
@@ -353,8 +1477,65 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
         if id.is_empty() {
             continue;
         }
-        // Two old keys can land on one row — an address and a private row of it —
-        // so the marks are unioned rather than overwritten.
+        /
+        /
+
+        T
+        w
+        o
+
+        o
+        l
+        d
+
+        k
+        e
+        y
+        s
+
+        c
+        a
+        n
+
+        l
+        a
+        n
+        d
+
+        o
+        n
+
+        o
+        n
+        e
+
+        r
+        o
+        w
+        :
+
+        t
+        h
+        e
+
+        m
+        a
+        r
+        k
+        s
+
+        a
+        r
+        e
+
+        u
+        n
+        i
+        o
+        n
+        e
+        d
+        .
         let existing = carried.entry(id).or_default();
         for mark in marks {
             if !existing.iter().any(|kept| kept.same_spot(&mark)) {
@@ -380,20 +1561,115 @@ fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError>
     set(GLOSS_KEY, &encode("save_gloss", all)?)
 }
 
-/// Drop one row's marks: the reader's data goes with the book, not into
-/// localStorage under a row nothing points at any more.
+/
+/
+/
+
+D
+r
+o
+p
+
+o
+n
+e
+
+r
+o
+w
+'
+s
+
+m
+a
+r
+k
+s
+:
+
+t
+h
+e
+
+r
+e
+a
+d
+e
+r
+'
+s
+
+d
+a
+t
+a
+
+g
+o
+e
+s
+
+w
+i
+t
+h
+
+t
+h
+e
+
+b
+o
+o
+k
+.
 pub fn remove_gloss(row_id: &str) {
     take_gloss(row_id);
 }
 
-/// Take one row's marks out of the store. The row id is never reused, so the
-/// entry goes whatever the answer was — and a removal that KEEPS the reader's
-/// data carries the marks away with it (`crate::kept::remember`)
-/// rather than dropping them.
-///
-/// Read-modify-write rather than a cached map: marks change at human pace,
-/// and re-reading keeps a second window's marks from being clobbered by a
-/// write in this one.
+/
+/
+/
+
+T
+a
+k
+e
+
+o
+n
+e
+
+r
+o
+w
+'
+s
+
+m
+a
+r
+k
+s
+
+o
+u
+t
+
+o
+f
+
+t
+h
+e
+
+s
+t
+o
+r
+e
+.
 pub fn take_gloss(row_id: &str) -> Vec<GlossMark> {
     let mut all = load_gloss();
     let Some(marks) = all.remove(row_id) else {
@@ -405,9 +1681,63 @@ pub fn take_gloss(row_id: &str) -> Vec<GlossMark> {
     marks
 }
 
-/// Replace one row's marks and write the whole map back.
-/// Read-modify-write for [`take_gloss`]'s reason: a second window's marks must
-/// not be clobbered by a write in this one.
+/
+/
+/
+
+R
+e
+p
+l
+a
+c
+e
+
+o
+n
+e
+
+r
+o
+w
+'
+s
+
+m
+a
+r
+k
+s
+
+a
+n
+d
+
+w
+r
+i
+t
+e
+
+t
+h
+e
+
+w
+h
+o
+l
+e
+
+m
+a
+p
+
+b
+a
+c
+k
+.
 pub fn persist_gloss(row_id: &str, marks: &[GlossMark]) {
     let mut all = load_gloss();
     all.insert(row_id.to_string(), marks.to_vec());
@@ -416,9 +1746,73 @@ pub fn persist_gloss(row_id: &str, marks: &[GlossMark]) {
     }
 }
 
-/// One row's marks as they cross the reader → Shell boundary: the JSON of the
-/// list, because the boundary crate (`runtime-contract`) must not know the
-/// mark type (`tools/check-dependency-gate.mjs` keeps `ai-core` out of it).
+/
+/
+/
+
+O
+n
+e
+
+r
+o
+w
+'
+s
+
+m
+a
+r
+k
+s
+
+c
+r
+o
+s
+s
+i
+n
+g
+
+t
+h
+e
+
+r
+e
+a
+d
+e
+r
+
+t
+o
+
+S
+h
+e
+l
+l
+
+b
+o
+u
+n
+d
+a
+r
+y
+,
+
+a
+s
+
+J
+S
+O
+N
+.
 pub fn encode_gloss(marks: &[GlossMark]) -> Result<String, StorageError> {
     encode("encode_gloss", marks)
 }
@@ -430,10 +1824,68 @@ fn decode_gloss(encoded: &str) -> Result<Vec<GlossMark>, StorageError> {
     })
 }
 
-/// The writer's half of [`encode_gloss`]: decode, then [`persist_gloss`]. A
-/// list that does not decode is reported and dropped, never written — the
-/// store is one map for every row, and a malformed list must not cost the
-/// other rows their marks.
+/
+/
+/
+
+T
+h
+e
+
+w
+r
+i
+t
+e
+r
+'
+s
+
+h
+a
+l
+f
+
+o
+f
+
+`
+e
+n
+c
+o
+d
+e
+_
+g
+l
+o
+s
+s
+`
+:
+
+d
+e
+c
+o
+d
+e
+,
+
+t
+h
+e
+n
+
+p
+e
+r
+s
+i
+s
+t
+.
 pub fn persist_encoded_gloss(row_id: &str, encoded: &str) {
     match decode_gloss(encoded) {
         Ok(marks) => persist_gloss(row_id, &marks),
@@ -441,14 +1893,51 @@ pub fn persist_encoded_gloss(row_id: &str, encoded: &str) {
     }
 }
 
-/// One row's marks, copied onto another row: the duplicate's highlights are
-/// its own list under its own id, each mark wearing a freshly minted id, so
-/// nothing about the two lists is shared.
-///
-/// The source list stays where it is, because the original keeps its
-/// highlights; a source with no list, or an empty one, costs nothing and
-/// writes nothing. Read-modify-write for [`persist_gloss`]'s reason: a second
-/// window's marks must not be clobbered by a write in this one.
+/
+/
+/
+
+O
+n
+e
+
+r
+o
+w
+'
+s
+
+m
+a
+r
+k
+s
+,
+
+c
+o
+p
+i
+e
+d
+
+o
+n
+t
+o
+
+a
+n
+o
+t
+h
+e
+r
+
+r
+o
+w
+.
 pub fn copy_gloss(from_id: &str, to_id: &str) {
     let mut all = load_gloss();
     let Some(marks) = all.get(from_id) else {
@@ -466,15 +1955,64 @@ pub fn copy_gloss(from_id: &str, to_id: &str) {
     }
 }
 
-/// The marks a duplicate wears: the same words at the same spots, under ids
-/// minted for the copy rather than carried from the original. An id only keys
-/// a list's own toggles and answer cache, so carrying the old ones would work
-/// today — and be one future rule away from two books sharing a stroke, which
-/// is the sharing this copy exists to end.
-///
-/// The stamp is the caller's (`copy_gloss` reads the clock once): every mark
-/// in one list mints at the same millisecond, so the index is folded in to
-/// keep two marks on one page of one list from colliding.
+/
+/
+/
+
+T
+h
+e
+
+m
+a
+r
+k
+s
+
+a
+
+d
+u
+p
+l
+i
+c
+a
+t
+e
+
+w
+e
+a
+r
+s
+,
+
+u
+n
+d
+e
+r
+
+f
+r
+e
+s
+h
+l
+y
+
+m
+i
+n
+t
+e
+d
+
+i
+d
+s
+.
 fn re_ided(marks: &[GlossMark], now_ms: u64) -> Vec<GlossMark> {
     marks
         .iter()
@@ -486,11 +2024,66 @@ fn re_ided(marks: &[GlossMark], now_ms: u64) -> Vec<GlossMark> {
         .collect()
 }
 
-/// Build a reader launch descriptor for an in-session open: the persisted
-/// blob answers for the row id (the shared row, per the resume rules), the
-/// resume point, the display name and the cover. `None` for a path the store
-/// does not know — the reader then opens it unnamed, and the read record
-/// mints the row.
+/
+/
+/
+
+B
+u
+i
+l
+d
+
+a
+
+r
+e
+a
+d
+e
+r
+
+l
+a
+u
+n
+c
+h
+
+d
+e
+s
+c
+r
+i
+p
+t
+o
+r
+
+f
+o
+r
+
+a
+n
+
+i
+n
+-
+s
+e
+s
+s
+i
+o
+n
+
+o
+p
+e
+n
+.
 pub fn resolve_launch(path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
     use library_core::book::resume_point;
     let blob = load_library();
@@ -573,10 +2166,68 @@ mod tests {
 
     #[test]
     fn an_empty_list_never_reaches_storage() {
-        // The guard the caller rides: copy_gloss with nothing to copy writes
-        // nothing, which on wasm is the difference between a duplicate that
-        // leaves the store alone and one that serializes the whole map for
-        // nothing.
+        /
+        /
+
+        T
+        h
+        e
+
+        g
+        u
+        a
+        r
+        d
+
+        t
+        h
+        e
+
+        c
+        a
+        l
+        l
+        e
+        r
+
+        r
+        i
+        d
+        e
+        s
+        :
+
+        n
+        o
+        t
+        h
+        i
+        n
+        g
+
+        t
+        o
+
+        c
+        o
+        p
+        y
+
+        w
+        r
+        i
+        t
+        e
+        s
+
+        n
+        o
+        t
+        h
+        i
+        n
+        g
+        .
         assert!(re_ided(&[], 5).is_empty());
     }
 }
