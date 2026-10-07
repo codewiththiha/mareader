@@ -1,9 +1,4 @@
-//! The drag session: what is held, where the pointer is, which target is hot,
-//! and what a release right now would mean.
-//!
-//! One controller per library page, provided by
-//! `crate::features::library::page` and read by every card, row and crumb
-//! under it.
+//! The drag session: what is held, where the pointer is, what a release means.
 
 use std::time::Duration;
 
@@ -20,16 +15,12 @@ use super::target::{DropTargetId, DropTargetKind, DropTargetRegistry};
 use super::{FOLD_DWELL_MS, SINK_DWELL_MS, commit};
 use crate::features::library::selection::exit_selection;
 
-/// One struct rather than a book-or-folder enum, because a selection holds
-/// both: every move is a pair of operations on one shelf list, so a pre-split
-/// payload is one the commit step does not have to sort.
+/// One struct, not a book-or-folder enum: a selection holds both.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DragPayload {
     pub books: Vec<String>,
     pub folders: Vec<String>,
-    /// What a move takes its books off: a drag out of an expanded branch is a
-    /// move out of that shelf, and reading the open level instead would
-    /// unfile a book from the shelf it was showing in.
+    /// What a move takes its books off: an expanded branch, not the open level.
     pub source: Option<String>,
 }
 
@@ -42,8 +33,7 @@ impl DragPayload {
         self.len() == 0
     }
 
-    // Asked by every card on every repaint of a drag: a question about the
-    // payload rather than a derived set of its own.
+    // Asked by every card on every repaint: a question about the payload.
     pub fn contains(&self, id: &str) -> bool {
         self.books.iter().any(|each| each.as_str() == id)
             || self.folders.iter().any(|each| each.as_str() == id)
@@ -57,9 +47,7 @@ pub struct GhostTile {
     pub folder: bool,
 }
 
-/// Captured once when the dwell runs out rather than read per frame: a sunk
-/// ghost means the pointer has stopped, so the target's box is not changing
-/// either.
+/// Captured when the dwell runs out: a sunk ghost means the pointer stopped.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SinkSpot {
     pub x: f64,
@@ -75,13 +63,10 @@ pub struct DragController {
     effect: RwSignal<Option<DropEffect>>,
     fold: RwSignal<Option<FoldPreview>>,
     sink: RwSignal<Option<SinkSpot>>,
-    /// While parked, the only thing a pointermove is tested against until the
-    /// pointer leaves: a held pointer on a crumb costs one comparison per move
-    /// instead of a rect read for every target on the shelf.
+    /// While parked, a pointermove costs one comparison per move.
     sink_rect: RwSignal<Option<(f64, f64, f64, f64)>>,
     dwell: RwSignal<bool>,
-    /// Separate from [`Self::hot`]: the dwell's timer is an effect on this
-    /// signal, and its cleanup is what clears the timer that was counting.
+    /// Separate from [`Self::hot`]: the dwell timer's cleanup lives on this.
     dwell_target: RwSignal<Option<DropTargetId>>,
     pub registry: DropTargetRegistry,
     state: crate::context::LibraryContext,
@@ -110,9 +95,7 @@ impl DragController {
         this
     }
 
-    /// Not `app_ui::components::primitives::interactions::drag`: that primitive
-    /// finishes a drag one way; here a release and a cancellation are different
-    /// answers.
+    /// Not the drag primitive: here a release and a cancellation differ.
     fn bind_session(&self) {
         let this = *self;
         Effect::new(move |_| {
@@ -136,10 +119,7 @@ impl DragController {
         });
     }
 
-    /// One timer each, both owned by an effect on the target they count
-    /// against, so moving to another target or ending the drag clears them.
-    /// They are not one question at two depths: the sink belongs to the title
-    /// bar alone.
+    /// One timer each, owned by an effect on their target.
     fn bind_dwells(&self) {
         let this = *self;
         Effect::new(move |_| {
@@ -157,8 +137,8 @@ impl DragController {
                 let still = target.clone();
                 if let Ok(sunk) = set_timeout_with_handle(
                     move || {
-                        // The dwell can fire after the drag's owner is gone:
-                        // a disposed target means nothing is being dragged.
+                        // The dwell can outlive the drag: a disposed target
+                        // means nothing is dragged.
                         let Some(dwell) = this.dwell_target.try_get_untracked() else {
                             return;
                         };
@@ -173,9 +153,7 @@ impl DragController {
                     on_cleanup(move || sunk.clear());
                 }
             }
-            // The fold arms off the answer, not only the target's kind: a
-            // book the session reads as a landing becomes a partner on a
-            // rest, and the table answers that only for a hold with books.
+            // The fold arms off the answer, not the target's kind alone.
             let arms_fold = matches!(
                 this.effect.get_untracked(),
                 Some(DropEffect::InsertBefore { .. })
@@ -271,8 +249,7 @@ impl DragController {
         self.sink.into()
     }
 
-    // The visible half of a multi-drag: the picked-up set stays readable as
-    // a set while the pointer carries it.
+    // The picked-up set stays readable as a set while the pointer carries it.
     pub fn holds(&self, id: &str) -> bool {
         self.payload
             .with(|at| at.as_ref().is_some_and(|held| held.contains(id)))
@@ -356,8 +333,7 @@ impl DragController {
             .with(|at| at.as_ref().and_then(|each| each.nest_into()) == Some(id))
     }
 
-    /// Asked by the breadcrumb while a drag is live: a drag cannot raise a
-    /// `mouseenter`, because the pressed card holds the pointer capture.
+    /// A drag cannot raise a `mouseenter`: the pressed card holds the capture.
     pub fn over_ellipsis(&self) -> bool {
         self.hot.with(|at| {
             at.as_ref()
@@ -382,16 +358,12 @@ impl DragController {
     }
 
     fn on_move(&self, x: f64, y: f64) {
-        // Parked on a crumb, the ghost reads the target, not the hand: one
-        // cached rect test and a return. The first move that leaves the box
-        // resumes the follow.
+        // Parked on a crumb the ghost reads the target, not the hand.
         if let Some((left, top, right, bottom)) = self.sink_rect.get_untracked() {
             if x >= left && x <= right && y >= top && y <= bottom {
                 return;
             }
-            // Deliberately not re-arming the dwell on a target the pointer
-            // never left: a cached box can go stale without the target
-            // changing (a wheel scroll, a level re-laying under an import).
+            // Not re-arming the dwell on a target the pointer never left.
             self.release_sink();
         }
         self.pointer.set((x, y));
@@ -406,16 +378,13 @@ impl DragController {
         self.refresh();
     }
 
-    /// The spot and its cached box are one fact; clearing them apart would
-    /// leave the fast path testing a box nothing is sunk in.
+    /// One fact: clearing the spot and its box apart strands the fast path.
     fn release_sink(&self) {
         self.sink.set(None);
         self.sink_rect.set(None);
     }
 
-    /// Every read is untracked: this runs from a pointer event and a timer,
-    /// not a reactive scope, and a tracked read would subscribe whatever scope
-    /// was current to the whole library.
+    /// Every read is untracked: this runs from a pointer event and a timer.
     fn refresh(&self) {
         let Some(held) = self.payload.get_untracked() else {
             return self.clear_answer();
@@ -453,9 +422,7 @@ impl DragController {
             }
             _ => None,
         });
-        // A brewing fold outranks the sink: the same gesture at two depths,
-        // and a shrunk plate inside the card it offers to replace says
-        // nothing.
+        // A brewing fold outranks the sink: the same gesture at two depths.
         if self.fold.get_untracked().is_some() {
             self.release_sink();
         }
@@ -467,10 +434,7 @@ impl DragController {
         self.fold.set(None);
     }
 
-    /// Asked per held shelf rather than for the batch:
-    /// `library_core::shelf::can_nest` is about one tree edge, and a batch
-    /// "no" would refuse a drag that could have filed two of its three
-    /// folders.
+    /// Asked per held shelf: one `can_nest` "no" would refuse the batch.
     fn can_nest_held(&self, held: &DragPayload, target: &str) -> bool {
         self.state.library.shelves.with_untracked(|shelves| {
             held.folders
@@ -479,8 +443,7 @@ impl DragController {
         })
     }
 
-    /// A root-level seam has no parent to close a loop through, so an anchor
-    /// at the top only refuses a shelf asked to sibling itself.
+    /// A root-level seam has no parent, so the top anchor only refuses itself.
     fn can_sibling_held(&self, held: &DragPayload, anchor: &str) -> bool {
         self.state.library.shelves.with_untracked(|shelves| {
             let Some(target) = find(shelves, anchor) else {
@@ -496,9 +459,7 @@ impl DragController {
         })
     }
 
-    /// Computed here rather than in the table or the rows: the seam a row
-    /// paints, the effect the table answers and the index the commit resolves
-    /// must agree, and one rectangle read in one place keeps them agreed.
+    /// One rectangle read here, so the seam, the effect and the index agree.
     fn band_of(&self, target: &DropTargetId) -> Band {
         if !self.state.library.view.with_untracked(|v| v.is_list()) {
             return Band::Middle;
@@ -528,9 +489,7 @@ impl DragController {
         }
     }
 
-    /// The one place a drag stops being a drag: listeners go with the effect
-    /// that owns them, the dwell timer with its own effect, and everything the
-    /// cards paint from is written back to nothing in the same breath.
+    /// The one place a drag stops: listeners, timers and the paint all clear.
     fn end(&self, applied: bool) {
         self.session.set(false);
         self.payload.set(None);
