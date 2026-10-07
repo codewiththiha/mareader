@@ -6,7 +6,7 @@ import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
 import { currentGen, readPipeline } from "./theme/pipeline";
 import { cacheDisplay, ensureEntryCurrent, paintCached } from "./theme/thumbnails";
-import { lifecycleEvent, THUMB_CACHE_MAX } from "./state";
+import { lifecycleEvent, THUMB_CACHE_MAX, worldEndedSignal } from "./state";
 import type { EngineSession } from "./state";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
 // raster work, not clicks: queued jobs are invalidated on unmount and cached
@@ -46,50 +46,18 @@ export function resumePrefetches(s: EngineSession): void {
   s.thumbLane.suspended = false;
 }
 
-function eraMovedSignal(s: EngineSession, era: number): {
-  promise: Promise<void>;
-  unsubscribe: () => void;
-} {
+type WorldEnded = { promise: Promise<void>; unsubscribe: () => void };
+
+/// The session's era moved (a suspend) — the world a prefetch was born in.
+function eraMovedSignal(s: EngineSession, era: number): WorldEnded {
   const lane = s.thumbLane;
-  if (era !== lane.era) {
-    return { promise: Promise.resolve(), unsubscribe: () => {} };
-  }
-  let resolve!: () => void;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
-  });
-  const waiter = () => resolve();
-  lane.eraWaiters.push(waiter);
-  return {
-    promise,
-    unsubscribe: () => {
-      const at = lane.eraWaiters.indexOf(waiter);
-      if (at >= 0) lane.eraWaiters.splice(at, 1);
-    },
-  };
+  return worldEndedSignal(lane.eraWaiters, era !== lane.era);
 }
 
-function epochMovedSignal(s: EngineSession, epoch: number): {
-  promise: Promise<void>;
-  unsubscribe: () => void;
-} {
+/// The session's lane epoch moved (a teardown or document swap).
+function epochMovedSignal(s: EngineSession, epoch: number): WorldEnded {
   const lane = s.thumbLane;
-  if (epoch !== lane.epoch) {
-    return { promise: Promise.resolve(), unsubscribe: () => {} };
-  }
-  let resolve!: () => void;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
-  });
-  const waiter = () => resolve();
-  lane.epochWaiters.push(waiter);
-  return {
-    promise,
-    unsubscribe: () => {
-      const at = lane.epochWaiters.indexOf(waiter);
-      if (at >= 0) lane.epochWaiters.splice(at, 1);
-    },
-  };
+  return worldEndedSignal(lane.epochWaiters, epoch !== lane.epoch);
 }
 
 export function thumbLaneGauge(s: EngineSession): { thumbQueue: number; thumbActive: number } {

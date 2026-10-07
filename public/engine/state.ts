@@ -205,6 +205,27 @@ class ScrubState {
   readonly entrySnapshots = new Map<string, HTMLCanvasElement>();
 }
 
+/** A raceable "world ended" promise: `unsubscribe` on every normal settle. */
+export function worldEndedSignal(
+  waiters: Array<() => void>,
+  ended: boolean,
+): { promise: Promise<void>; unsubscribe: () => void } {
+  if (ended) return { promise: Promise.resolve(), unsubscribe: () => {} };
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  const waiter = () => resolve();
+  waiters.push(waiter);
+  return {
+    promise,
+    unsubscribe: () => {
+      const at = waiters.indexOf(waiter);
+      if (at >= 0) waiters.splice(at, 1);
+    },
+  };
+}
+
 /** The engine's per-document session state: the pdf.js document proxy, live
  *  page surfaces, thumbnail cache, search context, and theme pipeline state.
  *  One instance per document session, created by `createSession(sid)` and
@@ -354,28 +375,9 @@ export class EngineSession {
     for (const wake of waiters) wake();
   }
 
-  /// Subscribe to "this document is dying". The unsubscribe is the leak
-  /// guard: a prefetch that settles NORMALLY (the usual case) must remove
-  /// its waiter, or every successful prefetch leaves a resolver parked here
-  /// for the document's whole lifetime — exactly the async bookkeeping
-  /// growth a memory baseline exists to catch.
+  /// Subscribe to "this document is dying" (see `worldEndedSignal`).
   documentGoneSignal(): { promise: Promise<void>; unsubscribe: () => void } {
-    if (!this.documentAlive) {
-      return { promise: Promise.resolve(), unsubscribe: () => {} };
-    }
-    let resolve!: () => void;
-    const promise = new Promise<void>((r) => {
-      resolve = r;
-    });
-    const waiter = () => resolve();
-    this.documentGoneWaiters.push(waiter);
-    return {
-      promise,
-      unsubscribe: () => {
-        const at = this.documentGoneWaiters.indexOf(waiter);
-        if (at >= 0) this.documentGoneWaiters.splice(at, 1);
-      },
-    };
+    return worldEndedSignal(this.documentGoneWaiters, !this.documentAlive);
   }
 
   /// Cancel the idle sweeper: a close must not leave a document-scoped
