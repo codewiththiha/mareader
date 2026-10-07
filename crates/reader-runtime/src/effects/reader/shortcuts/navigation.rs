@@ -1,11 +1,4 @@
-//! Page navigation and the continuous-scroll hold engine: arrows turn pages
-//! in single/dual mode and glide the scrollport in continuous/horizontal
-//! mode; PageUp/Down and Space page the column.
-//!
-//! What a key MEANS is not decided here — that is [`super::keymap`], pure and
-//! tested. This file is the doing: the scroll helpers, the rAF hold engine
-//! behind a held arrow, and the bridge that reads an event into the keymap's
-//! inputs and performs its answer.
+//! Page navigation and the continuous-scroll hold engine.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -20,40 +13,23 @@ use reader_core::view::{ViewMode, spread_step_next, spread_step_prev};
 use super::is_chrome_scroll_target;
 use super::keymap::{self, NavAction};
 
-/// One Arrow Up/Down tap is a reading nudge, not a page jump. The first
-/// owner-scroll used 15% of the viewport (48–140px); native browser
-/// line-scroll is ~40px, so a hold felt like paging — each key-repeat
-/// teleported a sixth of the screen with no glide. 8% clamped to a
-/// native-ish band matches the old feel without giving the keys back to a
-/// text-layer span that virtualization will unmount.
+/// One Arrow tap is a reading nudge, not a page jump.
 fn line_scroll_px(viewport_h: f64) -> f64 {
     (viewport_h * 0.08).clamp(40.0, 80.0)
 }
 
-/// PageUp / PageDown / Space: almost a screen, with a sliver of overlap
-/// so the reader does not lose the last line they just saw.
+/// PageUp / PageDown / Space: almost a screen, with an overlap
+/// sliver.
 fn page_scroll_px(viewport_h: f64) -> f64 {
     (viewport_h * 0.9).max(1.0)
 }
 
-/// Native-like delay before a held arrow starts repeating, then a continuous
-/// glide (px/s) instead of discrete jumps. 350ms sits between macOS (~250)
-/// and Windows (~500); 1000 px/s is roughly a viewport a second — reading
-/// speed, not a flick.
+/// Delay before a held arrow repeats, then a continuous glide.
 const HOLD_DELAY_MS: f64 = 350.0;
 const HOLD_PX_PER_SEC: f64 = 1000.0;
 
-// thread_local, not StoredValue: the hold engine is driven from window
-// keydown/keyup listeners that do not share a reactive owner, so the
-// rAF loop has to outlive any one effect.
-//
-// WINDOW-level on purpose, not per pane: a held key is one physical key on
-// one keyboard, and window keys reach only the host's ACTIVE pane (every
-// other pane's arm stands down on the host's focus authority). What the hold
-// scrolls is NOT looked up per frame: the strip is captured, from the active
-// pane's own root, when the key goes down (`HOLD_TARGET`), so a hold can never
-// drift onto another pane's strip. A focus change ends it (the pane's blur
-// calls `end_key_hold`), and so does the pane's teardown (the arm's cleanup).
+// thread_local, not StoredValue: the window listeners share no
+// reactive owner.
 thread_local! {
     static HOLD_DIR: Cell<f64> = const { Cell::new(0.0) };
     static HOLD_DOWN_AT: Cell<f64> = const { Cell::new(0.0) };
@@ -61,8 +37,7 @@ thread_local! {
     static HOLD_RAF: Cell<bool> = const { Cell::new(false) };
     /// 1 = vertical (#page-list), 2 = horizontal (#h-page-list).
     static HOLD_AXIS: Cell<u8> = const { Cell::new(1) };
-    /// The strip the running hold scrolls, captured from the active pane at
-    /// key-down; released the moment the hold ends.
+    /// The strip the running hold scrolls, captured at key-down.
     static HOLD_TARGET: RefCell<Option<web_sys::Element>> = const { RefCell::new(None) };
 }
 
@@ -89,9 +64,7 @@ fn page_next(state: ReaderState) {
     }
 }
 
-/// Keep keyboard focus on the active scroll strip itself, not a text-layer
-/// span the virtualizer is about to unmount. `preventScroll` so focusing does
-/// not fight the scroll we are about to apply.
+/// Keep focus on the strip itself, not a span about to unmount.
 fn focus_scroll_list(dom: PaneDom, horizontal: bool) {
     let Some(list) = strip(dom, horizontal) else {
         return;
@@ -104,10 +77,7 @@ fn focus_scroll_list(dom: PaneDom, horizontal: bool) {
     _ = html.focus_with_options(&opts);
 }
 
-/// Scroll one of the reader's strips by `delta` along its main axis, clamped
-/// to the scrollable range and skipped entirely when the clamp eats the step
-/// (a boundary hold must not fight the elastic edge). The y/x twins differ
-/// only in element and axis properties, so one helper serves both.
+/// Scroll a strip by `delta`, clamped and skipped at the edge.
 fn scroll_reader_axis(list: &web_sys::Element, horizontal: bool, delta: f64, smooth: bool) {
     let (current, extent, client) = if horizontal {
         (
@@ -184,10 +154,7 @@ fn begin_line_hold(dom: PaneDom, dir: f64, horizontal: bool, glide: bool) {
     let now = js_sys::Date::now();
     HOLD_DOWN_AT.with(|t| t.set(now));
     HOLD_LAST.with(|t| t.set(now));
-    // A tap is one smooth nudge — an ANIMATION, so `glide` (the reader's
-    // scroll switch) decides whether it eases or lands. The hold that follows
-    // is not: the rAF loop below IS the scrolling, frames and all, and it runs
-    // whether or not the tap glided.
+    // A tap is an ANIMATION, so `glide` decides; the hold is not.
     focus_scroll_list(dom, horizontal);
     scroll_reader_line(dom, horizontal, dir, glide);
     if HOLD_RAF.with(|r| r.get()) {
@@ -238,10 +205,7 @@ fn hold_tick() {
     request_animation_frame(hold_tick);
 }
 
-/// The plain-key navigation arms: arrows (page turn in single/dual mode,
-/// scroll hold in continuous/horizontal), PageUp/Down and Space. The DECISION
-/// lives in [`keymap::resolve`], pure and tested; this reads the event into
-/// its inputs and performs the answer.
+/// The plain-key arms: arrows, PageUp/Down and Space.
 pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::KeyboardEvent) {
     let key = ev.key();
     let outcome = keymap::resolve(keymap::NavKey {
@@ -262,9 +226,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
     let Some(action) = outcome.action else {
         return;
     };
-    // Whether this keypress may GLIDE anywhere. Untracked: the switch that
-    // turns the glide off must not be what triggers one, and a keypress reads
-    // the world as it is the moment it lands.
+    // Untracked: the switch that turns the glide off cannot trigger one.
     let glide = state.viewer.motion.get_untracked().scroll_glide;
     match action {
         NavAction::PagePrev => page_prev(state),
@@ -274,17 +236,14 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
         }
         NavAction::PageStep { dir, horizontal } => {
             focus_scroll_list(state.dom, horizontal);
-            // A repeat is the browser hammering the key; easing each one
-            // would queue a stack of overlapping smooth scrolls.
+            // A repeat would queue a stack of overlapping smooth scrolls.
             let smooth = glide && !ev.repeat();
             scroll_reader_page(state.dom, horizontal, dir as f64, smooth);
         }
     }
 }
 
-/// Ends the rAF glide on keyup; the entry dispatcher wires this. The vim
-/// aliases release the hold their arrow would (`keymap::arrow_key`), or a `j`
-/// held to the end of a chapter would keep gliding after the key came up.
+/// Ends the rAF glide on keyup, vim aliases included.
 pub(super) fn end_hold_for(key: &str) {
     match keymap::arrow_key(key).unwrap_or(key) {
         "ArrowUp" | "ArrowLeft" => end_line_hold(-1.0),
@@ -293,8 +252,7 @@ pub(super) fn end_hold_for(key: &str) {
     }
 }
 
-/// Stops the glide: the window lost focus, the pane lost the host's focus,
-/// or the pane is going away.
+/// Stops the glide: focus lost, or the pane is going away.
 pub(super) fn stop_hold() {
     stop_line_hold();
 }
@@ -305,9 +263,7 @@ mod tests {
 
     #[test]
     fn a_line_step_is_a_reading_nudge_not_a_page_jump() {
-        // A 900px viewer used to jump 135px (15%) per key — three native
-        // lines at once, which made arrows feel like paging rather than
-        // scrolling.
+        // A 900px viewer used to jump 135px per key, like paging.
         assert!((line_scroll_px(900.0) - 72.0).abs() < 0.01);
         assert_eq!(
             line_scroll_px(200.0),
