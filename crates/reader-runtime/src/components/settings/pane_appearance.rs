@@ -1,5 +1,4 @@
-//! Split-only appearance controls for pane boundaries. These live in the
-//! Reader Settings → Theme tab, not in the title-bar appearance popover.
+//! Split-only pane boundary controls, shown in Reader Settings → Theme.
 
 use leptos::prelude::*;
 

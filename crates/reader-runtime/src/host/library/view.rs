@@ -1,16 +1,4 @@
-//! The Library panel's view: the open-tabs strip (only while the workspace
-//! is split) over the library tree. Rows are one line each — a glyph, the
-//! name truncated to the rail, a format badge — at a fixed 28px so a long
-//! library stays a compact list.
-//!
-//! A file row is the workspace's split-drag source. A mouse or pen press
-//! ARMS the host's drag session (nothing is measured, nothing moves); past
-//! the shared threshold the session is live and the host's window listeners
-//! follow the pointer onto the workspace, where the drop preview shows the
-//! split it will make. No pointer capture and no HTML5 drag: the pointer has
-//! to leave the rail, and an OS drag is the library route's import, never
-//! this. Touch never drags. A press that stays a click is the row's click,
-//! which does what the Workspace setting says.
+//! The Library panel's tree; its file rows drag splits.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -23,8 +11,7 @@ use super::super::ReaderHost;
 use super::super::model::DocumentId;
 use super::{LibraryFile, Line, OpenHow, OpenTab, badge_of_format};
 
-/// A row's left padding: the outline panel's rule — a 12px step with a cap
-/// that always leaves the name room in the 288px rail.
+/// Row indent: a 12px step per depth, capped for the 288px rail.
 fn indent_px(depth: usize) -> usize {
     const BASE: usize = 8;
     const STEP: usize = 12;
@@ -32,14 +19,12 @@ fn indent_px(depth: usize) -> usize {
     BASE + (depth * STEP).min(INDENT_MAX)
 }
 
-/// The chevron's width plus its gap: a file lines its glyph up under its
-/// folder's name.
+/// Chevron width plus gap: a file's glyph lines up under its folder's name.
 const CHEVRON_PX: usize = 18;
 
 pub(super) fn library_panel(host: ReaderHost, shown: Signal<bool>) -> AnyView {
     let state = host.library();
-    // The store is read when the panel becomes the rail's visible one (and
-    // not before: a rail that never shows the Library reads nothing).
+    // The store is read only when the rail shows this panel.
     Effect::new(move |_| {
         if shown.get() {
             untrack(|| state.refresh());
@@ -47,9 +32,7 @@ pub(super) fn library_panel(host: ReaderHost, shown: Signal<bool>) -> AnyView {
     });
     let split = Signal::derive(move || host.pane_count() > 1);
 
-    // The documents the panes show, and the active pane's: a row names the
-    // file a pane is reading. Tracked on each pane's status, because a
-    // pane's document address is read untracked.
+    // Each row names the file its pane reads, tracked on the pane's status.
     let open_docs = Memo::new(move |_| {
         host.manager
             .placed()
@@ -310,8 +293,7 @@ fn file_view(
     }
 }
 
-/// The open panes, as tabs: a click focuses one, its × closes it. They
-/// never drag — the tree is the only split source.
+/// The open panes as tabs: click focuses, × closes, and they never drag.
 fn open_tabs_view(host: ReaderHost) -> impl IntoView {
     view! {
         <div class="shrink-0 border-b border-line pb-2">
@@ -339,8 +321,7 @@ fn tab_view(host: ReaderHost, tab: OpenTab) -> impl IntoView {
     let OpenTab { id, name } = tab;
     let active = Signal::derive(move || host.manager.active() == Some(id));
     let label = Signal::derive(move || name.try_get().unwrap_or_default());
-    // The format follows the document: a pane that replaced its document
-    // renames itself, and the badge is re-read with the name.
+    // The badge follows the document: a replaced document renames the row.
     let badge = move || {
         label.track();
         host.manager

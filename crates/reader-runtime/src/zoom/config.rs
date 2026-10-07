@@ -1,43 +1,23 @@
-//! Zoom behaviour knobs in one place: the clamped scale range and the
-//! animation profile. Every view mode shares one profile.
+//! Zoom knobs: the clamped scale range and the shared animation profile.
 
 use reader_core::zoom_math::{MAX_SCALE, MIN_SCALE};
 
-/// Duration of the zoom tween, in milliseconds. Linear, not eased — see
-/// `animation.rs` for why the commit seam must not decelerate. 120ms keeps a
-/// manual step feeling immediate while still reading as motion.
+/// Tween duration, ms; linear on purpose (`animation.rs` explains the seam).
 const ZOOM_ANIM_MS: f64 = 120.0;
 
-/// How long an item evicted by a ZOOM COMMIT stays mounted, milliseconds.
-/// Deliberately longer than the tween: the commit reinstalls geometry, the
-/// window jumps, and the pages it evicts are still on screen. The grace
-/// outlives the animation so the old surface never vanishes before the new
-/// geometry stabilises.
+/// Items a zoom commit evicts stay mounted this long (ms), outliving the tween.
 pub const ZOOM_GRACE_MS: u32 = 300;
 
-/// Ceiling on simultaneously retained (zombie) items per virtualizer. The
-/// bridge is bounded or it would stop being virtualization.
+/// Ceiling on retained (zombie) items: past it, virtualization stops being one.
 pub const MAX_ZOMBIES: usize = 12;
 
-/// How long the space around the page must be quiet before a container follow
-/// commits its crisp render, milliseconds. The layout follows a sidebar slide
-/// or window drag frame by frame; the rasters wait for the burst's end, so a
-/// slide costs one render pass at the settled size instead of one per frame.
-/// The same window doubles as the pause a fit-driven refit waits for after a
-/// page turn, where following the layout per frame would mean zooming at every
-/// row boundary of a mixed-size book.
+/// Quiet (ms) before a layout follow renders crisp; the fit-refit pause too.
 pub const FOLLOW_SETTLE_MS: u64 = 180;
 
-/// Scales closer than this are the same scale. One margin for the whole
-/// pipeline: the resolver uses it to call a boundary step a no-op and the
-/// coordinator to decline a transition that would not move. Two numbers would
-/// mean a step one layer considers settled and the other animates.
+/// Scales closer than this are one scale; resolver and coordinator share it.
 pub(crate) const SETTLED_EPSILON: f64 = 0.0005;
 
-/// How a zoom animates. WHETHER it animates is the reader's preference
-/// (`viewer.motion.zoom`) and the OS reduced-motion setting, decided in one
-/// place — `animation::interpolates` — rather than a second switch here that
-/// nothing ever turned off.
+/// How a zoom animates; whether it does is `animation::interpolates`' call.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ZoomAnimationConfig {
     pub duration_ms: f64,
@@ -46,8 +26,7 @@ pub struct ZoomAnimationConfig {
 /// How evicted virtual items are bridged across a window change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ZoomRetentionConfig {
-    /// Grace period items evicted by a zoom commit keep their DOM, in
-    /// milliseconds. Should outlive the tween itself.
+    /// Zombie grace for a zoom commit, ms; must outlive the tween.
     pub grace_ms: u32,
     pub max_zombies: usize,
 }
@@ -62,9 +41,7 @@ pub struct ZoomProfile {
 }
 
 impl ZoomProfile {
-    /// Clamp a proposed scale into the profile's range. A non-finite input
-    /// (NaN, infinity — a corrupt measurement upstream) collapses to the
-    /// minimum rather than poisoning every derived geometry.
+    /// Clamp a proposed scale; a non-finite input collapses to the minimum.
     pub fn clamp(&self, scale: f64) -> f64 {
         if !scale.is_finite() {
             return self.min;
@@ -72,15 +49,13 @@ impl ZoomProfile {
         scale.clamp(self.min, self.max)
     }
 
-    /// The tween's duration. Zero means no tween: the zoom commits in one
-    /// discrete step, like it does with animation switched off.
+    /// The tween's duration; zero commits in one discrete step.
     pub fn duration_ms(&self) -> f64 {
         self.animation.duration_ms
     }
 }
 
-/// The zoom profile. One for every view mode: the refactor that introduced
-/// this config changed the zoom *architecture*, not the numbers.
+/// The zoom profile every view mode shares.
 pub fn zoom_profile() -> ZoomProfile {
     ZoomProfile {
         min: MIN_SCALE,
@@ -116,9 +91,7 @@ mod tests {
 
     #[test]
     fn the_zoom_grace_outlives_the_tween() {
-        // The commit's evictions must still be bridged after the animation
-        // itself ends, or the old surface pops before the new geometry
-        // stabilises.
+        // Evictions must outlive the animation, or the old surface pops first.
         let p = zoom_profile();
         assert!(p.retention.grace_ms as f64 > p.duration_ms());
         assert!(p.retention.max_zombies > 0);
