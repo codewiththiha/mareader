@@ -96,11 +96,10 @@ shape is in `docs/frame-lifecycle-alternatives.md`.
   its full-resolution render lands, and a bitmap left at a stale scale asks
   for its crisp render at once. The strip's fling gate keeps pages a fling
   sweeps past from rasterising; its speed-aware visibility
-  (`in_view_signal` in `formats/pdf/strip.rs`) lets a page inside, or
-  within 320 px of, the viewport render immediately at reading speed, and
-  after a 60 ms dwell (`IN_VIEW_DWELL_MS`) mid-fling. A timer re-checks at
-  the dwell deadline, so a page never waits for another scroll event. See
-  `docs/memory/fling-gate.md`.
+  (`in_view_signal` in `components/formats/pdf/strip.rs`) is the
+  virtualizer's own motion band, so a page in the band renders immediately
+  and a page the fling only sweeps past waits for the settle — never for
+  another scroll event. See `docs/memory/fling-gate.md`.
 - In the disposable Reader host: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
