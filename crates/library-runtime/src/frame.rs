@@ -1,15 +1,5 @@
-//! The Library artifact boots in its own disposable iframe. The URL
-//! authenticates the Shell's MessageChannel offer; every message is stamped
-//! with that frame's generation,
-//! under the protocol vocabulary (`runtime-contract::protocol`).
-//!
-//! The boot every artifact frame shares — the URL marker, the channel offer,
-//! the boundary, the runtime root, the paint report — is
-//! [`frame_transport::artifact`]. What stays here is what the shelf's
-//! envelopes mean.
-//!
-//! The session itself is the one `start_session`: the boot is a transport,
-//! never a second implementation of the shelf.
+//! The Library artifact's frame boot: the URL marker and the
+//! shelf's envelope meanings.
 
 use frame_transport::wasm::PortWire;
 use runtime_contract::protocol::{BootStage, RuntimeFrame, RuntimeKind, ShellFrame};
@@ -21,28 +11,19 @@ pub use frame_transport::artifact::{
     with_api,
 };
 
-/// Boot through the frame when this artifact's URL names one.
-///
-/// Returns `true` as soon as the marker stands — before any offer arrives —
-/// because §6 forbids the fallback: a hosted boot that never hears from its
-/// Shell stays a claimless frame, never a standalone page.
+/// Boot through the frame when the URL names one; no fallback (§6).
 pub fn boot_if_hosted() -> bool {
     frame_transport::artifact::boot_if_hosted(adopt)
 }
 
-/// The Shell's channel offer, adopted: from here the boundary is live, the
-/// adoption's own status has gone out (that emission is how the Shell learns
-/// which of its offered channels this boot took) and every envelope this
-/// generation carries reaches [`on_frame`]. A re-offer for the same boot
-/// adopts nothing — the first channel answered first, and a second listener
-/// would only double the traffic.
+/// The Shell's channel offer, adopted: the boundary goes live and
+/// envelopes reach [`on_frame`].
 fn adopt(wire: PortWire, generation: u64) {
     frame_transport::artifact::adopt(wire, generation, move |body| on_frame(body, generation));
 }
 
-/// One Shell envelope for this frame, already generation-guarded. The init's
-/// visibility flag defers startup writes until reveal: no route may write
-/// another route's store before its incoming paint.
+/// One generation-guarded Shell envelope. A hidden init defers startup
+/// writes until reveal.
 fn on_frame(body: ShellFrame, generation: u64) {
     match body {
         ShellFrame::Init {
@@ -89,18 +70,14 @@ fn on_frame(body: ShellFrame, generation: u64) {
             }
         }
         ShellFrame::Launch { .. } | ShellFrame::ResolveLaunchAnswer { .. } => {
-            // Neither means anything to the shelf: a document launch is the
-            // reader's command, and the library never asks the Shell to
-            // resolve a launch. Dropped by the protocol, not by accident.
+            // A document launch and its answer are the reader's: dropped here.
         }
     }
 }
 
-/// The Shell's `init`: mount the runtime root (§9) and start the session.
-/// Hidden means an incoming route: paint first, start passes on reveal.
+/// The Shell's `init`: mount the runtime root and start the session.
 fn on_init(hidden: bool, generation: u64) {
-    // A re-init for a boot that already mounted is not a second session: the
-    // Shell mints one identity per frame and never reuses one.
+    // A re-init is never a second session.
     if frame_session().is_some() {
         return;
     }

@@ -1,4 +1,4 @@
-//! The library's reactive state (moved from the unified `state::library`).
+//! The library's reactive state.
 
 pub mod library;
 
