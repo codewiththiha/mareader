@@ -9,8 +9,7 @@ use app_chrome::hooks::use_timeout::use_timeout_slot;
 
 #[component]
 pub fn OverlayScrollbar(
-    /// The pane the scroller belongs to: `scroller_id` is looked up inside
-    /// it, never across the document (another pane carries the same id).
+    /// The pane the scroller belongs to.
     dom: PaneDom,
     scroller_id: &'static str,
     #[prop(default = false)] horizontal: bool,
@@ -83,8 +82,7 @@ pub fn OverlayScrollbar(
                 let shown_hide = shown_s;
                 let h = set_timeout_with_handle(
                     move || {
-                        // The scroller (and this signal) can be gone a second
-                        // later: a stale hide is a no-op.
+                        // A stale hide is a no-op.
                         let _ = shown_hide.try_set(false);
                     },
                     std::time::Duration::from_millis(1000),
@@ -95,21 +93,12 @@ pub fn OverlayScrollbar(
 
             let _ = el.add_event_listener_with_callback("scroll", cb.as_ref().unchecked_ref());
             // Removal needs the SAME JS function reference; the closure
-            // itself parks in local storage, because the cleanup hook must
-            // be Send + Sync and the closure is neither. Removing runs in
-            // the owner's cleanup, before that storage releases the closure
-            // — a dispose that only parked it (the old shape here) left the
-            // listener registered on the still-attached scroller, and the
-            // next scroll echo dispatched into a dropped closure and
-            // trapped the wasm. The element is captured, not re-looked-up:
-            // the scroller can already be off the document when this runs.
+            // parks in local storage.
             let fn_ref = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
             let retained = StoredValue::new_local(Some(cb));
             let bound = StoredValue::new_local(Some((el, fn_ref)));
             on_cleanup(move || {
-                // The hide timer is this listener's, so it leaves with it:
-                // the scroll that armed it may be the last, and a cleared
-                // timer cannot fire into a disposed signal at all.
+                // The hide timer leaves with its listener.
                 if let Some(prev) = hide_s.try_get_value().flatten() {
                     prev.clear();
                 }

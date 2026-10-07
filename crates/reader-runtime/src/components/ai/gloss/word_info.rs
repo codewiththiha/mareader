@@ -1,7 +1,4 @@
-//! The word card's BODY: the AI answer sections (meaning, synonyms, usages)
-//! rendered at the chosen density. Sits inside `gloss/` because the gloss
-//! surface is its only consumer — the measure twin renders it headless to
-//! predict the card's height.
+//! The word card's body: the AI answer sections.
 
 use std::sync::Arc;
 
@@ -11,10 +8,7 @@ use reader_core::settings::GlossDensity;
 
 use app_ui::components::primitives::feedback::LoadingShimmer;
 
-/// The body's density-dependent class sets: the gap between sections, the
-/// meaning's line height and the gap between usage examples. One tuple per
-/// density so the surface and the measure twin can never disagree — the
-/// twin's height is only correct if it renders EXACTLY what the card renders.
+/// The body's density-dependent class sets.
 fn section_classes(density: GlossDensity) -> (&'static str, &'static str, &'static str) {
     match density {
         GlossDensity::Compact => ("gap-2", "leading-normal", "gap-1.5"),
@@ -22,15 +16,7 @@ fn section_classes(density: GlossDensity) -> (&'static str, &'static str, &'stat
     }
 }
 
-/// Renders the AI result sections: Meaning, Synonyms, Usages. The
-/// part of speech is not one of them — it lives in the card's header, next to
-/// the word it belongs to, the way a dictionary prints it.
-///
-/// Takes the answer as a SIGNAL, not a value: the backend streams partial
-/// snapshots, and a value prop would rebuild this whole tree (and replay the
-/// entrance animation) on every one of them — the flicker this component used
-/// to have. Reading through derived signals means a snapshot PATCHES the text
-/// in place; the reveal animation plays once, on mount.
+/// Renders the AI result sections: Meaning, Synonyms, Usages.
 #[component]
 pub fn WordInfoSections(
     #[prop(into)] info: Signal<Option<Arc<WordInfo>>>,
@@ -44,9 +30,7 @@ pub fn WordInfoSections(
     let classes = Signal::derive(move || section_classes(density.get()));
 
     view! {
-        // The shimmer while the answer is still on its way — mounted by the
-        // same signal the sections patch through, so there is no phase read
-        // here to re-run this view.
+        // The shimmer while the answer is still on its way.
         <Show when=move || info.get().is_none()>
             <LoadingShimmer />
         </Show>
