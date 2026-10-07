@@ -835,7 +835,16 @@ mod tests {
             fraction: None,
         };
         assert!(
-            record_read(&mut books, Some("a"), "/books/dune.pdf", None, None, point, 9).is_none()
+            record_read(
+                &mut books,
+                Some("a"),
+                "/books/dune.pdf",
+                None,
+                None,
+                point,
+                9
+            )
+            .is_none()
         );
         assert_eq!(at(&books, 0).page, 240);
         assert_eq!(at(&books, 1).page, 1, "the private row is not a twin of it");
@@ -845,7 +854,16 @@ mod tests {
             fraction: None,
         };
         assert!(
-            record_read(&mut books, Some("b"), "/books/dune.pdf", None, None, further, 11).is_none()
+            record_read(
+                &mut books,
+                Some("b"),
+                "/books/dune.pdf",
+                None,
+                None,
+                further,
+                11
+            )
+            .is_none()
         );
         assert_eq!(at(&books, 1).page, 380);
         assert_eq!(at(&books, 1).last_read_ms, 11);
@@ -855,7 +873,16 @@ mod tests {
             "the shared row keeps the read it was given"
         );
         assert!(
-            record_read(&mut books, Some("zzz"), "/books/dune.pdf", None, None, point, 12).is_none()
+            record_read(
+                &mut books,
+                Some("zzz"),
+                "/books/dune.pdf",
+                None,
+                None,
+                point,
+                12
+            )
+            .is_none()
         );
         assert_eq!(at(&books, 0).page, 240);
         assert_eq!(books.len(), 2);
