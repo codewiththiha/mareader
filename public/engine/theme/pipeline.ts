@@ -81,4 +81,3 @@ export function pipelineIsIdentity(pipeline: PipelineCache): boolean {
   }
   return false;
 }
-

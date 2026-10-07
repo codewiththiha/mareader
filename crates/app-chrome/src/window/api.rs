@@ -113,4 +113,3 @@ pub async fn set_traffic_lights(visible: bool, header_height: f64) {
     });
     _ = tauri_bridge::invoke("set_traffic_lights", args).await;
 }
-

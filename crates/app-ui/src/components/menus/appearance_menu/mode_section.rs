@@ -171,4 +171,3 @@ fn TextInkSlider(state: ChromeState) -> impl IntoView {
         />
     }
 }
-

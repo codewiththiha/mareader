@@ -80,4 +80,3 @@ Use `VirtualizerOptions::grid(...)` and render `v.rows()` instead of `v.items()`
 ## License
 
 MIT
-

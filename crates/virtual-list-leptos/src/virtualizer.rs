@@ -1209,4 +1209,3 @@ impl Virtualizer {
             + usize::from(self.inner.retention_timer.borrow().is_some())
     }
 }
-

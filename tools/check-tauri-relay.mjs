@@ -263,4 +263,3 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log("tauri relay: drag regions, the facade and the host-frame event registry behave on all three platforms");
-

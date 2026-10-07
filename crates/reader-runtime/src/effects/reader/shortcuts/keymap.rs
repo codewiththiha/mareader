@@ -340,4 +340,3 @@ mod tests {
         assert_eq!(resolve(k), NavOutcome::passed());
     }
 }
-

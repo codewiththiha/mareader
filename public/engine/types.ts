@@ -385,4 +385,3 @@ export type PDFReaderApi = {
    * re-rendering; closing arms the idle tail that frees them. */
   setAppearanceMenuOpen: (on: boolean) => void;
 };
-

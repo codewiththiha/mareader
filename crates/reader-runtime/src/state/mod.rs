@@ -137,4 +137,3 @@ impl ReaderState {
         self.document.content.reflow.stream_fraction()
     }
 }
-

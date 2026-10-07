@@ -594,4 +594,3 @@ mod tests {
         assert!(!backdrop::test_has_palette(&a));
     }
 }
-

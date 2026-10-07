@@ -187,4 +187,3 @@ pub fn AppearanceMenu(
         </div>
     }
 }
-

@@ -52,4 +52,3 @@ pub(crate) fn gloss_key(state: crate::context::ReaderContext) -> String {
         .get_untracked()
         .unwrap_or_default()
 }
-

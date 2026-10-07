@@ -286,4 +286,3 @@ pub fn ThumbnailsPanel(
         </div>
     }
 }
-

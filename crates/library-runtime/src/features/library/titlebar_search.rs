@@ -235,4 +235,3 @@ pub(crate) fn TitlebarSearch(state: crate::context::LibraryContext) -> impl Into
         </div>
     }
 }
-

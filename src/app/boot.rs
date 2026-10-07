@@ -393,4 +393,3 @@ pub fn clear(host: &web_sys::Element) {
     let _ = host.remove_attribute(ACTIVE_ATTR);
     clear_boot(host);
 }
-

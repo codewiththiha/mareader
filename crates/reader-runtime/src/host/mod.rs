@@ -1667,4 +1667,3 @@ fn snapshot_of(
         drag,
     }
 }
-

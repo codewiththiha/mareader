@@ -53,4 +53,3 @@ pub fn zoom_style(state: ReaderState) -> Signal<String> {
         format!("--tx-zoom:{zoom};")
     })
 }
-

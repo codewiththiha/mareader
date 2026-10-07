@@ -140,4 +140,3 @@ mod tests {
         assert_eq!(PaneOutlineColor::Custom.resolve("#123abc"), Some("#123abc"));
     }
 }
-

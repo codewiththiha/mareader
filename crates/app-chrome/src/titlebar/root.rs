@@ -378,4 +378,3 @@ mod tests {
         close(width, 100.0);
     }
 }
-

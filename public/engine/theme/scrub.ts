@@ -270,4 +270,3 @@ export async function setScrubModeInternal(s: EngineSession, on: boolean): Promi
   // live canvas under it.
   releaseAllEntrySnapshots(s);
 }
-

@@ -1169,4 +1169,3 @@ mod tests {
         assert_eq!(FrameKind::Reader.attr(), "reader");
     }
 }
-

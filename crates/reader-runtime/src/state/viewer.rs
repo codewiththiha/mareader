@@ -282,4 +282,3 @@ mod tests {
         drops_exactly!(scroll_jumps -> scroll_glide);
     }
 }
-

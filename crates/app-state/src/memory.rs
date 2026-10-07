@@ -56,4 +56,3 @@ pub fn log_heap(tag: &str) {
         web_sys::console::log_1(&format!("[mem] {tag}: wasm heap {mb:.1} MB").into());
     }
 }
-

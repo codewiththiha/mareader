@@ -336,4 +336,3 @@ pub struct OpenRequest {
     pub launch: LaunchDocument,
     pub placement: Placement,
 }
-

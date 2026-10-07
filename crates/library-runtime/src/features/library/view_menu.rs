@@ -212,4 +212,3 @@ pub(crate) fn ViewMenu(state: crate::context::LibraryContext) -> impl IntoView {
         </div>
     }
 }
-

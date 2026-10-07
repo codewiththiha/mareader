@@ -559,4 +559,3 @@ fn web_launch() -> LaunchDocument {
     }
     launch
 }
-

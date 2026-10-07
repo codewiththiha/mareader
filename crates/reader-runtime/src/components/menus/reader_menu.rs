@@ -241,4 +241,3 @@ pub fn ReaderMenu(
         </div>
     }
 }
-

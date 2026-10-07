@@ -719,4 +719,3 @@ pub fn PdfPageCanvas(
         </div>
     }
 }
-

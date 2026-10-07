@@ -279,4 +279,3 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // both callers (the settle deadline, and the tween loop out of a rAF
     // callback) reach it from outside any owner of their own.
 }
-

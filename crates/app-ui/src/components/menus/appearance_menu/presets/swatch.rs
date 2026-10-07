@@ -117,4 +117,3 @@ pub(super) fn PresetSwatch(
         </div>
     }
 }
-

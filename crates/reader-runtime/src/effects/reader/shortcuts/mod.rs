@@ -142,4 +142,3 @@ pub fn shortcuts(
         }
     });
 }
-

@@ -164,4 +164,3 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
         </div>
     }
 }
-

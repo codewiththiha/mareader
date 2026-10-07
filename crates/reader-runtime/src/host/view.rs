@@ -472,4 +472,3 @@ fn divider_view(host: ReaderHost, split: SplitId) -> impl IntoView {
         </div>
     }
 }
-

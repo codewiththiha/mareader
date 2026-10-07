@@ -39,4 +39,3 @@ impl AppearanceEngineHooks for PdfAppearanceHooks {
 pub fn install() -> app_chrome::appearance_hooks::AppearanceHooksGuard {
     app_chrome::appearance_hooks::install(Rc::new(PdfAppearanceHooks))
 }
-

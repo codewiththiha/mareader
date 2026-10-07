@@ -126,4 +126,3 @@ impl EngineStats {
             && self.prefetches_started == self.prefetches_completed + self.prefetches_dropped
     }
 }
-

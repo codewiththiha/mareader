@@ -509,4 +509,3 @@ async function prefetchThumbInternal(
     dying.unsubscribe();
   }
 }
-

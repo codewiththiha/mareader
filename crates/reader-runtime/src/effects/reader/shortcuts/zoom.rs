@@ -29,4 +29,3 @@ pub(super) fn handle_zoom_shortcut(state: ReaderState, ev: &leptos::ev::Keyboard
         _ => {}
     }
 }
-

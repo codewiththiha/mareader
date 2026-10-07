@@ -328,4 +328,3 @@ mod tests {
         assert_eq!(page_scroll_px(0.0), 1.0);
     }
 }
-

@@ -78,4 +78,3 @@ pub(crate) fn SidebarHeader(reader: ReaderState, sidebar: RwSignal<SidebarMode>)
         </div>
     }
 }
-

@@ -309,4 +309,3 @@ result.afterGc = await sample(cdp ? "after a forced GC" : "after a 1.5 s settle 
 console.log(`RESULT ${JSON.stringify(result)}`);
 console.log(`CONSOLE ${JSON.stringify(consoleLines.filter((l) => /mareader\]|evict|forced|panick|error/i.test(l)).slice(0, 40))}`);
 await browser.close();
-

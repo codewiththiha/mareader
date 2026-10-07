@@ -181,4 +181,3 @@ export function paintCached(
   if (!shown) return null;
   return { width: entry!.cssW, height: entry!.cssH };
 }
-

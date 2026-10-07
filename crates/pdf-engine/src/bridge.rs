@@ -283,4 +283,3 @@ pub fn release_session_detached(sid: u32) {
         let _ = destroy.call1(&reader, &JsValue::from_f64(f64::from(sid)));
     }
 }
-

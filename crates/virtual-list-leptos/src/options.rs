@@ -213,4 +213,3 @@ impl VirtualizerOptions {
         self
     }
 }
-

@@ -845,4 +845,3 @@ mod tests {
         assert_eq!(history.display_name, launch.display_name);
     }
 }
-

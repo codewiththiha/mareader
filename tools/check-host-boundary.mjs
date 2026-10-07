@@ -182,4 +182,3 @@ console.log(
   `host boundary: ${hostFiles.length} host sources clean; no legacy ReaderPage; ` +
     "reader writes go through ShellApi",
 );
-

@@ -233,4 +233,3 @@ impl ShellApi for StandaloneApi {
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
 }
-

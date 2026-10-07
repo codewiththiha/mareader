@@ -500,4 +500,3 @@ mod tests {
         assert!(serde_json::from_value::<HostToPane>(json).is_err());
     }
 }
-

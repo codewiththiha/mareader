@@ -112,4 +112,3 @@ pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
         </div>
     }
 }
-

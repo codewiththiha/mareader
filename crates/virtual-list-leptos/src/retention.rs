@@ -355,4 +355,3 @@ mod tests {
         assert_eq!(next_deadline_ms(&retained, 600.0), 1);
     }
 }
-

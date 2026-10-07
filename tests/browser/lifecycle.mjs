@@ -4545,4 +4545,3 @@ console.log(JSON.stringify(summary));
 console.log("PHASE0_BASELINE_JSON " + JSON.stringify(summary));
 console.log("=== END PHASE0 BROWSER BASELINE ===");
 console.log("\nBROWSER LIFECYCLE BASELINE PASSED");
-

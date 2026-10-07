@@ -93,4 +93,3 @@
     // No storage, no remembered paper: the default one is correct enough.
   }
 })();
-
