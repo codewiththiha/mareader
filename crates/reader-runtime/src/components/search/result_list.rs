@@ -1,6 +1,4 @@
-//! Search results list: one row per match plus the "No results" empty
-//! state. Shared by the floating-search results dropdown (and any future
-//! search surface) so the list markup lives in exactly one place.
+//! Search results: one row per match plus the empty state.
 
 use std::sync::Arc;
 
@@ -11,8 +9,7 @@ use crate::effects::reader::search::activate_match;
 use crate::state::ReaderState;
 use reader_core::search::SearchMatch;
 
-/// Page + snippet for one list row. Built when `matches` changes, not
-/// when the active index ticks.
+/// Page and snippet for one row, built when `matches` changes.
 #[derive(Clone, Debug, PartialEq)]
 struct ResultRowView {
     index: usize,
@@ -59,11 +56,9 @@ fn ResultRow(
     let index = row.index;
     let page = row.page;
     let snippet_text = row.snippet;
-    // Compare by list index: `active` indexes `matches`, so this stays exact
-    // even when a page holds several identical snippets.
+    // Compare by list index, exact even for identical snippets.
     let is_active = move || state.search.active.get() == Some(index);
-    // Selecting a row scrolls that MATCH into view (not its page top) and moves
-    // the current-match marker onto it.
+    // Selecting a row scrolls that MATCH into view and marks it.
     let on_click = move |_| virtualizer.with_value(|v| activate_match(state, v, index));
     view! {
         <button
@@ -86,9 +81,7 @@ fn ResultRow(
     }
 }
 
-/// Scrollable list of matches (or a "No results" empty state). Shared by the
-/// sidebar SearchPanel and the floating-search results dropdown so the list
-/// markup lives in exactly one place.
+/// Scrollable matches, shared by every search surface.
 #[component]
 pub fn ResultList(
     state: ReaderState,

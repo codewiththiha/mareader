@@ -1,14 +1,4 @@
 //! Text-selection page-range tracking.
-//!
-//! The engine's selectionchange listener walks the DOM from the selection's
-//! anchor and focus up to the nearest page host, parses the page index from
-//! its id, and dispatches a `mareader:selection-pages` CustomEvent with
-//! `{ first, last }` (1-based, inclusive) — or `null` to clear.
-//!
-//! This effect is the single place that turns the event into a write on
-//! `state.reader.viewer.selected_pages`, which
-//! `crate::features::virtualizers` merges into the virtualizer's PINNED
-//! window so those pages stay mounted.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
@@ -17,10 +7,7 @@ use app_ui::components::primitives::hooks::use_custom_event::use_raw_event_from;
 
 use crate::pane::origin::{Origin, origin_of};
 
-/// The JS protocol of the `mareader:selection-pages` event detail: `null`
-/// (clear) or `{ first, last }` — 1-based, inclusive. One typed decoder for
-/// the whole protocol, so the effect below stays about reactivity, not about
-/// picking fields off a `JsValue`.
+/// The event detail's protocol: `null` or `{ first, last }`.
 fn parse_selection(detail: &JsValue) -> Option<(u32, u32)> {
     if detail.is_null() || detail.is_undefined() {
         return None;
@@ -37,9 +24,7 @@ fn parse_selection(detail: &JsValue) -> Option<(u32, u32)> {
     }
 }
 
-/// A range is dispatched on the selection's page host and bubbles; a clear
-/// on the window. The document has ONE selection, so a range in another
-/// pane means none in this one: that pane's pin is released here.
+/// A range bubbles from the page host; a clear rides the window.
 pub fn page_selection(state: crate::context::ReaderContext, active: Signal<bool>) {
     use_raw_event_from(
         app_ui::events::SELECTION_PAGES_EVENT,
@@ -57,8 +42,7 @@ pub fn page_selection(state: crate::context::ReaderContext, active: Signal<bool>
                         .selected_pages
                         .set(Some((f.min(l), f.max(l))));
                 }
-                // Every other pane hears each selection as a clear: notify only
-                // on a real change, so they do not re-pin for nothing.
+                // Notify only on a real change.
                 None => {
                     if state.reader.viewer.selected_pages.get_untracked().is_some() {
                         state.reader.viewer.selected_pages.set(None);

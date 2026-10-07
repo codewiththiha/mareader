@@ -1,7 +1,4 @@
-//! The Layout tab of the reader settings modal: page indicator, floating
-//! label, page chrome, window-fit and zoom behaviour — and the master switch
-//! for the reader's motion, which is a layout decision before it is a theme
-//! one, and which decides whether the Animations tab exists at all.
+//! The Layout tab: indicator, label, chrome, fit and motion.
 
 use leptos::prelude::*;
 
@@ -22,27 +19,12 @@ pub(crate) fn LayoutTab(state: crate::context::ReaderContext) -> impl IntoView {
     let s = state.settings;
     let indicator_off = Signal::derive(move || !s.with(|st| st.layout.page_indicator));
     let label_off = Signal::derive(move || !s.with(|st| st.layout.floating_label));
-    // The horizontal strip never carries a page margin — the reader resolves
-    // the stored pref to 0 while that mode is on — so the adjuster sits
-    // disabled until another mode returns. The stored value is untouched and
-    // comes back with it.
+    // The horizontal strip never carries a page margin.
     let horizontal_mode =
         Signal::derive(move || state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal);
-    // A reflowable document answers to the typography and the width dials,
-    // not to page chrome, and a PDF's page is the document's own: rows that
-    // would only lie about what they control leave the tree entirely rather
-    // than sitting disabled. No Gap is a PDF strip's concern (a streamed
-    // document has no gap to remove), the page shadow paints under
-    // `.pdf-page` hosts only (a `.tx-page` is a transparent frame with no
-    // shadow of its own), and Auto Resize exists for mixed-size books while
-    // a reflowable one is cut from a single identical A4 sheet. The mirror
-    // case is Column Width: it is the reflowable column's own measure, so it
-    // stands down where the page cannot grow one.
+    // Rows that would only lie about what they control leave the tree.
     let reflowable = Signal::derive(move || state.reader.reflowable());
-    // Continuous text reading has no pages to number: while the stream is
-    // live the indicator is a percentage by definition, so the style
-    // selector stands disabled rather than offering a choice that is not
-    // being honoured.
+    // The stream has no pages to number: percentage only.
     let stream_live = Signal::derive(move || state.reader.reflow_streaming());
     view! {
         <SectionLabel text="Reader chrome" />
@@ -176,13 +158,7 @@ pub(crate) fn LayoutTab(state: crate::context::ReaderContext) -> impl IntoView {
                     />
                 </Row>
             </Show>
-            // Page Margin is the horizontal air around each page, which No Gap
-            // never touches — No Gap only removes the vertical gap between
-            // stacked pages. The two stay fully independent, so the margin
-            // adjuster is live whether or not No Gap is on. The one exception
-            // is the horizontal scroll mode, which never carries a margin:
-            // while it is on, the adjuster is disabled and the stored value
-            // waits, untouched, for the other modes.
+            // Page Margin is horizontal air; No Gap is vertical only.
             <StepperRow
                 label="Page Margin"
                 display=Signal::derive(move || {
@@ -211,11 +187,7 @@ pub(crate) fn LayoutTab(state: crate::context::ReaderContext) -> impl IntoView {
                 })
                 title="margin".to_string()
             />
-            // Column Width is the reading measure dial: 100% is the natural
-            // column the typography and the page geometry agreed on, and the
-            // ends trade line length for everything else. A PDF's page
-            // is the document's own and has no column to grow, so the row
-            // leaves the tree for it, the way No Gap leaves it for text.
+            // Column Width is the reading measure dial.
             <Show when=move || reflowable.get()>
                 <Row label="Column Width">
                     <span class="flex w-44 items-center">
@@ -246,8 +218,7 @@ pub(crate) fn LayoutTab(state: crate::context::ReaderContext) -> impl IntoView {
                     title="Refit to width when entering single / two-page modes".to_string()
                 />
             </Row>
-            // A plate twice the size of the page before it must re-fit on
-            // arrival; in a reflowable document that page never arrives.
+            // A plate twice the page size must re-fit on arrival.
             <Show when=move || !reflowable.get()>
                 <Row label="Auto Resize">
                     <Switch

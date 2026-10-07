@@ -1,13 +1,4 @@
-//! Card targeting: everything that decides where the sprung box wants to be
-//! right now — the page-aware anchor watch, the reactive viewport, the
-//! content-height measurement, the expanded and spring targets, the spring
-//! itself, and the morph progress derived from all of them.
-//!
-//! Extracted from the popover's wiring so the composition root reads as
-//! controller → targeting → lifecycle hooks → view, and so the pieces that
-//! need to coordinate (the open effect re-anchors the spring; the settle
-//! watcher reads the anchor and the sprung box) share one named bundle
-//! instead of twelve loose locals.
+//! Card targeting: where the sprung box wants to be right now.
 
 use ai_core::gloss::GlossBox;
 use leptos::html;
@@ -26,8 +17,7 @@ use app_chrome::hooks::use_viewport::use_viewport;
 use app_ui::components::primitives::motion::reduced_motion::reduced_motion_signal;
 use app_ui::components::primitives::motion::spring::{SpringBox, use_spring_box};
 
-/// The targeting bundle consumed by the lifecycle hooks and the surface.
-/// Created by [`use_card_targeting`] inside the popover's reactive scope.
+/// The targeting bundle consumed by the hooks and the surface.
 pub struct CardTargeting {
     /// The page-aware anchor watcher: live screen box + the exit band.
     pub watch: AnchorWatch,
@@ -35,8 +25,7 @@ pub struct CardTargeting {
     pub anchor: RwSignal<Option<GlossBox>>,
     /// Reactive viewport size (resize-aware), owned by this scope.
     pub viewport: RwSignal<(f64, f64)>,
-    /// NodeRef for the invisible measure twin rendered beside the surface
-    /// (the twin's measured height feeds the expanded target directly).
+    /// NodeRef for the measure twin beside the surface.
     pub measure_ref: NodeRef<html::Div>,
     /// Where the expanded card wants to sit (side-aware, viewport-clamped).
     pub expanded: Memo<Option<GlossBox>>,
@@ -48,20 +37,12 @@ pub struct CardTargeting {
     pub progress: Memo<f64>,
 }
 
-/// Build the card's targeting layer: anchor watch, viewport, measurement,
-/// targets, spring and progress. Must run before the lifecycle hooks that
-/// re-anchor the spring (the open effect) or read the anchor (the
-/// origin-exit and settle watchers).
+/// Build the targeting layer, before the hooks that read it.
 pub fn use_card_targeting(
     state: crate::context::ReaderContext,
     ctrl: GlossController,
 ) -> CardTargeting {
-    // ONE shared, page-aware anchor: follows scroll/zoom/mode/page, and
-    // flags `exited` once the origin has fully left the viewport (either
-    // edge) or its host unmounts.
-    // The card's spot rides in the open mark's own context envelope, so the
-    // resolver reads it from whichever mark is current — one closure, and no
-    // second copy of the mark to keep in step.
+    // ONE page-aware anchor: follows scroll/zoom/mode/page, flags `exited`.
     let spots = state.reader.gloss.spots;
     let spot = Signal::derive(move || {
         ctrl.open
@@ -70,10 +51,7 @@ pub fn use_card_targeting(
             .and_then(|m| parse_spot(spots, &m.context))
     });
     let resolve = anchor_resolver(state.reader, spot);
-    // A reflowable document re-cuts its pages when the typography or the column
-    // width moves: the mark keeps its words, but the words are somewhere else,
-    // and nothing scrolled. A PDF's pages are fixed pixels and have nothing to
-    // add beyond the scroll, zoom, mode and page the watcher already tracks.
+    // A re-cut moves the mark's words with nothing scrolling.
     let invalidate = if state.reader.reflowable_now() {
         reflow_invalidation(state.reader)
     } else {
@@ -94,8 +72,7 @@ pub fn use_card_targeting(
     let viewport = use_viewport();
     let reduced = reduced_motion_signal();
 
-    // Card content measurement: the invisible twin's height, re-measured
-    // whenever the word or the answer changes (title wrap included).
+    // Card content measurement from the invisible twin.
     let (measure_ref, content_height) =
         use_content_measure(ctrl.content.word, ctrl.content.word_info);
 
@@ -108,9 +85,7 @@ pub fn use_card_targeting(
         viewport,
     );
 
-    // Snapping while compact was what made closing read as a cut: the spring
-    // teleported the surface onto the anchor instead of morphing down to it.
-    // Only the processing phase (where no surface exists anyway) snaps.
+    // Snapping while compact was what made closing read as a cut.
     let snap = Signal::derive(move || {
         ctrl.drag.active.get()
             || reduced.get()

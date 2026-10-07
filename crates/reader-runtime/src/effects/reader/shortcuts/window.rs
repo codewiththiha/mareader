@@ -1,9 +1,4 @@
-//! The Cmd/Ctrl combos: open, fit width, search, view mode, zoom.
-//!
-//! One arm per combo, and the two modifiers are deliberately not
-//! distinguished: the caller routes Cmd and Ctrl through this one handler, so
-//! macOS and Windows/Linux get the same keys by construction rather than by
-//! two tables that can drift apart.
+//! The Cmd/Ctrl combos: open, fit width, search, mode, zoom.
 
 use leptos::prelude::*;
 
@@ -14,8 +9,7 @@ use reader_core::zoom_math::FitMode;
 
 use super::zoom::zoom_by;
 
-/// One Cmd/Ctrl combo. `on_open` is the app's open-file action, injected so
-/// the shortcuts never depend on app chrome.
+/// One Cmd/Ctrl combo; `on_open` is injected.
 pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
     state: ReaderState,
     on_open: &F,
@@ -30,9 +24,7 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
             ev.prevent_default();
             state.viewer.fit.set(FitMode::Width);
         }
-        // Cmd/Ctrl+F -> search what you are looking at: the document's floating
-        // overlay while one is open, the library's title-bar filter while the
-        // shelf is what is on screen.
+        // Cmd/Ctrl+F -> search what you are looking at.
         "f" => {
             ev.prevent_default();
             if state.document.status.get_untracked() == DocStatus::Ready {
@@ -51,11 +43,7 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
             ev.prevent_default();
             state.viewer.mode.set(ViewMode::ScrollVertical);
         }
-        // Zoom, on every platform: the browser's own page-zoom combos are
-        // claimed here and re-aimed at the document. `=` stands in for `+`
-        // (the unshifted key of that cap on most layouts, and the one
-        // reported when Shift is held on some), `_` for `-`, so the arm does
-        // not depend on how the platform spells the shifted key.
+        // Zoom, re-aimed at the document on every platform.
         "+" | "=" => {
             ev.prevent_default();
             zoom_by(state, 1);

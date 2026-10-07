@@ -1,18 +1,4 @@
-//! Shared pieces of the reader settings modal: the tab switcher and the generic
-//! `StyleSelect` dropdown. The tabs (in their own files) build on these; `modal`
-//! is the shell that hosts them.
-//!
-//! The labelled `Row` these sit beside is
-//! [`app_ui::components::primitives::form::row::Row`]: the library's import
-//! sheet and removal receipt are built out of the same rows, and a component two
-//! features reach into a third for is a primitive with the wrong address.
-//! `StyleSelect` stays because it is built on the toolbar's `MenuPopover`, and
-//! moving it would make `primitives` depend on `shell` — the wrong way round.
-//!
-//! `TabButton` takes the tab to display as a SEPARATE signal from the one it
-//! writes, because the tab set is not fixed: the Animations tab only exists
-//! while its master switch is on, and the shell resolves that in a derived read
-//! so nothing has to overwrite what the reader selected.
+//! Shared pieces of the settings modal: the tabs and the dropdown.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -30,8 +16,7 @@ pub(crate) enum Tab {
     Theme,
     /// Hosted only while `Settings::animations.enabled` is on (see `modal`).
     Animations,
-    /// Hosted only while a reflowable (TXT/Markdown) document is open —
-    /// PDFs carry none of the type it controls (see `modal`).
+    /// Hosted only while a reflowable document is open.
     Fonts,
     /// The split workspace: what a Library panel click does.
     Workspace,
@@ -59,8 +44,7 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
             type="button"
             on:click=move |_| tab.set(t)
             aria-pressed=move || (active.get() == t).to_string()
-            // An inactive tab is its icon alone: the name is what a screen
-            // reader (and a hover) gets instead.
+            // An inactive tab is its icon alone; the name is its label.
             aria-label=label
             title=label
             class=class
@@ -71,10 +55,7 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
     }
 }
 
-/// A −/+ adjuster row: the current value formatted on the left, the two
-/// steppers on the right, each disabled at its end of the range. Shared by the
-/// Fonts and Layout tabs, whose adjusters differ only in what they format and
-/// how far they step.
+/// A −/+ adjuster row: value left, steppers right.
 #[component]
 pub(crate) fn StepperRow(
     label: &'static str,
@@ -84,8 +65,7 @@ pub(crate) fn StepperRow(
     #[prop(into)] plus_disabled: Signal<bool>,
     on_minus: Callback<()>,
     on_plus: Callback<()>,
-    /// What the steppers adjust; each button's tooltip derives from it
-    /// ("Decrease font size" / "Increase font size").
+    /// What the steppers adjust; their tooltips derive from it.
     #[prop(into)]
     title: String,
 ) -> impl IntoView {
@@ -94,8 +74,7 @@ pub(crate) fn StepperRow(
     view! {
         <Row label=label>
             <span class="flex items-center gap-3">
-                // Inert when neither stepper can move, which is the one state
-                // where the number on show is not one the reader can change.
+                // Inert when neither stepper can move.
                 <span
                     class="w-14 text-right text-sm tabular-nums text-ink"
                     class=("opacity-45", move || minus_disabled.get() && plus_disabled.get())
@@ -159,23 +138,16 @@ where
                 anchor=root_ref
                 width=190u32
                 class="p-1".to_string()
-                // A dropdown INSIDE the settings modal is part of the dialog,
-                // not a competitor for the window: the default MENU policy
-                // would evict the modal the frame the list opens. The
-                // in-dialog policy owns no lane and clears none, so the modal
-                // stays put while the list is up (an outside press — clicking
-                // anywhere else in the dialog — still closes the list).
+                // A dropdown here uses the in-dialog menu policy,
+                // or it would evict the modal.
                 policy=OverlayPolicy::IN_DIALOG
-                // Nothing here sits under the reader title bar, so there is
-                // no bar to hold open while the list is up.
+                // No reader title bar here to hold open.
                 hold_titlebar=false
             >
                 {opts.with_value(|opts| {
                     opts.iter()
                         .map(|(v, l)| {
-                            // One option value, three closures (the selected
-                            // memo, the click handler, the check glyph): each
-                            // takes its own clone now that T is no longer Copy.
+                            // One option value, three closures.
                             let v_selected = v.clone();
                             let v_for_click = v.clone();
                             let label = (*l).to_string();
