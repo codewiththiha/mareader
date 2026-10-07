@@ -48,7 +48,6 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
                                 <label
                                     title="Custom highlighter colour"
                                     aria-label="Custom highlighter colour"
-                                    data-gloss-color="custom"
                                     class="relative flex cursor-pointer flex-col items-center gap-1.5 rounded-lg py-1 \
                                            focus-within:outline-none focus-within:ring-2 focus-within:ring-accent"
                                 >
@@ -70,7 +69,6 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
                                     <input
                                         type="color"
                                         aria-label="Choose custom highlighter colour"
-                                        data-gloss-color-input="custom"
                                         prop:value=move || s.with(|st| st.gloss_custom.clone())
                                         on:click=move |_| s.update(|st| st.gloss_color = GlossColor::Custom)
                                         on:input=move |ev| {
@@ -166,4 +164,3 @@ pub(crate) fn AiAppearanceSection(state: crate::context::ReaderContext) -> impl 
     }
 }
 
-// only the changed file was rewritten

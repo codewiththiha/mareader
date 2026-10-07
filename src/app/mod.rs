@@ -76,7 +76,6 @@ pub fn Shell() -> impl IntoView {
         // native window's, not the DOM's.
         <Show when=move || drop_hint.get()>
             <div
-                data-import-drop=""
                 aria-hidden="true"
                 class="pointer-events-none fixed inset-0 z-50 p-3"
             >

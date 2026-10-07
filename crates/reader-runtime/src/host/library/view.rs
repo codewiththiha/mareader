@@ -190,7 +190,6 @@ fn folder_view(
             role="treeitem"
             aria-expanded=move || open.get().to_string()
             data-lib-row=""
-            data-lib-folder=id
             title=title
             class="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[13px] text-ink \
                    hover:bg-line/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset \
@@ -315,7 +314,7 @@ fn file_view(
 /// never drag — the tree is the only split source.
 fn open_tabs_view(host: ReaderHost) -> impl IntoView {
     view! {
-        <div class="shrink-0 border-b border-line pb-2" data-open-tabs="">
+        <div class="shrink-0 border-b border-line pb-2">
             <div class="flex items-center justify-between px-3 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
                 <span>"Open"</span>
                 <span class="font-normal tabular-nums">{move || host.pane_count()}</span>
