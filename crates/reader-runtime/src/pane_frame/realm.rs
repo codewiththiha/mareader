@@ -1,5 +1,4 @@
-//! The wasm half of the pane realm: the handshake, the port, the pane and
-//! the effects that keep the host's mirror current.
+//! The wasm half of the pane realm: the handshake, the port, the pane.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -37,8 +36,7 @@ struct Link {
     _on_message: Closure<dyn FnMut(web_sys::MessageEvent)>,
 }
 
-/// What the message handler reaches once the pane exists: Copy handles
-/// onto the pane realm's signals, and the pane itself.
+/// What the message handler reaches once the pane exists.
 #[derive(Clone)]
 struct Live {
     #[cfg(feature = "pdf")]
@@ -54,8 +52,7 @@ struct Live {
     paper: RwSignal<Option<Paper>>,
 }
 
-/// The values the host last sent, so a local signal written from a host
-/// message never echoes back as a pane change.
+/// The host's last values, so a local write never echoes back.
 #[derive(Default)]
 struct Heard {
     settings: Option<Settings>,
@@ -71,15 +68,13 @@ thread_local! {
     static DIGEST_API: Cell<Option<crate::context::ApiHandle>> = const { Cell::new(None) };
     static DISPOSED: Cell<bool> = const { Cell::new(false) };
     static HEARD: RefCell<Heard> = RefCell::new(Heard::default());
-    /// The pane's mount, dropped at dispose (its cleanup runs the runtime's
-    /// disposal with the pane's teardown tail).
+    /// The pane's mount, dropped at dispose.
     static UNMOUNT: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
     /// The pane's async teardown, handed to the runtime's disposal.
     static TEARDOWN: RefCell<Option<PaneTeardown>> = const { RefCell::new(None) };
 }
 
-/// Post one message to the host. Dropped when no port is adopted yet or the
-/// host already closed it: nothing on this side can revive a dead port.
+/// Post one message to the host; dropped when the port is gone.
 pub(super) fn send(message: &PaneToHost) {
     let Some(json) = encode(message) else {
         return;
@@ -132,8 +127,7 @@ pub(super) fn boot(kind: PaneKind) {
         return;
     };
 
-    // The host answers the hello with the port, tagged with the same nonce.
-    // The listener goes the moment the port arrives.
+    // The host answers the hello with the port, tagged with the nonce.
     let slot: Rc<RefCell<Option<Closure<dyn FnMut(web_sys::MessageEvent)>>>> =
         Rc::new(RefCell::new(None));
     let slot_in = slot.clone();
@@ -279,8 +273,7 @@ fn receive(kind: PaneKind, message: HostToPane) {
     }
 }
 
-/// Set a signal only when the value changed: a host echo of the pane's own
-/// value must not re-run everything that reads it.
+/// Set a signal only when the value changed, so echoes do nothing.
 fn put<T: PartialEq + Send + Sync + 'static>(signal: RwSignal<T>, value: T) {
     if signal.try_with_untracked(|v| *v != value) == Some(true) {
         signal.set(value);
@@ -299,10 +292,7 @@ fn apply_write(live: &Live, write: Write) {
             .post(crate::state::zoom::ZoomCommand::Step(step), true),
         Write::AutoScroll { on } => put(reader.viewer.auto_scroll, on),
         Write::SearchVisible { on } => put(reader.search.visible, on),
-        // The outline's jump is a directive, not mirrored state: the arm that
-        // owns the stream's geometry consumes it
-        // (`effects::reader::outline_jump`), and an index no heading answers
-        // is not a jump.
+        // The outline's jump is a directive, not mirrored state.
         Write::Outline { index } => put(reader.viewer.outline_jump, Some(index)),
     }
 }
@@ -318,9 +308,8 @@ fn apply_hook(kind: PaneKind, hook: Hook) {
         Hook::Scrub { on } => {
             super::thumbs::set_scrubbing(on);
             pdf_engine::api::set_scrub_mode(on);
-            // The drag is over: the exit settles the look the drag landed on
-            // into every raster, which is the bake the rail's pictures — raw
-            // ones from the drag, or the bake it started from — never saw.
+            // The drag is over: the exit settles the landed look into every
+            // raster.
             if !on {
                 crate::pane_frame::pictures_stale();
             }
@@ -329,8 +318,7 @@ fn apply_hook(kind: PaneKind, hook: Hook) {
     }
 }
 
-/// A key the host document received: replayed on this document's body, so
-/// the pane's own keyboard arm (a window listener) answers it.
+/// A key the host document received, replayed on this body.
 fn dispatch_key(key: &Key) {
     let Some(body) = web_sys::window()
         .and_then(|w| w.document())
@@ -384,14 +372,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
     let runtime = crate::runtime::ReaderRuntime::new();
     let appearance: app_state::AppearanceSignal =
         Memo::new(move |_| settings.with(|s| s.appearance));
-    // The look THIS pane shows, mirrored from the pane's own signal: the pane
-    // is built below, and its page hosts ask for this context while they are
-    // being built, so the mirror — not the pane's copy of settings — is what
-    // lets the texture memo, and with it every carrier's `texture-*` class,
-    // follow the LOOK the host routed to this pane. A per-pane edit lands in
-    // that look and never in settings, which is why deriving the mode from
-    // settings made a split's texture picker move both dials and no pattern.
-    // Seeded from `boot.look` so the first paint is already the right one.
+    // The look THIS pane shows, mirrored from the pane's own signal.
     let look = RwSignal::new(boot.look);
     let texture: crate::state::TextureSignal = Memo::new(move |_| {
         look.get()
@@ -484,17 +465,13 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
         look: boot.look,
     });
     let ctx = pane.context();
-    // The look's own mirror, next to the chrome facts the realm borrows from
-    // its pane (see `texture` above): the host pushes the look into
-    // `viewer.look` and this hands it to the carriers.
+    // The look's own mirror, beside the chrome facts the realm borrows.
     Effect::new(move |_| put(look, ctx.reader.viewer.look.get()));
-    // The chrome surface the pane's own components read (the bottom bar's
-    // reflowable sections, the title's search hold).
+    // The chrome surface the pane's own components read.
     Effect::new(move |_| put(reflowable, ctx.reader.reflowable()));
     Effect::new(move |_| put(search_visible, ctx.reader.search.visible.get()));
 
-    // This frame's `<html>` paints from the host's settings. The host owns
-    // persistence: the pane hands its own edits up (below), never to storage.
+    // The host owns persistence: the pane hands its own edits up.
     app_ui::frame_theme::install_frame_theme(
         settings,
         app_ui::frame_theme::FramePipeline::Pane,
@@ -608,14 +585,12 @@ fn window_bounds() -> PaneBounds {
     PaneBounds::filling(w, h)
 }
 
-/// The lift a hold inside this frame starts: streamed to the host, which
-/// maps the points into its own document.
+/// The lift a hold inside this frame starts, streamed to the host.
 struct FrameLift;
 
 impl crate::host::grab::LiftSink for FrameLift {
     fn can_lift(&self) -> bool {
-        // A lift needs another pane to drop beside: exactly when the
-        // workspace holds more than this one (the host's split flag).
+        // A lift needs another pane to drop beside: the workspace's split.
         LIVE.with(|l| {
             l.borrow()
                 .as_ref()
@@ -651,9 +626,7 @@ impl crate::host::grab::LiftSink for FrameLift {
     }
 }
 
-/// The pane's own writes to host-owned state go up: a settings edit (a
-/// shortcut's font step), the rail it opened or closed, the settings modal
-/// it asked for. A value equal to the host's last word is the host's echo.
+/// The pane's own writes to host-owned state go up; an echo does not.
 fn install_upstream(settings: RwSignal<Settings>, ui: UiState, settings_open: RwSignal<bool>) {
     Effect::new(move |_| {
         let now = settings.get();
@@ -681,8 +654,7 @@ fn install_upstream(settings: RwSignal<Settings>, ui: UiState, settings_open: Rw
     });
 }
 
-/// The chrome-facing state, sent whole whenever any of it changes, and the
-/// outline whenever it lands.
+/// The chrome-facing state, sent whole whenever any of it changes.
 fn install_mirror(pane: &Rc<DocumentPane>) {
     let ctx = pane.context();
     let weak = Rc::downgrade(pane);
@@ -730,9 +702,7 @@ fn install_mirror(pane: &Rc<DocumentPane>) {
     });
 }
 
-/// The PDF engine publishes its paper on this frame's `<html>`; the host
-/// shares the focused pane's with every pane. Watched with an observer that
-/// dies with the pane's owner.
+/// The engine publishes paper on `<html>`; the host shares it out.
 fn install_paper_watch() {
     let Some(root) = web_sys::window()
         .and_then(|w| w.document())
@@ -785,15 +755,13 @@ fn install_paper_watch() {
     });
 }
 
-/// A press anywhere in the frame: the host closes its own popovers on it
-/// (an outside press it would otherwise never see) and focuses the pane.
+/// A press in the frame: the host closes popovers and focuses.
 fn install_press() {
     let press = window_event_listener(leptos::ev::pointerdown, |_| send(&PaneToHost::Press));
     on_cleanup(move || press.remove());
 }
 
-/// The pane's first frame is on screen: two animation frames after its
-/// view attached, the paint that follows has happened.
+/// Two animation frames after the view attached, the paint is up.
 fn signal_painted() {
     request_animation_frame(|| request_animation_frame(|| send(&PaneToHost::Painted)));
 }
@@ -825,15 +793,12 @@ fn install_digest_beat(api: crate::context::ApiHandle) {
     });
 }
 
-/// The host closes the pane: the pane's sync teardown now (read point,
-/// document session, owner), the realm's unmount, and the runtime's tail,
-/// whose completion tells the host it may remove the frame.
-/// How many 25 ms beats a dispose waits for cancelled engine work to settle.
+/// The host closes the pane: its sync teardown, the unmount, and the
+/// runtime's tail.
 const SETTLE_TRIES: u32 = 40;
 
-/// Answer `Disposed` once the engine's cancelled work has settled (or the
-/// wait ran out): the host drops the realm on that word, and the final
-/// digest must count every render and prefetch the dispose cut short.
+/// Answer `Disposed` once cancelled engine work settles, or the wait
+/// runs out.
 fn finish_dispose(tries: u32) {
     if tries > 0 && crate::diagnostics::engine_in_flight() {
         let next = Closure::once_into_js(move || finish_dispose(tries - 1));
@@ -858,8 +823,7 @@ fn dispose(live: Live) {
     crate::diagnostics::set_reader_live(false);
     #[cfg(feature = "pdf")]
     super::thumbs::cancel_all();
-    // The final digest goes first: it is the one the host's balances keep,
-    // and only after the release does it show the session gone.
+    // The final digest goes first: the host's balances keep it.
     let done = Closure::once_into_js(|| finish_dispose(SETTLE_TRIES));
     crate::on_dispose_complete(done.unchecked_into());
     let teardown = live.pane.dispose();

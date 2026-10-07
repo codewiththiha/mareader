@@ -1,14 +1,5 @@
-//! The open path, wired up.
-//!
-//! Every open (a stroke click or the selection Explain pill) arrives as a
-//! `mareader:gloss-open` CustomEvent carrying the mark, which
-//! [`use_open_listener`] turns into a pending mark plus a bumped request
-//! nonce. [`use_open_effect`] tracks that nonce, asks [`open_verdict`] what
-//! the request means given the card's current state, and dispatches to one of
-//! three named transitions — [`begin_open`], [`serve_cached`],
-//! [`begin_fetch`]. Keeping the decision pure and separate from the
-//! transitions is what replaced a five-deep early-return chain with a table
-//! that can be read (and tested) at a glance.
+//! The open path: a `mareader:gloss-open` event becomes a pending mark,
+//! then a verdict dispatches.
 
 use std::sync::Arc;
 
@@ -31,15 +22,13 @@ use super::content::GlossContent;
 use super::geometry::GlossGeometry;
 use super::open::GlossOpen;
 
-/// Every open (stroke click OR Explain pill) arrives as a CustomEvent that
-/// carries the mark and bumps the nonce. Tracking `request` is what makes a
-/// second open of an already-open popover re-run the open effect.
+/// An open arrives as a CustomEvent carrying the mark and bumping the
+/// nonce.
 pub fn use_open_listener(state: crate::context::ReaderContext, ctrl: GlossController) {
     let detail = state.reader.ai_selection.detail;
     let popover_open = state.reader.ai_selection.popover_open;
 
-    // Raised on the stroke or the pill that asked, bubbling: every pane's
-    // popover hears it, and only the pane it came from opens.
+    // Raised on the stroke or pill that asked, bubbling to every pane.
     use_typed_event_from::<GlossMark>(GLOSS_OPEN_EVENT, move |m, origin| {
         if !raised_in(&state.reader.dom, origin.as_ref()) {
             return;
@@ -52,24 +41,16 @@ pub fn use_open_listener(state: crate::context::ReaderContext, ctrl: GlossContro
     });
 }
 
-/// What an open request means, given the controller's state when it lands.
-/// Pure: the open effect reads its inputs untracked and dispatches on this,
-/// so the decision table is named, exhaustive, and unit-tested.
+/// What an open request means, given the controller's state; pure.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum OpenVerdict {
-    /// `popover_open` is set but no request is pending — a stale flag (e.g.
-    /// a remount after a document switch). Clear it, don't sit on it.
+    /// A stale flag (a remount after a document switch): clear it.
     ClearFlag,
-    /// The request is for the mark whose run is still thinking: swallow the
-    /// re-click (a second request would restart or duplicate the run).
+    /// The request is for the mark whose run is still thinking: swallow.
     Swallow,
-    /// The request is for the mark expanded on screen: fold it back down
-    /// (toggle semantics live here, and only here — marks stay dumb open
-    /// dispatchers).
+    /// The request is for the mark on screen: fold it back down.
     Collapse,
-    /// Adopt the request: run the opening ritual, then serve it from the
-    /// cache or the backend. Compact or mid-outro re-clicks land here too,
-    /// deliberately — they recall/reopen.
+    /// Adopt the request: open, then serve from cache or backend.
     Open,
 }
 
@@ -92,12 +73,8 @@ fn open_verdict(
     OpenVerdict::Open
 }
 
-/// The opening ritual every fresh open runs: canonicalize + persist the
-/// mark, adopt it as current, re-derive the anchor NOW (same tick) and
-/// re-anchor the spring onto THIS word — every open morphs out of its own
-/// mark, never out of the previous card's resting place — and clear the
-/// transient state (native selection, drag offset, exit arming). Returns
-/// the CANONICAL mark.
+/// The opening ritual: canonicalize, adopt, re-anchor the spring, clear
+/// transients.
 fn begin_open(
     state: &ReaderContext,
     ctrl: GlossController,
@@ -106,13 +83,11 @@ fn begin_open(
     viewport: RwSignal<(f64, f64)>,
     mark: GlossMark,
 ) -> GlossMark {
-    // Self-contained open: mark is already in hand (Explain pill or stroke
-    // click). Persist it so re-open/re-explain reuse the id.
+    // Self-contained open: the mark is in hand; persist it.
     let mark = ctrl.commands.add_mark.run(mark);
 
     ctrl.open.pending.set(None);
-    // Whatever the previous card was waiting on, this card is not: a run in
-    // flight for the last word must not answer into this one.
+    // A run in flight for the last word must not answer into this one.
     ctrl.open.end_run();
     state.reader.ai_selection.detail.set(None);
     state.reader.ai_selection.anchor.set(None);
@@ -128,8 +103,8 @@ fn begin_open(
     ctrl.drag.offset.set(None);
     ctrl.drag.active.set(false);
 
-    // Exactly one highlighter: the native tint goes the moment the stroke
-    // takes over (it would also fight the card's own text selection).
+    // Exactly one highlighter: the native tint goes when the stroke takes
+    // over.
     if let Some(Some(s)) = web_sys::window().and_then(|w| w.get_selection().ok()) {
         let _ = s.remove_all_ranges();
     }
@@ -137,8 +112,7 @@ fn begin_open(
     mark
 }
 
-/// Recall, not rescan: a stroke whose answer is already cached morphs
-/// straight back open, with no request and no shimmer.
+/// Recall, not rescan: a cached answer morphs straight back open.
 fn serve_cached(
     ctrl: GlossController,
     processing_id: RwSignal<Option<String>>,
@@ -152,13 +126,7 @@ fn serve_cached(
     ctrl.geometry.surface_visible.set(true);
 }
 
-/// Fresh (or retried) explain. No surface while thinking: the highlighter
-/// stroke is the only processing UI, so nothing is stacked over the word.
-///
-/// Takes the three slices it writes rather than the whole controller because
-/// the retry command (`super::commands`) is built BEFORE the controller exists
-/// and must still funnel through here: one opening ritual, one spelling of the
-/// desktop-only verdict, and no second copy of either to drift.
+/// Fresh or retried explain; the stroke is the only processing UI.
 pub(super) fn begin_fetch(
     content: GlossContent,
     geometry: GlossGeometry,
@@ -175,14 +143,11 @@ pub(super) fn begin_fetch(
 
     if tauri_bridge::has_tauri() {
         let run = open.begin_run(&mark.id);
-        // The sentence, not the envelope: a reflowable mark's
-        // `context` carries its spot alongside the prose, and the model
-        // wants only the prose.
+        // The sentence, not the envelope: the model wants only the prose.
         let explain = crate::components::ai::reflow_anchor::explain_context(&mark);
         invoke_explain_word(mark.word, explain, run);
     } else {
-        // The environment cannot change mid-session: this is a terminal,
-        // non-retryable state, shown as an expanded error card.
+        // Terminal, non-retryable: shown as an expanded error card.
         content.error.set(Some(AiError {
             kind: AiErrorKind::Other("desktop-only".into()),
             message: "AI explanations are only available in the desktop app.".into(),
@@ -195,9 +160,7 @@ pub(super) fn begin_fetch(
     }
 }
 
-/// The open effect: re-runs on EVERY request (nonce). Reads the state
-/// untracked, asks [`open_verdict`] what the request means, and dispatches —
-/// the branches are one screenful and each names its transition.
+/// The open effect: re-runs on every nonce and dispatches the verdict.
 pub fn use_open_effect(
     state: crate::context::ReaderContext,
     ctrl: GlossController,
@@ -342,8 +305,7 @@ mod tests {
 
     #[test]
     fn a_same_spot_duplicate_is_the_same_mark_for_verdict_purposes() {
-        // add_mark canonicalizes same-spot duplicates; the verdict must
-        // treat them as the current mark (same page/word/rect, different id).
+        // `add_mark` canonicalizes same-spot duplicates.
         let current = mark(3, "word", 10.0);
         let duplicate = GlossMark {
             id: "g3-999".into(),
