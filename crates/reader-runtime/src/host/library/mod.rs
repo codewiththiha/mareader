@@ -1,25 +1,5 @@
-//! The rail's Library panel: the persisted library as a compact tree — its
-//! folders (shelves, nested as the library nests them) and its files, one
-//! line each, a name and a format badge — and, above it while the workspace
-//! is split, the open panes as tabs.
-//!
-//! It is NOT the library. It reads the persisted blob when it is shown
-//! (`storage::load_library`, the reader's read-only view of the store) and
-//! edits nothing: no covers, no sorting menu, no import. Its one job is to
-//! be where a split comes from:
-//!
-//! * a file row dragged onto the workspace opens it in a split, through the
-//!   host's drag session and workspace command ([`super::drag`],
-//!   [`super::commands`]) — the only split-drag source there is;
-//! * a click does what the Workspace setting says
-//!   ([`reader_core::settings::LibraryClick`]);
-//! * an open tab is focused by a click and closed by its ×; tabs never drag.
-//!
-//! The model below is pure (a library blob in, rows out) so the tree's
-//! shape is unit-tested; [`view`] renders it. The state that must outlive
-//! the rail — the tree as last read, which folders are open, the scroll
-//! offset — is the host's ([`LibraryState`]): the rail remounts whenever
-//! the active pane changes.
+//! The rail's Library panel: the library as a tree, the panes as
+//! tabs.
 
 mod view;
 
@@ -34,8 +14,7 @@ use super::ReaderHost;
 use super::model::{PaneBounds, PaneFormat, PaneId};
 use super::tree::{SplitAxis, split_fits};
 
-/// One file row: a book the library holds, or a link to one (shown under
-/// the link's name, opening the book it points at).
+/// One file row: a book, or a link shown under its own name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LibraryFile {
     /// Unique among the tree's rows: a book filed on two shelves is two
@@ -79,9 +58,7 @@ impl LibraryTree {
         self.root.folders.is_empty() && self.root.files.is_empty()
     }
 
-    /// The tree a library blob describes. Folders first, then files, each
-    /// by name (case-insensitive) — an explorer's order, not the shelf's
-    /// hand order: the panel is for finding a file, not arranging one.
+    /// The tree a blob describes: folders first, then files, by name.
     fn from_blob(blob: &LibraryBlob) -> Self {
         let books: HashMap<&str, &Book> = blob
             .books
@@ -97,9 +74,7 @@ impl LibraryTree {
     }
 }
 
-/// One level: `shelf` (`None` for the root), its sub-shelves and its
-/// members. `seen` guards a shelf cycle (a blob can carry one; the walk
-/// must not hang on it).
+/// One level and its members; `seen` guards a shelf cycle.
 fn level(
     blob: &LibraryBlob,
     books: &HashMap<&str, &Book>,
@@ -132,8 +107,7 @@ fn level(
     }
 }
 
-/// The file row for member `member` of level `level` (none for a link whose
-/// target is gone).
+/// The file row for a member; none when a link's target is gone.
 fn file_of(
     books: &HashMap<&str, &Book>,
     rows: &HashMap<&str, &Row>,
@@ -154,9 +128,7 @@ fn file_of(
     })
 }
 
-/// The short format tag for an address: its extension, uppercased, with the
-/// long spellings shortened. Read from the address — the panel shows what
-/// the file is called, it does not classify it.
+/// The short format tag for an address: its extension, uppercased.
 fn badge_of(path: &str) -> String {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     let ext = match name.rsplit_once('.') {
@@ -170,8 +142,7 @@ fn badge_of(path: &str) -> String {
     }
 }
 
-/// The badge for a pane's format (the tabs strip: a pane names its format,
-/// not its address).
+/// The badge for a pane's format.
 pub fn badge_of_format(format: PaneFormat) -> &'static str {
     match format {
         PaneFormat::Pdf => "PDF",
@@ -198,9 +169,7 @@ pub enum Line {
 }
 
 impl Line {
-    /// The line's identity for a keyed list: its id AND what it shows, so a
-    /// renamed or recounted line is redrawn (a folder's open state is not
-    /// part of it — the row follows that itself).
+    /// The line's identity for a keyed list: id plus what it shows.
     pub fn key(&self) -> String {
         match self {
             Line::Folder {
@@ -218,8 +187,7 @@ impl Line {
     }
 }
 
-/// The lines a tree shows with the folders in `open` expanded: a closed
-/// folder's contents are not lines at all.
+/// The lines shown with the folders in `open` expanded.
 pub fn lines(tree: &LibraryTree, open: &HashSet<String>) -> Vec<Line> {
     let mut out = Vec::new();
     push_level(&tree.root, 0, open, &mut out);
@@ -257,11 +225,7 @@ pub enum OpenHow {
     Beside,
 }
 
-/// The axis a row opened "beside" the focused pane splits it along: to the
-/// right when that leaves both halves usable, else below when that does
-/// (a narrow column beside the docked rail still takes a split), else to
-/// the right so the layout's own "no room" refusal is what the user hears.
-/// A pane not measured yet splits right: nothing to judge it by.
+/// The axis a row opened beside the focused pane splits it along.
 pub fn beside_axis(bounds: Option<PaneBounds>) -> SplitAxis {
     match bounds {
         Some(b)
@@ -276,24 +240,20 @@ pub fn beside_axis(bounds: Option<PaneBounds>) -> SplitAxis {
     }
 }
 
-/// One open pane, as the tabs strip lists it: its id and what its document
-/// is called (the strip reads the active id and the format itself, so a
-/// focus change restyles a tab rather than rebuilding it).
+/// One open pane as the tabs strip lists it.
 #[derive(Clone, Copy)]
 pub struct OpenTab {
     pub id: PaneId,
     pub name: Signal<String>,
 }
 
-/// The panel's host-owned state (see the module docs). Copy handles; the
-/// session's owner disposes them with the workspace.
+/// The panel's state, outliving the rail.
 #[derive(Clone, Copy)]
 pub struct LibraryState {
     tree: RwSignal<Option<LibraryTree>>,
     open: RwSignal<HashSet<String>>,
     scroll: StoredValue<i32>,
-    /// A drag just ended on a row: the click its release produces there is
-    /// not a click.
+    /// A drag just ended on a row: its release click is not a click.
     swallow: StoredValue<bool>,
 }
 
@@ -397,8 +357,7 @@ impl LibraryPanel {
         Self { host }
     }
 
-    /// The panel, for a rail slot. `shown`: the panel is the rail's visible
-    /// one (it reads the store when it becomes so).
+    /// The panel for a rail slot; `shown` means it is the visible one.
     pub fn view(self, shown: Signal<bool>) -> AnyView {
         view::library_panel(self.host, shown)
     }
