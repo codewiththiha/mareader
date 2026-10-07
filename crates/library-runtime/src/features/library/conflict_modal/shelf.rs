@@ -1,8 +1,4 @@
-//! The folder's question: a level already holds the name.
-//!
-//! Asked before the walk rather than after it, because the answer decides
-//! what the walk is for. Which answers the sheet offers is the arrival's
-//! mode.
+//! The folder's question: asked before the walk, rows from the arrival's mode.
 
 use leptos::prelude::*;
 
@@ -28,8 +24,7 @@ pub(super) fn describe_shelf(
             .iter()
             .any(|f| f.root == ask.root && f.mode().reads_in_place())
     });
-    // The row promises the counter rather than asking the reader to take
-    // "the next free name" on faith.
+    // The row promises the counter's name rather than on faith.
     let new_name = state
         .library
         .shelves
@@ -96,9 +91,7 @@ pub(super) fn describe_shelf(
     let choices = conflict::shelf_offers(ask)
         .iter()
         .map(|choice| match choice {
-            // No *as new* — a second shelf of one linked folder is the
-            // second instance the family gate prevents — and no *replace*: a
-            // linked tree is not the level's to empty.
+            // No *as new*: one linked folder cannot be shelved twice.
             Placement::LinkOnly => ChoiceSpec {
                 label: "Make link",
                 note: LINK_NOTE.to_string(),
@@ -109,8 +102,7 @@ pub(super) fn describe_shelf(
                 note: merge_note.clone(),
                 placement: Placement::Merge,
             },
-            // No pointer: a stored import is a second instance the library
-            // owns, and "show me the first" is a light rather than a row.
+            // No pointer: a stored import is the library's own second instance.
             Placement::Open => ChoiceSpec {
                 label: "Show it",
                 note: show_note.clone(),
