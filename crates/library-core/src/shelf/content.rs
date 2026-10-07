@@ -70,39 +70,35 @@ fn member_book<'a>(rows: &'a [Row], member_id: &str) -> Option<&'a Book> {
     }
 }
 
-/// Count a shelf's direct book members and report whether they are on disk,
-/// stored, mixed, or absent.
-///
-/// Shelf links (Row::Link at a shelf id) are ignored — they are pointers, not
-/// books. A book link (Row::Link at a book id) is resolved to its target book
-/// so a shelf that holds a link at a stored book counts as stored.
-fn content_kind(rows: &[Row], shelf: &Shelf) -> ContentKind {
-    content_kind_for_ids(rows, &shelf.books)
-}
-
-/// Same as [`content_kind`] but over an explicit list of member ids; the
-/// classification both walks share is [`member_book`].
-fn content_kind_for_ids(rows: &[Row], member_ids: &[String]) -> ContentKind {
-    let mut on_disk = 0usize;
-    let mut stored = 0usize;
-
+/// Fold members into the counts; a book link counts as its target.
+fn count_members(rows: &[Row], member_ids: &[String], on_disk: &mut usize, stored: &mut usize) {
     for member_id in member_ids {
         let Some(book) = member_book(rows, member_id) else {
             continue;
         };
         if book.origin.is_stored() {
-            stored += 1;
+            *stored += 1;
         } else {
-            on_disk += 1;
+            *on_disk += 1;
         }
     }
+}
 
+/// The counts as a kind; the one place empty and mixed are decided.
+fn kind_of(on_disk: usize, stored: usize) -> ContentKind {
     match (on_disk, stored) {
         (0, 0) => ContentKind::Empty,
         (_, 0) => ContentKind::OnDisk,
         (0, _) => ContentKind::Stored,
         _ => ContentKind::Mixed,
     }
+}
+
+/// What a shelf's own members are: on disk, stored, mixed, or nothing.
+fn content_kind(rows: &[Row], shelf: &Shelf) -> ContentKind {
+    let (mut on_disk, mut stored) = (0usize, 0usize);
+    count_members(rows, &shelf.books, &mut on_disk, &mut stored);
+    kind_of(on_disk, stored)
 }
 
 /// Count a shelf and all shelves below it. Used for the badge when a folder
@@ -124,34 +120,17 @@ fn content_kind_recursive(rows: &[Row], shelves: &[Shelf], root_id: &str) -> Con
         }
     }
 
-    let mut on_disk = 0usize;
-    let mut stored = 0usize;
-
+    let (mut on_disk, mut stored) = (0usize, 0usize);
     for shelf_id in ids {
         let Some(shelf) = crate::shelf::find(shelves, &shelf_id) else {
             continue;
         };
-        for member_id in &shelf.books {
-            let Some(book) = member_book(rows, member_id) else {
-                continue;
-            };
-            if book.origin.is_stored() {
-                stored += 1;
-            } else {
-                on_disk += 1;
-            }
-            if on_disk > 0 && stored > 0 {
-                return ContentKind::Mixed;
-            }
+        count_members(rows, &shelf.books, &mut on_disk, &mut stored);
+        if on_disk > 0 && stored > 0 {
+            return ContentKind::Mixed;
         }
     }
-
-    match (on_disk, stored) {
-        (0, 0) => ContentKind::Empty,
-        (_, 0) => ContentKind::OnDisk,
-        (0, _) => ContentKind::Stored,
-        _ => ContentKind::Mixed,
-    }
+    kind_of(on_disk, stored)
 }
 
 /// The badge rule every folder surface reads: what the shelf ITSELF holds

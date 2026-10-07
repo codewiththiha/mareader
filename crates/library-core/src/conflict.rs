@@ -178,18 +178,6 @@ pub enum Placement {
 }
 
 impl Placement {
-    /// The button's wording — one spelling per answer, so five sheets cannot
-    /// drift.
-    pub fn label(self) -> &'static str {
-        match self {
-            Placement::Open => "Already imported",
-            Placement::KeepBoth => "Add as new",
-            Placement::Merge => "Merge",
-            Placement::Replace => "Replace",
-            Placement::LinkOnly => "Make link",
-        }
-    }
-
     /// Offered for an import of a file: no row to fold and none to displace.
     pub const FILE: &'static [Placement] =
         &[Placement::Open, Placement::KeepBoth, Placement::LinkOnly];
@@ -220,14 +208,6 @@ impl Placement {
     /// Offered for a read-at-place folder arrival under a different folder's
     /// name.
     pub const SHELF_READ_IN_PLACE: &'static [Placement] = &[Placement::LinkOnly, Placement::Merge];
-
-    pub const ALL: &'static [Placement] = &[
-        Placement::Open,
-        Placement::KeepBoth,
-        Placement::Merge,
-        Placement::Replace,
-        Placement::LinkOnly,
-    ];
 }
 
 /// Which thing the reader's answer is about: the row already there, or the
@@ -244,10 +224,6 @@ impl Scope {
             Scope::Book { row_id } => row_id,
             Scope::Shelf { shelf_id } => shelf_id,
         }
-    }
-
-    pub fn is_shelf(&self) -> bool {
-        matches!(self, Scope::Shelf { .. })
     }
 }
 
@@ -311,20 +287,13 @@ mod tests {
     use crate::book::{Book, Fingerprint, Origin};
     use crate::shelf::ALL_SHELF;
 
-    #[test]
-    fn every_answer_a_sheet_can_offer_is_one_of_five() {
-        let all = Placement::ALL;
-        for offer in [
-            Placement::Open,
-            Placement::KeepBoth,
-            Placement::Merge,
-            Placement::Replace,
-            Placement::LinkOnly,
-        ] {
-            assert!(all.contains(&offer));
-        }
-        assert_eq!(all.len(), 5);
-    }
+    const ALL: [Placement; 5] = [
+        Placement::Open,
+        Placement::KeepBoth,
+        Placement::Merge,
+        Placement::Replace,
+        Placement::LinkOnly,
+    ];
 
     #[test]
     fn each_ask_offers_only_the_answers_it_can_apply() {
@@ -366,7 +335,7 @@ mod tests {
             Placement::SHELF_READ_IN_PLACE,
         ] {
             assert!(!list.is_empty());
-            assert!(list.iter().all(|p| Placement::ALL.contains(p)));
+            assert!(list.iter().all(|p| ALL.contains(p)));
         }
     }
 
@@ -379,7 +348,7 @@ mod tests {
             Placement::FILE,
         );
         assert_eq!(book.existing.id(), "b1");
-        assert!(!book.existing.is_shelf());
+        assert!(matches!(book.existing, Scope::Book { .. }));
         assert!(book.offers_placement(Placement::KeepBoth));
         assert!(
             !book.offers_placement(Placement::Merge),
@@ -390,21 +359,11 @@ mod tests {
             import("dune", "s1"),
             "s2".into(),
             "Sci-fi".into(),
-            Placement::ALL,
+            Placement::SHELF_STORED,
         );
         assert_eq!(shelf.existing.id(), "s2");
-        assert!(shelf.existing.is_shelf());
+        assert!(matches!(shelf.existing, Scope::Shelf { .. }));
         assert!(shelf.offers_placement(Placement::Replace));
-    }
-
-    #[test]
-    fn every_button_has_one_sentence_whichever_sheet_wears_it() {
-        let labels: Vec<&str> = Placement::ALL.iter().map(|p| p.label()).collect();
-        let mut deduped = labels.clone();
-        deduped.sort_unstable();
-        deduped.dedup();
-        assert_eq!(labels.len(), deduped.len(), "no two answers share a label");
-        assert!(labels.iter().all(|l| !l.is_empty()));
     }
 
     fn book(id: &str, path: &str) -> Row {
