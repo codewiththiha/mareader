@@ -21,7 +21,7 @@ pub use covers::backfill_missing;
 pub use duplicate::{duplicate_entries, duplicate_row, duplicate_shelf};
 pub use import::{
     GroundWatch, dismiss_task, ground_tracking, import_files, import_folder, migrate_store_layout,
-    rescan_watched, restore_deleted_book, set_shelf_watch, shelf_watch, verify_one,
+    rescan_watched, restore_deleted_book, set_shelf_watch, shelf_watch,
 };
 pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 
