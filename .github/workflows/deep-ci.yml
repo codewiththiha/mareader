@@ -1,19 +1,6 @@
 name: Deep CI
 
-# The expensive checks the required PR workflow deliberately does not carry
-# (docs/ci-architecture.md): the full production frontend build and the
-# browser-level lifecycle baseline — the REAL wasm app in a REAL browser,
-# driven through open / scroll / look-ahead / zoom / close-during-work /
-# dispose / reopen, asserting the disposal baseline (docs/memory-baseline.md).
-#
-# Runs nightly, on demand, and when the things this lane exists to test are
-# themselves changed (the engine bundles, the browser suite, this workflow).
-#
-# A push can opt out per commit: "[skip deep]" in the commit SUBJECT drops
-# both lanes. These are the two most expensive jobs in the repo and the two
-# that cannot run in under a minute, so a push that only moves a comment
-# should not have to pay for them twice. The nightly schedule ignores the
-# marker — whatever is skipped during the day is caught overnight.
+# The expensive checks PR CI does not carry: the browser and native lanes.
 on:
   schedule:
     - cron: "0 3 * * *"
@@ -33,23 +20,14 @@ on:
     paths:
       - ".github/workflows/deep-ci.yml"
       - "tests/browser/**"
-      # The whole public tree: the engine bundles (pdfEngine/readerEngine),
-      # the shell's classic scripts (shellBoot.js) and the frame's Tauri
-      # relay (tauri-relay.js) all live here — a relay change without a
-      # Deep run means the native read-proof smoke never sees it.
+      # The public tree: engine bundles, the shell's scripts, the Tauri relay.
       - "public/**"
-      # The lifecycle under test is also owned on the Rust side: an open/
-      # close, diagnostics, engine or virtualizer change can alter what the
-      # browser baseline measures just as much as an engine-bundle change.
-      # (These are the paths at the split's tip — the pre-split
-      # src/components, src/features, src/zoom and src/memory.rs entries that
-      # used to be listed here moved into the crates below.)
+      # An open/close, diagnostics, engine or virtualizer change moves what
+      # the baseline measures.
       - "src/**"
       - "crates/reader-runtime/**"
       - "crates/library-runtime/**"
-      # The transport and the vocabulary every artifact frame boots through:
-      # a wire, an offer, a boundary or an envelope change is a boot-path
-      # change, and this lane is the only one that boots one for real.
+      # A wire or boundary change is a boot-path change; this lane boots one.
       - "crates/frame-transport/**"
       - "crates/runtime-contract/**"
       - "crates/pdf-engine/**"
@@ -60,8 +38,7 @@ on:
       - "crates/tauri-bridge/**"
       - "crates/virtual-list/**"
       - "crates/virtual-list-leptos/**"
-      # The boot path itself: the one build contract, the shell page's boot
-      # markup, and the two configs that decide how Tauri serves the frontend.
+      # The boot path: the build contract, the shell page, the Tauri configs.
       - "index.html"
       - "reader.html"
       - "library.html"
@@ -93,10 +70,7 @@ env:
   RUSTUP_DOWNLOAD_TIMEOUT: "600"
 
 jobs:
-  # One tiny job decides whether this push opted out. It reads the SUBJECT
-  # only: `contains()` sees the whole commit message, so a body that merely
-  # QUOTES the marker in prose — this file's own comments do — would
-  # otherwise drop the most expensive gate in the repo by accident.
+  # One job decides whether a push opted out: the SUBJECT, never the body.
   skip:
     name: Resolve the skip marker
     runs-on: ubuntu-24.04
@@ -104,9 +78,8 @@ jobs:
     outputs:
       skip: ${{ steps.subject.outputs.skip }}
     steps:
-      # The message arrives through the environment, never interpolated into
-      # the script: a subject carrying quotes or a command substitution is
-      # data here, not shell.
+      # Through the environment, never interpolated: a subject's quotes stay
+      # data.
       - id: subject
         env:
           MESSAGE: ${{ github.event.head_commit.message }}
@@ -122,9 +95,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: skip
-    # Two ways in: the commit subject says "[skip deep]", or a dispatch
-    # narrowed the run to the other lane. Neither can be the last word — the
-    # nightly cron ignores both, and a dispatch can override the marker.
+    # Two ways in: the subject's marker, or a dispatch narrowing the lane.
     if: >-
       github.event.inputs.lanes != 'tauri'
       && (needs.skip.outputs.skip != 'true'
@@ -137,10 +108,7 @@ jobs:
           targets: wasm32-unknown-unknown
           cache-key: deep-cache
 
-      # The real production build: Trunk's own hooks (engine bundle, tools,
-      # CSS) fire inside it, and the release WASM is what the test drives.
-      # Pinned binary — a `cargo install trunk` would spend minutes compiling
-      # a build tool every run.
+      # The real production build: Trunk's hooks fire inside it; the WASM runs.
       - name: Install trunk
         run: |
           curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz
@@ -157,8 +125,7 @@ jobs:
         run: npm ci
 
       - name: Build the production frontend
-        # All three artifacts: the shell page plus the two runtime pages the
-        # shell loads (tools/build-dist.sh merges them into dist/).
+        # Both runtime pages and the shell page; build-dist.sh merges them.
         run: sh tools/build-dist.sh --release
 
       - name: Install Chromium for Playwright
@@ -174,11 +141,8 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
           exit $STATUS
 
-      # Every run, not only a failed one: the build a green run measured is
-      # the one a local comparison (route-switch latency, memory after a
-      # return) or a bisect wants to serve, and a passing run used to leave
-      # nothing to download. Three days is the whole window such a
-      # comparison needs.
+      # Every run, not only failed runs: a green build is what a comparison
+      # serves.
       - name: Upload dist for local debugging
         if: always()
         uses: actions/upload-artifact@v5
@@ -187,12 +151,8 @@ jobs:
           path: dist
           retention-days: 3
 
-  # Memory after a split read, for this build and for pinned baselines, on
-  # one runner (tools/measure-split-return.mjs): renderer PSS and the frames
-  # in the host over the 70 s after a four-pane book is closed, hands off
-  # and with the pointer over the shelf. Evidence, not a gate: the lifecycle
-  # suite asserts the disposal rule; this records what it costs. A baseline
-  # whose artifact has expired is skipped.
+  # Split-read memory (tools/measure-split-return.mjs): PSS over the 70 s
+  # after a four-pane close.
   memory-replay:
     name: Split memory replay
     runs-on: ubuntu-24.04
@@ -215,8 +175,8 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # WebKit is JavaScriptCore, the engine of the macOS app's WKWebView:
-      # the replay runs in both, since memory retention is engine behaviour.
+      # WebKit is JavaScriptCore, the macOS app's engine, so retention is
+      # checked there too.
       - name: Install Chromium and WebKit for Playwright
         run: npx playwright install --with-deps chromium webkit
 
@@ -266,9 +226,7 @@ jobs:
             exit 1
           fi
 
-      # A closed split must give its memory back: open → read → close cycles
-      # beside one kept pane, sampled after each close (16 in Chromium; 40 in
-      # WebKit, to see whether its growth levels off). The slope per cycle is
+      # A closed split gives its memory back; the slope is the answer.
       # the answer (tools/measure-split-cycles.mjs).
       - name: Split close cycles
         if: always()
@@ -319,11 +277,7 @@ jobs:
             cycles.log
           retention-days: 7
 
-  # The packaged app, launched for real (§14). Every other job here builds or
-  # serves the frontend; this one asks the native window whether a runtime
-  # actually came up, which is the question the blank-window incident turned
-  # on. It is the only gate that can fail on "the app opened and showed
-  # nothing".
+  # The packaged app, launched for real: the only blank-window gate.
   tauri-smoke:
     name: Tauri native boot smoke
     runs-on: ubuntu-24.04
@@ -338,9 +292,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
-          # The canonical frontend build compiles Rust TO WASM, so this job
-          # needs the same target the browser job installs (without it trunk
-          # dies in `can't find crate for `core``).
+          # Compiles Rust TO WASM: this job installs the wasm32 target.
           targets: wasm32-unknown-unknown
           cache-key: tauri-smoke-cache
 
@@ -349,9 +301,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      # The tauri crate's Linux build needs the WebKitGTK/GTK headers; the
-      # smoke needs an X server (xvfb), xwd to read the framebuffer and
-      # ImageMagick to summarise it.
+      # Linux needs WebKitGTK/GTK headers, xvfb, xwd and ImageMagick.
       - name: Install the Linux webview stack and X tools
         run: |
           sudo apt-get update
@@ -362,17 +312,15 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # The canonical build runs Trunk (plus its pre-build hooks), so the
-      # builder the browser job pins is pinned identically here.
+      # Trunk's hooks run in the canonical build; the builder is pinned.
       - name: Install trunk
         run: |
           curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz
           sudo mv trunk /usr/local/bin/trunk
           trunk --version
 
-      # The SAME canonical build Tauri runs (package.json's build:dist ->
-      # tools/build-dist.sh), so this job cannot pass on a frontend the
-      # packaged app would not have.
+      # The SAME canonical build Tauri runs, so this job cannot pass on
+        # another frontend.
       - name: Build the production frontend
         run: npm run build:dist
 
