@@ -1,7 +1,4 @@
-//! The Workspace tab: how the reader's split workspace behaves. Pane
-//! decoration lives in the Theme tab; this tab keeps workspace opening and the
-//! two per-pane look preferences — the colour mode and the texture mode, each
-//! with its own row because each owns its own half of a pane's look.
+//! The Workspace tab: workspace opening and per-pane looks.
 
 use leptos::prelude::*;
 
@@ -11,8 +8,7 @@ use app_ui::components::primitives::controls::switch::Switch;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 use reader_core::settings::LibraryClick;
 
-/// The choices, in the order the tab lists them: what each is called and
-/// what it does, in one sentence.
+/// The choices, in the tab's order.
 const CHOICES: [(LibraryClick, &str, &str); 3] = [
     (
         LibraryClick::Replace,
@@ -35,9 +31,7 @@ const CHOICES: [(LibraryClick, &str, &str); 3] = [
 pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoView {
     let s = state.settings;
     let current = Signal::derive(move || s.with(|st| st.workspace.library_click));
-    // The host's theme handle flips the live workspace's per-pane looks;
-    // without one (no workspace in this window) the same toggle persists
-    // the setting for the next one.
+    // The host's theme handle flips the live workspace.
     let theme = use_context::<ThemeHandle>().unwrap_or_else(|| ThemeHandle::for_settings(s));
     let toggle = view! {
         <Switch
