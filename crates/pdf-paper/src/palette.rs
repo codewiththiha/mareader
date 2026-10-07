@@ -44,10 +44,6 @@ impl PagePalette {
         self.pages.contains_key(&page)
     }
 
-    pub fn len(&self) -> usize {
-        self.pages.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.pages.is_empty()
     }
