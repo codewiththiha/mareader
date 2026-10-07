@@ -1,5 +1,4 @@
-// Real Library WASM against a deterministic Tauri window/event boundary.
-// This checks the compiled titlebar wiring, not an orphaned helper's source.
+// Real Library WASM against a deterministic Tauri window boundary.
 export async function verifyWindowState({ browser, base }) {
   const context = await browser.newContext({ viewport: { width: 1000, height: 800 } });
   const page = await context.newPage();
@@ -9,9 +8,7 @@ export async function verifyWindowState({ browser, base }) {
     await context.addInitScript(() => {
       const generation = new URL(location.href).searchParams.get("g");
       if (window === window.top || !["1", "3"].includes(generation)) return;
-      // A route frame runs no repeating timer: its cadence is observers and
-      // rAF. Counting creations in this realm measures what the mounted titlebar
-      // itself does — the host's channel ticker lives in another window.
+      // A route frame runs no repeating timer; count what the titlebar does.
       window.__intervalCreations = 0;
       const setInterval = window.setInterval.bind(window);
       window.setInterval = (...args) => {
@@ -19,9 +16,7 @@ export async function verifyWindowState({ browser, base }) {
         return setInterval(...args);
       };
       if (generation !== "3") return;
-      // Generation 3 has no Tauri surface and never gains one before it is
-      // disposed: the relay publishes from this page's own <head>, ahead of the
-      // module script, so a bar that finds nothing there is a plain browser.
+      // Generation 3 has no Tauri surface and never gains one.
       let surface;
       let available = false;
       Object.defineProperty(window, "__TAURI__", {
@@ -31,8 +26,7 @@ export async function verifyWindowState({ browser, base }) {
       });
       window.__releaseWindowSurface = () => { available = true; };
     });
-    // This existing same-origin page is inert when opened top-level; no
-    // Shell/runtime starts underneath the manually hosted Library fixture.
+    // This same-origin page is inert opened top-level: no runtime starts.
     await page.goto(`${base}/bake.html`, { waitUntil: "load" });
     await page.evaluate((base) => {
       const native = window.__windowProbe = {
@@ -85,8 +79,7 @@ export async function verifyWindowState({ browser, base }) {
           frame.contentWindow.postMessage({ kind: "mareader.channel", generation, nonce }, location.origin, [channel.port2]);
         };
         frame.onload = offer;
-        // Trunk's async init can outlive document load; never mistake a
-        // missed early offer for missing titlebar wiring.
+        // Trunk's async init can outlive document load: do not mistake a miss.
         fixture.ticker = setInterval(offer, 300);
         document.body.append(frame);
       };
@@ -152,13 +145,7 @@ export async function verifyWindowState({ browser, base }) {
     });
     await page.waitForFunction(() => window.__windowFixture.ready);
     await captions().locator('button[aria-label="Maximize"]').waitFor({ state: "attached" });
-    // A bar with no window reaches for nothing: the probe declines, no listener
-    // registers, and no timer is created to wait for a surface that cannot
-    // arrive. `intervals` is counted in this realm only — a poll there holds the
-    // route's `Owner`, and a frame whose runtime never reports disposal is the
-    // failure that timer produced. `queries` is the host's counter shared by
-    // every generation, so it is compared with itself: what matters is that an
-    // idle surface-less route adds nothing to it.
+    // A bar with no window reaches for nothing: no listener, no timer.
     const quiet = await frameStats();
     if (quiet.intervals !== 0 || quiet.handlers !== 0) {
       throw new Error(`a surface-less route registered for a window it cannot reach: ${JSON.stringify(quiet)}`);

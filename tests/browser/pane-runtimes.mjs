@@ -1,5 +1,4 @@
-// Real-realm regressions appended to the lifecycle suite, without relaxing
-// any existing gate. Screenshots live inside its existing dist artifact.
+// Real-realm regressions appended to the lifecycle suite.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -56,8 +55,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       !report.hierarchy.children.includes("/pdf.html")) {
     throw new Error(`route/document hierarchy broken: ${JSON.stringify(report.hierarchy)}`);
   }
-  // Layout-ready is a host lifecycle, not proof that a descendant has
-  // finished loading/painting. Scope, lift and close races need real realms.
+  // Layout-ready is a host lifecycle, not proof a descendant has painted.
   const paintedRealms = (ids) => page.waitForFunction((ids) => ids.every((id) => {
     const frames = [...window.__paneReaderDocument.querySelectorAll(`[data-pane-id="${id}"] iframe.pane-frame`)];
     if (frames.length !== 1 || frames[0].hasAttribute("data-frame-hidden")) return false;
@@ -105,8 +103,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   await replaced(paths.markdown, "markdown");
   await replaced(paths.text, "text");
 
-  // Supersede incoming frames before they can adopt. Late hello/paper/outline
-  // reports must not replace the final request or leave a boot error over it.
+  // Supersede incoming frames before they adopt a late report.
   await page.evaluate((paths) => {
     for (const path of paths) if (!window.__paneReaderDocument.defaultView.__mareaderOpenIn(path, "active")) throw new Error("rapid open refused");
   }, [paths.markdown, paths.pdf, paths.otherPdf]);
@@ -118,12 +115,10 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
 
   await openIn(paths.pdf, "right");
   const twoPdfs = await waitForSettledLayout("two real PDF realms", (s) => s.host?.panes?.length === 2 && s.host.panes.every((p) => p.lifecycle === "ready"));
-  // Host-ready means the iframe exists, not that its document is open. An
-  // empty loading frame also has an idle engine, so paint must precede idle.
+  // Host-ready means the iframe exists, not that its document is open.
   await paintedRealms(twoPdfs.host.panes.map((p) => p.paneId));
   await waitFor("two PDF render frontiers idle", (s) => s.engine.pageActive === 0 && s.engine.pageQueue === 0 && s.rasterLane?.active === 0 && s.rasterLane?.queued === 0);
-  // Exercise both engines together. These are real full-resolution renders
-  // at their existing scale, not fake permit requests or low-resolution covers.
+  // Exercise both engines together, with real full-resolution renders.
   const budget = await page.evaluate(async () => {
     const frames = [...window.__paneReaderDocument.querySelectorAll('iframe.pane-frame:not([data-frame-hidden])')]
       .filter((f) => typeof f.contentWindow.PDFReader !== "undefined");
@@ -152,13 +147,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       if (results.some((r) => !r.ok)) throw new Error(`cross-realm render failed: ${JSON.stringify(results)}`);
       await new Promise((r) => requestAnimationFrame(r));
       afterFrame = window.__mareaderRasterLane.snapshot();
-      // A permit is returned by the REALM that took it, on its own frame, when
-      // it applies the result. A parent frame is not that frame: the parent's
-      // rAF is sparse while these realms paint, so snapshotting one parent
-      // frame after the last job resolves can still catch an in-flight lease.
-      // Wait on the lane itself, which the suite's other settle waits allow
-      // 30 s to do; 10 s here so a lease that never returns still fails the
-      // stage, just loudly and with both snapshots in the message.
+      // A permit is returned by the realm that took it, on its own frame.
       const drainStart = performance.now();
       const deadline = drainStart + 10_000;
       let drained = afterFrame;
@@ -227,21 +216,14 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
   const holdStart = Date.now();
   await page.mouse.down();
   try {
-    // A press shorter than the lift delay is a pan or a click, never a lift.
-    // The probe runs FIRST and off the press's own clock, so nothing later in
-    // this block can spend the window and then blame the lift; the delay
-    // itself is the product spec (`HOLD_TO_LIFT_MS` in
-    // `crates/reader-runtime/src/host/lift.rs`).
+    // A press shorter than the lift delay is a pan or a click.
     await page.waitForTimeout(400);
     if (await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.pane-lifted').count()) throw new Error("a press shorter than the lift delay lifted the pane");
     // The ring is the affordance, and it is up for the rest of the hold...
     await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame`).contentDocument.querySelector('[data-pan-hold]'), md.paneId, { timeout: 3_000 });
-    // ...and the lift lands within a bounded remainder of the spec, not
-    // "eventually": the press, the ring and the lift all sit inside 1 s.
+    // ...and the lift lands within a bounded remainder of the spec.
     await page.waitForFunction((id) => window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`).classList.contains("pane-lifted"), md.paneId, { timeout: 3_000 });
     // The class reacts immediately; the host digest arrives on its beat.
-    // Timestamp the lift itself, then require both reported and rendered
-    // vacancy growth at a bounded deadline, not a stale immediate digest.
     report.liftHoldMs = Date.now() - holdStart;
     const lifted = await waitFor("lift fills the vacant pane box", (s) =>
       s.host.panes.filter((p) => p.paneId !== md.paneId).some((p) =>
@@ -271,15 +253,13 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     await page.setViewportSize({ width, height: 900 });
     const settled = await waitForSettledLayout(`${name} layout`, (s) => {
       const panes = s.host?.panes ?? [];
-      // Old boxes can briefly agree with an old digest after setViewportSize.
       // Agreement must belong to the requested viewport, not the last one.
       return panes.length === 3 && panes.every((p) => p.lifecycle === "ready") &&
         Math.abs(Math.max(...panes.map((p) => p.bounds.x + p.bounds.width)) - width) <= 2 &&
         Math.abs(Math.max(...panes.map((p) => p.bounds.y + p.bounds.height)) - 900) <= 2;
     });
     await waitFor(`${name} rasters settle`, (s) => s.engine.activeRenders === 0 && s.rasterLane?.active === 0);
-    // A fit/resize must land the reflow measurements too, not merely the
-    // iframe box and PDF work. Otherwise estimated rows can overlap forever.
+    // A fit must land the reflow measurements too, or rows overlap forever.
     await page.waitForFunction(() => {
       const frames = [...window.__paneReaderDocument.querySelectorAll('iframe.pane-frame:not([data-frame-hidden])')]
         .filter((f) => /reflow\.html/.test(f.src));
@@ -291,8 +271,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
         });
       });
     }, null, { timeout: 10_000 });
-    // Audit the real Reader document, not the legacy single-pane query
-    // adapter. Each route owns its own toolbar IDs and popup coordinates.
+    // Audit the real Reader document, not the legacy single-pane adapter.
     const appearanceButton = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]').locator('button[title="Appearance"]');
     const hit = await page.evaluate(() => {
       const frame = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"][data-mareader-runtime-frame="reader"]');
@@ -300,8 +279,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       const r = button.getBoundingClientRect(), outer = frame.getBoundingClientRect();
       return { x: outer.left + r.left + r.width / 2, y: outer.top + r.top + r.height / 2 };
     });
-    // Holds prevent an already-revealed toolbar from hiding; they do not
-    // reveal it. Geometry must use the same hover/click as an actual user.
+    // Holds keep a revealed toolbar open; they do not reveal it.
     await page.mouse.move(hit.x, hit.y);
     await appearanceButton.click({ timeout: 5_000 });
     const readMenuGeometry = (wait) => {
@@ -345,8 +323,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     const opened = await page.evaluate(readMenuGeometry, false);
     if (!opened?.aligned || !opened.visible) throw new Error(`${name} appearance geometry changed after settling: ${JSON.stringify(opened)}`);
     await page.mouse.move(opened.panel.left + 20, opened.panel.top + 40);
-    // Past the real 400 ms hover grace: an open menu must hold the bar even
-    // after the pointer leaves the toolbar for the popup's own controls.
+    // Past the 400 ms hover grace: an open menu holds the bar.
     await page.waitForTimeout(650);
     const geometry = await page.evaluate(readMenuGeometry, false);
     if (!geometry?.aligned || !geometry.visible) throw new Error(`${name} appearance menu lost its visible anchor while hovered: ${JSON.stringify(geometry)}`);
@@ -367,13 +344,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     report.screenshots.push({ name, width, facts, panes: settled.host.panes.map((p) => ({ id: p.paneId, bounds: p.bounds })) });
   }
   await page.setViewportSize({ width: 1400, height: 900 });
-  // ── The toolbar's zoom and the keyboard, on a pane that is not the caller ──
-  // The toolbar is HOST chrome and the zoom is the PANE's: a press has to
-  // travel the wire (`Write::ZoomStep`) and land in the pane's own zoom
-  // coordinator, which is the one that resolves a step against the window,
-  // the mode and the page. Read that off the PDF page host's `--scale-factor`
-  // — the same observable the keyboard zoom is proven by — and read the
-  // strip's `scrollTop` for the scrolling keys.
+  // The toolbar's zoom and the keyboard, on a pane that is not the caller.
   const pdfPane = await page.evaluate(() => {
     const frames = [...window.__paneReaderDocument.querySelectorAll("[data-pane-id] iframe.pane-frame:not([data-frame-hidden])")];
     const frame = frames.find((f) => /pdf\.html/.test(f.src));
@@ -384,9 +355,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
     const frame = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"] iframe.pane-frame:not([data-frame-hidden])`);
     const pageHost = frame?.contentDocument?.querySelector(".pdf-page canvas[data-engine-sid]:not(.page-snapshot)")?.parentElement;
     const pane = window.__paneReaderDocument.querySelector(`[data-pane-id="${id}"]`);
-    // The strip the reader itself names: inside the pane's own root, never a
-    // document-wide first match. `strips` and `travel` are there to explain a
-    // strip that does not move — a twin id, or a strip with no room left.
+    // The strip the reader itself names: inside the pane's own root.
     const strips = frame?.contentDocument?.querySelectorAll("#page-list") ?? [];
     const strip = frame?.contentDocument?.querySelector("[data-pane-root] #page-list") ?? strips[0];
     return { active: pane?.getAttribute("data-pane-active") ?? null,
@@ -401,8 +370,7 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       const facts = await probe();
       if (predicate(facts)) return facts;
       if (Date.now() - started > 20_000) {
-        // A key the reader did not act on is a fact about where it landed, so
-        // a failed settle reports the keys seen and the target each had.
+        // A key the reader ignored is a fact about where it landed.
         const keys = await page.evaluate(() => window.__paneKeys ?? null).catch(() => null);
         throw new Error(`${label}: last ${JSON.stringify(facts)}${keys ? ` keys ${JSON.stringify(keys)}` : ""}`);
       }

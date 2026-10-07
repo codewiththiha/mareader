@@ -1,5 +1,4 @@
-// Production path checks for the cleanup: async Shell resolution and no
-// prebooted empty document realm. Access real documents, not query adapters.
+// Production-path checks: async Shell resolution, no prebooted realm.
 export async function verifyCleanupRuntime({ page, browser, base, paths, openBook, waitFor, snap }) {
   await openBook(`${base}/?open=${encodeURIComponent(paths.pdf)}`);
   await page.waitForFunction((path) => {
@@ -18,8 +17,7 @@ export async function verifyCleanupRuntime({ page, browser, base, paths, openBoo
   }, reader);
   const dialogOpen = async () => {
     const surface = page.frameLocator(reader).frameLocator('iframe.pane-frame:not([data-frame-hidden])').locator('[data-pane-root]');
-    // The wrapper is not a tab stop. A real click enters its browsing
-    // context before keyboard input; press() on the div alone cannot.
+    // The wrapper is not a tab stop: a real click enters its context.
     await surface.click({ position: { x: 8, y: 170 } });
     const calls = await page.evaluate(() => window.__cleanupDialogCalls ?? 0);
     await page.evaluate(([reader, path]) => {
@@ -27,8 +25,7 @@ export async function verifyCleanupRuntime({ page, browser, base, paths, openBoo
       const w = doc.querySelector('iframe.pane-frame:not([data-frame-hidden])').contentWindow;
       w.__TAURI__ = { dialog: { open() {
         window.__cleanupDialogCalls = (window.__cleanupDialogCalls ?? 0) + 1;
-        // The dialog is the only native surface mocked. Remove it before
-        // the replacement realm boots, so real HTTP document IO is unchanged.
+        // The dialog is the only mocked surface; remove it before the boot.
         w.queueMicrotask(() => { delete w.__TAURI__; });
         return Promise.resolve(path);
       } } };
