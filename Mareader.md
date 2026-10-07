@@ -1477,18 +1477,14 @@ door to those acts beside the right-click's folder menu, and both renames — th
 the sheet — commit through the one service, so two doors to one act cannot differ about what it
 means.
 
-## Known gaps: two gates deliberately not run
+## Known gaps: one gate deliberately not run
 
-Both were built and tried. Both stay off for the same reason — a gate that is
-red on the day it lands teaches people to read past red — and both belong to a
-dedicated commit rather than to a check nobody can act on.
-
-### cargo fmt --check
-
-The codebase is hand-formatted in a style rustfmt >=1.9x would rewrite across
-roughly forty files, so the gate would fail on pre-existing code. The one-time
-formatting pass is the prerequisite, and it is a large mechanical diff that
-should not share a commit with anything else.
+`cargo fmt --check` was the first of the two and is a lane now: the one-time
+formatting pass landed with the gate itself (`#60`), so `Rust / format` runs
+`cargo fmt --all -- --check` on every push. What is left below is the gate the
+repo still does not run, for the same reason both were held back — a gate that
+is red on the day it lands teaches people to read past red — and it belongs to
+a dedicated commit rather than to a check nobody can act on.
 
 ### rustdoc's broken intra-doc links
 
