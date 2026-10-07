@@ -1,22 +1,10 @@
-//! The wire types of the word-explanation feature.
-//!
-//! These mirror the shapes in `src-tauri/src/ai/traits.rs` (the backend's
-//! `WordInfo` / `AiError` / `AiChunk` / `AiStreamEvent`) — keep the serde
-//! shapes in sync. They are format-agnostic: the backend answers "what does
-//! this word mean", never "where is it in the document" (that is the
-//! [`crate::gloss::mark::PageAnchor`] on the mark, owned by the format
-//! layer).
+//! The wire types of the word-explanation feature, mirroring the backend's.
 
 use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
-/// The structured word information returned by the AI.
-/// Mirrors the backend `WordInfo` struct.
-///
-/// `Serialize` is required so the app-lifetime AI chunk bridge can
-/// re-broadcast snapshots as a window `CustomEvent` for the popover.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The structured word information the AI returns; mirrors backend `WordInfo`.
 pub struct WordInfo {
     pub pos: String,
     pub meaning: String,
@@ -24,23 +12,17 @@ pub struct WordInfo {
     pub usages: Vec<String>,
 }
 
-/// Bounds on a single answer, applied at ingestion. A well-behaved model
-/// answers in a sentence or two; past these sizes a response is a runaway
-/// generation, and the card caches every answer for the session — clipping at
-/// the door keeps that ceiling flat instead of letting one pathological run
-/// set it.
+/// Bounds on one answer, applied once at ingestion so the cache stays flat.
 const MAX_MEANING_CHARS: usize = 1_200;
 const MAX_SYNONYMS: usize = 16;
 const MAX_SYNONYM_CHARS: usize = 80;
 const MAX_USAGES: usize = 8;
 const MAX_USAGE_CHARS: usize = 400;
 
-/// The ellipsis that marks a clipped string, so a truncated answer reads as
-/// truncated rather than as a model that stopped mid-word.
+/// The ellipsis marking a clipped string, so a cut answer reads as cut.
 const ELLIPSIS: char = '\u{2026}';
 
-/// Clip `s` to at most `max` characters (not bytes — this is human text and
-/// the boundary must be a char boundary), marking the cut.
+/// Clip `s` to at most `max` characters, marking the cut.
 fn clamp_text(s: String, max: usize) -> String {
     match s.char_indices().nth(max) {
         None => s,
@@ -54,9 +36,7 @@ fn clamp_text(s: String, max: usize) -> String {
 }
 
 impl WordInfo {
-    /// The answer bounded to the sizes above. Applied once, where snapshots
-    /// enter the app, so nothing downstream — the card, the measure twin, the
-    /// session cache — has to reason about how big an answer can be.
+    /// The answer bounded to the sizes above, applied where snapshots enter.
     pub fn clamped(self) -> Self {
         Self {
             pos: clamp_text(self.pos, MAX_SYNONYM_CHARS),
@@ -77,11 +57,7 @@ impl WordInfo {
     }
 }
 
-/// Mirror of the backend's `AiErrorKind` (`src-tauri/src/ai/traits.rs`) —
-/// keep the serde shapes in sync. Branch on `kind`, never on `message`
-/// wording: the prose may change between OS releases.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// Mirror of the backend's `AiErrorKind`: branch on `kind`, never wording.
 pub enum AiErrorKind {
     NotEnabled,
     ModelNotReady,
@@ -104,10 +80,7 @@ pub struct AiError {
 }
 
 impl AiError {
-    /// Short, human explanation mapped once per kind so the wording stays
-    /// consistent everywhere it is shown. [`AiErrorKind::Other`] is the
-    /// escape hatch whose `message` was written to be user-facing (and is
-    /// bounded in length by whoever constructs it).
+    /// Human wording, mapped once per kind so it stays consistent.
     pub fn friendly(&self) -> Cow<'_, str> {
         match &self.kind {
             AiErrorKind::NotEnabled => {
@@ -129,8 +102,7 @@ impl AiError {
         }
     }
 
-    /// Fallback for render paths that must show *something* even if the
-    /// error signal was (impossibly) cleared between phase and paint.
+    /// Fallback for render paths that must show *something* after a clear.
     pub fn unknown() -> Self {
         Self {
             kind: AiErrorKind::Other("unknown".into()),
@@ -140,10 +112,7 @@ impl AiError {
     }
 }
 
-/// One chunk of an explanation. Mirrors `AiChunk` in
-/// `src-tauri/src/ai/traits.rs` (same `type`/`data` tagging) — keep in sync.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
+/// One chunk of an explanation; mirrors `AiChunk`, same tagging.
 pub enum AiChunk {
     Snapshot(WordInfo),
     Done,
@@ -151,19 +120,7 @@ pub enum AiChunk {
     Error(AiError),
 }
 
-/// The wire format of one `ai-stream-chunk` payload: a chunk plus the id of
-/// the run that produced it. Mirrors `AiStreamEvent` in
-/// `src-tauri/src/ai/traits.rs` — keep in sync.
-///
-/// The run id is what makes concurrent glosses safe: runs are never cancelled
-/// backend-side, so glossing a second word while the first still thinks puts
-/// two runs on one event name, and without the id the abandoned run's answer
-/// would render against — and cache under — the word now on screen.
-///
-/// `Serialize` lets the app's chunk bridge park the same shape on a window
-/// CustomEvent detail so per-mount UI subscribes without touching Tauri
-/// again.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// One `ai-stream-chunk` payload: a chunk plus the id of its run.
 pub struct AiChunkEvent {
     /// The id passed to the `explain_word` invoke, echoed by the backend.
     pub run: String,
@@ -217,10 +174,7 @@ mod tests {
         assert_eq!(clamp_text(text.clone(), MAX_MEANING_CHARS), text);
     }
 
-    // The exact JSON shapes the backend's `app.emit("ai-stream-chunk",
-    // &chunk)` produces from `AiChunk`'s serde tagging. If these parse, the
-    // enum mirror above is wire-compatible.
-    #[test]
+    // The exact JSON shapes the backend emits from `AiChunk`'s serde tagging.
     fn chunk_wire_shapes_parse() {
         let snapshot: AiChunk = serde_json::from_str(
             r#"{"type":"Snapshot","data":{"pos":"noun","meaning":"lasting briefly","synonyms":["fleeting"],"usages":["ephemeral beauty"]}}"#,
@@ -263,10 +217,7 @@ mod tests {
         }
     }
 
-    /// The envelope the backend actually emits: the chunk nested under
-    /// `chunk`, the run id beside it. If this drifts, every chunk is dropped
-    /// by the listener's run gate and the card never opens.
-    #[test]
+    /// The emitted envelope: the chunk under `chunk`, the run id beside it.
     fn the_envelope_carries_the_run_id() {
         let event: AiChunkEvent = serde_json::from_str(
             r#"{"run":"g3-1712#4","chunk":{"type":"Snapshot","data":{"pos":"adj","meaning":"short-lived","synonyms":[],"usages":[]}}}"#,

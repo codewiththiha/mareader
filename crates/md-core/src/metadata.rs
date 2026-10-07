@@ -1,32 +1,11 @@
-//! What a Markdown file says about itself.
-//!
-//! A PDF carries a title and an author in its document info, which the engine
-//! reads for it; a Markdown file's nearest equivalents are its first heading
-//! and, for files written for a static site or a book tool, a leading
-//! front-matter block. Both are read here so the open flow asks one question
-//! ([`document_title`]) instead of learning two formats' conventions.
-//!
-//! The front-matter reader is a SCALAR reader, not a YAML parser: it takes the
-//! top-level `key: value` lines of the block and nothing else. That is the
-//! whole contract a reading view needs — a title and an author are one line
-//! each — and it is why this crate still has no Markdown or YAML dependency.
-//! Anything the front matter nests (an `authors:` list, a `date:` map) is
-//! skipped rather than guessed at.
+//! What a Markdown file says about itself: front matter and its first heading.
 
 use reflow_core::block::FenceTracker;
 use reflow_core::source::normalize;
 
 use crate::ast::heading_of_line;
 
-/// The front matter of a normalized source: the text between a leading `---`
-/// line and its closer (`---` or `...`), without either marker.
-///
-/// A block that never closes is not front matter. An empty one is — a file that
-/// opens with `---` / `---` is saying "the convention applies, there is nothing
-/// to read", and the body after it must still be the body.
-///
-/// A projection of [`split_front_matter`], the one scan that answers what the
-/// block holds AND what follows it.
+/// The front matter of a normalized source, without either marker.
 fn front_matter(normalized: &str) -> Option<String> {
     split_front_matter(normalized).map(|(matter, _)| matter.to_string())
 }
@@ -44,14 +23,7 @@ fn next_line<'a>(rest: &mut &'a str) -> Option<&'a str> {
     Some(line)
 }
 
-/// The leading front-matter block, answered in ONE scan: the text between the
-/// opening `---` and its closer (without either marker), and the body after
-/// the closer. `None` when the file does not open with a block that closes —
-/// prose that merely starts with `---` is a thematic break, not front matter.
-///
-/// Both questions a reader asks about the block — [`front_matter`] (what is
-/// inside it) and the title fallback (what follows it) — are projections of
-/// this, so a title lookup walks the block once instead of twice.
+/// The leading front-matter block and the body after it, in one scan.
 fn split_front_matter(normalized: &str) -> Option<(&str, &str)> {
     let mut rest = normalized.strip_prefix("---")?.strip_prefix('\n')?;
     // Byte offset just past the line `next_line` consumed last.
@@ -64,8 +36,7 @@ fn split_front_matter(normalized: &str) -> Option<(&str, &str)> {
         consumed += line.len() + 1;
         let trimmed = line.trim();
         if trimmed == "---" || trimmed == "..." {
-            // The matter runs to the newline before the closer; a closer
-            // directly under the opener is the empty matter.
+            // Matter ends before the closer; a bare closer is empty.
             let matter_end = if before > "---\n".len() {
                 before - 1
             } else {
@@ -76,9 +47,7 @@ fn split_front_matter(normalized: &str) -> Option<(&str, &str)> {
     }
 }
 
-/// The value of a top-level front-matter key: quotes and a trailing comment
-/// stripped, indentation honoured. `None` when the key is absent, empty, or
-/// nested inside something else.
+/// The value of a top-level front-matter key, quotes and comments stripped.
 fn front_matter_value(matter: &str, key: &str) -> Option<String> {
     for line in matter.split('\n') {
         // Leading whitespace means the key belongs to a nested structure.
@@ -99,10 +68,7 @@ fn front_matter_value(matter: &str, key: &str) -> Option<String> {
     None
 }
 
-/// The document's title: a front-matter `title` when the file has one, else the
-/// first ATX heading of levels 1–3 (deeper headings are sectioning, not a
-/// title). `None` when the file claims neither, which is what lets the file
-/// stem stand in.
+/// The title: a front-matter `title`, else the first ATX heading of levels 1-3.
 pub fn document_title(raw: &str) -> Option<String> {
     let text = normalize(raw);
     let (matter, body) = match split_front_matter(&text) {
@@ -112,25 +78,17 @@ pub fn document_title(raw: &str) -> Option<String> {
     if let Some(title) = front_matter_value(matter, "title") {
         return Some(title);
     }
-    // The fallback reads the body: a front-matter block that carries no title
-    // must not consume the heading under it, and its `---` line is not a
-    // heading, so scanning from the top of the file would find nothing.
+    // The fallback reads the body, past a title-less front matter.
     first_heading_title(body)
 }
 
-/// The document's author, from front matter only. Markdown has no
-/// heading-level convention for it, and inventing one ("the second paragraph is
-/// the author") would be wrong for the many files that have no author at all.
+/// The author, from front matter only: Markdown has no heading convention.
 pub fn document_author(raw: &str) -> Option<String> {
     let text = normalize(raw);
     front_matter(&text).and_then(|matter| front_matter_value(&matter, "author"))
 }
 
-/// The first heading's text, skipping fences so a `#` inside a code sample is
-/// not mistaken for the document's name. The fence rules are the shared
-/// [`FenceTracker`] the block splitter runs — an info-string line inside an
-/// open fence is content, not a close, which a plain marker toggle gets
-/// wrong.
+/// The first heading's text, skipping fences via the shared FenceTracker.
 fn first_heading_title(normalized: &str) -> Option<String> {
     let mut fences = FenceTracker::default();
     for line in normalized.split('\n') {
@@ -180,9 +138,7 @@ mod tests {
             first_heading_title("```\n# make install\n```\n\n# Build notes"),
             Some("Build notes".into())
         );
-        // An info-string line inside an open fence is content, not a close —
-        // the splitter's rule, which a plain marker toggle gets wrong (it
-        // would let the `#` under it win the title).
+        // An info-string line inside a fence is content, not a close.
         assert_eq!(
             first_heading_title("```\nsample code\n~~~rs\n# an inner prompt\n```\n\n# Real Title"),
             Some("Real Title".into())

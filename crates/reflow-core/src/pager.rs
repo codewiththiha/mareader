@@ -1,14 +1,4 @@
-//! The page cutter: which blocks land on which page.
-//!
-//! The cut is block-granular — a paragraph is never split across a page — and
-//! runs over BLOCK HEIGHTS. Heights come from two places: a pure ESTIMATE
-//! here (character counts against the column width, enough to seed the layout
-//! the instant a file opens) and the DOM's real MEASUREMENT once the text has
-//! rendered. Both feed the same [`paginate`], so the layout only re-cuts when
-//! real numbers arrive, never twice for the same truth.
-//!
-//! Zoom never re-cuts: every length scales by the same factor, so the cut
-//! computed at scale 1 is exactly the cut at any scale.
+//! The page cutter: block-granular, over estimated then measured heights.
 
 use crate::block::{BlockKind, TextBlock};
 
@@ -20,8 +10,7 @@ pub struct BlockMetrics {
     pub line_height: f64,
     /// Space under a paragraph, in ems of the font size.
     pub paragraph_margin_em: f64,
-    /// Average glyph advance as a fraction of the font size (proportional
-    /// faces ≈ 0.5, monospace 0.6).
+    /// Average glyph advance as a fraction of the font size.
     pub char_width: f64,
 }
 
@@ -35,17 +24,7 @@ impl BlockMetrics {
     }
 }
 
-/// The estimated height of one block at scale 1.
-///
-/// Text blocks honour their hard line breaks (each source line wraps on its
-/// own); Markdown blocks flow as one run — markup overstates the rendered
-/// length slightly, which the 0.85 factor takes back. An estimate is a SEED:
-/// the measurement pass replaces it with the real number once the block has
-/// rendered.
-///
-/// A continuation chunk (the tail of a paragraph `subdivide` cut) carries no
-/// paragraph space — the paragraph's one share belongs to its first chunk —
-/// so its estimate skips the margin term to match the render.
+/// The estimated height of one block at scale 1, replaced by measurement.
 pub fn estimate_block_height(block: &TextBlock, m: &BlockMetrics) -> f64 {
     let per_line = m.chars_per_line();
     let lines: f64 = match block.kind {
@@ -88,11 +67,7 @@ impl PageCut {
     }
 }
 
-/// Greedily pack block heights into pages of `content_height`. Blocks are
-/// never split; a block taller than a page gets the page to itself and
-/// overflows it (the renderer clips — the honest reading of a paragraph no
-/// page can hold). An empty document still cuts to one blank page: a document
-/// is never zero pages.
+/// Greedily pack block heights into pages; a block never splits across pages.
 pub fn paginate(heights: &[f64], content_height: f64) -> Vec<PageCut> {
     if heights.is_empty() {
         return vec![PageCut { start: 0, count: 0 }];
@@ -142,9 +117,7 @@ pub fn block_page_index(cuts: &[PageCut], block_count: usize) -> Vec<u32> {
     map
 }
 
-/// The first block of 1-based `page`, clamped into the document — the
-/// index a page jump scrolls to. A page beyond the last cut lands on the
-/// last page; page 0 lands on the first.
+/// The first block of 1-based `page`, clamped into the document.
 pub fn first_block_of_page(cuts: &[PageCut], page: u32) -> usize {
     let index = page.saturating_sub(1) as usize;
     cuts.get(index)
@@ -215,8 +188,7 @@ mod tests {
 
     #[test]
     fn paginate_packs_greedily_and_never_splits_a_block() {
-        // Page holds 100: 60+60 cannot share, but 60+40 fills the page
-        // exactly — and a page packed to capacity is full, not overfull.
+        // 60+60 cannot share, but 60+40 fills the page exactly.
         let cuts = paginate(&[60.0, 60.0, 40.0, 40.0], 100.0);
         assert_eq!(cuts.len(), 3);
         assert_eq!(cuts[0], PageCut { start: 0, count: 1 });

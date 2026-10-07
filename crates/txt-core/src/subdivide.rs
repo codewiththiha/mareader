@@ -1,20 +1,9 @@
-//! Splitting tall paragraphs so a page can be filled.
-//!
-//! A block is the paginator's atom, never cut mid-render: a block taller than
-//! the leftover space on a page is pushed whole to the next one, and a 40-line
-//! paragraph in a fixed 5-line column would leave a blank band on every page.
-//! Cutting it into line-bounded chunks first lets the cutter pack tight, and
-//! because the chunks carry no meaning of their own, nothing downstream has
-//! to know it happened.
+//! Splitting tall paragraphs so a page can be filled without a blank band.
 
 use reflow_core::block::{SPLIT_MAX_LINES, TextBlock, subdivide_with};
 
-/// Cut oversized plain-text blocks into line-bounded chunks. Every
-/// plain-text block may be cut: its hard breaks are the natural cut points,
-/// so a chunk renders exactly as the lines it holds did. The chunk after the
-/// first is flagged a continuation, which keeps one paragraph owning exactly
-/// one paragraph space however far the cut spreads. `max_lines` of 0
-/// disables the pass.
+/// Cut oversized plain-text blocks on line boundaries; later chunks are
+/// continuations.
 fn subdivide_with_budget(blocks: Vec<TextBlock>, max_lines: usize) -> Vec<TextBlock> {
     subdivide_with(blocks, max_lines, |_, _| true)
 }

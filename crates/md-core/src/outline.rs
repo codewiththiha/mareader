@@ -1,18 +1,4 @@
-//! The chapter tree a Markdown file carries in its headings.
-//!
-//! A PDF's outline is a dictionary the file was authored with; a Markdown
-//! document's is the `#` markers in its body. Once extracted they are the same
-//! thing — [`reader_core::outline::OutlineNode`], which is what lets the
-//! sidebar's outline panel, the active-entry memo and the floating chapter label
-//! serve a Markdown book with no format branch in sight.
-//!
-//! The one real difference is *where a chapter points*. A Markdown heading has
-//! no page number: the page depends on the reader's typography, their window and
-//! the current page cut. So the extraction is keyed on the BLOCK the heading
-//! starts in ([`MarkdownHeading::block_index`]), and [`headings_to_nodes`] turns
-//! those into pages against the live block→page map. That is also why the reader
-//! re-derives the tree after a re-measure re-cuts the document: the
-//! chapters follow the pagination instead of fighting it.
+//! The chapter tree a Markdown file carries in its headings, keyed on blocks.
 
 use reader_core::outline::{OutlineNode, clamp_depth};
 use reflow_core::block::TextBlock;
@@ -26,23 +12,11 @@ pub struct MarkdownHeading {
     pub title: String,
     /// ATX level, 1 for `#`.
     pub level: u32,
-    /// Index into the document's block list — the block whose first line this
-    /// is. Stable for the whole session, because a block is never re-cut once
-    /// it exists.
+    /// Index into the document's block list; stable for the session.
     pub block_index: usize,
 }
 
-/// The headings of an ALREADY-PARSED document, keyed on its final blocks.
-///
-/// This is the path the open flow takes, because the blocks it reads have
-/// been through `subdivide_prose` and a split shifts every index after it.
-/// Keyed on the final list, an outline entry points at the block the
-/// interface will actually paint, which is what lets the page number be
-/// derived from the live cut rather than chased after it.
-///
-/// A heading is a block that is not a continuation and whose first line is an
-/// ATX heading — so a `#` inside a fenced sample never joins the tree (a fence is
-/// one block, and it opens with its ticks).
+/// The headings of an already-parsed document, keyed on its final blocks.
 pub fn headings_of_blocks(blocks: &[TextBlock]) -> Vec<MarkdownHeading> {
     blocks
         .iter()
@@ -60,13 +34,6 @@ pub fn headings_of_blocks(blocks: &[TextBlock]) -> Vec<MarkdownHeading> {
 }
 
 /// Project the heading list onto the live page cut.
-///
-/// `block_to_page` is the 0-based page of every block, straight out of
-/// [`reflow_core::pager::block_page_index`]; a heading whose block the cut does
-/// not know (a re-parse racing a re-cut) lands on the first page rather than
-/// pointing nowhere. Depths are capped by [`clamp_depth`] because the panel
-/// indents by level, and the outline is stored flattened in document order —
-/// the same shape a PDF's tree arrives in.
 pub fn headings_to_nodes(headings: &[MarkdownHeading], block_to_page: &[u32]) -> Vec<OutlineNode> {
     headings
         .iter()
@@ -158,14 +125,7 @@ mod tests {
 
     #[test]
     fn block_headings_survive_a_prose_split_that_moves_the_indices() {
-        // A long prose paragraph before a heading is subdivided for the page
-        // pack, which pushes the heading's index. Reading the headings off the
-        // FINAL blocks is what keeps the entry pointing at the right one; a
-        // count taken before the split would land on the last chunk instead.
-        // The paragraph has to be long in LINES for this to be a test at all:
-        // `subdivide_with` only cuts a block taller than `SPLIT_MAX_LINES`, so
-        // one very long line would subdivide into nothing and the indices
-        // would not move.
+        // Headings come off the FINAL blocks, so a split cannot shift them.
         let line = "word ".repeat(12).trim().to_string();
         let prose = (0..8).map(|_| line.as_str()).collect::<Vec<_>>().join("\n");
         let source = format!("{prose}\n\n## Chapter\n\ntext\n");

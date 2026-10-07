@@ -6,17 +6,11 @@ description = "The format-agnostic core of the AI reading features: the word-exp
 license = "MIT"
 
 [dependencies]
-# The persisted gloss settings belong to the reader's core; the spring the
-# gloss box rides and the floating-box geometry it converts into belong to
-# `ui-geom`, the dependency-free leaf the chrome crate also places panels with.
-# Neither dependency runs the other way: no general crate knows AI exists.
+# Gloss settings live in reader-core, the spring and box maths in ui-geom.
 reader-core = { path = "../reader-core" }
 ui-geom = { path = "../ui-geom" }
 serde = { version = "1", features = ["derive"] }
-# Only `bridge` — the `explain_word` kickoff — crosses into JS, and it stays
-# inert rather than gated off-wasm: the app crate is built for the host too
-# (`cargo clippy --workspace` has no `--target`), so a wasm-only module here
-# would be a module the host build cannot name.
+# Only `bridge` crosses into JS; it stays inert off-wasm, not gated out.
 tauri-bridge = { path = "../tauri-bridge" }
 wasm-bindgen = "0.2"
 js-sys = "0.3"
@@ -25,8 +19,6 @@ js-sys = "0.3"
 serde_json = "1"
 
 [lints.rust]
-# Warnings are denied, not printed: a gate that only shows up in the log is a
-# gate that gets read past. The priority applies the group first, so the
-# individual levels below it remain deliberate overrides.
+# Warnings are denied, not printed: a gate only in the log gets read past.
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "forbid"
