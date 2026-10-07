@@ -1,8 +1,4 @@
-//! The moves a reader makes by hand: a drag between shelves, a removal, a relink.
-//!
-//! One rule covers the membership half of all three — **a move never touches a file the
-//! reader owns.** A shelf holds book ids, so a drag edits a list of ids, and the OS file a
-//! read-in-place book points at is never renamed, moved or deleted from here.
+//! The moves a reader makes by hand: a drag, a removal, a relink.
 
 mod asking;
 mod departure;
@@ -33,7 +29,7 @@ pub(crate) use purge::{drop_row, unlist_row};
 
 use library_core::shelf::{self as shelf, Shelf};
 
-/// One answer rather than every answer, because a removed book comes back to ONE shelf.
+/// One answer, because a removed book comes back to ONE shelf.
 pub(super) fn folder_shelf_of(shelves: &[Shelf], folder_id: &str, book_id: &str) -> Option<String> {
     shelf::containing(shelves, book_id)
         .into_iter()

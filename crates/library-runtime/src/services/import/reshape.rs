@@ -1,10 +1,4 @@
-//! Re-shaping a tree: the shelf-per-folder answer written onto the row that
-//! reads the ground, and the re-filing that answer owes.
-//!
-//! A pick answered the other way than the ground was imported with moves books
-//! between rungs — it never re-reads the disk. The walk in [`super::folder`]
-//! brings home what is new; this is what puts what is already here onto the
-//! rungs the answer now names.
+//! Re-shaping a tree: the pick written onto the row that reads it.
 
 use std::collections::HashSet;
 
@@ -19,14 +13,7 @@ use library_core::shelf::{self as shelves_ops, Shelf};
 
 use super::folder::{chain_for, page_shelves, write_folder};
 
-/// The row and rung the shelf-shape question moved, when the reader answered
-/// it the other way than that ground was imported with: the rung a fold plan
-/// names, else the rung the pick lit in the row that reads this run's ground.
-/// `None` when the answers agree, when the row copies its books, and when no
-/// row reads the ground yet.
-///
-/// A rescan hands a row its own answers back, so only a re-import can move
-/// this.
+/// The row and rung the pick moved, or `None` when they agree.
 pub(super) fn shape_moved(
     folders: &[WatchedFolder],
     root: &str,
@@ -42,9 +29,7 @@ pub(super) fn shape_moved(
         .then(|| (row.id.clone(), rung.to_string()))
 }
 
-/// The shelf a rung of the shape stands on: the one the tree already wears
-/// for it, or the mint of one the shape cuts — a hand that took the shelf out
-/// leaves a pointer, not a seat.
+/// The shelf a rung stands on: the tree's own, or a fresh mint.
 fn seat_for(
     state: crate::context::LibraryContext,
     folder: &mut WatchedFolder,
@@ -63,17 +48,12 @@ fn seat_for(
     chain_for(folder, key, now, &root, &None, false, minted)
 }
 
-/// Whether a rung's seat is there to file onto: a shelf the library holds, or
-/// one this re-shape has minted. Both count — re-minting over its own mint
-/// would grow a twin beside the rung it just cut.
+/// Whether a rung's seat is there: the library's, or this run's mint.
 fn seat_stands(shelves: &[Shelf], minted: &[Shelf], id: &str) -> bool {
     minted.iter().any(|shelf| shelf.id == id) || shelves_ops::find(shelves, id).is_some()
 }
 
-/// Write the shelf shape one ground answers with onto the row that reads it,
-/// before the walk that acts on it. The answer stands for the ground it was
-/// given on: the row's root for a pick of the tree's own ground, the rung
-/// below it for a pick under that.
+/// Write the shape onto the row that reads the ground, before the walk.
 pub(super) fn write_shape(
     state: crate::context::LibraryContext,
     row_id: &str,
@@ -87,11 +67,7 @@ pub(super) fn write_shape(
     });
 }
 
-/// The whole of one tree's books onto `seat`, and the shelves the one-shelf
-/// answer has no place for taken out: the flattening a re-import asks for,
-/// and the one an adopting tree takes a member in by. Every rung of `from`
-/// goes except the one that is `seat`. Books move, readers do not: a shelf
-/// the reader made inside one comes up to `seat` with its books.
+/// All of one tree's books onto `seat`; every other rung goes.
 pub(super) fn flatten_rungs(state: crate::context::LibraryContext, from: &str, seat: &str) {
     state.library.shelves.update(|shelves| {
         let own: Vec<String> = shelves_ops::rungs_of(shelves, from)
@@ -103,8 +79,7 @@ pub(super) fn flatten_rungs(state: crate::context::LibraryContext, from: &str, s
             .filter(|id| id.as_str() != seat)
             .cloned()
             .collect();
-        // A set rather than a growing list: the whole tree's books pass
-        // through here, and membership was a scan per book.
+        // A set: membership was a scan per book.
         let mut held: HashSet<String> = HashSet::new();
         for rung in &own {
             let Some(shelf) = shelves_ops::find(shelves, rung) else {
@@ -130,15 +105,7 @@ pub(super) fn flatten_rungs(state: crate::context::LibraryContext, from: &str, s
     });
 }
 
-/// Re-files the books of the ground the shape answer was about onto the rungs
-/// the shape now names: shelf-per-folder puts each under the rung its own
-/// address wears; one-shelf brings them onto the rung the ground answers for
-/// and takes out the rungs that answer has no place for. A rung the tree
-/// already stands on is reused, and the tree above the answered ground is
-/// left where it stands — the reader answered for the ground, not the tree.
-///
-/// Answers the shelf the ground's books came home to, and `None` when nothing
-/// moved.
+/// Re-file the answered ground's books onto the rungs the shape names.
 pub(super) fn reshape_the_tree(
     state: crate::context::LibraryContext,
     folder: &mut WatchedFolder,
@@ -152,9 +119,7 @@ pub(super) fn reshape_the_tree(
     if own.is_empty() {
         return None;
     }
-    // A tree whose root shelf is out of the library has no ground to
-    // re-file onto: the answer is the reader's when the shelf comes back with
-    // the folder's books.
+    // No root shelf, no ground to re-file onto.
     if folder
         .shelf_map
         .get("")
@@ -164,9 +129,7 @@ pub(super) fn reshape_the_tree(
     }
     let root = folder.root.clone();
     let ground = dir_of_rung(&root, rung);
-    // The rungs the answer has no place for: the ground's rung and the ones
-    // below it that no shape cuts any more. Their books come home with the
-    // ground's, and a reader-made shelf inside one comes up to `home`.
+    // Rungs no shape cuts any more; their books come home.
     let mut hurt: HashSet<String> = HashSet::new();
     for (key, id) in &own {
         if key_in_zone(key, rung) && !folder.cuts(key) {
@@ -174,8 +137,7 @@ pub(super) fn reshape_the_tree(
         }
     }
     let mut minted: Vec<Shelf> = Vec::new();
-    // Where the ground's books come home: the rung the shape names for it
-    // now, or the rung above when no shape cuts it any more.
+    // Where the ground's books come home.
     let home_key = folder.rung_for(rung);
     let home = seat_for(state, folder, &home_key, now, &mut minted);
     let books = state.library.books.get_untracked();
@@ -195,8 +157,7 @@ pub(super) fn reshape_the_tree(
                         let key = folder.rung_for(subfolder_of(&rel));
                         seat_for(state, folder, &key, now, &mut minted)
                     }
-                    // Every address under the ground is under the tree: the
-                    // two `rel_under` calls answer for one directory chain.
+                    // Under the ground is under the tree.
                     None => home.clone(),
                 }
             } else if doomed {
@@ -238,16 +199,12 @@ pub(super) fn reshape_the_tree(
         }
         shelves.retain(|shelf| !hurt.contains(shelf.id.as_str()));
     });
-    // The map is the tree's own idea of where its rungs stand: a rung the
-    // answer took out cannot be filed onto again.
+    // A rung the answer took out cannot be filed onto again.
     folder.shelf_map.retain(|_, id| !hurt.contains(id.as_str()));
     Some(home)
 }
 
-/// [`reshape_the_tree`] for a row the run does not hold: the tree a pick was
-/// folded into is read fresh, moved, written back and persisted — the run's
-/// clone of that ledger is the fold's own write and nothing else may land on
-/// top of it.
+/// [`reshape_the_tree`] for a row the run does not hold.
 pub(super) fn reshape_row(
     state: crate::context::LibraryContext,
     folder_id: &str,

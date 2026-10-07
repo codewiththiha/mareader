@@ -1,8 +1,5 @@
-//! The "already imported?" sheet: one question, three answers.
-//!
-//! The RULE is not here — it is `library_core::conflict`, which is pure and
-//! host-tested. This file is the wiring between that answer and the three things a
-//! reader can do about it.
+//! The "already imported?" sheet: the wiring between the pure rule and
+//! the reader's answers.
 
 mod covered;
 mod folder_merge;
@@ -29,35 +26,29 @@ use library_core::folder::FolderMode;
 
 use crate::context::LibraryContext;
 
-/// Which question an ask is, and the facts only that question has: three sheets share
-/// one queue and one signal, and two of the four answer functions used to open with a
-/// runtime guard over three booleans.
+/// Which question an ask is: three sheets share one queue and one signal.
 #[derive(Clone, PartialEq)]
 pub enum AskKind {
-    /// WHICH three answers the sheet offers is the arrival's fact rather than this one's, so this variant carries nothing.
+    /// Which three answers is the arrival's fact; this variant carries nothing.
     NameCollision,
-    /// A per-file question out of a folder import merging into a shelf the level already held.
+    /// A per-file question from a folder import merging into a held shelf.
     FolderMerge {
-        /// A folder that reads in place lands a linked answer now, a copying one lands it after its copy.
+        /// A read-in-place folder lands a link now; a copying one, later.
         mode: FolderMode,
-        /// The watched folder whose ledger records the placement when the answer lands, so a later rescan stays quiet.
+        /// The folder whose ledger records it, so a rescan stays quiet.
         folder_id: String,
     },
-    /// Two answers rather than three — the library's own stored copy on this level, or the
-    /// folder's book lit where it stands — because a second row of one linked file is the one
-    /// thing a read-at-place folder can never make.
+    /// Two answers: the stored copy here, or the folder's book lit.
     Covered {
-        /// The folder whose tree holds the file. Always one: the ask exists because a specific tree covers the ground.
+        /// The folder whose tree holds the file; the ask exists for one.
         folder_id: String,
     },
-    /// The question is the library's rather than the level's: the reader already has this
-    /// book, somewhere, and what is asked is whether they meant to add a second instance or
-    /// to go to the one they have.
+    /// The library's question, not the level's: this book is held somewhere.
     AlreadyHave,
 }
 
 impl AskKind {
-    /// Both folder kinds have one: a placement the ledger does not know about is a book the next rescan adds again.
+    /// Both folder kinds have one, so a later rescan stays quiet.
     pub fn folder_id(&self) -> Option<&str> {
         match self {
             AskKind::NameCollision | AskKind::AlreadyHave => None,
@@ -66,15 +57,12 @@ impl AskKind {
         }
     }
 
-    /// `false` for the two kinds that have no folder of their own: a name collision's copy is the library's own whatever the level is.
+    /// `false` for the kinds with no folder: a collision copy is the library's.
     pub fn reads_in_place(&self) -> bool {
         matches!(self, AskKind::FolderMerge { mode, .. } if mode.reads_in_place())
     }
 
-    /// Whether this is the level's own NAME question — the one the three-answer sheet
-    /// renders. The waiting count behind that sheet counts only these: "3 more waiting"
-    /// that included a covered file's two-answer question would promise a batch the
-    /// sheet's own answers can never consume.
+    /// Whether this is the level's name question; the waiting count uses it.
     pub fn is_name_question(&self) -> bool {
         matches!(self, AskKind::NameCollision)
     }
@@ -83,7 +71,7 @@ impl AskKind {
         matches!(self, AskKind::FolderMerge { .. })
     }
 
-    /// The covered file's shape, which the library's content question shares. One predicate rather than two, because the two render the same rows.
+    /// The covered shape, shared with the library's content question.
     pub fn is_two_answer(&self) -> bool {
         matches!(self, AskKind::Covered { .. } | AskKind::AlreadyHave)
     }
@@ -91,10 +79,10 @@ impl AskKind {
 
 #[derive(Clone, PartialEq)]
 pub struct ConflictAsk {
-    /// Kept whole: an answer places it, and a placement needs the file or the row and the level it was going to.
+    /// Kept whole: an answer places it with its file or row and level.
     pub arrival: Arrival,
     pub existing_id: String,
-    /// Read once: the sheet prints it in three places, and a heading and two buttons must not each derive their own.
+    /// Read once: heading and buttons must not each derive it.
     pub existing_name: String,
     pub kind: AskKind,
 }
@@ -149,9 +137,7 @@ impl ConflictAsk {
 }
 
 impl ConflictAsk {
-    /// One function rather than one per sheet, because the sheets differ only in WHICH answers
-    /// they offer and in what the thing already there is — a row or a shelf — and both of those
-    /// are already on the ask.
+    /// One function for both scopes: the sheets differ only in answers offered.
     pub fn placement(&self, state: crate::context::LibraryContext) -> PlacementAsk {
         let offers = match &self.kind {
             AskKind::Covered { .. } | AskKind::AlreadyHave => Placement::COVERED,
@@ -167,9 +153,7 @@ impl ConflictAsk {
     }
 }
 
-/// The single dispatch the five per-kind apply functions used to each write their own half
-/// of. `Merge` and `Replace` are where the duplication cost anything — each re-derived how to
-/// purge the loser, fold the progress and re-seat the membership — and they now branch once.
+/// The single dispatch the per-kind apply functions once each wrote half of.
 pub fn apply_placement(
     state: crate::context::LibraryContext,
     ask: &PlacementAsk,
@@ -215,9 +199,7 @@ fn replace_with(state: crate::context::LibraryContext, ask: &PlacementAsk) {
     }
 }
 
-/// The row being dragged is a read-at-place book an in-place folder placed, and the row
-/// already on the level is one of the library's own stored copies: neither side is the
-/// reader's to destroy, so the sheet offers *make link* in place of *replace*.
+/// A read-at-place row dragged onto the library's own copy: *make link*.
 fn link_shape(state: crate::context::LibraryContext, ask: &ConflictAsk) -> bool {
     let Some(moved_id) = ask.arrival.moving.as_deref() else {
         return false;
@@ -231,8 +213,7 @@ fn link_shape(state: crate::context::LibraryContext, ask: &ConflictAsk) -> bool 
         && crate::services::arrange::converts_on_move_to(state, moved_id, &ask.arrival.shelf_id)
 }
 
-/// One function rather than a branch in the sheet and a second in the answer, so the two
-/// cannot drift about which buttons a given arrival gets.
+/// One function, so sheet and answer cannot drift about the buttons.
 pub fn offers_for(
     state: crate::context::LibraryContext,
     ask: &ConflictAsk,
@@ -246,17 +227,14 @@ pub fn offers_for(
     }
 }
 
-/// One spelling, because the sheet prints this name in its heading and in every button's
-/// sentence: a site that derived its own would eventually disagree with the others about
-/// which book the question is about.
+/// One spelling: the heading and every button print this name.
 pub(crate) fn existing_name_of(rows: &[Row], existing_id: &str, arrival: &Arrival) -> String {
     find_row(rows, existing_id)
         .map(|row| row.display_name())
         .unwrap_or_else(|| arrival.name.clone())
 }
 
-/// Every placing surface hands its placements through here before writing
-/// anything, and applies the clean half at once.
+/// Every placing surface screens through here before writing.
 pub fn screen(
     state: crate::context::LibraryContext,
     arrivals: Vec<Arrival>,
@@ -280,8 +258,7 @@ pub fn screen(
     (clean, asks)
 }
 
-/// A sheet already up takes new asks onto its queue rather than being
-/// replaced: two drops in flight owe two answers.
+/// A sheet already up queues new asks: two drops owe two answers.
 pub fn raise(state: crate::context::LibraryContext, asks: Vec<ConflictAsk>) {
     if asks.is_empty() {
         return;
@@ -317,15 +294,13 @@ pub(super) fn advance(state: crate::context::LibraryContext) {
     }
 }
 
-/// Skips the question on screen and every one behind it; placements already
-/// answered keep their answers.
+/// Skips the question on screen and all behind it; answers already given stay.
 pub fn cancel(state: crate::context::LibraryContext) {
     state.library.conflict.dismiss();
     state.library.conflict_waiting.set(Vec::new());
 }
 
-/// Read at the click rather than at the raise, in one place: the two answers
-/// that mint a name must mint the same one for the same arrival.
+/// Read at the click, once: both name-minting answers mint the same one.
 pub(super) fn minted_name(state: crate::context::LibraryContext, ask: &ConflictAsk) -> String {
     let (rows, shelves) = state.library.snapshot_rows();
     next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name)
@@ -342,9 +317,7 @@ pub(super) fn member_slot(
     })
 }
 
-/// One spelling rather than one per sheet because the two sheets' contract is one contract,
-/// and the half of it that is easy to get wrong is the stop: a question of the other kind
-/// belongs to another gesture.
+/// One spelling for both sheets' drain: a question of the other kind stops it.
 pub(super) fn answer_batch<A: Copy + 'static>(
     state: crate::context::LibraryContext,
     answer: A,
