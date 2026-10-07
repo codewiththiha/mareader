@@ -1,38 +1,15 @@
-// Search-match highlight painting, split out of renderer.ts. Two halves, on
-// purpose: `occurrences` is the pure scan (which characters of a span's text
-// the query covers) and `applyHighlights` is the DOM work (a Range per
-// occurrence, a box per rect). The Rust side of search splits the same way,
-// because the scan's rules are the part that must agree across both
-// pipelines: an occurrence ordinal is how a painted box and a row in the
-// results list recognise each other.
+// Search-match highlight painting: the pure scan and the DOM work.
 
 import type { PageState } from "./types";
 import type { EngineSession } from "./state";
 
-/** Boxes one page will paint. The reflowable layer keeps the same number for a
- *  row (`MAX_BOXES_PER_ROW` in src/components/formats/reflow/highlight.rs), so
- *  a one-character query in a long paragraph costs the same whichever family
- *  the document is in. */
+// Boxes one page will paint, shared with the reflowable layer.
 const MAX_HIGHLIGHTS_PER_PAGE = 200;
 
-/** One occurrence's offsets in a span's text, in UTF-16 code units — the unit
- *  `Range.setStart` counts in, and the unit `String.indexOf` reports. */
+// One occurrence's offsets in a span's text, in UTF-16 units.
 type Occurrence = { start: number; end: number };
 
-/** Every occurrence of `query` in `text`, and whether those offsets may be
- *  handed to a Range over the RAW text node.
- *
- *  `query` arrives folded and trimmed (`setSearchContext` does both),
- *  matching case-insensitively and advancing by the query's length, so "aa"
- *  in "aaa" is one occurrence — the rules the Rust scan keeps and the
- *  ordinal numbering depends on.
- *
- *  The offsets are counted in the FOLDED copy. They transfer to the raw text
- *  only while folding preserves length, and `toLowerCase` does not always
- *  ('İ' is one code unit and folds to two, shifting every later offset one
- *  character early — a box over text nobody searched for). `offsetsUsable`
- *  is false then and the caller counts the ordinals without painting — the
- *  same call the Rust scan makes: a missed hit is a smaller lie. */
+// Every occurrence of `query` in `text`, in the folded copy.
 function occurrences(
   text: string,
   query: string,
@@ -47,9 +24,7 @@ function occurrences(
   return { spans, offsetsUsable };
 }
 
-/** The ordinal this page emphasises, or -1 for none. One home for the rule,
- *  which both halves of the highlight lifecycle apply: `applyHighlights` sets
- *  it while painting, `setActiveMatch` re-marks boxes already on the page. */
+// The ordinal this page emphasises, or -1.
 function activeOrdinal(s: EngineSession, page: number): number {
   const active = s.activeMatch;
   return active && active.page === page ? active.index : -1;
@@ -85,10 +60,7 @@ export function applyHighlights(s: EngineSession, st: PageState): void {
     const node = span.firstChild;
     const textNode = node && node.nodeType === Node.TEXT_NODE ? (node as Text) : null;
     const { spans, offsetsUsable } = occurrences(text, query);
-    // A span whose text is not one addressable text node cannot be boxed,
-    // but its occurrences still consume ordinals: the numbering must match
-    // the index's, which counts every occurrence in the page whether or not
-    // a box landed on it.
+    // A span that is not one text node still consumes ordinals.
     const paintable = !!textNode && textNode.length >= query.length && offsetsUsable;
     for (const { start, end } of spans) {
       const mine = ord;

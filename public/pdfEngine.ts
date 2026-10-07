@@ -1,15 +1,4 @@
-// window.PDFReader facade. The implementation lives in public/engine/*
-// (loader, renderer, thumbnails, search, theme); this file wires the public
-// API and session teardown. Compiled to public/pdfEngine.js and loaded by
-// the browser as an ES module.
-//
-// The facade holds NO document. Every document call names a session id
-// (`sid`) minted by the Rust `PdfSession` that owns the session; the
-// registry in engine/state.ts is the only way from a sid to its state, and
-// an unknown or retired sid resolves to nothing. The realm-level calls that
-// remain carry no document identity: the appearance broadcast (each live
-// session re-derives its OWN raster theme), diagnostics, and the aggregate
-// stats. docs/session-ownership.md is the ownership record.
+// window.PDFReader facade over public/engine/*, compiled to pdfEngine.js.
 
 export {};
 
@@ -97,14 +86,12 @@ declare global {
   var PDFReader: PDFReaderApi;
 }
 
-/** The envelope every session-scoped async call resolves when its sid names
- *  no live session — a stale caller, never an engine fault. */
+// The envelope a call resolves for a sid with no live session.
 function noSession(): { ok: false; error: { name: string; message: string } } {
   return fail("no_session", "No live PDF session with this id");
 }
 
-/** Cancel and release every live page surface of `s`. Shared by
- *  `destroySession`, `quiesce` and the pagehide release. */
+// Cancel and release every live page surface of `s`.
 function cancelAndReleasePages(s: EngineSession): void {
   for (const st of s.stateByCanvasId.values()) {
     st.dead = true;
@@ -114,10 +101,7 @@ function cancelAndReleasePages(s: EngineSession): void {
   }
 }
 
-/** The close intent's work-stop half for ONE session: every in-flight and
- *  queued job — page renders, thumbnail rasters, prefetch awaits — stops in
- *  the caller's task. The session survives; destroySession stays the one
- *  teardown and repeats this sweep idempotently. */
+// The work-stop half for one session; destroySession stays the teardown.
 function quiesce(s: EngineSession): void {
   if (s.pdf === null) return;
   lifecycleEvent("pdf_session:quiesce");
@@ -132,23 +116,13 @@ function quiesce(s: EngineSession): void {
   resetThumbLane(s);
 }
 
-/** Tear ONE session down, in the order the ownership rules require:
- *  stop accepting (the sid stops resolving) → advance invalidation
- *  (`disposed`, the document-gone signal, the lane epoch) → cancel active
- *  work → destroy the document and its pdf.js worker → clear the page
- *  registry → clear cache references → forget the session. Other sessions
- *  are untouched; no timeout decides when this is done. */
+// Tear ONE session down: stop accepting, cancel work, release, forget.
 async function destroySession(sid: Sid): Promise<void> {
   const s = sessionFor(sid);
   if (!s || !beginRetire(s)) return;
-  // Disconnect the pane-root observer at the top of teardown, before any
-  // asynchronous worker/document release can fail or await a late task.
+  // Disconnect the pane-root observer before any async release.
   unobserveThemeRoot(s);
-  // The sid no longer resolves, so nothing can queue again: take this
-  // session out of the realm lane's registry FIRST, before any teardown
-  // step below. The registry holds the session weakly (state.ts), so even
-  // a skipped unregister could not pin it — but a live entry would still
-  // receive pumps during the drain, and teardown leaves nothing behind.
+  // The sid no longer resolves: unregister from the realm lane first.
   if (s.unregisterLanePump) {
     s.unregisterLanePump();
     s.unregisterLanePump = null;
@@ -176,10 +150,7 @@ async function destroySession(sid: Sid): Promise<void> {
     s.thumbCache.clear();
     s.setSearchQuery("");
     s.setActiveMatchValue(null);
-    // Zero and remove the entry snapshots, not just the map: a canvas
-    // backing store lingers until GC unless zeroed (WKWebView keeps the
-    // IOSurface on DOM removal alone) — the same rule releaseSnapshots
-    // applies to the zoom masks.
+    // Zero and remove the entry snapshots; a canvas store lingers till GC.
     releaseAllEntrySnapshots(s);
     s.scrub.entryPrepare = null;
     if (s.loadingTask) await destroyTask(s, s.loadingTask);
@@ -193,23 +164,14 @@ async function destroySession(sid: Sid): Promise<void> {
     disposeScratch();
     if (hadDocument) lifecycleEvent("pdf_session:dispose_complete");
     finishRetire(s);
-    // The realm's last document session is gone (none live, none draining):
-    // the shared bake worker has nobody left to bake for. Realm-shared by
-    // design while documents exist — never while none do.
+    // The realm's last session is gone: the bake worker has nobody.
     if (registryCounts().live === 0) releaseBakeWorker();
   }
 }
 
-// ---------------------------------------------------------------------------
-// The appearance broadcast. Appearance is a global setting; the rasters it
-// is baked into are session-owned, so a change enqueues on EVERY live
-// session's own theme chain. Rust invokes these fire-and-forget, so each
-// session's mutations ride one promise chain: a pause in a tint drag cannot
-// interleave `scrub off -> bake` with a new `scrub on`. A failed mutation is
-// reported but swallowed so it never poisons that session's queue.
+// The appearance broadcast: a change enqueues on every live session.
 
-/** The appearance state a session created mid-drag (or with the menu open)
- *  must start in. Global appearance, not document state. */
+// The appearance state a session opening mid-drag must start in.
 let appearanceScrub = false;
 /** Whether the scrub in flight edits one pane only (see `scrubScope`). */
 let appearanceScrubScoped = false;
@@ -251,11 +213,7 @@ async function refreshSessionTheme(s: EngineSession): Promise<void> {
   paintAllVisibleThumbs(s);
 }
 
-/** Re-bake only the sessions whose own bake inputs moved since they were
- *  last brought up to date. Split panes share this realm: a pane-local edit
- *  (independent themes) changes ONE pane root's tokens, and every other
- *  session reads the same pipeline it already baked with, so it is left
- *  alone rather than re-rendered. A scrubbing session always settles. */
+// Re-bake only the sessions whose bake inputs moved since last refresh.
 function refreshTheme(): Promise<void> {
   const held = liveSessions();
   if (held.length === 0) {
@@ -274,13 +232,10 @@ function refreshTheme(): Promise<void> {
   );
 }
 
-/** The pipeline generation each session was last refreshed at. Weak: a
- *  disposed session drops out with its last reference. */
+// The pipeline generation each session was last refreshed at; weak.
 const refreshedGen = new WeakMap<EngineSession, number>();
 
-/** The pane a scrub is scoped to: the reader marks the document element
- *  with the edited pane's id while a slider edits ONE pane's look
- *  (independent themes), and clears it for a window-wide edit. */
+// The pane a scrub is scoped to.
 function scrubScope(): string | null {
   try {
     return document.documentElement.getAttribute("data-appearance-scope");
@@ -322,8 +277,7 @@ function setScrubMode(on: boolean): Promise<void> {
   // Leaving visits every session: one that never entered returns at once.
   const jobs = held.map((s) => enqueueTheme(s, () => setScrubModeInternal(s, on)));
   return Promise.all(jobs).then(() => {
-    // The class leaves once every session has settled out of the scrub —
-    // and only if no new scrub began meanwhile.
+    // The class leaves once every session has settled out of the scrub.
     if (!on && !appearanceScrub) {
       root?.classList.remove("appearance-scrubbing");
       for (const el of scopedScrubRoots) el.classList.remove("appearance-scrubbing");
@@ -332,9 +286,7 @@ function setScrubMode(on: boolean): Promise<void> {
   });
 }
 
-// Not enqueued: a retention flag, not a canvas mutation. The theme queue
-// serializes raster swaps; a menu toggle must neither wait behind a bake
-// nor delay one, and setting session state is synchronous anyway.
+// Not enqueued: a retention flag, not a canvas mutation.
 function setAppearanceMenuOpen(on: boolean): void {
   appearanceMenuOpen = on;
   for (const s of liveSessions()) s.setAppearanceMenuOpen(on);
@@ -346,13 +298,9 @@ function setAppearanceMenuOpen(on: boolean): void {
 function createEngineSession(sid: Sid): boolean {
   const s = createSession(sid);
   if (!s) return false;
-  // The realm lane's registry: a freed raster slot re-offers the lane to
-  // this session's queue head, so its pages pace with every other pane's.
-  // The registry holds the session WEAKLY and destroySession drops the
-  // entry, so it can never outlive the session.
+  // The realm lane registry; weak, so it cannot outlive the session.
   s.unregisterLanePump = registerLanePump(s);
-  // A session opening mid-scrub joins a window-wide scrub; a scoped one
-  // belongs to a pane that already exists.
+  // A session opening mid-scrub joins a window-wide scrub.
   if (appearanceScrub && !appearanceScrubScoped) {
     s.setThemeScrubActive(true);
     s.noteScrub();
@@ -364,9 +312,7 @@ function createEngineSession(sid: Sid): boolean {
 async function openInSession(sid: Sid, path: string) {
   const s = sessionFor(sid);
   if (!s) return noSession();
-  // A PDF session holds exactly one document: a new document is a new
-  // session (a new sid), so nothing captured against the old one can reach
-  // it.
+  // A PDF session holds exactly one document.
   if (s.pdf || s.loadingTask) {
     return fail("session_in_use", "This PDF session already holds a document");
   }
@@ -440,8 +386,7 @@ function sessionStats(sid: Sid): Stats | null {
   return s ? { ...gauges(s), ...s.counts } : null;
 }
 
-/** The realm aggregate: gauges summed over live and draining sessions,
- *  counters over every session that ever lived (realm totals). */
+// The realm aggregate over every session that ever lived.
 function stats(): AggregateStats {
   const out: AggregateStats = {
     fillMs: 0,
@@ -500,13 +445,9 @@ function stats(): AggregateStats {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Realm-level memory listeners: the window is one, the sessions are many,
-// so each walks every held session.
+// Realm memory listeners: each walks every held session.
 
-/** Release every GPU/canvas surface of every session. Registered on
- *  `pagehide` — the last reliable event before WKWebView tears the
- *  document down. */
+// Release every surface of every session, on `pagehide`.
 function releaseAllSurfaces(): void {
   for (const s of heldSessions()) {
     cancelAndReleasePages(s);
@@ -536,22 +477,12 @@ try {
   /* no document */
 }
 
-// The selection tracker is NOT installed here: it is format-agnostic and
-// lives in the reader bundle (public/readerEngine.ts), which index.html loads
-// first. Nothing in this facade depends on it.
+// The selection tracker lives in the reader bundle, not here.
 
-// The standing watch over the tokens the published backdrop paper is
-// computed from (public/engine/theme/paper.ts): a drag repaints the root
-// per frame and a texture click never reaches the scheduler at all, so the
-// publish rides the mutations instead of waiting to be called. Installed
-// with the other module-lifetime listeners; self-guarded where there is no
-// MutationObserver (the node smoke harness). It republishes the PUBLISHING
-// session's paper (engine/state.ts, setPaperPublisher).
+// The standing token watch over the backdrop paper's inputs.
 watchPaperTokens();
 
-// ---------------------------------------------------------------------------
-// The surface. Session-scoped entries resolve their sid first; an unknown
-// sid is a no-op (sync) or a `no_session` envelope (async).
+// The surface: session entries resolve their sid first.
 
 function withSession<T>(sid: Sid, missing: T, run: (s: EngineSession) => T): T {
   const s = sessionFor(sid);
@@ -614,6 +545,5 @@ globalThis.PDFReader = {
   setAppearanceMenuOpen,
 } satisfies PDFReaderApi;
 
-// The engine contract is fixed by the Rust bridge: surface integrity beats
-// extensibility, so freeze the object (has_pdf_reader only checks existence).
+// Freeze the object: the Rust bridge checks existence only.
 Object.freeze(globalThis.PDFReader);
