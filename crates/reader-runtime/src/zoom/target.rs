@@ -69,12 +69,18 @@ fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
     Some(profile.clamp(state.viewer.zoom.desired.get_untracked()))
 }
 
+/// Whether a host's size report is usable: finite and non-empty.
+#[cfg(feature = "pdf")]
+fn usable_size(width: f64, height: f64) -> bool {
+    width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0
+}
+
 /// A PDF page host's report of a page's true size; an active fit
 /// re-resolves.
 #[cfg(feature = "pdf")]
 pub(crate) fn page_rendered(state: ReaderState) -> Callback<(u32, f64, f64)> {
     Callback::new(move |(page, width, height): (u32, f64, f64)| {
-        if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+        if !usable_size(width, height) {
             return;
         }
         let changed = state
@@ -106,7 +112,7 @@ pub(crate) fn page_rendered(state: ReaderState) -> Callback<(u32, f64, f64)> {
 /// rasterise at this scale.
 #[cfg(feature = "pdf")]
 pub(crate) fn page_sized(state: ReaderState, page: u32, width: f64, height: f64) -> bool {
-    if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+    if !usable_size(width, height) {
         return false;
     }
     // Records the page's true box; `changed` is false for a known page.
