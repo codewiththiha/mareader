@@ -7,17 +7,14 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::phase::AiPhase;
 
-/// The data phase + payload of the open card: what the *model* is doing,
-/// independent of the card's geometry.
+/// The data phase and payload of the open card.
 #[derive(Clone, Copy)]
 pub struct GlossContent {
     pub phase: RwSignal<AiPhase>,
     pub word: RwSignal<String>,
-    /// The answer, shared rather than cloned: the same allocation is handed
-    /// to the card, the measure twin and the session cache.
+    /// The answer, shared with the card, twin and cache.
     pub word_info: RwSignal<Option<Arc<WordInfo>>>,
-    /// The typed failure behind `AiPhase::Error`, if any. Drives both the
-    /// friendly message and the retry affordance in the surface.
+    /// The typed failure behind `AiPhase::Error`, if any.
     pub error: RwSignal<Option<AiError>>,
 }
 
