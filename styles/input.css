@@ -1,15 +1,12 @@
 /* Stylesheet entry point, compiled to styles.css by the Tailwind CLI. */
 
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 
 /* Every Tailwind class token must be a static literal in the source. */
 @source "../src";
 @source "../crates";
 /* The shell page renders the pre-runtime boot placeholder itself. */
 @source "../index.html";
-
-/* Nothing under tools/ renders, so nothing under it is a class source. */
-@source not "../tools";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

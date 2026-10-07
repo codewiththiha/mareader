@@ -14,10 +14,10 @@ const DIST = path.join(root, "dist");
 
 /** Where the freshness manifest lives: outside dist/, which Trunk owns. */
 const MANIFEST_DIR = path.join(root, ".dev-artifacts");
-const MANIFEST_PATH = path.join(MANIFEST_DIR, "release-manifest.json");
+const MANIFEST_PATH = path.join(MANIFEST_DIR, "artifact-manifest.json");
 
-/** What invalidates the artifacts; derived outputs are excluded on purpose. */
-const FINGERPRINT_ROOTS = [
+/** Inputs that invalidate a complete production distribution. */
+const RELEASE_FINGERPRINT_ROOTS = [
   "src",
   "crates",
   "public",
@@ -34,12 +34,26 @@ const FINGERPRINT_ROOTS = [
   "tsconfig.tools.json",
 ];
 
+/** Trunk owns shell, CSS and public assets. */
+const DEV_FINGERPRINT_ROOTS = [
+  "crates",
+  "tools",
+  "Trunk.toml",
+  ...RUNTIME_INPUTS,
+  "Cargo.toml",
+  "Cargo.lock",
+  "package.json",
+  "package-lock.json",
+  "tsconfig.json",
+  "tsconfig.tools.json",
+];
+
 /** Hook outputs inside the roots above — derived, never fingerprinted. */
 const GENERATED_NAMES = new Set(["pdfEngine.js", "readerEngine.js", "rasterLane.js", "readerHost.js", "bake.worker.js", "coverBake.js"]);
 const ENGINE_DIR = path.join(root, "public", "engine");
 
-/** The floor a fresh manifest vouches for; proveServed checks the rest. */
-const FRESHNESS_SET = [
+/** Production outputs; dev only reuses the route artifacts. */
+const RELEASE_FRESHNESS_SET = [
   "dist/index.html",
   "dist/mareader.js",
   "dist/mareader_bg.wasm",
@@ -48,6 +62,7 @@ const FRESHNESS_SET = [
   "dist/readerHost.js",
   ...RUNTIME_FILES.map((file) => `dist/${file}`),
 ];
+const DEV_FRESHNESS_SET = RUNTIME_FILES.map((file) => `dist/${file}`);
 
 /** The files the shell and its pane frames load, probed over HTTP. */
 const PROBED = [
@@ -60,15 +75,14 @@ const PROBED = [
   ...RUNTIME_FILES.map((file) => `/${file}`),
 ];
 
-/** Source trees whose changes require a rebuild of the runtime artifacts. */
-const WATCHED_ROOTS = ["crates", "styles", "public"];
-const WATCHED_FILES = ["index.html", "Trunk.toml", "Cargo.toml", "Cargo.lock", ...RUNTIME_INPUTS];
+/** Rust changes need all runtime artifacts; Trunk watches web assets. */
+const WATCHED_ROOTS = ["crates"];
+const WATCHED_FILES = ["Trunk.toml", "Cargo.toml", "Cargo.lock", ...RUNTIME_INPUTS];
 
 /** Trunk's watch-ignore directories must exist before `trunk serve` spawns. */
 const IGNORE_DIRS = [
   "src-tauri",
   "scripts",
-  "styles",
   "target",
   "dist-library",
   "dist-reader",
@@ -209,24 +223,39 @@ function runCaptured(command, args) {
   });
 }
 
-/** Run the canonical build; the caller decides whether a failure is fatal. */
-async function runBuildAll() {
-  log("building all five artifacts (tools/build-dist.sh --release)");
-  return run("sh", ["tools/build-dist.sh", "--release"]);
+function profileArgs(profile) {
+  if (profile === "release") return ["--release"];
+  if (profile === "dev") return [];
+  throw new Error(`unsupported frontend profile: ${profile}`);
 }
 
-async function buildAllOrExit() {
-  const code = await runBuildAll();
+function developmentProfile() {
+  const profile = process.env.MAREADER_DEV_PROFILE ?? "dev";
+  if (profile !== "dev" && profile !== "release") {
+    throw new Error("MAREADER_DEV_PROFILE must be `dev` or `release`");
+  }
+  return profile;
+}
+
+/** Run the canonical build; the caller decides whether a failure is fatal. */
+async function runBuildAll(profile) {
+  log(`building all five artifacts (${profile} profile)`);
+  return run("sh", ["tools/build-dist.sh", ...profileArgs(profile)]);
+}
+
+async function buildAllOrExit(profile) {
+  const code = await runBuildAll(profile);
   if (code !== 0) {
     console.error(`[dev] the canonical build failed (exit ${code}) — not starting the shell`);
     process.exit(code);
   }
 }
 
-/** The (path, mtime, size) fingerprint of every build input. */
-function sourceFingerprint() {
+/** The (path, mtime, size) fingerprint of each build profile's inputs. */
+function sourceFingerprint(profile) {
+  const roots = profile === "release" ? RELEASE_FINGERPRINT_ROOTS : DEV_FINGERPRINT_ROOTS;
   const hash = crypto.createHash("sha256");
-  hash.update("profile:release;builder:build-dist.sh");
+  hash.update(`profile:${profile};builder:build-dist.sh`);
   const visit = (abs) => {
     let entries;
     try {
@@ -255,7 +284,7 @@ function sourceFingerprint() {
       }
     }
   };
-  for (const rel of FINGERPRINT_ROOTS) {
+  for (const rel of roots) {
     hash.update(rel);
     let stat;
     try {
@@ -272,8 +301,9 @@ function sourceFingerprint() {
   return hash.digest("hex");
 }
 
-function artifactsPresent() {
-  return FRESHNESS_SET.every((rel) => {
+function artifactsPresent(profile) {
+  const files = profile === "release" ? RELEASE_FRESHNESS_SET : DEV_FRESHNESS_SET;
+  return files.every((rel) => {
     try {
       return fs.statSync(path.join(root, rel)).size > 0;
     } catch {
@@ -290,11 +320,11 @@ function readManifest() {
   }
 }
 
-function writeManifest(fingerprint) {
+function writeManifest(profile, fingerprint) {
   fs.mkdirSync(MANIFEST_DIR, { recursive: true });
   fs.writeFileSync(
     MANIFEST_PATH,
-    `${JSON.stringify({ profile: "release", fingerprint }, null, 2)}\n`,
+    `${JSON.stringify({ profile, fingerprint }, null, 2)}\n`,
   );
 }
 
@@ -368,12 +398,7 @@ async function proveServed(label) {
   return false;
 }
 
-/** A cheap, deterministic change detector: newest mtime across the watched
- *  trees. fs.watch is platform-dependent (recursive on some, not others) and
- *  this runs once a second over a small tree. Hook outputs under `public/`
- *  are EXCLUDED for the same reason the fingerprint excludes them: every
- *  Trunk build rewrites them, so counting them would fire a canonical rebuild
- *  off Trunk's own churn instead of a real source edit. */
+/** Newest mtime across runtime sources; Trunk owns shell, CSS and public assets. */
 function newestMtime() {
   let newest = 0;
   const visit = (abs) => {
@@ -467,11 +492,11 @@ async function waitForDistQuiet() {
 }
 
 /** Builds racing `trunk serve` are retried; failures surface at the end. */
-async function rebuildRuntimeArtifacts() {
+async function rebuildRuntimeArtifacts(profile) {
   await waitForDistQuiet();
   let last = { code: 1, out: "" };
   for (let attempt = 1; attempt <= REBUILD_ATTEMPTS; attempt += 1) {
-    last = await runCaptured("sh", ["tools/build-dist.sh", "--release"]);
+    last = await runCaptured("sh", ["tools/build-dist.sh", ...profileArgs(profile)]);
     if (last.code === 0) {
       if (attempt > 1) log(`rebuild succeeded on attempt ${attempt}`);
       return true;
@@ -497,33 +522,36 @@ function ensureIgnoreDirs() {
 }
 
 /** The freshness decision: build only when the manifest does not vouch. */
-function freshnessDecision() {
+function freshnessDecision(profile) {
   const force = process.env.FORCE_REBUILD === "1";
-  const fingerprint = sourceFingerprint();
+  const fingerprint = sourceFingerprint(profile);
   if (force) return { fresh: false, fingerprint, why: "FORCE_REBUILD=1" };
-  if (!artifactsPresent())
+  if (!artifactsPresent(profile))
     return { fresh: false, fingerprint, why: "artifacts are missing" };
   const manifest = readManifest();
   if (manifest === null) return { fresh: false, fingerprint, why: "no manifest yet" };
-  if (manifest.profile !== "release" || manifest.fingerprint !== fingerprint)
+  if (manifest.profile !== profile || manifest.fingerprint !== fingerprint)
     return { fresh: false, fingerprint, why: "inputs changed since the last build" };
   return { fresh: true, fingerprint, why: "inputs unchanged" };
 }
 
 /** `--build-only`: the same gate with no server, run by beforeBuildCommand. */
 async function buildOnly() {
-  const decision = freshnessDecision();
+  const profile = "release";
+  const decision = freshnessDecision(profile);
   if (decision.fresh) {
     log(`build-only: ${decision.why} — skipping the five-target build`);
     return;
   }
   log(`build-only: ${decision.why} — running the five-target build`);
-  await buildAllOrExit();
-  writeManifest(decision.fingerprint);
+  await buildAllOrExit(profile);
+  writeManifest(profile, decision.fingerprint);
   log("build-only: artifacts built and manifest written");
 }
 
 async function main() {
+  const profile = developmentProfile();
+
   // The port must be ours before the first build touches dist/, not the spawn.
   if (!(await ensureDevPortFree())) process.exit(1);
 
@@ -531,7 +559,7 @@ async function main() {
   process.env.MAREADER_DEV_BUILD = "1";
 
   // The freshness gate: a warm restart pays no build when the manifest vouches.
-  const decision = freshnessDecision();
+  const decision = freshnessDecision(profile);
   if (decision.fresh) {
     log(
       `freshness gate: ${decision.why} — skipping the five-target build ` +
@@ -539,8 +567,8 @@ async function main() {
     );
   } else {
     log(`freshness gate: ${decision.why} — building all five artifacts`);
-    await buildAllOrExit();
-    writeManifest(decision.fingerprint);
+    await buildAllOrExit(profile);
+    writeManifest(profile, decision.fingerprint);
   }
 
   // Trunk hard-errors on a missing watch-ignore entry; create them first.
@@ -575,9 +603,10 @@ async function main() {
 
   if (!(await ensureDevPortFree())) process.exit(1);
 
-  log("starting trunk serve (the shell dev server, release profile)");
+  log(`starting trunk serve (the shell dev server, ${profile} profile)`);
   // --enable-cooldown drops in-build events; without it, endless rebuilds.
-  serve = spawn("trunk", ["serve", "--release", "--enable-cooldown"], {
+  const serveArgs = ["serve", ...profileArgs(profile), "--enable-cooldown"];
+  serve = spawn("trunk", serveArgs, {
     cwd: root,
     stdio: "inherit",
   });
@@ -605,7 +634,7 @@ async function main() {
   if (!(await proveServed("boot"))) stop(1);
 
   log(`safe to open ${devUrl()} — the shell will find its runtimes`);
-  log("watching crates/, styles/, public/ for runtime changes");
+  log("watching runtime crate and entry-point inputs for changes");
 
   let watermark = newestMtime();
   for (;;) {
@@ -624,8 +653,8 @@ async function main() {
     watermark = now;
     // A watched source changed: the runtime artifacts are stale until rebuilt.
     log("source change detected — rebuilding the runtime artifacts");
-    if (!(await rebuildRuntimeArtifacts())) continue;
-    writeManifest(sourceFingerprint());
+    if (!(await rebuildRuntimeArtifacts(profile))) continue;
+    writeManifest(profile, sourceFingerprint(profile));
     if (!(await proveServed("rebuild"))) stop(1);
   }
 }

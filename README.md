@@ -1101,13 +1101,16 @@ that does not exist):
 npm run dev:frontend
 ```
 
-It builds all five artifact types in release mode — reusing them untouched when
-the sources haven't moved since the last build (`FORCE_REBUILD=1` forces a
-fresh one) — merges them, starts Trunk on port 1420, and only reports the
-boot as safe once the dev server actually serves every artifact the shell
-loads. Release is the profile CI and the packaged app run: debug wasm makes
-every route transition visibly slow, because each transition instantiates
-its runtime's module again.
+It builds all five artifact types with Cargo's tuned `dev` profile, reusing
+route artifacts until their inputs change (`FORCE_REBUILD=1` forces a fresh
+build). The profile keeps incremental compilation and modest optimization,
+without release LTO or `wasm-opt`; Trunk handles shell, stylesheet and public
+asset changes without rebuilding every runtime. The orchestrator merges the
+artifacts, starts Trunk on port 1420 and reports a safe boot only after the
+server answers for every asset the shell loads. Set
+`MAREADER_DEV_PROFILE=release` when a release-sized frontend is needed while
+developing. `cargo tauri build` and `npm run build:dist` still build release
+artifacts.
 
 Note that the file dialog and drag-and-drop rely on Tauri and are unavailable in a browser.
 
