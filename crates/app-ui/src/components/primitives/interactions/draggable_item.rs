@@ -90,10 +90,6 @@ pub struct DraggableItemOptions {
     /// the pointerdown that started the press is six pixels and a decision
     /// behind by now.
     pub on_drag_start: Callback<(f64, f64), ()>,
-    /// The pointer is dragging, with its client coordinates. The `()` answer
-    /// type is spelled out: a stream of coordinates is not an answer anybody
-    /// wants back.
-    pub on_drag_move: Callback<(f64, f64), ()>,
     /// The drag ended on a release, at the coordinates the pointer came up at.
     pub on_drag_end: Callback<(f64, f64), ()>,
     /// The drag was taken away rather than released — a `pointercancel`:
@@ -167,7 +163,6 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
         on_tap,
         on_long_press,
         on_drag_start,
-        on_drag_move,
         on_drag_end,
         on_drag_cancel,
     } = options;
@@ -279,15 +274,13 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                     if may_drag(draggable.get_untracked(), touch.get_value()) {
                         mode.set_value(Mode::Drag);
                         on_drag_start.run(point);
-                        on_drag_move.run(point);
                     } else {
                         mode.set_value(Mode::Abandoned);
                     }
                 }
-                Mode::Drag => on_drag_move.run(point),
-                // A hold has already answered this press; an abandoned one
-                // has nothing left to answer with.
-                Mode::Tap | Mode::Hold | Mode::Abandoned => {}
+                // A drag's stream is the session's; a hold has
+                // already answered this press.
+                Mode::Drag | Mode::Tap | Mode::Hold | Mode::Abandoned => {}
             }
         }
     });
@@ -304,10 +297,8 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                     mode.set_value(Mode::Tap);
                     on_tap.run(());
                 }
-                // The release point rather than the last sampled move: a
-                // fast drag
-                // ends with the pointer somewhere no move was reported for, and
-                // where the reader let go is the answer they meant.
+                // The release point, not the last sampled move: where
+                // the reader let go is the answer they meant.
                 Mode::Drag => on_drag_end.run((ev.client_x() as f64, ev.client_y() as f64)),
                 Mode::Tap | Mode::Hold | Mode::Abandoned => {}
             }

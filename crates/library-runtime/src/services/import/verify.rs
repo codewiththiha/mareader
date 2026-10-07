@@ -91,23 +91,6 @@ fn walk_one(state: crate::context::LibraryContext, root: String, opts: FolderOpt
     });
 }
 
-/// Called when a book joins through the reader rather than an import: an
-/// open proves the file is there and measures nothing, so the row carries a
-/// placeholder — exactly what [`rescan_watched`] refuses to diff against.
-pub fn verify_one(state: crate::context::LibraryContext, path: String) {
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
-    spawn_local(async move {
-        match ipc::verify_paths(vec![path]).await {
-            Ok(checks) => apply_checks(state, &checks),
-            Err(message) => {
-                web_sys::console::warn_1(&format!("[library] verify failed: {message}").into());
-            }
-        }
-    });
-}
-
 /// Split out of [`rescan_watched`]: a relink asks the same thing about one
 /// address.
 pub(super) fn apply_checks(state: crate::context::LibraryContext, checks: &[PathCheck]) {

@@ -28,7 +28,7 @@ pub use migrate::migrate_store_layout;
 pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;
 pub use tasks::dismiss_task;
-pub use verify::{rescan_watched, set_shelf_watch, shelf_watch, verify_one};
+pub use verify::{rescan_watched, set_shelf_watch, shelf_watch};
 
 /// The card lifecycle for single-copy runs outside this module — a relink, a
 /// duplicate, a replace's conversion, departures: their beats need a card to
