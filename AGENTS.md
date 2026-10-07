@@ -206,7 +206,7 @@ this?** If not, cut it and put what it said in the commit message. Measure it wi
 from the left margin, fifteen words per block by default, all three raisable with
 `--max-lines`, `--max-line`, `--max-words`. Run it on the files you touched, not on
 the repository: the style this rule replaces is still in the tree, and the tool
-names 6,246 blocks across 714 files today. A comment that genuinely needs more than the ceiling states so
+names 76 blocks across 714 files today. A comment that genuinely needs more than the ceiling states so
 itself with `comment-check: allow` on the line above it, which the tool honours and
 a reviewer can read as a claim, not an escape.
 
