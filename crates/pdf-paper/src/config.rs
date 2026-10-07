@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 const MIN_EDGE_WIDTH: u32 = 2;
 const MAX_EDGE_WIDTH: u32 = 32;
 
-/// The default edge-strip thickness: a thin slice of each side.
+/// Default edge-strip thickness, in sampled-raster pixels.
 pub const DEFAULT_EDGE_WIDTH: u32 = 10;
 
 /// Which pixels of a page raster carry the paper colour.
@@ -79,7 +79,8 @@ mod tests {
 
     #[test]
     fn a_stale_blob_loads_and_fills_in_the_defaults() {
-        // An older blob carries retired keys; defaults fill the rest.
+        // A blob from before the renames: unknown keys drop, defaults
+        // fill what is missing.
         let c: PaperConfig = serde_json::from_str(r#"{"mode":"fixed","scan_pages":100}"#).unwrap();
         assert_eq!(c.area, PaperArea::WholePage);
         assert_eq!(c.edge_width, DEFAULT_EDGE_WIDTH);
