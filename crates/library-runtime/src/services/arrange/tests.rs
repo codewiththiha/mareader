@@ -44,7 +44,7 @@ fn a_drop_on_the_root_puts_one_row_where_the_reader_pointed() {
 
 #[test]
 fn the_index_counts_the_list_as_it_was_before_the_lift() {
-    // The reader pointed at the slot "d" occupied while they were holding the two, not two further down the list the lift just shortened.
+    // The slot "d" occupied while the reader held the two, not a shifted one.
     let mut rows = list();
     reorder_root(&mut rows, &owned(&["a", "b"]), Some(3));
     assert_eq!(ids(&rows), vec!["c", "a", "b", "d"]);
@@ -59,7 +59,7 @@ fn a_drop_past_the_end_appends() {
 
 #[test]
 fn an_append_keeps_the_payload_s_order_not_the_list_s() {
-    // A set has no order, so the payload is sorted into the level's own order — and the sort is by position in `row_ids`, because putting them back in the list's order would be a drop that quietly shuffled the hand.
+    // Sorted into the level's own order, by position in `row_ids`.
     let mut rows = list();
     reorder_root(&mut rows, &owned(&["c", "a"]), None);
     assert_eq!(ids(&rows), vec!["b", "d", "c", "a"]);
@@ -135,7 +135,7 @@ fn a_book_already_on_the_shelf_is_moved_not_duplicated() {
 
 #[test]
 fn the_shift_is_counted_per_book_rather_than_for_the_batch() {
-    // Counting the batch instead of the members would have landed the three one slot early.
+    // Counting the batch would have landed the three a slot early.
     let mut members = owned(&["a", "x", "c", "y"]);
     place_many(&mut members, &owned(&["a", "b", "c"]), Some(3));
     assert_eq!(members, vec!["x", "a", "b", "c", "y"]);
@@ -214,7 +214,7 @@ fn nested(n: u32) -> WatchedFolder {
     }
 }
 
-/// Takes the state rather than making one because the `Owner` a signal needs has to outlive the write.
+/// Takes the state: the `Owner` has to outlive the write.
 fn set_nested(state: crate::context::LibraryContext) {
     state.library.folders.set(vec![nested(7)]);
     state
@@ -229,8 +229,7 @@ fn a_drag_to_another_rung_of_the_same_folder_is_a_departure() {
     owner.set();
     let state = LibraryContext::default();
     set_nested(state);
-    // Reading the tie as the folder's shelf tree instead — "any shelf this folder owns" — left the row
-    // linked at an address it had been dragged off.
+    // Reading the tie as the folder's tree left the row linked where it left.
     assert!(converts_on_move_to(state, "b1", "shelf2"));
     assert!(converts_on_move_to(state, "b1", "shelf1"));
     assert!(converts_on_move_to(state, "b1", "elsewhere"));
@@ -242,7 +241,7 @@ fn a_reorder_on_the_book_s_own_rung_copies_nothing() {
     owner.set();
     let state = LibraryContext::default();
     set_nested(state);
-    // Re-ordering the books a folder placed, on the rung it placed them on, is the folder's own business.
+    // Re-ordering a folder's own placed books is the folder's business.
     assert!(!converts_on_move_to(state, "b1", "shelf3"));
 }
 
@@ -385,7 +384,7 @@ fn a_departure_s_landing_does_not_bind_the_log_it_just_wrote() {
             .with_untracked(|folders| folders[0].ignored[0].returned_row.is_some())
     };
 
-    // The shape of a return without being one: binding here would spend the log on the row that just left.
+    // A return's shape without being one: binding spends the log.
     move_row(state, "b1", "shelf2", None, Departed::ThisGesture);
     assert!(!bound(state), "a departure is not a return");
     let filed = state
@@ -486,7 +485,7 @@ fn a_departing_rung_carries_the_books_standing_on_the_rungs_it_takes() {
 fn a_book_shown_on_a_departing_rung_keeps_its_link_when_its_ground_stays() {
     let shelves = tree();
     let folder = reading_folder();
-    // "shown2" is a member of "sf" below it, but its address stands on the ROOT rung, which is not departing.
+    // "shown2" stands on the ROOT rung, which is not departing.
     let (subtree, rungs) = departing_sets(&shelves, "f1", "fic");
     assert!(
         subtree.contains("sf"),
@@ -573,7 +572,7 @@ fn the_ask_names_the_copies_the_level_s_next_free_names() {
     );
 }
 
-/// f1's tree with a displaced member: the shape a removed rung and a subfolder imported on its own leave behind.
+/// f1's tree with a displaced member: a removed rung, a subfolder alone.
 fn family_state() -> (Vec<Shelf>, Vec<WatchedFolder>) {
     let mut tree = reading_folder();
     tree.shelf_map.remove("Fiction/SciFi");
@@ -651,7 +650,7 @@ fn an_off_seat_rung_goes_home_by_the_reseat_and_a_seated_one_is_home() {
     }
 }
 
-/// `home/root/1st/2nd`: a read-at-place tree with a rung per folder, its books on the lowest one.
+/// `home/root/1st/2nd`: a tree with a rung per folder.
 fn deep_tree() -> (Vec<Shelf>, Vec<Row>, WatchedFolder) {
     let mut folder = reading_folder();
     folder.shelf_map = BTreeMap::from([
@@ -808,9 +807,7 @@ fn taking_a_level_apart_leaves_the_levels_below_it_alone() {
     state.library.books.set(rows());
     state.library.folders.set(vec![reading_folder()]);
 
-    // `Fiction` holds one book read in place, and the rung below it holds another on a ground of
-    // its own: the level coming apart pays for its own book, and the tree keeps answering for the
-    // rest — a copy of a book whose rung stays is a copy the reader never asked for.
+    // `Fiction` keeps one book; the rung below holds another of its own.
     let ask = CopyAsk::of_apart(state, "fic").expect("the level read in place is a question");
     assert!(
         ask.lines[0].contains("The book read in place here becomes a copy"),
@@ -839,8 +836,7 @@ fn a_level_the_library_already_stores_comes_apart_without_a_question() {
     state.library.books.set(rows());
     state.library.folders.set(vec![reading_folder()]);
 
-    // `kept` is the library's own copy already and `loose` is a file no folder placed here: neither
-    // is a book to make a copy of, so nothing is stored twice and nothing is asked.
+    // `kept` is already the library's copy and `loose` was never placed.
     ask_shelf_apart(state, "sf");
 
     assert!(
@@ -864,8 +860,7 @@ fn a_level_with_nothing_read_in_place_asks_nothing() {
     let state = LibraryContext::default();
     set_deep_tree(state);
 
-    // `1st` holds nothing, and the reader's own shelf is nobody's ground: neither leaves a book
-    // answering to a folder.
+    // `1st` holds nothing; a reader's shelf is nobody's ground.
     ask_shelf_apart(state, "one");
     assert!(state.library.copy_ask.ask.get_untracked().is_none());
     let shelves = state.library.shelves.get_untracked();
@@ -906,8 +901,7 @@ fn the_root_rung_has_nothing_above_it_to_come_up_to() {
 
     delete_shelf(state, "root");
 
-    // The tree's own root going leaves no rung of the folder's above its books: they stay in the
-    // library at the top level, and the levels below keep the shape the tree gave them.
+    // The tree's root going leaves the books at the top level.
     let shelves = state.library.shelves.get_untracked();
     assert!(
         shelves.iter().all(|s| !s.books.contains(&"b0".to_string())),
