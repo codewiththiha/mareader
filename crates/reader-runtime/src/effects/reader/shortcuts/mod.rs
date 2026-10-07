@@ -1,18 +1,4 @@
-//! Global keyboard shortcuts: the keydown/keyup/blur listeners, the target
-//! guards, and the routing to the per-intent handlers (`window` combos,
-//! `zoom` steps, `navigation` + the scroll-hold engine).
-//!
-//! Installed once per pane. The listener callback runs OUTSIDE the
-//! reactive owner, so everything it touches is a Copy signal handle /
-//! ReaderState captured by value.
-//!
-//! The map, so a new binding has an obvious home rather than a new arm: `Esc`
-//! is handled HERE, before the guards, because it is a dismiss action and not
-//! text input; `window` owns every Cmd/Ctrl combo (open, search, fit, view
-//! mode, zoom); `zoom` owns the bare `+`/`-` steps; `auto_scroll` owns
-//! Shift+A; `navigation` owns the movement keys — the arrows and their vim
-//! aliases `h`/`j`/`k`/`l`, PageUp/Down and Space — decided by the pure,
-//! tested [`keymap`] table and performed by the scroll-hold engine.
+//! Global keyboard shortcuts: the listeners, the guards, the routing.
 
 mod auto_scroll;
 mod keymap;
@@ -30,8 +16,7 @@ use navigation::{end_hold_for, handle_navigation_shortcut, stop_hold};
 use window::handle_modifier_shortcut;
 use zoom::handle_zoom_shortcut;
 
-/// Returns true when the keydown target is a form control (input / select),
-/// where global shortcuts must not fire.
+/// True when the keydown target is a form control.
 fn is_form_target(ev: &leptos::ev::KeyboardEvent) -> bool {
     ev.target().is_some_and(|target| {
         target.dyn_ref::<web_sys::HtmlInputElement>().is_some()
@@ -39,8 +24,7 @@ fn is_form_target(ev: &leptos::ev::KeyboardEvent) -> bool {
     })
 }
 
-/// True when the key landed inside a chrome scroller (thumbs, outline, a
-/// popover). Those own their own arrow keys; the reader must not steal them.
+/// True when the key landed inside a chrome scroller.
 fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
     let Some(el) = ev
         .target()
@@ -48,43 +32,29 @@ fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
     else {
         return false;
     };
-    // One selector list, one ancestor walk. This runs on EVERY keydown, and
-    // asking `closest` four times walked the tree to the root four times over
-    // before concluding that a key pressed over the document is the document's.
+    // One selector list, one ancestor walk: this runs on every keydown.
     el.closest(CHROME_SCROLL_SELECTOR).ok().flatten().is_some()
 }
 
 /// Chrome surfaces that own their own arrow keys.
 const CHROME_SCROLL_SELECTOR: &str = "#thumb-scroll, aside, .menu-popover, [data-search-chrome]";
 
-/// End any key hold still gliding. The hold engine is window-level (one
-/// keyboard), so a pane that loses the host's focus ends it: the keys that
-/// would have released it now go to another pane.
+/// End any key hold still gliding: focus left this pane.
 pub(crate) fn end_key_hold() {
     stop_hold();
 }
 
-/// Called once per pane, from its mount scope. `on_open` is the reader's
-/// open-file action (Cmd/Ctrl+O), injected so the viewer never depends on
-/// app chrome. `shell` is the HOST's workspace controller: Escape closes the
-/// rail through it, never by writing the host's sidebar store itself.
-/// `is_active` is the host's focus authority as this pane sees it: a
-/// window-level key belongs to the ACTIVE pane only, so every other pane's
-/// arm stands down.
+/// Called once per pane, from its mount scope.
 pub fn shortcuts(
     state: ReaderState,
     on_open: impl Fn() + 'static,
     shell: ShellController,
     is_active: impl Fn() -> bool + 'static,
 ) {
-    // Derived once, here: asking the controller per keypress would build a
-    // fresh derived signal every time.
+    // Derived once, here: per-keypress derivation would rebuild it.
     let sidebar_open = shell.is_sidebar_open();
-    // Handles are parked and removed on cleanup. The session installs these
-    // once for its own lifetime, and a dropped handle does NOT unregister
-    // the listener — an owner that went away would leave a keydown handler
-    // behind, still holding its signals and driving the scroll-hold
-    // engine.
+    // Handles are parked and removed on cleanup; a dropped handle does
+    // not unregister.
     let keydown =
         window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
             if !is_active() {
@@ -92,14 +62,13 @@ pub fn shortcuts(
             }
             let key = ev.key();
 
-            // Escape is a dismiss action, never text input, so it must work even
-            // with a search input focused — handle it before the form-target
-            // guard. Closes the floating search overlay first, then the
-            // sidebar — unless a modal or menu is up, whose press this is.
+            // Escape must work with an input focused, so it runs before the
+            // guard.
             if key == "Escape" {
                 if state.search.visible.get() {
-                    // Closes the bar but leaves the muted highlights behind; the
-                    // next interaction with the document clears them.
+                    // Closes the bar; the muted
+                    // highlights go on the next
+                    // interaction.
                     crate::effects::reader::search::dismiss_search(state);
                 } else if sidebar_open.try_get_untracked() == Some(true)
                     && !app_chrome::floating::dismiss::escape_is_claimed()
@@ -123,8 +92,7 @@ pub fn shortcuts(
             handle_navigation_shortcut(state, &ev);
         });
 
-    // Release ends the rAF glide. Without this a held arrow would keep
-    // scrolling after the key came up (or after the window lost focus).
+    // Release ends the rAF glide, or a held arrow would keep going.
     let keyup = window_event_listener(leptos::ev::keyup, move |ev: leptos::ev::KeyboardEvent| {
         end_hold_for(&ev.key())
     });
@@ -132,8 +100,7 @@ pub fn shortcuts(
 
     let handles = StoredValue::new_local(vec![keydown, keyup, blur]);
     on_cleanup(move || {
-        // Any glide still running belongs to a keyup that will now never
-        // arrive, so it is stopped here rather than left on the rAF loop.
+        // A glide whose keyup will never arrive is stopped here.
         stop_hold();
         if let Some(handles) = handles.try_update_value(std::mem::take) {
             for handle in handles {
