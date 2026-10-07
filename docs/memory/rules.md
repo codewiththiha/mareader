@@ -24,9 +24,10 @@ teardown so the frame can die; do not keep graphs that outlive it.
 ## 2. Never start expensive work for an item the strip is sweeping past
 
 A page crossing the visible band during a fling is not commitment. The
-fling gate defers unpainted pages to the scroll settle; the in-view
-exemption renders at once at reading speed and only after a short dwell
-mid-fling ([fling-gate.md](fling-gate.md)). Full surfaces created and discarded every
+fling gate defers unpainted pages to the scroll settle; a page the motion
+band marks in view (`VirtualItemState::Active`) renders immediately, and a
+page the fling only sweeps past waits for the settle
+([fling-gate.md](fling-gate.md)). Full surfaces created and discarded every
 few frames push the webview's resource cache — and the footprint latched
 onto it — to a high-water mark that does not come back at idle. Any new
 exemption from a gate must carry a time condition or an equivalent
@@ -53,8 +54,9 @@ call site, name the quiescence paths that replace it in the commit.
 A cache without a bound or a drain is a leak with extra steps. Existing
 bounds: canvas pool `POOL_MAX = 6` with oversized-return guard, LUT cache
 `LUT_CACHE_MAX = 8`, thumbnail cache `THUMB_CACHE_MAX`, zombies
-`MAX_ZOMBIES = 12` / 120 ms grace, the rail's 6 cells / 4 frames capped at
-`FRAME_CEILING_MS` a frame, page lane `PAGE_RENDER_LIMIT = 2` and
+`MAX_ZOMBIES = 12` with the motion-gated bridge (a retained item's ceiling
+is one frame, `FRAME_CEILING_MS = 120`), the rail's `BRIDGE_CELLS = 6`,
+page lane `PAGE_RENDER_LIMIT = 2` and
 realm cap `REALM_PAGE_LIMIT = 2`, and host cap `WINDOW_RASTER_LIMIT = 2`
 with at most two requests per pane realm (weak host wakes, cancelled on
 session teardown, reclaimed by scoped nonce on pane removal, and reclaimed
@@ -92,8 +94,10 @@ on a dead owner.
 Every paired resource has counters or gauges the test suite reads:
 `sessionsOpened == sessionsDestroyed`, `workersCreated == workersTerminated`,
 render and prefetch pairings, drained lane gauges, `retainedVirtualItems`.
-A teardown change must keep the paired numbers balanced in
-`scripts/test-engine-smoke.js` and the browser lifecycle baseline.
+A teardown change must keep the paired numbers balanced in the engine
+smoke suite (`tools/test-engine-smoke.ts`, whose stages live in
+`tools/engine-smoke/` — CI runs the compiled `scripts/test-engine-smoke.js`)
+and the browser lifecycle baseline.
 
 ## 10. Claims of release need measurements
 

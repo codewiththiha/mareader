@@ -107,7 +107,8 @@ comparable across commits.
 
 ### Manual (Tauri/WKWebView, per significant change)
 
-Run against a dev build (`trunk serve`, or `cargo tauri dev`); record a
+Run against a dev build (`npm run dev:frontend`, or `npm run dev` for the
+Tauri shell — a bare `trunk serve` builds only the shell page); record a
 `__mareaderDiagnostics()` snapshot at every marked point, plus the process
 RSS from the OS (Task Manager / `ps` / Activity Monitor) as the second,
 non-interchangeable signal. Look-ahead stays ENABLED in every workload.
@@ -163,7 +164,7 @@ level rises.
 ### Recorded: browser lifecycle baseline (automated)
 
 Environment: GitHub Actions `ubuntu-24.04`, headless Chromium (Playwright),
-the production `trunk build --release` output served statically, sample
+the production `tools/build-dist.sh --release` output served statically, sample
 book *Programming Pearls (2nd Edition)* opened through the web test hook
 with blend (look-ahead) enabled. What is recorded here is pasted from what the
 lane prints — the counter pairings it asserts, then the full table dump under
@@ -272,9 +273,6 @@ navigation-sync arms, the auto-center steps, and the anchor/first-paint
 rAF tails. The thumbnail generation bookkeeping gained the same shape: a
 document's lane opens with its document and `resetThumbLane` closes it, so
 a straggling request cannot reseed the map the teardown just cleared.
-
-### Structural findings at baseline
-
 
 ### Expected post-close baseline (every workload)
 

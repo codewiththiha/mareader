@@ -91,8 +91,11 @@ saturates at `max_lead`; a stopped scroller decays to zero within a frame or two
    rest, an evicted row unmounts in the same tick — `RetentionPolicy::Immediate`
    behaviour regardless of what the policy says, and `retainedVirtualItems`
    decays to 0 without waiting for its deadline. `RetentionPolicy` keeps its
-   shape (consumers construct it) but gains `MotionGated`, which becomes the
-   default: `bridges_now(motion, commit)` decides per publish.
+   shape (consumers construct it) and gained `MotionGated`, which is what every
+   caller now passes (`features/virtualizers.rs` for the strips,
+   `thumbnails/panel.rs` for the rail): the per-publish gate is
+   `RetentionPolicy::bridges()` plus the engine's `seeking` flag handed to
+   `retain_evicted`, and `RetentionPolicy::max()` still caps the pool.
 
 ### 4. Content dies with the frame; the queue decides who goes first.
    A page's rasters, raw bitmap and canvas are released by the unmount the band
@@ -134,11 +137,14 @@ Every item in `crates/virtual-list-leptos/src/lib.rs`'s re-export list and every
 `pub fn` on `Virtualizer`/`VirtualizerCore` keeps its name, argument types and
 return type. `VirtualizerOptions` keeps its fields and builder methods; new knobs
 arrive as new builder methods (`pipeline`) and new read-only getters
-(`motion_engaged`, `fill_priority`, `landing_index`). The kernel
-keeps `Strip`, `Layout`, `ListLayout`, `GridLayout`, `GridSpec`,
-`GridDimension`, `window_for`, `Window`, `Viewport`, `Budget`, `Overscan`,
-`Align`, `AnchorPolicy`, `pin_at`, `correct`, `rescale_anchor`,
-`subpixel_factor`, `SUBPIXEL_FACTOR`.
+(`motion_engaged`, `fill_priority`, `landing_index`). The kernel's
+surface today is what `crates/virtual-list/src/lib.rs` re-exports —
+`Strip`/`StripBackend`; `Layout`/`LayoutKind`/`ListLayout`/`GridLayout`/
+`GridSpec`/`GridColumns`; `Window`/`Viewport`/`Budget`/`Overscan`/`Align`;
+`AnchorPolicy`/`pin_at`/`correct`/`rescale_anchor` — plus the motion
+additions the phases landed (`Motion`/`MotionConfig`, `Pipeline`,
+`BandWindow`/`BandRange`, `Direction`, `FillPriority`). The sub-pixel
+factor is `pub(crate)` now: a kernel implementation detail, not surface.
 
 ## Phase plan (each phase lands green on CI before the next)
 
