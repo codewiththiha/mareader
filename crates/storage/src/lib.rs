@@ -281,10 +281,9 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     set(COVERS_KEY, &encode("save_covers", &borrowed)?)
 }
 
-/// Apply a reader session's read point to the persisted library blob: the
-/// rows the read belongs to (the shared row set the resume rules name) take
-/// the page and fraction. This is the Shell's recorder body AND the
-/// standalone substitute's — one implementation, two deployment callers.
+/// Apply a reader session's read point to the persisted library blob: the rows
+/// `library_core::book::rows_for_read` names take the page and fraction. This
+/// is the Shell's recorder body AND the standalone substitute's.
 pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     let mut blob = load_library();
     // The same recorder the reader's own tail used when the tree was unified
@@ -298,6 +297,7 @@ pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     };
     library_core::book::record_read(
         &mut blob.books,
+        point.book_id.as_deref(),
         &point.path,
         point.title.clone(),
         point.author.clone(),

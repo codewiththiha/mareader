@@ -83,10 +83,10 @@ pub fn is_shelf(id: &str) -> bool {
     id.starts_with('s')
 }
 
-/// Explicit-seq mint, public only for the `v1` migration
-/// ([`crate::blob::migrate::migrate_v1`]), which must be deterministic: running
-/// it twice over the same blob has to produce the same ids.
-pub fn new_id(now_ms: u64, seq: u32) -> String {
+/// Explicit-seq mint, for the `v1` migration ([`crate::blob::migrate::migrate_v1`]),
+/// which must be deterministic: running it twice over the same blob has to
+/// produce the same ids.
+pub(crate) fn new_id(now_ms: u64, seq: u32) -> String {
     format!("b{now_ms:011x}{seq:04x}")
 }
 

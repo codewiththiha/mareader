@@ -5,7 +5,7 @@ use super::{Book, Row, book_rows, book_rows_mut};
 /// The first row at the address — every shared row there agrees, so the first
 /// is the answer. A caller that knows which row the reader means wants
 /// [`find_by_id`] instead.
-pub fn find_by_path<'a>(rows: &'a [Row], path: &str) -> Option<&'a Book> {
+pub(crate) fn find_by_path<'a>(rows: &'a [Row], path: &str) -> Option<&'a Book> {
     book_rows(rows).find(|b| b.path() == path)
 }
 

@@ -36,22 +36,22 @@ impl ReadPoint {
     }
 }
 
-/// Record a read: every book at `path` moves to `now_ms` with the reader's
-/// resume point, or the library gains a linked book when the reader opened
-/// something it did not know.
+/// Record a read: the rows the read belongs to move to `now_ms` with the
+/// reader's resume point, or the library gains a linked book it did not have.
 ///
-/// Every row at the path, because a shelf can hold two rows of one file (a
-/// duplicate the reader kept) and the reading position is a fact about the
-/// file, not the row: both copies resume together.
+/// `book_id` names the row an open knew — an independent row moves alone;
+/// every shared row at the path moves otherwise, since the position is a fact
+/// about the file, not the row.
 pub fn record_read(
     rows: &mut Vec<Row>,
+    book_id: Option<&str>,
     path: &str,
     title: Option<String>,
     author: Option<String>,
     point: ReadPoint,
     now_ms: u64,
 ) -> Option<Book> {
-    let at = rows_for_read(rows, None, path);
+    let at = rows_for_read(rows, book_id, path);
     if write_read(rows, &at, &title, &author, point, now_ms) {
         return None;
     }
@@ -151,23 +151,4 @@ pub fn rows_for_read(rows: &[Row], book_id: Option<&str>, path: &str) -> Vec<usi
         .filter(|(_, r)| r.book().is_some_and(|b| b.path() == path))
         .map(|(i, _)| i)
         .collect()
-}
-
-/// [`record_read`] for an open that knows which row the reader meant — an id
-/// is the only thing that tells two rows of one address apart. A shared row
-/// answers as [`record_read`] does; an independent one moves alone.
-pub fn record_read_row(
-    rows: &mut Vec<Row>,
-    book_id: &str,
-    path: &str,
-    title: Option<String>,
-    author: Option<String>,
-    point: ReadPoint,
-    now_ms: u64,
-) -> Option<Book> {
-    let at = rows_for_read(rows, Some(book_id), path);
-    if write_read(rows, &at, &title, &author, point, now_ms) {
-        return None;
-    }
-    record_read(rows, path, title, author, point, now_ms)
 }

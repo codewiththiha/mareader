@@ -95,15 +95,14 @@ pub fn reading_progress(state: crate::context::ReaderContext) {
         // Which rows move is `library_core::book::rows_for_read`'s answer and
         // not the address's: the book the reader opened by name keeps its own
         // position when it is a book of its own, and every shared row at the
-        // address moves otherwise. Read untracked on purpose — the id is
-        // written before the path in an open, so the tracked `path` above is
-        // already the subscription that re-runs this on a new document.
+        // address moves otherwise. The sent point carries the id the open
+        // wrote before the path, so the tracked `path` above is already the
+        // subscription that re-runs this on a new document.
         // The moved check runs against the session's own last SENT point (the
         // launch resume seeded it): position-tracking syncs can re-write an
         // equal page, and a write that did not move must not reach the
         // boundary. A fraction counts as moved past half a percent — finer
         // steps are scroll noise the debounce would coalesce anyway.
-        let _book_id = state.reader.document.book_id.get_untracked();
         let moved = match last_sent.try_get_value().flatten() {
             None => true,
             Some((lp, lf)) => {

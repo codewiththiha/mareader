@@ -48,7 +48,7 @@ pub fn fold_books(survivor: &mut Book, gone: &Book) {
 /// The further of two read points: higher page wins, and on a tie the deeper
 /// stream fraction. A full tie keeps `mine`, so "came from the other row" is
 /// a fact rather than a coin toss.
-pub fn further_point(mine: ReadPoint, theirs: ReadPoint) -> ReadPoint {
+pub(crate) fn further_point(mine: ReadPoint, theirs: ReadPoint) -> ReadPoint {
     use std::cmp::Ordering;
     match theirs.page.cmp(&mine.page) {
         Ordering::Greater => theirs,
