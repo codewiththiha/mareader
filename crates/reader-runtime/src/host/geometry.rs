@@ -32,20 +32,18 @@ impl DropGeometry {
     /// The pointer in slot coordinates; half-open at the far edges.
     pub fn to_slot(&self, client: (f64, f64)) -> Option<(f64, f64)> {
         let at = (client.0 - self.workspace.x, client.1 - self.workspace.y);
-        contains(
-            PaneBounds {
-                x: 0.0,
-                y: 0.0,
-                ..self.workspace
-            },
-            at,
-        )
+        PaneBounds {
+            x: 0.0,
+            y: 0.0,
+            ..self.workspace
+        }
+        .contains(at)
         .then_some(at)
     }
 
     /// The pane under a slot point; a shared edge goes to one pane.
     fn pane_at(&self, at: (f64, f64)) -> Option<&PaneGeometry> {
-        self.panes.iter().find(|pane| contains(pane.rect, at))
+        self.panes.iter().find(|pane| pane.rect.contains(at))
     }
 
     pub fn pane(&self, id: PaneId) -> Option<&PaneGeometry> {
@@ -100,11 +98,6 @@ impl DropGeometry {
         }
         Some(best)
     }
-}
-
-/// `at` inside `rect`, half-open.
-fn contains(rect: PaneBounds, at: (f64, f64)) -> bool {
-    at.0 >= rect.x && at.0 < rect.x + rect.width && at.1 >= rect.y && at.1 < rect.y + rect.height
 }
 
 /// A target's score: 1 at its edge, 0 at the opposite; `Here`

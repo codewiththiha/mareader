@@ -39,6 +39,16 @@ impl Edge {
         }
     }
 
+    /// The half of `rect` a pane docking on this edge takes.
+    pub fn half(self, rect: PaneBounds) -> PaneBounds {
+        let (axis, side) = self.placement();
+        let (first, second) = split_rects(rect, axis, EVEN);
+        match side {
+            Side::Before => first,
+            Side::After => second,
+        }
+    }
+
     fn phrase(self) -> &'static str {
         match self {
             Edge::Left => "left of",
@@ -78,14 +88,7 @@ impl DropTarget {
     pub fn predicted_rect(self, rect: PaneBounds) -> PaneBounds {
         match self {
             DropTarget::Here { .. } => rect,
-            DropTarget::Split { edge, .. } => {
-                let (axis, side) = edge.placement();
-                let (first, second) = split_rects(rect, axis, EVEN);
-                match side {
-                    Side::Before => first,
-                    Side::After => second,
-                }
-            }
+            DropTarget::Split { edge, .. } => edge.half(rect),
         }
     }
 

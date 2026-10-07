@@ -100,6 +100,15 @@ impl PaneBounds {
             height: height.max(0.0),
         }
     }
+
+    /// Whether `at` is inside; half-open, so a far edge belongs to
+    /// the next pane along.
+    pub fn contains(&self, at: (f64, f64)) -> bool {
+        at.0 >= self.x
+            && at.0 < self.x + self.width
+            && at.1 >= self.y
+            && at.1 < self.y + self.height
+    }
 }
 
 // ---------------------------------------------------------------------------
