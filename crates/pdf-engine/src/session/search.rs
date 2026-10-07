@@ -1,28 +1,96 @@
-//! Full-text search, Rust side: each session's in-process index over its
-//! document's extracted text.
-//!
-//! The pdf.js worker can only extract text in the browser, so the engine hands
-//! each page over via `extractPageText` and everything after that —
-//! lowercasing, occurrence matching, snippet building, result ordering —
-//! happens here, on the wasm heap. The index is built LAZILY: the document's
-//! first search pays the extraction, never the open flow — a build scales
-//! with the book and lands on a wasm heap that only grows, so an eager build
-//! would ratchet the footprint of every book nobody ever searched.
-//!
-//! OWNERSHIP. The live index belongs to its [`super::PdfSession`] — two
-//! sessions never share one, and a session's build writes only its own.
-//! When a session is disposed its finished index moves into the realm's
-//! RETAINED slot (ONE entry, keyed by content fingerprint + page count): a
-//! reopen of the same bytes adopts it instead of re-extracting every page (a
-//! rebuild per open/close cycle ratchets the wasm heap, which never shrinks).
-//! Any other book's scope drops the slot, so the realm holds at most one
-//! index beyond the live sessions' own. The slot holds plain text runs —
-//! no engine object, no raster.
-//!
-//! Extraction is concurrent in bounded batches ([`SEARCH_PAGE_CONCURRENCY`]
-//! pages in flight per turn), so the worker is never flooded and live renders
-//! keep their share; between turns the builder falls back to Pending, so the
-//! event loop (and the reader's renders) runs without a busy wait.
+/
+/
+!
+
+F
+u
+l
+l
+-
+t
+e
+x
+t
+
+s
+e
+a
+r
+c
+h
+:
+
+e
+a
+c
+h
+
+s
+e
+s
+s
+i
+o
+n
+'
+s
+
+i
+n
+-
+p
+r
+o
+c
+e
+s
+s
+
+i
+n
+d
+e
+x
+
+o
+v
+e
+r
+
+i
+t
+s
+
+d
+o
+c
+u
+m
+e
+n
+t
+'
+s
+
+/
+/
+!
+
+e
+x
+t
+r
+a
+c
+t
+e
+d
+
+t
+e
+x
+t
+.
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -36,14 +104,128 @@ use reader_core::search::SearchResponse;
 use super::{PdfSession, no_session};
 use crate::api::{self, EngineError};
 
-/// Pages extracted concurrently per turn while the index is built. Three is
-/// enough to hide the per-page worker round trip without starving live
-/// renders; deliberately a plain const, not a setting.
+/
+/
+/
+
+P
+a
+g
+e
+s
+
+e
+x
+t
+r
+a
+c
+t
+e
+d
+
+c
+o
+n
+c
+u
+r
+r
+e
+n
+t
+l
+y
+
+p
+e
+r
+
+t
+u
+r
+n
+
+w
+h
+i
+l
+e
+
+t
+h
+e
+
+i
+n
+d
+e
+x
+
+i
+s
+
+b
+u
+i
+l
+t
+.
 pub const SEARCH_PAGE_CONCURRENCY: usize = 3;
 
-/// The identity of the document an index belongs to: its content fingerprint
-/// (the path when the engine reports none) and the page count it covers.
-#[derive(Clone, PartialEq, Eq, Debug)]
+/
+/
+/
+
+T
+h
+e
+
+i
+d
+e
+n
+t
+i
+t
+y
+
+o
+f
+
+t
+h
+e
+
+d
+o
+c
+u
+m
+e
+n
+t
+
+a
+n
+
+i
+n
+d
+e
+x
+
+b
+e
+l
+o
+n
+g
+s
+
+t
+o
+.
 struct IndexKey {
     identity: String,
     num_pages: u32,
@@ -55,9 +237,75 @@ pub(crate) struct SearchState {
     index: SearchIndex,
     /// The document the session's open scoped the index to.
     scoped: Option<IndexKey>,
-    /// What `index` holds: the key it was BUILT for and how many pages the
-    /// build indexed. `None` until a build completes — a half-extracted
-    /// index is never adopted.
+    /
+    /
+    /
+
+    W
+    h
+    a
+    t
+
+    `
+    i
+    n
+    d
+    e
+    x
+    `
+
+    h
+    o
+    l
+    d
+    s
+    :
+
+    t
+    h
+    e
+
+    k
+    e
+    y
+
+    i
+    t
+
+    w
+    a
+    s
+
+    b
+    u
+    i
+    l
+    t
+
+    f
+    o
+    r
+    ,
+
+    a
+    n
+    d
+
+    t
+    h
+    e
+
+    p
+    a
+    g
+    e
+
+    c
+    o
+    u
+    n
+    t
+    .
     built: Option<(IndexKey, u32)>,
 }
 
@@ -67,11 +315,55 @@ thread_local! {
 }
 
 impl SearchState {
-    /// Scope the index to the document being opened. The fingerprint is the
-    /// content identity pdf.js derived from these exact bytes — it survives
-    /// a rename and changes on an in-place edit; the path is the fallback
-    /// for engines that report none. `num_pages` rides along so a key can
-    /// never adopt an index of a different length.
+    /
+    /
+    /
+
+    S
+    c
+    o
+    p
+    e
+
+    t
+    h
+    e
+
+    i
+    n
+    d
+    e
+    x
+
+    t
+    o
+
+    t
+    h
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    b
+    e
+    i
+    n
+    g
+
+    o
+    p
+    e
+    n
+    e
+    d
+    .
     pub(crate) fn scope(&mut self, fingerprint: Option<&str>, path: &str, num_pages: u32) {
         let identity = fingerprint.filter(|f| !f.is_empty()).unwrap_or(path);
         let scoped = (!identity.is_empty()).then(|| IndexKey {
@@ -82,9 +374,77 @@ impl SearchState {
         if self.adopted_count(num_pages).is_some() {
             return;
         }
-        // A retained index for exactly this document is adopted; any other
-        // is dropped now (the realm keeps one retained index at most, and
-        // only for the book most recently closed).
+        /
+        /
+
+        A
+
+        r
+        e
+        t
+        a
+        i
+        n
+        e
+        d
+
+        i
+        n
+        d
+        e
+        x
+
+        f
+        o
+        r
+
+        t
+        h
+        i
+        s
+
+        e
+        x
+        a
+        c
+        t
+
+        d
+        o
+        c
+        u
+        m
+        e
+        n
+        t
+
+        i
+        s
+
+        a
+        d
+        o
+        p
+        t
+        e
+        d
+        ,
+
+        o
+        t
+        h
+        e
+        r
+        s
+
+        d
+        r
+        o
+        p
+        p
+        e
+        d
+        .
         let retained = RETAINED.with(|r| r.borrow_mut().take());
         match retained {
             Some(r) if scoped.is_some() && r.built.as_ref().map(|(k, _)| k) == scoped.as_ref() => {
@@ -98,8 +458,69 @@ impl SearchState {
         }
     }
 
-    /// The index's page count when it was built for exactly the scoped
-    /// document; `None` when anything disagrees or the index is empty.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    i
+    n
+    d
+    e
+    x
+    '
+    s
+
+    p
+    a
+    g
+    e
+
+    c
+    o
+    u
+    n
+    t
+
+    w
+    h
+    e
+    n
+
+    b
+    u
+    i
+    l
+    t
+
+    f
+    o
+    r
+
+    t
+    h
+    i
+    s
+
+    s
+    c
+    o
+    p
+    e
+    d
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+    .
     fn adopted_count(&self, num_pages: u32) -> Option<u32> {
         let scoped = self.scoped.as_ref()?;
         if scoped.num_pages != num_pages {
@@ -109,8 +530,50 @@ impl SearchState {
         (built == scoped && *indexed > 0 && !self.index.is_empty()).then_some(*indexed)
     }
 
-    /// Remember what a finished build produced. A build whose page count no
-    /// longer matches the scope records nothing.
+    /
+    /
+    /
+
+    R
+    e
+    m
+    e
+    m
+    b
+    e
+    r
+
+    w
+    h
+    a
+    t
+
+    a
+
+    f
+    i
+    n
+    i
+    s
+    h
+    e
+    d
+
+    b
+    u
+    i
+    l
+    d
+
+    p
+    r
+    o
+    d
+    u
+    c
+    e
+    d
+    .
     fn record_build(&mut self, num_pages: u32, indexed: u32) {
         self.built = self
             .scoped
@@ -124,25 +587,191 @@ impl SearchState {
     }
 }
 
-/// A disposed session's index: kept in the realm slot only when it is a
-/// finished build worth adopting; otherwise dropped here and now.
+/
+/
+/
+
+A
+
+d
+i
+s
+p
+o
+s
+e
+d
+
+s
+e
+s
+s
+i
+o
+n
+'
+s
+
+i
+n
+d
+e
+x
+,
+
+k
+e
+p
+t
+
+o
+n
+l
+y
+
+w
+h
+e
+n
+
+w
+o
+r
+t
+h
+
+a
+d
+o
+p
+t
+i
+n
+g
+.
 pub(crate) fn retain(state: SearchState) {
     if state.built.as_ref().is_some_and(|(_, n)| *n > 0) && !state.index.is_empty() {
         RETAINED.with(|r| *r.borrow_mut() = Some(state));
     }
 }
 
-/// Drop the realm's retained index — a text document opened, so a closed
-/// PDF's extracted text must not sit in the wasm heap.
+/
+/
+/
+
+D
+r
+o
+p
+
+t
+h
+e
+
+r
+e
+a
+l
+m
+'
+s
+
+r
+e
+t
+a
+i
+n
+e
+d
+
+i
+n
+d
+e
+x
+:
+
+a
+
+t
+e
+x
+t
+
+d
+o
+c
+u
+m
+e
+n
+t
+
+o
+p
+e
+n
+e
+d
+.
 pub fn drop_retained_search() {
     RETAINED.with(|r| *r.borrow_mut() = None);
 }
 
-/// `{ok:true, page, items:[{str,x,y,w,h}]}` — engine.extractPageText. The
-/// items are already normalised to scale-1 CSS px relative to the page's
-/// top-left.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+`
+{
+o
+k
+:
+t
+r
+u
+e
+,
+
+p
+a
+g
+e
+,
+
+i
+t
+e
+m
+s
+}
+`
+:
+
+e
+n
+g
+i
+n
+e
+.
+e
+x
+t
+r
+a
+c
+t
+P
+a
+g
+e
+T
+e
+x
+t
+.
 struct PageTextPayload {
     page: u32,
     items: Vec<ItemPayload>,
@@ -158,8 +787,61 @@ struct ItemPayload {
     h: f64,
 }
 
-/// In-flight search index builds across every session. Read by the
-/// diagnostics snapshot; the disposal baseline requires it back to zero.
+/
+/
+/
+
+I
+n
+-
+f
+l
+i
+g
+h
+t
+
+s
+e
+a
+r
+c
+h
+
+i
+n
+d
+e
+x
+
+b
+u
+i
+l
+d
+s
+
+a
+c
+r
+o
+s
+s
+
+e
+v
+e
+r
+y
+
+s
+e
+s
+s
+i
+o
+n
+.
 static BUILD_ACTIVE: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) fn search_build_active() -> u32 {
@@ -174,19 +856,142 @@ impl Drop for BuildActiveGuard {
     }
 }
 
-/// Extract every page of `session`'s document (concurrently,
-/// [`SEARCH_PAGE_CONCURRENCY`] per turn) into ITS index — unless the index
-/// it holds was built for this exact document. Unreadable pages are
-/// skipped, never fatal. The session is re-checked after every turn: a
-/// build whose session died stops there and records nothing.
+/
+/
+/
+
+E
+x
+t
+r
+a
+c
+t
+
+e
+v
+e
+r
+y
+
+p
+a
+g
+e
+
+o
+f
+
+t
+h
+e
+
+s
+e
+s
+s
+i
+o
+n
+'
+s
+
+d
+o
+c
+u
+m
+e
+n
+t
+
+i
+n
+t
+o
+
+I
+T
+S
+
+i
+n
+d
+e
+x
+.
 pub(crate) async fn build(session: &PdfSession, num_pages: u32) -> Result<u32, EngineError> {
     if !session.is_live() {
         return Err(no_session());
     }
     api::require_pdf_reader()?;
-    // The build is the one search step that can be mid-flight when a pane
-    // closes (worker round trips, page by page), so it is gauged for the
-    // teardown baseline. The guard's Drop covers every exit.
+    /
+    /
+
+    T
+    h
+    e
+
+    b
+    u
+    i
+    l
+    d
+
+    c
+    a
+    n
+
+    b
+    e
+
+    m
+    i
+    d
+    -
+    f
+    l
+    i
+    g
+    h
+    t
+
+    w
+    h
+    e
+    n
+
+    a
+
+    p
+    a
+    n
+    e
+
+    c
+    l
+    o
+    s
+    e
+    s
+    ,
+
+    s
+    o
+
+    i
+    t
+
+    i
+    s
+
+    g
+    a
+    u
+    g
+    e
+    d
+    .
     BUILD_ACTIVE.fetch_add(1, Ordering::Relaxed);
     let _build_guard = BuildActiveGuard;
     if let Some(indexed) = session.with_search(|s| s.adopted_count(num_pages)) {
@@ -239,9 +1044,55 @@ pub(crate) async fn build(session: &PdfSession, num_pages: u32) -> Result<u32, E
     Ok(indexed)
 }
 
-// The scope/adopt/drop rules are pure host logic — the extraction itself
-// needs the engine, but which index a session gets does not.
-#[cfg(test)]
+/
+/
+
+T
+h
+e
+
+s
+c
+o
+p
+e
+
+a
+n
+d
+
+a
+d
+o
+p
+t
+
+r
+u
+l
+e
+s
+
+a
+r
+e
+
+p
+u
+r
+e
+
+h
+o
+s
+t
+
+l
+o
+g
+i
+c
+.
 mod tests {
     use super::*;
 
@@ -249,8 +1100,70 @@ mod tests {
         SearchItem::new(word, 0.0, 0.0, 1.0, 1.0)
     }
 
-    /// A finished build for one page of "moby", simulated without the
-    /// engine: scope, extract, record — the three steps `build` runs.
+    /
+    /
+    /
+
+    A
+
+    f
+    i
+    n
+    i
+    s
+    h
+    e
+    d
+
+    b
+    u
+    i
+    l
+    d
+
+    f
+    o
+    r
+
+    o
+    n
+    e
+
+    p
+    a
+    g
+    e
+    ,
+
+    s
+    i
+    m
+    u
+    l
+    a
+    t
+    e
+    d
+
+    w
+    i
+    t
+    h
+    o
+    u
+    t
+
+    t
+    h
+    e
+
+    e
+    n
+    g
+    i
+    n
+    e
+    .
     fn built(fingerprint: Option<&str>, path: &str, num_pages: u32) -> SearchState {
         let mut s = SearchState::default();
         s.scope(fingerprint, path, num_pages);

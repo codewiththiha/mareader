@@ -1,21 +1,87 @@
-//! The realm-level half of the engine surface, plus the envelope parser
-//! every engine call shares. Views and effects never touch wasm-bindgen
-//! types.
-//!
-//! Document work is NOT here: every call that touches a document goes
-//! through the [`crate::session::PdfSession`] that owns it. What remains is
-//! what names no document — the appearance broadcast ([`theme`]: each live
-//! session re-derives its own raster theme), the diagnostics read side
-//! ([`diagnostics`]), and the paper frame parser ([`paper`]) the session's
-//! paper state machine reads through.
-//!
-//! Every engine fn resolves to `{ok:true, ...}` or
-//! `{ok:false, error:{name,message}}`; we check `ok` here and surface a
-//! `Result<T, EngineError>`.
-//!
-//! [`resolve`] and the hoisted property keys live here: the one parser for the
-//! `{ok,...}` envelope and the hottest allocations in the crate, shared rather
-//! than duplicated per surface.
+/
+/
+!
+
+T
+h
+e
+
+r
+e
+a
+l
+m
+-
+l
+e
+v
+e
+l
+
+h
+a
+l
+f
+
+o
+f
+
+t
+h
+e
+
+e
+n
+g
+i
+n
+e
+
+s
+u
+r
+f
+a
+c
+e
+,
+
+p
+l
+u
+s
+
+t
+h
+e
+
+s
+h
+a
+r
+e
+d
+
+e
+n
+v
+e
+l
+o
+p
+e
+
+/
+/
+!
+
+p
+a
+r
+s
+e
+r
+.
 
 use serde::de::DeserializeOwned;
 use std::thread::LocalKey;
@@ -29,9 +95,101 @@ pub use diagnostics::{EngineStats, engine_stats, set_lifecycle_log};
 pub use paper::PaperFrame;
 pub use theme::{refresh_theme, set_appearance_menu_open, set_scrub_mode};
 
-/// Error returned by any engine call: the engine-side error `name` and
-/// `message`, or a local failure to parse/communicate.
-#[derive(Debug, Clone)]
+/
+/
+/
+
+E
+r
+r
+o
+r
+
+f
+r
+o
+m
+
+a
+n
+y
+
+e
+n
+g
+i
+n
+e
+
+c
+a
+l
+l
+:
+
+t
+h
+e
+
+e
+n
+g
+i
+n
+e
+'
+s
+
+n
+a
+m
+e
+
+a
+n
+d
+
+m
+e
+s
+s
+a
+g
+e
+,
+
+o
+r
+
+a
+
+/
+/
+/
+
+l
+o
+c
+a
+l
+
+f
+a
+i
+l
+u
+r
+e
+
+t
+o
+
+p
+a
+r
+s
+e
+.
 pub struct EngineError {
     pub name: String,
     pub message: String,
@@ -43,30 +201,259 @@ impl std::fmt::Display for EngineError {
     }
 }
 
-/// Engine errors are toast text on the UI side; converting without cloning
-/// the inner strings keeps the retry/toast path allocation-free.
+/
+/
+/
+
+E
+n
+g
+i
+n
+e
+
+e
+r
+r
+o
+r
+s
+
+a
+r
+e
+
+t
+o
+a
+s
+t
+
+t
+e
+x
+t
+;
+
+t
+h
+e
+
+c
+o
+n
+v
+e
+r
+s
+i
+o
+n
+
+a
+v
+o
+i
+d
+s
+
+c
+l
+o
+n
+i
+n
+g
+.
 impl From<EngineError> for String {
     fn from(e: EngineError) -> Self {
         e.to_string()
     }
 }
 
-/// A non-string JS value is not a usable error field; show its debug form
-/// instead of silently substituting an empty string (an empty pair read as
-/// `: ` on screen and hid the real cause).
+/
+/
+/
+
+A
+
+n
+o
+n
+-
+s
+t
+r
+i
+n
+g
+
+e
+r
+r
+o
+r
+
+f
+i
+e
+l
+d
+
+s
+h
+o
+w
+s
+
+i
+t
+s
+
+d
+e
+b
+u
+g
+
+f
+o
+r
+m
+.
 fn js_str(v: JsValue) -> String {
     v.as_string().unwrap_or_else(|| format!("{v:?}"))
 }
 
-/// Hoisted property keys. `resolve` runs on EVERY engine call (each live
-/// render, each thumbnail, each search), and `JsValue::from_str` allocates a
-/// fresh JS string per key per call; these are created once. Every lookup in
-/// this crate goes through one of these.
+/
+/
+/
+
+H
+o
+i
+s
+t
+e
+d
+
+p
+r
+o
+p
+e
+r
+t
+y
+
+k
+e
+y
+s
+,
+
+c
+r
+e
+a
+t
+e
+d
+
+o
+n
+c
+e
+
+f
+o
+r
+
+t
+h
+e
+
+h
+o
+t
+t
+e
+s
+t
+
+p
+a
+t
+h
+.
 macro_rules! js_keys {
     ($($name:ident => $lit:literal),* $(,)?) => {
-        // `thread_local!` emits `const NAME: LocalKey<JsValue>`, so `&NAME`
-        // at a call site is a promoted `'static` reference — which is what
-        // `LocalKey::with` requires.
+        /
+        /
+
+        `
+        &
+        N
+        A
+        M
+        E
+        `
+
+        o
+        n
+
+        a
+
+        `
+        t
+        h
+        r
+        e
+        a
+        d
+        _
+        l
+        o
+        c
+        a
+        l
+        !
+        `
+
+        i
+        s
+
+        a
+
+        p
+        r
+        o
+        m
+        o
+        t
+        e
+        d
+
+        `
+        '
+        s
+        t
+        a
+        t
+        i
+        c
+        `
+
+        r
+        e
+        f
+        e
+        r
+        e
+        n
+        c
+        e
+        .
         $(thread_local! {
             pub(crate) static $name: JsValue = JsValue::from_str($lit);
         })*
@@ -92,9 +479,74 @@ pub(crate) fn reflect_get(
     key.with(|k| js_sys::Reflect::get(obj, k))
 }
 
-/// True when `window.PDFReader` is attached; must be checked before any
-/// engine call (a missing global makes the wasm-bindgen shim throw, which
-/// panics the reactive owner and freezes menus / theme / open).
+/
+/
+/
+
+T
+r
+u
+e
+
+w
+h
+e
+n
+
+`
+w
+i
+n
+d
+o
+w
+.
+P
+D
+F
+R
+e
+a
+d
+e
+r
+`
+
+i
+s
+
+a
+t
+t
+a
+c
+h
+e
+d
+;
+
+c
+h
+e
+c
+k
+
+b
+e
+f
+o
+r
+e
+
+a
+n
+y
+
+c
+a
+l
+l
+.
 pub(crate) fn require_pdf_reader() -> Result<(), EngineError> {
     if crate::bridge::has_pdf_reader() {
         Ok(())
@@ -106,15 +558,120 @@ pub(crate) fn require_pdf_reader() -> Result<(), EngineError> {
     }
 }
 
-/// Same probe as [`require_pdf_reader`] as a boolean, for the fire-and-forget
-/// calls that are silent no-ops outside the engine.
+/
+/
+/
+
+[
+`
+r
+e
+q
+u
+i
+r
+e
+_
+p
+d
+f
+_
+r
+e
+a
+d
+e
+r
+`
+]
+
+a
+s
+
+a
+
+b
+o
+o
+l
+e
+a
+n
+,
+
+f
+o
+r
+
+t
+h
+e
+
+s
+i
+l
+e
+n
+t
+
+c
+a
+l
+l
+s
+.
 pub(crate) fn guard_pdf_reader() -> bool {
     crate::bridge::has_pdf_reader()
 }
 
-/// Parses a `{ok:bool, error?:{name,message}, ...fields}` value into `T`.
-/// Pure parsing — no JS awaits — so the whole engine-answer path that needs
-/// no Promise can use it too.
+/
+/
+/
+
+P
+a
+r
+s
+e
+s
+
+a
+
+`
+{
+o
+k
+,
+
+e
+r
+r
+o
+r
+?
+,
+
+.
+.
+.
+}
+`
+
+v
+a
+l
+u
+e
+
+i
+n
+t
+o
+
+`
+T
+`
+.
 pub(crate) fn resolve<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, EngineError> {
     let is_ok = reflect_get(&value, &KEY_OK)
         .ok()
