@@ -20,5 +20,4 @@ pub mod parser;
 pub mod subdivide;
 
 pub use parser::parse_plain_text;
-pub use reflow_core::source::normalize;
 pub use subdivide::subdivide_paragraphs;
