@@ -1,10 +1,56 @@
-//! The tiny colour algebra the paper pipeline needs: an RGB triple, the hex
-//! string it publishes as `--pdf-paper`, and linear interpolation.
-//!
-//! Hex goes one way, out. The parser that used to live here served a
-//! per-document cache that has since moved to the engine (where the pixels
-//! are), and a parser with nothing to parse is a guess about input nobody
-//! sends.
+/
+/
+!
+
+T
+h
+e
+
+t
+i
+n
+y
+
+c
+o
+l
+o
+u
+r
+
+a
+l
+g
+e
+b
+r
+a
+
+t
+h
+e
+
+p
+a
+p
+e
+r
+
+p
+i
+p
+e
+l
+i
+n
+e
+
+n
+e
+e
+d
+s
+.
 
 use serde::{Deserialize, Serialize};
 
@@ -28,9 +74,47 @@ impl Rgb {
     }
 }
 
-/// Linear blend of two colours; `t` 0 returns `a`, 1 returns `b`, values
-/// outside `0..=1` are clamped. Rounded per channel so repeated round trips
-/// through the same pair stay stable.
+/
+/
+/
+
+L
+i
+n
+e
+a
+r
+
+b
+l
+e
+n
+d
+
+o
+f
+
+t
+w
+o
+
+c
+o
+l
+o
+u
+r
+s
+,
+
+c
+l
+a
+m
+p
+e
+d
+.
 pub fn lerp(a: Rgb, b: Rgb, t: f64) -> Rgb {
     let t = t.clamp(0.0, 1.0);
     let mix = |x: u8, y: u8| (f64::from(x) + (f64::from(y) - f64::from(x)) * t).round() as u8;
@@ -44,8 +128,69 @@ mod tests {
     #[test]
     fn hex_is_lowercase_and_zero_padded() {
         assert_eq!(Rgb::new(0x40, 0xa0, 0xff).to_hex(), "#40a0ff");
-        // The wire format the engine and the CSS custom property both expect:
-        // six digits, so a dark channel does not come out one character short.
+        /
+        /
+
+        T
+        h
+        e
+
+        w
+        i
+        r
+        e
+
+        f
+        o
+        r
+        m
+        a
+        t
+
+        b
+        o
+        t
+        h
+
+        t
+        h
+        e
+
+        e
+        n
+        g
+        i
+        n
+        e
+
+        a
+        n
+        d
+
+        t
+        h
+        e
+
+        C
+        S
+        S
+
+        p
+        r
+        o
+        p
+        e
+        r
+        t
+        y
+
+        e
+        x
+        p
+        e
+        c
+        t
+        .
         assert_eq!(Rgb::new(0x00, 0x0a, 0xff).to_hex(), "#000aff");
     }
 

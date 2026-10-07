@@ -1,52 +1,458 @@
-//! The serialized boundary between the Shell and the runtimes.
-//!
-//! Everything that crosses a runtime edge goes through here as data — the
-//! phase's rule that "library receives `&AppState`" is exactly what may not
-//! happen. The runtimes see the Shell as [`ShellApi`] (a set of typed
-//! commands); the Shell sees a runtime as its module exports (start / dispose
-//! / command), which carry JSON payloads defined by the same types.
+/
+/
+!
+
+T
+h
+e
+
+s
+e
+r
+i
+a
+l
+i
+z
+e
+d
+
+b
+o
+u
+n
+d
+a
+r
+y
+
+b
+e
+t
+w
+e
+e
+n
+
+t
+h
+e
+
+S
+h
+e
+l
+l
+
+a
+n
+d
+
+t
+h
+e
+
+r
+u
+n
+t
+i
+m
+e
+s
+.
 
 use reader_core::settings::Settings;
 use serde::{Deserialize, Serialize};
 
-/// The minimal launch descriptor the Shell hands a starting reader runtime
-/// (§13): identity and address, plus the resume point the LIBRARY computed
-/// from its own state — the reader does not reach into library state to find
-/// where the reader left off.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+T
+h
+e
+
+m
+i
+n
+i
+m
+a
+l
+
+l
+a
+u
+n
+c
+h
+
+d
+e
+s
+c
+r
+i
+p
+t
+o
+r
+
+t
+h
+e
+
+S
+h
+e
+l
+l
+
+h
+a
+n
+d
+s
+
+a
+
+s
+t
+a
+r
+t
+i
+n
+g
+
+r
+e
+a
+d
+e
+r
+.
 pub struct LaunchDocument {
-    /// The library row the open was named by, when it was named by one: the
-    /// key the highlights live under and the row a read point belongs to.
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    l
+    i
+    b
+    r
+    a
+    r
+    y
+
+    r
+    o
+    w
+
+    t
+    h
+    e
+
+    o
+    p
+    e
+    n
+
+    w
+    a
+    s
+
+    n
+    a
+    m
+    e
+    d
+
+    b
+    y
+    ,
+
+    w
+    h
+    e
+    n
+
+    i
+    t
+
+    w
+    a
+    s
+    .
     pub book_id: Option<String>,
     pub path: String,
-    /// Where to resume: the page (clamped by the reader's own open rules) and
-    /// the continuous stream's fractional position, when the format keeps one.
-    #[serde(default)]
+    /
+    /
+    /
+
+    W
+    h
+    e
+    r
+    e
+
+    t
+    o
+
+    r
+    e
+    s
+    u
+    m
+    e
+    :
+
+    t
+    h
+    e
+
+    p
+    a
+    g
+    e
+
+    a
+    n
+    d
+
+    t
+    h
+    e
+
+    s
+    t
+    r
+    e
+    a
+    m
+    '
+    s
+
+    f
+    r
+    a
+    c
+    t
+    i
+    o
+    n
+    .
     pub resume_page: u32,
     #[serde(default)]
     pub saved_fraction: Option<f64>,
-    /// The test hook's `?blend=1`: the appearance write the menu itself would
-    /// make, applied at session start. Inert in the packaged app.
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    t
+    e
+    s
+    t
+
+    h
+    o
+    o
+    k
+    '
+    s
+
+    `
+    ?
+    b
+    l
+    e
+    n
+    d
+    =
+    1
+    `
+
+    a
+    p
+    p
+    e
+    a
+    r
+    a
+    n
+    c
+    e
+
+    w
+    r
+    i
+    t
+    e
+    .
     pub blend_override: bool,
-    /// The book's cover, resolved by the library while it was still active,
-    /// so the reader's document-info panel never needs the cover map.
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    b
+    o
+    o
+    k
+    '
+    s
+
+    c
+    o
+    v
+    e
+    r
+    ,
+
+    r
+    e
+    s
+    o
+    l
+    v
+    e
+    d
+
+    b
+    y
+
+    t
+    h
+    e
+
+    l
+    i
+    b
+    r
+    a
+    r
+    y
+    .
     pub cover_data_url: Option<String>,
-    /// The library's display name for the row this open belongs to, so the
-    /// title bar never falls back to an address stem for a stored book.
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    l
+    i
+    b
+    r
+    a
+    r
+    y
+    '
+    s
+
+    d
+    i
+    s
+    p
+    l
+    a
+    y
+
+    n
+    a
+    m
+    e
+
+    f
+    o
+    r
+
+    t
+    h
+    i
+    s
+
+    o
+    p
+    e
+    n
+    '
+    s
+
+    r
+    o
+    w
+    .
     pub display_name: Option<String>,
 }
 
-/// A durable write-through: where the reader got to in the open document.
-/// The reader sends this on its progress debounce and — unconditionally —
-/// on close/dispose; the Shell applies it to the persisted library blob
-/// (`persist data ≠ retain live object`, §15).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+A
+
+d
+u
+r
+a
+b
+l
+e
+
+w
+r
+i
+t
+e
+-
+t
+h
+r
+o
+u
+g
+h
+:
+
+w
+h
+e
+r
+e
+
+t
+h
+e
+
+r
+e
+a
+d
+e
+r
+
+g
+o
+t
+
+t
+o
+.
 pub struct ReadPoint {
     #[serde(default)]
     pub book_id: Option<String>,
@@ -56,60 +462,465 @@ pub struct ReadPoint {
     pub num_pages: u32,
     #[serde(default)]
     pub fraction: Option<f64>,
-    /// The document's title/author when the library may have to mint a row
-    /// for a file it never knew (a drop-open of an unshelved file).
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+    '
+    s
+
+    t
+    i
+    t
+    l
+    e
+
+    a
+    n
+    d
+
+    a
+    u
+    t
+    h
+    o
+    r
+    ,
+
+    w
+    h
+    e
+    n
+
+    a
+
+    r
+    o
+    w
+
+    m
+    a
+    y
+
+    b
+    e
+
+    m
+    i
+    n
+    t
+    e
+    d
+    .
     pub title: Option<String>,
     #[serde(default)]
     pub author: Option<String>,
 }
 
-/// The document status as the reader session reports it. The Shell keeps the
-/// URL ⇄ document semantics the old `RouteSync` effect owned: Ready ⇒ the
-/// reader route is real, Idle ⇒ the shelf. Serialized as plain strings so
-/// the two sides need no shared enum crate beyond the pdf-engine types.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+T
+h
+e
+
+d
+o
+c
+u
+m
+e
+n
+t
+
+s
+t
+a
+t
+u
+s
+
+a
+s
+
+t
+h
+e
+
+r
+e
+a
+d
+e
+r
+
+s
+e
+s
+s
+i
+o
+n
+
+r
+e
+p
+o
+r
+t
+s
+
+i
+t
+.
 pub struct DocStatusReport {
     pub status: String,
     #[serde(default)]
     pub error: Option<String>,
 }
 
-/// The typed command surface a runtime calls the Shell through. One
-/// implementation per deployment: the hosted frame (`ApiHandle::Frame`, the
-/// boundary wire over the frame's port) and the standalone substitute
-/// (direct storage writes, no navigation to own).
+/
+/
+/
+
+T
+h
+e
+
+t
+y
+p
+e
+d
+
+c
+o
+m
+m
+a
+n
+d
+
+s
+u
+r
+f
+a
+c
+e
+
+a
+
+r
+u
+n
+t
+i
+m
+e
+
+c
+a
+l
+l
+s
+
+t
+h
+e
+
+S
+h
+e
+l
+l
+
+t
+h
+r
+o
+u
+g
+h
+.
 pub trait ShellApi {
-    /// Library → Shell: open this document. The Shell navigates to `/reader`
-    /// and starts the reader runtime with this descriptor.
+    /
+    /
+    /
+
+    L
+    i
+    b
+    r
+    a
+    r
+    y
+
+    t
+    o
+
+    S
+    h
+    e
+    l
+    l
+    :
+
+    o
+    p
+    e
+    n
+
+    t
+    h
+    i
+    s
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+    .
     fn open_document(&self, launch: &LaunchDocument);
-    /// Reader → Shell: the reader session is handing control back. The Shell
-    /// disposes the reader runtime and starts the library.
+    /
+    /
+    /
+
+    R
+    e
+    a
+    d
+    e
+    r
+
+    t
+    o
+
+    S
+    h
+    e
+    l
+    l
+    :
+
+    t
+    h
+    e
+
+    s
+    e
+    s
+    s
+    i
+    o
+    n
+
+    i
+    s
+
+    h
+    a
+    n
+    d
+    i
+    n
+    g
+
+    c
+    o
+    n
+    t
+    r
+    o
+    l
+
+    b
+    a
+    c
+    k
+    .
     fn navigate_library(&self);
     /// Reader → Shell: a durable read-point write (debounce or flush).
     fn read_point(&self, point: &ReadPoint);
     /// Runtime → Shell: persist the settings blob (the Shell owns the key).
     fn save_settings(&self, settings: &Settings);
-    /// Reader → Shell: one generated cover (the reader owns the engine that
-    /// bakes it; the Shell owns the persisted map it lands in). The library
-    /// blob and the cover cache are NOT boundary calls: the shelf writes
-    /// them itself, in its own frame, through the origin's one store.
+    /
+    /
+    /
+
+    R
+    e
+    a
+    d
+    e
+    r
+
+    t
+    o
+
+    S
+    h
+    e
+    l
+    l
+    :
+
+    o
+    n
+    e
+
+    g
+    e
+    n
+    e
+    r
+    a
+    t
+    e
+    d
+
+    c
+    o
+    v
+    e
+    r
+    .
     fn save_cover(&self, path: &str, image: &crate::covers::CoverImage);
-    /// Reader → Shell: persist one document's gloss marks (the whole list —
-    /// the stored shape is a document's list, so every edit replaces it).
-    /// `key` is the document's gloss key; `marks` is the list as
-    /// `storage::encode_gloss` encoded it: this crate must not know the mark
-    /// type, so the list crosses as its JSON and the writer decodes it.
+    /
+    /
+    /
+
+    R
+    e
+    a
+    d
+    e
+    r
+
+    t
+    o
+
+    S
+    h
+    e
+    l
+    l
+    :
+
+    p
+    e
+    r
+    s
+    i
+    s
+    t
+
+    o
+    n
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+    '
+    s
+
+    g
+    l
+    o
+    s
+    s
+
+    m
+    a
+    r
+    k
+    s
+    .
     fn save_gloss(&self, key: &str, marks: String);
-    /// Library → Shell: bake page 1 of the book at `path` into cover art.
-    ///
-    /// A COMMAND, not a call: the library artifact owns no engine, so the
-    /// Shell bakes it for the shelf's import queue. The answer comes back as
-    /// the session command `coverBaked { path, image }` — `image: None` when
-    /// the bake failed — and only ever into the LIVE session's generation: a
-    /// bake that outlived its frame is dropped by the Shell, never misfiled
-    /// into a replacement session's state.
+    /
+    /
+    /
+
+    L
+    i
+    b
+    r
+    a
+    r
+    y
+
+    t
+    o
+
+    S
+    h
+    e
+    l
+    l
+    :
+
+    b
+    a
+    k
+    e
+
+    p
+    a
+    g
+    e
+
+    1
+
+    o
+    f
+
+    t
+    h
+    e
+
+    b
+    o
+    o
+    k
+
+    i
+    n
+    t
+    o
+
+    c
+    o
+    v
+    e
+    r
+
+    a
+    r
+    t
+    .
     fn bake_cover(&self, path: &str);
     /// Reader → Shell: the document status changed (URL policy + probe).
     fn doc_status(&self, report: &DocStatusReport);

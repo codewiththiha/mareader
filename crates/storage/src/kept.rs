@@ -1,14 +1,70 @@
-//! The reading data a removal kept, waiting for the file it came from.
-//!
-//! Removing a book takes the app's own copy of its file with it, but the
-//! marks a reader wrote, the place they stopped at and any name they gave it
-//! are theirs: the removal sheet asks, and an answer of *keep* is written
-//! down here.
-//!
-//! A record cannot be keyed by the row it came from — the row is what went —
-//! so it is keyed by the file, the one thing a later import still has in
-//! common with it. [`claim`] hands the best record for a file to the import
-//! that brings it back.
+/
+/
+!
+
+T
+h
+e
+
+r
+e
+a
+d
+i
+n
+g
+
+d
+a
+t
+a
+
+a
+
+r
+e
+m
+o
+v
+a
+l
+
+k
+e
+p
+t
+,
+
+w
+a
+i
+t
+i
+n
+g
+
+f
+o
+r
+
+i
+t
+s
+
+f
+i
+l
+e
+'
+s
+
+r
+e
+t
+u
+r
+n
+.
 
 use ai_core::gloss::GlossMark;
 use library_core::book::{Book, Fingerprint, stem_of};
@@ -23,41 +79,326 @@ const KEPT_KEY: &str = "mareader.kept.v1";
 /// [`KEPT_KEY`] before the app was renamed: read as a fallback, never written.
 const RETIRED_KEPT_KEY: &str = "pdfreader.kept.v1";
 
-/// How many removals' worth of reading data the app holds. A ceiling,
-/// because every removal adds and only an import of the same file takes away:
-/// a store that only grows ends in a quota error with the reader's library in
-/// it.
+/
+/
+/
+
+H
+o
+w
+
+m
+a
+n
+y
+
+r
+e
+m
+o
+v
+a
+l
+s
+'
+
+w
+o
+r
+t
+h
+
+o
+f
+
+r
+e
+a
+d
+i
+n
+g
+
+d
+a
+t
+a
+
+t
+h
+e
+
+a
+p
+p
+
+h
+o
+l
+d
+s
+.
 const KEPT_CAP: usize = 100;
 
-/// What a removal kept about one book, in enough of its own words to be
-/// recognised by the file that comes back.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+W
+h
+a
+t
+
+a
+
+r
+e
+m
+o
+v
+a
+l
+
+k
+e
+p
+t
+
+a
+b
+o
+u
+t
+
+o
+n
+e
+
+b
+o
+o
+k
+.
 pub struct KeptBook {
-    /// The stem a later import is recognised by, derived the way every other
-    /// name in the app is.
-    ///
-    /// `None` when the library never knew which file the bytes came from (a
-    /// copy whose provenance was lost). The copy's own name is `source`,
-    /// which belongs to the store and would answer for a reader's file that
-    /// merely shares it, so such a record is matched by its bytes alone.
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    s
+    t
+    e
+    m
+
+    a
+
+    l
+    a
+    t
+    e
+    r
+
+    i
+    m
+    p
+    o
+    r
+    t
+
+    i
+    s
+
+    r
+    e
+    c
+    o
+    g
+    n
+    i
+    s
+    e
+    d
+
+    b
+    y
+    .
     name: Option<String>,
-    /// The address the file was at: for a copied book, its source — the
-    /// copy's own address is the store's, and the import that follows is of
-    /// the source file.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    a
+    d
+    d
+    r
+    e
+    s
+    s
+
+    t
+    h
+    e
+
+    f
+    i
+    l
+    e
+
+    w
+    a
+    s
+
+    a
+    t
+    :
+
+    f
+    o
+    r
+
+    a
+
+    c
+    o
+    p
+    i
+    e
+    d
+
+    b
+    o
+    o
+    k
+    ,
+
+    i
+    t
+    s
+
+    s
+    o
+    u
+    r
+    c
+    e
+    .
     address: String,
-    /// `None` for a book the library never measured: a placeholder is derived
-    /// from the address, and this store would read the address's length as a
-    /// file's size.
-    #[serde(default)]
+    /
+    /
+    /
+
+    `
+    N
+    o
+    n
+    e
+    `
+
+    f
+    o
+    r
+
+    a
+
+    b
+    o
+    o
+    k
+
+    t
+    h
+    e
+
+    l
+    i
+    b
+    r
+    a
+    r
+    y
+
+    n
+    e
+    v
+    e
+    r
+
+    m
+    e
+    a
+    s
+    u
+    r
+    e
+    d
+    .
     fp: Option<Fingerprint>,
     #[serde(default)]
     format: Format,
-    /// The name the reader gave the book, and only that one: a title the app
-    /// captured from the document is captured again on the next open; a name a
-    /// person typed is not.
-    #[serde(default)]
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    n
+    a
+    m
+    e
+
+    t
+    h
+    e
+
+    r
+    e
+    a
+    d
+    e
+    r
+
+    g
+    a
+    v
+    e
+
+    t
+    h
+    e
+
+    b
+    o
+    o
+    k
+    ,
+
+    a
+    n
+    d
+
+    o
+    n
+    l
+    y
+
+    t
+    h
+    a
+    t
+
+    o
+    n
+    e
+    .
     pub title: Option<String>,
     #[serde(default)]
     pub page: u32,
@@ -71,14 +412,137 @@ pub struct KeptBook {
     pub marks: Vec<GlossMark>,
 }
 
-/// How much of itself a file shares with a kept record, weakest first — the
-/// order an import takes them in: same bytes is the strongest thing two
-/// files can share, a name alone the weakest answer the store accepts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/
+/
+/
+
+H
+o
+w
+
+m
+u
+c
+h
+
+o
+f
+
+i
+t
+s
+e
+l
+f
+
+a
+
+f
+i
+l
+e
+
+s
+h
+a
+r
+e
+s
+
+w
+i
+t
+h
+
+a
+
+k
+e
+p
+t
+
+r
+e
+c
+o
+r
+d
+,
+
+w
+e
+a
+k
+e
+s
+t
+
+f
+i
+r
+s
+t
+.
 enum Confidence {
     /// The name and the kind agree and nothing else does.
     Name,
-    /// The address agrees and the bytes do not: the file was rewritten where it stood.
+    /
+    /
+    /
+
+    A
+    d
+    d
+    r
+    e
+    s
+    s
+
+    a
+    g
+    r
+    e
+    e
+    s
+    ,
+
+    b
+    y
+    t
+    e
+    s
+
+    d
+    o
+
+    n
+    o
+    t
+    :
+
+    t
+    h
+    e
+
+    f
+    i
+    l
+    e
+
+    w
+    a
+    s
+
+    r
+    e
+    w
+    r
+    i
+    t
+    t
+    e
+    n
+    .
     Rewritten,
     /// The bytes agree under a different address: the file moved.
     Moved,
@@ -104,11 +568,50 @@ impl KeptBook {
         }
     }
 
-    /// How well `file` answers for this record, `None` when the two have nothing in common.
-    ///
-    /// `size` and `head_hash` are what "the same bytes" means: they are the two fields that
-    /// identify content, and a copy the app made carries its OWN stamp, so comparing whole
-    /// fingerprints would refuse to recognise every stored book's source.
+    /
+    /
+    /
+
+    H
+    o
+    w
+
+    w
+    e
+    l
+    l
+
+    `
+    f
+    i
+    l
+    e
+    `
+
+    a
+    n
+    s
+    w
+    e
+    r
+    s
+
+    f
+    o
+    r
+
+    t
+    h
+    i
+    s
+
+    r
+    e
+    c
+    o
+    r
+    d
+    .
     fn confidence(&self, file: &FoundFile, name: &str) -> Option<Confidence> {
         let same_bytes = self
             .fp
@@ -139,8 +642,70 @@ pub fn remember(book: &Book, marks: Vec<GlossMark>) {
     report(save(&all));
 }
 
-/// Drop what waits for this book's file. The sheet's answer was to delete the reader's data, and a
-/// record left behind would put it back on the next import — the answer before the question.
+/
+/
+/
+
+D
+r
+o
+p
+
+w
+h
+a
+t
+
+w
+a
+i
+t
+s
+
+f
+o
+r
+
+t
+h
+i
+s
+
+b
+o
+o
+k
+'
+s
+
+f
+i
+l
+e
+:
+
+t
+h
+e
+
+s
+h
+e
+e
+t
+
+s
+a
+i
+d
+
+d
+e
+l
+e
+t
+e
+.
 pub fn forget(book: &Book) {
     let address = book.origin.source().unwrap_or_else(|| book.path());
     let mut all = load();
@@ -151,9 +716,74 @@ pub fn forget(book: &Book) {
     }
 }
 
-/// The best record `file` answers for, spent: the marks and the place it kept belong to the row
-/// this import is landing, and a second import of the same file is a second book rather than a
-/// second helping of the same reading data.
+/
+/
+/
+
+T
+h
+e
+
+b
+e
+s
+t
+
+r
+e
+c
+o
+r
+d
+
+`
+f
+i
+l
+e
+`
+
+a
+n
+s
+w
+e
+r
+s
+
+f
+o
+r
+,
+
+s
+p
+e
+n
+t
+:
+
+o
+n
+e
+
+i
+m
+p
+o
+r
+t
+
+c
+l
+a
+i
+m
+s
+
+i
+t
+.
 pub fn claim(file: &FoundFile) -> Option<KeptBook> {
     let mut all = load();
     let at = best_for(&all, file)?;
@@ -162,8 +792,65 @@ pub fn claim(file: &FoundFile) -> Option<KeptBook> {
     Some(kept)
 }
 
-/// The store after one more removal: the answer the reader just gave replaces an older record of
-/// the same address rather than stacking on it, and the newest [`KEPT_CAP`] are what it holds.
+/
+/
+/
+
+T
+h
+e
+
+s
+t
+o
+r
+e
+
+a
+f
+t
+e
+r
+
+o
+n
+e
+
+m
+o
+r
+e
+
+r
+e
+m
+o
+v
+a
+l
+,
+
+c
+a
+p
+p
+e
+d
+
+a
+t
+
+`
+K
+E
+P
+T
+_
+C
+A
+P
+`
+.
 fn remembered(mut all: Vec<KeptBook>, kept: KeptBook) -> Vec<KeptBook> {
     all.retain(|each| each.address != kept.address);
     all.push(kept);
@@ -172,9 +859,72 @@ fn remembered(mut all: Vec<KeptBook>, kept: KeptBook) -> Vec<KeptBook> {
     all
 }
 
-/// Which record a file answers for best, `None` when none of them shares anything with it. A tie
-/// goes to the newer record, which is why the list's own order decides it: the last removal that
-/// kept this file is the answer the reader would expect to come back.
+/
+/
+/
+
+W
+h
+i
+c
+h
+
+r
+e
+c
+o
+r
+d
+
+a
+
+f
+i
+l
+e
+
+a
+n
+s
+w
+e
+r
+s
+
+f
+o
+r
+
+b
+e
+s
+t
+;
+
+a
+
+t
+i
+e
+
+g
+o
+e
+s
+
+t
+o
+
+t
+h
+e
+
+n
+e
+w
+e
+r
+.
 fn best_for(all: &[KeptBook], file: &FoundFile) -> Option<usize> {
     let name = stem_of(&file.path);
     let mut best: Option<(Confidence, usize)> = None;
@@ -189,8 +939,67 @@ fn best_for(all: &[KeptBook], file: &FoundFile) -> Option<usize> {
     best.map(|(_, at)| at)
 }
 
-/// A store that will not write is a store the reader can still remove books from: the write is
-/// reported and the app carries on, the way every other save in this module does.
+/
+/
+/
+
+A
+
+f
+a
+i
+l
+e
+d
+
+w
+r
+i
+t
+e
+
+i
+s
+
+r
+e
+p
+o
+r
+t
+e
+d
+,
+
+a
+n
+d
+
+t
+h
+e
+
+r
+e
+m
+o
+v
+a
+l
+
+s
+t
+i
+l
+l
+
+s
+t
+a
+n
+d
+s
+.
 fn report(result: Result<(), StorageError>) {
     if let Err(e) = result {
         e.report();
@@ -236,8 +1045,68 @@ mod tests {
         }
     }
 
-    /// A book the app copied: the reader's own file still exists somewhere, and the bytes the
-    /// library holds are its own copy's.
+    /
+    /
+    /
+
+    A
+
+    b
+    o
+    o
+    k
+
+    t
+    h
+    e
+
+    a
+    p
+    p
+
+    c
+    o
+    p
+    i
+    e
+    d
+    :
+
+    t
+    h
+    e
+
+    r
+    e
+    a
+    d
+    e
+    r
+    '
+    s
+
+    o
+    w
+    n
+
+    f
+    i
+    l
+    e
+
+    s
+    t
+    i
+    l
+    l
+
+    e
+    x
+    i
+    s
+    t
+    s
+    .
     fn stored(id: &str, source: &str) -> Book {
         Book {
             origin: Origin::Stored {

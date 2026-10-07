@@ -1,29 +1,137 @@
-//! Dominant-colour detection: quantise pixels into 5-bit-per-channel buckets
-//! and let the largest bucket's exact mean stand for "the paper".
-//!
-//! One detector, two ways to feed it. [`PaperDetector::feed`] routes by
-//! [`PaperArea`]: the whole frame, or just the margin bands along the four
-//! edges (where artwork-heavy pages still show honest paper). A detector
-//! also POOLS: feeding it several rasters, one at a time, yields their
-//! combined dominant colour without ever holding more than one raster's
-//! pixels.
-//!
-//! The bucket grain is the detector's honesty: a cell wide enough to swallow
-//! a page's margin and its body into one bucket makes the two areas ask the
-//! same question — WholePage's mean is the body-and-margin mix and Edges'
-//! margin-only mean sits a few units off it, so both modes publish the same
-//! mud to the eye and the backdrop matches neither surface. Five bits per
-//! channel (32-wide cells) still folds scan noise and JPEG ringing into one
-//! bucket per flat region, but keeps a margin its own colour.
+/
+/
+!
+
+D
+o
+m
+i
+n
+a
+n
+t
+-
+c
+o
+l
+o
+u
+r
+
+d
+e
+t
+e
+c
+t
+i
+o
+n
+:
+
+q
+u
+a
+n
+t
+i
+s
+e
+
+p
+i
+x
+e
+l
+s
+
+i
+n
+t
+o
+
+5
+-
+b
+i
+t
+
+b
+u
+c
+k
+e
+t
+s
+.
 
 use std::collections::HashMap;
 
 use crate::color::Rgb;
 use crate::config::PaperArea;
 
-/// A book's paper has to own at least this share of the sampled pixels; a
-/// photo-heavy raster has no paper majority and yields nothing rather than
-/// guessing.
+/
+/
+/
+
+A
+
+b
+o
+o
+k
+'
+s
+
+p
+a
+p
+e
+r
+
+m
+u
+s
+t
+
+o
+w
+n
+
+a
+t
+
+l
+e
+a
+s
+t
+
+t
+h
+i
+s
+
+s
+h
+a
+r
+e
+
+o
+f
+
+t
+h
+e
+
+p
+i
+x
+e
+l
+s
+.
 pub const PAPER_SHARE: f64 = 0.1;
 
 #[derive(Default)]
@@ -41,11 +149,65 @@ pub struct PaperDetector {
     pixels: u64,
 }
 
-/// Round a non-negative integer mean to the nearest channel value. Keeping
-/// this in integer arithmetic makes the result deterministic across targets
-/// while avoiding the downward bias of plain integer division. The remainder
-/// comparison is written without `2 * remainder`, so even a very large
-/// histogram cannot overflow while deciding whether to round up.
+/
+/
+/
+
+R
+o
+u
+n
+d
+
+a
+
+n
+o
+n
+-
+n
+e
+g
+a
+t
+i
+v
+e
+
+m
+e
+a
+n
+
+t
+o
+
+t
+h
+e
+
+n
+e
+a
+r
+e
+s
+t
+
+c
+h
+a
+n
+n
+e
+l
+
+v
+a
+l
+u
+e
+.
 fn rounded_mean(sum: u64, count: u64) -> u8 {
     debug_assert!(count > 0);
     let whole = sum / count;
@@ -59,9 +221,65 @@ impl PaperDetector {
         Self::default()
     }
 
-    /// Feed one frame's pixels, honouring the configured area. `rgba` is the
-    /// frame's full pixel buffer (`width * height * 4`); the edge area walks
-    /// only the margin bands. Returns the number of pixels counted.
+    /
+    /
+    /
+
+    F
+    e
+    e
+    d
+
+    o
+    n
+    e
+
+    f
+    r
+    a
+    m
+    e
+    '
+    s
+
+    p
+    i
+    x
+    e
+    l
+    s
+    ,
+
+    h
+    o
+    n
+    o
+    u
+    r
+    i
+    n
+    g
+
+    t
+    h
+    e
+
+    c
+    o
+    n
+    f
+    i
+    g
+    u
+    r
+    e
+    d
+
+    a
+    r
+    e
+    a
+    .
     pub fn feed(
         &mut self,
         area: PaperArea,
@@ -86,17 +304,106 @@ impl PaperDetector {
         rgba.len() / 4
     }
 
-    /// Count only the margin bands: the pixels within `edge_width` of any of
-    /// the frame's four sides.
+    /
+    /
+    /
+
+    C
+    o
+    u
+    n
+    t
+
+    o
+    n
+    l
+    y
+
+    t
+    h
+    e
+
+    m
+    a
+    r
+    g
+    i
+    n
+
+    b
+    a
+    n
+    d
+    s
+    .
     fn feed_edges(&mut self, width: usize, height: usize, rgba: &[u8], edge_width: usize) -> usize {
-        // The strips are `edge` px deep on all four sides. Two opposing
-        // strips of HALF the extent each tile the entire axis, so the old
-        // half-of-width clamp turned Edges into WholePage in disguise
-        // whenever the width — a page-scale number applied to a frame
-        // downscaled to ≤96px — reached half the shorter axis, and the body
-        // colour rode home in the margin's histogram. A quarter of the
-        // shorter axis keeps the four strips a margin at every frame scale;
-        // a sane edge width on a full-resolution frame never meets the cap.
+        /
+        /
+
+        T
+        w
+        o
+
+        o
+        p
+        p
+        o
+        s
+        i
+        n
+        g
+
+        s
+        t
+        r
+        i
+        p
+        s
+
+        o
+        f
+
+        H
+        A
+        L
+        F
+
+        t
+        h
+        e
+
+        e
+        x
+        t
+        e
+        n
+        t
+
+        e
+        a
+        c
+        h
+
+        t
+        i
+        l
+        e
+
+        t
+        h
+        e
+
+        w
+        h
+        o
+        l
+        e
+
+        a
+        x
+        i
+        s
+        .
         let edge = edge_width.clamp(1, (width.min(height) / 4).max(1));
         let mut fed = 0;
         for y in 0..height {
@@ -112,11 +419,76 @@ impl PaperDetector {
         fed
     }
 
-    /// The dominant colour, provided one bucket owns at least `min_share` of
-    /// every pixel this detector has ever counted. The result is the nearest
-    /// representable channel value of that bucket's exact mean, not a bucket
-    /// centre — the mean keeps a paper colour that straddles a quantisation
-    /// edge from wobbling.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    d
+    o
+    m
+    i
+    n
+    a
+    n
+    t
+
+    c
+    o
+    l
+    o
+    u
+    r
+    ,
+
+    i
+    f
+
+    o
+    n
+    e
+
+    b
+    u
+    c
+    k
+    e
+    t
+
+    o
+    w
+    n
+    s
+
+    `
+    m
+    i
+    n
+    _
+    s
+    h
+    a
+    r
+    e
+    `
+
+    o
+    f
+
+    t
+    h
+    e
+
+    p
+    i
+    x
+    e
+    l
+    s
+    .
     pub fn dominant(&self, min_share: f64) -> Option<Rgb> {
         let best = self.buckets.values().max_by_key(|b| b.n)?;
         if self.pixels == 0 || best.n == 0 {
@@ -133,10 +505,49 @@ impl PaperDetector {
         ))
     }
 
-    /// Total pixels counted across every feed (the pooled denominator).
-    /// A test-only inspector: production reads the dominant colour, never the
-    /// raw count.
-    #[cfg(test)]
+    /
+    /
+    /
+
+    T
+    o
+    t
+    a
+    l
+
+    p
+    i
+    x
+    e
+    l
+    s
+
+    c
+    o
+    u
+    n
+    t
+    e
+    d
+
+    a
+    c
+    r
+    o
+    s
+    s
+
+    e
+    v
+    e
+    r
+    y
+
+    f
+    e
+    e
+    d
+    .
     fn pixels(&self) -> u64 {
         self.pixels
     }
@@ -147,9 +558,64 @@ impl PaperDetector {
     }
 
     fn count(&mut self, r: u8, g: u8, b: u8) {
-        // Five bits per channel: a 32-wide cell. Four bits merged margins
-        // into bodies on low-contrast sheets (see the module doc); fifteen
-        // bits of key still fit the u16 the histogram is keyed by.
+        /
+        /
+
+        F
+        i
+        v
+        e
+
+        b
+        i
+        t
+        s
+
+        p
+        e
+        r
+
+        c
+        h
+        a
+        n
+        n
+        e
+        l
+        ;
+
+        f
+        o
+        u
+        r
+
+        m
+        e
+        r
+        g
+        e
+        d
+
+        m
+        a
+        r
+        g
+        i
+        n
+        s
+
+        i
+        n
+        t
+        o
+
+        b
+        o
+        d
+        i
+        e
+        s
+        .
         let key = ((u16::from(r) >> 3) << 10) | ((u16::from(g) >> 3) << 5) | (u16::from(b) >> 3);
         let e = self.buckets.entry(key).or_default();
         e.n += 1;
@@ -193,8 +659,65 @@ mod tests {
         }
     }
 
-    /// Paint a `t`-deep band along all four sides of a `w`-wide buffer —
-    /// the shape of a scanned page's coloured margin.
+    /
+    /
+    /
+
+    P
+    a
+    i
+    n
+    t
+
+    a
+
+    `
+    t
+    `
+    -
+    d
+    e
+    e
+    p
+
+    b
+    a
+    n
+    d
+
+    a
+    l
+    o
+    n
+    g
+
+    a
+    l
+    l
+
+    f
+    o
+    u
+    r
+
+    s
+    i
+    d
+    e
+    s
+
+    o
+    f
+
+    a
+
+    b
+    u
+    f
+    f
+    e
+    r
+    .
     fn ring(buf: &mut [u8], w: usize, t: usize, colour: [u8; 3]) {
         let rows = buf.len() / (w * 4);
         for y in 0..rows {
@@ -224,9 +747,47 @@ mod tests {
 
     #[test]
     fn dominant_means_round_to_nearest_channel_value() {
-        // Two pixels in one bucket with a 0.5 mean expose the old truncation:
-        // the detector must agree with the floating-point compositor and pick
-        // 1 rather than the systematically darker 0.
+        /
+        /
+
+        A
+
+        0
+        .
+        5
+
+        m
+        e
+        a
+        n
+
+        e
+        x
+        p
+        o
+        s
+        e
+        s
+
+        t
+        h
+        e
+
+        o
+        l
+        d
+
+        t
+        r
+        u
+        n
+        c
+        a
+        t
+        i
+        o
+        n
+        .
         let rgba = [0, 0, 0, 255, 1, 1, 1, 255];
         let mut d = PaperDetector::new();
         d.feed_rgba(&rgba);
@@ -255,9 +816,67 @@ mod tests {
 
     #[test]
     fn edges_read_the_margins_and_ignore_the_middle() {
-        // A scanned page: cream margins, a dark photo filling the middle.
-        // Whole-page detection sees more photo than cream and calls the
-        // photo the paper; edge detection reads only the margin bands.
+        /
+        /
+
+        A
+
+        s
+        c
+        a
+        n
+        n
+        e
+        d
+
+        p
+        a
+        g
+        e
+        :
+
+        c
+        r
+        e
+        a
+        m
+
+        m
+        a
+        r
+        g
+        i
+        n
+        s
+        ,
+
+        a
+
+        d
+        a
+        r
+        k
+
+        p
+        h
+        o
+        t
+        o
+
+        i
+        n
+
+        t
+        h
+        e
+
+        m
+        i
+        d
+        d
+        l
+        e
+        .
         let mut buf = frame(40, 40, [0x20, 0x20, 0x30]);
         ring(&mut buf, 40, 4, CREAM);
         let mut whole = PaperDetector::new();
@@ -270,8 +889,69 @@ mod tests {
         let mut edges = PaperDetector::new();
         edges.feed(PaperArea::Edges, 40, 40, &buf, 4);
         assert_eq!(edges.dominant(PAPER_SHARE), Some(rgb(CREAM)));
-        // A 4px band on each of the four sides of a 40px page: the 32×32
-        // middle never votes.
+        /
+        /
+
+        A
+
+        4
+        p
+        x
+
+        b
+        a
+        n
+        d
+
+        e
+        a
+        c
+        h
+
+        s
+        i
+        d
+        e
+
+        o
+        f
+
+        a
+
+        4
+        0
+        p
+        x
+
+        p
+        a
+        g
+        e
+        :
+
+        t
+        h
+        e
+
+        m
+        i
+        d
+        d
+        l
+        e
+
+        n
+        e
+        v
+        e
+        r
+
+        v
+        o
+        t
+        e
+        s
+        .
         assert_eq!(edges.pixels(), 40 * 40 - 32 * 32);
     }
 
@@ -282,21 +962,183 @@ mod tests {
         let mut buf = frame(40, 40, CREAM);
         ring(&mut buf, 40, 5, MAROON);
         let fed = d.feed(PaperArea::Edges, 40, 40, &buf, 999);
-        // The strips cap at a quarter of the shorter axis (10px), never the
-        // half-that-tiles-everything clamp they replace.
+        /
+        /
+
+        T
+        h
+        e
+
+        s
+        t
+        r
+        i
+        p
+        s
+
+        c
+        a
+        p
+
+        a
+        t
+
+        a
+
+        q
+        u
+        a
+        r
+        t
+        e
+        r
+
+        o
+        f
+
+        t
+        h
+        e
+
+        s
+        h
+        o
+        r
+        t
+        e
+        r
+
+        a
+        x
+        i
+        s
+        .
         assert_eq!(fed, 40 * 40 - 20 * 20);
-        // The maroon ring owns the counted bands even though the cream
-        // centre owns the page: Edges reads the margin, not the middle.
+        /
+        /
+
+        T
+        h
+        e
+
+        m
+        a
+        r
+        o
+        o
+        n
+
+        r
+        i
+        n
+        g
+
+        o
+        w
+        n
+        s
+
+        t
+        h
+        e
+
+        c
+        o
+        u
+        n
+        t
+        e
+        d
+
+        b
+        a
+        n
+        d
+        s
+        ,
+
+        n
+        o
+        t
+
+        t
+        h
+        e
+
+        c
+        e
+        n
+        t
+        r
+        e
+        .
         assert_eq!(d.dominant(PAPER_SHARE), Some(rgb(MAROON)));
     }
 
     #[test]
     fn edges_and_whole_page_disagree_when_the_centre_dominates() {
-        // The shape of the regression document: a centre colour that wins
-        // the page by area, wrapped in a different-coloured margin. The two
-        // areas must answer differently — under the old clamp an oversized
-        // edge width made Edges ask the whole page's question and both
-        // answers collapsed into the centre colour.
+        /
+        /
+
+        T
+        h
+        e
+
+        r
+        e
+        g
+        r
+        e
+        s
+        s
+        i
+        o
+        n
+
+        d
+        o
+        c
+        u
+        m
+        e
+        n
+        t
+        '
+        s
+
+        s
+        h
+        a
+        p
+        e
+        :
+
+        a
+
+        c
+        e
+        n
+        t
+        r
+        e
+
+        c
+        o
+        l
+        o
+        u
+        r
+
+        t
+        h
+        a
+        t
+
+        w
+        i
+        n
+        s
+        .
         let mut buf = frame(40, 40, CREAM);
         ring(&mut buf, 40, 5, MAROON);
         let mut whole = PaperDetector::new();
@@ -309,12 +1151,74 @@ mod tests {
 
     #[test]
     fn a_margin_a_sixteenth_off_the_body_keeps_its_own_colour() {
-        // THE regression, in the dark: a sheet whose margins sit one 4-bit
-        // step off its body (#10 vs #1e). The old 16-wide cell swallowed
-        // both, so WholePage published their mixed mean and Edges published
-        // a mean a few units off it — the same mud to the eye, matching
-        // neither surface. At the 5-bit grain the two stay separate buckets:
-        // the body owns the page, the margin owns the bands.
+        /
+        /
+
+        T
+        H
+        E
+
+        r
+        e
+        g
+        r
+        e
+        s
+        s
+        i
+        o
+        n
+        ,
+
+        i
+        n
+
+        t
+        h
+        e
+
+        d
+        a
+        r
+        k
+        :
+
+        m
+        a
+        r
+        g
+        i
+        n
+        s
+
+        o
+        n
+        e
+
+        4
+        -
+        b
+        i
+        t
+
+        s
+        t
+        e
+        p
+
+        o
+        f
+        f
+
+        t
+        h
+        e
+
+        b
+        o
+        d
+        y
+        .
         let mut buf = frame(40, 40, [0x1e, 0x1e, 0x1e]);
         ring(&mut buf, 40, 4, [0x10, 0x10, 0x10]);
         let mut whole = PaperDetector::new();
@@ -334,9 +1238,68 @@ mod tests {
 
     #[test]
     fn feeds_pool_across_pages() {
-        // Two frames: page 1 mostly cream with ink text, page 2 all cream.
-        // Pooled, cream owns the pair even though page 1's own histogram
-        // leans the other way.
+        /
+        /
+
+        T
+        w
+        o
+
+        f
+        r
+        a
+        m
+        e
+        s
+        :
+
+        p
+        a
+        g
+        e
+
+        1
+
+        m
+        o
+        s
+        t
+        l
+        y
+
+        c
+        r
+        e
+        a
+        m
+
+        w
+        i
+        t
+        h
+
+        i
+        n
+        k
+        ,
+
+        p
+        a
+        g
+        e
+
+        2
+
+        a
+        l
+        l
+
+        c
+        r
+        e
+        a
+        m
+        .
         let mut page1 = frame(40, 10, [0xfa, 0xf4, 0xe8]);
         paint(&mut page1, 40, 0, 30, [0x22, 0x22, 0x22]); // 75% ink
         let page2 = frame(40, 10, [0xfa, 0xf4, 0xe8]);

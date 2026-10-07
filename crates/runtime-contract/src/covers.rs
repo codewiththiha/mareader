@@ -1,7 +1,81 @@
-//! The cover store's data types. They live here — not beside the library
-//! state — because both the library runtime (which builds the map) and the
-//! storage crate (which loads and saves it) name them, and the storage crate
-//! must not depend on the library runtime.
+/
+/
+!
+
+T
+h
+e
+
+c
+o
+v
+e
+r
+
+s
+t
+o
+r
+e
+'
+s
+
+d
+a
+t
+a
+
+t
+y
+p
+e
+s
+,
+
+n
+a
+m
+e
+d
+
+b
+y
+
+b
+o
+t
+h
+
+t
+h
+e
+
+l
+i
+b
+r
+a
+r
+y
+
+a
+n
+d
+
+/
+/
+!
+
+`
+s
+t
+o
+r
+a
+g
+e
+`
+.
 
 use std::sync::Arc;
 
@@ -15,18 +89,158 @@ pub struct CoverImage {
     pub height: f64,
 }
 
-/// Behind an `Arc`: a cover is tens of kilobytes, and the map is read out of
-/// a signal on every shelf render and cloned whole before every save.
+/
+/
+/
+
+B
+e
+h
+i
+n
+d
+
+a
+n
+
+`
+A
+r
+c
+`
+:
+
+a
+
+c
+o
+v
+e
+r
+
+i
+s
+
+t
+e
+n
+s
+
+o
+f
+
+k
+i
+l
+o
+b
+y
+t
+e
+s
+.
 pub type CoverMap = std::collections::HashMap<String, Arc<CoverImage>>;
 
-/// The cover queue's render width: one number for both renders of the same
-/// art, so the cache the open files into is the cache the queue filled.
+/
+/
+/
+
+T
+h
+e
+
+c
+o
+v
+e
+r
+
+q
+u
+e
+u
+e
+'
+s
+
+r
+e
+n
+d
+e
+r
+
+w
+i
+d
+t
+h
+.
 pub const COVER_WIDTH: f64 = 240.0;
 
-/// The page aspect (height/width) a tile assumes before a real cover or a
-/// page size arrives: the shelf's placeholder art and the reader's missing-
-/// size fallback must draw the SAME box or the grid would jump when the real
-/// cover lands. Both runtimes name that one number.
+/
+/
+/
+
+T
+h
+e
+
+p
+a
+g
+e
+
+a
+s
+p
+e
+c
+t
+
+a
+
+t
+i
+l
+e
+
+a
+s
+s
+u
+m
+e
+s
+
+b
+e
+f
+o
+r
+e
+
+a
+
+r
+e
+a
+l
+
+c
+o
+v
+e
+r
+
+a
+r
+r
+i
+v
+e
+s
+.
 pub const DEFAULT_PAGE_ASPECT: f64 = 0.75;
 
 /// The persisted map's entry cap (`library-core`'s blob budget rule).

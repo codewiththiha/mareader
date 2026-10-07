@@ -1,27 +1,178 @@
-//! Which pixels of a page are trusted to carry the blend backdrop's paper
-//! colour.
-//!
-//! The backdrop follows the reader: a colour PER PAGE, blended along the
-//! scroll position so it arrives at the next page's paper when the page does.
-//! The reader's one choice is the detection area:
-//!
-//! * [`PaperArea::WholePage`] — every pixel of the sampled raster votes.
-//! * [`PaperArea::Edges`] — only a thin band along the frame's four edges
-//!   votes: the margins, where a scanned or decorated page still shows its
-//!   honest paper even when the middle is full of artwork.
-//!
-//! Every knob is a plain field on [`PaperConfig`].
+/
+/
+!
+
+W
+h
+i
+c
+h
+
+p
+i
+x
+e
+l
+s
+
+c
+a
+r
+r
+y
+
+t
+h
+e
+
+b
+l
+e
+n
+d
+
+b
+a
+c
+k
+d
+r
+o
+p
+'
+s
+
+p
+a
+p
+e
+r
+
+c
+o
+l
+o
+u
+r
+.
 
 use serde::{Deserialize, Serialize};
 
-/// Edge-strip bounds, in sampled-raster pixels (rasters are downscaled to a
-/// ≤96px long edge before detection, so 10px is a real margin's worth).
-/// Crate-internal: `sanitize` is the only consumer.
+/
+/
+/
+
+E
+d
+g
+e
+-
+s
+t
+r
+i
+p
+
+b
+o
+u
+n
+d
+s
+,
+
+i
+n
+
+s
+a
+m
+p
+l
+e
+d
+-
+r
+a
+s
+t
+e
+r
+
+p
+i
+x
+e
+l
+s
+.
 const MIN_EDGE_WIDTH: u32 = 2;
 const MAX_EDGE_WIDTH: u32 = 32;
 
-/// The default edge-strip thickness: a thin slice of each side, wide enough
-/// that the margin's flat colour survives the downscale.
+/
+/
+/
+
+T
+h
+e
+
+d
+e
+f
+a
+u
+l
+t
+
+e
+d
+g
+e
+-
+s
+t
+r
+i
+p
+
+t
+h
+i
+c
+k
+n
+e
+s
+s
+:
+
+a
+
+t
+h
+i
+n
+
+s
+l
+i
+c
+e
+
+o
+f
+
+e
+a
+c
+h
+
+s
+i
+d
+e
+.
 pub const DEFAULT_EDGE_WIDTH: u32 = 10;
 
 /// Which pixels of a page raster carry the paper colour.
@@ -42,9 +193,62 @@ impl PaperArea {
     }
 }
 
-/// Every knob the paper pipeline exposes, in one value: the detection area
-/// and how thick the edge strips are when the area is [`PaperArea::Edges`].
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/
+/
+/
+
+E
+v
+e
+r
+y
+
+k
+n
+o
+b
+
+t
+h
+e
+
+p
+a
+p
+e
+r
+
+p
+i
+p
+e
+l
+i
+n
+e
+
+e
+x
+p
+o
+s
+e
+s
+,
+
+i
+n
+
+o
+n
+e
+
+v
+a
+l
+u
+e
+.
 pub struct PaperConfig {
     #[serde(default)]
     pub area: PaperArea,
@@ -66,8 +270,48 @@ impl Default for PaperConfig {
 }
 
 impl PaperConfig {
-    /// Clamp every knob into its legal range so a hand-edited or stale
-    /// settings blob can never configure a page-wide "edge".
+    /
+    /
+    /
+
+    C
+    l
+    a
+    m
+    p
+
+    e
+    v
+    e
+    r
+    y
+
+    k
+    n
+    o
+    b
+
+    i
+    n
+    t
+    o
+
+    i
+    t
+    s
+
+    l
+    e
+    g
+    a
+    l
+
+    r
+    a
+    n
+    g
+    e
+    .
     pub fn sanitize(&mut self) {
         self.edge_width = self.edge_width.clamp(MIN_EDGE_WIDTH, MAX_EDGE_WIDTH);
     }
@@ -97,9 +341,68 @@ mod tests {
 
     #[test]
     fn a_stale_blob_loads_and_fills_in_the_defaults() {
-        // A blob written by an older build still carries the retired
-        // `mode`/`scan_pages` keys; they are ignored and the defaults fill
-        // in for everything the blob does not name.
+        /
+        /
+
+        A
+        n
+
+        o
+        l
+        d
+        e
+        r
+
+        b
+        l
+        o
+        b
+
+        c
+        a
+        r
+        r
+        i
+        e
+        s
+
+        r
+        e
+        t
+        i
+        r
+        e
+        d
+
+        k
+        e
+        y
+        s
+        ;
+
+        d
+        e
+        f
+        a
+        u
+        l
+        t
+        s
+
+        f
+        i
+        l
+        l
+
+        t
+        h
+        e
+
+        r
+        e
+        s
+        t
+        .
         let c: PaperConfig = serde_json::from_str(r#"{"mode":"fixed","scan_pages":100}"#).unwrap();
         assert_eq!(c.area, PaperArea::WholePage);
         assert_eq!(c.edge_width, DEFAULT_EDGE_WIDTH);

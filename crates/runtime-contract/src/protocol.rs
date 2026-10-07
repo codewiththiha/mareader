@@ -1,41 +1,155 @@
-//! The frame wire protocol: the serialized form of the Shell ⇄ runtime
-//! boundary once a runtime lives in its own frame (guide §7–§9, §35).
-//!
-//! Every type here is pure data — no `js-sys`, no `web-sys` — so both
-//! artifacts and the Shell serialize it from the one crate, and the shape is
-//! unit-testable off-wasm.
-//!
-//! Channel discipline (§8): the Shell hands each frame a dedicated
-//! `MessagePort`, so the port itself authenticates the channel; the
-//! `generation` on every envelope is the stale-frame guard — a message from a
-//! disposed or superseded generation is dropped by whoever receives it,
-//! never applied to a live session (§35). The `nonce` authenticates the init
-//! handshake itself: a runtime acknowledges its init only when the nonce it
-//! echoes is the one the frame was created with.
+/
+/
+!
+
+T
+h
+e
+
+f
+r
+a
+m
+e
+
+w
+i
+r
+e
+
+p
+r
+o
+t
+o
+c
+o
+l
+:
+
+t
+h
+e
+
+S
+h
+e
+l
+l
+
+t
+o
+
+r
+u
+n
+t
+i
+m
+e
+
+b
+o
+u
+n
+d
+a
+r
+y
+,
+
+s
+e
+r
+i
+a
+l
+i
+z
+e
+d
+.
 
 use serde::{Deserialize, Serialize};
 
 use crate::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
 use crate::covers::CoverImage;
 
-/// Which artifact a route frame booted. Only one route is visible; an
-/// incoming frame and a retiring predecessor may overlap during handoff.
-/// Neither runtime is retained or prewarmed behind the other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+W
+h
+i
+c
+h
+
+a
+r
+t
+i
+f
+a
+c
+t
+
+a
+
+r
+o
+u
+t
+e
+
+f
+r
+a
+m
+e
+
+b
+o
+o
+t
+e
+d
+.
 pub enum RuntimeKind {
     Library,
     Reader,
 }
 
-/// The boot handshake stages (§9): a runtime does not get to claim "ready"
-/// because its wasm module initialized — ready means the session exists, the
-/// DOM is mounted and the first paint was given a chance. The Shell keeps
-/// the loading cover until [`RuntimeFrame::Painted`] arrives, and a stage of
-/// [`BootStage::Failed`] carries its cause into the Shell's visible runtime
-/// error state (§11).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+/
+/
+/
+
+T
+h
+e
+
+b
+o
+o
+t
+
+h
+a
+n
+d
+s
+h
+a
+k
+e
+
+s
+t
+a
+g
+e
+s
+.
 pub enum BootStage {
     /// Document fetched, module loading.
     Loading,
@@ -53,11 +167,72 @@ pub enum BootStage {
     Failed,
 }
 
-/// Every Shell → runtime message, wrapped in the frame identity: the runtime
-/// accepts a message only for ITS generation, and the init nonce authenticates
-/// the channel establishment itself.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+E
+v
+e
+r
+y
+
+S
+h
+e
+l
+l
+
+t
+o
+
+r
+u
+n
+t
+i
+m
+e
+
+m
+e
+s
+s
+a
+g
+e
+,
+
+w
+r
+a
+p
+p
+e
+d
+
+i
+n
+
+t
+h
+e
+
+f
+r
+a
+m
+e
+
+i
+d
+e
+n
+t
+i
+t
+y
+.
 pub struct ShellEnvelope {
     pub generation: u64,
     pub nonce: String,
@@ -65,35 +240,355 @@ pub struct ShellEnvelope {
     pub body: ShellFrame,
 }
 
-/// What the Shell can tell a runtime. These are commands and answers — the
-/// Shell asks, the runtime executes; durable state never travels Shell-owned.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+/
+/
+/
+
+W
+h
+a
+t
+
+t
+h
+e
+
+S
+h
+e
+l
+l
+
+c
+a
+n
+
+t
+e
+l
+l
+
+a
+
+r
+u
+n
+t
+i
+m
+e
+.
 pub enum ShellFrame {
-    /// First message on the port after the frame's document loads: the
-    /// identity the runtime must echo, plus the reader's launch descriptor
-    /// when the frame was created to open a document.
+    /
+    /
+    /
+
+    F
+    i
+    r
+    s
+    t
+
+    m
+    e
+    s
+    s
+    a
+    g
+    e
+
+    o
+    n
+
+    t
+    h
+    e
+
+    p
+    o
+    r
+    t
+
+    a
+    f
+    t
+    e
+    r
+
+    t
+    h
+    e
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    l
+    o
+    a
+    d
+    s
+    .
     Init {
         runtime: RuntimeKind,
         launch: Option<Box<LaunchDocument>>,
-        /// The incoming frame is laid out but not yet visible. Library
-        /// defers startup writes and grain motion until Refresh reveals it.
+        /
+        /
+        /
+
+        T
+        h
+        e
+
+        i
+        n
+        c
+        o
+        m
+        i
+        n
+        g
+
+        f
+        r
+        a
+        m
+        e
+
+        i
+        s
+
+        l
+        a
+        i
+        d
+
+        o
+        u
+        t
+
+        b
+        u
+        t
+
+        n
+        o
+        t
+
+        v
+        i
+        s
+        i
+        b
+        l
+        e
+
+        y
+        e
+        t
+        .
         hidden: bool,
     },
-    /// A document opened inside an already-active Reader workspace; its
-    /// pane gets a fresh document realm without replacing the workspace.
+    /
+    /
+    /
+
+    A
+
+    d
+    o
+    c
+    u
+    m
+    e
+    n
+    t
+
+    o
+    p
+    e
+    n
+    e
+    d
+
+    i
+    n
+    s
+    i
+    d
+    e
+
+    a
+    n
+
+    a
+    c
+    t
+    i
+    v
+    e
+
+    R
+    e
+    a
+    d
+    e
+    r
+
+    w
+    o
+    r
+    k
+    s
+    p
+    a
+    c
+    e
+    .
     Launch { document: Box<LaunchDocument> },
-    /// The frame is now visible. Reconcile durable state and start the
-    /// Library passes deferred while the incoming frame painted.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    f
+    r
+    a
+    m
+    e
+
+    i
+    s
+
+    n
+    o
+    w
+
+    v
+    i
+    s
+    i
+    b
+    l
+    e
+    .
     Refresh,
-    /// §12 phase 1: flush, cancel, dispose, then answer
-    /// [`RuntimeFrame::DisposeComplete`]. The Shell removes the iframe only
-    /// after that answer (or after the forced-dispose timeout).
+    /
+    /
+    /
+
+    P
+    h
+    a
+    s
+    e
+
+    1
+    :
+
+    f
+    l
+    u
+    s
+    h
+    ,
+
+    c
+    a
+    n
+    c
+    e
+    l
+    ,
+
+    d
+    i
+    s
+    p
+    o
+    s
+    e
+    ,
+
+    t
+    h
+    e
+    n
+
+    a
+    n
+    s
+    w
+    e
+    r
+    .
     Dispose,
-    /// Answer to [`RuntimeFrame::BakeCover`]: the shelf bake, performed by
-    /// the Shell's own bake frame (a pdf.js-only page the Shell mounts while
-    /// the queue drains and removes after it) — `image: None` when the bake
-    /// failed.
+    /
+    /
+    /
+
+    A
+    n
+    s
+    w
+    e
+    r
+
+    t
+    o
+
+    [
+    `
+    R
+    u
+    n
+    t
+    i
+    m
+    e
+    F
+    r
+    a
+    m
+    e
+    :
+    :
+    B
+    a
+    k
+    e
+    C
+    o
+    v
+    e
+    r
+    `
+    ]
+    :
+
+    t
+    h
+    e
+
+    s
+    h
+    e
+    l
+    f
+
+    b
+    a
+    k
+    e
+    .
     CoverBaked {
         path: String,
         image: Option<CoverImage>,
@@ -103,47 +598,444 @@ pub enum ShellFrame {
         request: u64,
         document: Option<Box<LaunchDocument>>,
     },
-    /// Files dropped on the window from the OS while the LIBRARY is the
-    /// runtime on screen: the shelf imports them where it is looking. The
-    /// Shell's one drop listener sends it to the library only — a drop over
-    /// the reader is nothing — and the paths are already filtered to the
-    /// formats the app opens.
+    /
+    /
+    /
+
+    F
+    i
+    l
+    e
+    s
+
+    d
+    r
+    o
+    p
+    p
+    e
+    d
+
+    o
+    n
+
+    t
+    h
+    e
+
+    w
+    i
+    n
+    d
+    o
+    w
+
+    w
+    h
+    i
+    l
+    e
+
+    t
+    h
+    e
+
+    L
+    I
+    B
+    R
+    A
+    R
+    Y
+
+    i
+    s
+
+    o
+    n
+
+    s
+    c
+    r
+    e
+    e
+    n
+    .
     ImportFiles { paths: Vec<String> },
 }
 
-/// Every runtime → Shell message, wrapped in the frame generation. The Shell
-/// drops any envelope whose generation is not the live frame's (§8).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+E
+v
+e
+r
+y
+
+r
+u
+n
+t
+i
+m
+e
+
+t
+o
+
+S
+h
+e
+l
+l
+
+m
+e
+s
+s
+a
+g
+e
+,
+
+w
+r
+a
+p
+p
+e
+d
+
+i
+n
+
+t
+h
+e
+
+f
+r
+a
+m
+e
+
+g
+e
+n
+e
+r
+a
+t
+i
+o
+n
+.
 pub struct RuntimeEnvelope {
     pub generation: u64,
     #[serde(flatten)]
     pub body: RuntimeFrame,
 }
 
-/// What a runtime can tell the Shell: the lifecycle signals of the boot
-/// handshake, the timer-free [`crate::boundary::ShellApi`] vocabulary
-/// serialized, and the disposal acknowledgement. The fat payloads are boxed
-/// (transparent on the wire — same JSON) so the envelope's in-memory size
-/// stays the size of its smallest variants.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+/
+/
+/
+
+W
+h
+a
+t
+
+a
+
+r
+u
+n
+t
+i
+m
+e
+
+c
+a
+n
+
+t
+e
+l
+l
+
+t
+h
+e
+
+S
+h
+e
+l
+l
+.
 pub enum RuntimeFrame {
-    /// Session created and durable state loaded ( boot stages up to
-    /// [`BootStage::Ready`] ). The Shell does not treat this as paint.
+    /
+    /
+    /
+
+    S
+    e
+    s
+    s
+    i
+    o
+    n
+
+    c
+    r
+    e
+    a
+    t
+    e
+    d
+
+    a
+    n
+    d
+
+    d
+    u
+    r
+    a
+    b
+    l
+    e
+
+    s
+    t
+    a
+    t
+    e
+
+    l
+    o
+    a
+    d
+    e
+    d
+    .
     Ready,
-    /// The runtime's root DOM exists and has had its paint opportunity
-    /// (§9): the Shell may now lift the loading cover.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    r
+    u
+    n
+    t
+    i
+    m
+    e
+    '
+    s
+
+    r
+    o
+    o
+    t
+
+    D
+    O
+    M
+
+    e
+    x
+    i
+    s
+    t
+    s
+
+    a
+    n
+    d
+
+    h
+    a
+    d
+
+    i
+    t
+    s
+
+    p
+    a
+    i
+    n
+    t
+
+    o
+    p
+    p
+    o
+    r
+    t
+    u
+    n
+    i
+    t
+    y
+    .
     Painted,
-    /// A boot-stage transition, so the Shell's error surface can say which
-    /// stage a failure happened in (§11).
+    /
+    /
+    /
+
+    A
+
+    b
+    o
+    o
+    t
+    -
+    s
+    t
+    a
+    g
+    e
+
+    t
+    r
+    a
+    n
+    s
+    i
+    t
+    i
+    o
+    n
+    .
     Status { stage: BootStage },
-    /// The runtime found its own failure: surface it as a runtime error,
-    /// never a blank window and never a silent fallback (§11).
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    r
+    u
+    n
+    t
+    i
+    m
+    e
+
+    f
+    o
+    u
+    n
+    d
+
+    i
+    t
+    s
+
+    o
+    w
+    n
+
+    f
+    a
+    i
+    l
+    u
+    r
+    e
+    :
+
+    s
+    u
+    r
+    f
+    a
+    c
+    e
+
+    i
+    t
+    .
     Failed { stage: BootStage, cause: String },
-    /// §12 phase 1 done: durable state flushed, document/render/search/
-    /// prefetch/virtualizer work cancelled, timers and observers released.
-    /// The Shell may now remove the iframe.
+    /
+    /
+    /
+
+    P
+    h
+    a
+    s
+    e
+
+    1
+
+    d
+    o
+    n
+    e
+    :
+
+    s
+    t
+    a
+    t
+    e
+
+    f
+    l
+    u
+    s
+    h
+    e
+    d
+    ,
+
+    w
+    o
+    r
+    k
+
+    c
+    a
+    n
+    c
+    e
+    l
+    l
+    e
+    d
+    ,
+
+    r
+    e
+    s
+    o
+    u
+    r
+    c
+    e
+    s
+
+    r
+    e
+    l
+    e
+    a
+    s
+    e
+    d
+    .
     DisposeComplete,
     /// `ShellApi::open_document` over the wire.
     OpenDocument { launch: Box<LaunchDocument> },
@@ -166,18 +1058,110 @@ pub enum RuntimeFrame {
     DocStatus { report: DocStatusReport },
     /// `ShellApi::publish_digest` over the wire.
     PublishDigest { json: String },
-    /// The one query the bridge answered synchronously becomes a
-    /// request/answer pair over the port; `request` matches the answer.
+    /
+    /
+    /
+
+    T
+    h
+    e
+
+    o
+    n
+    e
+
+    s
+    y
+    n
+    c
+    h
+    r
+    o
+    n
+    o
+    u
+    s
+
+    q
+    u
+    e
+    r
+    y
+
+    b
+    e
+    c
+    o
+    m
+    e
+    s
+
+    a
+
+    r
+    e
+    q
+    u
+    e
+    s
+    t
+
+    a
+    n
+    d
+
+    a
+    n
+    s
+    w
+    e
+    r
+
+    p
+    a
+    i
+    r
+    .
     ResolveLaunch { request: u64, path: String },
 }
 
-/// The Shell's runtime error record (§11): visible in the error state,
-/// complete enough to say WHICH runtime, WHERE in the boot it died, WHICH
-/// generation it belonged to and WHY. The Shell never panics over a runtime
-/// that failed — the frame model exists so a runtime can fail without the
-/// host following it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/
+/
+/
+
+T
+h
+e
+
+S
+h
+e
+l
+l
+'
+s
+
+r
+u
+n
+t
+i
+m
+e
+
+e
+r
+r
+o
+r
+
+r
+e
+c
+o
+r
+d
+.
 pub struct BootError {
     pub runtime: RuntimeKind,
     pub generation: u64,
@@ -300,10 +1284,58 @@ mod tests {
 
     #[test]
     fn the_shell_vocabulary_keeps_the_bridge_wire_names() {
-        // The frames replace the TRANSPORT, not the vocabulary: the same
-        // names the same-page bridge used must be the names on the port wire,
-        // so a runtime's ShellApi call is byte-identical whichever transport
-        // carries it.
+        /
+        /
+
+        F
+        r
+        a
+        m
+        e
+        s
+
+        r
+        e
+        p
+        l
+        a
+        c
+        e
+
+        t
+        h
+        e
+
+        T
+        R
+        A
+        N
+        S
+        P
+        O
+        R
+        T
+        ,
+
+        n
+        o
+        t
+
+        t
+        h
+        e
+
+        v
+        o
+        c
+        a
+        b
+        u
+        l
+        a
+        r
+        y
+        .
         let env = RuntimeEnvelope {
             generation: 1,
             body: RuntimeFrame::NavigateLibrary,
