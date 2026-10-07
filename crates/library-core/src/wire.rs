@@ -1,6 +1,5 @@
 //! The wire contract between the shell's filesystem commands and the
-//! frontend that drives them. Both sides depend on this crate, so these types
-//! are declared once rather than mirrored.
+//! frontend.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,30 +12,25 @@ pub enum ImportPhase {
     Copy,
 }
 
-/// One progress beat, emitted on the shell's `library://progress` channel
-/// and re-broadcast as a window event by `crates/library-runtime/src/services/mod.rs`.
+/// One progress beat on the shell's `library://progress` channel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportProgress {
-    /// The import run this beat belongs to, so two runs in flight never mix
-    /// their counts.
+    /// The import run this beat belongs to.
     pub task: String,
     pub phase: ImportPhase,
     pub done: u32,
-    /// `0` during a scan (the count is unknown until the walk ends); the
-    /// request count during a copy.
+    /// `0` during a scan; the request count during a copy.
     pub total: u32,
     pub name: String,
 }
 
-/// One row per path asked about, in the order asked, so the caller can zip
-/// the answer against its own list.
+/// One row per path asked about, in the order asked.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PathCheck {
     pub path: String,
-    /// False for a path that is gone, unreadable, a directory, or refused by
-    /// the shell's document gate.
+    /// False for a path that is gone or refused by the shell's gate.
     pub exists: bool,
     pub size: u64,
     pub mtime_ms: u64,
@@ -44,9 +38,7 @@ pub struct PathCheck {
 }
 
 impl PathCheck {
-    /// The measurement as a fingerprint, or `None` when the address did not
-    /// resolve — the caller marks that book `missing` rather than re-stamping
-    /// it with zeros.
+    /// The measurement as a fingerprint, or `None` unresolved.
     pub fn fingerprint(&self) -> Option<crate::book::Fingerprint> {
         self.exists.then_some(crate::book::Fingerprint {
             size: self.size,
@@ -56,16 +48,7 @@ impl PathCheck {
     }
 }
 
-/// One file the library is about to act on: the address the bytes come from
-/// and the book's id, which becomes part of the stored name so two books with
-/// the same title cannot collide. One shape for both commands that take it —
-/// a copy's source and a relocation's current address are the same question —
-/// with the field order the pre-unification shapes already spelled, so a
-/// relocation's wire bytes are unchanged.
-///
-/// For a relocation, `from` is the copy's address in the old flat store
-/// (`<root>/<format>/<stem>_<id>.<ext>`) that [`crate::store`]'s item layout
-/// (`<root>/items/<id>/source.<ext>`) replaces.
+/// One file to act on: its address and the book's id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookFileRequest {
@@ -73,20 +56,16 @@ pub struct BookFileRequest {
     pub id: String,
 }
 
-/// What a relocation pass produced: one row per request, plus the store root
-/// the shell moved them inside. The root rides along because the frontend
-/// cannot compute `<app_data_dir>` and needs it to tell a copy still in the
-/// old bucket from one already in its item folder.
+/// What a relocation produced: one row per request, plus the store root.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelocateResult {
-    /// The app's store root, `<app_data_dir>/Library`, or empty when the shell has none.
+    /// The app's store root, or empty when the shell has none.
     pub root: String,
     pub results: Vec<StoreResult>,
 }
 
-/// A failure is per-file rather than per-batch: a folder with one locked
-/// file in it still imports the other ninety-nine.
+/// A failure is per-file: one locked file does not sink the batch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreResult {
@@ -94,11 +73,7 @@ pub struct StoreResult {
     pub src: String,
     pub store: String,
     pub error: Option<String>,
-    /// The copy's own measurement, taken by the pass that stamped it: the
-    /// backend reads the head anyway, so answering costs no second trip and
-    /// the row never wears the source's identity (which stays free for the
-    /// folder that reads it). `None` for a failed copy, and for a relocation —
-    /// the bytes did not change.
+    /// The copy's own measurement, taken by the pass that stamped it.
     #[serde(default)]
     pub measured: Option<crate::book::Fingerprint>,
 }
@@ -124,8 +99,7 @@ mod tests {
         };
         let json = serde_json::to_string(&beat).unwrap();
         assert!(json.contains("\"phase\":\"copy\""), "{json}");
-        // No snake_case keys: the JS side of Tauri's IPC speaks camelCase, and
-        // a mismatched name deserialises as a default rather than as an error.
+        // No snake_case keys: Tauri's IPC speaks camelCase.
         assert!(!json.contains('_'), "{json}");
         let back: ImportProgress = serde_json::from_str(&json).unwrap();
         assert_eq!(back, beat);
@@ -174,19 +148,14 @@ mod tests {
         let json = serde_json::to_string(&requests).unwrap();
         assert!(json.contains("\"from\""), "{json}");
         assert!(json.contains("\"id\""), "{json}");
-        // The keys are the contract; the values are paths a reader owns, which
-        // carry underscores of their own, so the check names the keys it wants.
+        // The check names the keys it wants.
         assert!(!json.contains("\"from_\""), "no snake_case keys: {json}");
         assert!(!json.contains("\"_id\""), "no snake_case keys: {json}");
         assert!(json.starts_with("[{\"from\""), "{json}");
         let back: Vec<BookFileRequest> = serde_json::from_str(&json).unwrap();
         assert_eq!(back, requests);
 
-        // The answer carries the root beside the rows, because the frontend
-        // cannot compute `<app_data_dir>` itself and needs it to recognise a copy
-        // that has not moved yet. `measured` is absent from a relocation's rows:
-        // the bytes did not change, so the identity the row already carries is
-        // the truth, and `#[serde(default)]` reads the gap as `None`.
+        // The answer carries the store root beside the rows.
         let answer: RelocateResult = serde_json::from_str(
             r#"{"root":"/app/Library","results":[
                 {"id":"ab12","src":"/app/Library/pdf/dune_ab12.pdf",
@@ -229,9 +198,7 @@ mod tests {
 
     #[test]
     fn a_copys_own_measurement_crosses_with_it() {
-        // The shell stamps a copy and reads its head in one pass; the row lands with
-        // the copy's identity rather than the source file's, and no second verify trip
-        // follows the batch home.
+        // One pass stamps the copy and reads its head.
         let landed: StoreResult = serde_json::from_str(
             r#"{"id":"b1","src":"/downloads/a.pdf",
                 "store":"/app/Library/items/b1/source.pdf","error":null,
@@ -246,9 +213,7 @@ mod tests {
                 head_hash: 30
             })
         );
-        // A row written before the field existed answers `None`, not an error: the
-        // pending flag the startup sweep finishes is exactly what a missing
-        // measurement means.
+        // An older row answers `None`, not an error.
         let legacy: StoreResult = serde_json::from_str(
             r#"{"id":"b1","src":"/downloads/a.pdf",
                 "store":"/app/Library/items/b1/source.pdf","error":null}"#,

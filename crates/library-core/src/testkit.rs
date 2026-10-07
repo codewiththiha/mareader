@@ -1,6 +1,4 @@
-//! Fixture builders for the library's host tests — one spelling of "a book",
-//! "a row", "a link" and "a shelf" for every test module that used to build its
-//! own.
+//! Fixture builders for the library's host tests.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -30,8 +28,7 @@ pub fn fp_n(n: u32) -> Fingerprint {
     }
 }
 
-/// A minimal linked book: id `id`, address `/books/{id}.pdf`, format PDF, joined
-/// at `0`, page 1, nothing read, nothing missing, nothing pending.
+/// A minimal linked PDF book at `/books/{id}.pdf`.
 pub fn book(id: &str) -> Book {
     Book::new(
         id.to_string(),
@@ -48,7 +45,7 @@ pub fn row(id: &str) -> Row {
     Row::Book(book(id))
 }
 
-/// A linked Markdown book at `/books/{id}.md`, the fixture an app-side test lands through a placement.
+/// A linked Markdown book at `/books/{id}.md`.
 pub fn markdown_book(id: &str) -> Book {
     Book::new(
         id.to_string(),
@@ -84,7 +81,7 @@ pub fn link(id: &str, name: &str, target: &str) -> Row {
     Row::link(id.to_string(), name.to_string(), target.to_string(), 0)
 }
 
-/// A virtual shelf holding `members`, hanging under `parent` (`None` is the root).
+/// A virtual shelf holding `members`, under `parent`.
 pub fn shelf(id: &str, name: &str, members: &[&str], parent: Option<&str>) -> Shelf {
     Shelf {
         id: id.to_string(),
@@ -96,12 +93,12 @@ pub fn shelf(id: &str, name: &str, members: &[&str], parent: Option<&str>) -> Sh
     }
 }
 
-/// A shelf named by its id, where the name is not what the test is about.
+/// A shelf named by its id.
 pub fn plain_shelf(id: &str, members: &[&str]) -> Shelf {
     shelf(id, id, members, None)
 }
 
-/// A shelf a move took off its tree: the reader's own now, holding the copies that move paid for.
+/// A shelf a move took off its tree.
 pub fn departed_shelf(id: &str, members: &[&str], parent: Option<&str>) -> Shelf {
     Shelf {
         kind: ShelfKind::Departed,
@@ -109,7 +106,7 @@ pub fn departed_shelf(id: &str, members: &[&str], parent: Option<&str>) -> Shelf
     }
 }
 
-/// A folder shelf: one rung of a watched folder's tree, at `rel` (`None` is the root rung).
+/// A folder shelf: one rung of a watched tree, at `rel`.
 pub fn folder_shelf(
     id: &str,
     name: &str,
@@ -127,10 +124,7 @@ pub fn folder_shelf(
     }
 }
 
-/// A watched folder reading `root`, having placed nothing and logged nothing:
-/// the ledger row a test starts from and then narrows with a struct-update, the
-/// way [`book`] is. Ten fields is ten places a new one has to be remembered,
-/// which is the whole reason this exists.
+/// A watched folder reading `root` with an empty ledger.
 pub fn watched_folder(id: &str, root: &str) -> WatchedFolder {
     WatchedFolder {
         id: id.to_string(),

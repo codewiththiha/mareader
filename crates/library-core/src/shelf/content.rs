@@ -1,16 +1,10 @@
-//! What a shelf actually holds: whether its books are on disk, stored copies,
-//! or a mix of both. The governance badge (FolderMode) says where a shelf
-//! *should* read from; this says what it *does* hold, which is what fixes the
-//! duplicate-inside-read-at-place bug — a duplicated folder's books are stored
-//! even though its parent seat still says "On disk".
+//! What a shelf actually holds: on-disk books, stored copies, or both.
 
 use crate::book::{Book, Row, find_row};
 
 use super::Shelf;
 
-/// The composition of a shelf's direct members. Empty means no book rows to
-/// count (only shelf links, or nothing at all); the caller falls back to the
-/// governance badge in that case.
+/// The composition of a shelf's direct members.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentKind {
     Empty,
@@ -53,8 +47,7 @@ impl ContentKind {
     }
 }
 
-/// The book a member id names: a book row directly, a book link through its
-/// target, and nothing for a shelf link — a pointer at a level is not content.
+/// The book a member id names, if any.
 fn member_book<'a>(rows: &'a [Row], member_id: &str) -> Option<&'a Book> {
     match find_row(rows, member_id)? {
         Row::Book(b) => Some(b),
@@ -101,10 +94,7 @@ fn content_kind(rows: &[Row], shelf: &Shelf) -> ContentKind {
     kind_of(on_disk, stored)
 }
 
-/// Count a shelf and all shelves below it. Used for the badge when a folder
-/// has no direct books but its children do — e.g. a duplicated folder tree
-/// whose root is empty and whose leaves hold stored copies. If any level in
-/// the subtree is mixed, the whole tree is mixed.
+/// Count a shelf and all shelves below it, for the badge.
 fn content_kind_recursive(rows: &[Row], shelves: &[Shelf], root_id: &str) -> ContentKind {
     let mut ids = vec![root_id.to_string()];
     let mut seen = std::collections::HashSet::new();
@@ -133,10 +123,7 @@ fn content_kind_recursive(rows: &[Row], shelves: &[Shelf], root_id: &str) -> Con
     kind_of(on_disk, stored)
 }
 
-/// The badge rule every folder surface reads: what the shelf ITSELF holds
-/// decides the badge, and a shelf holding no books falls back to what its
-/// subtree holds, so a folder whose leaves carry the copies still says so at
-/// its root. A missing shelf is an empty one.
+/// The badge rule every folder surface reads.
 pub fn badge_kind(rows: &[Row], shelves: &[Shelf], shelf_id: &str) -> ContentKind {
     let direct = crate::shelf::find(shelves, shelf_id)
         .map(|shelf| content_kind(rows, shelf))
@@ -268,10 +255,7 @@ mod tests {
 
     #[test]
     fn duplicated_folder_inside_read_at_place_is_stored_not_on_disk() {
-        // The bug: a folder shelf inside a read-at-place tree is duplicated.
-        // The duplicate is virtual, its parent is the original's parent (still
-        // inside the tree), so governance says "On disk", but its members are
-        // stored copies.
+        // A duplicated folder shelf: on disk per governance, copies inside.
         let rows = vec![stored("dup1", "/a.pdf"), stored("dup2", "/b.pdf")];
         let s = shelf("dup_shelf", &["dup1", "dup2"]);
         // Content says stored, so badge must be Copied, not On disk.
@@ -284,8 +268,7 @@ mod tests {
         let root = shelf("s1", &["b1"]);
         let kid = testkit::shelf("s2", "s2", &["b2"], Some("s1"));
         let shelves = vec![root, kid];
-        // The shelf's own member decides the badge even when its subtree holds
-        // something else: what the folder holds is what it says.
+        // The shelf's own members decide the badge.
         assert_eq!(badge_kind(&rows, &shelves, "s1"), ContentKind::OnDisk);
         assert_eq!(badge_kind(&rows, &shelves, "s2"), ContentKind::Stored);
     }
@@ -296,8 +279,7 @@ mod tests {
         let root = shelf("s1", &[]);
         let kid = testkit::shelf("s2", "s2", &["b1", "b2"], Some("s1"));
         let shelves = vec![root, kid];
-        // The duplicated-tree shape: a root holding nothing whose leaves are
-        // stored copies still reads as Copied.
+        // An empty root whose leaves are copies still reads as Copied.
         assert_eq!(badge_kind(&rows, &shelves, "s1"), ContentKind::Stored);
     }
 
