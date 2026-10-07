@@ -271,7 +271,7 @@ impl LayoutNode {
         match self {
             LayoutNode::Leaf(id) => out.panes.push((*id, rect)),
             LayoutNode::Split(split) => {
-                let (first, second) = divide(rect, split.axis, split.ratio);
+                let (first, second) = split_rects(rect, split.axis, split.ratio);
                 let seam = match split.axis {
                     SplitAxis::Horizontal => PaneBounds {
                         x: first.x + first.width - DIVIDER_HIT_PX / 2.0,
@@ -299,16 +299,10 @@ impl LayoutNode {
     }
 }
 
-/// Split `rect` in whole pixels; the sides tile it exactly, as the
-/// drop preview draws.
-pub fn split_rects(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
-    divide(rect, axis, ratio)
-}
-
 /// Whether a fresh [`EVEN`] split keeps both halves at
 /// `MIN_PANE_PX`.
 pub fn split_fits(rect: PaneBounds, axis: SplitAxis) -> bool {
-    let (first, second) = divide(rect, axis, EVEN);
+    let (first, second) = split_rects(rect, axis, EVEN);
     let extent = |b: PaneBounds| match axis {
         SplitAxis::Horizontal => b.width,
         SplitAxis::Vertical => b.height,
@@ -316,7 +310,9 @@ pub fn split_fits(rect: PaneBounds, axis: SplitAxis) -> bool {
     extent(first) >= MIN_PANE_PX && extent(second) >= MIN_PANE_PX
 }
 
-fn divide(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
+/// Split `rect` in whole pixels; the sides tile it exactly, as the
+/// drop preview draws.
+pub fn split_rects(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
     match axis {
         SplitAxis::Horizontal => {
             let first_w = (rect.width * ratio).round().min(rect.width).max(0.0);

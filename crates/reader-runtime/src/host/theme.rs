@@ -212,14 +212,8 @@ impl PaneThemes {
     /// The look this pane owns under a per-pane mode (`None` = the window
     /// theme).
     pub fn look_for(self, id: PaneId, global: Appearance) -> Option<Appearance> {
-        if !self.in_effect() && !self.textures_active.get_untracked() {
-            return None;
-        }
-        let look = self
-            .overrides
-            .with_value(|m| m.borrow().get(&id).copied())
-            .unwrap_or(global);
-        Some(self.shown(look, global))
+        (self.in_effect() || self.textures_active.get_untracked())
+            .then(|| self.active_look(Some(id), global))
     }
 
     /// The look the window takes over as the last split collapses: the
