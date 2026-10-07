@@ -11,12 +11,12 @@
 //! The schema types are re-exported so a component that reads a knob and
 //! paints it imports from one crate.
 
-pub use reader_core::settings::typography::{FontChoice, TextFamily, TextSettings, builtin_fonts};
-
 pub use reader_core::settings::typography::{
-    BuiltInFont, DEFAULT_FONT_SIZE, DEFAULT_INK_CONTRAST, DEFAULT_LINE_HEIGHT,
-    DEFAULT_PARAGRAPH_MARGIN, SystemFont, TextColumnAlign, sanitize,
+    FontChoice, SystemFont, TextColumnAlign, TextSettings, sanitize,
 };
+
+// This module's own needs: the family table `body_char_width` reads.
+use reader_core::settings::typography::{TextFamily, builtin_fonts};
 
 /// Average glyph advance (fraction of the font size) for the body font —
 /// the pagination estimate's per-character width.
