@@ -1,8 +1,4 @@
-//! The library's search bar, in the title bar's centre slot.
-//!
-//! The reader's floating search is an overlay over a document; this is a
-//! filter over a shelf, so it borrows the look only: an always-present pill
-//! that narrows the grid on the spot.
+//! The library's search bar: a filter over a shelf, in the title bar's centre.
 
 use std::time::Duration;
 
@@ -19,9 +15,8 @@ use crate::services::reveal_book;
 use app_ui::components::primitives::floating::menu_popover::MenuPopover;
 use app_ui::events::FOCUS_LIBRARY_SEARCH_EVENT;
 
-/// The quiet gap between a keystroke and the suggestion scan: long enough
-/// for a fast typist's letters to land, short enough that the panel still
-/// feels like it answers the typing.
+/// The gap between a keystroke and the suggestion scan that feels like
+/// an answer.
 const SUGGEST_DEBOUNCE_MS: u64 = 90;
 
 fn placeholder(state: crate::context::LibraryContext) -> Signal<String> {
@@ -44,8 +39,7 @@ pub(crate) fn TitlebarSearch(state: crate::context::LibraryContext) -> impl Into
     let input_ref: NodeRef<html::Input> = NodeRef::new();
     let anchor: NodeRef<html::Div> = NodeRef::new();
 
-    // `open` is the popover's own signal (its dismissal writes it too), so a
-    // closed panel renders and computes nothing.
+    // The popover's own signal: closed, the panel computes nothing.
     let open = RwSignal::new(false);
     let active = RwSignal::new(0usize);
     let suggestions: RwSignal<Vec<Suggestion>> = RwSignal::new(Vec::new());
@@ -73,9 +67,8 @@ pub(crate) fn TitlebarSearch(state: crate::context::LibraryContext) -> impl Into
         open.set(!suggestions.with_untracked(|s| s.is_empty()));
     };
 
-    // The suggest pass is debounced, the query write is not: the shelf
-    // filters per keystroke, while suggestions scan every row in the library.
-    // One pending timer, replaced by each keystroke, so only the last lands.
+    // The suggest pass is debounced; the query write is not: suggestions
+    // scan every row.
     let pending_show: RwSignal<Option<TimeoutHandle>> = RwSignal::new(None);
     let queue_show = move || {
         if let Some(handle) = pending_show.try_get_untracked().flatten() {
@@ -95,8 +88,7 @@ pub(crate) fn TitlebarSearch(state: crate::context::LibraryContext) -> impl Into
         open.set(false);
     };
 
-    // The shortcut layer dispatches and forgets: it has no business knowing
-    // the library's bar owns an input node.
+    // The shortcut layer dispatches and forgets; the bar owns the node.
     let focus_handle = window_event_listener(
         leptos::ev::Custom::new(FOCUS_LIBRARY_SEARCH_EVENT),
         move |_: web_sys::CustomEvent| {
@@ -110,9 +102,7 @@ pub(crate) fn TitlebarSearch(state: crate::context::LibraryContext) -> impl Into
 
     view! {
         <div node_ref=anchor class="relative w-full max-w-xl">
-            // The bar's drag region claims its whole subtree; this pill opts
-            // out, so a press on its padding focuses the field instead of
-            // grabbing the window (and `preventDefault` never eats the caret).
+            // The bar's drag region claims the subtree; this pill opts out.
             <div
                 data-tauri-drag-region="false"
                 class="pointer-events-auto flex w-full items-center gap-2 rounded-full \
