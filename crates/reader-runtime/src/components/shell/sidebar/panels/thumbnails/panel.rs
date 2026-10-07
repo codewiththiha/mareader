@@ -286,5 +286,3 @@ pub fn ThumbnailsPanel(
         </div>
     }
 }
-
-// only the changed file was rewritten

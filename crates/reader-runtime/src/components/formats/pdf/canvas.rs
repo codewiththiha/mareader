@@ -719,5 +719,3 @@ pub fn PdfPageCanvas(
         </div>
     }
 }
-
-// only the changed file was rewritten

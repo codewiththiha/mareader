@@ -137,5 +137,3 @@ impl ReaderState {
         self.document.content.reflow.stream_fraction()
     }
 }
-
-// only the changed file was rewritten

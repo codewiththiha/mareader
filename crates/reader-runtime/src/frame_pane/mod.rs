@@ -270,7 +270,6 @@ fn new_frame(inner: &Rc<Inner>, kind: PaneKind, boot: Boot) -> Frame {
     let nonce = mint_nonce();
     iframe.set_class_name("pane-frame");
     let _ = iframe.set_attribute("data-frame-hidden", "");
-    let _ = iframe.set_attribute("data-pane-frame", &inner.id.get().to_string());
     let _ = iframe.set_attribute("title", "Document");
     iframe.set_src(&format!("{}?pane={nonce}", kind.page()));
     if let Some(container) = inner.container.borrow().as_ref() {
@@ -1007,7 +1006,7 @@ impl PaneRuntime for FramePane {
         let boot_error = self.inner.boot_error;
         let failed = move || boot_error.try_get().flatten();
         view! {
-            <div node_ref=container class="absolute inset-0" data-pane-root-host="" />
+            <div node_ref=container class="absolute inset-0" />
             {move || {
                 failed()
                     .map(|message| {
@@ -1638,5 +1637,3 @@ mod tests {
         }
     }
 }
-
-// only the changed file was rewritten

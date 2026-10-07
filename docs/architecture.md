@@ -395,7 +395,7 @@ ownership, liveness stamps and quiescent sweeps remain enforced by
   shelf's "Open in Reader" zone and the Shell's shelf → reader carry were
   removed.
 - **Open panes.** With more than one pane, the panel's top lists them
-  (`[data-open-tabs]`): a click focuses the pane, × closes it; no drag.
+  (`[data-open-tab]` rows): a click focuses the pane, × closes it; no drag.
 - **Row click.** A workspace setting (Settings → Workspace,
   `WorkspaceSettings::library_click`): open in the focused pane (default,
   `Replace`), open as a new split (`Split`), or nothing (`DragOnly`; the
@@ -674,7 +674,7 @@ texture with colour because a look they own is a whole look.
   Whether the window obeys is the desktop's business.
 - The drag overlay is the SHELL's, not a component: `install_import_drop`
   (`src/services/import_drop.rs`) listens for the native drag events and
-  returns the hover signal the Shell paints its `data-import-drop` hint from
+  returns the hover signal the Shell paints its drop hint from
   (`src/app/mod.rs`). The app-ui `DragOverlay` that lost its caller in the
   runtime split was deleted with its stylesheet block. The frameless
   caption's maximize/restore glyph is live again through the titlebar's own
@@ -688,5 +688,3 @@ texture with colour because a look they own is a whole look.
   so presence is already decided when the bar mounts — a frame with no surface
   there is a plain browser, and a poll timer waiting for one never clears and
   keeps the route's owner, which is how a Reader frame stops reporting disposal.
-
-<!-- // only the changed file was rewritten -->

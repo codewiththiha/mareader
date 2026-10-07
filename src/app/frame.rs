@@ -1169,5 +1169,3 @@ mod tests {
         assert_eq!(FrameKind::Reader.attr(), "reader");
     }
 }
-
-// only the changed file was rewritten

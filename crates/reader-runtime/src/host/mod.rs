@@ -1667,5 +1667,3 @@ fn snapshot_of(
         drag,
     }
 }
-
-// only the changed file was rewritten

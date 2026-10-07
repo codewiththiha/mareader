@@ -75,7 +75,7 @@ without waiting for an unrelated dependency change.
 | `CLEANUP_EVERY` | 5 renders | `engine/state.ts` |
 | `SWEEP_IDLE_MS` | 30 s | `engine/state.ts` |
 | `RAW_IDLE_MS` | 2 s | `engine/state.ts` |
-| `MAX_ZOMBIES` / `STRIP_SCROLL_GRACE_MS` | 12 / 120 ms | `zoom/config.rs` |
+| `MAX_ZOMBIES` / `ZOOM_GRACE_MS` | 12 / 300 ms | `zoom/config.rs` |
 | `PAGE_RENDER_LIMIT` / `REALM_PAGE_LIMIT` | 2 / 2 | `renderer.ts`, `state.ts` |
 
 ## History

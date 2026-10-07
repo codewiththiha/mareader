@@ -28,11 +28,6 @@ type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
 type ListenerCallback = Closure<dyn FnMut(Event)>;
 type IdleCallback = Rc<dyn Fn()>;
 
-/// The speed below which the reader is not drifting, pixels per second (well
-/// under a tenth of a pixel in a frame). [`Virtualizer::motion_drifts`] is the
-/// answer an effect samples against instead of inventing its own threshold.
-pub const DRIFT_EPS_PX_S: f64 = 20.0;
-
 /// One `ResizeObserver` and the wasm-bindgen closure that serves it. Named
 /// so the pairing is explicit: the callback must stay alive exactly as long
 /// as the observer is connected, and `dispose` drops both together.
@@ -1101,24 +1096,9 @@ impl Virtualizer {
         self.inner.retention.set(self.inner.options.retention);
     }
 
-    /// End every bridge whose clock has run out, publishing the change so its
-    /// DOM (and the engine surface it holds) unmounts: the soft endpoint, and
-    /// what the armed wakers do on their own tick.
-    ///
-    /// The wakers make this unnecessary in normal operation. It exists because
-    /// they are per-eviction bookkeeping on the item's owner, so a zombie
-    /// bridged around a zoom can outlive the transaction that raised its grace
-    /// and sit on a large (recently zoomed) bitmap until the window moves. A
-    /// caller that knows the change is over calls this instead of waiting for
-    /// the next scroll.
-    pub fn kill_retained(&self) {
-        self.inner.prune_retained_tick();
-    }
-
-    /// [`Self::kill_retained`] without the clock: every bridge ends THIS tick,
-    /// however much of it is left. The hard endpoint, for a caller that has
-    /// stopped needing the pixels a bridge was holding — and the reason a
-    /// bridge can be a cache rather than a risk.
+    /// Every bridge ends THIS tick, however much of it is left: the hard
+    /// endpoint, for a caller that has stopped needing the pixels a bridge was
+    /// holding. The armed wakers are the soft endpoint (see `prune_retained_tick`).
     pub fn remove_retained_now(&self) {
         if self.inner.retained.borrow().is_empty() {
             return;
@@ -1163,15 +1143,6 @@ impl Virtualizer {
     /// only state in which a retention bridge is granted.
     pub fn motion_engaged(&self) -> bool {
         self.inner.core.borrow().motion_engaged()
-    }
-
-    /// Whether the reader is moving at all, measured rather than assumed:
-    /// true while the estimate is above [`DRIFT_EPS_PX_S`]. A sampler that only
-    /// wants to know "should I be looking at the page or at the scroll" reads
-    /// this instead of watching scroll events, and an effect that must go quiet
-    /// while the reader is reading has one threshold to share.
-    pub fn motion_drifts(&self) -> bool {
-        self.inner.core.borrow().motion_speed() > DRIFT_EPS_PX_S
     }
 
     /// Where a mounted index ranks in the fill order right now: the viewport,
@@ -1238,5 +1209,3 @@ impl Virtualizer {
             + usize::from(self.inner.retention_timer.borrow().is_some())
     }
 }
-
-// only the changed file was rewritten

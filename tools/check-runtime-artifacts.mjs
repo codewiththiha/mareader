@@ -235,5 +235,3 @@ console.log(
   `runtime artifact contract OK: ${REQUIRED.length} files, ${total} bytes ` +
     `(Shell + Library + Reader host + PDF pane + reflow pane + shared assets)\n${sizes}`,
 );
-
-// only the changed file was rewritten

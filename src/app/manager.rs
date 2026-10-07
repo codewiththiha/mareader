@@ -845,5 +845,3 @@ mod tests {
         assert_eq!(history.display_name, launch.display_name);
     }
 }
-
-// only the changed file was rewritten

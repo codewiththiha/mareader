@@ -869,5 +869,3 @@ fn dispose(live: Live) {
         unmount();
     }
 }
-
-// only the changed file was rewritten

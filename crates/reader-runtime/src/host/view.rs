@@ -182,12 +182,6 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                 }
                 data-pane-id=id.get()
                 data-pane-active=move || active().to_string()
-                data-pane-format=move || {
-                    manager
-                        .pane(id)
-                        .map(|pane| format!("{:?}", pane.format()).to_lowercase())
-                        .unwrap_or_default()
-                }
             >
                 {content}
                 // The focus outline: which of several panes the keyboard
@@ -346,8 +340,6 @@ fn lift_view(manager: PaneManager, lift: super::lift::Lift) -> impl IntoView {
         {target.map(|(target, rect)| view! {
             <div
                 aria-hidden="true"
-                data-lift-target=target.word()
-                data-lift-pane=target.pane().get()
                 class=format!(
                     "pane-lift-target pointer-events-none absolute flex items-center \
                      justify-center {}",
@@ -361,7 +353,7 @@ fn lift_view(manager: PaneManager, lift: super::lift::Lift) -> impl IntoView {
                 <span class="pane-lift-label">{target.describe()}</span>
             </div>
         })}
-        <div class="sr-only" role="status" aria-live="polite" data-lift-announce="">
+        <div class="sr-only" role="status" aria-live="polite">
             {lift.target.map_or("Pane lifted", |target| target.describe())}
         </div>
     }
@@ -480,5 +472,3 @@ fn divider_view(host: ReaderHost, split: SplitId) -> impl IntoView {
         </div>
     }
 }
-
-// only the changed file was rewritten

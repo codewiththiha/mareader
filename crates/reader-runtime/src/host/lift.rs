@@ -214,5 +214,3 @@ mod tests {
         assert_eq!(LiftTarget::Swap(p(2)).predicted_rect(rect), rect);
     }
 }
-
-// only the changed file was rewritten

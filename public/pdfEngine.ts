@@ -617,5 +617,3 @@ globalThis.PDFReader = {
 // The engine contract is fixed by the Rust bridge: surface integrity beats
 // extensibility, so freeze the object (has_pdf_reader only checks existence).
 Object.freeze(globalThis.PDFReader);
-
-// only the changed file was rewritten

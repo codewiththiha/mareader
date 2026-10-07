@@ -134,7 +134,7 @@ Every item in `crates/virtual-list-leptos/src/lib.rs`'s re-export list and every
 `pub fn` on `Virtualizer`/`VirtualizerCore` keeps its name, argument types and
 return type. `VirtualizerOptions` keeps its fields and builder methods; new knobs
 arrive as new builder methods (`pipeline`) and new read-only getters
-(`motion_engaged`, `motion_speed`, `fill_priority`, `landing_index`). The kernel
+(`motion_engaged`, `fill_priority`, `landing_index`). The kernel
 keeps `Strip`, `Layout`, `ListLayout`, `GridLayout`, `GridSpec`,
 `GridDimension`, `window_for`, `Window`, `Viewport`, `Budget`, `Overscan`,
 `Align`, `AnchorPolicy`, `pin_at`, `correct`, `rescale_anchor`,
@@ -183,12 +183,12 @@ Refinements that came out of writing it, so the plan above and the code agree:
   `rank_signal` from `FillPriority::rank() × 2¹⁶ + |index − landing_index()|`.
   Read untracked at issue time: a rank change says who goes first, not what has
   to be drawn, so re-running a render effect for it would restart rasters.
-- `blend_backdrop`'s "am I moving" input becomes `motion_drifts` — true while
-  engaged, `false` once settled and slower than `drift_eps`, and nothing else —
-  replacing any speed *ratio* a caller might have invented. The engine-side
-  `retention::RetentionPolicy::MotionGated { max }` replaces `Frames` (whose
-  frame count was a guess) and becomes the strip default; `Grace { ms, max }`
-  stays for callers with a known wall-clock window, which is a zoom commit.
+- The engine-side `retention::RetentionPolicy::MotionGated { max }` replaces
+  `Frames` (whose frame count was a guess) and becomes the strip default;
+  `Grace { ms, max }` stays for callers with a known wall-clock window, which is
+  a zoom commit. `motion_engaged()` is the whole "am I moving" answer a caller
+  reads; `blend_backdrop` samples paper positions and asks no motion
+  question at all.
 - No `render_screens`-as-ceiling: a caller that sets a band asks for a floor
   under the motion-derived band, never a cap over it. `render_band(0)` keeps its
   meaning, which is that the mode is off.
@@ -281,5 +281,3 @@ wants; at rest the bridge dissolves in the same frame the motion estimate
 decays. `CI` and `Deep CI` green on the gated SHA; the page lane's queue and
 active slots stay drained at quiescence, which `tests/browser/lifecycle.mjs`
 asserts.
-
-<!-- // only the changed file was rewritten -->

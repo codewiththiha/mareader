@@ -12,5 +12,3 @@ use web_sys::Event;
 pub fn tauri_listen(event: &str, handler: impl FnMut(Event) + 'static) {
     app_state::tauri_listen::tauri_listen(event, handler);
 }
-
-// only the changed file was rewritten

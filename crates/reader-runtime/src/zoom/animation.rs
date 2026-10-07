@@ -316,5 +316,3 @@ mod tests {
         assert_eq!(ease_out_cubic(2.0), 1.0);
     }
 }
-
-// only the changed file was rewritten

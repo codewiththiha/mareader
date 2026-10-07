@@ -177,5 +177,3 @@ pub(super) fn pictures_stale() {
     }
     super::realm::send(&PaneToHost::ThumbsStale);
 }
-
-// only the changed file was rewritten

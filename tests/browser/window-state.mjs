@@ -185,5 +185,3 @@ export async function verifyWindowState({ browser, base }) {
     await context.close();
   }
 }
-
-// only the changed file was rewritten

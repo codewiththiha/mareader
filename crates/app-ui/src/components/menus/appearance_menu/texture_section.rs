@@ -112,5 +112,3 @@ pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
         </div>
     }
 }
-
-// only the changed file was rewritten

@@ -76,7 +76,7 @@ impl BootStage {
         }
     }
 
-    /// The machine-readable form (`data-mareader-stage`, diagnostics).
+    /// The machine-readable form the native boot report and `to_json` carry.
     pub const fn slug(self) -> &'static str {
         match self {
             BootStage::Dispose => "dispose",
@@ -331,10 +331,8 @@ pub fn paint_error(host: &web_sys::Element, error: &BootError) {
     };
     let _ = card.set_attribute("class", "runtime-boot runtime-boot--error");
     let _ = card.set_attribute(BOOT_ATTR, "error");
-    // The machine-readable half of the message: the browser suites assert on
-    // these, and a support report can quote them.
+    // The browser suites assert on this, and a support report can quote it.
     let _ = card.set_attribute("data-mareader-runtime", error.runtime.artifact());
-    let _ = card.set_attribute("data-mareader-stage", error.stage.slug());
     let _ = card.set_attribute("role", "alert");
     text_node(&card, "p", "runtime-boot__title", &error.headline());
     text_node(&card, "p", "runtime-boot__hint", &error.context());
@@ -395,5 +393,3 @@ pub fn clear(host: &web_sys::Element) {
     let _ = host.remove_attribute(ACTIVE_ATTR);
     clear_boot(host);
 }
-
-// only the changed file was rewritten

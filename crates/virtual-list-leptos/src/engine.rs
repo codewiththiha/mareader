@@ -593,11 +593,6 @@ impl VirtualizerCore {
         self.motion.engaged()
     }
 
-    /// The estimated scroll speed, pixels per second.
-    pub fn motion_speed(&self) -> f64 {
-        self.motion.speed_px_s()
-    }
-
     /// The band the estimator earned against the current layout and viewport,
     /// as of the last window update.
     pub const fn motion_band(&self) -> BandWindow {
@@ -1485,5 +1480,3 @@ mod tests {
         }
     }
 }
-
-// only the changed file was rewritten
