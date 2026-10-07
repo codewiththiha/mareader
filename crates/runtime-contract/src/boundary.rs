@@ -116,37 +116,3 @@ pub trait ShellApi {
     /// Reader → Shell: the diagnostics digest (the Shell's probe merges it).
     fn publish_digest(&self, json: String);
 }
-
-/// A no-Shell default for host tests: every command is recorded, nothing
-/// more. The runtimes' host tests install this so the boundary is exercised
-/// even off-wasm.
-#[derive(Default)]
-pub struct RecordApi {
-    pub launches: std::cell::RefCell<Vec<LaunchDocument>>,
-    pub read_points: std::cell::RefCell<Vec<ReadPoint>>,
-    pub settings_saves: std::cell::RefCell<u32>,
-    pub bakes: std::cell::RefCell<Vec<String>>,
-    pub gloss_saves: std::cell::RefCell<Vec<(String, String)>>,
-}
-
-impl ShellApi for RecordApi {
-    fn open_document(&self, launch: &LaunchDocument) {
-        self.launches.borrow_mut().push(launch.clone());
-    }
-    fn navigate_library(&self) {}
-    fn read_point(&self, point: &ReadPoint) {
-        self.read_points.borrow_mut().push(point.clone());
-    }
-    fn save_settings(&self, _settings: &Settings) {
-        *self.settings_saves.borrow_mut() += 1;
-    }
-    fn save_cover(&self, _path: &str, _image: &crate::covers::CoverImage) {}
-    fn save_gloss(&self, key: &str, marks: String) {
-        self.gloss_saves.borrow_mut().push((key.to_string(), marks));
-    }
-    fn bake_cover(&self, path: &str) {
-        self.bakes.borrow_mut().push(path.to_string());
-    }
-    fn doc_status(&self, _report: &DocStatusReport) {}
-    fn publish_digest(&self, _json: String) {}
-}

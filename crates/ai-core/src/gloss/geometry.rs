@@ -75,10 +75,10 @@ pub fn boxes_close(a: GlossBox, b: GlossBox, epsilon: f64) -> bool {
 }
 
 /// Smallest the card may shrink to before content stops being readable.
-pub const MIN_CARD_W: f64 = 260.0;
-pub const MIN_CARD_H: f64 = 140.0;
+const MIN_CARD_W: f64 = 260.0;
+const MIN_CARD_H: f64 = 140.0;
 /// The fraction is of the viewport's height.
-pub const MAX_CARD_H_FRAC: f64 = 0.8;
+const MAX_CARD_H_FRAC: f64 = 0.8;
 
 /// Gap-aware, side-aware card placement: the card goes on whichever side of
 /// the anchor has more free space (never covering the stroke), sits a little
