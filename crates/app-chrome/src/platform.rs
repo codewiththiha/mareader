@@ -1,15 +1,4 @@
-//! Which desktop OS the webview is running on.
-//!
-//! The frontend is ONE wasm binary for all three desktops, so compile-time
-//! `cfg` cannot tell it which window chrome exists: macOS owns native traffic
-//! lights, while Windows and Linux run frameless (their tauri conf files strip
-//! the decorations) and get the app's caption cluster. The user agent settles
-//! it — each webview engine ships a stable platform token (WKWebView
-//! "Macintosh", WebView2 "Windows NT", WebKitGTK "Linux").
-//!
-//! Probed once per process into a `OnceLock`: the answer never changes, chrome
-//! reads it without re-entering JS, and host `cargo test` (no webview) gets a
-//! truthful `Other`.
+//! Which desktop OS the webview runs on, probed from the user agent.
 
 use std::sync::OnceLock;
 
@@ -37,9 +26,7 @@ fn detect() -> DesktopPlatform {
     let Some(ua) = web_sys::window().map(|w| w.navigator().user_agent().unwrap_or_default()) else {
         return DesktopPlatform::Other;
     };
-    // Order matters only in that "Macintosh" must win over the rest — the
-    // tokens are mutually exclusive in practice, so this is a partition, not a
-    // priority.
+    // "Macintosh" must win over the rest: a partition, not a priority.
     if ua.contains("Macintosh") || ua.contains("Mac OS X") {
         DesktopPlatform::MacOs
     } else if ua.contains("Windows") {
@@ -51,25 +38,17 @@ fn detect() -> DesktopPlatform {
     }
 }
 
-/// True where the native traffic lights exist — the app hides/shows them
-/// and owes their corner a gutter. False everywhere else, Linux included:
-/// frameless there means no server-side title bar at all.
+/// True where the native traffic lights exist.
 pub fn is_macos() -> bool {
     platform() == DesktopPlatform::MacOs
 }
 
-/// True on Linux, where the frameless caption cluster draws GNOME-style
-/// circular buttons instead of the Windows squares — the circles match
-/// what a GNOME shell's header bar draws, so the window reads as native
-/// to the desktop.
+/// True on Linux, where the captions draw GNOME-style circles.
 pub fn is_linux() -> bool {
     platform() == DesktopPlatform::Linux
 }
 
-/// True where the window is frameless and the app owes the user its own
-/// caption buttons. Also true in a plain browser on those hosts — the cluster
-/// renders (styling stays testable under `trunk serve`) and every call it can
-/// make is a no-op there, like every other Tauri surface.
+/// True where the window is frameless and the app owes it captions.
 pub fn uses_frameless_controls() -> bool {
     matches!(
         platform(),

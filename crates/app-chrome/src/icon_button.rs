@@ -1,8 +1,4 @@
-//! Icon-only button: the toolbar's square ghost button. `pressed` renders the
-//! accent/ink toggle (titlebar pin); `disabled` is the plain disabled:opacity-50
-//! the other controls use. The borderless look is deliberate: toolbar icon
-//! buttons sit on glass/paper and only lift on hover, while the bordered
-//! `Button` variant is for labeled actions.
+//! Icon-only button, the toolbar's square ghost button.
 
 use leptos::prelude::*;
 
@@ -24,28 +20,19 @@ pub fn IconButton(
     /// defaults to always-enabled.
     #[prop(into, default = Signal::derive(|| false))]
     disabled: Signal<bool>,
-    /// Marks the button as search chrome for the floating search's
-    /// outside-dismiss exclusion (pointerdown on this button must not close
-    /// the bar the click is about to toggle). Rendered as
-    /// `data-search-chrome="true"`, matching the exclusion selector.
+    /// Marks the button as search chrome for the dismissal exclusion.
     #[prop(default = false)]
     data_search_chrome: bool,
-    /// Extra classes appended to the computed class string (callers may
-    /// override colour/size details; do not fork another button).
+    /// Extra classes appended to the computed class string.
     #[prop(optional, into)]
     class: Option<String>,
-    /// Optional content replacing the icon (dynamic icons: show-results
-    /// toggle, …). When absent the `icon` prop renders.
+    /// Optional content replacing the icon.
     #[prop(optional)]
     children: Option<Children>,
 ) -> impl IntoView {
     let pressed_sig = pressed.unwrap_or_else(|| Signal::derive(|| false));
     let box_class = "btn-icon inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg";
-    // One base string for both branches — toggle and plain buttons share
-    // every class; only the conditional colour swap differs. Plain buttons
-    // carry no text colour class so a caller's `class` passthrough can set it
-    // without fighting a conditional utility; toggles keep the accent/ink
-    // swap (only one branch is ever in the DOM).
+    // One base string for both branches; only the colour swap differs.
     let base = format!(
         "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
          focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
