@@ -1,7 +1,5 @@
-//! The menu chrome: item, separator, section label, shortcut hint and the
-//! key cap, plus the choice row a question sheet's answers use. They live as
-//! one group because menus, popovers, settings sections and the library's
-//! question sheets reach for them together.
+//! The menu chrome: item, separator, label, shortcut hint, key cap and
+//! choice row.
 
 pub mod choice_row;
 pub mod kbd;
