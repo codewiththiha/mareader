@@ -1,27 +1,6 @@
-// The shell page's boot screen: what the wait says, and when it says enough.
-//
-// `#shell-boot` (index.html) is the placeholder the user sees before the shell
-// wasm exists. The shell removes it as soon as the runtime host paints its
-// first state. This script owns the other half of that contract: the copy gets
-// more specific as the wait grows, so a slow launch explains itself instead of
-// showing a mark that never stops, and a start that never lands says so.
-//
-// The stages are facts about this app's startup, in the order they happen: the
-// page paints, the shell's wasm is fetched and compiled, its first mount takes
-// the placeholder away, and the runtime host carries the wait from there (its own
-// cover is painted by src/app/boot.rs). There is no index, cache or database
-// step to wait for — the library is a directory listing plus localStorage — so
-// an unhurried blank window on a machine whose webview is slow to paint was
-// easily read as "it's setting something up". It is not; it is still loading.
-//
-// A classic external script, not inline: the packaged app's CSP is
-// `script-src 'self' 'wasm-unsafe-eval'` (src-tauri/tauri.conf.json), which
-// blocks inline scripts. Copied to the dist root by index.html and required by
-// tools/check-runtime-artifacts.mjs.
+// The shell page's boot screen: the wait's copy, made specific.
 (function () {
-  // A document opened straight from the filesystem can never start: wasm
-  // modules and the root-absolute URLs this page is built from need a real
-  // origin. Say so at once instead of spinning through the 20 s deadline.
+  // A file:// document can never start: say so at once.
   if (window.location.protocol === "file:") {
     var early = document.getElementById("shell-boot");
     if (early) {
@@ -38,10 +17,7 @@
     return;
   }
 
-  // Each stage is the sentence for a wait of at least `at` milliseconds. The
-  // last one is the deadline the failure report rides on: past it the shell is
-  // not starting, and the mark stops (styles/boot.css) because an animation
-  // under "the shell did not start" would be lying.
+  // Each stage is the sentence for a wait of at least `at` ms.
   var STAGES = [
     { at: 4000, text: "Still loading the app itself — no library index or database to build." },
     { at: 9000, text: "Still loading. The browser console names what the shell is waiting for." },

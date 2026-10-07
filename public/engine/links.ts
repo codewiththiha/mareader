@@ -1,12 +1,4 @@
-// Link-layer construction (annotation -> DOM <a>), split out of renderer.ts.
-//
-// The layer is REPLACE-before-add, and that is the invariant worth stating:
-// every render of a mounted page builds one and swaps it in, so a page that
-// renders a hundred times carries one link layer and not a hundred. The
-// highlight boxes keep the same rule from the other direction
-// (public/engine/highlights.ts clears before it paints). Both are the one
-// place a per-render leak could hide, because both are called on the render
-// path rather than on the mount path.
+// Link-layer construction; REPLACE-before-add, so one layer per page.
 
 import type {
   Annotation,
@@ -104,8 +96,7 @@ export async function buildLinkLayer(
       aEl.dataset.page = String(p);
       aEl.addEventListener("click", (ev) => {
         ev.preventDefault();
-        // On the link itself, bubbling to the window: every pane listens
-        // there, and only the pane this link is in may turn its page.
+        // On the link, bubbling to the window.
         aEl.dispatchEvent(
           new CustomEvent(NAVIGATE_EVENT, { detail: { page: p }, bubbles: true })
         );
@@ -114,15 +105,7 @@ export async function buildLinkLayer(
     layer.appendChild(aEl);
   }
 
-  // The host captured above is not necessarily the one this state holds now.
-  // Every await between there and here — the annotation fetch, and a
-  // destination resolution per link — is a window for the page to unmount
-  // (releasePageSurfaces nulls `st.host` and strips the layer it already
-  // took off) or to re-register on a fresh host element for the same canvas
-  // id. Appending to the stale node would leave a link layer, and a click
-  // listener per link, on an element the engine has stopped tracking: nothing
-  // would ever remove it. The render path re-checks `st.dead` after each of
-  // its own awaits for the same reason.
+  // The host captured above may be stale; re-check `st.dead`.
   if (st.dead || st.host !== host) return;
 
   const live = host.querySelector(".linkLayer");
