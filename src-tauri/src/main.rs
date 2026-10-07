@@ -2,8 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    // Load the workspace .env so FM_BRIDGE_BIN reaches the process
-    // environment before Tauri (and the AI provider) starts up.
+    // Load the workspace .env so FM_BRIDGE_BIN reaches the process environment.
     let _ = dotenvy::dotenv();
 
     mareader_lib::run()

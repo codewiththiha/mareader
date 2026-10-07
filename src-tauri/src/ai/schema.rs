@@ -1,7 +1,4 @@
-//! The provider-facing output contract: the `WordInfo` payload every
-//! provider streams back, and — on Apple Silicon builds — the fm-bridge
-//! schema that forces the on-device model into constrained decoding for
-//! exactly that shape.
+//! The provider-facing contract: the `WordInfo` payload providers stream.
 
 use serde::{Deserialize, Serialize};
 
@@ -17,12 +14,7 @@ pub struct WordInfo {
     pub usages: Vec<String>,
 }
 
-/// Forces the Apple Intelligence model into constrained decoding: it will
-/// ONLY generate valid JSON matching this exact shape. Gated to the same
-/// targets as the `fm-bridge` dependency itself — schema construction is
-/// only ever needed by the Apple provider, and importing the crate elsewhere
-/// would break fallback builds.
-#[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
+/// Forces the model into constrained decoding, matching the WordInfo shape.
 pub fn word_info_schema() -> Schema {
     Schema::new(
         "WordInfo",
