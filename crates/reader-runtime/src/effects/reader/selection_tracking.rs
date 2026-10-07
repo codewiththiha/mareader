@@ -1,25 +1,5 @@
-//! Selection detail tracking for the AI explain feature, in every format.
-//!
-//! The engine's selectionchange listener debounces the native selection,
-//! measures its bounding rect, grabs the surrounding sentence, and dispatches
-//! a `mareader:selection-detail` CustomEvent with
-//! `{ text, context, rect, host, spot }` (rect in viewport CSS px, host the
-//! format family that painted it, spot a reflowable selection's durable
-//! identity) — or `null` to clear. Collapses caused by pressing inside the AI
-//! UI are suppressed engine-side, so the "Explain" button survives its own
-//! click.
-//!
-//! This effect is the single place that turns the event into writes on
-//! `state.reader.ai_selection`: `detail` carries the text/context, `anchor`
-//! is the origin the floating pill follows, and a genuine clear also closes
-//! an open popover.
-//!
-//! It also decides WHICH pipeline anchors a selection — from the event, not
-//! the open document: the tracker reports the host family the selection is
-//! actually in, so a selection outliving a document switch cannot be
-//! projected through the wrong format's maths. A PDF's anchor is its
-//! page-space rect; a reflowable one is a block and character range asked of
-//! the DOM again (`crate::components::ai::reflow_anchor`).
+//! Selection-detail tracking for the AI explain feature, in every
+//! format.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
@@ -33,10 +13,7 @@ use app_ui::components::primitives::hooks::use_custom_event::use_raw_event_from;
 
 use crate::pane::origin::{Origin, origin_of};
 
-/// The JS protocol of the event detail: `null` (clear) or a full
-/// `SelectionDetail`. The engine already debounces and dedupes, so every
-/// event arriving here is a genuine change (a `.set()` always notifies, even
-/// on unchanged values).
+/// The event detail's protocol: `null` (clear) or `SelectionDetail`.
 fn parse_selection_detail(detail: &JsValue) -> Option<SelectionDetail> {
     if detail.is_null() || detail.is_undefined() {
         return None;
@@ -55,8 +32,7 @@ fn anchor_for(
     let reflow = detail.is_reflow();
 
     if reflow {
-        // The tracker walked the offsets out of the range while it had it; the
-        // app's job is to project them onto the layout as it stands now.
+        // The tracker walked the offsets; project them onto the layout.
         if let Some(spot) = detail.spot
             && let Some(anchor) = reflow_anchor::anchor_of(reader, &spot)
         {
@@ -64,10 +40,7 @@ fn anchor_for(
         }
     }
 
-    // No spot to project. For a reflowable selection that means the tracker
-    // could not walk the offsets (a selection inside something that is not
-    // document text, or one already collapsed): do the same walk app-side —
-    // the bridge's own capture path.
+    // No spot to project: do the walk app-side instead.
     if reflow {
         let bridge = ReflowAnchorBridge {
             state: reader,
@@ -84,8 +57,7 @@ fn anchor_for(
     bridge.capture(scale)
 }
 
-/// Same routing as the page range (`page_selection`): a selection in another
-/// pane clears this pane's pill.
+/// Same routing as the page range: another pane clears the pill.
 pub fn selection_tracking(state: crate::context::ReaderContext, active: Signal<bool>) {
     use_raw_event_from(
         app_ui::events::SELECTION_DETAIL_EVENT,
@@ -101,8 +73,7 @@ pub fn selection_tracking(state: crate::context::ReaderContext, active: Signal<b
                     state.reader.ai_selection.popover_open.set(false);
                 }
                 None => {
-                    // Another pane's selection reaches here as a clear too:
-                    // write only when there is something to clear.
+                    // Another pane's selection reaches here as a clear.
                     let sel = state.reader.ai_selection;
                     let held = sel.detail.with_untracked(Option::is_some)
                         || sel.anchor.with_untracked(Option::is_some)
