@@ -7,19 +7,13 @@ license = "MIT"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-# The one workspace crate reader-core names, a pure types leaf: the persisted
-# blend config references the paper model `pdf-paper` defines. It may not
-# depend back on this crate, and no format crate — and no virtualizer crate —
-# may be named here (a settings read must never pull a renderer into the
-# reader-neutral graph).
+# The one named crate, a types leaf: the blend config needs pdf-paper's model.
 pdf-paper = { path = "../pdf-paper" }
 
 [dev-dependencies]
 serde_json = "1"
 
 [lints.rust]
-# Warnings are denied, not printed: a gate that only shows up in the log is a
-# gate that gets read past. The priority applies the group first, so the
-# individual levels below it remain deliberate overrides.
+# Warnings are denied, not printed: a gate only in the log gets read past.
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "forbid"

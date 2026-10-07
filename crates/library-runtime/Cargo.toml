@@ -49,9 +49,7 @@ ai-core = { path = "../ai-core" }
 # by the crate that uses it.
 library-core = { path = "../library-core", features = ["test-util"] }
 
-# Standalone artifact builds do not inherit the workspace Clippy command.
-# Keep warnings fatal for every target/feature selection, including the
-# format-free Reader host. This is the same policy as the other runtime crates.
+# Standalone artifact builds keep warnings fatal, like the other runtime crates.
 [lints.rust]
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "deny"

@@ -1,6 +1,4 @@
-//! Reader effect arms (from the unified tree): navigation, selection,
-//! search, zoom, layout, measurement, and the shortcuts + document-drop
-//! entry points the session installs.
+//! Reader effect arms: navigation, selection, search, zoom, layout, measure.
 
 pub mod auto_scroll;
 #[cfg(feature = "pdf")]

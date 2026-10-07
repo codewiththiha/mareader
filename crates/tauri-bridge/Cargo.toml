@@ -6,17 +6,13 @@ description = "The raw window.__TAURI__ externs (IPC invoke, event listen, windo
 license = "MIT"
 
 [dependencies]
-# The `#[wasm_bindgen]` macro emits `wasm_bindgen_futures` paths in the shims
-# it generates for async externs, so the crate that declares them must link
-# it (same reason every other bridge crate here carries both).
+# The macro emits wasm_bindgen_futures paths, so this crate must link it.
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["Window"] }
 
 [lints.rust]
-# Warnings are denied, not printed: a gate that only shows up in the log is a
-# gate that gets read past. The priority applies the group first, so the
-# individual levels below it remain deliberate overrides.
+# Warnings are denied, not printed: a gate only in the log gets read past.
 warnings = { level = "deny", priority = -1 }
 unsafe_code = "forbid"

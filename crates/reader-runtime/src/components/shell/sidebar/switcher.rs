@@ -1,6 +1,4 @@
-//! Bottom icon-only rail: Thumbs / Outline / Library panel toggles. Active state is a
-//! rounded filled chip, exactly like the reference's bookmark button. Rows
-//! are the shared [`ToggleButton`] primitive (size/shape via `variant_class`).
+//! Bottom icon-only rail: Thumbs / Outline / Library toggles.
 
 use leptos::prelude::*;
 
@@ -38,9 +36,7 @@ pub(crate) fn PanelSwitcher(
     /// hosts the panel.
     library_active: Option<Signal<bool>>,
     on_reveal: fn(),
-    /// The Thumbs toggle exists only while the engine has pages to thumb —
-    /// text documents carry none, so the rail offers Outline alone.
-    #[prop(into, default = Signal::derive(|| true))]
+    /// The Thumbs toggle exists only while the engine has pages to thumb.
     thumbs_visible: Signal<bool>,
 ) -> impl IntoView {
     view! {

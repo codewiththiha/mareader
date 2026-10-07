@@ -1,5 +1,4 @@
-//! Pointer state for the expanded card. The physics live in
-//! [`super::super::drag`]; this is only what they read and write.
+//! Pointer state for the expanded card; the physics live in `drag`.
 
 use leptos::prelude::*;
 
