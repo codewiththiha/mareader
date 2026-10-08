@@ -187,7 +187,7 @@ impl CefrManager {
     /// The model's stage: probed from disk once, then kept by its own
     /// download's hook.
     fn model_stage(&self, app: &AppHandle) -> Stage {
-        if let Ok(mut probe) = self.model.lock()
+        if let Ok(probe) = self.model.lock()
             && let Some(stage) = *probe
         {
             return stage;
@@ -285,7 +285,8 @@ impl CefrManager {
             if progress.phase != WirePhase::Paused {
                 return Err("the POS model is already downloading".into());
             }
-            return downloads.resume(&TauriHost::new(app), MODEL_ID);
+            let host = TauriHost::new(app.clone());
+            return downloads.resume(&host, MODEL_ID);
         }
         if Self::model_file(&app)?.is_file() {
             return Err("the POS model is already installed".into());
