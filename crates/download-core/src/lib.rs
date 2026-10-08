@@ -767,11 +767,17 @@ mod tests {
 
     #[test]
     fn percent_is_whole_and_bounded() {
-        assert_eq!(progress(Phase::Downloading, 50, Some(200)).percent(), Some(25));
+        assert_eq!(
+            progress(Phase::Downloading, 50, Some(200)).percent(),
+            Some(25)
+        );
         assert_eq!(progress(Phase::Downloading, 0, None).percent(), None);
         assert_eq!(progress(Phase::Downloading, 0, Some(0)).percent(), None);
         // A server that over-delivers never reads past 100.
-        assert_eq!(progress(Phase::Downloading, 9, Some(2)).percent(), Some(100));
+        assert_eq!(
+            progress(Phase::Downloading, 9, Some(2)).percent(),
+            Some(100)
+        );
     }
 
     #[test]
@@ -804,8 +810,7 @@ mod tests {
         for bad in ["../db", "a/b", "", ".", "..", "/abs"] {
             let path = Path::new(bad);
             let mut parts = path.components();
-            let bare =
-                matches!(parts.next(), Some(Component::Normal(_))) && parts.next().is_none();
+            let bare = matches!(parts.next(), Some(Component::Normal(_))) && parts.next().is_none();
             assert!(!bare, "'{bad}' should not pass as a file name");
         }
     }

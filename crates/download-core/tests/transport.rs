@@ -400,7 +400,11 @@ fn a_dead_first_link_rotates_to_the_next() {
             format!("http://{addr}/file")
         };
         downloads
-            .start(&host, request("file.bin", vec![dead, server.url()]), Some(hook))
+            .start(
+                &host,
+                request("file.bin", vec![dead, server.url()]),
+                Some(hook),
+            )
             .expect("start");
         let last = rx.await.expect("terminal snapshot");
         assert_eq!(last.phase, Phase::Done, "{:?}", last.message);
@@ -431,7 +435,9 @@ fn a_cut_stream_retries_and_keeps_what_landed() {
         // its budget and fail — with the bytes it did receive still on
         // disk for the next start.
         wait_until(|| reached(&downloads, "dl", Phase::Failed)).await;
-        let held = std::fs::metadata(part_of(&host.dir, "file.bin")).unwrap().len();
+        let held = std::fs::metadata(part_of(&host.dir, "file.bin"))
+            .unwrap()
+            .len();
         assert!(held > 0 && held < full.len() as u64);
         assert!(!host.dir.join("file.bin").exists());
         // A failed attempt is retried; the budget is finite.
@@ -456,7 +462,12 @@ fn a_paused_download_resumes_where_it_stopped() {
             .expect("start");
         wait_until(|| downloads.status("dl").is_some_and(|p| p.received > 0)).await;
         downloads.pause("dl");
-        wait_until(|| downloads.status("dl").is_some_and(|p| p.phase == Phase::Paused)).await;
+        wait_until(|| {
+            downloads
+                .status("dl")
+                .is_some_and(|p| p.phase == Phase::Paused)
+        })
+        .await;
         let paused = downloads.status("dl").unwrap();
         assert!(paused.received > 0 && paused.received < full.len() as u64);
         assert_eq!(paused.percent().map(|p| p < 100), Some(true));
@@ -528,7 +539,12 @@ fn cancelling_a_paused_download_settles_its_phase() {
             .expect("start");
         wait_until(|| downloads.status("dl").is_some_and(|p| p.received > 0)).await;
         downloads.pause("dl");
-        wait_until(|| downloads.status("dl").is_some_and(|p| p.phase == Phase::Paused)).await;
+        wait_until(|| {
+            downloads
+                .status("dl")
+                .is_some_and(|p| p.phase == Phase::Paused)
+        })
+        .await;
         // Nothing is left to read the flag, so cancel must land itself.
         downloads.cancel(&host, "dl");
         wait_until(|| reached(&downloads, "dl", Phase::Cancelled)).await;
@@ -573,10 +589,17 @@ fn an_active_id_is_refused_and_a_settled_one_is_restartable() {
     runtime().block_on(async {
         let (downloads, host, hook, _hooked, rx) = fixture("busy");
         downloads
-            .start(&host, request("file.bin", vec![server.url()]), Some(hook.clone()))
+            .start(
+                &host,
+                request("file.bin", vec![server.url()]),
+                Some(hook.clone()),
+            )
             .expect("start");
-        let refused =
-            downloads.start(&host, request("file.bin", vec![server.url()]), Some(hook.clone()));
+        let refused = downloads.start(
+            &host,
+            request("file.bin", vec![server.url()]),
+            Some(hook.clone()),
+        );
         assert!(refused.is_err());
         let last = rx.await.expect("terminal snapshot");
         assert_eq!(last.phase, Phase::Done);

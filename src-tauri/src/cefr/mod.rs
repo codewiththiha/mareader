@@ -248,7 +248,10 @@ impl CefrManager {
                 }
                 _ => {}
             }
-            *guard = Phase::Downloading { received: 0, total: None };
+            *guard = Phase::Downloading {
+                received: 0,
+                total: None,
+            };
         }
         republish(self, &app);
         let downloads = app.state::<AppDownloads>();
@@ -370,7 +373,9 @@ impl CefrManager {
             .iter()
             .map(|(_, key)| (key.clone(), String::new()))
             .collect();
-        let found = db.lookup_batch(&pairs).map_err(|e| format!("lookup: {e}"))?;
+        let found = db
+            .lookup_batch(&pairs)
+            .map_err(|e| format!("lookup: {e}"))?;
         for (index, key) in asked {
             out[index] = found.get(&(key, String::new())).copied();
         }
@@ -584,7 +589,12 @@ fn set_phase(app: &AppHandle, phase: Phase) {
 }
 
 fn finish_failed(app: &AppHandle, message: &str) {
-    set_phase(app, Phase::Failed { message: message.to_string() });
+    set_phase(
+        app,
+        Phase::Failed {
+            message: message.to_string(),
+        },
+    );
 }
 
 /// Publish the current snapshot, model stage included.

@@ -29,13 +29,7 @@ pub struct Walk {
 
 /// Plan a walk over one run of text. Pure — the same text, tokens, cache
 /// and threshold always answer the same plan.
-pub fn walk(
-    text: &str,
-    tokens: &[Span],
-    cache: &LevelCache,
-    threshold: u8,
-    cap: usize,
-) -> Walk {
+pub fn walk(text: &str, tokens: &[Span], cache: &LevelCache, threshold: u8, cap: usize) -> Walk {
     let chars: Vec<char> = text.chars().collect();
     let known: Vec<(Span, Vec<String>)> = tokens
         .iter()

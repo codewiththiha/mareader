@@ -207,13 +207,7 @@ fn paint(
 }
 
 /// The scheduled half: measure the plan against the live row.
-fn run_plan(
-    block: usize,
-    page: u32,
-    row: web_sys::Element,
-    plan: Vec<PlannedWord>,
-    sink: Sink,
-) {
+fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<PlannedWord>, sink: Sink) {
     // A detached row has no geometry; its signal is gone anyway.
     if !row.is_connected() {
         return;
