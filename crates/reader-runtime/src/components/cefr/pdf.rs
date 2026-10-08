@@ -97,8 +97,11 @@ pub fn PdfCefrLayer(
     let wake = Trigger::new();
     // The phase alone flips re-derive; the mirror handle is bound once.
     let mirror = services::cefr::dataset();
-    let dataset_ready =
-        Signal::derive(move || mirror.with(|m| m.as_ref().is_some_and(|m| m.is_ready())));
+    let dataset_ready = Signal::derive(move || {
+        mirror
+            .try_with(|m| m.as_ref().is_some_and(|m| m.is_ready()))
+            .unwrap_or(false)
+    });
 
     // The text layer lands after the raster: observed, not polled, in a
     // component-scope slot.
@@ -271,20 +274,24 @@ fn run_plan(
         return;
     }
     // Divide by the glyphs' live scale, read at measure time.
-    let display = scale.get_untracked();
+    let Some(display) = scale.try_get_untracked() else {
+        return;
+    };
     if display <= 0.0 {
         return;
     }
     // Words the AI stroke owns: the red yields to the accent.
-    let glossed: Vec<GlossBox> = state.gloss.marks.with_untracked(|all| {
+    let Some(glossed) = state.gloss.marks.try_with_untracked(|all| {
         all.iter()
             .filter(|m| {
                 m.page == page
                     && crate::components::ai::reflow_anchor::read_spot(&m.context).is_none()
             })
             .map(|m| m.anchor.rect)
-            .collect()
-    });
+            .collect::<Vec<GlossBox>>()
+    }) else {
+        return;
+    };
 
     let host_rect = host.get_bounding_client_rect();
     let inverse = 1.0 / display;

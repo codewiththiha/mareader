@@ -68,27 +68,26 @@ fn publish(status: DatasetMirror) {
     });
 }
 
-/// The dataset mirror to read; every ask in a realm agrees on one handle.
+/// The dataset mirror to read; one handle per realm.
 pub fn dataset() -> RwSignal<Option<DatasetMirror>> {
     MIRROR.with(|slot| match slot.get() {
         Some(mirror) => mirror,
-        None => {
-            let mirror = RwSignal::new(None);
-            slot.set(Some(mirror));
-            mirror
-        }
+        // Unbound: this caller's own handle, never cached.
+        None => RwSignal::new(None),
     })
 }
 
 /// Bind this realm's mirror and tap the backend's progress; the ask
 /// repeats per bind.
 pub fn install_cefr_bridge() {
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
+    // The realm's own handle: a component's signal must not be shared.
     let mirror = RwSignal::new(None);
     MIRROR.with(|slot| slot.set(Some(mirror)));
     on_cleanup(|| MIRROR.with(|slot| slot.set(None)));
+    if !tauri_bridge::has_tauri() {
+        // No backend to report: the mirror stays absent.
+        return;
+    }
     spawn_local(async move {
         if let Ok(value) = tauri_bridge::invoke("cefr_dataset_status", JsValue::UNDEFINED).await
             && let Ok(status) = serde_wasm_bindgen::from_value::<DatasetMirror>(value)

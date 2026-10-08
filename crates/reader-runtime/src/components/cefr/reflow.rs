@@ -43,7 +43,9 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
     let memo: StoredValue<Option<WalkMemo>, LocalStorage> = StoredValue::new_local(None);
     let row_id = block_row_id(block);
     let dataset_ready = Signal::derive(move || {
-        services::cefr::dataset().with(|mirror| mirror.as_ref().is_some_and(|m| m.is_ready()))
+        services::cefr::dataset()
+            .try_with(|mirror| mirror.as_ref().is_some_and(|m| m.is_ready()))
+            .unwrap_or(false)
     });
     // Everything that re-wraps the row without the reader scrolling.
     let relayout = {
