@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, RunEvent};
 
 mod ai;
+mod cefr;
 mod commands;
 mod macos;
 
@@ -124,6 +125,7 @@ pub fn run() {
             }
         }))
         .manage(PendingFile(Mutex::new(None)))
+        .manage(cefr::CefrManager::new())
         .invoke_handler(tauri::generate_handler![
             take_pending_file,
             read_file_bytes,
@@ -131,6 +133,11 @@ pub fn run() {
             set_traffic_lights,
             boot_report,
             commands::ai::explain_word,
+            commands::cefr::cefr_dataset_status,
+            commands::cefr::cefr_dataset_download,
+            commands::cefr::cefr_dataset_cancel,
+            commands::cefr::cefr_dataset_remove,
+            commands::cefr::cefr_levels,
             commands::library::scan_folder,
             commands::library::verify_paths,
             commands::library::store_books,

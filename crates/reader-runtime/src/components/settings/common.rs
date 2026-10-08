@@ -18,6 +18,8 @@ pub(crate) enum Tab {
     Animations,
     /// Hosted only while a reflowable document is open.
     Fonts,
+    /// The vocabulary highlighter: level slider and dataset.
+    Vocabulary,
     /// The split workspace: what a Library panel click does.
     Workspace,
 }

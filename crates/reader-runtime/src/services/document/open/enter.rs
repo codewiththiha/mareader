@@ -56,6 +56,8 @@ pub(super) fn identity(ctx: &ReaderContext, doc: DocumentIdentity) {
 /// This document's gloss highlights, into a freshly reset ctx.
 pub(super) fn load_marks(ctx: &ReaderContext) {
     ctx.reader.gloss.reset();
+    // The next document's vocabulary is its own.
+    ctx.reader.cefr.reset();
     let key = crate::services::document::gloss_key(*ctx);
     if key.is_empty() {
         return;

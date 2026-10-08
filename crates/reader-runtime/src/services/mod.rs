@@ -1,6 +1,7 @@
 //! The reader's services: the document session and the AI bridge.
 
 pub mod ai;
+pub mod cefr;
 pub mod document;
 
 use web_sys::Event;

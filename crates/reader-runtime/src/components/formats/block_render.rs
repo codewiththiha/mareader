@@ -44,7 +44,11 @@ pub fn BlockView(
     };
     // A lookup-able row is one a search hit can be painted over.
     let hits = match index {
-        Some(row) => view! { <BlockSearchHits state=state block=row /> }.into_any(),
+        Some(row) => view! {
+            <BlockSearchHits state=state block=row />
+            <crate::components::cefr::reflow::BlockCefrMarks state=state block=row />
+        }
+        .into_any(),
         None => ().into_any(),
     };
     // A split paragraph's tail drops its paragraph space.

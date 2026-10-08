@@ -383,6 +383,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
     let typography: crate::state::TypographySignal =
         Memo::new(move |_| settings.with(|s| s.text.clone()));
     provide_context(typography);
+    provide_context(settings);
     provide_context(OverlayBoard::default());
     runtime.begin_mount();
 
@@ -491,6 +492,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
         on_cleanup(move || drop(guard));
     }
     crate::services::ai::install_ai_chunk_bridge();
+    crate::services::cefr::install_cefr_bridge();
 
     install_upstream(settings, ui, settings_open);
     install_mirror(&pane);

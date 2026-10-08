@@ -23,6 +23,7 @@
 @import "./components/animations.css"; /* reduced motion, master switch, the loading mark */
 @import "./components/ai.css";         /* AI blur-fade, shimmer, the Explain pill's entrance */
 @import "./components/gloss.css";      /* word-card morph surface + highlighter stroke */
+@import "./components/cefr.css";       /* vocabulary highlighter: fixed-red ink over hard words */
 @import "./components/appearance.css"; /* hue strip, preset thumbnails, link layer */
 /* The library, one file per surface, in the order the cascade needs. */
 @import "./components/library/shared.css"; /* the ghost icon button every library surface reveals on hover */
