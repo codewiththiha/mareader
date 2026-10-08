@@ -491,7 +491,9 @@ async fn attempt_body<H: Host>(
         return stop;
     }
     let part = part_of(dest);
-    let validator = read_meta(&part);
+    // The validator names the destination, not the partial: it is written
+    // before the first body byte and read back here on every attempt.
+    let validator = read_meta(dest);
     let mut existing = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
     if existing > 0 && validator.is_none() {
         // A partial by a different validator proves nothing, and a stale
