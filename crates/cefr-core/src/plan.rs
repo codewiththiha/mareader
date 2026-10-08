@@ -86,10 +86,10 @@ mod tests {
 
     #[test]
     fn only_words_strictly_above_the_band_are_planned() {
-        let walk = walked("run ephemeral", &[("run", 2), ("ephemeral", 6)], 4);
-        assert_eq!(walk.paint.len(), 1);
-        assert_eq!(walk.paint[0].word, "ephemeral");
-        assert_eq!((walk.paint[0].start, walk.paint[0].end), (4, 13));
+        let plan = walked("run ephemeral", &[("run", 2), ("ephemeral", 6)], 4);
+        assert_eq!(plan.paint.len(), 1);
+        assert_eq!(plan.paint[0].word, "ephemeral");
+        assert_eq!((plan.paint[0].start, plan.paint[0].end), (4, 13));
     }
 
     #[test]
@@ -100,29 +100,29 @@ mod tests {
 
     #[test]
     fn unanswered_keys_are_asked_once_each_in_reading_order() {
-        let walk = walked("ephemeral ephemeral palimpsest", &[], 4);
+        let plan = walked("ephemeral ephemeral palimpsest", &[], 4);
         assert_eq!(
-            walk.ask,
+            plan.ask,
             vec!["ephemeral".to_string(), "palimpsest".to_string()]
         );
         // Nothing is decidable yet, so nothing is planned.
-        assert!(walk.paint.is_empty());
+        assert!(plan.paint.is_empty());
         assert_eq!(walked("run", &[("run", 2)], 4).ask, Vec::<String>::new());
     }
 
     #[test]
     fn a_contraction_marks_through_its_base() {
         // The dataset stores no apostrophes: `don't` answers as `not`.
-        let walk = walked("don't stop", &[("not", 6), ("stop", 1)], 4);
-        assert_eq!(walk.paint.len(), 1);
-        assert_eq!(walk.paint[0].word, "don't");
+        let plan = walked("don't stop", &[("not", 6), ("stop", 1)], 4);
+        assert_eq!(plan.paint.len(), 1);
+        assert_eq!(plan.paint[0].word, "don't");
     }
 
     #[test]
     fn a_hyphenated_token_answers_through_its_parts() {
-        let walk = walked("well-known fact", &[("known", 6)], 4);
-        assert_eq!(walk.paint.len(), 1);
-        assert_eq!(walk.paint[0].word, "well-known");
+        let plan = walked("well-known fact", &[("known", 6)], 4);
+        assert_eq!(plan.paint.len(), 1);
+        assert_eq!(plan.paint[0].word, "well-known");
         assert!(
             walked("well-known", &[], 4)
                 .ask
@@ -138,23 +138,23 @@ mod tests {
         for (word, band) in bands {
             cache.insert(word, band);
         }
-        let walk = walk(text, &tokenize(text), &cache, 4, 2);
-        assert_eq!(walk.paint.len(), 2);
-        assert_eq!(walk.paint[0].word, "alpha");
-        assert_eq!(walk.paint[1].word, "beta");
+        let plan = walk(text, &tokenize(text), &cache, 4, 2);
+        assert_eq!(plan.paint.len(), 2);
+        assert_eq!(plan.paint[0].word, "alpha");
+        assert_eq!(plan.paint[1].word, "beta");
     }
 
     #[test]
     fn a_planned_word_carries_its_own_context_window() {
-        let walk = walked("the ephemeral thing", &[("ephemeral", 6)], 4);
-        assert_eq!(walk.paint[0].context, "the ephemeral thing");
+        let plan = walked("the ephemeral thing", &[("ephemeral", 6)], 4);
+        assert_eq!(plan.paint[0].context, "the ephemeral thing");
     }
 
     #[test]
     fn a_token_the_dataset_cannot_hold_is_never_asked() {
         let long = "x".repeat(MAX_WORD_CHARS + 1);
-        let walk = walked(&long, &[], 4);
-        assert!(walk.ask.is_empty() && walk.paint.is_empty());
+        let plan = walked(&long, &[], 4);
+        assert!(plan.ask.is_empty() && plan.paint.is_empty());
         // A span past the end of the text is refused, not sliced.
         let beyond = walk("run", &[Span::new(1, 9)], &LevelCache::default(), 4, 200);
         assert!(beyond.ask.is_empty() && beyond.paint.is_empty());
