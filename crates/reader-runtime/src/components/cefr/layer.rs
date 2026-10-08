@@ -28,12 +28,12 @@ pub fn CefrMarkLayer(
     click_explain: Signal<bool>,
 ) -> impl IntoView {
     view! {
-        <div class="cefr-layer" aria-hidden="true">
+        // A page carries hundreds of these; the selection's Explain pill is the
+        // keyboard way in.
+        <div class="cefr-layer">
             <For
                 each=move || boxes.get()
-                key=|b: &CefrBox| {
-                    format!("{}@{},{}", b.mark.word, b.x, b.y)
-                }
+                key=|b: &CefrBox| format!("{}@{}x{}", b.mark.id, b.x, b.y)
                 children=move |b: CefrBox| {
                     // The gloss stroke's gesture shape, mirrored.
                     let mark = b.mark.clone();
@@ -51,6 +51,7 @@ pub fn CefrMarkLayer(
                         <button
                             type="button"
                             class="cefr-mark"
+                            tabindex="-1"
                             title=word.clone()
                             aria-label=format!("Explain {word}")
                             style=move || {

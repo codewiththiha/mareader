@@ -21,6 +21,7 @@ optional paper textures and film grain, all persisted between sessions.
   - [Motion](#motion)
   - [Navigation](#navigation)
   - [Search](#search)
+  - [Vocabulary highlighter](#vocabulary-highlighter)
   - [Appearance system](#appearance-system)
   - [Presets](#presets)
   - [Opening documents](#opening-documents)
@@ -224,6 +225,24 @@ decorative, so it is not offered.
   scale, so highlights stay aligned at any zoom.
 - Forward and backward navigation through results with wrap-around.
 - A floating search overlay with a results dropdown, dismissible with Escape.
+
+### Vocabulary highlighter
+
+- Words above the reader's English level are marked in red ink, on PDF pages and reflowed text
+  alike. The level is a slider from A2 to C2 and the rule is the one the label states: at B2,
+  every C1 and C2 word is marked and every word at or below B2 is left alone.
+- The dataset is not in the binary. **Settings → Vocabulary** downloads it on request — the
+  Words-CEFR-Dataset (about 3 MB) and the POS model (about 6.7 MB) — rebuilds the parquet into a
+  local SQLite database, and deletes the parquet. Nothing leaves the device.
+- Downloads are resumable and visible: live progress, pause and resume, cancel, remove, and a
+  failure that says what it was. Both files have three mirrors each to fall back on, and a file
+  already on disk is the cache rather than another download.
+- Words are filtered to plain ASCII English before anything is asked, contractions and hyphenated
+  compounds resolve to their head word, and a per-document cache answers a revisited page from
+  memory — so sweeping a long document asks the backend once per word.
+- Clicking a marked word opens the existing AI word card for that word in its sentence, with the
+  dataset's tagger naming the word class. Hovering a mark never calls the AI: the marks are
+  painted, not interactive.
 
 ### Appearance system
 
@@ -911,6 +930,14 @@ crates/
                           explain_word kickoff (the reader settings those types
                           feed live in reader-core, because they are the
                           reader's)
+  cefr-core/              the vocabulary highlighter's core: one tokenizer,
+                          the ASCII-English filter, contraction and hyphen
+                          rules, the level cache and the band rule, and the
+                          paint/ask walk both format pipelines plan from
+  download-core/          the resumable downloader any feature uses: one id,
+                          several mirrors of one file, progress snapshots,
+                          pause/resume/cancel, and the finished path handed
+                          back in the `done` snapshot
   reader-core/            the reader with no format in it: the format list, the
                           view modes and spread arithmetic, the settings schema
                           (layout, animation, typography, gloss), the colour
@@ -960,7 +987,8 @@ public/
                           runs against stubs, not these)
 src-tauri/                native shell, AI providers, the library's filesystem
                           commands (folder walk, path check, store copy and
-                          delete), capabilities, icons
+                          delete), the vocabulary dataset's manager (download,
+                          verify, rebuild, lookups), capabilities, icons
 styles/
   input.css               Tailwind v4 entry point assembling the design system
   tokens.css              the @theme block, base palettes and runtime vars
@@ -973,9 +1001,9 @@ styles/
                           held set is carried in, the breadcrumb's elided chain,
                           the multi-select a hold starts, and the search
                           suggestions
-  components/             shell, title bar, animations, ai, gloss, appearance,
-                          thumbnails, pdf.js's text layer, and the search-hit
-                          box both format families share
+  components/             shell, title bar, animations, ai, gloss, cefr,
+                          appearance, thumbnails, pdf.js's text layer, and the
+                          search-hit box both format families share
 tools/                    engine bundling, the engine smoke test, the
                           repo-reading prelude the checks share, and the
                           consistency checks CI runs (versions, formats, doc

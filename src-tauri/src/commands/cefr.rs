@@ -18,6 +18,12 @@ pub fn cefr_dataset_download(app: AppHandle) -> Result<(), String> {
     app.state::<CefrManager>().begin_download(app.clone())
 }
 
+/// Start or resume the POS model alone; the word levels are already here.
+#[tauri::command]
+pub fn cefr_model_download(app: AppHandle) -> Result<(), String> {
+    app.state::<CefrManager>().begin_model_download(app.clone())
+}
+
 /// Stop a running download; the partial stays for the next resume.
 #[tauri::command]
 pub fn cefr_dataset_cancel(app: AppHandle) {
@@ -26,12 +32,18 @@ pub fn cefr_dataset_cancel(app: AppHandle) {
 
 /// The dataset's POS verdict for one word in its sentence, at click time.
 #[tauri::command]
-pub fn cefr_pos_of(
+pub async fn cefr_pos_of(
     app: AppHandle,
     word: String,
     context: String,
 ) -> Result<Option<crate::cefr::PosAnswer>, String> {
-    app.state::<CefrManager>().pos_of(&app, &word, &context)
+    // The tagger decodes the model and sqlite blocks, so neither runs on
+    // the click's thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<CefrManager>().pos_of(&app, &word, &context)
+    })
+    .await
+    .map_err(|e| format!("pos worker: {e}"))?
 }
 
 /// Stop reading the stream; the partial stays for a resume.

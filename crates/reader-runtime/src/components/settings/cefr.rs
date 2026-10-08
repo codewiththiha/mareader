@@ -5,8 +5,10 @@ use leptos::prelude::*;
 use reader_core::settings::{CefrLevel, MIN_CEFR_BAND};
 
 use crate::services;
+use crate::services::cefr::DatasetPhase;
 use app_ui::components::primitives::controls::switch::Switch;
 use app_ui::components::primitives::form::range_input::RangeInput;
+use app_ui::components::primitives::form::row::Row;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 
 #[component]
@@ -19,7 +21,7 @@ pub(crate) fn CefrTab(state: crate::context::ReaderContext) -> impl IntoView {
 
     view! {
         <SectionLabel text="Vocabulary highlighter" />
-        <div class="rounded-xl border border-line" data-setting="cefr">
+        <div class="divide-y divide-line rounded-xl border border-line" data-setting="cefr">
             <div class="flex items-center justify-between gap-3 px-4 py-3.5">
                 <span class="min-w-0">
                     <span class="block text-sm text-ink">"Mark words above my level"</span>
@@ -35,36 +37,41 @@ pub(crate) fn CefrTab(state: crate::context::ReaderContext) -> impl IntoView {
                     title="Vocabulary highlighter"
                 />
             </div>
-            <div class="px-4 pb-4" class=("opacity-45", move || !enabled.get())>
-                <span class="flex items-baseline justify-between text-xs text-muted">
-                    <span>"My level"</span>
-                    <span class="text-sm font-medium tabular-nums text-ink">
-                        {move || level.get().label()}
-                    </span>
-                </span>
-                {move || {
-                    // The input is a plain-bool prop; re-creating it on the
-                    // toggle is the reactivity.
-                    let off = !enabled.get();
-                    view! {
-                        <RangeInput
-                            value=Signal::derive(move || level.get().band() as f64)
-                            min=Signal::derive(|| MIN_CEFR_BAND as f64)
-                            max=Signal::derive(|| 6.0)
-                            step=Signal::derive(|| 1.0)
-                            on_input=move |v: f64| {
-                                s.update(move |st| {
-                                    st.cefr_level = CefrLevel::from_band(v.round() as u8);
-                                });
+            <div>
+                <Row label="My level">
+                    <span
+                        class="flex w-40 flex-col gap-1"
+                        class=("opacity-45", move || !enabled.get())
+                        data-setting="cefr-level"
+                    >
+                        {move || {
+                            // `disabled` is a plain bool on the input, so the
+                            // toggle re-creates the control.
+                            let off = !enabled.get();
+                            view! {
+                                <RangeInput
+                                    value=Signal::derive(move || level.get().band() as f64)
+                                    min=Signal::derive(|| MIN_CEFR_BAND as f64)
+                                    max=Signal::derive(|| 6.0)
+                                    step=Signal::derive(|| 1.0)
+                                    on_input=move |v: f64| {
+                                        s.update(move |st| {
+                                            st.cefr_level = CefrLevel::from_band(v.round() as u8);
+                                        });
+                                    }
+                                    aria_label="Reading level"
+                                    disabled=off
+                                />
                             }
-                            aria_label="Reading level"
-                            disabled=off
-                        />
-                    }
-                }}
-                <p class="pt-1 text-xs text-muted">{move || level.get().detail()}</p>
+                        }}
+                        <span class="text-right text-xs tabular-nums text-muted">
+                            {move || level.get().label()}
+                        </span>
+                    </span>
+                </Row>
+                <p class="px-4 pb-4 text-xs text-muted">{move || level.get().detail()}</p>
             </div>
-            <div class="flex items-center justify-between gap-3 border-t border-line px-4 py-3.5">
+            <div class="flex items-center justify-between gap-3 px-4 py-3.5">
                 <span class="min-w-0">
                     <span class="block text-sm text-ink">"Click a red word to explain it"</span>
                     <span class="block text-xs text-muted">
@@ -85,9 +92,64 @@ pub(crate) fn CefrTab(state: crate::context::ReaderContext) -> impl IntoView {
         <SectionLabel text="Word dataset" />
         <DatasetSection dataset=dataset />
         <p class="px-1 pt-2 text-xs text-muted">
-            "The dataset is the Words-CEFR-Dataset, downloaded once (about 3 MB) and \
-             rebuilt as a local database. Nothing leaves the device."
+            "The Words-CEFR-Dataset (about 3 MB) and the POS model (about 6.7 MB), \
+             downloaded once and rebuilt into a local database. Every download resumes, \
+             and nothing leaves the device."
         </p>
+    }
+}
+
+/// The panel's buttons, shared so a row added later matches the others.
+const BUTTON: &str = "rounded-lg border border-line px-3 py-1.5 text-sm text-ink \
+                      hover:bg-line/40 focus:outline-none focus-visible:ring-2 \
+                      focus-visible:ring-accent";
+
+/// The POS model's own line: an absent or paused model asks for itself.
+fn model_note(model: Option<DatasetPhase>) -> Option<AnyView> {
+    match model {
+        Some(DatasetPhase::Ready) => None,
+        Some(DatasetPhase::Downloading) | Some(DatasetPhase::Converting) => Some(
+            view! {
+                <p class="pt-2 text-xs text-muted">
+                    "The POS model is still arriving; click-to-explain waits for it."
+                </p>
+            }
+            .into_any(),
+        ),
+        Some(DatasetPhase::Paused) => Some(
+            view! {
+                <div class="flex items-center justify-between gap-3 pt-2">
+                    <span class="min-w-0 text-xs text-muted">
+                        "The POS model's download paused; click-to-explain waits for it."
+                    </span>
+                    <button
+                        type="button"
+                        class=BUTTON
+                        on:click=move |_| services::cefr::request_model_download()
+                    >
+                        "Resume"
+                    </button>
+                </div>
+            }
+            .into_any(),
+        ),
+        _ => Some(
+            view! {
+                <div class="flex items-center justify-between gap-3 pt-2">
+                    <span class="min-w-0 text-xs text-muted">
+                        "The POS model is not downloaded; click-to-explain does without it."
+                    </span>
+                    <button
+                        type="button"
+                        class=BUTTON
+                        on:click=move |_| services::cefr::request_model_download()
+                    >
+                        "Download"
+                    </button>
+                </div>
+            }
+            .into_any(),
+        ),
     }
 }
 
@@ -95,8 +157,7 @@ pub(crate) fn CefrTab(state: crate::context::ReaderContext) -> impl IntoView {
 #[component]
 fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> impl IntoView {
     let desktop = tauri_bridge::has_tauri();
-    let button = "rounded-lg border border-line px-3 py-1.5 text-sm text-ink \
-                  hover:bg-line/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+    let button = BUTTON;
     view! {
         <div class="rounded-xl border border-line px-4 py-4" data-setting="cefr-dataset">
             {move || {
@@ -113,8 +174,8 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                     return view! { <p class="text-xs text-muted">"Checking the dataset…"</p> }
                         .into_any();
                 };
-                match mirror.phase.as_str() {
-                    "ready" => {
+                match mirror.phase {
+                    DatasetPhase::Ready => {
                         let words = mirror
                             .words
                             .map(|w| format!("Ready — {w} words"))
@@ -130,21 +191,20 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                                     "Remove"
                                 </button>
                             </div>
+                            {model_note(mirror.model)}
                         }
                             .into_any()
                     }
-                    "downloading" => {
-                        let percent = mirror
-                            .percent()
+                    DatasetPhase::Downloading => {
+                        // A size nobody has declared yet is not a full bar.
+                        let percent = mirror.percent();
+                        let label = percent
                             .map(|p| format!("{p}%"))
                             .unwrap_or_else(|| "…".into());
-                        let width = mirror
-                            .percent()
-                            .map(|p| format!("width:{p}%"))
-                            .unwrap_or_else(|| "width:100%".into());
+                        let width = format!("width:{}%", percent.unwrap_or(0));
                         view! {
                             <div class="flex items-center justify-between gap-3 pb-2">
-                                <span class="text-sm text-ink tabular-nums">{percent}</span>
+                                <span class="text-sm text-ink tabular-nums">{label}</span>
                                 <span class="flex gap-2">
                                     <button
                                         type="button"
@@ -163,7 +223,11 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                                 </span>
                             </div>
                             <div class="h-1.5 w-full overflow-hidden rounded-full bg-line">
-                                <div class="h-full rounded-full bg-accent" style=width></div>
+                                <div
+                                    class="h-full rounded-full bg-accent/80 \
+                                           transition-[width] duration-100 ease-out"
+                                    style=width
+                                ></div>
                             </div>
                             <p class="pt-2 text-xs text-muted">
                                 "The download resumes where it stopped if it breaks."
@@ -171,7 +235,7 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                         }
                             .into_any()
                     }
-                    "paused" => {
+                    DatasetPhase::Paused => {
                         let percent = mirror
                             .percent()
                             .map(|p| format!("{p}%"))
@@ -201,11 +265,11 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                         }
                             .into_any()
                     }
-                    "converting" => view! {
+                    DatasetPhase::Converting => view! {
                         <p class="text-sm text-ink">"Building the local dataset…"</p>
                     }
                         .into_any(),
-                    "failed" => {
+                    DatasetPhase::Failed => {
                         let message = mirror.message.clone().unwrap_or_else(|| "failed".into());
                         view! {
                             <div class="flex items-center justify-between gap-3 pb-1">
@@ -222,12 +286,12 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                         }
                             .into_any()
                     }
-                    _ => view! {
+                    DatasetPhase::Absent => view! {
                         <div class="flex items-center justify-between gap-3">
                             <span class="min-w-0">
                                 <span class="block text-sm text-ink">"Not downloaded"</span>
                                 <span class="block text-xs text-muted">
-                                    "Word levels for the highlighter, one small file."
+                                    "Two small files: the word levels and the POS model."
                                 </span>
                             </span>
                             <button

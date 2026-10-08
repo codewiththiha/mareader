@@ -7,18 +7,18 @@ use wasm_bindgen::closure::Closure;
 use ai_core::gloss::{GlossBox, PageAnchor};
 use reader_core::settings::Settings;
 
-use cefr_core::text::{MAX_WORD_CHARS, sentence_around, tokenize};
+use cefr_core::PlannedWord;
+use cefr_core::text::tokenize;
 
 use super::layer::{CefrBox, CefrMarkLayer};
 use super::measure::measure;
-use super::{Sink, WalkKey, WalkMemo, marks_fingerprint, text_fingerprint};
+use super::{Sink, WalkKey, WalkMemo, marks_fingerprint, read_text_layer, text_fingerprint};
 use crate::components::ai::anchor::captured_mark;
 use crate::components::ai::reflow_anchor::union_box;
 use crate::components::formats::reflow::spot::range_for_span;
 use crate::services;
 use crate::state::ReaderState;
 use app_chrome::hooks::dom::range_rects;
-use app_state::dom_contract::TEXT_LAYER_CLASS;
 
 /// Boxes one page paints, mirroring the engine's per-page cap.
 const MAX_BOXES_PER_PAGE: usize = 200;
@@ -77,14 +77,6 @@ struct Ctx {
     threshold: u8,
     generation: u64,
     marks: u64,
-}
-
-/// One planned word: its text-space spot, its text, its sentence.
-struct PlanWord {
-    start: usize,
-    end: usize,
-    word: String,
-    context: String,
 }
 
 #[component]
@@ -181,7 +173,7 @@ pub fn PdfCefrLayer(
     }
 }
 
-/// The walk's cheap half: text, cache pass, plan; a frame measures.
+/// The walk's cheap half: read the layer, plan, ask; a frame measures.
 fn walk(
     state: ReaderState,
     page: u32,
@@ -191,40 +183,13 @@ fn walk(
     boxes: &RwSignal<Vec<CefrBox>>,
     memo: StoredValue<Option<WalkMemo>, LocalStorage>,
 ) {
-    let Some(layer) = host
-        .query_selector(&format!(".{TEXT_LAYER_CLASS}"))
-        .ok()
-        .flatten()
-    else {
+    let Some(layer) = read_text_layer(host) else {
         return;
     };
-    let span_els: Vec<web_sys::Element> = {
-        let list = match layer.query_selector_all("span") {
-            Ok(list) => list,
-            Err(_) => return,
-        };
-        (0..list.length())
-            .filter_map(|i| list.get(i))
-            .filter_map(|node| node.dyn_into::<web_sys::Element>().ok())
-            .collect()
-    };
-    if span_els.is_empty() {
-        return;
-    }
-    // The page's text in DOM order, with each span's char range in it.
-    let mut text = String::new();
-    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(span_els.len());
-    for el in &span_els {
-        let piece = el.text_content().unwrap_or_default();
-        let start = text.chars().count();
-        text.push_str(&piece);
-        spans.push((start, text.chars().count()));
-    }
-
     let key = WalkKey {
         fp: 0,
         zoom: 0,
-        text: text_fingerprint(&text),
+        text: text_fingerprint(&layer.text),
         generation: ctx.generation,
         marks: ctx.marks,
         threshold: ctx.threshold,
@@ -239,54 +204,28 @@ fn walk(
         return;
     }
 
-    let tokens = tokenize(&text);
-    let chars: Vec<char> = text.chars().collect();
-
-    // Cache pass: what is already decidable, and what the backend owes.
-    let (hard, misses) = {
-        let mut hard: Vec<(usize, usize)> = Vec::new();
-        let mut misses: Vec<String> = Vec::new();
-        let _ = state.cefr.levels.try_with_value(|cache| {
-            for token in &tokens {
-                let word: String = chars[token.start..token.end].iter().collect();
-                if word.chars().count() > MAX_WORD_CHARS {
-                    continue;
-                }
-                let mut candidates = cefr_core::lookup_candidates(&word);
-                candidates.extend(cefr_core::hyphen_parts(&word));
-                for key in &candidates {
-                    if cache.get(key).is_none() && !misses.iter().any(|m| m == key) {
-                        misses.push(key.clone());
-                    }
-                }
-                if cache.any_above(&candidates, ctx.threshold) && hard.len() < MAX_BOXES_PER_PAGE {
-                    hard.push((token.start, token.end));
-                }
-            }
-        });
-        (hard, misses)
+    // The shared plan: what marks, and the keys the dataset is owed.
+    let planned = state.cefr.levels.try_with_value(|cache| {
+        let tokens = tokenize(&layer.text);
+        cefr_core::plan::walk(
+            &layer.text,
+            &tokens,
+            cache,
+            ctx.threshold,
+            MAX_BOXES_PER_PAGE,
+        )
+    });
+    let Some(planned) = planned else {
+        return;
     };
-    if !misses.is_empty() {
-        let asked = misses.clone();
-        services::cefr::fetch_levels(misses, move |levels| {
+    if !planned.ask.is_empty() {
+        let asked = planned.ask;
+        services::cefr::fetch_levels(asked.clone(), move |levels| {
             state.cefr.ingest(asked, levels);
         });
     }
 
-    let mut plan: Vec<PlanWord> = Vec::new();
-    for (start, end) in hard {
-        if plan.len() >= MAX_BOXES_PER_PAGE {
-            break;
-        }
-        let word: String = chars[start..end].iter().collect();
-        let context = sentence_around(&text, start, end);
-        plan.push(PlanWord {
-            start,
-            end,
-            word,
-            context,
-        });
-    }
+    let plan = planned.paint;
     memo.try_update_value(|slot| {
         *slot = Some(WalkMemo {
             key,
@@ -313,7 +252,7 @@ fn run_plan(
     page: u32,
     host: web_sys::Element,
     scale: ReadSignal<f64>,
-    plan: Vec<PlanWord>,
+    plan: Vec<PlannedWord>,
     sink: Sink,
 ) {
     if !host.is_connected() {
@@ -324,36 +263,11 @@ fn run_plan(
     {
         return; // a newer walk owns the memo
     }
-    let Some(layer) = host
-        .query_selector(&format!(".{TEXT_LAYER_CLASS}"))
-        .ok()
-        .flatten()
-    else {
+    let Some(layer) = read_text_layer(&host) else {
         return;
     };
-    let span_els: Vec<web_sys::Element> = {
-        let list = match layer.query_selector_all("span") {
-            Ok(list) => list,
-            Err(_) => return,
-        };
-        (0..list.length())
-            .filter_map(|i| list.get(i))
-            .filter_map(|node| node.dyn_into::<web_sys::Element>().ok())
-            .collect()
-    };
-    if span_els.is_empty() {
-        return;
-    }
     // The layer may have swapped since the plan; identical text only.
-    let mut text = String::new();
-    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(span_els.len());
-    for el in &span_els {
-        let piece = el.text_content().unwrap_or_default();
-        let start = text.chars().count();
-        text.push_str(&piece);
-        spans.push((start, text.chars().count()));
-    }
-    if text_fingerprint(&text) != sink.key.text {
+    if text_fingerprint(&layer.text) != sink.key.text {
         return;
     }
     // Divide by the glyphs' live scale, read at measure time.
@@ -377,13 +291,13 @@ fn run_plan(
     let mut painted: Vec<CefrBox> = Vec::new();
     'word: for word in &plan {
         let mut fragments: Vec<GlossBox> = Vec::new();
-        for (i, (s, e)) in spans.iter().enumerate() {
-            if *e <= word.start || *s >= word.end {
+        for (span, start, end) in &layer.spans {
+            if *end <= word.start || *start >= word.end {
                 continue;
             }
-            let local_start = word.start.max(*s) - *s;
-            let local_end = (*e).min(word.end) - *s;
-            let Some(range) = range_for_span(&span_els[i], local_start, local_end) else {
+            let local_start = word.start.max(*start) - *start;
+            let local_end = (*end).min(word.end) - *start;
+            let Some(range) = range_for_span(span, local_start, local_end) else {
                 continue;
             };
             let Some(fragment) = union_box(&range_rects(&range)) else {

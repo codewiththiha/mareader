@@ -1,22 +1,39 @@
 //! The vocabulary feature's frontend: the dataset mirror and batch lookup.
 
-use std::sync::{Mutex, OnceLock};
+use std::cell::Cell;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
 
-/// The dataset's lifecycle, as the backend reports it. One per realm.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The dataset's lifecycle, as the backend reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DatasetPhase {
+    /// Nothing on disk and nothing running.
+    Absent,
+    Downloading,
+    Paused,
+    /// The parquet is being rebuilt into the local database.
+    Converting,
+    Ready,
+    Failed,
+}
+
+/// The dataset's state, as the backend reports it. One per realm.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetMirror {
-    /// `absent` | `downloading` | `converting` | `ready` | `failed`.
-    pub phase: String,
+    pub phase: DatasetPhase,
     pub received: u64,
     pub total: Option<u64>,
     pub words: Option<u64>,
     pub message: Option<String>,
+    /// The POS model's stage: levels arrive first, and only a click needs
+    /// the tagger.
+    #[serde(default)]
+    pub model: Option<DatasetPhase>,
 }
 
 impl DatasetMirror {
@@ -26,31 +43,41 @@ impl DatasetMirror {
         (total > 0).then_some(((self.received.min(total) as f64 / total as f64) * 100.0) as u32)
     }
 
+    /// Whether the level lookups can answer.
     pub fn is_ready(&self) -> bool {
-        self.phase == "ready"
+        self.phase == DatasetPhase::Ready
     }
 }
 
-/// The current session's mirror; a session's end takes its own signal down.
-static MIRROR: Mutex<Option<RwSignal<Option<DatasetMirror>>>> = Mutex::new(None);
+thread_local! {
+    /// The realm's mirror; the session that binds it clears it on the way out.
+    static MIRROR: Cell<Option<RwSignal<Option<DatasetMirror>>>> = const { Cell::new(None) };
+    /// The progress tap is registered once per realm, however many
+    /// documents it opens.
+    static TAPPED: Cell<bool> = const { Cell::new(false) };
+    /// One warn per realm: a dead backend must not flood.
+    static LOOKUP_WARNED: Cell<bool> = const { Cell::new(false) };
+}
 
-/// The backend tap, installed once per process; it writes whoever is bound.
-static TAP: OnceLock<()> = OnceLock::new();
-
-/// Hand a status snapshot to the live session's mirror, if any survives.
+/// Hand a status snapshot to the realm's mirror, if one is bound.
 fn publish(status: DatasetMirror) {
-    if let Some(mirror) = MIRROR.lock().ok().and_then(|slot| *slot) {
-        mirror.try_set(Some(status));
-    }
+    MIRROR.with(|slot| {
+        if let Some(mirror) = slot.get() {
+            mirror.try_set(Some(status));
+        }
+    });
 }
 
-/// The dataset mirror to read this session; `None` phases in from the bridge.
+/// The dataset mirror to read; every ask in a realm agrees on one handle.
 pub fn dataset() -> RwSignal<Option<DatasetMirror>> {
-    MIRROR
-        .lock()
-        .ok()
-        .and_then(|slot| *slot)
-        .unwrap_or_else(|| RwSignal::new(None))
+    MIRROR.with(|slot| match slot.get() {
+        Some(mirror) => mirror,
+        None => {
+            let mirror = RwSignal::new(None);
+            slot.set(Some(mirror));
+            mirror
+        }
+    })
 }
 
 /// Bind this realm's mirror and tap the backend's progress; the ask
@@ -60,9 +87,8 @@ pub fn install_cefr_bridge() {
         return;
     }
     let mirror = RwSignal::new(None);
-    if let Ok(mut slot) = MIRROR.lock() {
-        *slot = Some(mirror);
-    }
+    MIRROR.with(|slot| slot.set(Some(mirror)));
+    on_cleanup(|| MIRROR.with(|slot| slot.set(None)));
     spawn_local(async move {
         if let Ok(value) = tauri_bridge::invoke("cefr_dataset_status", JsValue::UNDEFINED).await
             && let Ok(status) = serde_wasm_bindgen::from_value::<DatasetMirror>(value)
@@ -70,7 +96,7 @@ pub fn install_cefr_bridge() {
             publish(status);
         }
     });
-    if TAP.set(()).is_err() {
+    if TAPPED.with(|tapped| tapped.replace(true)) {
         return;
     }
     crate::services::tauri_listen("cefr-dataset-progress", |ev: web_sys::Event| {
@@ -124,6 +150,15 @@ pub fn request_remove() {
     });
 }
 
+/// Ask for the POS model alone: the levels are here, only a click needs it.
+pub fn request_model_download() {
+    spawn_local(async move {
+        if let Err(e) = tauri_bridge::invoke("cefr_model_download", JsValue::UNDEFINED).await {
+            web_sys::console::warn_1(&format!("[cefr] model download failed: {e:?}").into());
+        }
+    });
+}
+
 /// Levels for `words`, aligned with the input; a web build never calls
 /// back.
 pub fn fetch_levels(words: Vec<String>, done: impl FnOnce(Vec<Option<f64>>) + 'static) {
@@ -142,21 +177,14 @@ pub fn fetch_levels(words: Vec<String>, done: impl FnOnce(Vec<Option<f64>>) + 's
                     done(levels);
                 }
             }
-            Err(e) => {
-                // One warn per realm: a dead backend must not flood.
-                LOOKUP_WARNED.with(|warned| {
-                    if !warned.get() {
-                        warned.set(true);
-                        web_sys::console::warn_1(&format!("[cefr] lookup failed: {e:?}").into());
-                    }
-                });
-            }
+            Err(e) => LOOKUP_WARNED.with(|warned| {
+                if !warned.get() {
+                    warned.set(true);
+                    web_sys::console::warn_1(&format!("[cefr] lookup failed: {e:?}").into());
+                }
+            }),
         }
     });
-}
-
-thread_local! {
-    static LOOKUP_WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The lookup command's wire shape: a named `words` field.
@@ -166,14 +194,24 @@ struct LevelsArgs {
 }
 
 /// The backend's dataset POS answer for one clicked word.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PosAnswer {
-    pub pos: String,
+    /// The readable word class: noun, verb, adjective, ...
     pub kind: String,
-    pub sense: Option<String>,
-    pub level: Option<f64>,
-    pub senses: Vec<String>,
+    /// The Penn tag behind it, when no class is named.
+    pub pos: String,
+}
+
+impl PosAnswer {
+    /// What a card prints for this word's role.
+    pub fn label(&self) -> String {
+        if self.kind.is_empty() {
+            self.pos.clone()
+        } else {
+            self.kind.clone()
+        }
+    }
 }
 
 /// The dataset's verdict for `word` in `sentence`; `None` if unequipped.

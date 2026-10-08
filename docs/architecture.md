@@ -130,6 +130,57 @@ shape is in `docs/frame-lifecycle-alternatives.md`.
   churn record. New memory-sensitive code reads `rules.md` first; a new
   audit updates `audit.md`.
 
+## Vocabulary highlighter and the dataset download
+
+The vocabulary highlighter marks the words harder than the reader's own
+English band, and the dataset that answers for them is downloaded, never
+shipped. Four pieces, each unaware of the others' types beyond a wire shape:
+
+- `crates/cefr-core` is the format-agnostic half: one tokenizer, the
+  ASCII-English filter, the contraction and hyphen rules, `LevelCache`
+  (bands 0..=6, whole-clear at `LEVEL_CACHE_CAP`, so a document cannot grow
+  it past its bound), and `plan::walk`, which turns a token list plus the
+  cache into the two sets a painter needs — the marks to paint, capped, and
+  the words to ask about, deduplicated and ordered. The band rule is
+  `cefr_core::band_of`, single-sourced, so the slider, the cache and the
+  settings copy cannot drift apart.
+- `crates/reader-runtime/src/components/cefr/` paints them: the PDF layer
+  cuts page-space boxes by a fixed budget, the reflow path measures rows
+  through `with_row_scan` — the same row scan search uses — and both re-plan
+  when the epoch or the layout moves. `services/cefr.rs` is the only edge
+  that talks to the backend: one `DatasetMirror` signal, one batched
+  `cefr_levels` ask per pass, a warn-once per realm, and a tap installed once
+  per realm. The marks are painted, never interactive: a hover shows the
+  word's own title and nothing else, and the AI is reached by a click — only
+  when click-to-explain is on — so sweeping a page costs no model calls.
+- `src-tauri/src/cefr/mod.rs` is the manager: one phase machine
+  (`absent | downloading | paused | converting | ready | failed`), the parquet
+  and tagger downloads through `download-core`, then `verify_parquet` →
+  `build_db` on a blocking worker → `probe_db`, with the parquet deleted once
+  the database answers for itself. `cefr_levels` and `cefr_pos_of` both run on
+  the blocking pool, so a page's lookups and the tagger's first decode never
+  hold the click's thread.
+- `crates/download-core` is the transport and knows nothing about CEFR: an id,
+  mirrors of one file, a `.part` and a validator sidecar beside the
+  destination, `If-Range` resume, a stall timeout, and one snapshot per event
+  on the `ProgressHook` a feature passes — the terminal snapshot carrying the
+  finished path, which is how the manager learns to start the rebuild. A
+  destination that already holds its file settles `done` with that path and
+  no request at all, so the file on disk is also the cache. The app's `Host`
+  is `src-tauri/src/download.rs`.
+
+Nothing is fetched without the panel that names both files and their sizes,
+and nothing is fetched twice: a dataset on disk is adopted by the first status
+ask without a rebuild, a partial is resumed rather than restarted, the
+transport settles a request whose file is already at its destination instead
+of fetching it again, and a failed rebuild deletes its parquet rather than
+keeping bytes that already failed once. A model that is missing or stopped is stated in the same
+panel with its own ask, so a click never starts a silent multi-megabyte
+download. Sweeping a document costs one bounded plan per page: the row-text
+LRU drops at `SCAN_CAP`, the level cache clears whole at `LEVEL_CACHE_CAP`,
+and a document change resets the pane's cache rather than carrying another
+document's words.
+
 ## Fresh route realms and document handoff
 
 The Shell manager owns actual route iframes in `Active`, `Incoming` and
