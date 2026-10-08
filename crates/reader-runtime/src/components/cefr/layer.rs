@@ -37,7 +37,7 @@ pub fn CefrMarkLayer(
                 children=move |b: CefrBox| {
                     // The gloss stroke's gesture shape, mirrored.
                     let mark = b.mark.clone();
-                    let word = mark.word.clone();
+                    let label = mark.word.clone();
                     let explain = move |ev: web_sys::MouseEvent| {
                         ev.stop_propagation();
                         if !click_explain.get_untracked() {
@@ -48,11 +48,18 @@ pub fn CefrMarkLayer(
                         }
                     };
                     view! {
+                        // No `title`: hover is the dictionary's slot, not a
+                        // tooltip's.
                         <button
                             type="button"
                             class="cefr-mark"
-                            title=word.clone()
-                            aria-label=format!("Explain {word}")
+                            aria-label=move || {
+                                if click_explain.get() {
+                                    format!("Explain {label}")
+                                } else {
+                                    label.clone()
+                                }
+                            }
                             style=move || {
                                 let s = scale.get();
                                 format!(

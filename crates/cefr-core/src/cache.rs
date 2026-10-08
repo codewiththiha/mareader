@@ -1,7 +1,7 @@
 //! The one level cache: answered words, so a revisited page re-derives
 //! from memory.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The bound, in entries; past it the cache clears whole, like the
 /// spot memo.
@@ -26,11 +26,13 @@ impl LevelCache {
         self.0.insert(key.into(), band.min(6));
     }
 
-    /// The dataset keys among `candidates` the cache cannot answer yet.
+    /// The keys among `candidates` the cache cannot answer, first-seen
+    /// and never twice.
     pub fn misses<'a, I: IntoIterator<Item = &'a str>>(&self, candidates: I) -> Vec<String> {
+        let mut seen: HashSet<&str> = HashSet::new();
         let mut out: Vec<String> = Vec::new();
         for key in candidates {
-            if !self.0.contains_key(key) && !out.iter().any(|k| k == key) {
+            if !self.0.contains_key(key) && seen.insert(key) {
                 out.push(key.to_string());
             }
         }
