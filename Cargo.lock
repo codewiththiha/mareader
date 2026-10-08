@@ -811,7 +811,7 @@ dependencies = [
 [[package]]
 name = "cefr"
 version = "0.2.0"
-source = "git+https://github.com/codewiththiha/cefr-rs.git#6b1f93161e1c42813b3f1863e0e976826d3ba49b"
+source = "git+https://github.com/codewiththiha/cefr-rs.git#8a0931fd4090e1228a0397380c9794649d99a17f"
 dependencies = [
  "anyhow",
  "arrow",
