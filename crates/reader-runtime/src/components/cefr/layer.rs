@@ -28,8 +28,8 @@ pub fn CefrMarkLayer(
     click_explain: Signal<bool>,
 ) -> impl IntoView {
     view! {
-        // Not a keyboard surface: a page can carry two hundred of these,
-        // and the selection's Explain pill is the keyboard path in.
+        // A page carries hundreds of these; the selection's Explain pill is the
+        // keyboard way in.
         <div class="cefr-layer">
             <For
                 each=move || boxes.get()

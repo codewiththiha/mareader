@@ -10,8 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::download::{AppDownloads, DownloadRequest, Phase as WirePhase, ProgressHook, TauriHost};
 
-/// The parquet's mirrors, preferred first: a client whose network blocks
-/// one host still reaches the file.
+/// The parquet's mirrors; a client that blocks one host still reaches the file.
 const DATASET_URLS: [&str; 3] = [
     "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/data/cefr.zstd.parquet",
     "https://cdn.jsdelivr.net/gh/codewiththiha/cefr-rs@main/data/cefr.zstd.parquet",
@@ -32,8 +31,8 @@ pub const PROGRESS_EVENT: &str = "cefr-dataset-progress";
 const DATASET_ID: &str = "cefr-dataset";
 const MODEL_ID: &str = "cefr-model";
 
-/// Both files, under the dataset directory. The downloader keeps the
-/// bytes in transit beside them as `<name>.part`.
+/// Both files, under the dataset directory; the downloader keeps the
+/// in-transit bytes beside them.
 const DATASET_FILE: &str = "cefr.parquet";
 const MODEL_FILE: &str = "en_tokenizer.bin.zst";
 
@@ -102,8 +101,7 @@ impl Phase {
         }
     }
 
-    /// The byte count a sheet prints; only the two download phases carry
-    /// one, and a paused download carries the last.
+    /// The byte count a sheet prints; only the two download phases carry one.
     fn bytes(&self) -> (u64, Option<u64>) {
         match self {
             Self::Downloading { received, total } | Self::Paused { received, total } => {
@@ -234,8 +232,8 @@ impl CefrManager {
         Ok(words.max(0) as u64)
     }
 
-    /// Hand both files to the downloader. Every later stage is driven by
-    /// their snapshots: nothing here polls.
+    /// Hand both files to the downloader; every later stage is driven by
+    /// their snapshots.
     pub fn begin_download(&self, app: AppHandle) -> Result<(), String> {
         {
             let mut guard = self.phase.lock().map_err(|_| "phase lock poisoned")?;
@@ -268,15 +266,13 @@ impl CefrManager {
             set_phase(&app, Phase::Absent);
             return Err(e);
         }
-        // The tagger rides along; a model that lands late only delays a
-        // click, and its own stage rides the same snapshot.
+        // The tagger rides along; its stage rides the same snapshot.
         let _ = self.begin_model_download(app);
         Ok(())
     }
 
-    /// The POS model on its own: the levels are already here, and only a
-    /// click needs the tagger. A paused transfer continues from its bytes;
-    /// a live one is already doing what this asks for.
+    /// The POS model alone: a paused transfer resumes, a live one is
+    /// already doing this.
     pub fn begin_model_download(&self, app: AppHandle) -> Result<(), String> {
         let downloads = app.state::<AppDownloads>();
         if let Some(progress) = downloads.status(MODEL_ID)
@@ -358,8 +354,7 @@ impl CefrManager {
         let Some(db) = slot.as_ref() else {
             return Ok(vec![None; words.len()]);
         };
-        // Every English word gets one slot; the answers land back in the
-        // positions they were asked for.
+        // One slot per word, so answers land in ask order.
         let mut asked: Vec<(usize, String)> = Vec::new();
         for (index, word) in words.iter().take(MAX_BATCH).enumerate() {
             if cefr_core::is_english_ascii(word) {
@@ -384,7 +379,6 @@ impl CefrManager {
     }
 
     /// The dataset's POS for `word` in `sentence`; `Ok(None)` if unequipped.
-    /// Blocking work: the caller leaves the async pool.
     pub fn pos_of(
         &self,
         app: &AppHandle,
@@ -411,8 +405,7 @@ impl CefrManager {
             return Ok(Some(tagger.clone()));
         }
         if !path.is_file() {
-            // Nothing to load: the settings panel owns asking for the
-            // model, so a click never starts a multi-megabyte fetch.
+            // The settings panel owns the ask: a click never fetches the model.
             return Ok(None);
         }
         let tagger = Arc::new(
@@ -429,8 +422,7 @@ impl Default for CefrManager {
     }
 }
 
-/// The dataset download's watcher: every snapshot becomes a phase change,
-/// and the end of the transfer starts the rebuild.
+/// Every dataset snapshot becomes a phase change; the end starts the rebuild.
 fn dataset_hook(app: AppHandle) -> ProgressHook {
     Arc::new(move |progress: &crate::download::Progress| {
         match progress.phase {

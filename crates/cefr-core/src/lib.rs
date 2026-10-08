@@ -1,5 +1,5 @@
-//! The vocabulary highlighter's core: one tokenizer, band rule, cache and
-//! the walk both painters plan from.
+//! The vocabulary highlighter's core: the tokenizer, band rule, cache
+//! and shared walk.
 
 pub mod cache;
 pub mod plan;

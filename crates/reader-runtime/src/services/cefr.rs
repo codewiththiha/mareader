@@ -30,8 +30,8 @@ pub struct DatasetMirror {
     pub total: Option<u64>,
     pub words: Option<u64>,
     pub message: Option<String>,
-    /// The POS model's own stage: the levels arrive first, and only the
-    /// click needs the tagger.
+    /// The POS model's stage: levels arrive first, and only a click needs
+    /// the tagger.
     #[serde(default)]
     pub model: Option<DatasetPhase>,
 }
@@ -50,8 +50,7 @@ impl DatasetMirror {
 }
 
 thread_local! {
-    /// The realm's mirror. The session that binds it clears it on the way
-    /// out; the realm outlives every session.
+    /// The realm's mirror; the session that binds it clears it on the way out.
     static MIRROR: Cell<Option<RwSignal<Option<DatasetMirror>>>> = const { Cell::new(None) };
     /// The progress tap is registered once per realm, however many
     /// documents it opens.
@@ -81,8 +80,8 @@ pub fn dataset() -> RwSignal<Option<DatasetMirror>> {
     })
 }
 
-/// Bind this realm's mirror and tap the backend's progress. The ask
-/// repeats per bind, so a document opened mid-download starts informed.
+/// Bind this realm's mirror and tap the backend's progress; the ask
+/// repeats per bind.
 pub fn install_cefr_bridge() {
     if !tauri_bridge::has_tauri() {
         return;
@@ -151,8 +150,7 @@ pub fn request_remove() {
     });
 }
 
-/// Ask the backend for the POS model alone: the levels are already here,
-/// and only a click needs the tagger.
+/// Ask for the POS model alone: the levels are here, only a click needs it.
 pub fn request_model_download() {
     spawn_local(async move {
         if let Err(e) = tauri_bridge::invoke("cefr_model_download", JsValue::UNDEFINED).await {

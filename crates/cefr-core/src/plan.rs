@@ -1,13 +1,12 @@
-//! The half of a highlight walk that does not touch the DOM: which tokens
-//! mark, and which dataset keys the cache is still owed.
+//! The DOM-free half of a highlight walk: marks to paint, keys to ask.
 
 use crate::cache::LevelCache;
 use crate::text::{
     MAX_WORD_CHARS, Span, hyphen_parts, is_english_ascii, lookup_candidates, sentence_around,
 };
 
-/// One word to paint: where it sits, what it says, and the window a click
-/// sends to the dataset.
+/// One word to paint: where it sits, what it says, the window a click
+/// sends.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedWord {
     /// The word's span, in characters, in the run the walk read.
@@ -27,8 +26,7 @@ pub struct Walk {
     pub ask: Vec<String>,
 }
 
-/// Plan a walk over one run of text. Pure — the same text, tokens, cache
-/// and threshold always answer the same plan.
+/// Plan a pure walk over one run of text: same inputs, same plan.
 pub fn walk(text: &str, tokens: &[Span], cache: &LevelCache, threshold: u8, cap: usize) -> Walk {
     let chars: Vec<char> = text.chars().collect();
     let known: Vec<(Span, Vec<String>)> = tokens
@@ -38,8 +36,7 @@ pub fn walk(text: &str, tokens: &[Span], cache: &LevelCache, threshold: u8, cap:
                 return None;
             }
             let word: String = chars[span.start..span.end].iter().collect();
-            // The tokenizer only yields ASCII letter runs; the gate is
-            // what keeps a hand-built span list out of the dataset.
+            // The gate keeps a hand-built span list out of the dataset.
             is_english_ascii(&word).then(|| (*span, keys_of(&word)))
         })
         .collect();
@@ -62,8 +59,8 @@ pub fn walk(text: &str, tokens: &[Span], cache: &LevelCache, threshold: u8, cap:
     Walk { paint, ask }
 }
 
-/// The keys one token is probed as, most specific first: itself, then its
-/// contraction base, then a hyphenated token's parts.
+/// The keys one token is probed as, most specific first: itself, its
+/// base, its parts.
 pub fn keys_of(word: &str) -> Vec<String> {
     let mut keys = lookup_candidates(word);
     keys.extend(hyphen_parts(word));

@@ -37,8 +37,8 @@ pub async fn cefr_pos_of(
     word: String,
     context: String,
 ) -> Result<Option<crate::cefr::PosAnswer>, String> {
-    // The tagger's first call decodes the model and the db is sqlite:
-    // both block, so neither runs on the click's thread.
+    // The tagger decodes the model and sqlite blocks, so neither runs on
+    // the click's thread.
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<CefrManager>().pos_of(&app, &word, &context)
     })

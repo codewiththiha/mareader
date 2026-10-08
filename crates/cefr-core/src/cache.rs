@@ -7,8 +7,7 @@ use std::collections::{HashMap, HashSet};
 /// spot memo.
 pub const LEVEL_CACHE_CAP: usize = 8_192;
 
-/// The band a dataset answer stands for. Misses answer 0 — never asked,
-/// never marked — and the dataset's 1..=6 is clamped to the stored range.
+/// The band a dataset answer stands for: misses answer 0, and 1..=6 is clamped.
 pub fn band_of(level: Option<f64>) -> u8 {
     level
         .map(|level| level.round().clamp(1.0, 6.0) as u8)

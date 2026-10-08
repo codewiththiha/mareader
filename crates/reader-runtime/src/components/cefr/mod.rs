@@ -72,17 +72,14 @@ pub(crate) fn publish(sink: &Sink, painted: Vec<CefrBox>) {
 }
 
 /// One page's text layer, read once: the joined text, and each span's
-/// element with the character range it covers.
+/// element and range.
 pub(crate) struct LayerText {
     pub text: String,
     pub spans: Vec<(web_sys::Element, usize, usize)>,
 }
 
-/// Read a text layer, or `None` while it is absent.
-///
-/// The character count is carried forward rather than re-taken per span:
-/// counting from the start each time made a dense page's walk quadratic in
-/// its own length.
+/// The count carries forward: re-taking it per span made a dense page's
+/// walk quadratic.
 pub(crate) fn read_text_layer(host: &web_sys::Element) -> Option<LayerText> {
     let layer = host
         .query_selector(&format!(".{TEXT_LAYER_CLASS}"))
