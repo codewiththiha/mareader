@@ -650,6 +650,63 @@ texture with colour because a look they own is a whole look.
   the raw-raster scrub (and its CSS class, on the pane root) to that pane's
   sessions. The engine smoke asserts an untouched session renders nothing.
 
+## Vocabulary highlighter and background downloads
+
+Red ink over every word harder than the reader's own band, in both formats,
+and one dataset behind it. The rule is strict inequality: a word AT the
+reader's band is their own vocabulary and stays unpainted.
+
+- **The knobs.** Settings → Vocabulary (`reader_core::settings::CefrLevel`):
+  an enable switch, a five-stop slider (A2…C2, default B2) and click-to-explain.
+  A1 is not offered — at that band nearly every word in a document marks, which
+  is a wall of red rather than a reading aid. `MIN_CEFR_BAND` is the floor and
+  `CefrLevel::from_band` clamps a stray saved band instead of panicking.
+- **One walk, two painters.** `cefr_core::plan::walk` is the whole format-agnostic
+  decision: tokenize, probe each token as itself → its contraction base → its
+  hyphen parts, split the tokens into what the cache already marks above the
+  band and the dataset keys nobody has asked for, and carry each planned word's
+  sentence window with it. `components/cefr/pdf.rs` and `reflow.rs` own only
+  measurement — page space for a PDF page (so a zoom never re-measures), row
+  space for a reflowable block — and both write through one `WalkKey` memo, so a
+  re-run whose inputs did not move is free. Words the AI stroke already owns are
+  suppressed: by rect overlap on a PDF page, by reflow spot in a block.
+- **The ink.** `components/cefr/layer.rs` paints one fixed red
+  (`styles/components/cefr.css`), multiply on light paper and screen on dark, so
+  it reads as a PDF viewer's marker rather than as an accent-coloured selection.
+  Hover is deliberately unbound — no `title`, no popover — because that slot
+  belongs to a later dictionary; a click opens the AI word card through the same
+  `request_gloss_open` gesture a selection pill uses, and the card prefers the
+  dataset's own part of speech over the model's guess.
+- **The dataset.** Two files, both from `cefr-rs`'s repository through
+  `download-core`: a 2.9 MB zstd parquet of word levels and a 6.7 MB nlprule
+  model that names a clicked word's role in its sentence. `src-tauri/src/cefr/`
+  verifies the parquet's magic at both ends, rebuilds it into sqlite in a
+  blocking worker, adopts it by rename, marks the rebuild with
+  `PRAGMA user_version`, and deletes the parquet. A later run adopts the
+  existing db without rebuilding. Neither file ships in the binary.
+- **Downloads.** `crates/download-core` is the reusable half: a feature names an
+  id and a list of direct links, and gets throttled progress snapshots on the
+  host's event bus plus its own hook — every snapshot, the terminal ones
+  included, so completion arrives with the finished path instead of being
+  polled for. One attempt is one mirror, so a blocked host rotates to the next.
+  A resume sends `Range` with `If-Range` and a validator kept in a sidecar
+  beside the partial, because appending to bytes whose resource has since
+  changed produces a file that parses at both ends and fails in the middle; a
+  partial with no validator is restarted rather than trusted. Pause and cancel
+  settle their own phase when no transport is left to read the flag, and
+  `remove` flags the cancel before deleting so the transport's next chunk check
+  closes its handle. The crate has no Tauri in it: `Host` supplies spawn,
+  publish and the data directory, and `src-tauri/src/download.rs` is that impl.
+  Its invoke surface is the dataset's own `cefr_dataset_*` commands; the crate
+  ships no generic commands, because a command nothing calls is scaffolding.
+- **Ownership.** `CefrState` (answered words plus the repaint generation) is pane
+  state and resets with the document. `LevelCache` is bounded
+  (`LEVEL_CACHE_CAP = 8_192`, cleared whole at the cap, like the spot memo). A
+  PDF page's text-layer observer lives in a component-scope slot and is
+  disconnected in `on_cleanup`. The realm's dataset mirror is a module static
+  that a later bind replaces and a refused write drops. Row scans are an LRU of
+  32 and measurements share one animation frame.
+
 ## Known limitations
 
 - The Shell accepts boundary traffic only from the live frame — plus a

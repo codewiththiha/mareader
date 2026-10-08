@@ -26,6 +26,11 @@ teardown in the smoke suite and the browser lifecycle baseline.
 | Cover bake page | `src/app/bake.rs` | Pass | One page, deduplicated queue, removed seconds after the queue drains |
 | Route realm policy | `src/app/manager.rs`, `frame.rs` | Pass | Library has its own WASM; every Library return removes the Reader host and all live/incoming/retiring document realms. No Reader prewarm, recycle, empty retention or idle eviction window; Library is likewise disposed/removed while reading, including cover-bake queue/task/page. Neither route warms/recycles; both return fresh. Symmetric physical residency, cancelled boots, fresh Library identity and scoped bake cancellation are asserted by the browser/memory harnesses. |
 | Raw canvas retention | `public/engine/state.ts` | Pass | `dropRawIfIdle` after `RAW_IDLE_MS = 2000`, no-op while scrubbing or the appearance menu is open, cleared outright on teardown |
+| Vocabulary level cache | `crates/cefr-core/src/cache.rs` | Pass | Plain data (`Box<str>` → band), bounded at `LEVEL_CACHE_CAP = 8_192` and cleared whole at the cap rather than growing; `clear` also shrinks; cleared on a document change and on a dataset arrival |
+| Row scan LRU | `components/cefr/scan.rs` | Pass | 32 rows newest-first, `truncate`d on insert, plain `String` + `Vec<Span>` only — no element or owner references; keyed by row id plus a layout fingerprint, so a re-cut cannot serve stale text |
+| Measurement frame queue | `components/cefr/measure.rs` | Pass | One shared rAF per frame, drained to empty; closures hold handles only (`Copy` signals and elements), and each task re-checks `is_connected` plus its memo key before measuring |
+| Dataset mirror | `services/cefr.rs` | Pass | One `RwSignal` per bind in a module static; a later bind replaces it and a write the disposed realm refuses drops the handle, so no stale signal survives the realm |
+| Text-layer observer | `components/cefr/pdf.rs` | Pass | One per page host, held in a component-scope `StoredValue`, disconnected in `on_cleanup`; install retries are capped at `HOST_TRIES = 10` frames |
 
 ## Teardown fix from the audit
 
