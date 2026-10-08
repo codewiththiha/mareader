@@ -1,6 +1,7 @@
 //! Red ink over one PDF page, stored in page space: a zoom never re-measures.
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
 use ai_core::gloss::{GlossBox, PageAnchor};
