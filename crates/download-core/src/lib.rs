@@ -1,6 +1,4 @@
-//! The crate's documentation is its README: one text, read by a dev here
-//! and on the crate's front page, kept honest against the code by the
-//! example it compiles.
+//! The crate's docs are its README, kept honest by the example it compiles.
 #![doc = include_str!("../README.md")]
 
 use std::collections::HashMap;
@@ -14,18 +12,17 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-/// A download a feature asks for. `directory` is host-data-relative and
-/// `file_name` is a bare name, so the file lands at
-/// `<data_dir>/<directory>/<file_name>` and the bytes in transit at
-/// `<file_name>.part`.
+/// One file asked for; in transit its bytes sit beside the destination
+/// as `<file_name>.part`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadRequest {
     /// The key every later call, event and hook uses. One download per id.
     pub id: String,
-    /// Direct links to the one file, preferred first. A failed attempt
-    /// moves to the next, so a blocked or dead host costs one round trip.
+    /// Direct links to the one file, preferred first; a dead host
+    /// costs one round trip.
     pub urls: Vec<String>,
+    /// Host-data-relative; refused if it would leave that directory.
     pub directory: Option<String>,
     pub file_name: String,
 }
@@ -70,8 +67,8 @@ impl Progress {
     }
 }
 
-/// Every snapshot, the terminal ones included: how a feature that would
-/// rather be called than subscribed learns where the file landed.
+/// Every snapshot, the terminal ones included: how a caller is
+/// told where the file landed.
 pub type ProgressHook = Arc<dyn Fn(&Progress) + Send + Sync>;
 
 /// The environment a downloader lives in: threading, events, storage.
@@ -127,8 +124,8 @@ enum Attempt {
     Paused,
     /// The user asked to stop, or the record was dropped mid-flight.
     Cancelled,
-    /// A network, server or filesystem failure; the next attempt takes the
-    /// bytes on disk — and the next mirror — from there.
+    /// A network, server or filesystem failure; the next attempt
+    /// takes the bytes on disk.
     Retry(String),
 }
 
@@ -149,8 +146,7 @@ fn backoff(attempt: u32) -> Duration {
 /// publishes.
 const EMIT_EVERY: Duration = Duration::from_millis(100);
 
-/// A stream loop wakes this often while no chunk is in flight, so pause
-/// and cancel are read on a stalled connection.
+/// Pause and cancel are read this often, even on a stalled link.
 const POLL_EVERY: Duration = Duration::from_millis(250);
 
 /// A body that delivers nothing for this long is a dead connection.
@@ -173,8 +169,8 @@ impl Downloads {
         Self::default()
     }
 
-    /// Begin `req`; an active id is refused. A hook, when given, sees
-    /// every snapshot, the last one included.
+    /// Begin `req`; an active id is refused, a finished file settles
+    /// `done`.
     pub fn start<H: Host>(
         &self,
         host: &H,
@@ -191,13 +187,15 @@ impl Downloads {
         {
             return Err(format!("download '{}' is already active", req.id));
         }
+        // A finished file is the cache, whatever the link now serves.
+        let cached = std::fs::metadata(&dest).ok().filter(|m| m.is_file()).map(|m| m.len());
         let progress = Progress {
             id: req.id.clone(),
-            phase: Phase::Downloading,
-            received: 0,
-            total: None,
+            phase: if cached.is_some() { Phase::Done } else { Phase::Downloading },
+            received: cached.unwrap_or(0),
+            total: cached,
             message: None,
-            path: None,
+            path: cached.map(|_| dest.display().to_string()),
         };
         slots.insert(
             req.id.clone(),
@@ -212,6 +210,10 @@ impl Downloads {
         );
         drop(slots);
         self.emit(host, &req.id, None);
+        if cached.is_some() {
+            // Nothing to fetch: the terminal snapshot is the whole story.
+            return Ok(());
+        }
         let (downloads, task_host, id) = (self.clone(), host.clone(), req.id);
         host.spawn(async move {
             downloads.run(&task_host, id).await;
@@ -254,9 +256,8 @@ impl Downloads {
     }
 
     /// Ask a download to stop; the partial stays for a later `resume`.
-    /// A paused download has no live stream to read the flag, so this call
-    /// settles its phase.
     pub fn cancel<H: Host>(&self, host: &H, id: &str) {
+        // A paused record has no stream to read the flag, so settle it here.
         let idle = self
             .slots
             .lock()
@@ -272,8 +273,7 @@ impl Downloads {
         }
     }
 
-    /// Drop a download's record, its partial and its validator. A finished
-    /// file stays: the feature owns what it asked for.
+    /// Drop the record, its partial and its validator; a finished file stays.
     pub fn remove(&self, id: &str) {
         let dest = self.slots.lock().ok().and_then(|mut slots| {
             let slot = slots.remove(id)?;
@@ -301,8 +301,8 @@ impl Downloads {
             .unwrap_or_default()
     }
 
-    /// The absolute destination of a request, with both path parts checked
-    /// to stay inside the host's data directory.
+    /// The destination, with both path parts checked to stay inside the
+    /// host's data directory.
     fn dest<H: Host>(host: &H, req: &DownloadRequest) -> Result<PathBuf, String> {
         let name = Path::new(&req.file_name);
         let mut parts = name.components();
@@ -329,8 +329,7 @@ impl Downloads {
         })
     }
 
-    /// One snapshot out: the host's channel and the dev's hook, read under
-    /// one lock and called without it.
+    /// One snapshot out: the host's channel and the caller's hook.
     fn emit<H: Host>(&self, host: &H, id: &str, phase: Option<Phase>) {
         let (snapshot, hook) = {
             let Ok(mut slots) = self.slots.lock() else {
@@ -439,8 +438,8 @@ impl Downloads {
     }
 }
 
-/// Sleep `total` between attempts, watching the flags so pause and cancel
-/// answer inside the backoff too.
+/// Sleep `total` between attempts, watching the flags so pause and
+/// cancel answer inside the backoff.
 async fn backoff_wait(flags: &Flags, total: Duration) -> Option<Attempt> {
     let deadline = Instant::now() + total;
     loop {
@@ -464,8 +463,8 @@ async fn attempt_once<H: Host>(
     attempt: u32,
 ) -> Attempt {
     let outcome = attempt_body(downloads, host, id, target, attempt).await;
-    // Nothing is left to resume: drop the bytes. The body's handle is
-    // closed by now, which is what makes the delete land on Windows.
+    // The handle is closed here, which is what makes the delete land on
+    // Windows.
     if matches!(outcome, Attempt::Cancelled) && downloads.status(id).is_none() {
         let _ = std::fs::remove_file(part_of(&target.dest));
         drop_meta(&target.dest);
@@ -473,8 +472,8 @@ async fn attempt_once<H: Host>(
     outcome
 }
 
-/// One attempt against one mirror; an on-disk partial is reused only when
-/// the server proves it is the same bytes.
+/// One attempt against one mirror; a partial is reused only when the
+/// server proves it.
 async fn attempt_body<H: Host>(
     downloads: &Downloads,
     host: &H,
@@ -491,13 +490,12 @@ async fn attempt_body<H: Host>(
         return stop;
     }
     let part = part_of(dest);
-    // The validator names the destination, not the partial: it is written
-    // before the first body byte and read back here on every attempt.
+    // The validator belongs to the destination, not to the partial.
     let validator = read_meta(dest);
     let mut existing = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
     if existing > 0 && validator.is_none() {
-        // A partial by a different validator proves nothing, and a stale
-        // one would splice two resources into one file.
+        // A foreign partial proves nothing, and a stale one would splice
+        // two resources.
         let _ = std::fs::remove_file(&part);
         drop_meta(dest);
         existing = 0;
@@ -568,8 +566,7 @@ async fn attempt_body<H: Host>(
     let Ok(mut file) = opened else {
         return Attempt::Retry("partial unavailable".into());
     };
-    // Recorded before the body: a crash leaves a provable partial, and a
-    // 200 from a mirror clears the previous resource's validator.
+    // Recorded before the body, so a crash leaves a provable partial.
     match validator_of(response.headers()) {
         Some(fresh) => write_meta(dest, &fresh),
         None => drop_meta(dest),
@@ -644,10 +641,8 @@ fn finalize(dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// A directory part of a request, refused unless it is a non-empty path
-/// that stays under the data directory. `None` is how a request asks for
-/// the data directory itself; `Some("")` is a caller that meant something
-/// it did not say.
+/// A directory part; `""` and anything that would leave the data
+/// directory are refused.
 fn relative(value: &str) -> Result<PathBuf, String> {
     if value.is_empty() {
         return Err("a directory is either absent or a relative path".into());
@@ -704,8 +699,8 @@ fn drop_meta(dest: &Path) {
     let _ = std::fs::remove_file(meta_of(dest));
 }
 
-/// The total from a `Content-Range: bytes a-b/total` header, and from the
-/// `bytes */total` a 416 carries.
+/// The total from a `Content-Range` header, or from the `bytes */total`
+/// a 416 carries.
 fn content_range_total(header: Option<&str>) -> Option<u64> {
     // `bytes 0-99/1234` and `bytes */1234` both end in the total.
     let tail = header?.rsplit('/').next()?;

@@ -26,8 +26,7 @@ struct Options {
     etag: String,
     /// Answer every request with the whole body, ignoring `Range`.
     ignore_ranges: bool,
-    /// Write the body in pieces this far apart, so a transfer can be
-    /// caught in flight.
+    /// Write the body in pieces this far apart: a transfer can be caught.
     slow_ms: u64,
     /// Send this many bytes, then drop the connection.
     cut_after: Option<usize>,
@@ -299,6 +298,36 @@ fn a_fresh_download_lands_and_reports_its_path() {
 }
 
 #[test]
+fn an_existing_file_settles_without_a_request() {
+    let server = Server::start(body(64 * 1024));
+    runtime().block_on(async {
+        let (downloads, host, hook, hooked, rx) = fixture("cached");
+        // A file an earlier run finished is the cache: `start` settles it.
+        std::fs::write(host.dir.join("file.bin"), b"already here").unwrap();
+        downloads
+            .start(&host, request("file.bin", vec![server.url()]), Some(hook))
+            .expect("start");
+        let last = rx.await.expect("terminal snapshot");
+        assert_eq!(last.phase, Phase::Done);
+        assert_eq!(last.percent(), Some(100));
+        assert_eq!(last.received, "already here".len() as u64);
+        assert_eq!(
+            last.path.as_deref(),
+            Some(host.dir.join("file.bin").to_str().unwrap())
+        );
+        // The dev's bytes are untouched and the server was never asked.
+        let landed = std::fs::read(host.dir.join("file.bin")).unwrap();
+        assert_eq!(landed, b"already here");
+        assert!(server.seen().is_empty());
+        assert!(!part_of(&host.dir, "file.bin").exists());
+        // The hook saw the terminal snapshot, as it does for a fetch.
+        let hooked = hooked.lock().unwrap();
+        assert_eq!(hooked.last().unwrap().phase, Phase::Done);
+        assert!(bus_saw(&host.bus, Phase::Done));
+    });
+}
+
+#[test]
 fn a_partial_without_a_validator_is_not_trusted() {
     let server = Server::start(body(48 * 1024));
     runtime().block_on(async {
@@ -348,8 +377,7 @@ fn a_changed_resource_is_replaced_not_spliced() {
     let server = Server::start(server_body.clone());
     runtime().block_on(async {
         let (downloads, host, hook, _hooked, rx) = fixture("changed");
-        // An old partial under the OLD validator: the server's ETag has
-        // moved on, so `If-Range` misses and the whole body comes back.
+        // An old validator: `If-Range` misses, so the whole body comes back.
         std::fs::write(part_of(&host.dir, "file.bin"), &changed[..32 * 1024]).unwrap();
         std::fs::write(host.dir.join("file.bin.part.meta"), "\"stale\"\n").unwrap();
         downloads
@@ -431,9 +459,7 @@ fn a_cut_stream_retries_and_keeps_what_landed() {
         downloads
             .start(&host, request("file.bin", vec![server.url()]), Some(hook))
             .expect("start");
-        // Every attempt ends one 1 KB in, so the transfer must exhaust
-        // its budget and fail — with the bytes it did receive still on
-        // disk for the next start.
+        // Every attempt ends one 1 KB in: the transfer exhausts its budget.
         wait_until(|| reached(&downloads, "dl", Phase::Failed)).await;
         let held = std::fs::metadata(part_of(&host.dir, "file.bin"))
             .unwrap()
