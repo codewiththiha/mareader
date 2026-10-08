@@ -4,7 +4,7 @@ use wasm_bindgen::JsCast;
 
 /// Layers painted OVER a block's text, whose text is not document
 /// text.
-const OVERLAY_CLASSES: [&str; 2] = ["gloss-layer", "tx-hits"];
+const OVERLAY_CLASSES: [&str; 3] = ["gloss-layer", "tx-hits", "cefr-layer"];
 
 /// The block's text nodes, in document order.
 fn text_nodes_of(el: &web_sys::Element) -> Vec<web_sys::Node> {
@@ -107,18 +107,12 @@ pub(crate) fn range_for_span(
 }
 
 /// The row's rendered text, one entry per text node.
-fn text_contents(el: &web_sys::Element) -> Vec<String> {
+pub(crate) fn text_contents(el: &web_sys::Element) -> Vec<String> {
     text_nodes_of(el)
         .iter()
         .filter_map(|node| node.dyn_ref::<web_sys::Text>())
         .map(|text| text.data())
         .collect()
-}
-
-/// Every occurrence of `needle`, as spans in the row's own text.
-pub(crate) fn match_spans(el: &web_sys::Element, needle: &str) -> Vec<(usize, usize)> {
-    let text = text_contents(el).concat();
-    reader_core::search::occurrence_spans(&text, &text.to_lowercase(), needle)
 }
 
 #[cfg(test)]

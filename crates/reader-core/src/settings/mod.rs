@@ -7,6 +7,7 @@ use crate::appearance::Appearance;
 use crate::appearance::presets::{Preset, builtin_presets};
 
 mod animation;
+mod cefr;
 mod gloss;
 mod layout;
 mod workspace;
@@ -17,6 +18,7 @@ pub mod typography;
 
 /// The layout and animation schemas, re-exported from their own files.
 pub use animation::AnimationSettings;
+pub use cefr::{CefrLevel, MIN_CEFR_BAND};
 pub use layout::{
     DEFAULT_COLUMN_WIDTH_PCT, FloatingLabelStyle, LayoutSettings, MAX_COLUMN_WIDTH_PCT,
     MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
@@ -74,6 +76,15 @@ pub struct Settings {
     /// The AI word card's spacing; denser by default.
     #[serde(default)]
     pub gloss_density: GlossDensity,
+    /// The vocabulary highlighter: words above the reader's band in red ink.
+    #[serde(default = "on_true")]
+    pub cefr_enabled: bool,
+    /// The reader's own band; words ABOVE it are highlighted.
+    #[serde(default)]
+    pub cefr_level: CefrLevel,
+    /// Whether clicking a red word starts an AI explanation.
+    #[serde(default = "on_true")]
+    pub cefr_click_explain: bool,
     /// Typography of the reflowable formats; PDFs never read it.
     #[serde(default)]
     pub text: TextSettings,
@@ -100,6 +111,9 @@ impl Default for Settings {
             gloss_opacity: default_gloss_opacity(),
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
+            cefr_enabled: true,
+            cefr_level: CefrLevel::default(),
+            cefr_click_explain: true,
             text: TextSettings::default(),
             workspace: WorkspaceSettings::default(),
         }

@@ -5,7 +5,9 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, RunEvent};
 
 mod ai;
+mod cefr;
 mod commands;
+mod download;
 mod macos;
 
 /// Every extension the reader opens; the filesystem gates accept exactly these.
@@ -124,6 +126,8 @@ pub fn run() {
             }
         }))
         .manage(PendingFile(Mutex::new(None)))
+        .manage(cefr::CefrManager::new())
+        .manage(download::AppDownloads::new())
         .invoke_handler(tauri::generate_handler![
             take_pending_file,
             read_file_bytes,
@@ -131,6 +135,21 @@ pub fn run() {
             set_traffic_lights,
             boot_report,
             commands::ai::explain_word,
+            commands::cefr::cefr_dataset_status,
+            commands::cefr::cefr_dataset_download,
+            commands::cefr::cefr_dataset_pause,
+            commands::cefr::cefr_dataset_resume,
+            commands::cefr::cefr_dataset_cancel,
+            commands::cefr::cefr_dataset_remove,
+            commands::download::download_start,
+            commands::download::download_pause,
+            commands::download::download_resume,
+            commands::download::download_cancel,
+            commands::download::download_remove,
+            commands::download::download_status,
+            commands::download::download_list,
+            commands::cefr::cefr_levels,
+            commands::cefr::cefr_pos_of,
             commands::library::scan_folder,
             commands::library::verify_paths,
             commands::library::store_books,

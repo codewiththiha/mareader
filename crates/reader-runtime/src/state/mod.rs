@@ -1,6 +1,7 @@
 //! Reader-level reactive state, one file per domain.
 
 pub mod ai;
+pub mod cefr;
 pub mod document;
 pub mod gloss;
 pub mod search;
@@ -17,6 +18,7 @@ use reflow_core::typography::TextSettings;
 // Only the names the app reaches for by their short path are
 // re-exported.
 pub use ai::{AiSelectionState, SelectionDetail};
+pub use cefr::CefrState;
 pub use document::{DocumentState, NO_DOCUMENT, ReflowContent};
 pub use gloss::GlossState;
 pub use search::SearchState;
@@ -39,6 +41,8 @@ pub struct ReaderState {
     pub search: SearchState,
     pub ai_selection: AiSelectionState,
     pub gloss: GlossState,
+    /// The vocabulary highlighter's answered words and repaint bump.
+    pub cefr: CefrState,
     /// The pane's root element and host-given box.
     pub dom: crate::pane::dom::PaneDom,
     /// The pane's reflow measurement inbox.
@@ -55,6 +59,7 @@ impl ReaderState {
             search: SearchState::default(),
             ai_selection: AiSelectionState::default(),
             gloss: GlossState::default(),
+            cefr: CefrState::default(),
             dom: crate::pane::dom::PaneDom::default(),
             measure: crate::effects::reader::reflow_measure::MeasureInbox::default(),
         }

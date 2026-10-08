@@ -516,6 +516,7 @@ pub fn ReflowStreamLayout(
                                                             view! {
                                                                 <BlockView state=state block=block.clone() render=block_render(state) />
                                                                 <BlockSearchHits state=state block=index />
+                                                                <crate::components::cefr::reflow::BlockCefrMarks state=state block=index />
                                                             }
                                                                 .into_any()
                                                         }

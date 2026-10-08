@@ -35,6 +35,11 @@ pub fn mark_id(page: u32, stamp_ms: u64) -> String {
     format!("g{page}-{stamp_ms}")
 }
 
+/// A capture's unique id: the storage key plus its sequence number.
+pub fn capture_id(page: u32, stamp_ms: u64, seq: u64) -> String {
+    format!("{}c{seq}", mark_id(page, stamp_ms))
+}
+
 /// Where a mark sits: a page number plus a rect in unscaled page space.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct PageAnchor {
@@ -85,6 +90,13 @@ mod tests {
         // Pinned: marks already saved under this scheme are addressed by it.
         assert_eq!(mark_id(12, 1_700_000_000_123), "g12-1700000000123");
         assert_eq!(mark_id(1, 0), "g1-0");
+    }
+
+    #[test]
+    fn captures_in_one_millisecond_stay_distinct() {
+        // Pinned: batch captures share one millisecond.
+        assert_eq!(capture_id(2, 999, 7), "g2-999c7");
+        assert_ne!(capture_id(1, 999, 0), capture_id(1, 999, 1));
     }
 
     #[test]

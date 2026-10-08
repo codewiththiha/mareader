@@ -1,0 +1,50 @@
+/* The vocabulary highlighter: fixed-red ink, shared by both formats. */
+
+.cefr-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  /* Deliberately not the accent: a vocabulary mark is always red. */
+  --cefr-ink: #e11d48;
+}
+
+/* Marker stroke: flat translucent red; the reset drops UA chrome. */
+.cefr-layer .cefr-mark {
+  position: absolute;
+  z-index: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  appearance: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--cefr-ink) 34%, transparent);
+  mix-blend-mode: multiply;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cefr-layer .cefr-mark:hover,
+.cefr-layer .cefr-mark:focus-visible {
+  background: color-mix(in srgb, var(--cefr-ink) 52%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cefr-ink) 45%, transparent);
+  outline: none;
+}
+
+/* Multiply darkens light paper; screen keeps dark surfaces a glow. */
+:root.dark .cefr-layer .cefr-mark {
+  mix-blend-mode: screen;
+  background: color-mix(in srgb, var(--cefr-ink) 30%, transparent);
+}
+
+:root.dark .cefr-layer .cefr-mark:hover,
+:root.dark .cefr-layer .cefr-mark:focus-visible {
+  background: color-mix(in srgb, var(--cefr-ink) 46%, transparent);
+}
+
+/* A box must never join a text selection. */
+.cefr-layer .cefr-mark::selection {
+  background: transparent;
+}
