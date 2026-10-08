@@ -1,7 +1,7 @@
 //! The vocabulary highlighter's per-pane state: answered words and the
 //! repaint generation.
 
-use cefr_core::cache::LevelCache;
+use cefr_core::{LevelCache, band_of};
 use leptos::prelude::*;
 
 /// The open document's answered words, plus the bump that makes painted
@@ -18,18 +18,12 @@ impl CefrState {
     /// Merge one round's answers, raise the generation; all `try_` —
     /// answers may land after disposal.
     pub fn ingest(&self, words: Vec<String>, levels: Vec<Option<f64>>) {
-        let touched = {
-            let _ = self.levels.try_update_value(|cache| {
-                for (word, level) in words.into_iter().zip(levels) {
-                    let band = level.map(|l| l.round().clamp(1.0, 6.0) as u8).unwrap_or(0);
-                    cache.insert(&word, band);
-                }
-            });
-            true
-        };
-        if touched {
-            let _ = self.generation.try_update(|n| *n = n.wrapping_add(1));
-        }
+        let _ = self.levels.try_update_value(|cache| {
+            for (word, level) in words.into_iter().zip(levels) {
+                cache.insert(&word, band_of(level));
+            }
+        });
+        let _ = self.generation.try_update(|n| *n = n.wrapping_add(1));
     }
 
     /// Invalidate everything painted: the dataset arrived or the rule

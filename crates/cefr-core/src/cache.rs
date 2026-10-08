@@ -1,11 +1,19 @@
 //! The one level cache: answered words, so a revisited page re-derives
 //! from memory.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The bound, in entries; past it the cache clears whole, like the
 /// spot memo.
 pub const LEVEL_CACHE_CAP: usize = 8_192;
+
+/// The band a dataset answer stands for. Misses answer 0 — never asked,
+/// never marked — and the dataset's 1..=6 is clamped to the stored range.
+pub fn band_of(level: Option<f64>) -> u8 {
+    level
+        .map(|level| level.round().clamp(1.0, 6.0) as u8)
+        .unwrap_or(0)
+}
 
 /// Words answered by the dataset: key -> band; misses remember 0.
 #[derive(Clone, Default)]
@@ -26,11 +34,13 @@ impl LevelCache {
         self.0.insert(key.into(), band.min(6));
     }
 
-    /// The dataset keys among `candidates` the cache cannot answer yet.
+    /// The keys among `candidates` the cache cannot answer yet, first
+    /// seen first and never twice.
     pub fn misses<'a, I: IntoIterator<Item = &'a str>>(&self, candidates: I) -> Vec<String> {
+        let mut seen: HashSet<&str> = HashSet::new();
         let mut out: Vec<String> = Vec::new();
         for key in candidates {
-            if !self.0.contains_key(key) && !out.iter().any(|k| k == key) {
+            if !self.0.contains_key(key) && seen.insert(key) {
                 out.push(key.to_string());
             }
         }
@@ -123,6 +133,16 @@ mod tests {
         }
         cache.clear();
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn a_miss_is_band_zero_and_a_six_point_something_is_six() {
+        assert_eq!(band_of(None), 0);
+        assert_eq!(band_of(Some(1.0)), 1);
+        assert_eq!(band_of(Some(4.4)), 4);
+        assert_eq!(band_of(Some(4.6)), 5);
+        assert_eq!(band_of(Some(6.7)), 6);
+        assert_eq!(band_of(Some(-3.0)), 1);
     }
 
     #[test]

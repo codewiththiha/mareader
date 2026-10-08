@@ -1,6 +1,9 @@
 //! Red ink over hard words; a click hands each one to the AI card.
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
+
+use app_state::dom_contract::TEXT_LAYER_CLASS;
 
 use self::layer::CefrBox;
 
@@ -66,6 +69,44 @@ pub(crate) fn publish(sink: &Sink, painted: Vec<CefrBox>) {
             slot.boxes = painted;
         }
     });
+}
+
+/// One page's text layer, read once: the joined text, and each span's
+/// element with the character range it covers.
+pub(crate) struct LayerText {
+    pub text: String,
+    pub spans: Vec<(web_sys::Element, usize, usize)>,
+}
+
+/// Read a text layer, or `None` while it is absent.
+///
+/// The character count is carried forward rather than re-taken per span:
+/// counting from the start each time made a dense page's walk quadratic in
+/// its own length.
+pub(crate) fn read_text_layer(host: &web_sys::Element) -> Option<LayerText> {
+    let layer = host
+        .query_selector(&format!(".{TEXT_LAYER_CLASS}"))
+        .ok()
+        .flatten()?;
+    let list = layer.query_selector_all("span").ok()?;
+    let mut text = String::new();
+    let mut spans: Vec<(web_sys::Element, usize, usize)> =
+        Vec::with_capacity(list.length() as usize);
+    let mut chars = 0usize;
+    for index in 0..list.length() {
+        let Some(node) = list.get(index) else {
+            continue;
+        };
+        let Ok(span) = node.dyn_into::<web_sys::Element>() else {
+            continue;
+        };
+        let piece = span.text_content().unwrap_or_default();
+        let start = chars;
+        chars += piece.chars().count();
+        text.push_str(&piece);
+        spans.push((span, start, chars));
+    }
+    (!spans.is_empty()).then_some(LayerText { text, spans })
 }
 
 /// Fold mark ids into one suppression fingerprint; any edit moves it.
