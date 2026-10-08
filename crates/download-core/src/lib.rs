@@ -1,9 +1,9 @@
-//! Background downloads: resumable and pausable by id.
+//! Background downloads: resumable, pausable, mirror-rotating.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,16 +11,35 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-/// A download the frontend asks for. `directory` is host-data-relative;
-/// the file lands at `<data_dir>/<directory>/<file_name>`.
+/// A download a feature asks for. `directory` is host-data-relative; the
+/// file lands at `<data_dir>/<directory>/<file_name>`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadRequest {
     /// The key every later call and event uses. One download per id.
     pub id: String,
-    pub url: String,
+    /// Direct links to the one file, preferred first; a failure rotates.
+    pub urls: Vec<String>,
     pub directory: Option<String>,
     pub file_name: String,
+}
+
+/// Where a download is; the wire vocabulary a frontend switches on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Phase {
+    Downloading,
+    Paused,
+    Done,
+    Failed,
+    Cancelled,
+}
+
+impl Phase {
+    /// Whether the transport is finished with this download.
+    pub fn terminal(self) -> bool {
+        matches!(self, Self::Done | Self::Failed | Self::Cancelled)
+    }
 }
 
 /// The wire snapshot of one download.
@@ -28,8 +47,7 @@ pub struct DownloadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct Progress {
     pub id: String,
-    /// `downloading` | `paused` | `done` | `failed` | `cancelled`.
-    pub phase: String,
+    pub phase: Phase,
     pub received: u64,
     pub total: Option<u64>,
     pub message: Option<String>,
@@ -37,18 +55,13 @@ pub struct Progress {
     pub path: Option<String>,
 }
 
-/// The per-client progress hook, called outside the slot lock.
+/// Every snapshot, terminal ones included: how a feature learns where
+/// the file landed.
 pub type ProgressHook = Arc<dyn Fn(&Progress) + Send + Sync>;
-
-impl Progress {
-    fn terminal(&self) -> bool {
-        matches!(self.phase.as_str(), "done" | "failed" | "cancelled")
-    }
-}
 
 /// The environment a downloader lives in: threading, events, storage.
 pub trait Host: Clone + Send + Sync + 'static {
-    /// Run a task off the caller's thread.
+    /// Run a task off the caller's thread, on a tokio-compatible runtime.
     fn spawn(&self, task: impl Future<Output = ()> + Send + 'static);
     /// Hand one snapshot to the feature's event channel.
     fn publish(&self, progress: &Progress);
@@ -59,11 +72,17 @@ pub trait Host: Clone + Send + Sync + 'static {
 /// Per-download state: the wire snapshot plus the transport's flags.
 struct Slot {
     progress: Progress,
-    url: String,
+    urls: Vec<String>,
     dest: PathBuf,
     cancel: Arc<AtomicBool>,
     pause: Arc<AtomicBool>,
-    on_progress: Option<ProgressHook>,
+    on_progress: ProgressHook,
+}
+
+/// The transport's own copy of a slot's inputs, read once per attempt.
+struct Target {
+    urls: Vec<String>,
+    dest: PathBuf,
 }
 
 /// One attempt's outcome.
@@ -74,15 +93,20 @@ enum Attempt {
     Restart,
     /// Stop for now; the partial stays and `resume` continues from it.
     Paused,
-    /// The user asked to stop; the partial stays.
+    /// The user asked to stop, or the record was dropped mid-flight.
     Cancelled,
-    /// A network or server failure; the loop retries from the bytes on
-    /// disk.
+    /// A network or server failure; the next attempt rotates mirrors.
     Retry(String),
 }
 
-/// Retry budget; the backoff doubles per attempt, capped.
-const MAX_ATTEMPTS: u32 = 4;
+/// Attempts per mirror; the backoff doubles per attempt, capped.
+const ATTEMPTS_PER_URL: u32 = 2;
+
+/// The whole budget: every mirror gets its own tries.
+fn attempts_budget(mirrors: usize) -> u32 {
+    (mirrors.max(1) as u32).saturating_mul(ATTEMPTS_PER_URL)
+}
+
 fn backoff(attempt: u32) -> Duration {
     Duration::from_millis(500u64.saturating_mul(1 << attempt.min(4)))
 }
@@ -90,6 +114,9 @@ fn backoff(attempt: u32) -> Duration {
 /// Progress snapshots are throttled to this pace; a phase change always
 /// publishes.
 const EMIT_EVERY: Duration = Duration::from_millis(100);
+
+/// A body that stops delivering for this long is a dead connection.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The process-wide downloader, shared by every feature and host.
 #[derive(Clone, Default)]
@@ -102,23 +129,27 @@ impl Downloads {
         Self::default()
     }
 
-    /// Begin `req`; an active id is refused.
+    /// Begin `req`; an active id is refused. The hook sees every
+    /// snapshot, including the last.
     pub fn start<H: Host>(
         &self,
         host: &H,
         req: DownloadRequest,
-        on_progress: Option<ProgressHook>,
+        on_progress: ProgressHook,
     ) -> Result<(), String> {
+        if req.urls.is_empty() {
+            return Err(format!("download '{}' has no link", req.id));
+        }
         let dest = Self::dest(host, &req)?;
         let mut slots = self.slots.lock().map_err(|_| "slots lock poisoned")?;
         if let Some(slot) = slots.get(&req.id)
-            && !slot.progress.terminal()
+            && !slot.progress.phase.terminal()
         {
             return Err(format!("download '{}' is already active", req.id));
         }
         let progress = Progress {
             id: req.id.clone(),
-            phase: "downloading".into(),
+            phase: Phase::Downloading,
             received: 0,
             total: None,
             message: None,
@@ -128,7 +159,7 @@ impl Downloads {
             req.id.clone(),
             Slot {
                 progress,
-                url: req.url,
+                urls: req.urls,
                 dest,
                 cancel: Arc::new(AtomicBool::new(false)),
                 pause: Arc::new(AtomicBool::new(false)),
@@ -136,7 +167,7 @@ impl Downloads {
             },
         );
         drop(slots);
-        self.publish(host, &req.id, None);
+        self.emit(host, &req.id, None);
         let (downloads, task_host, id) = (self.clone(), host.clone(), req.id);
         host.spawn(async move {
             downloads.run(&task_host, id).await;
@@ -146,13 +177,13 @@ impl Downloads {
 
     /// Stop reading; the partial stays and `resume` continues from it.
     pub fn pause(&self, id: &str) {
-        if let Some(slot) = self
+        if let Some(pause) = self
             .slots
             .lock()
             .ok()
             .and_then(|mut slots| slots.get_mut(id).map(|s| s.pause.clone()))
         {
-            slot.store(true, Ordering::SeqCst);
+            pause.store(true, Ordering::SeqCst);
         }
     }
 
@@ -163,14 +194,13 @@ impl Downloads {
             let Some(slot) = slots.get_mut(id) else {
                 return Err(format!("no download '{id}'"));
             };
-            if slot.progress.phase != "paused" {
+            if slot.progress.phase != Phase::Paused {
                 return Err(format!("download '{id}' is not paused"));
             }
             slot.pause.store(false, Ordering::SeqCst);
-            slot.progress.phase = "downloading".into();
             slot.progress.message = None;
         }
-        self.publish(host, id, None);
+        self.emit(host, id, Some(Phase::Downloading));
         let (downloads, task_host, id) = (self.clone(), host.clone(), id.to_string());
         host.spawn(async move {
             downloads.run(&task_host, id).await;
@@ -180,27 +210,35 @@ impl Downloads {
 
     /// Ask a running download to stop; the partial stays for a later
     /// `start`'s range resume.
-    pub fn cancel(&self, id: &str) {
-        if let Some(slot) = self
+    pub fn cancel<H: Host>(&self, host: &H, id: &str) {
+        let idle = self
             .slots
             .lock()
             .ok()
-            .and_then(|mut slots| slots.get_mut(id).map(|s| s.cancel.clone()))
-        {
-            slot.store(true, Ordering::SeqCst);
+            .and_then(|mut slots| {
+                let slot = slots.get_mut(id)?;
+                slot.cancel.store(true, Ordering::SeqCst);
+                Some(slot.progress.phase == Phase::Paused)
+            })
+            .unwrap_or(false);
+        // A paused transport already returned, so this call settles
+        // the phase.
+        if idle {
+            self.emit(host, id, Some(Phase::Cancelled));
         }
     }
 
-    /// Drop a download's record and its partial file.
+    /// Drop a download's record, its partial and its resume sidecar.
     pub fn remove(&self, id: &str) {
         let dest = self.slots.lock().ok().and_then(|mut slots| {
-            let dest = slots.get(id).map(|s| s.dest.clone());
-            if dest.is_some() {
-                slots.remove(id);
-            }
-            dest
+            let slot = slots.remove(id)?;
+            // Flag first: the next chunk check closes the handle on
+            // the file this call deletes.
+            slot.cancel.store(true, Ordering::SeqCst);
+            Some(slot.dest)
         });
         if let Some(dest) = dest {
+            drop_sidecar(&dest);
             let _ = std::fs::remove_file(dest);
         }
     }
@@ -228,9 +266,9 @@ impl Downloads {
         Ok(dir.join(&req.file_name))
     }
 
-    /// Update a slot's phase, then publish outside the lock.
-    fn publish<H: Host>(&self, host: &H, id: &str, phase: Option<&str>) {
-        let snapshot = {
+    /// One snapshot out: the host's bus and the dev's hook, from one lock.
+    fn emit<H: Host>(&self, host: &H, id: &str, phase: Option<Phase>) {
+        let (snapshot, hook) = {
             let Ok(mut slots) = self.slots.lock() else {
                 return;
             };
@@ -238,50 +276,68 @@ impl Downloads {
                 return;
             };
             if let Some(phase) = phase {
-                slot.progress.phase = phase.to_string();
+                slot.progress.phase = phase;
             }
-            slot.progress.clone()
+            (slot.progress.clone(), slot.on_progress.clone())
         };
         host.publish(&snapshot);
-        if let Some(cb) = self
-            .slots
-            .lock()
-            .ok()
-            .and_then(|slots| slots.get(id).and_then(|s| s.on_progress.clone()))
+        hook(&snapshot);
+    }
+
+    /// Stamp the failure on the slot, then publish it.
+    fn fail<H: Host>(&self, host: &H, id: &str, message: String) {
+        if let Ok(mut slots) = self.slots.lock()
+            && let Some(slot) = slots.get_mut(id)
         {
-            cb(&snapshot);
+            slot.progress.message = Some(message);
         }
+        self.emit(host, id, Some(Phase::Failed));
+    }
+
+    /// Publish completion with the finished file's path.
+    fn finish<H: Host>(&self, host: &H, id: &str) {
+        if let Ok(mut slots) = self.slots.lock()
+            && let Some(slot) = slots.get_mut(id)
+        {
+            slot.progress.path = Some(slot.dest.display().to_string());
+        }
+        self.emit(host, id, Some(Phase::Done));
+    }
+
+    /// The transport's inputs for one attempt, or `None` once removed.
+    fn target(&self, id: &str) -> Option<Target> {
+        let slots = self.slots.lock().ok()?;
+        let slot = slots.get(id)?;
+        Some(Target {
+            urls: slot.urls.clone(),
+            dest: slot.dest.clone(),
+        })
     }
 
     /// One transport: attempts with backoff, then the completion publish.
     async fn run<H: Host>(&self, host: &H, id: String) {
         let mut attempt: u32 = 0;
         loop {
-            let slot_view = self
-                .slots
-                .lock()
-                .ok()
-                .and_then(|slots| slots.get(&id).map(|s| (s.url.clone(), s.dest.clone())));
-            let Some((url, dest)) = slot_view else {
+            let Some(target) = self.target(&id) else {
                 return; // removed mid-flight
             };
-            match attempt_once(self, host, &id, &url, &dest).await {
+            match attempt_once(self, host, &id, &target, attempt).await {
                 Attempt::Done => {
-                    self.finish(host, &id, "done");
+                    self.finish(host, &id);
                     return;
                 }
                 Attempt::Paused => {
-                    self.publish(host, &id, Some("paused"));
+                    self.emit(host, &id, Some(Phase::Paused));
                     return;
                 }
                 Attempt::Cancelled => {
-                    self.publish(host, &id, Some("cancelled"));
+                    self.emit(host, &id, Some(Phase::Cancelled));
                     return;
                 }
                 Attempt::Restart => continue,
                 Attempt::Retry(message) => {
                     attempt += 1;
-                    if attempt >= MAX_ATTEMPTS {
+                    if attempt >= attempts_budget(target.urls.len()) {
                         self.fail(host, &id, format!("download failed: {message}"));
                         return;
                     }
@@ -291,52 +347,62 @@ impl Downloads {
         }
     }
 
-    fn fail<H: Host>(&self, host: &H, id: &str, message: String) {
+    /// The two stop flags of one download, cloned for the stream loop.
+    fn flags(&self, id: &str) -> Option<(Arc<AtomicBool>, Arc<AtomicBool>)> {
+        self.slots
+            .lock()
+            .ok()?
+            .get(id)
+            .map(|s| (s.cancel.clone(), s.pause.clone()))
+    }
+
+    fn note_bytes<H: Host>(&self, host: &H, id: &str, received: u64, total: Option<u64>) {
         if let Ok(mut slots) = self.slots.lock()
             && let Some(slot) = slots.get_mut(id)
         {
-            slot.progress.phase = "failed".into();
-            slot.progress.message = Some(message);
+            slot.progress.received = received;
+            slot.progress.total = total;
         }
-        self.publish(host, id, None);
-    }
-
-    /// Stamp `phase` on the slot and publish it with the final path.
-    fn finish<H: Host>(&self, host: &H, id: &str, phase: &'static str) {
-        let snapshot = {
-            let Ok(mut slots) = self.slots.lock() else {
-                return;
-            };
-            let Some(slot) = slots.get_mut(id) else {
-                return;
-            };
-            slot.progress.phase = phase.into();
-            slot.progress.path = Some(slot.dest.display().to_string());
-            slot.progress.clone()
-        };
-        host.publish(&snapshot);
+        self.emit(host, id, None);
     }
 }
 
-/// One HTTP attempt, resuming from whatever the partial already holds.
+/// One attempt against one mirror; a partial is reused only when
+/// proven.
 async fn attempt_once<H: Host>(
     downloads: &Downloads,
     host: &H,
     id: &str,
-    url: &str,
-    dest: &PathBuf,
+    target: &Target,
+    attempt: u32,
 ) -> Attempt {
-    let existing = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+    let url = &target.urls[attempt as usize % target.urls.len()];
+    let dest = &target.dest;
+    // Read first: a cancel during a backoff must not pay another
+    // round trip.
+    let Some((cancel, pause)) = downloads.flags(id) else {
+        return Attempt::Cancelled;
+    };
+    // An unprovable partial cannot be appended to, so this attempt
+    // starts over.
+    let validator = read_validator(dest);
+    let mut existing = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+    if existing > 0 && validator.is_none() {
+        existing = 0;
+    }
     let client = match reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
+        .read_timeout(READ_TIMEOUT)
         .build()
     {
         Ok(client) => client,
         Err(e) => return Attempt::Retry(format!("client: {e}")),
     };
     let mut request = client.get(url);
-    if existing > 0 {
-        request = request.header("Range", format!("bytes={existing}-"));
+    if let (Some(validator), true) = (validator.as_deref(), existing > 0) {
+        request = request
+            .header("Range", format!("bytes={existing}-"))
+            .header("If-Range", validator);
     }
     let response = match request.send().await {
         Ok(response) => response,
@@ -355,16 +421,18 @@ async fn attempt_once<H: Host>(
                     .and_then(|v| v.to_str().ok()),
             );
         }
-        // The server ignored the range: the partial is overwritten.
+        // No range asked, or `If-Range` missed: the partial and its
+        // validator are both replaced.
         reqwest::StatusCode::OK => total = response.content_length(),
         reqwest::StatusCode::RANGE_NOT_SATISFIABLE => {
             if existing > 0 {
+                drop_sidecar(dest);
                 let _ = std::fs::remove_file(dest);
                 return Attempt::Restart;
             }
             return Attempt::Retry("range not satisfiable".into());
         }
-        status => return Attempt::Retry(format!("server said {status}")),
+        status => return Attempt::Retry(format!("{url} said {status}")),
     }
 
     let opened = if append {
@@ -375,38 +443,40 @@ async fn attempt_once<H: Host>(
     let Ok(mut file) = opened else {
         return Attempt::Retry("partial unavailable".into());
     };
+    // Written before the body: a crash still leaves a provable
+    // partial.
+    match validator_of(response.headers()) {
+        Some(fresh) => write_validator(dest, &fresh),
+        None => drop_sidecar(dest),
+    }
     let mut received = if append { existing } else { 0 };
     downloads.note_bytes(host, id, received, total);
 
-    let flags = downloads.flags(id);
     let mut last_emit = Instant::now();
     use futures_util::StreamExt;
     let mut stream = response.bytes_stream();
-    let mut buffer = Vec::with_capacity(64 * 1024);
     loop {
-        if let Some((cancel, pause)) = &flags {
-            if cancel.load(Ordering::SeqCst) {
-                let _ = file.flush();
-                return Attempt::Cancelled;
-            }
-            if pause.load(Ordering::SeqCst) {
-                let _ = file.flush();
-                return Attempt::Paused;
-            }
+        if cancel.load(Ordering::SeqCst) {
+            let _ = file.flush();
+            return Attempt::Cancelled;
         }
-        buffer.clear();
+        if pause.load(Ordering::SeqCst) {
+            let _ = file.flush();
+            return Attempt::Paused;
+        }
         match stream.next().await {
-            Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
+            Some(Ok(chunk)) => {
+                received += chunk.len() as u64;
+                if file.write_all(&chunk).is_err() {
+                    return Attempt::Retry("write partial".into());
+                }
+            }
             Some(Err(e)) => {
                 // Keep what landed; the retry resumes from it.
                 let _ = file.flush();
                 return Attempt::Retry(format!("stream: {e}"));
             }
             None => break,
-        }
-        received += buffer.len() as u64;
-        if file.write_all(&buffer).is_err() {
-            return Attempt::Retry("write partial".into());
         }
         if last_emit.elapsed() >= EMIT_EVERY {
             last_emit = Instant::now();
@@ -424,28 +494,40 @@ async fn attempt_once<H: Host>(
     {
         return Attempt::Retry(format!("size {received} of {total}"));
     }
+    drop_sidecar(dest);
     Attempt::Done
 }
 
-impl Downloads {
-    /// The two stop flags of one download, cloned for the stream loop.
-    fn flags(&self, id: &str) -> Option<(Arc<AtomicBool>, Arc<AtomicBool>)> {
-        self.slots
-            .lock()
-            .ok()?
-            .get(id)
-            .map(|s| (s.cancel.clone(), s.pause.clone()))
-    }
+/// The header a later resume can send back as `If-Range`.
+fn validator_of(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    headers
+        .get("etag")
+        .or_else(|| headers.get("last-modified"))
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+}
 
-    fn note_bytes<H: Host>(&self, host: &H, id: &str, received: u64, total: Option<u64>) {
-        if let Ok(mut slots) = self.slots.lock()
-            && let Some(slot) = slots.get_mut(id)
-        {
-            slot.progress.received = received;
-            slot.progress.total = total;
-        }
-        self.publish(host, id, None);
-    }
+/// The partial's validator, one line, sent verbatim as `If-Range`.
+fn sidecar(dest: &Path) -> PathBuf {
+    let mut name = dest.as_os_str().to_os_string();
+    name.push(".mareader-resume");
+    PathBuf::from(name)
+}
+
+fn read_validator(dest: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(sidecar(dest)).ok()?;
+    let line = text.lines().next()?.trim();
+    (!line.is_empty()).then(|| line.to_string())
+}
+
+fn write_validator(dest: &Path, validator: &str) {
+    let _ = std::fs::write(sidecar(dest), format!("{validator}\n"));
+}
+
+fn drop_sidecar(dest: &Path) {
+    let _ = std::fs::remove_file(sidecar(dest));
 }
 
 /// The total from a `Content-Range: bytes a-b/total` header.
@@ -478,18 +560,65 @@ mod tests {
     }
 
     #[test]
-    fn the_wire_shape_is_camel_case() {
+    fn the_wire_shape_is_camel_case_with_lowercase_phases() {
         let json = serde_json::to_string(&Progress {
             id: "x".into(),
-            phase: "downloading".into(),
+            phase: Phase::Downloading,
             received: 1,
             total: Some(2),
             message: None,
             path: None,
         })
         .unwrap();
+        assert!(json.contains("\"phase\":\"downloading\""));
         assert!(json.contains("\"received\":1"));
         assert!(json.contains("\"total\":2"));
         assert!(!json.contains("file_name"));
+    }
+
+    #[test]
+    fn only_the_last_three_phases_are_terminal() {
+        assert!(!Phase::Downloading.terminal());
+        assert!(!Phase::Paused.terminal());
+        assert!(Phase::Done.terminal());
+        assert!(Phase::Failed.terminal());
+        assert!(Phase::Cancelled.terminal());
+    }
+
+    #[test]
+    fn every_mirror_gets_its_own_attempts() {
+        assert_eq!(attempts_budget(1), 2);
+        assert_eq!(attempts_budget(3), 6);
+        // A linkless request is refused earlier; the budget still
+        // must not.
+        assert_eq!(attempts_budget(0), 2);
+    }
+
+    #[test]
+    fn attempts_walk_the_mirror_list_and_wrap() {
+        let urls = ["a", "b", "c"];
+        let pick = |attempt: u32| urls[attempt as usize % urls.len()];
+        assert_eq!(pick(0), "a");
+        assert_eq!(pick(1), "b");
+        assert_eq!(pick(3), "a");
+        assert_eq!(pick(5), "c");
+    }
+
+    #[test]
+    fn the_sidecar_round_trips_one_validator() {
+        let dir = std::env::temp_dir().join(format!("dl_core_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let dest = dir.join("file.parquet.part");
+        assert_eq!(read_validator(&dest), None);
+        write_validator(&dest, "\"68a7c2-1e5\"");
+        assert_eq!(read_validator(&dest).as_deref(), Some("\"68a7c2-1e5\""));
+        write_validator(&dest, "Wed, 21 Oct 2015 07:28:00 GMT");
+        assert_eq!(
+            read_validator(&dest).as_deref(),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT")
+        );
+        drop_sidecar(&dest);
+        assert_eq!(read_validator(&dest), None);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

@@ -26,12 +26,18 @@ pub fn cefr_dataset_cancel(app: AppHandle) {
 
 /// The dataset's POS verdict for one word in its sentence, at click time.
 #[tauri::command]
-pub fn cefr_pos_of(
+pub async fn cefr_pos_of(
     app: AppHandle,
     word: String,
     context: String,
 ) -> Result<Option<crate::cefr::PosAnswer>, String> {
-    app.state::<CefrManager>().pos_of(&app, &word, &context)
+    // Blocking like the batch lookup: sqlite, and a first click's
+    // model decode.
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<CefrManager>().pos_of(&app, &word, &context)
+    })
+    .await
+    .map_err(|e| format!("pos worker: {e}"))?
 }
 
 /// Stop reading the stream; the partial stays for a resume.

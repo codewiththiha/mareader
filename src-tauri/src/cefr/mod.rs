@@ -1,19 +1,30 @@
 //! The dataset's backend: download, parquet-to-sqlite rebuild, lookups.
 
+use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::download::{AppDownloads, DownloadRequest, TauriHost};
+use crate::download::{AppDownloads, DownloadRequest, Phase as WirePhase, Progress, TauriHost};
 
-/// The built dataset parquet, served straight from the cefr-rs repository.
-pub const DATASET_URL: &str =
-    "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/data/cefr.zstd.parquet";
+/// The parquet's mirrors, preferred first: a client that blocks one
+/// host still reaches the file.
+const DATASET_URLS: [&str; 3] = [
+    "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/data/cefr.zstd.parquet",
+    "https://cdn.jsdelivr.net/gh/codewiththiha/cefr-rs@main/data/cefr.zstd.parquet",
+    "https://github.com/codewiththiha/cefr-rs/raw/main/data/cefr.zstd.parquet",
+];
+
+/// The runtime tagger model's mirrors, in the same order.
+const MODEL_URLS: [&str; 3] = [
+    "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/models/en_tokenizer.bin.zst",
+    "https://cdn.jsdelivr.net/gh/codewiththiha/cefr-rs@main/models/en_tokenizer.bin.zst",
+    "https://github.com/codewiththiha/cefr-rs/raw/main/models/en_tokenizer.bin.zst",
+];
 
 /// The event the webview subscribes to for every dataset phase change.
 pub const PROGRESS_EVENT: &str = "cefr-dataset-progress";
@@ -21,12 +32,16 @@ pub const PROGRESS_EVENT: &str = "cefr-dataset-progress";
 /// The generic downloader's key for this dataset's parquet.
 const DOWNLOAD_ID: &str = "cefr-dataset";
 
-/// The runtime tagger model, served from the cefr-rs repository.
-pub const MODEL_URL: &str =
-    "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/models/en_tokenizer.bin.zst";
-
 /// The generic downloader's key for the tagger model.
 const MODEL_ID: &str = "cefr-model";
+
+/// The model file's name, under the dataset directory.
+const MODEL_FILE: &str = "en_tokenizer.bin.zst";
+
+/// One download's links, as the transport takes them.
+fn links(mirrors: [&str; 3]) -> Vec<String> {
+    mirrors.iter().map(|url| url.to_string()).collect()
+}
 
 /// The dataset's POS verdict for one clicked word.
 #[derive(Debug, Clone, Serialize)]
@@ -55,64 +70,47 @@ pub struct DatasetStatus {
     pub total: Option<u64>,
     pub words: Option<u64>,
     pub message: Option<String>,
+    /// The POS engine's state: `absent` | `downloading` | `ready` |
+    /// `failed`.
+    pub model: String,
 }
 
-/// The dataset's phase, guarded so commands and the supervise task agree.
+/// The dataset's phase, guarded so commands and the transport's hooks
+/// agree.
 enum Phase {
     Absent,
     Downloading { received: u64, total: Option<u64> },
-    Paused,
+    Paused { received: u64, total: Option<u64> },
     Converting,
     Ready { words: u64 },
     Failed { message: String },
 }
 
 impl Phase {
-    /// The wire snapshot of this phase.
+    /// The wire snapshot of this phase, before the model's own state is
+    /// folded in.
     fn snapshot(&self) -> DatasetStatus {
-        match self {
-            Phase::Absent => DatasetStatus {
-                phase: "absent".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: None,
+        let (phase, received, total) = match self {
+            Phase::Absent => ("absent", 0, None),
+            Phase::Downloading { received, total } => ("downloading", *received, *total),
+            Phase::Paused { received, total } => ("paused", *received, *total),
+            Phase::Converting => ("converting", 0, None),
+            Phase::Ready { .. } => ("ready", 0, None),
+            Phase::Failed { .. } => ("failed", 0, None),
+        };
+        DatasetStatus {
+            phase: phase.into(),
+            received,
+            total,
+            words: match self {
+                Phase::Ready { words } => Some(*words),
+                _ => None,
             },
-            Phase::Downloading { received, total } => DatasetStatus {
-                phase: "downloading".into(),
-                received: *received,
-                total: *total,
-                words: None,
-                message: None,
+            message: match self {
+                Phase::Failed { message } => Some(message.clone()),
+                _ => None,
             },
-            Phase::Paused => DatasetStatus {
-                phase: "paused".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: None,
-            },
-            Phase::Converting => DatasetStatus {
-                phase: "converting".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: None,
-            },
-            Phase::Ready { words } => DatasetStatus {
-                phase: "ready".into(),
-                received: 0,
-                total: None,
-                words: Some(*words),
-                message: None,
-            },
-            Phase::Failed { message } => DatasetStatus {
-                phase: "failed".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: Some(message.clone()),
-            },
+            model: "absent".into(),
         }
     }
 }
@@ -162,6 +160,10 @@ impl CefrManager {
         Ok(Self::dir(app)?.join("cefr.db.tmp"))
     }
 
+    fn model_path(app: &AppHandle) -> Result<PathBuf, String> {
+        Ok(Self::dir(app)?.join(MODEL_FILE))
+    }
+
     /// The live phase, or the disk when this process has not touched it yet.
     pub fn status(&self, app: &AppHandle) -> Result<DatasetStatus, String> {
         let mut guard = self.phase.lock().map_err(|_| "phase lock poisoned")?;
@@ -172,7 +174,7 @@ impl CefrManager {
                 Err(message) => Phase::Failed { message },
             };
         }
-        Ok(guard.snapshot())
+        Ok(with_model(app, guard.snapshot()))
     }
 
     /// A finished dataset answers a count and the version mark; anything
@@ -193,14 +195,17 @@ impl CefrManager {
         Ok(words.max(0) as u64)
     }
 
-    /// Hand the transport to the generic downloader, then supervise the
-    /// dataset's own stages.
+    /// Hand both files to the downloader; their snapshots drive the
+    /// stages, so nothing here polls.
     pub fn begin_download(&self, app: AppHandle) -> Result<(), String> {
         {
             let mut guard = self.phase.lock().map_err(|_| "phase lock poisoned")?;
             match &*guard {
-                Phase::Downloading { .. } | Phase::Paused | Phase::Converting => {
+                Phase::Downloading { .. } | Phase::Paused { .. } | Phase::Converting => {
                     return Err("a download is already running".into());
+                }
+                Phase::Ready { .. } => {
+                    return Err("the dataset is already installed".into());
                 }
                 _ => {}
             }
@@ -209,39 +214,27 @@ impl CefrManager {
                 total: None,
             };
         }
-        let _ = app.emit(PROGRESS_EVENT, guard_snapshot(self));
-        let on_progress = {
-            let app = app.clone();
-            Arc::new(move |p: &crate::download::Progress| {
-                let phase = match p.phase.as_str() {
-                    "downloading" => Phase::Downloading {
-                        received: p.received,
-                        total: p.total,
-                    },
-                    "paused" => Phase::Paused,
-                    _ => return,
-                };
-                set_phase(&app, phase);
-            })
-        };
-        let request = DownloadRequest {
+        republish(&app);
+        let host = TauriHost::new(app.clone());
+        let dataset = DownloadRequest {
             id: DOWNLOAD_ID.into(),
-            url: DATASET_URL.into(),
+            urls: links(DATASET_URLS),
             directory: Some("cefr".into()),
             file_name: "cefr.parquet.part".into(),
         };
-        let host = TauriHost::new(app.clone());
         app.state::<AppDownloads>()
-            .start(&host, request, Some(on_progress))?;
-        // The click-time tagger model rides along; one tap equips both.
+            .start(&host, dataset, dataset_hook(app.clone()))?;
+        // The tagger rides along; a model that lands late only delays
+        // a click.
         let model = DownloadRequest {
             id: MODEL_ID.into(),
-            url: MODEL_URL.into(),
+            urls: links(MODEL_URLS),
             directory: Some("cefr".into()),
-            file_name: "en_tokenizer.bin.zst".into(),
+            file_name: MODEL_FILE.into(),
         };
-        let _ = app.state::<AppDownloads>().start(&host, model, None);
-        tauri::async_runtime::spawn(supervise(app));
+        let _ = app
+            .state::<AppDownloads>()
+            .start(&host, model, model_hook(app.clone()));
         Ok(())
     }
 
@@ -258,7 +251,8 @@ impl CefrManager {
 
     /// Ask the transport to stop; the partial stays for the next start.
     pub fn cancel(&self, app: &AppHandle) {
-        app.state::<AppDownloads>().cancel(DOWNLOAD_ID);
+        app.state::<AppDownloads>()
+            .cancel(&TauriHost::new(app.clone()), DOWNLOAD_ID);
     }
 
     /// Drop the dataset and its partials; the next download starts over.
@@ -269,16 +263,19 @@ impl CefrManager {
             *guard = Phase::Absent;
         }
         app.state::<AppDownloads>().remove(DOWNLOAD_ID);
-        if let Ok(db) = Self::db_final(app) {
-            let _ = std::fs::remove_file(db);
-        }
-        if let Ok(tmp) = Self::db_building(app) {
-            let _ = std::fs::remove_file(tmp);
+        for path in [
+            Self::parquet_partial(app),
+            Self::db_final(app),
+            Self::db_building(app),
+        ] {
+            if let Ok(path) = path {
+                let _ = std::fs::remove_file(path);
+            }
         }
         if let Ok(mut slot) = self.db.lock() {
             *slot = None;
         }
-        let _ = app.emit(PROGRESS_EVENT, guard_snapshot(self));
+        republish(app);
         Ok(())
     }
 
@@ -307,12 +304,15 @@ impl CefrManager {
         let found = db
             .lookup_batch(&pairs)
             .map_err(|e| format!("lookup: {e}"))?;
+        // The batch key's tag half is always empty here, so the word
+        // alone answers.
+        let by_word: HashMap<&str, f64> = found
+            .iter()
+            .map(|((word, _), level)| (word.as_str(), *level))
+            .collect();
         let mut out: Vec<Option<f64>> = normalized
             .iter()
-            .map(|key| {
-                key.as_ref()
-                    .and_then(|k| found.get(&(k.clone(), String::new())).copied())
-            })
+            .map(|key| key.as_deref().and_then(|k| by_word.get(k).copied()))
             .collect();
         out.resize(words.len(), None);
         Ok(out)
@@ -365,17 +365,19 @@ impl CefrManager {
         if let Some(tagger) = slot.as_ref() {
             return Ok(Some(tagger.clone()));
         }
-        let model = Self::dir(app)?.join("en_tokenizer.bin.zst");
+        let model = Self::model_path(app)?;
         if !model.is_file() {
             // Self-heal: ask the downloader for it; a later click loads it.
             let request = DownloadRequest {
                 id: MODEL_ID.into(),
-                url: MODEL_URL.into(),
+                urls: links(MODEL_URLS),
                 directory: Some("cefr".into()),
-                file_name: "en_tokenizer.bin.zst".into(),
+                file_name: MODEL_FILE.into(),
             };
             let host = TauriHost::new(app.clone());
-            let _ = app.state::<AppDownloads>().start(&host, request, None);
+            let _ = app
+                .state::<AppDownloads>()
+                .start(&host, request, model_hook(app.clone()));
             return Ok(None);
         }
         let tagger = Arc::new(
@@ -384,6 +386,43 @@ impl CefrManager {
         *slot = Some(tagger.clone());
         Ok(Some(tagger))
     }
+}
+
+/// The dataset's own stage driver: one call per transport snapshot.
+fn dataset_hook(app: AppHandle) -> crate::download::ProgressHook {
+    Arc::new(move |p: &Progress| match p.phase {
+        WirePhase::Downloading => set_phase(
+            &app,
+            Phase::Downloading {
+                received: p.received,
+                total: p.total,
+            },
+        ),
+        WirePhase::Paused => set_phase(
+            &app,
+            Phase::Paused {
+                received: p.received,
+                total: p.total,
+            },
+        ),
+        WirePhase::Done => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(build_dataset(app));
+        }
+        WirePhase::Failed => {
+            finish_failed(&app, p.message.as_deref().unwrap_or("the download failed"));
+        }
+        WirePhase::Cancelled => set_phase(&app, Phase::Absent),
+    })
+}
+
+/// The sheet shows the engine's phase, so only its endings emit.
+fn model_hook(app: AppHandle) -> crate::download::ProgressHook {
+    Arc::new(move |p: &Progress| {
+        if p.phase.terminal() {
+            republish(&app);
+        }
+    })
 }
 
 /// A readable word class for a Penn tag.
@@ -420,30 +459,9 @@ impl Default for CefrManager {
     }
 }
 
-/// Watch the transport until it settles, then run the dataset's stages.
-async fn supervise(app: AppHandle) {
-    let downloads = app.state::<AppDownloads>();
-    loop {
-        let Some(progress) = downloads.status(DOWNLOAD_ID) else {
-            return; // the record went away (remove): nothing to stage
-        };
-        match progress.phase.as_str() {
-            "downloading" | "paused" => {}
-            "cancelled" => {
-                set_phase(&app, Phase::Absent);
-                return;
-            }
-            "failed" => {
-                finish_failed(&app, &progress.message.unwrap_or_else(|| "failed".into()));
-                return;
-            }
-            _ => break,
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
-    }
-    let manager = app.state::<CefrManager>();
+/// The stages after the parquet lands: verify, rebuild, adopt, probe.
+async fn build_dataset(app: AppHandle) {
     set_phase(&app, Phase::Converting);
-
     let partial = match CefrManager::parquet_partial(&app) {
         Ok(path) => path,
         Err(message) => {
@@ -453,12 +471,14 @@ async fn supervise(app: AppHandle) {
     };
     if let Err(message) = verify_parquet(&partial) {
         // Bad data, not bad luck: the next attempt re-downloads.
-        let _ = std::fs::remove_file(&partial);
-        app.state::<AppDownloads>().remove(DOWNLOAD_ID);
+        drop_dataset_files(&app, &partial);
         finish_failed(&app, &message);
         return;
     }
-    let (building, final_db) = match (CefrManager::db_building(&app), CefrManager::db_final(&app)) {
+    let (building, final_db) = match (
+        CefrManager::db_building(&app),
+        CefrManager::db_final(&app),
+    ) {
         (Ok(building), Ok(ready)) => (building, ready),
         (Err(message), _) | (_, Err(message)) => {
             finish_failed(&app, &message);
@@ -474,10 +494,9 @@ async fn supervise(app: AppHandle) {
     match built {
         Ok(Ok(_stats)) => {}
         Ok(Err(e)) => {
-            // A parquet that parses but does not rebuild is bad data: drop it.
-            let _ = std::fs::remove_file(&partial);
+            // A parquet that parses but does not rebuild is bad data.
             let _ = std::fs::remove_file(&building);
-            app.state::<AppDownloads>().remove(DOWNLOAD_ID);
+            drop_dataset_files(&app, &partial);
             finish_failed(&app, &format!("rebuild failed: {e}"));
             return;
         }
@@ -501,10 +520,16 @@ async fn supervise(app: AppHandle) {
     };
     // The parquet's job is done; only the db is kept.
     let _ = std::fs::remove_file(&partial);
-    if let Ok(mut slot) = manager.db.lock() {
+    if let Ok(mut slot) = app.state::<crate::cefr::CefrManager>().db.lock() {
         *slot = None;
     }
     set_phase(&app, Phase::Ready { words });
+}
+
+/// Drop a rejected partial and the download record that points at it.
+fn drop_dataset_files(app: &AppHandle, partial: &Path) {
+    let _ = std::fs::remove_file(partial);
+    app.state::<AppDownloads>().remove(DOWNLOAD_ID);
 }
 
 /// The four-byte signature a real parquet carries at both ends.
@@ -534,17 +559,38 @@ fn verify_parquet(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The POS engine's state, which the dataset's phase does not carry.
+fn model_state(app: &AppHandle) -> &'static str {
+    let present = CefrManager::model_path(app)
+        .map(|path| path.is_file())
+        .unwrap_or(false);
+    if present {
+        return "ready";
+    }
+    match app.state::<AppDownloads>().status(MODEL_ID).map(|p| p.phase) {
+        Some(WirePhase::Downloading) | Some(WirePhase::Paused) => "downloading",
+        Some(WirePhase::Failed) => "failed",
+        _ => "absent",
+    }
+}
+
+/// The snapshot plus the engine's own state, which needs the app.
+fn with_model(app: &AppHandle, mut status: DatasetStatus) -> DatasetStatus {
+    status.model = model_state(app).into();
+    status
+}
+
 /// One guarded write of a phase, then the event outside the lock.
 fn set_phase(app: &AppHandle, phase: Phase) {
     let status = {
-        let manager = app.state::<CefrManager>();
+        let manager = app.state::<crate::cefr::CefrManager>();
         let Ok(mut guard) = manager.phase.lock() else {
             return;
         };
         *guard = phase;
         guard.snapshot()
     };
-    let _ = app.emit(PROGRESS_EVENT, &status);
+    let _ = app.emit(PROGRESS_EVENT, with_model(app, status));
 }
 
 fn finish_failed(app: &AppHandle, message: &str) {
@@ -556,13 +602,16 @@ fn finish_failed(app: &AppHandle, message: &str) {
     );
 }
 
-/// Read the phase under guard, unlocked afterwards, for the emit.
-fn guard_snapshot(manager: &CefrManager) -> DatasetStatus {
-    manager
+/// Re-publish the phase as it stands: the engine moved, not the dataset.
+fn republish(app: &AppHandle) {
+    let status = app
+        .state::<crate::cefr::CefrManager>()
         .phase
         .lock()
-        .map(|guard| guard.snapshot())
-        .unwrap_or_else(|_| Phase::Absent.snapshot())
+        .map(|guard| guard.snapshot());
+    if let Ok(status) = status {
+        let _ = app.emit(PROGRESS_EVENT, with_model(app, status));
+    }
 }
 
 #[cfg(test)]
@@ -596,9 +645,6 @@ mod tests {
         assert!(json.contains("\"received\":1024"));
         assert!(json.contains("\"total\":2048"));
 
-        let paused = serde_json::to_string(&Phase::Paused.snapshot()).unwrap();
-        assert!(paused.contains("\"phase\":\"paused\""));
-
         let failed = serde_json::to_string(
             &Phase::Failed {
                 message: "no net".into(),
@@ -608,5 +654,30 @@ mod tests {
         .unwrap();
         assert!(failed.contains("\"phase\":\"failed\""));
         assert!(failed.contains("\"message\":\"no net\""));
+    }
+
+    #[test]
+    fn a_pause_keeps_the_bytes_it_had() {
+        // The sheet reads "Paused at N%", so the count must survive.
+        let paused = Phase::Paused {
+            received: 700,
+            total: Some(1000),
+        }
+        .snapshot();
+        assert_eq!(paused.phase, "paused");
+        assert_eq!(paused.received, 700);
+        assert_eq!(paused.total, Some(1000));
+    }
+
+    #[test]
+    fn every_mirror_list_reaches_the_same_file() {
+        assert_eq!(links(DATASET_URLS).len(), 3);
+        assert_eq!(links(MODEL_URLS).len(), 3);
+        for url in links(DATASET_URLS).iter().chain(&links(MODEL_URLS)) {
+            assert!(url.starts_with("https://"), "{url}");
+            assert!(url.contains("cefr-rs"), "{url}");
+        }
+        assert!(links(DATASET_URLS)[0].ends_with("cefr.zstd.parquet"));
+        assert!(links(MODEL_URLS)[0].ends_with(MODEL_FILE));
     }
 }
