@@ -227,6 +227,20 @@ that never moves. The transport's resumability (mirror rotation, `If-Range`,
 416, stall, and cancel on a paused record) is exercised against a loopback
 server in that crate's own tests rather than asserted here.
 
+An adversarial pass followed that review, and three of its findings were
+bugs, not style. The transport read its resume validator from the partial
+rather than from the destination, where it is written, so every proven
+partial looked unproven and every resume restarted from zero — the loopback
+suite now proves a paused transfer continues from its byte count. A directory
+part of `""` passed the bare-name check and quietly landed in a directory the
+caller did not name; it is refused now. And a request whose file is already
+at its destination is answered as `done`, with the path and without a
+request, which is what makes the destination the crate's cache and a rebuild
+retry cost no bytes. One unlisted event went out as well: the app's `Host`
+emitted `download-progress` with no window listening, so it no longer
+publishes at all — the manager's hook is the channel, and the terminal
+snapshot it receives is what starts the rebuild.
+
 This entry is a code audit, not a measurement: no memory replay was taken of
 the marking sweep, and no process-RAM claim is made for it. What it does
 establish is that the feature adds no unbounded structure — its caches are

@@ -235,7 +235,8 @@ decorative, so it is not offered.
   Words-CEFR-Dataset (about 3 MB) and the POS model (about 6.7 MB) — rebuilds the parquet into a
   local SQLite database, and deletes the parquet. Nothing leaves the device.
 - Downloads are resumable and visible: live progress, pause and resume, cancel, remove, and a
-  failure that says what it was. Both files have three mirrors each to fall back on.
+  failure that says what it was. Both files have three mirrors each to fall back on, and a file
+  already on disk is the cache rather than another download.
 - Words are filtered to plain ASCII English before anything is asked, contractions and hyphenated
   compounds resolve to their head word, and a per-document cache answers a revisited page from
   memory — so sweeping a long document asks the backend once per word.

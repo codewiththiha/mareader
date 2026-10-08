@@ -83,7 +83,8 @@ fn main() {
   `phase` is `downloading | paused | done | failed | cancelled`; the last
   three are terminal, and `Phase::terminal()` says so.
 - `Host` — `spawn`, `publish`, `data_dir`. The crate never owns a thread
-  pool, an event bus or a path.
+  pool, an event bus or a path. A host with one consumer can leave `publish`
+  empty; a second feature passes its own hook.
 - `ProgressHook` — optional, and called on every snapshot. A feature that
   would rather be called than subscribe passes one; the terminal snapshot is
   guaranteed to reach it, which is how a caller learns where the file
@@ -118,6 +119,9 @@ fn main() {
   the feature owns what it asked for.
 - **A restart of the app.** The partial and its validator are on disk, so a
   later `start` with the same request continues where the last run stopped.
+- **A file that is already there.** `start` settles the request as `done`,
+  with the finished path and no request at all: the destination is the cache.
+  Delete the file to fetch it again — a `remove` keeps it on purpose.
 
 ## What the bytes look like on disk
 

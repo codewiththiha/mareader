@@ -150,8 +150,9 @@ shipped. Four pieces, each unaware of the others' types beyond a wire shape:
   when the epoch or the layout moves. `services/cefr.rs` is the only edge
   that talks to the backend: one `DatasetMirror` signal, one batched
   `cefr_levels` ask per pass, a warn-once per realm, and a tap installed once
-  per realm. The marks are painted, never interactive — hover does nothing,
-  so the AI is reached only by a click.
+  per realm. The marks are painted, never interactive: a hover shows the
+  word's own title and nothing else, and the AI is reached by a click — only
+  when click-to-explain is on — so sweeping a page costs no model calls.
 - `src-tauri/src/cefr/mod.rs` is the manager: one phase machine
   (`absent | downloading | paused | converting | ready | failed`), the parquet
   and tagger downloads through `download-core`, then `verify_parquet` →
@@ -161,16 +162,19 @@ shipped. Four pieces, each unaware of the others' types beyond a wire shape:
   hold the click's thread.
 - `crates/download-core` is the transport and knows nothing about CEFR: an id,
   mirrors of one file, a `.part` and a validator sidecar beside the
-  destination, `If-Range` resume, a stall timeout, and snapshots on a
-  `ProgressHook` and the host's bus — the terminal snapshot carrying the
-  finished path, which is how the manager learns to start the rebuild. The
-  app's `Host` is `src-tauri/src/download.rs`.
+  destination, `If-Range` resume, a stall timeout, and one snapshot per event
+  on the `ProgressHook` a feature passes — the terminal snapshot carrying the
+  finished path, which is how the manager learns to start the rebuild. A
+  destination that already holds its file settles `done` with that path and
+  no request at all, so the file on disk is also the cache. The app's `Host`
+  is `src-tauri/src/download.rs`.
 
 Nothing is fetched without the panel that names both files and their sizes,
 and nothing is fetched twice: a dataset on disk is adopted by the first status
-ask without a rebuild, a partial is resumed rather than restarted, and a
-failed rebuild deletes its parquet instead of rebuilding from bytes that
-already failed once. A model that is missing or stopped is stated in the same
+ask without a rebuild, a partial is resumed rather than restarted, the
+transport settles a request whose file is already at its destination instead
+of fetching it again, and a failed rebuild deletes its parquet rather than
+keeping bytes that already failed once. A model that is missing or stopped is stated in the same
 panel with its own ask, so a click never starts a silent multi-megabyte
 download. Sweeping a document costs one bounded plan per page: the row-text
 LRU drops at `SCAN_CAP`, the level cache clears whole at `LEVEL_CACHE_CAP`,
