@@ -69,6 +69,9 @@ pub enum IconName {
     Layout,
     /// The settings tab for the reflowable formats' typography.
     Type,
+    /// Ascending bars: the settings tab for the vocabulary highlighter's
+    /// reading level.
+    Levels,
     /// The settings tab for motion: a rail that eases, a page that follows.
     Motion,
     Minus,
@@ -206,6 +209,10 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Type => (
             "0 0 24 24",
             "<path d='M4 7V4h16v3'/><path d='M9 20h6'/><path d='M12 4v16'/>",
+        ),
+        IconName::Levels => (
+            "0 0 24 24",
+            "<path d='M4 20h4v-5H4z'/><path d='M10 20h4v-10h-4z'/><path d='M16 20h4V5h-4z'/>",
         ),
         IconName::Motion => ("0 0 24 24", "<path d='M2 12h3l2.5 6 4-13L14 17l1.5-5H22'/>"),
         IconName::More => (

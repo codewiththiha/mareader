@@ -14,6 +14,8 @@ pub struct GlossContent {
     pub word: RwSignal<String>,
     /// The answer, shared with the card, twin and cache.
     pub word_info: RwSignal<Option<Arc<WordInfo>>>,
+    /// The dataset's own POS for the open word, once it lands.
+    pub local_pos: RwSignal<Option<String>>,
     /// The typed failure behind `AiPhase::Error`, if any.
     pub error: RwSignal<Option<AiError>>,
 }
@@ -24,6 +26,7 @@ impl GlossContent {
             phase: RwSignal::new(AiPhase::Idle),
             word: RwSignal::new(String::new()),
             word_info: RwSignal::new(None::<Arc<WordInfo>>),
+            local_pos: RwSignal::new(None),
             error: RwSignal::new(None::<AiError>),
         }
     }
@@ -33,6 +36,7 @@ impl GlossContent {
         self.phase.set(AiPhase::Idle);
         self.word.set(String::new());
         self.word_info.set(None);
+        self.local_pos.set(None);
         self.error.set(None);
     }
 }
