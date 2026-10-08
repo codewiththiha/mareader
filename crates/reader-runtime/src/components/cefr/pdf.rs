@@ -10,6 +10,8 @@ use reader_core::settings::Settings;
 use cefr_core::text::{MAX_WORD_CHARS, sentence_around, tokenize};
 
 use super::layer::{CefrBox, CefrMarkLayer};
+use super::measure::measure;
+use super::{Sink, WalkKey, WalkMemo, marks_fingerprint, text_fingerprint};
 use crate::components::ai::anchor::captured_mark;
 use crate::components::ai::reflow_anchor::union_box;
 use crate::components::formats::reflow::spot::range_for_span;
@@ -69,6 +71,22 @@ fn install_observer(
     held.try_update_value(|slot| *slot = Some((observer, callback)));
 }
 
+/// The inputs one PDF page walk runs against (all zoom-independent).
+#[derive(Clone, Copy)]
+struct Ctx {
+    threshold: u8,
+    generation: u64,
+    marks: u64,
+}
+
+/// One planned word: its text-space spot, its text, its sentence.
+struct PlanWord {
+    start: usize,
+    end: usize,
+    word: String,
+    context: String,
+}
+
 #[component]
 pub fn PdfCefrLayer(
     state: ReaderState,
@@ -83,6 +101,7 @@ pub fn PdfCefrLayer(
     let settings =
         use_context::<RwSignal<Settings>>().expect("Settings must be provided by the pane realm");
     let boxes: RwSignal<Vec<CefrBox>> = RwSignal::new(Vec::new());
+    let memo: StoredValue<Option<WalkMemo>, LocalStorage> = StoredValue::new_local(None);
     let wake = Trigger::new();
     // The phase alone flips re-derive; the mirror handle is bound once.
     let mirror = services::cefr::dataset();
@@ -112,10 +131,10 @@ pub fn PdfCefrLayer(
     let was_ready = StoredValue::new_local(false);
     {
         Effect::new(move |_| {
-            // The re-derive clock: cache fills, threshold edits, dataset swaps
-            // and text-layer batches all raise it.
+            // The re-derive clock: cache fills, threshold edits, dataset
+            // swaps and text-layer batches all raise it.
             wake.track();
-            let _ = state.cefr.generation.get();
+            let generation = state.cefr.generation.get();
             let (enabled, threshold) = settings.with(|s| (s.cefr_enabled, s.cefr_level.band()));
             let ready = dataset_ready.get();
             if ready && !was_ready.get_value() {
@@ -127,24 +146,29 @@ pub fn PdfCefrLayer(
                 clear(&boxes);
                 return;
             }
+            // The suppression set, folded tracked: a mark edit re-walks.
+            let marks = state.gloss.marks.with(|all| {
+                marks_fingerprint(
+                    all.iter()
+                        .filter(|m| {
+                            m.page == page
+                                && crate::components::ai::reflow_anchor::read_spot(&m.context)
+                                    .is_none()
+                        })
+                        .map(|m| m.id.as_str()),
+                )
+            });
+            // The observer wakes this when a missing layer lands.
             let Some(host) = state.dom.by_id(&host_id) else {
                 clear(&boxes);
                 return;
             };
-            let Some(layer) = host
-                .query_selector(&format!(".{TEXT_LAYER_CLASS}"))
-                .ok()
-                .flatten()
-            else {
-                // Not rendered yet: the observer wakes this when it lands.
-                return;
+            let ctx = Ctx {
+                threshold,
+                generation,
+                marks,
             };
-            // Divide by the glyphs' live scale; a tween never re-walks.
-            let display = scale.get_untracked();
-            if display <= 0.0 {
-                return;
-            }
-            walk(state, page, &host, &layer, display, threshold, &boxes);
+            walk(state, page, &host, scale, ctx, &boxes, memo);
         });
     }
 
@@ -157,16 +181,23 @@ pub fn PdfCefrLayer(
     }
 }
 
-/// The one walk: spans to text, tokens, cache pass, backend pass, paint.
+/// The walk's cheap half: text, cache pass, plan; a frame measures.
 fn walk(
     state: ReaderState,
     page: u32,
     host: &web_sys::Element,
-    layer: &web_sys::Element,
-    display: f64,
-    threshold: u8,
+    scale: ReadSignal<f64>,
+    ctx: Ctx,
     boxes: &RwSignal<Vec<CefrBox>>,
+    memo: StoredValue<Option<WalkMemo>, LocalStorage>,
 ) {
+    let Some(layer) = host
+        .query_selector(&format!(".{TEXT_LAYER_CLASS}"))
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
     let span_els: Vec<web_sys::Element> = {
         let list = match layer.query_selector_all("span") {
             Ok(list) => list,
@@ -190,6 +221,24 @@ fn walk(
         spans.push((start, text.chars().count()));
     }
 
+    let key = WalkKey {
+        fp: 0,
+        zoom: 0,
+        text: text_fingerprint(&text),
+        generation: ctx.generation,
+        marks: ctx.marks,
+        threshold: ctx.threshold,
+    };
+    if let Some(found) = memo.try_get_value().flatten()
+        && found.key == key
+    {
+        // Page-space memo boxes stay exact across a zoom rebuild.
+        if found.measured && boxes.get_untracked() != found.boxes {
+            boxes.set(found.boxes.clone());
+        }
+        return;
+    }
+
     let tokens = tokenize(&text);
     let chars: Vec<char> = text.chars().collect();
 
@@ -210,7 +259,7 @@ fn walk(
                         misses.push(key.clone());
                     }
                 }
-                if cache.any_above(&candidates, threshold) && hard.len() < MAX_BOXES_PER_PAGE {
+                if cache.any_above(&candidates, ctx.threshold) && hard.len() < MAX_BOXES_PER_PAGE {
                     hard.push((token.start, token.end));
                 }
             }
@@ -224,10 +273,97 @@ fn walk(
         });
     }
 
+    let mut plan: Vec<PlanWord> = Vec::new();
+    for (start, end) in hard {
+        if plan.len() >= MAX_BOXES_PER_PAGE {
+            break;
+        }
+        let word: String = chars[start..end].iter().collect();
+        let context = sentence_around(&text, start, end);
+        plan.push(PlanWord {
+            start,
+            end,
+            word,
+            context,
+        });
+    }
+    memo.try_update_value(|slot| {
+        *slot = Some(WalkMemo {
+            key,
+            measured: plan.is_empty(),
+            boxes: Vec::new(),
+        });
+    });
+    if plan.is_empty() {
+        clear(boxes);
+        return;
+    }
+    let task_host = host.clone();
+    let sink = Sink {
+        key,
+        boxes: *boxes,
+        memo,
+    };
+    measure(move || run_plan(state, page, task_host, scale, plan, sink));
+}
+
+/// The scheduled half: measure in page space, minus the AI's words.
+fn run_plan(
+    state: ReaderState,
+    page: u32,
+    host: web_sys::Element,
+    scale: ReadSignal<f64>,
+    plan: Vec<PlanWord>,
+    sink: Sink,
+) {
+    if !host.is_connected() {
+        return;
+    }
+    if let Some(found) = sink.memo.try_get_value().flatten()
+        && (found.key != sink.key || found.measured)
+    {
+        return; // a newer walk owns the memo
+    }
+    let Some(layer) = host
+        .query_selector(&format!(".{TEXT_LAYER_CLASS}"))
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+    let span_els: Vec<web_sys::Element> = {
+        let list = match layer.query_selector_all("span") {
+            Ok(list) => list,
+            Err(_) => return,
+        };
+        (0..list.length())
+            .filter_map(|i| list.get(i))
+            .filter_map(|node| node.dyn_into::<web_sys::Element>().ok())
+            .collect()
+    };
+    if span_els.is_empty() {
+        return;
+    }
+    // The layer may have swapped since the plan; identical text only.
+    let mut text = String::new();
+    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(span_els.len());
+    for el in &span_els {
+        let piece = el.text_content().unwrap_or_default();
+        let start = text.chars().count();
+        text.push_str(&piece);
+        spans.push((start, text.chars().count()));
+    }
+    if text_fingerprint(&text) != sink.key.text {
+        return;
+    }
+    // Divide by the glyphs' live scale, read at measure time.
+    let display = scale.get_untracked();
+    if display <= 0.0 {
+        return;
+    }
     // Words the AI stroke owns: the red yields to the accent.
-    let glossed: Vec<GlossBox> = state.gloss.marks.with(|marks| {
-        marks
-            .iter()
+    let glossed: Vec<GlossBox> = state.gloss.marks.with_untracked(|all| {
+        all.iter()
             .filter(|m| {
                 m.page == page
                     && crate::components::ai::reflow_anchor::read_spot(&m.context).is_none()
@@ -236,21 +372,17 @@ fn walk(
             .collect()
     });
 
-    // Paint pass: only tokens the cache answers and no gloss mark covers.
     let host_rect = host.get_bounding_client_rect();
     let inverse = 1.0 / display;
     let mut painted: Vec<CefrBox> = Vec::new();
-    'token: for (start, end) in hard {
-        let word: String = chars[start..end].iter().collect();
-        let context = sentence_around(&text, start, end);
-        // A token may cross spans; the union is its one mark.
+    'word: for word in &plan {
         let mut fragments: Vec<GlossBox> = Vec::new();
         for (i, (s, e)) in spans.iter().enumerate() {
-            if *e <= start || *s >= end {
+            if *e <= word.start || *s >= word.end {
                 continue;
             }
-            let local_start = start.max(*s) - *s;
-            let local_end = (*e).min(end) - *s;
+            let local_start = word.start.max(*s) - *s;
+            let local_end = (*e).min(word.end) - *s;
             let Some(range) = range_for_span(&span_els[i], local_start, local_end) else {
                 continue;
             };
@@ -283,13 +415,17 @@ fn walk(
                 union.y < g.y + g.h + 0.5 && g.y < union.y + union.h + 0.5,
             );
             if overlap_x && overlap_y {
-                continue 'token;
+                continue 'word;
             }
         }
-        let mark = captured_mark(word, context, PageAnchor { page, rect: union });
+        let mark = captured_mark(
+            word.word.clone(),
+            word.context.clone(),
+            PageAnchor { page, rect: union },
+        );
         for local in fragments {
             if painted.len() >= MAX_BOXES_PER_PAGE {
-                break 'token;
+                break 'word;
             }
             painted.push(CefrBox {
                 x: local.x,
@@ -300,10 +436,7 @@ fn walk(
             });
         }
     }
-    // Compared before written: an unchanged walk must not re-render.
-    if boxes.get_untracked() != painted {
-        boxes.set(painted);
-    }
+    super::publish(&sink, painted);
 }
 
 fn clear(boxes: &RwSignal<Vec<CefrBox>>) {
