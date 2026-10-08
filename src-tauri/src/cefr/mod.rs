@@ -317,7 +317,6 @@ impl CefrManager {
         out.resize(words.len(), None);
         Ok(out)
     }
-}
 
     /// The dataset's POS for `word` in `sentence`; `Ok(None)` if unequipped.
     pub fn pos_of(
