@@ -203,3 +203,32 @@ its callback until it can unlisten; unlisten always precedes callback release.
 These ownership rules are checked against real Library WASM using a controlled
 native boundary in the browser suite. This does not assert full process-RAM
 recovery or resolve the previously measured WebKit retention.
+
+## Vocabulary dataset review
+
+The vocabulary feature's memory surface was re-read against `rules.md` after
+its review pass: the pane's level cache (whole-clear at `LEVEL_CACHE_CAP`),
+the row-text LRU (`SCAN_CAP`), the dataset manager's three loaded things (the
+SQLite handle, the tagger model, the phase probe), and the frontend's
+per-realm mirror and tap. Each has one owner and one drop: a document change
+resets the pane's cache, removing the dataset drops the connection, the tagger
+and the probe together, the realm clears its mirror on cleanup, and the tap
+installs once per realm. The painters re-plan only on the generation they
+already watch, so no work starts on a dead owner.
+
+Two behaviours were changed in the review rather than written around. A click
+no longer fetches the multi-megabyte POS model by itself: the settings panel
+states the model's absence (or its pause) and carries its own ask, so the
+first byte of a download is always a visible one. And the download now ends in
+a terminal snapshot every consumer sees — `done` with the finished path,
+`failed` with its reason — so the manager starts the database rebuild from a
+hook instead of polling, and a refused start cannot leave a sheet on a bar
+that never moves. The transport's resumability (mirror rotation, `If-Range`,
+416, stall, and cancel on a paused record) is exercised against a loopback
+server in that crate's own tests rather than asserted here.
+
+This entry is a code audit, not a measurement: no memory replay was taken of
+the marking sweep, and no process-RAM claim is made for it. What it does
+establish is that the feature adds no unbounded structure — its caches are
+bounded and drop with their owner, and nothing is retained per frame — which
+is the property the rules require before a release claim could be measured.

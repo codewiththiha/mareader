@@ -106,6 +106,13 @@ all four deep jobs honour "[skip deep]" in the commit subject (never the cron)
   host compilation: it is the only lane that sees `wasm32`-only code. The
   standalone `app-chrome` check stays with it because workspace feature
   unification hides missing direct dependencies.
+- **`download-core` is excluded from the wasm lane, by name.** It is host
+  transport — `reqwest`, files, a runtime the host supplies — so a wasm check
+  of it would only fail. Leaving it in the workspace would force every wasm
+  lane to exclude it anyway; naming it once, in the lane that cannot run it,
+  keeps the exclusion visible instead of implied. Its own coverage is the
+  loopback transport suite in `crates/download-core/tests/transport.rs`, which
+  runs in the host test lane.
 - **Toolchain:** unpinned `stable`, deliberately — a moving target is what
   makes a nightly red informative. A pin is a decision with a date and a
   reason, not a cleanup: it lands as a `rust-toolchain.toml` naming a version
