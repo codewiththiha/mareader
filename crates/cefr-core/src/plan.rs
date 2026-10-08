@@ -1,11 +1,9 @@
-//! The shared half of a highlight walk: what the cache already answers,
-//! what the dataset owes, and which words a painter must measure.
+//! The shared half of a highlight walk: what marks, and what is owed.
 
 use crate::cache::LevelCache;
 use crate::text::{MAX_WORD_CHARS, Span, hyphen_parts, lookup_candidates, sentence_around};
 
-/// One word a painter measures and paints: its character span, its text
-/// and the sentence window a later lookup needs.
+/// One word a painter measures: its span, text and sentence window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedWord {
     pub start: usize,
@@ -23,9 +21,7 @@ pub struct Walk {
     pub ask: Vec<String>,
 }
 
-/// Split `tokens` into the words that already mark and the keys to ask
-/// for. Pure: the same inputs always give the same walk, so a painter's
-/// memo can key on them.
+/// The words that already mark, and the keys to ask for. Pure.
 pub fn walk(
     text: &str,
     chars: &[char],
@@ -87,11 +83,7 @@ mod tests {
 
     #[test]
     fn only_words_strictly_above_the_band_are_planned() {
-        let walk = walked(
-            "run ephemeral",
-            &[("run", 2), ("ephemeral", 6)],
-            4,
-        );
+        let walk = walked("run ephemeral", &[("run", 2), ("ephemeral", 6)], 4);
         assert_eq!(walk.paint.len(), 1);
         assert_eq!(walk.paint[0].word, "ephemeral");
         // Both were already answered, so nothing is owed.
@@ -101,7 +93,10 @@ mod tests {
     #[test]
     fn unanswered_words_are_asked_once_each() {
         let walk = walked("ephemeral ephemeral palimpsest", &[], 4);
-        assert_eq!(walk.ask, vec!["ephemeral".to_string(), "palimpsest".to_string()]);
+        assert_eq!(
+            walk.ask,
+            vec!["ephemeral".to_string(), "palimpsest".to_string()]
+        );
         // Nothing is decidable yet, so nothing is planned.
         assert!(walk.paint.is_empty());
     }

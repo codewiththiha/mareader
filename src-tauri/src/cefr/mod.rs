@@ -475,10 +475,7 @@ async fn build_dataset(app: AppHandle) {
         finish_failed(&app, &message);
         return;
     }
-    let (building, final_db) = match (
-        CefrManager::db_building(&app),
-        CefrManager::db_final(&app),
-    ) {
+    let (building, final_db) = match (CefrManager::db_building(&app), CefrManager::db_final(&app)) {
         (Ok(building), Ok(ready)) => (building, ready),
         (Err(message), _) | (_, Err(message)) => {
             finish_failed(&app, &message);
@@ -567,7 +564,11 @@ fn model_state(app: &AppHandle) -> &'static str {
     if present {
         return "ready";
     }
-    match app.state::<AppDownloads>().status(MODEL_ID).map(|p| p.phase) {
+    match app
+        .state::<AppDownloads>()
+        .status(MODEL_ID)
+        .map(|p| p.phase)
+    {
         Some(WirePhase::Downloading) | Some(WirePhase::Paused) => "downloading",
         Some(WirePhase::Failed) => "failed",
         _ => "absent",
