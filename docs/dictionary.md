@@ -8,7 +8,8 @@ dataset database, and deletes the Parquet. The CEFR highlighter decides *which*
 words are worth a lookup; the dictionary answers *what they mean*.
 
 This document records the data, the part-of-speech problem across two different
-tag vocabularies, the store, the English bridge, and the surfaces.
+tag vocabularies, the store, the English bridge, and the surfaces. Sections 1
+and 2 are the shipped core, `crates/dictionary-core`; 3 to 5 are what it feeds.
 
 ## 1. The packs
 

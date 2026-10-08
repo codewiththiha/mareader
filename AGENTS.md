@@ -188,6 +188,9 @@ other legitimate use, and it is described in "The CI loop".
   joining inside a function-like macro call (`assert_eq!`, `write!`) is gated by
   `attr_fn_like_width` — 60 by default — so a 98-character `assert_eq!` is still
   a diff: let the format job's own hunks decide, and replay them verbatim.
+  `fn_call_width` and `chain_width` (both 60) gate a call's arguments and a
+  method chain the same way: a chain inside the 100-column budget is still two
+  lines, and a chain broken by hand is still one if it fits under 60.
 - Comments: see [`### Comments`](#comments) below — a constraint, not an argument.
 - No `TODO`/`FIXME`, no scaffolding for work not being done now, no
   speculative abstractions.
