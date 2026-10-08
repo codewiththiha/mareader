@@ -122,11 +122,12 @@ pub fn start_session(
             // The per-open blend override: this launch's, and each later one.
             let blend_override = RwSignal::new(launch.blend_override);
 
-            // Typography is handed on here; a pane's texture is derived in
-            // its own frame.
+            // Typography and the settings signal: overlays read their
+            // knobs from context, not props.
             let typography: crate::state::TypographySignal =
                 Memo::new(move |_| settings.with(|s| s.text.clone()));
             provide_context(typography);
+            provide_context(settings);
 
             // One overlay board for this session, dying with the unmount.
             provide_context(OverlayBoard::default());
@@ -163,6 +164,7 @@ pub fn start_session(
 
             // The AI chunk bridge: session-wide, unregistered with this scope.
             crate::services::ai::install_ai_chunk_bridge();
+            crate::services::cefr::install_cefr_bridge();
 
             // This frame's own `<html>`: the reader paints its look and hands
             // edits to the Shell.

@@ -1,0 +1,10 @@
+[package]
+name = "cefr-core"
+version = "0.1.0"
+edition = "2024"
+description = "Format-agnostic core of the vocabulary highlighter: tokenizing, band thresholds, the level cache."
+
+[lints.rust]
+# Warnings are denied, not printed: a gate only in a log gets read past.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "deny"

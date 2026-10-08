@@ -1,6 +1,7 @@
 //! The reader settings modal and its tabs, one module per tab.
 
 pub(crate) mod animations;
+pub(crate) mod cefr;
 pub(crate) mod common;
 pub(crate) mod fonts;
 pub(crate) mod layout;

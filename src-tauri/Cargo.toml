@@ -24,10 +24,21 @@ serde_json = "1"
 library-core = { path = "../crates/library-core" }
 # The AI half: which selections count as a word, and the invoke boundary gate.
 ai-core = { path = "../crates/ai-core" }
+# The vocabulary half: shared tokenizer rules, dataset rebuild + lookups.
+cefr-core = { path = "../crates/cefr-core" }
+cefr = { git = "https://github.com/codewiththiha/cefr-rs.git", default-features = false, features = [
+  "parquet",
+  "sqlite",
+] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "stream",
+  "rustls-tls",
+] }
+futures-util = "0.3"  # Drives the download stream
 dotenvy = "0.15"      # Loads the .env file (FM_BRIDGE_BIN) before Tauri boots
 futures = "0.3"       # Handles fm-bridge's async streams
 async-stream = "0.3"  # Wraps the AI output chunks into a stream
-tokio = { version = "1", features = ["time"] } # Drives the mock provider's simulated delays
+tokio = { version = "1", features = ["time", "fs", "io-util"] } # Drives the mock provider's delays and the dataset download
 
 # macOS-only: hide/show the native traffic lights, via objc2-app-kit.
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -475,7 +475,17 @@ pub fn PdfPageCanvas(
                 .map(|gloss| {
                     let resolve = gloss.resolver(page, &gloss_host_id);
                     let refresh = gloss.refresh();
+                    let cefr_state = gloss.state;
+                    let cefr_host = gloss_host_id.clone();
+                    let cefr_scale = scale;
                     view! {
+                        // Red under accent: the click's stroke takes over.
+                        <crate::components::cefr::pdf::PdfCefrLayer
+                            state=cefr_state
+                            page=page
+                            host_id=cefr_host
+                            scale=cefr_scale
+                        />
                         <crate::components::ai::gloss::mark_layer::GlossMarkLayer
                             page=Some(page)
                             marks=gloss.marks

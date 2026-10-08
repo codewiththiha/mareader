@@ -4,7 +4,7 @@ use wasm_bindgen::JsCast;
 
 /// Layers painted OVER a block's text, whose text is not document
 /// text.
-const OVERLAY_CLASSES: [&str; 2] = ["gloss-layer", "tx-hits"];
+const OVERLAY_CLASSES: [&str; 3] = ["gloss-layer", "tx-hits", "cefr-layer"];
 
 /// The block's text nodes, in document order.
 fn text_nodes_of(el: &web_sys::Element) -> Vec<web_sys::Node> {
