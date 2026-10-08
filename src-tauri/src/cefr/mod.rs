@@ -605,11 +605,9 @@ fn finish_failed(app: &AppHandle, message: &str) {
 
 /// Re-publish the phase as it stands: the engine moved, not the dataset.
 fn republish(app: &AppHandle) {
-    let status = app
-        .state::<crate::cefr::CefrManager>()
-        .phase
-        .lock()
-        .map(|guard| guard.snapshot());
+    // Bound before the lock: the guard borrows the state handle.
+    let manager = app.state::<crate::cefr::CefrManager>();
+    let status = manager.phase.lock().map(|guard| guard.snapshot());
     if let Ok(status) = status {
         let _ = app.emit(PROGRESS_EVENT, with_model(app, status));
     }
