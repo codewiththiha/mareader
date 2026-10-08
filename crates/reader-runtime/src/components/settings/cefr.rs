@@ -8,6 +8,7 @@ use crate::services;
 use crate::services::cefr::DatasetPhase;
 use app_ui::components::primitives::controls::switch::Switch;
 use app_ui::components::primitives::form::range_input::RangeInput;
+use app_ui::components::primitives::form::row::Row;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 
 #[component]
@@ -20,7 +21,7 @@ pub(crate) fn CefrTab(state: crate::context::ReaderContext) -> impl IntoView {
 
     view! {
         <SectionLabel text="Vocabulary highlighter" />
-        <div class="rounded-xl border border-line" data-setting="cefr">
+        <div class="divide-y divide-line rounded-xl border border-line" data-setting="cefr">
             <div class="flex items-center justify-between gap-3 px-4 py-3.5">
                 <span class="min-w-0">
                     <span class="block text-sm text-ink">"Mark words above my level"</span>
@@ -36,36 +37,41 @@ pub(crate) fn CefrTab(state: crate::context::ReaderContext) -> impl IntoView {
                     title="Vocabulary highlighter"
                 />
             </div>
-            <div class="px-4 pb-4" class=("opacity-45", move || !enabled.get())>
-                <span class="flex items-baseline justify-between text-xs text-muted">
-                    <span>"My level"</span>
-                    <span class="text-sm font-medium tabular-nums text-ink">
-                        {move || level.get().label()}
-                    </span>
-                </span>
-                {move || {
-                    // The input is a plain-bool prop; re-creating it on the
-                    // toggle is the reactivity.
-                    let off = !enabled.get();
-                    view! {
-                        <RangeInput
-                            value=Signal::derive(move || level.get().band() as f64)
-                            min=Signal::derive(|| MIN_CEFR_BAND as f64)
-                            max=Signal::derive(|| 6.0)
-                            step=Signal::derive(|| 1.0)
-                            on_input=move |v: f64| {
-                                s.update(move |st| {
-                                    st.cefr_level = CefrLevel::from_band(v.round() as u8);
-                                });
+            <div>
+                <Row label="My level">
+                    <span
+                        class="flex w-40 flex-col gap-1"
+                        class=("opacity-45", move || !enabled.get())
+                        data-setting="cefr-level"
+                    >
+                        {move || {
+                            // `disabled` is a plain bool on the input, so the
+                            // toggle re-creates the control.
+                            let off = !enabled.get();
+                            view! {
+                                <RangeInput
+                                    value=Signal::derive(move || level.get().band() as f64)
+                                    min=Signal::derive(|| MIN_CEFR_BAND as f64)
+                                    max=Signal::derive(|| 6.0)
+                                    step=Signal::derive(|| 1.0)
+                                    on_input=move |v: f64| {
+                                        s.update(move |st| {
+                                            st.cefr_level = CefrLevel::from_band(v.round() as u8);
+                                        });
+                                    }
+                                    aria_label="Reading level"
+                                    disabled=off
+                                />
                             }
-                            aria_label="Reading level"
-                            disabled=off
-                        />
-                    }
-                }}
-                <p class="pt-1 text-xs text-muted">{move || level.get().detail()}</p>
+                        }}
+                        <span class="text-right text-xs tabular-nums text-muted">
+                            {move || level.get().label()}
+                        </span>
+                    </span>
+                </Row>
+                <p class="px-4 pb-4 text-xs text-muted">{move || level.get().detail()}</p>
             </div>
-            <div class="flex items-center justify-between gap-3 border-t border-line px-4 py-3.5">
+            <div class="flex items-center justify-between gap-3 px-4 py-3.5">
                 <span class="min-w-0">
                     <span class="block text-sm text-ink">"Click a red word to explain it"</span>
                     <span class="block text-xs text-muted">
@@ -98,9 +104,7 @@ const BUTTON: &str = "rounded-lg border border-line px-3 py-1.5 text-sm text-ink
                       hover:bg-line/40 focus:outline-none focus-visible:ring-2 \
                       focus-visible:ring-accent";
 
-/// The POS model's own line under a ready dataset: marking needs only the
-/// levels, so a late or failed model is stated with its own ask, never
-/// hidden behind a click that would fetch it.
+/// The POS model's own line: an absent or paused model asks for itself.
 fn model_note(model: Option<DatasetPhase>) -> Option<AnyView> {
     match model {
         Some(DatasetPhase::Ready) => None,
@@ -192,17 +196,15 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                             .into_any()
                     }
                     DatasetPhase::Downloading => {
-                        let percent = mirror
-                            .percent()
+                        // A size nobody has declared yet is not a full bar.
+                        let percent = mirror.percent();
+                        let label = percent
                             .map(|p| format!("{p}%"))
                             .unwrap_or_else(|| "…".into());
-                        let width = mirror
-                            .percent()
-                            .map(|p| format!("width:{p}%"))
-                            .unwrap_or_else(|| "width:100%".into());
+                        let width = format!("width:{}%", percent.unwrap_or(0));
                         view! {
                             <div class="flex items-center justify-between gap-3 pb-2">
-                                <span class="text-sm text-ink tabular-nums">{percent}</span>
+                                <span class="text-sm text-ink tabular-nums">{label}</span>
                                 <span class="flex gap-2">
                                     <button
                                         type="button"
@@ -221,7 +223,11 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                                 </span>
                             </div>
                             <div class="h-1.5 w-full overflow-hidden rounded-full bg-line">
-                                <div class="h-full rounded-full bg-accent" style=width></div>
+                                <div
+                                    class="h-full rounded-full bg-accent/80 \
+                                           transition-[width] duration-100 ease-out"
+                                    style=width
+                                ></div>
                             </div>
                             <p class="pt-2 text-xs text-muted">
                                 "The download resumes where it stopped if it breaks."
