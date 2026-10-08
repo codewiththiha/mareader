@@ -55,9 +55,9 @@ pub fn GlossAiPopover(state: crate::context::ReaderContext) -> impl IntoView {
     // The POS rides the same signal the sections patch through.
     let pos_sig = Signal::derive(move || {
         ctrl.content
-            .word_info
+            .local_pos
             .get()
-            .map(|i| i.pos.clone())
+            .or_else(|| ctrl.content.word_info.get().map(|i| i.pos.clone()))
             .unwrap_or_default()
     });
     let density_sig = Signal::derive(move || state.settings.with(|s| s.gloss_density));

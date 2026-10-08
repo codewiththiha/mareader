@@ -149,6 +149,7 @@ pub fn run() {
             commands::download::download_status,
             commands::download::download_list,
             commands::cefr::cefr_levels,
+            commands::cefr::cefr_pos_of,
             commands::library::scan_folder,
             commands::library::verify_paths,
             commands::library::store_books,

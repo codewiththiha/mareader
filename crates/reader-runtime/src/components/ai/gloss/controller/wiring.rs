@@ -35,9 +35,25 @@ pub fn use_open_listener(state: crate::context::ReaderContext, ctrl: GlossContro
         }
         detail.set(None);
         state.reader.ai_selection.anchor.set(None);
+        // The dataset's verdict for this word's role; AI holds the slot
+        // until it lands.
+        let word = m.word.clone();
+        let context = crate::components::ai::reflow_anchor::explain_context(&m);
         ctrl.open.pending.set(Some(m));
         ctrl.open.request.update(|n| *n += 1);
         popover_open.set(true);
+        crate::services::cefr::fetch_pos(word.clone(), context, {
+            let slot = ctrl.content.local_pos;
+            let live = ctrl.content.word;
+            move |answer| {
+                if live.get_untracked().eq_ignore_ascii_case(&word) {
+                    slot.set(answer.map(|a| {
+                        let kind = (!a.kind.is_empty()).then_some(a.kind);
+                        kind.unwrap_or(a.pos)
+                    }));
+                }
+            }
+        });
     });
 }
 

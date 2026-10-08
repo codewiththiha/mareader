@@ -24,6 +24,16 @@ pub fn cefr_dataset_cancel(app: AppHandle) {
     app.state::<CefrManager>().cancel(&app);
 }
 
+/// The dataset's POS verdict for one word in its sentence, at click time.
+#[tauri::command]
+pub fn cefr_pos_of(
+    app: AppHandle,
+    word: String,
+    context: String,
+) -> Result<Option<crate::cefr::PosAnswer>, String> {
+    app.state::<CefrManager>().pos_of(&app, &word, &context)
+}
+
 /// Stop reading the stream; the partial stays for a resume.
 #[tauri::command]
 pub fn cefr_dataset_pause(app: AppHandle) {
