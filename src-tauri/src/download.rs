@@ -1,4 +1,6 @@
-//! The generic downloader, hosted on the app's event bus and data dir.
+//! The downloader's app side: the bus any feature may listen on, and the
+//! data directory every download lands under. The transport itself is
+//! `download-core`; this is only the host it runs against.
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -7,9 +9,10 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use download_core::Host;
 
-pub use download_core::{DownloadRequest, Downloads, Progress};
+pub use download_core::{DownloadRequest, Downloads, Phase, Progress, ProgressHook};
 
-/// Every phase change and throttled byte count rides this event.
+/// Every phase change and throttled byte count rides this event; a feature
+/// that wants a hook instead passes one to `Downloads::start`.
 pub const PROGRESS_EVENT: &str = "download-progress";
 
 /// The app-hosted downloader, as managed state.
