@@ -145,13 +145,22 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                         view! {
                             <div class="flex items-center justify-between gap-3 pb-2">
                                 <span class="text-sm text-ink tabular-nums">{percent}</span>
-                                <button
-                                    type="button"
-                                    class=button
-                                    on:click=move |_| services::cefr::request_cancel()
-                                >
-                                    "Cancel"
-                                </button>
+                                <span class="flex gap-2">
+                                    <button
+                                        type="button"
+                                        class=button
+                                        on:click=move |_| services::cefr::request_pause()
+                                    >
+                                        "Pause"
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class=button
+                                        on:click=move |_| services::cefr::request_cancel()
+                                    >
+                                        "Cancel"
+                                    </button>
+                                </span>
                             </div>
                             <div class="h-1.5 w-full overflow-hidden rounded-full bg-line">
                                 <div class="h-full rounded-full bg-accent" style=width></div>
@@ -159,6 +168,36 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                             <p class="pt-2 text-xs text-muted">
                                 "The download resumes where it stopped if it breaks."
                             </p>
+                        }
+                            .into_any()
+                    }
+                    "paused" => {
+                        let percent = mirror
+                            .percent()
+                            .map(|p| format!("{p}%"))
+                            .unwrap_or_else(|| "…".into());
+                        view! {
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="text-sm text-ink tabular-nums">
+                                    {format!("Paused at {percent}")}
+                                </span>
+                                <span class="flex gap-2">
+                                    <button
+                                        type="button"
+                                        class=button
+                                        on:click=move |_| services::cefr::request_resume()
+                                    >
+                                        "Resume"
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class=button
+                                        on:click=move |_| services::cefr::request_cancel()
+                                    >
+                                        "Cancel"
+                                    </button>
+                                </span>
+                            </div>
                         }
                             .into_any()
                     }
