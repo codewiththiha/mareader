@@ -99,6 +99,22 @@ pub fn request_cancel() {
     });
 }
 
+/// Stop reading the stream; the partial stays for a resume.
+pub fn request_pause() {
+    spawn_local(async move {
+        let _ = tauri_bridge::invoke("cefr_dataset_pause", JsValue::UNDEFINED).await;
+    });
+}
+
+/// Continue a paused download from the bytes already on disk.
+pub fn request_resume() {
+    spawn_local(async move {
+        if let Err(e) = tauri_bridge::invoke("cefr_dataset_resume", JsValue::UNDEFINED).await {
+            web_sys::console::warn_1(&format!("[cefr] resume failed: {e:?}").into());
+        }
+    });
+}
+
 /// Delete the dataset and its partials.
 pub fn request_remove() {
     spawn_local(async move {

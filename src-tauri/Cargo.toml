@@ -34,7 +34,8 @@ reqwest = { version = "0.12", default-features = false, features = [
   "stream",
   "rustls-tls",
 ] }
-futures-util = "0.3"  # Drives the download stream
+futures-util = "0.3"  # Handles fm-bridge's async streams
+download-core = { path = "../crates/download-core" } # The resumable downloader
 dotenvy = "0.15"      # Loads the .env file (FM_BRIDGE_BIN) before Tauri boots
 futures = "0.3"       # Handles fm-bridge's async streams
 async-stream = "0.3"  # Wraps the AI output chunks into a stream

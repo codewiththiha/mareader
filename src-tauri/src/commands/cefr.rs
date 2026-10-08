@@ -21,7 +21,19 @@ pub fn cefr_dataset_download(app: AppHandle) -> Result<(), String> {
 /// Stop a running download; the partial stays for the next resume.
 #[tauri::command]
 pub fn cefr_dataset_cancel(app: AppHandle) {
-    app.state::<CefrManager>().cancel();
+    app.state::<CefrManager>().cancel(&app);
+}
+
+/// Stop reading the stream; the partial stays for a resume.
+#[tauri::command]
+pub fn cefr_dataset_pause(app: AppHandle) {
+    app.state::<CefrManager>().pause_download(&app);
+}
+
+/// Continue a paused download from the bytes already on disk.
+#[tauri::command]
+pub fn cefr_dataset_resume(app: AppHandle) -> Result<(), String> {
+    app.state::<CefrManager>().resume_download(&app)
 }
 
 /// Delete the dataset and its partials.
