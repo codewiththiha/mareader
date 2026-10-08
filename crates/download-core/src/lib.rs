@@ -188,10 +188,17 @@ impl Downloads {
             return Err(format!("download '{}' is already active", req.id));
         }
         // A finished file is the cache, whatever the link now serves.
-        let cached = std::fs::metadata(&dest).ok().filter(|m| m.is_file()).map(|m| m.len());
+        let cached = std::fs::metadata(&dest)
+            .ok()
+            .filter(|m| m.is_file())
+            .map(|m| m.len());
         let progress = Progress {
             id: req.id.clone(),
-            phase: if cached.is_some() { Phase::Done } else { Phase::Downloading },
+            phase: if cached.is_some() {
+                Phase::Done
+            } else {
+                Phase::Downloading
+            },
             received: cached.unwrap_or(0),
             total: cached,
             message: None,
