@@ -241,6 +241,18 @@ emitted `download-progress` with no window listening, so it no longer
 publishes at all — the manager's hook is the channel, and the terminal
 snapshot it receives is what starts the rebuild.
 
+The merged branch then met the gate this section had not: Deep CI's browser
+lifecycle baseline, red on `main` at the large-PDF stage. The realm's mirror was
+bound only in a Tauri build, so in a browser the first asker created the handle
+— and the first asker was a *page host*, recycled on every long scroll. The
+thread-local kept that dead signal, and the next read of it panicked
+(`reactive_graph`: a disposed reactive value) — the frontend reading of rule 7,
+"module-level state holds sessions weakly". The mirror is now bound by the
+install scope in every build, an unbound ask gets a private handle that is never
+cached, the two derived readiness signals read with `try_with`, and the
+scheduled measurement in `pdf.rs` re-checks its scale and mark handles at the
+frame edge (rule 8) instead of assuming they live.
+
 This entry is a code audit, not a measurement: no memory replay was taken of
 the marking sweep, and no process-RAM claim is made for it. What it does
 establish is that the feature adds no unbounded structure — its caches are
