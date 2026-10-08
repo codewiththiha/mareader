@@ -263,14 +263,13 @@ impl CefrManager {
             *guard = Phase::Absent;
         }
         app.state::<AppDownloads>().remove(DOWNLOAD_ID);
-        for path in [
+        let files = [
             Self::parquet_partial(app),
             Self::db_final(app),
             Self::db_building(app),
-        ] {
-            if let Ok(path) = path {
-                let _ = std::fs::remove_file(path);
-            }
+        ];
+        for path in files.into_iter().flatten() {
+            let _ = std::fs::remove_file(path);
         }
         if let Ok(mut slot) = self.db.lock() {
             *slot = None;
