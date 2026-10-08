@@ -7,7 +7,9 @@ use app_chrome::hooks::dom::range_rects;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use super::spot::{match_spans, range_for_span};
+use super::spot::range_for_span;
+use crate::components::cefr::measure::measure;
+use crate::components::cefr::scan::with_row_scan;
 use crate::components::viewer::page_host::block_row_id;
 use crate::pane::dom::PaneDom;
 use crate::state::ReaderState;
@@ -61,8 +63,8 @@ pub fn BlockSearchHits(
         let settled = state.viewer.zoom.committed.get();
         let mid_zoom = state.viewer.zoom.transition.get().is_some();
         // Everything that re-wraps the row without the reader scrolling.
-        let moved = relayout.get();
-        let _ = (settled, moved);
+        let fp = relayout.get();
+        let _ = settled;
 
         let needle = query.trim();
         if needle.is_empty() || mid_zoom {
@@ -79,11 +81,11 @@ pub fn BlockSearchHits(
                 if boxes.try_get_untracked().is_none() {
                     return;
                 }
-                paint_row(dom, &id, &needle, boxes);
+                paint_row(dom, &id, &needle, fp, boxes);
             });
             return;
         }
-        paint_row(dom, &row_id, needle, boxes);
+        paint_row(dom, &row_id, needle, fp, boxes);
     });
 
     // The occurrence in THIS block the reader stepped to, if any.
@@ -128,47 +130,63 @@ pub fn BlockSearchHits(
     }
 }
 
-/// Walk the row's text for `needle` and publish the boxes.
-fn paint_row(dom: PaneDom, row_id: &str, needle: &str, boxes: RwSignal<Vec<HitBox>>) {
+/// Plan the row's occurrences over the shared scan; a frame measures.
+fn paint_row(dom: PaneDom, row_id: &str, needle: &str, fp: u64, boxes: RwSignal<Vec<HitBox>>) {
     // A row that is not mounted has no text to cover.
     let Some(row) = dom.by_id(row_id) else {
         clear_if_painted(boxes);
         return;
     };
-
-    let origin = row.get_bounding_client_rect();
-    let mut painted: Vec<HitBox> = Vec::new();
-    for (occurrence, (start, end)) in match_spans(&row, needle).into_iter().enumerate() {
-        // The cap is on BOXES, which is what the engine caps.
-        if painted.len() >= MAX_BOXES_PER_ROW {
-            break;
+    let plan = with_row_scan(row_id, fp, &row, |scan| {
+        let lower = scan.text.to_lowercase();
+        reader_core::search::occurrence_spans(&scan.text, &lower, needle)
+            .into_iter()
+            .take(MAX_BOXES_PER_ROW)
+            .collect::<Vec<_>>()
+    });
+    if plan.is_empty() {
+        clear_if_painted(boxes);
+        return;
+    }
+    let task_row = row.clone();
+    measure(move || {
+        if !task_row.is_connected() || boxes.try_get_untracked().is_none() {
+            return;
         }
-        let Some(range) = range_for_span(&row, start, end) else {
-            continue;
-        };
-        for (left, top, right, bottom) in range_rects(&range) {
+        let origin = task_row.get_bounding_client_rect();
+        let mut painted: Vec<HitBox> = Vec::new();
+        for (occurrence, (start, end)) in plan.into_iter().enumerate() {
+            // The cap is on BOXES, which is what the engine caps.
             if painted.len() >= MAX_BOXES_PER_ROW {
                 break;
             }
-            let (width, height) = (right - left, bottom - top);
-            // A zero-sized fragment at a line-box edge is not a highlight.
-            if width <= 0.0 || height <= 0.0 {
+            let Some(range) = range_for_span(&task_row, start, end) else {
                 continue;
+            };
+            for (left, top, right, bottom) in range_rects(&range) {
+                if painted.len() >= MAX_BOXES_PER_ROW {
+                    break;
+                }
+                let (width, height) = (right - left, bottom - top);
+                // A zero-sized fragment at a line-box edge is not a highlight.
+                if width <= 0.0 || height <= 0.0 {
+                    continue;
+                }
+                painted.push(HitBox {
+                    occurrence: occurrence as u32,
+                    left: left - origin.left(),
+                    top: top - origin.top(),
+                    // A hairline match still gets a visible box.
+                    width: width.max(1.0),
+                    height: height.max(1.0),
+                });
             }
-            painted.push(HitBox {
-                occurrence: occurrence as u32,
-                left: left - origin.left(),
-                top: top - origin.top(),
-                // A hairline match still gets a visible box.
-                width: width.max(1.0),
-                height: height.max(1.0),
-            });
         }
-    }
-    // Compared before written: an unchanged walk must not re-render.
-    if boxes.get_untracked() != painted {
-        boxes.set(painted);
-    }
+        // Compared before written: an unchanged walk must not re-render.
+        if boxes.get_untracked() != painted {
+            boxes.set(painted);
+        }
+    });
 }
 
 /// Drop the painted boxes, but only if there are any.

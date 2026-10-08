@@ -107,18 +107,12 @@ pub(crate) fn range_for_span(
 }
 
 /// The row's rendered text, one entry per text node.
-fn text_contents(el: &web_sys::Element) -> Vec<String> {
+pub(crate) fn text_contents(el: &web_sys::Element) -> Vec<String> {
     text_nodes_of(el)
         .iter()
         .filter_map(|node| node.dyn_ref::<web_sys::Text>())
         .map(|text| text.data())
         .collect()
-}
-
-/// Every occurrence of `needle`, as spans in the row's own text.
-pub(crate) fn match_spans(el: &web_sys::Element, needle: &str) -> Vec<(usize, usize)> {
-    let text = text_contents(el).concat();
-    reader_core::search::occurrence_spans(&text, &text.to_lowercase(), needle)
 }
 
 #[cfg(test)]
