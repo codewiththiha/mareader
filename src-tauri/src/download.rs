@@ -1,24 +1,18 @@
-//! The downloader's app side: the bus any feature may listen on, and the
-//! data directory every download lands under. The transport itself is
-//! `download-core`; this is only the host it runs against.
+//! The downloader's app side: its runtime and data directory.
 
 use std::future::Future;
 use std::path::PathBuf;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use download_core::Host;
 
 pub use download_core::{DownloadRequest, Downloads, Phase, Progress, ProgressHook};
 
-/// Every phase change and throttled byte count rides this event; a feature
-/// that wants a hook instead passes one to `Downloads::start`.
-pub const PROGRESS_EVENT: &str = "download-progress";
-
 /// The app-hosted downloader, as managed state.
 pub type AppDownloads = Downloads;
 
-/// Hosts downloads on Tauri: runtime tasks, bus events, app files.
+/// Hosts downloads on Tauri: runtime tasks and app files.
 #[derive(Clone)]
 pub struct TauriHost {
     app: AppHandle,
@@ -35,9 +29,9 @@ impl Host for TauriHost {
         tauri::async_runtime::spawn(task);
     }
 
-    fn publish(&self, progress: &Progress) {
-        let _ = self.app.emit(PROGRESS_EVENT, progress);
-    }
+    /// Nothing is broadcast: the features here pass a hook, and no
+    /// window listens.
+    fn publish(&self, _progress: &Progress) {}
 
     fn data_dir(&self) -> Result<PathBuf, String> {
         self.app
