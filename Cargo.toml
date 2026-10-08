@@ -105,6 +105,7 @@ members = [
   "crates/virtual-list-leptos",
   "crates/reader-core",
   "crates/cefr-core",
+  "crates/dictionary-core",
   "crates/download-core",
   "crates/ui-geom",
   "crates/pdf-core",

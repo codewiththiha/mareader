@@ -1,0 +1,10 @@
+[package]
+name = "dictionary-core"
+version = "0.1.0"
+edition = "2024"
+description = "Format-agnostic core of the dictionary: pack tags folded to kinds, keys folded for lookup."
+
+[lints.rust]
+# Warnings are denied, not printed: a gate only in a log gets read past.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "deny"
