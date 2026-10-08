@@ -171,6 +171,7 @@ struct LevelsArgs {
 pub struct PosAnswer {
     pub pos: String,
     pub kind: String,
+    pub sense: Option<String>,
     pub level: Option<f64>,
     pub senses: Vec<String>,
 }

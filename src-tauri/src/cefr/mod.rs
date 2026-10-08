@@ -36,7 +36,9 @@ pub struct PosAnswer {
     pub pos: String,
     /// The readable word class: noun, verb, adjective, ...
     pub kind: String,
-    /// The exact sense's level, when the dataset carries it.
+    /// The dataset sense that answered, when one did.
+    pub sense: Option<String>,
+    /// The answering sense's level.
     pub level: Option<f64>,
     /// Every POS sense the dataset lists for the word.
     pub senses: Vec<String>,
@@ -338,8 +340,8 @@ impl CefrManager {
         let Some(db) = slot.as_ref() else {
             return Ok(None);
         };
-        let level = db
-            .exact_level(word, &found.pos)
+        let sense = db
+            .sense_level(word, &found.pos)
             .map_err(|e| format!("pos lookup: {e}"))?;
         let senses = db
             .pos_senses(word)
@@ -350,7 +352,10 @@ impl CefrManager {
         Ok(Some(PosAnswer {
             pos: found.pos.clone(),
             kind: penn_kind(&found.pos),
-            level,
+            // The sense that answered may be a tag-family neighbor; the
+            // tag stays the tagger's.
+            sense: sense.as_ref().map(|s| s.pos.clone()),
+            level: sense.map(|s| s.level),
             senses,
         }))
     }
