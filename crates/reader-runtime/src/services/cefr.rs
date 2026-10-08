@@ -11,12 +11,17 @@ use wasm_bindgen::JsValue;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetMirror {
-    /// `absent` | `downloading` | `converting` | `ready` | `failed`.
+    /// `absent` | `downloading` | `paused` | `converting` | `ready` |
+    /// `failed`.
     pub phase: String,
     pub received: u64,
     pub total: Option<u64>,
     pub words: Option<u64>,
     pub message: Option<String>,
+    /// The POS engine's state: `absent` | `downloading` | `ready` |
+    /// `failed`.
+    #[serde(default)]
+    pub model: String,
 }
 
 impl DatasetMirror {
@@ -29,18 +34,30 @@ impl DatasetMirror {
     pub fn is_ready(&self) -> bool {
         self.phase == "ready"
     }
+
+    /// Whether a click can be given the dataset's own word class yet.
+    pub fn model_ready(&self) -> bool {
+        self.model == "ready"
+    }
 }
 
-/// The current session's mirror; a session's end takes its own signal down.
+/// The bound session's mirror; a later bind replaces it.
 static MIRROR: Mutex<Option<RwSignal<Option<DatasetMirror>>>> = Mutex::new(None);
 
 /// The backend tap, installed once per process; it writes whoever is bound.
 static TAP: OnceLock<()> = OnceLock::new();
 
-/// Hand a status snapshot to the live session's mirror, if any survives.
+/// Write the bound mirror; a refused write drops the dead realm's
+/// handle.
 fn publish(status: DatasetMirror) {
-    if let Some(mirror) = MIRROR.lock().ok().and_then(|slot| *slot) {
-        mirror.try_set(Some(status));
+    let Ok(mut slot) = MIRROR.lock() else {
+        return;
+    };
+    let Some(mirror) = *slot else {
+        return;
+    };
+    if mirror.try_set(Some(status)).is_none() {
+        *slot = None;
     }
 }
 

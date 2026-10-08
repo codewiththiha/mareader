@@ -85,8 +85,9 @@ pub(crate) fn CefrTab(state: crate::context::ReaderContext) -> impl IntoView {
         <SectionLabel text="Word dataset" />
         <DatasetSection dataset=dataset />
         <p class="px-1 pt-2 text-xs text-muted">
-            "The dataset is the Words-CEFR-Dataset, downloaded once (about 3 MB) and \
-             rebuilt as a local database. Nothing leaves the device."
+            "The word levels are the Words-CEFR-Dataset, downloaded once (about 3 MB) \
+             and rebuilt as a local database. Naming a clicked word's part of speech adds a \
+             7 MB word engine. Nothing leaves the device."
         </p>
     }
 }
@@ -119,6 +120,19 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                             .words
                             .map(|w| format!("Ready — {w} words"))
                             .unwrap_or_else(|| "Ready".into());
+                        // The engine is a second file on its own schedule.
+                        let engine = match mirror.model.as_str() {
+                            "downloading" => {
+                                Some("The word engine for click explanations is still downloading.")
+                            }
+                            "failed" => {
+                                Some("The word engine did not download; click a red word to retry.")
+                            }
+                            _ => None,
+                        };
+                        let engine_line = engine.map(|line| {
+                            view! { <p class="pt-2 text-xs text-muted">{line}</p> }
+                        });
                         view! {
                             <div class="flex items-center justify-between gap-3">
                                 <span class="text-sm text-ink">{words}</span>
@@ -130,6 +144,7 @@ fn DatasetSection(dataset: RwSignal<Option<services::cefr::DatasetMirror>>) -> i
                                     "Remove"
                                 </button>
                             </div>
+                            {engine_line}
                         }
                             .into_any()
                     }
