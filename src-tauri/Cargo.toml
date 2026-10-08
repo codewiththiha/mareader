@@ -29,6 +29,7 @@ cefr-core = { path = "../crates/cefr-core" }
 cefr = { git = "https://github.com/codewiththiha/cefr-rs.git", default-features = false, features = [
   "parquet",
   "sqlite",
+  "nlp",
 ] }
 reqwest = { version = "0.12", default-features = false, features = [
   "stream",

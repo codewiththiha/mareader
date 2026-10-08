@@ -164,3 +164,36 @@ thread_local! {
 struct LevelsArgs {
     words: Vec<String>,
 }
+
+/// The backend's dataset POS answer for one clicked word.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PosAnswer {
+    pub pos: String,
+    pub kind: String,
+    pub level: Option<f64>,
+    pub senses: Vec<String>,
+}
+
+/// The dataset's verdict for `word` in `sentence`; `None` if unequipped.
+pub fn fetch_pos(word: String, context: String, done: impl FnOnce(Option<PosAnswer>) + 'static) {
+    #[derive(Serialize)]
+    struct PosArgs {
+        word: String,
+        context: String,
+    }
+    spawn_local(async move {
+        if !tauri_bridge::has_tauri() {
+            return;
+        }
+        let args = serde_wasm_bindgen::to_value(&PosArgs { word, context })
+            .unwrap_or(JsValue::UNDEFINED);
+        let parsed = match tauri_bridge::invoke("cefr_pos_of", args).await {
+            Ok(value) => serde_wasm_bindgen::from_value::<Option<PosAnswer>>(value)
+                .ok()
+                .flatten(),
+            Err(_) => None,
+        };
+        done(parsed);
+    });
+}

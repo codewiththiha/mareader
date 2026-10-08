@@ -21,6 +21,27 @@ pub const PROGRESS_EVENT: &str = "cefr-dataset-progress";
 /// The generic downloader's key for this dataset's parquet.
 const DOWNLOAD_ID: &str = "cefr-dataset";
 
+/// The runtime tagger model, served from the cefr-rs repository.
+pub const MODEL_URL: &str =
+    "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/models/en_tokenizer.bin.zst";
+
+/// The generic downloader's key for the tagger model.
+const MODEL_ID: &str = "cefr-model";
+
+/// The dataset's POS verdict for one clicked word.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosAnswer {
+    /// The Penn Treebank tag at the word's position in its sentence.
+    pub pos: String,
+    /// The readable word class: noun, verb, adjective, ...
+    pub kind: String,
+    /// The exact sense's level, when the dataset carries it.
+    pub level: Option<f64>,
+    /// Every POS sense the dataset lists for the word.
+    pub senses: Vec<String>,
+}
+
 /// Progress payload, also the answer of the status command.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,6 +124,8 @@ pub struct CefrManager {
     phase: Mutex<Phase>,
     /// The opened dataset, reused across lookups; dropped on remove.
     db: Mutex<Option<cefr::db::CefrDb>>,
+    /// The loaded tagger model, reused across clicks.
+    tagger: Mutex<Option<Arc<cefr::pos::Tagger>>>,
 }
 
 impl CefrManager {
@@ -110,6 +133,7 @@ impl CefrManager {
         Self {
             phase: Mutex::new(Phase::Absent),
             db: Mutex::new(None),
+            tagger: Mutex::new(None),
         }
     }
 
@@ -207,6 +231,14 @@ impl CefrManager {
         let host = TauriHost::new(app.clone());
         app.state::<AppDownloads>()
             .start(&host, request, Some(on_progress))?;
+        // The click-time tagger model rides along; one tap equips both.
+        let model = DownloadRequest {
+            id: MODEL_ID.into(),
+            url: MODEL_URL.into(),
+            directory: Some("cefr".into()),
+            file_name: "en_tokenizer.bin.zst".into(),
+        };
+        let _ = app.state::<AppDownloads>().start(&host, model, None);
         tauri::async_runtime::spawn(supervise(app));
         Ok(())
     }
@@ -283,6 +315,99 @@ impl CefrManager {
         out.resize(words.len(), None);
         Ok(out)
     }
+}
+
+    /// The dataset's POS for `word` in `sentence`; `Ok(None)` if unequipped.
+    pub fn pos_of(
+        &self,
+        app: &AppHandle,
+        word: &str,
+        sentence: &str,
+    ) -> Result<Option<PosAnswer>, String> {
+        let Some(tagger) = self.tagger(app)? else {
+            return Ok(None);
+        };
+        let Some(found) = tagger.pos_in_context(word, sentence) else {
+            return Ok(None);
+        };
+        let db_path = Self::db_final(app)?;
+        let mut slot = self.db.lock().map_err(|_| "db lock poisoned")?;
+        if slot.is_none() && db_path.is_file() {
+            *slot = Some(cefr::db::CefrDb::open(&db_path).map_err(|e| format!("dataset: {e}"))?);
+        }
+        let Some(db) = slot.as_ref() else {
+            return Ok(None);
+        };
+        let level = db
+            .exact_level(word, &found.pos)
+            .map_err(|e| format!("pos lookup: {e}"))?;
+        let senses = db
+            .pos_senses(word)
+            .map_err(|e| format!("senses: {e}"))?
+            .into_iter()
+            .map(|(pos, _)| pos)
+            .collect();
+        Ok(Some(PosAnswer {
+            pos: found.pos.clone(),
+            kind: penn_kind(&found.pos),
+            level,
+            senses,
+        }))
+    }
+
+    /// The loaded tagger, or `None` while the model is still inbound.
+    fn tagger(&self, app: &AppHandle) -> Result<Option<Arc<cefr::pos::Tagger>>, String> {
+        let mut slot = self.tagger.lock().map_err(|_| "tagger lock poisoned")?;
+        if let Some(tagger) = slot.as_ref() {
+            return Ok(Some(tagger.clone()));
+        }
+        let model = Self::dir(app)?.join("en_tokenizer.bin.zst");
+        if !model.is_file() {
+            // Self-heal: ask the downloader for it; a later click loads it.
+            let request = DownloadRequest {
+                id: MODEL_ID.into(),
+                url: MODEL_URL.into(),
+                directory: Some("cefr".into()),
+                file_name: "en_tokenizer.bin.zst".into(),
+            };
+            let host = TauriHost::new(app.clone());
+            let _ = app.state::<AppDownloads>().start(&host, request, None);
+            return Ok(None);
+        }
+        let tagger = Arc::new(
+            cefr::pos::Tagger::from_model_path(&model).map_err(|e| format!("tagger model: {e}"))?,
+        );
+        *slot = Some(tagger.clone());
+        Ok(Some(tagger))
+    }
+}
+
+/// A readable word class for a Penn tag.
+fn penn_kind(tag: &str) -> String {
+    let kind = if tag.starts_with("VB") {
+        "verb"
+    } else if tag.starts_with("NN") {
+        "noun"
+    } else if tag.starts_with("JJ") {
+        "adjective"
+    } else if tag.starts_with("RB") {
+        "adverb"
+    } else if tag == "PRP" || tag.starts_with("WP") {
+        "pronoun"
+    } else if tag == "IN" || tag == "TO" {
+        "preposition"
+    } else if tag == "CC" {
+        "conjunction"
+    } else if tag == "CD" {
+        "number"
+    } else if tag == "MD" {
+        "modal verb"
+    } else if tag == "DT" || tag == "PDT" || tag == "WDT" {
+        "determiner"
+    } else {
+        "other"
+    };
+    kind.to_string()
 }
 
 impl Default for CefrManager {
