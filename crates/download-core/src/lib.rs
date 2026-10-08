@@ -642,9 +642,14 @@ fn finalize(dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// A directory part of a request, refused unless it stays under the data
-/// directory.
+/// A directory part of a request, refused unless it is a non-empty path
+/// that stays under the data directory. `None` is how a request asks for
+/// the data directory itself; `Some("")` is a caller that meant something
+/// it did not say.
 fn relative(value: &str) -> Result<PathBuf, String> {
+    if value.is_empty() {
+        return Err("a directory is either absent or a relative path".into());
+    }
     let path = Path::new(value);
     let mut out = PathBuf::new();
     for component in path.components() {
