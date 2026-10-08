@@ -187,8 +187,8 @@ pub fn fetch_pos(word: String, context: String, done: impl FnOnce(Option<PosAnsw
         if !tauri_bridge::has_tauri() {
             return;
         }
-        let args = serde_wasm_bindgen::to_value(&PosArgs { word, context })
-            .unwrap_or(JsValue::UNDEFINED);
+        let args =
+            serde_wasm_bindgen::to_value(&PosArgs { word, context }).unwrap_or(JsValue::UNDEFINED);
         let parsed = match tauri_bridge::invoke("cefr_pos_of", args).await {
             Ok(value) => serde_wasm_bindgen::from_value::<Option<PosAnswer>>(value)
                 .ok()
