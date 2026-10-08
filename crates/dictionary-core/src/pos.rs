@@ -181,7 +181,8 @@ const TAGS: &[(&str, Kind)] = &[
 
 /// The table's answer for one tag already lowercased.
 fn exact(tag: &str) -> Option<Kind> {
-    TAGS.iter().find_map(|(spelling, kind)| (*spelling == tag).then_some(*kind))
+    TAGS.iter()
+        .find_map(|(spelling, kind)| (*spelling == tag).then_some(*kind))
 }
 
 /// Fold one pack tag, however it is spelled, to a canonical kind.
@@ -357,7 +358,7 @@ pub fn display_tag<'a>(pos: &'a str, nlp: Option<&str>) -> &'a str {
     if let Some(nlp) = nlp {
         for tag in &tags {
             if agrees(nlp, kind_of(tag)) {
-                return *tag;
+                return tag;
             }
         }
     }
@@ -441,7 +442,10 @@ mod tests {
         assert_eq!(kinds_of("n; adj"), vec![Kind::Noun, Kind::Adjective]);
         assert_eq!(kinds_of("verb/noun"), vec![Kind::Verb, Kind::Noun]);
         assert_eq!(kinds_of("n v"), vec![Kind::Noun, Kind::Verb]);
-        assert_eq!(kinds_of("verb | adj | verb"), vec![Kind::Verb, Kind::Adjective]);
+        assert_eq!(
+            kinds_of("verb | adj | verb"),
+            vec![Kind::Verb, Kind::Adjective]
+        );
         assert_eq!(split_tags("v, n"), vec!["v", "n"]);
         assert_eq!(split_tags("noun"), vec!["noun"]);
         assert_eq!(split_tags(""), Vec::<&str>::new());

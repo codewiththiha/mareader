@@ -2,7 +2,10 @@
 
 /// The characters a copied word carries that carry no meaning.
 fn is_invisible(c: char) -> bool {
-    matches!(c, '\u{200b}'..='\u{200d}' | '\u{00ad}' | '\u{2060}' | '\u{feff}')
+    matches!(
+        c,
+        '\u{200b}'..='\u{200d}' | '\u{00ad}' | '\u{2060}' | '\u{feff}'
+    )
 }
 
 /// One character's fold: full width, katakana, curly quotes.
