@@ -156,7 +156,7 @@ fn serve(
             &body[start..],
             format!("Content-Range: bytes {start}-{}/{total}\r\n", total - 1),
         ),
-        _ => ("200 OK", body.as_slice(), String::new()),
+        _ => ("200 OK", body, String::new()),
     };
     let head = format!(
         "HTTP/1.1 {status}\r\nETag: {}\r\nContent-Length: {}\r\n{}Connection: close\r\n\r\n",
