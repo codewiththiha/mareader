@@ -1085,6 +1085,7 @@ Deeper records live in `docs/`:
 | `docs/memory/README.md` | Memory documentation index: the binding rules for new code, the subsystem audit, and the fling-gate churn record |
 | `docs/memory-baseline.md` | Instrumentation and the baseline memory numbers |
 | `docs/ci-architecture.md`, `docs/lifecycle-ownership.md` | The CI pipeline and the browser lifecycle assertions |
+| `docs/dictionary.md` | The dictionary packs, the POS alias table, the store, the English bridge, and the surfaces |
 
 ---
 
