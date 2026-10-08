@@ -1,7 +1,7 @@
 //! Shared page-space anchor watchers: glue an anchor to the live page
 //! host.
 
-use ai_core::gloss::{GlossBox, GlossMark, ReflowSpot, mark_id};
+use ai_core::gloss::{GlossBox, GlossMark, ReflowSpot, capture_id};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -125,6 +125,9 @@ pub fn stroke_resolver(
     })
 }
 
+/// Distinguishes same-millisecond captures; strokes key on id.
+static CAPTURE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// The one place a capture becomes a persisted mark.
 pub fn captured_mark(
     word: impl Into<String>,
@@ -132,7 +135,11 @@ pub fn captured_mark(
     anchor: PageAnchor,
 ) -> GlossMark {
     GlossMark {
-        id: mark_id(anchor.page, js_sys::Date::now() as u64),
+        id: capture_id(
+            anchor.page,
+            js_sys::Date::now() as u64,
+            CAPTURE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        ),
         word: word.into(),
         context: context.into(),
         anchor,
