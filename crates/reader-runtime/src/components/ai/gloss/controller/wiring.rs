@@ -47,10 +47,7 @@ pub fn use_open_listener(state: crate::context::ReaderContext, ctrl: GlossContro
             let live = ctrl.content.word;
             move |answer| {
                 if live.get_untracked().eq_ignore_ascii_case(&word) {
-                    slot.set(answer.map(|a| {
-                        let kind = (!a.kind.is_empty()).then_some(a.kind);
-                        kind.unwrap_or(a.pos)
-                    }));
+                    slot.set(answer.map(|answer| answer.label()));
                 }
             }
         });
