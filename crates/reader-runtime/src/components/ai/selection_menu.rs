@@ -13,6 +13,7 @@ use crate::components::ai::gloss::mark_layer::request_gloss_open;
 use crate::components::ai::reflow_anchor::spot_envelope;
 use crate::components::dict::DictOpen;
 use crate::pane::origin::raised_in;
+use app_chrome::floating::types::Rect;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::layers::AI_SELECTION;
 use app_ui::components::primitives::floating::anchor_bubble::AnchorBubble;
@@ -20,7 +21,6 @@ use app_ui::components::primitives::hooks::use_custom_event::use_typed_event_fro
 use app_ui::components::primitives::overlay::toast::{ToastData, ToastTone};
 use app_ui::components::primitives::overlay::toast_host::{ToastHost, use_toast_slot};
 use app_ui::events::{DICT_OPEN_EVENT, dispatch_typed_event_on};
-use ui_geom::floating::Rect;
 
 /// The clipboard write, as the browser's promise settles it.
 async fn write_clipboard(text: &str) -> bool {
