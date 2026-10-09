@@ -39,8 +39,9 @@ impl PackMirror {
             return "ready";
         }
         match self.progress.as_ref().map(|p| p.phase.as_str()) {
-            Some("downloading") | Some("preparing") | Some("retrying")
-            | Some("verifying") => "downloading",
+            Some("downloading") | Some("preparing") | Some("retrying") | Some("verifying") => {
+                "downloading"
+            }
             Some("paused") => "paused",
             Some("failed") => "failed",
             _ => "absent",
@@ -51,8 +52,7 @@ impl PackMirror {
     pub fn percent(&self) -> Option<u32> {
         let progress = self.progress.as_ref()?;
         let total = progress.total?;
-        (total > 0)
-            .then_some(((progress.received.min(total) as f64 / total as f64) * 100.0) as u32)
+        (total > 0).then_some(((progress.received.min(total) as f64 / total as f64) * 100.0) as u32)
     }
 }
 
@@ -159,8 +159,9 @@ pub fn lookup(
         })
         .unwrap_or(JsValue::UNDEFINED);
         let parsed = match tauri_bridge::invoke("dict_lookup", args).await {
-            Ok(value) => serde_wasm_bindgen::from_value::<Vec<EntryMirror>>(value)
-                .unwrap_or_default(),
+            Ok(value) => {
+                serde_wasm_bindgen::from_value::<Vec<EntryMirror>>(value).unwrap_or_default()
+            }
             Err(_) => Vec::new(),
         };
         done(parsed);
@@ -188,8 +189,9 @@ pub fn search(
         let args = serde_wasm_bindgen::to_value(&SearchArgs { ask, pack_ids })
             .unwrap_or(JsValue::UNDEFINED);
         let parsed = match tauri_bridge::invoke("dict_search", args).await {
-            Ok(value) => serde_wasm_bindgen::from_value::<Vec<EntryMirror>>(value)
-                .unwrap_or_default(),
+            Ok(value) => {
+                serde_wasm_bindgen::from_value::<Vec<EntryMirror>>(value).unwrap_or_default()
+            }
             Err(_) => Vec::new(),
         };
         done(parsed);
