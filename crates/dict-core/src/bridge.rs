@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// One hop in a plan: a pack, and which of its columns is the door.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Hop {
     pub pack: String,
@@ -71,7 +71,7 @@ pub fn plans(from: &str, to: &str, packs: &[PackRef]) -> Vec<Plan> {
         for a in &first {
             for b in &second {
                 let mut hops = a.hops.clone();
-                hops.extend(b.hops.iter().copied());
+                hops.extend(b.hops.iter().cloned());
                 out.push(Plan {
                     from: from.into(),
                     to: to.into(),
