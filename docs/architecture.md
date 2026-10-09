@@ -701,6 +701,10 @@ a model feature: nothing is inferred at runtime, every band is looked up.
 - **Ink yields to the accent.** A word an AI gloss mark already owns is not
   painted red — by spot in reflow, by rect overlap in PDF — so one word never
   carries two colours.
+- **Generated ink is out of the tab order.** The marks are `tabindex="-1"`:
+  two hundred boxes a page would otherwise be two hundred tab stops inside a
+  layer that is `aria-hidden` while the click is off. The pointer reaches the
+  ink; the keyboard reaches the AI's own marks, which are few and the reader's.
 - **The mark is a control only when it can act.** `.cefr-mark` is
   `pointer-events: none` while disabled, and `cefr_click_explain` disables it,
   so turning the click off gives the reader their text selection back over
