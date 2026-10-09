@@ -40,6 +40,8 @@ shape is in `docs/frame-lifecycle-alternatives.md`.
   [Independent pane looks](#independent-pane-looks).
 - **Fit, moves and grab.** Fit follows the page on screen, panes move and
   lift, and empty space grab-pans; see [Fit, pane moves and grab](#fit-pane-moves-and-grab).
+- **Vocabulary highlights.** Red ink over words above the reader's CEFR
+  band; see [Vocabulary highlights](#vocabulary-highlights).
 
 ## Runtime structure
 
@@ -649,6 +651,39 @@ texture with colour because a look they own is a whole look.
   drag marks `data-appearance-scope` on the document so the engine scopes
   the raw-raster scrub (and its CSS class, on the pane root) to that pane's
   sessions. The engine smoke asserts an untouched session renders nothing.
+
+## Vocabulary highlights
+
+Red marker ink over words STRICTLY above the reader's band, in PDF and
+reflow alike. The band is `Settings::cefr_level` (A2–C2; A1 is not
+offered — it would mark nearly every word); the ink is always red, never
+the accent, and it yields to an AI gloss stroke over the same word.
+
+- **The layer.** `components/cefr/` paints one `CefrMarkLayer` per PDF
+  page host and per reflow block. Every box is a pointer target: a click
+  opens the AI word card for that word in its sentence
+  (`cefr_click_explain`); hover brightens the ink and never spends an AI
+  call. The mark carries the word and its context, so a later dictionary
+  can attach to the same click without re-anchoring.
+- **Measuring.** A walk plans over the shared row scan
+  (`components/cefr/scan.rs`, also the search painter's) and measures in
+  one animation frame (`components/cefr/measure.rs`). PDF boxes are page
+  space: a zoom re-renders, never re-measures. `MAX_BOXES_PER_PAGE` and
+  `MAX_BOXES_PER_ROW` cap the paint; the walk re-runs only when its
+  `WalkKey` moves (layout or text fingerprint, cache generation, the
+  gloss-suppression fold, the band).
+- **The words.** `cefr-core` tokenizes ASCII letter runs, folds
+  apostrophes, expands contractions and hyphen parts for lookup, and
+  memoizes answered bands in `LevelCache` (8192 entries, then clear
+  whole). The backend answers batched levels from the sqlite dataset;
+  misses remember zero, so one page never asks twice.
+- **The dataset.** Words-CEFR-Dataset rides `download-core` (mirrors,
+  pause, resume, progress events) as a parquet, verifies by its `PAR1`
+  head and tail, rebuilds to `cefr.db` (`PRAGMA user_version = 1`) and
+  deletes the parquet. The clicked word's POS is the `cefr` crate
+  tagger's, resolved in its sentence (contractions and compound heads
+  included); the model rides the same download. Settings → Vocabulary
+  shows the download with percent, pause, resume, cancel and remove.
 
 ## Known limitations
 
