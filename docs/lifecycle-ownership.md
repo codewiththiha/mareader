@@ -304,7 +304,7 @@ responsibilities moved to exactly one owner:
 | Document open / session / close, paper settings, prefetch gate | pane |
 | Virtualizers, zoom controller, navigation sync, reading progress, reflow pipeline, mode change, first paint, blend geometry | pane (installed at mount, in the pane's owner) |
 | Keyboard shortcuts (window listeners) | pane, gated on the host's `active` |
-| Viewer, first-paint cover, floating title, page pill, bottom bar, find bar, selection pill, gloss popover | pane content |
+| Viewer, first-paint cover, floating title, page pill, bottom bar, find bar, selection menu, gloss popover | pane content |
 | Document title, view menu | pane (`TitleCenter` / `TitleTrailing` slots) |
 
 - **Identity.** `PaneId` is minted by the manager core from a monotonic
