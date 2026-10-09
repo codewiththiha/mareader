@@ -136,24 +136,29 @@ impl DictDb {
         Ok(out)
     }
 
-    /// A pass over the ask's first letter for near-miss spellings.
+    /// A near-miss pass over the ask's length window.
     fn fuzzy(&self, ask_fold: &str, limit: usize, out: &mut Vec<RawRow>) -> Result<()> {
-        let Some(first) = ask_fold.chars().next() else {
+        let chars = ask_fold.chars().count();
+        if chars < 3 {
             return Ok(());
-        };
+        }
         let sql = "SELECT {COLUMNS} FROM entries
-             WHERE word_fold LIKE ?1 ESCAPE '\\'
-             LIMIT 500"
+             WHERE length(word_fold) BETWEEN ?1 AND ?2
+                OR length(def_fold) BETWEEN ?1 AND ?2
+             LIMIT 2000"
             .replace("{COLUMNS}", COLUMNS);
+        let len = chars as i64;
         let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params![like_prefix(&first.to_string())], row_shape)?;
+        let rows = stmt.query_map(params![len - 2, len + 2], row_shape)?;
         for row in rows {
             let row = row?;
             if out.len() >= limit {
                 break;
             }
-            let distance = dict_core::edit_distance(ask_fold, &fold(&row.word), 2);
-            if distance <= 2 && !out.iter().any(|seen| seen.word == row.word) {
+            let near_word = dict_core::edit_distance(ask_fold, &fold(&row.word), 2);
+            let near_def = dict_core::edit_distance(ask_fold, &fold(&row.definition), 2);
+            let near = near_word.min(near_def);
+            if near <= 2 && !out.iter().any(|seen| seen.word == row.word) {
                 out.push(row);
             }
         }
@@ -212,6 +217,63 @@ fn like_escape(ask: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A temp pack table with a few rows to ask.
+    fn temp_db(tag: &str, rows: &[(&str, &str)]) -> (std::path::PathBuf, DictDb) {
+        let dir = std::env::temp_dir().join(format!("dict_db_{tag}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pack.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(crate::dict::build::SCHEMA).unwrap();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "INSERT INTO entries (word, word_fold, definition, def_fold)                      VALUES (?1, ?2, ?3, ?4)",
+                )
+                .unwrap();
+            for (word, definition) in rows {
+                stmt.execute(params![
+                    word,
+                    fold(word),
+                    definition,
+                    fold(definition)
+                ])
+                .unwrap();
+            }
+        }
+        drop(conn);
+        let db = DictDb::open(&path).unwrap();
+        (dir, db)
+    }
+
+    #[test]
+    fn a_misspelled_ask_still_finds_the_word_and_the_other_side() {
+        let (dir, db) = temp_db(
+            "fuzzy",
+            &[("running", "palai"), ("color", "couleur"), ("chat", "cat")],
+        );
+        let got = db.search("runing", 10).unwrap();
+        assert!(got.iter().any(|row| row.word == "running"), "{got:?}");
+        // The far side answers too: a French ask one letter
+        // off finds its English word.
+        let got = db.search("couler", 10).unwrap();
+        assert!(got.iter().any(|row| row.word == "color"), "{got:?}");
+        // A short ask is a prefix question, not a spelling one.
+        let got = db.search("ru", 10).unwrap();
+        assert!(got.iter().any(|row| row.word == "running"), "{got:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_definition_side_is_askable_both_ways() {
+        let (dir, db) = temp_db("def", &[("light", "lumiere")]);
+        let got = db.lookup_definition("lumiere", 10).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].word, "light");
+        let got = db.search("lumier", 10).unwrap();
+        assert!(got.iter().any(|row| row.word == "light"), "{got:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn a_wildcard_in_the_ask_stays_data() {

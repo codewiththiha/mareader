@@ -11,6 +11,22 @@ use dict_core::fold;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use rusqlite::Connection;
 
+/// The table every pack lands as; the query layer reads nothing else.
+pub const SCHEMA: &str = "CREATE TABLE entries (
+    id INTEGER PRIMARY KEY,
+    word TEXT NOT NULL,
+    word_fold TEXT NOT NULL,
+    pos TEXT,
+    definition TEXT NOT NULL,
+    def_fold TEXT NOT NULL,
+    romanization TEXT,
+    sense TEXT,
+    lang_code TEXT,
+    source TEXT
+);
+CREATE INDEX entries_word ON entries(word_fold);
+CREATE INDEX entries_def ON entries(def_fold);";
+
 /// A parquet read to name-addressed rows of strings.
 pub struct Table {
     pub names: Vec<String>,
@@ -94,22 +110,7 @@ pub fn build_db(parquet_path: &Path, db_path: &Path) -> Result<u64> {
         std::fs::remove_file(db_path)?;
     }
     let mut db = Connection::open(db_path)?;
-    db.execute_batch(
-        "CREATE TABLE entries (
-            id INTEGER PRIMARY KEY,
-            word TEXT NOT NULL,
-            word_fold TEXT NOT NULL,
-            pos TEXT,
-            definition TEXT NOT NULL,
-            def_fold TEXT NOT NULL,
-            romanization TEXT,
-            sense TEXT,
-            lang_code TEXT,
-            source TEXT
-        );
-        CREATE INDEX entries_word ON entries(word_fold);
-        CREATE INDEX entries_def ON entries(def_fold);",
-    )?;
+    db.execute_batch(SCHEMA)?;
 
     let mut rows = 0u64;
     {

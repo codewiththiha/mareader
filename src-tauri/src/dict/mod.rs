@@ -57,6 +57,16 @@ pub struct DictEntryWire {
 /// One carried row: the row, its pack, and a bridge's word.
 type Carried = (RawRow, String, Option<(String, WordMatch)>);
 
+/// The packs a search may ask: the filter over what is built.
+fn wanted_packs(pack_ids: Option<Vec<String>>, built: &[String]) -> Vec<String> {
+    match pack_ids {
+        Some(ids) if !ids.is_empty() => {
+            ids.into_iter().filter(|id| built.contains(id)).collect()
+        }
+        _ => built.to_vec(),
+    }
+}
+
 /// The dictionary system: open packs and the routes between them.
 #[derive(Default)]
 pub struct DictManager {
@@ -223,11 +233,7 @@ impl DictManager {
             return Vec::new();
         };
         let built = self.built_packs(&dir);
-        let wanted: Vec<String> = pack_ids
-            .unwrap_or_else(|| built.clone())
-            .into_iter()
-            .filter(|id| built.contains(id))
-            .collect();
+        let wanted = wanted_packs(pack_ids, &built);
         let mut rows = Vec::new();
         for pack_id in &wanted {
             if let Ok(db) = self.open(&dir, pack_id) {
@@ -443,6 +449,22 @@ async fn convert(app: &AppHandle, pack_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_filter_still_answers_with_every_built_pack() {
+        let built = vec!["jmdict-en-jp".to_string(), "mcfnlp-en-my".to_string()];
+        // No filter and an empty one mean the same thing: all built.
+        assert_eq!(wanted_packs(None, &built), built);
+        assert_eq!(wanted_packs(Some(Vec::new()), &built), built);
+        // A filter keeps only what is built and asked.
+        assert_eq!(
+            wanted_packs(
+                Some(vec!["jmdict-en-jp".to_string(), "blorp".to_string()]),
+                &built
+            ),
+            vec!["jmdict-en-jp".to_string()]
+        );
+    }
 
     #[test]
     fn the_wire_shape_is_three_values_and_a_via() {
