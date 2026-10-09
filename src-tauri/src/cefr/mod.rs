@@ -28,6 +28,10 @@ pub const MODEL_URL: &str =
 /// The generic downloader's key for the tagger model.
 const MODEL_ID: &str = "cefr-model";
 
+/// File names under the dataset directory, shared by every stage.
+const PARQUET_FILE: &str = "cefr.parquet.part";
+const MODEL_FILE: &str = "en_tokenizer.bin.zst";
+
 /// The dataset's POS verdict for one clicked word.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -151,7 +155,7 @@ impl CefrManager {
     }
 
     fn parquet_partial(app: &AppHandle) -> Result<PathBuf, String> {
-        Ok(Self::dir(app)?.join("cefr.parquet.part"))
+        Ok(Self::dir(app)?.join(PARQUET_FILE))
     }
 
     fn db_final(app: &AppHandle) -> Result<PathBuf, String> {
@@ -228,7 +232,8 @@ impl CefrManager {
             id: DOWNLOAD_ID.into(),
             url: DATASET_URL.into(),
             directory: Some("cefr".into()),
-            file_name: "cefr.parquet.part".into(),
+            file_name: PARQUET_FILE.into(),
+            ..Default::default()
         };
         let host = TauriHost::new(app.clone());
         app.state::<AppDownloads>()
@@ -238,7 +243,8 @@ impl CefrManager {
             id: MODEL_ID.into(),
             url: MODEL_URL.into(),
             directory: Some("cefr".into()),
-            file_name: "en_tokenizer.bin.zst".into(),
+            file_name: MODEL_FILE.into(),
+            ..Default::default()
         };
         let _ = app.state::<AppDownloads>().start(&host, model, None);
         tauri::async_runtime::spawn(supervise(app));
@@ -261,14 +267,21 @@ impl CefrManager {
         app.state::<AppDownloads>().cancel(DOWNLOAD_ID);
     }
 
-    /// Drop the dataset and its partials; the next download starts over.
+    /// Drop the dataset, its model and every partial; the next download
+    /// starts over.
     pub fn remove(&self, app: &AppHandle) -> Result<(), String> {
-        self.cancel(app);
         {
             let mut guard = self.phase.lock().map_err(|_| "phase lock poisoned")?;
             *guard = Phase::Absent;
         }
+        // Both ids: a live transfer stops, its record and file go.
         app.state::<AppDownloads>().remove(DOWNLOAD_ID);
+        app.state::<AppDownloads>().remove(MODEL_ID);
+        if let Ok(dir) = Self::dir(app) {
+            // Files from an earlier run have no record to remove.
+            let _ = std::fs::remove_file(dir.join(PARQUET_FILE));
+            let _ = std::fs::remove_file(dir.join(MODEL_FILE));
+        }
         if let Ok(db) = Self::db_final(app) {
             let _ = std::fs::remove_file(db);
         }
@@ -276,6 +289,9 @@ impl CefrManager {
             let _ = std::fs::remove_file(tmp);
         }
         if let Ok(mut slot) = self.db.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.tagger.lock() {
             *slot = None;
         }
         let _ = app.emit(PROGRESS_EVENT, guard_snapshot(self));
@@ -299,20 +315,13 @@ impl CefrManager {
             .take(MAX_BATCH)
             .map(|w| cefr_core::is_english_ascii(w).then(|| cefr_core::normalize(w)))
             .collect();
-        let pairs: Vec<(String, String)> = normalized
-            .iter()
-            .flatten()
-            .map(|key| (key.clone(), String::new()))
-            .collect();
+        let asked: Vec<String> = normalized.iter().flatten().cloned().collect();
         let found = db
-            .lookup_batch(&pairs)
+            .lookup_words(&asked)
             .map_err(|e| format!("lookup: {e}"))?;
         let mut out: Vec<Option<f64>> = normalized
             .iter()
-            .map(|key| {
-                key.as_ref()
-                    .and_then(|k| found.get(&(k.clone(), String::new())).copied())
-            })
+            .map(|key| key.as_ref().and_then(|k| found.get(k).copied()))
             .collect();
         out.resize(words.len(), None);
         Ok(out)
@@ -325,12 +334,17 @@ impl CefrManager {
         word: &str,
         sentence: &str,
     ) -> Result<Option<PosAnswer>, String> {
+        if !cefr_core::is_english_ascii(word) {
+            return Ok(None);
+        }
         let Some(tagger) = self.tagger(app)? else {
             return Ok(None);
         };
         let Some(found) = tagger.pos_in_context(word, sentence) else {
             return Ok(None);
         };
+        // The dataset keys are lowercase; the click sends surface forms.
+        let key = cefr_core::normalize(word);
         let db_path = Self::db_final(app)?;
         let mut slot = self.db.lock().map_err(|_| "db lock poisoned")?;
         if slot.is_none() && db_path.is_file() {
@@ -340,17 +354,17 @@ impl CefrManager {
             return Ok(None);
         };
         let sense = db
-            .sense_level(word, &found.pos)
+            .sense_level(&key, &found.pos)
             .map_err(|e| format!("pos lookup: {e}"))?;
         let senses = db
-            .pos_senses(word)
+            .pos_senses(&key)
             .map_err(|e| format!("senses: {e}"))?
             .into_iter()
             .map(|(pos, _)| pos)
             .collect();
         Ok(Some(PosAnswer {
             pos: found.pos.clone(),
-            kind: penn_kind(&found.pos),
+            kind: cefr::tags::kind_of(&found.pos).to_string(),
             // The sense that answered may be a tag-family neighbor; the
             // tag stays the tagger's.
             sense: sense.as_ref().map(|s| s.pos.clone()),
@@ -365,14 +379,15 @@ impl CefrManager {
         if let Some(tagger) = slot.as_ref() {
             return Ok(Some(tagger.clone()));
         }
-        let model = Self::dir(app)?.join("en_tokenizer.bin.zst");
+        let model = Self::dir(app)?.join(MODEL_FILE);
         if !model.is_file() {
             // Self-heal: ask the downloader for it; a later click loads it.
             let request = DownloadRequest {
                 id: MODEL_ID.into(),
                 url: MODEL_URL.into(),
                 directory: Some("cefr".into()),
-                file_name: "en_tokenizer.bin.zst".into(),
+                file_name: MODEL_FILE.into(),
+                ..Default::default()
             };
             let host = TauriHost::new(app.clone());
             let _ = app.state::<AppDownloads>().start(&host, request, None);
@@ -384,34 +399,6 @@ impl CefrManager {
         *slot = Some(tagger.clone());
         Ok(Some(tagger))
     }
-}
-
-/// A readable word class for a Penn tag.
-fn penn_kind(tag: &str) -> String {
-    let kind = if tag.starts_with("VB") {
-        "verb"
-    } else if tag.starts_with("NN") {
-        "noun"
-    } else if tag.starts_with("JJ") {
-        "adjective"
-    } else if tag.starts_with("RB") {
-        "adverb"
-    } else if tag == "PRP" || tag.starts_with("WP") {
-        "pronoun"
-    } else if tag == "IN" || tag == "TO" {
-        "preposition"
-    } else if tag == "CC" {
-        "conjunction"
-    } else if tag == "CD" {
-        "number"
-    } else if tag == "MD" {
-        "modal verb"
-    } else if tag == "DT" || tag == "PDT" || tag == "WDT" {
-        "determiner"
-    } else {
-        "other"
-    };
-    kind.to_string()
 }
 
 impl Default for CefrManager {
@@ -487,24 +474,42 @@ async fn supervise(app: AppHandle) {
             return;
         }
     }
-    if let Err(e) = std::fs::rename(&building, &final_db) {
-        let _ = std::fs::remove_file(&building);
-        finish_failed(&app, &format!("adopt dataset: {e}"));
-        return;
-    }
-    let words = match CefrManager::probe_db(&final_db) {
-        Ok(words) => words,
-        Err(message) => {
-            finish_failed(&app, &message);
+    // The adopt holds the phase lock: a `remove` mid-build must not
+    // surface as Ready.
+    let status = {
+        let Ok(mut guard) = manager.phase.lock() else {
+            return;
+        };
+        if !matches!(*guard, Phase::Converting) {
+            let _ = std::fs::remove_file(&building);
             return;
         }
+        let verdict = match std::fs::rename(&building, &final_db) {
+            Err(e) => {
+                let _ = std::fs::remove_file(&building);
+                Phase::Failed {
+                    message: format!("adopt dataset: {e}"),
+                }
+            }
+            Ok(()) => match CefrManager::probe_db(&final_db) {
+                Err(message) => {
+                    let _ = std::fs::remove_file(&final_db);
+                    Phase::Failed { message }
+                }
+                Ok(words) => {
+                    // The parquet's job is done; only the db is kept.
+                    let _ = std::fs::remove_file(&partial);
+                    Phase::Ready { words }
+                }
+            },
+        };
+        *guard = verdict;
+        guard.snapshot()
     };
-    // The parquet's job is done; only the db is kept.
-    let _ = std::fs::remove_file(&partial);
     if let Ok(mut slot) = manager.db.lock() {
         *slot = None;
     }
-    set_phase(&app, Phase::Ready { words });
+    let _ = app.emit(PROGRESS_EVENT, &status);
 }
 
 /// The four-byte signature a real parquet carries at both ends.

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "Format-agnostic core of the vocabulary highlighter: tokenizing, band thresholds, the level cache."
 
+[dependencies]
+# The contraction table the dataset's tagger answers from; feature-free.
+cefr = { git = "https://github.com/codewiththiha/cefr-rs.git", default-features = false }
+
 [lints.rust]
 # Warnings are denied, not printed: a gate only in a log gets read past.
 warnings = { level = "deny", priority = -1 }
