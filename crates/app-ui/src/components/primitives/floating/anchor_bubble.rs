@@ -35,7 +35,9 @@ pub fn AnchorBubble(
             return;
         };
         let size = panel_size(
-            panel_ref.get().map(|p| p.unchecked_into::<web_sys::Element>()),
+            panel_ref
+                .get()
+                .map(|p| p.unchecked_into::<web_sys::Element>()),
             (160.0, 44.0),
         );
         let opts = PlacementOptions {
