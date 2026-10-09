@@ -140,6 +140,15 @@ mod tests {
     }
 
     #[test]
+    fn the_dataset_key_a_click_is_asked_under_is_its_own_normal_form() {
+        // Pinned: the db stores lowercase, so a capitalized click must fold.
+        assert_eq!(cefr_core::normalize("The"), "the");
+        assert_eq!(cefr_core::normalize("Ephemeral"), "ephemeral");
+        assert_eq!(cefr_core::normalize("it\u{2019}s"), "it's");
+        assert_eq!(cefr_core::normalize("well-Known"), "well-known");
+    }
+
+    #[test]
     fn the_word_class_is_the_dataset_crate_s_not_a_restatement() {
         // One home for the mapping: `NN` is a noun in the CLI too.
         assert_eq!(cefr::tags::kind_of("NN"), "noun");
