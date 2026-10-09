@@ -372,7 +372,7 @@ format-agnostic.
 
 ## How the AI layer finds a word: the host protocol and the spot
 
-Selection, the Explain pill, the gloss card and the persisted highlights all have to
+Selection, the selection menu, the gloss card and the persisted highlights all have to
 answer one question — *where in the document are these words?* — and the answer
 used to be a PDF's: a page number and a rect in page space, measured against a
 `.pdf-page`. Nothing else about the feature is PDF-specific, so the question was
@@ -429,7 +429,7 @@ generalised instead of the feature being forked per format.
   and the layers a walk must skip — a stroke's button, a hit's box — are one list in it rather
   than one per caller.
 - **Two resolvers, one dispatch.** `anchor::anchor_resolver` answers in viewport
-  space for the Explain pill and the gloss card; `anchor::stroke_resolver` answers in
+  space for the selection menu and the gloss card; `anchor::stroke_resolver` answers in
   a stroke layer's own coordinates, relative to the element it measured. Neither
   knows a format: both build a `FormatAnchorBridge` per call, decided from the
   document that is open, and read the spot from the mark or the selection itself.
