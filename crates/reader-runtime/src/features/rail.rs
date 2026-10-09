@@ -34,9 +34,7 @@ pub(crate) fn ReaderRail(
     let library = use_context::<LibraryPanel>();
     // The Dictionary seat: one built pack keeps it open.
     let packs = services::dict::packs();
-    let dictionary_visible = Signal::derive(move || {
-        packs.get().iter().any(|pack| pack.built)
-    });
+    let dictionary_visible = Signal::derive(move || packs.get().iter().any(|pack| pack.built));
     Effect::new(move |_| {
         if dictionary_visible.get() {
             return;

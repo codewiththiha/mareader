@@ -42,8 +42,7 @@ pub(crate) fn PanelSwitcher(
     /// The Dictionary toggle's seat: one pack built is enough.
     #[prop(into, default = Signal::derive(|| false))]
     dictionary_visible: Signal<bool>,
-    #[prop(into)]
-    dictionary_active: Signal<bool>,
+    #[prop(into)] dictionary_active: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <div class="flex shrink-0 items-center justify-around gap-1 border-t border-line p-1.5">
