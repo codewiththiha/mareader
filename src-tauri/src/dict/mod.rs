@@ -54,6 +54,9 @@ pub struct DictEntryWire {
     pub word_match: WordMatch,
 }
 
+/// One carried row: the row, its pack, and a bridge's word.
+type Carried = (RawRow, String, Option<(String, WordMatch)>);
+
 /// The dictionary system: open packs and the routes between them.
 #[derive(Default)]
 pub struct DictManager {
@@ -253,7 +256,7 @@ impl DictManager {
         plan: &dict_core::Plan,
         word: &str,
         limit: usize,
-    ) -> Vec<(RawRow, String, Option<(String, WordMatch)>)> {
+    ) -> Vec<Carried> {
         let [first, rest @ ..] = &plan.hops[..] else {
             return Vec::new();
         };
@@ -264,7 +267,7 @@ impl DictManager {
                 return Vec::new();
             };
             let db = db.lock().expect("db mutex");
-            match hop_ask(&*db, word, first.reverse, limit * 2) {
+            match hop_ask(&db, word, first.reverse, limit * 2) {
                 Ok(rows) => rows,
                 Err(_) => return Vec::new(),
             }
@@ -295,7 +298,7 @@ impl DictManager {
             let second_db = second_db.lock().expect("db mutex");
             let asks: Vec<String> = mids.iter().map(|(mid, _)| mid.clone()).collect();
             match if second.reverse {
-                lookup_defs_any(&*second_db, &asks, limit)
+                lookup_defs_any(&second_db, &asks, limit)
             } else {
                 second_db.lookup_words_any(&asks, limit)
             } {
@@ -367,7 +370,7 @@ fn lookup_defs_any(db: &DictDb, asks: &[String], limit: usize) -> anyhow::Result
 
 /// Rows to wire, ranked: role fit first, word fit next.
 fn finish(
-    rows: Vec<(RawRow, String, Option<(String, WordMatch)>)>,
+    rows: Vec<Carried>,
     ask: &str,
     pos: Option<&str>,
     limit: usize,
