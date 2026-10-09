@@ -30,17 +30,6 @@ pub const MAX_WORD_CHARS: usize = 32;
 /// The apostrophes a token may carry, folded to the ASCII one.
 const APOSTROPHES: [char; 2] = ['\'', '\u{2019}'];
 
-/// The dataset stores no apostrophes: `don't` is answerable only as `not`.
-const CONTRACTIONS: [(&str, &str); 7] = [
-    ("'m", "am"),
-    ("'s", "is"),
-    ("'re", "are"),
-    ("'ve", "have"),
-    ("'d", "had"),
-    ("n't", "not"),
-    ("'ll", "will"),
-];
-
 /// The word a token's text is probed as: lowercased, ASCII apostrophe.
 pub fn normalize(word: &str) -> String {
     word.chars()
@@ -94,11 +83,10 @@ pub fn is_english_ascii(word: &str) -> bool {
         && word.chars().any(|c| c.is_ascii_alphabetic())
 }
 
-/// The contraction a word ends in, expanded (`don't` -> `not`). The
-/// dataset stores no apostrophes.
+/// The contraction a word ends in, expanded by the dataset's own map.
 pub fn contraction_base(word: &str) -> Option<&'static str> {
     let lower = normalize(word);
-    CONTRACTIONS
+    cefr::tags::ABBREVIATION_MAPPING
         .iter()
         .find(|(suffix, _)| lower.ends_with(suffix))
         .map(|(_, base)| *base)

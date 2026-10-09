@@ -810,8 +810,8 @@ dependencies = [
 
 [[package]]
 name = "cefr"
-version = "0.2.0"
-source = "git+https://github.com/codewiththiha/cefr-rs.git#6b1f93161e1c42813b3f1863e0e976826d3ba49b"
+version = "0.3.0"
+source = "git+https://github.com/codewiththiha/cefr-rs.git#bb2dd66c2354944f3352154d3d2b15352df0e1af"
 dependencies = [
  "anyhow",
  "arrow",
@@ -825,6 +825,9 @@ dependencies = [
 [[package]]
 name = "cefr-core"
 version = "0.1.0"
+dependencies = [
+ "cefr",
+]
 
 [[package]]
 name = "cesu8"

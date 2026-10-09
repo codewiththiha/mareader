@@ -2,7 +2,11 @@
 name = "cefr-core"
 version = "0.1.0"
 edition = "2024"
-description = "Format-agnostic core of the vocabulary highlighter: tokenizing, band thresholds, the level cache."
+description = "Format-agnostic core of the vocabulary highlighter: tokenizing, planning, the level cache."
+
+[dependencies]
+# The dataset's own band and contraction rules; feature-free, so wasm builds.
+cefr = { git = "https://github.com/codewiththiha/cefr-rs.git", default-features = false }
 
 [lints.rust]
 # Warnings are denied, not printed: a gate only in a log gets read past.
