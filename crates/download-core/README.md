@@ -116,6 +116,13 @@ writes — and adding a second host later is one line, not a refactor.
 backoff doubles from 500 ms to an 8 s ceiling, and is slept in 150 ms slices so
 a pause or a cancel lands *during* it rather than after it.
 
+**A complete partial is not a stale one.** A run that wrote every byte and died
+before the rename leaves a partial exactly as long as the resource, and the
+resume asks for a range starting at the end. The mirror answers `416`, whose
+`Content-Range: bytes */total` names the whole resource: when that total is what
+is already held the file is finished, and it is verified and adopted rather than
+wiped and fetched again.
+
 **Resume.** The partial is `<dest>.part` and a sidecar `<dest>.dmeta` holds the
 validator the serving mirror gave (`ETag`, else `Last-Modified`). A resume asks
 `Range` **and** `If-Range`, so a resource that changed answers `200` and the

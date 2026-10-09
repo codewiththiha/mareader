@@ -114,6 +114,13 @@ pub(crate) async fn attempt(
         // The resource moved, or the mirror ignores ranges: start over.
         StatusCode::OK | StatusCode::PARTIAL_CONTENT => (false, response.content_length()),
         StatusCode::RANGE_NOT_SATISFIABLE => {
+            // `bytes */total` names the whole resource; a partial that
+            // reaches it is finished, not stale.
+            let whole =
+                content_range_total(header(&response, &reqwest::header::CONTENT_RANGE).as_deref());
+            if held > 0 && whole == Some(held) {
+                return Step::Complete;
+            }
             if held == 0 {
                 return Step::Permanent("range refused with nothing held".into());
             }
@@ -261,6 +268,8 @@ mod tests {
     #[test]
     fn content_range_totals_parse_and_reject_junk() {
         assert_eq!(content_range_total(Some("bytes 100-199/1234")), Some(1234));
+        // The 416 form names the whole resource with no range in it.
+        assert_eq!(content_range_total(Some("bytes */1234")), Some(1234));
         assert_eq!(content_range_total(Some("bytes 0-0/*")), None);
         assert_eq!(content_range_total(Some("bytes 0-0/0")), None);
         assert_eq!(content_range_total(Some("garbage")), None);
