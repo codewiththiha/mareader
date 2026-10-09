@@ -182,6 +182,34 @@ pub fn place_panel_from_anchor(anchor: Rect, panel: Size, opts: &PlacementOption
     }
 }
 
+/// Centered below/above placement for a bubble that points at its anchor.
+pub fn place_bubble_at_anchor(anchor: Rect, panel: Size, opts: &PlacementOptions) -> PlacedPanel {
+    let m = opts.margin;
+    let gap = opts.gap;
+    let vp = opts.viewport;
+    let fits_below = anchor.bottom() + gap + panel.h <= vp.h - m;
+    let x = anchor.x + anchor.w / 2.0 - panel.w / 2.0;
+
+    let below = PlacedPanel {
+        rect: Rect::new(x, anchor.bottom() + gap, panel.w, panel.h),
+        transform_origin: "top center",
+    };
+    let above = PlacedPanel {
+        rect: Rect::new(x, anchor.top() - gap - panel.h, panel.w, panel.h),
+        transform_origin: "bottom center",
+    };
+
+    let placed = match opts.side {
+        PlacementSide::Above => above,
+        PlacementSide::Auto if fits_below => below,
+        PlacementSide::Auto => above,
+    };
+    PlacedPanel {
+        rect: clamp_rect_to_viewport(placed.rect, vp, m),
+        transform_origin: placed.transform_origin,
+    }
+}
+
 /// Clamp a cursor point so a context menu of `panel` size stays in view.
 pub fn place_context_menu(point: Point, panel: Size, viewport: Size, margin: f64) -> PlacedPanel {
     let p = clamp_point_to_viewport(point, panel, viewport, margin);
@@ -319,5 +347,47 @@ mod tests {
             cur.close(&target, 0.5),
             "did not settle on long frames: {cur:?}"
         );
+    }
+
+    #[test]
+    fn place_bubble_centers_below_the_anchor() {
+        let anchor = Rect::new(300.0, 100.0, 120.0, 32.0);
+        let opts = PlacementOptions {
+            side: PlacementSide::Auto,
+            gap: 10.0,
+            margin: 8.0,
+            viewport: Size::new(1280.0, 800.0),
+        };
+        let placed = place_bubble_at_anchor(anchor, Size::new(120.0, 40.0), &opts);
+        assert!((placed.rect.x - 300.0).abs() < 1e-9);
+        assert!((placed.rect.y - 142.0).abs() < 1e-9);
+        assert_eq!(placed.transform_origin, "top center");
+    }
+
+    #[test]
+    fn place_bubble_flips_above_when_the_bottom_overflows() {
+        let anchor = Rect::new(300.0, 760.0, 120.0, 32.0);
+        let opts = PlacementOptions {
+            side: PlacementSide::Auto,
+            gap: 10.0,
+            margin: 8.0,
+            viewport: Size::new(1280.0, 800.0),
+        };
+        let placed = place_bubble_at_anchor(anchor, Size::new(120.0, 40.0), &opts);
+        assert!((placed.rect.y - 710.0).abs() < 1e-9);
+        assert_eq!(placed.transform_origin, "bottom center");
+    }
+
+    #[test]
+    fn place_bubble_clamps_a_near_edge_anchor_into_view() {
+        let anchor = Rect::new(2.0, 100.0, 20.0, 20.0);
+        let opts = PlacementOptions {
+            side: PlacementSide::Auto,
+            gap: 10.0,
+            margin: 8.0,
+            viewport: Size::new(1280.0, 800.0),
+        };
+        let placed = place_bubble_at_anchor(anchor, Size::new(120.0, 40.0), &opts);
+        assert!((placed.rect.x - 8.0).abs() < 1e-9);
     }
 }
