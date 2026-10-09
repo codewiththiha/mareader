@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use download_core::Host;
 
-pub use download_core::{Downloads, Phase, Progress};
+pub use download_core::{Downloads, Phase, Progress, Receipt};
 
 /// Every phase change and throttled byte count rides this event.
 pub const PROGRESS_EVENT: &str = "download-progress";
