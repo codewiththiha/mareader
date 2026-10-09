@@ -196,6 +196,7 @@ pub(crate) fn pane_content(
             />
             <crate::components::ai::selection_pill::SelectionPill state=state />
             <crate::components::ai::gloss::gloss_ai_popover::GlossAiPopover state=state />
+            <crate::components::dict::hover_card::DictHoverHost state=state />
         </div>
     };
 
