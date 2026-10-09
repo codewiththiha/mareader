@@ -66,7 +66,7 @@ web-sys = { version = "0.3", features = [
   "ResizeObserverEntry", "DomRect", "DomRectList", "Selection", "Range",
   "Text", "Location", "UrlSearchParams", "Storage", "Performance",
   "PerformanceEntry", "console", "DragEvent", "DataTransfer", "CustomEvent",
-  "AddEventListenerOptions", "EventTarget", "HtmlDocument", "Navigator",
+  "AddEventListenerOptions", "EventTarget", "HtmlDocument", "Navigator", "Clipboard",
   "VisibilityState", "HtmlIFrameElement", "MessageEvent", "Worker",
   "MessageChannel", "MessagePort", "MutationObserver", "MutationObserverInit",
   "MutationRecord",
