@@ -55,7 +55,6 @@ pub fn CefrMarkLayer(
                         <button
                             type="button"
                             class="cefr-mark"
-                            title=word.clone()
                             aria-label=format!("Explain {word}")
                             // Paint, not a control: nothing to focus, nothing
                             // to press, and no text selection swallowed.
