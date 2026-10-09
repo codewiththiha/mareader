@@ -51,6 +51,9 @@ pub fn CefrMarkLayer(
                         <button
                             type="button"
                             class="cefr-mark"
+                            // Generated ink: reachable by pointer, never by
+                            // tab, or a page floods the tab order.
+                            tabindex="-1"
                             title=word.clone()
                             aria-label=format!("Explain {word}")
                             style=move || {

@@ -211,14 +211,10 @@ fn walk(
     if span_els.is_empty() {
         return;
     }
-    // The page's text in DOM order, with each span's char range in it.
+    // The page's text in DOM order.
     let mut text = String::new();
-    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(span_els.len());
     for el in &span_els {
-        let piece = el.text_content().unwrap_or_default();
-        let start = text.chars().count();
-        text.push_str(&piece);
-        spans.push((start, text.chars().count()));
+        text.push_str(&el.text_content().unwrap_or_default());
     }
 
     let key = WalkKey {
