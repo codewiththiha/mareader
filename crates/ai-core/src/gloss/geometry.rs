@@ -28,21 +28,12 @@ pub struct GlossBox {
 }
 
 /// Longest selection still treated as a word lookup (chars, not bytes).
-const MAX_GLOSS_CHARS: usize = 60;
-
-/// The muted-hint band's soft edge: up to twice the cap still earns a pill.
-const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
+pub const MAX_GLOSS_CHARS: usize = 60;
 
 /// Whether `text` is one lookup-able token: trimmed, non-empty, no whitespace.
 pub fn is_glossable(text: &str) -> bool {
     let t = text.trim();
     !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS && !t.chars().any(char::is_whitespace)
-}
-
-/// Whether `text` stays inside the menu's visible range.
-pub fn is_hintable(text: &str) -> bool {
-    let t = text.trim();
-    !t.is_empty() && t.chars().count() <= MAX_GLOSS_HINT_CHARS
 }
 
 /// Whether two boxes are equal within `epsilon` on all five fields.
@@ -138,16 +129,6 @@ mod tests {
         assert!(!is_glossable("  quick brown  "));
         assert!(!is_glossable("note\ttab"));
         assert!(!is_glossable("line\nbreak"));
-    }
-
-    #[test]
-    fn the_hint_band_runs_to_twice_the_cap() {
-        let first_hint = "a".repeat(MAX_GLOSS_CHARS + 1);
-        assert!(!is_glossable(&first_hint));
-        assert!(is_hintable(&first_hint));
-        assert!(is_hintable(&"a".repeat(MAX_GLOSS_HINT_CHARS)));
-        assert!(!is_hintable(&"a".repeat(MAX_GLOSS_HINT_CHARS + 1)));
-        assert!(!is_hintable("   "));
     }
 
     #[test]

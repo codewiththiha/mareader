@@ -194,7 +194,7 @@ pub(crate) fn pane_content(
                 state=vs
                 virtualizer=rv.virtualizer_view
             />
-            <crate::components::ai::selection_pill::SelectionPill state=state />
+            <crate::components::ai::selection_menu::SelectionMenu state=state />
             <crate::components::ai::gloss::gloss_ai_popover::GlossAiPopover state=state />
             <crate::components::dict::hover_card::DictHoverHost state=state />
         </div>

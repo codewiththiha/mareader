@@ -55,6 +55,10 @@ pub enum IconName {
     Link,
     /// Two sheets, one behind the other: the shelf's "Duplicate".
     Copy,
+    /// A four-point star: the AI action.
+    Sparkles,
+    /// A closed book: the dictionary action.
+    Book,
     /// A plain folder: the "Reveal in folder" row.
     Folder,
     /// A plain document sheet: a file row in the rail's Library panel.
@@ -139,6 +143,14 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Copy => (
             "0 0 24 24",
             "<rect x='8' y='8' width='14' height='14' rx='2'/><path d='M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2'/>",
+        ),
+        IconName::Sparkles => (
+            "0 0 24 24",
+            "<path d='M9.94 15.5a2 2 0 0 0-1.44-1.44l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94a2 2 0 0 0 1.44-1.44l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.13 1.58a.5.5 0 0 1 0 .96l-6.13 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z'/><path d='M20 3v4'/><path d='M22 5h-4'/>",
+        ),
+        IconName::Book => (
+            "0 0 24 24",
+            "<path d='M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20'/>",
         ),
         IconName::Folder => (
             "0 0 24 24",

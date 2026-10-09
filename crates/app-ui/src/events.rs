@@ -11,6 +11,8 @@ pub const GLOSS_OPEN_EVENT: &str = "mareader:gloss-open";
 pub const GLOSS_CONTEXT_EVENT: &str = "mareader:gloss-context";
 /// A red word is under the pointer (carries the `GlossMark` as detail).
 pub const DICT_HOVER_EVENT: &str = "mareader:dict-hover";
+/// An explicit ask for the card (carries the reader's `DictOpen` as detail).
+pub const DICT_OPEN_EVENT: &str = "mareader:dict-open";
 /// The pointer left a red word; the hover card may retire.
 pub const DICT_LEAVE_EVENT: &str = "mareader:dict-leave";
 /// Internal link jump, dispatched by the engine's link layer.
