@@ -44,24 +44,32 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                 key=|pack: &services::dict::PackMirror| pack.id.clone()
                 children=move |pack: services::dict::PackMirror| {
                     let id = pack.id.clone();
+                    let label = pack.label.clone();
+                    let aria = format!("Include {label} in the dictionary");
+                    let fallback = pack.clone();
+                    let id_for_row = id.clone();
+                    // The row's truth, read again on every redraw.
+                    let current = move || {
+                        packs
+                            .get()
+                            .into_iter()
+                            .find(|p| p.id == id_for_row)
+                            .unwrap_or_else(|| fallback.clone())
+                    };
                     let include = Signal::derive(move || {
                         let langs = s.with(|st| st.dict.langs.clone());
                         langs.is_empty() || langs.contains(&id)
                     });
-                    let id_for_toggle = pack.id.clone();
-                    let id_download = pack.id.clone();
-                    let id_status = pack.id.clone();
-                    let id_remove = pack.id.clone();
-                    let phase = pack.phase();
-                    let built = pack.built;
+                    let id_for_change = id.clone();
+                    let id_for_actions = id.clone();
                     view! {
                         <div class="flex items-center gap-3 border-t border-line px-4 py-3 first:border-t-0">
                             <input
                                 type="checkbox"
                                 class="size-4 accent-[var(--color-accent)]"
-                                attr:aria-label=format!("Include {} in the dictionary", pack.label)
+                                attr:aria-label=aria
                                 prop:checked=move || include.get()
-                                disabled=!built
+                                attr:disabled=move || !current().built
                                 on:change=move |ev: web_sys::Event| {
                                     use wasm_bindgen::JsCast;
                                     let on = ev
@@ -71,12 +79,12 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                                 .map(|input| input.checked())
                                         })
                                         .unwrap_or(false);
-                                    let id = id_for_toggle.clone();
+                                    let id = id_for_change.clone();
                                     s.update(move |st| {
                                         let mut langs = st.dict.langs.clone();
                                         if langs.is_empty() {
-                                            // Empty means all: materialize the
-                                            // set before changing one seat.
+                                            // Empty means all: materialize
+                                            // the set before one seat moves.
                                             langs = services::dict::packs()
                                                 .get()
                                                 .iter()
@@ -93,43 +101,107 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                 }
                             />
                             <span class="min-w-0 flex-1">
-                                <span class="block truncate text-sm text-ink">{pack.label.clone()}</span>
+                                <span class="block truncate text-sm text-ink">{label}</span>
                                 <span class="block text-xs text-muted">
-                                    {move || {
-                                        let row = packs
-                                            .get()
-                                            .into_iter()
-                                            .find(|p| p.id == id_status)
-                                            .unwrap_or(pack.clone());
-                                        status_line(&row)
-                                    }}
+                                    {move || status_line(&current())}
                                 </span>
                             </span>
-                            {if built {
-                                view! {
-                                    <button
-                                        type="button"
-                                        class=BUTTON
-                                        on:click=move |_| {
-                                            services::dict::request_pack(&id_remove, "remove");
-                                            let id = id_remove.clone();
-                                            s.update(move |st| {
-                                                st.dict.langs.retain(|entry| entry != &id);
-                                            });
+                            {move || {
+                                let row = current();
+                                match row.phase() {
+                                    "ready" => {
+                                        let id = id_for_actions.clone();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                class=BUTTON
+                                                on:click=move |_| {
+                                                    services::dict::request_pack(&id, "remove");
+                                                    let id = id.clone();
+                                                    s.update(move |st| {
+                                                        st.dict.langs.retain(|entry| entry != &id);
+                                                    });
+                                                }
+                                            >
+                                                "Remove"
+                                            </button>
                                         }
-                                    >
-                                        "Remove"
-                                    </button>
+                                        .into_any()
+                                    }
+                                    "downloading" => {
+                                        let pause_id = id_for_actions.clone();
+                                        let cancel_id = id_for_actions.clone();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                class=BUTTON
+                                                on:click=move |_| {
+                                                    services::dict::request_pack(&pause_id, "pause")
+                                                }
+                                            >
+                                                "Pause"
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class=BUTTON
+                                                on:click=move |_| {
+                                                    services::dict::request_pack(&cancel_id, "cancel")
+                                                }
+                                            >
+                                                "Cancel"
+                                            </button>
+                                        }
+                                        .into_any()
+                                    }
+                                    "paused" => {
+                                        let resume_id = id_for_actions.clone();
+                                        let cancel_id = id_for_actions.clone();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                class=BUTTON
+                                                on:click=move |_| {
+                                                    services::dict::request_pack(&resume_id, "resume")
+                                                }
+                                            >
+                                                "Resume"
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class=BUTTON
+                                                on:click=move |_| {
+                                                    services::dict::request_pack(&cancel_id, "cancel")
+                                                }
+                                            >
+                                                "Cancel"
+                                            </button>
+                                        }
+                                        .into_any()
+                                    }
+                                    "converting" => view! {
+                                        <button type="button" class=BUTTON disabled=true>
+                                            "Converting…"
+                                        </button>
+                                    }
+                                    .into_any(),
+                                    _ => {
+                                        let download_id = id_for_actions.clone();
+                                        let why = row.message.clone().unwrap_or_default();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                class=BUTTON
+                                                title=why
+                                                on:click=move |_| {
+                                                    services::dict::request_pack(&download_id, "download")
+                                                }
+                                            >
+                                                "Download"
+                                            </button>
+                                        }
+                                        .into_any()
+                                    }
                                 }
-                                .into_any()
-                            } else {
-                                view! {
-                                    <PackActions
-                                        id=id_download.clone()
-                                        phase=phase
-                                    />
-                                }
-                                .into_any()
                             }}
                         </div>
                     }
@@ -143,73 +215,20 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
     }
 }
 
-/// A pack's lifecycle buttons: download, or pause/resume/cancel.
-#[component]
-fn PackActions(id: String, phase: &'static str) -> impl IntoView {
-    let download_id = id.clone();
-    let pause_id = id.clone();
-    let resume_id = id.clone();
-    let cancel_id = id.clone();
-    view! {
-        {match phase {
-            "downloading" => view! {
-                <button
-                    type="button"
-                    class=BUTTON
-                    on:click=move |_| services::dict::request_pack(&pause_id, "pause")
-                >
-                    "Pause"
-                </button>
-                <button
-                    type="button"
-                    class=BUTTON
-                    on:click=move |_| services::dict::request_pack(&cancel_id, "cancel")
-                >
-                    "Cancel"
-                </button>
-            }
-            .into_any(),
-            "paused" => view! {
-                <button
-                    type="button"
-                    class=BUTTON
-                    on:click=move |_| services::dict::request_pack(&resume_id, "resume")
-                >
-                    "Resume"
-                </button>
-                <button
-                    type="button"
-                    class=BUTTON
-                    on:click=move |_| services::dict::request_pack(&cancel_id, "cancel")
-                >
-                    "Cancel"
-                </button>
-            }
-            .into_any(),
-            _ => view! {
-                <button
-                    type="button"
-                    class=BUTTON
-                    on:click=move |_| services::dict::request_pack(&download_id, "download")
-                >
-                    "Download"
-                </button>
-            }
-            .into_any(),
-        }}
-    }
-}
-
 /// The readout under a pack's name.
 fn status_line(pack: &services::dict::PackMirror) -> String {
     match pack.phase() {
         "ready" => format!("{} words — ready", pack.rows),
+        "converting" => "converting to database…".to_string(),
         "downloading" => match pack.percent() {
             Some(percent) => format!("downloading — {percent}%"),
             None => "downloading".to_string(),
         },
         "paused" => "paused".to_string(),
-        "failed" => "download failed".to_string(),
+        "failed" => pack
+            .message
+            .clone()
+            .unwrap_or_else(|| "download failed".to_string()),
         _ => format!("{} words — not downloaded", pack.rows),
     }
 }
