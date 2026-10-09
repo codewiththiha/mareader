@@ -20,7 +20,7 @@ pub mod typography;
 /// The layout and animation schemas, re-exported from their own files.
 pub use animation::AnimationSettings;
 pub use cefr::{CefrLevel, MIN_CEFR_BAND};
-pub use dict::{DictOverlay, DictSettings};
+pub use dict::DictSettings;
 pub use layout::{
     DEFAULT_COLUMN_WIDTH_PCT, FloatingLabelStyle, LayoutSettings, MAX_COLUMN_WIDTH_PCT,
     MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
@@ -93,7 +93,7 @@ pub struct Settings {
     /// The reader workspace: what a Library-panel click does.
     #[serde(default)]
     pub workspace: WorkspaceSettings,
-    /// The dictionary system: hover, languages, floating window.
+    /// The dictionary system: the hover and the languages.
     #[serde(default)]
     pub dict: DictSettings,
 }
