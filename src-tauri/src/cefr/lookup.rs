@@ -75,11 +75,14 @@ impl CefrManager {
         };
         let paths = Self::paths(app)?;
         let tag = found.pos.clone();
+        // The table's keys are the dataset's words: `Ephemeral` must
+        // ask for `ephemeral`.
+        let key = cefr_core::normalize(word);
         let Some((sense, all)) = self.with_db(&paths.db, |db| {
             let sense = db
-                .sense_level(word, &tag)
+                .sense_level(&key, &tag)
                 .map_err(|e| format!("pos lookup: {e}"))?;
-            let all = db.pos_senses(word).map_err(|e| format!("senses: {e}"))?;
+            let all = db.pos_senses(&key).map_err(|e| format!("senses: {e}"))?;
             Ok((sense, all))
         })?
         else {

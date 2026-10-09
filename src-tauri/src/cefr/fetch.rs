@@ -16,7 +16,10 @@ const DATASET_URL: &str =
     "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/data/cefr.zstd.parquet";
 
 /// Further hosts serving the same bytes, for a firewalled client.
-const DATASET_MIRRORS: &[&str] = &[];
+const DATASET_MIRRORS: &[&str] = &[
+    "https://cdn.jsdelivr.net/gh/codewiththiha/cefr-rs@main/data/cefr.zstd.parquet",
+    "https://fastly.jsdelivr.net/gh/codewiththiha/cefr-rs@main/data/cefr.zstd.parquet",
+];
 
 /// The adopted parquet's name; the rebuild consumes it and deletes it.
 const DATASET_FILE: &str = "cefr.parquet";
@@ -29,7 +32,10 @@ const TAGGER_URL: &str =
     "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/models/en_tokenizer.bin.zst";
 
 /// Further hosts serving the same model.
-const TAGGER_MIRRORS: &[&str] = &[];
+const TAGGER_MIRRORS: &[&str] = &[
+    "https://cdn.jsdelivr.net/gh/codewiththiha/cefr-rs@main/models/en_tokenizer.bin.zst",
+    "https://fastly.jsdelivr.net/gh/codewiththiha/cefr-rs@main/models/en_tokenizer.bin.zst",
+];
 
 /// The adopted model's name, which is also the extension `cefr` decodes by.
 const TAGGER_FILE: &str = "en_tokenizer.bin.zst";
