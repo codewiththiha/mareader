@@ -212,6 +212,8 @@ pub fn SelectionMenu(state: crate::context::ReaderContext) -> impl IntoView {
             <AnchorBubble anchor=anchor gap=10.0 class=format!("selection-menu {AI_SELECTION}")>
                 <div
                     node_ref=menu_ref
+                    // The engine's selection walk skips presses in here.
+                    data-ai-popover=""
                     role="toolbar"
                     aria-label="Selection actions"
                     class="flex items-center gap-0.5"
