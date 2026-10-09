@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use ai_core::gloss::{GlossBox, GlossMark};
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
+use app_chrome::floating::types::Rect;
 use app_chrome::hooks::use_timeout::use_debounce;
 use app_chrome::hooks::use_viewport::viewport_size;
 use app_chrome::layers::POPOVER;
@@ -11,13 +12,13 @@ use app_ui::components::primitives::floating::anchor_bubble::AnchorBubble;
 use app_ui::components::primitives::hooks::use_custom_event::use_typed_event_from;
 use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT, DICT_OPEN_EVENT};
 use leptos::prelude::*;
-use ui_geom::floating::Rect;
 
-use super::DictOpen;
 use crate::context::ReaderContext;
 use crate::pane::origin::raised_in;
 use crate::services;
 use crate::services::dict::EntryMirror;
+
+use super::DictOpen;
 
 /// How long the card lingers after the pointer leaves a word.
 const LEAVE_GRACE_MS: u64 = 350;
