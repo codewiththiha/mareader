@@ -7,9 +7,7 @@ pub mod search;
 
 pub use bridge::{Hop, PackRef, Plan, plans};
 pub use entry::{DictEntry, EntryRank, WordMatch, order_entries};
-pub use pos::{
-    CanonPos, PosMatch, canonize, kind_canon, parse_tags, penn_canon, rank_tags,
-};
+pub use pos::{CanonPos, PosMatch, canonize, kind_canon, parse_tags, penn_canon, rank_tags};
 pub use search::{classify, edit_distance, fold};
 
 #[cfg(test)]

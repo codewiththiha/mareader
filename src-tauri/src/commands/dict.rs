@@ -13,7 +13,8 @@ pub fn dict_packs_status(app: AppHandle) -> Result<Vec<PackStatus>, String> {
 /// Start one pack's download; progress rides `dict-packs`.
 #[tauri::command]
 pub fn dict_pack_download(app: AppHandle, pack_id: String) -> Result<(), String> {
-    app.state::<DictManager>().begin_download(app.clone(), &pack_id)
+    app.state::<DictManager>()
+        .begin_download(app.clone(), &pack_id)
 }
 
 /// Stop reading a pack; the partial stays for resume.

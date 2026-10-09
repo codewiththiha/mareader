@@ -165,9 +165,7 @@ mod tests {
         ];
         let mut kept = 0;
         for row in &rows {
-            let (Some(word), Some(definition)) =
-                (row[0].as_deref(), row[1].as_deref())
-            else {
+            let (Some(word), Some(definition)) = (row[0].as_deref(), row[1].as_deref()) else {
                 continue;
             };
             if word.trim().is_empty() || definition.trim().is_empty() {

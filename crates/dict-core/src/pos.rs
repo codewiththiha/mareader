@@ -95,8 +95,9 @@ impl CanonPos {
             Self::Other => "other",
             Self::Unknown => "unknown",
         }
-    }    /// The family a match falls back to. Siblings answer for
-    /// one another at a lower rank; nothing else does.
+    }
+    /// The family a match falls back to; siblings answer
+    /// lower. Nothing else answers.
     pub fn family(self) -> &'static str {
         match self {
             Self::Noun | Self::ProperName => "noun",
@@ -114,7 +115,10 @@ impl CanonPos {
 
 /// One source tag folded to the canon. `None` when empty.
 pub fn canonize(tag: &str) -> Option<CanonPos> {
-    let t = tag.trim().to_ascii_lowercase().replace([' ', '-', '.'], "_");
+    let t = tag
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-', '.'], "_");
     if t.is_empty() || t == "none" || t == "null" {
         return None;
     }
@@ -123,7 +127,9 @@ pub fn canonize(tag: &str) -> Option<CanonPos> {
         "n" | "ns" | "noun" | "nouns" | "common_noun" => CanonPos::Noun,
         "name" | "names" | "proper" | "proper_noun" | "propernoun" => CanonPos::ProperName,
         "v" | "vs" | "verb" | "verbs" => CanonPos::Verb,
-        "md" | "modal" | "modals" | "modal_verb" | "modal_verb_" | "modalverb" => CanonPos::ModalVerb,
+        "md" | "modal" | "modals" | "modal_verb" | "modal_verb_" | "modalverb" => {
+            CanonPos::ModalVerb
+        }
         "aux" | "auxiliary" | "auxiliaries" | "helping_verb" => CanonPos::Auxiliary,
         "cop" | "copula" | "copulas" => CanonPos::Copula,
         "adj" | "adjs" | "adjective" | "adjectives" => CanonPos::Adjective,
@@ -269,13 +275,59 @@ mod tests {
         // The 53 real values `output/pos-tags/SUMMARY.txt` lists.
         // Its 54th is the empty cell: not dropped.
         for tag in [
-            "abbr", "adj", "adjs", "adnominal", "adv", "advpart", "advs", "affix", "article",
-            "aux", "character", "classifier", "combining_form", "conj", "contraction", "cop",
-            "counter", "det", "indefadv", "indefart", "indefdet", "indefpron", "infix",
-            "interfix", "interj", "intj", "n", "name", "noun", "ns", "num", "other", "particle",
-            "pers", "phrase", "possess", "postp", "pref", "prefix", "prep", "prep_phrase",
-            "pron", "proverb", "punct", "root", "suff", "suffix", "syllable", "symb", "symbol",
-            "v", "verb", "vs",
+            "abbr",
+            "adj",
+            "adjs",
+            "adnominal",
+            "adv",
+            "advpart",
+            "advs",
+            "affix",
+            "article",
+            "aux",
+            "character",
+            "classifier",
+            "combining_form",
+            "conj",
+            "contraction",
+            "cop",
+            "counter",
+            "det",
+            "indefadv",
+            "indefart",
+            "indefdet",
+            "indefpron",
+            "infix",
+            "interfix",
+            "interj",
+            "intj",
+            "n",
+            "name",
+            "noun",
+            "ns",
+            "num",
+            "other",
+            "particle",
+            "pers",
+            "phrase",
+            "possess",
+            "postp",
+            "pref",
+            "prefix",
+            "prep",
+            "prep_phrase",
+            "pron",
+            "proverb",
+            "punct",
+            "root",
+            "suff",
+            "suffix",
+            "syllable",
+            "symb",
+            "symbol",
+            "v",
+            "verb",
+            "vs",
         ] {
             assert_ne!(canonize(tag).unwrap(), CanonPos::Unknown, "{tag}");
         }
@@ -304,8 +356,14 @@ mod tests {
     fn a_cell_may_hold_several_tags() {
         assert_eq!(parse_tags("v,n"), vec![CanonPos::Verb, CanonPos::Noun]);
         assert_eq!(parse_tags("v, n"), vec![CanonPos::Verb, CanonPos::Noun]);
-        assert_eq!(parse_tags("verb/noun"), vec![CanonPos::Verb, CanonPos::Noun]);
-        assert_eq!(parse_tags("adj;adv"), vec![CanonPos::Adjective, CanonPos::Adverb]);
+        assert_eq!(
+            parse_tags("verb/noun"),
+            vec![CanonPos::Verb, CanonPos::Noun]
+        );
+        assert_eq!(
+            parse_tags("adj;adv"),
+            vec![CanonPos::Adjective, CanonPos::Adverb]
+        );
         // A spaced tag is one tag; splitting it would mangle `modal verb`.
         assert_eq!(parse_tags("modal verb"), vec![CanonPos::ModalVerb]);
         assert_eq!(parse_tags("prep phrase"), vec![CanonPos::PrepPhrase]);
@@ -334,8 +392,17 @@ mod tests {
         // `cefr::tags::kind_of` answers exactly these; the count is the
         // contract the hover menu ranks against.
         let kinds = [
-            "noun", "verb", "adjective", "adverb", "pronoun", "preposition", "conjunction",
-            "number", "modal verb", "determiner", "other",
+            "noun",
+            "verb",
+            "adjective",
+            "adverb",
+            "pronoun",
+            "preposition",
+            "conjunction",
+            "number",
+            "modal verb",
+            "determiner",
+            "other",
         ];
         assert_eq!(kinds.len(), 11);
         for kind in kinds {

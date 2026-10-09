@@ -130,7 +130,10 @@ mod tests {
             .find(|plan| plan.via.as_deref() == Some("en"))
             .expect("a my-jp bridge through en");
         assert_eq!(bridge.hops.len(), 2);
-        assert!(bridge.hops[0].reverse, "my is asked through its pack's door");
+        assert!(
+            bridge.hops[0].reverse,
+            "my is asked through its pack's door"
+        );
         assert_eq!(bridge.hops[1].pack, "jmdict-en-jp");
     }
 

@@ -18,8 +18,7 @@ pub struct RawRow {
     pub source: Option<String>,
 }
 
-const COLUMNS: &str =
-    "word, pos, definition, romanization, sense, lang_code, source";
+const COLUMNS: &str = "word, pos, definition, romanization, sense, lang_code, source";
 
 /// A pack's open database.
 pub struct DictDb {
@@ -29,8 +28,7 @@ pub struct DictDb {
 impl DictDb {
     /// Open the sqlite a finished build landed.
     pub fn open(path: &Path) -> Result<Self> {
-        let conn = Connection::open(path)
-            .with_context(|| format!("open {}", path.display()))?;
+        let conn = Connection::open(path).with_context(|| format!("open {}", path.display()))?;
         Ok(Self { conn })
     }
 
@@ -144,11 +142,10 @@ impl DictDb {
         let Some(first) = ask_fold.chars().next() else {
             return Ok(());
         };
-        let sql =
-            "SELECT {COLUMNS} FROM entries
+        let sql = "SELECT {COLUMNS} FROM entries
              WHERE word_fold LIKE ?1 ESCAPE '\\'
              LIMIT 500"
-                .replace("{COLUMNS}", COLUMNS);
+            .replace("{COLUMNS}", COLUMNS);
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![like_prefix(&first.to_string())], row_shape)?;
         for row in rows {
@@ -210,7 +207,9 @@ fn like_contains(ask: &str) -> String {
 
 /// The three LIKE metacharacters, backslashed.
 fn like_escape(ask: &str) -> String {
-    ask.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    ask.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 #[cfg(test)]

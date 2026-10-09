@@ -105,8 +105,8 @@ mod tests {
             entry("run", "v,n", WordMatch::Exact),
             entry("runner", "noun", WordMatch::Prefix),
         ];
-        order_entries(&mut rows, Some(CanonPos::Verb));        // Exact first, then family, then bare rows; a fuzzy word
-        // sorts last whatever its tag says.
+        // Exact first, then family, then bare; fuzzy words sort last.
+        order_entries(&mut rows, Some(CanonPos::Verb));
         assert_eq!(rows[0].tags, vec![CanonPos::Verb, CanonPos::Noun]);
         assert_eq!(rows[1].pos_rank(Some(CanonPos::Verb)), PosMatch::Family);
         assert_eq!(rows[2].pos_rank(Some(CanonPos::Verb)), PosMatch::Bare);
