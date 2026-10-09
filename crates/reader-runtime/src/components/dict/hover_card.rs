@@ -1,14 +1,19 @@
-//! The hover card: one red word's senses, beside the pointer.
+//! The dictionary card: one word's senses, centered under the word.
 
 use std::time::Duration;
 
-use ai_core::gloss::GlossMark;
+use ai_core::gloss::{GlossBox, GlossMark};
+use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_timeout::use_debounce;
+use app_chrome::hooks::use_viewport::viewport_size;
 use app_chrome::layers::POPOVER;
+use app_ui::components::primitives::floating::anchor_bubble::AnchorBubble;
 use app_ui::components::primitives::hooks::use_custom_event::use_typed_event_from;
-use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT};
+use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT, DICT_OPEN_EVENT};
 use leptos::prelude::*;
+use ui_geom::floating::Rect;
 
+use super::DictOpen;
 use crate::context::ReaderContext;
 use crate::pane::origin::raised_in;
 use crate::services;
@@ -20,24 +25,34 @@ const LEAVE_GRACE_MS: u64 = 350;
 #[component]
 pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     let visible = RwSignal::new(false);
+    let pinned = RwSignal::new(false);
     let word = RwSignal::new(String::new());
-    let context = RwSignal::new(String::new());
     let entries: RwSignal<Vec<EntryMirror>> = RwSignal::new(Vec::new());
     let index = RwSignal::new(0usize);
-    let x = RwSignal::new(0f64);
-    let y = RwSignal::new(0f64);
-    // The pack the chooser stands on.
-    let to = RwSignal::new(String::new());
+    // The word's box in page space; scroll carries the card with it.
+    let page_box = RwSignal::new(None::<GlossBox>);
+    let scroll_top = state.reader.viewer.scroll_top;
+    let anchor = Signal::derive(move || {
+        page_box
+            .get()
+            .map(|b| Rect::new(b.x, b.y - scroll_top.get(), b.w, b.h))
+    });
     let packs = services::dict::packs();
 
-    // The chooser defaults to the first built pack.
-    Effect::new(move |_| {
+    // The settings' seats decide the pack; the first built one backs them.
+    let to = Signal::derive(move || {
         let rows = packs.get();
-        if to.get_untracked().is_empty()
-            && let Some(pack) = rows.iter().find(|pack| pack.built)
-        {
-            to.set(pack.target.clone());
-        }
+        let seats = state.settings.with(|st| st.dict.langs.clone());
+        rows.iter()
+            .find(|pack| {
+                pack.built
+                    && (seats.is_empty()
+                        || seats.contains(&pack.id)
+                        || seats.contains(&format!("{}-{}", pack.source, pack.target)))
+            })
+            .or_else(|| rows.iter().find(|pack| pack.built))
+            .map(|pack| pack.target.clone())
+            .unwrap_or_default()
     });
 
     // The pointer left; retire unless something else claims the card.
@@ -82,29 +97,92 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
         });
     });
 
+    let show = Callback::new(
+        move |(ask, ctx, box_, pin): (String, String, GlossBox, bool)| {
+            retire.cancel();
+            page_box.set(Some(box_));
+            word.set(ask.clone());
+            entries.set(Vec::new());
+            index.set(0);
+            pinned.set(pin);
+            visible.set(true);
+            fetch_for.run((ask, ctx));
+        },
+    );
+
     use_typed_event_from::<GlossMark>(DICT_HOVER_EVENT, move |mark, origin| {
         if !raised_in(&state.reader.dom, origin.as_ref()) {
             return;
         }
-        retire.cancel();
-        if let Some(el) = origin.as_ref() {
-            let rect = el.get_bounding_client_rect();
-            x.set(rect.left().max(8.0));
-            y.set((rect.bottom() + 8.0).max(8.0));
+        let Some(el) = origin.as_ref() else {
+            return;
+        };
+        let r = el.get_bounding_client_rect();
+        let box_ = GlossBox {
+            x: r.left(),
+            y: r.top() + scroll_top.get_untracked(),
+            w: r.width(),
+            h: r.height(),
+            r: 6.0,
+        };
+        show.run((mark.word, mark.context, box_, false));
+    });
+
+    use_typed_event_from::<DictOpen>(DICT_OPEN_EVENT, move |open, origin| {
+        if !raised_in(&state.reader.dom, origin.as_ref()) {
+            return;
         }
-        word.set(mark.word.clone());
-        context.set(mark.context.clone());
-        entries.set(Vec::new());
-        index.set(0);
-        visible.set(true);
-        fetch_for.run((mark.word.clone(), mark.context.clone()));
+        show.run((open.word, open.context, open.anchor, true));
     });
 
     use_typed_event_from::<GlossMark>(DICT_LEAVE_EVENT, move |_mark, origin| {
         if !raised_in(&state.reader.dom, origin.as_ref()) {
             return;
         }
+        // An asked-for card waits for a dismiss, not for the pointer.
+        if pinned.get_untracked() {
+            return;
+        }
         retire.trigger();
+    });
+
+    use_dismiss(
+        pinned.into(),
+        Callback::new(move |_| {
+            pinned.set(false);
+            visible.set(false);
+        }),
+        DismissPolicy {
+            escape: true,
+            outside: Some(DismissTrigger::PointerDown),
+            exclude_selectors: vec![".dict-card"],
+            enabled: None,
+            topmost_only: false,
+        },
+        |_| false,
+    );
+
+    // A word scrolled out of view takes its card with it.
+    Effect::new(move |_| {
+        if !visible.get() {
+            return;
+        }
+        let Some(r) = anchor.get() else {
+            return;
+        };
+        let (_, vh) = viewport_size();
+        if r.bottom() < 0.0 || r.y > vh {
+            pinned.set(false);
+            visible.set(false);
+        }
+    });
+
+    // A zoom re-cuts the boxes the card points at.
+    Effect::new(move |_| {
+        if state.reader.viewer.zooming().get() && visible.get_untracked() {
+            pinned.set(false);
+            visible.set(false);
+        }
     });
 
     // One entry rides at a time; the arrows and a swipe trade it.
@@ -122,123 +200,113 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
 
     view! {
         <Show when=move || visible.get()>
-            <div
-                class=move || format!("fixed {POPOVER} w-80 max-w-[calc(100vw-16px)] rounded-xl border border-line bg-surface shadow-xl")
-                style=move || format!("left:{}px;top:{}px", x.get(), y.get())
-                on:mouseenter=move |_| retire.cancel()
-                on:mouseleave=move |_| retire.trigger()
-                on:pointerdown=move |ev: web_sys::PointerEvent| {
-                    swipe_x.set_value(ev.client_x() as f64);
-                }
-                on:pointerup=move |ev: web_sys::PointerEvent| {
-                    let dx = ev.client_x() as f64 - swipe_x.get_value();
-                    if dx > 40.0 {
-                        step(-1);
-                    } else if dx < -40.0 {
-                        step(1);
-                    }
-                }
+            <AnchorBubble
+                anchor=anchor
+                gap=10.0
+                class=format!(
+                    "dict-card {POPOVER} w-80 max-w-[calc(100vw-16px)] rounded-xl \
+                     border border-line bg-surface shadow-xl"
+                )
             >
-                <div class="flex items-center gap-2 border-b border-line px-3 py-2">
-                    <span class="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-                        {move || word.get()}
-                    </span>
-                    // The language chooser lives in the title area.
-                    <select
-                        class="shrink-0 rounded-md border border-line bg-paper px-1.5 py-0.5 text-xs text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        attr:aria-label="Translate into"
-                        prop:value=move || to.get()
-                        on:change=move |ev: leptos::ev::Event| {
-                            to.set(event_target_value(&ev));
-                            fetch_for.run((word.get_untracked(), context.get_untracked()));
+                <div
+                    on:mouseenter=move |_| retire.cancel()
+                    on:mouseleave=move |_| {
+                        if !pinned.get_untracked() {
+                            retire.trigger();
                         }
-                    >
-                        {move || {
-                            packs
-                                .get()
-                                .iter()
-                                .filter(|pack| pack.built)
-                                .map(|pack| {
-                                    view! {
-                                        <option value=pack.target.clone()>{pack.label.clone()}</option>
-                                    }
-                                })
-                                .collect_view()
-                        }}
-                    </select>
-                </div>
-                {move || {
-                    let rows = entries.get();
-                    if rows.is_empty() {
-                        return view! {
-                            <div class="px-3 py-2.5 text-xs text-muted">
-                                "No senses in this pack."
-                            </div>
-                        }
-                        .into_any();
                     }
-                    let i = index.get().min(rows.len() - 1);
-                    let entry = rows[i].clone();
-                    let tags = entry.tags.join(" · ");
-                    view! {
-                        <div class="px-3 py-2.5">
-                            <div class="flex items-baseline gap-2">
-                                <span class="text-xs text-muted">{tags}</span>
+                    on:pointerdown=move |ev: web_sys::PointerEvent| {
+                        swipe_x.set_value(ev.client_x() as f64);
+                    }
+                    on:pointerup=move |ev: web_sys::PointerEvent| {
+                        let dx = ev.client_x() as f64 - swipe_x.get_value();
+                        if dx > 40.0 {
+                            step(-1);
+                        } else if dx < -40.0 {
+                            step(1);
+                        }
+                    }
+                >
+                    <div class="flex items-center gap-2 border-b border-line px-3 py-2">
+                        <span class="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                            {move || word.get()}
+                        </span>
+                    </div>
+                    {move || {
+                        let rows = entries.get();
+                        if rows.is_empty() {
+                            return view! {
+                                <div class="px-3 py-2.5 text-xs text-muted">
+                                    "No senses in this pack."
+                                </div>
+                            }
+                            .into_any();
+                        }
+                        let i = index.get().min(rows.len() - 1);
+                        let entry = rows[i].clone();
+                        let tags = entry.tags.join(" · ");
+                        view! {
+                            <div class="px-3 py-2.5">
+                                <div class="flex items-baseline gap-2">
+                                    <span class="text-xs text-muted">{tags}</span>
+                                    {entry
+                                        .via
+                                        .clone()
+                                        .map(|via| {
+                                            view! {
+                                                <span class="ml-auto text-xs text-muted">
+                                                    {"via "}{via}
+                                                </span>
+                                            }
+                                        })}
+                                </div>
+                                <div class="pt-1 text-sm text-ink">{entry.definition.clone()}</div>
                                 {entry
-                                    .via
+                                    .romanization
                                     .clone()
-                                    .map(|via| {
-                                        view! {
-                                            <span class="ml-auto text-xs text-muted">{"via "}{via}</span>
-                                        }
+                                    .map(|rom| {
+                                        view! { <div class="text-xs text-muted">{rom}</div> }
+                                    })}
+                                {entry
+                                    .sense
+                                    .clone()
+                                    .map(|sense| {
+                                        view! { <div class="text-xs text-muted italic">{sense}</div> }
                                     })}
                             </div>
-                            <div class="pt-1 text-sm text-ink">{entry.definition.clone()}</div>
-                            {entry
-                                .romanization
-                                .clone()
-                                .map(|rom| {
-                                    view! { <div class="text-xs text-muted">{rom}</div> }
-                                })}
-                            {entry
-                                .sense
-                                .clone()
-                                .map(|sense| {
-                                    view! { <div class="text-xs text-muted italic">{sense}</div> }
-                                })}
-                        </div>
-                    }
-                    .into_any()
-                }}
-                <div class="flex items-center justify-between border-t border-line px-2 py-1.5">
-                    <button
-                        type="button"
-                        class="rounded-md px-2 py-1 text-xs text-muted hover:bg-line/40 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        attr:aria-label="Previous sense"
-                        on:click=move |_| step(-1)
-                    >
-                        "‹"
-                    </button>
-                    <span class="text-xs text-muted tabular-nums">
-                        {move || {
-                            let len = entries.with(Vec::len);
-                            if len == 0 {
-                                "0/0".to_string()
-                            } else {
-                                format!("{}/{}", index.get().min(len - 1) + 1, len)
-                            }
-                        }}
-                    </span>
-                    <button
-                        type="button"
-                        class="rounded-md px-2 py-1 text-xs text-muted hover:bg-line/40 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        attr:aria-label="Next sense"
-                        on:click=move |_| step(1)
-                    >
-                        "›"
-                    </button>
+                        }
+                        .into_any()
+                    }}
+                    <div class="flex items-center justify-between border-t border-line px-2 py-1.5">
+                        <button
+                            type="button"
+                            class="rounded-md px-2 py-1 text-xs text-muted hover:bg-line/40 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            attr:aria-label="Previous sense"
+                            on:click=move |_| step(-1)
+                        >
+                            "‹"
+                        </button>
+                        <span class="text-xs text-muted tabular-nums">
+                            {move || {
+                                let len = entries.with(Vec::len);
+                                if len == 0 {
+                                    "0/0".to_string()
+                                } else {
+                                    format!("{}/{}", index.get().min(len - 1) + 1, len)
+                                }
+                            }}
+                        </span>
+                        <button
+                            type="button"
+                            class="rounded-md px-2 py-1 text-xs text-muted hover:bg-line/40 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            attr:aria-label="Next sense"
+                            on:click=move |_| step(1)
+                        >
+                            "›"
+                        </button>
+                    </div>
                 </div>
-            </div>
+            </AnchorBubble>
         </Show>
     }
 }
