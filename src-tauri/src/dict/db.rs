@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use dict_core::fold;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OpenFlags, params};
 
 /// A row's read shape. The pack id answers what `lang_code`
 /// and `source` would.
@@ -186,6 +186,21 @@ impl DictDb {
     }
 }
 
+/// Whether a file holds a nonempty database this reader can query.
+pub fn is_usable(path: &Path) -> bool {
+    let Ok(conn) = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
+        return false;
+    };
+    let version = conn
+        .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+        .unwrap_or_default();
+    if version != 1 || conn.prepare("SELECT word, word_fold, pos, definition, def_fold, romanization, sense, lang_code, source FROM entries LIMIT 0").is_err() {
+        return false;
+    }
+    conn.query_row("SELECT 1 FROM entries LIMIT 1", [], |row| row.get::<_, i64>(0))
+        .is_ok()
+}
+
 /// The row shape every select above carries.
 fn row_shape(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawRow> {
     Ok(RawRow {
@@ -236,9 +251,23 @@ mod tests {
                     .unwrap();
             }
         }
+        conn.pragma_update(None, "user_version", 1).unwrap();
         drop(conn);
         let db = DictDb::open(&path).unwrap();
         (dir, db)
+    }
+
+    #[test]
+    fn only_a_finished_nonempty_current_schema_is_ready() {
+        let (dir, db) = temp_db("probe", &[("cat", "chat")]);
+        assert!(is_usable(&dir.join("pack.db")));
+        drop(db);
+        let old = dir.join("old.db");
+        let conn = Connection::open(&old).unwrap();
+        conn.execute_batch("CREATE TABLE entry (word TEXT, gloss TEXT);").unwrap();
+        drop(conn);
+        assert!(!is_usable(&old));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

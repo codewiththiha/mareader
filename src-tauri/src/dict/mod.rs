@@ -4,10 +4,11 @@
 pub mod build;
 pub mod db;
 pub mod fetch;
+pub mod legacy;
 pub mod packs;
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use dict_core::{
@@ -50,7 +51,14 @@ enum BuildState {
     Failed(String),
 }
 
-/// One entry on the wire to a card, a route, or the overlay.
+/// Where one conversion gets its rows.
+#[derive(Debug, Clone)]
+enum ConvertInput {
+    Parquet,
+    Legacy(PathBuf),
+}
+
+/// One entry on the wire to a hover card or sidebar search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DictEntryWire {
@@ -102,11 +110,34 @@ fn phase_of(
     }
 }
 
+/// Replace a database only after its complete replacement exists.
+fn install_database(building: &Path, target: &Path) -> Result<(), String> {
+    let backup = target.with_extension("db.previous");
+    if backup.exists() {
+        std::fs::remove_file(&backup).map_err(|error| error.to_string())?;
+    }
+    let had_target = target.exists();
+    if had_target {
+        std::fs::rename(target, &backup).map_err(|error| error.to_string())?;
+    }
+    if let Err(error) = std::fs::rename(building, target) {
+        if had_target {
+            let _ = std::fs::rename(&backup, target);
+        }
+        return Err(error.to_string());
+    }
+    if had_target {
+        let _ = std::fs::remove_file(backup);
+    }
+    Ok(())
+}
+
 /// The dictionary system: open packs and the routes between them.
 #[derive(Default)]
 pub struct DictManager {
     dbs: Mutex<HashMap<String, Arc<Mutex<DictDb>>>>,
     builds: Mutex<HashMap<String, BuildState>>,
+    legacy_checked: Mutex<HashSet<String>>,
 }
 
 impl DictManager {
@@ -122,13 +153,14 @@ impl DictManager {
     /// Every pack's row, whatever its download is doing.
     pub fn status(&self, app: &AppHandle) -> Vec<PackStatus> {
         let dir = Self::dir(app).ok();
+        self.adopt_landed(app, dir.as_deref());
         let downloads = app.state::<AppDownloads>();
-        let rows = PACKS
+        PACKS
             .iter()
             .map(|pack| {
                 let built = dir
                     .as_deref()
-                    .map(|dir| fetch::db_file(dir, pack.id).exists())
+                    .map(|dir| db::is_usable(&fetch::db_file(dir, pack.id)))
                     .unwrap_or(false);
                 let progress = downloads.status(pack.id);
                 let build = self
@@ -149,28 +181,73 @@ impl DictManager {
                     message,
                 }
             })
-            .collect();
-        self.adopt_landed(app, dir.as_deref());
-        rows
+            .collect()
     }
 
-    /// A body landed in an earlier run converts itself into view.
+    /// Adopt database or parquet files left by an earlier run.
     fn adopt_landed(&self, app: &AppHandle, dir: Option<&std::path::Path>) {
         let Some(dir) = dir else {
             return;
         };
+        let downloads = app.state::<AppDownloads>();
         for pack in PACKS {
-            if fetch::db_file(dir, pack.id).exists() {
+            if db::is_usable(&fetch::db_file(dir, pack.id)) || self.has_build_record(pack.id) {
+                continue;
+            }
+            let progress = downloads.status(pack.id);
+            if matches!(
+                progress.as_ref().map(|progress| progress.phase),
+                Some(Phase::Preparing | Phase::Downloading | Phase::Retrying | Phase::Verifying | Phase::Paused)
+            ) {
                 continue;
             }
             if fetch::parquet_file(dir, pack.id).is_file() {
                 self.start_convert(app, pack.id);
+                continue;
+            }
+            if legacy::is_marked(dir, pack.id) || !self.claim_legacy_scan(pack.id) {
+                continue;
+            }
+            let pair = format!("{}-{}", pack.source, pack.target);
+            let old = legacy::candidates(app, dir, pack.id, &pair)
+                .into_iter()
+                .find(|path| build::legacy_db_matches(path, pack.id, &pair).unwrap_or(false));
+            if let Some(path) = old {
+                self.start_conversion(app, pack.id, ConvertInput::Legacy(path));
             }
         }
     }
 
-    /// Convert one landed body now; never two at once.
+    /// Whether this run already checked old paths for the pack.
+    fn claim_legacy_scan(&self, pack_id: &str) -> bool {
+        self.legacy_checked
+            .lock()
+            .map(|mut checked| checked.insert(pack_id.to_string()))
+            .unwrap_or(false)
+    }
+
+    /// A new download can finish before old files are checked again.
+    fn reset_legacy_scan(&self, pack_id: &str) {
+        if let Ok(mut checked) = self.legacy_checked.lock() {
+            checked.remove(pack_id);
+        }
+    }
+
+    /// Whether this run already owns or rejected the pack's conversion.
+    fn has_build_record(&self, pack_id: &str) -> bool {
+        self.builds
+            .lock()
+            .map(|builds| builds.contains_key(pack_id))
+            .unwrap_or(true)
+    }
+
+    /// Convert a landed parquet now.
     fn start_convert(&self, app: &AppHandle, pack_id: &str) {
+        self.start_conversion(app, pack_id, ConvertInput::Parquet);
+    }
+
+    /// Convert one source now; never two builds for a pack.
+    fn start_conversion(&self, app: &AppHandle, pack_id: &str, input: ConvertInput) {
         {
             let mut builds = match self.builds.lock() {
                 Ok(guard) => guard,
@@ -185,13 +262,16 @@ impl DictManager {
         let app = app.clone();
         let pack_id = pack_id.to_string();
         tauri::async_runtime::spawn(async move {
-            app.state::<DictManager>().convert(&app, &pack_id).await;
+            app.state::<DictManager>()
+                .convert(&app, &pack_id, input)
+                .await;
         });
     }
 
     /// A landed body becomes a sqlite, renamed into place when whole.
-    async fn convert(&self, app: &AppHandle, pack_id: &str) {
-        let result = self.convert_blocking(app, pack_id).await;
+    async fn convert(&self, app: &AppHandle, pack_id: &str, input: ConvertInput) {
+        let legacy_input = matches!(&input, ConvertInput::Legacy(_));
+        let result = self.convert_blocking(app, pack_id, input).await;
         let mut builds = match self.builds.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -199,6 +279,11 @@ impl DictManager {
         match result {
             Ok(_) => {
                 builds.remove(pack_id);
+                if legacy_input
+                    && let Ok(dir) = Self::dir(app)
+                {
+                    legacy::mark(&dir, pack_id);
+                }
             }
             Err(message) => {
                 eprintln!("dict convert {pack_id}: {message}");
@@ -213,42 +298,62 @@ impl DictManager {
     }
 
     /// The blocking half: build the table, then replace the old.
-    async fn convert_blocking(&self, app: &AppHandle, pack_id: &str) -> Result<u64, String> {
+    async fn convert_blocking(
+        &self,
+        app: &AppHandle,
+        pack_id: &str,
+        input: ConvertInput,
+    ) -> Result<u64, String> {
         let dir = Self::dir(app)?;
-        let source = fetch::parquet_file(&dir, pack_id);
+        std::fs::create_dir_all(&dir).map_err(|error| format!("create {}: {error}", dir.display()))?;
+        let parquet = fetch::parquet_file(&dir, pack_id);
         let target = fetch::db_file(&dir, pack_id);
         let building = fetch::db_building(&dir, pack_id);
+        let pair = packs::pack(pack_id)
+            .map(|pack| format!("{}-{}", pack.source, pack.target))
+            .ok_or_else(|| format!("no pack {pack_id}"))?;
         if let Ok(mut dbs) = self.dbs.lock() {
             dbs.remove(pack_id);
         }
+        let pack_id = pack_id.to_string();
         tauri::async_runtime::spawn_blocking(move || {
-            let result = (|| {
-                let rows = build::build_db(&source, &building).map_err(|e| e.to_string())?;
-                if target.exists() {
-                    std::fs::remove_file(&target).map_err(|e| e.to_string())?;
-                }
-                std::fs::rename(&building, &target).map_err(|e| e.to_string())?;
-                Ok::<u64, String>(rows)
-            })();
+            let built = match input {
+                ConvertInput::Parquet => build::build_db(&parquet, &building)
+                    .map_err(|error| error.to_string()),
+                ConvertInput::Legacy(source) => build::build_legacy_db(
+                    &source,
+                    &building,
+                    &pack_id,
+                    &pair,
+                )
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "legacy database has no rows for this pack".to_string()),
+            };
+            let result = built.and_then(|rows| {
+                install_database(&building, &target)?;
+                Ok(rows)
+            });
             if result.is_err() {
                 let _ = std::fs::remove_file(&building);
             }
             result
         })
         .await
-        .map_err(|e| format!("convert worker: {e}"))?
+        .map_err(|error| format!("convert worker: {error}"))?
     }
 
     /// Start one pack's download, then convert it when the body lands.
     pub fn begin_download(&self, app: AppHandle, pack_id: &str) -> Result<(), String> {
         let dir = Self::dir(&app)?;
-        self.clear_failed(pack_id);
         let watched = app.clone();
-        let job = fetch::job_for(dir, pack_id)
+        let job = fetch::job_for(dir.clone(), pack_id)
             .ok_or_else(|| format!("no pack {pack_id}"))?
             .on_progress(move |progress| narrate(&watched, progress));
         let host = TauriHost::new(app.clone());
         let receipt = app.state::<AppDownloads>().start(&host, job)?;
+        self.clear_failed(pack_id);
+        self.reset_legacy_scan(pack_id);
+        legacy::unmark(&dir, pack_id);
         self.emit(&app);
         let pack_id = pack_id.to_string();
         tauri::async_runtime::spawn(async move {
@@ -314,6 +419,7 @@ impl DictManager {
         ] {
             let _ = std::fs::remove_file(path);
         }
+        legacy::mark(&dir, pack_id);
         self.emit(app);
         Ok(())
     }
@@ -393,7 +499,7 @@ impl DictManager {
     fn built_packs(&self, dir: &std::path::Path) -> Vec<String> {
         PACKS
             .iter()
-            .filter(|pack| fetch::db_file(dir, pack.id).exists())
+            .filter(|pack| db::is_usable(&fetch::db_file(dir, pack.id)))
             .map(|pack| pack.id.to_string())
             .collect()
     }
@@ -571,6 +677,20 @@ fn narrate(app: &AppHandle, progress: &Progress) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_finished_database_replaces_the_old_file() {
+        let dir = std::env::temp_dir().join(format!("dict_replace_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("pack.db");
+        let building = dir.join("pack.db.tmp");
+        std::fs::write(&target, b"old").unwrap();
+        std::fs::write(&building, b"new").unwrap();
+        install_database(&building, &target).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new".to_vec());
+        assert!(!building.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn an_empty_filter_still_answers_with_every_built_pack() {
