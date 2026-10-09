@@ -458,7 +458,7 @@ mod tests {
         drop(conn);
 
         assert!(legacy_db_matches(&old, "mcfnlp-en-my", "en-my").unwrap());
-        assert!(!legacy_db_matches(&old, "mcfnlp-en-my", "en-jp").unwrap());
+        assert!(!legacy_db_matches(&old, "mcfnlp-en-my", "en-fr").unwrap());
         let current = dir.join("mcfnlp-en-my.db.tmp");
         assert_eq!(
             build_legacy_db(&old, &current, "mcfnlp-en-my", "en-my").unwrap(),
