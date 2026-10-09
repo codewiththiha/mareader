@@ -25,8 +25,7 @@ use self::db::{DictDb, RawRow};
 /// The event carrying every pack's row to the download UI.
 pub const DICT_EVENT: &str = "dict-packs";
 
-/// A pack's row: what it is, where its download stands, whether
-/// its sqlite is built.
+/// A pack's row: where its download stands, and its phase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackStatus {
@@ -37,6 +36,18 @@ pub struct PackStatus {
     pub rows: u64,
     pub built: bool,
     pub progress: Option<Progress>,
+    /// `absent` | `downloading` | `paused` | `converting` | `ready` |
+    /// `failed`.
+    pub phase: String,
+    /// Why a phase is what it is: a failure's own words.
+    pub message: Option<String>,
+}
+
+/// One pack's conversion: running, or the reason it stopped.
+#[derive(Debug, Clone)]
+enum BuildState {
+    Converting,
+    Failed(String),
 }
 
 /// One entry on the wire to a card, a route, or the overlay.
@@ -65,10 +76,36 @@ fn wanted_packs(pack_ids: Option<Vec<String>>, built: &[String]) -> Vec<String> 
     }
 }
 
+/// One pack's wire phase and why, from its three truths.
+fn phase_of(
+    built: bool,
+    build: Option<&BuildState>,
+    progress: Option<&Progress>,
+) -> (String, Option<String>) {
+    if built {
+        return ("ready".to_string(), None);
+    }
+    match build {
+        Some(BuildState::Converting) => ("converting".to_string(), None),
+        Some(BuildState::Failed(message)) => ("failed".to_string(), Some(message.clone())),
+        None => match progress.map(|progress| progress.phase) {
+            Some(
+                Phase::Preparing | Phase::Downloading | Phase::Retrying | Phase::Verifying,
+            ) => ("downloading".to_string(), None),
+            Some(Phase::Paused) => ("paused".to_string(), None),
+            Some(Phase::Failed) => {
+                ("failed".to_string(), progress.and_then(|progress| progress.message.clone()))
+            }
+            _ => ("absent".to_string(), None),
+        },
+    }
+}
+
 /// The dictionary system: open packs and the routes between them.
 #[derive(Default)]
 pub struct DictManager {
     dbs: Mutex<HashMap<String, Arc<Mutex<DictDb>>>>,
+    builds: Mutex<HashMap<String, BuildState>>,
 }
 
 impl DictManager {
@@ -85,13 +122,20 @@ impl DictManager {
     pub fn status(&self, app: &AppHandle) -> Vec<PackStatus> {
         let dir = Self::dir(app).ok();
         let downloads = app.state::<AppDownloads>();
-        PACKS
+        let rows = PACKS
             .iter()
             .map(|pack| {
                 let built = dir
-                    .as_ref()
+                    .as_deref()
                     .map(|dir| fetch::db_file(dir, pack.id).exists())
                     .unwrap_or(false);
+                let progress = downloads.status(pack.id);
+                let build = self
+                    .builds
+                    .lock()
+                    .ok()
+                    .and_then(|builds| builds.get(pack.id).cloned());
+                let (phase, message) = phase_of(built, build.as_ref(), progress.as_ref());
                 PackStatus {
                     id: pack.id.to_string(),
                     label: pack.label.to_string(),
@@ -99,15 +143,105 @@ impl DictManager {
                     target: pack.target.to_string(),
                     rows: pack.rows,
                     built,
-                    progress: downloads.status(pack.id),
+                    progress,
+                    phase,
+                    message,
                 }
             })
-            .collect()
+            .collect();
+        self.adopt_landed(app, dir.as_deref());
+        rows
+    }
+
+    /// A body landed in an earlier run converts itself into view.
+    fn adopt_landed(&self, app: &AppHandle, dir: Option<&std::path::Path>) {
+        let Some(dir) = dir else {
+            return;
+        };
+        for pack in PACKS {
+            if fetch::db_file(dir, pack.id).exists() {
+                continue;
+            }
+            if fetch::parquet_file(dir, pack.id).is_file() {
+                self.start_convert(app, pack.id);
+            }
+        }
+    }
+
+    /// Convert one landed body now; never two at once.
+    fn start_convert(&self, app: &AppHandle, pack_id: &str) {
+        {
+            let mut builds = match self.builds.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if builds.contains_key(pack_id) {
+                return;
+            }
+            builds.insert(pack_id.to_string(), BuildState::Converting);
+        }
+        self.emit(app);
+        let app = app.clone();
+        let pack_id = pack_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            app.state::<DictManager>().convert(&app, &pack_id).await;
+        });
+    }
+
+    /// A landed body becomes a sqlite, renamed into place when whole.
+    async fn convert(&self, app: &AppHandle, pack_id: &str) {
+        let result = self.convert_blocking(app, pack_id).await;
+        let mut builds = match self.builds.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match result {
+            Ok(_) => {
+                builds.remove(pack_id);
+            }
+            Err(message) => {
+                eprintln!("dict convert {pack_id}: {message}");
+                builds.insert(
+                    pack_id.to_string(),
+                    BuildState::Failed(format!("conversion failed: {message}")),
+                );
+            }
+        }
+        drop(builds);
+        self.emit(app);
+    }
+
+    /// The blocking half: build the table, then replace the old.
+    async fn convert_blocking(&self, app: &AppHandle, pack_id: &str) -> Result<u64, String> {
+        let dir = Self::dir(app)?;
+        let source = fetch::parquet_file(&dir, pack_id);
+        let target = fetch::db_file(&dir, pack_id);
+        let building = fetch::db_building(&dir, pack_id);
+        if let Ok(mut dbs) = self.dbs.lock() {
+            dbs.remove(pack_id);
+        }
+        tauri::async_runtime::spawn_blocking(move || {
+            let result = (|| {
+                let rows = build::build_db(&source, &building).map_err(|e| e.to_string())?;
+                if target.exists() {
+                    std::fs::remove_file(&target).map_err(|e| e.to_string())?;
+                }
+                std::fs::rename(&building, &target).map_err(|e| e.to_string())?;
+                Ok::<u64, String>(rows)
+            })();
+            if result.is_err() {
+                let _ = std::fs::remove_file(&building);
+            }
+            result
+        })
+        .await
+        .map_err(|e| format!("convert worker: {e}"))?
     }
 
     /// Start one pack's download, then convert it when the body lands.
     pub fn begin_download(&self, app: AppHandle, pack_id: &str) -> Result<(), String> {
         let dir = Self::dir(&app)?;
+        self.clear_failed(pack_id);
         let watched = app.clone();
         let job = fetch::job_for(dir, pack_id)
             .ok_or_else(|| format!("no pack {pack_id}"))?
@@ -118,11 +252,19 @@ impl DictManager {
         let pack_id = pack_id.to_string();
         tauri::async_runtime::spawn(async move {
             if receipt.finished().await.is_ok() {
-                convert(&app, &pack_id).await;
+                app.state::<DictManager>().start_convert(&app, &pack_id);
             }
-            app.state::<DictManager>().emit(&app);
         });
         Ok(())
+    }
+
+    /// A retry starts clean: the old failure goes with it.
+    fn clear_failed(&self, pack_id: &str) {
+        if let Ok(mut builds) = self.builds.lock()
+            && matches!(builds.get(pack_id), Some(BuildState::Failed(_)))
+        {
+            builds.remove(pack_id);
+        }
     }
 
     /// Stop reading; the partial stays and resume continues from it.
@@ -140,9 +282,8 @@ impl DictManager {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             if receipt.finished().await.is_ok() {
-                convert(&app, &pack_id).await;
+                app.state::<DictManager>().start_convert(&app, &pack_id);
             }
-            app.state::<DictManager>().emit(&app);
         });
         Ok(())
     }
@@ -161,6 +302,9 @@ impl DictManager {
             .lock()
             .map_err(|_| "db lock poisoned")?
             .remove(pack_id);
+        if let Ok(mut builds) = self.builds.lock() {
+            builds.remove(pack_id);
+        }
         let dir = Self::dir(app)?;
         for path in [
             fetch::parquet_file(&dir, pack_id),
@@ -423,27 +567,6 @@ fn narrate(app: &AppHandle, progress: &Progress) {
     let _ = app.emit(DICT_EVENT, statuses);
 }
 
-/// A landed body becomes a sqlite, renamed into place when whole.
-async fn convert(app: &AppHandle, pack_id: &str) {
-    let Ok(dir) = DictManager::dir(app) else {
-        return;
-    };
-    let source = fetch::parquet_file(&dir, pack_id);
-    let target = fetch::db_file(&dir, pack_id);
-    let building = fetch::db_building(&dir, pack_id);
-    let pack_id = pack_id.to_string();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let rows = build::build_db(&source, &building).map_err(|e| e.to_string())?;
-        std::fs::rename(&building, &target).map_err(|e| e.to_string())?;
-        Ok::<u64, String>(rows)
-    })
-    .await;
-    if let Ok(Err(message)) = result {
-        eprintln!("dict convert {pack_id}: {message}");
-        let _ = std::fs::remove_file(fetch::db_building(&dir, &pack_id));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,8 +615,43 @@ mod tests {
             rows: 110_640,
             built: false,
             progress: None,
+            phase: "absent".into(),
+            message: None,
         };
         let text = serde_json::to_string(&status).unwrap();
         assert!(text.contains("\"built\":false"));
+        assert!(text.contains("\"phase\":\"absent\""));
+    }
+
+    #[test]
+    fn a_pack_says_where_it_stands_in_words() {
+        // A built pack is ready, whatever the progress says.
+        assert_eq!(phase_of(true, None, None).0, "ready");
+        // A conversion under way says so, not "not downloaded".
+        let (phase, _) = phase_of(false, Some(&BuildState::Converting), None);
+        assert_eq!(phase, "converting");
+        // A failed conversion keeps its own reason on the wire.
+        let (phase, message) =
+            phase_of(false, Some(&BuildState::Failed("bad parquet".into())), None);
+        assert_eq!(phase, "failed");
+        assert_eq!(message.as_deref(), Some("bad parquet"));
+        // A live download reads as downloading.
+        let progress = Progress {
+            id: "x".into(),
+            phase: Phase::Downloading,
+            received: 0,
+            total: None,
+            source: None,
+            attempt: 1,
+            speed: None,
+            eta_secs: None,
+            message: None,
+            path: None,
+            cached: false,
+        };
+        let (phase, _) = phase_of(false, None, Some(&progress));
+        assert_eq!(phase, "downloading");
+        // And nothing at all reads as not downloaded.
+        assert_eq!(phase_of(false, None, None).0, "absent");
     }
 }
