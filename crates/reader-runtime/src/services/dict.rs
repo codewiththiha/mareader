@@ -30,11 +30,19 @@ pub struct PackMirror {
     pub rows: u64,
     pub built: bool,
     pub progress: Option<ProgressMirror>,
+    /// `absent` | `downloading` | `paused` | `converting` | `ready` |
+    /// `failed`.
+    pub phase: String,
+    /// Why a phase is what it is: a failure's own words.
+    pub message: Option<String>,
 }
 
 impl PackMirror {
-    /// `absent` | `downloading` | `paused` | `ready` | `failed`.
-    pub fn phase(&self) -> &'static str {
+    /// The wire phase, with the fields as a fallback for old rows.
+    pub fn phase(&self) -> &str {
+        if !self.phase.is_empty() {
+            return &self.phase;
+        }
         if self.built {
             return "ready";
         }
