@@ -194,11 +194,17 @@ pub fn is_usable(path: &Path) -> bool {
     let version = conn
         .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
         .unwrap_or_default();
-    if version != 1 || conn.prepare("SELECT word, word_fold, pos, definition, def_fold, romanization, sense, lang_code, source FROM entries LIMIT 0").is_err() {
+    if version != 1
+        || conn
+            .prepare("SELECT word, word_fold, pos, definition, def_fold, romanization, sense, lang_code, source FROM entries LIMIT 0")
+            .is_err()
+    {
         return false;
     }
-    conn.query_row("SELECT 1 FROM entries LIMIT 1", [], |row| row.get::<_, i64>(0))
-        .is_ok()
+    conn.query_row("SELECT 1 FROM entries LIMIT 1", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .is_ok()
 }
 
 /// The row shape every select above carries.
@@ -264,7 +270,8 @@ mod tests {
         drop(db);
         let old = dir.join("old.db");
         let conn = Connection::open(&old).unwrap();
-        conn.execute_batch("CREATE TABLE entry (word TEXT, gloss TEXT);").unwrap();
+        conn.execute_batch("CREATE TABLE entry (word TEXT, gloss TEXT);")
+            .unwrap();
         drop(conn);
         assert!(!is_usable(&old));
         let _ = std::fs::remove_dir_all(dir);

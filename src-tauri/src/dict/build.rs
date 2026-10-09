@@ -181,7 +181,10 @@ pub fn build_legacy_db(
     let query = format!(
         "SELECT {}, {}, {}, {}, {}, {}, {} FROM {}{pack_filter}",
         quote(&info.word),
-        info.pos.as_deref().map(quote).unwrap_or_else(|| "NULL".into()),
+        info.pos
+            .as_deref()
+            .map(quote)
+            .unwrap_or_else(|| "NULL".into()),
         quote(&info.definition),
         info.romanization
             .as_deref()
@@ -289,7 +292,9 @@ pub fn legacy_db_matches(source_path: &Path, pack_id: &str, pair: &str) -> Resul
     );
     let found = if info.pack.is_some() {
         source
-            .query_row(&query, rusqlite::params![pack_id, pair], |row| row.get::<_, i64>(0))
+            .query_row(&query, rusqlite::params![pack_id, pair], |row| {
+                row.get::<_, i64>(0)
+            })
             .optional()?
             .is_some()
     } else {
@@ -467,7 +472,10 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!(entry, ("light".into(), "အလင်း".into(), "illumination".into()));
+        assert_eq!(
+            entry,
+            ("light".into(), "အလင်း".into(), "illumination".into())
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
