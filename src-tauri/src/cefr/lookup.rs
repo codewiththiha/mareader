@@ -75,8 +75,7 @@ impl CefrManager {
         };
         let paths = Self::paths(app)?;
         let tag = found.pos.clone();
-        // The table's keys are the dataset's words: `Ephemeral` must
-        // ask for `ephemeral`.
+        // The dataset's keys are lowercase, so "The" is asked as "the".
         let key = cefr_core::normalize(word);
         let Some((sense, all)) = self.with_db(&paths.db, |db| {
             let sense = db
@@ -137,6 +136,15 @@ mod tests {
         assert!(json.contains("\"kind\":\"verb\""));
         assert!(json.contains("\"level\":4.2"));
         assert!(!json.contains("pos_tag"));
+    }
+
+    #[test]
+    fn the_dataset_key_a_click_is_asked_under_is_its_own_normal_form() {
+        // Pinned: the db stores lowercase, so a capitalized click must fold.
+        assert_eq!(cefr_core::normalize("The"), "the");
+        assert_eq!(cefr_core::normalize("Ephemeral"), "ephemeral");
+        assert_eq!(cefr_core::normalize("it\u{2019}s"), "it's");
+        assert_eq!(cefr_core::normalize("well-Known"), "well-known");
     }
 
     #[test]
