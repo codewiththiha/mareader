@@ -6,8 +6,8 @@ use tauri::{Emitter, Manager, RunEvent};
 
 mod ai;
 mod cefr;
-mod dict;
 mod commands;
+mod dict;
 mod download;
 mod macos;
 
@@ -128,7 +128,7 @@ pub fn run() {
         }))
         .manage(PendingFile(Mutex::new(None)))
         .manage(cefr::CefrManager::new())
-            .manage(dict::DictManager::new())
+        .manage(dict::DictManager::new())
         .manage(download::AppDownloads::new())
         .invoke_handler(tauri::generate_handler![
             take_pending_file,

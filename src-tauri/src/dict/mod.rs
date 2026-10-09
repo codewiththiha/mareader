@@ -13,9 +13,9 @@ use std::sync::{Arc, Mutex};
 use dict_core::{
     CanonPos, DictEntry, WordMatch, classify, order_entries, parse_tags, penn_canon, plans,
 };
+use download_core::{Phase, Progress};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use download_core::{Phase, Progress};
 
 use crate::download::{AppDownloads, TauriHost};
 use packs::{PACKS, pack};
@@ -99,8 +99,8 @@ impl DictManager {
         let pack = pack(pack_id).ok_or_else(|| format!("no pack {pack_id}"))?;
         let dir = Self::dir(&app)?;
         let watched = app.clone();
-        let job = fetch::pack_job(dir, pack)
-            .on_progress(move |progress| narrate(&watched, progress));
+        let job =
+            fetch::pack_job(dir, pack).on_progress(move |progress| narrate(&watched, progress));
         let host = TauriHost::new(app.clone());
         let receipt = app.state::<AppDownloads>().start(&host, job)?;
         self.emit(&app);
@@ -357,11 +357,7 @@ fn hop_ask(db: &DictDb, word: &str, reverse: bool, limit: usize) -> anyhow::Resu
 }
 
 /// The batched way home a reversed second hop needs.
-fn lookup_defs_any(
-    db: &DictDb,
-    asks: &[String],
-    limit: usize,
-) -> anyhow::Result<Vec<RawRow>> {
+fn lookup_defs_any(db: &DictDb, asks: &[String], limit: usize) -> anyhow::Result<Vec<RawRow>> {
     let mut out = Vec::new();
     for ask in asks {
         out.extend(db.lookup_definition(ask, limit)?);
@@ -381,10 +377,7 @@ fn finish(
         .map(|(row, pack, bridge)| {
             let (via, fit) = match bridge {
                 Some((mid, fit)) => (Some(mid), fit),
-                None => (
-                    None,
-                    classify(ask, &row.word).unwrap_or(WordMatch::Fuzzy),
-                ),
+                None => (None, classify(ask, &row.word).unwrap_or(WordMatch::Fuzzy)),
             };
             DictEntry {
                 word: row.word,
