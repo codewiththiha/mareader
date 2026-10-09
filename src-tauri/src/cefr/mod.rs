@@ -315,6 +315,9 @@ impl CefrManager {
 
     /// Drop both files, the database and every cached handle.
     pub fn remove(&self, app: &AppHandle) -> Result<(), String> {
+        // A build in flight must see this and stay deleted.
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        self.claimed.store(false, Ordering::SeqCst);
         let downloads = app.state::<AppDownloads>();
         downloads.remove(fetch::DATASET_ID);
         downloads.remove(fetch::TAGGER_ID);
@@ -332,8 +335,12 @@ impl CefrManager {
         if let Ok(mut slot) = self.model.lock() {
             *slot = None;
         }
-        let _ = std::fs::remove_file(&paths.db);
-        let _ = std::fs::remove_file(&paths.building);
+        // Records from an earlier run own no files; the paths do.
+        for file in [&paths.parquet, &paths.model, &paths.db, &paths.building] {
+            let _ = std::fs::remove_file(file);
+        }
+        download_core::discard(&paths.parquet);
+        download_core::discard(&paths.model);
         self.emit(app);
         Ok(())
     }
