@@ -44,6 +44,7 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                 key=|pack: &services::dict::PackMirror| pack.id.clone()
                 children=move |pack: services::dict::PackMirror| {
                     let id = pack.id.clone();
+                    let pair = format!("{}-{}", pack.source, pack.target);
                     let label = pack.label.clone();
                     let aria = format!("Include {label} in the dictionary");
                     let fallback = pack.clone();
@@ -56,12 +57,21 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                             .find(|p| p.id == id_for_row)
                             .unwrap_or_else(|| fallback.clone())
                     };
+                    let current_for_disabled = current.clone();
+                    let current_for_status = current.clone();
+                    let current_for_actions = current.clone();
+                    let id_for_include = id.clone();
+                    let pair_for_include = pair.clone();
                     let include = Signal::derive(move || {
                         let langs = s.with(|st| st.dict.langs.clone());
-                        langs.is_empty() || langs.contains(&id)
+                        langs.is_empty()
+                            || langs.contains(&id_for_include)
+                            || langs.contains(&pair_for_include)
                     });
                     let id_for_change = id.clone();
+                    let pair_for_change = pair.clone();
                     let id_for_actions = id.clone();
+                    let pair_for_actions = pair.clone();
                     view! {
                         <div class="flex items-center gap-3 border-t border-line px-4 py-3 first:border-t-0">
                             <input
@@ -69,7 +79,7 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                 class="size-4 accent-[var(--color-accent)]"
                                 attr:aria-label=aria
                                 prop:checked=move || include.get()
-                                attr:disabled=move || !current().built
+                                prop:disabled=move || !current_for_disabled().built
                                 on:change=move |ev: web_sys::Event| {
                                     use wasm_bindgen::JsCast;
                                     let on = ev
@@ -80,6 +90,7 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                         })
                                         .unwrap_or(false);
                                     let id = id_for_change.clone();
+                                    let pair = pair_for_change.clone();
                                     s.update(move |st| {
                                         let mut langs = st.dict.langs.clone();
                                         if langs.is_empty() {
@@ -92,7 +103,7 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                                 .map(|p| p.id.clone())
                                                 .collect();
                                         }
-                                        langs.retain(|entry| entry != &id);
+                                        langs.retain(|entry| entry != &id && entry != &pair);
                                         if on {
                                             langs.push(id);
                                         }
@@ -103,14 +114,15 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                             <span class="min-w-0 flex-1">
                                 <span class="block truncate text-sm text-ink">{label}</span>
                                 <span class="block text-xs text-muted">
-                                    {move || status_line(&current())}
+                                    {move || status_line(&current_for_status())}
                                 </span>
                             </span>
                             {move || {
-                                let row = current();
+                                let row = current_for_actions();
                                 match row.phase() {
                                     "ready" => {
                                         let id = id_for_actions.clone();
+                                        let pair = pair_for_actions.clone();
                                         view! {
                                             <button
                                                 type="button"
@@ -118,8 +130,10 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                                 on:click=move |_| {
                                                     services::dict::request_pack(&id, "remove");
                                                     let id = id.clone();
+                                                    let pair = pair.clone();
                                                     s.update(move |st| {
-                                                        st.dict.langs.retain(|entry| entry != &id);
+                                                        st.dict.langs
+                                                            .retain(|entry| entry != &id && entry != &pair);
                                                     });
                                                 }
                                             >

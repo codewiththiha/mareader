@@ -6,8 +6,10 @@ use crate::dict::{DictEntryWire, DictManager, PackStatus};
 
 /// Every pack's row: what it is and where its download stands.
 #[tauri::command]
-pub fn dict_packs_status(app: AppHandle) -> Result<Vec<PackStatus>, String> {
-    Ok(app.state::<DictManager>().status(&app))
+pub async fn dict_packs_status(app: AppHandle) -> Result<Vec<PackStatus>, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<DictManager>().status(&app))
+        .await
+        .map_err(|error| format!("status worker: {error}"))
 }
 
 /// Start one pack's download; progress rides `dict-packs`.

@@ -9,7 +9,7 @@ use arrow::datatypes::DataType;
 use arrow::record_batch::RecordBatch;
 use dict_core::fold;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 /// The table every pack lands as; the query layer reads nothing else.
 pub const SCHEMA: &str = "CREATE TABLE entries (
@@ -152,6 +152,214 @@ pub fn build_db(parquet_path: &Path, db_path: &Path) -> Result<u64> {
     Ok(rows)
 }
 
+/// Read one older SQLite pack into the current table shape.
+pub fn build_legacy_db(
+    source_path: &Path,
+    db_path: &Path,
+    pack_id: &str,
+    pair: &str,
+) -> Result<Option<u64>> {
+    let source = Connection::open_with_flags(source_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("open legacy {}", source_path.display()))?;
+    let Some(info) = legacy_info(&source)? else {
+        return Ok(None);
+    };
+    if info.pack.is_none() && !crate::dict::legacy::filename_matches(source_path, pack_id, pair) {
+        return Ok(None);
+    }
+
+    let pack_filter = info
+        .pack
+        .as_deref()
+        .map(|column| {
+            format!(
+                " WHERE replace(lower({}), '_', '-') IN (?1, ?2)",
+                quote(column)
+            )
+        })
+        .unwrap_or_default();
+    let query = format!(
+        "SELECT {}, {}, {}, {}, {}, {}, {} FROM {}{pack_filter}",
+        quote(&info.word),
+        info.pos.as_deref().map(quote).unwrap_or_else(|| "NULL".into()),
+        quote(&info.definition),
+        info.romanization
+            .as_deref()
+            .map(quote)
+            .unwrap_or_else(|| "NULL".into()),
+        info.sense
+            .as_deref()
+            .map(quote)
+            .unwrap_or_else(|| "NULL".into()),
+        info.lang_code
+            .as_deref()
+            .map(quote)
+            .unwrap_or_else(|| "NULL".into()),
+        info.source
+            .as_deref()
+            .map(quote)
+            .unwrap_or_else(|| "NULL".into()),
+        quote(&info.table),
+    );
+    let mut source_stmt = source.prepare(&query)?;
+    let mut source_rows = if info.pack.is_some() {
+        source_stmt.query(rusqlite::params![pack_id, pair])?
+    } else {
+        source_stmt.query([])?
+    };
+
+    if db_path.exists() {
+        std::fs::remove_file(db_path)?;
+    }
+    let mut db = Connection::open(db_path)?;
+    db.execute_batch(SCHEMA)?;
+    let mut rows = 0u64;
+    {
+        let insert = db.transaction()?;
+        let mut stmt = insert.prepare_cached(
+            "INSERT INTO entries
+                (word, word_fold, pos, definition, def_fold,
+                 romanization, sense, lang_code, source)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        )?;
+        while let Some(row) = source_rows.next()? {
+            let word: Option<String> = row.get(0)?;
+            let pos: Option<String> = row.get(1)?;
+            let definition: Option<String> = row.get(2)?;
+            let romanization: Option<String> = row.get(3)?;
+            let sense: Option<String> = row.get(4)?;
+            let lang_code: Option<String> = row.get(5)?;
+            let source: Option<String> = row.get(6)?;
+            let (Some(word), Some(definition)) = (word.as_deref(), definition.as_deref()) else {
+                continue;
+            };
+            if word.trim().is_empty() || definition.trim().is_empty() {
+                continue;
+            }
+            stmt.execute(rusqlite::params![
+                word,
+                fold(word),
+                pos,
+                definition,
+                fold(definition),
+                romanization,
+                sense,
+                lang_code,
+                source,
+            ])?;
+            rows += 1;
+        }
+        drop(stmt);
+        insert.commit()?;
+    }
+    db.pragma_update(None, "user_version", 1)?;
+    drop(db);
+    if rows == 0 {
+        std::fs::remove_file(db_path)?;
+        return Ok(None);
+    }
+    Ok(Some(rows))
+}
+
+/// Whether an older file contains rows for the named pack.
+pub fn legacy_db_matches(source_path: &Path, pack_id: &str, pair: &str) -> Result<bool> {
+    let source = Connection::open_with_flags(source_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("open legacy {}", source_path.display()))?;
+    let Some(info) = legacy_info(&source)? else {
+        return Ok(false);
+    };
+    if info.pack.is_none() && !crate::dict::legacy::filename_matches(source_path, pack_id, pair) {
+        return Ok(false);
+    }
+    let filter = info
+        .pack
+        .as_deref()
+        .map(|column| {
+            format!(
+                " AND replace(lower({}), '_', '-') IN (?1, ?2)",
+                quote(column)
+            )
+        })
+        .unwrap_or_default();
+    let query = format!(
+        "SELECT 1 FROM {} WHERE {} IS NOT NULL AND {} IS NOT NULL{filter} LIMIT 1",
+        quote(&info.table),
+        quote(&info.word),
+        quote(&info.definition),
+    );
+    let found = if info.pack.is_some() {
+        source
+            .query_row(&query, rusqlite::params![pack_id, pair], |row| row.get::<_, i64>(0))
+            .optional()?
+            .is_some()
+    } else {
+        source
+            .query_row(&query, [], |row| row.get::<_, i64>(0))
+            .optional()?
+            .is_some()
+    };
+    Ok(found)
+}
+
+#[derive(Clone)]
+struct LegacyInfo {
+    table: String,
+    word: String,
+    definition: String,
+    pack: Option<String>,
+    pos: Option<String>,
+    romanization: Option<String>,
+    sense: Option<String>,
+    lang_code: Option<String>,
+    source: Option<String>,
+}
+
+fn legacy_info(conn: &Connection) -> Result<Option<LegacyInfo>> {
+    let mut tables = conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?;
+    let tables = tables.query_map([], |row| row.get::<_, String>(0))?;
+    let tables = tables.collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut candidates = Vec::new();
+    for table in ["entries", "entry", "dict"] {
+        if !tables.iter().any(|name| name.as_str() == table) {
+            continue;
+        }
+        let mut columns_stmt = conn.prepare(&format!("PRAGMA table_info({})", quote(table)))?;
+        let columns = columns_stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let pick = |names: &[&str]| {
+            names
+                .iter()
+                .find(|name| columns.iter().any(|column| column.as_str() == **name))
+                .map(|name| (*name).to_string())
+        };
+        let (Some(word), Some(definition)) = (pick(&["word"]), pick(&["definition", "gloss"]))
+        else {
+            continue;
+        };
+        candidates.push(LegacyInfo {
+            table: table.to_string(),
+            word,
+            definition,
+            pack: pick(&["pack"]),
+            pos: pick(&["pos", "kind"]),
+            romanization: pick(&["romanization", "roman"]),
+            sense: pick(&["sense"]),
+            lang_code: pick(&["lang_code"]),
+            source: pick(&["source", "note"]),
+        });
+    }
+    Ok(candidates
+        .iter()
+        .find(|info| info.pack.is_some())
+        .or_else(|| candidates.first())
+        .cloned())
+}
+
+fn quote(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,6 +425,52 @@ mod tests {
         let level = ZstdLevel::try_new(1).unwrap();
         roundtrip("zstd", Compression::ZSTD(level));
     }
+    #[test]
+    fn the_old_combined_store_yields_only_the_requested_pack() {
+        let dir = std::env::temp_dir().join(format!("dict_legacy_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("dictionary.db");
+        let conn = Connection::open(&old).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE entry (
+                id INTEGER PRIMARY KEY,
+                pack TEXT NOT NULL,
+                word TEXT NOT NULL,
+                key TEXT NOT NULL,
+                pos TEXT,
+                kind TEXT,
+                gloss TEXT NOT NULL,
+                roman TEXT,
+                sense TEXT,
+                note TEXT
+            );
+            INSERT INTO entry (pack, word, key, pos, gloss, roman, sense)
+                VALUES ('en-my', 'light', 'light', 'n', 'အလင်း', NULL, 'illumination');
+            INSERT INTO entry (pack, word, key, pos, gloss)
+                VALUES ('en-jp', 'light', 'light', 'noun', '光');",
+        )
+        .unwrap();
+        drop(conn);
+
+        assert!(legacy_db_matches(&old, "mcfnlp-en-my", "en-my").unwrap());
+        assert!(!legacy_db_matches(&old, "mcfnlp-en-my", "en-jp").unwrap());
+        let current = dir.join("mcfnlp-en-my.db.tmp");
+        assert_eq!(
+            build_legacy_db(&old, &current, "mcfnlp-en-my", "en-my").unwrap(),
+            Some(1)
+        );
+        let db = Connection::open(&current).unwrap();
+        let entry: (String, String, String) = db
+            .query_row(
+                "SELECT word, definition, sense FROM entries LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(entry, ("light".into(), "အလင်း".into(), "illumination".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_row_without_word_or_definition_is_dropped() {
         let names = vec!["word".to_string(), "definition".to_string()];

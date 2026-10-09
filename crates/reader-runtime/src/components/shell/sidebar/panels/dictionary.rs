@@ -28,18 +28,18 @@ pub(crate) fn SidebarDictionary(
     // The seats: the settings' selection over what is built.
     // No selection means every built pack.
     let selected = Signal::derive(move || {
-        let built: Vec<String> = packs
-            .get()
-            .iter()
-            .filter(|pack| pack.built)
-            .map(|pack| pack.id.clone())
-            .collect();
         let langs = s.with(|st| st.dict.langs.clone());
-        if langs.is_empty() {
-            built
-        } else {
-            langs.into_iter().filter(|id| built.contains(id)).collect()
-        }
+        packs
+            .get()
+            .into_iter()
+            .filter(|pack| {
+                pack.built
+                    && (langs.is_empty()
+                        || langs.contains(&pack.id)
+                        || langs.contains(&format!("{}-{}", pack.source, pack.target)))
+            })
+            .map(|pack| pack.id)
+            .collect()
     });
 
     let fire = move || {
