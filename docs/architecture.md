@@ -739,7 +739,16 @@ downloader is not a reader concern.
   rebuild runs when that future resolves. There is no status poll loop, so a
   pause leaves the task waiting rather than looping. A resume adds its own
   waiter, and every waiter that wakes hands the landing to the same claim, so
-  the rebuild runs once.
+  the rebuild runs once. `spawn_landing` is the one place that shape is
+  written, because a start and a resume both owe it.
+- **A remove that lands mid-rebuild owns the stage and the files.** The
+  rebuild's every stage write goes through `land`, which writes only while
+  the stage is still `converting` — so a remove keeps the `absent` it set
+  instead of being overwritten by a `ready`. A generation watches the files
+  the rename would adopt: `remove` and a new start bump it, and a build that
+  finds it moved deletes its work, because the probe on the next `status`
+  adopts whatever a rename left behind. Editing those out reintroduces the
+  race, and no test in `CI` would catch it.
 - **Two files, two states, one panel.** The dataset gates `ready`, because the
   ink needs it; the tagger model is a separate line in the same settings
   panel, because only a *click* needs it and a silent 6 MB fetch with no
