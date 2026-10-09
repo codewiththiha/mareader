@@ -176,10 +176,11 @@ fn respond(stream: &mut impl Write, state: &State, mode: Mode, head: &str) {
         (None, _) => false,
     };
     let from = range_start(head).filter(|_| resumable).unwrap_or(0);
-    if from > body.len() {
+    if from >= body.len() {
         let _ = write!(
             stream,
-            "HTTP/1.1 416 Bad\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            "HTTP/1.1 416 Bad\r\nContent-Range: bytes */{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            body.len()
         );
         return;
     }
@@ -249,6 +250,19 @@ impl TestHost {
             .map(|progress| progress.phase)
             .collect()
     }
+}
+
+/// The sidecar a run that wrote every byte and died before adopting leaves.
+fn stage_complete_partial(dir: &std::path::Path, name: &str, body: &[u8]) {
+    std::fs::write(dir.join(format!("{name}.part")), body).unwrap();
+    std::fs::write(
+        dir.join(format!("{name}.dmeta")),
+        format!(
+            "{{\"etag\":\"\\\"v0\\\"\",\"last_modified\":null,\"source\":0,\"total\":{}}}",
+            body.len()
+        ),
+    )
+    .unwrap();
 }
 
 /// A body of `bytes`, patterned so a shifted resume cannot look complete.
@@ -496,6 +510,38 @@ async fn a_complete_file_needs_no_request_at_all() {
         .unwrap();
     assert!(!again.cached);
     assert_eq!(server.state.served(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_partial_that_already_reaches_the_resource_is_adopted() {
+    let server = Server::start(vec![Mode::Serve], vec![body(8192)]);
+    let dir = dir("satisfied");
+    let expected = server.state.body();
+    // Every byte landed; the run died before the rename.
+    stage_complete_partial(&dir, "data.bin", &expected);
+
+    let registry = Downloads::new();
+    let host = TestHost::default();
+    let job = Job::new("satisfied", &dir, server.url("data.bin"));
+    let outcome = registry
+        .start(&host, job)
+        .unwrap()
+        .finished()
+        .await
+        .unwrap();
+
+    // A range starting at the end answers 416; that is a whole file.
+    assert_eq!(std::fs::read(&outcome.path).unwrap(), expected);
+    assert_eq!(outcome.bytes as usize, expected.len());
+    assert!(
+        !outcome.cached,
+        "it was the transport that proved it complete"
+    );
+    // One request: the 416. Wiping the partial would have refetched it.
+    assert_eq!(server.state.served(), 1);
+    assert_eq!(server.state.ranges(), vec![Some(8192)]);
+    assert!(!dir.join("data.bin.part").exists());
+    assert!(!dir.join("data.bin.dmeta").exists());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
