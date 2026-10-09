@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::download::{AppDownloads, TauriHost};
-use packs::{PACKS, pack};
+use packs::PACKS;
 
 use self::db::{DictDb, RawRow};
 
@@ -96,15 +96,15 @@ impl DictManager {
 
     /// Start one pack's download, then convert it when the body lands.
     pub fn begin_download(&self, app: AppHandle, pack_id: &str) -> Result<(), String> {
-        let pack = pack(pack_id).ok_or_else(|| format!("no pack {pack_id}"))?;
         let dir = Self::dir(&app)?;
         let watched = app.clone();
-        let job =
-            fetch::pack_job(dir, pack).on_progress(move |progress| narrate(&watched, progress));
+        let job = fetch::job_for(dir, pack_id)
+            .ok_or_else(|| format!("no pack {pack_id}"))?
+            .on_progress(move |progress| narrate(&watched, progress));
         let host = TauriHost::new(app.clone());
         let receipt = app.state::<AppDownloads>().start(&host, job)?;
         self.emit(&app);
-        let pack_id = pack.id.to_string();
+        let pack_id = pack_id.to_string();
         tauri::async_runtime::spawn(async move {
             if receipt.finished().await.is_ok() {
                 convert(&app, &pack_id).await;
