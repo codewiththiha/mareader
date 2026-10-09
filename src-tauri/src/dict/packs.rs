@@ -22,10 +22,6 @@ pub struct PackDef {
     pub mirrors: &'static [&'static str],
 }
 
-const REPO: &str = "https://raw.githubusercontent.com/codewiththiha/wikidict/main/output/curated";
-const CDN: &str = "https://cdn.jsdelivr.net/gh/codewiththiha/wikidict@main/output/curated";
-const FASTLY: &str = "https://fastly.jsdelivr.net/gh/codewiththiha/wikidict@main/output/curated";
-
 /// Every pack the app may offer. Adding a language is adding a row.
 pub const PACKS: &[PackDef] = &[
     PackDef {
@@ -77,6 +73,12 @@ pub fn pack(id: &str) -> Option<&'static PackDef> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const REPO: &str =
+        "https://raw.githubusercontent.com/codewiththiha/wikidict/main/output/curated";
+    const CDN: &str = "https://cdn.jsdelivr.net/gh/codewiththiha/wikidict@main/output/curated";
+    const FASTLY: &str =
+        "https://fastly.jsdelivr.net/gh/codewiththiha/wikidict@main/output/curated";
 
     #[test]
     fn every_pack_points_at_the_same_body_three_times() {
