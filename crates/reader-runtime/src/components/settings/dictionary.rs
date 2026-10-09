@@ -50,6 +50,7 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                     });
                     let id_for_toggle = pack.id.clone();
                     let id_download = pack.id.clone();
+                    let id_status = pack.id.clone();
                     let id_remove = pack.id.clone();
                     let phase = pack.phase();
                     let built = pack.built;
@@ -70,6 +71,7 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                                 .map(|input| input.checked())
                                         })
                                         .unwrap_or(false);
+                                    let id = id_for_toggle.clone();
                                     s.update(move |st| {
                                         let mut langs = st.dict.langs.clone();
                                         if langs.is_empty() {
@@ -82,9 +84,9 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                                 .map(|p| p.id.clone())
                                                 .collect();
                                         }
-                                        langs.retain(|entry| entry != &id_for_toggle);
+                                        langs.retain(|entry| entry != &id);
                                         if on {
-                                            langs.push(id_for_toggle.clone());
+                                            langs.push(id);
                                         }
                                         st.dict.langs = langs;
                                     });
@@ -97,7 +99,7 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                         let row = packs
                                             .get()
                                             .into_iter()
-                                            .find(|p| p.id == id_download)
+                                            .find(|p| p.id == id_status)
                                             .unwrap_or(pack.clone());
                                         status_line(&row)
                                     }}
@@ -110,8 +112,9 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                                         class=BUTTON
                                         on:click=move |_| {
                                             services::dict::request_pack(&id_remove, "remove");
+                                            let id = id_remove.clone();
                                             s.update(move |st| {
-                                                st.dict.langs.retain(|entry| entry != &id_remove);
+                                                st.dict.langs.retain(|entry| entry != &id);
                                             });
                                         }
                                     >

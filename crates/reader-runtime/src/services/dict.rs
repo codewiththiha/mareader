@@ -119,6 +119,7 @@ pub fn request_pack(pack_id: &str, verb: &str) {
         pack_id: String,
     }
     let name = format!("dict_pack_{verb}");
+    let verb = verb.to_string();
     let args = serde_wasm_bindgen::to_value(&PackArgs {
         pack_id: pack_id.to_string(),
     })
