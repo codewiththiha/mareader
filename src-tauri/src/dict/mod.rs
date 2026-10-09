@@ -223,7 +223,7 @@ impl DictManager {
         let wanted: Vec<String> = pack_ids
             .unwrap_or_else(|| built.clone())
             .into_iter()
-            .filter(|id| built.contains(id.as_str()))
+            .filter(|id| built.contains(id))
             .collect();
         let mut rows = Vec::new();
         for pack_id in &wanted {
@@ -438,7 +438,7 @@ async fn convert(app: &AppHandle, pack_id: &str) {
     .await;
     if let Ok(Err(message)) = result {
         eprintln!("dict convert {pack_id}: {message}");
-        let _ = std::fs::remove_file(fetch::db_building(&dir, pack_id));
+        let _ = std::fs::remove_file(fetch::db_building(&dir, &pack_id));
     }
 }
 

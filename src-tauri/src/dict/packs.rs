@@ -80,20 +80,20 @@ mod tests {
 
     #[test]
     fn every_pack_points_at_the_same_body_three_times() {
-        for pack in PACKS {
-            assert!(pack.url.starts_with(REPO), "{}", pack.id);
-            assert_eq!(pack.mirrors.len(), 2);
-            assert!(pack.mirrors[0].starts_with(CDN), "{}", pack.id);
-            assert!(pack.mirrors[1].starts_with(FASTLY), "{}", pack.id);
-            assert_eq!(pack.url.rsplit('/').next(), Some(pack.file));
+        for def in PACKS {
+            assert!(def.url.starts_with(REPO), "{}", def.id);
+            assert_eq!(def.mirrors.len(), 2);
+            assert!(def.mirrors[0].starts_with(CDN), "{}", def.id);
+            assert!(def.mirrors[1].starts_with(FASTLY), "{}", def.id);
+            assert_eq!(def.url.rsplit('/').next(), Some(def.file));
         }
     }
 
     #[test]
     fn ids_are_the_stems_the_builder_lands_on() {
-        for pack in PACKS {
-            assert!(pack.file.starts_with(pack.id));
-            assert_eq!(pack(pack.id).map(|p| p.id), Some(pack.id));
+        for def in PACKS {
+            assert!(def.file.starts_with(def.id));
+            assert_eq!(pack(def.id).map(|p| p.id), Some(def.id));
         }
     }
 }
