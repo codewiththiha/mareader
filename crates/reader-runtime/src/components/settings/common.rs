@@ -20,6 +20,8 @@ pub(crate) enum Tab {
     Fonts,
     /// The vocabulary highlighter: level slider and dataset.
     Vocabulary,
+    /// The dictionary: hover, packs, languages.
+    Dictionary,
     /// The split workspace: what a Library panel click does.
     Workspace,
 }

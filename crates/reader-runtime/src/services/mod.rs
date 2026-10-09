@@ -2,6 +2,7 @@
 
 pub mod ai;
 pub mod cefr;
+pub mod dict;
 pub mod document;
 
 use web_sys::Event;
