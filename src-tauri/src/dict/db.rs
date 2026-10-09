@@ -6,7 +6,8 @@ use anyhow::{Context, Result};
 use dict_core::fold;
 use rusqlite::{Connection, params};
 
-/// A row as the builder carried it.
+/// A row's read shape. The pack id answers what `lang_code`
+/// and `source` would.
 #[derive(Debug, Clone)]
 pub struct RawRow {
     pub word: String,
@@ -14,11 +15,9 @@ pub struct RawRow {
     pub definition: String,
     pub romanization: Option<String>,
     pub sense: Option<String>,
-    pub lang_code: Option<String>,
-    pub source: Option<String>,
 }
 
-const COLUMNS: &str = "word, pos, definition, romanization, sense, lang_code, source";
+const COLUMNS: &str = "word, pos, definition, romanization, sense";
 
 /// A pack's open database.
 pub struct DictDb {
@@ -190,8 +189,6 @@ fn row_shape(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawRow> {
         definition: row.get(2)?,
         romanization: row.get(3)?,
         sense: row.get(4)?,
-        lang_code: row.get(5)?,
-        source: row.get(6)?,
     })
 }
 
