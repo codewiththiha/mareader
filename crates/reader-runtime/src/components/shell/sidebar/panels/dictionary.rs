@@ -110,7 +110,6 @@ pub(crate) fn SidebarDictionary(
         debounce.trigger();
     };
 
-
     view! {
         <div
             class="sidebar-panel absolute inset-0 flex flex-col"
