@@ -197,7 +197,13 @@ impl DictManager {
             let progress = downloads.status(pack.id);
             if matches!(
                 progress.as_ref().map(|progress| progress.phase),
-                Some(Phase::Preparing | Phase::Downloading | Phase::Retrying | Phase::Verifying | Phase::Paused)
+                Some(
+                    Phase::Preparing
+                        | Phase::Downloading
+                        | Phase::Retrying
+                        | Phase::Verifying
+                        | Phase::Paused
+                )
             ) {
                 continue;
             }
@@ -279,9 +285,7 @@ impl DictManager {
         match result {
             Ok(_) => {
                 builds.remove(pack_id);
-                if legacy_input
-                    && let Ok(dir) = Self::dir(app)
-                {
+                if legacy_input && let Ok(dir) = Self::dir(app) {
                     legacy::mark(&dir, pack_id);
                 }
             }
@@ -305,7 +309,8 @@ impl DictManager {
         input: ConvertInput,
     ) -> Result<u64, String> {
         let dir = Self::dir(app)?;
-        std::fs::create_dir_all(&dir).map_err(|error| format!("create {}: {error}", dir.display()))?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|error| format!("create {}: {error}", dir.display()))?;
         let parquet = fetch::parquet_file(&dir, pack_id);
         let target = fetch::db_file(&dir, pack_id);
         let building = fetch::db_building(&dir, pack_id);
@@ -318,16 +323,14 @@ impl DictManager {
         let pack_id = pack_id.to_string();
         tauri::async_runtime::spawn_blocking(move || {
             let built = match input {
-                ConvertInput::Parquet => build::build_db(&parquet, &building)
-                    .map_err(|error| error.to_string()),
-                ConvertInput::Legacy(source) => build::build_legacy_db(
-                    &source,
-                    &building,
-                    &pack_id,
-                    &pair,
-                )
-                .map_err(|error| error.to_string())?
-                .ok_or_else(|| "legacy database has no rows for this pack".to_string()),
+                ConvertInput::Parquet => {
+                    build::build_db(&parquet, &building).map_err(|error| error.to_string())
+                }
+                ConvertInput::Legacy(source) => {
+                    build::build_legacy_db(&source, &building, &pack_id, &pair)
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "legacy database has no rows for this pack".to_string())
+                }
             };
             let result = built.and_then(|rows| {
                 install_database(&building, &target)?;
