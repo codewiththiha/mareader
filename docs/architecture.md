@@ -748,6 +748,12 @@ downloader is not a reader concern.
 - **A paused bar keeps its bytes.** The dataset's `paused` stage carries
   `received` and `total`, and so does the transport's own snapshot, so a pause
   reads as "paused at 62%" and not as a download that was lost.
+- **A complete partial is not a stale one.** A run that wrote every byte and
+  died before the rename leaves a partial exactly as long as the resource, and
+  the resume's range starts at the end — which the mirror answers with `416` and
+  a `Content-Range: bytes */total`. When that total is what is already held the
+  file is finished, so it is verified and adopted rather than wiped and fetched
+  again.
 - **Nothing is adopted until it is checked.** Bytes land at `<dest>.part`, the
   parquet's `PAR1` brackets (and the model's zstd magic) are verified
   off-runtime, and only then is the file renamed onto its final name. A body
