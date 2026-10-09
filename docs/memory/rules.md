@@ -61,8 +61,12 @@ realm cap `REALM_PAGE_LIMIT = 2`, and host cap `WINDOW_RASTER_LIMIT = 2`
 with at most two requests per pane realm (weak host wakes, cancelled on
 session teardown, reclaimed by scoped nonce on pane removal, and reclaimed
 for all descendants on Reader-host removal). Raw canvases
-survive `RAW_IDLE_MS = 2000` after a theme change and no longer. A new cache needs both numbers in the
-same comment.
+survive `RAW_IDLE_MS = 2000` after a theme change and no longer. Rust-side
+bounds: the vocabulary highlighter's `LEVEL_CACHE_CAP = 8192` answered words
+(cleared whole at the cap, and on a document change) and its `SCAN_CAP = 32`
+shared row scans; the downloader's `SLOT_CAP = 32` records, the oldest
+finished ones evicted first, whose files outlive their records on purpose.
+A new cache needs both numbers in the same comment.
 
 ## 6. Canvas release means zeroing the backing store
 

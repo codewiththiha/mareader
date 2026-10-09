@@ -650,6 +650,110 @@ texture with colour because a look they own is a whole look.
   the raw-raster scrub (and its CSS class, on the pane root) to that pane's
   sessions. The engine smoke asserts an untouched session renders nothing.
 
+## Vocabulary highlighter
+
+Red ink over every word harder than the reader's own band, in both formats,
+with a click that hands the word to the AI card. It is a *dataset* feature, not
+a model feature: nothing is inferred at runtime, every band is looked up.
+
+- **Four crates, one owner each.** `crates/cefr-core` is the format-agnostic
+  half — the tokenizer, the level cache and `plan`, the one decision both
+  painters share (which tokens are hard, which dataset keys are still owed).
+  It reads the band rule and the contraction map from the external `cefr`
+  crate built with `default-features = false`, which is two pure modules and
+  no dependency, so the wasm bundle and the CLI cannot disagree about what a
+  level rounds to or how `don't` is split. `crates/reader-runtime/src/state/
+  cefr.rs` is the pane's answered words plus the asks in flight;
+  `services/cefr.rs` is the realm's bridge; `components/cefr/` is the two
+  painters and the shared ink layer. The dataset itself — download, rebuild,
+  lookups — is `src-tauri/src/cefr/`.
+- **One plan, two measurements.** `pdf.rs` stores boxes in PAGE space, so a
+  zoom never re-measures: it divides the measured rect by the live display
+  scale once and the layer multiplies it back per frame. `reflow.rs` stores
+  boxes in ROW space and re-measures on a relayout, because a re-wrap moves
+  the glyphs. Both call `cefr_core::plan`, both defer their measuring into
+  the shared animation-frame batch (`components/cefr/measure.rs`), and both
+  memoize a walk by a `WalkKey` of layout, zoom, text fingerprint, cache
+  generation, suppression fingerprint and threshold — an unchanged key is a
+  restore, not a walk.
+- **The scan is shared with search.** `components/cefr/scan.rs` holds one
+  newest-first LRU of a row's rendered text and its tokens
+  (`SCAN_CAP = 32` rows), and `formats/reflow/highlight.rs` reads the same
+  entry, so a search hit and the ink over it tokenize the row once between
+  them. The search painter defers into the same frame batch.
+- **Asks are claimed, not repeated.** A walk hands its misses to
+  `CefrState::claim`, which returns only the keys nobody has asked for yet;
+  the answer releases them through `ingest`. Without the claim, every
+  text-layer mutation between an ask and its answer re-sent the same batch.
+  An answer that carries no level — a dead backend, a missing dataset —
+  releases its keys and bumps nothing, so a failure cannot start a
+  re-walk/re-ask loop.
+- **The dataset's arrival paints nothing stale.** Painting is gated on the
+  mirror's `ready` phase, and a gate that has not painted has written no
+  memo, so the first walk after the dataset lands is a real one. Nothing
+  keys on the edge itself: a per-page edge flag made every newly mounted page
+  clear the pane's whole cache, which during a scroll re-asked every word on
+  every page it mounted.
+- **The observer does not watch its own paint.** The page host's
+  `MutationObserver` sees the ink layer it wakes, so a record whose target is
+  inside `.cefr-layer` or `.gloss-layer` is dropped before the wake; without
+  that, every publish re-walked the page it had just painted.
+- **Ink yields to the accent.** A word an AI gloss mark already owns is not
+  painted red — by spot in reflow, by rect overlap in PDF — so one word never
+  carries two colours.
+- **The mark is a control only when it can act.** `.cefr-mark` is
+  `pointer-events: none` while disabled, and `cefr_click_explain` disables it,
+  so turning the click off gives the reader their text selection back over
+  every highlighted word. `aria-hidden` follows the same signal: a focusable
+  element under `aria-hidden` contradicts itself. `layer.rs`'s `activate` is
+  the single seam a red word's press crosses — today the AI card, and the one
+  place a later hover-triggered dictionary would hang from.
+- **Click-time POS.** The word card's part of speech is the *dataset's*, read
+  at click time: `cefr_pos_of` tags the word in the sentence it was captured
+  with (`cefr::pos::Tagger`, the model fetched beside the dataset) and asks
+  the database for that sense, falling back through the tag family. The
+  command is `spawn_blocking` — tagging a sentence, and a first click's model
+  load, are seconds of CPU and neither belongs on the thread the window is
+  drawn from. `PosAnswer.kind` is `cefr::tags::kind_of`, not a restatement.
+- **Bounds.** `MAX_BOXES_PER_PAGE` and `MAX_BOXES_PER_ROW` are 200, the
+  engine's own per-page cap; `LEVEL_CACHE_CAP = 8192` entries, cleared whole
+  at the cap and on a document change; `SCAN_CAP = 32` rows; the backend
+  refuses a batch over `MAX_BATCH = 4000` rather than truncating one, because
+  a truncated answer caches a wrong band for every word it dropped.
+
+## The dataset's download
+
+`crates/download-core` is the transport, and it is a leaf: no path dependency,
+no import of this application, its own `README.md` as the guide. Moving it to
+its own repository is a copy and one manifest line, which is the point — a
+downloader is not a reader concern.
+
+- **The app's half is two files.** `src-tauri/src/download.rs` implements the
+  crate's `Host` on Tauri (its executor and its event bus) and owns the
+  `<app data>/<feature>` convention; `src-tauri/src/cefr/fetch.rs` owns this
+  feature's two sources, their file names, and the signature check each body
+  has to pass. Neither the crate nor the feature reaches into the other's
+  decision.
+- **The lifecycle is awaited, not polled.** `begin_download` starts the
+  transport and spawns one task that awaits the receipt; the parquet-to-sqlite
+  rebuild runs when that future resolves. There is no status poll loop, so a
+  pause leaves the task waiting rather than looping, and a resume needs no
+  second task.
+- **Two files, two states, one panel.** The dataset gates `ready`, because the
+  ink needs it; the tagger model is a separate line in the same settings
+  panel, because only a *click* needs it and a silent 6 MB fetch with no
+  progress and no failure path is how a feature comes to look broken. Both
+  ride the same downloader under their own ids.
+- **A paused bar keeps its bytes.** The dataset's `paused` stage carries
+  `received` and `total`, and so does the transport's own snapshot, so a pause
+  reads as "paused at 62%" and not as a download that was lost.
+- **Nothing is adopted until it is checked.** Bytes land at `<dest>.part`, the
+  parquet's `PAR1` brackets (and the model's zstd magic) are verified
+  off-runtime, and only then is the file renamed onto its final name. A body
+  that fails its check leaves neither a destination nor a partial behind, and
+  a rebuild that fails deletes the parquet, because a file that will not
+  rebuild is not usable and fetching one again is the only other move.
+
 ## Known limitations
 
 - The Shell accepts boundary traffic only from the live frame — plus a

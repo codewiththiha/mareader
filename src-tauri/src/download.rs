@@ -1,4 +1,4 @@
-//! The generic downloader, hosted on the app's event bus and data dir.
+//! The generic downloader, hosted on the app's event bus.
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use download_core::Host;
 
-pub use download_core::{DownloadRequest, Downloads, Progress};
+pub use download_core::{Downloads, Phase, Progress};
 
 /// Every phase change and throttled byte count rides this event.
 pub const PROGRESS_EVENT: &str = "download-progress";
@@ -15,7 +15,7 @@ pub const PROGRESS_EVENT: &str = "download-progress";
 /// The app-hosted downloader, as managed state.
 pub type AppDownloads = Downloads;
 
-/// Hosts downloads on Tauri: runtime tasks, bus events, app files.
+/// Hosts downloads on Tauri: runtime tasks and bus events.
 #[derive(Clone)]
 pub struct TauriHost {
     app: AppHandle,
@@ -24,6 +24,15 @@ pub struct TauriHost {
 impl TauriHost {
     pub fn new(app: AppHandle) -> Self {
         Self { app }
+    }
+
+    /// Where a feature's downloads land: `<app data>/<feature>`.
+    pub fn feature_dir(&self, feature: &str) -> Result<PathBuf, String> {
+        self.app
+            .path()
+            .app_data_dir()
+            .map(|dir| dir.join(feature))
+            .map_err(|e| format!("app data dir: {e}"))
     }
 }
 
@@ -34,12 +43,5 @@ impl Host for TauriHost {
 
     fn publish(&self, progress: &Progress) {
         let _ = self.app.emit(PROGRESS_EVENT, progress);
-    }
-
-    fn data_dir(&self) -> Result<PathBuf, String> {
-        self.app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("app data dir: {e}"))
     }
 }
