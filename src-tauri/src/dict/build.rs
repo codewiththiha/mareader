@@ -154,6 +154,69 @@ pub fn build_db(parquet_path: &Path, db_path: &Path) -> Result<u64> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    use arrow::array::StringArray;
+    use arrow::datatypes::{DataType, Field, Schema};
+    use parquet::arrow::ArrowWriter;
+    use parquet::basic::{Compression, ZstdLevel};
+    use parquet::file::properties::WriterProperties;
+
+    /// Write one mini pack in `compression`, then build it to sqlite.
+    fn roundtrip(tag: &str, compression: Compression) {
+        let dir = std::env::temp_dir().join(format!("dict_build_{tag}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let parquet_path = dir.join("mini.parquet");
+        let schema = Schema::new(vec![
+            Field::new("word", DataType::Utf8, true),
+            Field::new("pos", DataType::Utf8, true),
+            Field::new("definition", DataType::Utf8, true),
+        ]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema.clone()),
+            vec![
+                Arc::new(StringArray::from(vec!["cat", "run"])),
+                Arc::new(StringArray::from(vec![Some("n"), Some("v, n")])),
+                Arc::new(StringArray::from(vec!["chat", "palai"])),
+            ],
+        )
+        .unwrap();
+        let props = WriterProperties::builder()
+            .set_compression(compression)
+            .build();
+        let file = std::fs::File::create(&parquet_path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, Arc::new(schema), Some(props)).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let db_path = dir.join("mini.db");
+        let rows = build_db(&parquet_path, &db_path).unwrap();
+        assert_eq!(rows, 2, "{tag} rows");
+        let conn = Connection::open(&db_path).unwrap();
+        let found: String = conn
+            .query_row(
+                "SELECT word FROM entries WHERE definition = 'chat'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(found, "cat", "{tag} reads back");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The Myanmar pack lands snappy from its HuggingFace home.
+    #[test]
+    fn a_snappy_body_builds_like_mcf_nlp_does() {
+        roundtrip("snappy", Compression::SNAPPY);
+    }
+
+    /// The other packs land zstd from the wikidict scripts.
+    #[test]
+    fn a_zstd_body_builds_like_the_shipped_packs() {
+        let level = ZstdLevel::try_new(1).unwrap();
+        roundtrip("zstd", Compression::ZSTD(level));
+    }
     #[test]
     fn a_row_without_word_or_definition_is_dropped() {
         let names = vec!["word".to_string(), "definition".to_string()];

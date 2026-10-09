@@ -37,7 +37,14 @@ download-core = { path = "../crates/download-core" }
 dict-core = { path = "../crates/dict-core" }
 # Packs ship as parquet; the builder reads them into sqlite.
 arrow = "59"
-parquet = { version = "59", default-features = false, features = ["arrow", "zstd"] }
+parquet = { version = "59", default-features = false, features = [
+  "arrow",
+  "zstd",
+  "snap",
+  "brotli",
+  "lz4",
+  "flate2-rust_backend",
+] }
 # The builder's errors, and the sqlite a pack converts to.
 anyhow = "1"
 rusqlite = { version = "0.40", features = ["bundled"] }
