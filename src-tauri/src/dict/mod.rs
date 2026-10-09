@@ -369,12 +369,7 @@ fn lookup_defs_any(db: &DictDb, asks: &[String], limit: usize) -> anyhow::Result
 }
 
 /// Rows to wire, ranked: role fit first, word fit next.
-fn finish(
-    rows: Vec<Carried>,
-    ask: &str,
-    pos: Option<&str>,
-    limit: usize,
-) -> Vec<DictEntryWire> {
+fn finish(rows: Vec<Carried>, ask: &str, pos: Option<&str>, limit: usize) -> Vec<DictEntryWire> {
     let mut entries: Vec<DictEntry> = rows
         .into_iter()
         .map(|(row, pack, bridge)| {
