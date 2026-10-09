@@ -20,6 +20,7 @@ pub fn Slider(
     #[prop(default = false)] disabled: bool,
 ) -> impl IntoView {
     let unit_s = unit.unwrap_or_default();
+    let is_off = Signal::derive(move || disabled);
     let label_for_aria = label.clone().unwrap_or_else(|| "slider".to_string());
     let range_class = match class {
         Some(c) if c.contains("h-") => c,
@@ -48,7 +49,7 @@ pub fn Slider(
                 on_input=on_change
                 aria_label=label_for_aria
                 class=range_class
-                disabled=disabled
+                disabled=is_off
             />
         </label>
     }

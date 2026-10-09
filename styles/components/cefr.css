@@ -13,8 +13,7 @@
 .cefr-layer .cefr-mark {
   position: absolute;
   z-index: 0;
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: none;
   appearance: none;
   border: none;
   padding: 0;
@@ -26,8 +25,14 @@
   -webkit-user-select: none;
 }
 
-.cefr-layer .cefr-mark:hover,
-.cefr-layer .cefr-mark:focus-visible {
+/* Only a live mark is a control: paint must not swallow a text selection. */
+.cefr-layer .cefr-mark:not(:disabled) {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.cefr-layer .cefr-mark:not(:disabled):hover,
+.cefr-layer .cefr-mark:not(:disabled):focus-visible {
   background: color-mix(in srgb, var(--cefr-ink) 52%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--cefr-ink) 45%, transparent);
   outline: none;
@@ -39,8 +44,8 @@
   background: color-mix(in srgb, var(--cefr-ink) 30%, transparent);
 }
 
-:root.dark .cefr-layer .cefr-mark:hover,
-:root.dark .cefr-layer .cefr-mark:focus-visible {
+:root.dark .cefr-layer .cefr-mark:not(:disabled):hover,
+:root.dark .cefr-layer .cefr-mark:not(:disabled):focus-visible {
   background: color-mix(in srgb, var(--cefr-ink) 46%, transparent);
 }
 

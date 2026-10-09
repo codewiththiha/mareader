@@ -1,4 +1,4 @@
-//! The shared ink layer: either format's boxes and the AI click.
+//! The shared ink layer: either format's boxes and the click that explains.
 
 use leptos::prelude::*;
 
@@ -6,15 +6,20 @@ use ai_core::gloss::GlossMark;
 
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
 
-/// One painted word: the layer box plus the click's AI payload.
+/// One painted word: the layer box plus the activation's payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CefrBox {
     pub x: f64,
     pub y: f64,
     pub w: f64,
     pub h: f64,
-    /// The word's own mark: the click's payload, built once per walk.
+    /// The word's own mark: the activation's payload, built once per walk.
     pub mark: GlossMark,
+}
+
+/// The one seam a red word's activation crosses: today the AI card.
+fn activate(origin: &web_sys::EventTarget, mark: &GlossMark) {
+    request_gloss_open(origin, mark);
 }
 
 #[component]
@@ -24,27 +29,26 @@ pub fn CefrMarkLayer(
     /// Multiplier from box coordinates to layer pixels; a reflow row
     /// always passes one.
     scale: Signal<f64>,
-    /// Whether a click opens the AI card; hover stays visual either way.
+    /// Whether a red word is a control at all; off leaves it pure paint.
     click_explain: Signal<bool>,
 ) -> impl IntoView {
     view! {
-        <div class="cefr-layer" aria-hidden="true">
+        <div
+            class="cefr-layer"
+            // A focusable mark under `aria-hidden` contradicts itself.
+            attr:aria-hidden=move || (!click_explain.get()).then_some("true")
+        >
             <For
                 each=move || boxes.get()
-                key=|b: &CefrBox| {
-                    format!("{}@{},{}", b.mark.word, b.x, b.y)
-                }
+                key=|b: &CefrBox| format!("{}@{},{}", b.mark.word, b.x, b.y)
                 children=move |b: CefrBox| {
                     // The gloss stroke's gesture shape, mirrored.
                     let mark = b.mark.clone();
                     let word = mark.word.clone();
                     let explain = move |ev: web_sys::MouseEvent| {
                         ev.stop_propagation();
-                        if !click_explain.get_untracked() {
-                            return;
-                        }
                         if let Some(origin) = ev.target() {
-                            request_gloss_open(&origin, &mark);
+                            activate(&origin, &mark);
                         }
                     };
                     view! {
@@ -53,6 +57,9 @@ pub fn CefrMarkLayer(
                             class="cefr-mark"
                             title=word.clone()
                             aria-label=format!("Explain {word}")
+                            // Paint, not a control: nothing to focus, nothing
+                            // to press, and no text selection swallowed.
+                            prop:disabled=move || !click_explain.get()
                             style=move || {
                                 let s = scale.get();
                                 format!(

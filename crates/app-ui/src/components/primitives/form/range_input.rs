@@ -18,7 +18,7 @@ pub fn RangeInput(
     /// when missing.
     #[prop(optional, into)]
     aria_label: Option<String>,
-    #[prop(default = false)] disabled: bool,
+    #[prop(into, default = Signal::derive(|| false))] disabled: Signal<bool>,
 ) -> impl IntoView {
     let class = class.unwrap_or_else(|| {
         "h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-accent".to_string()
@@ -32,7 +32,7 @@ pub fn RangeInput(
             max=move || max.get().to_string()
             step=move || step.get().to_string()
             aria-label=aria_label
-            disabled=disabled
+            prop:disabled=move || disabled.get()
             prop:value=move || value.get().to_string()
             on:input=move |ev| {
                 if let Ok(n) = event_target_value(&ev).parse::<f64>() {

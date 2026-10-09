@@ -76,8 +76,8 @@ pub struct Settings {
     /// The AI word card's spacing; denser by default.
     #[serde(default)]
     pub gloss_density: GlossDensity,
-    /// The vocabulary highlighter: words above the reader's band in red ink.
-    #[serde(default = "on_true")]
+    /// The vocabulary highlighter: words above the reader's band, in red.
+    #[serde(default)]
     pub cefr_enabled: bool,
     /// The reader's own band; words ABOVE it are highlighted.
     #[serde(default)]
@@ -111,7 +111,7 @@ impl Default for Settings {
             gloss_opacity: default_gloss_opacity(),
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
-            cefr_enabled: true,
+            cefr_enabled: false,
             cefr_level: CefrLevel::default(),
             cefr_click_explain: true,
             text: TextSettings::default(),
