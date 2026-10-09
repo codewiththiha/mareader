@@ -42,6 +42,7 @@ registry.pause("cefr-dataset");     // stop reading; the partial stays
 registry.resume(&host, "cefr-dataset")?;  // continue from the bytes on disk
 registry.cancel("cefr-dataset");    // stop for good; the partial still stays
 registry.remove("cefr-dataset");    // drop the record, the partial and the file
+download_core::discard(&dest);      // the same sweep for a record that is gone
 registry.status("cefr-dataset");    // Option<Progress>
 registry.list();                    // Vec<Progress>, for a booting frontend
 registry.outcome("cefr-dataset");   // Option<Result<Outcome, String>>, kept after the end
