@@ -175,10 +175,10 @@ pub fn canonize(tag: &str) -> Option<CanonPos> {
 pub fn parse_tags(raw: &str) -> Vec<CanonPos> {
     let mut out: Vec<CanonPos> = Vec::new();
     for part in raw.split([',', ';', '|', '/', '+']) {
-        if let Some(canon) = canonize(part) {
-            if !out.contains(&canon) {
-                out.push(canon);
-            }
+        if let Some(canon) = canonize(part)
+            && !out.contains(&canon)
+        {
+            out.push(canon);
         }
     }
     out
