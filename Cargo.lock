@@ -3205,6 +3205,7 @@ name = "mareader-shell"
 version = "0.1.2"
 dependencies = [
  "ai-core",
+ "anyhow",
  "arrow",
  "async-stream",
  "cefr",
@@ -3221,6 +3222,7 @@ dependencies = [
  "objc2-foundation",
  "parquet",
  "raw-window-handle",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
