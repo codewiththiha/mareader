@@ -68,7 +68,10 @@ mod tests {
         assert_eq!(classify("colour", "color"), Some(WordMatch::Fuzzy));
         // A far ask finds no fit past the two-edit forgive.
         assert_eq!(classify("zz", "supercalifragilistic"), None);
-        assert_eq!(classify("a", "supercalifragilistic"), Some(WordMatch::Substring));
+        assert_eq!(
+            classify("a", "supercalifragilistic"),
+            Some(WordMatch::Substring)
+        );
     }
 
     #[test]
