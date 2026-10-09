@@ -80,6 +80,19 @@ all four deep jobs honour "[skip deep]" in the commit subject (never the cron)
   compile on Linux. It IS built on Linux in the deep lane's native smoke job,
   where it links against the real frontend build — that build is what caught
   the platform stub for the traffic lights still being alive as dead code.
+- **The wasm check excludes exactly two crates, both native-only, and neither
+  exclusion is a narrowing of what the frontend is.** `mareader-shell` is
+  Tauri; `download-core` is reqwest over a tokio timer and file, and neither
+  has a `wasm32` target to compile for — a downloader belongs to the process
+  that owns the disk, not to a route realm. Both are still compiled by the
+  lint lane's host clippy, still tested by the test lane, and the shell is
+  compiled again on macOS. The rule the exclusion has to keep honouring is
+  the one the wasm check exists for: nothing a route realm links may be left
+  uncompiled for `wasm32`. A new native-only crate has to say which of those
+  three lanes covers it, and a crate that a route realm *does* link has no
+  business being on the list — `cefr-core` is the counter-example: it reads
+  the dataset crate's pure half, which is two modules and no dependency, so it
+  compiles for `wasm32` and is checked there.
 
 ## Decisions worth remembering
 
