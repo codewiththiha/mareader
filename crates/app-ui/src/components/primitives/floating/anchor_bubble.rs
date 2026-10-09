@@ -29,8 +29,16 @@ pub fn AnchorBubble(
     let panel_ref: NodeRef<html::Div> = NodeRef::new();
     let box_style = RwSignal::new(String::new());
     let caret_style = RwSignal::new(String::new());
+    // The parent anchor can outlive a conditionally mounted bubble.
+    let alive = StoredValue::new_local(true);
+    on_cleanup(move || {
+        alive.try_set_value(false);
+    });
 
     let place = move || {
+        if alive.try_get_value() != Some(true) {
+            return;
+        }
         let Some(a) = anchor.try_get_untracked().flatten() else {
             return;
         };
@@ -74,13 +82,7 @@ pub fn AnchorBubble(
         place();
         {
             let place = std::rc::Rc::clone(&place);
-            request_animation_frame(move || {
-                // A frame can outlive the bubble's owner: a disposed anchor.
-                if anchor.try_get_untracked().is_none() {
-                    return;
-                }
-                place();
-            });
+            request_animation_frame(move || place());
         }
         {
             let place = std::rc::Rc::clone(&place);
