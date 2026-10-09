@@ -373,6 +373,12 @@ impl Downloads {
                 let step = transfer::attempt(client, url, source, dest, flags, &note).await;
                 match step {
                     Step::Complete => {
+                        if !self.contains(id) {
+                            // Removed as the last bytes landed: the
+                            // adoption must not bring it back.
+                            discard(dest);
+                            return Verdict::Stopped(Phase::Cancelled);
+                        }
                         self.update(host, id, |progress| {
                             progress.phase = Phase::Verifying;
                             progress.message = None;

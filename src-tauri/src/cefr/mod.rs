@@ -1,6 +1,7 @@
 //! The dataset's backend: download, parquet-to-sqlite rebuild, lookups.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
@@ -127,6 +128,10 @@ pub struct CefrManager {
     db: Mutex<Option<cefr::db::CefrDb>>,
     /// The loaded tagger model, reused across clicks.
     model: Mutex<Option<Arc<cefr::pos::Tagger>>>,
+    /// One claim per landing; both waiters resolve at one ending.
+    claimed: AtomicBool,
+    /// Bumped when a landing is dropped; a build re-checks it.
+    generation: AtomicU64,
 }
 
 impl Default for CefrManager {
@@ -142,6 +147,8 @@ impl CefrManager {
             tagger: Mutex::new(TaggerState::default()),
             db: Mutex::new(None),
             model: Mutex::new(None),
+            claimed: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -238,6 +245,9 @@ impl CefrManager {
                 eta: None,
             };
         }
+        // A new landing is its own build; a stale one must stand down.
+        self.claimed.store(false, Ordering::SeqCst);
+        self.generation.fetch_add(1, Ordering::SeqCst);
         // The click-time tagger rides along; one tap equips both.
         self.request_tagger(&app, &paths.dir);
 
@@ -305,6 +315,9 @@ impl CefrManager {
 
     /// Drop both files, the database and every cached handle.
     pub fn remove(&self, app: &AppHandle) -> Result<(), String> {
+        // A build in flight must see this and stay deleted.
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        self.claimed.store(false, Ordering::SeqCst);
         let downloads = app.state::<AppDownloads>();
         downloads.remove(fetch::DATASET_ID);
         downloads.remove(fetch::TAGGER_ID);
@@ -322,8 +335,12 @@ impl CefrManager {
         if let Ok(mut slot) = self.model.lock() {
             *slot = None;
         }
-        let _ = std::fs::remove_file(&paths.db);
-        let _ = std::fs::remove_file(&paths.building);
+        // Records from an earlier run own no files; the paths do.
+        for file in [&paths.parquet, &paths.model, &paths.db, &paths.building] {
+            let _ = std::fs::remove_file(file);
+        }
+        download_core::discard(&paths.parquet);
+        download_core::discard(&paths.model);
         self.emit(app);
         Ok(())
     }
@@ -429,10 +446,13 @@ fn set_stage(app: &AppHandle, stage: Stage) {
 
 /// The dataset's own stages, after the transport landed the parquet.
 async fn convert(app: AppHandle) {
-    // A start's receipt and a resume's can both land here.
-    if !claim_convert(&app) {
+    let manager = app.state::<CefrManager>();
+    // A start's receipt and a resume's both land here; one claim wins.
+    if manager.claimed.swap(true, Ordering::SeqCst) {
         return;
     }
+    let generation = manager.generation.load(Ordering::SeqCst);
+    set_stage(&app, Stage::Converting);
     let paths = match CefrManager::paths(&app) {
         Ok(paths) => paths,
         Err(message) => return fail(&app, &message),
@@ -453,13 +473,26 @@ async fn convert(app: AppHandle) {
             return fail(&app, &format!("rebuild worker: {e}"));
         }
     }
+    // A remove mid-build has already deleted the answer; stay deleted.
+    if manager.generation.load(Ordering::SeqCst) != generation {
+        let _ = std::fs::remove_file(&paths.building);
+        return;
+    }
     if let Err(e) = std::fs::rename(&paths.building, &paths.db) {
         let _ = std::fs::remove_file(&paths.building);
+        // A remove that landed mid-adopt already owns the story.
+        if manager.generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
         return fail(&app, &format!("adopt dataset: {e}"));
+    }
+    if manager.generation.load(Ordering::SeqCst) != generation {
+        // A remove landed around the rename; its deletion must stay.
+        let _ = std::fs::remove_file(&paths.db);
+        return;
     }
     // The parquet's job is done; only the database is kept.
     let _ = std::fs::remove_file(&paths.parquet);
-    let manager = app.state::<CefrManager>();
     match CefrManager::probe_db(&paths.db) {
         Ok(words) => {
             if let Ok(mut slot) = manager.db.lock() {
@@ -472,19 +505,6 @@ async fn convert(app: AppHandle) {
             fail(&app, &message);
         }
     }
-}
-
-/// Take the conversion, or say another task already holds it.
-fn claim_convert(app: &AppHandle) -> bool {
-    let manager = app.state::<CefrManager>();
-    let Ok(mut guard) = manager.stage.lock() else {
-        return false;
-    };
-    if matches!(*guard, Stage::Converting) {
-        return false;
-    }
-    *guard = Stage::Converting;
-    true
 }
 
 fn fail(app: &AppHandle, message: &str) {

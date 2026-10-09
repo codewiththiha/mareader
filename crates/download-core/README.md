@@ -42,6 +42,7 @@ registry.pause("cefr-dataset");     // stop reading; the partial stays
 registry.resume(&host, "cefr-dataset")?;  // continue from the bytes on disk
 registry.cancel("cefr-dataset");    // stop for good; the partial still stays
 registry.remove("cefr-dataset");    // drop the record, the partial and the file
+download_core::discard(&dest);      // the same sweep for a record that is gone
 registry.status("cefr-dataset");    // Option<Progress>
 registry.list();                    // Vec<Progress>, for a booting frontend
 registry.outcome("cefr-dataset");   // Option<Result<Outcome, String>>, kept after the end
@@ -141,9 +142,10 @@ a double-click cannot double-fetch. A finished or paused record is replaced,
 and whoever waited on the old receipt is told it was superseded instead of
 hanging.
 
-**Bounded registry.** At most `SLOT_CAP` (32) records; the oldest finished ones
-are evicted first. A long-lived app that starts a download per session does not
-grow a map forever. Files are never evicted, only records.
+**Bounded registry.** `SLOT_CAP` (32) records; the oldest finished ones are
+evicted first, so only a fleet of live transports can hold more. A long-lived
+app that starts a download per session does not grow a map forever. Files are
+never evicted, only records.
 
 **Names.** `file_name` is checked, not trusted: a separator, a traversal
 component, a NUL or a colon is refused, so a name that arrives over a wire
