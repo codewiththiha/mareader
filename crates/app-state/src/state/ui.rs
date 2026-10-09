@@ -39,6 +39,8 @@ pub enum SidebarMode {
     Thumbs,
     /// The Library panel: the library as a tree, and the workspace's open tabs.
     Library,
+    /// The Dictionary panel: search the built language packs.
+    Dictionary,
 }
 
 /// Which of the reader's motions animate, projected from the settings.

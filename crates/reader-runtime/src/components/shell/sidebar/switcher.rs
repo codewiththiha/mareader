@@ -1,4 +1,4 @@
-//! Bottom icon-only rail: Thumbs / Outline / Library toggles.
+//! Bottom icon-only rail: Thumbs / Outline / Library / Dictionary.
 
 use leptos::prelude::*;
 
@@ -39,6 +39,11 @@ pub(crate) fn PanelSwitcher(
     /// The Thumbs toggle exists only while the engine has pages to thumb.
     #[prop(into, default = Signal::derive(|| true))]
     thumbs_visible: Signal<bool>,
+    /// The Dictionary toggle's seat: one pack built is enough.
+    #[prop(into, default = Signal::derive(|| false))]
+    dictionary_visible: Signal<bool>,
+    #[prop(into)]
+    dictionary_active: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <div class="flex shrink-0 items-center justify-around gap-1 border-t border-line p-1.5">
@@ -78,6 +83,14 @@ pub(crate) fn PanelSwitcher(
                     on_click=move || mode.set(SidebarMode::Library)
                 />
             })}
+            <Show when=move || dictionary_visible.get()>
+                <RailToggle
+                    icon=IconName::Search
+                    title="Dictionary"
+                    active=dictionary_active
+                    on_click=move || mode.set(SidebarMode::Dictionary)
+                />
+            </Show>
         </div>
     }
 }

@@ -31,7 +31,10 @@ pub(super) fn thumbnail_cells_are_live(
 /// Whether the thumbnail grid keeps its cells mounted.
 fn thumbs_should_stay_mounted(mode: SidebarMode, collapsing: bool, last: SidebarMode) -> bool {
     match mode {
-        SidebarMode::Thumbs | SidebarMode::Outline | SidebarMode::Library => true,
+        SidebarMode::Thumbs
+        | SidebarMode::Outline
+        | SidebarMode::Library
+        | SidebarMode::Dictionary => true,
         SidebarMode::None => collapsing && last == SidebarMode::Thumbs,
     }
 }
