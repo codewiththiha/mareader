@@ -3,9 +3,8 @@
 use leptos::prelude::*;
 
 use ai_core::gloss::{GlossBox, PageAnchor, ReflowSpot};
-use reader_core::settings::Settings;
 
-use cefr_core::text::{MAX_WORD_CHARS, sentence_around};
+use cefr_core::Planned;
 
 use std::hash::Hash;
 use std::sync::Arc;
@@ -13,7 +12,7 @@ use std::sync::Arc;
 use super::layer::{CefrBox, CefrMarkLayer};
 use super::measure::measure;
 use super::scan::with_row_scan;
-use super::{Sink, WalkKey, WalkMemo, marks_fingerprint, text_fingerprint};
+use super::{Sink, WalkKey, WalkMemo, ask, marks_fingerprint, pane_settings, text_fingerprint};
 use crate::components::ai::anchor::captured_mark;
 use crate::components::ai::reflow_anchor::{page_of_block, spot_envelope};
 use crate::components::formats::reflow::spot::range_for_span;
@@ -33,26 +32,18 @@ struct Ctx {
     zoom: u64,
     threshold: u8,
     marks: u64,
-}
-
-/// One planned word: its spot, its text, its sentence.
-struct PlanWord {
-    start: usize,
-    end: usize,
-    word: String,
-    context: String,
+    generation: u64,
 }
 
 #[component]
 pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
-    let settings =
-        use_context::<RwSignal<Settings>>().expect("Settings must be provided by the pane realm");
+    let settings = pane_settings();
     let boxes: RwSignal<Vec<CefrBox>> = RwSignal::new(Vec::new());
     let memo: StoredValue<Option<WalkMemo>, LocalStorage> = StoredValue::new_local(None);
     let row_id = block_row_id(block);
-    let dataset_ready = Signal::derive(move || {
-        services::cefr::dataset().with(|mirror| mirror.as_ref().is_some_and(|m| m.is_ready()))
-    });
+    let mirror = services::cefr::dataset();
+    let dataset_ready =
+        Signal::derive(move || mirror.with(|m| m.as_ref().is_some_and(|m| m.is_ready())));
     // Everything that re-wraps the row without the reader scrolling.
     let relayout = {
         let reflow = state.document.content.reflow;
@@ -73,12 +64,16 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
     Effect::new(move |_| {
         // Everything below is TRACKED; the memo makes unchanged
         // re-runs free.
-        let _ = state.cefr.generation.get();
+        let generation = state.cefr.generation.get();
         let settled = state.viewer.zoom.committed.get();
         let mid_zoom = state.viewer.zoom.transition.get().is_some();
         let fp = relayout.get();
         let (enabled, threshold) = settings.with(|s| (s.cefr_enabled, s.cefr_level.band()));
-        let ready = dataset_ready.get();
+        if !enabled || !dataset_ready.get() || mid_zoom {
+            // The memo survives a clear: re-enabling restores for free.
+            clear(&boxes);
+            return;
+        }
         // The suppression set, folded tracked: a mark edit re-walks.
         let marks = state.gloss.marks.with(|all| {
             marks_fingerprint(all.iter().filter_map(|m| {
@@ -87,16 +82,12 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
                     .map(|_| m.id.as_str())
             }))
         });
-        if !enabled || !ready || mid_zoom {
-            // The memo survives a clear: re-enabling restores for free.
-            clear(&boxes);
-            return;
-        }
         let ctx = Ctx {
             fp,
             zoom: settled.to_bits(),
             threshold,
             marks,
+            generation,
         };
         let Some(row) = state.dom.by_id(&row_id) else {
             // Not yet attached: one frame from now it is, so retry once.
@@ -140,14 +131,13 @@ fn paint(
         clear(boxes);
         return;
     }
-    let generation = state.cefr.generation.get_untracked();
     let page = page_of_block(state.document.content.reflow, block).unwrap_or(1);
     with_row_scan(row_id, ctx.fp, row, |scan| {
         let key = WalkKey {
             fp: ctx.fp,
             zoom: ctx.zoom,
             text: text_fingerprint(&scan.text),
-            generation,
+            generation: ctx.generation,
             marks: ctx.marks,
             threshold: ctx.threshold,
         };
@@ -161,37 +151,20 @@ fn paint(
             }
             return;
         }
-        let chars: Vec<char> = scan.text.chars().collect();
-        let (hard, misses) = {
-            let mut hard: Vec<(usize, usize)> = Vec::new();
-            let mut misses: Vec<String> = Vec::new();
-            let _ = state.cefr.levels.try_with_value(|cache| {
-                for token in &scan.tokens {
-                    let word: String = chars[token.start..token.end].iter().collect();
-                    if word.chars().count() > MAX_WORD_CHARS {
-                        continue;
-                    }
-                    let mut candidates = cefr_core::lookup_candidates(&word);
-                    candidates.extend(cefr_core::hyphen_parts(&word));
-                    for key in &candidates {
-                        if cache.get(key).is_none() && !misses.iter().any(|m| m == key) {
-                            misses.push(key.clone());
-                        }
-                    }
-                    if cache.any_above(&candidates, ctx.threshold) && hard.len() < MAX_BOXES_PER_ROW
-                    {
-                        hard.push((token.start, token.end));
-                    }
-                }
-            });
-            (hard, misses)
-        };
-        if !misses.is_empty() {
-            let asked = misses.clone();
-            services::cefr::fetch_levels(misses, move |levels| {
-                state.cefr.ingest(asked, levels);
-            });
-        }
+        let plan = state
+            .cefr
+            .levels
+            .try_with_value(|cache| {
+                cefr_core::plan_tokens(
+                    &scan.text,
+                    &scan.tokens,
+                    cache,
+                    ctx.threshold,
+                    MAX_BOXES_PER_ROW,
+                )
+            })
+            .unwrap_or_default();
+        ask(state, plan.misses);
         // Words the AI stroke already owns, by spot: the red yields to it.
         let glossed: Vec<(usize, usize)> = state.gloss.marks.with_untracked(|all| {
             all.iter()
@@ -200,31 +173,20 @@ fn paint(
                 .map(|s| (s.start, s.end))
                 .collect()
         });
-        let mut plan: Vec<PlanWord> = Vec::new();
-        for (start, end) in hard {
-            if plan.len() >= MAX_BOXES_PER_ROW {
-                break;
-            }
-            if glossed.contains(&(start, end)) {
-                continue;
-            }
-            let word: String = chars[start..end].iter().collect();
-            let context = sentence_around(&scan.text, start, end);
-            plan.push(PlanWord {
-                start,
-                end,
-                word,
-                context,
-            });
-        }
+        let kept: Vec<_> = plan
+            .hard
+            .into_iter()
+            .filter(|span| !glossed.contains(&(span.start, span.end)))
+            .collect();
+        let words = cefr_core::planned(&scan.text, &kept);
         memo.try_update_value(|slot| {
             *slot = Some(WalkMemo {
                 key,
-                measured: plan.is_empty(),
+                measured: words.is_empty(),
                 boxes: Vec::new(),
             });
         });
-        if plan.is_empty() {
+        if words.is_empty() {
             clear(boxes);
             return;
         }
@@ -234,12 +196,12 @@ fn paint(
             boxes: *boxes,
             memo,
         };
-        measure(move || run_plan(block, page, task_row, plan, sink));
+        measure(move || run_plan(block, page, task_row, words, sink));
     });
 }
 
 /// The scheduled half: measure the plan against the live row.
-fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<PlanWord>, sink: Sink) {
+fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<Planned>, sink: Sink) {
     // A detached row has no geometry; its signal is gone anyway.
     if !row.is_connected() {
         return;
