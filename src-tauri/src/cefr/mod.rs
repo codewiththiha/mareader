@@ -1,50 +1,22 @@
 //! The dataset's backend: download, parquet-to-sqlite rebuild, lookups.
 
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::download::{AppDownloads, DownloadRequest, TauriHost};
+use crate::download::{AppDownloads, Phase, Progress, TauriHost};
 
-/// The built dataset parquet, served straight from the cefr-rs repository.
-pub const DATASET_URL: &str =
-    "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/data/cefr.zstd.parquet";
+pub mod fetch;
+mod lookup;
+
+pub use lookup::PosAnswer;
 
 /// The event the webview subscribes to for every dataset phase change.
 pub const PROGRESS_EVENT: &str = "cefr-dataset-progress";
 
-/// The generic downloader's key for this dataset's parquet.
-const DOWNLOAD_ID: &str = "cefr-dataset";
-
-/// The runtime tagger model, served from the cefr-rs repository.
-pub const MODEL_URL: &str =
-    "https://raw.githubusercontent.com/codewiththiha/cefr-rs/main/models/en_tokenizer.bin.zst";
-
-/// The generic downloader's key for the tagger model.
-const MODEL_ID: &str = "cefr-model";
-
-/// The dataset's POS verdict for one clicked word.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PosAnswer {
-    /// The Penn Treebank tag at the word's position in its sentence.
-    pub pos: String,
-    /// The readable word class: noun, verb, adjective, ...
-    pub kind: String,
-    /// The dataset sense that answered, when one did.
-    pub sense: Option<String>,
-    /// The answering sense's level.
-    pub level: Option<f64>,
-    /// Every POS sense the dataset lists for the word.
-    pub senses: Vec<String>,
-}
-
-/// Progress payload, also the answer of the status command.
+/// The wire snapshot: the dataset's phase and the tagger model's own.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetStatus {
@@ -53,126 +25,165 @@ pub struct DatasetStatus {
     pub phase: String,
     pub received: u64,
     pub total: Option<u64>,
+    pub speed: Option<f64>,
+    pub eta_secs: Option<u64>,
     pub words: Option<u64>,
     pub message: Option<String>,
+    /// The click-time tagger: `absent` | `downloading` | `ready` | `failed`.
+    pub tagger: String,
+    /// The tagger model's own percent, while it is inbound.
+    pub tagger_percent: Option<u32>,
 }
 
-/// The dataset's phase, guarded so commands and the supervise task agree.
-enum Phase {
+/// The dataset's stage, guarded so commands and the transport agree.
+#[derive(Debug, Clone)]
+enum Stage {
     Absent,
-    Downloading { received: u64, total: Option<u64> },
-    Paused,
+    Downloading {
+        received: u64,
+        total: Option<u64>,
+        speed: Option<f64>,
+        eta: Option<u64>,
+    },
+    Paused {
+        received: u64,
+        total: Option<u64>,
+    },
     Converting,
-    Ready { words: u64 },
-    Failed { message: String },
+    Ready {
+        words: u64,
+    },
+    Failed {
+        message: String,
+    },
 }
 
-impl Phase {
-    /// The wire snapshot of this phase.
-    fn snapshot(&self) -> DatasetStatus {
-        match self {
-            Phase::Absent => DatasetStatus {
-                phase: "absent".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: None,
-            },
-            Phase::Downloading { received, total } => DatasetStatus {
-                phase: "downloading".into(),
-                received: *received,
-                total: *total,
-                words: None,
-                message: None,
-            },
-            Phase::Paused => DatasetStatus {
-                phase: "paused".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: None,
-            },
-            Phase::Converting => DatasetStatus {
-                phase: "converting".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: None,
-            },
-            Phase::Ready { words } => DatasetStatus {
-                phase: "ready".into(),
-                received: 0,
-                total: None,
-                words: Some(*words),
-                message: None,
-            },
-            Phase::Failed { message } => DatasetStatus {
-                phase: "failed".into(),
-                received: 0,
-                total: None,
-                words: None,
-                message: Some(message.clone()),
-            },
+impl Stage {
+    /// This stage's half of the wire snapshot.
+    fn status(&self, tagger: TaggerState) -> DatasetStatus {
+        let (phase, received, total, speed, eta_secs, words, message) = match self {
+            Stage::Absent => ("absent", 0, None, None, None, None, None),
+            Stage::Downloading {
+                received,
+                total,
+                speed,
+                eta,
+            } => ("downloading", *received, *total, *speed, *eta, None, None),
+            Stage::Paused { received, total } => {
+                ("paused", *received, *total, None, None, None, None)
+            }
+            Stage::Converting => ("converting", 0, None, None, None, None, None),
+            Stage::Ready { words } => ("ready", 0, None, None, None, Some(*words), None),
+            Stage::Failed { message } => {
+                ("failed", 0, None, None, None, None, Some(message.as_str()))
+            }
+        };
+        DatasetStatus {
+            phase: phase.into(),
+            received,
+            total,
+            speed,
+            eta_secs,
+            words,
+            message: message.map(str::to_string),
+            tagger: tagger.phase.into(),
+            tagger_percent: tagger.percent,
         }
     }
 }
 
-/// The largest batch one lookup may carry; the frontend's pages stay far
-/// below it.
-const MAX_BATCH: usize = 4_000;
+/// The tagger model's own state, beside the dataset's.
+#[derive(Debug, Clone, Copy)]
+struct TaggerState {
+    /// `absent` | `downloading` | `ready` | `failed`.
+    phase: &'static str,
+    percent: Option<u32>,
+}
+
+impl Default for TaggerState {
+    /// A derived default would be `""`, which the adoption check misses.
+    fn default() -> Self {
+        Self {
+            phase: "absent",
+            percent: None,
+        }
+    }
+}
+
+/// The files this feature owns, all under one directory.
+struct Paths {
+    dir: PathBuf,
+    parquet: PathBuf,
+    model: PathBuf,
+    building: PathBuf,
+    db: PathBuf,
+}
 
 /// The manager: one per process, shared by every pane's commands.
 pub struct CefrManager {
-    phase: Mutex<Phase>,
+    stage: Mutex<Stage>,
+    tagger: Mutex<TaggerState>,
     /// The opened dataset, reused across lookups; dropped on remove.
     db: Mutex<Option<cefr::db::CefrDb>>,
     /// The loaded tagger model, reused across clicks.
-    tagger: Mutex<Option<Arc<cefr::pos::Tagger>>>,
+    model: Mutex<Option<Arc<cefr::pos::Tagger>>>,
+}
+
+impl Default for CefrManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CefrManager {
     pub fn new() -> Self {
         Self {
-            phase: Mutex::new(Phase::Absent),
+            stage: Mutex::new(Stage::Absent),
+            tagger: Mutex::new(TaggerState::default()),
             db: Mutex::new(None),
-            tagger: Mutex::new(None),
+            model: Mutex::new(None),
         }
     }
 
-    /// The dataset directory, created on demand.
+    /// The feature's directory, created on demand.
     fn dir(app: &AppHandle) -> Result<PathBuf, String> {
-        let base = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("app data dir: {e}"))?;
-        let dir = base.join("cefr");
+        let dir = TauriHost::new(app.clone()).feature_dir(fetch::FEATURE)?;
         std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
         Ok(dir)
     }
 
-    fn parquet_partial(app: &AppHandle) -> Result<PathBuf, String> {
-        Ok(Self::dir(app)?.join("cefr.parquet.part"))
+    fn paths(app: &AppHandle) -> Result<Paths, String> {
+        let dir = Self::dir(app)?;
+        Ok(Paths {
+            parquet: fetch::dataset_file(&dir),
+            model: fetch::tagger_file(&dir),
+            building: fetch::db_building(&dir),
+            db: fetch::db_final(&dir),
+            dir,
+        })
     }
 
-    fn db_final(app: &AppHandle) -> Result<PathBuf, String> {
-        Ok(Self::dir(app)?.join("cefr.db"))
-    }
-
-    fn db_building(app: &AppHandle) -> Result<PathBuf, String> {
-        Ok(Self::dir(app)?.join("cefr.db.tmp"))
-    }
-
-    /// The live phase, or the disk when this process has not touched it yet.
+    /// The live stage, or the disk when this process has not touched it yet.
     pub fn status(&self, app: &AppHandle) -> Result<DatasetStatus, String> {
-        let mut guard = self.phase.lock().map_err(|_| "phase lock poisoned")?;
-        if matches!(*guard, Phase::Absent) && Self::db_final(app)?.is_file() {
+        let paths = Self::paths(app)?;
+        {
+            let mut guard = self.stage.lock().map_err(|_| "stage lock poisoned")?;
             // A dataset from an earlier run: adopt it without a rebuild.
-            *guard = match Self::probe_db(&Self::db_final(app)?) {
-                Ok(words) => Phase::Ready { words },
-                Err(message) => Phase::Failed { message },
-            };
+            if matches!(*guard, Stage::Absent) && paths.db.is_file() {
+                *guard = match Self::probe_db(&paths.db) {
+                    Ok(words) => Stage::Ready { words },
+                    Err(message) => Stage::Failed { message },
+                };
+            }
         }
-        Ok(guard.snapshot())
+        // A model from an earlier run is likewise already there.
+        if paths.model.is_file()
+            && let Ok(mut slot) = self.tagger.lock()
+            && slot.phase == "absent"
+        {
+            slot.phase = "ready";
+        }
+        Ok(self.snapshot())
     }
 
     /// A finished dataset answers a count and the version mark; anything
@@ -193,420 +204,368 @@ impl CefrManager {
         Ok(words.max(0) as u64)
     }
 
-    /// Hand the transport to the generic downloader, then supervise the
-    /// dataset's own stages.
+    /// The wire snapshot. Neither lock is held while the other is taken.
+    fn snapshot(&self) -> DatasetStatus {
+        let tagger = self.tagger.lock().map(|slot| *slot).unwrap_or_default();
+        let stage = self
+            .stage
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or(Stage::Absent);
+        stage.status(tagger)
+    }
+
+    /// Publish the snapshot both guards describe.
+    fn emit(&self, app: &AppHandle) {
+        let _ = app.emit(PROGRESS_EVENT, self.snapshot());
+    }
+
+    /// Hand both files to the downloader, then await the dataset's landing.
     pub fn begin_download(&self, app: AppHandle) -> Result<(), String> {
+        let paths = Self::paths(&app)?;
         {
-            let mut guard = self.phase.lock().map_err(|_| "phase lock poisoned")?;
+            let mut guard = self.stage.lock().map_err(|_| "stage lock poisoned")?;
             match &*guard {
-                Phase::Downloading { .. } | Phase::Paused | Phase::Converting => {
+                Stage::Downloading { .. } | Stage::Paused { .. } | Stage::Converting => {
                     return Err("a download is already running".into());
                 }
                 _ => {}
             }
-            *guard = Phase::Downloading {
+            *guard = Stage::Downloading {
                 received: 0,
                 total: None,
+                speed: None,
+                eta: None,
             };
         }
-        let _ = app.emit(PROGRESS_EVENT, guard_snapshot(self));
-        let on_progress = {
-            let app = app.clone();
-            Arc::new(move |p: &crate::download::Progress| {
-                let phase = match p.phase.as_str() {
-                    "downloading" => Phase::Downloading {
-                        received: p.received,
-                        total: p.total,
-                    },
-                    "paused" => Phase::Paused,
-                    _ => return,
-                };
-                set_phase(&app, phase);
-            })
-        };
-        let request = DownloadRequest {
-            id: DOWNLOAD_ID.into(),
-            url: DATASET_URL.into(),
-            directory: Some("cefr".into()),
-            file_name: "cefr.parquet.part".into(),
-        };
+        // The click-time tagger rides along; one tap equips both.
+        self.request_tagger(&app, &paths.dir);
+
         let host = TauriHost::new(app.clone());
-        app.state::<AppDownloads>()
-            .start(&host, request, Some(on_progress))?;
-        // The click-time tagger model rides along; one tap equips both.
-        let model = DownloadRequest {
-            id: MODEL_ID.into(),
-            url: MODEL_URL.into(),
-            directory: Some("cefr".into()),
-            file_name: "en_tokenizer.bin.zst".into(),
+        let watched = app.clone();
+        let job = fetch::dataset_job(paths.dir.clone())
+            .on_progress(move |progress| dataset_progress(&watched, progress));
+        let receipt = match app.state::<AppDownloads>().start(&host, job) {
+            Ok(receipt) => receipt,
+            Err(message) => {
+                // A refused start must not leave the stage downloading.
+                set_stage(
+                    &app,
+                    Stage::Failed {
+                        message: message.clone(),
+                    },
+                );
+                return Err(message);
+            }
         };
-        let _ = app.state::<AppDownloads>().start(&host, model, None);
-        tauri::async_runtime::spawn(supervise(app));
+        self.emit(&app);
+        tauri::async_runtime::spawn(async move {
+            match receipt.finished().await {
+                Ok(_) => convert(app.clone()).await,
+                Err(_) => settled(&app),
+            }
+        });
         Ok(())
+    }
+
+    /// Ask for the tagger model, reporting its progress beside the dataset's.
+    fn request_tagger(&self, app: &AppHandle, dir: &Path) {
+        let watched = app.clone();
+        let job = fetch::tagger_job(dir.to_path_buf())
+            .on_progress(move |progress| tagger_progress(&watched, progress));
+        let host = TauriHost::new(app.clone());
+        let _ = app.state::<AppDownloads>().start(&host, job);
     }
 
     /// Stop reading; the partial stays and resume continues from it.
     pub fn pause_download(&self, app: &AppHandle) {
-        app.state::<AppDownloads>().pause(DOWNLOAD_ID);
+        app.state::<AppDownloads>().pause(fetch::DATASET_ID);
     }
 
-    /// Continue a paused download.
+    /// Continue a paused download, and own its landing like a first start.
     pub fn resume_download(&self, app: &AppHandle) -> Result<(), String> {
-        app.state::<AppDownloads>()
-            .resume(&TauriHost::new(app.clone()), DOWNLOAD_ID)
+        let host = TauriHost::new(app.clone());
+        let receipt = app
+            .state::<AppDownloads>()
+            .resume(&host, fetch::DATASET_ID)?;
+        let watched = app.clone();
+        tauri::async_runtime::spawn(async move {
+            match receipt.finished().await {
+                Ok(_) => convert(watched.clone()).await,
+                Err(_) => settled(&watched),
+            }
+        });
+        Ok(())
     }
 
     /// Ask the transport to stop; the partial stays for the next start.
     pub fn cancel(&self, app: &AppHandle) {
-        app.state::<AppDownloads>().cancel(DOWNLOAD_ID);
+        app.state::<AppDownloads>().cancel(fetch::DATASET_ID);
     }
 
-    /// Drop the dataset and its partials; the next download starts over.
+    /// Drop both files, the database and every cached handle.
     pub fn remove(&self, app: &AppHandle) -> Result<(), String> {
-        self.cancel(app);
+        let downloads = app.state::<AppDownloads>();
+        downloads.remove(fetch::DATASET_ID);
+        downloads.remove(fetch::TAGGER_ID);
+        let paths = Self::paths(app)?;
         {
-            let mut guard = self.phase.lock().map_err(|_| "phase lock poisoned")?;
-            *guard = Phase::Absent;
+            let mut guard = self.stage.lock().map_err(|_| "stage lock poisoned")?;
+            *guard = Stage::Absent;
         }
-        app.state::<AppDownloads>().remove(DOWNLOAD_ID);
-        if let Ok(db) = Self::db_final(app) {
-            let _ = std::fs::remove_file(db);
-        }
-        if let Ok(tmp) = Self::db_building(app) {
-            let _ = std::fs::remove_file(tmp);
+        if let Ok(mut slot) = self.tagger.lock() {
+            *slot = TaggerState::default();
         }
         if let Ok(mut slot) = self.db.lock() {
             *slot = None;
         }
-        let _ = app.emit(PROGRESS_EVENT, guard_snapshot(self));
+        if let Ok(mut slot) = self.model.lock() {
+            *slot = None;
+        }
+        let _ = std::fs::remove_file(&paths.db);
+        let _ = std::fs::remove_file(&paths.building);
+        self.emit(app);
         Ok(())
     }
 
-    /// Levels for `words`, aligned with the input; the db opens lazily.
-    pub fn levels(&self, app: &AppHandle, words: &[String]) -> Result<Vec<Option<f64>>, String> {
-        let db_path = Self::db_final(app)?;
-        let mut slot = self.db.lock().map_err(|_| "db lock poisoned")?;
-        if slot.is_none() && db_path.is_file() {
-            *slot = Some(cefr::db::CefrDb::open(&db_path).map_err(|e| format!("dataset: {e}"))?);
-        }
-        let Some(db) = slot.as_ref() else {
-            return Ok(vec![None; words.len()]);
-        };
-        // One normalize per word; unanswerable words keep their place as
-        // `None` in the aligned answer.
-        let normalized: Vec<Option<String>> = words
-            .iter()
-            .take(MAX_BATCH)
-            .map(|w| cefr_core::is_english_ascii(w).then(|| cefr_core::normalize(w)))
-            .collect();
-        let pairs: Vec<(String, String)> = normalized
-            .iter()
-            .flatten()
-            .map(|key| (key.clone(), String::new()))
-            .collect();
-        let found = db
-            .lookup_batch(&pairs)
-            .map_err(|e| format!("lookup: {e}"))?;
-        let mut out: Vec<Option<f64>> = normalized
-            .iter()
-            .map(|key| {
-                key.as_ref()
-                    .and_then(|k| found.get(&(k.clone(), String::new())).copied())
-            })
-            .collect();
-        out.resize(words.len(), None);
-        Ok(out)
-    }
-
-    /// The dataset's POS for `word` in `sentence`; `Ok(None)` if unequipped.
-    pub fn pos_of(
-        &self,
-        app: &AppHandle,
-        word: &str,
-        sentence: &str,
-    ) -> Result<Option<PosAnswer>, String> {
-        let Some(tagger) = self.tagger(app)? else {
-            return Ok(None);
-        };
-        let Some(found) = tagger.pos_in_context(word, sentence) else {
-            return Ok(None);
-        };
-        let db_path = Self::db_final(app)?;
-        let mut slot = self.db.lock().map_err(|_| "db lock poisoned")?;
-        if slot.is_none() && db_path.is_file() {
-            *slot = Some(cefr::db::CefrDb::open(&db_path).map_err(|e| format!("dataset: {e}"))?);
-        }
-        let Some(db) = slot.as_ref() else {
-            return Ok(None);
-        };
-        let sense = db
-            .sense_level(word, &found.pos)
-            .map_err(|e| format!("pos lookup: {e}"))?;
-        let senses = db
-            .pos_senses(word)
-            .map_err(|e| format!("senses: {e}"))?
-            .into_iter()
-            .map(|(pos, _)| pos)
-            .collect();
-        Ok(Some(PosAnswer {
-            pos: found.pos.clone(),
-            kind: penn_kind(&found.pos),
-            // The sense that answered may be a tag-family neighbor; the
-            // tag stays the tagger's.
-            sense: sense.as_ref().map(|s| s.pos.clone()),
-            level: sense.map(|s| s.level),
-            senses,
-        }))
-    }
-
     /// The loaded tagger, or `None` while the model is still inbound.
-    fn tagger(&self, app: &AppHandle) -> Result<Option<Arc<cefr::pos::Tagger>>, String> {
-        let mut slot = self.tagger.lock().map_err(|_| "tagger lock poisoned")?;
+    pub(super) fn tagger(&self, app: &AppHandle) -> Result<Option<Arc<cefr::pos::Tagger>>, String> {
+        let paths = Self::paths(app)?;
+        let mut slot = self.model.lock().map_err(|_| "model lock poisoned")?;
         if let Some(tagger) = slot.as_ref() {
             return Ok(Some(tagger.clone()));
         }
-        let model = Self::dir(app)?.join("en_tokenizer.bin.zst");
-        if !model.is_file() {
-            // Self-heal: ask the downloader for it; a later click loads it.
-            let request = DownloadRequest {
-                id: MODEL_ID.into(),
-                url: MODEL_URL.into(),
-                directory: Some("cefr".into()),
-                file_name: "en_tokenizer.bin.zst".into(),
-            };
-            let host = TauriHost::new(app.clone());
-            let _ = app.state::<AppDownloads>().start(&host, request, None);
+        if !paths.model.is_file() {
+            // Self-heal: ask for it; a later click loads what lands.
+            drop(slot);
+            self.request_tagger(app, &paths.dir);
             return Ok(None);
         }
-        let tagger = Arc::new(
-            cefr::pos::Tagger::from_model_path(&model).map_err(|e| format!("tagger model: {e}"))?,
+        let loaded = Arc::new(
+            cefr::pos::Tagger::from_model_path(&paths.model)
+                .map_err(|e| format!("tagger model: {e}"))?,
         );
-        *slot = Some(tagger.clone());
-        Ok(Some(tagger))
+        *slot = Some(loaded.clone());
+        Ok(Some(loaded))
     }
 }
 
-/// A readable word class for a Penn tag.
-fn penn_kind(tag: &str) -> String {
-    let kind = if tag.starts_with("VB") {
-        "verb"
-    } else if tag.starts_with("NN") {
-        "noun"
-    } else if tag.starts_with("JJ") {
-        "adjective"
-    } else if tag.starts_with("RB") {
-        "adverb"
-    } else if tag == "PRP" || tag.starts_with("WP") {
-        "pronoun"
-    } else if tag == "IN" || tag == "TO" {
-        "preposition"
-    } else if tag == "CC" {
-        "conjunction"
-    } else if tag == "CD" {
-        "number"
-    } else if tag == "MD" {
-        "modal verb"
-    } else if tag == "DT" || tag == "PDT" || tag == "WDT" {
-        "determiner"
-    } else {
-        "other"
+/// Mirror one transport snapshot into the dataset's own stage.
+fn dataset_progress(app: &AppHandle, progress: &Progress) {
+    // The receipt owns the endings; this hook only narrates the middle.
+    let stage = match progress.phase {
+        Phase::Done | Phase::Failed | Phase::Cancelled => return,
+        Phase::Verifying => Stage::Converting,
+        Phase::Paused => Stage::Paused {
+            received: progress.received,
+            total: progress.total,
+        },
+        _ => Stage::Downloading {
+            received: progress.received,
+            total: progress.total,
+            speed: progress.speed,
+            eta: progress.eta_secs,
+        },
     };
-    kind.to_string()
+    set_stage(app, stage);
 }
 
-impl Default for CefrManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Watch the transport until it settles, then run the dataset's stages.
-async fn supervise(app: AppHandle) {
-    let downloads = app.state::<AppDownloads>();
-    loop {
-        let Some(progress) = downloads.status(DOWNLOAD_ID) else {
-            return; // the record went away (remove): nothing to stage
-        };
-        match progress.phase.as_str() {
-            "downloading" | "paused" => {}
-            "cancelled" => {
-                set_phase(&app, Phase::Absent);
-                return;
-            }
-            "failed" => {
-                finish_failed(&app, &progress.message.unwrap_or_else(|| "failed".into()));
-                return;
-            }
-            _ => break,
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
-    }
+/// Mirror one transport snapshot into the tagger model's own state.
+fn tagger_progress(app: &AppHandle, progress: &Progress) {
     let manager = app.state::<CefrManager>();
-    set_phase(&app, Phase::Converting);
-
-    let partial = match CefrManager::parquet_partial(&app) {
-        Ok(path) => path,
-        Err(message) => {
-            finish_failed(&app, &message);
-            return;
-        }
+    let state = match progress.phase {
+        Phase::Done => TaggerState {
+            phase: "ready",
+            percent: Some(100),
+        },
+        Phase::Failed => TaggerState {
+            phase: "failed",
+            percent: None,
+        },
+        Phase::Cancelled => TaggerState::default(),
+        _ => TaggerState {
+            phase: "downloading",
+            percent: progress.percent().map(u32::from),
+        },
     };
-    if let Err(message) = verify_parquet(&partial) {
-        // Bad data, not bad luck: the next attempt re-downloads.
-        let _ = std::fs::remove_file(&partial);
-        app.state::<AppDownloads>().remove(DOWNLOAD_ID);
-        finish_failed(&app, &message);
+    if let Ok(mut slot) = manager.tagger.lock() {
+        *slot = state;
+    }
+    manager.emit(app);
+}
+
+/// The receipt ended without a file: the record says which ending it was.
+fn settled(app: &AppHandle) {
+    let record = app.state::<AppDownloads>().status(fetch::DATASET_ID);
+    let cancelled = record
+        .as_ref()
+        .is_some_and(|progress| progress.phase == Phase::Cancelled);
+    let message = record
+        .and_then(|progress| progress.message)
+        .unwrap_or_else(|| "the download did not finish".to_string());
+    let manager = app.state::<CefrManager>();
+    let stage = if cancelled {
+        Stage::Absent
+    } else {
+        Stage::Failed { message }
+    };
+    {
+        let Ok(mut guard) = manager.stage.lock() else {
+            return;
+        };
+        *guard = stage;
+    }
+    manager.emit(app);
+}
+
+/// One guarded write of a stage, then the event outside the lock.
+fn set_stage(app: &AppHandle, stage: Stage) {
+    let manager = app.state::<CefrManager>();
+    if let Ok(mut guard) = manager.stage.lock() {
+        *guard = stage;
+    }
+    manager.emit(app);
+}
+
+/// The dataset's own stages, after the transport landed the parquet.
+async fn convert(app: AppHandle) {
+    // A start's receipt and a resume's can both land here.
+    if !claim_convert(&app) {
         return;
     }
-    let (building, final_db) = match (CefrManager::db_building(&app), CefrManager::db_final(&app)) {
-        (Ok(building), Ok(ready)) => (building, ready),
-        (Err(message), _) | (_, Err(message)) => {
-            finish_failed(&app, &message);
-            return;
-        }
+    let paths = match CefrManager::paths(&app) {
+        Ok(paths) => paths,
+        Err(message) => return fail(&app, &message),
     };
-    let build_path = building.clone();
-    let built = {
-        let parquet = partial.clone();
-        tauri::async_runtime::spawn_blocking(move || cefr::db::build_db(&parquet, &build_path))
-            .await
-    };
+    let (source, target) = (paths.parquet.clone(), paths.building.clone());
+    let built =
+        tauri::async_runtime::spawn_blocking(move || cefr::db::build_db(&source, &target)).await;
     match built {
         Ok(Ok(_stats)) => {}
         Ok(Err(e)) => {
-            // A parquet that parses but does not rebuild is bad data: drop it.
-            let _ = std::fs::remove_file(&partial);
-            let _ = std::fs::remove_file(&building);
-            app.state::<AppDownloads>().remove(DOWNLOAD_ID);
-            finish_failed(&app, &format!("rebuild failed: {e}"));
-            return;
+            // A parquet that will not rebuild is not usable; fetch again.
+            let _ = std::fs::remove_file(&paths.parquet);
+            let _ = std::fs::remove_file(&paths.building);
+            return fail(&app, &format!("rebuild failed: {e}"));
         }
         Err(e) => {
-            let _ = std::fs::remove_file(&building);
-            finish_failed(&app, &format!("rebuild worker: {e}"));
-            return;
+            let _ = std::fs::remove_file(&paths.building);
+            return fail(&app, &format!("rebuild worker: {e}"));
         }
     }
-    if let Err(e) = std::fs::rename(&building, &final_db) {
-        let _ = std::fs::remove_file(&building);
-        finish_failed(&app, &format!("adopt dataset: {e}"));
-        return;
+    if let Err(e) = std::fs::rename(&paths.building, &paths.db) {
+        let _ = std::fs::remove_file(&paths.building);
+        return fail(&app, &format!("adopt dataset: {e}"));
     }
-    let words = match CefrManager::probe_db(&final_db) {
-        Ok(words) => words,
+    // The parquet's job is done; only the database is kept.
+    let _ = std::fs::remove_file(&paths.parquet);
+    let manager = app.state::<CefrManager>();
+    match CefrManager::probe_db(&paths.db) {
+        Ok(words) => {
+            if let Ok(mut slot) = manager.db.lock() {
+                *slot = None;
+            }
+            set_stage(&app, Stage::Ready { words });
+        }
         Err(message) => {
-            finish_failed(&app, &message);
-            return;
+            let _ = std::fs::remove_file(&paths.db);
+            fail(&app, &message);
         }
+    }
+}
+
+/// Take the conversion, or say another task already holds it.
+fn claim_convert(app: &AppHandle) -> bool {
+    let manager = app.state::<CefrManager>();
+    let Ok(mut guard) = manager.stage.lock() else {
+        return false;
     };
-    // The parquet's job is done; only the db is kept.
-    let _ = std::fs::remove_file(&partial);
-    if let Ok(mut slot) = manager.db.lock() {
-        *slot = None;
+    if matches!(*guard, Stage::Converting) {
+        return false;
     }
-    set_phase(&app, Phase::Ready { words });
+    *guard = Stage::Converting;
+    true
 }
 
-/// The four-byte signature a real parquet carries at both ends.
-fn verify_parquet(path: &Path) -> Result<(), String> {
-    let mut file = std::fs::File::open(path).map_err(|e| format!("reopen partial: {e}"))?;
-    let len = file
-        .metadata()
-        .map_err(|e| format!("stat partial: {e}"))?
-        .len();
-    if len < 8 {
-        return Err(format!("dataset too small ({len} bytes)"));
-    }
-    let mut head = [0u8; 4];
-    file.read_exact(&mut head)
-        .map_err(|e| format!("read head: {e}"))?;
-    if &head != b"PAR1" {
-        return Err("not a parquet file".into());
-    }
-    let mut tail = [0u8; 4];
-    file.seek(SeekFrom::Start(len - 4))
-        .map_err(|e| format!("seek tail: {e}"))?;
-    file.read_exact(&mut tail)
-        .map_err(|e| format!("read tail: {e}"))?;
-    if &tail != b"PAR1" {
-        return Err("dataset is truncated".into());
-    }
-    Ok(())
-}
-
-/// One guarded write of a phase, then the event outside the lock.
-fn set_phase(app: &AppHandle, phase: Phase) {
-    let status = {
-        let manager = app.state::<CefrManager>();
-        let Ok(mut guard) = manager.phase.lock() else {
-            return;
-        };
-        *guard = phase;
-        guard.snapshot()
-    };
-    let _ = app.emit(PROGRESS_EVENT, &status);
-}
-
-fn finish_failed(app: &AppHandle, message: &str) {
-    set_phase(
+fn fail(app: &AppHandle, message: &str) {
+    set_stage(
         app,
-        Phase::Failed {
+        Stage::Failed {
             message: message.to_string(),
         },
     );
-}
-
-/// Read the phase under guard, unlocked afterwards, for the emit.
-fn guard_snapshot(manager: &CefrManager) -> DatasetStatus {
-    manager
-        .phase
-        .lock()
-        .map(|guard| guard.snapshot())
-        .unwrap_or_else(|_| Phase::Absent.snapshot())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn the_parquet_signature_check_rejects_html_error_bodies() {
-        let dir = std::env::temp_dir().join(format!("cefr_mgr_test_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("fake.parquet");
-        std::fs::write(&path, b"<html>Not Found</html>").unwrap();
-        assert!(verify_parquet(&path).is_err());
-        // Truncated real header: magic passes, tail cannot.
-        std::fs::write(&path, b"PAR1").unwrap();
-        assert!(verify_parquet(&path).is_err());
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
+    fn json(stage: &Stage, tagger: TaggerState) -> String {
+        serde_json::to_string(&stage.status(tagger)).unwrap()
     }
 
     #[test]
-    fn phase_snapshots_use_the_camel_case_wire() {
-        let json = serde_json::to_string(
-            &Phase::Downloading {
-                received: 1024,
-                total: Some(2048),
-            }
-            .snapshot(),
-        )
-        .unwrap();
+    fn the_snapshot_uses_the_camel_case_wire() {
+        let downloading = Stage::Downloading {
+            received: 1024,
+            total: Some(2048),
+            speed: Some(512.0),
+            eta: Some(3),
+        };
+        let json = json(&downloading, TaggerState::default());
+        assert!(json.contains("\"phase\":\"downloading\""));
         assert!(json.contains("\"received\":1024"));
         assert!(json.contains("\"total\":2048"));
+        assert!(json.contains("\"etaSecs\":3"));
+        assert!(json.contains("\"tagger\":\"absent\""));
+        assert!(!json.contains("eta_secs"));
+    }
 
-        let paused = serde_json::to_string(&Phase::Paused.snapshot()).unwrap();
-        assert!(paused.contains("\"phase\":\"paused\""));
+    #[test]
+    fn a_pause_keeps_the_bytes_it_had() {
+        let paused = Stage::Paused {
+            received: 900,
+            total: Some(2048),
+        };
+        let json = json(&paused, TaggerState::default());
+        // A paused bar that reads zero looks like a lost download.
+        assert!(json.contains("\"phase\":\"paused\""));
+        assert!(json.contains("\"received\":900"));
+        assert!(json.contains("\"total\":2048"));
+    }
 
-        let failed = serde_json::to_string(
-            &Phase::Failed {
-                message: "no net".into(),
-            }
-            .snapshot(),
-        )
-        .unwrap();
-        assert!(failed.contains("\"phase\":\"failed\""));
-        assert!(failed.contains("\"message\":\"no net\""));
+    #[test]
+    fn only_a_ready_stage_carries_a_word_count() {
+        assert!(
+            json(&Stage::Ready { words: 248_447 }, TaggerState::default())
+                .contains("\"words\":248447")
+        );
+        let failed = Stage::Failed {
+            message: "no net".into(),
+        };
+        let json = json(&failed, TaggerState::default());
+        assert!(json.contains("\"message\":\"no net\""));
+        // An `Option` field is null on the wire, never absent.
+        assert!(json.contains("\"words\":null"), "{json}");
+    }
+
+    #[test]
+    fn a_default_tagger_is_absent_not_an_empty_word() {
+        // Pinned: the disk-adoption check compares against this string.
+        assert_eq!(TaggerState::default().phase, "absent");
+        assert_eq!(TaggerState::default().percent, None);
+        assert!(json(&Stage::Absent, TaggerState::default()).contains("\"tagger\":\"absent\""));
+    }
+
+    #[test]
+    fn the_tagger_model_reports_beside_the_dataset() {
+        let inbound = TaggerState {
+            phase: "downloading",
+            percent: Some(42),
+        };
+        let json = json(&Stage::Absent, inbound);
+        assert!(json.contains("\"tagger\":\"downloading\""));
+        assert!(json.contains("\"taggerPercent\":42"));
+        assert!(!json.contains("tagger_percent"));
     }
 }

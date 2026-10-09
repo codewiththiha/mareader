@@ -118,7 +118,7 @@ impl Job {
     }
 
     /// Whether every field names something this crate can act on.
-    pub(crate) fn check(&self) -> Result<(), String> {
+    pub fn check(&self) -> Result<(), String> {
         if self.id.trim().is_empty() {
             return Err("a download needs an id".into());
         }
