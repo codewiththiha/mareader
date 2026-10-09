@@ -1331,6 +1331,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dict-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3198,9 +3205,11 @@ name = "mareader-shell"
 version = "0.1.2"
 dependencies = [
  "ai-core",
+ "arrow",
  "async-stream",
  "cefr",
  "cefr-core",
+ "dict-core",
  "dotenvy",
  "download-core",
  "fm-bridge",
@@ -3210,6 +3219,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-core-foundation",
  "objc2-foundation",
+ "parquet",
  "raw-window-handle",
  "serde",
  "serde_json",
