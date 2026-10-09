@@ -232,13 +232,8 @@ mod tests {
                 )
                 .unwrap();
             for (word, definition) in rows {
-                stmt.execute(params![
-                    word,
-                    fold(word),
-                    definition,
-                    fold(definition)
-                ])
-                .unwrap();
+                stmt.execute(params![word, fold(word), definition, fold(definition)])
+                    .unwrap();
             }
         }
         drop(conn);

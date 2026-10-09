@@ -41,8 +41,9 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     });
 
     // The pointer left; retire unless something else claims the card.
-    let retire =
-        use_debounce(Duration::from_millis(LEAVE_GRACE_MS), move || visible.set(false));
+    let retire = use_debounce(Duration::from_millis(LEAVE_GRACE_MS), move || {
+        visible.set(false)
+    });
     on_cleanup(move || retire.cancel());
 
     // Senses now, POS-ranked answers when the tagger lands.

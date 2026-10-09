@@ -4,8 +4,8 @@
 use leptos::prelude::*;
 
 use ai_core::gloss::GlossMark;
-use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT};
 use app_ui::events::dispatch_typed_event_on;
+use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT};
 
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
 

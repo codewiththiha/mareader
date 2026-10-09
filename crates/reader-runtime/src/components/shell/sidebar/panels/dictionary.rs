@@ -38,10 +38,7 @@ pub(crate) fn SidebarDictionary(
         if langs.is_empty() {
             built
         } else {
-            langs
-                .into_iter()
-                .filter(|id| built.contains(id))
-                .collect()
+            langs.into_iter().filter(|id| built.contains(id)).collect()
         }
     });
 
@@ -61,7 +58,7 @@ pub(crate) fn SidebarDictionary(
         });
     };
 
-    let debounce = use_debounce(Duration::from_millis(SEARCH_DEBOUNCE_MS), move || fire());
+    let debounce = use_debounce(Duration::from_millis(SEARCH_DEBOUNCE_MS), fire);
     on_cleanup(move || debounce.cancel());
 
     // Reveal takes the caret straight to the ask.
@@ -83,12 +80,20 @@ pub(crate) fn SidebarDictionary(
 
     // A chip takes or gives a seat; the table never sits
     // empty.
-    let toggle_seat = {
-        let s = s;
-        move |id: String| {
-            let included = selected.with_untracked(|sel| sel.contains(&id));
-            s.update(move |st| {
-                let mut langs = st.dict.langs.clone();
+    let toggle_seat = move |id: String| {
+        let included = selected.with_untracked(|sel| sel.contains(&id));
+        s.update(move |st| {
+            let mut langs = st.dict.langs.clone();
+            if langs.is_empty() {
+                langs = packs
+                    .get()
+                    .iter()
+                    .filter(|pack| pack.built)
+                    .map(|pack| pack.id.clone())
+                    .collect();
+            }
+            if included {
+                langs.retain(|seat| seat != &id);
                 if langs.is_empty() {
                     langs = packs
                         .get()
@@ -97,24 +102,14 @@ pub(crate) fn SidebarDictionary(
                         .map(|pack| pack.id.clone())
                         .collect();
                 }
-                if included {
-                    langs.retain(|seat| seat != &id);
-                    if langs.is_empty() {
-                        langs = packs
-                            .get()
-                            .iter()
-                            .filter(|pack| pack.built)
-                            .map(|pack| pack.id.clone())
-                            .collect();
-                    }
-                } else if !langs.contains(&id) {
-                    langs.push(id);
-                }
-                st.dict.langs = langs;
-            });
-            debounce.trigger();
-        }
+            } else if !langs.contains(&id) {
+                langs.push(id);
+            }
+            st.dict.langs = langs;
+        });
+        debounce.trigger();
     };
+
 
     view! {
         <div

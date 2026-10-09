@@ -60,9 +60,7 @@ type Carried = (RawRow, String, Option<(String, WordMatch)>);
 /// The packs a search may ask: the filter over what is built.
 fn wanted_packs(pack_ids: Option<Vec<String>>, built: &[String]) -> Vec<String> {
     match pack_ids {
-        Some(ids) if !ids.is_empty() => {
-            ids.into_iter().filter(|id| built.contains(id)).collect()
-        }
+        Some(ids) if !ids.is_empty() => ids.into_iter().filter(|id| built.contains(id)).collect(),
         _ => built.to_vec(),
     }
 }
