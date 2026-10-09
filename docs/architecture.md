@@ -737,8 +737,9 @@ downloader is not a reader concern.
 - **The lifecycle is awaited, not polled.** `begin_download` starts the
   transport and spawns one task that awaits the receipt; the parquet-to-sqlite
   rebuild runs when that future resolves. There is no status poll loop, so a
-  pause leaves the task waiting rather than looping, and a resume needs no
-  second task.
+  pause leaves the task waiting rather than looping. A resume adds its own
+  waiter, and every waiter that wakes hands the landing to the same claim, so
+  the rebuild runs once.
 - **Two files, two states, one panel.** The dataset gates `ready`, because the
   ink needs it; the tagger model is a separate line in the same settings
   panel, because only a *click* needs it and a silent 6 MB fetch with no
