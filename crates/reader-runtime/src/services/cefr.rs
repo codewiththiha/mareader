@@ -71,10 +71,11 @@ pub fn dataset() -> RwSignal<Option<DatasetMirror>> {
 
 /// Bind this realm's mirror and tap the backend's progress.
 pub fn install_cefr_bridge() {
+    // Realm-global: mint it in this owner, not the first transient reader's.
+    let mirror = dataset();
     if !tauri_bridge::has_tauri() {
         return;
     }
-    let mirror = dataset();
     spawn_local(async move {
         if let Ok(value) = tauri_bridge::invoke("cefr_dataset_status", JsValue::UNDEFINED).await
             && let Ok(status) = serde_wasm_bindgen::from_value::<DatasetMirror>(value)

@@ -96,6 +96,8 @@ pub fn packs() -> RwSignal<Vec<PackMirror>> {
 
 /// Bind this realm's rows and tap the backend's progress.
 pub fn install_dict_bridge() {
+    // Realm-global: mint it in this owner, not the first transient reader's.
+    let _ = packs();
     if !tauri_bridge::has_tauri() {
         return;
     }
