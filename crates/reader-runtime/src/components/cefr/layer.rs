@@ -55,6 +55,9 @@ pub fn CefrMarkLayer(
                         <button
                             type="button"
                             class="cefr-mark"
+                            // Two hundred boxes a page would flood the
+                            // tab order; the pointer still reaches them.
+                            tabindex="-1"
                             aria-label=format!("Explain {word}")
                             // Paint, not a control: nothing to focus, nothing
                             // to press, and no text selection swallowed.
