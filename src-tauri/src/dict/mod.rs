@@ -89,13 +89,14 @@ fn phase_of(
         Some(BuildState::Converting) => ("converting".to_string(), None),
         Some(BuildState::Failed(message)) => ("failed".to_string(), Some(message.clone())),
         None => match progress.map(|progress| progress.phase) {
-            Some(
-                Phase::Preparing | Phase::Downloading | Phase::Retrying | Phase::Verifying,
-            ) => ("downloading".to_string(), None),
-            Some(Phase::Paused) => ("paused".to_string(), None),
-            Some(Phase::Failed) => {
-                ("failed".to_string(), progress.and_then(|progress| progress.message.clone()))
+            Some(Phase::Preparing | Phase::Downloading | Phase::Retrying | Phase::Verifying) => {
+                ("downloading".to_string(), None)
             }
+            Some(Phase::Paused) => ("paused".to_string(), None),
+            Some(Phase::Failed) => (
+                "failed".to_string(),
+                progress.and_then(|progress| progress.message.clone()),
+            ),
             _ => ("absent".to_string(), None),
         },
     }
