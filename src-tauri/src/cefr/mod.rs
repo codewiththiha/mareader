@@ -414,6 +414,10 @@ fn tagger_progress(app: &AppHandle, progress: &Progress) {
 /// The receipt ended without a file: the record says which ending it was.
 fn settled(app: &AppHandle) {
     let record = app.state::<AppDownloads>().status(fetch::DATASET_ID);
+    // remove() woke this receipt and already spoke for the stage.
+    if record.is_none() {
+        return;
+    }
     let cancelled = record
         .as_ref()
         .is_some_and(|progress| progress.phase == Phase::Cancelled);
@@ -455,7 +459,7 @@ async fn convert(app: AppHandle) {
     set_stage(&app, Stage::Converting);
     let paths = match CefrManager::paths(&app) {
         Ok(paths) => paths,
-        Err(message) => return fail(&app, &message),
+        Err(message) => return land(&app, failed(&message)),
     };
     let (source, target) = (paths.parquet.clone(), paths.building.clone());
     let built =
@@ -466,11 +470,11 @@ async fn convert(app: AppHandle) {
             // A parquet that will not rebuild is not usable; fetch again.
             let _ = std::fs::remove_file(&paths.parquet);
             let _ = std::fs::remove_file(&paths.building);
-            return fail(&app, &format!("rebuild failed: {e}"));
+            return land(&app, failed(&format!("rebuild failed: {e}")));
         }
         Err(e) => {
             let _ = std::fs::remove_file(&paths.building);
-            return fail(&app, &format!("rebuild worker: {e}"));
+            return land(&app, failed(&format!("rebuild worker: {e}")));
         }
     }
     // A remove mid-build has already deleted the answer; stay deleted.
@@ -484,7 +488,7 @@ async fn convert(app: AppHandle) {
         if manager.generation.load(Ordering::SeqCst) != generation {
             return;
         }
-        return fail(&app, &format!("adopt dataset: {e}"));
+        return land(&app, failed(&format!("adopt dataset: {e}")));
     }
     if manager.generation.load(Ordering::SeqCst) != generation {
         // A remove landed around the rename; its deletion must stay.
@@ -498,22 +502,34 @@ async fn convert(app: AppHandle) {
             if let Ok(mut slot) = manager.db.lock() {
                 *slot = None;
             }
-            set_stage(&app, Stage::Ready { words });
+            land(&app, Stage::Ready { words });
         }
         Err(message) => {
             let _ = std::fs::remove_file(&paths.db);
-            fail(&app, &message);
+            land(&app, failed(&message));
         }
     }
 }
 
-fn fail(app: &AppHandle, message: &str) {
-    set_stage(
-        app,
-        Stage::Failed {
-            message: message.to_string(),
-        },
-    );
+/// Land a rebuild's ending, unless a remove already took the stage back.
+fn land(app: &AppHandle, stage: Stage) {
+    let manager = app.state::<CefrManager>();
+    {
+        let Ok(mut guard) = manager.stage.lock() else {
+            return;
+        };
+        if !matches!(*guard, Stage::Converting) {
+            return;
+        }
+        *guard = stage;
+    }
+    manager.emit(app);
+}
+
+fn failed(message: &str) -> Stage {
+    Stage::Failed {
+        message: message.to_string(),
+    }
 }
 
 #[cfg(test)]
