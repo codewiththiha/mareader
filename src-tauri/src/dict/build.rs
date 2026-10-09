@@ -113,7 +113,7 @@ pub fn build_db(parquet_path: &Path, db_path: &Path) -> Result<u64> {
 
     let mut rows = 0u64;
     {
-        let mut insert = db.transaction()?;
+        let insert = db.transaction()?;
         {
             let mut stmt = insert.prepare_cached(
                 "INSERT INTO entries
@@ -153,8 +153,6 @@ pub fn build_db(parquet_path: &Path, db_path: &Path) -> Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn a_row_without_word_or_definition_is_dropped() {
         let names = vec!["word".to_string(), "definition".to_string()];
