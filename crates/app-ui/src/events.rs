@@ -9,6 +9,10 @@ pub const AI_CHUNK_EVENT: &str = "mareader:ai-chunk";
 pub const GLOSS_OPEN_EVENT: &str = "mareader:gloss-open";
 /// Ask for a mark's remove menu (carries the `ContextTarget` as detail).
 pub const GLOSS_CONTEXT_EVENT: &str = "mareader:gloss-context";
+/// A red word is under the pointer (carries the `GlossMark` as detail).
+pub const DICT_HOVER_EVENT: &str = "mareader:dict-hover";
+/// The pointer left a red word; the hover card may retire.
+pub const DICT_LEAVE_EVENT: &str = "mareader:dict-leave";
 /// Internal link jump, dispatched by the engine's link layer.
 pub const NAVIGATE_EVENT: &str = "mareader:navigate";
 /// Page-range selection from the engine's thumbnail/id scanner.

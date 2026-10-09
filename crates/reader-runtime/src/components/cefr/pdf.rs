@@ -213,6 +213,7 @@ pub fn PdfCefrLayer(
             boxes=boxes.read_only().into()
             scale=scale.into()
             click_explain=Signal::derive(move || settings.with(|s| s.cefr_click_explain))
+            hover_dict=Signal::derive(move || settings.with(|s| s.dict.hover))
         />
     }
 }
