@@ -737,35 +737,49 @@ the pure half (POS canon, ranks, bridge plans, word fit);
 - **One language answers a card.** `Settings::dict.default_lang` names a
   target language, and `services::dict::answer_pack` resolves it against the
   built packs — falling to the first built one when the name is unset, names a
-  pack that was removed, or names one still converting. The sidebar's chips are
-  the search's own override: they write `dict.langs`, and an empty list follows
-  the default language instead of asking every pack.
+  pack that was removed, or names one still converting. The sidebar's panel
+  overrides it its own way: one dropdown writes `dict.langs`, and the row that
+  names no pack at all asks every built one.
 - **A lookup stays on its pair.** The backend walks `dict_core::plans` first —
   direct, reversed, then bridged through English — and only when no plan
   carries the word does it ask the packs that speak the asked pair. The
   fallback is what once made a missing Myanmar sense answer in Japanese: it
   used to walk every built pack.
-- **The panel may name two shores.** `dict.pair` turns the chips into two
-  pickers: the language the word is typed in, and the one the answer is wanted
-  in. `services::dict::resolve` holds the rules, tested apart from the view: a
-  chosen shore outranks the word; the word's own script speaks only when one
-  downloaded language is written in it — Latin never does, since English and
-  French share it, so a Latin word keeps the shore the reader chose — the hub
-  is the fallback, and the answer is never the shore the ask stands on, so the
-  target's list never offers the source. `dict_core::lang` reads the script,
-  and `dict_core::HUB` is the one tongue a bridge rides. With no pair named,
-  the search asks every built pack on both sides and computes no route at all:
-  a bridge is extra work, and the default never asked for it.
+- **The panel may name two shores.** `dict.pair` turns the one pack dropdown
+  into two pickers: the language the word is typed in, and the one the answer
+  is wanted in. `services::dict::resolve` holds the rules, tested apart from
+  the view: a chosen shore outranks the word; the word's own script speaks
+  only when one downloaded language is written in it — Latin never does,
+  since English and French share it, so a Latin word keeps the shore the
+  reader chose — the hub is the fallback, and the answer is never the shore
+  the ask stands on, so the target's list never offers the source. The
+  source's own dropdown is where the verdict shows: Detect leaves it standing
+  on the shore the word was read as, so nothing has to say in prose what was
+  detected. `dict_core::lang` reads the script, and `dict_core::HUB` is the
+  one tongue a bridge rides. With no pair named, the search asks every built
+  pack on both sides and computes no route at all: a bridge is extra work,
+  and the default never asked for it.
 - **A routed search reads the pair.** `DictManager::search` takes the two
   shores and rides `plans` the way a lookup does, loosely: a hop whose door is
   the far side takes prefixes and near spellings too, which is the only way a
-  panel is ever asked. The chips name the packs when no pair does. An ask that
-  found nothing and is plainly written in another shore is offered that shore
-  in one keystroke, rather than a second search run to cover for the first.
+  panel is ever asked. The pack row names the packs when no pair does. An ask
+  that found nothing and is plainly written in another shore is offered that
+  shore in one keystroke, rather than a second search run to cover for the
+  first.
 - **A row is judged at the door it came in by.** A reversed hop matches the
   far column and a bridged row rides the hub word on the way, so both used to
   be reported as near misses however exact they were: the `≈` badge lied, and
   the order rode on the lie. The fit is carried with the row now.
+- **A pack is named by the shores it joins.** `dict_core::pair_label` reads
+  the two codes the pack itself carries, so `EN - MY` is the same string in
+  the download row, the panel's dropdown and the pair's pickers; no name is
+  kept in a second table that can drift away from the row it describes.
+- **The panel's ask is the window's, not a pane's.** The typed word, the rows
+  the packs answered with and whether an ask was made live in
+  `services::dict::panel`, minted beside the pack rows and held as long. The
+  rail is built afresh for every pane, so state kept in the view follows the
+  focused pane and dies on a tab away. Only the rail on show runs the search,
+  so a split does not ask the same question twice.
 - **Two asks, one anchor.** A red word's `mouseenter` raises
   `mareader:dict-hover` with the mark; the selection menu's dictionary icon
   raises `mareader:dict-open` with the selection's own anchor and spot. Both
