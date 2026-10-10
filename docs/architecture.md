@@ -711,7 +711,8 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   every highlighted word. `aria-hidden` follows the same signal: a focusable
   element under `aria-hidden` contradicts itself. `layer.rs`'s `activate` is
   the single seam a red word's press crosses — today the AI card, and the one
-  place a later hover-triggered dictionary would hang from.
+  place a hover-triggered dictionary hangs from, and the hover card's own
+  seam (`hover_in`) sits beside it.
 - **Click-time POS.** The word card's part of speech is the *dataset's*, read
   at click time: `cefr_pos_of` tags the word in the sentence it was captured
   with (`cefr::pos::Tagger`, the model fetched beside the dataset) and asks
@@ -724,6 +725,44 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   at the cap and on a document change; `SCAN_CAP = 32` rows; the backend
   refuses a batch over `MAX_BATCH = 4000` rather than truncating one, because
   a truncated answer caches a wrong band for every word it dropped.
+
+## Dictionary cards
+
+The hover card over a red word, the selection menu's lookup and the sidebar's
+search are one feature over the same packs. `src-tauri/src/dict/` owns the
+downloads, the parquet-to-sqlite builds and the lookups; `crates/dict-core` is
+the pure half (POS canon, ranks, bridge plans, word fit);
+`services/dict.rs` is the realm's bridge and the only place a pack is chosen.
+
+- **One language answers a card.** `Settings::dict.default_lang` names a
+  target language, and `services::dict::answer_pack` resolves it against the
+  built packs — falling to the first built one when the name is unset, names a
+  pack that was removed, or names one still converting. The sidebar's chips are
+  the search's own override: they write `dict.langs`, and an empty list follows
+  the default language instead of asking every pack.
+- **A lookup stays on its pair.** The backend walks `dict_core::plans` first —
+  direct, reversed, then bridged through English — and only when no plan
+  carries the word does it ask the packs that speak the asked pair. The
+  fallback is what once made a missing Myanmar sense answer in Japanese: it
+  used to walk every built pack.
+- **Two asks, one card.** A red word's `mouseenter` raises
+  `mareader:dict-hover` with the mark; the selection menu's dictionary icon
+  raises `mareader:dict-open` with the selection's box. Both hand the card a
+  box ON SCREEN, and the card parks it in page space once, so it rides its word
+  through a scroll. A hovered card retires 350 ms after the pointer leaves; an
+  asked-for one is pinned and waits for a dismiss.
+- **One card at a time.** `mareader:gloss-open` hides the hover card at once:
+  the AI card owns the word the press asked about. The red word raises that
+  event only while `cefr_click_explain` is on, so with the click off — no AI on
+  the device, or the reader turned it off — the hover card stays and the ink is
+  paint alone.
+- **A near miss says so.** An entry whose `word_match` is not `exact` names the
+  headword the pack answered with, so a reader who hovered `run` can see the
+  sense came from `runner`.
+- **The host owns nothing long-lived.** `DictHoverHost` is per pane: its four
+  window listeners are removed on cleanup, and the retire debounce — the one
+  timer here — is cancelled the same way. The card itself is an
+  `AnchorBubble`, whose own listeners die with it.
 
 ## The dataset's download
 
