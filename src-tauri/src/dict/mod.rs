@@ -490,11 +490,6 @@ impl DictManager {
                         } else {
                             row.word.clone()
                         };
-                        let door = if backward {
-                            row.definition.clone()
-                        } else {
-                            row.word.clone()
-                        };
                         let fit = classify(word, &door).unwrap_or(WordMatch::Fuzzy);
                         (row, pack_id.clone(), None, fit)
                     }));

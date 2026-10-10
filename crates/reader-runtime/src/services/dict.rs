@@ -430,13 +430,26 @@ mod tests {
     #[test]
     fn the_word_names_its_own_shore() {
         let rows = vec![pack("a-en-jp", "jp", true), pack("b-en-my", "my", true)];
-        let ask = Pair::default();
+        let ask = Pair {
+            from: None,
+            to: Some("jp".to_string()),
+        };
+        // The word is Myanmar, so the ask is: no pack joins those two.
         let got = resolve(&rows, &ask, "\u{1019}\u{102E}\u{1038}").expect("a pair");
         assert_eq!(got.from, "my");
         assert_eq!(got.detected.as_deref(), Some("my"));
-        // The answer must be another shore, never the same one.
-        assert_eq!(got.to, "en");
+        assert_eq!(got.to, "jp");
         assert_eq!(got.route, Route::Bridged);
+    }
+
+    #[test]
+    fn a_detected_word_still_asks_one_pack_when_it_can() {
+        let rows = vec![pack("a-en-jp", "jp", true), pack("b-en-my", "my", true)];
+        // No target chosen: the first other shore is the hub, one pack away.
+        let got = resolve(&rows, &Pair::default(), "\u{1019}\u{102E}\u{1038}").expect("a pair");
+        assert_eq!(got.from, "my");
+        assert_eq!(got.to, "en");
+        assert_eq!(got.route, Route::Direct);
     }
 
     #[test]
