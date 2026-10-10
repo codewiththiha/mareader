@@ -2,11 +2,13 @@
 
 pub mod bridge;
 pub mod entry;
+pub mod lang;
 pub mod pos;
 pub mod search;
 
-pub use bridge::{Hop, PackRef, Plan, plans};
+pub use bridge::{HUB, Hop, PackRef, Plan, plans};
 pub use entry::{DictEntry, EntryRank, WordMatch, order_entries};
+pub use lang::{Script, detect, name, script, speakers};
 pub use pos::{CanonPos, PosMatch, canonize, kind_canon, parse_tags, penn_canon, rank_tags};
 pub use search::{classify, edit_distance, fold};
 
