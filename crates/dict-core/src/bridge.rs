@@ -23,6 +23,9 @@ pub struct Plan {
     pub via: Option<String>,
 }
 
+/// The tongue every bridge rides through.
+pub const HUB: &str = "en";
+
 /// A pack the planner may use: its two languages and its id.
 #[derive(Debug, Clone, Copy)]
 pub struct PackRef {
@@ -62,7 +65,7 @@ pub fn plans(from: &str, to: &str, packs: &[PackRef]) -> Vec<Plan> {
         }
     }
     // A bridge is two shores and a hub between them.
-    for hub in ["en"] {
+    for hub in [HUB] {
         if hub == from || hub == to {
             continue;
         }
