@@ -25,21 +25,17 @@ pub(crate) fn SidebarDictionary(
     let asked = RwSignal::new(false);
     let input_ref: NodeRef<html::Input> = NodeRef::new();
 
-    // The seats: the settings' selection over what is built.
-    // No selection means every built pack.
+    // The seats: the settings' own list, else the card's language's pack.
     let selected = Signal::derive(move || {
-        let langs = s.with(|st| st.dict.langs.clone());
-        packs
-            .get()
-            .into_iter()
-            .filter(|pack| {
-                pack.built
-                    && (langs.is_empty()
-                        || langs.contains(&pack.id)
-                        || langs.contains(&format!("{}-{}", pack.source, pack.target)))
-            })
-            .map(|pack| pack.id)
-            .collect()
+        let (langs, default_lang) =
+            s.with(|st| (st.dict.langs.clone(), st.dict.default_lang.clone()));
+        let rows = packs.get();
+        if !langs.is_empty() {
+            return dict::named_packs(&rows, &langs);
+        }
+        dict::answer_pack(&rows, default_lang.as_deref())
+            .map(|pack| vec![pack.id.clone()])
+            .unwrap_or_else(|| dict::built_packs(&rows))
     });
 
     let fire = move || {
@@ -81,32 +77,16 @@ pub(crate) fn SidebarDictionary(
     // A chip takes or gives a seat; the table never sits
     // empty.
     let toggle_seat = move |id: String| {
-        let included = selected.with_untracked(|sel| sel.contains(&id));
-        s.update(move |st| {
-            let mut langs = st.dict.langs.clone();
-            if langs.is_empty() {
-                langs = packs
-                    .get()
-                    .iter()
-                    .filter(|pack| pack.built)
-                    .map(|pack| pack.id.clone())
-                    .collect();
+        let mut seats = selected.get_untracked();
+        if seats.contains(&id) {
+            seats.retain(|seat| seat != &id);
+            if seats.is_empty() {
+                seats = dict::built_packs(&packs.get_untracked());
             }
-            if included {
-                langs.retain(|seat| seat != &id);
-                if langs.is_empty() {
-                    langs = packs
-                        .get()
-                        .iter()
-                        .filter(|pack| pack.built)
-                        .map(|pack| pack.id.clone())
-                        .collect();
-                }
-            } else if !langs.contains(&id) {
-                langs.push(id);
-            }
-            st.dict.langs = langs;
-        });
+        } else {
+            seats.push(id);
+        }
+        s.update(move |st| st.dict.langs = seats);
         debounce.trigger();
     };
 
