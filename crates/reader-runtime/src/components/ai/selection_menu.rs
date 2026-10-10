@@ -183,16 +183,14 @@ pub fn SelectionMenu(state: crate::context::ReaderContext) -> impl IntoView {
         let Some(sel) = detail.get_untracked() else {
             return;
         };
-        let Some(anchor) = watch.screen.get_untracked() else {
-            return;
-        };
         let Some(origin) = menu_ref.get() else {
             return;
         };
         let open = DictOpen {
             word: sel.text.trim().to_string(),
             context: sel.context.clone(),
-            anchor,
+            anchor: state.reader.ai_selection.anchor.get_untracked(),
+            spot: sel.spot,
         };
         dispatch_typed_event_on(&origin, DICT_OPEN_EVENT, &open);
     };

@@ -2,17 +2,20 @@
 
 use std::time::Duration;
 
-use ai_core::gloss::{GlossBox, GlossMark};
+use ai_core::gloss::{GlossMark, PageAnchor, ReflowSpot};
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::floating::types::Rect;
 use app_chrome::hooks::use_timeout::use_debounce;
-use app_chrome::hooks::use_viewport::viewport_size;
 use app_chrome::layers::POPOVER;
 use app_ui::components::primitives::floating::anchor_bubble::AnchorBubble;
 use app_ui::components::primitives::hooks::use_custom_event::use_typed_event_from;
 use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT, DICT_OPEN_EVENT, GLOSS_OPEN_EVENT};
 use leptos::prelude::*;
 
+use crate::components::ai::anchor::{
+    anchor_resolver, no_invalidation, reflow_invalidation, watch_page_anchor,
+};
+use crate::components::ai::reflow_anchor::{self, parse_spot};
 use crate::context::ReaderContext;
 use crate::pane::origin::raised_in;
 use crate::services;
@@ -23,6 +26,17 @@ use super::DictOpen;
 /// How long the card lingers after the pointer leaves a word.
 const LEAVE_GRACE_MS: u64 = 350;
 
+/// One word asked for: what to look up, and where the word sits.
+struct Ask {
+    word: String,
+    /// The sentence around the word, which the role tagger reads.
+    context: String,
+    /// Where the word is, in the space a gloss mark keeps.
+    anchor: PageAnchor,
+    /// The reflow spot the anchor resolves through, when there is one.
+    spot: Option<ReflowSpot>,
+}
+
 #[component]
 pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     let visible = RwSignal::new(false);
@@ -30,14 +44,26 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     let word = RwSignal::new(String::new());
     let entries: RwSignal<Vec<EntryMirror>> = RwSignal::new(Vec::new());
     let index = RwSignal::new(0usize);
-    // The word's box in page space; scroll carries the card with it.
-    let page_box = RwSignal::new(None::<GlossBox>);
+    // The word the card is on; None leaves the watch nothing to follow.
+    let placed: RwSignal<Option<Ask>> = RwSignal::new(None);
     let scroll_top = state.reader.viewer.scroll_top;
-    let anchor = Signal::derive(move || {
-        page_box
-            .get()
-            .map(|b| Rect::new(b.x, b.y - scroll_top.get(), b.w, b.h))
-    });
+    // The menu's own glue: an anchor resolved on every scroll, zoom
+    // and re-cut.
+    let spot = Signal::derive(move || placed.with(|ask| ask.as_ref().and_then(|ask| ask.spot)));
+    let invalidate = if state.reader.reflowable_now() {
+        reflow_invalidation(state.reader)
+    } else {
+        no_invalidation()
+    };
+    let watch = watch_page_anchor(
+        Signal::derive(move || placed.with(|ask| ask.as_ref().map(|ask| ask.anchor))),
+        anchor_resolver(state.reader, spot),
+        state.reader.viewer.zoom.display.into(),
+        scroll_top.into(),
+        state.reader.viewer.page.into(),
+        invalidate,
+    );
+    let anchor = Signal::derive(move || watch.screen.get().map(|b| Rect::new(b.x, b.y, b.w, b.h)));
     let packs = services::dict::packs();
 
     // The card's language: the one the settings name, or the first built.
@@ -49,10 +75,15 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
             .unwrap_or_default()
     });
 
-    // The pointer left; retire unless something else claims the card.
-    let retire = use_debounce(Duration::from_millis(LEAVE_GRACE_MS), move || {
-        visible.set(false)
+    // The card is gone: no word left to follow, nothing to retire.
+    let hide = Callback::new(move |_| {
+        placed.set(None);
+        pinned.set(false);
+        visible.set(false);
     });
+
+    // The pointer left; retire unless something else claims the card.
+    let retire = use_debounce(Duration::from_millis(LEAVE_GRACE_MS), move || hide.run(()));
     on_cleanup(move || retire.cancel());
 
     // Senses now, POS-ranked answers when the tagger lands.
@@ -91,47 +122,47 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
         });
     });
 
-    // Both asks hand over a box on screen; the card tracks the page.
-    let show = Callback::new(
-        move |(ask, ctx, screen, pin): (String, String, GlossBox, bool)| {
-            retire.cancel();
-            let top = scroll_top.get_untracked();
-            page_box.set(Some(GlossBox {
-                y: screen.y + top,
-                ..screen
-            }));
-            word.set(ask.clone());
-            entries.set(Vec::new());
-            index.set(0);
-            pinned.set(pin);
-            visible.set(true);
-            fetch_for.run((ask, ctx));
-        },
-    );
+    let show = Callback::new(move |(ask, pin): (Ask, bool)| {
+        retire.cancel();
+        let (asked, context) = (ask.word.clone(), ask.context.clone());
+        placed.set(Some(ask));
+        word.set(asked.clone());
+        entries.set(Vec::new());
+        index.set(0);
+        pinned.set(pin);
+        visible.set(true);
+        fetch_for.run((asked, context));
+    });
 
     use_typed_event_from::<GlossMark>(DICT_HOVER_EVENT, move |mark, origin| {
         if !raised_in(&state.reader.dom, origin.as_ref()) {
             return;
         }
-        let Some(el) = origin.as_ref() else {
-            return;
+        // The sentence, not the envelope a reflowable mark keeps it in.
+        let context = reflow_anchor::explain_context(&mark);
+        let ask = Ask {
+            word: mark.word.clone(),
+            context,
+            anchor: mark.anchor,
+            spot: parse_spot(state.reader.gloss.spots, &mark.context),
         };
-        let r = el.get_bounding_client_rect();
-        let box_ = GlossBox {
-            x: r.left(),
-            y: r.top(),
-            w: r.width(),
-            h: r.height(),
-            r: 6.0,
-        };
-        show.run((mark.word, mark.context, box_, false));
+        show.run((ask, false));
     });
 
     use_typed_event_from::<DictOpen>(DICT_OPEN_EVENT, move |open, origin| {
         if !raised_in(&state.reader.dom, origin.as_ref()) {
             return;
         }
-        show.run((open.word, open.context, open.anchor, true));
+        let Some(anchor) = open.anchor else {
+            return;
+        };
+        let ask = Ask {
+            word: open.word,
+            context: open.context,
+            anchor,
+            spot: open.spot,
+        };
+        show.run((ask, true));
     });
 
     // The AI card owns the word once it opens; this one goes at once.
@@ -140,8 +171,7 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
             return;
         }
         retire.cancel();
-        pinned.set(false);
-        visible.set(false);
+        hide.run(());
     });
 
     use_typed_event_from::<GlossMark>(DICT_LEAVE_EVENT, move |_mark, origin| {
@@ -157,10 +187,7 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
 
     use_dismiss(
         pinned.into(),
-        Callback::new(move |_| {
-            pinned.set(false);
-            visible.set(false);
-        }),
+        hide,
         DismissPolicy {
             escape: true,
             outside: Some(DismissTrigger::PointerDown),
@@ -173,24 +200,15 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
 
     // A word scrolled out of view takes its card with it.
     Effect::new(move |_| {
-        if !visible.get() {
-            return;
-        }
-        let Some(r) = anchor.get() else {
-            return;
-        };
-        let (_, vh) = viewport_size();
-        if r.bottom() < 0.0 || r.y > vh {
-            pinned.set(false);
-            visible.set(false);
+        if watch.exited.get() && visible.get_untracked() {
+            hide.run(());
         }
     });
 
     // A zoom re-cuts the boxes the card points at.
     Effect::new(move |_| {
         if state.reader.viewer.zooming().get() && visible.get_untracked() {
-            pinned.set(false);
-            visible.set(false);
+            hide.run(());
         }
     });
 
