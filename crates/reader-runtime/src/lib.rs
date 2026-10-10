@@ -165,6 +165,7 @@ pub fn start_session(
             // The AI chunk bridge: session-wide, unregistered with this scope.
             crate::services::ai::install_ai_chunk_bridge();
             crate::services::cefr::install_cefr_bridge();
+            crate::services::dict::install_dict_bridge();
 
             // This frame's own `<html>`: the reader paints its look and hands
             // edits to the Shell.

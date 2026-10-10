@@ -2299,7 +2299,7 @@ async function waitForSettledLayout(label, predicate, timeoutMs = 30_000) {
     }
     await page.waitForTimeout(100);
   }
-  throw new Error(`[${label}] the layout never settled: ${JSON.stringify(last)}`);
+  throw new Error(`[${label}] the layout never settled: ${JSON.stringify({ layout: last, snapshot: lastSnap })}`);
 }
 
 /** Every placed pane is SHOWN (inactive is not hidden), with a live box. */

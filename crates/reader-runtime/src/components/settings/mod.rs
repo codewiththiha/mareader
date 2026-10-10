@@ -3,6 +3,7 @@
 pub(crate) mod animations;
 pub(crate) mod cefr;
 pub(crate) mod common;
+pub(crate) mod dictionary;
 pub(crate) mod fonts;
 pub(crate) mod layout;
 pub mod modal;

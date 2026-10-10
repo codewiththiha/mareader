@@ -6,13 +6,15 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 
-/// Visual tone of a toast: the global error, or the gloss undo.
+/// Visual tone of a toast: the global error, the gloss undo, a plain note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ToastTone {
     #[default]
     Error,
     /// The "removed X — Undo" style: neutral with an accent action.
     Undo,
+    /// A neutral note: neutral surface, check mark, no action.
+    Info,
 }
 
 /// An optional action on a toast (Undo, Open, Save…).
@@ -59,6 +61,7 @@ fn tone_classes(tone: ToastTone) -> (&'static str, IconName) {
             IconName::Close,
         ),
         ToastTone::Undo => ("border-line bg-surface text-ink", IconName::Undo),
+        ToastTone::Info => ("border-line bg-surface text-ink", IconName::Check),
     }
 }
 

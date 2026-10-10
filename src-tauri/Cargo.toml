@@ -31,8 +31,23 @@ cefr = { git = "https://github.com/codewiththiha/cefr-rs.git", default-features 
   "sqlite",
   "nlp",
 ] }
-# The dataset's transport; reqwest and tokio's file half are its business.
+# The dataset's transport; reqwest and tokio's file half is its business.
 download-core = { path = "../crates/download-core" }
+# The dictionary's POS canon: shared by the wasm menu and the backend.
+dict-core = { path = "../crates/dict-core" }
+# Packs ship as parquet; the builder reads them into sqlite.
+arrow = "59"
+parquet = { version = "59", default-features = false, features = [
+  "arrow",
+  "zstd",
+  "snap",
+  "brotli",
+  "lz4",
+  "flate2-rust_backend",
+] }
+# The builder's errors, and the sqlite a pack converts to.
+anyhow = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
 dotenvy = "0.15"      # Loads the .env file (FM_BRIDGE_BIN) before Tauri boots
 futures = "0.3"       # Handles fm-bridge's async streams
 async-stream = "0.3"  # Wraps the AI output chunks into a stream

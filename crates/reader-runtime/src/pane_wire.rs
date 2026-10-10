@@ -90,6 +90,7 @@ pub enum WireSidebar {
     Outline,
     Thumbs,
     Library,
+    Dictionary,
 }
 
 impl From<app_state::SidebarMode> for WireSidebar {
@@ -99,6 +100,7 @@ impl From<app_state::SidebarMode> for WireSidebar {
             app_state::SidebarMode::Outline => Self::Outline,
             app_state::SidebarMode::Thumbs => Self::Thumbs,
             app_state::SidebarMode::Library => Self::Library,
+            app_state::SidebarMode::Dictionary => Self::Dictionary,
         }
     }
 }
@@ -110,6 +112,7 @@ impl From<WireSidebar> for app_state::SidebarMode {
             WireSidebar::Outline => Self::Outline,
             WireSidebar::Thumbs => Self::Thumbs,
             WireSidebar::Library => Self::Library,
+            WireSidebar::Dictionary => Self::Dictionary,
         }
     }
 }

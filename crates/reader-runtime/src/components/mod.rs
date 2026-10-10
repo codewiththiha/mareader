@@ -2,6 +2,7 @@
 
 pub mod ai;
 pub mod cefr;
+pub mod dict;
 pub mod formats;
 pub mod menus;
 pub mod search;
