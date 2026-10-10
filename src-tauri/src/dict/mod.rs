@@ -73,8 +73,8 @@ pub struct DictEntryWire {
     pub word_match: WordMatch,
 }
 
-/// One carried row: the row, its pack, and a bridge's word.
-type Carried = (RawRow, String, Option<(String, WordMatch)>);
+/// One carried row: the row, its pack, a bridge's word, and its fit.
+type Carried = (RawRow, String, Option<String>, WordMatch);
 
 /// The packs a search may ask: the filter over what is built.
 fn wanted_packs(pack_ids: Option<Vec<String>>, built: &[String]) -> Vec<String> {
@@ -82,6 +82,18 @@ fn wanted_packs(pack_ids: Option<Vec<String>>, built: &[String]) -> Vec<String> 
         Some(ids) if !ids.is_empty() => ids.into_iter().filter(|id| built.contains(id)).collect(),
         _ => built.to_vec(),
     }
+}
+
+/// Every pack the planner may route through.
+fn pack_refs() -> Vec<dict_core::PackRef> {
+    PACKS
+        .iter()
+        .map(|pack| dict_core::PackRef {
+            id: pack.id,
+            source: pack.source,
+            target: pack.target,
+        })
+        .collect()
 }
 
 /// One pack's wire phase and why, from its three truths.
@@ -442,21 +454,14 @@ impl DictManager {
             return Vec::new();
         };
         let built = self.built_packs(&dir);
-        let refs: Vec<dict_core::PackRef> = PACKS
-            .iter()
-            .map(|p| dict_core::PackRef {
-                id: p.id,
-                source: p.source,
-                target: p.target,
-            })
-            .collect();
+        let refs = pack_refs();
         for plan in plans(from, to, &refs) {
             if !plan.hops.iter().all(|hop| built.contains(&hop.pack)) {
                 continue;
             }
-            let rows = self.run_plan(&dir, &plan, word, limit);
+            let rows = self.run_plan(&dir, &plan, word, limit, false);
             if !rows.is_empty() {
-                return finish(rows, word, pos, limit);
+                return finish(rows, pos, limit);
             }
         }
         // No route carried the ask: the pair's own packs, and no
@@ -473,26 +478,53 @@ impl DictManager {
             }
             if let Ok(db) = self.open(&dir, pack_id) {
                 let db = db.lock().expect("db mutex");
-                if let Ok(found) = db.lookup_word(word, limit) {
-                    rows.extend(found.into_iter().map(|row| (row, pack_id.clone(), None)));
+                let found = if backward {
+                    db.lookup_definition(word, limit)
+                } else {
+                    db.lookup_word(word, limit)
+                };
+                if let Ok(found) = found {
+                    rows.extend(found.into_iter().map(|row| {
+                        let door = if backward {
+                            row.definition.clone()
+                        } else {
+                            row.word.clone()
+                        };
+                        let door = if backward {
+                            row.definition.clone()
+                        } else {
+                            row.word.clone()
+                        };
+                        let fit = classify(word, &door).unwrap_or(WordMatch::Fuzzy);
+                        (row, pack_id.clone(), None, fit)
+                    }));
                 }
             }
         }
-        finish(rows, word, pos, limit)
+        finish(rows, pos, limit)
     }
 
-    /// The route's ask: the word on either side of a
-    /// built pack.
+    /// The route's ask: a word on either side, or between two shores.
     pub fn search(
         &self,
         app: &AppHandle,
         ask: &str,
         pack_ids: Option<Vec<String>>,
+        from: Option<&str>,
+        to: Option<&str>,
         limit: usize,
     ) -> Vec<DictEntryWire> {
         let Ok(dir) = Self::dir(app) else {
             return Vec::new();
         };
+        // A pair asks only its own routes; no bridge otherwise.
+        if let (Some(from), Some(to)) = (from, to)
+            && from != to
+            && !from.is_empty()
+            && !to.is_empty()
+        {
+            return self.search_route(&dir, from, to, ask, limit);
+        }
         let built = self.built_packs(&dir);
         let wanted = wanted_packs(pack_ids, &built);
         let mut rows = Vec::new();
@@ -500,11 +532,42 @@ impl DictManager {
             if let Ok(db) = self.open(&dir, pack_id) {
                 let db = db.lock().expect("db mutex");
                 if let Ok(found) = db.search(ask, limit) {
-                    rows.extend(found.into_iter().map(|row| (row, pack_id.clone(), None)));
+                    rows.extend(found.into_iter().map(|row| {
+                        // Either side may have matched; the tighter fit stands.
+                        let fit = classify(ask, &row.word)
+                            .into_iter()
+                            .chain(classify(ask, &row.definition))
+                            .min()
+                            .unwrap_or(WordMatch::Fuzzy);
+                        (row, pack_id.clone(), None, fit)
+                    }));
                 }
             }
         }
-        finish(rows, ask, None, limit)
+        finish(rows, None, limit)
+    }
+
+    /// One pair's routes, best first: the first plan that answers wins.
+    fn search_route(
+        &self,
+        dir: &std::path::Path,
+        from: &str,
+        to: &str,
+        ask: &str,
+        limit: usize,
+    ) -> Vec<DictEntryWire> {
+        let built = self.built_packs(dir);
+        let refs = pack_refs();
+        for plan in plans(from, to, &refs) {
+            if !plan.hops.iter().all(|hop| built.contains(&hop.pack)) {
+                continue;
+            }
+            let rows = self.run_plan(dir, &plan, ask, limit, true);
+            if !rows.is_empty() {
+                return finish(rows, None, limit);
+            }
+        }
+        Vec::new()
     }
 
     /// The packs whose sqlite stands built right now.
@@ -516,13 +579,15 @@ impl DictManager {
             .collect()
     }
 
-    /// One plan's rows: one hop, or two hops through the hub word.
+    /// One plan's rows: one hop, or two through the hub.
+    /// `search` is loose.
     fn run_plan(
         &self,
         dir: &std::path::Path,
         plan: &dict_core::Plan,
         word: &str,
         limit: usize,
+        search: bool,
     ) -> Vec<Carried> {
         let [first, rest @ ..] = &plan.hops[..] else {
             return Vec::new();
@@ -534,18 +599,30 @@ impl DictManager {
                 return Vec::new();
             };
             let db = db.lock().expect("db mutex");
-            match hop_ask(&db, word, first.reverse, limit * 2) {
+            match hop_ask(&db, word, first.reverse, search, limit * 2) {
                 Ok(rows) => rows,
                 Err(_) => return Vec::new(),
+            }
+        };
+        // The door: the column this hop was asked through.
+        let door = |row: &RawRow| {
+            if first.reverse {
+                row.definition.clone()
+            } else {
+                row.word.clone()
             }
         };
         let Some(second) = rest.first() else {
             return rows
                 .into_iter()
-                .map(|row| (row, first.pack.to_string(), None))
+                .map(|row| {
+                    let fit = classify(word, &door(&row)).unwrap_or(WordMatch::Fuzzy);
+                    (row, first.pack.to_string(), None, fit)
+                })
                 .collect();
         };
-        // The bridge word: the side the second hop will ask.
+        // The bridge word: what the second hop asks. The fit is
+        // the first hop's.
         let mids: Vec<(String, WordMatch)> = rows
             .iter()
             .map(|row| {
@@ -554,7 +631,7 @@ impl DictManager {
                 } else {
                     row.word.clone()
                 };
-                let fit = classify(word, &mid).unwrap_or(WordMatch::Fuzzy);
+                let fit = classify(word, &door(row)).unwrap_or(WordMatch::Fuzzy);
                 (mid, fit)
             })
             .collect();
@@ -586,7 +663,7 @@ impl DictManager {
                     .find(|(name, _)| *name == mid)
                     .map(|(_, fit)| *fit)
                     .unwrap_or(WordMatch::Fuzzy);
-                (row, second.pack.to_string(), Some((mid, fit)))
+                (row, second.pack.to_string(), Some(mid), fit)
             })
             .collect()
     }
@@ -617,12 +694,19 @@ impl DictManager {
     }
 }
 
-/// A hop's rows: the word side or the definition side.
-fn hop_ask(db: &DictDb, word: &str, reverse: bool, limit: usize) -> anyhow::Result<Vec<RawRow>> {
-    if reverse {
-        db.lookup_definition(word, limit)
-    } else {
-        db.lookup_word(word, limit)
+/// A hop's rows: the side the hop opens, tightly or loosely.
+fn hop_ask(
+    db: &DictDb,
+    word: &str,
+    reverse: bool,
+    search: bool,
+    limit: usize,
+) -> anyhow::Result<Vec<RawRow>> {
+    match (reverse, search) {
+        (false, _) => db.lookup_word(word, limit),
+        (true, false) => db.lookup_definition(word, limit),
+        // A panel's ask on the far shore: prefixes and near spellings too.
+        (true, true) => db.search_definition(word, limit),
     }
 }
 
@@ -636,25 +720,19 @@ fn lookup_defs_any(db: &DictDb, asks: &[String], limit: usize) -> anyhow::Result
 }
 
 /// Rows to wire, ranked: role fit first, word fit next.
-fn finish(rows: Vec<Carried>, ask: &str, pos: Option<&str>, limit: usize) -> Vec<DictEntryWire> {
+fn finish(rows: Vec<Carried>, pos: Option<&str>, limit: usize) -> Vec<DictEntryWire> {
     let mut entries: Vec<DictEntry> = rows
         .into_iter()
-        .map(|(row, pack, bridge)| {
-            let (via, fit) = match bridge {
-                Some((mid, fit)) => (Some(mid), fit),
-                None => (None, classify(ask, &row.word).unwrap_or(WordMatch::Fuzzy)),
-            };
-            DictEntry {
-                word: row.word,
-                tags: parse_tags(row.pos.as_deref().unwrap_or_default()),
-                pos_raw: row.pos,
-                definition: row.definition,
-                romanization: row.romanization,
-                sense: row.sense,
-                pack,
-                via,
-                word_match: fit,
-            }
+        .map(|(row, pack, via, word_match)| DictEntry {
+            word: row.word,
+            tags: parse_tags(row.pos.as_deref().unwrap_or_default()),
+            pos_raw: row.pos,
+            definition: row.definition,
+            romanization: row.romanization,
+            sense: row.sense,
+            pack,
+            via,
+            word_match,
         })
         .collect();
     order_entries(&mut entries, pos.map(penn_canon));
@@ -736,6 +814,46 @@ mod tests {
         assert_eq!(entry.tags.len(), 2);
         let text = serde_json::to_string(&entry).unwrap();
         assert!(text.contains("wordMatch"));
+    }
+
+    /// One row on its way to the wire: a pack, a bridge, a fit.
+    fn carried(word: &str, definition: &str, via: Option<&str>, fit: WordMatch) -> Carried {
+        (
+            RawRow {
+                word: word.into(),
+                pos: Some("n".into()),
+                definition: definition.into(),
+                romanization: None,
+                sense: None,
+            },
+            "mcfnlp-en-my".to_string(),
+            via.map(str::to_string),
+            fit,
+        )
+    }
+
+    #[test]
+    fn a_row_is_judged_by_the_door_it_came_in_by() {
+        // A reversed hop matched the far side: the fit says so.
+        let got = finish(
+            vec![carried("light", "မီး", None, WordMatch::Exact)],
+            None,
+            10,
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].word_match, WordMatch::Exact);
+        assert_eq!(got[0].via, None);
+    }
+
+    #[test]
+    fn a_bridge_row_names_the_word_it_rode() {
+        let got = finish(
+            vec![carried("light", "光", Some("light"), WordMatch::Prefix)],
+            None,
+            10,
+        );
+        assert_eq!(got[0].via.as_deref(), Some("light"));
+        assert_eq!(got[0].word_match, WordMatch::Prefix);
     }
 
     #[test]

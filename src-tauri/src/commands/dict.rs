@@ -70,18 +70,27 @@ pub async fn dict_lookup(
     .map_err(|e| format!("lookup worker: {e}"))
 }
 
-/// The route's ask: a word on either side of a built
-/// pack.
+/// The route's ask: a word on either side, or between two shores.
 #[tauri::command]
 pub async fn dict_search(
     app: AppHandle,
     ask: String,
     pack_ids: Option<Vec<String>>,
+    // The language the ask is written in; `None` asks every side.
+    from: Option<String>,
+    // The language the answer is wanted in; `None` asks every side.
+    to: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<DictEntryWire>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<DictManager>()
-            .search(&app, &ask, pack_ids, limit.unwrap_or(60))
+        app.state::<DictManager>().search(
+            &app,
+            &ask,
+            pack_ids,
+            from.as_deref(),
+            to.as_deref(),
+            limit.unwrap_or(60),
+        )
     })
     .await
     .map_err(|e| format!("search worker: {e}"))
