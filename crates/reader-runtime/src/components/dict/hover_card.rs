@@ -244,10 +244,19 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
                         let i = index.get().min(rows.len() - 1);
                         let entry = rows[i].clone();
                         let tags = entry.tags.join(" · ");
+                        let nearest = nearest_word(&entry);
                         view! {
                             <div class="px-3 py-2.5">
                                 <div class="flex items-baseline gap-2">
                                     <span class="text-xs text-muted">{tags}</span>
+                                    {nearest
+                                        .map(|taken| {
+                                            view! {
+                                                <span class="text-xs text-muted">
+                                                    {"nearest: "}{taken}
+                                                </span>
+                                            }
+                                        })}
                                     {entry
                                         .via
                                         .clone()
@@ -307,5 +316,37 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
                 </div>
             </AnchorBubble>
         </Show>
+    }
+}
+
+/// The headword a near miss answered with; `None` when it is the ask.
+fn nearest_word(entry: &EntryMirror) -> Option<String> {
+    (entry.word_match != "exact").then(|| entry.word.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(word: &str, word_match: &str) -> EntryMirror {
+        EntryMirror {
+            word: word.to_string(),
+            word_match: word_match.to_string(),
+            ..EntryMirror::default()
+        }
+    }
+
+    #[test]
+    fn an_exact_answer_names_no_word_it_took() {
+        let nearest = nearest_word(&entry("run", "exact"));
+        assert!(nearest.is_none());
+    }
+
+    #[test]
+    fn a_near_answer_names_the_word_it_took() {
+        let nearest = nearest_word(&entry("runner", "prefix"));
+        assert_eq!(nearest.as_deref(), Some("runner"));
+        let nearest = nearest_word(&entry("ran", "fuzzy"));
+        assert_eq!(nearest.as_deref(), Some("ran"));
     }
 }
