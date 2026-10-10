@@ -83,9 +83,22 @@ pub struct EntryMirror {
     pub word_match: String,
 }
 
+/// The panel's ask. One for the window, so no pane owns it.
+#[derive(Debug, Clone, Copy)]
+pub struct Panel {
+    /// The word the panel is holding.
+    pub query: RwSignal<String>,
+    /// The rows the packs answered with.
+    pub results: RwSignal<Vec<EntryMirror>>,
+    /// Whether an ask has been made since the box was emptied.
+    pub asked: RwSignal<bool>,
+}
+
 thread_local! {
     /// This realm's pack rows, bound before any component reads.
     static PACKS: OnceCell<RwSignal<Vec<PackMirror>>> = const { OnceCell::new() };
+    /// The panel's ask, minted beside the rows and kept as long.
+    static PANEL: OnceCell<Panel> = const { OnceCell::new() };
     /// The backend tap is installed once per realm.
     static TAPPED: OnceCell<()> = const { OnceCell::new() };
 }
@@ -93,6 +106,17 @@ thread_local! {
 /// The pack rows to read this realm.
 pub fn packs() -> RwSignal<Vec<PackMirror>> {
     PACKS.with(|slot| *slot.get_or_init(|| RwSignal::new(Vec::new())))
+}
+
+/// The panel's ask, read by every pane's rail alike.
+pub fn panel() -> Panel {
+    PANEL.with(|slot| {
+        *slot.get_or_init(|| Panel {
+            query: RwSignal::new(String::new()),
+            results: RwSignal::new(Vec::new()),
+            asked: RwSignal::new(false),
+        })
+    })
 }
 
 /// The built pack that answers a card: the asked language's, or the
@@ -225,6 +249,8 @@ pub fn resolve(rows: &[PackMirror], ask: &Pair, query: &str) -> Option<Asked> {
 pub fn install_dict_bridge() {
     // Realm-global: mint it in this owner, not the first transient reader's.
     let _ = packs();
+    // And the panel's ask with it, so one owner holds both.
+    let _ = panel();
     if !tauri_bridge::has_tauri() {
         return;
     }
