@@ -91,10 +91,15 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
         });
     });
 
+    // Both asks hand over a box on screen; the card tracks the page.
     let show = Callback::new(
-        move |(ask, ctx, box_, pin): (String, String, GlossBox, bool)| {
+        move |(ask, ctx, screen, pin): (String, String, GlossBox, bool)| {
             retire.cancel();
-            page_box.set(Some(box_));
+            let top = scroll_top.get_untracked();
+            page_box.set(Some(GlossBox {
+                y: screen.y + top,
+                ..screen
+            }));
             word.set(ask.clone());
             entries.set(Vec::new());
             index.set(0);
@@ -114,7 +119,7 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
         let r = el.get_bounding_client_rect();
         let box_ = GlossBox {
             x: r.left(),
-            y: r.top() + scroll_top.get_untracked(),
+            y: r.top(),
             w: r.width(),
             h: r.height(),
             r: 6.0,
