@@ -4397,6 +4397,7 @@ dependencies = [
  "app-ui",
  "cefr-core",
  "console_error_panic_hook",
+ "dict-core",
  "frame-transport",
  "js-sys",
  "leptos",

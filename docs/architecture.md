@@ -745,6 +745,27 @@ the pure half (POS canon, ranks, bridge plans, word fit);
   carries the word does it ask the packs that speak the asked pair. The
   fallback is what once made a missing Myanmar sense answer in Japanese: it
   used to walk every built pack.
+- **The panel may name two shores.** `dict.pair` turns the chips into two
+  pickers: the language the word is typed in, and the one the answer is wanted
+  in. `services::dict::resolve` holds the rules, tested apart from the view: a
+  chosen shore outranks the word; the word's own script speaks only when one
+  downloaded language is written in it — Latin never does, since English and
+  French share it, so a Latin word keeps the shore the reader chose — the hub
+  is the fallback, and the answer is never the shore the ask stands on, so the
+  target's list never offers the source. `dict_core::lang` reads the script,
+  and `dict_core::HUB` is the one tongue a bridge rides. With no pair named,
+  the search asks every built pack on both sides and computes no route at all:
+  a bridge is extra work, and the default never asked for it.
+- **A routed search reads the pair.** `DictManager::search` takes the two
+  shores and rides `plans` the way a lookup does, loosely: a hop whose door is
+  the far side takes prefixes and near spellings too, which is the only way a
+  panel is ever asked. The chips name the packs when no pair does. An ask that
+  found nothing and is plainly written in another shore is offered that shore
+  in one keystroke, rather than a second search run to cover for the first.
+- **A row is judged at the door it came in by.** A reversed hop matches the
+  far column and a bridged row rides the hub word on the way, so both used to
+  be reported as near misses however exact they were: the `≈` badge lied, and
+  the order rode on the lie. The fit is carried with the row now.
 - **Two asks, one anchor.** A red word's `mouseenter` raises
   `mareader:dict-hover` with the mark; the selection menu's dictionary icon
   raises `mareader:dict-open` with the selection's own anchor and spot. Both
