@@ -9,20 +9,30 @@ pub enum Script {
     Latin,
 }
 
-/// Every language: its code, the name it is offered by, and its scripts.
-const LANGUAGES: &[(&str, &str, &[Script])] = &[
-    ("en", "English", &[Script::Latin]),
-    ("fr", "French", &[Script::Latin]),
-    ("my", "Myanmar", &[Script::Myanmar]),
-    ("jp", "Japanese", &[Script::Kana, Script::Han]),
+/// Every language and the scripts it is written in.
+const LANGUAGES: &[(&str, &[Script])] = &[
+    ("en", &[Script::Latin]),
+    ("fr", &[Script::Latin]),
+    ("my", &[Script::Myanmar]),
+    ("jp", &[Script::Kana, Script::Han]),
 ];
+
+/// A pack's own name: the two shores it joins, as its codes read.
+pub fn pair_label(source: &str, target: &str) -> String {
+    format!("{} - {}", source.to_uppercase(), target.to_uppercase())
+}
+
+/// One shore's own name, the way a pack carries it.
+pub fn lang_label(code: &str) -> String {
+    code.to_uppercase()
+}
 
 /// Every language written in `script`, in table order.
 pub fn speakers(script: Script) -> Vec<&'static str> {
     LANGUAGES
         .iter()
-        .filter(|(_, _, scripts)| scripts.contains(&script))
-        .map(|(code, _, _)| *code)
+        .filter(|(_, scripts)| scripts.contains(&script))
+        .map(|(code, _)| *code)
         .collect()
 }
 
@@ -41,15 +51,6 @@ fn script_of(ch: char) -> Option<Script> {
 /// The script a word is written in: its first letter's, punctuation past.
 pub fn script(text: &str) -> Option<Script> {
     text.chars().find_map(script_of)
-}
-
-/// The name `code` is offered by; a code no row claims names itself.
-pub fn name(code: &str) -> String {
-    LANGUAGES
-        .iter()
-        .find(|(have, _, _)| *have == code)
-        .map(|(_, label, _)| (*label).to_string())
-        .unwrap_or_else(|| code.to_uppercase())
 }
 
 /// The one language `text` can be, of `langs`. Latin names none.
@@ -127,9 +128,11 @@ mod tests {
     }
 
     #[test]
-    fn a_code_no_row_claims_names_itself() {
-        assert_eq!(name("my"), "Myanmar");
-        assert_eq!(name("jp"), "Japanese");
-        assert_eq!(name("zz"), "ZZ");
+    fn a_pack_names_itself_by_the_shores_it_joins() {
+        assert_eq!(pair_label("en", "my"), "EN - MY");
+        assert_eq!(pair_label("en", "jp"), "EN - JP");
+        // The codes are the pack's own, uppercased, never a name kept apart.
+        assert_eq!(lang_label("my"), "MY");
+        assert_eq!(lang_label("en"), "EN");
     }
 }

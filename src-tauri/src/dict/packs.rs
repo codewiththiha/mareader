@@ -6,8 +6,6 @@
 pub struct PackDef {
     /// The job id and the file's stem.
     pub id: &'static str,
-    /// The download row's name.
-    pub label: &'static str,
     /// The headword language (English in every shipped pack).
     pub source: &'static str,
     /// The definition language.
@@ -26,7 +24,6 @@ pub struct PackDef {
 pub const PACKS: &[PackDef] = &[
     PackDef {
         id: "mcfnlp-en-my",
-        label: "MCF NLP English–Myanmar",
         source: "en",
         target: "my",
         file: "mcfnlp-en-my.parquet",
@@ -39,7 +36,6 @@ pub const PACKS: &[PackDef] = &[
     },
     PackDef {
         id: "jmdict-en-jp",
-        label: "JMdict English–Japanese",
         source: "en",
         target: "jp",
         file: "jmdict-en-jp.parquet",
@@ -52,7 +48,6 @@ pub const PACKS: &[PackDef] = &[
     },
     PackDef {
         id: "wiktionary-en-fr",
-        label: "Wiktionary English–French",
         source: "en",
         target: "fr",
         file: "wiktionary-en-fr.parquet",
