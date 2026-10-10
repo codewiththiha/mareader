@@ -1,10 +1,16 @@
 //! The Dictionary tab: the hover switch and the language packs.
 
+use leptos::html;
 use leptos::prelude::*;
 
 use crate::services;
+use app_chrome::icon::{Icon, IconName};
 use app_ui::components::primitives::controls::switch::Switch;
+use app_ui::components::primitives::floating::menu_popover::MenuPopover;
+use app_ui::components::primitives::form::row::Row;
+use app_ui::components::primitives::menu::menu_item::MenuItem;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
+use app_ui::components::primitives::overlay::lanes::OverlayPolicy;
 
 /// One action's look, shared by every button on this tab.
 const BUTTON: &str = "rounded-lg border border-line px-3 py-1.5 text-sm text-ink \
@@ -36,6 +42,17 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
                     title="Dictionary hover"
                 />
             </div>
+        </div>
+
+        <SectionLabel text="Language" />
+        <div class="rounded-xl border border-line" data-setting="dict-language">
+            <Row label="Default language">
+                <LanguageSelect state=state />
+            </Row>
+            <p class="border-t border-line px-4 py-3 text-xs text-muted">
+                "The card answers in this language. Only a language whose pack \
+                 is downloaded is offered."
+            </p>
         </div>
 
         <SectionLabel text="Language packs" />
@@ -181,6 +198,15 @@ pub(crate) fn DictionaryTab(state: crate::context::ReaderContext) -> impl IntoVi
     }
 }
 
+/// The chosen row's text; a language whose pack left reads as none.
+fn language_label(options: Vec<(Option<String>, String)>, want: Option<String>) -> String {
+    options
+        .into_iter()
+        .find(|(lang, _)| *lang == want)
+        .map(|(_, text)| text)
+        .unwrap_or_else(|| "First downloaded".to_string())
+}
+
 /// The readout under a pack's name.
 fn status_line(pack: &services::dict::PackMirror) -> String {
     match pack.phase() {
@@ -196,5 +222,104 @@ fn status_line(pack: &services::dict::PackMirror) -> String {
             .clone()
             .unwrap_or_else(|| "download failed".to_string()),
         _ => format!("{} words — not downloaded", pack.rows),
+    }
+}
+
+/// The card's language, chosen from the packs that are downloaded.
+#[component]
+fn LanguageSelect(state: crate::context::ReaderContext) -> impl IntoView {
+    let s = state.settings;
+    let packs = services::dict::packs();
+    let open = RwSignal::new(false);
+    let root_ref: NodeRef<html::Div> = NodeRef::new();
+    // One row per downloaded language; the row that names none is first.
+    let options = Signal::derive(move || {
+        let mut rows = vec![(None, "First downloaded".to_string())];
+        for pack in packs.get() {
+            let taken = rows
+                .iter()
+                .any(|(lang, _)| lang.as_deref() == Some(pack.target.as_str()));
+            if pack.built && !taken {
+                rows.push((Some(pack.target.clone()), pack.label.clone()));
+            }
+        }
+        rows
+    });
+    let current = Signal::derive(move || s.with(|st| st.dict.default_lang.clone()));
+    let has_choice = Signal::derive(move || options.get().len() > 1);
+
+    view! {
+        <div node_ref=root_ref class="relative inline-flex">
+            <button
+                type="button"
+                prop:disabled=move || !has_choice.get()
+                on:click=move |_| open.set(!open.get())
+                class="flex max-w-[220px] items-center gap-1.5 rounded-md px-2 py-1 text-sm text-ink hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-45"
+            >
+                <span class="truncate">
+                    {move || language_label(options.get(), current.get())}
+                </span>
+                <Icon name=IconName::ChevronDown size=12 class="text-muted" />
+            </button>
+            <MenuPopover
+                open=open
+                anchor=root_ref
+                width=240u32
+                class="p-1".to_string()
+                // A dropdown here uses the in-dialog menu policy,
+                // or it would evict the modal.
+                policy=OverlayPolicy::IN_DIALOG
+                hold_titlebar=false
+            >
+                {move || {
+                    options
+                        .get()
+                        .into_iter()
+                        .map(|(value, text)| {
+                            let picked = value.clone();
+                            let is_current = Signal::derive(move || current.get() == picked);
+                            view! {
+                                <MenuItem
+                                    label=text
+                                    selected=is_current
+                                    check=true
+                                    on_click=move || {
+                                        let value = value.clone();
+                                        s.update(move |st| st.dict.default_lang = value);
+                                        open.set(false);
+                                    }
+                                />
+                            }
+                        })
+                        .collect_view()
+                }}
+            </MenuPopover>
+        </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_language_without_a_row_reads_as_the_row_that_names_none() {
+        let options = vec![(None, "First downloaded".to_string())];
+        let label = language_label(options, Some("my".to_string()));
+        assert_eq!(label, "First downloaded");
+    }
+
+    #[test]
+    fn the_chosen_language_is_the_row_it_names() {
+        let options = vec![
+            (None, "First downloaded".to_string()),
+            (
+                Some("my".to_string()),
+                "MCF NLP English–Myanmar".to_string(),
+            ),
+        ];
+        assert_eq!(language_label(options.clone(), None), "First downloaded");
+        let label = language_label(options, Some("my".to_string()));
+        assert_eq!(label, "MCF NLP English–Myanmar");
     }
 }
