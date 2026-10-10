@@ -81,7 +81,7 @@ pub(crate) fn ReaderRail(
                     view! {
                         <div
                             class="sidebar-panel absolute inset-0 flex flex-col"
-                            class=("invisible", move || !shown.get())
+                            class=("is-away", move || !shown.get())
                             class=("is-outro", move || outro.get())
                             class=("is-intro", move || intro.get())
                         >
