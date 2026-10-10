@@ -113,6 +113,7 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
             boxes=boxes.read_only().into()
             scale=Signal::derive(|| 1.0)
             click_explain=Signal::derive(move || settings.with(|s| s.cefr_click_explain))
+            hover_dict=Signal::derive(move || settings.with(|s| s.dict.hover))
         />
     }
 }

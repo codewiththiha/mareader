@@ -26,6 +26,14 @@
   opacity: 0;
 }
 
+/* Put away: dropped from layout, not merely unpainted. A panel left in
+   layout behind visibility:hidden hands its truncate boxes back blank —
+   an ellipsis run is not repainted by the flip alone, and only a hover
+   brings the glyphs back. Unlayered, so it beats the display utilities. */
+.sidebar-panel.is-away {
+  display: none;
+}
+
 /* Rebuild the glass only on the frame a base mode swaps. */
 html.theme-switching .toolbar-glass {
   -webkit-backdrop-filter: none;

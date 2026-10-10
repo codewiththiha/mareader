@@ -711,7 +711,8 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   every highlighted word. `aria-hidden` follows the same signal: a focusable
   element under `aria-hidden` contradicts itself. `layer.rs`'s `activate` is
   the single seam a red word's press crosses — today the AI card, and the one
-  place a later hover-triggered dictionary would hang from.
+  place a hover-triggered dictionary hangs from, and the hover card's own
+  seam (`hover_in`) sits beside it.
 - **Click-time POS.** The word card's part of speech is the *dataset's*, read
   at click time: `cefr_pos_of` tags the word in the sentence it was captured
   with (`cefr::pos::Tagger`, the model fetched beside the dataset) and asks
@@ -724,6 +725,84 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   at the cap and on a document change; `SCAN_CAP = 32` rows; the backend
   refuses a batch over `MAX_BATCH = 4000` rather than truncating one, because
   a truncated answer caches a wrong band for every word it dropped.
+
+## Dictionary cards
+
+The hover card over a red word, the selection menu's lookup and the sidebar's
+search are one feature over the same packs. `src-tauri/src/dict/` owns the
+downloads, the parquet-to-sqlite builds and the lookups; `crates/dict-core` is
+the pure half (POS canon, ranks, bridge plans, word fit);
+`services/dict.rs` is the realm's bridge and the only place a pack is chosen.
+
+- **One language answers a card.** `Settings::dict.default_lang` names a
+  target language, and `services::dict::answer_pack` resolves it against the
+  built packs — falling to the first built one when the name is unset, names a
+  pack that was removed, or names one still converting. The sidebar's panel
+  overrides it its own way: one dropdown writes `dict.langs`, and the row that
+  names no pack at all asks every built one.
+- **A lookup stays on its pair.** The backend walks `dict_core::plans` first —
+  direct, reversed, then bridged through English — and only when no plan
+  carries the word does it ask the packs that speak the asked pair. The
+  fallback is what once made a missing Myanmar sense answer in Japanese: it
+  used to walk every built pack.
+- **The panel may name two shores.** `dict.pair` turns the one pack dropdown
+  into two pickers: the language the word is typed in, and the one the answer
+  is wanted in. `services::dict::resolve` holds the rules, tested apart from
+  the view: a chosen shore outranks the word; the word's own script speaks
+  only when one downloaded language is written in it — Latin never does,
+  since English and French share it, so a Latin word keeps the shore the
+  reader chose — the hub is the fallback, and the answer is never the shore
+  the ask stands on, so the target's list never offers the source. The
+  source's own dropdown is where the verdict shows: Detect leaves it standing
+  on the shore the word was read as, so nothing has to say in prose what was
+  detected. `dict_core::lang` reads the script, and `dict_core::HUB` is the
+  one tongue a bridge rides. With no pair named, the search asks every built
+  pack on both sides and computes no route at all: a bridge is extra work,
+  and the default never asked for it.
+- **A routed search reads the pair.** `DictManager::search` takes the two
+  shores and rides `plans` the way a lookup does, loosely: a hop whose door is
+  the far side takes prefixes and near spellings too, which is the only way a
+  panel is ever asked. The pack row names the packs when no pair does. An ask
+  that found nothing and is plainly written in another shore is offered that
+  shore in one keystroke, rather than a second search run to cover for the
+  first.
+- **A row is judged at the door it came in by.** A reversed hop matches the
+  far column and a bridged row rides the hub word on the way, so both used to
+  be reported as near misses however exact they were: the `≈` badge lied, and
+  the order rode on the lie. The fit is carried with the row now.
+- **A pack is named by the shores it joins.** `dict_core::pair_label` reads
+  the two codes the pack itself carries, so `EN - MY` is the same string in
+  the download row, the panel's dropdown and the pair's pickers; no name is
+  kept in a second table that can drift away from the row it describes.
+- **The panel's ask is the window's, not a pane's.** The typed word, the rows
+  the packs answered with and whether an ask was made live in
+  `services::dict::panel`, minted beside the pack rows and held as long. The
+  rail is built afresh for every pane, so state kept in the view follows the
+  focused pane and dies on a tab away. Only the rail on show runs the search,
+  so a split does not ask the same question twice.
+- **Two asks, one anchor.** A red word's `mouseenter` raises
+  `mareader:dict-hover` with the mark; the selection menu's dictionary icon
+  raises `mareader:dict-open` with the selection's own anchor and spot. Both
+  hand the card a `PageAnchor`, never a box, and the card watches it with
+  `watch_page_anchor` — the same glue the selection menu and the AI card use,
+  so it is re-resolved through the format's bridge on every scroll (any
+  direction), resize, zoom step and re-cut, and it dies on the watch's own
+  `exited` verdict. A box carried in page space and corrected by `scroll_top`
+  cannot follow a horizontal scroll or a re-wrap, which is why it is gone. A
+  hovered card retires 350 ms after the pointer leaves; an asked-for one is
+  pinned and waits for a dismiss.
+- **One card at a time.** `mareader:gloss-open` hides the hover card at once:
+  the AI card owns the word the press asked about. The red word raises that
+  event only while `cefr_click_explain` is on, so with the click off — no AI on
+  the device, or the reader turned it off — the hover card stays and the ink is
+  paint alone.
+- **A near miss says so.** An entry whose `word_match` is not `exact` names the
+  headword the pack answered with, so a reader who hovered `run` can see the
+  sense came from `runner`.
+- **The host owns nothing long-lived.** `DictHoverHost` is per pane: its four
+  window listeners are removed on cleanup, and the retire debounce — the one
+  timer here — is cancelled the same way. The card itself is an
+  `AnchorBubble`, whose own listeners die with it.
 
 ## The dataset's download
 

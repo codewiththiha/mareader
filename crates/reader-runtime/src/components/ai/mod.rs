@@ -1,9 +1,9 @@
-//! AI-assisted reading: the pill a selection produces and the card it opens.
+//! AI-assisted reading: the menu a selection produces and the card it opens.
 
 pub mod anchor;
 pub mod gloss;
 pub mod reflow_anchor;
-pub mod selection_pill;
+pub mod selection_menu;
 pub mod settings;
 
 /// Fixtures this feature's tests share: the gloss origin box.

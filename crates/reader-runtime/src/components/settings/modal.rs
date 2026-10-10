@@ -5,6 +5,7 @@ use leptos::prelude::*;
 use crate::components::settings::animations::AnimationsTab;
 use crate::components::settings::cefr::CefrTab;
 use crate::components::settings::common::{Tab, TabButton};
+use crate::components::settings::dictionary::DictionaryTab;
 use crate::components::settings::fonts::FontsTab;
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
@@ -81,6 +82,13 @@ pub fn SettingsModal(
                             <TabButton
                                 tab=tab
                                 active=shown
+                                t=Tab::Dictionary
+                                icon=IconName::Search
+                                label="Dictionary"
+                            />
+                            <TabButton
+                                tab=tab
+                                active=shown
                                 t=Tab::Workspace
                                 icon=IconName::SplitRight
                                 label="Workspace"
@@ -103,6 +111,9 @@ pub fn SettingsModal(
                                 }
                                 Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
                                 Tab::Vocabulary => view! { <CefrTab state=state /> }.into_any(),
+                                Tab::Dictionary => {
+                                    view! { <DictionaryTab state=state /> }.into_any()
+                                }
                                 Tab::Workspace => {
                                     view! { <WorkspaceTab state=state /> }.into_any()
                                 }

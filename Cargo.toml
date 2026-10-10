@@ -106,6 +106,7 @@ members = [
   "crates/reader-core",
   "crates/cefr-core",
   "crates/download-core",
+  "crates/dict-core",
   "crates/ui-geom",
   "crates/pdf-core",
   "crates/pdf-engine",

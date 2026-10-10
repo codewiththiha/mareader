@@ -773,9 +773,14 @@ impl ReaderHost {
         let tail = self.manager.close_now(id, successor)?;
         let _ = self.retiring.try_update(|r| r.push(id));
         let retiring = self.retiring;
-        leptos::task::spawn_local(async move {
+        let enter = self.session.enter;
+        // Unowned: the close disposes the button's owner that would cancel it.
+        wasm_bindgen_futures::spawn_local(async move {
             tail.await;
-            let _ = retiring.try_update(|r| r.retain(|other| *other != id));
+            // The retire cascade belongs in a reactive owner, not this drain.
+            enter(&mut move || {
+                let _ = retiring.try_update(|r| r.retain(|other| *other != id));
+            });
         });
         self.themes.forget(id);
         // The promoted look lands after the close, when both modes stand

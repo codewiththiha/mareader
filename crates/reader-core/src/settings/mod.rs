@@ -8,6 +8,7 @@ use crate::appearance::presets::{Preset, builtin_presets};
 
 mod animation;
 mod cefr;
+mod dict;
 mod gloss;
 mod layout;
 mod workspace;
@@ -19,6 +20,7 @@ pub mod typography;
 /// The layout and animation schemas, re-exported from their own files.
 pub use animation::AnimationSettings;
 pub use cefr::{CefrLevel, MIN_CEFR_BAND};
+pub use dict::DictSettings;
 pub use layout::{
     DEFAULT_COLUMN_WIDTH_PCT, FloatingLabelStyle, LayoutSettings, MAX_COLUMN_WIDTH_PCT,
     MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
@@ -91,6 +93,9 @@ pub struct Settings {
     /// The reader workspace: what a Library-panel click does.
     #[serde(default)]
     pub workspace: WorkspaceSettings,
+    /// The dictionary system: the hover and the languages.
+    #[serde(default)]
+    pub dict: DictSettings,
 }
 
 impl Default for Settings {
@@ -116,6 +121,7 @@ impl Default for Settings {
             cefr_click_explain: true,
             text: TextSettings::default(),
             workspace: WorkspaceSettings::default(),
+            dict: DictSettings::default(),
         }
     }
 }

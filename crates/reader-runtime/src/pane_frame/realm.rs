@@ -493,6 +493,7 @@ fn build(kind: PaneKind, boot: Boot) -> impl IntoView {
     }
     crate::services::ai::install_ai_chunk_bridge();
     crate::services::cefr::install_cefr_bridge();
+    crate::services::dict::install_dict_bridge();
 
     install_upstream(settings, ui, settings_open);
     install_mirror(&pane);
