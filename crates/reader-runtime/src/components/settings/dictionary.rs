@@ -240,7 +240,10 @@ fn LanguageSelect(state: crate::context::ReaderContext) -> impl IntoView {
                 .iter()
                 .any(|(lang, _)| lang.as_deref() == Some(pack.target.as_str()));
             if pack.built && !taken {
-                rows.push((Some(pack.target.clone()), pack.label.clone()));
+                rows.push((
+                    Some(pack.target.clone()),
+                    dict_core::lang_label(&pack.target),
+                ));
             }
         }
         rows

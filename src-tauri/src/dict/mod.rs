@@ -183,7 +183,7 @@ impl DictManager {
                 let (phase, message) = phase_of(built, build.as_ref(), progress.as_ref());
                 PackStatus {
                     id: pack.id.to_string(),
-                    label: pack.label.to_string(),
+                    label: dict_core::pair_label(pack.source, pack.target),
                     source: pack.source.to_string(),
                     target: pack.target.to_string(),
                     rows: pack.rows,
@@ -855,7 +855,7 @@ mod tests {
     fn a_pack_row_reports_where_it_stands() {
         let status = PackStatus {
             id: "mcfnlp-en-my".into(),
-            label: "MCF NLP English–Myanmar".into(),
+            label: "EN - MY".into(),
             source: "en".into(),
             target: "my".into(),
             rows: 110_640,

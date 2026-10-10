@@ -10,39 +10,48 @@ use app_ui::components::primitives::menu::menu_item::MenuItem;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::services::dict::{self, EntryMirror, Pair};
+use crate::services::dict::{self, Pair};
 
 /// How long a keystroke waits before the packs are asked.
 const SEARCH_DEBOUNCE_MS: u64 = 180;
 
-/// One shore's picker.
+/// One dropdown: the rows it offers, and the one that stands.
 #[component]
-fn ShoreSelect(
-    /// The languages to offer; `None` is the word's own.
+fn Picker(
+    /// `None` is the row that names nothing: every pack, or the word's
+    /// own shore.
     #[prop(into)]
-    options: Signal<Vec<Option<String>>>,
-    /// The shore that stands.
-    #[prop(into)]
-    current: Signal<Option<String>>,
+    options: Signal<Vec<(Option<String>, String)>>,
+    #[prop(into)] current: Signal<Option<String>>,
     on_pick: Callback<Option<String>>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
+    // An offer taken away leaves the button blank, not lying.
+    let label = move || {
+        let want = current.get();
+        options
+            .get()
+            .into_iter()
+            .find(|(value, _)| *value == want)
+            .map(|(_, text)| text)
+            .unwrap_or_default()
+    };
 
     view! {
         <div node_ref=root_ref class="relative inline-flex">
             <button
                 type="button"
                 on:click=move |_| open.set(!open.get())
-                class="flex max-w-[122px] items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-xs text-ink hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                class="flex max-w-[150px] items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-xs text-ink hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-                <span class="truncate">{move || shore_label(&current.get())}</span>
+                <span class="truncate">{label}</span>
                 <Icon name=IconName::ChevronDown size=11 class="shrink-0 text-muted" />
             </button>
             <MenuPopover
                 open=open
                 anchor=root_ref
-                width=180u32
+                width=200u32
                 class="p-1".to_string()
                 hold_titlebar=false
             >
@@ -50,13 +59,13 @@ fn ShoreSelect(
                     options
                         .get()
                         .into_iter()
-                        .map(|value| {
+                        .map(|(value, text)| {
                             let picked = value.clone();
                             let click = value.clone();
                             let is_current = Signal::derive(move || current.get() == picked);
                             view! {
                                 <MenuItem
-                                    label=shore_label(&value)
+                                    label=text
                                     selected=is_current
                                     check=true
                                     on_click=move || {
@@ -73,14 +82,6 @@ fn ShoreSelect(
     }
 }
 
-/// The name a shore is offered by; `None` is the word's own language.
-fn shore_label(value: &Option<String>) -> String {
-    match value {
-        Some(code) => dict_core::name(code),
-        None => "Detect".to_string(),
-    }
-}
-
 #[component]
 pub(crate) fn SidebarDictionary(
     state: crate::context::ReaderContext,
@@ -90,9 +91,9 @@ pub(crate) fn SidebarDictionary(
 ) -> impl IntoView {
     let s = state.settings;
     let packs = dict::packs();
-    let query = RwSignal::new(String::new());
-    let results: RwSignal<Vec<EntryMirror>> = RwSignal::new(Vec::new());
-    let asked = RwSignal::new(false);
+    // The window's ask, not a pane's: a tab away leaves it standing.
+    let held = dict::panel();
+    let (query, results, asked) = (held.query, held.results, held.asked);
     let input_ref: NodeRef<html::Input> = NodeRef::new();
 
     // The pair, when asked for: the card's language stands in
@@ -106,17 +107,11 @@ pub(crate) fn SidebarDictionary(
         })
     });
 
-    // The seats: the settings' own list, else the card's language's pack.
-    let selected = Signal::derive(move || {
-        let (langs, default_lang) =
-            s.with(|st| (st.dict.langs.clone(), st.dict.default_lang.clone()));
+    // The seat an ask that names no pair rides: one pack, or every one.
+    let seat = Signal::derive(move || {
         let rows = packs.get();
-        if !langs.is_empty() {
-            return dict::named_packs(&rows, &langs);
-        }
-        dict::answer_pack(&rows, default_lang.as_deref())
-            .map(|pack| vec![pack.id.clone()])
-            .unwrap_or_else(|| dict::built_packs(&rows))
+        s.with(|st| st.dict.langs.first().cloned())
+            .filter(|id| rows.iter().any(|pack| pack.built && &pack.id == id))
     });
 
     let fire = move || {
@@ -132,11 +127,11 @@ pub(crate) fn SidebarDictionary(
             .and_then(|ask| dict::resolve(&packs.get_untracked(), &ask, &q));
         let from = settled.as_ref().map(|ask| ask.from.clone());
         let to = settled.as_ref().map(|ask| ask.to.clone());
-        // A pair names the packs it rides; the chips name them without one.
+        // A pair names the packs it rides; a seat names one by hand.
         let filter = if from.is_some() {
             None
         } else {
-            Some(selected.get_untracked())
+            seat.get_untracked().map(|id| vec![id])
         };
         dict::search(q, filter, from, to, move |entries| {
             results.set(entries);
@@ -160,30 +155,17 @@ pub(crate) fn SidebarDictionary(
 
     // A seat or a shore changed: the packs are asked again.
     Effect::new(move |_| {
-        selected.get();
+        if !shown.get() {
+            return;
+        }
+        seat.get();
         pair.get();
         debounce.trigger();
     });
 
-    // A chip takes or gives a seat; the table never sits
-    // empty.
-    let toggle_seat = move |id: String| {
-        let mut seats = selected.get_untracked();
-        if seats.contains(&id) {
-            seats.retain(|seat| seat != &id);
-            if seats.is_empty() {
-                seats = dict::built_packs(&packs.get_untracked());
-            }
-        } else {
-            seats.push(id);
-        }
-        s.update(move |st| st.dict.langs = seats);
-        debounce.trigger();
-    };
-
     // The shores a pair may name: every built pack's two.
     let langs = Signal::derive(move || dict::languages(&packs.get()));
-    // What the pair settled on, for the row that reads it out.
+    // What the pair settled on, once the word has had its say.
     let settled = Signal::derive(move || {
         let ask = pair.get()?;
         dict::resolve(&packs.get(), &ask, &query.get())
@@ -199,53 +181,46 @@ pub(crate) fn SidebarDictionary(
         (looks != got.from).then_some(looks)
     });
 
-    // The pair's own note: what the word said, and the way between.
-    let note = Signal::derive(move || {
-        let ask = pair.get()?;
-        let got = settled.get()?;
-        let mut parts = Vec::new();
-        // Only a shore left to Detect has anything to report.
-        if ask.from.is_none()
-            && let Some(lang) = got.detected
-        {
-            parts.push(format!("Detected {}", dict_core::name(&lang)));
+    // One row per shore, and one that reads the word for itself.
+    let from_options: Signal<Vec<(Option<String>, String)>> = Signal::derive(move || {
+        let mut rows = vec![(None, "Detect".to_string())];
+        for lang in langs.get() {
+            rows.push((Some(lang.clone()), dict_core::lang_label(&lang)));
         }
-        if got.route == dict::Route::Bridged {
-            parts.push(format!("via {}", dict_core::name(dict_core::HUB)));
-        }
-        (!parts.is_empty()).then(|| parts.join(" · "))
+        rows
     });
-
-    // One shore's chips, for an ask that names no pair.
-    let chips = move || {
-        packs
+    let to_options: Signal<Vec<(Option<String>, String)>> = Signal::derive(move || {
+        let taken = settled.get().map(|got| got.from).unwrap_or_default();
+        langs
             .get()
-            .iter()
-            .filter(|pack| pack.built)
-            .map(|pack| {
-                let id = pack.id.clone();
-                let label = pack.label.clone();
-                let seat_id = pack.id.clone();
-                let active = Signal::derive(move || selected.get().contains(&id));
-                view! {
-                    <button
-                        type="button"
-                        class=move || {
-                            if active.get() {
-                                "rounded-full border border-accent bg-accent-soft px-2 py-0.5 text-xs text-accent"
-                            } else {
-                                "rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:text-ink"
-                            }
-                        }
-                        attr:aria-pressed=move || active.get().to_string()
-                        on:click=move |_| toggle_seat(seat_id.clone())
-                    >
-                        {label}
-                    </button>
-                }
-            })
-            .collect_view()
-    };
+            .into_iter()
+            .filter(|lang| *lang != taken)
+            .map(|lang| (Some(lang.clone()), dict_core::lang_label(&lang)))
+            .collect()
+    });
+    // One row per built pack, and one that names no pack at all.
+    let pack_options: Signal<Vec<(Option<String>, String)>> = Signal::derive(move || {
+        let mut rows = vec![(None, "Every pack".to_string())];
+        for pack in packs.get() {
+            if pack.built {
+                rows.push((Some(pack.id.clone()), pack.label.clone()));
+            }
+        }
+        rows
+    });
+    // Detect answers on the word: the dropdown shows its choice.
+    let from_current = Signal::derive(move || {
+        settled
+            .get()
+            .map(|got| got.from)
+            .or_else(|| s.with(|st| st.dict.from.clone()))
+    });
+    let to_current = Signal::derive(move || {
+        settled
+            .get()
+            .map(|got| got.to)
+            .or_else(|| s.with(|st| st.dict.to.clone()))
+    });
 
     let pick_from = Callback::new(move |lang: Option<String>| {
         s.update(move |st| st.dict.from = lang);
@@ -255,33 +230,14 @@ pub(crate) fn SidebarDictionary(
         s.update(move |st| st.dict.to = lang);
         debounce.trigger();
     });
+    let pick_pack = Callback::new(move |id: Option<String>| {
+        s.update(move |st| st.dict.langs = id.into_iter().collect());
+        debounce.trigger();
+    });
     let toggle_pair = move |_| {
         s.update(|st| st.dict.pair = !st.dict.pair);
         debounce.trigger();
     };
-
-    // A pair offers every shore but the one the ask stands on.
-    let from_options = Signal::derive(move || {
-        let mut rows = vec![None];
-        rows.extend(langs.get().into_iter().map(Some));
-        rows
-    });
-    let to_options = Signal::derive(move || {
-        let taken = settled.get().map(|got| got.from).unwrap_or_default();
-        langs
-            .get()
-            .into_iter()
-            .filter(|lang| *lang != taken)
-            .map(Some)
-            .collect::<Vec<Option<String>>>()
-    });
-    let from_current = Signal::derive(move || s.with(|st| st.dict.from.clone()));
-    let to_current = Signal::derive(move || {
-        settled
-            .get()
-            .map(|got| got.to)
-            .or_else(|| s.with(|st| st.dict.to.clone()))
-    });
 
     view! {
         <div
@@ -308,17 +264,16 @@ pub(crate) fn SidebarDictionary(
                     {move || {
                         if pair.get().is_some() {
                             view! {
-                                <ShoreSelect
-                                    options=from_options
-                                    current=from_current
-                                    on_pick=pick_from
-                                />
+                                <Picker options=from_options current=from_current on_pick=pick_from />
                                 <span class="text-xs text-muted" aria-hidden="true">"→"</span>
-                                <ShoreSelect options=to_options current=to_current on_pick=pick_to />
+                                <Picker options=to_options current=to_current on_pick=pick_to />
                             }
                                 .into_any()
                         } else {
-                            view! { {chips} }.into_any()
+                            view! {
+                                <Picker options=pack_options current=seat on_pick=pick_pack />
+                            }
+                                .into_any()
                         }
                     }}
                     <button
@@ -338,35 +293,25 @@ pub(crate) fn SidebarDictionary(
                         "Pair"
                     </button>
                 </div>
-                {move || {
-                    note.get()
-                        .map(|text| {
-                            view! { <p class="pt-1 text-xs text-muted">{text}</p> }
-                        })
-                }}
             </div>
             <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
                 {move || {
                     let rows = results.get();
                     if !asked.get() {
-                        return view! {
-                            <p class="px-1 pt-3 text-xs text-muted">
-                                "Type a word in any language. Misspellings still find it."
-                            </p>
-                        }
-                            .into_any();
+                        return view! { <span class="hidden"></span> }.into_any();
                     }
                     if rows.is_empty() {
                         return view! {
                             <div class="px-1 pt-3">
-                                <p class="text-xs text-muted">
-                                    "Nothing found. Try fewer letters, or another shore."
-                                </p>
+                                <p class="text-xs text-muted">"Nothing found."</p>
                                 {move || {
                                     otherwise
                                         .get_untracked()
                                         .map(|lang| {
-                                            let label = format!("Search as {}", dict_core::name(&lang));
+                                            let label = format!(
+                                                "Search as {}",
+                                                dict_core::lang_label(&lang),
+                                            );
                                             view! {
                                                 <button
                                                     type="button"
@@ -386,7 +331,6 @@ pub(crate) fn SidebarDictionary(
                         }
                             .into_any();
                     }
-                    let ask = pair.get_untracked();
                     let wanted = settled.get_untracked().map(|got| got.to);
                     let rows_packs = packs.get_untracked();
                     view! {
@@ -440,21 +384,16 @@ pub(crate) fn SidebarDictionary(
                                                         <div class="text-xs text-muted italic">{sense}</div>
                                                     }
                                                 })}
-                                            {ask
-                                                .is_none()
-                                                .then(|| {
-                                                    entry
-                                                        .via
-                                                        .clone()
-                                                        .map(|via| {
-                                                            view! {
-                                                                <div class="pt-0.5 text-xs text-muted">
-                                                                    {"via "}{via}
-                                                                </div>
-                                                            }
-                                                        })
-                                                })
-                                                .flatten()}
+                                            {entry
+                                                .via
+                                                .clone()
+                                                .map(|via| {
+                                                    view! {
+                                                        <div class="pt-0.5 text-xs text-muted">
+                                                            {"via "}{via}
+                                                        </div>
+                                                    }
+                                                })}
                                         </div>
                                     }
                                 })
