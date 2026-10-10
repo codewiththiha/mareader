@@ -10,7 +10,7 @@ use app_chrome::hooks::use_viewport::viewport_size;
 use app_chrome::layers::POPOVER;
 use app_ui::components::primitives::floating::anchor_bubble::AnchorBubble;
 use app_ui::components::primitives::hooks::use_custom_event::use_typed_event_from;
-use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT, DICT_OPEN_EVENT};
+use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT, DICT_OPEN_EVENT, GLOSS_OPEN_EVENT};
 use leptos::prelude::*;
 
 use crate::context::ReaderContext;
@@ -132,6 +132,16 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
             return;
         }
         show.run((open.word, open.context, open.anchor, true));
+    });
+
+    // The AI card owns the word once it opens; this one goes at once.
+    use_typed_event_from::<GlossMark>(GLOSS_OPEN_EVENT, move |_mark, origin| {
+        if !raised_in(&state.reader.dom, origin.as_ref()) {
+            return;
+        }
+        retire.cancel();
+        pinned.set(false);
+        visible.set(false);
     });
 
     use_typed_event_from::<GlossMark>(DICT_LEAVE_EVENT, move |_mark, origin| {
