@@ -459,9 +459,18 @@ impl DictManager {
                 return finish(rows, word, pos, limit);
             }
         }
-        // No route carried the ask: show the word's matches anyway.
+        // No route carried the ask: the pair's own packs, and no
+        // other language's.
         let mut rows = Vec::new();
         for pack_id in &built {
+            let Some(def) = packs::pack(pack_id) else {
+                continue;
+            };
+            let forward = def.source == from && def.target == to;
+            let backward = def.source == to && def.target == from;
+            if !forward && !backward {
+                continue;
+            }
             if let Ok(db) = self.open(&dir, pack_id) {
                 let db = db.lock().expect("db mutex");
                 if let Ok(found) = db.lookup_word(word, limit) {
