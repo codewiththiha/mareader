@@ -112,6 +112,34 @@ impl DictDb {
         Ok(out)
     }
 
+    /// The rows whose far side fits `ask`, loosely: prefixes too.
+    pub fn search_definition(&self, ask: &str, limit: usize) -> Result<Vec<RawRow>> {
+        let ask_fold = fold(ask);
+        let mut out: Vec<RawRow> = Vec::new();
+        self.collect(
+            "SELECT {COLUMNS} FROM entries WHERE def_fold = ?1",
+            params![ask_fold],
+            limit,
+            &mut out,
+        )?;
+        self.collect(
+            "SELECT {COLUMNS} FROM entries
+             WHERE def_fold LIKE ?1 ESCAPE '\\' AND def_fold != ?2",
+            params![like_prefix(&ask_fold), ask_fold],
+            limit,
+            &mut out,
+        )?;
+        self.collect(
+            "SELECT {COLUMNS} FROM entries
+             WHERE def_fold LIKE ?1 ESCAPE '\\' AND def_fold NOT LIKE ?2 ESCAPE '\\'",
+            params![like_contains(&ask_fold), like_prefix(&ask_fold)],
+            limit,
+            &mut out,
+        )?;
+        self.fuzzy(&ask_fold, limit, &mut out)?;
+        Ok(out)
+    }
+
     /// A bridge's next hop asks the word side for several
     /// intermediates at once.
     pub fn lookup_words_any(&self, asks: &[String], limit: usize) -> Result<Vec<RawRow>> {
@@ -302,6 +330,22 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].word, "light");
         let got = db.search("lumier", 10).unwrap();
+        assert!(got.iter().any(|row| row.word == "light"), "{got:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_far_shore_is_searchable_the_loose_way() {
+        let (dir, db) = temp_db("defsearch", &[("light", "lumiere"), ("book", "livre")]);
+        // A prefix on the far shore finds its headword.
+        let got = db.search_definition("lumier", 10).unwrap();
+        assert!(got.iter().any(|row| row.word == "light"), "{got:?}");
+        // So does the whole word, and nothing else comes with it.
+        let got = db.search_definition("lumiere", 10).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].word, "light");
+        // A near miss on the far shore still lands.
+        let got = db.search_definition("lumierr", 10).unwrap();
         assert!(got.iter().any(|row| row.word == "light"), "{got:?}");
         let _ = std::fs::remove_dir_all(dir);
     }
