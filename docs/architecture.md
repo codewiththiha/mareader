@@ -745,12 +745,17 @@ the pure half (POS canon, ranks, bridge plans, word fit);
   carries the word does it ask the packs that speak the asked pair. The
   fallback is what once made a missing Myanmar sense answer in Japanese: it
   used to walk every built pack.
-- **Two asks, one card.** A red word's `mouseenter` raises
+- **Two asks, one anchor.** A red word's `mouseenter` raises
   `mareader:dict-hover` with the mark; the selection menu's dictionary icon
-  raises `mareader:dict-open` with the selection's box. Both hand the card a
-  box ON SCREEN, and the card parks it in page space once, so it rides its word
-  through a scroll. A hovered card retires 350 ms after the pointer leaves; an
-  asked-for one is pinned and waits for a dismiss.
+  raises `mareader:dict-open` with the selection's own anchor and spot. Both
+  hand the card a `PageAnchor`, never a box, and the card watches it with
+  `watch_page_anchor` — the same glue the selection menu and the AI card use,
+  so it is re-resolved through the format's bridge on every scroll (any
+  direction), resize, zoom step and re-cut, and it dies on the watch's own
+  `exited` verdict. A box carried in page space and corrected by `scroll_top`
+  cannot follow a horizontal scroll or a re-wrap, which is why it is gone. A
+  hovered card retires 350 ms after the pointer leaves; an asked-for one is
+  pinned and waits for a dismiss.
 - **One card at a time.** `mareader:gloss-open` hides the hover card at once:
   the AI card owns the word the press asked about. The red word raises that
   event only while `cefr_click_explain` is on, so with the click off — no AI on
