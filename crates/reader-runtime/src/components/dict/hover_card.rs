@@ -40,18 +40,11 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     });
     let packs = services::dict::packs();
 
-    // The settings' seats decide the pack; the first built one backs them.
+    // The card's language: the one the settings name, or the first built.
     let to = Signal::derive(move || {
         let rows = packs.get();
-        let seats = state.settings.with(|st| st.dict.langs.clone());
-        rows.iter()
-            .find(|pack| {
-                pack.built
-                    && (seats.is_empty()
-                        || seats.contains(&pack.id)
-                        || seats.contains(&format!("{}-{}", pack.source, pack.target)))
-            })
-            .or_else(|| rows.iter().find(|pack| pack.built))
+        let want = state.settings.with(|st| st.dict.default_lang.clone());
+        services::dict::answer_pack(&rows, want.as_deref())
             .map(|pack| pack.target.clone())
             .unwrap_or_default()
     });

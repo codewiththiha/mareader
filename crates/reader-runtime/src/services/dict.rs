@@ -94,6 +94,38 @@ pub fn packs() -> RwSignal<Vec<PackMirror>> {
     PACKS.with(|slot| *slot.get_or_init(|| RwSignal::new(Vec::new())))
 }
 
+/// The built pack that answers a card: the asked language's, or the
+/// first one built.
+pub fn answer_pack<'a>(rows: &'a [PackMirror], lang: Option<&str>) -> Option<&'a PackMirror> {
+    rows.iter()
+        .find(|pack| pack.built && lang.is_some_and(|want| pack.target == want))
+        .or_else(|| rows.iter().find(|pack| pack.built))
+}
+
+/// Every built pack's id, in row order.
+pub fn built_packs(rows: &[PackMirror]) -> Vec<String> {
+    rows.iter()
+        .filter(|pack| pack.built)
+        .map(|pack| pack.id.clone())
+        .collect()
+}
+
+/// The built packs `langs` names: an id, or a `source-target` pair.
+/// Empty asks every pack.
+pub fn named_packs(rows: &[PackMirror], langs: &[String]) -> Vec<String> {
+    if langs.is_empty() {
+        return built_packs(rows);
+    }
+    rows.iter()
+        .filter(|pack| {
+            pack.built
+                && (langs.contains(&pack.id)
+                    || langs.contains(&format!("{}-{}", pack.source, pack.target)))
+        })
+        .map(|pack| pack.id.clone())
+        .collect()
+}
+
 /// Bind this realm's rows and tap the backend's progress.
 pub fn install_dict_bridge() {
     // Realm-global: mint it in this owner, not the first transient reader's.
@@ -207,4 +239,60 @@ pub fn search(
         };
         done(parsed);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One row: an English-sourced pack, its target, and whether built.
+    fn pack(id: &str, target: &str, built: bool) -> PackMirror {
+        PackMirror {
+            id: id.to_string(),
+            source: "en".to_string(),
+            target: target.to_string(),
+            built,
+            ..PackMirror::default()
+        }
+    }
+
+    #[test]
+    fn the_asked_language_answers_before_the_row_order() {
+        let rows = vec![pack("a-en-jp", "jp", true), pack("b-en-my", "my", true)];
+        let got = answer_pack(&rows, Some("my"));
+        assert_eq!(got.map(|pack| pack.id.as_str()), Some("b-en-my"));
+    }
+
+    #[test]
+    fn no_asked_language_answers_the_first_built_pack() {
+        let rows = vec![pack("a-en-jp", "jp", true), pack("b-en-my", "my", true)];
+        let got = answer_pack(&rows, None);
+        assert_eq!(got.map(|pack| pack.id.as_str()), Some("a-en-jp"));
+    }
+
+    #[test]
+    fn a_language_nobody_built_falls_to_one_that_is() {
+        let rows = vec![pack("a-en-fr", "fr", false), pack("b-en-my", "my", true)];
+        let got = answer_pack(&rows, Some("fr"));
+        assert_eq!(got.map(|pack| pack.id.as_str()), Some("b-en-my"));
+    }
+
+    #[test]
+    fn a_pack_still_building_never_answers() {
+        let rows = vec![pack("a-en-fr", "fr", false)];
+        assert_eq!(answer_pack(&rows, Some("fr")), None);
+    }
+
+    #[test]
+    fn a_named_pack_is_reachable_by_its_pair_too() {
+        let rows = vec![pack("a-en-jp", "jp", true), pack("b-en-my", "my", true)];
+        let langs = vec!["en-my".to_string()];
+        assert_eq!(named_packs(&rows, &langs), vec!["b-en-my"]);
+    }
+
+    #[test]
+    fn an_empty_list_asks_every_built_pack() {
+        let rows = vec![pack("a-en-jp", "jp", true), pack("b-en-fr", "fr", false)];
+        assert_eq!(named_packs(&rows, &[]), vec!["a-en-jp"]);
+    }
 }
