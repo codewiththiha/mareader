@@ -76,7 +76,14 @@ export const realmCounters: Record<CounterKey, number> = zeroCounters();
 
 // One queued raster: the canvas it paints, its fill rank, request order,
 // and job.
-type QueuedRaster = { canvasId: string; rank: number; seq: number; run: () => void };
+type QueuedRaster = {
+  canvasId: string;
+  rank: number;
+  seq: number;
+  run: () => void;
+  // Settles the caller's promise for a job that never reaches `run`.
+  cancel: () => void;
+};
 
 // The page render lane: PAGE_RENDER_LIMIT rasters, queued by rank.
 class PageLane {
@@ -91,8 +98,8 @@ class PageLane {
   }>();
 
   // Insert ahead of looser-ranked jobs, stable inside a rank.
-  push(canvasId: string, rank: number, run: () => void): void {
-    const job: QueuedRaster = { canvasId, rank, seq: this.seq++, run };
+  push(canvasId: string, rank: number, run: () => void, cancel: () => void): void {
+    const job: QueuedRaster = { canvasId, rank, seq: this.seq++, run, cancel };
     this.queue.push(job);
     this.sort();
   }
@@ -108,6 +115,25 @@ class PageLane {
       }
     }
     if (moved) this.sort();
+  }
+
+  // A queued job holds the page state and its canvas.
+  // Settle it: callers await these.
+  drop(canvasId: string): number {
+    let dropped = 0;
+    let keep = 0;
+    for (let i = 0; i < this.queue.length; i += 1) {
+      const job = this.queue[i];
+      if (job.canvasId === canvasId) {
+        dropped += 1;
+        job.cancel();
+        continue;
+      }
+      this.queue[keep] = job;
+      keep += 1;
+    }
+    this.queue.length = keep;
+    return dropped;
   }
 
   /** Harshest rank first, request order inside a rank. */

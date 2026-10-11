@@ -164,6 +164,8 @@ export function unregisterPage(s: EngineSession, canvasId: string): void {
       st.queueHandle = 0;
     }
     s.releasePageSurfaces(st);
+    // The queued job still holds this state and its canvas.
+    s.pageLane.drop(canvasId);
   }
   s.stateByCanvasId.delete(canvasId);
   s.rankByCanvas.delete(canvasId);
@@ -179,7 +181,8 @@ export function cancelPage(s: EngineSession, canvasId: string): void {
     try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
     st.renderTask = null;
   }
-  // A cancelled job drops only when the lane pops it.
+  // Drop now: the lane holds this raster until it pops.
+  s.pageLane.drop(canvasId);
   if (s.pageLane.queue.length > 0) pumpPageQueue(s);
 }
 
@@ -187,12 +190,14 @@ export function cancelPage(s: EngineSession, canvasId: string): void {
 // synchronously with the click.
 export function cancelPageRenders(s: EngineSession): void {
   cancelRasterWaiters(s);
-  for (const st of s.stateByCanvasId.values()) {
+  for (const [canvasId, st] of s.stateByCanvasId) {
     st.queueGen = (st.queueGen || 0) + 1;
     if (st.renderTask) {
       try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
       st.renderTask = null;
     }
+    // Cancelling every page cancels every queued page: same raster held.
+    s.pageLane.drop(canvasId);
   }
 }
 
@@ -565,6 +570,11 @@ export async function renderPage(
       }
       s.rendersQueued += 1;
       s.rankByCanvas.set(canvasId, rank);
+      const settle = () => {
+        s.rendersDropped += 1;
+        lifecycleEvent("render:cancel");
+        resolve(fail("cancelled", "Render cancelled"));
+      };
       s.pageLane.push(canvasId, rank, () => {
         const finish = () => {
           s.pageLane.active -= 1;
@@ -572,9 +582,7 @@ export async function renderPage(
         };
         // Dropped without touching pdf.js or claiming a realm slot.
         if (st.dead || s.disposed || st.queueGen !== gen) {
-          s.rendersDropped += 1;
-          lifecycleEvent("render:cancel");
-          resolve(fail("cancelled", "Render cancelled"));
+          settle();
           finish();
           return;
         }
@@ -585,9 +593,7 @@ export async function renderPage(
           try {
             // A permit may land after unmount, close or a zoom: check again.
             if (!permit || st.dead || s.disposed || st.queueGen !== gen) {
-              s.rendersDropped += 1;
-              lifecycleEvent("render:cancel");
-              resolve(fail("cancelled", "Render cancelled"));
+              settle();
               return;
             }
             resolve(await renderPageInternal(s, canvasId, scale, !!renderText, requestedAt));
@@ -602,7 +608,8 @@ export async function renderPage(
           pumpAllLanes();
           finish();
         });
-      });
+        // Fourth argument: cancel it while still queued.
+      }, settle);
       pumpPageQueue(s);
     });
   });

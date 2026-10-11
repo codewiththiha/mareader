@@ -203,3 +203,51 @@ its callback until it can unlisten; unlisten always precedes callback release.
 These ownership rules are checked against real Library WASM using a controlled
 native boundary in the browser suite. This does not assert full process-RAM
 recovery or resolve the previously measured WebKit retention.
+
+## Settle audit: why a leak could be green
+
+The lifecycle suite sampled `liveCanvasBytes`, `wasmHeapBytes` and
+`jsHeapBytes` on every snapshot but asserted none of them. Every settle
+assertion read the engine's own gauges, which are computed from the engine's
+own maps: a canvas the engine failed to unregister is invisible to them. The
+suite could therefore pass while the DOM held rasters the engine had already
+stopped accounting for. Byte-level settle is now asserted, against the shelf
+with no reader open as the floor: after a dispose, after a split pane closes,
+and after each reader ↔ library round trip, with a ratchet check across the
+repeated cycles.
+
+## Page-lane queue retention (fixed)
+
+`renderPage` admitted work through a frame delay and then pushed a job whose
+closure holds the `PageState`, and the `PageState` holds the canvas backing
+store. `cancelPage` and `unregisterPage` invalidated the job with a
+generation bump but left it in the lane queue, so a page the reader had
+already scrolled past kept a full-page raster for the length of the burst
+that queued it. `PageLane.drop` now removes the job at cancel, unregister and
+bulk-cancel time, and settles the caller's promise with the cancelled result
+so an awaiting caller is not left waiting on a job that will never run.
+`destroySession` also clears `rankByCanvas`, which until then outlived the
+states it named.
+
+## Dictionary verdict
+
+The dictionary does not hold reader memory. The pack index and its files live
+in the backend process behind `app.state::<DictManager>()`, not in the webview.
+Every answer is bounded at the command boundary: `dict_lookup` caps at 24
+entries and `dict_search` at 60. The panel keeps one result vector at a time
+and replaces it, and the hover card already drops a superseded answer by
+comparing the live word. `PACKS` and `PANEL` are realm-locals that die with
+the realm. The one residual is that an ask in flight cannot be cancelled: a
+burst of hovers keeps each superseded answer alive until it resolves. That is
+a transient peak bounded by the caps above, not a ratchet, and it is left as
+is.
+
+## Budget, and what is not the cause
+
+`RENDER_BUDGET` is `Budget::screenfuls(1.0, 4)` against a per-page cap of
+`PAGE_MAX_PIXELS_BASE = 12M` pixels, so four mounted pages is bounded at
+roughly 192 MB before zombies, and the zombie cap is motion-gated with a
+120 ms deadline. The budget is not what turns a 400 MB baseline into a
+multi-gigabyte process. Process RAM that does not return after a route change
+remains the unresolved WebKit retention recorded above, which no source-level
+change has yet been shown to move.

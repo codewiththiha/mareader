@@ -140,6 +140,8 @@ async function destroySession(sid: Sid): Promise<void> {
     cancelAndReleasePages(s);
     drainPageLane(s);
     s.stateByCanvasId.clear();
+    // The ranks outlive the states they name unless they are told otherwise.
+    s.rankByCanvas.clear();
     for (const task of s.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
     }

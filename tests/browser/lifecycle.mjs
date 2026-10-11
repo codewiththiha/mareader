@@ -14,6 +14,9 @@ const outlineUrl = `${BASE}?blend=1&open=${encodeURIComponent(DEEP_OUTLINE)}`;
 const MAX_ZOMBIES = 12;
 const PAGE_LANE_SLOTS = 2;
 const THUMB_LANE_SLOTS = 3;
+// Two rasters at the per-page cap: a landing page
+// must not trip the settle assertion.
+const PAGE_RASTER_SLACK = 2 * 12 * 1024 * 1024 * 4;
 // Both fixtures ship 40 pages, so a distant jump crosses 12x the window.
 const MIN_FIXTURE_PAGES = 40;
 
@@ -162,6 +165,8 @@ page.on("requestfailed", (req) => {
 
 /** One diagnostics snapshot plus the browser's memory categories. */
 let lastSnap = null;
+// DOM canvas bytes with no reader open: this run's floor.
+let restingCanvasBytes = 0;
 async function snap() {
   const value = await page.evaluate(() => {
     const raw = window.__mareaderDiagnostics?.();
@@ -228,6 +233,19 @@ function samplePeaks(peaks, s) {
     pooledIntermediateBytesEst: s.engine?.pooledIntermediateBytesEst ?? 0,
   };
   for (const k of PEAK_KEYS) peaks[k] = Math.max(peaks[k], values[k]);
+}
+
+/** The engine's gauges see only its own maps; the DOM sees every canvas. */
+function assertMemoryReturned(label, s, ceiling, what = "canvas") {
+  const live = s.liveCanvasBytes ?? 0;
+  if (live > ceiling) {
+    throw new Error(
+      `[${label}] ${what} bytes did not settle: ${live} live vs ${ceiling} allowed ` +
+        `(engine pages ${s.engine?.pageCanvasBytesEst ?? 0}, raw ` +
+        `${s.engine?.rawRetentionBytesEst ?? 0}, thumbs ${s.engine?.thumbnailRasterBytesEst ?? 0}, ` +
+        `retained rows ${s.retainedVirtualItems ?? 0})`,
+    );
+  }
 }
 
 /** The bounded policy, asserted on the peaks a workload observed. */
@@ -432,6 +450,8 @@ function assertDrained(s, label, expectedEpoch = 2) {
   if (s.engine.rawRetentionBytesEst !== 0) {
     throw new Error(`[${label}] retained raws still hold ${s.engine.rawRetentionBytesEst} bytes`);
   }
+  // A canvas the engine forgot is invisible to its own gauges.
+  assertMemoryReturned(`${label} disposal`, s, restingCanvasBytes, "disposed canvas");
   if (s.engine.sessionsOpened !== s.engine.sessionsDestroyed) {
     throw new Error(`[${label}] session counters unbalanced`);
   }
@@ -941,6 +961,8 @@ if (libraryDom.frames !== 1) {
 {
   const atRest = await snap();
   assertLibraryOnly(atRest, "untouched shelf");
+  // The shelf alone: this run's memory floor for later settles.
+  restingCanvasBytes = atRest.liveCanvasBytes;
 }
 assertArtifactLoaded("/mareader.js", "/");
 assertArtifactLoaded("/mareader_bg.wasm", "/");
@@ -1083,6 +1105,8 @@ assertLibraryOnly(readerRetired, "reader → library");
 // ---- 0c: the same handoff, back to back. ---
 currentStage = "stage0-rapid-transitions";
 const cycles = [];
+// Canvas bytes on the shelf after each round trip.
+const canvasOnLibrary = [];
 for (let cycle = 0; cycle < 4; cycle += 1) {
   const before = await waitFor(`rapid ${cycle}: no Reader realm on Library`,
     (x) => x.atBaseline === true && x.readerFramesResident === 0);
@@ -1115,6 +1139,10 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
     intoReader.readerDisposesCompleted ?? 0);
   assertSessionBalance(retired, `rapid ${cycle}`);
   assertLibraryOnly(retired, `rapid ${cycle} returned`);
+  // Back on the shelf: the reader's rasters went with its realm.
+  canvasOnLibrary.push(retired.liveCanvasBytes);
+  assertMemoryReturned(`rapid ${cycle} back on Library`, retired,
+    restingCanvasBytes + PAGE_RASTER_SLACK, "library-route canvas");
   const returned = await frameSlots();
   if (returned.active === libraryAtRest.active || returned.active === null ||
       cycles.some((c) => c.libraryGeneration === returned.active)) {
@@ -1141,7 +1169,15 @@ if (new Set(cycles.map((c) => c.readerGeneration)).size !== cycles.length ||
     cycles.some((c) => c.readerFramesAfterReturn !== 0 || c.libraryFramesWhileReading !== 0)) {
   throw new Error("rapid transitions reused or retained the outgoing route realm");
 }
+// Each round trip ends on the same shelf; a higher total leaks.
+if (canvasOnLibrary.at(-1) > canvasOnLibrary[0] + PAGE_RASTER_SLACK) {
+  throw new Error(
+    `canvas bytes ratcheted across reader <-> library round trips: ${canvasOnLibrary.join(" -> ")} ` +
+      `(shelf floor ${restingCanvasBytes})`,
+  );
+}
 summary.bootContract.rapidTransitions = cycles;
+summary.bootContract.canvasOnLibrary = canvasOnLibrary;
 console.log(
   `boot contract: ${cycles.length} back-to-back handoffs (reader sessions ${cycles.at(-1).readerSessions} / disposals ${cycles.at(-1).readerDisposes}, library sessions ${cycles.at(-1).librarySessions} / disposals ${cycles.at(-1).libraryDisposes})`,
 );
@@ -3507,6 +3543,8 @@ async function openIn(path, target) {
     virtualizersCreated: alone.virtualizersCreated, virtualizersDisposed: alone.virtualizersDisposed,
   };
   const heapAfterClose = [];
+  const pdfOnlyCeiling = alone.liveCanvasBytes + PAGE_RASTER_SLACK;
+  const canvasAfterClose = [];
   for (let cycle = 1; cycle <= 3; cycle += 1) {
     if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error(`[memory ${cycle}] the host refused the Markdown pane`);
     const both = await waitForSettledLayout(`memory ${cycle}: PDF | Markdown`, (s) =>
@@ -3551,6 +3589,16 @@ async function openIn(path, target) {
     }
     if (back.engine.sessionsOpened !== baseline.sessionsOpened) throw new Error(`[memory ${cycle}] the PDF was reopened`);
     heapAfterClose.push(back.wasmHeapBytes);
+    canvasAfterClose.push(back.liveCanvasBytes);
+    // The pane is gone, so its raster must be too.
+    assertMemoryReturned(`memory ${cycle}: Markdown pane closed`, back, pdfOnlyCeiling, "closed-pane canvas");
+  }
+  // Repeated work must not ratchet.
+  if (canvasAfterClose.at(-1) > canvasAfterClose[0] + PAGE_RASTER_SLACK) {
+    throw new Error(
+      `[memory] canvas bytes ratcheted across split/close cycles: ${canvasAfterClose.join(" -> ")} ` +
+        `(PDF-only ceiling ${pdfOnlyCeiling})`,
+    );
   }
   if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[memory] the host refused the Markdown pane");
   await waitFor("memory: PDF | Markdown", (s) => s.host?.panes?.length === 2 &&
@@ -3565,6 +3613,8 @@ async function openIn(path, target) {
   summary.splitMemory = {
     baseline,
     heapAfterMarkdownClose: heapAfterClose,
+    canvasAfterMarkdownClose: canvasAfterClose,
+    pdfOnlyCanvasCeiling: pdfOnlyCeiling,
     threeFormats: all.host.panes.map((p) => ({ paneId: p.paneId, format: p.format })),
   };
   stages.afterSplitMemory = all;
