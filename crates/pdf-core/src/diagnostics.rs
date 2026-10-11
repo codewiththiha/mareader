@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStats {
-    /// Timed inside the lane slot, so queue wait is excluded; `0`
-    /// means unmeasured.
+    /// Time to make one page visible, from the request: the frame the lane
+    /// waits for, the queue, the raster slot and the raster. `0` means
+    /// unmeasured.
     #[serde(default)]
     pub fill_ms: f64,
     /// How many rasters this session's page lane runs at once.

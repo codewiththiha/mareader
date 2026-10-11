@@ -1013,6 +1013,7 @@ lifecycle log are realm-wide.
 | `resolveOutline` | Flatten the session's chapter tree after the reader is up |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |
+| `reprioritizePage` | Re-order one queued page render without restarting it — the reader can reverse between offering a raster and serving it |
 | `cancelPageRenders` | Cancel every in-flight page render (the close path's first act) |
 | `quiesce` | Stop every in-flight and queued job for the session's document without ending the session |
 | `renderPage` | Render one page |

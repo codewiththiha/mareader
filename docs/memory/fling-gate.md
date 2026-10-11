@@ -47,6 +47,31 @@ constant, an entry floor of 1400 px/s (~2 screens/s on a 700 px window), a
 what the content lane can actually fill, so a slow pipeline is not handed a
 band it cannot keep up with.
 
+Whatever the band says, the viewport's own window stays inside the render
+range (`compute_render_range` in
+`crates/virtual-list-leptos/src/engine.rs`): the band follows a velocity
+estimate, and a row the reader can see is never blanked because that
+estimate lags or overshoots.
+
+## What the lead is measured against
+
+`Pipeline.fill_ms` is the engine's `fillMs`, timed from the page render's
+REQUEST — the frame the lane waits for, the queue behind it, the raster
+slot and the raster itself. The reader waits for all of that, so the band
+is sized against all of that. It is reported at the first paint
+(`state.viewer.first_paint`) and again whenever it has moved by a quarter,
+not only at a scroll settle: a reader who flings before their first settle
+was getting a lead calibrated from nothing.
+
+## What the lane serves, and in what order
+
+A queued raster is ordered by the rank it carried when it was OFFERED. That
+rank is a guess about where the reader is going, and a reader can invalidate
+it in one frame by reversing, so the strip re-ranks every mounted page
+while the band is engaged (`reprioritizePage`, down to
+`PageLane.reprioritize` in `public/engine/state.ts`) and the lane sorts by
+the live rank when it takes the next job.
+
 ## Never stuck at a stale scale
 
 A render that lands after the committed scale moved on
@@ -72,7 +97,8 @@ without waiting for an unrelated dependency change.
 
 | Constant | Value | Owner |
 | --- | --- | --- |
-| Scroll settle delay | 150 ms | virtualizer `scroll_end_delay_ms` |
+| Scroll settle delay | 150 ms (fallback; `scrollend` settles sooner) | virtualizer `scroll_end_delay_ms` |
+| Page mount budget | `Budget::screenfuls(1.0, 4)` | `reader-runtime/src/features/virtualizers.rs` |
 | `enter_floor_px_s` / `hysteresis` | 1400 px/s / 0.4 | `virtual-list/src/motion.rs` |
 | `min_lead_screens` / `max_lead_screens` / `trail_screens` | 0.5 / 2.0 / 0.25 | `virtual-list/src/motion.rs` |
 | `tau_ms` / `flip_ratio` | 32 ms / 0.35 | `virtual-list/src/motion.rs` |

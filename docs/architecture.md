@@ -99,7 +99,21 @@ shape is in `docs/frame-lifecycle-alternatives.md`.
   (`in_view_signal` in `components/formats/pdf/strip.rs`) is the
   virtualizer's own motion band, so a page in the band renders immediately
   and a page the fling only sweeps past waits for the settle — never for
-  another scroll event. See `docs/memory/fling-gate.md`.
+  another scroll event. The band's lead is measured against the engine's
+  time-to-visible (request, queue, raster slot, raster), reported at the
+  first paint rather than at the first scroll settle, and the page lane
+  re-reads a queued page's rank at dequeue, because the reader can reverse
+  between offering a raster and serving it. See
+  `docs/memory/fling-gate.md`.
+- The band never blanks a row the reader can see. It is derived from a
+  velocity estimate, so it can lag or overshoot; `compute_render_range`
+  (`virtual-list-leptos/src/engine.rs`) unions the viewport's own window
+  into the render range, and a mounted row that is showing the band's
+  placeholder says so with `data-virtual-placeholder`. A blank's box is the
+  layout's own estimate, and `MeasureInbox::ingest` — the one door to the
+  canonical reflow heights — drops every report that is not real content, so
+  the estimate can never confirm itself and recut the document under a
+  reader.
 - In the disposable Reader host: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's

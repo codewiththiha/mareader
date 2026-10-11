@@ -131,6 +131,41 @@ saturates at `max_lead`; a stopped scroller decays to zero within a frame or two
    like the iOS-deferral rule TanStack added in 2026: layout always lands,
    the scroll correction waits for the gesture to settle).
 
+   Holding the write back is only safe if the correction is held EXACTLY ONCE.
+   The adapter banks `Step::scroll_delta` — how far that one flush moved the
+   core — and never the distance between the core's position and its own
+   stale signal: that distance is the whole correction, every flush, so
+   re-deriving it banked one correction per flush and the settle wrote back
+   several times what the layout had actually moved. At the settle the banked
+   delta lands as one write on the DOM, the reactive signal and the core
+   together (`adopt_offset`), because a window computed from an offset the
+   scroller does not hold is the window that renders the wrong pages.
+
+   The settle is one transaction (`settle` in `virtualizer.rs`): flush the
+   measurements the gesture outran, close the band, land the correction,
+   publish, and only then write `settled`. `settled` is the liveness probe
+   every deferred first paint waits on, so nothing it wakes may observe a
+   window a later line still has to move.
+
+### 5a. The band may not blank what the reader can see. `Motion` is an
+   estimator: its first sample after construction has no interval to measure,
+   so `Motion::new` starts unprimed and `update` seeds on the first sample
+   instead of dividing by the clock's origin (which reported the reader's
+   whole session in the document as one very slow gesture). A container that
+   binds late seeds it explicitly (`seed_motion`).
+
+   Even primed, the band follows a velocity estimate and can lag or
+   overshoot, so `compute_render_range` unions the viewport's own window into
+   the render range. Whatever the band says, a row the reader can see is
+   `Active` — and with it, the block's text, its search hits and its CEFR
+   marks, which a `Blank` row unmounts wholesale.
+
+   A blank row says so: it carries `data-virtual-placeholder`, and
+   `MeasureInbox::ingest` — the one door to the canonical reflow heights —
+   drops every report that is not real content. A placeholder's box IS the
+   layout's estimate; feeding it back let the estimate confirm itself and
+   recut the document under a reader.
+
 ## Endpoint policy (nothing may break at the call sites)
 
 Every item in `crates/virtual-list-leptos/src/lib.rs`'s re-export list and every

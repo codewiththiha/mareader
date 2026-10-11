@@ -25,24 +25,26 @@ type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
 type ListenerCallback = Closure<dyn FnMut(Event)>;
 type IdleCallback = Rc<dyn Fn()>;
 
-/// End a gesture: land every correction, publish the window that gesture
-/// leaves behind, and only then say the scroller is quiet.
+/// End a gesture: land every correction, then say the scroller is quiet.
 ///
-/// The order is the contract. `settled` is the liveness probe every deferred
-/// first paint waits on, so nothing it wakes may observe a window that a
-/// later line of this function still has to move.
+/// The order is the contract: `settled` is the liveness probe deferred first
+/// paints wait on, so nothing it wakes may see a window this still has to
+/// move.
 fn settle(inner: &Rc<VirtualizerInner>) {
     // Disposed while pending: the settled write belongs to nobody.
     if inner.surface.element().is_none() || inner.settled.try_get_untracked().is_none() {
         return;
     }
     // Measurements the fling outran still owe the reader their correction.
-    if let Some(flush) = inner.core.borrow_mut().flush() {
+    // The borrow ends at the statement, not the `if let`: applying the step
+    // reads the core again.
+    let pending = inner.core.borrow_mut().flush();
+    if let Some(flush) = pending {
         inner.apply_measurements(flush.step);
     }
     // The motion is over: the band closes, bridges earn nothing.
-    let step = inner.core.borrow_mut().note_scroll_end();
-    inner.publish_range(step.range);
+    let ended = inner.core.borrow_mut().note_scroll_end();
+    inner.publish_range(ended.range);
     inner.prune_retained_tick();
     // Every correction the gesture outran lands now, one write.
     inner.flush_banked_scroll();

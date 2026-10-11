@@ -293,6 +293,50 @@ mod tests {
         }
     }
 
+    fn row(index: usize, kind: RowBox, height: f64) -> RowMeasurement {
+        RowMeasurement {
+            index,
+            box_kind: kind,
+            height,
+        }
+    }
+
+    /// The blanking contract, enforced at the only door to the heights: a
+    /// placeholder's box is the layout's own estimate, and feeding it back
+    /// is how the stream starts jumping under a reader.
+    #[test]
+    fn a_placeholder_measurement_never_reaches_the_canonical_heights() {
+        let rows = vec![
+            row(0, RowBox::Content, 180.0),
+            row(1, RowBox::Placeholder, 140.0),
+            row(2, RowBox::Content, 260.0),
+            row(3, RowBox::Placeholder, 90.0),
+        ];
+        assert_eq!(content_only(&rows), vec![(0, 180.0), (2, 260.0)]);
+
+        // A blank batch changes nothing at all.
+        let heights = vec![300.0, 300.0];
+        let blank = vec![
+            row(0, RowBox::Placeholder, 100.0),
+            row(1, RowBox::Placeholder, 100.0),
+        ];
+        assert!(content_only(&blank).is_empty());
+        assert_eq!(applied_heights(&heights, &content_only(&blank), 1.0), None);
+    }
+
+    /// One block measured twice in a batch (a zoom landing mid-pass) keeps
+    /// the last report, not a sum and not the first.
+    #[test]
+    fn repeated_reports_of_one_block_coalesce_to_the_last() {
+        let rows = vec![
+            row(7, RowBox::Content, 210.0),
+            row(7, RowBox::Content, 240.0),
+            row(8, RowBox::Placeholder, 999.0),
+            row(8, RowBox::Content, 260.0),
+        ];
+        assert_eq!(content_only(&rows), vec![(7, 240.0), (8, 260.0)]);
+    }
+
     #[test]
     fn a_correction_above_the_gate_moves_the_cut_and_its_map() {
         // Three blocks of 300px into 500px pages: one block per page, three

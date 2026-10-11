@@ -440,14 +440,16 @@ mod tests {
     #[test]
     fn seeding_rebases_the_estimate() {
         let mut motion = Motion::new(MotionConfig::default());
+        let idle = Pipeline::default();
         motion.update(0.0, 0.0);
         motion.update(4_000.0, 16.0);
-        assert!(motion.engaged());
+        motion.band(4_000.0, 800.0, 0.0, &idle);
+        assert!(motion.engaged(), "a real fling earns the band");
         // A programmatic jump is not reader momentum.
         motion.seed(90_000.0, 120_000.0);
         assert_eq!(motion.offset(), 90_000.0);
         assert_eq!(motion.velocity_px_s(), 0.0);
         assert_eq!(motion.direction(), Direction::Still);
-        assert!(!motion.engaged());
+        assert!(!motion.engaged(), "the band goes back to the viewport");
     }
 }

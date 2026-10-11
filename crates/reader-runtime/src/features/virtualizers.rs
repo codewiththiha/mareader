@@ -216,36 +216,36 @@ pub(crate) fn use_reader_virtualizers(
     // A zoom-out or mode flip renders nothing: sweep when scrolling settles.
     #[cfg(feature = "pdf")]
     {
-        let vertical = virtualizer.clone();
-        let horizontal = h_virtualizer.clone();
+        // One latch per strip: first paint and first settle report once.
         let applied_v = std::rc::Rc::new(std::cell::Cell::new(-1.0));
         let applied_h = std::rc::Rc::new(std::cell::Cell::new(-1.0));
+        let idle_v = virtualizer.clone();
+        let idle_h = h_virtualizer.clone();
+        let idle_applied_v = applied_v.clone();
+        let idle_applied_h = applied_h.clone();
         virtualizer.on_scroll_idle(move || {
             pane.pdf().sweep();
             if state.viewer.page_gap.try_get_untracked().is_some() {
-                note_fill_profile(&pane, &vertical, &applied_v);
+                note_fill_profile(&pane, &idle_v, &idle_applied_v);
             }
         });
         h_virtualizer.on_scroll_idle(move || {
             pane.pdf().sweep();
             if state.viewer.page_gap.try_get_untracked().is_some() {
-                note_fill_profile(&pane, &horizontal, &applied_h);
+                note_fill_profile(&pane, &idle_h, &idle_applied_h);
             }
         });
 
-        // The first paint is the earliest honest measurement there is. Until
-        // it lands the band is guessing from `Pipeline::default()`, and a
-        // reader who flings before their first settle gets a lead nobody
-        // measured.
-        let painted_v = applied_v.clone();
-        let painted_h = applied_h.clone();
+        // The first paint is the earliest honest measurement there is.
+        let first_v = virtualizer.clone();
+        let first_h = h_virtualizer.clone();
         Effect::new(move |_| {
             if !state.viewer.first_paint.get() {
                 return;
             }
             if state.viewer.page_gap.try_get_untracked().is_some() {
-                note_fill_profile(&pane, &vertical, &painted_v);
-                note_fill_profile(&pane, &horizontal, &painted_h);
+                note_fill_profile(&pane, &first_v, &applied_v);
+                note_fill_profile(&pane, &first_h, &applied_h);
             }
         });
     }

@@ -151,7 +151,8 @@ export type ThumbResult = Result<{ width: number; height: number; scale: number 
 export type CoverResult = Result<{ dataUrl: string; width: number; height: number }>;
 // The engine's live resource picture: gauges and counters.
 export type Stats = {
-  // Recent raster cost in ms; max-aggregated across sessions.
+  // Recent time-to-visible in ms (request, queue, raster slot, raster);
+  // max-aggregated across sessions.
   fillMs: number;
   /** One session's page-lane slot count, max-aggregated for the same reason. */
   pageLimit: number;

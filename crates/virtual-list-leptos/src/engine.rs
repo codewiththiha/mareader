@@ -52,6 +52,13 @@ impl Default for CoreConfig {
     }
 }
 
+/// Every producer that moves the core reports it here, so a caller that
+/// defers the write banks the move once.
+fn report_move(step: &mut Step, from: f64, to: f64) {
+    step.scroll_delta = to - from;
+    step.scroll_write = Some(to);
+}
+
 /// What a transition changed; the adapter applies it to signals and the DOM.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Step {
@@ -59,11 +66,11 @@ pub struct Step {
     pub range: Option<Window>,
     /// A corrected scroll position to apply, in content coordinates.
     pub scroll_write: Option<f64>,
-    /// How far `scroll_write` moved the core's position, signed. A caller
-    /// that defers the DOM write banks this, never the distance between the
-    /// core's position and its own older signal: that distance never shrinks
-    /// while the write is held, so re-deriving it would bank one correction
-    /// once per flush.
+    /// How far `scroll_write` moved the core, signed.
+    ///
+    /// A caller that defers the write banks this, never the distance to its
+    /// own stale signal: that never shrinks while the write is held, so it
+    /// would bank one correction once per flush.
     pub scroll_delta: f64,
     /// The layout's geometry changed — bump the layout version.
     pub layout_changed: bool,
@@ -196,21 +203,22 @@ impl VirtualizerCore {
         };
 
         self.viewport = vp;
-        let mut scroll_write = None;
+        let mut clamped = None;
         let max_scroll = self.max_scroll();
         if self.scroll_top > max_scroll {
+            let from = self.scroll_top;
             self.scroll_top = max_scroll;
-            scroll_write = Some(max_scroll);
+            clamped = Some((from, max_scroll));
         }
 
         let mut step = self.rewindow();
         step.layout_changed = rebuilt;
         // The viewport's own correction wins over a pending scroll-to.
-        if scroll_write.is_some() {
+        if let Some((from, to)) = clamped {
             if rebuilt {
                 self.refresh_pending_target();
             }
-            step.scroll_write = scroll_write;
+            report_move(&mut step, from, to);
         } else if rebuilt {
             step.scroll_write = self.settle_pending();
         }
@@ -246,6 +254,7 @@ impl VirtualizerCore {
         self.queue.clear();
 
         let max_scroll = self.max_scroll();
+        let from = self.scroll_top;
         self.scroll_top = match anchor {
             Some((item, px)) if count > 0 => {
                 let item = item.min(count - 1);
@@ -253,10 +262,11 @@ impl VirtualizerCore {
             }
             _ => self.scroll_top.clamp(self.min_scroll(), max_scroll),
         };
+        let to = self.scroll_top;
 
         let mut step = self.rewindow();
         step.layout_changed = true;
-        step.scroll_write = Some(self.scroll_top);
+        report_move(&mut step, from, to);
         step
     }
 
@@ -273,6 +283,7 @@ impl VirtualizerCore {
         self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.queue.clear();
+        let from = self.scroll_top;
         self.scroll_top = match anchor {
             Some((item, px)) if count > 0 => {
                 let item = item.min(count - 1);
@@ -281,9 +292,10 @@ impl VirtualizerCore {
             _ => self.scroll_top.clamp(self.min_scroll(), self.max_scroll()),
         };
 
+        let to = self.scroll_top;
         let mut step = self.rewindow();
         step.layout_changed = true;
-        step.scroll_write = Some(self.scroll_top);
+        report_move(&mut step, from, to);
         self.refresh_pending_target();
         step
     }
@@ -395,13 +407,15 @@ impl VirtualizerCore {
         self.pending = None;
         // Queued measurements were taken at the OLD scale: drop them.
         self.queue.clear();
+        let from = self.scroll_top;
         if let Some(top) = new_top {
             self.scroll_top = top.clamp(self.min_scroll(), self.max_scroll());
         }
+        let to = self.scroll_top;
 
         let mut step = self.rewindow();
         step.layout_changed = true;
-        step.scroll_write = Some(self.scroll_top);
+        report_move(&mut step, from, to);
         step
     }
 
@@ -474,24 +488,25 @@ impl VirtualizerCore {
 
     /// The band clipped to the mount window (see [`Self::render_range`]).
     ///
-    /// The band is derived from a velocity estimate, so it can lag or miss
-    /// the slice the reader is actually looking at. Whatever the band says,
-    /// the viewport's own window stays inside the render range: a row the
-    /// reader can see is never blanked because of a guess about where they
-    /// are going.
+    /// A velocity estimate can miss where the reader is looking, so the
+    /// viewport's own window always stays inside the render range: a visible
+    /// row is never blanked on a guess.
     fn compute_render_range(&self, mount: Option<Window>) -> Option<Window> {
         let mount = mount?;
         if !self.band.placeholder {
             return Some(mount);
         }
         let extent = (self.band.active.end - self.band.active.start).max(0.0);
-        let banded = self.layout.overlapping(self.band.active.start, extent).and_then(|window| {
-            let clipped = Window {
-                first: window.first.max(mount.first),
-                last: window.last.min(mount.last),
-            };
-            (clipped.first <= clipped.last).then_some(clipped)
-        });
+        let banded = self
+            .layout
+            .overlapping(self.band.active.start, extent)
+            .and_then(|window| {
+                let clipped = Window {
+                    first: window.first.max(mount.first),
+                    last: window.last.min(mount.last),
+                };
+                (clipped.first <= clipped.last).then_some(clipped)
+            });
         let visible = self.visible_window();
         match (banded, visible) {
             (Some(banded), Some(visible)) => Some(Window {
@@ -507,9 +522,11 @@ impl VirtualizerCore {
         }
     }
 
-    /// The rows the viewport actually reaches, before the budget trims it.
+    /// The rows the viewport reaches, before the budget trims it.
     fn visible_window(&self) -> Option<Window> {
-        let window = self.layout.overlapping(self.scroll_top, self.viewport.main)?;
+        let window = self
+            .layout
+            .overlapping(self.scroll_top, self.viewport.main)?;
         (window.first <= window.last).then_some(window)
     }
 
@@ -533,11 +550,6 @@ impl VirtualizerCore {
     /// the reader has had the document open.
     pub fn seed_motion(&mut self, offset: f64, now_ms: f64) {
         self.motion.seed(offset, now_ms);
-    }
-
-    /// Whether any scroll sample has reached the motion estimator.
-    pub fn motion_primed(&self) -> bool {
-        self.motion.primed()
     }
 
     /// Adopt an offset the adapter already put on the DOM, without reading
@@ -1478,6 +1490,23 @@ mod tests {
     }
 
     #[test]
+    fn a_deferred_zoom_lands_the_anchor_the_zoom_computed() {
+        let mut core = list_core(400, 100.0, 800.0);
+        let _ = core.on_scroll(4_000.0);
+        let before = core.scroll_top();
+        // The reader's zoom outruns the surface width: the write is deferred,
+        // so the adapter banks it instead of applying it now.
+        let step = core.rescale(2.0, &|index| 200.0 + index as f64);
+        let after = core.scroll_top();
+        // The centre point scales with the document; the gap above it does
+        // not, so the top moves by twice the old offset less one viewport.
+        assert_eq!(after, 8_400.0);
+        assert_eq!(step.scroll_write, Some(after));
+        assert_eq!(step.scroll_delta, after - before);
+        assert_eq!(step.scroll_delta, 4_400.0);
+    }
+
+    #[test]
     fn adopting_the_applied_offset_leaves_core_and_adapter_in_agreement() {
         let mut core = list_core(100, 100.0, 200.0);
         let _ = core.on_scroll(5_000.0);
@@ -1488,7 +1517,13 @@ mod tests {
         let step = core.adopt_offset(target);
         assert_eq!(step.scroll_write, None, "the adapter owns that write");
         assert_eq!(core.scroll_top(), target);
-        assert_eq!(step.range, Some(Window { first: 50, last: 51 }));
+        assert_eq!(
+            step.range,
+            Some(Window {
+                first: 50,
+                last: 52
+            })
+        );
     }
 
     #[test]

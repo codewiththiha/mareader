@@ -14,7 +14,6 @@ use crate::components::formats::pdf::{GlossOverlayProps, PdfPageCanvas, PdfPageS
 use crate::components::formats::reflow::{ReflowPage, ReflowPageStrip, ReflowStreamLayout};
 #[cfg(feature = "pdf")]
 use crate::components::viewer::shells::scroll_shell::ScrollShell;
-#[cfg(feature = "reflow")]
 use crate::effects::reader::reflow_measure::RowBox as ReflowRowBox;
 use crate::state::ReaderState;
 
@@ -64,14 +63,13 @@ pub fn block_row_id(block: usize) -> String {
 
 /// What a mounted row was showing when its box was read.
 ///
-/// A row rendering the motion band's placeholder carries
-/// [`PLACEHOLDER_ATTR`](app_state::dom_contract::PLACEHOLDER_ATTR): its box
-/// is the layout's own estimate, so a measuring pass that took one for text
-/// would let the estimate confirm itself and recut the document under a
-/// reader who is trying to read it.
-#[cfg(feature = "reflow")]
+/// A placeholder row's box is the layout's own estimate; measuring it would
+/// let the estimate confirm itself and recut the document under the reader.
 pub fn row_box(el: &web_sys::Element) -> ReflowRowBox {
-    if el.get_attribute(app_state::dom_contract::PLACEHOLDER_ATTR).is_some() {
+    if el
+        .get_attribute(app_state::dom_contract::PLACEHOLDER_ATTR)
+        .is_some()
+    {
         ReflowRowBox::Placeholder
     } else {
         ReflowRowBox::Content
