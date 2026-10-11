@@ -74,8 +74,9 @@ function zeroCounters(): Record<CounterKey, number> {
 /** Realm totals over every session that ever lived — diagnostics only. */
 export const realmCounters: Record<CounterKey, number> = zeroCounters();
 
-// One queued raster: its fill rank, request order, and job.
-type QueuedRaster = { rank: number; seq: number; run: () => void };
+// One queued raster: the canvas it paints, its fill rank, request order,
+// and job.
+type QueuedRaster = { canvasId: string; rank: number; seq: number; run: () => void };
 
 // The page render lane: PAGE_RENDER_LIMIT rasters, queued by rank.
 class PageLane {
@@ -90,11 +91,28 @@ class PageLane {
   }>();
 
   // Insert ahead of looser-ranked jobs, stable inside a rank.
-  push(rank: number, run: () => void): void {
-    const job: QueuedRaster = { rank, seq: this.seq++, run };
-    let at = this.queue.length;
-    while (at > 0 && this.queue[at - 1]!.rank > rank) at -= 1;
-    this.queue.splice(at, 0, job);
+  push(canvasId: string, rank: number, run: () => void): void {
+    const job: QueuedRaster = { canvasId, rank, seq: this.seq++, run };
+    this.queue.push(job);
+    this.sort();
+  }
+
+  // A queued job's rank is a guess made when it was offered: the reader may
+  // have reversed since. Move what the session now says.
+  reprioritize(canvasId: string, rank: number): void {
+    let moved = false;
+    for (const job of this.queue) {
+      if (job.canvasId === canvasId && job.rank !== rank) {
+        job.rank = rank;
+        moved = true;
+      }
+    }
+    if (moved) this.sort();
+  }
+
+  /** Harshest rank first, request order inside a rank. */
+  private sort(): void {
+    this.queue.sort((a, b) => (a.rank - b.rank) || (a.seq - b.seq));
   }
 
   /** Harshest rank first, request order inside a rank. */
@@ -179,8 +197,11 @@ export class EngineSession {
   readonly sid: number;
   /** Set by `retireSession`; every lane checks it before committing. */
   disposed = false;
-  // Recent raster cost in ms, over completed rasters; `0` before one lands.
+  // Recent time-to-visible in ms: request, queue, raster slot, completion.
+  // `0` before one lands.
   fillMs = 0;
+  // Each canvas's current fill rank, so the lane can re-read it at dequeue.
+  readonly rankByCanvas = new Map<string, number>();
 
   readonly pageLane = new PageLane();
   readonly thumbLane = new ThumbLane();

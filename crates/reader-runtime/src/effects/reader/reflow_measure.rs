@@ -20,6 +20,48 @@ const INGEST_EPSILON: f64 = 2.0;
 /// A landed batch waits this long for company before flushing.
 const INGEST_DEBOUNCE_MS: u64 = 120;
 
+/// What a mounted row was showing when its box was measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowBox {
+    /// The block's own content, rendered and measured.
+    Content,
+    /// The motion band's placeholder: a box sized by the layout's estimate.
+    Placeholder,
+}
+
+/// One measured row: which block it is, what it was showing, and its
+/// scale-1 height.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RowMeasurement {
+    /// The block's index in document order.
+    pub index: usize,
+    /// What the row held when the height was read.
+    pub box_kind: RowBox,
+    /// The measured height at scale 1.
+    pub height: f64,
+}
+
+/// The reports that may become canonical heights: real content only, one per
+/// block, the last measurement of that block winning.
+///
+/// A placeholder box is the layout's own estimate drawn in the DOM. Handing
+/// it back as a measurement closes the loop — the estimate starts
+/// confirming itself — and every recut it provokes moves the text under a
+/// reader who is trying to read it.
+pub fn content_only(rows: &[RowMeasurement]) -> Vec<(usize, f64)> {
+    let mut merged: Vec<(usize, f64)> = Vec::with_capacity(rows.len());
+    for row in rows {
+        if row.box_kind != RowBox::Content || row.height <= 0.0 {
+            continue;
+        }
+        match merged.last_mut() {
+            Some(last) if last.0 == row.index => last.1 = row.height,
+            _ => merged.push((row.index, row.height)),
+        }
+    }
+    merged
+}
+
 /// The session and scale a batch was measured against, beside its
 /// `(index, scale-1 height)` reports.
 type PendingBatch = (u64, f64, Vec<(usize, f64)>);
@@ -46,7 +88,12 @@ impl Default for MeasureInbox {
 impl MeasureInbox {
     /// Hand measured SCALE-1 heights to the store; the caller divides the
     /// live scale out first.
-    pub fn ingest(&self, session: u64, scale: f64, batch: &[(usize, f64)]) {
+    ///
+    /// Placeholder boxes are dropped here rather than at the call sites: this
+    /// is the one door to the canonical heights, and a placeholder's height
+    /// is the estimate the store already holds.
+    pub fn ingest(&self, session: u64, scale: f64, rows: &[RowMeasurement]) {
+        let batch = content_only(rows);
         if batch.is_empty() {
             return;
         }
@@ -57,7 +104,7 @@ impl MeasureInbox {
                 pending.0 = session;
                 pending.1 = scale;
             }
-            pending.2.extend_from_slice(batch);
+            pending.2.extend_from_slice(&batch);
         });
         if parked.is_none() {
             return;

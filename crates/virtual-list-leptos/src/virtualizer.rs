@@ -25,6 +25,35 @@ type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
 type ListenerCallback = Closure<dyn FnMut(Event)>;
 type IdleCallback = Rc<dyn Fn()>;
 
+/// End a gesture: land every correction, publish the window that gesture
+/// leaves behind, and only then say the scroller is quiet.
+///
+/// The order is the contract. `settled` is the liveness probe every deferred
+/// first paint waits on, so nothing it wakes may observe a window that a
+/// later line of this function still has to move.
+fn settle(inner: &Rc<VirtualizerInner>) {
+    // Disposed while pending: the settled write belongs to nobody.
+    if inner.surface.element().is_none() || inner.settled.try_get_untracked().is_none() {
+        return;
+    }
+    // Measurements the fling outran still owe the reader their correction.
+    if let Some(flush) = inner.core.borrow_mut().flush() {
+        inner.apply_measurements(flush.step);
+    }
+    // The motion is over: the band closes, bridges earn nothing.
+    let step = inner.core.borrow_mut().note_scroll_end();
+    inner.publish_range(step.range);
+    inner.prune_retained_tick();
+    // Every correction the gesture outran lands now, one write.
+    inner.flush_banked_scroll();
+    // The scroller is quiet: the held-back first paints run.
+    write_if_changed(inner.settled, true);
+    let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
+    for callback in callbacks {
+        callback();
+    }
+}
+
 /// One `ResizeObserver` and the closure that serves it.
 pub(crate) struct ObserverBinding {
     observer: ResizeObserver,
@@ -110,7 +139,8 @@ pub(crate) struct VirtualizerInner {
     /// The pre-paint flush's once-per-batch latch.
     pub now_flush_armed: Rc<Cell<bool>>,
 
-    /// Measured sizes whose anchored correction is banked until the settle.
+    /// The offset the DOM holds that the core has already corrected past: the
+    /// anchor correction a still-running gesture has not taken yet.
     pub banked_scroll: Cell<f64>,
 
     /// While false, the DOM scroll echo must not touch the core.
@@ -302,20 +332,24 @@ impl VirtualizerInner {
         let Some(top) = step.scroll_write else {
             return;
         };
-        let delta = top - self.scroll_top.get_untracked();
-        if delta.abs() <= self.options.measure_epsilon {
+        if write_scroll {
+            self.commit_scroll(top);
             return;
         }
-        if !write_scroll {
-            // The DOM stays put; only the correction is held back.
-            self.banked_scroll.set(self.banked_scroll.get() + delta);
-            return;
-        }
+        // A gesture owns the surface: the layout lands now and the scroll
+        // correction waits for the settle, exactly once per correction.
+        let banked = self.banked_scroll.get() + step.scroll_delta;
+        self.banked_scroll.set(banked);
+    }
+
+    /// Land one offset on the DOM, the signal and the core together.
+    fn commit_scroll(self: &Rc<Self>, top: f64) {
+        self.banked_scroll.set(0.0);
         self.surface.set_scroll(top, false);
         write_if_changed(self.scroll_top, top);
     }
 
-    /// Apply every banked correction as one write.
+    /// Apply every banked correction as one write, at the settle.
     fn flush_banked_scroll(self: &Rc<Self>) {
         let banked = self.banked_scroll.replace(0.0);
         if banked.abs() <= self.options.measure_epsilon {
@@ -324,7 +358,12 @@ impl VirtualizerInner {
         let Some(top) = self.scroll_top.try_get_untracked() else {
             return;
         };
-        self.surface.set_scroll((top + banked).max(0.0), false);
+        let target = (top + banked).max(0.0);
+        self.commit_scroll(target);
+        // The core was left at the pre-correction offset; its window has to
+        // follow the offset the scroller now holds.
+        let step = self.core.borrow_mut().adopt_offset(target);
+        self.publish_range(step.range);
     }
 
     /// Apply a step a scroll command produced: no second DOM write.
@@ -336,6 +375,8 @@ impl VirtualizerInner {
             self.layout_version.update(|version| *version += 1);
         }
         self.publish_range(step.range);
+        // The core already moved; the command owns the DOM write.
+        self.banked_scroll.set(0.0);
         write_if_changed(self.scroll_top, self.core.borrow().scroll_top());
     }
 
@@ -349,17 +390,20 @@ impl VirtualizerInner {
             return;
         }
         let content = dom_top - self.options.padding_start;
-        // Sub-epsilon echo: skip the signal write and the re-arm.
+        // The signal is the scroll offset every consumer reads, so it is
+        // synced even when the core's geometry does not have to move.
+        write_if_changed(self.scroll_top, content);
+        // Sub-epsilon echo of a correction this adapter wrote: the core's
+        // geometry does not have to move.
         if (content - self.core.borrow().scroll_top()).abs() <= self.options.measure_epsilon {
             return;
         }
         let step = self.core.borrow_mut().on_scroll_at(content, now_ms());
-        write_if_changed(self.scroll_top, content);
         // The strip is moving again: first paints wait for the settle.
         write_if_changed(self.settled, false);
         self.publish_range(step.range);
         if let Some(top) = step.scroll_write {
-            self.surface.set_scroll(top, false);
+            self.commit_scroll(top);
         }
         self.arm_scroll_end();
     }
@@ -424,30 +468,17 @@ impl VirtualizerInner {
         }
         let inner = self.clone();
         let delay = Duration::from_millis(self.options.scroll_end_delay_ms as u64);
-        if let Ok(handle) = set_timeout_with_handle(
-            move || {
-                // Disposed while pending: the settled write belongs to nobody.
-                if inner.surface.element().is_none() || inner.settled.try_get_untracked().is_none()
-                {
-                    return;
-                }
-                // The scroller is quiet: the held-back first paints run.
-                write_if_changed(inner.settled, true);
-                // The motion is over: the band closes, bridges earn nothing.
-                let step = inner.core.borrow_mut().note_scroll_end();
-                inner.publish_range(step.range);
-                inner.prune_retained_tick();
-                // Every correction the fling outran lands now, one write.
-                inner.flush_banked_scroll();
-                let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
-                for callback in callbacks {
-                    callback();
-                }
-            },
-            delay,
-        ) {
+        if let Ok(handle) = set_timeout_with_handle(move || settle(&inner), delay) {
             *self.scroll_end_timer.borrow_mut() = Some(handle);
         }
+    }
+
+    /// Run the settle transaction now, on a native `scrollend`.
+    fn settle_now(self: &Rc<Self>) {
+        if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {
+            handle.clear();
+        }
+        settle(self);
     }
 
     /// Teardown, idempotent, callable by the handle or the component.
@@ -525,6 +556,14 @@ fn dom_scroll_offset(el: &web_sys::HtmlElement, axis: crate::options::Axis) -> f
     }
 }
 
+/// Whether this engine ends a gesture by itself or needs the debounce.
+fn supports_scroll_end() -> bool {
+    web_sys::window().is_some_and(|w| {
+        js_sys::Reflect::has(w.as_ref(), &wasm_bindgen::JsValue::from_str("onscrollend"))
+            .unwrap_or(false)
+    })
+}
+
 impl Virtualizer {
     /// Explicit teardown by the resource owner, idempotent.
     pub fn dispose(&self) {
@@ -549,6 +588,13 @@ impl Virtualizer {
                 inner.surface.set_scroll(current, false);
             }
         }
+
+        // A container that binds long after the core was built would
+        // otherwise have its first scroll sample measured against the clock's
+        // origin: the reader's whole session in the document looks like one
+        // very slow gesture.
+        let seeded = inner.core.borrow().scroll_top();
+        inner.core.borrow_mut().seed_motion(seeded, now_ms());
 
         {
             let inner_for_listener = inner.clone();
@@ -586,6 +632,26 @@ impl Virtualizer {
             inner.listeners.borrow_mut().push(ListenerBinding {
                 element: el.clone(),
                 event: "scroll",
+                callback: closure,
+            });
+        }
+
+        if supports_scroll_end() {
+            // The browser's own "this gesture is over" beats a fixed delay:
+            // a long fling stops paying 150 ms of latency on every settle.
+            // The timer stays armed as the fallback for engines without it.
+            let inner_for_end = inner.clone();
+            let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
+                if inner_for_end.settled.try_get_untracked().is_none() {
+                    return;
+                }
+                inner_for_end.settle_now();
+            });
+            let _ =
+                el.add_event_listener_with_callback("scrollend", closure.as_ref().unchecked_ref());
+            inner.listeners.borrow_mut().push(ListenerBinding {
+                element: el.clone(),
+                event: "scrollend",
                 callback: closure,
             });
         }

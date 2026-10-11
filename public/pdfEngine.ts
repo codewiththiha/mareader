@@ -20,6 +20,7 @@ import {
   readRenderTrace,
   registerPage,
   renderPage,
+  reprioritizePage,
   rerenderLivePages,
   unregisterPage,
 } from "./engine/renderer";
@@ -507,6 +508,8 @@ globalThis.PDFReader = {
     withSession(sid, undefined, (s) => registerPage(s, page, canvasId, hostId, canvas, host)),
   unregisterPage: (sid, canvasId) => withSession(sid, undefined, (s) => unregisterPage(s, canvasId)),
   cancelPage: (sid, canvasId) => withSession(sid, undefined, (s) => cancelPage(s, canvasId)),
+  reprioritizePage: (sid, canvasId, rank) =>
+    withSession(sid, undefined, (s) => reprioritizePage(s, canvasId, rank)),
   cancelPageRenders: (sid) => withSession(sid, undefined, (s) => cancelPageRenders(s)),
   quiesce: (sid) => withSession(sid, undefined, (s) => quiesce(s)),
   renderPage: (sid, canvasId, scale, renderText, rank = 0) =>

@@ -245,6 +245,15 @@ impl PdfSession {
         }
     }
 
+    /// Re-rank one page's queued raster without restarting it: the lane
+    /// reads a rank offered at request time, and the reader may have
+    /// reversed since.
+    pub fn reprioritize_page(&self, canvas_id: &str, rank: u32) {
+        if let Ok(sid) = self.require() {
+            bridge::reprioritize_page(sid, canvas_id, rank);
+        }
+    }
+
     /// The intrinsic box of one page, read from the document.
     pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
         let sid = self.require()?;

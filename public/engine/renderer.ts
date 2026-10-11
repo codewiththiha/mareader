@@ -166,6 +166,7 @@ export function unregisterPage(s: EngineSession, canvasId: string): void {
     s.releasePageSurfaces(st);
   }
   s.stateByCanvasId.delete(canvasId);
+  s.rankByCanvas.delete(canvasId);
   // No sweepPdf here: an unmount-heavy move would force re-parses.
 }
 
@@ -239,7 +240,8 @@ async function renderPageInternal(
   s: EngineSession,
   canvasId: string,
   scale: number,
-  renderText: boolean
+  renderText: boolean,
+  requestedAt: number
 ): Promise<RenderResult> {
   // One terminal classification per started render, so the lane drains.
   s.rendersStarted += 1;
@@ -247,14 +249,16 @@ async function renderPageInternal(
   const tracePage = ensurePage(s, canvasId)?.page ?? -1;
   traceRender(s.sid, tracePage, "start");
   lifecycleEvent("render:start");
-  // Raster service time, timed from the lane slot.
   const startMs = Date.now();
   try {
     const result = await renderPageNow(s, canvasId, scale, renderText);
     if (result.ok) {
       s.rendersCompleted += 1;
       // An exponential mean: one slow frame must not retune the session.
-      const ms = Date.now() - startMs;
+      // Timed from the request, not the lane slot: the reader waits for the
+      // queue too, and the band's lead is measured against what they wait
+      // for. The lane slot's own span is the floor of that.
+      const ms = Math.max(Date.now() - requestedAt, Date.now() - startMs);
       s.fillMs = s.fillMs <= 0 ? ms : s.fillMs + (ms - s.fillMs) * 0.2;
       traceRender(s.sid, tracePage, "complete");
       lifecycleEvent("render:complete");
@@ -502,6 +506,13 @@ export function drainPageLane(s: EngineSession): void {
   }
 }
 
+/** A page's urgency changed while it was queued: re-read it at dequeue. */
+export function reprioritizePage(s: EngineSession, canvasId: string, rank: number): void {
+  if (s.rankByCanvas.get(canvasId) === rank) return;
+  s.rankByCanvas.set(canvasId, rank);
+  s.pageLane.reprioritize(canvasId, rank);
+}
+
 function pumpPageQueue(s: EngineSession): void {
   const lane = s.pageLane;
   while (
@@ -539,6 +550,10 @@ export async function renderPage(
     cancelAnimationFrame(st.queueHandle);
     st.queueHandle = 0;
   }
+  // Time to visible is measured from here, before the frame the lane waits
+  // for: a page that waits a frame in the queue and one in the lane are the
+  // same wait to the reader.
+  const requestedAt = Date.now();
   return await new Promise<RenderResult>((resolve) => {
     st.queueHandle = requestAnimationFrame(() => {
       st.queueHandle = 0;
@@ -549,7 +564,8 @@ export async function renderPage(
         return;
       }
       s.rendersQueued += 1;
-      s.pageLane.push(rank, () => {
+      s.rankByCanvas.set(canvasId, rank);
+      s.pageLane.push(canvasId, rank, () => {
         const finish = () => {
           s.pageLane.active -= 1;
           pumpPageQueue(s);
@@ -574,7 +590,7 @@ export async function renderPage(
               resolve(fail("cancelled", "Render cancelled"));
               return;
             }
-            resolve(await renderPageInternal(s, canvasId, scale, !!renderText));
+            resolve(await renderPageInternal(s, canvasId, scale, !!renderText, requestedAt));
           } finally {
             permit?.release();
           }

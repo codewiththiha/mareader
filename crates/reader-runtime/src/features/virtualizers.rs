@@ -12,7 +12,13 @@ use crate::zoom::config::MAX_ZOMBIES;
 use app_ui::epoch::epoch_signal;
 
 /// ~64MB per mounted page at 2× DPR: the ceiling is what bounds idle RAM.
-pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
+///
+/// One screen of look-ahead with a ceiling of four is what a two-lane raster
+/// can actually fill: a lead measured in fill time at any sane page height
+/// lands here. The old half screen / three pages gave the lane one visible
+/// page and one spare, so a fling reached the reader's landing page before
+/// the queue had painted it.
+pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(1.0, 4);
 
 /// Bridged only mid-seek; a zoom commit raises a timed Grace over it.
 const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::MotionGated { max: MAX_ZOMBIES };
@@ -93,6 +99,13 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
 }
 
 /// What one settled page costs here, and how wide the lane that serves it.
+///
+/// The lead the band gives the reader is measured in fill time, so an
+/// uncalibrated band guesses. Report as soon as the engine has painted
+/// something — the first paint, not the first scroll settle — and report
+/// again whenever the measurement has actually moved: a report re-evaluates
+/// every mounted page of the band, so a per-frame one would cost a row
+/// walk per frame to learn nothing.
 #[cfg(feature = "pdf")]
 fn note_fill_profile(
     pane: &crate::pane::handle::PaneHandle,
@@ -106,8 +119,8 @@ fn note_fill_profile(
     if stats.fill_ms <= 0.0 {
         return;
     }
-    // Once per strip: a report re-evaluates every mounted page of the band.
-    if last.get() >= 0.0 {
+    let previous = last.get();
+    if previous >= 0.0 && (stats.fill_ms - previous).abs() <= previous * 0.25 {
         return;
     }
     last.set(stats.fill_ms);
@@ -217,6 +230,22 @@ pub(crate) fn use_reader_virtualizers(
             pane.pdf().sweep();
             if state.viewer.page_gap.try_get_untracked().is_some() {
                 note_fill_profile(&pane, &horizontal, &applied_h);
+            }
+        });
+
+        // The first paint is the earliest honest measurement there is. Until
+        // it lands the band is guessing from `Pipeline::default()`, and a
+        // reader who flings before their first settle gets a lead nobody
+        // measured.
+        let painted_v = applied_v.clone();
+        let painted_h = applied_h.clone();
+        Effect::new(move |_| {
+            if !state.viewer.first_paint.get() {
+                return;
+            }
+            if state.viewer.page_gap.try_get_untracked().is_some() {
+                note_fill_profile(&pane, &vertical, &painted_v);
+                note_fill_profile(&pane, &horizontal, &painted_h);
             }
         });
     }

@@ -23,8 +23,9 @@ use crate::components::formats::block_render::BlockView;
 use crate::components::formats::reflow::BlockSearchHits;
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
-use crate::components::viewer::page_host::block_row_id;
+use crate::components::viewer::page_host::{block_row_id, row_box};
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
+use crate::effects::reader::reflow_measure::{RowBox, RowMeasurement};
 use crate::state::ReaderState;
 use crate::state::TypographySignal;
 use app_ui::epoch::epoch_signal;
@@ -301,27 +302,32 @@ pub fn ReflowStreamLayout(
                 // The rows belong to the reflow session as it stands now.
                 let session = state.pane.reflow_session();
                 let children = col.children();
-                let mut batch: Vec<(usize, f64)> = Vec::new();
+                let mut batch: Vec<RowMeasurement> = Vec::new();
                 for slot in 0..children.length() {
                     let Some(child) = children.item(slot) else {
                         continue;
                     };
-                    // Every mounted row is measured, blanks included; a blank
-                    // reports the layout's own height.
                     let Ok(el) = child.dyn_into::<web_sys::HtmlElement>() else {
                         continue;
                     };
                     let Some(index) = el
-                        .get_attribute("data-block-index")
+                        .get_attribute(app_state::dom_contract::BLOCK_INDEX_ATTR)
                         .and_then(|value| value.parse::<usize>().ok())
                     else {
                         continue;
                     };
+                    // A blank row's box IS the layout's estimate. Measuring
+                    // it would hand the estimate back as a measurement.
+                    let box_kind = row_box(&el);
                     let height = el.offset_height() as f64;
-                    if height > 0.0 {
+                    if height > 0.0 && box_kind == RowBox::Content {
                         v.report_size_now(index, height);
                         if scale > 0.0 {
-                            batch.push((index, height / scale));
+                            batch.push(RowMeasurement {
+                                index,
+                                box_kind,
+                                height: height / scale,
+                            });
                         }
                     }
                 }
@@ -442,8 +448,12 @@ pub fn ReflowStreamLayout(
                                         let Some(el) = row_el.get() else {
                                             return;
                                         };
+                                        // A row showing the band's placeholder
+                                        // resizes with the estimate, not with
+                                        // text: its height is not evidence.
+                                        let box_kind = row_box(&el);
                                         let height = el.offset_height() as f64;
-                                        if height <= 0.0 {
+                                        if height <= 0.0 || box_kind != RowBox::Content {
                                             return;
                                         }
                                         v_row.report_size_now(index, height);
@@ -456,7 +466,11 @@ pub fn ReflowStreamLayout(
                                             state.measure.ingest(
                                                 session,
                                                 scale,
-                                                &[(index, height / scale)],
+                                                &[RowMeasurement {
+                                                    index,
+                                                    box_kind,
+                                                    height: height / scale,
+                                                }],
                                             );
                                         }
                                     });
@@ -479,6 +493,14 @@ pub fn ReflowStreamLayout(
                                         node_ref=row_ref
                                         id=block_row_id(index)
                                         data-block-index=index
+                                        // The blanking contract: a row that
+                                        // is showing the band's placeholder
+                                        // says so, so no measuring path can
+                                        // mistake the estimate for text.
+                                        data-virtual-placeholder=move || {
+                                            (row_state.get() == VirtualItemState::Blank)
+                                                .then_some("true")
+                                        }
                                         data-host-page=move || {
                                             state
                                                 .document

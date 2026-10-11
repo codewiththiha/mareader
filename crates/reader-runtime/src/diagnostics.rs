@@ -701,7 +701,7 @@ mod tests {
             virtualizer_listeners: 0,
             virtualizer_observers: 0,
             virtualizer_timers: 0,
-            render_budget_max_items: 3,
+            render_budget_max_items: 4,
             lookahead_samples_active: 0,
             runtime: None,
             host: None,

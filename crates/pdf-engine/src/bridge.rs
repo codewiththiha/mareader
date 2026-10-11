@@ -71,6 +71,10 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelPage")]
     pub fn cancel_page(sid: u32, canvas_id: &str);
 
+    /// Re-rank one page's queued raster; a rank read at dequeue time.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "reprioritizePage")]
+    pub fn reprioritize_page(sid: u32, canvas_id: &str, rank: u32);
+
     /// One page's intrinsic box, without rasterising it.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "probePageSize")]
     pub async fn probe_page_size(sid: u32, page: u32) -> JsValue;

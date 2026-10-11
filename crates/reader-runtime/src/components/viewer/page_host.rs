@@ -14,6 +14,8 @@ use crate::components::formats::pdf::{GlossOverlayProps, PdfPageCanvas, PdfPageS
 use crate::components::formats::reflow::{ReflowPage, ReflowPageStrip, ReflowStreamLayout};
 #[cfg(feature = "pdf")]
 use crate::components::viewer::shells::scroll_shell::ScrollShell;
+#[cfg(feature = "reflow")]
+use crate::effects::reader::reflow_measure::RowBox as ReflowRowBox;
 use crate::state::ReaderState;
 
 /// Where a page sits in the current layout, as a slot, not a mode.
@@ -58,6 +60,22 @@ pub fn host_id_for_mode(mode: ViewMode, page: u32) -> String {
 /// The id of the row rendering `block`, in any mode.
 pub fn block_row_id(block: usize) -> String {
     format!("tx-block-{block}")
+}
+
+/// What a mounted row was showing when its box was read.
+///
+/// A row rendering the motion band's placeholder carries
+/// [`PLACEHOLDER_ATTR`](app_state::dom_contract::PLACEHOLDER_ATTR): its box
+/// is the layout's own estimate, so a measuring pass that took one for text
+/// would let the estimate confirm itself and recut the document under a
+/// reader who is trying to read it.
+#[cfg(feature = "reflow")]
+pub fn row_box(el: &web_sys::Element) -> ReflowRowBox {
+    if el.get_attribute(app_state::dom_contract::PLACEHOLDER_ATTR).is_some() {
+        ReflowRowBox::Placeholder
+    } else {
+        ReflowRowBox::Content
+    }
 }
 
 /// The canvas id of `page` in `mode`: the host id plus a suffix.

@@ -59,6 +59,12 @@ pub struct Step {
     pub range: Option<Window>,
     /// A corrected scroll position to apply, in content coordinates.
     pub scroll_write: Option<f64>,
+    /// How far `scroll_write` moved the core's position, signed. A caller
+    /// that defers the DOM write banks this, never the distance between the
+    /// core's position and its own older signal: that distance never shrinks
+    /// while the write is held, so re-deriving it would bank one correction
+    /// once per flush.
+    pub scroll_delta: f64,
     /// The layout's geometry changed — bump the layout version.
     pub layout_changed: bool,
 }
@@ -147,6 +153,7 @@ impl VirtualizerCore {
             return Step {
                 range: self.range,
                 scroll_write: None,
+                scroll_delta: 0.0,
                 layout_changed: false,
             };
         }
@@ -163,6 +170,7 @@ impl VirtualizerCore {
             return Step {
                 range: self.range,
                 scroll_write: None,
+                scroll_delta: 0.0,
                 layout_changed: false,
             };
         }
@@ -339,6 +347,7 @@ impl VirtualizerCore {
                 step: Step {
                     range: self.range,
                     scroll_write: None,
+                    scroll_delta: 0.0,
                     layout_changed: false,
                 },
             });
@@ -348,7 +357,9 @@ impl VirtualizerCore {
         new_top = new_top.clamp(self.min_scroll(), max_scroll);
 
         let mut scroll_write = None;
+        let mut scroll_delta = 0.0;
         if (new_top - self.scroll_top).abs() > self.eps {
+            scroll_delta = new_top - self.scroll_top;
             self.scroll_top = new_top;
             scroll_write = Some(new_top);
         }
@@ -357,6 +368,7 @@ impl VirtualizerCore {
         step.layout_changed = true;
         if let Some(target) = scroll_write {
             step.scroll_write = Some(target);
+            step.scroll_delta = scroll_delta;
             self.refresh_pending_target();
         } else {
             step.scroll_write = self.settle_pending();
@@ -461,17 +473,44 @@ impl VirtualizerCore {
     }
 
     /// The band clipped to the mount window (see [`Self::render_range`]).
+    ///
+    /// The band is derived from a velocity estimate, so it can lag or miss
+    /// the slice the reader is actually looking at. Whatever the band says,
+    /// the viewport's own window stays inside the render range: a row the
+    /// reader can see is never blanked because of a guess about where they
+    /// are going.
     fn compute_render_range(&self, mount: Option<Window>) -> Option<Window> {
         let mount = mount?;
-        let band = self.band;
-        if !band.placeholder {
+        if !self.band.placeholder {
             return Some(mount);
         }
-        let extent = (band.active.end - band.active.start).max(0.0);
-        let items = self.layout.overlapping(band.active.start, extent)?;
-        let first = items.first.max(mount.first);
-        let last = items.last.min(mount.last);
-        (first <= last).then_some(Window { first, last })
+        let extent = (self.band.active.end - self.band.active.start).max(0.0);
+        let banded = self.layout.overlapping(self.band.active.start, extent).and_then(|window| {
+            let clipped = Window {
+                first: window.first.max(mount.first),
+                last: window.last.min(mount.last),
+            };
+            (clipped.first <= clipped.last).then_some(clipped)
+        });
+        let visible = self.visible_window();
+        match (banded, visible) {
+            (Some(banded), Some(visible)) => Some(Window {
+                first: banded.first.min(visible.first).max(mount.first),
+                last: banded.last.max(visible.last).min(mount.last),
+            }),
+            (Some(banded), None) => Some(banded),
+            (None, Some(visible)) => Some(Window {
+                first: visible.first.max(mount.first),
+                last: visible.last.min(mount.last),
+            }),
+            (None, None) => None,
+        }
+    }
+
+    /// The rows the viewport actually reaches, before the budget trims it.
+    fn visible_window(&self) -> Option<Window> {
+        let window = self.layout.overlapping(self.scroll_top, self.viewport.main)?;
+        (window.first <= window.last).then_some(window)
     }
 
     /// The render state of a mounted index.
@@ -488,12 +527,42 @@ impl VirtualizerCore {
         self.on_scroll(content_top)
     }
 
+    /// The scroller adopted a position without a scroll event — a container
+    /// binding late, or a programmatic jump. Rebase the estimator on it so
+    /// the next sample measures a real interval rather than the whole time
+    /// the reader has had the document open.
+    pub fn seed_motion(&mut self, offset: f64, now_ms: f64) {
+        self.motion.seed(offset, now_ms);
+    }
+
+    /// Whether any scroll sample has reached the motion estimator.
+    pub fn motion_primed(&self) -> bool {
+        self.motion.primed()
+    }
+
+    /// Adopt an offset the adapter already put on the DOM, without reading
+    /// it back as reader input. The settle uses it so the core's window,
+    /// the reactive signal and the scroller end the gesture in agreement.
+    pub fn adopt_offset(&mut self, content_top: f64) -> Step {
+        if (content_top - self.scroll_top).abs() <= self.eps {
+            return Step {
+                range: self.range,
+                scroll_write: None,
+                scroll_delta: 0.0,
+                layout_changed: false,
+            };
+        }
+        self.scroll_top = content_top;
+        self.rewindow()
+    }
+
     /// The scroller has stopped: the estimate rests, the band closes.
     pub fn note_scroll_end(&mut self) -> Step {
         if self.motion.speed_px_s() == 0.0 && !self.motion.engaged() {
             return Step {
                 range: self.range,
                 scroll_write: None,
+                scroll_delta: 0.0,
                 layout_changed: false,
             };
         }
@@ -739,6 +808,7 @@ impl VirtualizerCore {
         Step {
             range,
             scroll_write: None,
+            scroll_delta: 0.0,
             layout_changed: false,
         }
     }
@@ -1345,6 +1415,80 @@ mod tests {
                 .all(|item| item.state == VirtualItemState::Active)
         );
         assert_eq!(core.render_range(), core.range());
+    }
+
+    /// The reader's own rows outlive every estimate the band is working
+    /// from: a lag, a reversal or a mis-sized pitch must not cost them.
+    #[test]
+    fn the_band_never_blanks_a_row_the_reader_can_see() {
+        for render_screens in [0.75, 0.0, 2.0] {
+            let mut core = stream_core(render_screens);
+            let mut top = 0.0;
+            let mut t = 0.0;
+            let mut engaged = false;
+            while top < 19_000.0 {
+                // A reader who keeps scrolling, sometimes reversing, on a
+                // clock that has been running a while.
+                t += 16.0;
+                let _ = core.on_scroll_at(top, t);
+                engaged |= core.motion_band().placeholder;
+                let visible = core.viewport().main;
+                let first = core.index_at(top + 0.5);
+                let last = core.index_at(top + visible - 0.5);
+                for index in first..=last {
+                    assert_eq!(
+                        core.item_state(index),
+                        VirtualItemState::Active,
+                        "band {render_screens}: viewport item {index} blanked at {top}"
+                    );
+                }
+                top += if (t as usize) % 7 == 0 { -317.0 } else { 317.0 };
+                top = top.clamp(0.0, 19_000.0);
+            }
+            // Otherwise the sweep above proves nothing: the band never
+            // opened, so nothing could have been blanked by it.
+            assert!(engaged, "band {render_screens} never engaged");
+        }
+    }
+
+    /// A caller that holds the DOM write back until the settle banks the
+    /// correction, not the distance between the core and its own stale
+    /// signal: that distance is the whole correction, every time.
+    #[test]
+    fn a_deferred_correction_is_reported_once_per_flush() {
+        let mut core = list_core(100, 100.0, 200.0);
+        let _ = core.on_scroll(5_000.0);
+        let before = core.scroll_top();
+
+        core.queue_size(3, 120.0);
+        let first = core.flush().expect("a changed size flushes").step;
+        assert_eq!(first.scroll_delta, 20.0, "+20 above the anchor");
+        assert_eq!(first.scroll_write, Some(before + 20.0));
+
+        core.queue_size(4, 120.0);
+        let second = core.flush().expect("a second changed size flushes").step;
+        assert_eq!(
+            second.scroll_delta, 20.0,
+            "the second correction is its own, not the running total"
+        );
+        assert_eq!(
+            first.scroll_delta + second.scroll_delta,
+            second.scroll_write.expect("a correction to land") - before
+        );
+    }
+
+    #[test]
+    fn adopting_the_applied_offset_leaves_core_and_adapter_in_agreement() {
+        let mut core = list_core(100, 100.0, 200.0);
+        let _ = core.on_scroll(5_000.0);
+        core.queue_size(3, 140.0);
+        let _ = core.flush();
+        // The adapter writes the banked correction to the DOM itself.
+        let target = core.scroll_top() + 40.0;
+        let step = core.adopt_offset(target);
+        assert_eq!(step.scroll_write, None, "the adapter owns that write");
+        assert_eq!(core.scroll_top(), target);
+        assert_eq!(step.range, Some(Window { first: 50, last: 51 }));
     }
 
     #[test]

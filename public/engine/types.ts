@@ -263,6 +263,8 @@ export type PDFReaderApi = {
   ) => void;
   unregisterPage: (sid: Sid, canvasId: string) => void;
   cancelPage: (sid: Sid, canvasId: string) => void;
+  // Re-rank a queued page raster; it reorders the lane without restarting.
+  reprioritizePage: (sid: Sid, canvasId: string, rank: number) => void;
   // Cancel every in-flight page render of the session.
   cancelPageRenders: (sid: Sid) => void;
   // The work-stop half: every in-flight and queued job stops now.

@@ -153,6 +153,8 @@ pub struct Motion {
     velocity_px_s: f64,
     direction: Direction,
     engaged: bool,
+    /// Whether `offset`/`at_ms` hold a real sample yet.
+    primed: bool,
 }
 
 impl Motion {
@@ -165,7 +167,25 @@ impl Motion {
             velocity_px_s: 0.0,
             direction: Direction::Still,
             engaged: false,
+            primed: false,
         }
+    }
+
+    /// Whether any scroll sample has reached the estimator yet.
+    pub const fn primed(&self) -> bool {
+        self.primed
+    }
+
+    /// Rebase the estimator on a position it did not measure itself — a
+    /// container that bound late, or a programmatic jump. The next sample
+    /// then measures a real interval instead of the reader's whole session.
+    pub fn seed(&mut self, offset: f64, now_ms: f64) {
+        self.offset = offset;
+        self.at_ms = now_ms;
+        self.velocity_px_s = 0.0;
+        self.direction = Direction::Still;
+        self.engaged = false;
+        self.primed = true;
     }
 
     /// The last sampled scroll position.
@@ -196,6 +216,13 @@ impl Motion {
 
     /// Fold one scroll sample into the estimate.
     pub fn update(&mut self, offset: f64, now_ms: f64) {
+        if !self.primed {
+            // A first sample has no interval to measure: dividing by the
+            // clock's origin would report how long the app has been open as
+            // the time this scroll took.
+            self.seed(offset, now_ms);
+            return;
+        }
         let dt = now_ms - self.at_ms;
         let delta = offset - self.offset;
         self.offset = offset;
@@ -382,5 +409,45 @@ mod tests {
                 one_minus_exp_neg(x)
             );
         }
+    }
+
+    #[test]
+    fn the_first_sample_is_the_origin_not_a_speed() {
+        let mut motion = Motion::new(MotionConfig::default());
+        assert!(!motion.primed());
+        // The app has been open five minutes and the reader flicks.
+        motion.update(900.0, 300_000.0);
+        assert!(motion.primed());
+        assert_eq!(motion.velocity_px_s(), 0.0);
+        assert_eq!(motion.direction(), Direction::Still);
+        assert!(!motion.engaged());
+    }
+
+    #[test]
+    fn detection_does_not_depend_on_application_uptime() {
+        let mut early = Motion::new(MotionConfig::default());
+        let mut late = Motion::new(MotionConfig::default());
+        for (motion, base) in [(&mut early, 0.0), (&mut late, 600_000.0)] {
+            motion.update(0.0, base);
+            motion.update(900.0, base + 16.0);
+            motion.update(1_800.0, base + 32.0);
+        }
+        assert!(late.speed_px_s() > 30_000.0, "{}", late.speed_px_s());
+        assert_eq!(late.direction(), Direction::Forward);
+        assert!((late.speed_px_s() - early.speed_px_s()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn seeding_rebases_the_estimate() {
+        let mut motion = Motion::new(MotionConfig::default());
+        motion.update(0.0, 0.0);
+        motion.update(4_000.0, 16.0);
+        assert!(motion.engaged());
+        // A programmatic jump is not reader momentum.
+        motion.seed(90_000.0, 120_000.0);
+        assert_eq!(motion.offset(), 90_000.0);
+        assert_eq!(motion.velocity_px_s(), 0.0);
+        assert_eq!(motion.direction(), Direction::Still);
+        assert!(!motion.engaged());
     }
 }

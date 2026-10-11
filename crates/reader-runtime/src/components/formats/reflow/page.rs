@@ -8,6 +8,7 @@ use reflow_core::geometry::{PageGeometry, SpineSide};
 use super::block_render;
 use crate::components::formats::block_render::BlockView;
 use crate::components::viewer::page_host::block_row_id;
+use crate::effects::reader::reflow_measure::{RowBox, RowMeasurement};
 use crate::state::ReaderState;
 use crate::state::ReflowContent;
 use crate::state::TypographySignal;
@@ -101,7 +102,7 @@ pub fn ReflowPage(
                 let Some(session) = state.pane.reflow_session() else {
                     return;
                 };
-                let mut batch: Vec<(usize, f64)> = Vec::new();
+                let mut batch: Vec<RowMeasurement> = Vec::new();
                 for index in start..end {
                     let Some(row) = state.dom.by_id(&block_row_id(index)) else {
                         continue;
@@ -111,7 +112,12 @@ pub fn ReflowPage(
                     };
                     let height = el.offset_height() as f64;
                     if height > 0.0 && scale > 0.0 {
-                        batch.push((index, height / scale));
+                        // The paginated host renders every block it mounts.
+                        batch.push(RowMeasurement {
+                            index,
+                            box_kind: RowBox::Content,
+                            height: height / scale,
+                        });
                     }
                 }
                 state.measure.ingest(session, scale, &batch);

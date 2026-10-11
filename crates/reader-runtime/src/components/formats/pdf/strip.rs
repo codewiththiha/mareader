@@ -53,6 +53,27 @@ pub fn PdfPageStrip(
         }
     };
 
+    // A queued raster is ordered by the rank it carried when it was offered.
+    // Mid-seek that rank is a guess the reader can invalidate in one frame
+    // by reversing, so the lane is told what the order is NOW. At rest the
+    // ranks are settled and this costs nothing.
+    {
+        let v = v.clone();
+        Effect::new(move |_| {
+            let mounted = items.get();
+            if !v.motion_engaged() {
+                return;
+            }
+            for item in mounted {
+                let canvas_id = canvas_id_for_axis(axis, (item.index + 1) as u32);
+                state
+                    .pane
+                    .pdf()
+                    .reprioritize_page(&canvas_id, lane_rank(&v, item.index));
+            }
+        });
+    }
+
     // A report can outlive the strip: the pane's generation, then
     // `report_alive`, keeps it honest.
     let report_alive = StoredValue::new_local(true);
@@ -296,19 +317,26 @@ fn rank_signal(
     virt: &Virtualizer,
     index: usize,
 ) -> Signal<u32, LocalStorage> {
-    /// Wide enough that distance can never carry a page into the next class.
-    const CLASS: u32 = 1 << 16;
     let v = virt.clone();
     Signal::derive_local(move || {
         // Reading `items` is what re-derives this when the band moves.
         let _ = items.get();
-        let distance = (index as i64 - v.landing_index() as i64)
-            .unsigned_abs()
-            .min((CLASS - 1) as u64) as u32;
-        u32::from(v.fill_priority(index).rank())
-            .saturating_mul(CLASS)
-            .saturating_add(distance)
+        lane_rank(&v, index)
     })
+}
+
+/// Wide enough that distance can never carry a page into the next class.
+const RANK_CLASS: u32 = 1 << 16;
+
+/// One page's place in the lane: its fill class, then its distance from the
+/// index the reader is travelling toward.
+fn lane_rank(virt: &Virtualizer, index: usize) -> u32 {
+    let distance = (index as i64 - virt.landing_index() as i64)
+        .unsigned_abs()
+        .min((RANK_CLASS - 1) as u64) as u32;
+    u32::from(virt.fill_priority(index).rank())
+        .saturating_mul(RANK_CLASS)
+        .saturating_add(distance)
 }
 
 /// The virtualizer's own band answers, so no local estimate can disagree.

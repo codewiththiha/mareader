@@ -143,6 +143,14 @@ impl PdfPane {
         }
     }
 
+    /// Re-rank one page's queued raster, so the lane serves it in the order
+    /// the reader is travelling now rather than the order they were.
+    pub fn reprioritize_page(&self, canvas_id: &str, rank: u32) {
+        if let Some(s) = self.working() {
+            s.reprioritize_page(canvas_id, rank);
+        }
+    }
+
     /// One page's intrinsic box, from the document: no pixels, read before
     /// its first raster.
     pub async fn probe_page_size(&self, page: u32) -> Result<PageSizeResult, EngineError> {
