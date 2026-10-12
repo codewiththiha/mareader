@@ -398,13 +398,6 @@ fn install_effects(inner: &Rc<Inner>) {
     });
     let w = weak.clone();
     Effect::new(move |_| {
-        let page = viewer.page.get();
-        if let Some(inner) = w.upgrade() {
-            inner.write_if(|m| m.page != page, Write::Page { page });
-        }
-    });
-    let w = weak.clone();
-    Effect::new(move |_| {
         let mode = viewer.mode.get();
         if let Some(inner) = w.upgrade() {
             inner.write_if(|m| m.mode != mode, Write::Mode { mode });

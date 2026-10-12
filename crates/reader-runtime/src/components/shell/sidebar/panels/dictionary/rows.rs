@@ -4,8 +4,7 @@ use leptos::prelude::*;
 
 use crate::services::dict::{EntryMirror, PackMirror};
 
-/// A row's two lines. The shore the ask named leads; the word it
-/// came from follows.
+/// A row's two lines: the requested side leads, the source follows.
 fn faces(entry: &EntryMirror, packs: &[PackMirror], wanted: Option<&str>) -> (String, String) {
     let pack = packs.iter().find(|pack| pack.id == entry.pack);
     match (wanted, pack) {

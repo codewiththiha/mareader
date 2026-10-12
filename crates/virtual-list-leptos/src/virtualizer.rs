@@ -567,10 +567,15 @@ impl Virtualizer {
         inner.surface.attach(el.clone());
 
         let viewport = viewport_of(&el, inner.options.axis);
-        inner.viewport.set(viewport);
-        let step = inner.core.borrow_mut().on_viewport(viewport);
-        let had_scroll_write = step.scroll_write.is_some();
-        inner.apply(step);
+        let had_scroll_write = if viewport.main > 0.0 && viewport.cross > 0.0 {
+            inner.viewport.set(viewport);
+            let step = inner.core.borrow_mut().on_viewport(viewport);
+            let wrote = step.scroll_write.is_some();
+            inner.apply(step);
+            wrote
+        } else {
+            false
+        };
 
         if !had_scroll_write {
             let current = inner.core.borrow().scroll_top();

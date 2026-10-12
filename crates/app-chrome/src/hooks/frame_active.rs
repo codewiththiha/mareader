@@ -18,16 +18,21 @@ fn slot_is_active(el: &web_sys::Element) -> bool {
         .is_none_or(|slot| slot == "active")
 }
 
-/// Whether this document is the frame on screen right now.
-pub fn use_frame_active() -> Signal<bool> {
+fn slot_is_live(el: &web_sys::Element) -> bool {
+    // Active or incoming: only a retiring frame is parked off screen.
+    el.get_attribute(SLOT_ATTR)
+        .is_none_or(|slot| slot == "active" || slot == "incoming")
+}
+
+fn watch_slot(predicate: fn(&web_sys::Element) -> bool) -> Signal<bool> {
     let Some(el) = frame_element() else {
         return Signal::derive(|| true);
     };
-    let active = RwSignal::new(slot_is_active(&el));
+    let active = RwSignal::new(predicate(&el));
     let watched = el.clone();
     let callback = Closure::<dyn FnMut(js_sys::Array, web_sys::MutationObserver)>::new(
         move |_records: js_sys::Array, _observer: web_sys::MutationObserver| {
-            let now = slot_is_active(&watched);
+            let now = predicate(&watched);
             if active.try_get_untracked() != Some(now) {
                 let _ = active.try_set(now);
             }
@@ -46,4 +51,14 @@ pub fn use_frame_active() -> Signal<bool> {
         });
     }
     active.into()
+}
+
+/// Whether this document is the frame on screen right now.
+pub fn use_frame_active() -> Signal<bool> {
+    watch_slot(slot_is_active)
+}
+
+/// Whether this document is active or incoming (not retiring).
+pub fn use_frame_live() -> Signal<bool> {
+    watch_slot(slot_is_live)
 }

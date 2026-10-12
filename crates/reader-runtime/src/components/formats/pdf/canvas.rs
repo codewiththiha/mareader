@@ -72,16 +72,16 @@ fn register_mounted(
     host_id: &str,
     canvas: NodeRef<html::Canvas>,
     host: NodeRef<html::Div>,
-) {
+) -> bool {
     let Some(canvas) = canvas
         .try_get_untracked()
         .flatten()
         .map(web_sys::Element::from)
     else {
-        return;
+        return false;
     };
     let host = host_element(host);
-    pdf.register_page(
+    if !pdf.register_page(
         page,
         canvas_id,
         Some(host_id),
@@ -89,11 +89,14 @@ fn register_mounted(
             canvas: &canvas,
             host: host.as_ref(),
         },
-    );
+    ) {
+        return false;
+    }
     let thumb_scale = crate::components::shell::sidebar::panels::thumbnails::geometry::THUMB_SCALE;
     if pdf.has_thumb(page, thumb_scale) {
         pdf.seed_thumb_snapshot(canvas_id, page, thumb_scale);
     }
+    true
 }
 
 #[component]
@@ -215,8 +218,9 @@ pub fn PdfPageCanvas(
             canvas_ref.try_get_untracked().flatten().is_some(),
             "PdfPageCanvas canvas must be in the DOM before register_page"
         );
-        if !registered_boot.get() {
-            register_mounted(&pdf(), page, &cid_boot, &hid_boot, canvas_ref, host_ref);
+        if !registered_boot.get()
+            && register_mounted(&pdf(), page, &cid_boot, &hid_boot, canvas_ref, host_ref)
+        {
             registered_boot.set(true);
         }
     });
@@ -226,6 +230,8 @@ pub fn PdfPageCanvas(
     // Monotonic render generation: only the latest render applies geometry
     // or callbacks.
     let render_seq = StoredValue::new_local(0u32);
+    // Scale of the render currently in flight, if any.
+    let in_flight_scale = StoredValue::new_local(None::<f64>);
     // Forces the render effect to run again after a stale landing.
     let rerender = Trigger::new();
 
@@ -255,13 +261,16 @@ pub fn PdfPageCanvas(
         );
     });
 
+    let pane_lifecycle = pane_ctx.lifecycle_signal();
+
     Effect::new(move || {
         // Read every dependency unconditionally: an effect subscribes only to
         // what it reads.
+        let pane_live = pane_lifecycle.get().admits_work();
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
         // A zombie never starts a render: its bitmap stays until it unmounts.
-        if dormant.as_ref().is_some_and(|d| d.get()) {
+        if !pane_live || dormant.as_ref().is_some_and(|d| d.get()) {
             return;
         }
         if s_render <= 0.0 {
@@ -294,6 +303,11 @@ pub fn PdfPageCanvas(
         // NO-OP FAST PATH: same scale and still painted, so re-rendering would
         // only wipe the canvas.
         if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
+            if in_flight_scale.get_value().is_some() {
+                in_flight_scale.set_value(None);
+                render_seq.set_value(render_seq.get_value() + 1);
+                pdf().cancel_page(&cid_effect);
+            }
             return;
         }
         // SCROLL-FLING GATE: `in_view` (tracked) is the whole rule; `settled`
@@ -303,10 +317,20 @@ pub fn PdfPageCanvas(
         rerender.track();
         if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
             // Give the slot back; re-entering the band re-runs this effect.
+            in_flight_scale.set_value(None);
             render_seq.set_value(render_seq.get_value() + 1);
             pdf().cancel_page(&cid_effect);
             return;
         }
+        // Already rendering this exact scale: keep the in-flight run.
+        if in_flight_scale
+            .get_value()
+            .is_some_and(|flight| (flight - s).abs() <= 1e-9)
+        {
+            return;
+        }
+        in_flight_scale.set_value(Some(s));
+
         let page_no = page;
         let cid = cid_effect.clone();
         let hid = hid_effect.clone();
@@ -316,6 +340,7 @@ pub fn PdfPageCanvas(
         let do_register = registered.clone();
         let geo_async = geo;
         let seq_async = render_seq;
+        let in_flight_async = in_flight_scale;
         let painted_async = painted.clone();
         let sized_async = sized.clone();
         let sized_cb = on_sized;
@@ -350,21 +375,23 @@ pub fn PdfPageCanvas(
         spawn_local(async move {
             // A render can outlive its component: post-await reads use `try_`
             // on `StoredValue`.
-            if !do_register.get() {
-                register_mounted(&pdf_async, page_no, &cid, &hid, canvas_ref, host_ref);
+            if !do_register.get()
+                && register_mounted(&pdf_async, page_no, &cid, &hid, canvas_ref, host_ref)
+            {
                 do_register.set(true);
             }
             // SIZE BEFORE PIXELS: probe the true box before the raster.
             if !sized_async.get() {
-                sized_async.set(true);
                 if let Ok(size) = pdf_async.probe_page_size(page_no).await {
                     // A probe can outlive its host or be superseded mid-flight.
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
+                    sized_async.set(true);
                     if let Some(cb) = sized_cb
                         && cb.run((page_no, size.width, size.height))
                     {
+                        let _ = in_flight_async.try_set_value(None);
                         return;
                     }
                 }
@@ -389,6 +416,9 @@ pub fn PdfPageCanvas(
                     ) else {
                         return;
                     };
+                    if latest {
+                        let _ = in_flight_async.try_set_value(None);
+                    }
                     match judge_completion(latest, issued_mid_zoom, zooming_now, committed_now, s) {
                         Completion::Apply => {}
                         // A newer render owns the host and its geometry.
@@ -464,6 +494,7 @@ pub fn PdfPageCanvas(
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
+                    let _ = in_flight_async.try_set_value(None);
                     // Keep `.page-snapshot` covers alive until a render lands.
                     painted_async.set(false);
                     web_sys::console::warn_1(

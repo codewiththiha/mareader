@@ -269,7 +269,7 @@ impl ReaderHost {
             layout,
             pending_ratio: StoredValue::new(None),
             classify,
-            frame_active: app_chrome::hooks::frame_active::use_frame_active(),
+            frame_active: app_chrome::hooks::frame_active::use_frame_live(),
             library: library::LibraryState::new(),
             themes,
         };

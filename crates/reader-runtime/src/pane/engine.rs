@@ -102,9 +102,12 @@ impl PdfPane {
         canvas_id: &str,
         host_id: Option<&str>,
         elements: PageElements<'_>,
-    ) {
-        if let Some(s) = self.working() {
+    ) -> bool {
+        if let Some(s) = self.tearing() {
             s.register_page(page, canvas_id, host_id, Some(elements));
+            true
+        } else {
+            false
         }
     }
 

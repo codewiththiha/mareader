@@ -1,4 +1,5 @@
 use leptos::children::ChildrenFn;
+use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
@@ -6,7 +7,7 @@ use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use crate::state::ReaderState;
-use app_chrome::hooks::use_resize_observer::observe_content_size_with;
+use app_chrome::hooks::use_resize_observer::observe_content_size;
 
 /// Shared shell for Single and Spread.
 #[component]
@@ -17,9 +18,8 @@ pub fn PageShell(
     children: ChildrenFn,
 ) -> impl IntoView {
     // The container observation dies with the shell.
-    let dom = state.dom;
-    let stop_observing =
-        observe_content_size_with(move || dom.by_id(scroller_id), state.viewer.container_size);
+    let list_ref: NodeRef<html::Div> = NodeRef::new();
+    let stop_observing = observe_content_size(list_ref, state.viewer.container_size);
     on_cleanup(stop_observing);
     let texture_class = texture_class(state);
     let tx_zoom = zoom_style(state);
@@ -35,6 +35,7 @@ pub fn PageShell(
     view! {
         <div class="relative h-full w-full">
             <div
+                node_ref=list_ref
                 id=scroller_id
                 class=move || {
                     let base =

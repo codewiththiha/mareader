@@ -49,6 +49,7 @@ pub(crate) struct PaneCell {
 pub struct PaneHandle {
     id: PaneId,
     runtime: ReaderRuntime,
+    lifecycle: RwSignal<PaneLifecycle>,
     cell: StoredValue<PaneCell, LocalStorage>,
 }
 
@@ -58,6 +59,7 @@ impl PaneHandle {
         Self {
             id,
             runtime,
+            lifecycle: RwSignal::new(PaneLifecycle::default()),
             cell: StoredValue::new_local(PaneCell::default()),
         }
     }
@@ -71,12 +73,21 @@ impl PaneHandle {
         let _ = self
             .cell
             .try_update_value(|cell| cell.lifecycle = lifecycle);
+        if self.lifecycle.try_get_untracked() != Some(lifecycle) {
+            let _ = self.lifecycle.try_set(lifecycle);
+        }
     }
 
     pub fn lifecycle(&self) -> PaneLifecycle {
         self.cell
             .try_with_value(|cell| cell.lifecycle)
             .unwrap_or(PaneLifecycle::Disposed)
+    }
+
+    /// Tracked view of the pane's lifecycle.
+    #[cfg(feature = "pdf")]
+    pub fn lifecycle_signal(&self) -> Signal<PaneLifecycle> {
+        self.lifecycle.into()
     }
 
     /// Whether pane work may start: the pane admits it AND the session

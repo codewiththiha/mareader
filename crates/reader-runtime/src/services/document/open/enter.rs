@@ -80,12 +80,6 @@ pub(super) fn startup_scale(ctx: &ReaderContext, page_size: (f64, f64)) -> (FitM
         .measured_size()
         .unwrap_or_else(|| window_budget(ctx));
     let box_size = (cw.max(1.0), ch.max(1.0));
-    if ctx.reader.dom.page_list().is_none()
-        && ctx.reader.dom.h_page_list().is_none()
-        && ctx.reader.viewer.container_size.get_untracked() != box_size
-    {
-        ctx.reader.viewer.container_size.set(box_size);
-    }
     // The pane's `initial_zoom` wins over every fit, once.
     if let Some(zoom) = ctx.pane.take_initial_zoom() {
         return (FitMode::None, clamp_scale(zoom));
