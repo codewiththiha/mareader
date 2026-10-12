@@ -3,12 +3,16 @@
 pub mod bridge;
 pub mod entry;
 pub mod lang;
+pub mod panel;
 pub mod pos;
 pub mod search;
 
 pub use bridge::{HUB, Hop, PackRef, Plan, plans};
 pub use entry::{DictEntry, EntryRank, WordMatch, order_entries};
 pub use lang::{Script, detect, lang_label, pair_label, script, speakers};
+pub use panel::{
+    Asked, PackLike, Pair, Route, answer_pack, built_packs, languages, named_packs, resolve, route,
+};
 pub use pos::{CanonPos, PosMatch, canonize, kind_canon, parse_tags, penn_canon, rank_tags};
 pub use search::{classify, edit_distance, fold};
 
