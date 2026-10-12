@@ -664,8 +664,10 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   no dependency, so the wasm bundle and the CLI cannot disagree about what a
   level rounds to or how `don't` is split. `crates/reader-runtime/src/state/
   cefr.rs` is the pane's answered words plus the asks in flight;
-  `services/cefr.rs` is the realm's bridge; `components/cefr/` is the two
-  painters and the shared ink layer. The dataset itself — download, rebuild,
+  `services/cefr/` is the realm's bridge and its two asks — the mirror and
+  the dataset's lifecycle in `mod.rs`, the asks and the tagger's answer
+  memory in `query.rs`; `components/cefr/` is the two painters and the
+  shared ink layer. The dataset itself — download, rebuild,
   lookups — is `src-tauri/src/cefr/`.
 - **One plan, two measurements.** `pdf.rs` stores boxes in PAGE space, so a
   zoom never re-measures: it divides the measured rect by the live display
@@ -675,7 +677,9 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   the shared animation-frame batch (`components/cefr/measure.rs`), and both
   memoize a walk by a `WalkKey` of layout, zoom, text fingerprint, cache
   generation, suppression fingerprint and threshold — an unchanged key is a
-  restore, not a walk.
+  restore, not a walk. The walk's two settings knobs ride an equality memo,
+  so an unrelated settings write — a theme swap — neither re-walks nor
+  repaints the ink.
 - **The scan is shared with search.** `components/cefr/scan.rs` holds one
   newest-first LRU of a row's rendered text and its tokens
   (`SCAN_CAP = 32` rows), and `formats/reflow/highlight.rs` reads the same
@@ -720,23 +724,34 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   command is `spawn_blocking` — tagging a sentence, and a first click's model
   load, are seconds of CPU and neither belongs on the thread the window is
   drawn from. `PosAnswer.kind` is `cefr::tags::kind_of`, not a restatement.
+  A tagging is remembered per realm — `TAGGED_CAP = 256` answers, newest
+  first, voided when the dataset's word count moves — so one word in one
+  sentence pays the model once; an unequipped `None` stays unremembered, so
+  a model that lands later still answers. The dictionary's hover card never
+  asks it at all: the model runs for a pinned ask alone, one at a time
+  behind the command's permit.
 - **Bounds.** `MAX_BOXES_PER_PAGE` and `MAX_BOXES_PER_ROW` are 200, the
   engine's own per-page cap; `LEVEL_CACHE_CAP = 8192` entries, cleared whole
-  at the cap and on a document change; `SCAN_CAP = 32` rows; the backend
-  refuses a batch over `MAX_BATCH = 4000` rather than truncating one, because
-  a truncated answer caches a wrong band for every word it dropped.
+  at the cap and on a document change; `SCAN_CAP = 32` rows; `TAGGED_CAP =
+  256` tagger answers; a red box shares ONE `Arc` of its mark between its
+  fragments, closures and memo copies; the backend refuses a batch over
+  `MAX_BATCH = 4000` rather than truncating one, because a truncated answer
+  caches a wrong band for every word it dropped.
 
 ## Dictionary cards
 
 The hover card over a red word, the selection menu's lookup and the sidebar's
 search are one feature over the same packs. `src-tauri/src/dict/` owns the
 downloads, the parquet-to-sqlite builds and the lookups; `crates/dict-core` is
-the pure half (POS canon, ranks, bridge plans, word fit);
-`services/dict.rs` is the realm's bridge and the only place a pack is chosen.
+the pure half (POS canon, ranks, bridge plans, word fit, and — in `panel` —
+the pack choice itself, over any row that implements `PackLike`);
+`services/dict/` is the realm's bridge in three rooms: its state and bridge
+in `mod.rs`, the wire's shapes, asks and answer memory in `wire.rs`, and the
+panel's rules, bound to the mirror, in `route.rs`.
 
 - **One language answers a card.** `Settings::dict.default_lang` names a
-  target language, and `services::dict::answer_pack` resolves it against the
-  built packs — falling to the first built one when the name is unset, names a
+  target language, and `answer_pack` (`dict_core::panel`, re-exported by
+  `services::dict`) resolves it against the built packs — falling to the first built one when the name is unset, names a
   pack that was removed, or names one still converting. The sidebar's panel
   overrides it its own way: one dropdown writes `dict.langs`, and the row that
   names no pack at all asks every built one.
@@ -747,8 +762,8 @@ the pure half (POS canon, ranks, bridge plans, word fit);
   used to walk every built pack.
 - **The panel may name two shores.** `dict.pair` turns the one pack dropdown
   into two pickers: the language the word is typed in, and the one the answer
-  is wanted in. `services::dict::resolve` holds the rules, tested apart from
-  the view: a chosen shore outranks the word; the word's own script speaks
+  is wanted in. `dict_core::panel::resolve` holds the rules, tested apart
+  from any view: a chosen shore outranks the word; the word's own script speaks
   only when one downloaded language is written in it — Latin never does,
   since English and French share it, so a Latin word keeps the shore the
   reader chose — the hub is the fallback, and the answer is never the shore
@@ -791,6 +806,27 @@ the pure half (POS canon, ranks, bridge plans, word fit);
   cannot follow a horizontal scroll or a re-wrap, which is why it is gone. A
   hovered card retires 350 ms after the pointer leaves; an asked-for one is
   pinned and waits for a dismiss.
+- **A hover rests before it asks.** The card appears at once, but the packs
+  are asked only once the pointer has rested `HOVER_DWELL_MS = 140`; a word
+  the card already holds keeps its senses and rides the new anchor without a
+  wire round trip; an ask stamp lands a superseded answer on nothing; and a
+  card no pack can answer asks nothing. A sweep across a page of red ink
+  costs the backend nothing at all.
+- **The tagger runs for a pinned card alone.** A hover is answered by the
+  plain lookup; the selection menu's ask — pinned — adds the POS-ranked
+  re-ask, behind the same stamp and the tagger's answer memory (see the
+  vocabulary section).
+- **A tight ask rides the indexes.** The hover's lookup is `tight`: exact
+  and prefix probes on `word_fold`/`def_fold`, both indexed. The
+  containment scan and the edit-distance fuzzy belong to the panel's search
+  and a pinned card alone. Lookups and searches ride a four-permit gate and
+  the tagger a one-permit gate, so a storm queues instead of growing the
+  blocking pool; the built-pack probe answers from a `BUILT_TTL = 5 s` cache
+  the landings and removals invalidate, so neither an ask nor a progress
+  tick opens sqlite to ask what is built.
+- **An answered ask is remembered.** The realm keeps `ANSWERED_CAP = 64`
+  lookup answers, newest first, voided when the built pack set moves — a
+  re-hover of the same word pays no wire.
 - **One card at a time.** `mareader:gloss-open` hides the hover card at once:
   the AI card owns the word the press asked about. The red word raises that
   event only while `cefr_click_explain` is on, so with the click off — no AI on
@@ -799,10 +835,15 @@ the pure half (POS canon, ranks, bridge plans, word fit);
 - **A near miss says so.** An entry whose `word_match` is not `exact` names the
   headword the pack answered with, so a reader who hovered `run` can see the
   sense came from `runner`.
+- **The panel asks on its own fields.** The panel's pair and seat ride an
+  equality memo over the dictionary's settings slice, so an unrelated
+  settings write — a theme swap — fires no search.
 - **The host owns nothing long-lived.** `DictHoverHost` is per pane: its four
-  window listeners are removed on cleanup, and the retire debounce — the one
-  timer here — is cancelled the same way. The card itself is an
-  `AnchorBubble`, whose own listeners die with it.
+  window listeners are removed on cleanup, and its two timers — the hover's
+  dwell and the leave's grace — are cancelled the same way. The card itself
+  is an `AnchorBubble`: its resize listener is born once with the bubble and
+  dies with it, and a placement rides one coalesced frame, however fast the
+  anchor moves.
 
 ## The dataset's download
 

@@ -203,3 +203,33 @@ its callback until it can unlisten; unlisten always precedes callback release.
 These ownership rules are checked against real Library WASM using a controlled
 native boundary in the browser suite. This does not assert full process-RAM
 recovery or resolve the previously measured WebKit retention.
+
+## Dictionary hover pipeline audit (2026-10-12)
+
+Scope: the dictionary system PR #132 added a hover card per pane realm, a
+sidebar panel per rail, and a backend lookup path, none of it bounded at the
+time. Symptom in the field: after a few panes and two or three theme swaps
+the window stopped answering presses, and the footprint stood near 1 GB at
+idle against a 280 MB baseline. Every realm shares the webview's one main
+thread, so a storm in a pane realm reads as a frozen shell.
+
+| Holder | Verdict | Evidence |
+| --- | --- | --- |
+| Hover ask rate | Pass (fixed) | `HOVER_DWELL_MS = 140` dwell before the packs are asked; a word the card already holds asks nothing; an ask stamp drops a superseded answer (`components/dict/hover_card.rs`) |
+| Tagger calls | Pass (fixed) | The model runs for a pinned card alone and behind a one-permit gate; answers are remembered (`TAGGED_CAP = 256`), voided when the dataset's word count moves |
+| Lookup cost | Pass (fixed) | A hover's ask is `tight` — exact and prefix probes on the indexed folds. The containment scan and the edit-distance fuzzy, which walked tables of up to 441k rows per hover, belong to the panel's search and a pinned card |
+| Ask concurrency | Pass (fixed) | Four permits over `dict_lookup`/`dict_search`, one over `cefr_pos_of`; a sweep queues instead of growing the blocking pool a thread per ask |
+| Backend probes | Pass (fixed) | The built-pack list answers from a `BUILT_TTL = 5 s` cache that landings and removals invalidate; a progress tick no longer opens sqlite per pack, and `adopt_landed` rides the same age |
+| Answer memory | Pass (fixed) | `ANSWERED_CAP = 64` lookup answers per realm, newest first, voided when the built pack set moves |
+| Red-ink retention | Pass (fixed) | One `Arc<GlossMark>` per painted word shared by its fragments, its four closures and the walk memo's copy; was three owned marks per box |
+| Walk re-runs | Pass (fixed) | The walk's settings knobs ride an equality memo, so a theme swap neither re-reads a text layer nor repaints ink |
+| Bubble listeners | Pass (fixed) | `AnchorBubble`'s resize listener is born once with the bubble; the anchor effect only places, through one coalesced frame |
+| Panel searches | Pass (fixed) | The panel's pair and seat ride an equality memo over the dict slice, so an unrelated settings write fires no search |
+| Realm signals | Pass | `packs`/`panel`/`dataset` mirrors mint in `install_*_bridge` under the realm's root owner, not a transient chrome owner |
+
+Not measured here: no process-RSS numbers. The mechanism this round removes
+is a per-event cost with no bound — unbounded in-flight asks, each holding
+closures and row buffers in a wasm heap that only grows (rules.md §1), plus a
+blocking thread per ask on the Rust side. The claim is the bound, not a
+before/after footprint; a scroll-heavy replay is what would measure it
+(rules.md §10).

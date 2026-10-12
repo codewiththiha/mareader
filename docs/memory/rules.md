@@ -63,8 +63,14 @@ session teardown, reclaimed by scoped nonce on pane removal, and reclaimed
 for all descendants on Reader-host removal). Raw canvases
 survive `RAW_IDLE_MS = 2000` after a theme change and no longer. Rust-side
 bounds: the vocabulary highlighter's `LEVEL_CACHE_CAP = 8192` answered words
-(cleared whole at the cap, and on a document change) and its `SCAN_CAP = 32`
-shared row scans; the downloader's `SLOT_CAP = 32` records, the oldest
+(cleared whole at the cap, and on a document change), its `SCAN_CAP = 32`
+shared row scans, and its `TAGGED_CAP = 256` tagger answers (newest first,
+voided when the dataset's word count moves); the dictionary realm's
+`ANSWERED_CAP = 64` lookup answers (voided when the built pack set moves),
+the backend's `BUILT_TTL = 5 s` built-pack probe that a landing or removal
+invalidates, and the command gates — four permits over lookup and search,
+one over the tagger — so a hover storm queues instead of growing the
+blocking pool; the downloader's `SLOT_CAP = 32` records, the oldest
 finished ones evicted first, whose files outlive their records on purpose.
 A new cache needs both numbers in the same comment.
 
