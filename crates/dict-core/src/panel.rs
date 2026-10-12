@@ -1,6 +1,7 @@
 //! Pack choice and pair resolution, pure over any pack row.
 
-use crate::lang::{HUB, detect};
+use crate::bridge::HUB;
+use crate::lang::detect;
 
 /// The facts one pack row lends the panel's logic.
 pub trait PackLike {
@@ -75,12 +76,9 @@ pub enum Route {
 /// The way between two shores, over the packs that are built.
 pub fn route<P: PackLike>(rows: &[P], from: &str, to: &str) -> Route {
     let joins = |a: &str, b: &str| {
-        rows.iter()
-            .filter(|pack| pack.built())
-            .any(|pack| {
-                (pack.source() == a && pack.target() == b)
-                    || (pack.source() == b && pack.target() == a)
-            })
+        rows.iter().filter(|pack| pack.built()).any(|pack| {
+            (pack.source() == a && pack.target() == b) || (pack.source() == b && pack.target() == a)
+        })
     };
     if joins(from, to) {
         return Route::Direct;
