@@ -47,7 +47,7 @@ impl DatasetMirror {
 
     /// The readout under the bar: a speed, and what is left at it.
     pub fn rate(&self) -> Option<String> {
-        let speed = self.speed.filter(|speed| speed > 1.0)?;
+        let speed = self.speed.filter(|speed| *speed > 1.0)?;
         let per_sec = if speed >= 1_048_576.0 {
             format!("{:.1} MB/s", speed / 1_048_576.0)
         } else {

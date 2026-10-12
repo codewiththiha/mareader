@@ -76,5 +76,5 @@ pub async fn cefr_pos_of(
     .await
     .map_err(|e| format!("pos worker: {e}"))?;
     drop(permit);
-    Ok(answer)
+    answer
 }
