@@ -64,7 +64,9 @@ for all descendants on Reader-host removal). Raw canvases
 survive `RAW_IDLE_MS = 2000` after a theme change and no longer. Rust-side
 bounds: the vocabulary highlighter's `LEVEL_CACHE_CAP = 8192` answered words
 (cleared whole at the cap, and on a document change) and its `SCAN_CAP = 32`
-shared row scans; the downloader's `SLOT_CAP = 32` records, the oldest
+shared row scans; the dictionary's `LOOKUP_CAP = 96` asked words, oldest
+first, drained by every fresh set of pack rows; the downloader's
+`SLOT_CAP = 32` records, the oldest
 finished ones evicted first, whose files outlive their records on purpose.
 A new cache needs both numbers in the same comment.
 

@@ -118,6 +118,9 @@ pub fn use_dismiss(
 
         if live {
             push_stack(id);
+            // Window-wide: whoever dies holding it must let go, whichever
+            // policy arms the listeners below.
+            on_cleanup(move || pop_stack(id));
         } else {
             pop_stack(id);
         }

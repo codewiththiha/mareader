@@ -1,13 +1,22 @@
 //! The shared ink layer: boxes, the click that explains,
 //! the hover that translates.
 
+use std::time::Duration;
+
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 use ai_core::gloss::GlossMark;
 use app_ui::events::dispatch_typed_event_on;
 use app_ui::events::{DICT_HOVER_EVENT, DICT_LEAVE_EVENT};
 
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
+
+/// How long the pointer rests on a word before the card is asked for.
+const HOVER_DWELL_MS: u64 = 160;
+
+/// The attribute a box carries: its index in this layer's own list.
+const BOX_INDEX: &str = "data-cefr";
 
 /// One painted word: the layer box plus the activation's payload.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,14 +34,16 @@ fn activate(origin: &web_sys::EventTarget, mark: &GlossMark) {
     request_gloss_open(origin, mark);
 }
 
-/// A red word under the pointer: the hover card's own seam.
-fn hover_in(origin: &web_sys::EventTarget, mark: &GlossMark) {
-    dispatch_typed_event_on(origin, DICT_HOVER_EVENT, mark);
+/// Boxes paired with their index; a painted box carries its own.
+fn indexed(boxes: Vec<CefrBox>) -> Vec<(usize, CefrBox)> {
+    boxes.into_iter().enumerate().collect()
 }
 
-/// The pointer left the word; the hover card may retire.
-fn hover_out(origin: &web_sys::EventTarget, mark: &GlossMark) {
-    dispatch_typed_event_on(origin, DICT_LEAVE_EVENT, mark);
+/// The mark the pointer is on, by the index its box carries.
+fn mark_at(boxes: Signal<Vec<CefrBox>>, target: &web_sys::EventTarget) -> Option<GlossMark> {
+    let element = target.clone().dyn_into::<web_sys::Element>().ok()?;
+    let index = element.get_attribute(BOX_INDEX)?.parse::<usize>().ok()?;
+    boxes.with_untracked(|all| all.get(index).map(|b| b.mark.clone()))
 }
 
 #[component]
@@ -47,27 +58,90 @@ pub fn CefrMarkLayer(
     /// Whether hovering translates; independent of the click.
     hover_dict: Signal<bool>,
 ) -> impl IntoView {
+    // One dwell timer for the layer: a sweep asks for nothing,
+    // a rest asks once.
+    let dwell = StoredValue::new_local(None::<TimeoutHandle>);
+    let hovered = StoredValue::new_local(None::<GlossMark>);
+    on_cleanup(move || {
+        if let Some(handle) = dwell.try_get_value().flatten() {
+            handle.clear();
+        }
+    });
+    let disarm = move || {
+        if let Some(handle) = dwell.try_get_value().flatten() {
+            handle.clear();
+        }
+        let _ = dwell.try_set_value(None);
+    };
+
+    let on_over = move |ev: web_sys::MouseEvent| {
+        disarm();
+        if !hover_dict.get_untracked() {
+            return;
+        }
+        let Some(origin) = ev.target() else {
+            return;
+        };
+        let Some(mark) = mark_at(boxes, &origin) else {
+            return;
+        };
+        let _ = hovered.try_set_value(Some(mark.clone()));
+        let handle = set_timeout_with_handle(
+            move || dispatch_typed_event_on(&origin, DICT_HOVER_EVENT, &mark),
+            Duration::from_millis(HOVER_DWELL_MS),
+        )
+        .ok();
+        let _ = dwell.try_set_value(handle);
+    };
+
+    let on_leave = move |ev: web_sys::MouseEvent| {
+        disarm();
+        let Some(mark) = hovered.try_get_value().flatten() else {
+            return;
+        };
+        let _ = hovered.try_set_value(None);
+        let Some(origin) = ev.target() else {
+            return;
+        };
+        dispatch_typed_event_on(&origin, DICT_LEAVE_EVENT, &mark);
+    };
+
+    let on_click = move |ev: web_sys::MouseEvent| {
+        if !click_explain.get_untracked() {
+            return;
+        }
+        let Some(origin) = ev.target() else {
+            return;
+        };
+        let Some(mark) = mark_at(boxes, &origin) else {
+            return;
+        };
+        ev.stop_propagation();
+        activate(&origin, &mark);
+    };
+
+    let on_down = move |ev: web_sys::MouseEvent| {
+        // Only the click owns the selection; hover-only leaves it flowing.
+        if click_explain.get_untracked() {
+            ev.prevent_default();
+        }
+    };
+
     view! {
         <div
             class="cefr-layer"
             // A focusable mark under `aria-hidden` contradicts itself.
             attr:aria-hidden=move || (!click_explain.get()).then_some("true")
+            on:mouseover=on_over
+            on:mouseleave=on_leave
+            on:click=on_click
+            on:mousedown=on_down
         >
             <For
-                each=move || boxes.get()
-                key=|b: &CefrBox| format!("{}@{},{}", b.mark.word, b.x, b.y)
-                children=move |b: CefrBox| {
-                    // The gloss stroke's gesture shape, mirrored.
-                    let mark = b.mark.clone();
-                    let word = mark.word.clone();
-                    let hover_mark = mark.clone();
-                    let out_mark = mark.clone();
-                    let explain = move |ev: web_sys::MouseEvent| {
-                        ev.stop_propagation();
-                        if let Some(origin) = ev.target() {
-                            activate(&origin, &mark);
-                        }
-                    };
+                each=move || indexed(boxes.get())
+                key=|(_, b): &(usize, CefrBox)| format!("{}@{},{}", b.mark.word, b.x, b.y)
+                children=move |(index, b): (usize, CefrBox)| {
+                    let word = b.mark.word.clone();
                     view! {
                         <button
                             type="button"
@@ -76,6 +150,7 @@ pub fn CefrMarkLayer(
                             // tab order; the pointer still reaches them.
                             tabindex="-1"
                             aria-label=format!("Explain {word}")
+                            attr:data-cefr=index.to_string()
                             // A control while either feature answers;
                             // paint alone when both are off.
                             prop:disabled=move || {
@@ -90,32 +165,6 @@ pub fn CefrMarkLayer(
                                     b.w.max(1.0) * s,
                                     b.h.max(1.0) * s,
                                 )
-                            }
-                            on:mousedown=move |ev: web_sys::MouseEvent| {
-                                // Only the click owns the selection;
-                                // hover-only leaves it flowing.
-                                if click_explain.get_untracked() {
-                                    ev.prevent_default();
-                                }
-                            }
-                            on:click=move |ev: web_sys::MouseEvent| {
-                                if click_explain.get_untracked() {
-                                    explain(ev);
-                                }
-                            }
-                            on:mouseenter=move |ev: web_sys::MouseEvent| {
-                                if hover_dict.get_untracked()
-                                    && let Some(origin) = ev.target()
-                                {
-                                    hover_in(&origin, &hover_mark);
-                                }
-                            }
-                            on:mouseleave=move |ev: web_sys::MouseEvent| {
-                                if hover_dict.get_untracked()
-                                    && let Some(origin) = ev.target()
-                                {
-                                    hover_out(&origin, &out_mark);
-                                }
                             }
                         />
                     }

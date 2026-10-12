@@ -711,8 +711,12 @@ a model feature: nothing is inferred at runtime, every band is looked up.
   every highlighted word. `aria-hidden` follows the same signal: a focusable
   element under `aria-hidden` contradicts itself. `layer.rs`'s `activate` is
   the single seam a red word's press crosses — today the AI card, and the one
-  place a hover-triggered dictionary hangs from, and the hover card's own
-  seam (`hover_in`) sits beside it.
+  place a hover-triggered dictionary hangs from. The layer listens once for
+  the whole page — one `mouseover`, one `mouseleave`, one `click` and one
+  `mousedown` — and a box carries nothing but its index in `data-cefr`; the
+  handler reads the mark back out of the boxes. `HOVER_DWELL_MS` sits between
+  the pointer and the ask, so sweeping the ink asks for nothing and resting
+  on one word asks once.
 - **Click-time POS.** The word card's part of speech is the *dataset's*, read
   at click time: `cefr_pos_of` tags the word in the sentence it was captured
   with (`cefr::pos::Tagger`, the model fetched beside the dataset) and asks
@@ -731,8 +735,13 @@ a model feature: nothing is inferred at runtime, every band is looked up.
 The hover card over a red word, the selection menu's lookup and the sidebar's
 search are one feature over the same packs. `src-tauri/src/dict/` owns the
 downloads, the parquet-to-sqlite builds and the lookups; `crates/dict-core` is
-the pure half (POS canon, ranks, bridge plans, word fit);
-`services/dict.rs` is the realm's bridge and the only place a pack is chosen.
+the pure half (POS canon, ranks, bridge plans, word fit); `services/dict/` is
+the realm's bridge and the only place a pack is chosen. It is four files:
+`rows.rs` holds the wire shapes, `route.rs` the rules between two shores,
+`ask.rs` the backend's three asks and their cache, and `mod.rs` the realm's
+pack rows, the panel's ask and the tap that fills both. The sidebar's panel
+reads the same way — `ask.rs` derives the ask from the settings and the pack
+rows, `rows.rs` draws one answer, and `mod.rs` composes them.
 
 - **One language answers a card.** `Settings::dict.default_lang` names a
   target language, and `services::dict::answer_pack` resolves it against the
@@ -780,8 +789,8 @@ the pure half (POS canon, ranks, bridge plans, word fit);
   rail is built afresh for every pane, so state kept in the view follows the
   focused pane and dies on a tab away. Only the rail on show runs the search,
   so a split does not ask the same question twice.
-- **Two asks, one anchor.** A red word's `mouseenter` raises
-  `mareader:dict-hover` with the mark; the selection menu's dictionary icon
+- **Two asks, one anchor.** A red word the pointer rested on raises
+  `mareader:dict-hover` with its mark; the selection menu's dictionary icon
   raises `mareader:dict-open` with the selection's own anchor and spot. Both
   hand the card a `PageAnchor`, never a box, and the card watches it with
   `watch_page_anchor` — the same glue the selection menu and the AI card use,
@@ -799,6 +808,30 @@ the pure half (POS canon, ranks, bridge plans, word fit);
 - **A near miss says so.** An entry whose `word_match` is not `exact` names the
   headword the pack answered with, so a reader who hovered `run` can see the
   sense came from `runner`.
+- **A put-away panel drops its menu.** The rail mounts every panel for the
+  session and puts the rest away with `.sidebar-panel.is-away`, whose
+  `display: none` hides a popover without closing it. A dropdown left open
+  when the panel was put away kept its dismissal armed: the next press
+  anywhere in the window closed an invisible menu instead of reaching the
+  button under the cursor, and Escape stayed claimed. `SelectMenu` takes an
+  `alive` signal — the panel passes its own `shown` — and closes on it and on
+  unmount. `use_dismiss` pops its claim from the push itself, so no policy
+  can leak one.
+- **The taps are counted.** Every `install_*_bridge` notes its tap in
+  `services::bridge_listeners`, and the digest carries the sum over live
+  panes. The AI chunk tap was the one without a once-guard, so a second
+  install in a realm stacked a second listener on the same event; it has one
+  now, like the dictionary's and the dataset's. A closed pane's terminal
+  digest carries counters forward and never gauges, so churn leaves the
+  host's own three alone — which is what
+  `pane_churn_returns_bridge_listeners_to_baseline` asserts.
+- **The card asks once per word.** `services::dict::lookup` keeps the answers
+  it has in a newest-first `VecDeque` capped at `LOOKUP_CAP`, keyed by the
+  word, both shores and the role. A page of red ink holds up to two hundred
+  words and the reader crosses a good few on the way to the one they want, so
+  without it the same handful crossed the bridge on every glance. Every fresh
+  set of pack rows drains it: a pack that lands or leaves changes what a word
+  answers.
 - **The host owns nothing long-lived.** `DictHoverHost` is per pane: its four
   window listeners are removed on cleanup, and the retire debounce — the one
   timer here — is cancelled the same way. The card itself is an

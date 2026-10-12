@@ -5,5 +5,6 @@ pub mod choice_row;
 pub mod kbd;
 pub mod menu_item;
 pub mod section_label;
+pub mod select_menu;
 pub mod separator;
 pub mod shortcut_row;

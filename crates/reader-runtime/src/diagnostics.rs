@@ -242,6 +242,12 @@ pub(crate) struct Snapshot {
     render_budget_max_items: u32,
     /// Look-ahead (paper colour) samples in flight, which must drain.
     lookahead_samples_active: usize,
+    /// Backend taps this realm installed: three while a session reads.
+    bridge_listeners: usize,
+    /// Words the vocabulary dataset's cache holds; its cap bounds it.
+    cefr_level_entries: usize,
+    /// Answers the dictionary's lookup cache holds; its cap bounds it.
+    dict_lookup_entries: usize,
     /// The engine's half (session, worker, render lane, thumbnails).
     engine: Option<pdf_core::diagnostics::EngineStats>,
     /// The runtime's self-reported view, when one has published.
@@ -377,6 +383,9 @@ pub(crate) fn snapshot() -> Snapshot {
         virtualizer_observers,
         virtualizer_timers,
         render_budget_max_items: crate::features::virtualizers::RENDER_BUDGET.max_items as u32,
+        bridge_listeners: crate::services::bridge_listeners(),
+        cefr_level_entries: crate::state::level_entries(),
+        dict_lookup_entries: crate::services::dict::lookup_entries(),
         runtime: runtime_view.map(|view| {
             let engine_stats: pdf_core::diagnostics::EngineStats = engine.unwrap_or_default();
             RuntimeSnapshot {
@@ -477,6 +486,9 @@ const PANE_GAUGES: &[&str] = &[
     "virtualizerObservers",
     "virtualizerTimers",
     "lookaheadSamplesActive",
+    "bridgeListeners",
+    "cefrLevelEntries",
+    "dictLookupEntries",
 ];
 
 /// Fold the pane frames' digests into the host's: counters, gauges, engine.
@@ -595,6 +607,41 @@ pub fn install() {}
 mod tests {
     use super::*;
 
+    /// Fold panes into a host digest the way `snapshot_json` does.
+    fn merged(host: serde_json::Value, live: &[String], finals: &[String]) -> serde_json::Value {
+        let mut value = host;
+        merge_pane_digests(&mut value, true, live, finals);
+        value
+    }
+
+    /// The gauge the once-guard is judged by: a closed pane's taps
+    /// are not the host's.
+    #[test]
+    fn pane_churn_returns_bridge_listeners_to_baseline() {
+        let host = serde_json::json!({ "bridgeListeners": 3 });
+        let pane = serde_json::json!({ "bridgeListeners": 3, "atBaseline": true }).to_string();
+        let reading = merged(host.clone(), &[pane.clone(), pane.clone()], &[]);
+        assert_eq!(
+            reading["bridgeListeners"], 9,
+            "two reading panes add their own taps to the host's"
+        );
+        let closed = merged(host, &[], &[pane.clone(), pane]);
+        assert_eq!(
+            closed["bridgeListeners"], 3,
+            "a closed pane carries counters forward, never gauges"
+        );
+    }
+
+    /// The bounds are read from the digest, so the digest carries them.
+    #[test]
+    fn the_snapshot_reports_the_feature_gauges() {
+        let value: serde_json::Value =
+            serde_json::from_str(&snapshot_json()).expect("snapshot is JSON");
+        for key in ["bridgeListeners", "cefrLevelEntries", "dictLookupEntries"] {
+            assert!(value.get(key).is_some(), "{key} is missing from the digest");
+        }
+    }
+
     #[test]
     fn create_and_dispose_notes_move_their_counters() {
         let created_before = READER_RUNTIMES_CREATED.load(Ordering::Relaxed);
@@ -703,6 +750,9 @@ mod tests {
             virtualizer_timers: 0,
             render_budget_max_items: 3,
             lookahead_samples_active: 0,
+            bridge_listeners: 0,
+            cefr_level_entries: 0,
+            dict_lookup_entries: 0,
             runtime: None,
             host: None,
             engine: Some(drained_engine()),
