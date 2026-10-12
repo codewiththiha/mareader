@@ -7,7 +7,7 @@ use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use crate::state::ReaderState;
-use app_chrome::hooks::use_resize_observer::observe_content_size;
+use app_chrome::hooks::use_resize_observer::observe_content_size_with;
 
 /// Shared shell for Single and Spread.
 #[component]
@@ -19,7 +19,10 @@ pub fn PageShell(
 ) -> impl IntoView {
     // The container observation dies with the shell.
     let list_ref: NodeRef<html::Div> = NodeRef::new();
-    let stop_observing = observe_content_size(list_ref, state.viewer.container_size);
+    let stop_observing = observe_content_size_with(
+        move || list_ref.get().map(web_sys::Element::from),
+        state.viewer.container_size,
+    );
     on_cleanup(stop_observing);
     let texture_class = texture_class(state);
     let tx_zoom = zoom_style(state);

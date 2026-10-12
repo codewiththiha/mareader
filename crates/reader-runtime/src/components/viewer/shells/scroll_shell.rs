@@ -14,7 +14,7 @@ use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
 use crate::state::ReaderState;
 use app_chrome::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
-use app_chrome::hooks::use_resize_observer::observe_content_size;
+use app_chrome::hooks::use_resize_observer::observe_content_size_with;
 
 #[component]
 pub fn ScrollShell(
@@ -30,7 +30,10 @@ pub fn ScrollShell(
     let list_ref: NodeRef<html::Div> = NodeRef::new();
     // The observer's teardown belongs to THIS shell's owner, or it
     // retains the scroller.
-    let stop_observing = observe_content_size(list_ref, state.viewer.container_size);
+    let stop_observing = observe_content_size_with(
+        move || list_ref.get().map(web_sys::Element::from),
+        state.viewer.container_size,
+    );
     on_cleanup(stop_observing);
     // The strip is about to be placed on `viewer.page`; the sync waits.
     state.viewer.awaiting_anchor.set(true);

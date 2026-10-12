@@ -261,12 +261,10 @@ pub fn PdfPageCanvas(
         );
     });
 
-    let pane_lifecycle = pane_ctx.lifecycle_signal();
-
     Effect::new(move || {
         // Read every dependency unconditionally: an effect subscribes only to
         // what it reads.
-        let pane_live = pane_lifecycle.get().admits_work();
+        let pane_live = mounted.admits_work();
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
         // A zombie never starts a render: its bitmap stays until it unmounts.

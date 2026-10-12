@@ -1,7 +1,7 @@
 //! The pane's guarded view of its PDF session: work stops at
 //! disposal, teardown stays admitted.
 
-use leptos::prelude::{LocalStorage, StoredValue, WithValue, use_context};
+use leptos::prelude::{Get, LocalStorage, StoredValue, WithValue, use_context};
 use pdf_engine::api::EngineError;
 use pdf_engine::types::{
     CoverResult, OpenResult, OutlineEntry, PageSizeResult, RenderResult, ThumbResult,
@@ -309,6 +309,12 @@ impl MountedPdf {
         self.session
             .try_with_value(|s| s.as_ref().map(PdfSession::sid))
             .flatten()
+    }
+
+    /// Whether the bound pane admits work right now (tracked).
+    pub fn admits_work(&self) -> bool {
+        self.pane
+            .is_none_or(|p| p.lifecycle_signal().get().admits_work())
     }
 
     /// The guarded view onto the bound session, with the pane's lifecycle now.
