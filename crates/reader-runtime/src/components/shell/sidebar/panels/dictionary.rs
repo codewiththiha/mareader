@@ -96,13 +96,17 @@ pub(crate) fn SidebarDictionary(
     let (query, results, asked) = (held.query, held.results, held.asked);
     let input_ref: NodeRef<html::Input> = NodeRef::new();
 
+    // The dictionary's own slice: a theme swap meets an equal memo and
+    // re-asks nothing.
+    let dict_fields = Memo::new(move |_| s.with(|st| st.dict.clone()));
+
     // The pair, when asked for: the card's language stands in
     // for a target.
     let pair = Signal::derive(move || {
-        s.with(|st| {
-            st.dict.pair.then(|| Pair {
-                from: st.dict.from.clone(),
-                to: st.dict.to.clone().or_else(|| st.dict.default_lang.clone()),
+        dict_fields.with(|d| {
+            d.pair.then(|| Pair {
+                from: d.from.clone(),
+                to: d.to.clone().or_else(|| d.default_lang.clone()),
             })
         })
     });
@@ -110,7 +114,8 @@ pub(crate) fn SidebarDictionary(
     // The seat an ask that names no pair rides: one pack, or every one.
     let seat = Signal::derive(move || {
         let rows = packs.get();
-        s.with(|st| st.dict.langs.first().cloned())
+        dict_fields
+            .with(|d| d.langs.first().cloned())
             .filter(|id| rows.iter().any(|pack| pack.built && &pack.id == id))
     });
 
@@ -213,13 +218,13 @@ pub(crate) fn SidebarDictionary(
         settled
             .get()
             .map(|got| got.from)
-            .or_else(|| s.with(|st| st.dict.from.clone()))
+            .or_else(|| dict_fields.with(|d| d.from.clone()))
     });
     let to_current = Signal::derive(move || {
         settled
             .get()
             .map(|got| got.to)
-            .or_else(|| s.with(|st| st.dict.to.clone()))
+            .or_else(|| dict_fields.with(|d| d.to.clone()))
     });
 
     let pick_from = Callback::new(move |lang: Option<String>| {
