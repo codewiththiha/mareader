@@ -25,6 +25,8 @@ use super::DictOpen;
 
 /// How long the card lingers after the pointer leaves a word.
 const LEAVE_GRACE_MS: u64 = 350;
+/// The pointer's rest before a hover asks; a sweep asks nothing.
+const HOVER_DWELL_MS: u64 = 140;
 
 /// One word asked for: what to look up, and where the word sits.
 struct Ask {
@@ -44,6 +46,8 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     let word = RwSignal::new(String::new());
     let entries: RwSignal<Vec<EntryMirror>> = RwSignal::new(Vec::new());
     let index = RwSignal::new(0usize);
+    // An empty list reads as "still asking" until an ask lands.
+    let answered = RwSignal::new(false);
     // The word the card is on; None leaves the watch nothing to follow.
     let placed: RwSignal<Option<Ask>> = RwSignal::new(None);
     let scroll_top = state.reader.viewer.scroll_top;
@@ -75,63 +79,109 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
             .unwrap_or_default()
     });
 
+    // The ask in flight; a newer ask or a hide leaves it landing on
+    // nothing.
+    let ask_gen = StoredValue::new_local(0u64);
+    // The hover ask the dwell is carrying: word, context, generation.
+    let pending: StoredValue<Option<(String, String, u64)>, LocalStorage> =
+        StoredValue::new_local(None);
+
+    // One ask's answers; only a pinned card runs the tagger's model.
+    let fetch_for = Callback::new(move |(asked, ctx, pin, stamp): (String, String, bool, u64)| {
+        let target = to.get_untracked();
+        if target.is_empty() {
+            answered.set(true);
+            return;
+        }
+        let land_word = asked.clone();
+        let land = move |found: Vec<EntryMirror>| {
+            let live = ask_gen.try_get_value() == Some(stamp)
+                && word.try_get_untracked().as_deref() == Some(land_word.as_str());
+            if live {
+                entries.set(found);
+                index.set(0);
+                answered.set(true);
+            }
+        };
+        services::dict::lookup(asked.clone(), "en".to_string(), target.clone(), None, land);
+        if !pin {
+            return;
+        }
+        services::cefr::fetch_pos(asked.clone(), ctx, {
+            let target = target.clone();
+            move |answer| {
+                let Some(answer) = answer else {
+                    return;
+                };
+                if ask_gen.try_get_value() != Some(stamp) {
+                    return;
+                }
+                let ranked = move |found: Vec<EntryMirror>| {
+                    if ask_gen.try_get_value() == Some(stamp) {
+                        entries.set(found);
+                        index.set(0);
+                        answered.set(true);
+                    }
+                };
+                services::dict::lookup(asked, "en".to_string(), target, Some(answer.pos), ranked);
+            }
+        });
+    });
+
+    // The dwell's fire: the pointer rested, so the packs are asked.
+    let dwell = use_debounce(Duration::from_millis(HOVER_DWELL_MS), move || {
+        let carried = pending.try_update_value(|slot| slot.take()).flatten();
+        let Some((asked, ctx, stamp)) = carried else {
+            return;
+        };
+        fetch_for.run((asked, ctx, false, stamp));
+    });
+    on_cleanup(move || dwell.cancel());
+
     // The card is gone: no word left to follow, nothing to retire.
     let hide = Callback::new(move |_| {
+        dwell.cancel();
+        let _ = pending.try_set_value(None);
+        let _ = ask_gen.try_update_value(|stamp| *stamp += 1);
         placed.set(None);
         pinned.set(false);
         visible.set(false);
+        answered.set(false);
     });
 
     // The pointer left; retire unless something else claims the card.
     let retire = use_debounce(Duration::from_millis(LEAVE_GRACE_MS), move || hide.run(()));
     on_cleanup(move || retire.cancel());
 
-    // Senses now, POS-ranked answers when the tagger lands.
-    let fetch_for = Callback::new(move |(ask, ctx): (String, String)| {
-        let target = to.get_untracked();
-        let live = word;
-        let asked = ask.clone();
-        services::dict::lookup(ask.clone(), "en".to_string(), target.clone(), None, {
-            let asked = asked.clone();
-            move |found| {
-                if live.get_untracked() == asked {
-                    entries.set(found);
-                    index.set(0);
-                }
-            }
-        });
-        services::cefr::fetch_pos(ask.clone(), ctx, {
-            let target = target.clone();
-            move |answer| {
-                let Some(answer) = answer else {
-                    return;
-                };
-                if live.get_untracked() != asked {
-                    return;
-                }
-                services::dict::lookup(ask, "en".to_string(), target, Some(answer.pos), {
-                    let asked = asked.clone();
-                    move |found| {
-                        if live.get_untracked() == asked {
-                            entries.set(found);
-                            index.set(0);
-                        }
-                    }
-                });
-            }
-        });
-    });
-
     let show = Callback::new(move |(ask, pin): (Ask, bool)| {
         retire.cancel();
         let (asked, context) = (ask.word.clone(), ask.context.clone());
+        let held = visible.get_untracked() && word.get_untracked() == asked;
         placed.set(Some(ask));
-        word.set(asked.clone());
-        entries.set(Vec::new());
-        index.set(0);
         pinned.set(pin);
         visible.set(true);
-        fetch_for.run((asked, context));
+        // Already on this word: ride the anchor, keep the senses.
+        if held && !pin {
+            return;
+        }
+        if !held {
+            word.set(asked.clone());
+            entries.set(Vec::new());
+            index.set(0);
+            answered.set(false);
+        }
+        let stamp = ask_gen
+            .try_update_value(|stamp| {
+                *stamp += 1;
+                *stamp
+            })
+            .unwrap_or(0);
+        if pin {
+            fetch_for.run((asked, context, true, stamp));
+        } else {
+            let _ = pending.try_set_value(Some((asked, context, stamp)));
+            dwell.trigger();
+        }
     });
 
     use_typed_event_from::<GlossMark>(DICT_HOVER_EVENT, move |mark, origin| {
@@ -262,10 +312,13 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
                     {move || {
                         let rows = entries.get();
                         if rows.is_empty() {
+                            let empty = if answered.get() {
+                                "No senses in this pack."
+                            } else {
+                                "Looking up…"
+                            };
                             return view! {
-                                <div class="px-3 py-2.5 text-xs text-muted">
-                                    "No senses in this pack."
-                                </div>
+                                <div class="px-3 py-2.5 text-xs text-muted">{empty}</div>
                             }
                             .into_any();
                         }
