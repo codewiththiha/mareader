@@ -233,3 +233,41 @@ closures and row buffers in a wasm heap that only grows (rules.md §1), plus a
 blocking thread per ask on the Rust side. The claim is the bound, not a
 before/after footprint; a scroll-heavy replay is what would measure it
 (rules.md §10).
+
+### The footprint the report named
+
+The field report behind this round also named a footprint: an idle window
+near 1 GB against a remembered 280 MB, in WebKit, after many panes. The
+replay lane's own numbers (`Split memory replay`, PSS of every content
+process, MB) put that claim next to the dictionary system's arrival:
+
+| build | run | WebKit at rest | WebKit, four panes | +70 s after the close | WebKit slope | Chromium at rest → four panes → +70 s |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-08, before #132 | 113478319472 | 474 / 443 | 856 / 817 | 810 / 776 | 22.0 MB/cycle | 167 → 335 → 148 |
+| 2026-10-10, before #132 | 114180775042 | 511 / 443 | 856 / 816 | 814 / 775 | 22.3 MB/cycle | 168 → 335 → 146 |
+| 2026-10-11, main after #132 | 114438495728 | 489 / 448 | 867 / 820 | 813 / 778 | 22.1 MB/cycle | 171 → 335 → 149 |
+| the round's branch | 114629948136 | 441 / 452 | 840 | 799 | 23.1 MB/cycle | 171 → 327 → 149 |
+
+Two rows are hands-off and intent where the pair is given. The dictionary
+system moved none of these columns: WebKit's idle footprint, its four-pane
+reading peak and its per-cycle growth are the same the week before the PR
+landed, inside run-to-run noise (`441` to `511` MB at rest, `22.0` to
+`23.1` MB/cycle). Chromium gives the reader's memory back — 335 MB reading
+falls to 148 MB, which is the library's own steady state — and WebKit does
+not, at 799 MB after the return against 452 MB before the read.
+
+That WebKit gap is not a leak the counters can see: the same rows report
+`frames: ["library:active:g3"]`, `readerFramesResident: 0`,
+`libraryFramesResident: 1` and `librarySessionsCreated ==
+libraryDisposesCompleted`, so every realm the app owns is gone while the
+WebKitWebProcess keeps what it allocated. It is engine-side retention, it
+predates this round, and no part of the dictionary or the vocabulary
+feature moved it. Naming the 1 GB as this round's regression would have
+pointed the next reader at the wrong system.
+
+What it costs to chase: the replay lane's cycles step already measures the
+slope per engine, so the follow-up is an attribution, not a discovery —
+a WebKit pass that reads one pane against four, and the same with the
+vocabulary and the dictionary disabled, which separates the document
+realms' own cost from the engine's retention. Rules 4 and 5 hold either
+way: what the app allocates is released, and the counters say so.
