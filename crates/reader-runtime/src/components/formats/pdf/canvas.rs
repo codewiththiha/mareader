@@ -379,19 +379,19 @@ pub fn PdfPageCanvas(
                 do_register.set(true);
             }
             // SIZE BEFORE PIXELS: probe the true box before the raster.
-            if !sized_async.get() {
-                if let Ok(size) = pdf_async.probe_page_size(page_no).await {
-                    // A probe can outlive its host or be superseded mid-flight.
-                    if seq_async.try_get_value() != Some(my_seq) {
-                        return;
-                    }
-                    sized_async.set(true);
-                    if let Some(cb) = sized_cb
-                        && cb.run((page_no, size.width, size.height))
-                    {
-                        let _ = in_flight_async.try_set_value(None);
-                        return;
-                    }
+            if !sized_async.get()
+                && let Ok(size) = pdf_async.probe_page_size(page_no).await
+            {
+                // A probe can outlive its host or be superseded mid-flight.
+                if seq_async.try_get_value() != Some(my_seq) {
+                    return;
+                }
+                sized_async.set(true);
+                if let Some(cb) = sized_cb
+                    && cb.run((page_no, size.width, size.height))
+                {
+                    let _ = in_flight_async.try_set_value(None);
+                    return;
                 }
             }
             if seq_async.try_get_value() != Some(my_seq) {
