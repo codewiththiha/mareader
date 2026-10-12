@@ -817,6 +817,14 @@ rows, `rows.rs` draws one answer, and `mod.rs` composes them.
   `alive` signal — the panel passes its own `shown` — and closes on it and on
   unmount. `use_dismiss` pops its claim from the push itself, so no policy
   can leak one.
+- **The taps are counted.** Every `install_*_bridge` notes its tap in
+  `services::bridge_listeners`, and the digest carries the sum over live
+  panes. The AI chunk tap was the one without a once-guard, so a second
+  install in a realm stacked a second listener on the same event; it has one
+  now, like the dictionary's and the dataset's. A closed pane's terminal
+  digest carries counters forward and never gauges, so churn leaves the
+  host's own three alone — which is what
+  `pane_churn_returns_bridge_listeners_to_baseline` asserts.
 - **The card asks once per word.** `services::dict::lookup` keeps the answers
   it has in a newest-first `VecDeque` capped at `LOOKUP_CAP`, keyed by the
   word, both shores and the role. A page of red ink holds up to two hundred

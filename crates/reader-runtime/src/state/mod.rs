@@ -18,7 +18,7 @@ use reflow_core::typography::TextSettings;
 // Only the names the app reaches for by their short path are
 // re-exported.
 pub use ai::{AiSelectionState, SelectionDetail};
-pub use cefr::CefrState;
+pub use cefr::{CefrState, level_entries};
 pub use document::{DocumentState, NO_DOCUMENT, ReflowContent};
 pub use gloss::GlossState;
 pub use search::SearchState;

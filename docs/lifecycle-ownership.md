@@ -151,7 +151,12 @@ engine's raw-retention timers and document-scoped idle sweeper
 (`rawRetentionTimers` / `sweepTimerArmed`, both required 0 by the drained
 gate), and the thumbnail generation map's size (`thumbGenerationSize`,
 cleared at teardown — measured during long sessions so growth cannot go
-unseen).
+unseen). Three gauges carry the same promise for the newest features: the
+backend taps this realm installed (`bridgeListeners`, summed over live
+panes — a closed pane carries counters forward, never gauges), the
+vocabulary dataset's answered words (`cefrLevelEntries`) and the
+dictionary's cached answers (`dictLookupEntries`), each bounded by the cap
+named beside it in `docs/memory/rules.md`.
 
 ### Two teardown bugs the baseline caught (and their fixes)
 

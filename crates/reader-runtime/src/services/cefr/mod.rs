@@ -45,6 +45,7 @@ pub fn install_cefr_bridge() {
     if TAPPED.with(|slot| slot.set(())).is_err() {
         return;
     }
+    crate::services::note_bridge_listener();
     crate::services::tauri_listen("cefr-dataset-progress", |ev: web_sys::Event| {
         let value: &JsValue = ev.as_ref();
         let payload = js_sys::Reflect::get(value, &"payload".into()).unwrap_or(JsValue::UNDEFINED);

@@ -53,6 +53,11 @@ pub fn panel() -> Panel {
     })
 }
 
+/// Answers the lookup cache holds; the cap bounds it.
+pub fn lookup_entries() -> usize {
+    ask::entries()
+}
+
 /// Bind this realm's rows and tap the backend's progress.
 pub fn install_dict_bridge() {
     // Realm-global: mint it in this owner, not the first transient reader's.
@@ -72,6 +77,7 @@ pub fn install_dict_bridge() {
     if TAPPED.with(|slot| slot.set(())).is_err() {
         return;
     }
+    crate::services::note_bridge_listener();
     crate::services::tauri_listen("dict-packs", |ev: web_sys::Event| {
         let value: &JsValue = ev.as_ref();
         let payload = js_sys::Reflect::get(value, &"payload".into()).unwrap_or(JsValue::UNDEFINED);

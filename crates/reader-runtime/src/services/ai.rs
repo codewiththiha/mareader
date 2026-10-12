@@ -1,5 +1,7 @@
 //! The frontend half of the AI word-explanation feature.
 
+use std::cell::OnceCell;
+
 pub use ai_core::types::{AiChunk, AiChunkEvent};
 use leptos::task::spawn_local;
 use wasm_bindgen::JsValue;
@@ -15,12 +17,22 @@ pub fn invoke_explain_word(word: String, context: String, run: String) {
     });
 }
 
+thread_local! {
+    /// The backend tap is installed once per realm, as the others are.
+    static TAPPED: OnceCell<()> = const { OnceCell::new() };
+}
+
 /// Register the Tauri chunk listener once; chunks re-broadcast as
 /// window events.
 pub fn install_ai_chunk_bridge() {
     if !tauri_bridge::has_tauri() {
         return;
     }
+    // Without it a second install stacked a second tap on one event.
+    if TAPPED.with(|slot| slot.set(())).is_err() {
+        return;
+    }
+    crate::services::note_bridge_listener();
 
     crate::services::tauri_listen("ai-stream-chunk", move |ev: web_sys::Event| {
         // Tauri event object; the AiChunk payload is under `.payload`.

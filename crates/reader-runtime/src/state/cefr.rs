@@ -1,6 +1,7 @@
 //! The vocabulary highlighter's per-pane state: answered words, the asks in
 //! flight, and the repaint generation.
 
+use std::cell::Cell;
 use std::collections::HashSet;
 
 use cefr_core::cache::LevelCache;
@@ -72,14 +73,30 @@ impl CefrState {
     }
 }
 
+thread_local! {
+    /// This realm's one state, held so a gauge can read the cache.
+    static LIVE: Cell<Option<CefrState>> = const { Cell::new(None) };
+}
+
 impl Default for CefrState {
     fn default() -> Self {
-        Self {
+        let state = Self {
             levels: StoredValue::new(LevelCache::default()),
             pending: StoredValue::new(HashSet::new()),
             generation: RwSignal::new(0),
-        }
+        };
+        LIVE.with(|live| live.set(Some(state)));
+        state
     }
+}
+
+/// Words the dataset's cache holds; zero once the pane's owner is gone.
+pub fn level_entries() -> usize {
+    LIVE.with(|live| {
+        live.get()
+            .and_then(|state| state.levels.try_with_value(|cache| cache.len()))
+    })
+    .unwrap_or(0)
 }
 
 #[cfg(test)]
