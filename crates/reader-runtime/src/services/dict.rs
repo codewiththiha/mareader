@@ -301,6 +301,7 @@ pub fn lookup(
     from: String,
     to: String,
     pos: Option<String>,
+    tight: bool,
     done: impl FnOnce(Vec<EntryMirror>) + 'static,
 ) {
     #[derive(Serialize)]
@@ -309,6 +310,7 @@ pub fn lookup(
         from: String,
         to: String,
         pos: Option<String>,
+        tight: bool,
     }
     if !tauri_bridge::has_tauri() {
         done(Vec::new());
@@ -320,6 +322,7 @@ pub fn lookup(
             from,
             to,
             pos,
+            tight,
         })
         .unwrap_or(JsValue::UNDEFINED);
         let parsed = match tauri_bridge::invoke("dict_lookup", args).await {

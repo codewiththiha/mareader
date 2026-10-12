@@ -1,8 +1,17 @@
 //! The dictionary's invoke surface: pack rows, lifecycle, lookups.
 
+use std::sync::OnceLock;
+
 use tauri::{AppHandle, Manager};
+use tokio::sync::Semaphore;
 
 use crate::dict::{DictEntryWire, DictManager, PackStatus};
+
+/// Asks in flight; a sweep queues instead of growing the pool.
+fn lookup_permits() -> &'static Semaphore {
+    static PERMITS: OnceLock<Semaphore> = OnceLock::new();
+    PERMITS.get_or_init(|| Semaphore::new(4))
+}
 
 /// Every pack's row: what it is and where its download stands.
 #[tauri::command]
@@ -55,8 +64,13 @@ pub async fn dict_lookup(
     to: String,
     pos: Option<String>,
     limit: Option<usize>,
+    tight: Option<bool>,
 ) -> Result<Vec<DictEntryWire>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let permit = lookup_permits()
+        .acquire()
+        .await
+        .map_err(|e| format!("lookup gate: {e}"))?;
+    let rows = tauri::async_runtime::spawn_blocking(move || {
         app.state::<DictManager>().lookup(
             &app,
             &word,
@@ -64,10 +78,13 @@ pub async fn dict_lookup(
             &to,
             pos.as_deref(),
             limit.unwrap_or(24),
+            tight.unwrap_or(true),
         )
     })
     .await
-    .map_err(|e| format!("lookup worker: {e}"))
+    .map_err(|e| format!("lookup worker: {e}"))?;
+    drop(permit);
+    Ok(rows)
 }
 
 /// The route's ask: a word on either side, or between two shores.
@@ -82,7 +99,11 @@ pub async fn dict_search(
     to: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<DictEntryWire>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let permit = lookup_permits()
+        .acquire()
+        .await
+        .map_err(|e| format!("search gate: {e}"))?;
+    let rows = tauri::async_runtime::spawn_blocking(move || {
         app.state::<DictManager>().search(
             &app,
             &ask,
@@ -93,5 +114,7 @@ pub async fn dict_search(
         )
     })
     .await
-    .map_err(|e| format!("search worker: {e}"))
+    .map_err(|e| format!("search worker: {e}"))?;
+    drop(permit);
+    Ok(rows)
 }

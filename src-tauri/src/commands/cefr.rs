@@ -52,6 +52,12 @@ pub async fn cefr_levels(app: AppHandle, words: Vec<String>) -> Result<Vec<Optio
         .map_err(|e| format!("lookup worker: {e}"))?
 }
 
+/// Taggings in flight: one; the model is seconds of CPU.
+fn pos_permit() -> &'static tokio::sync::Semaphore {
+    static PERMITS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    PERMITS.get_or_init(|| tokio::sync::Semaphore::new(1))
+}
+
 /// The dataset's POS verdict for one word in its sentence, at click time.
 #[tauri::command]
 pub async fn cefr_pos_of(
@@ -60,9 +66,15 @@ pub async fn cefr_pos_of(
     context: String,
 ) -> Result<Option<crate::cefr::PosAnswer>, String> {
     // Tagging, and a first click's model load, are seconds of CPU.
-    tauri::async_runtime::spawn_blocking(move || {
+    let permit = pos_permit()
+        .acquire()
+        .await
+        .map_err(|e| format!("pos gate: {e}"))?;
+    let answer = tauri::async_runtime::spawn_blocking(move || {
         app.state::<CefrManager>().pos_of(&app, &word, &context)
     })
     .await
-    .map_err(|e| format!("pos worker: {e}"))?
+    .map_err(|e| format!("pos worker: {e}"))?;
+    drop(permit);
+    Ok(answer)
 }

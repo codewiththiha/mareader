@@ -10,6 +10,7 @@ pub mod packs;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use dict_core::{
     CanonPos, DictEntry, WordMatch, classify, order_entries, parse_tags, penn_canon, plans,
@@ -144,12 +145,17 @@ fn install_database(building: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// How long a built-pack probe answers before the disk is asked again.
+const BUILT_TTL: Duration = Duration::from_secs(5);
+
 /// The dictionary system: open packs and the routes between them.
 #[derive(Default)]
 pub struct DictManager {
     dbs: Mutex<HashMap<String, Arc<Mutex<DictDb>>>>,
     builds: Mutex<HashMap<String, BuildState>>,
     legacy_checked: Mutex<HashSet<String>>,
+    /// The built packs and their probe's age; a tick reads this.
+    built: Mutex<Option<(Instant, Vec<String>)>>,
 }
 
 impl DictManager {
@@ -165,15 +171,19 @@ impl DictManager {
     /// Every pack's row, whatever its download is doing.
     pub fn status(&self, app: &AppHandle) -> Vec<PackStatus> {
         let dir = Self::dir(app).ok();
-        self.adopt_landed(app, dir.as_deref());
+        // The landed-file sweep rides the probe's age, not every tick.
+        if !self.built_is_fresh() {
+            self.adopt_landed(app, dir.as_deref());
+        }
+        let built = dir
+            .as_deref()
+            .map(|dir| self.built_packs(dir))
+            .unwrap_or_default();
         let downloads = app.state::<AppDownloads>();
         PACKS
             .iter()
             .map(|pack| {
-                let built = dir
-                    .as_deref()
-                    .map(|dir| db::is_usable(&fetch::db_file(dir, pack.id)))
-                    .unwrap_or(false);
+                let built = built.iter().any(|id| id == pack.id);
                 let progress = downloads.status(pack.id);
                 let build = self
                     .builds
@@ -297,6 +307,7 @@ impl DictManager {
         match result {
             Ok(_) => {
                 builds.remove(pack_id);
+                self.invalidate_built();
                 if legacy_input && let Ok(dir) = Self::dir(app) {
                     legacy::mark(&dir, pack_id);
                 }
@@ -423,6 +434,7 @@ impl DictManager {
             .lock()
             .map_err(|_| "db lock poisoned")?
             .remove(pack_id);
+        self.invalidate_built();
         if let Ok(mut builds) = self.builds.lock() {
             builds.remove(pack_id);
         }
@@ -449,6 +461,7 @@ impl DictManager {
         to: &str,
         pos: Option<&str>,
         limit: usize,
+        tight: bool,
     ) -> Vec<DictEntryWire> {
         let Ok(dir) = Self::dir(app) else {
             return Vec::new();
@@ -459,7 +472,7 @@ impl DictManager {
             if !plan.hops.iter().all(|hop| built.contains(&hop.pack)) {
                 continue;
             }
-            let rows = self.run_plan(&dir, &plan, word, limit, false);
+            let rows = self.run_plan(&dir, &plan, word, limit, false, tight);
             if !rows.is_empty() {
                 return finish(rows, pos, limit);
             }
@@ -478,10 +491,10 @@ impl DictManager {
             }
             if let Ok(db) = self.open(&dir, pack_id) {
                 let db = db.lock().expect("db mutex");
-                let found = if backward {
-                    db.lookup_definition(word, limit)
-                } else {
-                    db.lookup_word(word, limit)
+                let found = match (backward, tight) {
+                    (true, _) => db.lookup_definition(word, limit),
+                    (false, true) => db.lookup_word_tight(word, limit),
+                    (false, false) => db.lookup_word(word, limit),
                 };
                 if let Ok(found) = found {
                     rows.extend(found.into_iter().map(|row| {
@@ -557,7 +570,7 @@ impl DictManager {
             if !plan.hops.iter().all(|hop| built.contains(&hop.pack)) {
                 continue;
             }
-            let rows = self.run_plan(dir, &plan, ask, limit, true);
+            let rows = self.run_plan(dir, &plan, ask, limit, true, false);
             if !rows.is_empty() {
                 return finish(rows, None, limit);
             }
@@ -565,17 +578,45 @@ impl DictManager {
         Vec::new()
     }
 
-    /// The packs whose sqlite stands built right now.
+    /// The built packs, probed at most once a TTL.
     fn built_packs(&self, dir: &std::path::Path) -> Vec<String> {
-        PACKS
+        if let Some(ids) = self
+            .built
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone())
+            .filter(|(at, _)| at.elapsed() < BUILT_TTL)
+        {
+            return ids.1;
+        }
+        let ids: Vec<String> = PACKS
             .iter()
             .filter(|pack| db::is_usable(&fetch::db_file(dir, pack.id)))
             .map(|pack| pack.id.to_string())
-            .collect()
+            .collect();
+        if let Ok(mut slot) = self.built.lock() {
+            *slot = Some((Instant::now(), ids.clone()));
+        }
+        ids
+    }
+
+    /// Whether the built probe still answers for its TTL.
+    fn built_is_fresh(&self) -> bool {
+        self.built
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|(at, _)| at.elapsed() < BUILT_TTL))
+            .unwrap_or(false)
+    }
+
+    /// A landing or a removal moved the files: probe again.
+    fn invalidate_built(&self) {
+        if let Ok(mut slot) = self.built.lock() {
+            *slot = None;
+        }
     }
 
     /// One plan's rows: one hop, or two through the hub.
-    /// `search` is loose.
     fn run_plan(
         &self,
         dir: &std::path::Path,
@@ -583,6 +624,7 @@ impl DictManager {
         word: &str,
         limit: usize,
         search: bool,
+        tight: bool,
     ) -> Vec<Carried> {
         let [first, rest @ ..] = &plan.hops[..] else {
             return Vec::new();
@@ -594,7 +636,7 @@ impl DictManager {
                 return Vec::new();
             };
             let db = db.lock().expect("db mutex");
-            match hop_ask(&db, word, first.reverse, search, limit * 2) {
+            match hop_ask(&db, word, first.reverse, search, tight, limit * 2) {
                 Ok(rows) => rows,
                 Err(_) => return Vec::new(),
             }
@@ -695,13 +737,15 @@ fn hop_ask(
     word: &str,
     reverse: bool,
     search: bool,
+    tight: bool,
     limit: usize,
 ) -> anyhow::Result<Vec<RawRow>> {
-    match (reverse, search) {
-        (false, _) => db.lookup_word(word, limit),
-        (true, false) => db.lookup_definition(word, limit),
+    match (reverse, search, tight) {
+        (false, _, true) => db.lookup_word_tight(word, limit),
+        (false, _, false) => db.lookup_word(word, limit),
+        (true, false, _) => db.lookup_definition(word, limit),
         // A panel's ask on the far shore: prefixes and near spellings too.
-        (true, true) => db.search_definition(word, limit),
+        (true, true, _) => db.search_definition(word, limit),
     }
 }
 

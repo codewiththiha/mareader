@@ -60,6 +60,27 @@ impl DictDb {
         Ok(out)
     }
 
+    /// The headwords that start with `ask`: exact, then prefix,
+    /// both off the word index.
+    pub fn lookup_word_tight(&self, ask: &str, limit: usize) -> Result<Vec<RawRow>> {
+        let ask_fold = fold(ask);
+        let mut out: Vec<RawRow> = Vec::new();
+        self.collect(
+            "SELECT {COLUMNS} FROM entries WHERE word_fold = ?1",
+            params![ask_fold],
+            limit,
+            &mut out,
+        )?;
+        self.collect(
+            "SELECT {COLUMNS} FROM entries
+             WHERE word_fold LIKE ?1 ESCAPE '\\' AND word_fold != ?2",
+            params![like_prefix(&ask_fold), ask_fold],
+            limit,
+            &mut out,
+        )?;
+        Ok(out)
+    }
+
     /// The rows whose other-language side is `ask`: the way home.
     pub fn lookup_definition(&self, ask: &str, limit: usize) -> Result<Vec<RawRow>> {
         let ask_fold = fold(ask);
@@ -321,6 +342,29 @@ mod tests {
         let got = db.search("ru", 10).unwrap();
         assert!(got.iter().any(|row| row.word == "running"), "{got:?}");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_tight_ask_takes_exact_and_prefix_only() {
+        let (dir, db) = temp_db(
+            "tight",
+            &[
+                ("running", "palai"),
+                ("color", "couleur"),
+                ("overrun", "run past"),
+            ],
+        );
+        // Exact and prefix ride the index; a contained ask is not a
+        // tight answer.
+        let got = db.lookup_word_tight("run", 10).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].word, "running");
+        let got = db.lookup_word_tight("running", 10).unwrap();
+        assert_eq!(got.len(), 1);
+        // The loose ask finds the containment the tight one drops.
+        let loose = db.lookup_word("run", 10).unwrap();
+        assert!(loose.iter().any(|row| row.word == "overrun"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

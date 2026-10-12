@@ -103,7 +103,14 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
                 answered.set(true);
             }
         };
-        services::dict::lookup(asked.clone(), "en".to_string(), target.clone(), None, land);
+        services::dict::lookup(
+            asked.clone(),
+            "en".to_string(),
+            target.clone(),
+            None,
+            !pin,
+            land,
+        );
         if !pin {
             return;
         }
@@ -123,7 +130,14 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
                         answered.set(true);
                     }
                 };
-                services::dict::lookup(asked, "en".to_string(), target, Some(answer.pos), ranked);
+                services::dict::lookup(
+                    asked,
+                    "en".to_string(),
+                    target,
+                    Some(answer.pos),
+                    false,
+                    ranked,
+                );
             }
         });
     });
