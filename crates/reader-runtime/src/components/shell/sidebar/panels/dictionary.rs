@@ -4,9 +4,7 @@
 use std::time::Duration;
 
 use app_chrome::hooks::use_timeout::use_debounce;
-use app_chrome::icon::{Icon, IconName};
-use app_ui::components::primitives::floating::menu_popover::MenuPopover;
-use app_ui::components::primitives::menu::menu_item::MenuItem;
+use app_ui::components::primitives::menu::select_menu::SelectMenu;
 use leptos::html;
 use leptos::prelude::*;
 
@@ -14,73 +12,6 @@ use crate::services::dict::{self, Pair};
 
 /// How long a keystroke waits before the packs are asked.
 const SEARCH_DEBOUNCE_MS: u64 = 180;
-
-/// One dropdown: the rows it offers, and the one that stands.
-#[component]
-fn Picker(
-    /// `None` is the row that names nothing: every pack, or the word's
-    /// own shore.
-    #[prop(into)]
-    options: Signal<Vec<(Option<String>, String)>>,
-    #[prop(into)] current: Signal<Option<String>>,
-    on_pick: Callback<Option<String>>,
-) -> impl IntoView {
-    let open = RwSignal::new(false);
-    let root_ref: NodeRef<html::Div> = NodeRef::new();
-    // An offer taken away leaves the button blank, not lying.
-    let label = move || {
-        let want = current.get();
-        options
-            .get()
-            .into_iter()
-            .find(|(value, _)| *value == want)
-            .map(|(_, text)| text)
-            .unwrap_or_default()
-    };
-
-    view! {
-        <div node_ref=root_ref class="relative inline-flex">
-            <button
-                type="button"
-                on:click=move |_| open.set(!open.get())
-                class="flex max-w-[150px] items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-xs text-ink hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-                <span class="truncate">{label}</span>
-                <Icon name=IconName::ChevronDown size=11 class="shrink-0 text-muted" />
-            </button>
-            <MenuPopover
-                open=open
-                anchor=root_ref
-                width=200u32
-                class="p-1".to_string()
-                hold_titlebar=false
-            >
-                {move || {
-                    options
-                        .get()
-                        .into_iter()
-                        .map(|(value, text)| {
-                            let picked = value.clone();
-                            let click = value.clone();
-                            let is_current = Signal::derive(move || current.get() == picked);
-                            view! {
-                                <MenuItem
-                                    label=text
-                                    selected=is_current
-                                    check=true
-                                    on_click=move || {
-                                        on_pick.run(click.clone());
-                                        open.set(false);
-                                    }
-                                />
-                            }
-                        })
-                        .collect_view()
-                }}
-            </MenuPopover>
-        </div>
-    }
-}
 
 #[component]
 pub(crate) fn SidebarDictionary(
@@ -264,14 +195,14 @@ pub(crate) fn SidebarDictionary(
                     {move || {
                         if pair.get().is_some() {
                             view! {
-                                <Picker options=from_options current=from_current on_pick=pick_from />
+                                <SelectMenu options=from_options current=from_current on_pick=pick_from alive=shown />
                                 <span class="text-xs text-muted" aria-hidden="true">"→"</span>
-                                <Picker options=to_options current=to_current on_pick=pick_to />
+                                <SelectMenu options=to_options current=to_current on_pick=pick_to alive=shown />
                             }
                                 .into_any()
                         } else {
                             view! {
-                                <Picker options=pack_options current=seat on_pick=pick_pack />
+                                <SelectMenu options=pack_options current=seat on_pick=pick_pack alive=shown />
                             }
                                 .into_any()
                         }
