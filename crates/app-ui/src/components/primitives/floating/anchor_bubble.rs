@@ -6,6 +6,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use app_chrome::floating::position::{panel_size, viewport};
+use app_chrome::hooks::use_raf::raf_coalesce;
 use app_chrome::hooks::use_window_event::use_window_event;
 use ui_geom::floating::{PlacementOptions, PlacementSide, Rect, place_bubble_at_anchor};
 
@@ -73,21 +74,24 @@ pub fn AnchorBubble(
         caret_style.set(format!("left:{cx:.1}px;{edge}"));
     };
 
-    // Re-measured a frame after mount, when the bubble first has a size.
+    let place = std::rc::Rc::new(place);
+    // Born once, not per anchor move; both die with the bubble.
+    let remeasure = {
+        let place = std::rc::Rc::clone(&place);
+        raf_coalesce(move || place())
+    };
+    use_window_event("resize", {
+        let remeasure = remeasure.clone();
+        move |_| remeasure()
+    });
+
     Effect::new(move |_| {
         if anchor.get().is_none() {
             return;
         }
-        let place = std::rc::Rc::new(place);
         place();
-        {
-            let place = std::rc::Rc::clone(&place);
-            request_animation_frame(move || place());
-        }
-        {
-            let place = std::rc::Rc::clone(&place);
-            use_window_event("resize", move |_| place());
-        }
+        // The bubble has no size until a frame after the mount.
+        remeasure();
     });
 
     let base = format!("bubble-enter fixed {}", class.unwrap_or_default());
