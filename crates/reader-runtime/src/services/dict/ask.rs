@@ -22,6 +22,11 @@ thread_local! {
 /// What one answer depends on: the word, both shores, the role.
 type LookupKey = (String, String, String, Option<String>);
 
+/// Answers the cache holds, for the diagnostics gauge.
+pub(super) fn entries() -> usize {
+    LOOKUPS.with(|cache| cache.borrow().len())
+}
+
 /// Drop every answer: a pack that landed or left changes them all.
 pub(super) fn forget() {
     LOOKUPS.with(|cache| cache.borrow_mut().clear());
