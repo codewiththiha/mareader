@@ -156,6 +156,36 @@ const shelfIntent = () =>
     level?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
   });
 
+/** The shelf's own state: how many cards, and what they read. */
+const shelfState = (needle) =>
+  inActive((doc, want) => {
+    const rows = [...(doc?.querySelectorAll(".book-title") ?? [])];
+    const titles = rows.map((n) => (n.textContent ?? "").trim());
+    return {
+      rows: rows.length,
+      titles: titles.slice(0, 8),
+      found: rows.some(
+        (n, at) => titles[at].includes(want) || (n.getAttribute("title") ?? "").includes(want),
+      ),
+    };
+  }, needle);
+
+/** Wait for the shelf's row: the cards hydrate after the route boots. */
+async function waitForRow(needle, timeout = 60_000) {
+  const started = Date.now();
+  for (;;) {
+    const state = await shelfState(needle);
+    if (state.found) return state;
+    if (Date.now() - started > timeout) {
+      throw new Error(
+        `the shelf holds no row for ${JSON.stringify(needle)} after ${timeout} ms — ` +
+          `${state.rows} card(s): ${JSON.stringify(state.titles)}`,
+      );
+    }
+    await page.waitForTimeout(100);
+  }
+}
+
 const result = { label, base: BASE, intent: INTENT, engine: ENGINE };
 
 // 1. seed a library with the book (the real path: open from the URL)
@@ -171,7 +201,7 @@ result.libraryAtRest = await sample("library at rest (fresh boot, before any rea
 
 // 3. open the book from the shelf
 await shelfIntent();
-await page.waitForTimeout(1500);
+await waitForRow(NEEDLE);
 // A real click first: the card opens on the pointer sequence.
 try {
   const scope = (await framed()) ? page.frameLocator(activeFrame) : page.locator(activeFrame);
@@ -182,7 +212,8 @@ try {
 } catch {
   await inActive((doc, needle) => {
     const el = [...(doc?.querySelectorAll(".book-title") ?? [])].find((n) => (n.textContent ?? "").includes(needle));
-    if (!el) throw new Error("book row not found");
+    // The wait proved the row: a miss here is the click, not the shelf.
+    if (!el) throw new Error(`the shelf's ${needle} row left between the wait and the click`);
     el.click();
   }, NEEDLE);
 }
