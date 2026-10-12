@@ -41,6 +41,9 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
     let boxes: RwSignal<Vec<CefrBox>> = RwSignal::new(Vec::new());
     let memo: StoredValue<Option<WalkMemo>, LocalStorage> = StoredValue::new_local(None);
     let row_id = block_row_id(block);
+    // Only the vocabulary's knobs re-walk the row; a theme swap
+    // meets an equal memo.
+    let gate = Memo::new(move |_| settings.with(|s| (s.cefr_enabled, s.cefr_level.band())));
     let mirror = services::cefr::dataset();
     let dataset_ready =
         Signal::derive(move || mirror.with(|m| m.as_ref().is_some_and(|m| m.is_ready())));
@@ -68,7 +71,7 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
         let settled = state.viewer.zoom.committed.get();
         let mid_zoom = state.viewer.zoom.transition.get().is_some();
         let fp = relayout.get();
-        let (enabled, threshold) = settings.with(|s| (s.cefr_enabled, s.cefr_level.band()));
+        let (enabled, threshold) = gate.get();
         if !enabled || !dataset_ready.get() || mid_zoom {
             // The memo survives a clear: re-enabling restores for free.
             clear(&boxes);
@@ -112,8 +115,8 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
         <CefrMarkLayer
             boxes=boxes.read_only().into()
             scale=Signal::derive(|| 1.0)
-            click_explain=Signal::derive(move || settings.with(|s| s.cefr_click_explain))
-            hover_dict=Signal::derive(move || settings.with(|s| s.dict.hover))
+            click_explain=Memo::new(move |_| settings.with(|s| s.cefr_click_explain)).into()
+            hover_dict=Memo::new(move |_| settings.with(|s| s.dict.hover)).into()
         />
     }
 }

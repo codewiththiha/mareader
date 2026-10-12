@@ -153,6 +153,9 @@ pub fn PdfCefrLayer(
     let boxes: RwSignal<Vec<CefrBox>> = RwSignal::new(Vec::new());
     let memo: StoredValue<Option<WalkMemo>, LocalStorage> = StoredValue::new_local(None);
     let wake = Trigger::new();
+    // Only the vocabulary's knobs re-walk the page; a theme swap
+    // meets an equal memo.
+    let gate = Memo::new(move |_| settings.with(|s| (s.cefr_enabled, s.cefr_level.band())));
     // The phase alone flips re-derive; the mirror handle is bound once.
     let mirror = services::cefr::dataset();
     let dataset_ready =
@@ -181,7 +184,7 @@ pub fn PdfCefrLayer(
         // swaps and text-layer batches all raise it.
         wake.track();
         let generation = state.cefr.generation.get();
-        let (enabled, threshold) = settings.with(|s| (s.cefr_enabled, s.cefr_level.band()));
+        let (enabled, threshold) = gate.get();
         if !enabled || !dataset_ready.get() {
             clear(&boxes);
             return;
@@ -214,8 +217,8 @@ pub fn PdfCefrLayer(
         <CefrMarkLayer
             boxes=boxes.read_only().into()
             scale=scale.into()
-            click_explain=Signal::derive(move || settings.with(|s| s.cefr_click_explain))
-            hover_dict=Signal::derive(move || settings.with(|s| s.dict.hover))
+            click_explain=Memo::new(move |_| settings.with(|s| s.cefr_click_explain)).into()
+            hover_dict=Memo::new(move |_| settings.with(|s| s.dict.hover)).into()
         />
     }
 }
