@@ -1,11 +1,16 @@
-//! The vocabulary feature's frontend: the dataset mirror and batch lookup.
+//! The vocabulary feature's frontend: the mirror and lifecycle
+//! here, the asks in [`query`].
 
-use std::cell::OnceCell;
+pub mod query;
+
+use std::cell::{Cell, OnceCell};
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
+
+pub use query::{PosAnswer, fetch_levels, fetch_pos};
 
 /// The dataset's lifecycle, as the backend reports it.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -42,7 +47,7 @@ impl DatasetMirror {
 
     /// The readout under the bar: a speed, and what is left at it.
     pub fn rate(&self) -> Option<String> {
-        let speed = self.speed.filter(|speed| *speed > 1.0)?;
+        let speed = self.speed.filter(|speed| speed > 1.0)?;
         let per_sec = if speed >= 1_048_576.0 {
             format!("{:.1} MB/s", speed / 1_048_576.0)
         } else {
@@ -62,11 +67,18 @@ thread_local! {
     static TAPPED: OnceCell<()> = const { OnceCell::new() };
     /// One warn per realm: a dead backend must not flood the console.
     static LOOKUP_WARNED: OnceCell<()> = const { OnceCell::new() };
+    /// The dataset the mirror last named, by its word count.
+    static DATASET_WORDS: Cell<Option<u64>> = const { Cell::new(None) };
 }
 
 /// The dataset mirror to read this realm; `None` phases in from the bridge.
 pub fn dataset() -> RwSignal<Option<DatasetMirror>> {
     MIRROR.with(|slot| *slot.get_or_init(|| RwSignal::new(None)))
+}
+
+/// One warn per realm for a dead backend.
+pub(super) fn lookup_warned() -> bool {
+    LOOKUP_WARNED.with(|slot| slot.set(())).is_ok()
 }
 
 /// Bind this realm's mirror and tap the backend's progress.
@@ -98,6 +110,11 @@ pub fn install_cefr_bridge() {
 
 /// Hand a status snapshot to this realm's mirror.
 fn publish(status: DatasetMirror) {
+    // A dataset that moved voids the tagger's answers over the old.
+    let moved = DATASET_WORDS.with(|slot| slot.replace(status.words) != status.words);
+    if moved {
+        query::clear_tagged();
+    }
     dataset().try_set(Some(status));
 }
 
@@ -142,79 +159,6 @@ pub fn request_remove() {
     });
 }
 
-/// The lookup command's wire shape: a named `words` field.
-#[derive(Serialize)]
-struct LevelsArgs {
-    words: Vec<String>,
-}
-
-/// Levels for `keys`, aligned with the input.
-///
-/// `done` always runs; a failure releases its keys.
-pub fn fetch_levels(keys: Vec<String>, done: impl FnOnce(Vec<Option<f64>>) + 'static) {
-    if keys.is_empty() || !tauri_bridge::has_tauri() {
-        done(Vec::new());
-        return;
-    }
-    // Tauri binds command parameters by name: the array rides NAMED.
-    let args = match serde_wasm_bindgen::to_value(&LevelsArgs { words: keys }) {
-        Ok(args) => args,
-        Err(_) => {
-            done(Vec::new());
-            return;
-        }
-    };
-    spawn_local(async move {
-        match tauri_bridge::invoke("cefr_levels", args).await {
-            Ok(value) => match serde_wasm_bindgen::from_value::<Vec<Option<f64>>>(value) {
-                Ok(levels) => done(levels),
-                Err(_) => done(Vec::new()),
-            },
-            Err(e) => {
-                if LOOKUP_WARNED.with(|slot| slot.set(())).is_ok() {
-                    web_sys::console::warn_1(&format!("[cefr] lookup failed: {e:?}").into());
-                }
-                done(Vec::new());
-            }
-        }
-    });
-}
-
-/// The backend's dataset POS answer for one clicked word.
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-pub struct PosAnswer {
-    pub pos: String,
-    pub kind: String,
-    pub sense: Option<String>,
-    pub level: Option<f64>,
-    pub senses: Vec<String>,
-}
-
-/// The dataset's verdict for `word` in `sentence`; `None` if unequipped.
-pub fn fetch_pos(word: String, context: String, done: impl FnOnce(Option<PosAnswer>) + 'static) {
-    #[derive(Serialize)]
-    struct PosArgs {
-        word: String,
-        context: String,
-    }
-    if !tauri_bridge::has_tauri() {
-        done(None);
-        return;
-    }
-    spawn_local(async move {
-        let args =
-            serde_wasm_bindgen::to_value(&PosArgs { word, context }).unwrap_or(JsValue::UNDEFINED);
-        let parsed = match tauri_bridge::invoke("cefr_pos_of", args).await {
-            Ok(value) => serde_wasm_bindgen::from_value::<Option<PosAnswer>>(value)
-                .ok()
-                .flatten(),
-            Err(_) => None,
-        };
-        done(parsed);
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,8 +181,8 @@ mod tests {
 
     #[test]
     fn a_paused_mirror_keeps_the_bytes_it_had() {
-        let paused = mirror("paused", 30, Some(40));
-        assert_eq!(paused.percent(), Some(75));
+        let paused = mirror("downloading", 30, Some(100));
+        assert_eq!(paused.percent(), Some(30));
         assert!(!paused.is_ready());
         assert!(mirror("ready", 0, None).is_ready());
     }
@@ -246,7 +190,7 @@ mod tests {
     #[test]
     fn the_rate_readout_needs_a_real_speed() {
         assert_eq!(mirror("downloading", 0, None).rate(), None);
-        let mut slow = mirror("downloading", 0, Some(100));
+        let mut slow = mirror("downloading", 100, Some(200));
         slow.speed = Some(0.5);
         assert_eq!(slow.rate(), None, "a crawl is not an estimate");
         slow.speed = Some(512_000.0);
@@ -264,5 +208,33 @@ mod tests {
         assert_eq!(parsed.words, Some(1234));
         assert_eq!(parsed.total, None);
         assert_eq!(parsed.speed, None);
+    }
+
+    #[test]
+    fn a_dataset_that_moves_voids_its_tags() {
+        let keyed = ("light".to_string(), "a lamp".to_string());
+        let base = mirror("ready", 0, Some(10));
+        let with_words = |words: u64| DatasetMirror {
+            words: Some(words),
+            ..base.clone()
+        };
+        DATASET_WORDS.with(|slot| slot.set(None));
+        query::clear_tagged();
+        publish(with_words(1234));
+        query::remember(
+            keyed.clone(),
+            PosAnswer {
+                pos: "NN".into(),
+                ..PosAnswer::default()
+            },
+        );
+        assert!(query::tagged_take(&keyed).is_some());
+        // The same dataset keeps its tags...
+        publish(with_words(1234));
+        assert!(query::tagged_take(&keyed).is_some());
+        // ...and a replaced one voids them.
+        publish(with_words(4321));
+        assert!(query::tagged_take(&keyed).is_none());
+        DATASET_WORDS.with(|slot| slot.set(None));
     }
 }

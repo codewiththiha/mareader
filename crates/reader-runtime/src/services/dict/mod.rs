@@ -1,8 +1,4 @@
-//! The dictionary's frontend: the realm's rows and the panel's ask.
-//!
-//! Three rooms: the realm state and its bridge live here, the wire's
-//! shapes and asks in [`wire`], and the pack choice — pure, shared with
-//! the backend's planner — in [`route`] over `dict_core::panel`.
+//! The dictionary's frontend: its realm state, [`wire`], [`route`].
 
 pub mod route;
 pub mod wire;
