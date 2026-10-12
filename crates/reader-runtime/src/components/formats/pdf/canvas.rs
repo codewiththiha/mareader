@@ -303,6 +303,7 @@ pub fn PdfPageCanvas(
         rerender.track();
         if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
             // Give the slot back; re-entering the band re-runs this effect.
+            render_seq.set_value(render_seq.get_value() + 1);
             pdf().cancel_page(&cid_effect);
             return;
         }
@@ -357,8 +358,8 @@ pub fn PdfPageCanvas(
             if !sized_async.get() {
                 sized_async.set(true);
                 if let Ok(size) = pdf_async.probe_page_size(page_no).await {
-                    // A probe can outlive its host; a dead arena owes nothing.
-                    if seq_async.try_get_value().is_none() {
+                    // A probe can outlive its host or be superseded mid-flight.
+                    if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
                     if let Some(cb) = sized_cb
@@ -367,6 +368,9 @@ pub fn PdfPageCanvas(
                         return;
                     }
                 }
+            }
+            if seq_async.try_get_value() != Some(my_seq) {
+                return;
             }
             // A dead session's render resolves `no_session`, so nothing
             // commits into a replaced document.
@@ -432,6 +436,20 @@ pub fn PdfPageCanvas(
                     // The geometry cache keeps the RAW size; what leaves is the
                     // snapped one.
                     geo_async.try_set_value((r.width, r.height, s));
+                    if zooming_now
+                        && let Some(display) = display_at_landing.try_get_untracked()
+                        && (display - s).abs() > 1e-9
+                    {
+                        stretch_host(
+                            host_ref,
+                            LastGeo {
+                                w: r.width,
+                                h: r.height,
+                                scale: s,
+                            },
+                            display,
+                        );
+                    }
                     // Before the geometry report, which lifts the gate.
                     if let Some(rendered) = rendered_cb.filter(|_| s > 0.0) {
                         rendered.run((page_no, r.width / s, r.height / s));

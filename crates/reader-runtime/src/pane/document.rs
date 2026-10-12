@@ -201,6 +201,12 @@ impl PaneRuntime for DocumentPane {
         }
         let ctx = self.ctx;
         ctx.reader.dom.set_bounds(bounds);
+        if let Some(size) = crate::pane::dom::measured(bounds)
+            && ctx.reader.dom.page_list().is_none()
+            && ctx.reader.dom.h_page_list().is_none()
+        {
+            ctx.reader.viewer.container_size.set(size);
+        }
         let active = self.env.active;
         let request_focus = self.env.request_focus;
         // Effects and virtualizers belong to the PANE's owner, not the view.

@@ -73,27 +73,32 @@ pub(super) fn resume_page(saved_page: u32, num_pages: u32) -> u32 {
 
 /// The scale to seed a fresh document at, and its fit mode.
 pub(super) fn startup_scale(ctx: &ReaderContext, page_size: (f64, f64)) -> (FitMode, f64) {
+    // The container is unmounted at seed time; the PANE's box is not.
+    let (cw, ch) = ctx
+        .reader
+        .dom
+        .measured_size()
+        .unwrap_or_else(|| window_budget(ctx));
+    let box_size = (cw.max(1.0), ch.max(1.0));
+    if ctx.reader.dom.page_list().is_none()
+        && ctx.reader.dom.h_page_list().is_none()
+        && ctx.reader.viewer.container_size.get_untracked() != box_size
+    {
+        ctx.reader.viewer.container_size.set(box_size);
+    }
     // The pane's `initial_zoom` wins over every fit, once.
     if let Some(zoom) = ctx.pane.take_initial_zoom() {
         return (FitMode::None, clamp_scale(zoom));
     }
     // The startup fit mode is a user setting, always real here.
     let startup_fit = ctx.settings.with_untracked(|s| s.layout.default_fit);
-    let scale = {
-        // The container is unmounted at seed time; the PANE's box is not.
-        let (cw, ch) = ctx
-            .reader
-            .dom
-            .measured_size()
-            .unwrap_or_else(|| window_budget(ctx));
-        FitDims::from_geometry(
-            ctx.reader.viewer.mode.get_untracked(),
-            (cw.max(1.0), ch.max(1.0)),
-            ctx.reader.viewer.page_margin.get_untracked(),
-            page_size,
-        )
-        .map_or(1.0, |dims| dims.fit(startup_fit, 1.0))
-    };
+    let scale = FitDims::from_geometry(
+        ctx.reader.viewer.mode.get_untracked(),
+        box_size,
+        ctx.reader.viewer.page_margin.get_untracked(),
+        page_size,
+    )
+    .map_or(1.0, |dims| dims.fit(startup_fit, 1.0));
     (startup_fit, scale)
 }
 
