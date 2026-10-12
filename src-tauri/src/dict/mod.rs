@@ -77,6 +77,17 @@ pub struct DictEntryWire {
 /// One carried row: the row, its pack, a bridge's word, and its fit.
 type Carried = (RawRow, String, Option<String>, WordMatch);
 
+/// One lookup's ask: the word, its two shores, the rank, the reach.
+pub struct LookupAsk<'a> {
+    pub word: &'a str,
+    pub from: &'a str,
+    pub to: &'a str,
+    pub pos: Option<&'a str>,
+    pub limit: usize,
+    /// Index probes alone; the loose scans belong to an explicit ask.
+    pub tight: bool,
+}
+
 /// The packs a search may ask: the filter over what is built.
 fn wanted_packs(pack_ids: Option<Vec<String>>, built: &[String]) -> Vec<String> {
     match pack_ids {
@@ -451,18 +462,17 @@ impl DictManager {
         Ok(())
     }
 
-    /// The hover's ask: `word` from `from` to `to`.
+    /// The hover's ask: its word from shore to shore.
     /// POS ranks senses; never gates them.
-    pub fn lookup(
-        &self,
-        app: &AppHandle,
-        word: &str,
-        from: &str,
-        to: &str,
-        pos: Option<&str>,
-        limit: usize,
-        tight: bool,
-    ) -> Vec<DictEntryWire> {
+    pub fn lookup(&self, app: &AppHandle, ask: LookupAsk<'_>) -> Vec<DictEntryWire> {
+        let LookupAsk {
+            word,
+            from,
+            to,
+            pos,
+            limit,
+            tight,
+        } = ask;
         let Ok(dir) = Self::dir(app) else {
             return Vec::new();
         };

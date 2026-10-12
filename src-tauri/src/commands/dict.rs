@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use tauri::{AppHandle, Manager};
 use tokio::sync::Semaphore;
 
-use crate::dict::{DictEntryWire, DictManager, PackStatus};
+use crate::dict::{DictEntryWire, DictManager, LookupAsk, PackStatus};
 
 /// Asks in flight; a sweep queues instead of growing the pool.
 fn lookup_permits() -> &'static Semaphore {
@@ -73,12 +73,14 @@ pub async fn dict_lookup(
     let rows = tauri::async_runtime::spawn_blocking(move || {
         app.state::<DictManager>().lookup(
             &app,
-            &word,
-            &from,
-            &to,
-            pos.as_deref(),
-            limit.unwrap_or(24),
-            tight.unwrap_or(true),
+            LookupAsk {
+                word: &word,
+                from: &from,
+                to: &to,
+                pos: pos.as_deref(),
+                limit: limit.unwrap_or(24),
+                tight: tight.unwrap_or(true),
+            },
         )
     })
     .await
