@@ -1,6 +1,8 @@
 //! The shared ink layer: boxes, the click that explains,
 //! the hover that translates.
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 
 use ai_core::gloss::GlossMark;
@@ -16,8 +18,8 @@ pub struct CefrBox {
     pub y: f64,
     pub w: f64,
     pub h: f64,
-    /// The word's own mark: the activation's payload, built once per walk.
-    pub mark: GlossMark,
+    /// The word's mark: the activation's payload, shared by its boxes.
+    pub mark: Arc<GlossMark>,
 }
 
 /// The one seam a red word's activation crosses: today the AI card.
@@ -58,10 +60,10 @@ pub fn CefrMarkLayer(
                 key=|b: &CefrBox| format!("{}@{},{}", b.mark.word, b.x, b.y)
                 children=move |b: CefrBox| {
                     // The gloss stroke's gesture shape, mirrored.
-                    let mark = b.mark.clone();
+                    let mark = Arc::clone(&b.mark);
                     let word = mark.word.clone();
-                    let hover_mark = mark.clone();
-                    let out_mark = mark.clone();
+                    let hover_mark = Arc::clone(&mark);
+                    let out_mark = Arc::clone(&mark);
                     let explain = move |ev: web_sys::MouseEvent| {
                         ev.stop_propagation();
                         if let Some(origin) = ev.target() {

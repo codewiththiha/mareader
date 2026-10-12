@@ -223,7 +223,7 @@ fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<Planned>, 
         };
         let spot = ReflowSpot::new(block, word.start, word.end);
         let envelope = spot_envelope(&spot, &word.context);
-        let mark = captured_mark(
+        let mark = Arc::new(captured_mark(
             word.word.clone(),
             envelope,
             PageAnchor {
@@ -232,7 +232,7 @@ fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<Planned>, 
                 // resolves through.
                 rect: GlossBox::default(),
             },
-        );
+        ));
         for (left, top, right, bottom) in range_rects(&range) {
             let (width, height) = (right - left, bottom - top);
             // A zero-sized fragment at a line-box edge is not ink.
@@ -244,7 +244,7 @@ fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<Planned>, 
                 y: top - origin.top(),
                 w: width.max(1.0),
                 h: height.max(1.0),
-                mark: mark.clone(),
+                mark: Arc::clone(&mark),
             });
         }
     }

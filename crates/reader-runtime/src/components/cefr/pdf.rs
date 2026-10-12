@@ -1,5 +1,7 @@
 //! Red ink over one PDF page, stored in page space: a zoom never re-measures.
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
@@ -365,11 +367,11 @@ fn run_plan(
                 continue 'word;
             }
         }
-        let mark = captured_mark(
+        let mark = Arc::new(captured_mark(
             word.word.clone(),
             word.context.clone(),
             PageAnchor { page, rect: union },
-        );
+        ));
         for local in fragments {
             if painted.len() >= MAX_BOXES_PER_PAGE {
                 break 'word;
@@ -379,7 +381,7 @@ fn run_plan(
                 y: local.y,
                 w: local.w,
                 h: local.h,
-                mark: mark.clone(),
+                mark: Arc::clone(&mark),
             });
         }
     }
