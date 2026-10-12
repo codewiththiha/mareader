@@ -9,9 +9,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsValue;
 
-pub use route::{
-    Asked, Pair, Route, answer_pack, built_packs, languages, named_packs, resolve,
-};
+pub use route::{Asked, Pair, Route, answer_pack, built_packs, languages, named_packs, resolve};
 pub use wire::{EntryMirror, PackMirror, ProgressMirror, lookup, request_pack, search};
 
 /// The panel's ask. One for the window, so no pane owns it.

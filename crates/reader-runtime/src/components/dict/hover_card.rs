@@ -87,60 +87,62 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
         StoredValue::new_local(None);
 
     // One ask's answers; only a pinned card runs the tagger's model.
-    let fetch_for = Callback::new(move |(asked, ctx, pin, stamp): (String, String, bool, u64)| {
-        let target = to.get_untracked();
-        if target.is_empty() {
-            answered.set(true);
-            return;
-        }
-        let land_word = asked.clone();
-        let land = move |found: Vec<EntryMirror>| {
-            let live = ask_gen.try_get_value() == Some(stamp)
-                && word.try_get_untracked().as_deref() == Some(land_word.as_str());
-            if live {
-                entries.set(found);
-                index.set(0);
+    let fetch_for = Callback::new(
+        move |(asked, ctx, pin, stamp): (String, String, bool, u64)| {
+            let target = to.get_untracked();
+            if target.is_empty() {
                 answered.set(true);
+                return;
             }
-        };
-        services::dict::lookup(
-            asked.clone(),
-            "en".to_string(),
-            target.clone(),
-            None,
-            !pin,
-            land,
-        );
-        if !pin {
-            return;
-        }
-        services::cefr::fetch_pos(asked.clone(), ctx, {
-            let target = target.clone();
-            move |answer| {
-                let Some(answer) = answer else {
-                    return;
-                };
-                if ask_gen.try_get_value() != Some(stamp) {
-                    return;
+            let land_word = asked.clone();
+            let land = move |found: Vec<EntryMirror>| {
+                let live = ask_gen.try_get_value() == Some(stamp)
+                    && word.try_get_untracked().as_deref() == Some(land_word.as_str());
+                if live {
+                    entries.set(found);
+                    index.set(0);
+                    answered.set(true);
                 }
-                let ranked = move |found: Vec<EntryMirror>| {
-                    if ask_gen.try_get_value() == Some(stamp) {
-                        entries.set(found);
-                        index.set(0);
-                        answered.set(true);
-                    }
-                };
-                services::dict::lookup(
-                    asked,
-                    "en".to_string(),
-                    target,
-                    Some(answer.pos),
-                    false,
-                    ranked,
-                );
+            };
+            services::dict::lookup(
+                asked.clone(),
+                "en".to_string(),
+                target.clone(),
+                None,
+                !pin,
+                land,
+            );
+            if !pin {
+                return;
             }
-        });
-    });
+            services::cefr::fetch_pos(asked.clone(), ctx, {
+                let target = target.clone();
+                move |answer| {
+                    let Some(answer) = answer else {
+                        return;
+                    };
+                    if ask_gen.try_get_value() != Some(stamp) {
+                        return;
+                    }
+                    let ranked = move |found: Vec<EntryMirror>| {
+                        if ask_gen.try_get_value() == Some(stamp) {
+                            entries.set(found);
+                            index.set(0);
+                            answered.set(true);
+                        }
+                    };
+                    services::dict::lookup(
+                        asked,
+                        "en".to_string(),
+                        target,
+                        Some(answer.pos),
+                        false,
+                        ranked,
+                    );
+                }
+            });
+        },
+    );
 
     // The dwell's fire: the pointer rested, so the packs are asked.
     let dwell = use_debounce(Duration::from_millis(HOVER_DWELL_MS), move || {
