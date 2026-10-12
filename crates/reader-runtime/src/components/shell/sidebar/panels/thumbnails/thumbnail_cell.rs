@@ -268,7 +268,11 @@ pub fn ThumbCell(
             class="group flex w-full cursor-pointer flex-col items-center"
             // Jumping does NOT close the panel: thumbnail browsing is a loop.
             on:click=move |_| {
-                state.viewer.page.set(page);
+                crate::effects::reader::navigation_sync::request_page(
+                    state,
+                    page,
+                    virtual_list::Align::Start,
+                );
             }
         >
             // A themed backdrop under a blended canvas; the cover fades

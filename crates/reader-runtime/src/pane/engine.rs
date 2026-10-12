@@ -203,6 +203,15 @@ impl PdfPane {
         }
     }
 
+    /// Sweep outside the 0-based virtualizer window `[first, last]`.
+    pub fn sweep_keepalive(&self, first: usize, last: usize) {
+        if let Some(s) = self.tearing() {
+            let first_page = first.saturating_add(1) as u32;
+            let last_page = last.saturating_add(1).max(first.saturating_add(1)) as u32;
+            s.sweep_keepalive(first_page, last_page);
+        }
+    }
+
     /// This session's engine report for diagnostics and the reader's band.
     pub fn stats(&self) -> Option<pdf_core::diagnostics::EngineStats> {
         self.working().and_then(|s| s.stats())
@@ -211,6 +220,12 @@ impl PdfPane {
     pub fn sweep_snapshots(&self) {
         if let Some(s) = self.tearing() {
             s.sweep_snapshots();
+        }
+    }
+
+    pub fn seed_thumb_snapshot(&self, canvas_id: &str, page: u32, scale: f64) {
+        if let Some(s) = self.working() {
+            s.seed_thumb_snapshot(canvas_id, page, scale);
         }
     }
 

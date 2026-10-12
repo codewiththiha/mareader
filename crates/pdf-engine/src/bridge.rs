@@ -139,9 +139,17 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweep")]
     pub fn sweep(sid: u32);
 
+    /// Sweep outside `[first_page, last_page]`, keeping visible renders.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweepKeepalive")]
+    pub fn sweep_keepalive(sid: u32, first_page: u32, last_page: u32);
+
     /// Drop the `.page-snapshot` scrub covers of the session's page hosts.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweepSnapshots")]
     pub fn sweep_snapshots(sid: u32);
+
+    /// Seed a `.page-snapshot` cover from a cached thumbnail.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "seedThumbSnapshot")]
+    pub fn seed_thumb_snapshot(sid: u32, canvas_id: &str, page: u32, scale: f64);
 
     // --- Realm: appearance broadcast --------------------------------------
 

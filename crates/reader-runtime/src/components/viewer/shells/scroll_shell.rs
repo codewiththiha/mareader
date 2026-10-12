@@ -4,7 +4,7 @@
 use leptos::html;
 use leptos::prelude::*;
 use reader_core::view::Axis;
-use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
+use virtual_list_leptos::{Align, Drive, ScrollMode, Virtualizer};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
@@ -59,7 +59,7 @@ pub fn ScrollShell(
             v.bind_container(el.clone());
 
             if axis == Axis::Horizontal {
-                install_wheel_to_hscroll(&el, &wheel_guard);
+                install_wheel_to_hscroll(&el, &v, &wheel_guard);
             }
 
             on_cleanup(move || {
@@ -99,8 +99,17 @@ pub fn ScrollShell(
         reader_core::view::scroll_fraction(st, total_size.get(), extent)
     };
 
+    let v_down = virtualizer.clone();
+    let v_wheel = virtualizer.clone();
+    let v_up = virtualizer.clone();
+
     view! {
-        <div class="relative h-full w-full">
+        <div
+            class="relative h-full w-full"
+            on:pointerdown=move |_| v_down.set_drive(Drive::User)
+            on:wheel=move |_| v_wheel.set_drive(Drive::User)
+            on:pointerup=move |_| v_up.reanchor_now()
+        >
             // The strip is the page host's choice; the
             // scroller id and virtualizer are
             // shared.
@@ -143,12 +152,14 @@ fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis) {
 /// Horizontal wheel policy: only a plain vertical tick needs help.
 fn install_wheel_to_hscroll(
     el: &web_sys::Element,
+    v: &Virtualizer,
     wheel_guard: &StoredValue<Option<(web_sys::Element, js_sys::Function)>, LocalStorage>,
 ) {
     if let Some((old_el, old_fn)) = wheel_guard.get_value() {
         let _ = old_el.remove_event_listener_with_callback("wheel", &old_fn);
     }
     let target = el.clone();
+    let v = v.clone();
     let cb = Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |e: web_sys::WheelEvent| {
         if e.shift_key() {
             return;
@@ -167,7 +178,9 @@ fn install_wheel_to_hscroll(
             return;
         }
         e.prevent_default();
+        v.set_drive(Drive::User);
         target.set_scroll_left((target.scroll_left() as f64 + dy) as i32);
+        v.notify_external_scroll((target.scroll_left() as f64).max(0.0));
     });
     let handler: js_sys::Function = cb.into_js_value().unchecked_into();
     thread_local! {

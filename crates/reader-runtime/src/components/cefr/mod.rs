@@ -18,7 +18,9 @@ pub(crate) mod measure;
 /// A walk's memo, its sink and the fingerprints it is keyed by.
 pub(crate) mod walk;
 
-pub(crate) use walk::{Sink, WalkKey, WalkMemo, marks_fingerprint, publish, text_fingerprint};
+pub(crate) use walk::{
+    Sink, WalkKey, WalkMemo, marks_fingerprint, publish, publish_checked, text_fingerprint,
+};
 
 /// Hand the cache's misses to the backend, one ask per key.
 pub(crate) fn ask(state: ReaderState, misses: Vec<String>) {

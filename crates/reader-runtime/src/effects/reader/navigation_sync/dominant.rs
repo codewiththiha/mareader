@@ -1,4 +1,4 @@
-//! Scroll → page: the strip's dominant item names the reader's page.
+//! Scroll → page: the strip's dominant item names the reader's display page.
 
 use std::rc::Rc;
 
@@ -17,12 +17,9 @@ fn page_from_dominant(dominant: usize, num_pages: u32) -> u32 {
 
 /// Install the scroll → page arm for one axis.
 pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpGate>) {
-    let Arms {
-        state,
-        suppress,
-        zooming,
-    } = arms;
+    let Arms { state, zooming } = arms;
     let page = state.viewer.page;
+    let page_command = state.viewer.page_command;
     let mode = state.viewer.mode;
     Effect::new(move |_| {
         // The dominant's scope outlives the reader state by a beat.
@@ -31,7 +28,7 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
         };
         if mode_now != axis {
             return;
-        }
+        };
         // The text stream owns its own page bookkeeping.
         if axis == ViewMode::ScrollVertical && state.reflowable() {
             return;
@@ -45,14 +42,13 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
         if zooming.get() {
             return;
         }
-        // A held navigation replays in this same flush; let it land first.
-        if gate.pending().is_some() {
+        // A held or queued navigation replays in this flush; let it land first.
+        if gate.pending().is_some() || page_command.try_get_untracked().flatten().is_some() {
             return;
         }
         if page.get_untracked() == dominant {
             return;
         }
-        suppress.set(true);
         page.set(dominant);
     });
 }

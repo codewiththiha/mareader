@@ -316,10 +316,28 @@ impl PdfSession {
         }
     }
 
+    /// Sweep outside `[first_page, last_page]`, keeping visible renders.
+    pub fn sweep_keepalive(&self, first_page: u32, last_page: u32) {
+        if self.engine() {
+            bridge::sweep_keepalive(
+                self.inner.sid,
+                first_page.max(1),
+                last_page.max(first_page.max(1)),
+            );
+        }
+    }
+
     /// Drop the scrub covers this session's page hosts still carry.
     pub fn sweep_snapshots(&self) {
         if self.engine() {
             bridge::sweep_snapshots(self.inner.sid);
+        }
+    }
+
+    /// Seed a `.page-snapshot` cover from a cached thumbnail on mount.
+    pub fn seed_thumb_snapshot(&self, canvas_id: &str, page: u32, scale: f64) {
+        if self.engine() {
+            bridge::seed_thumb_snapshot(self.inner.sid, canvas_id, page, scale);
         }
     }
 
@@ -523,5 +541,15 @@ mod tests {
         assert!(b.is_live());
         assert!(backdrop::test_has_palette(&b));
         assert!(!backdrop::test_has_palette(&a));
+    }
+
+    #[test]
+    fn sweep_keepalive_does_not_cancel_visible_renders() {
+        let s = PdfSession::create();
+        backdrop::test_feed(&s, "/keepalive.pdf");
+        // A keepalive sweep on [1, 5] preserves visible state.
+        s.sweep_keepalive(1, 5);
+        assert!(s.is_live());
+        assert!(backdrop::test_has_palette(&s));
     }
 }

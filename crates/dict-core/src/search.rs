@@ -23,32 +23,90 @@ pub fn classify(ask: &str, word: &str) -> Option<WordMatch> {
 
 /// Case-folded, apostrophe-unified compare form.
 pub fn fold(word: &str) -> String {
-    word.chars()
-        .map(|c| match c {
+    if word.is_ascii() && !word.bytes().any(|b| b.is_ascii_uppercase()) {
+        return word.to_string();
+    }
+    let mut out = String::with_capacity(word.len());
+    for c in word.chars() {
+        let mapped = match c {
             '\u{2019}' => '\'',
             other => other,
-        })
-        .flat_map(char::to_lowercase)
-        .collect()
+        };
+        for lower in mapped.to_lowercase() {
+            out.push(lower);
+        }
+    }
+    out
 }
+
+/// Stack capacity before `edit_distance` falls back to a heap row.
+const STACK_CAP: usize = 64;
 
 /// Levenshtein distance, giving up past `cap` (the answer is `cap + 1`).
 pub fn edit_distance(a: &str, b: &str, cap: usize) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
+    if a == b {
+        return 0;
+    }
+    if a.is_ascii() && b.is_ascii() {
+        return edit_distance_slice(a.as_bytes(), b.as_bytes(), cap);
+    }
+    let mut a_buf = ['\0'; STACK_CAP];
+    let mut b_buf = ['\0'; STACK_CAP];
+    if let (Some(a_chars), Some(b_chars)) = (fill_chars(a, &mut a_buf), fill_chars(b, &mut b_buf)) {
+        return edit_distance_slice(a_chars, b_chars, cap);
+    }
+    let a_vec: Vec<char> = a.chars().collect();
+    let b_vec: Vec<char> = b.chars().collect();
+    edit_distance_slice(&a_vec, &b_vec, cap)
+}
+
+fn fill_chars<'a>(s: &str, buf: &'a mut [char; STACK_CAP]) -> Option<&'a [char]> {
+    let mut len = 0;
+    for ch in s.chars() {
+        if len >= STACK_CAP {
+            return None;
+        }
+        buf[len] = ch;
+        len += 1;
+    }
+    Some(&buf[..len])
+}
+
+fn edit_distance_slice<T: Copy + Eq>(a: &[T], b: &[T], cap: usize) -> usize {
     if a.len().abs_diff(b.len()) > cap {
         return cap + 1;
     }
+    if b.len() < STACK_CAP {
+        let mut prev = [0usize; STACK_CAP];
+        let mut cur = [0usize; STACK_CAP];
+        for (j, slot) in prev[..=b.len()].iter_mut().enumerate() {
+            *slot = j;
+        }
+        return run_rows(a, b, cap, &mut prev[..=b.len()], &mut cur[..=b.len()]);
+    }
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     let mut cur = vec![0usize; b.len() + 1];
-    for (i, ca) in a.iter().enumerate() {
+    run_rows(a, b, cap, &mut prev, &mut cur)
+}
+
+fn run_rows<T: Copy + Eq>(
+    a: &[T],
+    b: &[T],
+    cap: usize,
+    prev: &mut [usize],
+    cur: &mut [usize],
+) -> usize {
+    for (i, &ca) in a.iter().enumerate() {
         cur[0] = i + 1;
-        for (j, cb) in b.iter().enumerate() {
+        let mut row_min = cur[0];
+        for (j, &cb) in b.iter().enumerate() {
             let cost = usize::from(ca != cb);
-            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+            let cell = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+            cur[j + 1] = cell;
+            row_min = row_min.min(cell);
         }
-        std::mem::swap(&mut prev, &mut cur);
-        if *prev.iter().min().unwrap_or(&0) > cap {
+        prev.copy_from_slice(cur);
+        if row_min > cap {
             return cap + 1;
         }
     }

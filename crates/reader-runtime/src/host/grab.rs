@@ -84,6 +84,12 @@ pub trait LiftSink {
     fn moved(&self, at: (f64, f64));
     /// The press ended: drop the pane where it is (`commit`) or put it back.
     fn end(&self, commit: bool);
+    /// Notify virtualizers that user pointer pan / fling is driving scroll.
+    fn on_scroll_drive(&self) {}
+    /// Notify virtualizers of an external pan/fling scroll write.
+    fn on_external_scroll(&self, _scroller: &web_sys::Element) {}
+    /// Notify virtualizers that pan/fling stopped and should re-anchor.
+    fn on_reanchor(&self) {}
 }
 
 /// Install the grab listeners on a pane's entry element.
@@ -201,10 +207,11 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
                     if dx.hypot(dy) > PAN_THRESHOLD_PX {
                         grab.cancel_hold(&move_entry);
                         grab.phase = Phase::Panning;
-                        pan(&mut grab, at);
+                        move_sink.on_scroll_drive();
+                        pan(&mut grab, at, &*move_sink);
                     }
                 }
-                Phase::Panning => pan(&mut grab, at),
+                Phase::Panning => pan(&mut grab, at, &*move_sink),
                 Phase::Lifted => {
                     drop(grab);
                     move_sink.moved(at);
@@ -232,8 +239,23 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
                 if let Some(scroller) = scroller.filter(|_| !resting) {
                     let generation = grab.generation;
                     drop(grab);
-                    fling(up_state.clone(), scroller, velocity, generation, now_ms());
+                    release_sink.on_scroll_drive();
+                    fling(
+                        up_state.clone(),
+                        scroller,
+                        velocity,
+                        generation,
+                        now_ms(),
+                        release_sink.clone(),
+                    );
+                } else {
+                    drop(grab);
+                    release_sink.on_reanchor();
                 }
+            }
+            Phase::Panning => {
+                drop(grab);
+                release_sink.on_reanchor();
             }
             Phase::Lifted => {
                 drop(grab);
@@ -291,7 +313,7 @@ pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
 
 /// Scroll the scroller so content follows the pointer; keeps a smoothed
 /// velocity for the fling.
-fn pan(grab: &mut Grab, at: (f64, f64)) {
+fn pan(grab: &mut Grab, at: (f64, f64), sink: &dyn LiftSink) {
     let now = now_ms();
     let dt = (now - grab.last.2).max(1.0);
     let instant = ((at.0 - grab.last.0) / dt, (at.1 - grab.last.1) / dt);
@@ -304,6 +326,7 @@ fn pan(grab: &mut Grab, at: (f64, f64)) {
         let x = grab.scroll_start.0 - (at.0 - grab.origin.0);
         let y = grab.scroll_start.1 - (at.1 - grab.origin.1);
         scroller.scroll_to_with_x_and_y(x, y);
+        sink.on_external_scroll(scroller);
     }
 }
 
@@ -315,6 +338,7 @@ fn fling(
     velocity: (f64, f64),
     generation: u32,
     last: f64,
+    sink: Rc<dyn LiftSink>,
 ) {
     let weak = Rc::downgrade(&state);
     let velocity = Cell::new(velocity);
@@ -324,6 +348,7 @@ fn fling(
             return false;
         };
         if state.borrow().generation != generation || !scroller.is_connected() {
+            sink.on_reanchor();
             return false;
         }
         let now = now_ms();
@@ -333,6 +358,7 @@ fn fling(
         let speed = (vx * decay, vy * decay);
         velocity.set(speed);
         if speed.0.hypot(speed.1) < FLING_MIN_SPEED {
+            sink.on_reanchor();
             return false;
         }
         let (left, top) = (
@@ -340,6 +366,7 @@ fn fling(
             f64::from(scroller.scroll_top()),
         );
         scroller.scroll_to_with_x_and_y(left - speed.0 * dt, top - speed.1 * dt);
+        sink.on_external_scroll(&scroller);
         true
     });
 }

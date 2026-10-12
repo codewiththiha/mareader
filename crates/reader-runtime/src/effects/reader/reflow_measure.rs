@@ -160,6 +160,11 @@ fn flush(state: crate::context::ReaderContext) {
         // All within the jitter gate: no write, no epoch, no re-cut.
         return;
     };
+    if let Some(stream) = reflow.stream_handle()
+        && !stream.settled_now()
+    {
+        stream.set_drive(virtual_list_leptos::Drive::User);
+    }
     reflow.heights.set(Arc::new(next));
     let geo = reflow.geometry.get_untracked();
     recut_and_publish(&state, reflow, geo);

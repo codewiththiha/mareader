@@ -2,17 +2,44 @@
 
 use std::cell::Cell;
 
+use crate::state::viewer::PageJump;
+
 /// Whether a run of the page→scroll effect may command the strip.
 #[derive(Debug, Default)]
 pub(super) struct JumpGate {
     /// The page the last `admit` saw.
+    #[cfg(test)]
     last_page: Cell<u32>,
     /// A page write that arrived during a transaction, awaiting replay.
     held: Cell<Option<u32>>,
+    /// A commanded `PageJump` that arrived during a zoom transaction.
+    held_jump: Cell<Option<PageJump>>,
 }
 
 impl JumpGate {
+    /// Admit a one-shot `PageJump` command, holding it while `zooming`.
+    pub(super) fn admit_jump(&self, command: Option<PageJump>, zooming: bool) -> Option<PageJump> {
+        if zooming {
+            if let Some(jump) = command {
+                self.held.set(Some(jump.page));
+                self.held_jump.set(Some(jump));
+            }
+            return None;
+        }
+        if let Some(jump) = command {
+            self.held.set(None);
+            self.held_jump.set(None);
+            return Some(jump);
+        }
+        if let Some(held) = self.held_jump.take() {
+            self.held.set(None);
+            return Some(held);
+        }
+        None
+    }
+
     /// The page to scroll to on this run, as `(page, reassert)`.
+    #[cfg(test)]
     pub(super) fn admit(&self, page: u32, zooming: bool) -> Option<(u32, bool)> {
         let changed = page != self.last_page.get();
         self.last_page.set(page);

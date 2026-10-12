@@ -83,7 +83,11 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
                             el.set_scroll_top((position / 100.0 * max) as i32);
                         }
                     } else {
-                        reader.viewer.page.set(position.round() as u32);
+                        crate::effects::reader::navigation_sync::request_page(
+                            reader,
+                            position.round() as u32,
+                            virtual_list::Align::Start,
+                        );
                     }
                 }
                 aria_label="Reading position"

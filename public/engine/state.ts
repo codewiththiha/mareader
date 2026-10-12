@@ -415,6 +415,7 @@ export class EngineSession {
 
   sweepPdf(): void {
     if (!this.pdf) return;
+    if (this.pageLane.active > 0 || this.pageLane.queue.length > 0) return;
     try {
       Promise.resolve(this.pdf.cleanup()).catch(() => {
         /* advisory */
@@ -424,10 +425,31 @@ export class EngineSession {
     }
   }
 
-  // Drop the zoom masks every live host carries.
+  // Sweep outside [firstPage, lastPage], keeping visible covers.
+  sweepKeepalive(firstPage: number, lastPage: number): void {
+    for (const st of this.stateByCanvasId.values()) {
+      if (!st.host) continue;
+      const inKeepalive = st.page >= firstPage && st.page <= lastPage;
+      const canvasPainted =
+        !!st.canvas && st.canvas.width > 0 && st.canvas.height > 0 && !st.renderTask;
+      if (!inKeepalive || canvasPainted) {
+        try {
+          releaseSnapshots(st.host);
+        } catch (_) {
+          /* host already detached */
+        }
+      }
+    }
+    this.sweepPdf();
+  }
+
+  // Drop the zoom masks on hosts whose live canvas has already painted.
   sweepSnapshots(): void {
     for (const st of this.stateByCanvasId.values()) {
       if (!st.host) continue;
+      const unpainted =
+        !st.dead && (!st.canvas || st.canvas.width === 0 || st.canvas.height === 0 || !!st.renderTask);
+      if (unpainted) continue;
       try {
         releaseSnapshots(st.host);
       } catch (_) {

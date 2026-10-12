@@ -39,9 +39,33 @@ pub(crate) struct Sink {
     pub memo: StoredValue<Option<WalkMemo>, LocalStorage>,
 }
 
-/// Publish a measured walk; a stale task writes neither target.
+impl Sink {
+    /// True when the layer currently holds painted boxes from an earlier walk.
+    pub(crate) fn has_previous(&self) -> bool {
+        self.boxes
+            .try_with_untracked(|b| !b.is_empty())
+            .unwrap_or(false)
+    }
+}
+
+/// Publish a walk, keeping stale boxes if a live row measured empty.
 pub(crate) fn publish(sink: &Sink, painted: Vec<CefrBox>) {
+    publish_checked(sink, painted, true)
+}
+
+/// Stale-while-revalidate publish with explicit block liveness.
+pub(crate) fn publish_checked(sink: &Sink, painted: Vec<CefrBox>, block_alive: bool) {
     if sink.boxes.try_get_untracked().is_none() {
+        return;
+    }
+    if !block_alive {
+        if sink.has_previous() {
+            sink.boxes.set(Vec::new());
+        }
+        return;
+    }
+    if painted.is_empty() && sink.has_previous() {
+        // Keep stale boxes when a live row measured zero rects.
         return;
     }
     if sink.boxes.get_untracked() != painted {
@@ -101,5 +125,57 @@ mod tests {
         assert_eq!(text_fingerprint("abc"), text_fingerprint("abc"));
         assert_ne!(text_fingerprint("abc"), text_fingerprint("acb"));
         assert_ne!(text_fingerprint(""), text_fingerprint("a"));
+    }
+
+    #[test]
+    fn cefr_keeps_stale_boxes_while_row_blank() {
+        use ai_core::gloss::{GlossBox, GlossMark, PageAnchor};
+
+        let owner = Owner::new();
+        owner.with(|| {
+            let key = WalkKey {
+                fp: 1,
+                zoom: 1,
+                text: text_fingerprint("ubiquitous"),
+                generation: 1,
+                marks: 0,
+                threshold: 4,
+            };
+            let sample = CefrBox {
+                x: 10.0,
+                y: 20.0,
+                w: 64.0,
+                h: 16.0,
+                mark: GlossMark {
+                    id: "m1".to_string(),
+                    word: "ubiquitous".to_string(),
+                    context: "ubiquitous".to_string(),
+                    anchor: PageAnchor {
+                        page: 1,
+                        rect: GlossBox::default(),
+                    },
+                },
+            };
+            let boxes = RwSignal::new(vec![sample.clone()]);
+            let memo = StoredValue::new_local(Some(WalkMemo {
+                key,
+                measured: false,
+                boxes: Vec::new(),
+            }));
+            let sink = Sink { key, boxes, memo };
+            assert!(sink.has_previous());
+
+            // Live blank row: keep stale boxes and leave memo unmeasured.
+            publish_checked(&sink, Vec::new(), true);
+            assert_eq!(boxes.get_untracked(), vec![sample]);
+            assert!(
+                !memo.get_value().unwrap().measured,
+                "unmeasured memo schedules a rescan on settle"
+            );
+
+            // Once genuinely unmounted (`!block_alive`), boxes clear.
+            publish_checked(&sink, Vec::new(), false);
+            assert!(boxes.get_untracked().is_empty());
+        });
     }
 }

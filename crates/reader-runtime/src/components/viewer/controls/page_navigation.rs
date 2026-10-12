@@ -100,11 +100,19 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     on_click=move || {
                         if prev_state.viewer.mode.get() == ViewMode::Spread {
                             let next = spread_step_prev(prev_state.viewer.page.get());
-                            prev_state.viewer.page.set(next);
+                            crate::effects::reader::navigation_sync::request_page(
+                                prev_state,
+                                next,
+                                virtual_list::Align::Start,
+                            );
                         } else {
                             let p = prev_state.viewer.page.get();
                             if p > 1 {
-                                prev_state.viewer.page.set(p - 1);
+                                crate::effects::reader::navigation_sync::request_page(
+                                    prev_state,
+                                    p - 1,
+                                    virtual_list::Align::Start,
+                                );
                             }
                         }
                     }
@@ -124,12 +132,17 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                         Ok(n) => {
                             let max = commit_state.document.num_pages.get().max(1);
                             let clamped = n.clamp(1, max);
-                            if commit_state.viewer.mode.get() == ViewMode::Spread {
+                            let target = if commit_state.viewer.mode.get() == ViewMode::Spread {
                                 // Snap onto the spread containing the input.
-                                commit_state.viewer.page.set(spread_start(clamped));
+                                spread_start(clamped)
                             } else {
-                                commit_state.viewer.page.set(clamped);
-                            }
+                                clamped
+                            };
+                            crate::effects::reader::navigation_sync::request_page(
+                                commit_state,
+                                target,
+                                virtual_list::Align::Start,
+                            );
                         }
                         // Invalid input: snap back to the current page.
                         Err(_) => {
@@ -163,11 +176,19 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                         let n = next_state.document.num_pages.get();
                         if next_state.viewer.mode.get() == ViewMode::Spread {
                             let next = spread_step_next(n, next_state.viewer.page.get());
-                            next_state.viewer.page.set(next);
+                            crate::effects::reader::navigation_sync::request_page(
+                                next_state,
+                                next,
+                                virtual_list::Align::Start,
+                            );
                         } else {
                             let p = next_state.viewer.page.get();
                             if n > 0 && p < n {
-                                next_state.viewer.page.set(p + 1);
+                                crate::effects::reader::navigation_sync::request_page(
+                                    next_state,
+                                    p + 1,
+                                    virtual_list::Align::Start,
+                                );
                             }
                         }
                     }

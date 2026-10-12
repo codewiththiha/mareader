@@ -1,5 +1,7 @@
 //! What one row's tokens decide: what to paint, what the dataset owes.
 
+use std::collections::HashSet;
+
 use crate::cache::LevelCache;
 use crate::text::{
     MAX_WORD_CHARS, Span, hyphen_parts, lookup_candidates, sentence_around, tokenize,
@@ -40,6 +42,7 @@ pub fn plan_tokens(
     let chars: Vec<char> = text.chars().collect();
     let mut hard: Vec<Span> = Vec::new();
     let mut misses: Vec<String> = Vec::new();
+    let mut seen_misses: HashSet<String> = HashSet::new();
     for token in tokens {
         // A token over the cap is not dataset material; asking wastes a round.
         if token.len() > MAX_WORD_CHARS {
@@ -51,7 +54,7 @@ pub fn plan_tokens(
         let mut candidates = lookup_candidates(&word);
         candidates.extend(hyphen_parts(&word));
         for key in &candidates {
-            if cache.get(key).is_none() && !misses.iter().any(|held| held == key) {
+            if cache.get(key).is_none() && seen_misses.insert(key.clone()) {
                 misses.push(key.clone());
             }
         }

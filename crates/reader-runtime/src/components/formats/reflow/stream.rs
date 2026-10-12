@@ -150,7 +150,13 @@ pub fn ReflowStreamLayout(
             .budget(STREAM_MOUNT_BUDGET)
             .padding(0.0, STREAM_TAIL_PADDING)
             .initial(Viewport::main_only(initial_vh), initial_offset)
-            .epoch(epoch),
+            .epoch(epoch)
+            .retention(virtual_list_leptos::RetentionPolicy::Grace {
+                ms: 450,
+                max: crate::zoom::config::MAX_ZOMBIES,
+            })
+            .measure_epsilon(1.0)
+            .pipeline(virtual_list_leptos::Pipeline::disabled()),
     );
     // The virtualizer joins the diagnostics registry for its lifetime.
     crate::diagnostics::track_virtualizer(&v);
@@ -409,6 +415,15 @@ pub fn ReflowStreamLayout(
                 }
                 style=move || tx_zoom.get()
                 tabindex="0"
+                on:pointerdown=move |_| {
+                    handle.with_value(|v| v.set_drive(virtual_list_leptos::Drive::User));
+                }
+                on:wheel=move |_| {
+                    handle.with_value(|v| v.set_drive(virtual_list_leptos::Drive::User));
+                }
+                on:pointerup=move |_| {
+                    handle.with_value(|v| v.reanchor_now());
+                }
             >
                 <div class="relative w-full" style:height=move || format!("{}px", total_size.get())>
                     <div node_ref=column_ref class=column_class style=column_style>
@@ -516,11 +531,15 @@ pub fn ReflowStreamLayout(
                                                             view! {
                                                                 <BlockView state=state block=block.clone() render=block_render(state) />
                                                                 <BlockSearchHits state=state block=index />
-                                                                <crate::components::cefr::reflow::BlockCefrMarks state=state block=index />
                                                             }
                                                                 .into_any()
                                                         }
                                                     }}
+                                                    <crate::components::cefr::reflow::BlockCefrMarks
+                                                        state=state
+                                                        block=index
+                                                        row_state=row_state
+                                                    />
                                                 }
                                                     .into_any()
                                             }

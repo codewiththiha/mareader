@@ -92,6 +92,20 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
+    /// A disabled pipeline: never engages placeholder staging.
+    pub const fn disabled() -> Self {
+        Self {
+            fill_ms: 0.0,
+            pitch: -1.0,
+            lanes: 0,
+        }
+    }
+
+    /// Whether placeholder staging is disabled.
+    pub const fn is_disabled(&self) -> bool {
+        self.pitch < 0.0
+    }
+
     /// Items per second this pipeline can sustain.
     pub fn items_per_s(&self) -> f64 {
         if self.lanes == 0 || self.fill_ms <= 0.0 {
@@ -107,6 +121,9 @@ impl Pipeline {
 
     /// The gate that opens the placeholder mode.
     pub fn enter_px_s(&self, config: &MotionConfig) -> f64 {
+        if self.is_disabled() {
+            return f64::INFINITY;
+        }
         config.enter_floor_px_s.max(self.capacity_px_s())
     }
 

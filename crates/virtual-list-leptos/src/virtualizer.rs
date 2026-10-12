@@ -12,12 +12,13 @@ use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 
 use virtual_list::{Align, Layout, Viewport, Window};
 
-use crate::engine::{Step, VirtualizerCore};
+use crate::engine::{Drive, Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 use crate::retention::{
-    RetainedItem, RetentionPolicy, is_retained, next_deadline_ms, prune_retained, retain_evicted,
+    RetainedItem, RetentionPolicy, cap_retained_by_distance, is_retained, next_deadline_ms,
+    prune_retained, retain_evicted,
 };
 use crate::surface::{DomSurface, ScrollSurface};
 
@@ -158,28 +159,42 @@ impl VirtualizerInner {
             return;
         }
         let policy = self.retention.get();
-        // A motion-gated bridge is granted by the seek; others ignore it.
+        // Retain while scrolling or during a zoom grace override.
+        let active_scroll =
+            !self.settled.try_get_untracked().unwrap_or(true) || policy != self.options.retention;
         let seeking = self.core.borrow().motion_engaged();
         if policy.bridges() {
             let now = now_ms();
             let frame = self.frame_clock.get();
-            let evicted = retain_evicted(old, new, now, frame, &policy, seeking);
+            let evicted = if active_scroll {
+                retain_evicted(old, new, now, frame, &policy, seeking)
+            } else {
+                Vec::new()
+            };
+            let dominant = self.core.borrow().dominant();
+            let mut retained = self.retained.borrow_mut();
+            let before = retained.len();
+            // Prune expired or re-entered items on every window move.
+            *retained = prune_retained(std::mem::take(&mut *retained), new, now, frame);
+            let mut changed = retained.len() != before;
             if !evicted.is_empty() {
-                let mut retained = self.retained.borrow_mut();
-                // Merge: a retained index keeps its expiry.
-                *retained = prune_retained(std::mem::take(&mut *retained), new, now, frame);
                 for item in evicted {
-                    if !retained.iter().any(|r| r.index == item.index) {
+                    if let Some(existing) = retained.iter_mut().find(|r| r.index == item.index) {
+                        existing.expires_at = item.expires_at;
+                        existing.frame_limit = item.frame_limit;
+                    } else {
                         retained.push(item);
                     }
                 }
-                let max = policy.max();
-                if retained.len() > max {
-                    let drop = retained.len() - max;
-                    retained.drain(0..drop);
-                }
-                drop(retained);
+                cap_retained_by_distance(&mut retained, new, dominant, policy.max());
+                changed = true;
+            }
+            let has_retained = !retained.is_empty();
+            drop(retained);
+            if changed {
                 self.retained_version.update(|v| *v += 1);
+            }
+            if has_retained {
                 self.arm_retention_clocks();
             }
         }
@@ -336,7 +351,8 @@ impl VirtualizerInner {
             self.layout_version.update(|version| *version += 1);
         }
         self.publish_range(step.range);
-        write_if_changed(self.scroll_top, self.core.borrow().scroll_top());
+        let top = self.core.borrow().scroll_top();
+        write_if_changed(self.scroll_top, top);
     }
 
     fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
@@ -353,7 +369,11 @@ impl VirtualizerInner {
         if (content - self.core.borrow().scroll_top()).abs() <= self.options.measure_epsilon {
             return;
         }
-        let step = self.core.borrow_mut().on_scroll_at(content, now_ms());
+        let step = {
+            let mut core = self.core.borrow_mut();
+            core.set_drive(Drive::User);
+            core.on_scroll_at(content, now_ms())
+        };
         write_if_changed(self.scroll_top, content);
         // The strip is moving again: first paints wait for the settle.
         write_if_changed(self.settled, false);
@@ -436,6 +456,15 @@ impl VirtualizerInner {
                 // The motion is over: the band closes, bridges earn nothing.
                 let step = inner.core.borrow_mut().note_scroll_end();
                 inner.publish_range(step.range);
+                let debt_target = inner.core.borrow_mut().settle_debt();
+                if let Some(target) = debt_target
+                    && inner.scroll_feedback.get()
+                {
+                    inner.surface.set_scroll(target, false);
+                    write_if_changed(inner.scroll_top, target);
+                    let range = inner.core.borrow().range();
+                    inner.publish_range(range);
+                }
                 inner.prune_retained_tick();
                 // Every correction the fling outran lands now, one write.
                 inner.flush_banked_scroll();
@@ -879,11 +908,67 @@ impl Virtualizer {
 
     /// Every bridge ends THIS tick: the hard endpoint.
     pub fn remove_retained_now(&self) {
+        if let Some(prev) = self.inner.retention_timer.borrow_mut().take() {
+            prev.clear();
+        }
         if self.inner.retained.borrow().is_empty() {
             return;
         }
         self.inner.retained.borrow_mut().clear();
-        self.inner.retained_version.update(|v| *v += 1);
+        if self.inner.retained_version.try_get_untracked().is_some() {
+            self.inner.retained_version.update(|v| *v += 1);
+        }
+    }
+
+    /// The active mount window signal (`Some(Window { first, last })`).
+    pub fn window(&self) -> RwSignal<Option<Window>> {
+        self.inner.range
+    }
+
+    /// Predicted landing index `fill_latency_ms` ahead while seeking.
+    pub fn landing_hint(&self, fill_latency_ms: f64) -> Option<usize> {
+        self.inner.core.borrow().landing_hint(fill_latency_ms)
+    }
+
+    /// Current drive state ([`Drive::Idle`] or [`Drive::User`]).
+    pub fn drive(&self) -> Drive {
+        self.inner.core.borrow().drive()
+    }
+
+    /// Set who drives the scroll offset; [`Drive::User`] defers compensation.
+    pub fn set_drive(&self, drive: Drive) {
+        self.inner.core.borrow_mut().set_drive(drive);
+    }
+
+    /// Transition to [`Drive::Idle`] and apply any buffered anchor debt once.
+    pub fn settle_debt(&self) {
+        if self.inner.settled.try_get_untracked().is_none() {
+            return;
+        }
+        let debt_target = self.inner.core.borrow_mut().settle_debt();
+        if let Some(target) = debt_target
+            && self.inner.scroll_feedback.get()
+        {
+            self.inner.surface.set_scroll(target, false);
+            write_if_changed(self.inner.scroll_top, target);
+            let range = self.inner.core.borrow().range();
+            self.inner.publish_range(range);
+        }
+    }
+
+    /// Pin the anchor at the current scroll offset and clear pending jumps.
+    pub fn reanchor_now(&self) {
+        self.inner.core.borrow_mut().reanchor_now();
+    }
+
+    /// Adopt an externally driven scroll offset synchronously (pan / fling).
+    pub fn notify_external_scroll(&self, offset: f64) {
+        if self.inner.settled.try_get_untracked().is_none() {
+            return;
+        }
+        let step = self.inner.core.borrow_mut().notify_external_scroll(offset);
+        write_if_changed(self.inner.scroll_top, offset);
+        self.inner.publish_range(step.range);
     }
 
     /// Zoom: rescale every size with the viewport center pinned.

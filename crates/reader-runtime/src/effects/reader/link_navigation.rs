@@ -21,6 +21,10 @@ pub fn link_navigation(state: crate::context::ReaderContext, active: Signal<bool
         };
         let total = state.reader.document.num_pages.get_untracked().max(1);
         let page = (page as u32).clamp(1, total);
-        state.reader.viewer.page.set(page);
+        crate::effects::reader::navigation_sync::request_page(
+            state.reader,
+            page,
+            virtual_list::Align::Start,
+        );
     });
 }

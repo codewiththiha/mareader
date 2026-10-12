@@ -72,7 +72,9 @@ without waiting for an unrelated dependency change.
 
 | Constant | Value | Owner |
 | --- | --- | --- |
-| Scroll settle delay | 150 ms | virtualizer `scroll_end_delay_ms` |
+| Scroll settle delay | 400 ms | virtualizer `scroll_end_delay_ms` |
+| `STRIP_RETENTION` | `Grace { ms: 450, max: 12 }` | `reader-runtime/src/features/virtualizers.rs` |
+| `RENDER_BUDGET` | `Budget::screenfuls(1.5, 8)` | `reader-runtime/src/features/virtualizers.rs` |
 | `enter_floor_px_s` / `hysteresis` | 1400 px/s / 0.4 | `virtual-list/src/motion.rs` |
 | `min_lead_screens` / `max_lead_screens` / `trail_screens` | 0.5 / 2.0 / 0.25 | `virtual-list/src/motion.rs` |
 | `tau_ms` / `flip_ratio` | 32 ms / 0.35 | `virtual-list/src/motion.rs` |

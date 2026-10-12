@@ -12,15 +12,22 @@ use super::rows::EntryMirror;
 
 /// Answers the card keeps; the oldest goes first at the cap.
 const LOOKUP_CAP: usize = 96;
+/// Search results the panel keeps; evicted oldest-first at the cap.
+const SEARCH_CAP: usize = 32;
 
 thread_local! {
     /// Newest-first answers, keyed by the whole ask. Plain data only.
     static LOOKUPS: RefCell<VecDeque<(LookupKey, Vec<EntryMirror>)>> =
         const { RefCell::new(VecDeque::new()) };
+    /// Newest-first search answers, invalidated whenever packs change.
+    static SEARCHES: RefCell<VecDeque<(SearchKey, Vec<EntryMirror>)>> =
+        const { RefCell::new(VecDeque::new()) };
 }
 
 /// What one answer depends on: the word, both shores, the role.
 type LookupKey = (String, String, String, Option<String>);
+/// What one search depends on: the query, pack filter, and shores.
+type SearchKey = (String, Option<Vec<String>>, Option<String>, Option<String>);
 
 /// Answers the cache holds, for the diagnostics gauge.
 pub(super) fn entries() -> usize {
@@ -30,6 +37,7 @@ pub(super) fn entries() -> usize {
 /// Drop every answer: a pack that landed or left changes them all.
 pub(super) fn forget() {
     LOOKUPS.with(|cache| cache.borrow_mut().clear());
+    SEARCHES.with(|cache| cache.borrow_mut().clear());
 }
 
 /// The answer a key already has, pushed back to the front.
@@ -47,8 +55,28 @@ fn remembered(key: &LookupKey) -> Option<Vec<EntryMirror>> {
 fn remember(key: LookupKey, entries: Vec<EntryMirror>) {
     LOOKUPS.with(|cache| {
         let mut cache = cache.borrow_mut();
+        cache.retain(|(have, _)| have != &key);
         cache.push_front((key, entries));
         cache.truncate(LOOKUP_CAP);
+    });
+}
+
+fn remembered_search(key: &SearchKey) -> Option<Vec<EntryMirror>> {
+    SEARCHES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let at = cache.iter().position(|(have, _)| have == key)?;
+        let (_, entries) = cache.remove(at)?;
+        cache.push_front((key.clone(), entries.clone()));
+        Some(entries)
+    })
+}
+
+fn remember_search(key: SearchKey, entries: Vec<EntryMirror>) {
+    SEARCHES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|(have, _)| have != &key);
+        cache.push_front((key, entries));
+        cache.truncate(SEARCH_CAP);
     });
 }
 
@@ -138,6 +166,11 @@ pub fn search(
         done(Vec::new());
         return;
     }
+    let key = (ask.clone(), pack_ids.clone(), from.clone(), to.clone());
+    if let Some(entries) = remembered_search(&key) {
+        done(entries);
+        return;
+    }
     spawn_local(async move {
         let args = serde_wasm_bindgen::to_value(&SearchArgs {
             ask,
@@ -152,6 +185,7 @@ pub fn search(
             }
             Err(_) => Vec::new(),
         };
+        remember_search(key, parsed.clone());
         done(parsed);
     });
 }

@@ -12,7 +12,7 @@ pub mod retention;
 mod surface;
 mod virtualizer;
 
-pub use crate::engine::{CoreConfig, Flush, Step, VirtualizerCore};
+pub use crate::engine::{CoreConfig, Drive, Flush, Step, VirtualizerCore};
 pub use crate::hook::use_virtualizer;
 pub use crate::options::{Axis, LayoutShape, ScrollMode, VirtualizerOptions};
 pub use crate::render::{VirtualItem, VirtualItemState, VirtualRow};

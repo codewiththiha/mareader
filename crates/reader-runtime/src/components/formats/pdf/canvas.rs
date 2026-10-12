@@ -90,6 +90,10 @@ fn register_mounted(
             host: host.as_ref(),
         },
     );
+    let thumb_scale = crate::components::shell::sidebar::panels::thumbnails::geometry::THUMB_SCALE;
+    if pdf.has_thumb(page, thumb_scale) {
+        pdf.seed_thumb_snapshot(canvas_id, page, thumb_scale);
+    }
 }
 
 #[component]
@@ -442,12 +446,8 @@ pub fn PdfPageCanvas(
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
-                    // Cancelled errors are logged, not fatal; a wipe
-                    // marks the canvas unpainted.
+                    // Keep `.page-snapshot` covers alive until a render lands.
                     painted_async.set(false);
-                    if let Some(host) = host_element(host_ref) {
-                        remove_snapshots(&host);
-                    }
                     web_sys::console::warn_1(
                         &format!("[page_canvas] render page {page_no}: {e}").into(),
                     );

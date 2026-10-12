@@ -180,8 +180,11 @@ pub fn PdfCefrLayer(
         wake.track();
         let generation = state.cefr.generation.get();
         let (enabled, threshold) = settings.with(|s| (s.cefr_enabled, s.cefr_level.band()));
-        if !enabled || !dataset_ready.get() {
+        if !enabled {
             clear(&boxes);
+            return;
+        }
+        if !dataset_ready.get() {
             return;
         }
         // The suppression set, folded tracked: a mark edit re-walks.
@@ -195,9 +198,8 @@ pub fn PdfCefrLayer(
                     .map(|m| m.id.as_str()),
             )
         });
-        // The observer wakes this when a missing layer lands.
+        // The observer wakes this when a missing layer lands; keep stale boxes.
         let Some(host) = state.dom.by_id(&host_id) else {
-            clear(&boxes);
             return;
         };
         let ctx = Ctx {
@@ -256,20 +258,30 @@ fn walk(
             cefr_core::plan(&layer.text, cache, ctx.threshold, MAX_BOXES_PER_PAGE)
         })
         .unwrap_or_default();
+    let had_misses = !plan.misses.is_empty();
     ask(state, plan.misses);
 
     let words = cefr_core::planned(&layer.text, &plan.hard);
+    if words.is_empty() {
+        if !had_misses {
+            memo.try_update_value(|slot| {
+                *slot = Some(WalkMemo {
+                    key,
+                    measured: true,
+                    boxes: Vec::new(),
+                });
+            });
+            clear(boxes);
+        }
+        return;
+    }
     memo.try_update_value(|slot| {
         *slot = Some(WalkMemo {
             key,
-            measured: words.is_empty(),
+            measured: false,
             boxes: Vec::new(),
         });
     });
-    if words.is_empty() {
-        clear(boxes);
-        return;
-    }
     let task_host = host.clone();
     let sink = Sink {
         key,

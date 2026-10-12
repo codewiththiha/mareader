@@ -42,25 +42,37 @@ thread_local! {
 }
 
 fn page_prev(state: ReaderState) {
-    if state.viewer.mode.get() == ViewMode::Spread {
-        state
-            .viewer
-            .page
-            .set(spread_step_prev(state.viewer.page.get()));
+    let target = if state.viewer.mode.get() == ViewMode::Spread {
+        Some(spread_step_prev(state.viewer.page.get()))
     } else if state.viewer.page.get() > 1 {
-        state.viewer.page.set(state.viewer.page.get() - 1);
+        Some(state.viewer.page.get() - 1)
+    } else {
+        None
+    };
+    if let Some(page) = target {
+        crate::effects::reader::navigation_sync::request_page(
+            state,
+            page,
+            virtual_list::Align::Start,
+        );
     }
 }
 
 fn page_next(state: ReaderState) {
     let n = state.document.num_pages.get();
-    if state.viewer.mode.get() == ViewMode::Spread {
-        state
-            .viewer
-            .page
-            .set(spread_step_next(n, state.viewer.page.get()));
+    let target = if state.viewer.mode.get() == ViewMode::Spread {
+        Some(spread_step_next(n, state.viewer.page.get()))
     } else if n > 0 && state.viewer.page.get() < n {
-        state.viewer.page.set(state.viewer.page.get() + 1);
+        Some(state.viewer.page.get() + 1)
+    } else {
+        None
+    };
+    if let Some(page) = target {
+        crate::effects::reader::navigation_sync::request_page(
+            state,
+            page,
+            virtual_list::Align::Start,
+        );
     }
 }
 
@@ -232,7 +244,10 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
         NavAction::PagePrev => page_prev(state),
         NavAction::PageNext => page_next(state),
         NavAction::HoldLine { dir, horizontal } => {
-            begin_line_hold(state.dom, dir as f64, horizontal, glide)
+            state
+                .pane
+                .with_bound_virtualizers(|v| v.set_drive(virtual_list_leptos::Drive::User));
+            begin_line_hold(state.dom, dir as f64, horizontal, glide);
         }
         NavAction::PageStep { dir, horizontal } => {
             focus_scroll_list(state.dom, horizontal);

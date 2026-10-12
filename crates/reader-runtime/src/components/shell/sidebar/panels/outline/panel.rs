@@ -238,13 +238,16 @@ pub fn OutlinePanel(
                                         style:padding-left=move || format!("{}px", indent_px(depth))
                                         // Jumping keeps the sidebar open.
                                         on:click=move |_| {
-                                            // The block jump moves a text
-                                            // document; the page write
-                                            // carries the counter.
-                                            state.viewer.page.set(page);
                                             clicked.set(Some((row_index, page)));
                                             if state.reflowable_now() {
+                                                state.viewer.page.set(page);
                                                 state.viewer.ask_outline_jump(row_index as u32);
+                                            } else {
+                                                crate::effects::reader::navigation_sync::request_page(
+                                                    state,
+                                                    page,
+                                                    virtual_list::Align::Start,
+                                                );
                                             }
                                         }
                                     >

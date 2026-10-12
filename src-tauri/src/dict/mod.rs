@@ -464,39 +464,7 @@ impl DictManager {
                 return finish(rows, pos, limit);
             }
         }
-        // No route carried the ask: the pair's own packs, and no
-        // other language's.
-        let mut rows = Vec::new();
-        for pack_id in &built {
-            let Some(def) = packs::pack(pack_id) else {
-                continue;
-            };
-            let forward = def.source == from && def.target == to;
-            let backward = def.source == to && def.target == from;
-            if !forward && !backward {
-                continue;
-            }
-            if let Ok(db) = self.open(&dir, pack_id) {
-                let db = db.lock().expect("db mutex");
-                let found = if backward {
-                    db.lookup_definition(word, limit)
-                } else {
-                    db.lookup_word(word, limit)
-                };
-                if let Ok(found) = found {
-                    rows.extend(found.into_iter().map(|row| {
-                        let door = if backward {
-                            row.definition.clone()
-                        } else {
-                            row.word.clone()
-                        };
-                        let fit = classify(word, &door).unwrap_or(WordMatch::Fuzzy);
-                        (row, pack_id.clone(), None, fit)
-                    }));
-                }
-            }
-        }
-        finish(rows, pos, limit)
+        Vec::new()
     }
 
     /// The route's ask: a word on either side, or between two shores.
@@ -637,7 +605,7 @@ impl DictManager {
             let second_db = second_db.lock().expect("db mutex");
             let asks: Vec<String> = mids.iter().map(|(mid, _)| mid.clone()).collect();
             match if second.reverse {
-                lookup_defs_any(&second_db, &asks, limit)
+                second_db.lookup_defs_any(&asks, limit)
             } else {
                 second_db.lookup_words_any(&asks, limit)
             } {
@@ -653,9 +621,10 @@ impl DictManager {
                 } else {
                     row.word.clone()
                 };
+                let mid_fold = dict_core::fold(&mid);
                 let fit = mids
                     .iter()
-                    .find(|(name, _)| *name == mid)
+                    .find(|(name, _)| dict_core::fold(name) == mid_fold)
                     .map(|(_, fit)| *fit)
                     .unwrap_or(WordMatch::Fuzzy);
                 (row, second.pack.to_string(), Some(mid), fit)
@@ -703,15 +672,6 @@ fn hop_ask(
         // A panel's ask on the far shore: prefixes and near spellings too.
         (true, true) => db.search_definition(word, limit),
     }
-}
-
-/// The batched way home a reversed second hop needs.
-fn lookup_defs_any(db: &DictDb, asks: &[String], limit: usize) -> anyhow::Result<Vec<RawRow>> {
-    let mut out = Vec::new();
-    for ask in asks {
-        out.extend(db.lookup_definition(ask, limit)?);
-    }
-    Ok(out)
 }
 
 /// Rows to wire, ranked: role fit first, word fit next.

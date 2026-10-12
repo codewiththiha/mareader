@@ -1,10 +1,9 @@
-//! Navigation sync: keeps `viewer.page` and the scroll in step.
+//! Navigation sync: display `page` vs commanded `page_command`.
 
 mod dominant;
 mod jump_gate;
 mod page_to_scroll;
 
-use std::cell::Cell;
 use std::rc::Rc;
 
 use leptos::prelude::*;
@@ -25,12 +24,21 @@ pub(crate) fn scroll_mode(state: ReaderState) -> ScrollMode {
     }
 }
 
-/// What every arm needs: state, echo flag, zoom flag.
+/// Command an explicit page jump and arm `page_command`.
+pub fn request_page(state: ReaderState, page: u32, align: Align) {
+    let mode = scroll_mode(state);
+    state.viewer.request_page(page, align, mode);
+}
+
+/// Command an explicit page jump with a caller-specified [`ScrollMode`].
+pub fn request_page_with_mode(state: ReaderState, page: u32, align: Align, mode: ScrollMode) {
+    state.viewer.request_page(page, align, mode);
+}
+
+/// What every arm needs: state and zoom flag (no echo suppression needed).
 #[derive(Clone)]
 pub(super) struct Arms {
     pub state: ReaderState,
-    /// Echo suppression: our own write is not a reader scroll.
-    pub suppress: Rc<Cell<bool>>,
     /// The tracked form of "a zoom transaction is in flight".
     pub zooming: Signal<bool>,
 }
@@ -39,13 +47,11 @@ pub(super) struct Arms {
 pub fn navigation_sync(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: Virtualizer) {
     let arms = Arms {
         state,
-        suppress: Rc::new(Cell::new(false)),
         zooming: state.viewer.zooming(),
     };
 
-    // One gate per axis; its arms hold and replay (see JumpGate).
+    // Shared gate: defers dominant reads while a zoom jump replays.
     let gate = Rc::new(JumpGate::default());
-    let h_gate = Rc::new(JumpGate::default());
 
     dominant::install(
         arms.clone(),
@@ -53,24 +59,72 @@ pub fn navigation_sync(state: ReaderState, virtualizer: Virtualizer, h_virtualiz
         virtualizer.clone(),
         gate.clone(),
     );
-    page_to_scroll::install(
-        arms.clone(),
-        ViewMode::ScrollVertical,
-        virtualizer,
-        gate,
-        Align::Start,
-    );
     dominant::install(
         arms.clone(),
         ViewMode::ScrollHorizontal,
         h_virtualizer.clone(),
-        h_gate.clone(),
+        gate.clone(),
     );
-    page_to_scroll::install(
-        arms,
-        ViewMode::ScrollHorizontal,
-        h_virtualizer,
-        h_gate,
-        Align::Center,
-    );
+    page_to_scroll::install(arms, virtualizer, h_virtualizer, gate);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::viewer::{PageJump, ViewerSignals};
+
+    #[test]
+    fn passive_dominant_page_update_never_arms_page_command() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let viewer = ViewerSignals::default();
+            let gate = JumpGate::default();
+            assert_eq!(viewer.page.get_untracked(), 1);
+            assert_eq!(viewer.page_command.get_untracked(), None);
+
+            // Simulate passive dominant scroll updates.
+            for passive_page in [2u32, 3, 15, 42] {
+                viewer.page.set(passive_page);
+                let cmd = viewer.take_page_command();
+                assert_eq!(
+                    cmd, None,
+                    "passive page {passive_page} must not command scroll"
+                );
+                assert_eq!(gate.admit_jump(cmd, false), None);
+            }
+        });
+    }
+
+    #[test]
+    fn explicit_request_page_arms_one_shot_command_and_replays_after_zoom() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let viewer = ViewerSignals::default();
+            let gate = JumpGate::default();
+
+            viewer.request_page(12, Align::Start, ScrollMode::Auto);
+            assert_eq!(viewer.page.get_untracked(), 12);
+            let cmd = viewer.take_page_command();
+            assert_eq!(
+                cmd,
+                Some(PageJump {
+                    page: 12,
+                    align: Align::Start,
+                    mode: ScrollMode::Auto,
+                })
+            );
+            // Held while zooming, then replayed once zoom settles.
+            assert_eq!(gate.admit_jump(cmd, true), None);
+            assert_eq!(gate.pending(), Some(12));
+            assert_eq!(
+                gate.admit_jump(None, false),
+                Some(PageJump {
+                    page: 12,
+                    align: Align::Start,
+                    mode: ScrollMode::Auto,
+                })
+            );
+            assert_eq!(gate.pending(), None);
+        });
+    }
 }

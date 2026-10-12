@@ -45,6 +45,15 @@ impl Window {
             },
         }
     }
+
+    /// Expand this window by `margin` items on each side (saturating at 0).
+    #[inline]
+    pub const fn expanded(&self, margin: usize) -> Self {
+        Self {
+            first: self.first.saturating_sub(margin),
+            last: self.last.saturating_add(margin),
+        }
+    }
 }
 
 impl IntoIterator for Window {

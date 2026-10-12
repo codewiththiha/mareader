@@ -26,6 +26,7 @@ import {
 import {
   cancelThumb,
   hasThumb,
+  seedThumbSnapshot,
   thumbGenerationSize,
   thumbLaneGauge,
   prefetchThumb,
@@ -532,7 +533,11 @@ globalThis.PDFReader = {
   samplePaperPage: (sid, page) =>
     withSession(sid, Promise.resolve({ ok: true as const }), (s) => samplePaperPage(s, page)),
   sweep: (sid) => withSession(sid, undefined, (s) => s.sweepPdf()),
+  sweepKeepalive: (sid, firstPage, lastPage) =>
+    withSession(sid, undefined, (s) => s.sweepKeepalive(firstPage, lastPage)),
   sweepSnapshots: (sid) => withSession(sid, undefined, (s) => s.sweepSnapshots()),
+  seedThumbSnapshot: (sid, canvasId, page, scale) =>
+    withSession(sid, undefined, (s) => seedThumbSnapshot(s, canvasId, page, scale)),
   prefetchThumb: (sid, page, scale) =>
     withSession(sid, Promise.resolve(), (s) => prefetchThumb(s, page, scale)),
   suspendPrefetches: (sid) => withSession(sid, undefined, (s) => suspendPrefetches(s)),

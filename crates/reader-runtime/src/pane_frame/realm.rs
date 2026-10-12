@@ -283,7 +283,13 @@ fn put<T: PartialEq + Send + Sync + 'static>(signal: RwSignal<T>, value: T) {
 fn apply_write(live: &Live, write: Write) {
     let reader = live.pane.context().reader;
     match write {
-        Write::Page { page } => put(reader.viewer.page, page),
+        Write::Page { page } => {
+            crate::effects::reader::navigation_sync::request_page(
+                reader,
+                page,
+                virtual_list::Align::Start,
+            );
+        }
         Write::Mode { mode } => put(reader.viewer.mode, mode),
         Write::Fit { fit } => put(reader.viewer.fit, fit),
         Write::ZoomStep { step } => reader
@@ -625,6 +631,37 @@ impl crate::host::grab::LiftSink for FrameLift {
             },
             x: 0.0,
             y: 0.0,
+        });
+    }
+    fn on_scroll_drive(&self) {
+        LIVE.with(|l| {
+            if let Some(live) = l.borrow().as_ref() {
+                live.pane
+                    .context()
+                    .pane
+                    .with_bound_virtualizers(|v| v.set_drive(virtual_list_leptos::Drive::User));
+            }
+        });
+    }
+    fn on_external_scroll(&self, _scroller: &web_sys::Element) {
+        LIVE.with(|l| {
+            if let Some(live) = l.borrow().as_ref() {
+                live.pane.context().pane.with_bound_virtualizers(|v| {
+                    if let Some(off) = v.surface_offset() {
+                        v.notify_external_scroll(off);
+                    }
+                });
+            }
+        });
+    }
+    fn on_reanchor(&self) {
+        LIVE.with(|l| {
+            if let Some(live) = l.borrow().as_ref() {
+                live.pane
+                    .context()
+                    .pane
+                    .with_bound_virtualizers(|v| v.reanchor_now());
+            }
         });
     }
 }

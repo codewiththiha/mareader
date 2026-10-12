@@ -44,6 +44,7 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     let word = RwSignal::new(String::new());
     let entries: RwSignal<Vec<EntryMirror>> = RwSignal::new(Vec::new());
     let index = RwSignal::new(0usize);
+    let seq = StoredValue::new_local(0u64);
     // The word the card is on; None leaves the watch nothing to follow.
     let placed: RwSignal<Option<Ask>> = RwSignal::new(None);
     let scroll_top = state.reader.viewer.scroll_top;
@@ -77,6 +78,7 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
 
     // The card is gone: no word left to follow, nothing to retire.
     let hide = Callback::new(move |_| {
+        seq.update_value(|n| *n = n.wrapping_add(1));
         placed.set(None);
         pinned.set(false);
         visible.set(false);
@@ -89,14 +91,18 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
     // Senses now, POS-ranked answers when the tagger lands.
     let fetch_for = Callback::new(move |(ask, ctx): (String, String)| {
         let target = to.get_untracked();
-        let live = word;
-        let asked = ask.clone();
+        let ticket = seq.try_update_value(|n| {
+            *n = n.wrapping_add(1);
+            *n
+        });
+        let Some(ticket) = ticket else {
+            return;
+        };
         services::dict::lookup(ask.clone(), "en".to_string(), target.clone(), None, {
-            let asked = asked.clone();
             move |found| {
-                if live.get_untracked() == asked {
-                    entries.set(found);
-                    index.set(0);
+                if seq.try_get_value() == Some(ticket) {
+                    let _ = entries.try_set(found);
+                    let _ = index.try_set(0);
                 }
             }
         });
@@ -106,20 +112,32 @@ pub fn DictHoverHost(state: ReaderContext) -> impl IntoView {
                 let Some(answer) = answer else {
                     return;
                 };
-                if live.get_untracked() != asked {
+                if seq.try_get_value() != Some(ticket) {
                     return;
                 }
                 services::dict::lookup(ask, "en".to_string(), target, Some(answer.pos), {
-                    let asked = asked.clone();
                     move |found| {
-                        if live.get_untracked() == asked {
-                            entries.set(found);
-                            index.set(0);
+                        if seq.try_get_value() == Some(ticket) {
+                            let _ = entries.try_set(found);
+                            let _ = index.try_set(0);
                         }
                     }
                 });
             }
         });
+    });
+
+    // Re-query if the active target shore changes while a card is open.
+    Effect::new(move |_| {
+        let _ = to.get();
+        if !visible.get_untracked() {
+            return;
+        }
+        let current =
+            placed.with_untracked(|ask| ask.as_ref().map(|a| (a.word.clone(), a.context.clone())));
+        if let Some(pair) = current {
+            fetch_for.run(pair);
+        }
     });
 
     let show = Callback::new(move |(ask, pin): (Ask, bool)| {

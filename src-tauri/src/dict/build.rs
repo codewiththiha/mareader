@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use arrow::array::{Array, AsArray};
+use arrow::array::{Array, AsArray, RecordBatchReader};
 use arrow::compute::cast;
 use arrow::datatypes::DataType;
 use arrow::record_batch::RecordBatch;
@@ -26,35 +26,6 @@ pub const SCHEMA: &str = "CREATE TABLE entries (
 );
 CREATE INDEX entries_word ON entries(word_fold);
 CREATE INDEX entries_def ON entries(def_fold);";
-
-/// A parquet read to name-addressed rows of strings.
-pub struct Table {
-    pub names: Vec<String>,
-    pub rows: Vec<Vec<Option<String>>>,
-}
-
-/// Read any pack parquet: rows addressed by column NAME.
-pub fn read_parquet(path: &Path) -> Result<Table> {
-    let file = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
-    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-        .with_context(|| format!("builder {}", path.display()))?
-        .build()?;
-    let mut names: Vec<String> = Vec::new();
-    let mut rows: Vec<Vec<Option<String>>> = Vec::new();
-    for batch in reader {
-        let batch = batch.with_context(|| format!("row group {}", path.display()))?;
-        if names.is_empty() {
-            names = batch
-                .schema()
-                .fields()
-                .iter()
-                .map(|f| f.name().to_string())
-                .collect();
-        }
-        rows.extend(batch_rows(&batch, &names)?);
-    }
-    Ok(Table { names, rows })
-}
 
 /// One record batch's rows, every column as a string or none.
 fn batch_rows(batch: &RecordBatch, names: &[String]) -> Result<Vec<Vec<Option<String>>>> {
@@ -87,29 +58,42 @@ fn col_strings(column: &std::sync::Arc<dyn Array>) -> Result<Vec<Option<String>>
         .collect())
 }
 
-/// Build the sqlite beside the parquet. `word` + `definition`
-/// must be present.
+/// Stream a parquet pack into sqlite (`word` + `definition` required).
 pub fn build_db(parquet_path: &Path, db_path: &Path) -> Result<u64> {
-    let table = read_parquet(parquet_path)?;
+    let file = std::fs::File::open(parquet_path)
+        .with_context(|| format!("open {}", parquet_path.display()))?;
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .with_context(|| format!("builder {}", parquet_path.display()))?
+        .build()?;
+    let schema = reader.schema();
+    let names: Vec<String> = schema
+        .fields()
+        .iter()
+        .map(|f| f.name().to_string())
+        .collect();
     let at = |name: &str| {
-        table
-            .names
+        names
             .iter()
             .position(|col| col == name)
             .with_context(|| format!("no {name} column"))
     };
     let word_at = at("word")?;
     let def_at = at("definition")?;
-    let pos_at = table.names.iter().position(|col| col == "pos");
-    let rome_at = table.names.iter().position(|col| col == "romanization");
-    let sense_at = table.names.iter().position(|col| col == "sense");
-    let lang_at = table.names.iter().position(|col| col == "lang_code");
-    let src_at = table.names.iter().position(|col| col == "source");
+    let pos_at = names.iter().position(|col| col == "pos");
+    let rome_at = names.iter().position(|col| col == "romanization");
+    let sense_at = names.iter().position(|col| col == "sense");
+    let lang_at = names.iter().position(|col| col == "lang_code");
+    let src_at = names.iter().position(|col| col == "source");
 
     if db_path.exists() {
         std::fs::remove_file(db_path)?;
     }
     let mut db = Connection::open(db_path)?;
+    let _ = db.execute_batch(
+        "PRAGMA synchronous = OFF;
+         PRAGMA journal_mode = MEMORY;
+         PRAGMA temp_store = MEMORY;",
+    );
     db.execute_batch(SCHEMA)?;
 
     let mut rows = 0u64;
@@ -122,28 +106,32 @@ pub fn build_db(parquet_path: &Path, db_path: &Path) -> Result<u64> {
                      romanization, sense, lang_code, source)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             )?;
-            for row in &table.rows {
-                let (Some(word), Some(definition)) =
-                    (row[word_at].as_deref(), row[def_at].as_deref())
-                else {
-                    continue;
-                };
-                if word.trim().is_empty() || definition.trim().is_empty() {
-                    continue;
+            for batch in reader {
+                let batch =
+                    batch.with_context(|| format!("row group {}", parquet_path.display()))?;
+                for row in batch_rows(&batch, &names)? {
+                    let (Some(word), Some(definition)) =
+                        (row[word_at].as_deref(), row[def_at].as_deref())
+                    else {
+                        continue;
+                    };
+                    if word.trim().is_empty() || definition.trim().is_empty() {
+                        continue;
+                    }
+                    let get = |slot: Option<usize>| slot.and_then(|i| row[i].as_deref());
+                    stmt.execute(rusqlite::params![
+                        word,
+                        fold(word),
+                        get(pos_at),
+                        definition,
+                        fold(definition),
+                        get(rome_at),
+                        get(sense_at),
+                        get(lang_at),
+                        get(src_at),
+                    ])?;
+                    rows += 1;
                 }
-                let get = |slot: Option<usize>| slot.and_then(|i| row[i].clone());
-                stmt.execute(rusqlite::params![
-                    word,
-                    fold(word),
-                    get(pos_at),
-                    definition,
-                    fold(definition),
-                    get(rome_at),
-                    get(sense_at),
-                    get(lang_at),
-                    get(src_at),
-                ])?;
-                rows += 1;
             }
         }
         insert.commit()?;

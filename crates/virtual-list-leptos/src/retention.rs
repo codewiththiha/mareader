@@ -69,6 +69,35 @@ fn deadline(policy: &RetentionPolicy, now_ms: f64, frame: u64) -> (f64, u64) {
     }
 }
 
+/// Distance from `index` to the nearest edge of `window` (or `dominant`).
+fn distance_to_target(index: usize, window: Option<Window>, dominant: usize) -> usize {
+    match window {
+        Some(w) if index < w.first => w.first - index,
+        Some(w) if index > w.last => index - w.last,
+        Some(_) => 0,
+        None => index.abs_diff(dominant),
+    }
+}
+
+/// Evict the items furthest from `window` / `dominant` so at most `max` remain.
+pub fn cap_retained_by_distance(
+    retained: &mut Vec<RetainedItem>,
+    window: Option<Window>,
+    dominant: usize,
+    max: usize,
+) {
+    if retained.len() <= max {
+        return;
+    }
+    if max == 0 {
+        retained.clear();
+        return;
+    }
+    retained.sort_by_key(|item| (distance_to_target(item.index, window, dominant), item.index));
+    retained.truncate(max);
+    retained.sort_by_key(|item| item.index);
+}
+
 /// Diff two windows and schedule the evicted indices for retention.
 pub fn retain_evicted(
     old: Option<Window>,
@@ -94,12 +123,8 @@ pub fn retain_evicted(
             frame_limit,
         })
         .collect();
-    let max = policy.max();
-    if evicted.len() > max {
-        // Keep the upper end of the eviction list: the items just below.
-        let drop = evicted.len() - max;
-        evicted.drain(0..drop);
-    }
+    let center = new.first + (new.last - new.first) / 2;
+    cap_retained_by_distance(&mut evicted, Some(new), center, policy.max());
     evicted
 }
 
@@ -216,6 +241,11 @@ mod tests {
         let indices: Vec<usize> = retained.iter().map(|r| r.index).collect();
         assert_eq!(indices, vec![12, 13, 14, 15, 16, 17]);
         assert_eq!(retained.len(), 6);
+
+        // Scrolling backward: keep the six nearest 0..=1 (2..=7), not the tail.
+        let backward = retain_evicted(window(0, 19), window(0, 1), 0.0, 0, &SEEK, true);
+        let back_indices: Vec<usize> = backward.iter().map(|r| r.index).collect();
+        assert_eq!(back_indices, vec![2, 3, 4, 5, 6, 7]);
     }
 
     #[test]

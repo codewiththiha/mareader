@@ -2,6 +2,7 @@
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
 import { offscreenFor, releaseCanvas, sessionEl } from "./canvas";
+import { PAGE_SNAPSHOT_CLASS, PAGE_SNAPSHOT_SELECTOR } from "./dom-contract";
 import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
 import { currentGen, readPipeline } from "./theme/pipeline";
@@ -106,6 +107,43 @@ export function hasThumb(s: EngineSession, page: number, scale: number): boolean
   if (!hit || Math.abs(hit.scale - scale) >= 1e-9) return false;
   // Under a scrub the raw IS the picture; otherwise only current answers.
   return s.themeScrubActive || hit.gen === currentGen(s);
+}
+
+// Seed a `.page-snapshot` cover from a cached thumbnail.
+export function seedThumbSnapshot(
+  s: EngineSession,
+  canvasId: string,
+  page: number,
+  scale: number
+): void {
+  const st = s.stateByCanvasId.get(canvasId);
+  if (!st || st.dead || !st.host) return;
+  if (st.canvas && st.canvas.width > 0 && st.canvas.height > 0) return;
+  if (st.host.querySelector(PAGE_SNAPSHOT_SELECTOR)) return;
+  const hit = s.thumbCache.get(page);
+  if (!hit || Math.abs(hit.scale - scale) >= 1e-9) return;
+  if (!s.themeScrubActive && hit.gen !== currentGen(s)) return;
+  try {
+    const doc = st.host.ownerDocument ?? document;
+    const snap = doc.createElement("canvas");
+    snap.className = PAGE_SNAPSHOT_CLASS;
+    snap.setAttribute("aria-hidden", "true");
+    snap.style.position = "absolute";
+    snap.style.inset = "0";
+    snap.style.width = "100%";
+    snap.style.height = "100%";
+    snap.style.pointerEvents = "none";
+    const size = paintCached(s, snap, hit);
+    if (size) {
+      snap.style.width = "100%";
+      snap.style.height = "100%";
+      st.host.appendChild(snap);
+    } else {
+      releaseCanvas(snap);
+    }
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 // The canvas `canvasId` names FOR THIS SESSION.

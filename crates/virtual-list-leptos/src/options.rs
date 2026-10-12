@@ -101,7 +101,7 @@ impl VirtualizerOptions {
             pinned: None,
             initial_viewport: Viewport::main_only(0.0),
             initial_offset: 0.0,
-            scroll_end_delay_ms: 150,
+            scroll_end_delay_ms: 400,
             retention: RetentionPolicy::Immediate,
             measure_epsilon: 0.5,
             pipeline: Pipeline::default(),
@@ -182,6 +182,24 @@ impl VirtualizerOptions {
     /// Sets [`Self::retention`], later adjustable at runtime.
     pub fn retention(mut self, policy: RetentionPolicy) -> Self {
         self.retention = policy;
+        self
+    }
+
+    /// Sets [`Self::scroll_end_delay_ms`].
+    pub fn scroll_end_delay(mut self, ms: u32) -> Self {
+        self.scroll_end_delay_ms = ms;
+        self
+    }
+
+    /// Sets [`Self::measure_epsilon`].
+    pub fn measure_epsilon(mut self, eps: f64) -> Self {
+        self.measure_epsilon = eps.max(0.0);
+        self
+    }
+
+    /// Sets [`Self::pipeline`].
+    pub fn pipeline(mut self, pipeline: Pipeline) -> Self {
+        self.pipeline = pipeline;
         self
     }
 }

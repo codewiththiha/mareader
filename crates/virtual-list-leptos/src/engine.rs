@@ -72,6 +72,16 @@ pub struct Flush {
     pub step: Step,
 }
 
+/// Who currently owns the scroll offset: user input or settled layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Drive {
+    /// At rest; layout measurements may adjust `scroll_top` to keep the anchor.
+    #[default]
+    Idle,
+    /// User gesture or momentum in flight; anchor shifts buffer into debt.
+    User,
+}
+
 /// An in-flight `scroll_to_index`, re-aimed when measurements move the target.
 #[derive(Debug, Clone, Copy)]
 struct PendingScroll {
@@ -107,6 +117,8 @@ pub struct VirtualizerCore {
     pending: Option<PendingScroll>,
     queue: Vec<(usize, f64)>,
     suspended: bool,
+    drive: Drive,
+    anchor_debt: f64,
 }
 
 impl VirtualizerCore {
@@ -135,6 +147,8 @@ impl VirtualizerCore {
             pending: None,
             queue: Vec::new(),
             suspended: false,
+            drive: Drive::Idle,
+            anchor_debt: 0.0,
         };
         this.scroll_top = this.scroll_top.clamp(this.min_scroll(), this.max_scroll());
         this.range = this.rewindow().range;
@@ -296,6 +310,50 @@ impl VirtualizerCore {
         self.flush()
     }
 
+    /// Current drive state.
+    pub const fn drive(&self) -> Drive {
+        self.drive
+    }
+
+    /// Set who drives the scroll offset; user drive cancels pending jumps.
+    pub fn set_drive(&mut self, drive: Drive) {
+        self.drive = drive;
+        if drive == Drive::User {
+            self.pending = None;
+        }
+    }
+
+    /// Transition to [`Drive::Idle`] and settle any buffered anchor debt.
+    pub fn settle_debt(&mut self) -> Option<f64> {
+        self.drive = Drive::Idle;
+        self.pending = None;
+        let debt = core::mem::replace(&mut self.anchor_debt, 0.0);
+        if debt.abs() <= self.eps {
+            return None;
+        }
+        let target = (self.scroll_top + debt).clamp(self.min_scroll(), self.max_scroll());
+        if (target - self.scroll_top).abs() <= self.eps {
+            return None;
+        }
+        self.scroll_top = target;
+        let _ = self.rewindow();
+        Some(target)
+    }
+
+    /// Re-anchor at the current scroll offset, dropping pending jumps and debt.
+    pub fn reanchor_now(&mut self) {
+        self.pending = None;
+        self.anchor_debt = 0.0;
+    }
+
+    /// Adopt an externally driven scroll offset (e.g. pointer pan or fling).
+    pub fn notify_external_scroll(&mut self, content_top: f64) -> Step {
+        self.pending = None;
+        self.anchor_debt = 0.0;
+        self.scroll_top = content_top.clamp(self.min_scroll(), self.max_scroll());
+        self.rewindow()
+    }
+
     /// Apply every queued measurement as one transaction.
     pub fn flush(&mut self) -> Option<Flush> {
         if self.suspended || self.queue.is_empty() {
@@ -344,8 +402,17 @@ impl VirtualizerCore {
             });
         }
 
+        if self.drive == Drive::User {
+            self.anchor_debt += new_top - self.scroll_top;
+            let mut step = self.rewindow();
+            step.layout_changed = true;
+            step.scroll_write = None;
+            return Some(Flush { applied, step });
+        }
+
+        let debt = core::mem::replace(&mut self.anchor_debt, 0.0);
         let max_scroll = self.max_scroll();
-        new_top = new_top.clamp(self.min_scroll(), max_scroll);
+        new_top = (new_top + debt).clamp(self.min_scroll(), max_scroll);
 
         let mut scroll_write = None;
         if (new_top - self.scroll_top).abs() > self.eps {
@@ -468,7 +535,15 @@ impl VirtualizerCore {
             return Some(mount);
         }
         let extent = (band.active.end - band.active.start).max(0.0);
-        let items = self.layout.overlapping(band.active.start, extent)?;
+        let banded = self.layout.overlapping(band.active.start, extent);
+        let visible = self
+            .layout
+            .overlapping(self.scroll_top, self.viewport.main.max(1.0));
+        let items = match (banded, visible) {
+            (Some(a), Some(b)) => a.union(b),
+            (Some(a), None) | (None, Some(a)) => a,
+            (None, None) => return None,
+        };
         let first = items.first.max(mount.first);
         let last = items.last.min(mount.last);
         (first <= last).then_some(Window { first, last })
@@ -550,6 +625,19 @@ impl VirtualizerCore {
             return 0;
         }
         landed.min(self.layout.item_count() - 1)
+    }
+
+    /// Predicted landing index `fill_latency_ms` ahead while seeking.
+    pub fn landing_hint(&self, fill_latency_ms: f64) -> Option<usize> {
+        if self.layout.is_empty() || !self.motion.engaged() {
+            return None;
+        }
+        let pitch = self.pipeline.pitch.max(self.layout.item_size_hint());
+        let at = self.layout.dominant(self.scroll_top, self.viewport.main);
+        let landed = self
+            .motion
+            .landing_index(at, pitch, fill_latency_ms.max(0.0));
+        Some(landed.min(self.layout.item_count() - 1))
     }
 
     /// Current scroll position.
@@ -1359,5 +1447,50 @@ mod tests {
             assert_eq!(banded.total_size(), plain.total_size(), "extent at {top}");
             top += 317.0;
         }
+    }
+
+    #[test]
+    fn compensation_is_deferred_while_user_drives() {
+        let mut core = list_core(100, 100.0, 200.0);
+        let _ = core.on_scroll(5_000.0);
+        core.set_drive(Drive::User);
+
+        // A measurement above the viewport arrives while the user is driving.
+        core.queue_size(10, 220.0);
+        let flush = core.flush().expect("flush");
+        assert_eq!(flush.applied, 1);
+        assert!(flush.step.layout_changed);
+        assert_eq!(
+            flush.step.scroll_write, None,
+            "user drive must never emit a competing scroll write"
+        );
+        assert_eq!(core.scroll_top(), 5_000.0);
+
+        // Once the gesture settles, the buffered debt applies in one step.
+        assert_eq!(core.settle_debt(), Some(5_120.0));
+        assert_eq!(core.drive(), Drive::Idle);
+        assert_eq!(core.scroll_top(), 5_120.0);
+        assert_eq!(core.settle_debt(), None);
+    }
+
+    #[test]
+    fn reanchor_drops_pending_scroll() {
+        let surface = TestSurface::default();
+        let mut core = list_core(100, 100.0, 200.0);
+        let _ = core.on_scroll(1_000.0);
+        let _ = core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface);
+        assert!(core.pending().is_some());
+
+        // User stops the fling at 3_200.0 and re-anchors immediately.
+        core.set_drive(Drive::User);
+        let _ = core.notify_external_scroll(3_200.0);
+        core.queue_size(10, 250.0);
+        let flush = core.flush().expect("flush");
+        assert_eq!(flush.step.scroll_write, None);
+        core.reanchor_now();
+
+        assert!(core.pending().is_none());
+        assert_eq!(core.settle_debt(), None);
+        assert_eq!(core.scroll_top(), 3_200.0);
     }
 }

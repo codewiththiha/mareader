@@ -33,13 +33,21 @@ struct Ctx {
     threshold: u8,
     marks: u64,
     generation: u64,
+    rescan: Trigger,
 }
 
 #[component]
-pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
+pub fn BlockCefrMarks(
+    state: ReaderState,
+    block: usize,
+    #[prop(optional)] row_state: Option<
+        Signal<virtual_list_leptos::VirtualItemState, LocalStorage>,
+    >,
+) -> impl IntoView {
     let settings = pane_settings();
     let boxes: RwSignal<Vec<CefrBox>> = RwSignal::new(Vec::new());
     let memo: StoredValue<Option<WalkMemo>, LocalStorage> = StoredValue::new_local(None);
+    let rescan = Trigger::new();
     let row_id = block_row_id(block);
     let mirror = services::cefr::dataset();
     let dataset_ready =
@@ -64,14 +72,22 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
     Effect::new(move |_| {
         // Everything below is TRACKED; the memo makes unchanged
         // re-runs free.
+        rescan.track();
         let generation = state.cefr.generation.get();
         let settled = state.viewer.zoom.committed.get();
         let mid_zoom = state.viewer.zoom.transition.get().is_some();
         let fp = relayout.get();
+        let is_blank = row_state
+            .as_ref()
+            .is_some_and(|rs| rs.get() == virtual_list_leptos::VirtualItemState::Blank);
         let (enabled, threshold) = settings.with(|s| (s.cefr_enabled, s.cefr_level.band()));
-        if !enabled || !dataset_ready.get() || mid_zoom {
-            // The memo survives a clear: re-enabling restores for free.
+        if !enabled {
+            // Disabled in settings: clear boxes immediately.
             clear(&boxes);
+            return;
+        }
+        if !dataset_ready.get() || mid_zoom || is_blank {
+            // Stale-while-revalidate: keep existing boxes mid-zoom or blank.
             return;
         }
         // The suppression set, folded tracked: a mark edit re-walks.
@@ -88,10 +104,10 @@ pub fn BlockCefrMarks(state: ReaderState, block: usize) -> impl IntoView {
             threshold,
             marks,
             generation,
+            rescan,
         };
         let Some(row) = state.dom.by_id(&row_id) else {
-            // Not yet attached: one frame from now it is, so retry once.
-            clear(&boxes);
+            // Not yet attached: retry on the next frame.
             let (id, state, boxes) = (row_id.clone(), state, boxes);
             request_animation_frame(move || {
                 // The retry can outlive the row; the row's own signal
@@ -134,6 +150,9 @@ fn paint(
     }
     let page = page_of_block(state.document.content.reflow, block).unwrap_or(1);
     with_row_scan(row_id, ctx.fp, row, |scan| {
+        if scan.text.is_empty() {
+            return;
+        }
         let key = WalkKey {
             fp: ctx.fp,
             zoom: ctx.zoom,
@@ -165,6 +184,7 @@ fn paint(
                 )
             })
             .unwrap_or_default();
+        let had_misses = !plan.misses.is_empty();
         ask(state, plan.misses);
         // Words the AI stroke already owns, by spot: the red yields to it.
         let glossed: Vec<(usize, usize)> = state.gloss.marks.with_untracked(|all| {
@@ -180,31 +200,51 @@ fn paint(
             .filter(|span| !glossed.contains(&(span.start, span.end)))
             .collect();
         let words = cefr_core::planned(&scan.text, &kept);
+        if words.is_empty() {
+            // Clear only when no misses remain in flight.
+            if !had_misses {
+                memo.try_update_value(|slot| {
+                    *slot = Some(WalkMemo {
+                        key,
+                        measured: true,
+                        boxes: Vec::new(),
+                    });
+                });
+                clear(boxes);
+            }
+            return;
+        }
         memo.try_update_value(|slot| {
             *slot = Some(WalkMemo {
                 key,
-                measured: words.is_empty(),
+                measured: false,
                 boxes: Vec::new(),
             });
         });
-        if words.is_empty() {
-            clear(boxes);
-            return;
-        }
         let task_row = row.clone();
         let sink = Sink {
             key,
             boxes: *boxes,
             memo,
         };
-        measure(move || run_plan(block, page, task_row, words, sink));
+        let rescan = ctx.rescan;
+        measure(move || run_plan(state, block, page, task_row, words, sink, rescan));
     });
 }
 
 /// The scheduled half: measure the plan against the live row.
-fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<Planned>, sink: Sink) {
-    // A detached row has no geometry; its signal is gone anyway.
-    if !row.is_connected() {
+fn run_plan(
+    state: ReaderState,
+    block: usize,
+    page: u32,
+    row: web_sys::Element,
+    plan: Vec<Planned>,
+    sink: Sink,
+    rescan: Trigger,
+) {
+    let block_alive = row.is_connected() && state.document.content.reflow.block_at(block).is_some();
+    if !block_alive {
+        super::publish_checked(&sink, Vec::new(), false);
         return;
     }
     if let Some(found) = sink.memo.try_get_value().flatten()
@@ -248,7 +288,16 @@ fn run_plan(block: usize, page: u32, row: web_sys::Element, plan: Vec<Planned>, 
             });
         }
     }
-    super::publish(&sink, painted);
+    if painted.is_empty() && sink.has_previous() {
+        // Keep stale boxes visible and schedule a re-scan on the next frame.
+        request_animation_frame(move || {
+            if sink.boxes.try_get_untracked().is_some() {
+                rescan.notify();
+            }
+        });
+        return;
+    }
+    super::publish_checked(&sink, painted, true);
 }
 
 fn clear(boxes: &RwSignal<Vec<CefrBox>>) {

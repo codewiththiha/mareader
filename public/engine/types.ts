@@ -305,9 +305,15 @@ export type PDFReaderApi = {
     | { ok: true }
   >;
   sweep: (sid: Sid) => void;
+  /** Sweep outside `[firstPage, lastPage]` without cancelling active renders
+   *  or unpainted snapshots inside the keepalive range. */
+  sweepKeepalive: (sid: Sid, firstPage: number, lastPage: number) => void;
   /** Drop the `.page-snapshot` scrub covers the session's page hosts still
    *  carry, zeroing their backing stores. */
   sweepSnapshots: (sid: Sid) => void;
+  /** Seed a `.page-snapshot` cover from a cached thumbnail when a page host
+   *  mounts unpainted. */
+  seedThumbSnapshot: (sid: Sid, canvasId: string, page: number, scale: number) => void;
   prefetchThumb: (sid: Sid, page: number, scale: number) => Promise<void>;
   // The pane left the screen: drop queued prefetches, refuse new ones.
   suspendPrefetches: (sid: Sid) => void;

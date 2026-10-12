@@ -389,6 +389,15 @@ fn install_effects(inner: &Rc<Inner>) {
     let search = inner.ctx.reader.search;
     let w = weak.clone();
     Effect::new(move |_| {
+        let Some(jump) = viewer.take_page_command() else {
+            return;
+        };
+        if let Some(inner) = w.upgrade() {
+            inner.post_live(&HostToPane::Write(Write::Page { page: jump.page }));
+        }
+    });
+    let w = weak.clone();
+    Effect::new(move |_| {
         let page = viewer.page.get();
         if let Some(inner) = w.upgrade() {
             inner.write_if(|m| m.page != page, Write::Page { page });

@@ -1,4 +1,4 @@
-//! Page → scroll: a page write commands the strip, one arm per axis.
+//! Page command → scroll: consumes one-shot `page_command` jumps.
 
 use std::rc::Rc;
 
@@ -7,63 +7,57 @@ use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use virtual_list_leptos::{Align, Virtualizer};
 
-use super::{Arms, JumpGate, scroll_mode};
+use super::{Arms, JumpGate};
 
-/// Install the page → scroll arm for one axis.
+/// Install the `page_command` → scroll arm.
 pub(super) fn install(
     arms: Arms,
-    axis: ViewMode,
-    v: Virtualizer,
+    vertical: Virtualizer,
+    horizontal: Virtualizer,
     gate: Rc<JumpGate>,
-    align: Align,
 ) {
-    let Arms {
-        state,
-        suppress,
-        zooming,
-        ..
-    } = arms;
-    let page = state.viewer.page;
-    let mode = state.viewer.mode;
+    let Arms { state, zooming } = arms;
+    let viewer = state.viewer;
     Effect::new(move |_| {
-        if mode.get() != axis {
-            return;
-        }
-        // A page write means a page-cut strip only for PDFs here.
-        if axis == ViewMode::ScrollVertical && state.reflowable() {
-            return;
-        }
-        // The gate holds the write mid-zoom and replays it after.
-        let Some(page_now) = page.try_get() else {
-            return;
-        };
         let Some(zooming) = zooming.try_get() else {
             return;
         };
-        let Some((target, reassert)) = gate.admit(page_now, zooming) else {
-            // A stand-down consumed the run; drop the echo flag.
-            if zooming {
-                suppress.set(false);
-            }
+        let command = viewer.take_page_command();
+        let Some(jump) = gate.admit_jump(command, zooming) else {
             return;
         };
-        // A replay re-asserts the page it jumped to.
-        if reassert {
-            suppress.set(false);
-            page.set(target);
-        }
-        if suppress.get() {
-            suppress.set(false);
+        if jump.page == 0 {
             return;
         }
-        if target == 0 {
-            return;
+        // Re-assert the display page in case a zoom-held jump replayed after
+        // a dominant read.
+        if viewer.page.get_untracked() != jump.page {
+            viewer.page.set(jump.page);
         }
         // The shell is still placing the strip; do not fight it.
-        if state.viewer.awaiting_anchor.get_untracked() {
+        if viewer.awaiting_anchor.get_untracked() {
             return;
         }
-        // The glide is the animation; the jump is not.
-        v.scroll_to_index((target - 1) as usize, align, scroll_mode(state));
+        match viewer.mode.get_untracked() {
+            ViewMode::ScrollVertical if state.reflowable() => {
+                state
+                    .document
+                    .content
+                    .reflow
+                    .scroll_to_page(jump.page, jump.align, jump.mode);
+            }
+            ViewMode::ScrollVertical => {
+                vertical.scroll_to_index((jump.page - 1) as usize, jump.align, jump.mode);
+            }
+            ViewMode::ScrollHorizontal => {
+                let align = if jump.align == Align::Start {
+                    Align::Center
+                } else {
+                    jump.align
+                };
+                horizontal.scroll_to_index((jump.page - 1) as usize, align, jump.mode);
+            }
+            ViewMode::Single | ViewMode::Spread => {}
+        }
     });
 }

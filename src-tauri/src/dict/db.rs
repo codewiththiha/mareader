@@ -1,5 +1,6 @@
 //! One pack's sqlite, asked the ways a menu asks.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -17,7 +18,15 @@ pub struct RawRow {
     pub sense: Option<String>,
 }
 
-const COLUMNS: &str = "word, pos, definition, romanization, sense";
+const COLUMNS: &str = "id, word, pos, definition, romanization, sense";
+
+/// Which side of the table a near-miss pass inspects.
+#[derive(Clone, Copy)]
+enum FuzzySide {
+    Word,
+    Definition,
+    Both,
+}
 
 /// A pack's open database.
 pub struct DictDb {
@@ -28,6 +37,11 @@ impl DictDb {
     /// Open the sqlite a finished build landed.
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path).with_context(|| format!("open {}", path.display()))?;
+        let _ = conn.execute_batch(
+            "PRAGMA query_only = ON;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA cache_size = -8000;",
+        );
         Ok(Self { conn })
     }
 
@@ -36,10 +50,12 @@ impl DictDb {
     pub fn lookup_word(&self, ask: &str, limit: usize) -> Result<Vec<RawRow>> {
         let ask_fold = fold(ask);
         let mut out: Vec<RawRow> = Vec::new();
+        let mut seen: HashSet<i64> = HashSet::new();
         self.collect(
             "SELECT {COLUMNS} FROM entries WHERE word_fold = ?1",
             params![ask_fold],
             limit,
+            &mut seen,
             &mut out,
         )?;
         self.collect(
@@ -47,6 +63,7 @@ impl DictDb {
              WHERE word_fold LIKE ?1 ESCAPE '\\' AND word_fold != ?2",
             params![like_prefix(&ask_fold), ask_fold],
             limit,
+            &mut seen,
             &mut out,
         )?;
         self.collect(
@@ -54,9 +71,10 @@ impl DictDb {
              WHERE word_fold LIKE ?1 ESCAPE '\\' AND word_fold NOT LIKE ?2 ESCAPE '\\'",
             params![like_contains(&ask_fold), like_prefix(&ask_fold)],
             limit,
+            &mut seen,
             &mut out,
         )?;
-        self.fuzzy(&ask_fold, limit, &mut out)?;
+        self.fuzzy(&ask_fold, FuzzySide::Word, limit, &mut seen, &mut out)?;
         Ok(out)
     }
 
@@ -64,10 +82,12 @@ impl DictDb {
     pub fn lookup_definition(&self, ask: &str, limit: usize) -> Result<Vec<RawRow>> {
         let ask_fold = fold(ask);
         let mut out: Vec<RawRow> = Vec::new();
+        let mut seen: HashSet<i64> = HashSet::new();
         self.collect(
             "SELECT {COLUMNS} FROM entries WHERE def_fold = ?1",
             params![ask_fold],
             limit,
+            &mut seen,
             &mut out,
         )?;
         self.collect(
@@ -75,6 +95,7 @@ impl DictDb {
              WHERE def_fold LIKE ?1 ESCAPE '\\' AND def_fold != ?2",
             params![like_prefix(&ask_fold), ask_fold],
             limit,
+            &mut seen,
             &mut out,
         )?;
         Ok(out)
@@ -85,11 +106,13 @@ impl DictDb {
     pub fn search(&self, ask: &str, limit: usize) -> Result<Vec<RawRow>> {
         let ask_fold = fold(ask);
         let mut out: Vec<RawRow> = Vec::new();
+        let mut seen: HashSet<i64> = HashSet::new();
         self.collect(
             "SELECT {COLUMNS} FROM entries
              WHERE word_fold = ?1 OR def_fold = ?1",
             params![ask_fold],
             limit,
+            &mut seen,
             &mut out,
         )?;
         self.collect(
@@ -98,6 +121,7 @@ impl DictDb {
                 OR def_fold LIKE ?1 ESCAPE '\\'",
             params![like_prefix(&ask_fold)],
             limit,
+            &mut seen,
             &mut out,
         )?;
         self.collect(
@@ -106,9 +130,10 @@ impl DictDb {
                 OR def_fold LIKE ?1 ESCAPE '\\'",
             params![like_contains(&ask_fold)],
             limit,
+            &mut seen,
             &mut out,
         )?;
-        self.fuzzy(&ask_fold, limit, &mut out)?;
+        self.fuzzy(&ask_fold, FuzzySide::Both, limit, &mut seen, &mut out)?;
         Ok(out)
     }
 
@@ -116,10 +141,12 @@ impl DictDb {
     pub fn search_definition(&self, ask: &str, limit: usize) -> Result<Vec<RawRow>> {
         let ask_fold = fold(ask);
         let mut out: Vec<RawRow> = Vec::new();
+        let mut seen: HashSet<i64> = HashSet::new();
         self.collect(
             "SELECT {COLUMNS} FROM entries WHERE def_fold = ?1",
             params![ask_fold],
             limit,
+            &mut seen,
             &mut out,
         )?;
         self.collect(
@@ -127,6 +154,7 @@ impl DictDb {
              WHERE def_fold LIKE ?1 ESCAPE '\\' AND def_fold != ?2",
             params![like_prefix(&ask_fold), ask_fold],
             limit,
+            &mut seen,
             &mut out,
         )?;
         self.collect(
@@ -134,17 +162,33 @@ impl DictDb {
              WHERE def_fold LIKE ?1 ESCAPE '\\' AND def_fold NOT LIKE ?2 ESCAPE '\\'",
             params![like_contains(&ask_fold), like_prefix(&ask_fold)],
             limit,
+            &mut seen,
             &mut out,
         )?;
-        self.fuzzy(&ask_fold, limit, &mut out)?;
+        self.fuzzy(&ask_fold, FuzzySide::Definition, limit, &mut seen, &mut out)?;
         Ok(out)
     }
 
     /// A bridge's next hop asks the word side for several
     /// intermediates at once.
     pub fn lookup_words_any(&self, asks: &[String], limit: usize) -> Result<Vec<RawRow>> {
+        self.lookup_column_any("word_fold", asks, limit)
+    }
+
+    /// A reversed bridge's next hop asks the definition side for several
+    /// intermediates at once.
+    pub fn lookup_defs_any(&self, asks: &[String], limit: usize) -> Result<Vec<RawRow>> {
+        self.lookup_column_any("def_fold", asks, limit)
+    }
+
+    fn lookup_column_any(
+        &self,
+        column: &str,
+        asks: &[String],
+        limit: usize,
+    ) -> Result<Vec<RawRow>> {
         let mut out: Vec<RawRow> = Vec::new();
-        if asks.is_empty() {
+        if asks.is_empty() || limit == 0 {
             return Ok(out);
         }
         let folds: Vec<String> = asks.iter().map(|ask| fold(ask)).collect();
@@ -152,41 +196,71 @@ impl DictDb {
         for i in 2..=folds.len() {
             marks.push_str(&format!(", ?{i}"));
         }
-        let sql = format!("SELECT {COLUMNS} FROM entries WHERE word_fold IN ({marks})");
+        let sql = format!("SELECT {COLUMNS} FROM entries WHERE {column} IN ({marks})");
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(folds.iter()), row_shape)?;
+        let mut seen = HashSet::new();
         for row in rows {
             if out.len() >= limit {
                 break;
             }
-            out.push(row?);
+            let (id, row) = row?;
+            if seen.insert(id) {
+                out.push(row);
+            }
         }
         Ok(out)
     }
 
     /// A near-miss pass over the ask's length window.
-    fn fuzzy(&self, ask_fold: &str, limit: usize, out: &mut Vec<RawRow>) -> Result<()> {
+    fn fuzzy(
+        &self,
+        ask_fold: &str,
+        side: FuzzySide,
+        limit: usize,
+        seen: &mut HashSet<i64>,
+        out: &mut Vec<RawRow>,
+    ) -> Result<()> {
+        if out.len() >= limit {
+            return Ok(());
+        }
         let chars = ask_fold.chars().count();
         if chars < 3 {
             return Ok(());
         }
-        let sql = "SELECT {COLUMNS} FROM entries
-             WHERE length(word_fold) BETWEEN ?1 AND ?2
-                OR length(def_fold) BETWEEN ?1 AND ?2
-             LIMIT 2000"
-            .replace("{COLUMNS}", COLUMNS);
+        let clause = match side {
+            FuzzySide::Word => "length(word_fold) BETWEEN ?1 AND ?2",
+            FuzzySide::Definition => "length(def_fold) BETWEEN ?1 AND ?2",
+            FuzzySide::Both => {
+                "length(word_fold) BETWEEN ?1 AND ?2 OR length(def_fold) BETWEEN ?1 AND ?2"
+            }
+        };
+        let sql =
+            format!("SELECT {COLUMNS}, word_fold, def_fold FROM entries WHERE {clause} LIMIT 2000");
         let len = chars as i64;
         let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params![len - 2, len + 2], row_shape)?;
+        let rows = stmt.query_map(params![len - 2, len + 2], |row| {
+            let (id, raw) = row_shape(row)?;
+            let word_fold: String = row.get(6)?;
+            let def_fold: String = row.get(7)?;
+            Ok((id, raw, word_fold, def_fold))
+        })?;
         for row in rows {
-            let row = row?;
+            let (id, row, word_fold, def_fold) = row?;
             if out.len() >= limit {
                 break;
             }
-            let near_word = dict_core::edit_distance(ask_fold, &fold(&row.word), 2);
-            let near_def = dict_core::edit_distance(ask_fold, &fold(&row.definition), 2);
-            let near = near_word.min(near_def);
-            if near <= 2 && !out.iter().any(|seen| seen.word == row.word) {
+            if seen.contains(&id) {
+                continue;
+            }
+            let near = match side {
+                FuzzySide::Word => dict_core::edit_distance(ask_fold, &word_fold, 2),
+                FuzzySide::Definition => dict_core::edit_distance(ask_fold, &def_fold, 2),
+                FuzzySide::Both => dict_core::edit_distance(ask_fold, &word_fold, 2)
+                    .min(dict_core::edit_distance(ask_fold, &def_fold, 2)),
+            };
+            if near <= 2 && !out.iter().any(|prev| prev.word == row.word) {
+                seen.insert(id);
                 out.push(row);
             }
         }
@@ -199,8 +273,12 @@ impl DictDb {
         sql: &str,
         params: impl rusqlite::Params,
         limit: usize,
+        seen: &mut HashSet<i64>,
         out: &mut Vec<RawRow>,
     ) -> Result<()> {
+        if out.len() >= limit {
+            return Ok(());
+        }
         let sql = sql.replace("{COLUMNS}", COLUMNS);
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params, row_shape)?;
@@ -208,7 +286,10 @@ impl DictDb {
             if out.len() >= limit {
                 break;
             }
-            out.push(row?);
+            let (id, row) = row?;
+            if seen.insert(id) {
+                out.push(row);
+            }
         }
         Ok(())
     }
@@ -236,14 +317,17 @@ pub fn is_usable(path: &Path) -> bool {
 }
 
 /// The row shape every select above carries.
-fn row_shape(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawRow> {
-    Ok(RawRow {
-        word: row.get(0)?,
-        pos: row.get(1)?,
-        definition: row.get(2)?,
-        romanization: row.get(3)?,
-        sense: row.get(4)?,
-    })
+fn row_shape(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, RawRow)> {
+    Ok((
+        row.get(0)?,
+        RawRow {
+            word: row.get(1)?,
+            pos: row.get(2)?,
+            definition: row.get(3)?,
+            romanization: row.get(4)?,
+            sense: row.get(5)?,
+        },
+    ))
 }
 
 /// A LIKE pattern for `ask` starting a word, wildcards escaped.
@@ -357,5 +441,21 @@ mod tests {
         assert_eq!(like_escape("c\\d"), "c\\\\d");
         assert_eq!(like_prefix("ca"), "ca%");
         assert_eq!(like_contains("ca"), "%ca%");
+    }
+
+    #[test]
+    fn search_deduplicates_rows_across_passes() {
+        let (dir, db) = temp_db("dedup", &[("light", "lumiere"), ("lighter", "briquet")]);
+        let got = db.search("light", 10).unwrap();
+        assert_eq!(
+            got.iter().filter(|row| row.word == "light").count(),
+            1,
+            "exact row must not repeat in prefix/contains passes"
+        );
+        let defs = db
+            .lookup_defs_any(&["lumiere".into(), "briquet".into()], 10)
+            .unwrap();
+        assert_eq!(defs.len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

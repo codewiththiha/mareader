@@ -6,15 +6,27 @@ use leptos::prelude::*;
 use app_state::state::Motion;
 use reader_core::view::{PAGE_GAP, ViewMode};
 use reader_core::zoom_math::FitMode;
+use virtual_list::Align;
+use virtual_list_leptos::ScrollMode;
 
 use super::zoom::ZoomState;
+
+/// One-shot user or programmatic command to scroll to a 1-based page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageJump {
+    pub page: u32,
+    pub align: Align,
+    pub mode: ScrollMode,
+}
 
 /// The zoom pipeline signals (see `reader_runtime::effects`).
 #[derive(Clone, Copy)]
 pub struct ViewerSignals {
     pub mode: RwSignal<ViewMode>,
-    /// 1-based current page.
+    /// 1-based current page (display-only; passive scroll updates this).
     pub page: RwSignal<u32>,
+    /// One-shot commanded page jump; consumed by `page_to_scroll`.
+    pub page_command: RwSignal<Option<PageJump>>,
     /// The outline entry just asked for, as an index; ONE-SHOT.
     pub(crate) outline_jump: RwSignal<Option<u32>>,
     /// The zoom step just asked for: `1` in, `-1` out; ONE-SHOT.
@@ -57,6 +69,20 @@ impl ViewerSignals {
 
     pub fn owns_anchor(&self, generation: u64) -> bool {
         self.anchor_generation.get_untracked() == generation
+    }
+
+    /// Command a jump to `page` with `align` and `mode`.
+    pub fn request_page(&self, page: u32, align: Align, mode: ScrollMode) {
+        let page = page.max(1);
+        self.page.set(page);
+        self.page_command.set(Some(PageJump { page, align, mode }));
+    }
+
+    /// Take the pending page command, clearing it; the read is TRACKED.
+    pub(crate) fn take_page_command(&self) -> Option<PageJump> {
+        let jump = self.page_command.get()?;
+        self.page_command.set(None);
+        Some(jump)
     }
 
     /// Ask for the outline entry at `index`, the panel's row click.
@@ -117,6 +143,7 @@ impl Default for ViewerSignals {
         Self {
             mode: RwSignal::new(ViewMode::ScrollVertical),
             page: RwSignal::new(1),
+            page_command: RwSignal::new(None),
             outline_jump: RwSignal::new(None),
             zoom_step: RwSignal::new(None),
             fit: RwSignal::new(FitMode::None),

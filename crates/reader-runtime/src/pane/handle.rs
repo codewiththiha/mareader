@@ -237,6 +237,17 @@ impl PaneHandle {
             .unwrap_or(0)
     }
 
+    /// Run `f` on every currently bound virtualizer owned by this pane.
+    pub fn with_bound_virtualizers(&self, mut f: impl FnMut(&virtual_list_leptos::Virtualizer)) {
+        let _ = self.cell.try_with_value(|cell| {
+            for v in &cell.resources.virtualizers {
+                if v.is_bound() {
+                    f(v);
+                }
+            }
+        });
+    }
+
     /// The pane holds a live document session (of any format).
     pub fn holds_document_session(&self) -> bool {
         self.cell

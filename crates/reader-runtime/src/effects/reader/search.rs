@@ -171,7 +171,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     // Dual is paginated like Single: setting the page shows the spread that
     // contains the match.
     if mode == ViewMode::Single || mode == ViewMode::Spread {
-        state.viewer.page.set(m.page);
+        crate::effects::reader::navigation_sync::request_page(state, m.page, Align::Start);
         return;
     }
 

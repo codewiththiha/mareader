@@ -96,6 +96,22 @@ impl ReflowContent {
         self.stream.try_with_value(|v| v.clone()).flatten()
     }
 
+    /// Scroll the live reflow stream to the first block of `page`.
+    pub fn scroll_to_page(
+        &self,
+        page: u32,
+        align: virtual_list::Align,
+        mode: virtual_list_leptos::ScrollMode,
+    ) {
+        let Some(stream) = self.stream_handle() else {
+            return;
+        };
+        let block = self
+            .cuts
+            .with_untracked(|cuts| first_block_of_page(cuts, page.max(1)));
+        stream.scroll_to_index(block, align, mode);
+    }
+
     /// How many blocks the open document has, read untracked.
     pub fn block_count(&self) -> usize {
         self.blocks.with_untracked(|blocks| blocks.len())

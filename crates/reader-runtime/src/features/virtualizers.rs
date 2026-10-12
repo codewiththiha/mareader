@@ -11,11 +11,18 @@ use crate::state::ReaderState;
 use crate::zoom::config::MAX_ZOMBIES;
 use app_ui::epoch::epoch_signal;
 
-/// ~64MB per mounted page at 2× DPR: the ceiling is what bounds idle RAM.
-pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
+/// 1.5 screenfuls (capped at 8) mounts the viewport plus one fling frame.
+pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(1.5, 8);
 
-/// Bridged only mid-seek; a zoom commit raises a timed Grace over it.
-const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::MotionGated { max: MAX_ZOMBIES };
+/// Initial fill-latency estimate (ms) before measured p95 samples arrive.
+#[cfg(feature = "pdf")]
+pub(crate) const EST_FILL_LATENCY_MS: f64 = 180.0;
+
+/// Timed 450ms grace bridge so short reversals reuse warm page hosts.
+const STRIP_RETENTION: RetentionPolicy = RetentionPolicy::Grace {
+    ms: 450,
+    max: MAX_ZOMBIES,
+};
 
 /// Both virtualizers always exist; a view binds the one for its axis.
 pub(crate) struct ReaderVirtualizers {
@@ -92,12 +99,34 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
     })
 }
 
-/// What one settled page costs here, and how wide the lane that serves it.
+/// Compute the p95 of `samples`, or `EST_FILL_LATENCY_MS` when empty.
+#[cfg(feature = "pdf")]
+fn p95_fill_ms(samples: &[f64]) -> f64 {
+    if samples.is_empty() {
+        return EST_FILL_LATENCY_MS;
+    }
+    let mut sorted: Vec<f64> = samples
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .collect();
+    if sorted.is_empty() {
+        return EST_FILL_LATENCY_MS;
+    }
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let idx = ((sorted.len() as f64 * 0.95).ceil() as usize)
+        .saturating_sub(1)
+        .min(sorted.len() - 1);
+    sorted[idx]
+}
+
+/// Report p95 settled page fill cost and lane width to the virtualizer.
 #[cfg(feature = "pdf")]
 fn note_fill_profile(
     pane: &crate::pane::handle::PaneHandle,
     strip: &virtual_list_leptos::Virtualizer,
-    last: &std::rc::Rc<std::cell::Cell<f64>>,
+    samples: &std::rc::Rc<std::cell::RefCell<Vec<f64>>>,
+    est_fill_ms: &std::rc::Rc<std::cell::Cell<f64>>,
 ) {
     let Some(stats) = pane.pdf().stats() else {
         return;
@@ -106,12 +135,51 @@ fn note_fill_profile(
     if stats.fill_ms <= 0.0 {
         return;
     }
-    // Once per strip: a report re-evaluates every mounted page of the band.
-    if last.get() >= 0.0 {
+    let p95 = {
+        let mut ring = samples.borrow_mut();
+        if ring.len() >= 20 {
+            ring.remove(0);
+        }
+        ring.push(stats.fill_ms);
+        p95_fill_ms(&ring)
+    };
+    if (p95 - est_fill_ms.get()).abs() <= 1.0 {
         return;
     }
-    last.set(stats.fill_ms);
-    strip.set_fill_profile(stats.fill_ms, stats.page_limit.max(1) as usize);
+    est_fill_ms.set(p95);
+    strip.set_fill_profile(p95, stats.page_limit.max(1) as usize);
+}
+
+/// Prefetch the predicted landing page neighborhood into the thumbnail cache.
+#[cfg(feature = "pdf")]
+fn prefetch_neighborhood(
+    pane: crate::pane::handle::PaneHandle,
+    state: ReaderState,
+    center_page: u32,
+) {
+    let total = state.document.num_pages.try_get_untracked().unwrap_or(0);
+    if total == 0 {
+        return;
+    }
+    let stamp = pane.generation();
+    let pdf = pane.pdf();
+    let scale = crate::components::shell::sidebar::panels::thumbnails::geometry::THUMB_SCALE;
+    let center = center_page.clamp(1, total);
+    let candidates = [
+        center,
+        center.saturating_sub(1).max(1),
+        (center + 1).min(total),
+    ];
+    wasm_bindgen_futures::spawn_local(async move {
+        for p in candidates {
+            if !pane.owns_generation(stamp) || !pdf.still_current(&pane) {
+                return;
+            }
+            if !pdf.has_thumb(p, scale) {
+                pdf.prefetch_thumb(p, scale).await;
+            }
+        }
+    });
 }
 
 pub(crate) fn use_reader_virtualizers(
@@ -200,23 +268,50 @@ pub(crate) fn use_reader_virtualizers(
     );
     let h_virtualizer_view = StoredValue::new_local(h_virtualizer.clone());
 
-    // A zoom-out or mode flip renders nothing: sweep when scrolling settles.
+    // A zoom-out or mode flip renders nothing: sweep outside the keepalive
+    // window when scrolling settles.
     #[cfg(feature = "pdf")]
     {
         let vertical = virtualizer.clone();
         let horizontal = h_virtualizer.clone();
-        let applied_v = std::rc::Rc::new(std::cell::Cell::new(-1.0));
-        let applied_h = std::rc::Rc::new(std::cell::Cell::new(-1.0));
+        let samples_v = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let samples_h = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let est_v = std::rc::Rc::new(std::cell::Cell::new(EST_FILL_LATENCY_MS));
+        let est_h = std::rc::Rc::new(std::cell::Cell::new(EST_FILL_LATENCY_MS));
+        let est_v_hint = est_v.clone();
         virtualizer.on_scroll_idle(move || {
-            pane.pdf().sweep();
+            if let Some(keep) = vertical.window().get_untracked().map(|w| w.expanded(1)) {
+                pane.pdf().sweep_keepalive(keep.first, keep.last);
+            } else {
+                pane.pdf().sweep();
+            }
             if state.viewer.page_gap.try_get_untracked().is_some() {
-                note_fill_profile(&pane, &vertical, &applied_v);
+                note_fill_profile(&pane, &vertical, &samples_v, &est_v);
             }
         });
         h_virtualizer.on_scroll_idle(move || {
-            pane.pdf().sweep();
+            if let Some(keep) = horizontal.window().get_untracked().map(|w| w.expanded(1)) {
+                pane.pdf().sweep_keepalive(keep.first, keep.last);
+            } else {
+                pane.pdf().sweep();
+            }
             if state.viewer.page_gap.try_get_untracked().is_some() {
-                note_fill_profile(&pane, &horizontal, &applied_h);
+                note_fill_profile(&pane, &horizontal, &samples_h, &est_h);
+            }
+        });
+        let v_for_hint = virtualizer.clone();
+        let last_hint = std::rc::Rc::new(std::cell::Cell::new(0u32));
+        Effect::new(move |_| {
+            let _ = v_for_hint.scroll_offset().get();
+            if state.reflowable() {
+                return;
+            }
+            let Some(idx) = v_for_hint.landing_hint(est_v_hint.get()) else {
+                return;
+            };
+            let page = (idx + 1) as u32;
+            if last_hint.replace(page) != page {
+                prefetch_neighborhood(pane, state, page);
             }
         });
     }
