@@ -105,6 +105,7 @@ fn contents(ui: &mut Ui, cx: &MenuContext<'_>, out: &mut Commands) {
         ui.close();
     }
     pin_row(ui, cx.pinned, out);
+    palette_row(ui, cx.platform, out);
     widgets::menu_rule(ui);
     for tool in cx.folded {
         let keys = keymap::hint(cx.platform, &tool.command);
@@ -125,6 +126,19 @@ pub fn pin_row(ui: &mut Ui, pinned: bool, out: &mut Commands) {
     let mut on = pinned;
     if widgets::menu_switch(ui, Icon::Pin, label, &mut on).changed() {
         out.push(Sent::Engine(Command::SetTitlebarPinned(on)));
+    }
+}
+
+/// Opens the command palette, reading its title from `UI_COMMANDS`.
+fn palette_row(ui: &mut Ui, platform: Platform, out: &mut Commands) {
+    let command = Sent::Ui(UiCommand::ShowPalette);
+    let label = crate::ui_command::ui_spec("ui.palette")
+        .map(|spec| spec.title)
+        .unwrap_or("Command Palette");
+    let keys = keymap::hint(platform, &command);
+    if widgets::menu_row(ui, Icon::Search, label, keys.as_deref(), false).clicked() {
+        out.push(command);
+        ui.close();
     }
 }
 

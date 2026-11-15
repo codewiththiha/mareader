@@ -177,3 +177,44 @@ fn opening_shows_the_reader_and_a_dial_is_written_by_its_path() {
     session.execute(Command::SetSidebarOverlay(false), 0.0);
     assert!(!session.settings().chrome.sidebar_overlay);
 }
+
+#[test]
+fn journal_records_coalesces_batches_and_replays() {
+    let mut session = script();
+    session.clear_journal();
+    session
+        .execute_id("settings.ink", r#"{"ink":50.0,"coalesce":"ink"}"#, 1.0)
+        .expect("first ink");
+    session
+        .execute_id("settings.ink", r#"{"ink":75.0,"coalesce":"ink"}"#, 2.0)
+        .expect("second ink");
+    assert_eq!(session.journal().len(), 1);
+
+    let batch = r#"{"commands":[{"id":"page.last","params":{}},{"id":"page.first","params":{}}]}"#;
+    session
+        .execute_id("command.batch", batch, 3.0)
+        .expect("batch runs");
+    let entries = session.journal().entries();
+    let ids: Vec<&str> = entries.iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["settings.ink", "page.last", "page.first"]);
+
+    let jsonl = session.journal().to_jsonl();
+    let steps = mareader_engine::journal::Journal::from_jsonl(&jsonl).expect("jsonl");
+    let mut fresh = script();
+    let count = fresh.replay(&steps, 4.0).expect("replay succeeds");
+    assert_eq!(count, 3);
+    assert!((fresh.settings().text.ink_contrast - 75.0).abs() < 1e-4);
+}
+
+#[test]
+fn batch_rejects_excessive_nesting() {
+    let mut session = Session::headless(Arc::new(Fake::default()));
+    let mut payload = serde_json::json!({"commands": []});
+    for _ in 0..=mareader_engine::journal::MAX_BATCH_DEPTH {
+        let step = serde_json::json!({"id": "command.batch", "params": payload});
+        payload = serde_json::json!({"commands": [step]});
+    }
+    let res = session.execute_json("command.batch", payload, 0.0);
+    let err = res.expect_err("deep nesting is refused");
+    assert!(err.contains("nesting"));
+}

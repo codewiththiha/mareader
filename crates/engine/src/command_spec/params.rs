@@ -227,6 +227,9 @@ pub(crate) const LIBRARY: &[(&str, &str)] = &[
     ("groups", "bool?"),
 ];
 
+/// A sequence of `{id, params}` steps run in order.
+pub(crate) const BATCH: &[(&str, &str)] = &[("commands", "objects")];
+
 /// The AI settings' jobs.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) const JOBS: &[(&str, &str)] = &[("action", acts::JOBS)];

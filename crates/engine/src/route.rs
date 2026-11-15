@@ -69,6 +69,7 @@ impl Route {
             I::ForgetPositions { .. } | I::Open(_) | I::Export { .. } => false,
             I::SetAppearance(_) | I::SavePreset { .. } | I::DeletePreset(_) => false,
             I::SetTitlebarPinned(_) | I::SetSidebarOverlay(_) | I::ShowRoute(_) => false,
+            I::Batch(_) => false,
             #[cfg(not(target_arch = "wasm32"))]
             I::Ai(_) | I::AttachVocab(_) => false,
         }

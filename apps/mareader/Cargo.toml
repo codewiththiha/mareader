@@ -14,16 +14,14 @@ mareader-engine = { workspace = true }
 mareader-ui-egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "persistence", "wayland", "x11", "links"] }
 egui = { workspace = true }
-# The open and save dialogs, run on a helper thread of their own: the machine
-# asks them, so the front end never names them (Law 6, and its four-file
-# thread allowlist).
+# System dialogs run on a helper thread so the front end stays pure.
 rfd = { workspace = true }
 pollster = "0.4"
+serde_json = { workspace = true }
 
 [features]
 default = ["traffic-lights", "open-files"]
-# macOS: centre the traffic lights in the bar and fade them with it. This is
-# one of two `unsafe` modules (AppKit calls); off keeps AppKit's position.
+# macOS: centre traffic lights via AppKit; off keeps default placement.
 traffic-lights = [
     "dep:objc2",
     "dep:objc2-app-kit",
@@ -32,8 +30,7 @@ traffic-lights = [
     "dep:raw-window-handle",
 ]
 
-# macOS: files opened from Finder or the Dock (an AppKit Apple event
-# handler, so `unsafe`); off, only the command line opens files.
+# macOS: open files from Finder or Dock via AppKit Apple events.
 open-files = [
     "dep:objc2",
     "objc2-app-kit/NSApplication",
@@ -51,8 +48,7 @@ objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, 
 objc2-foundation = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSGeometry", "objc2-core-foundation"] }
 raw-window-handle = { version = "0.6", optional = true }
 
-# Installers that open Mareader's books: `cargo packager --release`.
-# See docs/packaging.md.
+# Installers built via `cargo packager --release` (see docs/packaging.md).
 [package.metadata.packager]
 product-name = "Mareader"
 identifier = "com.codewiththiha.mareader"
@@ -107,9 +103,7 @@ minimum-system-version = "11.0"
 # Ad hoc: Gatekeeper asks once. CI swaps in a Developer ID when it has one.
 signing-identity = "-"
 
-# Loaded at run time, so dpkg can't see them: fonts, keyboard, GPU;
-# and ALSA, which the narration's sound goes through. The system voices
-# go through Speech Dispatcher, linked, and its daemon.
+# Runtime shared libraries for fonts, keyboard, GPU, ALSA, and speech.
 [package.metadata.packager.deb]
 depends = ["libfontconfig1", "libxkbcommon0", "libxkbcommon-x11-0", "libvulkan1 | libegl1", "libasound2t64 | libasound2", "libspeechd2", "speech-dispatcher"]
 

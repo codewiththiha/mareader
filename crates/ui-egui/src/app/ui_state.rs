@@ -79,6 +79,8 @@ pub struct UiState {
     pub(super) queued: Commands,
     /// Session events requiring an egui context, deferred from `drain_local`.
     pub(super) deferred_events: Vec<mareader_engine::event::Event>,
+    /// Optional loopback live UI control channel host.
+    pub(super) control: Option<crate::control::ControlHost>,
     pub(super) wake: setup::WakeSlot,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     pub(super) live: theme::live::LiveTokens,

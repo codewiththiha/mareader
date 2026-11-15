@@ -3,6 +3,7 @@
 mod access;
 mod appearance;
 mod apply;
+mod control;
 mod frame;
 mod glosses;
 mod library;
@@ -236,6 +237,7 @@ impl MareaderApp {
                 machine_fonts: MachineFonts::default(),
                 queued: Commands::new(),
                 deferred_events: Vec::new(),
+                control: None,
                 wake,
                 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
                 live: theme::live::LiveTokens::from_env(),
@@ -265,5 +267,16 @@ impl MareaderApp {
     pub fn with_dialogs(mut self, dialogs: Runner) -> Self {
         self.ui.files.set_dialogs(dialogs);
         self
+    }
+
+    /// Attaches a live UI control channel host to this app instance.
+    pub fn with_control(mut self, control: crate::control::ControlHost) -> Self {
+        self.ui.control = Some(control);
+        self
+    }
+
+    /// Installs or replaces the live UI control host on an existing app.
+    pub fn set_control(&mut self, control: crate::control::ControlHost) {
+        self.ui.control = Some(control);
     }
 }

@@ -27,6 +27,7 @@ mareader-library = { path = "crates/library" }
 mareader-study = { path = "crates/study" }
 mareader-assist = { path = "crates/assist" }
 mareader-engine = { path = "crates/engine" }
+mareader-mcp = { path = "crates/mcp" }
 mareader-dict = { path = "crates/dict" }
 mareader-fetch = { path = "crates/fetch" }
 mareader-search = { path = "crates/search" }
@@ -107,8 +108,7 @@ thin-vec = "0.2"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [workspace.lints.rust]
-# `deny`, not `forbid`, so one audited module can allow it; `cargo xtask
-# unsafe` keeps that list to apps/mareader/src/traffic_lights.rs.
+# Audited modules allow `unsafe_code`; `cargo xtask unsafe` enforces the list.
 unsafe_code = "deny"
 
 [workspace.lints.clippy]

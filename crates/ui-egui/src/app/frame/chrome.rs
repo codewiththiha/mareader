@@ -228,6 +228,7 @@ impl MareaderApp {
             commands,
         );
         crate::shortcuts::show(ctx, self.ui.platform);
+        crate::palette::show(ctx, &self.session, self.ui.platform, commands);
         crate::focus::paint(ctx);
         self.film_grain(ctx);
         self.ui.fade.paint(ctx);

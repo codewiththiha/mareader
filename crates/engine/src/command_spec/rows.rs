@@ -38,6 +38,13 @@ pub(crate) const ROWS: &[CommandSpec] = &[
         pages::autoscroll,
     ),
     row(
+        "command.batch",
+        "Runs a sequence of commands in order.",
+        keys::BATCH,
+        anywhere,
+        keeps::batch,
+    ),
+    row(
         "mark.bookmark",
         "Bookmarks the pane's page, or takes its bookmark back; none is the focused pane.",
         keys::PANE,

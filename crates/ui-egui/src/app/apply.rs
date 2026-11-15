@@ -231,6 +231,7 @@ impl MareaderApp {
             UiCommand::ShowViewMenu => self.show_view_menu(ctx),
             UiCommand::ShowSettings => self.open_settings(None),
             UiCommand::ShowShortcuts => crate::shortcuts::toggle(ctx),
+            UiCommand::ShowPalette => crate::palette::toggle(ctx),
             UiCommand::CloseSettings => self.ui.settings_window.close(),
             UiCommand::FindStep { forward } => self.find_step(ctx, forward),
             UiCommand::ShowFind => self.show_find(ctx),

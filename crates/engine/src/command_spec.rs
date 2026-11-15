@@ -11,6 +11,7 @@ mod acts;
 mod json;
 mod keeps;
 mod marks;
+mod meta;
 mod names;
 mod pages;
 mod panes;
@@ -28,8 +29,14 @@ use crate::session::Session;
 pub struct CommandSpec {
     /// Dotted and stable: `pane.split`, the id a ledger or a script names.
     pub id: &'static str,
+    /// Short human-facing title for menus and the command palette.
+    pub title: &'static str,
     /// One line, in the imperative, saying what happens.
     pub label: &'static str,
+    /// Optional menu category for grouping commands in UI surfaces.
+    pub menu: Option<&'static str>,
+    /// Optional default keyboard shortcut label (e.g. `Mod+D`, `Home`).
+    pub shortcut: Option<&'static str>,
     /// The keys a script's params hold, each beside the kind of value it takes.
     ///
     /// A kind ending in `?` may be left out, `a|b` is one of those names, and
@@ -39,6 +46,10 @@ pub struct CommandSpec {
     /// Whether a page takes the command: `Route::takes` asked of the row,
     /// instead of of a command built to ask it.
     pub enabled: fn(Route) -> bool,
+    /// Session-aware enablement check returning `Ok(())` or why it cannot run.
+    pub can_run: fn(&Session) -> Result<(), &'static str>,
+    /// Whether successful executions are recorded in the session journal.
+    pub journal: bool,
     /// The command a script's params build, or the line saying why they do not.
     pub parse: fn(&Session, &Value) -> Result<Command, String>,
 }
@@ -58,11 +69,17 @@ pub(crate) const fn row(
     enabled: fn(Route) -> bool,
     parse: fn(&Session, &Value) -> Result<Command, String>,
 ) -> CommandSpec {
+    let info = meta::for_id(id);
     CommandSpec {
         id,
+        title: info.title,
         label,
+        menu: info.menu,
+        shortcut: info.shortcut,
         params,
         enabled,
+        can_run: info.can_run,
+        journal: info.journal,
         parse,
     }
 }
@@ -85,6 +102,7 @@ impl Command {
             #[cfg(not(target_arch = "wasm32"))]
             Command::AttachVocab(..) => "vocab.attach",
             Command::AutoScroll => "page.autoscroll",
+            Command::Batch(..) => "command.batch",
             Command::Bookmark(..) => "mark.bookmark",
             Command::ClearSelection(..) => "mark.clear",
             Command::ClosePane(..) => "pane.close",

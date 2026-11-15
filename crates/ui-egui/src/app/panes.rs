@@ -242,6 +242,7 @@ impl MareaderApp {
             "appearance" => self.queue(Sent::Ui(UiCommand::ShowAppearance)),
             "settings" => self.queue(Sent::Ui(UiCommand::ShowSettings)),
             "shortcuts" => self.queue(Sent::Ui(UiCommand::ShowShortcuts)),
+            "palette" => self.queue(Sent::Ui(UiCommand::ShowPalette)),
             "menu" => self.queue(Sent::Ui(UiCommand::ShowViewMenu)),
             "find" => self.queue(Sent::Ui(UiCommand::ShowFind)),
             _ => {

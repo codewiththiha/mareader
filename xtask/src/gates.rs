@@ -43,6 +43,8 @@ pub fn ci(_: &[String]) -> Result<(), String> {
     crate::parity::run(&[])?;
     crate::assets::run(&[])?;
     crate::unsafety::run(&[])?;
+    crate::ui_commands::run(&["--check".to_owned()])?;
+    crate::panel_commands::run(&[])?;
     comments(&[])
 }
 

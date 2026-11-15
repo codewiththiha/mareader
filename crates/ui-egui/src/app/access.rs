@@ -311,6 +311,11 @@ impl MareaderApp {
             self.drain_local();
             return Ok(());
         }
+        if key.starts_with("ui.") {
+            let cmd = crate::ui_command::parse_ui_command(key)?;
+            self.queue(Sent::Ui(cmd));
+            return Ok(());
+        }
         for family in [
             Family(super::appearance::own_key),
             Family(super::library::own_key),

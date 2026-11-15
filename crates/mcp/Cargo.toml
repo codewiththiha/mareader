@@ -1,0 +1,21 @@
+[package]
+name = "mareader-mcp"
+description = "Model Context Protocol server and live UI control client (L6)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { workspace = true }
+mareader-engine = { workspace = true }
+mareader-workspace = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+mareader-pdf = { workspace = true }
+tempfile = { workspace = true }

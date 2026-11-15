@@ -46,7 +46,10 @@ fn every_variant_has_a_row() {
     let intents = every_variant();
     assert_eq!(intents.len(), SPECS.len(), "a variant has no row");
     for intent in &intents {
-        assert!(intent.spec().is_some(), "{} has no row", intent.id());
+        let Some(spec) = intent.spec() else {
+            panic!("{} has no row", intent.id());
+        };
+        assert!(!spec.title.is_empty(), "{} has no title", spec.id);
     }
 }
 
@@ -254,6 +257,7 @@ fn settings_intents() -> Vec<Command> {
     let pane = PaneId(1);
     let quick = QuickText::of(&mareader_settings::TextSettings::default());
     vec![
+        Command::Batch(Vec::new()),
         Command::OpenSettings(Tab::Appearance),
         Command::SetSettings(Box::default()),
         Command::SetField {

@@ -106,6 +106,8 @@ pub enum UiCommand {
     ShowLibrary,
     /// The system open dialog, the pick placed as asked.
     ShowOpenDialog(Placement),
+    /// Opens the command palette, or closes it when already open.
+    ShowPalette,
     /// Back to the pane reading aloud, turned to the words read.
     ShowReading,
     /// The Search buttons: the find bar on, or off if open.
@@ -152,6 +154,7 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         // Settings, menus and pages open over any page.
         U::ShowSettings
         | U::ShowShortcuts
+        | U::ShowPalette
         | U::ShowAppearance
         | U::ShowViewMenu
         | U::ShowLibrary
@@ -167,10 +170,234 @@ fn chrome_reads(ui: &UiCommand) -> bool {
     }
 }
 
+/// Static metadata for a UI-only command in the palette and control channel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UiCommandMeta {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub label: &'static str,
+    pub menu: Option<&'static str>,
+    pub shortcut: Option<&'static str>,
+}
+
+/// Canonical catalog of UI commands, mirrored by `cargo xtask ui-commands`.
+pub const UI_COMMANDS: &[UiCommandMeta] = &[
+    UiCommandMeta {
+        id: "ui.palette",
+        title: "Command Palette",
+        label: "Open or close the command palette.",
+        menu: Some("App"),
+        shortcut: Some("Mod+K"),
+    },
+    UiCommandMeta {
+        id: "ui.open-dialog",
+        title: "Open File...",
+        label: "Open the system file picker.",
+        menu: Some("File"),
+        shortcut: Some("Mod+O"),
+    },
+    UiCommandMeta {
+        id: "ui.sidebar-toggle",
+        title: "Toggle Sidebar",
+        label: "Show or hide the reading sidebar.",
+        menu: Some("View"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.sidebar-close",
+        title: "Close Sidebar",
+        label: "Hide the reading sidebar.",
+        menu: None,
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.sidebar-thumbnails",
+        title: "Thumbnails Panel",
+        label: "Open the thumbnails sidebar panel.",
+        menu: Some("View"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.sidebar-outline",
+        title: "Outline Panel",
+        label: "Open the outline sidebar panel.",
+        menu: Some("View"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.sidebar-notes",
+        title: "Notes Panel",
+        label: "Open the notes sidebar panel.",
+        menu: Some("View"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.sidebar-library",
+        title: "Library Sidebar Panel",
+        label: "Open the library sidebar panel.",
+        menu: Some("View"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.chromeless",
+        title: "Distraction-Free Mode",
+        label: "Hide or restore all reader chrome.",
+        menu: Some("View"),
+        shortcut: Some("Mod+Shift+F"),
+    },
+    UiCommandMeta {
+        id: "ui.fullscreen",
+        title: "Toggle Full Screen",
+        label: "Enter or leave full-screen mode.",
+        menu: Some("View"),
+        shortcut: Some("F11"),
+    },
+    UiCommandMeta {
+        id: "ui.find",
+        title: "Find",
+        label: "Open the find bar for the active view.",
+        menu: Some("Find"),
+        shortcut: Some("Mod+F"),
+    },
+    UiCommandMeta {
+        id: "ui.find-next",
+        title: "Next Match",
+        label: "Jump to the next search match.",
+        menu: Some("Find"),
+        shortcut: Some("Mod+G"),
+    },
+    UiCommandMeta {
+        id: "ui.find-prev",
+        title: "Previous Match",
+        label: "Jump to the previous search match.",
+        menu: Some("Find"),
+        shortcut: Some("Mod+Shift+G"),
+    },
+    UiCommandMeta {
+        id: "ui.search",
+        title: "Toggle Search Bar",
+        label: "Show or hide the document search bar.",
+        menu: Some("Find"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.library",
+        title: "Toggle Library",
+        label: "Switch between the library and the reader.",
+        menu: Some("App"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.dictionary",
+        title: "Toggle Dictionary",
+        label: "Switch between the dictionary and the reader.",
+        menu: Some("App"),
+        shortcut: Some("Mod+Shift+D"),
+    },
+    UiCommandMeta {
+        id: "ui.reading",
+        title: "Show Reading Pane",
+        label: "Jump back to the pane reading aloud.",
+        menu: Some("Reading"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.appearance",
+        title: "Appearance Popover",
+        label: "Open the appearance popover.",
+        menu: Some("View"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.view-menu",
+        title: "View & Tools Menu",
+        label: "Open the View & tools menu.",
+        menu: Some("View"),
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.settings",
+        title: "Settings",
+        label: "Open the settings window.",
+        menu: Some("App"),
+        shortcut: Some("Mod+,"),
+    },
+    UiCommandMeta {
+        id: "ui.settings-close",
+        title: "Close Settings",
+        label: "Close the settings window.",
+        menu: None,
+        shortcut: None,
+    },
+    UiCommandMeta {
+        id: "ui.shortcuts",
+        title: "Keyboard Shortcuts",
+        label: "Show or hide the keyboard shortcuts sheet.",
+        menu: Some("App"),
+        shortcut: Some("Mod+/"),
+    },
+    UiCommandMeta {
+        id: "ui.clear-toasts",
+        title: "Clear Notifications",
+        label: "Dismiss all visible toast notifications.",
+        menu: None,
+        shortcut: None,
+    },
+];
+
+/// Looks up UI command metadata by stable id.
+pub fn ui_spec(id: &str) -> Option<&'static UiCommandMeta> {
+    UI_COMMANDS.iter().find(|meta| meta.id == id)
+}
+
+/// Parses a `ui.*` command id into a concrete [`UiCommand`].
+pub fn parse_ui_command(id: &str) -> Result<UiCommand, String> {
+    match id {
+        "ui.palette" => Ok(UiCommand::ShowPalette),
+        "ui.open-dialog" => Ok(UiCommand::ShowOpenDialog(Placement::Into)),
+        "ui.sidebar-toggle" => Ok(UiCommand::ToggleSidebar),
+        "ui.sidebar-close" => Ok(UiCommand::CloseSidebar),
+        "ui.sidebar-thumbnails" => Ok(UiCommand::OpenSidebar(Some(Panel::Thumbnails))),
+        "ui.sidebar-outline" => Ok(UiCommand::OpenSidebar(Some(Panel::Outline))),
+        "ui.sidebar-notes" => Ok(UiCommand::OpenSidebar(Some(Panel::Notes))),
+        "ui.sidebar-library" => Ok(UiCommand::OpenSidebar(Some(Panel::Library))),
+        "ui.chromeless" => Ok(UiCommand::Chromeless),
+        "ui.fullscreen" => Ok(UiCommand::Window(WindowCommand::ToggleFullscreen)),
+        "ui.find" => Ok(UiCommand::ShowFind),
+        "ui.find-next" => Ok(UiCommand::FindStep { forward: true }),
+        "ui.find-prev" => Ok(UiCommand::FindStep { forward: false }),
+        "ui.search" => Ok(UiCommand::ShowSearch),
+        "ui.library" => Ok(UiCommand::ShowLibrary),
+        "ui.dictionary" => Ok(UiCommand::ShowDictionary),
+        "ui.reading" => Ok(UiCommand::ShowReading),
+        "ui.appearance" => Ok(UiCommand::ShowAppearance),
+        "ui.view-menu" => Ok(UiCommand::ShowViewMenu),
+        "ui.settings" => Ok(UiCommand::ShowSettings),
+        "ui.settings-close" => Ok(UiCommand::CloseSettings),
+        "ui.shortcuts" => Ok(UiCommand::ShowShortcuts),
+        "ui.clear-toasts" => Ok(UiCommand::ClearToasts),
+        _ => Err(format!("unknown UI command {id:?}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use mareader_engine::pane::ViewMode;
+    use std::collections::HashSet;
+
+    #[test]
+    fn ui_commands_catalog_is_unique_and_parseable() {
+        let mut seen = HashSet::new();
+        for meta in UI_COMMANDS {
+            assert!(meta.id.starts_with("ui."), "{}", meta.id);
+            assert!(!meta.title.is_empty(), "{}", meta.id);
+            assert!(!meta.label.is_empty(), "{}", meta.id);
+            assert!(seen.insert(meta.id), "duplicate {}", meta.id);
+            assert!(parse_ui_command(meta.id).is_ok(), "{}", meta.id);
+        }
+        assert!(parse_ui_command("ui.nonexistent").is_err());
+    }
 
     #[test]
     fn the_library_drops_what_acts_on_panes() {

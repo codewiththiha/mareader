@@ -18,13 +18,18 @@ pub struct Binding {
 }
 
 /// Every bound shortcut; features add theirs here as they land.
-pub fn bindings(platform: Platform) -> [Binding; 39] {
+pub fn bindings(platform: Platform) -> [Binding; 40] {
     // Each desktop's own full-screen key.
     let fullscreen = match platform {
         Platform::Mac => KeyboardShortcut::new(Modifiers::CTRL | Modifiers::MAC_CMD, Key::F),
         Platform::Windows | Platform::Gnome => KeyboardShortcut::new(Modifiers::NONE, Key::F11),
     };
     [
+        Binding {
+            label: "Command palette",
+            shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::K),
+            command: Sent::Ui(UiCommand::ShowPalette),
+        },
         Binding {
             label: "Open a file",
             shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::O),
@@ -243,8 +248,9 @@ pub fn read(ctx: &Context, platform: Platform, route: Route, out: &mut Commands)
     if crate::image_viewer::is_open(ctx) {
         return;
     }
-    // Behind the cheat sheet only its own key, which shuts it, acts.
+    // Behind the cheat sheet or palette only its own key acts.
     let sheet = crate::shortcuts::is_open(ctx);
+    let palette = crate::palette::is_open(ctx);
     // A focused button wants Space and the arrows, not every key.
     let typing = ctx.text_edit_focused();
     let focused = ctx.memory(|m| m.focused().is_some()) || egui::Popup::is_any_open(ctx);
@@ -253,6 +259,7 @@ pub fn read(ctx: &Context, platform: Platform, route: Route, out: &mut Commands)
         .into_iter()
         .filter(|b| route.allows(&b.command))
         .filter(|b| !sheet || b.command == Sent::Ui(UiCommand::ShowShortcuts))
+        .filter(|b| !palette || b.command == Sent::Ui(UiCommand::ShowPalette))
     {
         if (typing && types(&b.shortcut)) || (focused && steers(&b)) {
             continue;

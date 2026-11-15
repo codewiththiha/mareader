@@ -16,6 +16,7 @@ use dialogs::Shell;
 use inbox::Inbox;
 use single_instance::Claim;
 
+mod control_server;
 mod desk;
 mod dialogs;
 mod inbox;
@@ -30,6 +31,7 @@ mod traffic_lights;
 struct Desktop {
     app: MareaderApp,
     inbox: Inbox,
+    _control: Option<control_server::ControlServer>,
 }
 
 /// Opens the newest of `paths`, as mareader does; false if none.
@@ -42,6 +44,10 @@ fn open_latest(app: &mut MareaderApp, paths: Vec<PathBuf>) -> bool {
 }
 
 impl eframe::App for Desktop {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.app.raw_input_hook(ctx, raw_input);
+    }
+
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
         self.app.clear_color(visuals)
     }
@@ -117,13 +123,26 @@ fn without_large_cache() {
 fn main() -> eframe::Result {
     #[cfg(target_os = "macos")]
     without_large_cache();
-    let files: Vec<PathBuf> = std::env::args_os()
+    let raw_args = std::env::args_os()
         .skip(1)
-        .filter(|a| !open_files::is_launch_noise(a))
-        .map(PathBuf::from)
-        .collect();
+        .filter(|a| !open_files::is_launch_noise(a));
+    let (control_cfg, files) = match control_server::parse_args(raw_args) {
+        Ok(parsed) => parsed,
+        Err(why) => {
+            eprintln!("mareader: {why}");
+            std::process::exit(2);
+        }
+    };
+    let oneshot = match build_oneshot(&control_cfg) {
+        Ok(shot) => shot,
+        Err(why) => {
+            eprintln!("mareader: {why}");
+            std::process::exit(2);
+        }
+    };
     let inbox = Inbox::default();
-    if let Some(dir) = desk::state_dir()
+    if !control_cfg.isolated()
+        && let Some(dir) = desk::state_dir()
         && single_instance::claim(&dir, &files, &inbox) == Claim::Forwarded
     {
         return Ok(());
@@ -141,7 +160,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "mareader",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             // The machine arrives here, and the app is built on it.
             let host: Shared = Arc::new(Desk::new(cc.egui_ctx.clone()));
             let machine = Machine {
@@ -150,15 +169,71 @@ fn main() -> eframe::Result {
             };
             // The machine's dialogs: the front end asks, this app runs them.
             let mut app = MareaderApp::new(cc, host, machine).with_dialogs(Arc::new(Shell));
+            let control = attach_control(&mut app, &control_cfg, oneshot, cc.egui_ctx.clone());
             inbox.wake_with(cc.egui_ctx.clone());
             // A file asked for at launch, else what was read last time.
-            if !open_latest(&mut app, inbox.take().paths) {
+            if !open_latest(&mut app, inbox.take().paths) && control_cfg.screenshot.is_none() {
                 app.resume();
             }
             reduced_motion::watch(app.reduced_motion(), cc.egui_ctx.clone());
-            Ok(Box::new(Desktop { app, inbox }))
+            Ok(Box::new(Desktop {
+                app,
+                inbox,
+                _control: control,
+            }))
         }),
     )
+}
+
+/// Builds a one-shot `--screenshot` capture job from parsed CLI flags.
+fn build_oneshot(
+    cfg: &control_server::ControlArgs,
+) -> Result<Option<mareader_ui_egui::control::OneShotCapture>, String> {
+    let Some(path) = &cfg.screenshot else {
+        return Ok(None);
+    };
+    let steps = match &cfg.script {
+        Some(script_path) => {
+            let text = std::fs::read_to_string(script_path)
+                .map_err(|e| format!("read {}: {e}", script_path.display()))?;
+            mareader_engine::journal::Journal::from_jsonl(&text)?
+        }
+        None => Vec::new(),
+    };
+    Ok(Some(mareader_ui_egui::control::OneShotCapture::new(
+        path.display().to_string(),
+        steps,
+        cfg.wait_frames,
+    )))
+}
+
+/// Attaches `--control` server and/or one-shot `--screenshot` to `app`.
+fn attach_control(
+    app: &mut MareaderApp,
+    cfg: &control_server::ControlArgs,
+    oneshot: Option<mareader_ui_egui::control::OneShotCapture>,
+    ctx: egui::Context,
+) -> Option<control_server::ControlServer> {
+    if let Some(port) = cfg.port {
+        let (bridge, mut ctrl_host) = mareader_ui_egui::control::channel();
+        if let Some(shot) = oneshot {
+            ctrl_host.set_oneshot(shot);
+        }
+        return match control_server::ControlServer::start(port, cfg.file.clone(), bridge, ctx) {
+            Ok(server) => {
+                app.set_control(ctrl_host);
+                Some(server)
+            }
+            Err(why) => {
+                eprintln!("mareader: {why}");
+                None
+            }
+        };
+    }
+    if let Some(shot) = oneshot {
+        app.set_control(mareader_ui_egui::control::ControlHost::oneshot(shot));
+    }
+    None
 }
 
 /// Debug builds also find the helper `tools/fm-helper.sh` builds.

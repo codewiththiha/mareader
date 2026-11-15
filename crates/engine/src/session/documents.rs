@@ -86,6 +86,12 @@ impl Session {
 
     /// Polls inline document work when running without a front-end window.
     pub fn pump(&mut self) {
+        if let Err(msg) = crate::guard::catch_panic(|| self.pump_inner()) {
+            self.emit_panic("pump", &msg);
+        }
+    }
+
+    fn pump_inner(&mut self) {
         let budget = Budget {
             items: 64,
             bytes: usize::MAX,

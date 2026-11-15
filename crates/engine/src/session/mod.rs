@@ -29,7 +29,9 @@ use mareader_workspace::{Bounds, PaneId, PaneTree};
 
 use crate::documents::{OpenRequest, State as DocumentsState};
 use crate::event::Event;
+use crate::guard;
 use crate::host::Shared;
+use crate::journal::{Journal, Step};
 use crate::library::State as LibraryState;
 use crate::page_copy::PageCopy;
 use crate::pane_texts::PaneTexts;
@@ -116,6 +118,12 @@ pub struct Session {
     last: Option<LastDocument>,
     /// Results not yet drained, oldest first.
     events: Vec<Event>,
+    /// Bounded command journal for inspection and replay.
+    pub(crate) journal: Journal,
+    /// Current nesting depth of `command.batch`.
+    pub(crate) batch_depth: u32,
+    /// True while `execute_json` is recording the active command.
+    pub(crate) recording_json: bool,
     waker: Waker,
     /// The machine it runs on, held from the moment it is built.
     host: Shared,
@@ -141,6 +149,13 @@ impl Done {
         Self {
             dirty: true,
             refused: None,
+        }
+    }
+
+    pub(crate) fn refused(reason: String) -> Self {
+        Self {
+            dirty: false,
+            refused: Some(reason),
         }
     }
 }
@@ -211,6 +226,9 @@ impl Session {
             edge_tab: EdgeTab::default(),
             last: loaded.last,
             events: Vec::new(),
+            journal: Journal::default(),
+            batch_depth: 0,
+            recording_json: false,
         };
         if inline {
             session.set_document_workers(0);
@@ -272,10 +290,18 @@ impl Session {
     /// The answer is the wait left when it skipped, for a frame to book.
     /// Any write failure leaves as an [`Event::Toast`].
     pub fn keep(&mut self, now: f64, last: Option<LastDocument>) -> Option<f64> {
-        self.save.note(last);
-        let wait = self.save.write(now, &self.settings);
-        self.emit_save_failure();
-        wait
+        match guard::catch_panic(|| {
+            self.save.note(last);
+            let wait = self.save.write(now, &self.settings);
+            self.emit_save_failure();
+            wait
+        }) {
+            Ok(wait) => wait,
+            Err(msg) => {
+                self.emit_panic("save", &msg);
+                None
+            }
+        }
     }
 
     /// Writes what is owed at once: the window is going.
@@ -289,9 +315,43 @@ impl Session {
     /// What a front end's persist hook asks for, and what a test can: the
     /// cadence is skipped, and a session with nowhere to write writes nothing.
     pub fn flush(&mut self) {
-        self.library.flush();
-        self.save.flush(&self.settings);
-        self.emit_save_failure();
+        if let Err(msg) = guard::catch_panic(|| {
+            self.library.flush();
+            self.save.flush(&self.settings);
+            self.emit_save_failure();
+        }) {
+            self.emit_panic("flush", &msg);
+        }
+    }
+
+    /// Emits an error toast when the panic firewall catches an engine unwind.
+    pub(crate) fn emit_panic(&mut self, where_: &str, msg: &str) {
+        let text = format!("Engine {where_} error: {msg}");
+        self.emit(Event::Toast(Toast::error(text)));
+    }
+
+    /// The session's bounded command journal, oldest entry first.
+    pub fn journal(&self) -> &Journal {
+        &self.journal
+    }
+
+    /// Clears all retained journal entries.
+    pub fn clear_journal(&mut self) {
+        self.journal.clear();
+    }
+
+    /// Replays a list of journal steps without re-recording them.
+    pub fn replay(&mut self, steps: &[Step], now: f64) -> Result<usize, String> {
+        self.journal.set_replaying(true);
+        let mut outcome = Ok(steps.len());
+        for (idx, step) in steps.iter().enumerate() {
+            if let Err(why) = self.execute_json(&step.id, step.params.clone(), now) {
+                outcome = Err(format!("step {}: {why}", idx + 1));
+                break;
+            }
+        }
+        self.journal.set_replaying(false);
+        outcome
     }
 
     fn emit_save_failure(&mut self) {

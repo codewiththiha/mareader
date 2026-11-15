@@ -8,19 +8,20 @@ the two disagree, `AGENTS.md` wins.
 
 | Path | What |
 |---|---|
-| `apps/mareader` | Desktop binary (L7): opens the window, supplies desktop `Host`, runs `MareaderApp` |
+| `apps/mareader` | Desktop binary (L7): opens the window, supplies desktop `Host`, serves optional `--control` loopback UI automation, runs `MareaderApp` |
 | `apps/mareader-web` | Browser preview (L7): `MareaderApp` via eframe `WebRunner` with a web `Host` |
-| `apps/mareader-cli` | Headless CLI client (L7): `commands`, `exec`, `run`, `inspect` over `mareader-engine` with zero toolkit deps; CI scripts in `scripts/` |
-| `crates/engine` | The app without a window (L5, ADR 0007): `Session`, `Command`, `SPECS`, `Event`, `Host`, atomic `settings.json`/`session.json` persistence, open documents, library, marks, read-aloud and study controllers |
-| `crates/ui-egui` | egui front end (L6): theme, icons, title bar, panes, shell, GPU textures and window-ephemeral `UiState` |
+| `apps/mareader-cli` | Headless CLI client (L7): `commands`, `exec`, `run`, `inspect`, `mcp`, `ui` over `mareader-engine` and `mareader-mcp` with zero toolkit deps; CI scripts in `scripts/` |
+| `crates/engine` | The app without a window (L5, ADR 0007): `Session`, `Command`, `SPECS`, panic guard (`guard.rs`), command journal & replay (`journal.rs`), `Event`, `Host`, atomic `settings.json`/`session.json` persistence, open documents, library, marks, read-aloud and study controllers |
+| `crates/mcp` | Synchronous stdio MCP server and loopback live UI control client (L6, zero UI deps): headless and live-UI backends with `--root` confinement and synced `UI_COMMANDS` catalog |
+| `crates/ui-egui` | egui front end (L6): theme, icons, title bar, panes, command palette (`Mod+K`), shell, GPU textures, live control bridge (`control.rs`), and window-ephemeral `UiState` |
 | `crates/appearance` | Base modes, tints, filters, presets, UI tokens (no egui) |
 | `crates/workspace` | Pane split tree and layout geometry (no egui) |
 | `crates/settings` | User settings: schema, defaults, ranges, migration, mareader import (no egui) |
 | `crates/engine/src/command.rs` | `Command`: every application action, applied by `Session::execute` |
-| `crates/engine/src/command_spec/` | `SPECS`: static registry mapping every `Command` variant to its id, label, params, enabled check and parser |
+| `crates/engine/src/command_spec/` | `SPECS`: static registry mapping every `Command` variant to its id, title, label, menu, shortcut, params, enabled/can_run checks, journal flag, and parser |
 | `crates/engine/src/host.rs` | `Host`: the five-method platform seam (`state_dir`, `cache_dir`, `set_clipboard`, `reveal`, `open_external`) |
-| `crates/ui-egui/src/ui_command.rs` | `UiCommand`: chrome-only actions, applied in `MareaderApp::apply` |
-| `xtask` | Workspace gates: `layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `comments`, `ci` |
+| `crates/ui-egui/src/ui_command.rs` | `UiCommand` & `UI_COMMANDS`: chrome-only actions and static metadata catalog mirrored to `crates/mcp/src/ui_catalog.rs` |
+| `xtask` | Workspace gates: `layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `ui-commands`, `panel-commands`, `comments`, `ci` |
 | `parity/mareader-features.toml` | Feature parity ledger: status, test evidence, and `command` / `ui_only` links |
 | `docs/` | Architecture, ADRs, design system, format pipelines, memory audits and verification guides |
 | `tools/` | Verification, static checks (`shape_check`, `comment_check`, `commit_check`), CI driver and voice-model parity tools |
@@ -29,7 +30,12 @@ the two disagree, `AGENTS.md` wins.
 
 ```sh
 cargo run -p mareader                       # desktop app
+cargo run -p mareader -- --screenshot /tmp/win.png book.pdf       # one-shot desktop screenshot
+cargo run -p mareader -- --control 0 --control-file /tmp/mr.json  # live control channel
 cargo run -p mareader-cli -- commands       # list every registered engine command
+cargo run -p mareader-cli -- render book.pdf --page 0 -o p0.png   # headless CPU page PNG
+cargo run -p mareader-cli -- mcp            # stdio MCP server (headless; add --control-file for live UI)
+cargo run -p mareader-cli -- ui --control-file /tmp/mr.json screenshot /tmp/live.png  # live window PNG
 cargo test -p mareader-cli --test scripts   # headless CLI end-to-end scripts
 tools/web.sh --serve 8080                   # browser preview, best effort (?panes=2)
 cargo test -p mareader-ui-egui -j 2         # one crate's tests
@@ -39,6 +45,8 @@ cargo xtask parity --list planned           # remaining planned entries
 cargo xtask layers                          # dependency rules (incl. headless CLI tree)
 cargo xtask wasm                            # L0-L5, ui-egui and web for wasm32
 cargo xtask trapped                         # toolkit-free files in ui-egui (must be 0)
+cargo xtask ui-commands --check             # verify crates/mcp UI_COMMANDS mirror matches ui-egui
+cargo xtask panel-commands                  # verify panel click handlers dispatch commands only
 cargo xtask assets                          # ATTRIBUTION.toml verification
 cargo xtask unsafe                          # audited unsafe allowlist check
 cargo xtask comments                        # comment rule on changed files

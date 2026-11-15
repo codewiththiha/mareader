@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 mareader-engine = { workspace = true }
+mareader-mcp = { workspace = true }
 mareader-workspace = { workspace = true }
 serde_json = { workspace = true }
 

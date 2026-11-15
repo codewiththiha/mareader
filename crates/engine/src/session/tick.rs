@@ -32,6 +32,16 @@ impl Session {
     /// Idempotent when called more than once in the same frame. Results leave
     /// as [`Event`]s ready for [`Session::drain`].
     pub fn tick(&mut self, now: f64) -> Tick {
+        match crate::guard::catch_panic(|| self.tick_inner(now)) {
+            Ok(tick) => tick,
+            Err(msg) => {
+                self.emit_panic("tick", &msg);
+                Tick::default()
+            }
+        }
+    }
+
+    fn tick_inner(&mut self, now: f64) -> Tick {
         self.reconcile_looks(now);
         self.reconcile_texts();
         let mut tick = Tick::default();

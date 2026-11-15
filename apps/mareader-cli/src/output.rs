@@ -2,6 +2,7 @@
 
 use mareader_engine::command_spec::SPECS;
 use mareader_engine::event::Event;
+use mareader_engine::inspect::route_name;
 use mareader_engine::notes_panel::page_of;
 use mareader_engine::route::Route;
 use mareader_engine::session::Session;
@@ -32,7 +33,11 @@ pub fn commands_json() -> Value {
                 .collect();
             json!({
                 "id": spec.id,
+                "title": spec.title,
                 "label": spec.label,
+                "menu": spec.menu,
+                "shortcut": spec.shortcut,
+                "journal": spec.journal,
                 "params": params,
                 "routes": routes,
             })
@@ -259,13 +264,5 @@ fn event_json(event: &Event) -> Value {
             "kind": "other",
             "debug": format!("{other:?}"),
         }),
-    }
-}
-
-fn route_name(route: Route) -> &'static str {
-    match route {
-        Route::Reader => "reader",
-        Route::Library => "library",
-        Route::Dictionary => "dictionary",
     }
 }

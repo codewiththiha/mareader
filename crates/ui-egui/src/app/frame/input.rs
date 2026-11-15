@@ -54,7 +54,8 @@ impl MareaderApp {
         let dialog = self.ui.settings_window.is_open()
             || self.ui.word_window.is_open()
             || self.session.library().sheet_up()
-            || crate::shortcuts::is_open(ctx);
+            || crate::shortcuts::is_open(ctx)
+            || crate::palette::is_open(ctx);
         if crate::focus::begin(ctx) && !dialog {
             self.ui.titlebar.reveal();
             self.ui.page_bars.entry(self.active()).or_default().reveal();
@@ -122,6 +123,7 @@ impl MareaderApp {
             || (route == Route::Library && ui_library::search::focused(ctx))
             || crate::image_viewer::is_open(ctx)
             || crate::shortcuts::is_open(ctx)
+            || crate::palette::is_open(ctx)
             || self.ui.lifting.is_some();
         let mut free = escape && !modal && !egui::Popup::is_any_open(ctx);
         // The library page lets go of a selection, else goes back to reading.

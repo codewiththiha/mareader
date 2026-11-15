@@ -96,8 +96,10 @@ xattr -d com.apple.quarantine /Applications/Mareader.app
 Requires the pinned Rust toolchain in `rust-toolchain.toml`:
 
 ```sh
-cargo run -p mareader                   # desktop app
+cargo run -p mareader                   # desktop app (--screenshot <out.png> or --control 0 --control-file <path>)
 cargo run -p mareader-cli -- commands   # list registered engine commands
+cargo run -p mareader-cli -- render book.pdf --page 0 -o page0.png  # headless page PNG
+cargo run -p mareader-cli -- mcp        # stdio MCP server (headless or attached live UI)
 cargo test --workspace                  # run all workspace tests
 ```
 

@@ -343,6 +343,7 @@ cargo fmt --all --check
 cargo clippy -p <crate> -j 2 --all-targets -- -D warnings
 cargo test -p <crate> -j 2
 cargo xtask layers && cargo xtask wasm && cargo xtask trapped
+cargo xtask ui-commands --check && cargo xtask panel-commands
 cargo xtask parity && cargo xtask assets
 cargo xtask comments
 ```

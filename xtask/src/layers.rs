@@ -33,6 +33,7 @@ pub const TABLE: &[(&str, Layer)] = &[
     ("session", Layer::Core(3)),
     ("assist", Layer::Core(3)),
     ("engine", Layer::Core(5)),
+    ("mcp", Layer::Core(6)),
     ("ui-egui", Layer::Front),
     ("mareader", Layer::App),
     ("web", Layer::App),

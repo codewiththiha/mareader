@@ -44,6 +44,8 @@ pub enum Command {
     AttachVocab(PathBuf),
     /// Shift+A: the active pane's auto-scroll on or off.
     AutoScroll,
+    /// Executes a sequence of JSON commands in order.
+    Batch(Vec<crate::journal::Step>),
     /// Bookmarks the pane's page, or takes its bookmark back; none is
     /// the focused pane.
     Bookmark(Option<PaneId>),

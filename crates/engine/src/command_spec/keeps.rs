@@ -145,3 +145,14 @@ pub(crate) fn export(at: &Session, params: &Value) -> Result<Command, String> {
         contents,
     })
 }
+
+/// `command.batch`: runs a list of `{id, params}` steps in order.
+pub(crate) fn batch(_at: &Session, params: &Value) -> Result<Command, String> {
+    let steps: Vec<crate::journal::Step> =
+        json::shape(params, "commands", "a list of {id, params} steps")?;
+    let max = crate::journal::MAX_BATCH_LEN;
+    if steps.len() > max {
+        return Err(format!("batch exceeds {max} commands"));
+    }
+    Ok(Command::Batch(steps))
+}

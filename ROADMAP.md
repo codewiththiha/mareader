@@ -20,7 +20,8 @@ Cross-device library sync (`docs/sync.md`) remains optional future work.
 | Read aloud | System voices plus offline candle neural models (Kokoro in 6 languages, Piper, Kitten, Phonon), word-by-word tracking, floating/tucked player, idle model unloading | [`docs/architecture.md`](docs/architecture.md) |
 | Search & keyboard | Streaming cross-line/diacritic-folded document search, full Tab/keyboard focus navigation, auto-scroll, distraction-free mode | [`docs/search.md`](docs/search.md) |
 | Packaging & releases | Native installers for macOS (`.dmg` Apple Silicon & Intel), Windows (NSIS & MSI), and Linux (`.deb`, AppImage, Arch) verified end-to-end in CI | [`docs/packaging.md`](docs/packaging.md), [`docs/releases/`](docs/releases/) |
-| Engine-first & headless CLI | `mareader-engine` (L5) owns all durable state, registered commands (`SPECS`), `Host` seam and atomic JSON persistence; `ui-egui` (L6) draws; `mareader-cli` (L7) runs scripts with zero toolkit dependencies | [`docs/adr/0007-engine-first.md`](docs/adr/0007-engine-first.md) |
+| Engine-first & headless CLI | `mareader-engine` (L5) owns all durable state, registered commands (`SPECS`), panic guard, coalescing session journal/replay, `command.batch`, `Host` seam and atomic JSON persistence; `ui-egui` (L6) draws and provides the `Mod+K` command palette; `mareader-cli` (L7) runs scripts with zero toolkit dependencies | [`docs/adr/0007-engine-first.md`](docs/adr/0007-engine-first.md) |
+| Live UI control & MCP | Loopback TCP `--control` channel in `apps/mareader` + `crates/ui-egui` (state inspection, command execution, synthetic input injection, PNG screenshots), synchronous stdio `mareader-mcp` server (L6) via `mareader-cli mcp` / `mareader-cli ui`, and `xtask ui-commands` + `xtask panel-commands` gates | [`docs/architecture.md`](docs/architecture.md), [`docs/development.md`](docs/development.md) |
 
 ## Optional future work
 

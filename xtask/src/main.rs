@@ -6,8 +6,10 @@ use std::process::ExitCode;
 mod assets;
 mod gates;
 mod layers;
+mod panel_commands;
 mod parity;
 mod trapped;
+mod ui_commands;
 mod unsafety;
 mod wasm;
 
@@ -50,8 +52,18 @@ const COMMANDS: &[(&str, &str, Command)] = &[
         trapped::run,
     ),
     (
+        "ui-commands",
+        "Sync crates/ui-egui UI_COMMANDS into crates/mcp/src/ui_catalog.rs (--check)",
+        ui_commands::run,
+    ),
+    (
+        "panel-commands",
+        "Verify UI panel click handlers dispatch commands instead of mutating Session",
+        panel_commands::run,
+    ),
+    (
         "ci",
-        "fmt, clippy, tests, layers, wasm, trapped, parity, assets, unsafe; stops at the first failure",
+        "Run fmt, clippy, tests, and every xtask gate; stops at the first failure",
         gates::ci,
     ),
 ];

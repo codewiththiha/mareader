@@ -133,11 +133,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           status=0
-          for t in layers trapped parity assets unsafe; do
+          for t in layers trapped parity assets unsafe panel-commands; do
             echo "::group::xtask $t"
             cargo xtask "$t" || { echo "::error::cargo xtask $t failed"; status=1; }
             echo "::endgroup::"
           done
+          echo "::group::xtask ui-commands --check"
+          cargo xtask ui-commands --check || { echo "::error::cargo xtask ui-commands --check failed"; status=1; }
+          echo "::endgroup::"
           exit $status
 
   wasm:

@@ -7,6 +7,12 @@ mod input;
 mod pages;
 
 impl eframe::App for MareaderApp {
+    fn raw_input_hook(&mut self, _ctx: &Context, raw_input: &mut egui::RawInput) {
+        if let Some(control) = &mut self.ui.control {
+            control.inject_raw_input(raw_input);
+        }
+    }
+
     /// The remembered paper from the very first frame, never a dark flash.
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         let paper = theme::Tokens::new(&self.settings().appearance).paper;
@@ -33,6 +39,7 @@ impl eframe::App for MareaderApp {
             return;
         }
         let (mut commands, route, outside) = self.commands(&ctx);
+        self.poll_control(&ctx);
         let drop_target = self.escape(&ctx, route, &mut commands);
         let (inset, overlay) = self.rail(ui, &ctx, route, &mut commands);
         let view = self.pages(ui, &ctx, route, drop_target, &mut commands);
