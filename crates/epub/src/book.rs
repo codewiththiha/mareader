@@ -2,7 +2,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
 
 use mareader_reflow::{
     Anchor, Block, BookFace, Content, Flow, Fonts, PageLine, Picture, Pixels, Region, Role,
@@ -90,11 +93,7 @@ pub struct Link {
 /// The archive's images and stylesheets, each read once per path.
 struct Shelf<'e> {
     epub: &'e Epub,
-    pictures: HashMap<String, Option<Arc<Picture>>>,
-    sheets: HashMap<String, Option<Arc<Stylesheet>>>,
-    /// Files SVG pictures link.
-    files: HashMap<String, Option<Arc<Vec<u8>>>>,
-    budget: usize,
+    read: &'e mut Read,
 }
 
 /// What a shelf has read, kept to read chapters again as triggers change.
@@ -107,24 +106,8 @@ struct Read {
 }
 
 impl<'e> Shelf<'e> {
-    /// A shelf holding what `read` already has.
-    fn again(epub: &'e Epub, read: &Read) -> Self {
-        Self {
-            epub,
-            pictures: read.pictures.clone(),
-            sheets: read.sheets.clone(),
-            files: read.files.clone(),
-            budget: read.budget,
-        }
-    }
-
-    fn kept(self) -> Read {
-        Read {
-            pictures: self.pictures,
-            sheets: self.sheets,
-            files: self.files,
-            budget: self.budget,
-        }
+    fn on(epub: &'e Epub, read: &'e mut Read) -> Self {
+        Self { epub, read }
     }
 }
 
@@ -132,9 +115,9 @@ impl Shelf<'_> {
     /// The picture at `path` itself, its fallbacks aside.
     fn decode(&mut self, path: &str) -> Option<Arc<Picture>> {
         let bytes = self.epub.read_resource_bytes(path).ok();
-        let bytes = bytes.filter(|b| b.len() <= self.budget);
+        let bytes = bytes.filter(|b| b.len() <= self.read.budget);
         bytes.and_then(|b| {
-            self.budget -= b.len();
+            self.read.budget -= b.len();
             let picture = if Picture::is_svg(&b) {
                 let links = xhtml::svg_links(self, path, Picture::svg_links(&b));
                 Picture::svg(b, links)
@@ -149,7 +132,7 @@ impl Shelf<'_> {
 impl Library for Shelf<'_> {
     /// Pictures that won't decode give way to their manifest fallbacks.
     fn picture(&mut self, path: &str) -> Option<Arc<Picture>> {
-        if let Some(known) = self.pictures.get(path) {
+        if let Some(known) = self.read.pictures.get(path) {
             return known.clone();
         }
         let mut picture = self.decode(path);
@@ -162,7 +145,7 @@ impl Library for Shelf<'_> {
             };
             picture = paths.iter().find_map(|p| self.decode(p));
         }
-        self.pictures.insert(path.to_owned(), picture.clone());
+        self.read.pictures.insert(path.to_owned(), picture.clone());
         picture
     }
 
@@ -172,20 +155,20 @@ impl Library for Shelf<'_> {
     }
 
     fn bytes(&mut self, path: &str) -> Option<Arc<Vec<u8>>> {
-        if let Some(known) = self.files.get(path) {
+        if let Some(known) = self.read.files.get(path) {
             return known.clone();
         }
         let bytes = self.epub.read_resource_bytes(path).ok();
-        let bytes = bytes.filter(|b| b.len() <= self.budget).map(|b| {
-            self.budget -= b.len();
+        let bytes = bytes.filter(|b| b.len() <= self.read.budget).map(|b| {
+            self.read.budget -= b.len();
             Arc::new(b)
         });
-        self.files.insert(path.to_owned(), bytes.clone());
+        self.read.files.insert(path.to_owned(), bytes.clone());
         bytes
     }
 
     fn stylesheet(&mut self, path: &str) -> Option<Arc<Stylesheet>> {
-        if let Some(known) = self.sheets.get(path) {
+        if let Some(known) = self.read.sheets.get(path) {
             return known.clone();
         }
         let bytes = self.epub.read_resource_bytes(path).ok();
@@ -193,7 +176,7 @@ impl Library for Shelf<'_> {
             let text = String::from_utf8_lossy(&b);
             Arc::new(Stylesheet::parse(&text, path))
         });
-        self.sheets.insert(path.to_owned(), sheet.clone());
+        self.read.sheets.insert(path.to_owned(), sheet.clone());
         sheet
     }
 }
@@ -202,6 +185,7 @@ impl Library for Shelf<'_> {
 #[derive(Clone)]
 pub struct Files {
     archive: Arc<Vec<u8>>,
+    epub: Arc<OnceLock<Option<Epub>>>,
 }
 
 impl std::fmt::Debug for Files {
@@ -211,6 +195,12 @@ impl std::fmt::Debug for Files {
 }
 
 impl Files {
+    fn epub(&self) -> Option<&Epub> {
+        self.epub
+            .get_or_init(|| guard::open_manifest(&self.archive).ok())
+            .as_ref()
+    }
+
     /// Whether both come from one opening of a book, whatever its typesetting.
     pub fn same(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.archive, &other.archive)
@@ -219,8 +209,7 @@ impl Files {
     /// The sound or video at `path`, if the manifest names its type.
     pub fn media(&self, path: &str) -> Option<Media> {
         let read = || {
-            let epub = guard::open(&self.archive).ok()?;
-            let entry = epub.manifest().by_href(path)?;
+            let entry = self.epub()?.manifest().by_href(path)?;
             let extension = media::extension(entry.media_type())?;
             let data = entry.read_bytes().ok()?;
             Some(Media { data, extension })
@@ -231,8 +220,7 @@ impl Files {
     /// Any file the manifest lists at `path`, if not too large.
     fn read(&self, path: &str) -> Option<Vec<u8>> {
         let read = || {
-            let epub = guard::open(&self.archive).ok()?;
-            let data = epub.manifest().by_href(path)?.read_bytes().ok()?;
+            let data = self.epub()?.manifest().by_href(path)?.read_bytes().ok()?;
             (data.len() <= subtitles::MAX_TRACK).then_some(data)
         };
         catch_unwind(AssertUnwindSafe(read)).ok().flatten()
@@ -483,7 +471,7 @@ impl OpenBook {
             return Ok(());
         };
         self.next = self.next.saturating_add(1);
-        let mut shelf = Shelf::again(&self.epub, &self.read);
+        let mut shelf = Shelf::on(&self.epub, &mut self.read);
         let parsed = read_item(
             ItemPass {
                 epub: &self.epub,
@@ -507,7 +495,6 @@ impl OpenBook {
             self.spine.push(spine);
         }
         self.pars.extend(parsed.pars);
-        self.read = shelf.kept();
         Ok(())
     }
 
@@ -559,7 +546,7 @@ impl OpenBook {
         let mut opening = None;
         let mut pars = Vec::new();
         let mut escapes = 0u32;
-        let mut shelf = Shelf::again(&self.epub, &self.read);
+        let mut shelf = Shelf::on(&self.epub, &mut self.read);
         for record in self.records.get(first..end).unwrap_or_default() {
             let parsed = match read_item(
                 ItemPass {
@@ -592,7 +579,6 @@ impl OpenBook {
         if blocks.is_empty() {
             return Ok(None);
         }
-        self.read = shelf.kept();
         let book = assemble_book(BookAssembly {
             epub: &self.epub,
             bytes: &self.bytes,
@@ -759,7 +745,7 @@ fn assemble_book(assembly: BookAssembly<'_>) -> Result<Book, OpenError> {
         complete,
         include_cover,
     } = assembly;
-    let mut shelf = Shelf::again(epub, read);
+    let mut shelf = Shelf::on(epub, read);
     if include_cover {
         let cover = epub
             .manifest()
@@ -820,12 +806,12 @@ fn assemble_book(assembly: BookAssembly<'_>) -> Result<Book, OpenError> {
         .any(|chapter| !chapter.scripts.code.is_empty());
     let shows = !refs.targets.is_empty() || scripted;
     let archive = (!complete || plays || shows).then(|| Arc::clone(bytes));
-    let kept = shelf.kept();
-    let book_read = if complete {
-        shows.then(|| Arc::new(kept))
+    let book_read = if !shows {
+        None
+    } else if complete {
+        Some(Arc::new(std::mem::take(read)))
     } else {
-        *read = kept.clone();
-        Some(Arc::new(kept))
+        Some(Arc::new(read.clone()))
     };
     Ok(Book {
         identity: Arc::clone(identity),
@@ -1102,7 +1088,8 @@ impl Book {
         for &chapter in pages.keys() {
             chapters.entry(chapter).or_default();
         }
-        let mut shelf = Shelf::again(&epub, read);
+        let mut scratch = read.as_ref().clone();
+        let mut shelf = Shelf::on(&epub, &mut scratch);
         let mut out = Vec::new();
         for (chapter, overrides) in chapters {
             let Some(laid) = self.refs.chapters.get(chapter) else {
@@ -1130,7 +1117,10 @@ impl Book {
     /// Its files, to read sound from after the book itself is gone.
     pub fn files(&self) -> Option<Files> {
         let archive = Arc::clone(self.archive.as_ref()?);
-        Some(Files { archive })
+        Some(Files {
+            archive,
+            epub: Arc::new(OnceLock::new()),
+        })
     }
 
     pub fn page_count(&self) -> usize {
@@ -1532,7 +1522,14 @@ fn names(epub: &Epub) -> (Option<String>, Option<String>) {
 
 /// A book's title and author without laying it out, for the library.
 pub fn describe(bytes: &Arc<Vec<u8>>) -> Option<(Option<String>, Option<String>)> {
-    let read = || guard::open(bytes).ok().map(|epub| names(&epub));
+    let read = || guard::open(bytes).ok().map(|e| names(&e));
+    catch_unwind(AssertUnwindSafe(read)).ok().flatten()
+}
+
+/// A book's title and author streamed from `path` without loading it whole.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn describe_file(path: &Path) -> Option<(Option<String>, Option<String>)> {
+    let read = || guard::open_file_metadata(path).ok().map(|e| names(&e));
     catch_unwind(AssertUnwindSafe(read)).ok().flatten()
 }
 
@@ -1541,51 +1538,46 @@ const COVER_BLOCKS: usize = 4;
 
 /// The declared cover, else a picture opening the first chapter; sets no type.
 pub fn cover(bytes: &Arc<Vec<u8>>) -> Option<Arc<Picture>> {
-    let find = || {
-        let epub = guard::open(bytes).ok()?;
-        let mut shelf = Shelf {
-            epub: &epub,
-            pictures: HashMap::new(),
-            sheets: HashMap::new(),
-            files: HashMap::new(),
-            budget: MAX_PICTURE_BYTES,
-        };
-        let declared = epub.manifest().cover_image().map(|e| e.href().decode());
-        if let Some(picture) = declared.and_then(|path| shelf.picture(&path)) {
-            return Some(picture);
-        }
-        let (mut blocks, mut refs) = (Vec::new(), Refs::default());
-        for entry in epub
-            .spine()
-            .iter()
-            .filter_map(|s| s.manifest_entry())
-            .map(readable)
-        {
-            let path = entry.href().decode();
-            if is_picture(&entry) {
-                xhtml::read_svg_page(&path, &mut shelf, (&mut blocks, &mut refs), false);
-                if !blocks.is_empty() {
-                    break;
-                }
-                continue;
-            }
-            let Some(content) = chapter_text(&entry).filter(|c| c.len() <= MAX_MARKUP) else {
-                continue;
-            };
-            xhtml::read_chapter(&content, &path, &mut shelf, (&mut blocks, &mut refs));
-            if !blocks.is_empty() {
-                break;
-            }
-        }
-        blocks
-            .iter()
-            .take(COVER_BLOCKS)
-            .find_map(|b| match &b.content {
-                Content::Image { picture, .. } => Some(Arc::clone(picture)),
-                _ => None,
-            })
-    };
+    let find = || cover_from(&guard::open(bytes).ok()?);
     catch_unwind(AssertUnwindSafe(find)).ok().flatten()
+}
+
+/// The cover streamed from `path` without loading the full archive.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn cover_file(path: &Path) -> Option<Arc<Picture>> {
+    let find = || cover_from(&guard::open_file_cover(path).ok()?);
+    catch_unwind(AssertUnwindSafe(find)).ok().flatten()
+}
+
+fn cover_from(epub: &Epub) -> Option<Arc<Picture>> {
+    let mut read = Read {
+        budget: MAX_PICTURE_BYTES,
+        ..Read::default()
+    };
+    let mut shelf = Shelf::on(epub, &mut read);
+    let declared = epub.manifest().cover_image().map(|e| e.href().decode());
+    if let Some(picture) = declared.and_then(|path| shelf.picture(&path)) {
+        return Some(picture);
+    }
+    let (mut blocks, mut refs) = (Vec::new(), Refs::default());
+    let spine = epub.spine().iter().filter_map(|s| s.manifest_entry());
+    for entry in spine.map(readable) {
+        let path = entry.href().decode();
+        if is_picture(&entry) {
+            xhtml::read_svg_page(&path, &mut shelf, (&mut blocks, &mut refs), false);
+        } else if let Some(content) = chapter_text(&entry).filter(|c| c.len() <= MAX_MARKUP) {
+            xhtml::read_chapter(&content, &path, &mut shelf, (&mut blocks, &mut refs));
+        }
+        if !blocks.is_empty() {
+            break;
+        }
+    }
+    for block in blocks.iter().take(COVER_BLOCKS) {
+        if let Content::Image { picture, .. } = &block.content {
+            return Some(Arc::clone(picture));
+        }
+    }
+    None
 }
 
 /// The media type of SVG pages in the spine.

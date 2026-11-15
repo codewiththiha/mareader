@@ -5,6 +5,7 @@ use std::sync::Arc;
 use eframe::egui_wgpu::{self, CallbackResources, ScreenDescriptor, wgpu};
 use egui::{Color32, Rect, pos2};
 
+use super::buffers::DrawBuffers;
 use super::page_pass::{self, PagePass, Quad};
 
 /// Blur sigma in points and saturation; 20 points smeared text to grey.
@@ -98,6 +99,8 @@ struct Slot {
     /// Horizontal blur, vertical blur, composite.
     params: [wgpu::Buffer; 3],
     targets: Option<Targets>,
+    draws: DrawBuffers,
+    offsets: Vec<u32>,
 }
 
 /// The strip ping-pongs between `a` and `b`; the result ends in `a`.
@@ -215,6 +218,8 @@ impl Slot {
             slots.push(Slot {
                 params: [param(), param(), param()],
                 targets: None,
+                draws: DrawBuffers::default(),
+                offsets: Vec::new(),
             });
         }
         slots.get_mut(i)
@@ -283,11 +288,13 @@ struct Shared<'a> {
 /// The shader's `Params`: three vec2s and two floats, padded to 32 bytes.
 const PARAMS: u64 = 32;
 
-fn params(v: [f32; 2], a: f32, b: f32, o: [f32; 2]) -> Vec<u8> {
-    [v[0], v[1], a, b, o[0], o[1], 0.0, 0.0]
-        .iter()
-        .flat_map(|f| f.to_ne_bytes())
-        .collect()
+fn params(v: [f32; 2], a: f32, b: f32, o: [f32; 2]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let vals = [v[0], v[1], a, b, o[0], o[1], 0.0, 0.0];
+    for (dst, f) in out.as_chunks_mut::<4>().0.iter_mut().zip(vals) {
+        *dst = f.to_ne_bytes();
+    }
+    out
 }
 
 /// A colour as the target stores it: sRGB targets want linear.
@@ -364,6 +371,11 @@ impl egui_wgpu::CallbackTrait for GlassCallback {
             return Vec::new();
         };
         slot.targets(device, size, shared);
+        slot.draws.clear();
+        let first = slot
+            .draws
+            .stage(device, &self.quads, self.strip, &mut slot.offsets);
+        slot.draws.upload(device, queue, &self.pass.tone_layout);
         let Some(targets) = &slot.targets else {
             return Vec::new();
         };
@@ -381,17 +393,17 @@ impl egui_wgpu::CallbackTrait for GlassCallback {
         let fade = self.look.opacity;
         queue.write_buffer(pc, 0, &params([1.0, share], SATURATE, fade, [0.0, start]));
 
-        let instances = page_pass::instances(device, &self.quads, self.strip);
-        let tones = page_pass::Tones::new(device, &self.pass, &self.quads);
         {
             let load = wgpu::LoadOp::Clear(clear(self.canvas, format));
             let mut rp = pass(encoder, &targets.a, load);
-            rp.set_pipeline(&self.pass.strip);
-            let strip = self.strip;
-            self.pass
-                .draw(&mut rp, (&instances, &tones), &self.quads, |clip| {
-                    page_pass::scissor(clip, strip, size)
-                });
+            if let Some(gpu) = slot.draws.gpu() {
+                rp.set_pipeline(&self.pass.strip);
+                let strip = self.strip;
+                self.pass
+                    .draw(&mut rp, gpu, (first, &slot.offsets), &self.quads, |clip| {
+                        page_pass::scissor(clip, strip, size)
+                    });
+            }
         }
         let [gh, gv, _] = &targets.groups;
         for (target, group) in [(&targets.b, gh), (&targets.a, gv)] {

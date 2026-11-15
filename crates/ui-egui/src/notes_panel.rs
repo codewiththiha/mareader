@@ -1,9 +1,11 @@
 //! The notes panel: a book's highlights and notes, by chapter, searchable.
 
+mod share;
+
 use crate::documents::Reading;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, color};
-use crate::ui_command::{Commands, Sent, UiCommand};
+use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
@@ -12,12 +14,10 @@ use egui::{
 };
 use mareader_appearance::Rgb;
 use mareader_engine::command::Command;
-use mareader_engine::export::{self, Entry, Format, Sheet};
 use mareader_engine::study::Action;
 use mareader_library::{MarkId, Pen, Spot};
-use mareader_pdf::active_entry;
 use mareader_session::Document;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use mareader_engine::notes_panel::{bookmark_chapter, page_of, query};
 
@@ -78,8 +78,53 @@ impl Find<'_> {
     }
 }
 
+#[derive(Clone)]
+struct CachedPlaces {
+    doc: Weak<Document>,
+    rows: Weak<[Row]>,
+    places: Arc<[(Option<usize>, Option<String>)]>,
+}
+
+fn cached_places(
+    ui: &mut Ui,
+    reading: &Reading,
+    rows: &Arc<[Row]>,
+) -> Arc<[(Option<usize>, Option<String>)]> {
+    let key = Id::new(("notes-places", reading.doc));
+    if let Some(hit) = ui.data(|d| d.get_temp::<CachedPlaces>(key))
+        && hit
+            .doc
+            .upgrade()
+            .is_some_and(|d| Arc::ptr_eq(&d, &reading.document))
+        && hit.rows.upgrade().is_some_and(|r| Arc::ptr_eq(&r, rows))
+    {
+        return hit.places;
+    }
+    let book = reading.document.as_ref();
+    let places: Arc<[(Option<usize>, Option<String>)]> = rows
+        .iter()
+        .map(|r| {
+            let page = page_of(book, r.spot);
+            let chapter = page.and_then(|p| bookmark_chapter(book, p));
+            (page, chapter)
+        })
+        .collect::<Vec<_>>()
+        .into();
+    ui.data_mut(|d| {
+        d.insert_temp(
+            key,
+            CachedPlaces {
+                doc: Arc::downgrade(&reading.document),
+                rows: Arc::downgrade(rows),
+                places: Arc::clone(&places),
+            },
+        );
+    });
+    places
+}
+
 /// Draws the panel for `reading`'s document and its `rows`.
-pub fn show(ui: &mut Ui, reading: &Reading, rows: &[Row], out: &mut Commands) {
+pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     let id = Id::new(("notes-filter", reading.doc));
     let mut filter: Filter = ui.data(|d| d.get_temp(id)).unwrap_or_default();
@@ -97,20 +142,19 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &[Row], out: &mut Commands) {
     let query_id = Id::new(("notes-query", reading.doc));
     let mut typed: String = ui.data(|d| d.get_temp(query_id)).unwrap_or_default();
     let words = query::terms(&typed);
-    let book = reading.document.as_ref();
-    let chapter = |r: &Row| page_of(book, r.spot).and_then(|p| bookmark_chapter(book, p));
-    // Each row with its chapter, which a search reads too.
-    let placed: Vec<(Option<String>, &Row)> = rows
+    let places = cached_places(ui, reading, rows);
+    // Each row with its cached page and chapter, which a search reads too.
+    let placed: Vec<(Option<usize>, Option<&str>, &Row)> = rows
         .iter()
-        .filter(|r| filter.keeps(r))
-        .map(|r| (chapter(r), r))
-        .filter(|(c, r)| {
+        .zip(places.iter())
+        .filter(|(r, _)| filter.keeps(r))
+        .filter(|(r, (_, c))| {
             let note = r.note.as_deref().unwrap_or_default();
             let texts = [r.quote.as_str(), note, c.as_deref().unwrap_or_default()];
             query::keeps(&words, &texts)
         })
+        .map(|(r, (p, c))| (*p, c.as_deref(), r))
         .collect();
-    let shown: Vec<&Row> = placed.iter().map(|(_, r)| *r).collect();
     ui.add_space(8.0);
     // The book and its tools, then the filters on a row of their own.
     ui.horizontal(|ui| {
@@ -118,9 +162,9 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &[Row], out: &mut Commands) {
         ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(PAD_X - 6.0);
             // Exports carry highlights; bookmarks are places, not words.
-            let words: Vec<&Row> = shown.iter().copied().filter(|r| !r.bookmark).collect();
-            ui.add_enabled_ui(!words.is_empty(), |ui| {
-                share(ui, reading, &words, &t, out);
+            let any = placed.iter().any(|(_, _, r)| !r.bookmark);
+            ui.add_enabled_ui(any, |ui| {
+                share::share(ui, reading, &placed, &t, out);
             });
             ui.with_layout(egui::Layout::left_to_right(Align::Center), |ui| {
                 let title = RichText::new(&reading.name).strong();
@@ -150,7 +194,7 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &[Row], out: &mut Commands) {
     search(ui, &mut typed, &t);
     ui.data_mut(|d| d.insert_temp(query_id, typed));
     ui.add_space(4.0);
-    if shown.is_empty() && !words.is_empty() {
+    if placed.is_empty() && !words.is_empty() {
         widgets::panel_empty(
             ui,
             Some(Icon::Note),
@@ -159,7 +203,7 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &[Row], out: &mut Commands) {
         );
         return;
     }
-    if shown.is_empty() {
+    if placed.is_empty() {
         widgets::panel_empty(
             ui,
             Some(Icon::Note),
@@ -178,20 +222,19 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &[Row], out: &mut Commands) {
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             let mut last: Option<&str> = None;
-            for (i, (chapter, row)) in placed.iter().enumerate() {
-                let chapter = chapter.as_deref();
+            for (i, &(page, chapter, row)) in placed.iter().enumerate() {
                 if let Some(c) = chapter
                     && last != Some(c)
                 {
                     let rest = placed.iter().skip(i);
-                    let n = rest.take_while(|(d, _)| d.as_deref() == Some(c)).count();
+                    let n = rest.take_while(|(_, d, _)| *d == Some(c)).count();
                     heading(ui, c, n, find, &t);
                 }
                 last = chapter;
                 if row.bookmark {
-                    bookmark(ui, reading, book, row, find, &t, out);
+                    bookmark(ui, reading, (page, chapter), row, find, &t, out);
                 } else {
-                    entry(ui, reading, row, find, &t, out);
+                    entry(ui, reading, page, row, find, &t, out);
                 }
             }
             ui.add_space(12.0);
@@ -262,89 +305,16 @@ fn heading(ui: &mut Ui, title: &str, n: usize, find: Find<'_>, t: &Tokens) {
     });
 }
 
-/// Export, then Copy all: the list as shown, so a filter narrows both.
-fn share(ui: &mut Ui, reading: &Reading, shown: &[&Row], _t: &Tokens, out: &mut Commands) {
-    let notes = shown.iter().filter(|r| r.note.is_some()).count();
-    let tally = export::tally(shown.len(), notes);
-    // Written only when asked for, not each frame.
-    let render = |format| {
-        let entries = entries(reading, shown);
-        let sheet = Sheet {
-            title: &reading.name,
-            entries: &entries,
-            now_ms: mareader_engine::library::wall_ms(),
-        };
-        export::render(&sheet, format)
-    };
-    let menu = Id::new(("notes-export", reading.doc));
-    let open = egui::Popup::is_id_open(ui.ctx(), menu);
-    let r = widgets::icon_button(ui, Icon::Download, "Export…", open);
-    egui::Popup::from_toggle_button_response(&r)
-        .id(menu)
-        .sense(widgets::POPUP_SENSE)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .align(egui::RectAlign::BOTTOM_END)
-        .width(widgets::MENU_W)
-        .gap(4.0)
-        .show(|ui| {
-            widgets::menu_style(ui, widgets::MENU_W);
-            let what = format!("Export {tally}");
-            widgets::menu_section(ui, None, &what);
-            for format in Format::ALL {
-                let label = format!("{} (.{})", format.label(), format.extension());
-                if widgets::menu_row(ui, Icon::Download, &label, None, false).clicked() {
-                    out.push(Sent::Engine(Command::Export {
-                        name: export::file_name(&reading.name, format),
-                        format,
-                        contents: render(format),
-                    }));
-                    ui.close();
-                }
-            }
-            widgets::close_on_key(ui);
-        });
-    if widgets::icon_button(ui, Icon::Copy, "Copy all as Markdown", false).clicked() {
-        ui.ctx().copy_text(render(Format::Markdown));
-        let copied = format!("Copied {tally}");
-        out.push(Sent::Ui(UiCommand::Notify(
-            mareader_engine::toast::Toast::info(copied),
-        )));
-    }
-}
-
-/// The rows as exported, each with its page and chapter.
-fn entries(reading: &Reading, rows: &[&Row]) -> Vec<Entry> {
-    let outline = reading.document.outline();
-    let chapter = |page| {
-        let i = active_entry(outline, page)?;
-        outline.get(i).map(|e| e.title.clone())
-    };
-    rows.iter()
-        .map(|r| {
-            let page = page_of(&reading.document, r.spot);
-            Entry {
-                quote: r.quote.clone(),
-                note: r.note.clone(),
-                page,
-                chapter: page.and_then(chapter),
-                pen: r.pen,
-                color: r.ink,
-                added: r.added,
-            }
-        })
-        .collect()
-}
-
 /// One highlight: its page, the words, and the note under them.
 fn entry(
     ui: &mut Ui,
     reading: &Reading,
+    page: Option<usize>,
     row: &Row,
     find: Find<'_>,
     t: &Tokens,
     out: &mut Commands,
 ) {
-    let page = page_of(&reading.document, row.spot);
     let full = ui.available_width();
     let text_w = (full - PAD_X * 2.0 - RULE - RULE_GAP).max(40.0);
     let open = is_open(ui, row.id);
@@ -439,20 +409,17 @@ fn entry(
 fn bookmark(
     ui: &mut Ui,
     reading: &Reading,
-    doc: &Document,
+    (page, chapter): (Option<usize>, Option<&str>),
     row: &Row,
     find: Find<'_>,
     t: &Tokens,
     out: &mut Commands,
 ) {
-    let page = page_of(doc, row.spot);
     let full = ui.available_width();
     let text_w = (full - PAD_X * 2.0 - RULE - RULE_GAP).max(40.0);
-    // Its chapter as the book stands now; the page says the rest.
-    let chapter = page.and_then(|p| bookmark_chapter(doc, p));
     let at = page.map(|p| format!("Page {}", p + 1));
     let (name, meta) = match (chapter, at) {
-        (Some(c), Some(at)) => (c, at),
+        (Some(c), Some(at)) => (c.to_owned(), at),
         (None, Some(at)) => (at, "Bookmark".to_owned()),
         (_, None) => (row.quote.clone(), "Bookmark".to_owned()),
     };

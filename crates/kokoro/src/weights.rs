@@ -29,8 +29,7 @@ pub fn read_model(path: &Path) -> Result<HashMap<String, Tensor>, Error> {
         return read_gguf(path);
     }
     if path.extension().is_some_and(|e| e == "onnx") {
-        let bytes = std::fs::read(path).map_err(|e| bad(path, e))?;
-        return crate::onnx::weights(&bytes);
+        return crate::onnx::weights_file(path);
     }
     if path.extension().is_some_and(|e| e == "safetensors") {
         for (name, t) in candle_core::safetensors::load(path, &Device::Cpu)? {

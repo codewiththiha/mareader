@@ -1,56 +1,82 @@
 //! A book's cover art and names for the library, read off the frame.
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use mareader_epub::Format;
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::Read as _;
 
+use mareader_epub::{Format, MAX_PICTURE_FILE};
 use mareader_pdf::Raster;
-
-use crate::document::{read_picture, stand_in};
 
 /// A PDF's first page or a book's picture, at most `side` long.
 pub fn cover(path: &Path, side: u32) -> Option<Raster> {
-    let bytes = std::fs::read(path).ok()?;
     let name = path.file_name()?.to_string_lossy();
-    let bytes = match mareader_epub::Format::of_name(&name) {
-        Some(format) => {
-            let folder = path.parent();
-            let read = |p: &str| folder.and_then(|f| read_picture(f, p));
-            mareader_epub::convert(&bytes, format, Some(&name), &read).ok()?
-        }
-        None => bytes,
-    };
-    let bytes = Arc::new(bytes);
-    if !mareader_epub::sniff(&bytes) {
-        return first_page(bytes, side);
+    if let Some(format) = Format::of_name(&name) {
+        let bytes = std::fs::read(path).ok()?;
+        let folder = path.parent();
+        let read = |p: &str| folder.and_then(|f| read_picture(f, p));
+        let epub = mareader_epub::convert(&bytes, format, Some(&name), &read).ok()?;
+        let (width, height, pixels) = mareader_epub::cover(&Arc::new(epub))?.thumbnail(side)?;
+        return Some(Raster {
+            width,
+            height,
+            pixels,
+        });
     }
-    let (width, height, pixels) = mareader_epub::cover(&bytes)?.thumbnail(side)?;
-    Some(Raster {
-        width,
-        height,
-        pixels,
-    })
+    #[cfg(not(target_arch = "wasm32"))]
+    if is_epub_file(path)? {
+        let (width, height, pixels) = mareader_epub::cover_file(path)?.thumbnail(side)?;
+        return Some(Raster {
+            width,
+            height,
+            pixels,
+        });
+    }
+    let bytes = Arc::new(std::fs::read(path).ok()?);
+    #[cfg(target_arch = "wasm32")]
+    if mareader_epub::sniff(&bytes) {
+        let (width, height, pixels) = mareader_epub::cover(&bytes)?.thumbnail(side)?;
+        return Some(Raster {
+            width,
+            height,
+            pixels,
+        });
+    }
+    mareader_pdf::first_page(bytes, side)
 }
 
 /// A file's own title and author; text converts without its pictures.
 pub fn describe(path: &Path) -> (Option<String>, Option<String>) {
     let read = || {
-        let bytes = std::fs::read(path).ok()?;
         let name = path.file_name()?.to_string_lossy();
-        let bytes = match mareader_epub::Format::of_name(&name) {
-            Some(format) => mareader_epub::convert(&bytes, format, Some(&name), &|_| None).ok()?,
-            None => bytes,
-        };
-        let bytes = Arc::new(bytes);
+        if let Some(format) = Format::of_name(&name) {
+            let bytes = std::fs::read(path).ok()?;
+            let epub = mareader_epub::convert(&bytes, format, Some(&name), &|_| None).ok()?;
+            return mareader_epub::describe(&Arc::new(epub));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if is_epub_file(path)? {
+            return mareader_epub::describe_file(path);
+        }
+        let bytes = Arc::new(std::fs::read(path).ok()?);
+        #[cfg(target_arch = "wasm32")]
         if mareader_epub::sniff(&bytes) {
             return mareader_epub::describe(&bytes);
         }
-        let doc = mareader_pdf::Document::open(bytes).ok()?;
-        let own = |s: Option<&str>| s.map(str::to_owned);
-        Some((own(doc.raw_title()), own(doc.raw_author())))
+        mareader_pdf::describe(bytes)
     };
     read().unwrap_or_default()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_epub_file(path: &Path) -> Option<bool> {
+    let mut file = File::open(path).ok()?;
+    let mut head = [0u8; 4];
+    let n = file.read(&mut head).ok()?;
+    Some(mareader_epub::sniff(head.get(..n)?))
 }
 
 /// A Markdown file's pictures, each with where a copy of it keeps them.
@@ -80,12 +106,33 @@ pub fn pictures(path: &Path) -> Vec<(PathBuf, PathBuf)> {
     seen
 }
 
-fn first_page(bytes: Arc<Vec<u8>>, side: u32) -> Option<Raster> {
-    let doc = mareader_pdf::Document::open(bytes).ok()?;
-    let size = *doc.page_sizes().first()?;
-    // Pages are never zero-sized: `PageSize::sane` sees to it.
-    let long = size.width.max(size.height);
-    doc.render(0, side as f32 / long).ok()
+/// A small enough picture a note names, else a copy's stand-in for it.
+pub(crate) fn read_picture(folder: &Path, path: &str) -> Option<Vec<u8>> {
+    let read = |path: PathBuf| {
+        let len = std::fs::metadata(&path).ok()?.len();
+        let fits = usize::try_from(len).is_ok_and(|len| len <= MAX_PICTURE_FILE);
+        fits.then(|| std::fs::read(&path).ok()).flatten()
+    };
+    read(folder.join(path)).or_else(|| read(folder.join(stand_in(path)?)))
+}
+
+/// Where a copied note keeps `path`: `../a.png` as `^/a.png`.
+fn stand_in(path: &str) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for part in Path::new(path).components() {
+        match part {
+            Component::Normal(n) => out.push(n),
+            Component::CurDir => {}
+            Component::ParentDir => out.push("^"),
+            Component::RootDir => out.push("^root"),
+            Component::Prefix(p) => {
+                let drive = p.as_os_str().to_string_lossy();
+                let safe: String = drive.chars().filter(char::is_ascii_alphanumeric).collect();
+                out.push(format!("^{safe}"));
+            }
+        }
+    }
+    (!out.as_os_str().is_empty()).then_some(out)
 }
 
 #[cfg(test)]

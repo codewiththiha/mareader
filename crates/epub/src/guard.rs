@@ -1,7 +1,14 @@
 //! Caps checked before rbook reads a book, and the trees it would nest.
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Seek};
 use std::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::BufReader;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
 
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
@@ -32,27 +39,99 @@ impl AsRef<[u8]> for Shared {
 
 /// Opens `bytes` with rbook, skipping what it would nest too deep.
 pub(crate) fn open(bytes: &Arc<Vec<u8>>) -> Result<Epub, OpenError> {
-    check(bytes)?;
+    let checked = {
+        let mut zip =
+            ZipArchive::new(Cursor::new(bytes.as_slice())).map_err(|_| OpenError::Invalid)?;
+        check_zip(&mut zip)?;
+        inspect_zip(&mut zip)
+    };
     let read = |toc: bool, metadata: bool| {
         let mut options = Epub::options();
         options.skip_toc(!toc).skip_metadata(!metadata);
         let book = Cursor::new(Shared(Arc::clone(bytes)));
         options.read(book).map_err(|_| OpenError::Invalid)
     };
+    if let Some((toc, metadata)) = checked {
+        // Contents or metadata rbook rejects needn't cost the book.
+        return read(toc, metadata)
+            .or_else(|_| read(false, metadata))
+            .or_else(|_| read(false, false));
+    }
     // rbook frees its contents and resolves refinements recursively.
     let bare = read(false, false)?;
     let package = bare.read_resource_bytes(bare.package().location());
     let package = Package::scan(&package.unwrap_or_default());
     let toc = package.toc_fits(&bare);
     let metadata = package.chains_fit;
-    // Contents or metadata rbook rejects needn't cost the book.
     read(toc, metadata)
         .or_else(|_| read(false, metadata))
         .or(Ok(bare))
 }
 
-fn check(bytes: &[u8]) -> Result<(), OpenError> {
-    let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(|_| OpenError::Invalid)?;
+/// Opens an already-checked archive for manifest resource reads only.
+pub(crate) fn open_manifest(bytes: &Arc<Vec<u8>>) -> Result<Epub, OpenError> {
+    let mut options = Epub::options();
+    options.skip_toc(true).skip_metadata(true).skip_spine(true);
+    let book = Cursor::new(Shared(Arc::clone(bytes)));
+    options.read(book).map_err(|_| OpenError::Invalid)
+}
+
+/// Streams a book's package metadata from `path` without loading it whole.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn open_file_metadata(path: &Path) -> Result<Epub, OpenError> {
+    let chains = check_file_chains(path)?;
+    let read = |metadata: bool, manifest: bool| {
+        let mut options = Epub::options();
+        options
+            .skip_toc(true)
+            .skip_spine(true)
+            .skip_manifest(!manifest)
+            .skip_metadata(!metadata);
+        options.open(path).map_err(|_| OpenError::Invalid)
+    };
+    if let Some(metadata) = chains {
+        return read(metadata, false).or_else(|_| read(false, false));
+    }
+    let bare = read(false, true)?;
+    let package = bare.read_resource_bytes(bare.package().location());
+    let metadata = Package::scan(&package.unwrap_or_default()).chains_fit;
+    if metadata {
+        read(true, false).or(Ok(bare))
+    } else {
+        Ok(bare)
+    }
+}
+
+/// Streams a book from `path` for cover lookup without loading it whole.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn open_file_cover(path: &Path) -> Result<Epub, OpenError> {
+    let chains = check_file_chains(path)?;
+    let read = |metadata: bool| {
+        let mut options = Epub::options();
+        options.skip_toc(true).skip_metadata(!metadata);
+        options.open(path).map_err(|_| OpenError::Invalid)
+    };
+    if let Some(metadata) = chains {
+        return read(metadata).or_else(|_| read(false));
+    }
+    let bare = read(false)?;
+    let package = bare.read_resource_bytes(bare.package().location());
+    if Package::scan(&package.unwrap_or_default()).chains_fit {
+        read(true).or(Ok(bare))
+    } else {
+        Ok(bare)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn check_file_chains(path: &Path) -> Result<Option<bool>, OpenError> {
+    let file = File::open(path).map_err(|_| OpenError::Invalid)?;
+    let mut zip = ZipArchive::new(BufReader::new(file)).map_err(|_| OpenError::Invalid)?;
+    check_zip(&mut zip)?;
+    Ok(scan_zip(&mut zip).map(|(_, pkg)| pkg.chains_fit))
+}
+
+fn check_zip<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Result<(), OpenError> {
     if zip.len() > MAX_ENTRIES {
         return Err(OpenError::TooLarge);
     }
@@ -67,10 +146,47 @@ fn check(bytes: &[u8]) -> Result<(), OpenError> {
     Ok(())
 }
 
+fn read_entry<R: Read + Seek>(zip: &mut ZipArchive<R>, path: &str) -> Option<Vec<u8>> {
+    let entry = zip.by_name(path.trim_start_matches('/')).ok()?;
+    let mut out = Vec::new();
+    entry.take(MAX_ENTRY + 1).read_to_end(&mut out).ok()?;
+    (out.len() as u64 <= MAX_ENTRY).then_some(out)
+}
+
+fn rootfile(xml: &[u8]) -> Option<String> {
+    let mut reader = Reader::from_reader(xml);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.local_name().as_ref() == "rootfile" => {
+                if let Some(path) = value(&e, "full-path") {
+                    return Some(path);
+                }
+            }
+            Ok(Event::Eof) | Err(_) => return None,
+            Ok(_) => {}
+        }
+    }
+}
+
+fn scan_zip<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Option<(String, Package)> {
+    let container = read_entry(zip, "META-INF/container.xml")?;
+    let opf = rootfile(&container)?;
+    let xml = read_entry(zip, &opf)?;
+    Some((opf, Package::scan(&xml)))
+}
+
+fn inspect_zip<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Option<(bool, bool)> {
+    let (opf, pkg) = scan_zip(zip)?;
+    let toc = pkg.toc_fits_zip(zip, &opf)?;
+    Some((toc, pkg.chains_fit))
+}
+
 /// What the package file says, read as rbook reads it.
 struct Package {
     /// The spine's NCX, by manifest id.
     ncx: Option<String>,
+    nav_hrefs: Vec<String>,
+    items: HashMap<String, String>,
     chains_fit: bool,
 }
 
@@ -78,14 +194,30 @@ impl Package {
     fn scan(xml: &[u8]) -> Self {
         let mut reader = Reader::from_reader(xml);
         let mut ncx = None;
+        let mut nav_hrefs = Vec::new();
+        let mut items = HashMap::new();
         // Each refining element's id and the id it refines.
         let mut refines = HashMap::new();
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e) | Event::Empty(e)) => {
                     let (id, target) = (value(&e, "id"), value(&e, "refines"));
-                    if e.local_name().as_ref() == "spine" {
-                        ncx = value(&e, "toc");
+                    match e.local_name().as_ref() {
+                        "spine" => ncx = value(&e, "toc"),
+                        "item" => {
+                            if let Some(href) = value(&e, "href") {
+                                let is_nav = value(&e, "properties").is_some_and(|p| {
+                                    p.split_ascii_whitespace().any(|w| w == "nav")
+                                });
+                                if is_nav {
+                                    nav_hrefs.push(href.clone());
+                                }
+                                if let Some(id) = id.as_ref() {
+                                    items.insert(id.clone(), href);
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                     if let (Some(id), Some(target)) = (id, target) {
                         let target = target.strip_prefix('#').unwrap_or(&target);
@@ -110,8 +242,23 @@ impl Package {
         };
         Self {
             ncx,
+            nav_hrefs,
+            items,
             chains_fit: refines.keys().all(|id| chain(id) <= MAX_REFINES),
         }
+    }
+
+    fn toc_fits_zip<R: Read + Seek>(&self, zip: &mut ZipArchive<R>, opf: &str) -> Option<bool> {
+        let base = format!("/{}", opf.trim_start_matches('/'));
+        let ncx = self.ncx.as_deref().and_then(|id| self.items.get(id));
+        for href in self.nav_hrefs.iter().chain(ncx) {
+            let path = crate::href::resolve(&base, href)?;
+            let xml = read_entry(zip, &path)?;
+            if toc_depth(&xml) > MAX_TOC_DEPTH {
+                return Some(false);
+            }
+        }
+        Some(true)
     }
 
     /// Whether every contents file rbook would read nests shallowly.

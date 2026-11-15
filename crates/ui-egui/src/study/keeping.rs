@@ -10,7 +10,7 @@ use mareader_library::{BookId, Library, MarkId, MarkKind};
 use mareader_settings::HighlightSettings;
 use mareader_workspace::PaneId;
 
-use super::{Bookmarks, Note, StudyUi, ink};
+use super::{Bookmarks, Note, Noted, StudyUi, ink};
 use mareader_engine::study::state::State as StudyState;
 
 impl StudyUi {
@@ -42,8 +42,17 @@ impl StudyUi {
         book: Option<BookId>,
         name: &str,
         look: &HighlightSettings,
-    ) -> Vec<crate::notes_panel::Row> {
+    ) -> Arc<[crate::notes_panel::Row]> {
         let (lib, id) = state.lib_of(main, book, name);
+        let stamp = lib.marks_stamp();
+        let mut noted = self.noted.borrow_mut();
+        if let Some(cached) = noted.as_ref()
+            && cached.stamp == stamp
+            && cached.book == id
+            && cached.look == *look
+        {
+            return Arc::clone(&cached.rows);
+        }
         let mut out: Vec<crate::notes_panel::Row> = lib
             .marks(id)
             .into_iter()
@@ -60,7 +69,14 @@ impl StudyUi {
             })
             .collect();
         out.sort_by_key(|r| crate::notes_panel::order(&r.spot));
-        out
+        let rows: Arc<[crate::notes_panel::Row]> = out.into();
+        *noted = Some(Noted {
+            stamp,
+            book: id,
+            look: look.clone(),
+            rows: Arc::clone(&rows),
+        });
+        rows
     }
 
     /// Opens a draft note on a highlight already created by the session.

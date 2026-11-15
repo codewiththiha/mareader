@@ -1,5 +1,6 @@
 //! Our GPU work in egui's frame (ADR 0003): pages, the glass and grain.
 
+mod buffers;
 mod glass;
 mod grain;
 mod page_pass;

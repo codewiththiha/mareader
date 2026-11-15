@@ -9,10 +9,10 @@ use hayro::hayro_interpret::{
 use hayro::hayro_syntax::Pdf;
 use hayro::kurbo::{Affine, Rect};
 use hayro::vello_cpu::color::palette::css::WHITE;
-use hayro::vello_cpu::peniko::ImageAlphaType;
 use hayro::vello_cpu::{Pixmap, RasterizerSettings, RenderContext, Resources, TargetInit};
 use hayro::{PixmapSettings, RenderCache, RenderSettings};
 
+use crate::cache::finish;
 use crate::check;
 pub use crate::check::OpenError;
 use crate::dest::{self, PageIds, Targets};
@@ -20,7 +20,6 @@ use crate::links;
 use crate::outline::{self, OutlineEntry};
 use crate::strings::decode_text;
 use crate::text::{Bounds, Collector, PageText, TextLayer};
-use crate::tiles::Tiling;
 
 /// More pages than this is treated as a broken file.
 pub const MAX_PAGES: usize = 100_000;
@@ -29,7 +28,7 @@ pub const MAX_RASTER_SIDE: u32 = 4096;
 /// A raster's pixel count, so a long strip can't take 4096².
 pub const MAX_RASTER_PIXELS: u64 = 4096 * 4096;
 /// A region is drawn no larger than this many pixels per point.
-const REGION_SCALE: f32 = 8.0;
+pub(crate) const REGION_SCALE: f32 = 8.0;
 
 /// PDF user space allows at most 14,400 points a side.
 const MAX_PAGE_PT: f32 = 14_400.0;
@@ -60,7 +59,7 @@ impl PageSize {
         fit_scale(self, scale)
     }
 
-    fn sane(width: f32, height: f32) -> Self {
+    pub(crate) fn sane(width: f32, height: f32) -> Self {
         let ok = |v: f32| v.is_finite() && v >= 1.0;
         if ok(width) && ok(height) {
             Self {
@@ -185,15 +184,24 @@ impl Document {
         Some(fit_scale(*size, scale))
     }
 
-    /// Draws page `page` (0-based) at `scale` pixels per point.
-    pub fn render(&self, page: usize, scale: f32) -> Result<Raster, RenderError> {
-        let size = *self.sizes.get(page).ok_or(RenderError::NoPage(page))?;
-        let scale = fit_scale(size, scale);
-        catch_unwind(AssertUnwindSafe(|| self.raster(page, scale)))
-            .unwrap_or(Err(RenderError::Failed))
+    /// Opens a reusable render and text cache bound to this document.
+    pub fn session(&self) -> crate::cache::RenderSession<'_> {
+        crate::cache::RenderSession::new(self)
     }
 
-    /// Tile `col`, `row` of page `page` split at `scale`; see [`Tiling`].
+    pub(crate) fn size_at(&self, page: usize) -> Result<PageSize, RenderError> {
+        self.sizes
+            .get(page)
+            .copied()
+            .ok_or(RenderError::NoPage(page))
+    }
+
+    /// Draws page `page` (0-based) at `scale` pixels per point.
+    pub fn render(&self, page: usize, scale: f32) -> Result<Raster, RenderError> {
+        self.session().render(page, scale)
+    }
+
+    /// Tile `col`, `row` of `page` split at `scale`; see [`crate::Tiling`].
     pub fn render_tile(
         &self,
         page: usize,
@@ -201,38 +209,24 @@ impl Document {
         col: u32,
         row: u32,
     ) -> Result<Raster, RenderError> {
-        let size = *self.sizes.get(page).ok_or(RenderError::NoPage(page))?;
-        let tiling = Tiling::new(size, scale);
-        let rect = tiling.rect(col, row).ok_or(RenderError::Failed)?;
-        catch_unwind(AssertUnwindSafe(|| self.tile(page, tiling.scale, rect)))
-            .unwrap_or(Err(RenderError::Failed))
+        self.session().render_tile(page, scale, col, row)
     }
 
     /// Box `at` of page `page`, `side` pixels on its long edge at most.
     pub fn render_region(&self, page: usize, at: Bounds, side: u32) -> Result<Raster, RenderError> {
-        let size = *self.sizes.get(page).ok_or(RenderError::NoPage(page))?;
-        let x0 = at.x0.clamp(0.0, size.width);
-        let y0 = at.y0.clamp(0.0, size.height);
-        let (w, h) = (at.x1.min(size.width) - x0, at.y1.min(size.height) - y0);
-        if !(w >= 1.0 && h >= 1.0) {
-            return Err(RenderError::Failed);
-        }
-        let scale = (side.min(MAX_RASTER_SIDE) as f32 / w.max(h)).min(REGION_SCALE);
-        let px = |v: f32| (v * scale).round() as u32;
-        let rect = [px(x0), px(y0), px(w).max(1), px(h).max(1)];
-        catch_unwind(AssertUnwindSafe(|| self.tile(page, scale, rect)))
-            .unwrap_or(Err(RenderError::Failed))
+        self.session().render_region(page, at, side)
     }
 
     /// Page `page`'s characters and links; never panics.
     pub fn text_layer(&self, page: usize) -> Result<TextLayer, RenderError> {
-        if page >= self.sizes.len() {
-            return Err(RenderError::NoPage(page));
-        }
-        catch_unwind(AssertUnwindSafe(|| self.read_layer(page))).unwrap_or(Err(RenderError::Failed))
+        self.session().text_layer(page)
     }
 
-    fn read_layer(&self, index: usize) -> Result<TextLayer, RenderError> {
+    pub(crate) fn read_layer_with<'a>(
+        &'a self,
+        index: usize,
+        cache: &InterpreterCache<'a>,
+    ) -> Result<TextLayer, RenderError> {
         let pages = self.pdf.pages();
         let page = pages.get(index).ok_or(RenderError::NoPage(index))?;
         let (w, h) = page.render_dimensions();
@@ -241,10 +235,9 @@ impl Document {
             render_annotations: false,
             ..InterpreterSettings::default()
         };
-        let cache = InterpreterCache::new();
         let start = page.initial_transform(true).to_kurbo();
         let bbox = Rect::new(0.0, 0.0, f64::from(w), f64::from(h));
-        let mut cx = Context::new(start, bbox, &cache, page.xref(), settings);
+        let mut cx = Context::new(start, bbox, cache, page.xref(), settings);
         let mut collector = Collector::default();
         interpret_page(page, &mut cx, &mut collector);
         let links = Targets::new(&self.pdf, &self.page_ids)
@@ -260,10 +253,17 @@ impl Document {
         })
     }
 
-    fn raster(&self, page: usize, scale: f32) -> Result<Raster, RenderError> {
-        let pages = self.pdf.pages();
-        let page = pages.get(page).ok_or(RenderError::NoPage(page))?;
-        let cache = RenderCache::new();
+    pub(crate) fn raster_with<'a>(
+        &'a self,
+        page: usize,
+        scale: f32,
+        cache: &RenderCache<'a>,
+    ) -> Result<Raster, RenderError> {
+        let page = self
+            .pdf
+            .pages()
+            .get(page)
+            .ok_or(RenderError::NoPage(page))?;
         let settings = PixmapSettings {
             x_scale: scale,
             y_scale: scale,
@@ -272,7 +272,7 @@ impl Document {
         let interpreter = InterpreterSettings::default();
         let pixmap = hayro::render(
             page,
-            &cache,
+            cache,
             &interpreter,
             &RenderSettings::default(),
             &settings,
@@ -281,21 +281,28 @@ impl Document {
     }
 
     /// hayro's `render`, shifted so the tile's corner is the origin.
-    fn tile(&self, page: usize, scale: f32, [x, y, w, h]: [u32; 4]) -> Result<Raster, RenderError> {
-        let pages = self.pdf.pages();
-        let page = pages.get(page).ok_or(RenderError::NoPage(page))?;
-        let (w, h) = (u16::try_from(w), u16::try_from(h));
-        let (Ok(w), Ok(h)) = (w, h) else {
+    pub(crate) fn tile_with<'a>(
+        &'a self,
+        page: usize,
+        scale: f32,
+        [x, y, w, h]: [u32; 4],
+        cache: &RenderCache<'a>,
+    ) -> Result<Raster, RenderError> {
+        let page = self
+            .pdf
+            .pages()
+            .get(page)
+            .ok_or(RenderError::NoPage(page))?;
+        let (Ok(w), Ok(h)) = (u16::try_from(w), u16::try_from(h)) else {
             return Err(RenderError::Failed);
         };
         let mut ctx = RenderContext::new(w, h);
         let shift = Affine::translate((-f64::from(x), -f64::from(y)));
         let transform =
             shift * Affine::scale(f64::from(scale)) * page.initial_transform(true).to_kurbo();
-        let cache = RenderCache::new();
         let interpreter = InterpreterSettings::default();
         let settings = RenderSettings::default();
-        hayro::render_into(page, &cache, &interpreter, &settings, &mut ctx, transform);
+        hayro::render_into(page, cache, &interpreter, &settings, &mut ctx, transform);
         ctx.flush();
         let mut pixmap = Pixmap::new(w, h);
         let raster = RasterizerSettings {
@@ -305,20 +312,6 @@ impl Document {
         ctx.render_with(&mut pixmap, &mut Resources::default(), raster);
         finish(pixmap)
     }
-}
-
-fn finish(pixmap: Pixmap) -> Result<Raster, RenderError> {
-    let (width, height) = (u32::from(pixmap.width()), u32::from(pixmap.height()));
-    if width == 0 || height == 0 {
-        return Err(RenderError::Failed);
-    }
-    // Handed over, not copied: no second page-sized buffer.
-    let pixels = pixmap.take_rgba8(ImageAlphaType::AlphaPremultiplied);
-    Ok(Raster {
-        width,
-        height,
-        pixels,
-    })
 }
 
 /// Lowers `scale` until the raster fits the side and pixel caps.
@@ -337,6 +330,7 @@ fn fit_scale(size: PageSize, scale: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::sample;
+    use crate::tiles::Tiling;
 
     type Out = Result<(), Box<dyn std::error::Error>>;
 

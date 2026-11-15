@@ -35,6 +35,10 @@ pub use book::{
     Book, Destination, Files, Link, MAX_BLOCKS, MAX_MARKUP, MAX_PICTURE_BYTES, MAX_TOC, OpenBook,
     OpenStep, OpenTarget, SpinePlace, TocEntry, cover, describe,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use book::{cover_file, describe_file};
+
 pub use convert::{Format, MAX_PICTURE_FILE, MAX_TEXT, Pictures, convert};
 pub use css::MAX_SHEET;
 pub use guard::{MAX_ENTRIES, MAX_ENTRY, MAX_REFINES, MAX_TOC_DEPTH, MAX_TOTAL};

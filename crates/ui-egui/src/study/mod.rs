@@ -97,6 +97,8 @@ pub struct StudyUi {
     note_rect: Option<Rect>,
     /// Books' marks as last listed: every pane asks each frame.
     listed: RefCell<Vec<Listed>>,
+    /// The notes panel's rows as last built, cached by marks stamp.
+    noted: RefCell<Option<Noted>>,
 }
 
 /// Read-only view over engine study state and window study overlays.
@@ -165,6 +167,13 @@ struct Listed {
     look: HighlightSettings,
     shown: Arc<[marks::Shown]>,
     bookmarks: Bookmarks,
+}
+
+struct Noted {
+    stamp: u64,
+    book: BookId,
+    look: HighlightSettings,
+    rows: Arc<[crate::notes_panel::Row]>,
 }
 
 impl StudyUi {

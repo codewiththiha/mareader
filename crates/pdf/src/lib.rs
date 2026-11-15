@@ -9,6 +9,7 @@
     clippy::indexing_slicing
 )]
 
+mod cache;
 mod check;
 mod dest;
 mod document;
@@ -21,6 +22,7 @@ mod text;
 mod tiles;
 mod title;
 
+pub use cache::{RenderSession, describe, first_page};
 pub use document::{
     Document, MAX_PAGES, MAX_RASTER_PIXELS, MAX_RASTER_SIDE, OpenError, PageSize, Raster,
     RenderError,

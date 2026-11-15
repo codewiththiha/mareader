@@ -1,14 +1,15 @@
 //! Either format behind one set of calls, so views never ask which.
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use mareader_epub::{Book, Destination, Format, Inserts, MAX_PICTURE_FILE, OpenTarget, SpinePlace};
+use mareader_epub::{Book, Destination, Format, Inserts, OpenTarget, SpinePlace};
 use mareader_pdf::{Bounds, Link, LinkTarget, MAX_DEPTH, Tiling, web_address};
 use mareader_pdf::{OutlineEntry, PageSize, PageText, Paper, Raster, RenderError};
 use mareader_pdf::{Passage, PassageRun, TextLayer};
 use mareader_reflow::{Anchor, PassageKind, Picture, Typography};
 
 use crate::OpenError;
+use crate::cover::read_picture;
 
 /// A text file converted to an EPUB before it opens.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,15 +85,12 @@ impl Document {
             PageSize { width, height }
         };
         let sizes = (0..book.page_count()).map(size).collect();
-        let outline = book
-            .toc()
-            .iter()
-            .map(|e| OutlineEntry {
-                title: e.title.clone(),
-                page: book.locate(e.at),
-                depth: u8::try_from(e.depth).unwrap_or(u8::MAX).min(MAX_DEPTH),
-            })
-            .collect();
+        let entry = |e: &mareader_epub::TocEntry| OutlineEntry {
+            title: e.title.clone(),
+            page: book.locate(e.at),
+            depth: u8::try_from(e.depth).unwrap_or(u8::MAX).min(MAX_DEPTH),
+        };
+        let outline = book.toc().iter().map(entry).collect();
         Self::Epub {
             book: Box::new(book),
             sizes,
@@ -607,6 +605,13 @@ impl Document {
         }
     }
 
+    pub(crate) fn as_pdf(&self) -> Option<&mareader_pdf::Document> {
+        match self {
+            Self::Pdf(d) => Some(d),
+            Self::Epub { .. } => None,
+        }
+    }
+
     /// Page `page`'s paper colour; a book's is the theme's, so it has none.
     pub fn paper(&self, page: usize) -> Result<Paper, RenderError> {
         if let Self::Pdf(d) = self {
@@ -643,35 +648,6 @@ fn draw(book: &Book, page: usize, scale: f32, region: [u32; 4]) -> Result<Raster
         height: px.height,
         pixels: px.rgba,
     })
-}
-
-/// A small enough picture a note names, else a copy's stand-in for it.
-pub(crate) fn read_picture(folder: &Path, path: &str) -> Option<Vec<u8>> {
-    let read = |path: PathBuf| {
-        let len = std::fs::metadata(&path).ok()?.len();
-        let fits = usize::try_from(len).is_ok_and(|len| len <= MAX_PICTURE_FILE);
-        fits.then(|| std::fs::read(&path).ok()).flatten()
-    };
-    read(folder.join(path)).or_else(|| read(folder.join(stand_in(path)?)))
-}
-
-/// Where a copied note keeps `path`: `../a.png` as `^/a.png`.
-pub(crate) fn stand_in(path: &str) -> Option<PathBuf> {
-    let mut out = PathBuf::new();
-    for part in Path::new(path).components() {
-        match part {
-            Component::Normal(n) => out.push(n),
-            Component::CurDir => {}
-            Component::ParentDir => out.push("^"),
-            Component::RootDir => out.push("^root"),
-            Component::Prefix(p) => {
-                let drive = p.as_os_str().to_string_lossy();
-                let safe: String = drive.chars().filter(char::is_ascii_alphanumeric).collect();
-                out.push(format!("^{safe}"));
-            }
-        }
-    }
-    (!out.as_os_str().is_empty()).then_some(out)
 }
 
 /// The runs of `lines` in lists, figures and asides, alike ones joined.

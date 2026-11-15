@@ -36,10 +36,8 @@ pub(crate) enum Hidden {
 
 /// The font in `bytes` as OpenType, if it is one in any packing.
 pub(crate) fn sfnt(bytes: Vec<u8>) -> Option<Vec<u8>> {
-    let magic = bytes.get(..4)?;
-    let plain = [&[0, 1, 0, 0][..], b"OTTO", b"true", b"ttcf"].contains(&magic);
-    let out = match magic {
-        _ if plain => bytes,
+    let out = match bytes.get(..4)? {
+        [0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf" => bytes,
         b"wOFF" => woff(&bytes)?,
         b"wOF2" => woff2(&bytes)?,
         _ => return None,
@@ -135,10 +133,17 @@ fn uuid(id: &str) -> Option<[u8; 16]> {
 
 /// A hidden font revealed by the first key that yields a real font.
 pub(crate) fn reveal(bytes: &[u8], how: Hidden, keys: &Keys) -> Option<Vec<u8>> {
+    let head = <[u8; 4]>::try_from(bytes.get(..4)?).ok()?;
     let unmask = |key: &[u8], span: usize| {
-        let mut out = bytes.to_vec();
-        let cycle = key.iter().cycle();
-        for (b, k) in out.iter_mut().take(span).zip(cycle) {
+        let mut probe = head;
+        for (b, k) in probe.iter_mut().zip(key.iter().cycle()) {
+            *b ^= k;
+        }
+        let mut out = match &probe {
+            [0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf" | b"wOFF" | b"wOF2" => bytes.to_vec(),
+            _ => return None,
+        };
+        for (b, k) in out.iter_mut().take(span).zip(key.iter().cycle()) {
             *b ^= k;
         }
         sfnt(out)
@@ -740,8 +745,7 @@ mod tests {
     /// Each glyph's outline, advance and side bearing, as skrifa reads them.
     fn glyphs(font: &[u8]) -> Vec<(String, Option<f32>, Option<f32>)> {
         use skrifa::instance::{LocationRef, Size};
-        use skrifa::outline::DrawSettings;
-        use skrifa::outline::pen::SvgPen;
+        use skrifa::outline::{DrawSettings, pen::SvgPen};
         use skrifa::raw::TableProvider;
         use skrifa::{FontRef, GlyphId, MetadataProvider};
         let Ok(font) = FontRef::new(font) else {
@@ -752,16 +756,11 @@ mod tests {
         let metrics = font.glyph_metrics(Size::unscaled(), LocationRef::default());
         (0..count)
             .map(|g| {
-                let id = GlyphId::new(u32::from(g));
-                let mut pen = SvgPen::new();
+                let (id, mut pen) = (GlyphId::new(u32::from(g)), SvgPen::new());
                 let settings = DrawSettings::unhinted(Size::unscaled(), LocationRef::default());
                 let drawn = outlines.get(id).map(|o| o.draw(settings, &mut pen).is_ok());
-                let path = format!("{drawn:?} {pen}");
-                (
-                    path,
-                    metrics.advance_width(id),
-                    metrics.left_side_bearing(id),
-                )
+                let (adv, lsb) = (metrics.advance_width(id), metrics.left_side_bearing(id));
+                (format!("{drawn:?} {pen}"), adv, lsb)
             })
             .collect()
     }

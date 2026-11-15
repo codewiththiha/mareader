@@ -156,19 +156,14 @@ impl Kokoro {
 
     /// An ONNX export of the network, as Kitten's builds are.
     pub fn from_onnx(path: &Path) -> Result<Self> {
-        let bytes =
-            std::fs::read(path).map_err(|e| Error::Load(format!("{}: {e}", path.display())))?;
-        let (config, tensors) = onnx::read(&bytes)?;
-        drop(bytes);
+        let (config, tensors) = onnx::read_file(path)?;
         Self::from_tensors(config, tensors)
     }
 
     /// Every weight name an ONNX file yields, sorted, for checks.
     #[doc(hidden)]
     pub fn onnx_names(path: &Path) -> Result<Vec<String>> {
-        let bytes =
-            std::fs::read(path).map_err(|e| Error::Load(format!("{}: {e}", path.display())))?;
-        let mut names: Vec<String> = onnx::read(&bytes)?.1.into_keys().collect();
+        let mut names: Vec<String> = onnx::read_file(path)?.1.into_keys().collect();
         names.sort();
         Ok(names)
     }

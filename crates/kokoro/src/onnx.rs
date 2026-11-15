@@ -1,12 +1,20 @@
 //! An ONNX export of the network, read as Kokoro's named `f32` weights.
 
+mod stream;
+
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{BufReader, Read, Seek};
+use std::path::Path;
 
 use candle_core::{Device, Tensor};
 
-use mareader_nn_core::wire::{self, Value, take, text, varint};
+use mareader_nn_core::wire::{Value, take, text, varint};
 
+#[cfg(test)]
+use self::stream::half;
+use self::stream::{Stream, TensorIndex, decode_values, dequantise_in_place, scan_graph};
 use crate::config::{Activation, Config, Istft, Plbert};
 use crate::{Error, Result};
 
@@ -93,139 +101,6 @@ impl<'a> Iterator for Fields<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         (self.pos < self.buf.len()).then(|| self.field())
     }
-}
-
-/// A repeated integer, written packed or one field at a time.
-fn push_ints(value: &Value<'_>, out: &mut Vec<u64>) -> Result<()> {
-    wire::push_ints(value, out).map_err(bad)
-}
-
-/// One stored tensor, before it is named or widened.
-#[derive(Default)]
-struct Stored<'a> {
-    dims: Vec<usize>,
-    dtype: u64,
-    raw: &'a [u8],
-    /// Packed `float_data`, little-endian like `raw`.
-    floats: Vec<u8>,
-    /// `int32_data`, where small types go when not kept raw.
-    ints: Vec<u64>,
-    external: bool,
-}
-
-fn stored(buf: &[u8]) -> Result<(String, Stored<'_>)> {
-    let mut name = String::new();
-    let mut dims = Vec::new();
-    let mut s = Stored::default();
-    for field in fields(buf) {
-        match field? {
-            (1, v) => push_ints(&v, &mut dims)?,
-            (2, Value::Int(t)) => s.dtype = t,
-            (4, Value::Bytes(b)) => s.floats.extend_from_slice(b),
-            (4, Value::Fixed32(v)) => s.floats.extend_from_slice(&v.to_le_bytes()),
-            (5, v) => push_ints(&v, &mut s.ints)?,
-            (8, v) => name = text(&v).map_err(bad)?,
-            (9, Value::Bytes(b)) => s.raw = b,
-            (14, Value::Int(loc)) => s.external = loc == EXTERNAL,
-            _ => {}
-        }
-    }
-    s.dims = dims
-        .into_iter()
-        .map(|d| usize::try_from(d).map_err(|_| bad("a dimension")))
-        .collect::<Result<_>>()?;
-    Ok((name, s))
-}
-
-/// A half-precision number, widened.
-fn half(bits: u16) -> f32 {
-    let sign = u32::from(bits >> 15) << 31;
-    let exp = u32::from((bits >> 10) & 0x1f);
-    let frac = u32::from(bits & 0x3ff);
-    match (exp, frac) {
-        (0, 0) => f32::from_bits(sign),
-        (0, f) => {
-            let mag = f as f32 * (-24f32).exp2();
-            if sign == 0 { mag } else { -mag }
-        }
-        (0x1f, 0) => f32::from_bits(sign | 0x7f80_0000),
-        (0x1f, f) => f32::from_bits(sign | 0x7fc0_0000 | (f << 13)),
-        (e, f) => f32::from_bits(sign | ((e + 112) << 23) | (f << 13)),
-    }
-}
-
-/// Every value of `s` as `f32`, or none if it isn't numbers we read.
-fn values(name: &str, s: &Stored<'_>) -> Result<Option<Vec<f32>>> {
-    if !matches!(s.dtype, FLOAT | FLOAT16 | UINT8 | INT8) {
-        return Ok(None);
-    }
-    if s.external {
-        return Err(Error::Load(format!(
-            "{name} is stored outside the model file"
-        )));
-    }
-    let count = s
-        .dims
-        .iter()
-        .try_fold(1usize, |n, &d| n.checked_mul(d))
-        .ok_or_else(|| bad("a tensor size"))?;
-    let raw = !s.raw.is_empty();
-    // Small types sit in `int32_data` when not raw, one per entry.
-    let low = |v: &u64| *v as u32;
-    let out: Vec<f32> = match s.dtype {
-        FLOAT => {
-            let bytes = if raw { s.raw } else { &s.floats };
-            let (words, _) = bytes.as_chunks::<4>();
-            words.iter().map(|&w| f32::from_le_bytes(w)).collect()
-        }
-        FLOAT16 if raw => {
-            let (pairs, _) = s.raw.as_chunks::<2>();
-            pairs.iter().map(|&p| half(u16::from_le_bytes(p))).collect()
-        }
-        FLOAT16 => s.ints.iter().map(|v| half(low(v) as u16)).collect(),
-        UINT8 if raw => s.raw.iter().map(|&b| f32::from(b)).collect(),
-        UINT8 => s.ints.iter().map(|v| f32::from(low(v) as u8)).collect(),
-        _ if raw => s.raw.iter().map(|&b| f32::from(b as i8)).collect(),
-        _ => s.ints.iter().map(|v| f32::from(low(v) as i8)).collect(),
-    };
-    if out.len() != count {
-        return Err(bad(&format!("{name} holds the wrong amount of data")));
-    }
-    Ok(Some(out))
-}
-
-/// `(q − zero) × scale`: whole, per first-axis slice, or per column.
-fn dequantise(
-    name: &str,
-    q: &[f32],
-    scale: &[f32],
-    zero: &[f32],
-    columns: bool,
-) -> Result<Vec<f32>> {
-    let groups = scale.len();
-    let zeros = zero.len();
-    if groups == 0 || (zeros != groups && zeros != 1) || !q.len().is_multiple_of(groups) {
-        return Err(bad(&format!("{name} has a scale that doesn't fit")));
-    }
-    let per = if columns {
-        1
-    } else {
-        (q.len() / groups).max(1)
-    };
-    let at = |i: usize| -> (f32, f32) {
-        let g = (i / per) % groups;
-        let s = scale.get(g).copied().unwrap_or_default();
-        let z = zero
-            .get(if zeros == 1 { 0 } else { g })
-            .copied()
-            .unwrap_or_default();
-        (s, z)
-    };
-    let wide = q.iter().enumerate().map(|(i, &v)| {
-        let (s, z) = at(i);
-        (v - z) * s
-    });
-    Ok(wide.collect())
 }
 
 /// What a quantised weight's readers say about it.
@@ -393,58 +268,134 @@ fn lstm(
     Ok(())
 }
 
-/// Every weight by Kokoro's name, and the sizes they imply.
-pub(crate) fn read(bytes: &[u8]) -> Result<(Config, HashMap<String, Tensor>)> {
-    let (named, layers) = names(bytes)?;
+/// Every weight by Kokoro's name, and the sizes they imply, streamed from disk.
+pub(crate) fn read_file(path: &Path) -> Result<(Config, HashMap<String, Tensor>)> {
+    let file = File::open(path).map_err(|e| Error::Load(format!("{}: {e}", path.display())))?;
+    let (named, layers) = names_stream(BufReader::with_capacity(64 << 10, file))?;
     Ok((sizes(&named, layers)?, named))
 }
 
+/// Every weight by Kokoro's name, streamed from disk.
+pub(crate) fn weights_file(path: &Path) -> Result<HashMap<String, Tensor>> {
+    let file = File::open(path).map_err(|e| Error::Load(format!("{}: {e}", path.display())))?;
+    Ok(names_stream(BufReader::with_capacity(64 << 10, file))?.0)
+}
+
 /// Every weight by Kokoro's name, sized by a config of its own.
+#[cfg(test)]
 pub(crate) fn weights(bytes: &[u8]) -> Result<HashMap<String, Tensor>> {
     Ok(names(bytes)?.0)
 }
 
-/// Every weight by Kokoro's name, and how many times ALBERT runs.
+#[cfg(test)]
 fn names(bytes: &[u8]) -> Result<(HashMap<String, Tensor>, usize)> {
-    let mut graph = None;
-    for field in fields(bytes) {
-        if let (7, Value::Bytes(b)) = field? {
-            graph = Some(b);
+    names_stream(std::io::Cursor::new(bytes))
+}
+
+enum WeightSource {
+    Plain(String),
+    Quantised(String),
+}
+
+enum Action {
+    OwnTranspose(String),
+    Lstm {
+        module: String,
+        slot: usize,
+        transposed: bool,
+    },
+    Named {
+        name: String,
+        transpose: bool,
+    },
+    OwnPlain(String),
+}
+
+struct Plan {
+    actions: Vec<(String, Action)>,
+    shared: Vec<(String, String)>,
+    leftover: Vec<String>,
+    layers: usize,
+}
+
+/// Collects every float or quantised weight key before reading bulk data.
+fn weight_sources(stores: &HashMap<String, TensorIndex>) -> HashMap<String, WeightSource> {
+    let mut sources = HashMap::new();
+    for (name, idx) in stores {
+        if let Some(base) = name.strip_suffix(QUANTISED) {
+            sources.insert(base.to_owned(), WeightSource::Quantised(name.clone()));
+            continue;
+        }
+        let of = name
+            .strip_suffix("_scale")
+            .or(name.strip_suffix("_zero_point"));
+        if of.is_some_and(|b| stores.contains_key(&format!("{b}{QUANTISED}"))) {
+            continue;
+        }
+        if matches!(idx.dtype, FLOAT | FLOAT16) {
+            sources
+                .entry(name.clone())
+                .or_insert_with(|| WeightSource::Plain(name.clone()));
         }
     }
-    let graph = graph.ok_or_else(|| Error::Load("no model graph in the file".into()))?;
-    let mut stores = HashMap::new();
-    let mut nodes = Vec::new();
-    for field in fields(graph) {
-        match field? {
-            (1, Value::Bytes(b)) => nodes.push(node(b)?),
-            (5, Value::Bytes(b)) => {
-                let (name, s) = stored(b)?;
-                stores.insert(name, s);
+    sources
+}
+
+fn op_action(op: &str, module: &str, slot: usize, matmul: bool) -> Option<Action> {
+    Some(match (op, slot) {
+        ("LSTM" | "DynamicQuantizeLSTM", 1..=3) => Action::Lstm {
+            module: module.to_owned(),
+            slot,
+            transposed: op != "LSTM",
+        },
+        _ if matmul => Action::Named {
+            name: format!("{module}.weight"),
+            transpose: true,
+        },
+        ("Conv" | "ConvTranspose" | "ConvInteger" | "Gemm", 1) => Action::Named {
+            name: format!("{module}.weight"),
+            transpose: false,
+        },
+        ("Conv" | "ConvTranspose" | "Gemm", 2) => Action::Named {
+            name: format!("{module}.bias"),
+            transpose: false,
+        },
+        ("LayerNormalization", 1 | 2) => {
+            let names = if module.ends_with("LayerNorm") {
+                ["weight", "bias"]
+            } else {
+                ["gamma", "beta"]
+            };
+            let part = names.get(slot - 1).copied().unwrap_or_default();
+            Action::Named {
+                name: format!("{module}.{part}"),
+                transpose: false,
             }
-            _ => {}
         }
-    }
-    let mut weights = widen(&stores, &readers(&nodes))?;
-    drop(stores);
+        _ => return None,
+    })
+}
+
+/// Maps every weight key to its target Kokoro name before streaming bytes.
+fn plan_names(nodes: &[Node], sources: &HashMap<String, WeightSource>) -> Plan {
+    let mut pending: HashSet<String> = sources.keys().cloned().collect();
     // A cast or quantised copy stands for the weight it came from.
     let mut alias: HashMap<String, String> = HashMap::new();
-    for name in weights.keys() {
+    for name in &pending {
         alias.insert(format!("{name}{QUANTISED}"), name.clone());
     }
     for n in nodes.iter().filter(|n| n.op == "Cast") {
         if let (Some(i), Some(o)) = (n.inputs.first(), n.outputs.first())
-            && weights.contains_key(i)
+            && pending.contains(i)
         {
             alias.insert(o.clone(), i.clone());
         }
     }
-    let mut named = HashMap::new();
+    let mut actions = Vec::new();
     // Norms a file stores once for several modules: (module's name, stored).
-    let mut shared: Vec<(String, String)> = Vec::new();
+    let mut shared = Vec::new();
     let mut layers = 0;
-    for node in &nodes {
-        // A cast only renames a weight; its readers name it.
+    for node in nodes {
         if node.op == "Cast" {
             continue;
         }
@@ -468,110 +419,134 @@ fn names(bytes: &[u8]) -> Result<(HashMap<String, Tensor>, usize)> {
                 let part = if slot == 1 { "weight" } else { "bias" };
                 shared.push((format!("{module}.{part}"), own.to_owned()));
             }
-            // Named weights wait for the end unless stored `[in, out]`.
-            if !weights.contains_key(from) || (own.is_some() && !matmul) {
+            if !pending.contains(from) || (own.is_some() && !matmul) {
                 continue;
             }
-            if let Some(own) = own
-                && let Some(w) = weights.remove(from)
+            if let Some(own) = own {
+                pending.remove(from);
+                actions.push((from.to_owned(), Action::OwnTranspose(own)));
+                continue;
+            }
+            let Some(action) = module
+                .as_deref()
+                .and_then(|m| op_action(op, m, slot, matmul))
+            else {
+                continue;
+            };
+            pending.remove(from);
+            actions.push((from.to_owned(), action));
+        }
+    }
+    let mut leftover = Vec::new();
+    for name in pending {
+        if let Some(own) = own(&name) {
+            actions.push((name, Action::OwnPlain(own)));
+        } else {
+            leftover.push(name);
+        }
+    }
+    Plan {
+        actions,
+        shared,
+        leftover,
+        layers,
+    }
+}
+
+fn load_weight<R: Read + Seek>(
+    stream: &mut Stream<R>,
+    stores: &HashMap<String, TensorIndex>,
+    by: &Readers,
+    source: &WeightSource,
+    base: &str,
+    scratch: &mut Vec<u8>,
+) -> Result<Weight> {
+    match source {
+        WeightSource::Plain(name) => {
+            let idx = stores.get(name).ok_or_else(|| bad(&format!("no {name}")))?;
+            let values = decode_values(stream, name, idx, scratch)?
+                .ok_or_else(|| bad(&format!("{name} isn't numbers")))?;
+            Ok(Weight {
+                dims: idx.dims.clone(),
+                values,
+            })
+        }
+        WeightSource::Quantised(name) => {
+            let idx = stores.get(name).ok_or_else(|| bad(&format!("no {name}")))?;
+            let mut part = |stream: &mut Stream<R>, key: &str| -> Result<Vec<f32>> {
+                let s = stores.get(key).ok_or_else(|| bad(&format!("no {key}")))?;
+                decode_values(stream, key, s, scratch)?
+                    .ok_or_else(|| bad(&format!("{key} isn't numbers")))
+            };
+            let mut zero_key = format!("{base}_zero_point");
+            if !stores.contains_key(&zero_key)
+                && let Some(theirs) = by.zero.get(name)
             {
+                zero_key.clone_from(theirs);
+            }
+            let scale = part(stream, &format!("{base}_scale"))?;
+            let zero = part(stream, &zero_key)?;
+            let mut values = decode_values(stream, name, idx, scratch)?
+                .ok_or_else(|| bad(&format!("{name} isn't numbers")))?;
+            dequantise_in_place(name, &mut values, &scale, &zero, by.columns.contains(name))?;
+            Ok(Weight {
+                dims: idx.dims.clone(),
+                values,
+            })
+        }
+    }
+}
+
+/// Every weight by Kokoro's name, streamed one tensor at a time.
+fn names_stream<R: Read + Seek>(reader: R) -> Result<(HashMap<String, Tensor>, usize)> {
+    let mut stream = Stream::new(reader)?;
+    let (nodes, stores) = scan_graph(&mut stream)?;
+    let by = readers(&nodes);
+    let sources = weight_sources(&stores);
+    let plan = plan_names(&nodes, &sources);
+    drop(nodes);
+    let mut named = HashMap::with_capacity(plan.actions.len());
+    let mut scratch = Vec::new();
+    for (base, action) in plan.actions {
+        let Some(source) = sources.get(&base) else {
+            continue;
+        };
+        let w = load_weight(&mut stream, &stores, &by, source, &base, &mut scratch)?;
+        match action {
+            Action::OwnTranspose(own) => {
                 named.insert(own, tensor(w)?.t()?.contiguous()?);
-                continue;
             }
-            let Some(module) = module.as_deref() else {
-                continue;
-            };
-            let name = match (op, slot) {
-                ("LSTM" | "DynamicQuantizeLSTM", 1..=3) => {
-                    if let Some(w) = weights.remove(from) {
-                        lstm(module, slot, w, op != "LSTM", &mut named)?;
-                    }
-                    continue;
+            Action::Lstm {
+                module,
+                slot,
+                transposed,
+            } => lstm(&module, slot, w, transposed, &mut named)?,
+            Action::Named { name, transpose } => {
+                if let Entry::Vacant(e) = named.entry(name) {
+                    let t = tensor(w)?;
+                    e.insert(if transpose { t.t()?.contiguous()? } else { t });
                 }
-                _ if matmul => format!("{module}.weight"),
-                ("Conv" | "ConvTranspose" | "ConvInteger" | "Gemm", 1) => {
-                    format!("{module}.weight")
+            }
+            Action::OwnPlain(own) => {
+                if let Entry::Vacant(e) = named.entry(own) {
+                    e.insert(tensor(w)?);
                 }
-                ("Conv" | "ConvTranspose" | "Gemm", 2) => format!("{module}.bias"),
-                ("LayerNormalization", 1 | 2) => {
-                    let own = module.ends_with("LayerNorm");
-                    let names = if own {
-                        ["weight", "bias"]
-                    } else {
-                        ["gamma", "beta"]
-                    };
-                    let part = names.get(slot - 1).copied().unwrap_or_default();
-                    format!("{module}.{part}")
-                }
-                _ => continue,
-            };
-            // Taken only once named, so a reader that can't name it leaves it.
-            let Some(w) = weights.remove(from) else {
-                continue;
-            };
-            if let Entry::Vacant(e) = named.entry(name) {
-                let t = tensor(w)?;
-                e.insert(if matmul { t.t()?.contiguous()? } else { t });
             }
         }
     }
-    // The rest of the named weights, as stored.
-    for (name, w) in weights {
-        if let Some(own) = own(&name)
-            && !named.contains_key(&own)
-        {
-            named.insert(own, tensor(w)?);
+    for base in plan.leftover {
+        if let Some(source) = sources.get(&base) {
+            let _ = load_weight(&mut stream, &stores, &by, source, &base, &mut scratch)?;
         }
     }
-    for (name, own) in shared {
+    for (name, own) in plan.shared {
         if !named.contains_key(&name)
             && let Some(t) = named.get(&own).cloned()
         {
             named.insert(name, t);
         }
     }
-    Ok((named, layers))
-}
-
-/// Every float or quantised weight, widened to `f32` by its stored name.
-fn widen(stores: &HashMap<String, Stored<'_>>, by: &Readers) -> Result<HashMap<String, Weight>> {
-    let mut out = HashMap::new();
-    for (name, s) in stores {
-        let Some(base) = name.strip_suffix(QUANTISED) else {
-            // A quantised weight's scale and zero point are read with it.
-            let of = name
-                .strip_suffix("_scale")
-                .or(name.strip_suffix("_zero_point"));
-            if of.is_some_and(|b| stores.contains_key(&format!("{b}{QUANTISED}"))) {
-                continue;
-            }
-            if matches!(s.dtype, FLOAT | FLOAT16)
-                && let Some(values) = values(name, s)?
-            {
-                let dims = s.dims.clone();
-                out.insert(name.clone(), Weight { dims, values });
-            }
-            continue;
-        };
-        let part = |key: String| -> Result<Vec<f32>> {
-            let s = stores.get(&key).ok_or_else(|| bad(&format!("no {key}")))?;
-            values(&key, s)?.ok_or_else(|| bad(&format!("{key} isn't numbers")))
-        };
-        // Zero points alike may be stored once, named by the readers.
-        let mut zero = format!("{base}_zero_point");
-        if !stores.contains_key(&zero)
-            && let Some(theirs) = by.zero.get(name)
-        {
-            zero.clone_from(theirs);
-        }
-        let q = values(name, s)?.ok_or_else(|| bad(&format!("{name} isn't numbers")))?;
-        let scale = part(format!("{base}_scale"))?;
-        let columns = by.columns.contains(name);
-        let values = dequantise(name, &q, &scale, &part(zero)?, columns)?;
-        let dims = s.dims.clone();
-        out.insert(base.to_owned(), Weight { dims, values });
-    }
-    Ok(out)
+    Ok((named, plan.layers))
 }
 
 /// The model's sizes, read off the shapes of its weights.
@@ -642,6 +617,18 @@ fn sizes(t: &HashMap<String, Tensor>, layers: usize) -> Result<Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dequantise(
+        name: &str,
+        q: &[f32],
+        scale: &[f32],
+        zero: &[f32],
+        columns: bool,
+    ) -> Result<Vec<f32>> {
+        let mut out = q.to_vec();
+        dequantise_in_place(name, &mut out, scale, zero, columns)?;
+        Ok(out)
+    }
 
     #[test]
     fn halves_widen_exactly() {
@@ -900,6 +887,14 @@ mod tests {
         assert_eq!((fc.dims(), values(fc)), (&[2, 1][..], vec![2.0, 6.0]));
         assert_eq!(values(&named["bert_encoder.bias"]), [7.0]);
         assert_eq!(named.len(), 3, "{:?}", named.keys().collect::<Vec<_>>());
+        let path = std::env::temp_dir().join(format!("mareader-onnx-{}.onnx", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let streamed = weights_file(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(streamed.len(), named.len());
+        for (k, v) in &named {
+            assert_eq!(values(&streamed[k]), values(v), "{k}");
+        }
     }
 
     #[test]

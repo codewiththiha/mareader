@@ -28,8 +28,8 @@ pub struct Page {
     folded: String,
     /// Each char's layer character, or `GAP`.
     layer: Layer,
-    /// Hyphens that split a word across lines; a match may skip them.
-    soft: Vec<u32>,
+    /// Hyphens splitting a word across lines `(char, byte)`; matches skip them.
+    soft: Vec<(u32, u32)>,
 }
 
 impl Page {
@@ -48,8 +48,9 @@ impl Page {
                 continue;
             }
             if broke && !gap && g.ch.is_lowercase() && page.ends_in_a_split_word() {
-                let hyphen = page.len().saturating_sub(1);
-                page.soft.push(u32::try_from(hyphen).unwrap_or(GAP));
+                let hyphen = u32::try_from(page.len().saturating_sub(1)).unwrap_or(GAP);
+                let byte = u32::try_from(page.folded.len().saturating_sub(1)).unwrap_or(GAP);
+                page.soft.push((hyphen, byte));
             } else if (gap || broke || g.space_before) && !page.is_empty() {
                 page.push(' ', GAP);
             }
@@ -98,8 +99,8 @@ impl Page {
             .map(|c| c..c + n)
             .collect();
         if !self.soft.is_empty() {
-            hits.extend(self.across_lines(needle));
-            hits.sort_unstable_by_key(|h| h.start);
+            self.across_lines(needle, &mut hits);
+            hits.sort_unstable_by_key(|h| (h.start, h.end));
             let mut end = 0;
             hits.retain(|h| {
                 let keep = h.start >= end;
@@ -111,26 +112,69 @@ impl Page {
     }
 
     /// Matches that run through a split word's hyphen as if it weren't there.
-    fn across_lines(&self, needle: &Needle) -> Vec<Range<usize>> {
-        let soft = |i: usize| self.soft.binary_search(&(i as u32)).is_ok();
-        // Each joined char's place in `folded`.
-        let (mut joined, mut from) = (String::new(), Vec::new());
-        for (i, c) in self.folded.chars().enumerate() {
-            if !soft(i) {
-                joined.push(c);
-                from.push(i);
+    fn across_lines(&self, needle: &Needle, out: &mut Vec<Range<usize>>) {
+        let n = needle.chars;
+        if n < 2 {
+            return;
+        }
+        for (k, &(h_char, h_byte)) in self.soft.iter().enumerate() {
+            let (h_char, h_byte) = (h_char as usize, h_byte as usize);
+            let floor = k
+                .checked_sub(1)
+                .and_then(|p| self.soft.get(p))
+                .map_or(0, |&(_, b)| (b as usize).saturating_add(1));
+            let Some(prefix) = self.folded.get(floor..h_byte) else {
+                continue;
+            };
+            // Each match starts 1..n non-soft chars before its first hyphen.
+            for (back, (rel, _)) in prefix.char_indices().rev().take(n - 1).enumerate() {
+                let start_byte = floor + rel;
+                let start_char = h_char.saturating_sub(back + 1);
+                if let Some(last) = self.match_skipping_soft(start_byte, start_char, k, needle)
+                    && last - start_char >= n
+                {
+                    out.push(start_char..last + 1);
+                }
             }
         }
-        let chars = Chars::new(&joined);
-        let n = needle.chars;
-        (joined.match_indices(&needle.folded))
-            .filter_map(|(b, _)| {
-                let start = chars.at(b);
-                let (first, last) = (*from.get(start)?, *from.get(start + n - 1)?);
-                // Only hyphen-split matches; the plain pass found the rest.
-                (last - first >= n).then_some(first..last + 1)
-            })
-            .collect()
+    }
+
+    fn match_skipping_soft(
+        &self,
+        start_byte: usize,
+        start_char: usize,
+        mut soft_idx: usize,
+        needle: &Needle,
+    ) -> Option<usize> {
+        let rest = self.folded.get(start_byte..)?;
+        let mut want = needle.folded.chars();
+        let mut expected = want.next()?;
+        for (offset, (rel, ch)) in rest.char_indices().enumerate() {
+            let byte = start_byte + rel;
+            while self
+                .soft
+                .get(soft_idx)
+                .is_some_and(|&(_, sb)| (sb as usize) < byte)
+            {
+                soft_idx += 1;
+            }
+            if self
+                .soft
+                .get(soft_idx)
+                .is_some_and(|&(_, sb)| sb as usize == byte)
+            {
+                soft_idx += 1;
+                continue;
+            }
+            if ch != expected {
+                return None;
+            }
+            match want.next() {
+                Some(next) => expected = next,
+                None => return Some(start_char + offset),
+            }
+        }
+        None
     }
 
     /// The layer characters behind `chars`, gaps at either end dropped.
@@ -365,5 +409,13 @@ mod tests {
     fn soft_hyphens_and_zero_widths_vanish() {
         let p = page(&["hy\u{00ad}phen\u{200b}ated"]);
         assert_eq!(found(&p, "hyphenated").len(), 1);
+    }
+
+    #[test]
+    fn multi_hyphen_and_unicode_line_splits_match() {
+        let p = page(&["αβ su-", "per-", "natural", "aa-", "aa-", "aa"]);
+        assert_eq!(found(&p, "supernatural"), vec!["su-per-natural"]);
+        assert_eq!(found(&p, "αβ super"), vec!["αβ su-per"]);
+        assert_eq!(found(&p, "aaa"), vec!["aa-a", "a-aa"]);
     }
 }

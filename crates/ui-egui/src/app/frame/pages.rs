@@ -27,11 +27,17 @@ impl MareaderApp {
             platform: self.ui.platform,
             bar_bottom: self.ui.titlebar.band_bottom(ctx),
         };
-        let tabs = self.tabs();
+        let sidebar_drawn =
+            route.has_rail() && (self.ui.sidebar.is_open() || self.ui.sidebar.offset().is_some());
+        let tabs = if sidebar_drawn && self.ui.sidebar.panel() == Panel::Library {
+            self.tabs()
+        } else {
+            Vec::new()
+        };
         if let Some(made) = self.session.library_take_made() {
             self.ui.shelf_tree.made(self.session.library_model(), made);
         }
-        let notes = self.rail_notes();
+        let notes = self.rail_notes(sidebar_drawn);
         self.ui
             .thumbs
             .set_offer(crate::thumbnails::Offer::of(self.settings()));
@@ -86,9 +92,9 @@ impl MareaderApp {
         (inset, overlay)
     }
 
-    fn rail_notes(&self) -> Vec<crate::notes_panel::Row> {
-        if !(self.ui.sidebar.is_open() && self.ui.sidebar.panel() == Panel::Notes) {
-            return Vec::new();
+    fn rail_notes(&self, sidebar_drawn: bool) -> Arc<[crate::notes_panel::Row]> {
+        if !(sidebar_drawn && self.ui.sidebar.panel() == Panel::Notes) {
+            return Arc::from([]);
         }
         let book = self.book_in(self.active());
         let name = self
@@ -122,13 +128,23 @@ impl MareaderApp {
 
     fn page_context(&mut self, ctx: &Context, drop_target: Option<PaneId>) -> PageContext {
         let tokens = theme::Tokens::get(ctx);
+        let has_empty = self
+            .tree()
+            .panes()
+            .iter()
+            .any(|&p| self.documents().reading(p).is_none());
+        let recent = if has_empty {
+            self.recent_books()
+        } else {
+            Vec::new()
+        };
         let view = PaneView {
             active: self.active(),
             look: self.settings().workspace.look,
             chrome_bottom: self.ui.titlebar.band_bottom(ctx),
             drop_target,
             styles: self.pane_styles(&tokens),
-            recent: self.recent_books(),
+            recent,
         };
         // Each pane reads its own paper while it has a colour of its own.
         let every = self.routing().colour();

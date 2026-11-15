@@ -11,6 +11,8 @@ const MAX_POSITIONS: usize = 64;
 const POSITION_OFFSET: usize = 2;
 const LN_EPS: f32 = 1e-5;
 
+type VecD = [f32; D];
+
 const PAD: usize = 0;
 const BOS: usize = 1;
 const EOS: usize = 2;
@@ -40,11 +42,16 @@ struct Linear {
 }
 
 impl Linear {
-    fn forward(&self, x: &[f32]) -> Vec<f32> {
-        let mut out = self.bias.clone();
-        for (o, row) in out.iter_mut().zip(self.weight.chunks_exact(self.in_dim)) {
-            *o += dot(row, x);
+    fn forward_into(&self, x: &[f32], out: &mut [f32]) {
+        let rows = self.weight.chunks_exact(self.in_dim);
+        for ((o, &b), row) in out.iter_mut().zip(&self.bias).zip(rows) {
+            *o = b + dot(row, x);
         }
+    }
+
+    fn forward_d(&self, x: &[f32]) -> VecD {
+        let mut out = [0.0; D];
+        self.forward_into(x, &mut out);
         out
     }
 }
@@ -74,24 +81,39 @@ struct Attention {
 }
 
 impl Attention {
-    fn forward(&self, queries: &[Vec<f32>], keys_values: &[Vec<f32>]) -> Vec<Vec<f32>> {
+    fn project_kv(&self, xs: &[VecD]) -> (Vec<VecD>, Vec<VecD>) {
+        let keys = xs.iter().map(|x| self.k.forward_d(x)).collect();
+        let values = xs.iter().map(|x| self.v.forward_d(x)).collect();
+        (keys, values)
+    }
+
+    fn attend_one(&self, query: &VecD, keys: &[VecD], values: &[VecD]) -> VecD {
         let scale = (D as f32).powf(-0.5);
-        let keys: Vec<Vec<f32>> = keys_values.iter().map(|x| self.k.forward(x)).collect();
-        let values: Vec<Vec<f32>> = keys_values.iter().map(|x| self.v.forward(x)).collect();
+        let mut q = self.q.forward_d(query);
+        for v in &mut q {
+            *v *= scale;
+        }
+        let mut scores = [0.0f32; MAX_POSITIONS];
+        let count = keys.len().min(MAX_POSITIONS);
+        let active = scores.get_mut(..count).unwrap_or_default();
+        for (slot, k) in active.iter_mut().zip(keys) {
+            *slot = dot(&q, k);
+        }
+        softmax_in_place(active);
+        let mut mixed = [0.0f32; D];
+        for (&w, v) in active.iter().zip(values) {
+            for (m, &x) in mixed.iter_mut().zip(v) {
+                *m += w * x;
+            }
+        }
+        self.out.forward_d(&mixed)
+    }
+
+    fn forward(&self, queries: &[VecD], keys_values: &[VecD]) -> Vec<VecD> {
+        let (keys, values) = self.project_kv(keys_values);
         queries
             .iter()
-            .map(|x| {
-                let q: Vec<f32> = self.q.forward(x).iter().map(|v| v * scale).collect();
-                let scores: Vec<f32> = keys.iter().map(|k| dot(&q, k)).collect();
-                let weights = softmax(&scores);
-                let mut mixed = vec![0.0; D];
-                for (w, v) in weights.iter().zip(&values) {
-                    for (m, x) in mixed.iter_mut().zip(v) {
-                        *m += w * x;
-                    }
-                }
-                self.out.forward(&mixed)
-            })
+            .map(|x| self.attend_one(x, &keys, &values))
             .collect()
     }
 }
@@ -102,9 +124,13 @@ struct FeedForward {
 }
 
 impl FeedForward {
-    fn forward(&self, x: &[f32]) -> Vec<f32> {
-        let hidden: Vec<f32> = self.fc1.forward(x).into_iter().map(gelu).collect();
-        self.fc2.forward(&hidden)
+    fn forward(&self, x: &VecD) -> VecD {
+        let mut hidden = [0.0f32; FFN];
+        self.fc1.forward_into(x, &mut hidden);
+        for v in &mut hidden {
+            *v = gelu(*v);
+        }
+        self.fc2.forward_d(&hidden)
     }
 }
 
@@ -114,16 +140,21 @@ struct Embeddings {
 }
 
 impl Embeddings {
-    fn embed(&self, tokens: &[f32], ids: &[usize]) -> Vec<Vec<f32>> {
+    fn embed_one(&self, tokens: &[f32], id: usize, pos: usize) -> VecD {
+        let token = row(tokens, id);
+        let position = row(&self.positions, pos + POSITION_OFFSET);
+        let mut h = [0.0f32; D];
+        for ((slot, &t), &p) in h.iter_mut().zip(token).zip(position) {
+            *slot = t + p;
+        }
+        self.norm.forward_in_place(&mut h);
+        h
+    }
+
+    fn embed(&self, tokens: &[f32], ids: &[usize]) -> Vec<VecD> {
         ids.iter()
             .enumerate()
-            .map(|(pos, &id)| {
-                let token = row(tokens, id);
-                let position = row(&self.positions, pos + POSITION_OFFSET);
-                let mut h: Vec<f32> = token.iter().zip(position).map(|(t, p)| t + p).collect();
-                self.norm.forward_in_place(&mut h);
-                h
-            })
+            .map(|(pos, &id)| self.embed_one(tokens, id, pos))
             .collect()
     }
 }
@@ -254,67 +285,76 @@ impl NeuralG2p {
         (!out.is_empty()).then_some(out)
     }
 
-    fn encode(&self, ids: &[usize]) -> Vec<Vec<f32>> {
+    fn encode(&self, ids: &[usize]) -> Vec<VecD> {
         let mut h = self.encoder_embeddings.embed(&self.shared, ids);
         let attended = self.encoder_attn.forward(&h, &h);
-        residual_norm(&mut h, &attended, &self.encoder_attn_norm);
-        let fed: Vec<Vec<f32>> = h.iter().map(|x| self.encoder_ffn.forward(x)).collect();
-        residual_norm(&mut h, &fed, &self.encoder_ffn_norm);
+        for (row, d) in h.iter_mut().zip(&attended) {
+            add_norm(row, d, &self.encoder_attn_norm);
+        }
+        for row in &mut h {
+            let fed = self.encoder_ffn.forward(row);
+            add_norm(row, &fed, &self.encoder_ffn_norm);
+        }
         h
     }
 
-    fn decode_greedy(&self, memory: &[Vec<f32>]) -> Vec<usize> {
-        let mut ids = vec![BOS];
-        while ids.len() < MAX_POSITIONS {
-            let prefix = self.decoder_embeddings.embed(&self.shared, &ids);
-            let Some(last) = prefix.last() else {
-                break;
-            };
-            let mut h = vec![last.clone()];
-            let attended = self.decoder_self_attn.forward(&h, &prefix);
-            residual_norm(&mut h, &attended, &self.decoder_self_attn_norm);
-            let crossed = self.decoder_cross_attn.forward(&h, memory);
-            residual_norm(&mut h, &crossed, &self.decoder_cross_attn_norm);
-            let fed: Vec<Vec<f32>> = h.iter().map(|x| self.decoder_ffn.forward(x)).collect();
-            residual_norm(&mut h, &fed, &self.decoder_ffn_norm);
+    fn decode_greedy(&self, memory: &[VecD]) -> Vec<usize> {
+        let (cross_k, cross_v) = self.decoder_cross_attn.project_kv(memory);
+        let mut self_k = Vec::with_capacity(MAX_POSITIONS);
+        let mut self_v = Vec::with_capacity(MAX_POSITIONS);
+        let mut out = Vec::new();
+        let mut current = BOS;
+        for pos in 0..MAX_POSITIONS.saturating_sub(1) {
+            let mut h = self
+                .decoder_embeddings
+                .embed_one(&self.shared, current, pos);
+            self_k.push(self.decoder_self_attn.k.forward_d(&h));
+            self_v.push(self.decoder_self_attn.v.forward_d(&h));
+            let attended = self.decoder_self_attn.attend_one(&h, &self_k, &self_v);
+            add_norm(&mut h, &attended, &self.decoder_self_attn_norm);
+            let crossed = self.decoder_cross_attn.attend_one(&h, &cross_k, &cross_v);
+            add_norm(&mut h, &crossed, &self.decoder_cross_attn_norm);
+            let fed = self.decoder_ffn.forward(&h);
+            add_norm(&mut h, &fed, &self.decoder_ffn_norm);
 
-            let Some(state) = h.first() else {
-                break;
-            };
             let next = self
                 .final_logits_bias
                 .iter()
                 .enumerate()
-                .map(|(id, bias)| (id, dot(row(&self.shared, id), state) + bias))
+                .map(|(id, bias)| (id, dot(row(&self.shared, id), &h) + bias))
                 .max_by(|a, b| a.1.total_cmp(&b.1))
                 .map_or(EOS, |(id, _)| id);
             if next == EOS || next == PAD {
                 break;
             }
-            ids.push(next);
+            out.push(next);
+            current = next;
         }
-        ids.into_iter().skip(1).collect()
+        out
     }
 }
 
-fn residual_norm(h: &mut [Vec<f32>], delta: &[Vec<f32>], norm: &LayerNorm) {
-    for (row, d) in h.iter_mut().zip(delta) {
-        for (v, x) in row.iter_mut().zip(d) {
-            *v += x;
-        }
-        norm.forward_in_place(row);
+fn add_norm(row: &mut VecD, delta: &VecD, norm: &LayerNorm) {
+    for (v, &x) in row.iter_mut().zip(delta) {
+        *v += x;
     }
+    norm.forward_in_place(row);
 }
 
 fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
-fn softmax(scores: &[f32]) -> Vec<f32> {
+fn softmax_in_place(scores: &mut [f32]) {
     let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let exps: Vec<f32> = scores.iter().map(|s| (s - max).exp()).collect();
-    let sum: f32 = exps.iter().sum();
-    exps.into_iter().map(|e| e / sum).collect()
+    let mut sum = 0.0f32;
+    for s in scores.iter_mut() {
+        *s = (*s - max).exp();
+        sum += *s;
+    }
+    for s in scores.iter_mut() {
+        *s /= sum;
+    }
 }
 
 /// The exact GELU BART uses, not the tanh approximation.
