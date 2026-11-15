@@ -1,6 +1,6 @@
-# Library: design
+# Library
 
-> **Status:** design for M5 · **Last updated:** 2026-10-15
+> **Status:** implemented · **Last updated:** 2026-11-15
 
 mareader's library is ~32k lines (`library-core` 10k, `library-runtime` 22k,
 plus `src-tauri/src/commands/library.rs`), and its design notes
@@ -195,13 +195,13 @@ keyed by content:
 
 ## Ready for sync (2026-10-15)
 
-Sync comes after 1.0 (`docs/sync.md`), but its ground is laid in M5 so no
-library needs migrating later: ids nobody else mints, a hybrid-clock stamp
-on each synced field, tombstones instead of deletion, sort keys for
-manual order, and synced facts kept apart from a machine's own
-(`docs/sync.md` § What M5 must lay down).
+Sync is optional future work (`docs/sync.md`), with its groundwork already
+built into the library schema so no library needs migrating later: ids nobody
+else mints, a hybrid-clock stamp on each synced field, tombstones instead of
+deletion, sort keys for manual order, and synced facts kept apart from a
+machine's own (`docs/sync.md` § Library groundwork).
 
-## Slice 1: records and resume (2026-10-15)
+## Records and resume (2026-10-15)
 
 What the first slice built, and where it stops short of the model above.
 
@@ -245,7 +245,7 @@ What the first slice built, and where it stops short of the model above.
   the character offset for converted books, and following a file that
   moved while the app was closed all wait for later slices.
 
-## Slice 2: grid, list, sort and covers (2026-10-15)
+## Grid, list, sort and covers (2026-10-15)
 
 - **View.** `mareader_library::View` keeps the layout, the pinned columns
   (none is Auto), the cover fit and the sort, inside the settings as
@@ -285,7 +285,7 @@ What the first slice built, and where it stops short of the model above.
 - **Not yet.** Manual order arrives with shelves. A cover that failed is
   retried only after a relaunch.
 
-## Slice 3: folders read in place (2026-10-15)
+## Folders read in place (2026-10-15)
 
 - **Adding.** Folders (beside Open…, and on the empty page) adds a folder
   through the system dialog. Its books are read where they are: nothing is
@@ -336,7 +336,7 @@ What the first slice built, and where it stops short of the model above.
   with slices 4, 5 and 7. There is no file watcher: rescans are cheap and
   run when the window comes back, as mareader does.
 
-## Slice 4: shelves and the breadcrumb (2026-10-15)
+## Shelves and breadcrumbs (2026-10-15)
 
 - **Shelves.** New shelf (in the page header and the View menu) makes
   one where the reader is, opens it and selects its name in the
@@ -388,7 +388,7 @@ What the first slice built, and where it stops short of the model above.
 - **Not yet.** Several books at once (selection) and shelf menus for
   books come with slice 5; dragging onto panes with slice 7.
 
-## Slice 5: selection, menus, removal and imports (2026-10-15)
+## Selection, menus, removal and imports (2026-10-15)
 
 - **Picking.** Ctrl-click (⌘ on macOS) picks a book or shelf card;
   Shift-click picks the run from the last pick, in the order shown;
@@ -447,7 +447,7 @@ What the first slice built, and where it stops short of the model above.
 - **Not yet.** Search with slice 6; dragging onto panes and import
   progress with slice 7.
 
-## Slice 6: search (2026-10-15)
+## Search (2026-10-15)
 
 - **One rule.** `mareader_library::Query` decides both what the page
   keeps and what the bar suggests. A query is split into words, and every
@@ -502,7 +502,7 @@ What the first slice built, and where it stops short of the model above.
 - **Shots.** `search=<text>` types into the field and `open=search`
   focuses it: `books=10 library=show search=essays open=search`.
 
-## Slice 7: the Library panel, drops on panes, progress (2026-10-15)
+## Library panel, drops on panes and progress (2026-10-15)
 
 - **The panel.** The reading sidebar's Library panel lists shelves, then
   books, by name (natural order, case folded). The top level shows what
@@ -558,9 +558,9 @@ cards behave like apps on a phone's home screen. The owner's answers:
   filing by drag happen in the grid.
 - **Old code goes** when the new design replaces it; no parallel paths.
 
-Slices, each checkable on its own (`ROADMAP.md`):
+Key parts of the home-screen redesign:
 
-1. **Adding (slice 8).** The header keeps the title and count. A book-sized
+1. **Adding.** The header keeps the title and count. A book-sized
    card with a plus ends the grid (an Add row ends the list) and opens one
    menu: import copies, add a folder, a new shelf, and Restore for books
    removed from the folder shown. Files picked are always copied in, even
@@ -571,27 +571,27 @@ Slices, each checkable on its own (`ROADMAP.md`):
    in, read in place, or read in place and watched) and folder structure
    (a shelf per folder, one shelf, or none). Watched folders file books
    found later on the same shelves; a folder shelf removed stays removed.
-2. **Storage (slice 9).** Synced records are rows whose fields carry their
+2. **Storage.** Synced records are rows whose fields carry their
    own stamps; a removal is a tombstone that field writes never revive.
    Local facts (locations, folders) sit in their own table and never sync.
    Only records an edit touched are written, in one transaction off the UI
    thread. A change cursor lets a later sync ask what changed since.
-3. **Arranged order (slice 10).** Every item at a level, book or shelf, has
+3. **Arranged order.** Every item at a level, book or shelf, has
    a sort key between its neighbours', so two machines' moves merge.
-4. **A living grid (slice 11).** Cards ease to their slots on springs while
+4. **Living grid.** Cards ease to their slots on springs while
    a drag moves the hole; only cards on screen animate, and the page asks
    for frames only while something moves.
-5. **Stacking (slice 12).** Resting a carried book on another for a moment
+5. **Stacking.** Resting a carried book on another for a moment
    makes a shelf of both, named and ready to rename; a shelf takes drops,
    and opens when rested on; crumbs take drops.
-6. **Many at once (slice 13).** A long press selects; carrying a selected
+6. **Multi-selection carries.** A long press selects; carrying a selected
    card carries all of them as a fanned stack with a count.
 
 **Cheap on weak machines.** The grid lays out only rows in view, keeps
 animation state only for cards drawn, allocates nothing per card per
 frame, and stops repainting when nothing moves.
 
-## Slice 9: storage on SQLite (2026-10-15)
+## Storage on SQLite (2026-10-15)
 
 - **One file.** `library.sqlite`, bundled SQLite in WAL mode, opened by the
   library's disk thread and kept open; the UI never touches it. Tables:
@@ -619,7 +619,7 @@ frame, and stops repainting when nothing moves.
   once and left as it was, since saves only write rows they changed.
 - **The browser preview** has no store; its library lives in memory.
 
-## Slice 10: the arranged order (2026-10-15)
+## Arranged order (2026-10-15)
 
 - **One order per level.** The top level holds shelves and every book; a
   shelf holds its shelves and its books. `Library::arranged` lists either
@@ -653,7 +653,7 @@ frame, and stops repainting when nothing moves.
 - **Shots.** `books=6 shelves=demo library=show` shows the mixed grid;
   `carry=x1,y1,x2,y2` holds a drag over a card's side to show the bar.
 
-## Slice 11: a living grid (2026-10-15)
+## Living grid and drag physics (2026-10-15)
 
 - **A hole, not a bar.** Carrying a card from the level shown lifts it
   (or the whole selection) out of the grid. A hole as wide as what's
@@ -685,7 +685,7 @@ frame, and stops repainting when nothing moves.
 - **Code.** `library/living.rs` holds the hole, springs and lift, and
   `library/view/grid.rs` draws the grid.
 
-## Slice 12: stacking and resting (2026-10-15)
+## Stacking and resting (2026-10-15)
 
 Each rest is one `Aim` on the lift, timed from when the pointer settled
 on it; moving to another place restarts the clock.
@@ -717,7 +717,7 @@ on it; moving to another place restarts the clock.
 - **Code.** `Lift::aim` in `library/living.rs`; the crumb's rest is in
   `library/crumbs.rs`, kept in egui's memory with the frame it was seen.
 
-## Slice 13: many at once (2026-10-15)
+## Multi-selection carries (2026-10-15)
 
 - **Long press picks.** A press held still for 0.45 s on a card or row
   picks it, as on a phone, and starts picking: plain clicks then toggle.
@@ -775,7 +775,7 @@ View menu command (`open=menu` in shots) opens the library's own menu.
 Escape and the Library button go back only while a pane has a document.
 Entering the library closes the find bar and the settings window.
 
-## UI (`crates/ui-egui`, M5)
+## UI (`crates/ui-egui`)
 
 - **Sections:** All books, Shelves (a tree), Sources (each folder's own tree,
   read-only), Missing, Recent.

@@ -1,4 +1,4 @@
-# Search and keyboard (M7)
+# Search and keyboard
 
 Finding text in the open document, then running the reader from the
 keyboard alone. The parity entries are `search.document`,
@@ -126,8 +126,10 @@ in modals. egui moves focus and fakes clicks but draws no ring, so
   view, or when another pane takes focus. Its speed may become a setting.
 
 
-| # | Slice | Check |
+## Verification
+
+| Area | Scope | Check |
 |---|---|---|
-| 1 | Document search: the `search` crate, threaded lazy index, bar with count, steps and results, hit painting, reveal | `crates/search` unit tests; `crates/ui-egui/tests/find.rs` |
-| 2 | Keyboard-only operation and focus rings | `crates/ui-egui/tests/focus.rs`; `reach.rs` unit test |
-| 3 | Auto-scroll: Shift+A, the View menu row, Escape, stops at the end | `crates/ui-egui/tests/auto_scroll.rs` |
+| Document search | `search` crate, threaded lazy index, bar with count, steps and results, hit painting, reveal | `crates/search` unit tests; `crates/ui-egui/tests/find.rs` |
+| Keyboard navigation | Keyboard-only operation and focus rings | `crates/ui-egui/tests/focus.rs`; `reach.rs` unit test |
+| Auto-scroll | Shift+A, View menu row, Escape, stops at the end | `crates/ui-egui/tests/auto_scroll.rs` |

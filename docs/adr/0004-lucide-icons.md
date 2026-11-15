@@ -8,8 +8,8 @@
   generated geometry for every stock glyph the UI uses, so retaining a second
   copy of those outlines is unnecessary.
 - **Decision:**
-  - Code names icons by meaning (`ui::icons::Icon`). Only
-    `ui::icons::pack` names a generated glyph.
+  - Code names icons by meaning (`ui_egui::icons::Icon`). Only
+    `ui_egui::icons::pack` names a generated glyph.
   - `mareader-animated-icons` remains the toolkit-free owner of build-normalised
     Lucide geometry. Declarative SVG is build and parity-test input only.
   - A stock icon at rest calls `raster_resting`, which evaluates only the

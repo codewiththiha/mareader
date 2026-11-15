@@ -1,6 +1,6 @@
-# EPUB: the plan
+# EPUB pipeline
 
-> **Status:** built (M4) · **Last updated:** 2026-10-31
+> **Status:** implemented · **Last updated:** 2026-10-31
 
 EPUB replaces mareader's `.txt`/`.md` pipeline. Everything mareader's text
 formats can do, an EPUB page must do too. The choice of stack is in
@@ -79,7 +79,7 @@ the user set always wins over it.
   reported as the whole book. Hits are cluster rectangles in page space, with
   the current hit in amber `#f59e0b`.
 - **Selection and gloss:** hit-test pointer → cluster → word. The word and its
-  sentence go to the study tools (M6).
+  sentence go to the study tools (`docs/study.md`).
 - **Links:** internal hrefs map to spine item + anchor → page. External links
   open in the browser after the same scheme checks as mareader (`javascript:`
   and `file:` refused).
@@ -87,7 +87,7 @@ the user set always wins over it.
   reading position, and the deeper entry wins on shared pages.
 - **Covers:** the OPF cover image, for the library.
 
-## The XHTML subset (M4 slice 2)
+## XHTML subset
 
 What the epub crate reads, and what each element becomes:
 
@@ -117,7 +117,7 @@ What the epub crate reads, and what each element becomes:
 - **Faces:** the mono face is JetBrains Mono (OFL). Every face falls back to
   Inter for symbols it lacks.
 
-## Typography as built (M4 slice 3)
+## Typography implementation
 
 - **Settings to type.** `session::typography` turns `TextSettings` into
   `reflow::Typography`. The body takes the serif slot until the Font slot
@@ -152,7 +152,7 @@ What the epub crate reads, and what each element becomes:
   re-set forks a new document in a per-pane slot, leaving the old one to
   any pane still on it.
 
-## View modes as built (M4 slice 4)
+## View modes implementation
 
 - **One raster per page in every mode.** Single, spread, the horizontal
   strip and the stream all draw the same page textures, so switching modes
@@ -177,7 +177,7 @@ What the epub crate reads, and what each element becomes:
   stream as on the paged modes' pages.
 - **Settings.** Book layout and column alignment sit in Settings › Fonts.
 
-## Navigation as built (M4 slice 5)
+## Navigation
 
 - **Places.** A live anchor is a block and byte offset, never a page, so
   it outlives re-pagination. Every element `id` (and old `<a name>`) marks
@@ -202,7 +202,7 @@ What the epub crate reads, and what each element becomes:
   and page count; the next launch opens at that place, even in another type.
   Older saves with only a global block anchor remain supported.
 
-## Selection and ink as built (M4 slice 6)
+## Selection and ink
 
 - **Characters.** Each page's text comes from parley's clusters, line by
   line: one box per character, as wide as its share of the cluster and as
@@ -230,9 +230,9 @@ What the epub crate reads, and what each element becomes:
   second time over its own box in the pane's plain tone. Thumbnails keep
   full ink. Without a GPU, pages aren't themed and the dial does nothing.
   *Since the follow-ups, pictures keep their own colours unless Theme
-  pictures is on (§ Follow-ups as built).*
+  pictures is on (§ Layout and per-pane text follow-ups).*
 
-## Hostile books as built (M4 slice 7)
+## Hostile books
 
 A book is untrusted input. Whatever its bytes, opening it ends in a book or
 in one of three refusals (`OpenError`): `Invalid` (not a zip or no
@@ -278,7 +278,7 @@ parley layout, about 3,000 bytes plus 48 a byte of text (measured; see
 layout. *War and Peace* comes to about 190 MB, the complete Shakespeare to
 about 560 MB. Laying out on demand would lift the limit; it is a follow-up.
 *Superseded: layouts are now laid on demand and blocks are capped instead
-(§ Follow-ups as built).*
+(§ Layout and per-pane text follow-ups).*
 
 **EPUB 2.** Books with only an NCX, an OPF 2 cover (`<meta name="cover">`)
 and HTML entities open as EPUB 3 books do. A real one is a test fixture:
@@ -288,9 +288,9 @@ NCX, a page list and a cover wrapper page.
 **Fuzzing, cheaply.** One test flips bytes in copies of the sample book 48
 times, seeded, and opens each; every copy opens or is refused.
 
-## Follow-ups as built (before M5)
+## Layout and per-pane text follow-ups
 
-Owner decisions after M4, and what they changed.
+Post-implementation refinements to EPUB layout, pictures and per-pane typography.
 
 - **Layout on demand.** Opening a book still lays every block out once, to
   measure its lines and cut exact pages, but keeps only the line boxes.
@@ -335,8 +335,8 @@ Owner decisions after M4, and what they changed.
   value over. The text column scales, never below 160
   units, and the page grows or shrinks with it, keeping its margins. Each
   step re-sets the book off the UI thread and keeps the reading place.
-- **Kept as built:** one binding-side rule for every view (§ View modes as
-  built), and the line-end hyphen hanging just past the column's edge.
+- **Kept as built:** one binding-side rule for every view (§ View modes
+  implementation), and the line-end hyphen hanging just past the column's edge.
 
 ## Text files as EPUBs (owner request, 2026-10-14)
 
@@ -483,17 +483,17 @@ behind, at its own pixels rather than the page's size for it.
 
 | Date | Summary |
 |---|---|
-| 2026-10-13 | Created with the M0 foundation |
-| 2026-10-14 | Added the XHTML subset as built in M4 slice 2 |
-| 2026-10-14 | Added typography as built in M4 slice 3 |
-| 2026-10-14 | Added view modes as built in M4 slice 4 |
-| 2026-10-14 | Added navigation as built in M4 slice 5 |
-| 2026-10-14 | Added selection and ink as built in M4 slice 6 |
-| 2026-10-14 | Added hostile books as built in M4 slice 7 |
-| 2026-10-14 | Added the follow-ups as built: layout on demand, pictures, Column Width |
-| 2026-10-14 | Added text files as EPUBs: Markdown and plain text converted on open |
-| 2026-10-15 | Added text for each pane; Column Width moved to the Fonts tab |
-| 2026-10-15 | Added text file edge cases: names, labelled heads, Chinese headings, repeatable bytes |
-| 2026-10-18 | Added footnotes shown in place |
-| 2026-10-18 | Added pictures opened large, and PDF figures |
-| 2026-10-20 | Added layout tables read as blocks, spacer columns dropped, image widths |
+| 2026-10-13 | Initial EPUB pipeline plan |
+| 2026-10-14 | XHTML subset implemented |
+| 2026-10-14 | Typography knobs, hyphenation and Fonts tab implemented |
+| 2026-10-14 | Reflow view modes (stream, single, spread, horizontal strip) implemented |
+| 2026-10-14 | Navigation (ToC, internal/external links, position anchors) implemented |
+| 2026-10-14 | Cluster selection, copy and text ink contrast implemented |
+| 2026-10-14 | Hostile-book guards and EPUB 2 support implemented |
+| 2026-10-14 | Follow-ups: layout on demand, pictures, Column Width |
+| 2026-10-14 | Text files as EPUBs: Markdown and plain text converted on open |
+| 2026-10-15 | Per-pane text settings; Column Width moved to the Fonts tab |
+| 2026-10-15 | Text file edge cases: names, labelled heads, Chinese headings, repeatable bytes |
+| 2026-10-18 | Footnotes shown in place |
+| 2026-10-18 | Pictures opened large, and PDF figures |
+| 2026-10-20 | Layout tables read as blocks, spacer columns dropped, image widths |

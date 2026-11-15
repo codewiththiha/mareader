@@ -588,11 +588,3 @@ installed build: the bar drags and double-clicks, the traffic lights sit
 in the bar and slide with the sidebar, and books open from Finder into
 the running window. All passed. Each installer's launch is also checked
 in CI on every OS (`docs/packaging.md` § Installers from CI).
-
-
-### Review batch transition
-
-The S0 branch proposes a pinned toolchain, a no-compiler gate, main-only build
-cache writes and cache garbage collection. Timings and cache behavior are not
-verified until the owner authorizes the final merged CI run. The review's
-one-time cache purge is an owner operation and has not been performed here.

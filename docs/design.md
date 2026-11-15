@@ -1,13 +1,13 @@
 # Design
 
-> **Status:** M0 · **Last updated:** 2026-10-13
+> **Status:** active design system · **Last updated:** 2026-11-15
 
 mareader2's design system. It starts from mareader's: calm, paper-first, chrome
 that gets out of the way. But it is ours to improve (ADR 0005): where egui offers a
 better native answer, or a mareader detail reads poorly, change it here, then in
 the code.
 
-Every UI change is looked at with the shot tool (`CLAUDE.md` § The look loop)
+Every UI change is looked at with the shot tool (`docs/development.md` § The look loop)
 in light, dark and one tint, at desktop and narrow sizes.
 
 ## Principles
@@ -134,8 +134,8 @@ Classic and Dial deck, share the anchor.
 
 **Derived in `theme.rs`:**
 - hover fill = `line`; selected = `accent-soft` with an accent icon;
-- glass (the title bar) = surface at 96 % until the blur pass (M2 slice 3) gives
-  surface at 72 % with a 20 pt backdrop blur.
+- glass (the title bar) = surface at 96 % without a GPU, or surface at 72 % with
+  a 20 pt backdrop blur through the wgpu blur pass.
 - glass, retuned (2026-10-22): surface at 59 % (`FROST` 150) over a
   12 pt blur. At 72 % and 20 pt, shots of glass on and off differed by at
   most 6 levels, so the switch looked dead; text under the bar now shows.
@@ -186,7 +186,8 @@ across ("Parchment" was "Parchme…"). Past three it is elided, whole on hover.
 - Inter (Regular, Medium, SemiBold), embedded once from `assets/fonts` by
   `mareader-reflow`; the interface borrows its bytes (`reflow::inter`).
 - Body 14 pt, small 12 pt, title 13 pt Medium.
-- Reading fonts for EPUB arrive with M4 (ADR 0002).
+- Bundled reading fonts for EPUB (Literata, Inter, JetBrains Mono) live under
+  `assets/fonts` (ADR 0002).
 - egui's named families exist only from the second frame; `MareaderApp::ui`
   skips frame one for that reason.
 
@@ -199,7 +200,7 @@ across ("Parchment" was "Parchme…"). Past three it is elided, whole on hover.
 | Popover, window | radius 12, shadow 0 8 24 (black 24 % light, 47 % dark) | `Tokens::{radius_lg, shadow}` |
 | Spacing | gap 8: items 8 × 6, button padding 10 × 6; toolbar clusters 4 | `Tokens::gap`, `titlebar.rs` |
 | Body, small text | 14 pt, 12 pt | `Tokens::{text, text_small}` |
-| Sidebar (M1) | ~288 pt, slides 300 ms | — |
+| Sidebar | ~288 pt, slides 300 ms | `sidebar.rs` |
 | Toast | 3.5 s, errors 6 s, with an action 6 s; 360 pt wide | `toast.rs` |
 
 ## Title bar
@@ -232,7 +233,7 @@ over the panes, so content never moves when it appears.
   buttons (owner, 2026-10-17): panes split by dragging a book from the
   sidebar's Library panel onto a pane edge. The title is centred on the window when it fits, else in the gap,
   truncated with an ellipsis, and hidden when the gap is under 48 pt.
-- **Document controls.** When documents open (M2), the trailing cluster gains
+- **Document controls.** When documents open, the trailing cluster gains
   the pane's own controls (zoom, view mode).
 
 ### Window controls
@@ -603,7 +604,7 @@ Lucide 1.34.0 geometry is compiled from build-only declarations behind
 - **Animations** is the master switch (`crates/ui-egui/src/motion.rs`). Off zeroes
   egui's `animation_time` and every motion duration; end states still arrive in
   the same frame. The system reduced-motion preference has the same authority.
-- Per-motion switches (M2): icon animations, sidebar slide, canvas follows the
+- Per-motion switches: icon animations, sidebar slide, canvas follows the
   window, zoom ease and scroll to page. Each preference persists separately;
   icon animations default on to preserve existing behaviour.
 - A loading indicator fades rather than freezes when animations are off.
@@ -639,7 +640,7 @@ Lucide 1.34.0 geometry is compiled from build-only declarations behind
 
 | Date | Summary |
 |---|---|
-| 2026-10-13 | Created with the M0 foundation as `look.md` |
+| 2026-10-13 | Created with the initial foundation as `look.md` |
 | 2026-10-13 | Became `design.md`: our own design system (ADR 0005); one-hue tints; egui-native controls |
 | 2026-10-13 | How the theme works: shape tokens, one apply, instant restyle, live token file |
 | 2026-10-15 | Settings that follow the focused pane: `Scope`, `Applies` and `Rows` |

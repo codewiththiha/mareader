@@ -203,11 +203,11 @@ Dictionary", or None while that has none either.
 | The request, partials and retries | `Assist::rewrite` in `crates/assist/src/service.rs` |
 | Page types shared with the UI | `crates/study/src/page.rs` |
 | Saved results | `crates/library/src/ai_pages.rs` |
-| Runs, results, bubbles' state | `crates/ui-egui/src/page_ai/mod.rs` |
-| Continuous mode | `crates/ui-egui/src/page_ai/follow.rs` |
+| Runs, results, bubbles' state | `crates/engine/src/page_ai/{mod,ledger,state,ops}.rs`, `crates/ui-egui/src/page_ai/mod.rs` |
+| Continuous mode | `crates/engine/src/page_ai/follow.rs` |
 | A book's results laid into its pages | `crates/epub/src/splice.rs`, `Flow::region` |
 | A page's text, and results back to blocks | `crates/engine/src/page_ai/extract.rs` |
-| Typesetting results off the frame | `crates/ui-egui/src/page_ai/cards.rs` |
+| Typesetting results off the frame | `crates/engine/src/page_ai/cards.rs`, `crates/ui-egui/src/page_ai/cards.rs` |
 | Drawing cards, bubbles and the pill | `crates/ui-egui/src/page_ai/paint.rs` |
 | The page and bubble menus | `crates/ui-egui/src/page_ai/menu.rs` |
 | Settings | `crates/settings/src/ai.rs`, `crates/ui-egui/src/settings_window/ai.rs` |

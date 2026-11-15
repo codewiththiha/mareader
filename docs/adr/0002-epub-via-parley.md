@@ -34,14 +34,15 @@
     splitting a heading from its next line), and rasterises with `vello_cpu` 0.3,
     the rasteriser hayro already uses.
   - Hyphenation uses `hypher` (pattern-based, embedded, many languages).
-- **Open questions for the M4 spike:**
+- **Initial open questions:**
   1. Does parley break at U+00AD and draw the hyphen? If not, break lines
      ourselves at hypher points.
   2. Glyph-run drawing in vello_cpu 0.3 for parley output (font data handoff).
   3. Bundled reading faces: which OFL families, with ATTRIBUTION entries.
-- **Answers from M4 slice 1 (2026-10-14):**
+- **Resolved design choices (2026-10-14):**
   1. parley breaks at U+00AD but draws no hyphen: the soft hyphen shapes to a
-     zero-width blank. Slice 3 draws the hyphen at lines that end in one.
+     zero-width blank. The typography pass draws the hyphen at lines that end
+     in one.
   2. The handoff is direct: parley's `FontData` is peniko's, and each glyph
      run goes to `RenderContext::glyph_run` with its size and variation
      coordinates (`NormalizedCoord::to_bits`).

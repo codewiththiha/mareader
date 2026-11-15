@@ -5,12 +5,12 @@
   (L0–L3) free of egui, yet application behaviour — settings mutations, pane
   tree ownership, document opens, reading places, library commands, marks and
   notes, read-aloud, study lookups, AI jobs and persistence — lived in the
-  front-end crate (`crates/ui`). A headless test, script runner or second
-  client could not drive the application without linking egui, eframe and wgpu.
-  The engine-first refactor (phases P0–P6, slices G0–G6) lifts that application
-  layer into a toolkit-free `mareader-engine` crate (L5) while keeping `ui-egui`
-  (L6) as a direct, immediate-mode egui front end rather than introducing a
-  retained UI abstraction.
+  front-end crate (`crates/ui`, now `crates/ui-egui`). A headless test, script
+  runner or second client could not drive the application without linking egui,
+  eframe and wgpu. The engine-first architecture lifts that application layer
+  into a toolkit-free `mareader-engine` crate (L5) while keeping `ui-egui` (L6)
+  as a direct, immediate-mode egui front end rather than introducing a retained
+  UI abstraction.
 - **Decision:** Adopt an engine-first boundary governed by eight laws and eight
   limits.
   - **The eight laws:**

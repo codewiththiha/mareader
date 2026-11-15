@@ -116,7 +116,7 @@ cd apps/mareader && cargo packager --release
 - **Other platforms.** The helper is never built or shipped; the AI tab
   hides Apple Intelligence and offers the servers instead.
 
-## Installers from CI (M8)
+## Installers from CI
 
 `.github/workflows/installers.yml` builds every installer on its own
 platform, then installs it, launches it with a book, and removes it:

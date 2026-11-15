@@ -1,8 +1,9 @@
 # EPUB support: what a full reader draws
 
 The EPUB 3.3 reading system rules, checked item by item against our
-engine (2026-10-21), and the slices that close the gaps. Layout itself
-(boxes, grids, floats, the book's type) is in [epub-layout.md](epub-layout.md).
+engine (2026-10-21), and the capabilities implemented to cover them. Layout
+itself (boxes, grids, floats, the book's type) is in
+[epub-layout.md](epub-layout.md).
 
 ## What the specification asks
 
@@ -21,55 +22,55 @@ engine (2026-10-21), and the slices that close the gaps. Layout itself
 
 ## Audit (2026-10-21)
 
-| Feature | State before | Slice |
+| Feature | State before | Section |
 | --- | --- | --- |
-| PNG, JPEG, GIF, WebP | Done | |
-| SVG files (`img`, `image`, `object`, `embed`) | Not drawn | E1 |
-| SVG inside chapters | Skipped; only its `image` showed | E1 |
-| SVG pages in the spine | Not read | E1 |
-| `data:` images | Refused | E1 |
-| Black art on transparent ground | Kept its colours, so it vanished on dark paper | E1 |
-| Borders, backgrounds and padding in prose chapters | Drawn only in designed chapters | E1 |
-| `::before`, `::after`, `content`, counters, quotes | Dropped | E2 |
-| `::first-letter` drop caps, `::first-line`, `::marker` | Dropped | E2 |
-| `list-style-type` (roman, alpha, none, strings), `list-style-image` | Decimal and bullets only | E2 |
-| `border-image`, `box-shadow`, gradients, multiple backgrounds | Missing | E3 |
-| `outline`, `opacity`, `visibility`, `text-shadow`, `filter` | Missing | E3 |
-| `hr` in the book's width, style and colour | The reader's faint rule | E3 |
-| `calc()`, `var()`, `min()`, `max()`, `clamp()` | Missing | E4 |
-| `@media` features (`prefers-color-scheme`, widths), `!important` | Partly | E4 |
-| `@import`, `@supports`, `@layer`, `@container` | Skipped, with all their rules | E4 |
-| `initial`, `inherit`, `unset`, `revert` | Read as unknown values | E4 |
-| `media` on `link` and `style`, alternate sheets | Every sheet applied | E4 |
-| Obfuscated fonts, WOFF, WOFF2 | Missing | E5 |
-| `font-variant`, `font-feature-settings`, `text-align-last`, widows and orphans, `break-inside` | Missing | E5 |
-| `dir`, right-to-left text and page order | Missing | E6 |
-| Ruby | Read as plain text | E6 |
-| Vertical writing (`writing-mode`) | Missing | E6b |
-| Fixed layout (`pre-paginated`, spreads) | Read as reflowable | E7 |
-| MathML | Skipped | E8 |
-| Audio, video, `object` fallbacks, `epub:switch`, manifest fallbacks | Missing | E9 |
+| PNG, JPEG, GIF, WebP | Done | — |
+| SVG files (`img`, `image`, `object`, `embed`) | Not drawn | SVG |
+| SVG inside chapters | Skipped; only its `image` showed | SVG |
+| SVG pages in the spine | Not read | SVG |
+| `data:` images | Refused | SVG |
+| Black art on transparent ground | Kept its colours, so it vanished on dark paper | Black art |
+| Borders, backgrounds and padding in prose chapters | Drawn only in designed chapters | Boxes in prose |
+| `::before`, `::after`, `content`, counters, quotes | Dropped | Generated content |
+| `::first-letter` drop caps, `::first-line`, `::marker` | Dropped | Drop caps and first lines |
+| `list-style-type` (roman, alpha, none, strings), `list-style-image` | Decimal and bullets only | Lists |
+| `border-image`, `box-shadow`, gradients, multiple backgrounds | Missing | Backgrounds and borders |
+| `outline`, `opacity`, `visibility`, `text-shadow`, `filter` | Missing | Backgrounds and borders |
+| `hr` in the book's width, style and colour | The reader's faint rule | Rules as the book draws them |
+| `calc()`, `var()`, `min()`, `max()`, `clamp()` | Missing | Values and queries |
+| `@media` features (`prefers-color-scheme`, widths), `!important` | Partly | Values and queries |
+| `@import`, `@supports`, `@layer`, `@container` | Skipped, with all their rules | Values and queries |
+| `initial`, `inherit`, `unset`, `revert` | Read as unknown values | Values and queries |
+| `media` on `link` and `style`, alternate sheets | Every sheet applied | Values and queries |
+| Obfuscated fonts, WOFF, WOFF2 | Missing | Fonts the book ships |
+| `font-variant`, `font-feature-settings`, `text-align-last`, widows and orphans, `break-inside` | Missing | Type features and page breaks |
+| `dir`, right-to-left text and page order | Missing | Right to left |
+| Ruby | Read as plain text | Ruby and run fonts |
+| Vertical writing (`writing-mode`) | Missing | Vertical writing |
+| Fixed layout (`pre-paginated`, spreads) | Read as reflowable | Fixed layout |
+| MathML | Skipped | MathML |
+| Audio, video, `object` fallbacks, `epub:switch`, manifest fallbacks | Missing | Media and fallbacks |
 
-## Slices
+## Supported capabilities
 
-| Slice | Scope |
+| Capability | Scope |
 | --- | --- |
-| E1 | SVG everywhere (files, inline, spine pages, `data:`); black art on transparent ground follows the theme's ink; painted boxes (borders, backgrounds, padding, radius) in prose chapters. |
-| E2 | Generated content: `::before`/`::after` (strings, `attr()`, counters, quotes, pictures, empty bordered blocks), drop caps, `::first-line`, `::marker`, every list style and list pictures. |
-| E3 | Backgrounds and borders: `border-image`, shadows, gradients, layered backgrounds, outlines, opacity, visibility, text shadows, `hr` as the book draws it. |
-| E4 | CSS values and queries: maths functions, custom properties, media features, importance. |
-| E5 | Fonts and text: de-obfuscation, WOFF and WOFF2, font features, last-line alignment, widows and orphans, unbroken blocks. |
-| E6 | Languages: bidirectional text, right-to-left page order, ruby, runs in their own font family. |
-| E6b | Vertical writing: `writing-mode`, upright and sideways runs, columns read right to left. |
-| E7 | Fixed layout: pre-paginated pages at their viewport, spreads, absolute positions. |
-| E8 | MathML: fractions, scripts, roots, rows, operators, tables. |
-| E9 | Media and fallbacks: audio and video as their poster or a labelled box, `object` and `epub:switch` fallbacks, manifest fallback chains. |
-| E10 | Read-aloud: media overlays played in the reader, the phrase read lit, pages turning to follow. |
-| E11 | Subtitles: `track` files beside clips handed to the player, and transcripts shown in the pages. |
-| E12 | `epub:trigger`: clicks that show and hide parts of the page, and play, pause and mute clips. |
-| E13 | Scripted content: a chapter's scripts run in a sandboxed engine and change the page, which is laid again. |
+| SVG, black art & prose boxes | SVG everywhere (files, inline, spine pages, `data:`); black art on transparent ground follows the theme's ink; painted boxes (borders, backgrounds, padding, radius) in prose chapters. |
+| Generated content & lists | `::before`/`::after` (strings, `attr()`, counters, quotes, pictures, empty bordered blocks), drop caps, `::first-line`, `::marker`, every list style and list pictures. |
+| Backgrounds, borders & rules | `border-image`, shadows, gradients, layered backgrounds, outlines, opacity, visibility, text shadows, `hr` as the book draws it. |
+| CSS values & queries | Maths functions, custom properties, media features, importance. |
+| Fonts & type features | De-obfuscation, WOFF and WOFF2, font features, last-line alignment, widows and orphans, unbroken blocks. |
+| Bidirectional text & ruby | Bidirectional text, right-to-left page order, ruby, runs in their own font family. |
+| Vertical writing | `writing-mode`, upright and sideways runs, columns read right to left. |
+| Fixed layout | Pre-paginated pages at their viewport, spreads, absolute positions. |
+| MathML | Fractions, scripts, roots, rows, operators, tables. |
+| Media & fallbacks | Audio and video as their poster or a labelled box, `object` and `epub:switch` fallbacks, manifest fallback chains. |
+| Read-aloud overlays | Media overlays played in the reader, the phrase read lit, pages turning to follow. |
+| Subtitles & transcripts | `track` files beside clips handed to the player, and transcripts shown in the pages. |
+| Interactive triggers | `epub:trigger`: clicks that show and hide parts of the page, and play, pause and mute clips. |
+| Scripted content | A chapter's scripts run in a sandboxed engine and change the page, which is laid again. |
 
-## SVG (E1)
+## SVG
 
 SVG draws through resvg at the size it is shown, so it stays sharp at any
 zoom. A file's size comes from its root `width`, `height` or `viewBox`;
@@ -77,21 +78,21 @@ images it links are read from the book. An inline `svg` is kept as markup
 (names keep their SVG case) and drawn as a picture; one holding only an
 `image`, the usual cover wrapper, still shows that image directly.
 
-## Black art (E1)
+## Black art
 
 A picture that is mostly see-through and whose marks are dark and nearly
 colourless (line drawings, ornaments, title lettering) is drawn as ink: it
 takes the theme's tone like text, so it reads on dark paper. Coloured and
 opaque pictures keep their own colours.
 
-## Boxes in prose (E1)
+## Boxes in prose
 
 Prose chapters draw the boxes the book paints (a border, a background
 colour or picture), at the reader's size, with their padding, margins,
 width and corners. Boxes that only move text are left out, so prose still
 reads in the reader's column.
 
-## Generated content (E2)
+## Generated content
 
 `::before` and `::after` (one colon too) show their `content`: strings with
 CSS escapes, `attr()`, `counter()` and `counters()` in any list style,
@@ -102,7 +103,7 @@ An `hr` with generated content shows that ornament instead of a line.
 `q` quotes as browsers do. Counters reset, increment and set as CSS says;
 one never reset counts from the root, and `list-item` is the list's count.
 
-## Drop caps and first lines (E2)
+## Drop caps and first lines
 
 A floated `::first-letter`, or a short floated run starting a paragraph,
 is a drop cap: the letter is drawn large, spanning lines by its size, and
@@ -111,7 +112,7 @@ selection still read the word. Unfloated, the letter is only restyled.
 `::first-line` styles what the first line holds, after a few passes. Both
 need the book's design; read as the reader's own, the text is plain.
 
-## Lists (E2)
+## Lists
 
 Every `list-style-type` counts its own way: decimal (with a leading zero),
 Roman, Latin, Greek, Armenian, Georgian, Hebrew, kana and iroha, CJK, the
@@ -120,7 +121,7 @@ Myanmar scripts, symbols, and strings. `type` and `value` attributes count
 as in HTML. `list-style-image` hangs the picture as the marker, at most a
 line tall. `::marker` sets the marker's text and colour.
 
-## Backgrounds and borders (E3)
+## Backgrounds and borders
 
 Boxes draw what CSS paints around them, in the theme's ink:
 
@@ -143,7 +144,7 @@ Shades are strengths of the ink, as backgrounds are, so they follow every
 theme. A gradient behind text is kept faint enough to read; in an empty box
 it shows at full strength.
 
-## Rules as the book draws them (E3)
+## Rules as the book draws them
 
 An `hr` the book styles itself (a border, a background, a gradient, a
 picture, a shadow) is drawn as a box in the book's width, margins and
@@ -151,7 +152,7 @@ style, so a centred short line, a double rule or a gradient fade shows as
 designed. Read as the reader's own, it is the reader's plain rule. An `hr`
 the book leaves alone is the reader's faint rule.
 
-## Values and queries (E4)
+## Values and queries
 
 Lengths may be sums: `calc()`, `min()`, `max()` and `clamp()` work out to
 pixels where they can; a share of the column stays a share, so
@@ -179,7 +180,7 @@ inverted twice, its ornaments vanishing on dark paper. Vendor `@media`
 types, `print`, alternate sheets, and `link` or `style` elements whose
 `media` doesn't match are not applied.
 
-## Fonts the book ships (E5)
+## Fonts the book ships
 
 A book's fonts load however they are packed. WOFF tables are inflated
 one by one; WOFF2 is a single Brotli stream whose `glyf`, `loca` and
@@ -196,7 +197,7 @@ book declares is tried, the unique one first, and a key is kept only if
 the result starts as a font. Any other encryption leaves the file alone.
 Unpacked faces keep the per-face and per-book size caps.
 
-## Type features and page breaks (E5)
+## Type features and page breaks
 
 `font-variant-numeric`, `font-variant-ligatures`, `font-variant-position`,
 `font-kerning` and `font-feature-settings` become OpenType features of the
@@ -214,7 +215,7 @@ page when it fits on one, and `break-after: avoid` keeps a block with the
 next as headings are kept. These follow the book in designed chapters;
 prose keeps the reader's two-line rule.
 
-## Right to left (E6)
+## Right to left
 
 A block's direction comes from its `dir` attribute or the CSS `direction`
 property, inherited, the sheet winning over the attribute. `auto`, or no
@@ -232,7 +233,7 @@ Persian, Urdu, Yiddish, Pashto, Sindhi, Uyghur or Dhivehi. A spread then
 shows its first page on the right, and in single and spread views the left
 arrow goes forward. Scrolling views are unchanged.
 
-## Ruby and run fonts (E6)
+## Ruby and run fonts
 
 The text of `<rt>` and `<rtc>` becomes a note over the base read since the
 ruby began or since its last note, trimmed of space; `<rp>` fallbacks are
@@ -248,7 +249,7 @@ loads when only such runs use it. The book's family on `code` now wins
 over the reader's monospace.
 
 
-## Vertical writing (E6b)
+## Vertical writing
 
 `writing-mode: vertical-rl`, or its `-epub-` and `-webkit-` forms and the
 older `tb-rl`, on the root or body turns a chapter: its lines run down the
@@ -280,7 +281,7 @@ whole run.
 
 sha256 of `vertical.epub`: `18aadeea5e9ac0d666d5fddc2b5537cb4348ab481945b52bf72d5fd7472231f8`
 
-## Fixed layout (E7)
+## Fixed layout
 
 A book whose package sets `rendition:layout` to `pre-paginated` is laid
 out by the book, page by page. A spine item's
@@ -320,7 +321,7 @@ landscape-only spreads aren't followed.
 
 sha256 of `fxl.epub`: `85764517a37055bb1ffea996559fad292c7067a9f66a5cf4c4357ca056333361`
 
-## MathML (E8)
+## MathML
 
 Presentation MathML is laid out by the reader, without scripts, and
 drawn as a picture. Its type is STIX Two Math (OFL), bundled as a subset
@@ -359,7 +360,7 @@ stays in one piece. Copy and search skip formulas.
 
 sha256 of `math.epub`: `a9b54ffb7b329a7352072e0379844b7b1a351122880b5b5260f385217f6cb488`
 
-## Media and fallbacks (E9)
+## Media and fallbacks
 
 The reader has no player and runs no scripts. Sound and video show as
 cards, and clicking one hands the clip to the system's player.
@@ -397,13 +398,13 @@ picture that won't decode shows its first fallback that does. A spine
 item that isn't XHTML or a picture reads as its first fallback that is,
 and links to the item land on it.
 
-Media overlays read aloud in the reader (E10, below), and `track`
-subtitles show as transcripts (E11, below). `epub:trigger` works too
-(E12, below), and scripted content runs (E13, below).
+Media overlays read aloud in the reader (see Read-aloud below), and `track`
+subtitles show as transcripts (see Subtitles below). `epub:trigger` works too
+(see Triggers below), and scripted content runs (see Scripts below).
 
 sha256 of `media.epub`: `1c735eea7efc902ce4e1231a3cef6cfb5d4f0c20a8d585fa16578ee5c82c64d8`
 
-## Read-aloud (E10)
+## Read-aloud
 
 A book whose chapters name a `media-overlay` can be read aloud. Right-click
 a page and choose **Read aloud from here**: reading starts at the phrase
@@ -452,7 +453,7 @@ there, and an overlay file is read up to 16 MB.
 
 sha256 of `narration.epub`: `480889f7ab1f0ca0d752d2e24e74f93112f8ae737bdac3f51470ea420006b645`
 
-## Subtitles (E11)
+## Subtitles
 
 A `video` or `audio` element's `track` children of kind `subtitles` or
 `captions` (or no kind) are read; `chapters`, `descriptions` and
@@ -494,7 +495,7 @@ characters.
 
 sha256 of `subtitles.epub`: `db6ee795ebaea483877a8d3ccdcb0e1b50a5a686caeb892a2bf8ee30b708142d`
 
-## Triggers (E12)
+## Triggers
 
 `epub:trigger` (EPUB 3.0, deprecated since 3.3) makes a click on one
 element act on another. A trigger is read from the chapter's `head` or
@@ -540,7 +541,7 @@ lays out as a block, table or line by its tag, so a flex or grid
 
 sha256 of `triggers.epub`: `2aa2ea9eaa31efb7a821dd4acaa4182cdbbbe7d073d43a4552d32b6f2dd49cda`
 
-## Scripts (E13)
+## Scripts
 
 A chapter with `script` elements (no `type`, or a JavaScript one;
 inline or a file in the book) runs them in the reader's own engine:
@@ -560,8 +561,8 @@ until the book closes.
 | Speak | `alert` shows a message under the page; `confirm` says yes |
 
 After each click, field change or timer that changed something, the
-page is written back as markup and laid again the way triggers do
-(E12): only blocks that came out different replace the book's own, and
+page is written back as markup and laid again the way triggers do:
+only blocks that came out different replace the book's own, and
 triggers still act on the scripted page. Before the first run the
 chapter shows as written; then `noscript` goes.
 

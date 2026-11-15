@@ -1,16 +1,16 @@
 # Sync: design
 
-> **Status:** design for an optional milestone (M9), much later; M5 lays its ground · **Last updated:** 2026-10-17
+> **Status:** optional future feature; database groundwork is in place · **Last updated:** 2026-11-15
 
 mareader has no sync. mareader2 will sync one library across machines
-through several backends. Sync itself comes after 1.0, but the library's
-model (M5) must be ready for it from its first release: retrofitting ids,
-clocks and tombstones later means migrating every user's library.
+through several backends. Sync itself is optional future work, so the library
+model was built ready for it from the start: retrofitting ids, clocks and
+tombstones later would mean migrating every user's library.
 
 ## What sync is for
 
 1. **One library on every machine:** books, shelves, positions, marks
-   (M6) and the portable settings.
+   and portable settings.
 2. **Bring your own storage.** A synced folder (Dropbox, iCloud Drive,
    OneDrive's folder, Syncthing), WebDAV, S3-compatible storage, Google
    Drive and OneDrive's API.
@@ -20,9 +20,10 @@ clocks and tombstones later means migrating every user's library.
    they touch different fields; a removal on one machine never deletes a
    user's own file anywhere.
 
-## What M5 must lay down
+## Library groundwork
 
-These cost little in M5 and make sync a transport, not a migration.
+These invariants are already built into the library schema so sync can land as
+a transport rather than a migration.
 
 - **Ids nobody else mints.** An original book's id derives from its first
   content id, so two machines that import the same file agree on it
@@ -40,7 +41,7 @@ These cost little in M5 and make sync a transport, not a migration.
 - **Manual order by key, not index.** A shelf's order is a sort key per
   membership (a string between its neighbours'), so two machines that
   reorder different books merge without a conflict.
-- **Arranged levels too** (slice 10). Books (on the top level) and shelves
+- **Arranged levels too.** Books (on the top level) and shelves
   (beside their siblings) carry a stamped key of their own, merged per
   field like a membership's.
 - **A device id**, random, made on first launch and kept in the data
@@ -73,7 +74,7 @@ blind upload of the merged state converges even when a write is lost.
 | Position | Last writer wins; an open book shows "Read to p. 90 on another device" with Jump, and never moves the page by itself |
 | Shelf (name, parent) | Per field; a move that would make a cycle is dropped, keeping the older parent |
 | Membership | A record per (shelf, book): alive flag and sort key, each last writer wins |
-| Mark (M6) | A set by id; fields per stamp (the saved answer, `gloss`, is one); tombstoned |
+| Mark | A set by id; fields per stamp (the saved answer, `gloss`, is one); tombstoned |
 | Removal | `removed` and `restored` stamps; alive while `restored > removed`. Field edits never revive a record; only restore does |
 | Settings | Per section, last writer wins; only the portable sections sync |
 
@@ -159,7 +160,7 @@ the other machines.
 ## Why SQLite (owner, 2026-10-15)
 
 The owner reversed the plain-files decision: the library is one bundled
-SQLite file, `library.sqlite` (`docs/library.md` § Slice 9). The record
+SQLite file, `library.sqlite` (`docs/library.md` § Storage on SQLite). The record
 model above is unchanged; only where records rest moved.
 
 - **Records** (books, shelves, memberships) are rows of `{kind, id, body,
@@ -183,7 +184,7 @@ model above is unchanged; only where records rest moved.
 The file layout above is the remote side and is unchanged: a file backend
 writes records from the store into those envelopes. No backend exists yet.
 
-## Taking rows in (M5 slice 14, 2026-10-16)
+## Absorbing remote rows (2026-10-16)
 
 A review of the model against the design found four places where two
 machines could end up apart or a newer build's work could be lost. They
@@ -225,16 +226,16 @@ are closed before any backend exists, so none of them becomes a migration.
   files here, its shelves and its position; the other becomes a removed
   twin of it, and twins of the other follow.
 
-**Left for the sync milestone.** Settings carry no stamps yet; a book's
+**Left for the sync transport.** Settings carry no stamps yet; a book's
 synced record has no file size for downloads; rows merged in get a new
 `seq`, so a round sends them back once (harmless, merging is idempotent);
-encryption would seal each `v` and leave `t` readable; marks and reading
-stats follow the record pattern when M6 builds them.
+encryption would seal each `v` and leave `t` readable; marks already follow
+the record pattern and future reading stats can reuse it.
 
 ## Revision history
 
 | Date | Summary |
 |---|---|
-| 2026-10-15 | First design: what M5 lays down, clock, merge rules, backends, layout |
+| 2026-10-15 | First design: library groundwork, clock, merge rules, backends, layout |
 | 2026-10-15 | SQLite store replaces plain files (owner): records, local rows, change cursor, `Merge` |
-| 2026-10-16 | Taking rows in: `absorb`, mends, fields from newer builds, stamped `twin_of` |
+| 2026-10-16 | Absorbing remote rows: `absorb`, mends, fields from newer builds, stamped `twin_of` |

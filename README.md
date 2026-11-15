@@ -91,11 +91,23 @@ from the installed app:
 xattr -d com.apple.quarantine /Applications/Mareader.app
 ```
 
+## Build from source
+
+Requires the pinned Rust toolchain in `rust-toolchain.toml`:
+
+```sh
+cargo run -p mareader                   # desktop app
+cargo run -p mareader-cli -- commands   # list registered engine commands
+cargo test --workspace                  # run all workspace tests
+```
+
 ## Developer guides
 
-[Architecture](docs/architecture.md) · [EPUB pipeline](docs/epub.md) ·
-[AI integration](docs/assist.md) · [Packaging](docs/packaging.md) ·
-[Verification](docs/verification.md) · [Showcase samples](docs/showcase/README.md)
+[Development](docs/development.md) · [Architecture](docs/architecture.md) ·
+[Contributor rules](AGENTS.md) · [Roadmap](ROADMAP.md) ·
+[EPUB pipeline](docs/epub.md) · [AI integration](docs/assist.md) ·
+[Packaging](docs/packaging.md) · [Verification](docs/verification.md) ·
+[Showcase samples](docs/showcase/README.md)
 
 ## Core crates and licenses
 

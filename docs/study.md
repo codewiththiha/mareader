@@ -1,4 +1,4 @@
-# Study tools (M6)
+# Study tools
 
 Reading aids: explain a word in place, keep it marked, look words up in
 offline dictionaries, and shade words above a chosen CEFR level. The parity
@@ -74,19 +74,17 @@ characters, 16 synonyms of 80, 8 usages of 400, cut text ending in "…".
 - `Canned` answers from a small table, for tests and shots
   (`explain=canned`); the word `fail` gives a retryable error.
 
-## Slices
+## Capabilities
 
-| # | Slice | Check |
+| Capability | Summary | Check |
 |---|---|---|
-| 1 | Selection bar (Copy, Explain) on PDFs and books; Explain marks the word and opens its card; marks drawn in the gloss colour and opacity, kept per book as synced records; a click opens a mark's card, a right-click removes it with Undo | select a word, click Explain: it's shaded and a card opens; click elsewhere, click the shading: the card is back; right-click it, Remove highlight, then Undo; `pdf=sample:5 explain=canned selection=0:quick gloss=open` in shots |
-| 2 | Apple Intelligence through `fm-bridge` (macOS, Apple silicon, feature `ai`), the card filling as the answer streams, Retry | on a Mac with Apple Intelligence, Explain answers in place |
-| 3 | Highlighters (owner, 2026-10-16; see "Highlighters" below): full, half and underline looks; your own highlights from the selection menu on PDFs and books; Settings › Highlights for each highlighter's colour, the menu's buttons and the colour-on-click choice; AI marks on their own reserved look; density; selecting many marks to remove at once | select text, click Highlight or Underline: it stays after a relaunch; add Half in Settings and it joins the menu; change a colour and the highlights follow while the slider moves |
-| 4 | Dictionary packs: download with mirrors and resume, convert, Look up in the bar, a lookup card | download a pack, select a word, Look up |
-| 5 | CEFR shading: the dataset and tagger, a level setting, click to explain; drawn in its own reserved highlighter and colour (red, as mareader's, by default) | turn CEFR on at B2: harder words are shaded, and that look is no longer offered for your own highlights; click one to explain it, rest on one to look it up; `pdf=sample:5 cefr=<dir> workers=0` in shots |
+| Selection bar & marks | Selection bar (Copy, Explain) on PDFs and books; Explain marks the word and opens its card; marks drawn in the gloss colour and opacity, kept per book as synced records; a click opens a mark's card, a right-click removes it with Undo | select a word, click Explain: it's shaded and a card opens; click elsewhere, click the shading: the card is back; right-click it, Remove highlight, then Undo; `pdf=sample:5 explain=canned selection=0:quick gloss=open` in shots |
+| AI answers | Apple Intelligence through `fm-bridge` (macOS) or OpenAI-compatible servers everywhere, the card filling as the answer streams, Retry | configure a provider in Settings › AI, select a word, Explain answers in place |
+| Highlighters | Full, half and underline looks; user highlights from the selection menu on PDFs and books; Settings › Highlights for each pen's colour, menu buttons and colour-on-click; reserved AI look; multi-mark removal | select text, click Highlight or Underline: it stays after a relaunch; add Half in Settings and it joins the menu; change a colour and highlights follow live |
+| Offline dictionaries | Dictionary packs downloaded with mirrors and resume, converted to SQLite, Look up in the selection bar, lookup card and Dictionary panel | download a pack, select a word, Look up |
+| CEFR vocabulary shading | Word-level dataset and role tagger, level setting, reserved highlighter look (red by default), click to explain, hover to look up | turn CEFR on at B2: harder words are shaded; click to explain, rest to look up; `pdf=sample:5 cefr=<dir> workers=0` in shots |
 
-Look up stays out of the bar until slice 4 gives it something to do.
-
-## Slice 1 behaviour
+## Selection bar and marks
 
 - **The bar** sits under the selection's last line, centred on it, or above
   its first line when there's no room below. It shows once the button is
@@ -104,7 +102,7 @@ Look up stays out of the bar until slice 4 gives it something to do.
   the gloss opacity. A click opens the card; a right-click opens a menu
   with Remove highlight; the toast offers Undo for six seconds.
 
-## Slice 2 behaviour
+## AI answers
 
 The owner widened this slice (2026-10-16): answers come from Apple
 Intelligence on a Mac or, on every desktop, from an OpenAI-compatible
@@ -186,7 +184,7 @@ slice 5.
   word. AI marks default to a full violet highlight.
 
 
-## Slice 3 behaviour
+## Highlighter behaviour
 
 - **Records.** A highlight is a mark with `kind: highlight`, its `pen` and
   maybe a `color`; marks saved before keep reading as Explain marks. Its
@@ -232,7 +230,7 @@ slice 5.
   click, pick from the colour row, set the tab, and stage highlights with
   the `highlight=full|half|underline` option after `selection=`.
 
-## Slice 4 behaviour
+## Dictionary
 
 - **Packs.** Eight, English to Burmese, Chinese, French, German,
   Japanese, Korean, Spanish and Thai, built in
@@ -282,7 +280,7 @@ slice 5.
   searches; kittests look up from the bar, follow Get dictionaries…,
   remove a pack, search in the panel, and pick and remove marks.
 
-## Slice 5 behaviour
+## Vocabulary
 
 - **The dataset.** Settings › Vocabulary downloads mareader's word levels
   (about 2.9 MB, some 248,000 senses) and the role tagger (about 6.7 MB)

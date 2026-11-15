@@ -121,17 +121,17 @@ so a bigger setting makes every size bigger rather than one size:
 | Hyphenation | The reader's own. |
 | Text colours | The book's, adapted to the theme: see Text colours. |
 
-## Slices
+## Supported layout features
 
-| Slice | Scope |
+| Feature area | Scope |
 | --- | --- |
-| L1 | Cascade engine; Look (sizes, line height, spacing, indent, weight, embedded fonts, justify, margins, spacer paragraphs); designed-chapter test; Book design setting. |
-| L2 | Boxes: borders (solid, double, dashed, dotted; per side; radius), padding, widths, auto margins, rules from bordered empty blocks, vertical centring of tall flex or `vh` containers. Done, with round corners from `border-radius`. |
-| L3 | Grids: tables with block cells, column widths (fixed, %, content), cell padding, borders, `vertical-align`, spans, nesting; flex rows (justify, align, wrap, gap); anchored text in cells. Done: tables with block cells, fixed and % widths shrunk to fit, cell boxes, `vertical-align`, nested tables read flat, one-column tables as framed boxes, column widths from content (least and most widths, shared by every row), `colspan` and `rowspan`, flex rows (justify, align, wrap, gap, grow, basis). A flex row holding one layout table lets the table be the grid. |
-| L4 | Floats with text wrapping, inline images, `break-before`/`page-break-*`, decorations, small caps, sub and super, background pictures. Done: design scale, floats (left and right) with text wrapping line by line, `break-before`/`break-after`, underline and line-through, small caps and `text-transform`, sub and super, background colours and pictures, box heights, small pictures set inside a line (at most 3 ems tall), `transform: rotate()` drawn about the block's middle. |
-| L5 | Per-book override, both samples and the test corpus checked, docs, parity. Done: the per-book choice in the Fonts tab, saved with the book; the Gutenberg Raven stays prose in Auto; hostile grids, flex rows, spans, turns, radii and line pictures open within the time cap. |
-| L6 | Leftovers. Done: `flex-direction: column` (an item narrower than the column, or placed by `align-items`/`align-self`, is its own row of one; stretched items read as prose; `row-gap`); line pictures follow `vertical-align` (keywords, lengths, percentages); a `rowspan` cell sits across the rows it spans and its last row grows to hold it; a `vh` flex page centres its content (the screen share is the page's, not a length). |
-| L7 | The book's type in prose: sizes in its own steps, weights, indents, alignment, margins, inline sizes and spacer lines, moved by the reader's settings (table above); unstyled chapters keep the reader's type; designed type scales with the reader's size. |
+| Cascade & typography | Cascade engine; Look (sizes, line height, spacing, indent, weight, embedded fonts, justify, margins, spacer paragraphs); designed-chapter detection; Book design setting. |
+| Boxes & borders | Borders (solid, double, dashed, dotted; per side; `border-radius`), padding, widths, auto margins, rules from bordered empty blocks, vertical centring of tall flex or `vh` containers. |
+| Tables & flex grids | Tables with block cells, fixed and `%` widths shrunk to fit, cell boxes, `vertical-align`, nested tables read flat, one-column tables as framed boxes, content-derived column widths, `colspan` and `rowspan`, flex rows (justify, align, wrap, gap, grow, basis). A flex row holding one layout table lets the table be the grid. |
+| Floats, decorations & transforms | Design scale, floats (left and right) with line-by-line text wrapping, `break-before`/`break-after`, underline and line-through, small caps and `text-transform`, sub and super, background colours and pictures, box heights, inline pictures (at most 3 ems tall), `transform: rotate()` about the block's middle. |
+| Per-book overrides | Per-book choice in the Fonts tab saved with the book; hostile grids, flex rows, spans, turns, radii and line pictures open within the time cap. |
+| Column flex & rowspan | `flex-direction: column` (narrow or aligned items as single-item rows; stretched items as prose; `row-gap`); inline picture `vertical-align`; `rowspan` cells spanning rows; `vh` flex vertical centring. |
+| Prose typography scaling | Book type in prose (sizes, weights, indents, alignment, margins, inline sizes and spacer lines) shifted by the reader's settings; unstyled chapters keep the reader's type; designed type scales with the reader's size. |
 
 ## Book CSS everywhere (2026-10-22)
 

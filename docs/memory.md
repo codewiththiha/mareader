@@ -1,6 +1,6 @@
 # Memory
 
-> **Status:** M8 audit recorded; generated icon-atlas budget pending release measurement · **Last updated:** 2026-11-07
+> **Status:** full-workspace budgets audited; release icon-atlas and streaming-perf RSS pending measurement · **Last updated:** 2026-11-15
 
 Every memory claim in this repository needs:
 - what was measured (RSS peak, texture bytes, heap);
@@ -27,9 +27,9 @@ Add a dated section per audit; never overwrite one.
 | scanned, 8 pp at 400 dpi | 49 MiB | 195 MiB |
 | CAD, 4 pp × 170k paths | 118 MiB | 550 MiB |
 
-## Budgets to hold (set at M2)
+## Budgets to hold
 
-- **Idle window, no document:** measure it at M1 and record it here as the floor.
+- **Idle window, no document:** record and hold the empty-window floor.
 - **Closing the last pane on a document:** texture count and bytes return to
   their value before it opened (a kittest test).
 - **The same book in two panes:** one parse, one tile set; the second pane adds
@@ -45,7 +45,7 @@ Add a dated section per audit; never overwrite one.
   whole-frame cells. Driver overhead and release-build RSS remain to be
   measured; a pending or unadmitted atlas uses the generated resting glyph.
 
-## 2026-10-13: M2 audit, reading and closing (slice 7)
+## 2026-10-13: PDF reading and teardown audit
 
 - **What:** process RSS and its peak (`VmRSS`, `VmHWM` in `/proc/self/status`;
   the peak is reset after each row), with the app's own counts: open
@@ -95,7 +95,7 @@ Findings:
   256 MiB cap holds about 34 such pages. A book under the cap stays whole once
   read, which is why "every page read" ends at 104 MiB of rasters.
 
-## Tiles (M2 slice 9)
+## High-zoom page tiling
 
 What was measured: the page cache's bytes in
 `a_deep_zoom_draws_tiles_once_the_view_rests`, a three-page sample at 500 %
@@ -112,7 +112,7 @@ in a 900 × 700 pane without a GPU, where egui's texture side is 2048.
 - **Threadless runs:** inline work queued by a demand now asks for a frame.
   Before, a test or the web preview could stop with jobs left queued.
 
-## 2026-10-14: EPUB layout (M4 slice 7)
+## 2026-10-14: EPUB layout caps and hostile input
 
 What was measured: resident memory (VmRSS, and VmHWM for the peak) from
 `/proc/self/status` before and after `Book::open`, on CI's Linux runner.
@@ -140,7 +140,7 @@ Each workload is one generated chapter in bundled fonts.
   it is open. Laying out only the pages near the view, and dropping the
   rest, would bound it; that is the follow-up.
 
-## 2026-10-14: EPUB layout on demand (M4 follow-ups)
+## 2026-10-14: EPUB layout on demand
 
 What was measured: the same as the section above, with the same test, now
 also reading every page's text after opening, which lays every block again
@@ -162,7 +162,7 @@ through the kept few. CI's Linux runner, VmRSS and VmHWM.
   1.2 s.
 - **Known limit:** each open book has its own 32 MiB of kept layouts.
 
-## 2026-10-16: M8 audit, both formats and the library (slice 3)
+## 2026-10-16: Full-workspace audit (PDF, EPUB and library)
 
 - **What:** as at M2 (`VmRSS`, `VmHWM` reset after each row), plus open
   searches, cover texture bytes and egui's texture count. Each workload ends
@@ -557,7 +557,7 @@ PDF page-tree enumeration remains eager, with rasters requested on demand.
   so the glyph is never blank. Release startup time, texture-manager overhead,
   cache churn across DPI changes, RSS and driver bytes remain to be measured.
 
-## 2026-11-13: what the engine writes, and when (G4)
+## 2026-11-13: Engine persistence and write cadence
 
 - **What changed:** the settings and the last document are written by the engine,
   to a place the host names. `engine::save::Save` holds `settings.json` and
@@ -573,16 +573,38 @@ PDF page-tree enumeration remains eager, with rasters requested on demand.
 - **What survives an interrupted write:** `mareader_library::disk::write_atomic`
   leaves a temp file behind when a write is cut short, and `load` does not read
   it. `save_tests.rs`'s `a_temp_file_left_by_an_interrupted_write_is_not_read`
-  holds that, which is the second line of G4's exit gate.
+  holds that invariant.
 - **What reaches the engine by name:** `engine::options::parse` answers 49 of
   `set_option`'s keys as `Command`s, in batches, because one key can write two
-  settings. A shot, a query string and — at G5 — a command line now set a dial the
-  same way, and the front end keeps only the 49 that read its own state. No file
-  under `crates/ui-egui/src` is toolkit-free any more, so `cargo xtask trapped`
-  fails on the first one that appears.
-- **Limits:** the browser still persists through the browser's store, because that
-  is the only store it has, so DoD #7 is reported unmet on web rather than forced.
-  `persist_window: true` leaves window geometry in eframe's own
-  `egui_storage.json`, which no code here reads. None of this measures RSS, write
-  latency or a real disk's behaviour under power loss; the bounds are about what
-  is written, by whom and when.
+  settings. Shots, query strings and the headless CLI set dials through the same
+  path, while the front end keeps only the keys that read window-ephemeral state.
+  No file under `crates/ui-egui/src` is toolkit-free beyond the two-file
+  allowlist, so `cargo xtask trapped` fails on the first violation.
+- **Limits:** the browser preview still persists through the browser's store,
+  because that is the only store available on web. `persist_window: true` leaves
+  window geometry in eframe's own `egui_storage.json`, which no code here reads.
+  None of this measures RSS, write latency or a real disk's behaviour under power
+  loss; the bounds are about what is written, by whom and when.
+
+## 2026-11-15: Streaming covers, weight loading and frame allocations
+
+- **What changed:**
+  - **EPUB covers (`crates/session`):** `cover_bytes` streams the cover image
+    directly from the zip archive without unpacking or parsing the whole book.
+  - **PDF rendering (`crates/pdf`):** `RenderSession` is reused across tiles on
+    the same page instead of re-interpreting shared document state per call.
+  - **Kokoro ONNX weights (`crates/kokoro`):** model tensors stream from disk
+    by byte offset instead of reading the whole ONNX archive into a single
+    `Vec<u8>` buffer at load time.
+  - **Search (`crates/search`):** soft-hyphen folding scans in place without
+    building temporary stripped strings per page.
+  - **G2P (`crates/g2p`):** neural fallback layers store flattened vectors and
+    reuse an attention KV cache across decoding steps.
+  - **GPU & notes (`crates/ui-egui`):** glass and page passes reuse uniform
+    buffers (packing params via `as_chunks_mut`), and the Notes panel caches
+    derived rows between revisions.
+- **Verification:** all 75 workspace test suites (2,131 passed, 0 failed) and
+  headless CLI scripts passed in CI.
+- **Limits:** this entry records the structural allocation reductions only;
+  before/after peak RSS and wall-clock timings remain to be measured with
+  `python3 tools/ci.py memory` on release builds.

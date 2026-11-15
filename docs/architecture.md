@@ -1,6 +1,6 @@
 # Architecture
 
-> **Status:** engine-first (G0–G6 complete) · **Last updated:** 2026-11-15
+> **Status:** engine-first · **Last updated:** 2026-11-15
 
 mareader2 delivers what mareader does — the same features, the same reading
 experience, the blend backdrop, panes, appearance, library and study tools — as
@@ -66,9 +66,7 @@ The rules (enforced with the eight laws in `AGENTS.md` § Layering and ADR 0007)
    `wasm32-unknown-unknown`. `cargo xtask wasm` checks them all; `assist` is the
    one exemption, because AI needs threads, a keychain and TLS (see below).
 4. A file under `crates/ui-egui/src` that names no toolkit is a file that belongs
-   in the engine, and `cargo xtask trapped` fails on it: the gate is absolute, and
-   the count it was ratcheted down against — 52 files at G0, 33 at G1, 10 at G3,
-   7 for the option keys, 0 at G4 — was deleted with `tools/trapped_count.txt`.
+   in the engine, and `cargo xtask trapped` fails on it: the gate is absolute.
    Only `lib.rs` and `icons/pack.rs` are allowlisted, each being front-end
    presentation with nowhere else to go, and a unit test pins that two-file list.
    `tests/` and `examples/` are harnesses and are not counted.
@@ -162,7 +160,7 @@ EPUB: parley → vello_cpu ┘                                    filter · blen
 - **Raster off the UI thread.** A small worker pool renders tiles at the
   settled scale. During a zoom, the existing texture stretches and is replaced
   once, crisp.
-- **The page pass** is an `egui_wgpu::CallbackTrait` paint callback (M3). It
+- **The page pass** is an `egui_wgpu::CallbackTrait` paint callback. It
   takes `Appearance::page_filter()` as a ≤ 7-entry matrix uniform
   (`MAX_FILTER_OPS`) and `page_blend()`, and composites the texture tile and the
   grain. `apply_filter` in `crates/appearance` is its CPU reference, and tests
@@ -288,14 +286,15 @@ mareader typography setting has a parley equivalent.
 
 | Date | Summary |
 |---|---|
-| 2026-10-13 | Created with the M0 foundation |
-| 2026-10-13 | Functional parity and the egui architecture section (ADR 0005) |
+| 2026-10-13 | Foundation workspace, crate layers, and initial architecture |
+| 2026-10-13 | Functional parity and immediate-mode egui architecture (ADR 0005) |
 | 2026-10-13 | Shared documents, cache and workers across panes (ADR 0006); appearance as uniforms |
-| 2026-10-13 | Scrolling long documents: admission, tiling and upload rules |
-| 2026-11-11 | P0 of the engine-first review: `crates/ui` becomes `crates/ui-egui` (`mareader-ui-egui`), `mareader-engine` takes L5, the front end L6 and the three apps L7; `cargo xtask wasm` and `cargo xtask trapped` become gates |
-| 2026-11-11 | P1: the toolkit-free rules move to `mareader-engine`; the front end calls them across the crate boundary, and `cargo xtask trapped` falls to 33 |
-| 2026-11-12 | P2 (G2): the command enum splits into `engine::Command` and `ui_egui::UiCommand`, `Session::execute` becomes the door and the app is `{ session, ui }`; the reading place, the library's state and its work move down, and `cargo xtask trapped` falls to 11 |
-| 2026-11-13 | P3 (G3): documents, marks, read-aloud, study/dict/vocab and page-AI controllers move into `mareader-engine`, `Waker` replaces `ctx.clone()`, `ui-egui` thread spawns drop to the four pixel files (`icons/anim.rs`, `machine_fonts.rs`, `library/covers.rs`, `image_viewer.rs`) |
-| 2026-11-14 | P4 (G4): `engine::Host` isolates the five platform calls, `Session::new(host, waker)` replaces `attach_*`, engine writes `settings.json` and `session.json` atomically with one-time v0.0.5 `eframe::Storage` import, `cargo xtask trapped` hits 0 beyond the two-file allowlist (`lib.rs`, `icons/pack.rs`) and `tools/trapped_count.txt` is deleted |
-| 2026-11-15 | P5 (G5): `apps/mareader-cli` lands with `commands`, `exec`, `run` and `inspect`, zero toolkit dependencies (checked transitively by `cargo xtask layers`), and five headless end-to-end scripts running in CI |
-| 2026-11-15 | P6 (G6): ADR 0007, updated layer table and laws in docs, and all 122 shipped parity entries tied to `engine::SPECS` or `ui_only = true` in `cargo xtask parity` |
+| 2026-10-13 | Long-document scrolling rules: viewport admission, high-zoom tiling and upload budgets |
+| 2026-11-11 | Engine boundary and workspace gates: rename front end to `crates/ui-egui` (L6), introduce `mareader-engine` (L5), check binaries at L7, and enforce `cargo xtask wasm` and `cargo xtask trapped` |
+| 2026-11-11 | Core rules extracted into `mareader-engine` across the crate boundary |
+| 2026-11-12 | Command split and single reducer: separate `engine::Command` from `ui_egui::UiCommand`, route mutations through `Session::execute`, register dotted ids in `SPECS`, and pair `{ session, ui }` in `MareaderApp` |
+| 2026-11-13 | Stateful controllers moved to engine: documents, marks, read-aloud, study/dict/vocab, library and page-AI move to `mareader-engine` behind `Waker`, leaving only the four pixel worker files (`icons/anim.rs`, `machine_fonts.rs`, `library/covers.rs`, `image_viewer.rs`) in `ui-egui` |
+| 2026-11-14 | Host trait and atomic persistence: `engine::Host` isolates platform calls, `Session::new(host, waker)` wires services, engine writes `settings.json` and `session.json` atomically with one-time v0.0.5 `eframe::Storage` import, and `cargo xtask trapped` becomes an absolute zero-trapped gate |
+| 2026-11-15 | Headless CLI client: `apps/mareader-cli` ships `commands`, `exec`, `run` and `inspect` with zero toolkit dependencies (checked transitively by `cargo xtask layers`) and five end-to-end scripts in CI |
+| 2026-11-15 | Architecture lock and parity enforcement: ADR 0007 adopted, layer laws documented, and all 122 shipped parity entries linked to `engine::SPECS` or `ui_only = true` in `cargo xtask parity` |
+| 2026-11-15 | Post-split cleanup and performance pass: retired transitional shims, tightened session boundaries, streamed EPUB covers and Kokoro weights, cached PDF `RenderSession`, reduced search/G2P/GPU allocations |

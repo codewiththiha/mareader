@@ -1,8 +1,9 @@
 # AGENTS.md
 
 These rules bind every AI agent and every human contributor in this repository.
-They come before any task, instruction or deadline. `CLAUDE.md` holds the
-day-to-day working instructions; if the two disagree, **this file wins.**
+They come before any task, instruction or deadline. Build commands and the
+developer reference live in `docs/development.md` (with agent quick-start notes
+in `CLAUDE.md`); if anything disagrees, **this file wins.**
 
 ## Project
 
@@ -140,8 +141,9 @@ records the engine-first decision.
 
 - New files stop at 500 lines, tests included. Existing oversized files have
   ceilings in `tools/shape_baseline.toml`; they must not grow.
-- Ceilings only go down; only SZ tightens the baseline. The declared data files
-  in its `[exempt]` section are exempt; adding an exemption is an owner decision.
+- Ceilings only go down; tighten `tools/shape_baseline.toml` when splitting or
+  shrinking a baseline file. The declared data files in its `[exempt]` section
+  are exempt; adding an exemption is an owner decision.
 - New functions stop at 80 lines. Baseline functions must not grow.
 - Move inline test modules over 150 lines into `foo/tests/<topic>.rs` files
   under 500 lines. Tests cited in the parity ledger stay at their paths.
@@ -168,10 +170,10 @@ records the engine-first decision.
   and one-field types without an invariant.
 - Commits changing more than 50 lines need a body describing what, why and
   verification. A `perf` commit records command, machine, before and after.
-- `python3 tools/shape_check.py` checks tracked file and Rust function sizes;
-  `--dups` reports matching bodies after the duplicate-removal slices. Its
-  lightweight scanner is not a Rust parser, so review its results and rules
-  it cannot enforce, including inline tests and routing matches.
+- `python3 tools/shape_check.py --dups` checks tracked file sizes, Rust
+  function sizes and duplicate function bodies (enforced in CI and the pre-push
+  hook). Its lightweight scanner is not a Rust parser, so review its results
+  and rules it cannot enforce, including inline tests and routing matches.
 
 ## Code style
 
@@ -271,30 +273,26 @@ is in progress, by looking and by using it.
   ids in `engine::SPECS` (callable through `Session::execute_id` and
   `mareader-cli`); window-only views get a `set_option` key so the shot tool
   (`key=value`) and the browser preview (`?key=value`) can open them directly.
-- **Be honest in the app.** A control whose effect lands in a later phase says
-  so in a muted line, and its parity entry stays `partial` with notes.
-- **Log each slice** in `ROADMAP.md` (what to try, where).
+- **Be honest in the app.** A control whose effect lands later says so in a
+  muted line, and its parity entry stays `partial` with notes.
+- **Update `ROADMAP.md`** when shipping major capabilities or architectural
+  milestones.
 
-## Parallel slices
+## Concurrent work
 
-- Each slice owns the exact write-set in `docs/slices/BATCH.md`. Write-sets in
-  the same batch must be disjoint. Stop and report required outside edits.
-- Shared registries have one writer per batch; see the batch table. S0 is the
-  opening slice; SZ alone tightens the baseline and folds slice reports into
-  ROADMAP and `docs/reuse.md`.
-- A slice reports what changed, what was verified, limits and seen-but-untouched
-  issues in `docs/slices/<id>.md`; do not edit ROADMAP during parallel work.
-- Branch parallel slices from S0 and do not merge or rebase another slice into
-  them. Each slice must stand alone and keep parity evidence addresses intact.
-- No drive-by edits. Moves and behavior changes are separate commits.
+- Keep concurrent branches scoped to disjoint areas so shared registries
+  (`Cargo.toml`, `parity/mareader-features.toml`, `tools/shape_baseline.toml`)
+  have a single clear owner per merge.
+- Branch from `main`, keep parity evidence addresses intact, avoid drive-by
+  edits, and separate move-only refactors from behaviour changes.
 
 ## UI work: look at the result
 
 - **Every UI change is looked at, not assumed.** Render it with
   `cargo run -p mareader-ui-egui --example shot -- OUT.png key=value…` (see
-  `CLAUDE.md`), open the PNG, and check it against `docs/design.md`: light,
-  dark and one tint, wide and narrow, and each platform's chrome the change
-  touches. Say what was checked.
+  `docs/development.md` § The look loop), open the PNG, and check it against
+  `docs/design.md`: light, dark and one tint, wide and narrow, and each
+  platform's chrome the change touches. Say what was checked.
 - **Behaviour is tested with egui_kittest** (`crates/ui-egui/tests/`): hover, click
   and keyboard through AccessKit labels, at 60 fps steps
   (`with_step_dt(1.0 / 60.0)`).
