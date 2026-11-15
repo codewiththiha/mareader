@@ -22,7 +22,7 @@ impl MareaderApp {
     }
 
     /// Who says English words on cards, which picks the accent they show.
-    pub(super) fn english_voice(&self) -> Option<crate::sounds::EnglishVoice> {
+    pub(super) fn english_voice(&self) -> Option<mareader_engine::sounds::EnglishVoice> {
         let others = self.settings().dictionary.other_voices;
         let picked = || {
             self.session
@@ -33,12 +33,15 @@ impl MareaderApp {
     }
 
     /// How the open cards' words sound, as the settings write them.
-    pub(super) fn card_sounds(&mut self, now: f64) -> Vec<(String, Vec<crate::sounds::Line>)> {
+    pub(super) fn card_sounds(
+        &mut self,
+        now: f64,
+    ) -> Vec<(String, Vec<mareader_engine::sounds::Line>)> {
         let words = [self.ui.study.card_word(), self.ui.dict.card_word()];
         let mut words: Vec<String> = words.into_iter().flatten().map(str::to_owned).collect();
         words.extend(self.ui.dict.sound_words());
         let english = self.english_voice();
-        let voice = crate::sounds::spoken(english.as_ref().map(|v| v.tag.as_str()));
+        let voice = mareader_engine::sounds::spoken(english.as_ref().map(|v| v.tag.as_str()));
         let pronunciation = self.settings().study.pronunciation;
         let shown = (&pronunciation, voice);
         words
@@ -104,111 +107,6 @@ impl MareaderApp {
         {
             self.session.ask_role(&word, &context);
         }
-    }
-
-    /// Look up: the pane's selection, its card beside it.
-    pub(super) fn look_up(&mut self, pane: PaneId) {
-        let Some((text, rect)) = self.documents().looked_up(pane) else {
-            return;
-        };
-        let max = mareader_study::MAX_GLOSS_CHARS;
-        let Some(word) = crate::dict::lookup_text(&text, max) else {
-            let rule = format!("Look up takes a word or short phrase, up to {max} characters.");
-            self.ui.toasts.push(Toast::info(rule));
-            return;
-        };
-        // An open window answers instead; selection stays.
-        if self.settings().dictionary.window.open && self.route() == Route::Reader {
-            let _ = self.set_field("dictionary.window.minimized", false);
-            self.ui.dict.escape();
-            self.ui.dict.feed(&word);
-            return;
-        }
-        // Its sentence, so the card can name the word's class there.
-        let context = self.documents().asked(pane).map(|(a, _)| a.context);
-        self.session.execute(Command::ClearSelection(pane), 0.0);
-        // One card at a time.
-        self.ui.study.escape(&mut self.session);
-        let offset = self.documents().offset(pane);
-        let to = self.settings().dictionary.default_lang.clone();
-        self.ui
-            .dict
-            .look_up(&mut self.session, pane, word.clone(), rect, offset, to);
-        self.session
-            .ask_role(&word, context.as_deref().unwrap_or(&word));
-    }
-
-    /// Note: highlights the selection in the bar's first pen, then
-    /// opens a draft on it.
-    pub(super) fn note(&mut self, pane: PaneId) {
-        let Some((spot, text)) = self.session.documents().highlighted(pane) else {
-            return;
-        };
-        let rect = self.documents().looked_up(pane).map(|(_, r)| r);
-        self.session.execute(Command::ClearSelection(pane), 0.0);
-        let look = &self.settings().study.highlights;
-        let pen = look.bar.iter().find_map(|i| match i {
-            mareader_settings::BarItem::Highlight(pen) => Some(*pen),
-            _ => None,
-        });
-        let book = self.book_in(pane);
-        let name = self
-            .session
-            .documents()
-            .title(pane)
-            .unwrap_or_default()
-            .to_owned();
-        let at = Highlighted {
-            book,
-            name: &name,
-            text,
-            spot,
-            pen: pen.unwrap_or_default(),
-            color: None,
-        };
-        let rect = rect.unwrap_or(Rect::NOTHING);
-        self.ui.study.write_note(
-            &mut self.session,
-            pane,
-            at,
-            rect,
-            mareader_engine::library::wall_ms(),
-        );
-    }
-
-    /// Explain: the pane's selected word, marked, its card open.
-    pub(super) fn explain(&mut self, pane: PaneId) {
-        if self.session.documents().selection(pane).is_none() {
-            return;
-        }
-        let Some((asked, rect)) = self.documents().asked(pane) else {
-            let rule = format!(
-                "The AI Dictionary takes one word, up to {} characters.",
-                mareader_study::MAX_GLOSS_CHARS
-            );
-            self.ui.toasts.push(Toast::info(rule));
-            return;
-        };
-        self.session.execute(Command::ClearSelection(pane), 0.0);
-        self.ui.dict.escape();
-        let book = self.book_in(pane);
-        let name = self
-            .session
-            .documents()
-            .title(pane)
-            .unwrap_or_default()
-            .to_owned();
-        let at = Explained {
-            pane,
-            book,
-            name: &name,
-            asked,
-            rect,
-        };
-        self.ui
-            .study
-            .explain(&mut self.session, at, mareader_engine::library::wall_ms());
-        self.ask_role();
     }
 }
 

@@ -25,7 +25,7 @@ pub fn page_of(doc: &Document, spot: Spot) -> Option<usize> {
 }
 
 /// Where `page` starts: its first text when the text reflows.
-pub fn bookmark_spot(doc: &Document, page: usize) -> Spot {
+pub(crate) fn bookmark_spot(doc: &Document, page: usize) -> Spot {
     match doc.anchor(page) {
         Some(a) => Spot::Text {
             block: a.block,
@@ -48,6 +48,6 @@ pub fn bookmark_chapter(doc: &Document, page: usize) -> Option<String> {
 }
 
 /// A bookmark's name: its chapter, else its page.
-pub fn bookmark_label(doc: &Document, page: usize) -> String {
+pub(crate) fn bookmark_label(doc: &Document, page: usize) -> String {
     bookmark_chapter(doc, page).unwrap_or_else(|| format!("Page {}", page + 1))
 }

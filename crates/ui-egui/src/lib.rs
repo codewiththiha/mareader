@@ -46,9 +46,9 @@ pub mod panes;
 pub mod park;
 pub mod pdf_view;
 pub mod platform;
+pub(crate) mod preset_cards;
 pub mod reach;
 pub mod read_aloud;
-pub mod repaint;
 pub mod resize;
 pub mod scripts;
 pub mod search;
@@ -71,6 +71,12 @@ pub mod word_list;
 pub mod zoom;
 
 pub use app::MareaderApp;
+
+/// Answers a background worker's wake with a frame from `ctx`.
+pub(crate) fn wake(ctx: &egui::Context) -> mareader_engine::session::Waker {
+    let ctx = ctx.clone();
+    std::sync::Arc::new(move || ctx.request_repaint())
+}
 
 #[cfg(test)]
 mod testing {

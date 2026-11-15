@@ -10,7 +10,7 @@ use crate::toast::Toast;
 pub use super::BookAction;
 
 impl State {
-    pub fn book_act(&mut self, action: BookAction, out: &mut Vec<Out>) {
+    pub(crate) fn book_act(&mut self, action: BookAction, out: &mut Vec<Out>) {
         let now = wall_ms();
         match action {
             BookAction::AskRemove {
@@ -108,5 +108,3 @@ impl State {
         self.carry(mv, out);
     }
 }
-
-pub use super::counted;

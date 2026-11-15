@@ -14,10 +14,10 @@ use crate::session::Waker;
 
 use super::folders::Folders;
 use super::searching::Search;
-use super::{Io, Job, Organizer, PickAction, Picks, Question, Runs, Scope, Sheet};
+use super::{Io, Job, Organizer, Picks, Question, Runs, Scope, Sheet};
 
 /// Seconds between writes while reading.
-pub const SAVE_DELAY: f64 = 0.5;
+pub(crate) const SAVE_DELAY: f64 = 0.5;
 
 /// Whether the library's files can be written.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -136,16 +136,8 @@ impl State {
     }
 
     /// Escape lets go of a selection, then the search; true if it did.
-    pub fn escape(&mut self) -> bool {
-        if self.picks.active() {
-            self.picks.apply(PickAction::Clear);
-            return true;
-        }
-        self.search.clear()
-    }
-
     /// Keeps covers in `<dir>/covers` between launches.
-    pub fn attach_cache(&mut self, dir: PathBuf) {
+    pub(crate) fn attach_cache(&mut self, dir: PathBuf) {
         self.cache = Some(dir.join("covers"));
     }
 

@@ -40,7 +40,7 @@ impl State {
     }
 
     /// Makes the duplicates from the copies made, then tells of them.
-    pub fn duplicated(
+    pub(crate) fn duplicated(
         &mut self,
         picks: &[Pick],
         copies: &HashMap<PathBuf, Copied>,

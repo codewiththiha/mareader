@@ -59,7 +59,7 @@ impl Service {
     }
 
     /// Runs a pack download action; returns true if `action` was handled.
-    pub fn act_pack(&mut self, action: &Action) -> bool {
+    pub(crate) fn act_pack(&mut self, action: &Action) -> bool {
         let pack = |id: &str| PACKS.iter().find(|p| p.id == id);
         let handled = matches!(
             action,

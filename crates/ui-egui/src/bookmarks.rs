@@ -1,13 +1,12 @@
 //! Bookmarks: pages kept to come back to, shown as ribbons.
 
 use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
-pub(crate) use mareader_engine::notes_panel::bookmark_chapter as chapter;
 use mareader_engine::session::Session;
 use mareader_library::MarkId;
 use mareader_workspace::PaneId;
 
-use crate::notes_panel::page_of;
 use crate::study::StudyUi;
+use mareader_engine::notes_panel::page_of;
 
 /// The ribbon's size, hung from a page's top edge.
 const RIBBON: egui::Vec2 = vec2(14.0, 22.0);

@@ -3,7 +3,7 @@
 use egui::{Context, Id, Margin, Pos2, Rect, RichText, TextEdit};
 use mareader_engine::scripts::Field;
 
-pub(crate) use mareader_engine::scripts::{Ask, Paged};
+use mareader_engine::scripts::{Ask, Paged};
 
 use crate::bubble::{Bubble, Side};
 use crate::selection::Sheet;

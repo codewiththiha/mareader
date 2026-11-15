@@ -1,5 +1,7 @@
 //! Voice listing, speaker matching, and voice-booth selection for read-aloud.
 
+use std::time::Duration;
+
 use mareader_settings::ReadAloudSettings;
 use mareader_speech::{Model, Voice};
 
@@ -25,17 +27,24 @@ pub struct Offer {
 
 impl State {
     /// Keeps the settings booth open for `engine`, or closes it.
-    pub fn voices_shown(&mut self, engine: Option<&str>, settings: &ReadAloudSettings) {
+    pub fn voices_shown(
+        &mut self,
+        engine: Option<&str>,
+        settings: &ReadAloudSettings,
+    ) -> Option<Duration> {
         if let Some(engine) = engine {
             self.booth.open(engine, settings, &self.shelf);
-            self.booth.tick();
-        } else if self.booth.is_open() {
-            self.booth.close();
+            self.booth.tick()
+        } else {
+            if self.booth.is_open() {
+                self.booth.close();
+            }
+            None
         }
     }
 
     /// Opens a system engine once to list its voices while none are known.
-    pub fn list_voices(&mut self, settings: &ReadAloudSettings) {
+    pub(crate) fn list_voices(&mut self, settings: &ReadAloudSettings) {
         let engine = settings.engine.as_str();
         let model = mareader_speech::MODELS.iter().any(|m| m.id == engine);
         let tried = self.listed_once.iter().any(|e| e == engine);

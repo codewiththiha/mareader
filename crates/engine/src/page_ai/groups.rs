@@ -48,11 +48,11 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn waiting_any(&self) -> bool {
+    pub(crate) fn waiting_any(&self) -> bool {
         !self.waiting.is_empty()
     }
 
-    pub fn flying(&self) -> usize {
+    pub(crate) fn flying(&self) -> usize {
         self.runs.len() + self.reading.len()
     }
 
@@ -88,7 +88,7 @@ pub fn groups(pages: &[usize], size: usize) -> Vec<(usize, usize)> {
 }
 
 /// Pages per request: the setting, fewer for a model with little context.
-pub fn size_for(settings: &AiSettings, task: &AiTask) -> usize {
+pub(crate) fn size_for(settings: &AiSettings, task: &AiTask) -> usize {
     let size = usize::from(settings.tasks.pages.per_request.max(1));
     let preset = settings.page_preset(page_task(task));
     // Apple's model reads about 4,000 tokens in all, answer included.
@@ -100,7 +100,7 @@ pub fn size_for(settings: &AiSettings, task: &AiTask) -> usize {
 }
 
 /// What a group covers in the book: its span, or none without text.
-pub fn span_of(document: &Document, (from, to): (usize, usize)) -> Option<PageSpan> {
+pub(crate) fn span_of(document: &Document, (from, to): (usize, usize)) -> Option<PageSpan> {
     match document {
         Document::Epub { .. } => {
             let [from, to] = group_span(document, (from, to))?;
@@ -112,7 +112,7 @@ pub fn span_of(document: &Document, (from, to): (usize, usize)) -> Option<PageSp
 }
 
 /// Groups written at once: the model's room, else its own setting.
-pub fn room_for(a: &Around<'_>, task: &AiTask) -> usize {
+pub(crate) fn room_for(a: &Around<'_>, task: &AiTask) -> usize {
     let Some(preset) = a.settings.page_preset(page_task(task)) else {
         return 1;
     };
@@ -122,7 +122,7 @@ pub fn room_for(a: &Around<'_>, task: &AiTask) -> usize {
 
 impl Ledger {
     /// Queues the picked pages of `asked`'s pane, in groups, for `task`.
-    pub fn run_pages(&mut self, asked: Asked<'_>, pages: &[usize], task: AiTask) {
+    pub(crate) fn run_pages(&mut self, asked: Asked<'_>, pages: &[usize], task: AiTask) {
         let Some(view) = asked.documents.ai_view(asked.pane) else {
             return;
         };
@@ -139,7 +139,7 @@ impl Ledger {
     }
 
     /// Asks a kept or failed group's pages again, replacing its result.
-    pub fn redo_group(
+    pub(crate) fn redo_group(
         &mut self,
         asked: Asked<'_>,
         layout: u64,
@@ -312,7 +312,7 @@ impl Ledger {
                 self.write(b, who, (Some(source), g, span), now);
             }
             _ => {
-                let wake = self.repaint.waker();
+                let wake = Arc::clone(&self.waker);
                 let rx = read::group(wake, Arc::clone(document), (g.from, g.to), self.inline);
                 b.reading.push((rx, g, span));
             }
@@ -353,7 +353,7 @@ impl Ledger {
     }
 
     /// Drops the pane's waiting groups and stops those being written.
-    pub fn stop_groups(&mut self, pane: PaneId) {
+    pub(crate) fn stop_groups(&mut self, pane: PaneId) {
         let Some(b) = self.batches.remove(&pane) else {
             return;
         };

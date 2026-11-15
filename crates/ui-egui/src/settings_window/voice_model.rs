@@ -11,11 +11,11 @@ use super::{
 };
 use crate::dict::megabytes;
 use crate::icons::Icon;
-use crate::read_aloud::Booth;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use mareader_engine::command::Command;
 use mareader_engine::dict::Download;
+use mareader_engine::read_aloud::booth::Booth;
 
 pub fn tab(
     ui: &mut Ui,

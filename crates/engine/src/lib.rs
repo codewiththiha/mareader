@@ -39,7 +39,6 @@ pub mod play;
 pub mod read_aloud;
 pub mod reading;
 pub mod reading_place;
-pub mod repaint;
 pub mod route;
 pub mod sample;
 pub mod save;
@@ -50,7 +49,16 @@ pub mod search;
 pub mod session;
 pub mod settings;
 pub mod sounds;
-pub mod stable_hash;
+/// One stable hash for cached, content-derived keys.
+pub mod stable_hash {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    pub fn hash(v: impl Hash) -> u64 {
+        let mut h = DefaultHasher::new();
+        v.hash(&mut h);
+        h.finish()
+    }
+}
 pub mod study;
 #[cfg(test)]
 mod testing;

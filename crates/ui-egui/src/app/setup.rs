@@ -27,7 +27,6 @@ impl MareaderApp {
     /// a frame. A place left unnamed attaches nothing, and its controller
     /// keeps its state in memory.
     pub(super) fn wire(&mut self, ctx: &Context, machine: &Machine) {
-        self.session.set_repaint(crate::repaint::of(ctx));
         let base = Machine::under(self.session.host().as_ref());
         if let Some(root) = machine.library.clone()
             && machine.library != base.library

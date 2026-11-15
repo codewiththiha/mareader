@@ -198,7 +198,7 @@ impl<T: PartialEq, D: PartialEq + Copy> Reloads<T, D> {
     }
 
     /// False if `doc` is opening again already; it then goes once more.
-    pub fn should_start(&mut self, doc: D) -> bool {
+    pub(crate) fn should_start(&mut self, doc: D) -> bool {
         match self.0.iter_mut().find(|r| r.doc == doc) {
             Some(r) => {
                 r.again = true;

@@ -96,12 +96,12 @@ impl MareaderApp {
     }
 
     /// Sets the paused AI organizer state, for test fixtures.
-    pub fn set_library_paused(&mut self, paused: Option<ui_library::Paused>) {
+    pub fn set_library_paused(&mut self, paused: Option<mareader_engine::library::Paused>) {
         self.session.library_set_paused(paused);
     }
 
     /// Feeds an AI organizer update into the library, for test fixtures.
-    pub fn library_heard(&mut self, heard: ui_library::Heard, out: &mut Commands) {
+    pub fn library_heard(&mut self, heard: mareader_engine::library::Heard, out: &mut Commands) {
         ui_library::push_out(self.session.library_heard(heard), out);
     }
 
@@ -230,12 +230,12 @@ impl MareaderApp {
     }
 
     /// The pronunciation pack, for tests and shots.
-    pub fn sounds(&self) -> &crate::sounds::Sounds {
+    pub fn sounds(&self) -> &mareader_engine::sounds::Sounds {
         self.session.sounds()
     }
 
     /// The word levels: the dataset and the shaded words.
-    pub fn vocab(&self) -> &crate::vocab::Vocab {
+    pub fn vocab(&self) -> &mareader_engine::vocab::Vocab {
         self.session.vocab()
     }
 

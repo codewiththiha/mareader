@@ -5,16 +5,19 @@ mod entry;
 mod look;
 pub mod page;
 pub mod window;
+mod window_chrome;
+mod window_geom;
+mod window_tab;
 
 use egui::{Context, Rect, Vec2};
 use mareader_cefr::Role;
 use mareader_dict::{Pack, Query, Reply, State, Ticket, WordMatch};
 use mareader_engine::dict::{Action, Service as DictService};
+use mareader_engine::read_aloud::state::{Offer, Speaker};
 use mareader_engine::session::Session;
 use mareader_settings::DictionarySettings;
 use mareader_workspace::PaneId;
 
-pub(crate) use crate::read_aloud::{Offer, Speaker};
 use crate::theme::Tokens;
 use crate::ui_command::Commands;
 
@@ -49,7 +52,7 @@ mareader_engine::impl_card!(Card);
 pub struct Voice {
     /// The word being said aloud.
     pub saying: Option<String>,
-    pub sounds: Vec<(String, Vec<crate::sounds::Line>)>,
+    pub sounds: Vec<(String, Vec<mareader_engine::sounds::Line>)>,
     /// Who says words in which language, the picked voice first.
     pub speakers: Vec<Speaker>,
     /// Languages the engine has voices for, waiting to be downloaded.
@@ -74,7 +77,7 @@ impl Voice {
         self.offers.iter().find(wanted).copied()
     }
 
-    pub fn lines(&self, word: &str) -> &[crate::sounds::Line] {
+    pub fn lines(&self, word: &str) -> &[mareader_engine::sounds::Line] {
         let found = self.sounds.iter().find(|(w, _)| w == word);
         found.map_or(&[], |(_, lines)| lines.as_slice())
     }
@@ -174,6 +177,27 @@ impl<'a> DictView<'a> {
 }
 
 impl DictUi {
+    /// Opens the lookup card for an already-submitted dictionary query.
+    pub fn show_lookup(
+        &mut self,
+        pane: PaneId,
+        word: String,
+        ticket: Ticket,
+        at: Rect,
+        offset: Option<Vec2>,
+    ) {
+        self.card = Some(Card {
+            pane,
+            word,
+            at,
+            offset,
+            ticket,
+            reply: None,
+            rest: false,
+            role: None,
+        });
+    }
+
     /// Look up pressed: the card for `word` beside it, answered in the
     /// default language.
     pub fn look_up(
@@ -190,16 +214,7 @@ impl DictUi {
             to,
         };
         let ticket = session.dict_ask(query);
-        self.card = Some(Card {
-            pane,
-            word,
-            at,
-            offset,
-            ticket,
-            reply: None,
-            rest: false,
-            role: None,
-        });
+        self.show_lookup(pane, word, ticket, at, offset);
     }
 
     /// A rest on a shaded word opens its card, unless one was asked.
@@ -324,7 +339,7 @@ impl DictUi {
         &mut self,
         ctx: &Context,
         attached: bool,
-        (panes, heard): (&[(PaneId, Rect)], crate::sounds::Heard<'_>),
+        (panes, heard): (&[(PaneId, Rect)], mareader_engine::sounds::Heard<'_>),
         offset: impl Fn(PaneId) -> Option<Vec2>,
         out: &mut Commands,
     ) {
@@ -495,27 +510,9 @@ pub fn count(n: u64) -> String {
     out
 }
 
-/// The selection on one line, edge punctuation trimmed; none past `max`.
-pub fn lookup_text(selected: &str, max: usize) -> Option<String> {
-    let joined = selected.split_whitespace().collect::<Vec<_>>().join(" ");
-    let edge = |c: char| !c.is_alphanumeric() && c != '%';
-    let word = joined.trim_matches(edge);
-    let fits = !word.is_empty() && word.chars().count() <= max;
-    fits.then(|| word.to_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_selection_becomes_a_tidy_lookup() {
-        assert_eq!(lookup_text("  “Light,”\n", 40), Some("Light".into()));
-        assert_eq!(lookup_text("100% sure.", 40), Some("100% sure".into()));
-        assert_eq!(lookup_text("it’s", 40), Some("it’s".into()));
-        assert_eq!(lookup_text("…", 40), None);
-        assert_eq!(lookup_text("a long, long phrase", 6), None);
-    }
 
     #[test]
     fn a_japanese_voice_says_the_dictionarys_japanese() {

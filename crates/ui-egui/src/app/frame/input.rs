@@ -70,10 +70,20 @@ impl MareaderApp {
                 && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space));
             let skip = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             if read || skip {
-                let mut settings = self.settings().read_aloud.clone();
-                let aloud = &mut self.ui.read_aloud;
-                aloud.answer_question(&mut self.session, read, &mut settings);
-                let _ = self.set_field("read_aloud", settings);
+                let remember = self.ui.read_aloud.take_answer_remember();
+                if !read
+                    && let (Some(book), Some(kind)) = (
+                        self.session.read_aloud().origin().and_then(|o| o.book),
+                        remember,
+                    )
+                {
+                    let mut settings = self.settings().read_aloud.clone();
+                    mareader_engine::read_aloud::state::remember_skip(&mut settings, book, kind);
+                    let _ = self.set_field("read_aloud", settings);
+                }
+                self.send(Command::ReadAloudAct(
+                    mareader_engine::read_aloud::player::Act::Answer(read),
+                ));
             }
         }
         let read = commands.len();
@@ -116,9 +126,7 @@ impl MareaderApp {
         let mut free = escape && !modal && !egui::Popup::is_any_open(ctx);
         // The library page lets go of a selection, else goes back to reading.
         if free && route == Route::Library {
-            if !self.session.library_escape() {
-                commands.push(Sent::Ui(UiCommand::ShowLibrary));
-            }
+            self.escape_library(commands);
             free = false;
         }
         // The dictionary clears its search, else goes back.
@@ -169,6 +177,20 @@ impl MareaderApp {
             }
         }
         drop_target
+    }
+
+    fn escape_library(&mut self, commands: &mut Commands) {
+        if self.session.library().picks().active() {
+            let clear = mareader_engine::library::Action::Pick(mareader_library::PickAction::Clear);
+            self.send(Command::Library(clear));
+        } else if !self.session.library().search_text().is_empty() {
+            let clear = mareader_engine::library::Action::Search(
+                mareader_engine::library::SearchAction::Clear,
+            );
+            self.send(Command::Library(clear));
+        } else {
+            commands.push(Sent::Ui(UiCommand::ShowLibrary));
+        }
     }
 
     fn tick_library(&mut self, ctx: &Context) {

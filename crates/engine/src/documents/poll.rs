@@ -150,7 +150,7 @@ impl State {
     }
 
     /// Opens `path`'s documents again; panes keep the old ones meanwhile.
-    pub fn reload(&mut self, path: &Path) {
+    pub(crate) fn reload(&mut self, path: &Path) {
         let Some(session) = &mut self.session else {
             return;
         };

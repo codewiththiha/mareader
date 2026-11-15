@@ -41,3 +41,26 @@ pub enum Action {
     /// The reader's floating window, which the app keeps.
     Window(Window),
 }
+
+/// The selection on one line, edge punctuation trimmed; none past `max`.
+pub fn lookup_text(selected: &str, max: usize) -> Option<String> {
+    let joined = selected.split_whitespace().collect::<Vec<_>>().join(" ");
+    let edge = |c: char| !c.is_alphanumeric() && c != '%';
+    let word = joined.trim_matches(edge);
+    let fits = !word.is_empty() && word.chars().count() <= max;
+    fits.then(|| word.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lookup_text;
+
+    #[test]
+    fn a_selection_becomes_a_tidy_lookup() {
+        assert_eq!(lookup_text("  “Light,”\n", 40), Some("Light".into()));
+        assert_eq!(lookup_text("100% sure.", 40), Some("100% sure".into()));
+        assert_eq!(lookup_text("it’s", 40), Some("it’s".into()));
+        assert_eq!(lookup_text("…", 40), None);
+        assert_eq!(lookup_text("a long, long phrase", 6), None);
+    }
+}

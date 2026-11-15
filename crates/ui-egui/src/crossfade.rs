@@ -134,15 +134,14 @@ fn fitted(image: ColorImage) -> ColorImage {
     if longest <= MAX_SIDE {
         return image;
     }
-    // Integer maths: a rounded-down float factor can shave a pixel off the
-    // side that is already exactly at the limit.
+    // Integer maths keeps a side already at the limit from losing a pixel.
     let dw = (sw * MAX_SIDE / longest).clamp(1, sw);
     let dh = (sh * MAX_SIDE / longest).clamp(1, sh);
     let src: &[Color32] = image.pixels.as_ref();
-    let mut px = vec![0_u8; dw * dh * 4];
-    for (dy, band) in px.chunks_mut(dw * 4).enumerate() {
+    let mut pixels = Vec::with_capacity(dw * dh);
+    for dy in 0..dh {
         let (y0, y1) = band_rows(dy, sh, dh);
-        for (dx, out) in band.chunks_mut(4).enumerate() {
+        for dx in 0..dw {
             let (x0, x1) = band_rows(dx, sw, dw);
             let (mut r, mut g, mut b, mut a, mut n) = (0_u32, 0_u32, 0_u32, 0_u32, 0_u32);
             for row in src.chunks(sw).take(y1).skip(y0) {
@@ -155,10 +154,15 @@ fn fitted(image: ColorImage) -> ColorImage {
                 }
             }
             let n = n.max(1);
-            out.copy_from_slice(&[(r / n) as u8, (g / n) as u8, (b / n) as u8, (a / n) as u8]);
+            pixels.push(Color32::from_rgba_premultiplied(
+                (r / n) as u8,
+                (g / n) as u8,
+                (b / n) as u8,
+                (a / n) as u8,
+            ));
         }
     }
-    ColorImage::from_rgba_unmultiplied([dw, dh], &px)
+    ColorImage::new([dw, dh], pixels)
 }
 
 /// The half-open source span one downscaled column or row covers.

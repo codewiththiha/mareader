@@ -7,8 +7,8 @@ use egui::{Color32, CornerRadius, FontId, Pos2, Rect, Response, Ui, pos2};
 use mareader_library::BookId;
 
 use super::{Cx, face, line};
-use crate::library::{Bound, Proposal};
 use crate::motion;
+use mareader_engine::library::{Bound, Proposal};
 use mareader_library::picks::Pick;
 
 /// A pass of light every so often, each card a beat after the last.

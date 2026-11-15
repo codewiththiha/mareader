@@ -1,4 +1,4 @@
-//! A reading driven with no window: a recorded `Repaint`, panes that keep
+//! A reading driven with no window: a recorded `Waker`, panes that keep
 //! what they were asked, and a book opened in memory.
 //!
 //! The feed below is a thread, so a test frames until what it waits for is
@@ -58,16 +58,16 @@ fn stands(of: &[(PaneId, usize)]) -> Option<Vec<Stand>> {
     Some(books)
 }
 
-/// A window recording the waits asked of it, in order.
-fn recording() -> (Repaint, Arc<Mutex<Vec<Duration>>>) {
+/// A window recording the wakes and tick waits asked of it.
+fn recording() -> (Waker, Arc<Mutex<Vec<Duration>>>) {
     let asks: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(Vec::new()));
     let kept = Arc::clone(&asks);
-    let repaint = Repaint::new(Arc::new(move |after| {
+    let wake: Waker = Arc::new(move || {
         if let Ok(mut log) = kept.lock() {
-            log.push(after);
+            log.push(Duration::ZERO);
         }
-    }));
-    (repaint, asks)
+    });
+    (wake, asks)
 }
 
 /// The waits asked for; a poisoned lock reads as none asked.
@@ -120,15 +120,29 @@ impl Read {
     /// One frame, with its book standing in a pane.
     fn frame(&mut self) -> bool {
         let (settings, shelf, stand) = (&self.settings, &self.shelf, &self.stand);
-        self.spoken
-            .tick(&mut self.glass, Some(stand), (settings, shelf, 0.0))
+        let (going, wait) = self
+            .spoken
+            .tick(&mut self.glass, Some(stand), (settings, shelf, 0.0));
+        if let Some(after) = wait
+            && let Ok(mut log) = self.asks.lock()
+        {
+            log.push(after);
+        }
+        going
     }
 
     /// One frame, with its book away from any pane.
     fn away(&mut self) -> bool {
         let (settings, shelf) = (&self.settings, &self.shelf);
-        self.spoken
-            .tick(&mut self.glass, None, (settings, shelf, 0.0))
+        let (going, wait) = self
+            .spoken
+            .tick(&mut self.glass, None, (settings, shelf, 0.0));
+        if let Some(after) = wait
+            && let Ok(mut log) = self.asks.lock()
+        {
+            log.push(after);
+        }
+        going
     }
 
     /// Frames until `met` holds; false if `FRAMES` of them did not.
@@ -159,14 +173,14 @@ fn reading(
     wants.extend_from_slice(others);
     let mut books = stands(&wants).ok_or("the sample didn't open")?;
     let stand = books.remove(0);
-    let (repaint, asks) = recording();
+    let (wake, asks) = recording();
     let settings = ReadAloudSettings {
         engine: SILENT.to_owned(),
         ..Default::default()
     };
     let shelf = Shelf::default();
     let start = Start::Spot(Spot::default());
-    let spoken = Spoken::new(repaint, &stand, (start, until), (&settings, &shelf));
+    let spoken = Spoken::new(wake, &stand, (start, until), (&settings, &shelf));
     Ok(Read {
         spoken,
         glass: Glass::default(),

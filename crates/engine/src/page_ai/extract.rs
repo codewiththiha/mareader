@@ -170,7 +170,7 @@ fn text_piece(t: &Text, frame: &Frame, range: Range<usize>) -> Option<Piece> {
 }
 
 /// Code, not verse: both keep their lines, but only verse is translated.
-pub fn looks_like_code(text: &str) -> bool {
+pub(crate) fn looks_like_code(text: &str) -> bool {
     const LEADS: [&str; 16] = [
         "fn ", "def ", "let ", "var ", "const ", "import ", "return", "class ", "#include",
         "function", "public ", "private ", "if (", "for (", "while (", "SELECT ",

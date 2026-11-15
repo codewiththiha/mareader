@@ -5,12 +5,10 @@ use std::collections::BTreeMap;
 use egui::{Align, Layout, RichText, ScrollArea, Ui, vec2};
 use mareader_library::{BookId, Library};
 
-use super::{Proposal, Spot};
 use crate::icons::Icon;
 use crate::modal::{buttons, primary, title};
 use crate::theme::{self, Tokens};
-use mareader_engine::library::Action;
-use mareader_engine::library::counted;
+use mareader_engine::library::{Action, Proposal, Spot, counted};
 
 /// Titles a row names before "and N more".
 const NAMED: usize = 3;

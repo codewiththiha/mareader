@@ -8,7 +8,7 @@ use mareader_engine::page_ai::cards::{Ask, Done, Set, set, worker};
 use mareader_reflow::PAD;
 use mareader_session::Raster;
 
-pub(crate) use mareader_engine::page_ai::cards::Job;
+use mareader_engine::page_ai::cards::Job;
 
 use crate::gpu::Gpu;
 use crate::pages::PageTexture;

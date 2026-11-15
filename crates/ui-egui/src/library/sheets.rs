@@ -289,7 +289,7 @@ fn moved(
 /// A new run would replace the paused one: start over, or carry on?
 fn replace(
     ui: &mut Ui,
-    paused: &super::Paused,
+    paused: &mareader_engine::library::Paused,
     picked: &Option<Vec<mareader_library::BookId>>,
     t: &Tokens,
 ) -> Option<Action> {

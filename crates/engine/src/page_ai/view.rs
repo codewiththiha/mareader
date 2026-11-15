@@ -99,7 +99,7 @@ pub fn group_span(document: &Document, (from, to): (usize, usize)) -> Option<[[u
 }
 
 /// Own page `page`'s text, to send or show beside a result.
-pub fn source_of(
+pub(crate) fn source_of(
     view: &AiView,
     documents: &dyn Views,
     page: usize,

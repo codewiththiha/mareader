@@ -42,20 +42,6 @@ impl MareaderApp {
         ctx: &Context,
         action: mareader_engine::library::Action,
     ) {
-        if library_handles_1(&action) {
-            self.library_special_1(ctx, action);
-            return;
-        }
-        if library_handles_2(&action) {
-            self.library_special_2(ctx, action);
-            return;
-        }
-        if library_handles_3(&action) {
-            self.library_special_3(ctx, action);
-        }
-    }
-
-    fn library_special_1(&mut self, ctx: &Context, action: mareader_engine::library::Action) {
         match action {
             A::Search(S::Focus) => {
                 self.ui.titlebar.reveal();
@@ -63,12 +49,6 @@ impl MareaderApp {
             }
             A::Search(S::Choose(_) | S::ChooseLit) => ui_library::search::blur(ctx),
             A::ShowAdd => egui::Popup::open_id(ctx, egui::Id::new(ui_library::ADD_MENU)),
-            _ => {}
-        }
-    }
-
-    fn library_special_2(&mut self, _ctx: &Context, action: mareader_engine::library::Action) {
-        match action {
             A::Organize(picked) => self.organize(picked, false),
             A::OrganizeAnew(picked) => self.organize(picked, true),
             A::ResumeOrganizing => self.resume_organizing(),
@@ -78,41 +58,38 @@ impl MareaderApp {
                 self.session.library_set_paused(self.ui.ai.paused());
                 self.session.library_organizer_end();
             }
-            A::DiscardPaused => {
-                let ready = self
-                    .session
-                    .library()
-                    .organizer()
-                    .paused()
-                    .is_some_and(|p| p.ready);
-                if self.ui.ai.set_aside() {
-                    let said = match ready {
-                        true => "Discarded the shelf plan.",
-                        false => "Discarded the paused run.",
-                    };
-                    let undo = Command::Library(A::RestorePaused);
-                    self.ui.toasts.push(Toast::info(said).undo(undo));
-                }
-                self.session.library_set_paused(None);
-            }
+            A::DiscardPaused => self.discard_paused_organize(),
             A::RestorePaused => {
                 self.ui.ai.bring_back();
                 self.session.library_set_paused(self.ui.ai.paused());
+            }
+            A::ApplyOrganized => self.ui.ai.forget(),
+            A::DiscardOrganized if self.ui.ai.set_aside() => {
+                let undo = Command::Library(A::RestorePaused);
+                self.ui
+                    .toasts
+                    .push(Toast::info("Discarded the shelf plan.").undo(undo));
             }
             _ => {}
         }
     }
 
-    fn library_special_3(&mut self, _ctx: &Context, action: mareader_engine::library::Action) {
-        match action {
-            A::ApplyOrganized => self.ui.ai.forget(),
-            A::DiscardOrganized if self.ui.ai.set_aside() => {
-                let undo = Command::Library(A::RestorePaused);
-                let said = "Discarded the shelf plan.";
-                self.ui.toasts.push(Toast::info(said).undo(undo));
-            }
-            _ => {}
+    fn discard_paused_organize(&mut self) {
+        let ready = self
+            .session
+            .library()
+            .organizer()
+            .paused()
+            .is_some_and(|p| p.ready);
+        if self.ui.ai.set_aside() {
+            let said = match ready {
+                true => "Discarded the shelf plan.",
+                false => "Discarded the paused run.",
+            };
+            let undo = Command::Library(A::RestorePaused);
+            self.ui.toasts.push(Toast::info(said).undo(undo));
         }
+        self.session.library_set_paused(None);
     }
 
     /// The last three books opened, rebuilt only as the library changes.
@@ -155,7 +132,7 @@ impl MareaderApp {
     }
 
     /// Runs `ask`; a finished paused run needs no model to show its plan.
-    pub(super) fn start_organizing(&mut self, ask: &ui_library::Ask, resume: bool) {
+    pub(super) fn start_organizing(&mut self, ask: &mareader_engine::library::Ask, resume: bool) {
         let ai = &self.settings().ai;
         let ready = resume
             && self
@@ -188,7 +165,7 @@ impl MareaderApp {
     /// The run's news, into the library; an ended run's steps are read back.
     pub(super) fn take_organized(&mut self) {
         let heard = self.ui.ai.organized();
-        use ui_library::Heard;
+        use mareader_engine::library::Heard;
         let over = |h: &Heard| !matches!(h, Heard::Progress { .. });
         let empty = |h: &Heard| matches!(h, Heard::Plan(p) if p.placed.is_empty());
         if heard.iter().any(empty) {
@@ -223,29 +200,6 @@ impl MareaderApp {
         };
         self.ui.files.pick_books(ctx, from, import);
     }
-}
-
-fn library_handles_1(action: &mareader_engine::library::Action) -> bool {
-    matches!(
-        action,
-        A::Search(S::Focus | S::Choose(_) | S::ChooseLit) | A::ShowAdd
-    )
-}
-
-fn library_handles_2(action: &mareader_engine::library::Action) -> bool {
-    matches!(
-        action,
-        A::Organize(..)
-            | A::OrganizeAnew(..)
-            | A::ResumeOrganizing
-            | A::StopOrganizing
-            | A::DiscardPaused
-            | A::RestorePaused
-    )
-}
-
-fn library_handles_3(action: &mareader_engine::library::Action) -> bool {
-    matches!(action, A::ApplyOrganized | A::DiscardOrganized)
 }
 
 /// The shelf's own key: the page the shelf is read on.

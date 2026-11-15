@@ -12,9 +12,9 @@ use mareader_workspace::PaneId;
 
 use crate::icons::Icon;
 use crate::motion::entrance;
-use crate::search::Found;
 use crate::theme::{self, Tokens};
 use crate::{loading_mark, widgets};
+use mareader_engine::search::Found;
 
 pub const PLACEHOLDER: &str = "Search in document…";
 const WIDTH: f32 = 520.0;
@@ -99,14 +99,6 @@ impl FindBar {
 
     pub fn active(&self) -> Option<usize> {
         self.active
-    }
-
-    /// Replaces the query, as if typed.
-    pub fn set_query(&mut self, query: &str, now: f64) {
-        if self.query != query {
-            self.query = query.to_owned();
-            self.typed = Some(now);
-        }
     }
 
     /// A query asked at once, landing on its first hit: for shots.

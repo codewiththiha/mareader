@@ -13,7 +13,7 @@ use super::extract;
 use super::layout::{anchor, pages_of};
 use super::ledger::Ledger;
 use super::state::{Asked, Key, News, Showing, canned, poll};
-use super::view::{AiView, source_of};
+use super::view::source_of;
 
 /// Seconds between settings of a result while it streams in.
 const RESET: f64 = 0.4;
@@ -107,7 +107,7 @@ impl Ledger {
             }
         }
         if streaming {
-            self.repaint.after(Duration::from_secs_f64(RESET));
+            self.wait_after(Duration::from_secs_f64(RESET));
         }
         // A failed run that was shown leaves the page as it was.
         let failed: Vec<u64> = self
@@ -180,7 +180,13 @@ impl Ledger {
     }
 
     /// Toggles the bubble `index`; returns `Some(slot)` if it failed.
-    pub fn pick_slot(&mut self, pane: PaneId, page: usize, index: usize, now: f64) -> Option<Slot> {
+    pub(crate) fn pick_slot(
+        &mut self,
+        pane: PaneId,
+        page: usize,
+        index: usize,
+        now: f64,
+    ) -> Option<Slot> {
         let (layout, slot, own) = self.slot_at(pane, page, index)?;
         let failed = match slot {
             Slot::Run(id) => self.runs.iter().any(|r| r.id == id && r.failed.is_some()),
@@ -200,7 +206,7 @@ impl Ledger {
     }
 
     /// Shows `slot` over the page, or the page itself.
-    pub fn show_result(&mut self, pane: PaneId, page: usize, slot: Option<Slot>, now: f64) {
+    pub(crate) fn show_result(&mut self, pane: PaneId, page: usize, slot: Option<Slot>, now: f64) {
         let Some((layout, pages)) = self.drawn.get(&pane) else {
             return;
         };
@@ -327,13 +333,6 @@ impl Ledger {
             .into_iter()
             .map(|p| (p.task.clone(), p.span.clone()))
             .collect()
-    }
-
-    /// Shots: whether the page's text is in, to be worked on.
-    pub fn can_read(&self, asked: &Asked<'_>) -> bool {
-        let view = asked.documents.ai_view(asked.pane);
-        let page = |v: &AiView| v.document.to_base(asked.page);
-        view.is_some_and(|v| source_of(&v, asked.documents, page(&v)).is_ok())
     }
 
     /// Whether `pane` shows a result over `page`.

@@ -5,7 +5,7 @@ use crate::command::Command;
 /// How long a note or a result stays up.
 pub const SHOW_FOR: f64 = 3.5;
 /// A failure stays longer: it may need reading twice.
-pub const ERROR_FOR: f64 = 6.0;
+pub(crate) const ERROR_FOR: f64 = 6.0;
 /// A toast with a button stays as long as an Undo is offered.
 pub const UNDO_FOR: f64 = 6.0;
 

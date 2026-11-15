@@ -141,11 +141,6 @@ impl Session {
         measuring
     }
 
-    /// The book a pane reads as: its own, else the book at `path`.
-    pub fn library_book_in(&self, own: Option<BookId>, path: Option<&Path>) -> Option<BookId> {
-        own.or_else(|| self.library.model.book_at(path?))
-    }
-
     /// Applies a library action; returns resulting toasts and commands.
     pub(crate) fn library_act(&mut self, action: Action, now: f64) -> Vec<Out> {
         let mut out = Vec::new();
@@ -188,10 +183,6 @@ impl Session {
 
     pub fn library_settle(&mut self) {
         self.library.settle();
-    }
-
-    pub fn library_escape(&mut self) -> bool {
-        self.library.escape()
     }
 
     pub fn library_listing(&mut self, view: &LibraryView) -> Rc<Listing> {

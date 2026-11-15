@@ -248,12 +248,12 @@ impl MareaderApp {
 
     fn pill_gloss(&mut self, ctx: &Context, _out: &mut Commands, pane: PaneId, gloss: Gloss) {
         match gloss {
-            Gloss::Pill(crate::page_ai::PillPress::Stop) => {
+            Gloss::Pill(mareader_engine::page_ai::view::PillPress::Stop) => {
                 let stop = mareader_engine::page_ai::Action::StopPill(pane);
                 let now = ctx.input(|i| i.time);
                 self.session.execute(Command::PageAi(stop), now);
             }
-            Gloss::Pill(crate::page_ai::PillPress::Continue) => {
+            Gloss::Pill(mareader_engine::page_ai::view::PillPress::Continue) => {
                 let Some(page) = self.session.documents().current(pane) else {
                     return;
                 };
@@ -285,7 +285,7 @@ impl MareaderApp {
         &mut self,
         ctx: &Context,
         out: &mut Commands,
-    ) -> Vec<(String, Vec<crate::sounds::Line>)> {
+    ) -> Vec<(String, Vec<mareader_engine::sounds::Line>)> {
         let sounds = self.card_sounds(ctx.input(|i| i.time));
         // Read before the mutable borrows below.
         let (gloss_look, highlight_look) = (
@@ -310,7 +310,7 @@ impl MareaderApp {
             speakers,
             offers,
         });
-        let heard = crate::sounds::Heard {
+        let heard = mareader_engine::sounds::Heard {
             saying,
             sounds: &sounds,
         };
@@ -324,12 +324,13 @@ impl MareaderApp {
         &mut self,
         ctx: &Context,
         out: &mut Commands,
-        sounds: &[(String, Vec<crate::sounds::Line>)],
+        sounds: &[(String, Vec<mareader_engine::sounds::Line>)],
     ) {
-        self.session.set_repaint(crate::repaint::of(ctx));
         let now = ctx.input(|i| i.time);
         self.ui.page_ai.receive_cards(ctx, self.ui.documents.gpu());
-        self.session.page_ai_tick(&self.ui.ai, now);
+        if let Some(wait) = self.session.page_ai_tick(&self.ui.ai, now) {
+            ctx.request_repaint_after(wait);
+        }
         // A book lays its pane's shown results and transcripts into its pages.
         let ai_look = self.settings().ai.clone();
         let wanted = mareader_engine::transcript::wanted(&ai_look);
@@ -363,7 +364,7 @@ impl MareaderApp {
         let docs = self.ui.documents.as_view(self.session.documents());
         let offset = |pane| docs.offset(pane);
         let saying = self.session.read_aloud().saying();
-        let heard = crate::sounds::Heard { saying, sounds };
+        let heard = mareader_engine::sounds::Heard { saying, sounds };
         let attached = self.session.dict().attached();
         self.ui
             .dict

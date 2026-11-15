@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
+use std::time::Duration;
 
 use mareader_session::Entry;
 use mareader_settings::ReadAloudSettings;
@@ -14,7 +15,6 @@ use mareader_workspace::PaneId;
 use crate::dict::Download;
 use crate::documents::PaneShow;
 use crate::read_aloud::ReadFrom;
-use crate::read_aloud::parts;
 use crate::read_aloud::place::{Panes, Stand};
 use crate::read_aloud::player::Act;
 use crate::read_aloud::state::{Origin, State};
@@ -122,9 +122,9 @@ impl Session {
     }
 
     /// Keeps the settings voice booth open for `engine`, or closes it.
-    pub fn read_aloud_voices_shown(&mut self, engine: Option<&str>) {
+    pub fn read_aloud_voices_shown(&mut self, engine: Option<&str>) -> Option<Duration> {
         let settings = &self.settings.read_aloud;
-        self.read_aloud.voices_shown(engine, settings);
+        self.read_aloud.voices_shown(engine, settings)
     }
 
     /// Opens a system engine once to list its voices while none are known.
@@ -183,8 +183,13 @@ impl Session {
         });
     }
 
-    /// Advances playback and word-card booth; drives panes while following.
-    pub fn read_aloud_tick(&mut self, now: f64, rise: f32, driver: &mut dyn PaneDriver) {
+    /// Advances playback and word-card booth; returns any poll wait owed.
+    pub fn read_aloud_tick(
+        &mut self,
+        now: f64,
+        rise: f32,
+        driver: &mut dyn PaneDriver,
+    ) -> Option<Duration> {
         let stand = self.read_aloud.pane().and_then(|p| self.documents.stand(p));
         let mut panes = Drive {
             documents: &mut self.documents,
@@ -192,7 +197,7 @@ impl Session {
         };
         let settings = &self.settings.read_aloud;
         self.read_aloud
-            .tick(now, rise, &mut panes, stand.as_ref(), settings);
+            .tick(now, rise, &mut panes, stand.as_ref(), settings)
     }
 
     /// Brings `chars` on `pane`'s `page` into view using `driver`.
@@ -213,15 +218,6 @@ impl Session {
 
     pub(crate) fn read_aloud_act(&mut self, act: Act) {
         self.read_aloud.act_player(act);
-    }
-
-    pub fn read_aloud_answer(
-        &mut self,
-        read: bool,
-        remember: Option<parts::Kind>,
-        settings: &mut ReadAloudSettings,
-    ) -> bool {
-        self.read_aloud.answer_question(read, remember, settings)
     }
 
     pub(crate) fn try_voice(&mut self) {

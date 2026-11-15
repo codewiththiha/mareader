@@ -63,14 +63,6 @@ impl Place {
         self.current = page.min(count.saturating_sub(1));
     }
 
-    /// Reading the whole page: how far through the document, 0 to 1.
-    pub fn advanced(&self, count: usize) -> f32 {
-        match count {
-            0 => 0.0,
-            n => (self.current + 1) as f32 / n as f32,
-        }
-    }
-
     /// A place to come back to: the page, and how far down it.
     pub fn anchor(&self) -> Anchor {
         Anchor {

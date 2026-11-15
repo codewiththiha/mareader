@@ -23,7 +23,7 @@ use mareader_cefr::Role;
 use mareader_engine::command::Command;
 use mareader_engine::session::Session;
 use mareader_engine::study::Action;
-pub(crate) use mareader_engine::study::state::{Highlighted, Key, State as StudyState};
+use mareader_engine::study::state::{Key, State as StudyState};
 use mareader_engine::study::words::Asked;
 use mareader_library::{BookId, Library, Mark, MarkId, MarkKind, Spot, Style};
 use mareader_settings::{GlossSettings, HighlightSettings};
@@ -214,7 +214,7 @@ impl StudyUi {
         &mut self,
         ctx: &Context,
         (state, main): (&StudyState, &Library),
-        (panes, heard): (&[(PaneId, Rect)], crate::sounds::Heard<'_>),
+        (panes, heard): (&[(PaneId, Rect)], mareader_engine::sounds::Heard<'_>),
         (look, pens): (&GlossSettings, &HighlightSettings),
         out: &mut Commands,
     ) {

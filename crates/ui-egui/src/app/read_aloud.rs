@@ -3,7 +3,7 @@ use mareader_engine::documents::OpenRequest;
 
 impl MareaderApp {
     /// The voice booth opens with a voice tab and closes after it.
-    pub(super) fn voices_shown(&mut self) {
+    pub(super) fn voices_shown(&mut self, ctx: &Context) {
         use mareader_engine::settings::Tab;
         let engine = match self.ui.settings_window.tab() {
             _ if !self.ui.settings_window.is_open() => None,
@@ -11,11 +11,17 @@ impl MareaderApp {
             Tab::Model(m) => Some(m.id.to_owned()),
             _ => None,
         };
-        self.session.read_aloud_voices_shown(engine.as_deref());
+        if let Some(wait) = self.session.read_aloud_voices_shown(engine.as_deref()) {
+            ctx.request_repaint_after(wait);
+        }
     }
 
     /// Opens the book read aloud beside what shows, to read on there.
-    pub(super) fn reopen_reading(&mut self, ctx: &Context, origin: crate::read_aloud::Origin) {
+    pub(super) fn reopen_reading(
+        &mut self,
+        ctx: &Context,
+        origin: mareader_engine::read_aloud::state::Origin,
+    ) {
         let name = &origin.name;
         // Checked first, so a lost file opens no empty pane.
         let why = match &origin.path {
@@ -150,7 +156,7 @@ impl MareaderApp {
     fn option_english_voice(&mut self, _key: &str, value: &str) -> Result<(), String> {
         let (name, tag) = value.split_once(':').ok_or("english_voice=name:tag")?;
         let (name, tag) = (name.replace('_', " "), tag.to_owned());
-        self.ui.english = Some(crate::sounds::EnglishVoice { name, tag });
+        self.ui.english = Some(mareader_engine::sounds::EnglishVoice { name, tag });
 
         Ok(())
     }

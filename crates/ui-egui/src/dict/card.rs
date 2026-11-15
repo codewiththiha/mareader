@@ -66,9 +66,9 @@ pub struct View<'a> {
     /// Its word is being said aloud.
     pub saying: bool,
     /// How it sounds, once looked up.
-    pub sound: &'a [crate::sounds::Line],
+    pub sound: &'a [mareader_engine::sounds::Line],
     /// Who says the word, when a voice here speaks its language.
-    pub speaker: Option<&'a crate::read_aloud::Speaker>,
+    pub speaker: Option<&'a mareader_engine::read_aloud::state::Speaker>,
 }
 
 pub fn show(ctx: &Context, view: &View<'_>, t: &Tokens, out: &mut Commands) -> Rect {

@@ -108,8 +108,8 @@ fn kept(ctx: &Context) -> Keep {
 /// Rects recently asked to stay clear, this pass and the last.
 pub fn kept_clear(ctx: &Context) -> Vec<Rect> {
     let pass = ctx.cumulative_pass_nr();
-    ctx.data(|d| {
-        let keep = d.get_temp::<Keep>(keep_id()).unwrap_or_default();
+    ctx.data_mut(|d| {
+        let keep = d.get_temp_mut_or_default::<Keep>(keep_id());
         let recent = keep.clear.iter().filter(move |(at, _)| at + 1 >= pass);
         recent.map(|(_, r)| *r).collect()
     })

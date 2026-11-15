@@ -8,7 +8,7 @@ use egui::{
 use mareader_appearance::PageTone;
 use mareader_engine::page_ai::view::Ring;
 
-pub(crate) use mareader_engine::page_ai::view::{Pill, PillPress};
+use mareader_engine::page_ai::view::{Pill, PillPress};
 
 use crate::gpu::{Anchor, Quad};
 use crate::pages::PageTexture;

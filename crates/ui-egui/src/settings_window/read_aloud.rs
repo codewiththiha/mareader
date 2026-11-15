@@ -5,12 +5,12 @@ use super::voice_model::buttons;
 use super::{ROW_H, divider, fold_row, group, note, pick_row, row, section, switch_row};
 use crate::icons::Icon;
 use crate::platform::Platform;
-use crate::read_aloud::Booth;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::{keymap, widgets};
 use egui::{Align, Color32, Id, Layout, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
 use mareader_engine::command::Command;
+use mareader_engine::read_aloud::booth::Booth;
 use mareader_engine::settings::Tab;
 use mareader_settings::{Highlight, LANGUAGES, Player, ReadAloudSettings, Skip};
 use mareader_speech::{Build, Item, Model, Shelf, Stage, Voice};
@@ -22,9 +22,9 @@ pub struct Voices<'a> {
     pub shelf: &'a Shelf,
     pub platform: Platform,
     /// The pronunciation pack, which shares the models' files.
-    pub sounds: &'a crate::sounds::Sounds,
+    pub sounds: &'a mareader_engine::sounds::Sounds,
     /// Who says English words on cards, picking their accent.
-    pub english: Option<crate::sounds::EnglishVoice>,
+    pub english: Option<mareader_engine::sounds::EnglishVoice>,
 }
 
 const VOICE_H: f32 = 34.0;

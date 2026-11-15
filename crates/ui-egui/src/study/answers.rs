@@ -6,7 +6,8 @@ use mareader_engine::session::Session;
 use mareader_library::MarkId;
 use mareader_workspace::PaneId;
 
-use super::{Card, Explained, Key, StudyUi};
+use super::{Card, Explained, StudyUi};
+use mareader_engine::study::state::Key;
 
 impl StudyUi {
     /// The mark whose card or note is open in `pane`.
@@ -48,6 +49,28 @@ impl StudyUi {
         mareader_engine::word_card::set_role(&mut self.card, word, role);
     }
 
+    /// Opens the AI Dictionary card for a word already marked by the session.
+    pub fn show_explained(
+        &mut self,
+        pane: PaneId,
+        key: Key,
+        word: String,
+        context: String,
+        at: Rect,
+    ) {
+        self.menu = None;
+        self.note = None;
+        self.card = Some(Card {
+            pane,
+            key,
+            word,
+            context,
+            at,
+            seen: true,
+            role: None,
+        });
+    }
+
     /// Explain pressed: marks the word in the session and opens its card.
     pub fn explain(&mut self, session: &mut Session, at: Explained<'_>, wall_ms: u64) {
         let Explained {
@@ -58,17 +81,7 @@ impl StudyUi {
             rect,
         } = at;
         let key = session.study_explain(book, name, &asked, wall_ms);
-        self.menu = None;
-        self.note = None;
-        self.card = Some(Card {
-            pane,
-            key,
-            word: asked.word,
-            context: asked.context,
-            at: rect,
-            seen: true,
-            role: None,
-        });
+        self.show_explained(pane, key, asked.word, asked.context, rect);
     }
 
     pub(super) fn open(

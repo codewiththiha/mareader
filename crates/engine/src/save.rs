@@ -125,7 +125,7 @@ impl Save {
     }
 
     /// Why a write was refused, once; a caller turns it into a toast.
-    pub fn take_failure(&mut self) -> Option<String> {
+    pub(crate) fn take_failure(&mut self) -> Option<String> {
         self.failed.take()
     }
 }

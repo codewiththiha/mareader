@@ -11,7 +11,7 @@ use crate::gpu::{Gpu, Look, Reach};
 use crate::icons::Icon;
 use crate::keymap;
 use crate::library::menu as library_menu;
-use crate::library::{Field, crumbs, search};
+use crate::library::{crumbs, search};
 use crate::motion;
 use crate::platform::Platform;
 use crate::theme::{self, TITLE_BAR_H, Tokens};
@@ -20,7 +20,7 @@ use crate::view_menu::{self, MenuContext, Tool};
 use crate::widgets::{self, CaptionStyle};
 use crate::zoom::ZoomState;
 use mareader_engine::command::Independence;
-use mareader_engine::library::Crumb;
+use mareader_engine::library::{Crumb, Field};
 use mareader_engine::pane::ViewMode;
 
 /// How long the bar stays after the pointer leaves the band.

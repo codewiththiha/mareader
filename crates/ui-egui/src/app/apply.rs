@@ -32,16 +32,19 @@ impl MareaderApp {
 
     /// Shows what the session reported since it was last asked.
     pub(super) fn drain(&mut self, ctx: &Context) {
+        for event in std::mem::take(&mut self.ui.deferred_events) {
+            self.handle_event(ctx, event);
+        }
         for event in self.session.drain() {
             self.handle_event(ctx, event);
         }
     }
 
     fn handle_event(&mut self, ctx: &Context, event: Event) {
+        let Some(event) = self.handle_local_event(event) else {
+            return;
+        };
         match event {
-            Event::Toast(toast) => self.ui.toasts.push(toast),
-            Event::RouteChanged(route) => self.arrived(route),
-            Event::OpenSettings(tab) => self.open_settings(Some(tab)),
             Event::RevealVoice { model, language } => {
                 self.open_settings(Some(Tab::Model(model)));
                 let fold = crate::settings_window::voice_fold(model, language);
@@ -65,6 +68,19 @@ impl MareaderApp {
             Event::ReleaseFocus => {
                 ctx.memory_mut(|m| m.focused().map(|id| m.surrender_focus(id)));
             }
+            Event::PageAi(action) => self.page_ai_act(ctx, action),
+            Event::Library(action) => self.library_action(ctx, action),
+            Event::WordList { made, list } => self.deliver_word_list(ctx, &made, list.output),
+            _ => {}
+        }
+    }
+
+    /// Handles context-free events; returns `Some(event)` when ctx is needed.
+    fn handle_local_event(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::Toast(toast) => self.ui.toasts.push(toast),
+            Event::RouteChanged(route) => self.arrived(route),
+            Event::OpenSettings(tab) => self.open_settings(Some(tab)),
             Event::PaneOpened {
                 pane,
                 page,
@@ -81,8 +97,9 @@ impl MareaderApp {
             }
             Event::ForgetPages(doc) => self.ui.documents.forget_pages(doc),
             Event::PaneView { pane, action, now } => self.handle_pane_view(pane, action, now),
-            other => self.handle_ui_event(ctx, other),
+            other => return self.handle_local_ui_event(other),
         }
+        None
     }
 
     fn handle_pane_view(&mut self, pane: PaneId, action: PaneAction, now: f64) {
@@ -106,7 +123,7 @@ impl MareaderApp {
         }
     }
 
-    fn handle_ui_event(&mut self, ctx: &Context, event: Event) {
+    fn handle_local_ui_event(&mut self, event: Event) -> Option<Event> {
         match event {
             Event::PlaceReadMarker { pane, spot, now } => {
                 self.ui.documents.place_read_marker(pane, spot, now);
@@ -114,21 +131,57 @@ impl MareaderApp {
             Event::DismissReadMarkers(now) => {
                 self.ui.documents.dismiss_read_markers(now);
             }
-            Event::ReadAloudStarted { fresh } => {
-                self.session.set_repaint(crate::repaint::of(ctx));
-                self.ui.read_aloud.on_started(fresh);
-            }
+            Event::ReadAloudStarted { fresh } => self.ui.read_aloud.on_started(fresh),
             Event::Study(action) => self.ui.study.act(&mut self.session, action),
-            Event::Explain(pane) => self.explain(pane),
-            Event::LookUp(pane) => self.look_up(pane),
-            Event::Note(pane) => self.note(pane),
+            Event::ExplainOpened { pane, key, asked } => {
+                self.ui.dict.escape();
+                let rect = self
+                    .documents()
+                    .hit_box(pane, asked.page, asked.chars)
+                    .unwrap_or(Rect::ZERO);
+                self.ui
+                    .study
+                    .show_explained(pane, key, asked.word, asked.context, rect);
+            }
+            Event::LookUpOpened {
+                pane,
+                word,
+                ticket,
+                spans,
+            } => {
+                // One card at a time.
+                self.ui.study.escape(&mut self.session);
+                let rect = self
+                    .documents()
+                    .spans_rect(pane, &spans)
+                    .unwrap_or(Rect::ZERO);
+                let offset = self.documents().offset(pane);
+                self.ui.dict.show_lookup(pane, word, ticket, rect, offset);
+            }
+            Event::DictWindowFeed(word) => {
+                self.ui.dict.escape();
+                self.ui.dict.feed(&word);
+            }
+            Event::NoteOpened {
+                pane,
+                id,
+                made,
+                spans,
+            } => {
+                let rect = self
+                    .documents()
+                    .spans_rect(pane, &spans)
+                    .unwrap_or(Rect::ZERO);
+                let (state, model) = (self.session.study(), self.session.library_model());
+                self.ui
+                    .study
+                    .open_created_note(state, model, pane, id, made, rect);
+            }
             Event::DictWindow(window) => self.dict_window(window),
             Event::Pursue(word) => self.pursue(&word),
             Event::Dict(action) => self.ui.dict.act(action),
-            Event::PageAi(action) => self.page_ai_act(ctx, action),
             #[cfg(not(target_arch = "wasm32"))]
             Event::Ai(job) => self.ui.ai.send(job),
-            Event::Library(action) => self.library_action(ctx, action),
             Event::Role { word, role } => {
                 self.ui.dict.set_role(&word, role.clone());
                 self.ui.study.set_role(&word, role);
@@ -138,19 +191,16 @@ impl MareaderApp {
                 self.ui.dict.set_exact_only(exact);
                 self.ui.dict.receive(changed, replies);
             }
-            Event::WordList { made, list } => self.deliver_word_list(ctx, &made, list.output),
-            _ => {}
+            needs_ctx => return Some(needs_ctx),
         }
+        None
     }
 
-    /// Handles session events that need no egui context (dials, focus, route).
+    /// Handles context-free events immediately and defers ctx-needing ones.
     pub(super) fn drain_local(&mut self) {
         for event in self.session.drain() {
-            match event {
-                Event::Toast(toast) => self.ui.toasts.push(toast),
-                Event::RouteChanged(route) => self.arrived(route),
-                Event::OpenSettings(tab) => self.open_settings(Some(tab)),
-                _ => {}
+            if let Some(deferred) = self.handle_local_event(event) {
+                self.ui.deferred_events.push(deferred);
             }
         }
     }

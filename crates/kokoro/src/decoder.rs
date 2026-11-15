@@ -52,28 +52,25 @@ const NOISE_STD: f32 = 0.003;
 /// Pitch below this, in hertz, counts as unvoiced.
 const VOICED: f32 = 10.0;
 
-/// `input` stretched to `len` points, as linear interpolation without corners.
-fn resample(input: &[f32], len: usize) -> Vec<f32> {
-    let (Some(&first), Some(last)) = (input.first(), input.len().checked_sub(1)) else {
-        return Vec::new();
-    };
-    if input.len() == len {
-        return input.to_vec();
-    }
-    if last == 0 {
-        return vec![first; len];
-    }
-    let ratio = input.len() as f32 / len as f32;
-    (0..len)
-        .map(|i| {
-            let src = ((i as f32 + 0.5) * ratio - 0.5).clamp(0.0, last as f32);
-            let left = src.floor() as usize;
-            let frac = src - left as f32;
-            let a = input.get(left).copied().unwrap_or(first);
-            let b = input.get((left + 1).min(last)).copied().unwrap_or(a);
-            a * (1.0 - frac) + b * frac
-        })
-        .collect()
+/// `n` points from `at` stretched to `len`, as linear interpolation.
+fn resample_iter(n: usize, len: usize, at: impl Fn(usize) -> f32) -> impl Iterator<Item = f32> {
+    let count = if n == 0 { 0 } else { len };
+    let last = n.saturating_sub(1);
+    let ratio = n as f32 / len.max(1) as f32;
+    (0..count).map(move |i| {
+        if n == len {
+            return at(i);
+        }
+        if last == 0 {
+            return at(0);
+        }
+        let src = ((i as f32 + 0.5) * ratio - 0.5).clamp(0.0, last as f32);
+        let left = src.floor() as usize;
+        let frac = src - left as f32;
+        let a = at(left);
+        let b = at((left + 1).min(last));
+        a * (1.0 - frac) + b * frac
+    })
 }
 
 /// A fixed phase offset per harmonic, as the model's source expects.
@@ -110,22 +107,21 @@ impl Source {
         let mut waves = vec![0f32; len * dims];
         fast::by_rows(&mut waves, len, |h, row| {
             let times = (h + 1) as f32;
-            let mut rad: Vec<f32> = f0
-                .iter()
-                .map(|v| (v * times / SAMPLE_RATE as f32).rem_euclid(1.0))
-                .collect();
-            if let (true, Some(first)) = (h > 0, rad.first_mut()) {
-                *first += offset(h as u64);
-            }
+            let shift = if h > 0 { offset(h as u64) } else { 0.0 };
+            let rad = |i: usize| {
+                let v = f0.get(i).copied().unwrap_or(0.0);
+                let base = (v * times / SAMPLE_RATE as f32).rem_euclid(1.0);
+                if h > 0 && i == 0 { base + shift } else { base }
+            };
             let mut acc = 0f32;
-            let phase: Vec<f32> = resample(&rad, coarse)
-                .into_iter()
+            let phase: Vec<f32> = resample_iter(f0.len(), coarse, rad)
                 .map(|v| {
                     acc += v;
                     acc * std::f32::consts::TAU * self.upsampling as f32
                 })
                 .collect();
-            for (slot, p) in row.iter_mut().zip(resample(&phase, len)) {
+            let at = |i: usize| phase.get(i).copied().unwrap_or(0.0);
+            for (slot, p) in row.iter_mut().zip(resample_iter(phase.len(), len, at)) {
                 *slot = p.sin() * SINE_AMP;
             }
         });
@@ -730,6 +726,10 @@ mod tests {
 
     #[test]
     fn resampling_keeps_ends_and_halves() {
+        let resample = |input: &[f32], len: usize| -> Vec<f32> {
+            let at = |i: usize| input.get(i).copied().unwrap_or(0.0);
+            resample_iter(input.len(), len, at).collect()
+        };
         assert_eq!(resample(&[0.0, 2.0], 2), [0.0, 2.0]);
         assert_eq!(resample(&[1.0], 3), [1.0, 1.0, 1.0]);
         assert_eq!(resample(&[0.0, 1.0, 2.0, 3.0], 2), [0.5, 2.5]);

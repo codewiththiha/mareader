@@ -4,12 +4,10 @@ use egui::Context;
 use mareader_settings::WordOutput;
 
 use mareader_engine::toast::Toast;
-use mareader_engine::word_list::{copied, file_stem};
+use mareader_engine::word_list::{Made, copied, file_stem};
 
 pub mod preview;
 pub mod window;
-
-pub(crate) use mareader_engine::word_list::{Ask, Gather, Made, Progress};
 
 /// Copies or saves `made`; a toast for now, as saving toasts later.
 pub fn deliver(

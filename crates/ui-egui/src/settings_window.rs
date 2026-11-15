@@ -109,7 +109,7 @@ impl SettingsWindow {
         (ai, dict, vocab, voices): (
             &crate::ai::Ai,
             &mareader_engine::dict::Service,
-            &crate::vocab::Vocab,
+            &mareader_engine::vocab::Vocab,
             &Voices<'_>,
         ),
         out: &mut Commands,
@@ -316,7 +316,7 @@ fn tab_body(
         &Scope,
         &crate::ai::Ai,
         &mareader_engine::dict::Service,
-        &crate::vocab::Vocab,
+        &mareader_engine::vocab::Vocab,
         &Voices<'_>,
     ),
     out: &mut Commands,

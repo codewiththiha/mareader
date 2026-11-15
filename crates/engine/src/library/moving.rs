@@ -7,7 +7,7 @@ use mareader_library::{BookId, Copied, Data, Found, LinkId, Move, Moved, Placeme
 
 use super::Out;
 use super::Question;
-use super::books::counted;
+use super::counted;
 use super::{CopyIn, Job, Pending, Pick, PickAction, Sheet, State, wall_ms};
 use crate::command::Command;
 use crate::toast::Toast;
@@ -33,7 +33,7 @@ impl State {
     }
 
     /// The remove sheet's answer: the cascade counted in, copies asked.
-    pub fn remove_entries(
+    pub(crate) fn remove_entries(
         &mut self,
         (books, shelves): (&[BookId], &[ShelfId]),
         cascade: bool,
@@ -59,7 +59,7 @@ impl State {
     }
 
     /// The copy ask answered: copies first, or the way without them.
-    pub fn answer_copy(&mut self, answer: CopyAnswer, out: &mut Vec<Out>) {
+    pub(crate) fn answer_copy(&mut self, answer: CopyAnswer, out: &mut Vec<Out>) {
         let Some(Sheet::Copy(work)) = self.sheet.take() else {
             return;
         };
@@ -76,7 +76,7 @@ impl State {
     }
 
     /// Copies books read in place, then finishes the gesture.
-    pub fn copy_out(&mut self, work: Box<CopyWork>, files: Vec<Found>, out: &mut Vec<Out>) {
+    pub(crate) fn copy_out(&mut self, work: Box<CopyWork>, files: Vec<Found>, out: &mut Vec<Out>) {
         let Some(store) = self.store() else {
             let note = "The library has no folder to keep books in.";
             out.push(Out::Toast(Toast::error(note)));
@@ -93,7 +93,12 @@ impl State {
     }
 
     /// Copies the books a duplicate wants, then makes the duplicates.
-    pub fn copy_to_duplicate(&mut self, picks: Vec<Pick>, files: Vec<Found>, out: &mut Vec<Out>) {
+    pub(crate) fn copy_to_duplicate(
+        &mut self,
+        picks: Vec<Pick>,
+        files: Vec<Found>,
+        out: &mut Vec<Out>,
+    ) {
         let Some(store) = self.store() else {
             let note = "The library has no folder to keep books in.";
             out.push(Out::Toast(Toast::error(note)));
@@ -110,7 +115,7 @@ impl State {
     }
 
     /// Copies an answer's file first, then writes the answer.
-    pub fn copy_for(&mut self, question: Question, answer: Placement, out: &mut Vec<Out>) {
+    pub(crate) fn copy_for(&mut self, question: Question, answer: Placement, out: &mut Vec<Out>) {
         let (Some(store), Some(found)) = (self.store(), question.found().cloned()) else {
             let note = "The library has no folder to keep books in.";
             out.push(Out::Toast(Toast::error(note)));
@@ -128,7 +133,7 @@ impl State {
     }
 
     /// A book as the copier takes it: its file read in place.
-    pub fn found_of(&self, id: BookId) -> Option<Found> {
+    pub(crate) fn found_of(&self, id: BookId) -> Option<Found> {
         let book = self.model.book(id)?;
         let home = book.home()?;
         Some(Found {
@@ -259,7 +264,7 @@ impl State {
     }
 
     /// Takes a shelf apart now: its shelves move up, a rung's books too.
-    pub fn take_apart(&mut self, id: ShelfId, out: &mut Vec<Out>) {
+    pub(crate) fn take_apart(&mut self, id: ShelfId, out: &mut Vec<Out>) {
         let name = self.shelf_name(id);
         let home = self.model.seat(id).flatten();
         let Some(done) = self.model.remove_shelf(id, wall_ms()) else {

@@ -10,7 +10,8 @@ use mareader_library::{BookId, Library, MarkId, MarkKind};
 use mareader_settings::HighlightSettings;
 use mareader_workspace::PaneId;
 
-use super::{Bookmarks, Highlighted, Note, StudyState, StudyUi, ink};
+use super::{Bookmarks, Note, StudyUi, ink};
+use mareader_engine::study::state::State as StudyState;
 
 impl StudyUi {
     /// `book`'s bookmarks, each with where it is.
@@ -62,20 +63,17 @@ impl StudyUi {
         out
     }
 
-    /// Note pressed: highlights the text and opens a draft on it.
-    pub fn write_note(
+    /// Opens a draft note on a highlight already created by the session.
+    pub fn open_created_note(
         &mut self,
-        session: &mut Session,
+        state: &StudyState,
+        main: &Library,
         pane: PaneId,
-        at: Highlighted<'_>,
+        id: MarkId,
+        made: bool,
         rect: Rect,
-        wall_ms: u64,
     ) {
-        let Some((id, made)) = session.study_highlight(at, wall_ms) else {
-            return;
-        };
-        let (state, model) = (session.study(), session.library_model());
-        self.open_note(state, model, pane, id, rect, true);
+        self.open_note(state, main, pane, id, rect, true);
         if let Some(n) = &mut self.note {
             n.placeholder = made;
         }

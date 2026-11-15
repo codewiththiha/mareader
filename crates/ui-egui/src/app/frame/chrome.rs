@@ -111,7 +111,8 @@ impl MareaderApp {
                     renaming: state.renaming(),
                     search: state.field(),
                     organizing: state.busy(),
-                    paused: (state.organizer().paused()).map(ui_library::Paused::short),
+                    paused: (state.organizer().paused())
+                        .map(mareader_engine::library::Paused::short),
                 };
                 // On a shelf, the breadcrumb names the page.
                 let title = if library.trail.is_empty() {
@@ -205,7 +206,7 @@ impl MareaderApp {
 
     pub(super) fn windows(&mut self, ctx: &Context, commands: &mut Commands) {
         let window = self.settings_scope();
-        self.voices_shown();
+        self.voices_shown(ctx);
         let settings = self.settings().clone();
         let voices = crate::settings_window::Voices {
             booth: &self.session.read_aloud().booth,

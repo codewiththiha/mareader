@@ -120,7 +120,7 @@ impl State {
     }
 
     /// Writes a file's or a merge's answer, its copy made if owed.
-    pub fn write_answer(
+    pub(crate) fn write_answer(
         &mut self,
         question: Question,
         answer: Placement,

@@ -15,17 +15,17 @@ use mareader_settings::{AiSettings, PageTask, SummaryStyle, language_name};
 use mareader_study::page::Rewritten;
 use mareader_workspace::PaneId;
 
-use crate::documents::AiView;
 use crate::gpu::Gpu;
+use mareader_engine::page_ai::cards::Job as CardJob;
 use mareader_engine::page_ai::extract::{self, Source};
-use mareader_engine::page_ai::view::group_span;
+use mareader_engine::page_ai::view::{AiView, group_span};
 use mareader_engine::page_ai::{Slot, pages_of};
 use mareader_engine::session::Session;
 use mareader_engine::stable_hash::hash;
 
-pub(crate) use mareader_engine::page_ai::ledger::Ledger;
-pub(crate) use mareader_engine::page_ai::view::page_task;
-pub(crate) use paint::{Overlay, Pill, PillPress};
+use mareader_engine::page_ai::ledger::Ledger;
+use mareader_engine::page_ai::view::Pill;
+pub(crate) use paint::Overlay;
 
 /// Seconds a result takes to fade in over its page.
 const FADE_IN: f32 = 0.3;
@@ -508,7 +508,7 @@ impl PageAiUi {
                 Document::Pdf(_) => extract::blocks(&result, &Source::default(), &[]),
             };
             let book = matches!(*document, Document::Epub { .. }).then(|| Arc::clone(&document));
-            cards::Job {
+            CardJob {
                 blocks: Arc::new(blocks),
                 typo,
                 room: (room.x, room.y),

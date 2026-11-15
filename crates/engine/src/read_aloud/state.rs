@@ -2,11 +2,12 @@
 
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Duration;
 
 use mareader_library::BookId;
 use mareader_session::Anchor;
 use mareader_settings::ReadAloudSettings;
-use mareader_speech::{Item, Shelf, Spot, Voice};
+use mareader_speech::{Item, Shelf, Spot, Voice, Waker};
 use mareader_workspace::PaneId;
 
 use super::ReadFrom;
@@ -22,13 +23,11 @@ use super::player::{Act, Lyrics, View};
 use super::spoken::Spoken;
 pub use super::voices::{Offer, Speaker};
 use crate::dict::Download;
-use crate::repaint::Repaint;
 
 /// Seconds after a card's word before its engine is let go.
 const WORD_IDLE: f64 = 60.0;
 
 /// Engine-owned read-aloud playback, voice booths, and speech model shelf.
-#[derive(Default)]
 pub struct State {
     active: Option<Active>,
     /// Voices to pick from and try, while settings show them.
@@ -49,21 +48,37 @@ pub struct State {
     origin_at: Option<PaneId>,
     /// Its pane shows another book, or is gone: it reads on unseen.
     away: bool,
-    repaint: Repaint,
+    waker: Waker,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            active: None,
+            booth: Booth::default(),
+            shelf: Shelf::default(),
+            word: Booth::default(),
+            known: (String::new(), Vec::new()),
+            listed_once: Vec::new(),
+            saying: None,
+            said_at: 0.0,
+            origin: None,
+            origin_at: None,
+            away: false,
+            waker: Arc::new(|| {}),
+        }
+    }
 }
 
 impl State {
-    pub fn attach_repaint(&mut self, repaint: Repaint) {
-        self.repaint = repaint.clone();
-        self.booth.attach(repaint.clone());
-        self.word.attach(repaint.clone());
-        if let Some(Active::Narrated(s)) = &mut self.active {
-            s.set_repaint(repaint);
-        }
+    pub fn attach_waker(&mut self, waker: Waker) {
+        self.waker = Arc::clone(&waker);
+        self.booth.attach(Arc::clone(&waker));
+        self.word.attach(waker);
     }
 
     /// Does what a voice-model button asked; a failed delete says why.
-    pub fn act_model(
+    pub(crate) fn act_model(
         &mut self,
         item: Item,
         action: Download,
@@ -161,7 +176,7 @@ impl State {
                 return fresh;
             }
             let on = (settings, &self.shelf);
-            let spoken = Spoken::new(self.repaint.clone(), stand, (start, until), on);
+            let spoken = Spoken::new(Arc::clone(&self.waker), stand, (start, until), on);
             self.active = Some(Active::Spoken(Box::new(spoken)));
             return fresh;
         }
@@ -182,15 +197,13 @@ impl State {
             if let Some(Active::Narrated(s)) = self.active.as_mut() {
                 s.restart(stand.pane, first, settings);
             }
-        } else if let Some(narrated) =
-            Narrated::new(self.repaint.clone(), stand, narration, first, settings)
-        {
+        } else if let Some(narrated) = Narrated::new(stand, narration, first, settings) {
             self.active = Some(Active::Narrated(narrated));
         }
         fresh
     }
 
-    /// Advances playback and word-card booth; turns `panes` while following.
+    /// Advances playback and word-card booth; returns any poll wait owed.
     pub fn tick(
         &mut self,
         now: f64,
@@ -198,11 +211,11 @@ impl State {
         panes: &mut dyn Panes,
         stand: Option<&Stand>,
         settings: &ReadAloudSettings,
-    ) {
-        self.tick_word(now);
+    ) -> Option<Duration> {
+        let mut wait = self.tick_word(now);
         let Some(active) = self.active.as_mut() else {
             self.origin = None;
-            return;
+            return wait;
         };
         let mask = self
             .origin
@@ -215,39 +228,22 @@ impl State {
         }
         let stand = stand.filter(|st| st.pane == active.pane() && active.ours(st));
         self.away = stand.is_none();
-        let going = match active {
+        let (going, active_wait) = match active {
             Active::Narrated(s) => s.tick(panes, stand, settings),
             Active::Spoken(s) => s.tick(panes, stand, (settings, &self.shelf, rise)),
         };
         if !going {
             self.active = None;
         }
+        if let Some(after) = active_wait {
+            wait = Some(wait.map_or(after, |w| w.min(after)));
+        }
+        wait
     }
 
     /// The pane currently playing, even if it now shows another document.
     pub fn pane(&self) -> Option<PaneId> {
         Some(self.active.as_ref()?.pane())
-    }
-
-    pub fn answer_question(
-        &mut self,
-        read: bool,
-        remember: Option<parts::Kind>,
-        settings: &mut ReadAloudSettings,
-    ) -> bool {
-        let Some(Active::Spoken(s)) = self.active.as_mut() else {
-            return false;
-        };
-        if !s.is_asking() {
-            return false;
-        }
-        if !read
-            && let (Some(book), Some(kind)) = (self.origin.as_ref().and_then(|o| o.book), remember)
-        {
-            remember_skip(settings, book, kind);
-        }
-        s.act(Act::Answer(read));
-        true
     }
 
     pub fn is_asking(&self) -> bool {
@@ -274,7 +270,7 @@ impl State {
         }
     }
 
-    pub fn rehome(&mut self, stand: &Stand) -> bool {
+    pub(crate) fn rehome(&mut self, stand: &Stand) -> bool {
         let Some(active) = self.active.as_mut() else {
             return false;
         };
@@ -330,14 +326,14 @@ impl State {
         self.active.as_ref()?.lyrics()
     }
 
-    pub fn act_player(&mut self, act: Act) {
+    pub(crate) fn act_player(&mut self, act: Act) {
         if self.active.as_mut().is_some_and(|s| s.act(act)) {
             self.active = None;
         }
     }
 
     /// Says `word` in the engine books are read in, in `voice` or picked.
-    pub fn say_word(
+    pub(crate) fn say_word(
         &mut self,
         now: f64,
         settings: &ReadAloudSettings,
@@ -354,7 +350,7 @@ impl State {
         Ok(())
     }
 
-    pub fn stop_word(&mut self) {
+    pub(crate) fn stop_word(&mut self) {
         self.word.stop_trying();
         self.saying = None;
     }
@@ -367,19 +363,21 @@ impl State {
         self.word.samples()
     }
 
-    fn tick_word(&mut self, now: f64) {
+    fn tick_word(&mut self, now: f64) -> Option<Duration> {
         self.keep_listing();
         if !self.word.is_open() {
-            return;
+            return None;
         }
-        self.word.tick();
+        let wait = self.word.tick();
         if !self.word.trying() {
             self.saying = None;
         }
         let idle = now - self.said_at;
         if self.saying.is_none() && idle > WORD_IDLE {
             self.word.close();
+            return None;
         }
+        wait
     }
 }
 

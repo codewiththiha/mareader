@@ -97,11 +97,6 @@ impl State {
         own.into_iter().chain(self.cache.clone()).collect()
     }
 
-    /// Whether a rescan is walking.
-    pub fn scanning(&self) -> bool {
-        !self.folders.walking.is_empty()
-    }
-
     /// Folders whose drive wasn't there at the last look.
     pub fn offline(&self) -> &BTreeSet<FolderId> {
         &self.folders.offline
@@ -129,7 +124,7 @@ impl State {
     }
 
     /// The import sheet for `root`, or after the sheet that's up.
-    pub fn ask_folder(&mut self, root: PathBuf) {
+    pub(crate) fn ask_folder(&mut self, root: PathBuf) {
         // "Change…" on the import sheet swaps its folder.
         match self.sheet {
             Some(Sheet::Import(_)) | None => self.sheet = Some(Sheet::Import(root)),
@@ -138,7 +133,7 @@ impl State {
     }
 
     /// Closes the sheet; a folder dropped meanwhile asks next.
-    pub fn close_sheet(&mut self) {
+    pub(crate) fn close_sheet(&mut self) {
         self.sheet = self.folders.later.pop_front().map(Sheet::Import);
     }
 
@@ -277,7 +272,7 @@ impl State {
     }
 
     /// A quiet walk of a watched folder, landed as it found.
-    pub fn rescanned(&mut self, id: FolderId, done: Walked, now: f64) {
+    pub(crate) fn rescanned(&mut self, id: FolderId, done: Walked, now: f64) {
         self.folders.walking.remove(&id);
         match done.offline {
             true => self.folders.offline.insert(id),
@@ -298,7 +293,12 @@ impl State {
     }
 
     /// Files picked or dropped: folders ask, files are measured.
-    pub fn import_files(&mut self, paths: Vec<PathBuf>, to: Option<ShelfId>, out: &mut Vec<Out>) {
+    pub(crate) fn import_files(
+        &mut self,
+        paths: Vec<PathBuf>,
+        to: Option<ShelfId>,
+        out: &mut Vec<Out>,
+    ) {
         let (dirs, files): (Vec<PathBuf>, Vec<PathBuf>) =
             paths.into_iter().partition(|p| p.is_dir());
         for dir in dirs {
@@ -324,7 +324,7 @@ impl State {
     }
 
     /// A moved book shown on the open folder shelf too.
-    pub fn show_moved(&mut self, folder: FolderId, book: BookId, now: f64) {
+    pub(crate) fn show_moved(&mut self, folder: FolderId, book: BookId, now: f64) {
         self.sheet = None;
         let rung = |s: ShelfId| self.model.shelf(s).and_then(|s| s.kind.value.rung());
         let here = self

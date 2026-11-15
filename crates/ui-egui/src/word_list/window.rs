@@ -1,15 +1,13 @@
 //! The word list window: options, a live preview, then Copy or Save.
 
+use super::deliver;
 use super::preview::{self, Block};
-use super::{Ask, Gather, Made, Progress, deliver};
-use crate::files::Files;
-use crate::icons::Icon;
-use crate::modal::Dialog;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
-use crate::widgets;
+use crate::{files::Files, icons::Icon, modal::Dialog, widgets};
 use egui::{Frame, RichText, ScrollArea, Ui, Vec2, vec2};
 use mareader_dict::PACKS;
+use mareader_engine::word_list::{Ask, Gather, Made, Progress};
 use mareader_engine::{command::Command, dict::Service as Dict, session::Session, settings::Tab};
 use mareader_settings::{
     Settings, WORD_LANGUAGES, WordGroup, WordLayout, WordList, WordOutput, WordPreset, WordSort,
@@ -72,7 +70,7 @@ impl WordWindow {
             title,
             pages,
             chapters,
-            gather: Gather::new(crate::repaint::wake(ctx), ask),
+            gather: Gather::new(crate::wake(ctx), ask),
             progress: Ok(Progress::Reading),
             preset: None,
             naming: None,

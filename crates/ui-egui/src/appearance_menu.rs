@@ -1,20 +1,16 @@
 //! The Appearance popover: presets, mode and colour, texture and grain.
 
-use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Align2, Color32, Context, CornerRadius, CursorIcon, FontId, Galley, Id, Key, Layout,
-    Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo,
-    WidgetType, pos2, vec2,
+    Align, Align2, Color32, Context, CornerRadius, CursorIcon, FontId, Id, Layout, Rect, Response,
+    RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo, WidgetType, pos2, vec2,
 };
-use mareader_appearance::{
-    Appearance, BaseMode, FilmGrain, NoiseMode, Preset, TextureMode, group_presets, section_names,
-};
+use mareader_appearance::{Appearance, BaseMode, NoiseMode, Preset, TextureMode, group_presets};
 use mareader_settings::TextSettings;
-use std::sync::Arc;
 
 use crate::dial_deck::{mode_icon, noise_label};
-use crate::gpu::{Anchor, Gpu, GrainCallback, PagesCallback, Quad, crawl_offset};
+use crate::gpu::Gpu;
 use crate::icons::Icon;
+use crate::preset_cards::{self, DeleteStyle, Draft, DraftStyle, PreviewStyle};
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
@@ -34,8 +30,6 @@ const INTENSITY_ON: u8 = 25;
 pub const MAX_HEIGHT: f32 = 512.0;
 /// Kept clear between the popover and the window's foot.
 const FOOT_MARGIN: f32 = 16.0;
-/// A card's texture against a page's, as mareader's preview.
-const CARD_ZOOM: f32 = 0.34;
 const CARD_RADIUS: f32 = 6.0;
 /// A card's page height per width, then the name strip below it.
 const CARD_ASPECT: f32 = 0.7;
@@ -356,7 +350,7 @@ fn fold(
     // Folded, the row still tells what the group is set to.
     if !open {
         let width = (end - named.right() - 12.0).max(0.0);
-        let galley = elided(ui, summary, font, t.muted, width);
+        let galley = preset_cards::elided(ui, summary, font, t.muted, width);
         let size = galley.size();
         painter.galley(pos2(end - size.x, y - size.y / 2.0), galley, t.muted);
     }
@@ -365,18 +359,6 @@ fn fold(
 
 fn fold_id(key: &str) -> Id {
     Id::new(FOLDS).with(key)
-}
-
-/// One line of text, cut with an ellipsis where it would overflow.
-fn elided(ui: &Ui, text: &str, font: FontId, colour: Color32, width: f32) -> Arc<Galley> {
-    let mut job = LayoutJob::simple_singleline(text.to_owned(), font, colour);
-    job.wrap = TextWrapping {
-        max_width: width,
-        max_rows: 1,
-        break_anywhere: true,
-        overflow_character: Some('…'),
-    };
-    ui.painter().layout_job(job)
 }
 
 /// Drops a half-typed preset once the popover has closed.
@@ -672,6 +654,33 @@ fn name_room(card: f32) -> f32 {
     card + CARD_GAP - 2.0
 }
 
+const PREVIEW: PreviewStyle = PreviewStyle {
+    radius: CARD_RADIUS,
+    shrink: Vec2::new(0.18, 0.24),
+    line_shares: [1.0, 0.8, 0.6],
+    ink_alpha: 0.7,
+    dot_offset: Vec2::new(-7.0, 7.0),
+    dot_radius: 3.0,
+};
+
+const DELETE: DeleteStyle = DeleteStyle {
+    id_salt: "delete-preset",
+    offset: Vec2::new(-3.0, 3.0),
+    size: 16.0,
+    icon_size: 9.0,
+    use_paper_fill: false,
+    hover_cursor: false,
+    tooltip: false,
+};
+
+const DRAFT_STYLE: DraftStyle = DraftStyle {
+    fill: None,
+    radius: 6,
+    margin: 8.0,
+    button_height: 24.0,
+    muted_when_empty: false,
+};
+
 /// One preset; picks it on click, and the user's own show a delete.
 fn card(
     ui: &mut Ui,
@@ -688,7 +697,7 @@ fn card(
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let page = Rect::from_min_size(rect.min, vec2(w, w * CARD_ASPECT));
     let hot = ui.rect_contains_pointer(rect);
-    paint_page(ui, cx.gpu, page, &p.appearance);
+    preset_cards::paint_page(ui, cx.gpu, page, &p.appearance, &PREVIEW);
     let border = match (selected, hot) {
         (true, _) => Stroke::new(2.0, t.accent),
         (false, true) => Stroke::new(2.0, t.muted),
@@ -699,7 +708,7 @@ fn card(
         .rect_stroke(page, r, border, StrokeKind::Inside);
     let font = FontId::proportional(name_size);
     let colour = if selected { t.accent } else { t.ink };
-    let name = elided(ui, &p.name, font, colour, name_room(w));
+    let name = preset_cards::elided(ui, &p.name, font, colour, name_room(w));
     let at = pos2(
         rect.center().x - name.size().x / 2.0,
         rect.bottom() - name.size().y,
@@ -708,74 +717,11 @@ fn card(
     let label = p.name.clone();
     resp.widget_info(|| WidgetInfo::selected(WidgetType::Button, true, selected, &label));
     let own = cx.user.iter().any(|u| u.id == p.id);
-    if own && hot && delete_button(ui, page, p).clicked() {
+    if own && hot && preset_cards::delete_badge(ui, page, p, true, &DELETE, &t).clicked() {
         out.push(Sent::Engine(Command::DeletePreset(p.id.clone())));
     } else if resp.on_hover_text(&p.name).clicked() {
         *a = p.appearance;
     }
-}
-
-/// A round × on a card's corner, above the card's own click.
-fn delete_button(ui: &mut Ui, page: Rect, p: &Preset) -> Response {
-    let t = Tokens::get(ui.ctx());
-    let rect = Rect::from_center_size(page.right_top() + vec2(-3.0, 3.0), Vec2::splat(16.0));
-    let id = ui.id().with(("delete-preset", &p.id));
-    let resp = ui.interact(rect, id, Sense::click());
-    let painter = ui.painter();
-    painter.circle(rect.center(), 8.0, t.surface, Stroke::new(1.0, t.line));
-    let tint = if resp.hovered() { t.ink } else { t.muted };
-    Icon::Close
-        .image(ui, 9.0)
-        .tint(tint)
-        .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(9.0)));
-    let label = format!("Delete {}", p.name);
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &label));
-    resp
-}
-
-/// A tiny page in the look's own paper, texture and grain.
-fn paint_page(ui: &Ui, gpu: Option<&Gpu>, page: Rect, look: &Appearance) {
-    let c = look.ui_tokens();
-    let rgb = |v: mareader_appearance::Rgb| Color32::from_rgb(v.0, v.1, v.2);
-    let painter = ui.painter();
-    let clip = page.intersect(ui.clip_rect());
-    match gpu {
-        Some(gpu) => {
-            let anchor = Anchor {
-                origin: page.min,
-                zoom: CARD_ZOOM,
-            };
-            let mut quad = Quad::backdrop(page, CARD_RADIUS, look.page_tone(), anchor);
-            quad.clip = clip;
-            painter.add(PagesCallback::shape(gpu.pass.clone(), page, vec![quad]));
-        }
-        None => {
-            let r = CornerRadius::same(CARD_RADIUS as u8);
-            painter.rect_filled(page, r, rgb(c.paper));
-        }
-    }
-    let inner = page.shrink2(Vec2::new(page.width() * 0.18, page.height() * 0.24));
-    for (i, frac) in [1.0, 0.8, 0.6].into_iter().enumerate() {
-        let y = inner.top() + i as f32 * inner.height() / 2.0;
-        let line =
-            Rect::from_min_size(pos2(inner.left(), y - 1.0), vec2(inner.width() * frac, 2.0));
-        painter.rect_filled(line, CornerRadius::same(1), rgb(c.ink).gamma_multiply(0.7));
-    }
-    painter.circle_filled(page.right_top() + vec2(-7.0, 7.0), 3.0, rgb(c.accent));
-    if let (Some(gpu), Some(grain)) = (gpu, FilmGrain::of(look)) {
-        let offset = crawl_offset(ui.ctx(), grain);
-        let card = (page, CARD_RADIUS);
-        painter.add(GrainCallback::card(gpu.grain.clone(), card, grain, offset));
-    }
-}
-
-/// A preset being named; it lives in egui's memory while the form shows.
-#[derive(Clone, Default)]
-struct Draft {
-    open: bool,
-    name: String,
-    group: String,
-    focus: bool,
 }
 
 /// Opens the naming form; the header's + calls it.
@@ -794,70 +740,9 @@ fn save_form(ui: &mut Ui, user: &[Preset], look: &Appearance, out: &mut Commands
     if !d.open {
         return;
     }
-    draft_form(ui, user, look, &mut d, out);
-    ui.data_mut(|m| m.insert_temp(id, d));
-}
-
-fn field<'a>(text: &'a mut String, hint: &str) -> egui::TextEdit<'a> {
-    egui::TextEdit::singleline(text)
-        .hint_text(hint.to_owned())
-        .desired_width(f32::INFINITY)
-}
-
-fn draft_form(ui: &mut Ui, user: &[Preset], look: &Appearance, d: &mut Draft, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
-    let frame = egui::Frame::new()
-        .stroke(Stroke::new(1.0, t.line))
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(8.0);
-    frame.show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 6.0;
-        let name = ui.add(field(&mut d.name, "Preset name"));
-        widgets::name(&name, "Preset name");
-        if std::mem::take(&mut d.focus) {
-            name.request_focus();
-        }
-        let group = ui.add(field(&mut d.group, "Section (optional)"));
-        widgets::name(&group, "Section");
-        let sections = section_names(user);
-        if !sections.is_empty() {
-            ui.horizontal_wrapped(|ui| {
-                for s in sections {
-                    if ui.selectable_label(d.group.trim() == s, s).clicked() {
-                        d.group = s.to_owned();
-                    }
-                }
-            });
-        }
-        let named = !d.name.trim().is_empty();
-        let left = name.lost_focus() || group.lost_focus();
-        let enter = left && ui.input(|i| i.key_pressed(Key::Enter));
-        let escape = ui.input(|i| i.key_pressed(Key::Escape));
-        let (mut save, mut cancel) = (false, false);
-        let primary = widgets::primary_button(ui, None, "Save", t.accent, &t);
-        ui.columns(2, |cols| {
-            if let [l, r] = cols {
-                save = l
-                    .add_enabled_ui(named, |ui| {
-                        ui.add_sized([ui.available_width(), 24.0], primary)
-                    })
-                    .inner
-                    .clicked();
-                let size = [r.available_width(), 24.0];
-                cancel = r.add_sized(size, egui::Button::new("Cancel")).clicked();
-            }
-        });
-        if named && (save || enter) {
-            out.push(Sent::Engine(Command::SavePreset {
-                name: d.name.trim().to_owned(),
-                group: d.group.trim().to_owned(),
-                look: *look,
-            }));
-            *d = Draft::default();
-        } else if cancel || escape {
-            *d = Draft::default();
-        }
-    });
+    preset_cards::draft_form(ui, user, look, &mut d, out, &DRAFT_STYLE, &t);
+    ui.data_mut(|m| m.insert_temp(id, d));
 }
 
 #[cfg(test)]

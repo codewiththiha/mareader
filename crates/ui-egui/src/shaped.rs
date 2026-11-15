@@ -76,9 +76,8 @@ pub fn label(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Response {
 /// One line across the width left, cut at a word; whole on hover.
 pub fn line(ui: &mut Ui, text: impl Into<RichText>, size: f32, color: Color32) -> Response {
     let rich: RichText = text.into();
-    let raw = rich.text().to_owned();
     let width = ui.available_width().max(1.0);
-    let Some(drawn) = block(ui.ctx(), &raw, size, width, 1) else {
+    let Some(drawn) = block(ui.ctx(), rich.text(), size, width, 1) else {
         let rich = rich.size(size).color(color);
         return ui.add(egui::Label::new(rich).truncate());
     };
@@ -87,9 +86,9 @@ pub fn line(ui: &mut Ui, text: impl Into<RichText>, size: f32, color: Color32) -
     let w = if fill { width } else { drawn.size.x };
     let (rect, response) = ui.allocate_exact_size(Vec2::new(w, drawn.size.y), Sense::hover());
     drawn.paint(ui.painter(), rect.min, color);
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &raw));
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, rich.text()));
     if drawn.cut {
-        return response.on_hover_text(raw);
+        return response.on_hover_text(rich.text());
     }
     response
 }
@@ -136,7 +135,8 @@ pub fn measure(
     let key = key_of(text, size, width, ppp, lines);
     let id = Id::new(SIZES);
     type Sizes = HashMap<u64, Option<(Vec2, bool)>>;
-    if let Some(hit) = ctx.data(|d| d.get_temp::<Sizes>(id).and_then(|c| c.get(&key).copied())) {
+    let hit = ctx.data_mut(|d| d.get_temp_mut_or_default::<Sizes>(id).get(&key).copied());
+    if let Some(hit) = hit {
         return hit;
     }
     let made = mareader_reflow::measure_lines(text, size * ppp, width * ppp, lines)
@@ -173,10 +173,11 @@ pub fn block(ctx: &Context, text: &str, size: f32, width: f32, lines: usize) -> 
     let width = width.max(1.0);
     let key = key_of(text, size, width, ppp, lines);
     let id = Id::new(CACHE);
-    if let Some(hit) = ctx.data(|d| {
-        d.get_temp::<Cache>(id)
-            .and_then(|c| c.labels.get(&key).cloned())
-    }) {
+    let hit = ctx.data_mut(|d| {
+        let cache = d.get_temp_mut_or_default::<Cache>(id);
+        cache.labels.get(&key).cloned()
+    });
+    if let Some(hit) = hit {
         return hit;
     }
     let made = mareader_reflow::label_lines(text, size * ppp, width * ppp, lines).map(|l| {

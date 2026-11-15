@@ -16,13 +16,13 @@ use mareader_library::{
 use super::add::{self, Here};
 use super::covers::Covers;
 use super::living::{Grab, Motion};
-use super::search;
-use super::{LibraryUi, menus};
+use super::{LibraryUi, menus, search};
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
 use mareader_engine::command::Command;
+use mareader_engine::library::Paused;
 use mareader_engine::library::{Action, Carry, Lit, Scope, ShelfAction};
 use mareader_engine::library::{SearchAction, counted, offline};
 use mareader_engine::session::Session;
@@ -105,16 +105,16 @@ pub fn show(
         .map_or((None, false), |(l, s)| (Some(l), s));
     let lib = session.library();
     let (loading, busy, scope, at) = (lib.loading(), lib.busy(), lib.scope, lib.at());
-    let (offline, held) = (lib.offline().clone(), lib.held().clone());
-    let plan = lib.organizer().review().cloned();
+    let (offline, held) = (lib.offline(), lib.held());
+    let plan = lib.organizer().review();
     // One last pass of light over the held covers as the plan lands.
     let landed = Id::new("library-plan-landed");
     let settle = ui
         .ctx()
         .animate_bool_with_time(landed, plan.is_some(), 0.55);
-    let paused = lib.organizer().paused().map(super::Paused::short);
-    let (picks, unfolded) = (lib.picks().clone(), lib.unfolded().clone());
-    let searched = lib.searching().then(|| lib.search_text().trim().to_owned());
+    let paused = lib.organizer().paused().map(Paused::short);
+    let (picks, unfolded) = (lib.picks(), lib.unfolded());
+    let searched = lib.searching().then(|| lib.search_text().trim());
     let (model, covers, motion) = (lib.model(), &mut ui_lib.covers, &mut ui_lib.motion);
     if model.is_empty() && model.shelves().next().is_none() {
         if !loading {
@@ -169,7 +169,7 @@ pub fn show(
     }
     let hovering = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
     if items.is_empty() {
-        if let Some(text) = &searched {
+        if let Some(text) = searched {
             no_match(&mut ui, text, listing.elsewhere, &t, out);
             ui_lib.file_target = None;
             return;
@@ -204,18 +204,18 @@ pub fn show(
     let mut cx = Cx {
         model,
         covers,
-        offline: &offline,
+        offline,
         held: Held {
-            books: &held,
-            plan: plan.as_ref(),
+            books: held,
+            plan,
             settle,
         },
         fit: view.cover,
         at,
         level: at,
-        unfolded: &unfolded,
+        unfolded,
         arranging,
-        picks: &picks,
+        picks,
         sequence,
         motion,
         filing: None,
@@ -243,7 +243,7 @@ pub fn show(
         ),
         Layout::List => {
             cx.motion.forget();
-            let how = (view, &unfolded, searched.is_some());
+            let how = (view, unfolded, searched.is_some());
             let rows = tree::rows(model, &items, at, how);
             tree::list(&mut ui, &rows, &mut cx);
         }
@@ -257,7 +257,7 @@ pub fn show(
     if DragAndDrop::payload::<Carry>(ui.ctx()).is_none() {
         let bar = menus::Bar {
             model,
-            picks: &picks,
+            picks,
             at,
             sequence,
             busy,

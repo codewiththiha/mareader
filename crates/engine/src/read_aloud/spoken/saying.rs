@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::mpsc::TryRecvError;
+use std::time::Duration;
 
 use mareader_settings::{Pass, ReadAloudSettings};
 use mareader_speech::{Event, Shelf, Spot};
@@ -15,13 +16,13 @@ use crate::read_aloud::place::{Panes, Stand, follow};
 use crate::read_aloud::player::Act;
 
 impl Spoken {
-    /// Each frame: hears the voice, says on, turns `here`; false once done.
+    /// Advances playback one frame; returns whether active and any wait.
     pub fn tick(
         &mut self,
         panes: &mut dyn Panes,
         here: Option<&Stand>,
         (settings, shelf, clear): (&ReadAloudSettings, &Shelf, f32),
-    ) -> bool {
+    ) -> (bool, Option<Duration>) {
         // Set in new type or opened again, the place is found anew.
         if let Some(reading) = here {
             self.doc = reading.doc;
@@ -50,8 +51,7 @@ impl Spoken {
         }
         if self.relaid {
             // Nothing more is said until the place is found.
-            self.repaint.after(TICK);
-            return true;
+            return (true, Some(TICK));
         }
         // Paused, a step still fetches the sentence it lands on.
         let fetch = self.current.is_none() && self.feed.is_some();
@@ -67,10 +67,8 @@ impl Spoken {
         // Away from its pane, the book reads on unseen.
         let Some(reading) = here else {
             self.jump = None;
-            if !self.paused && !self.finished {
-                self.repaint.after(TICK);
-            }
-            return true;
+            let wait = (!self.paused && !self.finished).then_some(TICK);
+            return (true, wait);
         };
         // Back in a pane, it shows the words read at once.
         if std::mem::take(&mut self.homing) {
@@ -86,10 +84,8 @@ impl Spoken {
         let turned = page.is_some() && page != self.followed && page != Some(reading.current);
         follow(panes, reading, settings, page, &mut self.followed);
         self.reveal(panes, (reading.pane, clear), settings, turned);
-        if !self.paused && !self.finished {
-            self.repaint.after(TICK);
-        }
-        true
+        let wait = (!self.paused && !self.finished).then_some(TICK);
+        (true, wait)
     }
 
     /// New pages: the voice goes on while its place is found on them.

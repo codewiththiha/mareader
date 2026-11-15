@@ -3,9 +3,7 @@
 use std::sync::Arc;
 
 use mareader_library::BookId;
-use mareader_session::{
-    Anchor, Budget, DocId, Document, Inserts, PageKey, Raster, RenderError, Want,
-};
+use mareader_session::{Anchor, Budget, DocId, Inserts, Want};
 use mareader_settings::{BookDesign, TextSettings, WordList};
 use mareader_workspace::PaneId;
 
@@ -51,30 +49,8 @@ impl Sink for EventSink {
         self.events.push(Event::PaneClosed(pane));
     }
 
-    fn rendered(&mut self, _: PageKey, _: Result<Raster, RenderError>) {}
-
     fn forget_pages(&mut self, doc: DocId) {
         self.events.push(Event::ForgetPages(doc));
-    }
-
-    fn adopt_pages(&mut self, _: DocId, _: DocId, _: &Document, _: &Document) {}
-
-    fn reloaded_fixed(&mut self, pane: PaneId, place: &mut Place, new: DocId, count: usize) {
-        ().reloaded_fixed(pane, place, new, count);
-    }
-
-    fn retarget(
-        &mut self,
-        pane: PaneId,
-        place: &mut Place,
-        old: DocId,
-        new: DocId,
-        was: Option<&Document>,
-        is: Option<&Document>,
-        texts: &TextLayers,
-        said: Option<(PaneId, Anchor)>,
-    ) {
-        ().retarget(pane, place, old, new, was, is, texts, said);
     }
 }
 
@@ -171,7 +147,7 @@ impl Session {
     }
 
     /// Per-pane text overrides from each book's saved publisher-design choice.
-    pub fn book_designs(&self) -> Vec<(PaneId, TextSettings)> {
+    pub(crate) fn book_designs(&self) -> Vec<(PaneId, TextSettings)> {
         let own = self.texts.own(&self.settings.text);
         let lib = self.library.model();
         let pane_text = |pane: PaneId| {

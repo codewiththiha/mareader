@@ -20,13 +20,14 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use egui::Context;
-use mareader_library::{BookId, Library, Picks, ShelfId};
+use mareader_library::{BookId, Library, Options, Pick, Picks, ShelfId};
 
 use crate::ui_command::{Commands, Sent, UiCommand};
 pub use add::ADD_MENU;
 pub use covers::Covers;
-pub(crate) use mareader_engine::library::{Ask, Bound, Field, Heard, Paused, Proposal, Spot};
-use mareader_engine::library::{Organizer as EngineOrganizer, Out, Question, Sheet, State};
+use mareader_engine::library::{
+    Crumb, Field, Organizer as EngineOrganizer, Out, Question, Sheet, State,
+};
 pub use menu::LIBRARY_VIEW_MENU;
 pub use menus::{Organizer, organize_rows};
 
@@ -77,13 +78,29 @@ impl<'a> LibraryView<'a> {
     pub fn questions(&self) -> std::collections::vec_deque::Iter<'a, Question> {
         self.state.asks.iter()
     }
-}
 
-impl std::ops::Deref for LibraryView<'_> {
-    type Target = State;
+    pub fn at(&self) -> Option<ShelfId> {
+        self.state.at()
+    }
 
-    fn deref(&self) -> &Self::Target {
-        self.state
+    pub fn renaming(&self) -> Option<ShelfId> {
+        self.state.renaming()
+    }
+
+    pub fn trail(&self) -> Vec<Crumb> {
+        self.state.trail()
+    }
+
+    pub fn revealed(&self) -> Option<Pick> {
+        self.state.revealed()
+    }
+
+    pub fn field(&self) -> Field {
+        self.state.field()
+    }
+
+    pub fn last_options(&self) -> Options {
+        self.state.last_options()
     }
 }
 

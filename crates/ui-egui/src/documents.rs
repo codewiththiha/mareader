@@ -9,7 +9,6 @@ use egui::{Context, Rect, Ui, Vec2};
 use mareader_appearance::Rgb;
 use mareader_engine::documents::{DocumentPlace, PaneShow, Sink, State, UPLOADS};
 use mareader_engine::memory::give_back;
-pub(crate) use mareader_engine::page_ai::view::AiView;
 use mareader_engine::pane::{Arrow, ViewMode, ZoomCommand};
 use mareader_engine::reading::Place;
 use mareader_engine::reading_place;
@@ -260,35 +259,11 @@ impl<'a> DocumentsView<'a> {
         words::asked_at(&layer, page, chars)
     }
 
-    pub fn asked(&self, pane: PaneId) -> Option<(Asked, Rect)> {
-        let view = self.pane_view(pane)?;
-        let sel = self.state.selection(pane)?;
-        let layer = |page| self.state.layer(pane, page);
-        let asked = words::asked(sel, layer)?;
-        let sheet = view.sheets.iter().find(|s| s.page == asked.page)?;
-        let held = layer(asked.page)?;
-        let boxes = held.text.line_boxes(asked.chars.clone());
-        let on_screen = boxes.map(|b| sheet.to_screen(b));
-        let rect = on_screen.reduce(|a, b| a.union(b))?;
-        Some((asked, rect))
-    }
-
-    pub fn looked_up(&self, pane: PaneId) -> Option<(String, Rect)> {
-        let view = self.pane_view(pane)?;
-        let sel = self.state.selection(pane)?;
-        let layer = |page| self.state.layer(pane, page);
-        let on_sheet = |sheet: &Sheet| {
-            let l = layer(sheet.page)?;
-            let range = sel.on_page(sheet.page, l.text.len())?;
-            let boxes = l.text.line_boxes(range).map(|b| sheet.to_screen(b));
-            boxes.reduce(|a, b| a.union(b))
-        };
-        let rect = view
-            .sheets
+    pub fn spans_rect(&self, pane: PaneId, spans: &[(usize, Range<usize>)]) -> Option<Rect> {
+        spans
             .iter()
-            .filter_map(on_sheet)
-            .reduce(|a, b| a.union(b))?;
-        Some((sel.text(layer), rect))
+            .filter_map(|(page, range)| self.hit_box(pane, *page, range.clone()))
+            .reduce(|a, b| a.union(b))
     }
 
     pub fn highlighted(&self, pane: PaneId) -> Option<(Spot, String)> {
@@ -296,10 +271,9 @@ impl<'a> DocumentsView<'a> {
     }
 
     pub fn hit_box(&self, pane: PaneId, page: usize, chars: Range<usize>) -> Option<Rect> {
-        let place = self.state.place(pane)?;
         let view = self.pane_view(pane)?;
         let sheet = view.sheets.iter().find(|s| s.page == page)?;
-        let layer = self.state.texts.get(place.doc, page)?;
+        let layer = self.state.layer(pane, page)?;
         let spot = layer.text.line_boxes(chars).reduce(Bounds::union)?;
         Some(sheet.to_screen(spot))
     }
@@ -734,7 +708,7 @@ impl DocumentsUi {
     pub fn scripted(
         &mut self,
         state: &State,
-    ) -> Vec<(PaneId, Arc<Document>, &mut crate::scripts::Paged)> {
+    ) -> Vec<(PaneId, Arc<Document>, &mut mareader_engine::scripts::Paged)> {
         self.views
             .iter_mut()
             .filter_map(|(pane, view)| {
@@ -754,7 +728,7 @@ impl DocumentsUi {
         let Some(&chapter) = paged.pages.keys().next() else {
             return false;
         };
-        let ask = crate::scripts::Ask::Pick(selector.to_owned());
+        let ask = mareader_engine::scripts::Ask::Pick(selector.to_owned());
         paged.asks.push((chapter, ask));
         true
     }

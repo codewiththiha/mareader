@@ -75,7 +75,7 @@ impl Spoken {
     }
 
     /// The page and chapter read, as the card names them.
-    pub fn whereabouts(&self) -> Option<String> {
+    pub(crate) fn whereabouts(&self) -> Option<String> {
         let (start, _) = self.lit_spots()?;
         Some(place_name(&self.document, start.page))
     }

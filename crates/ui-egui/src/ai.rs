@@ -16,8 +16,8 @@ use mareader_settings::{SummaryStyle, language_name};
 use mareader_study::Explainer;
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::library::{Ask, Proposal, Spot};
-use crate::library::{Heard, Paused};
+use mareader_engine::library::{Ask, Proposal, Spot};
+use mareader_engine::library::{Heard, Paused};
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_engine::toast::Toast;
 

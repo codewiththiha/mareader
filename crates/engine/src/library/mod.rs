@@ -9,7 +9,6 @@ use mareader_library::{
 
 mod acting;
 mod books;
-mod counted;
 mod duplicating;
 mod filing;
 mod find;
@@ -28,7 +27,6 @@ mod seed;
 mod sheeting;
 mod shelving;
 mod state;
-pub use counted::counted;
 pub use find::{file_name, folder_name};
 pub use folders::{Folders, Going, Pending, RESCAN_GAP, SETTLE_WAIT, Screening, offline};
 pub use io::{Copies, CopyIn, Files, Io, Job, Measured, News, Probe, Tag, Walk, Walked};
@@ -42,6 +40,14 @@ pub use runs::{Beat, DELAY, Phase, Run, RunId, Runs};
 pub use searching::{Field, Listing, Lit, RING_END, RING_HOLD, Reveal, Search, Shape};
 pub use shelving::Crumb;
 pub use state::{State, Status, wall_ms};
+
+/// "3 books", "1 shelf": a count and its noun.
+pub fn counted(n: usize, one: &str, many: &str) -> String {
+    match n {
+        1 => format!("1 {one}"),
+        n => format!("{n} {many}"),
+    }
+}
 
 /// A book pointed at a file again: the reader picked it, or a search found it.
 #[derive(Clone, Debug, PartialEq, Eq)]

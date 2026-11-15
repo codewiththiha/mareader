@@ -13,12 +13,12 @@ use super::highlights::{palette, preview};
 use super::{choices, divider, flagged_row, group, note, row, section, switch_row};
 use crate::dict::{count, megabytes};
 use crate::icons::Icon;
-use crate::sounds::{EnglishVoice, Sounds, Spoken};
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
-use crate::vocab::Vocab;
 use mareader_engine::command::Command;
 use mareader_engine::dict::Download;
+use mareader_engine::sounds::{EnglishVoice, Sounds, Spoken};
+use mareader_engine::vocab::Vocab;
 
 pub fn tab(
     ui: &mut Ui,
@@ -93,7 +93,7 @@ fn pronunciation(ui: &mut Ui, p: &mut PronunciationSettings, english: Option<&En
     let hint = "Under the word on dictionary and AI cards";
     switch_row(ui, "Show on word cards", hint, &mut p.shown);
     divider(ui);
-    let voice = crate::sounds::spoken(english.map(|v| v.tag.as_str()));
+    let voice = mareader_engine::sounds::spoken(english.map(|v| v.tag.as_str()));
     let (detail, tip, warn) = following(p.follow_voice, voice, english);
     let t = Tokens::get(ui.ctx());
     let flag = warn.then(|| (Icon::Alert, crate::theme::caution(&t)));
@@ -103,7 +103,7 @@ fn pronunciation(ui: &mut Ui, p: &mut PronunciationSettings, english: Option<&En
     });
     divider(ui);
     // While the voice decides, the picker shows its choice, greyed.
-    let mut accent = crate::sounds::accent(p, voice);
+    let mut accent = mareader_engine::sounds::accent(p, voice);
     let hint = match p.follow_voice {
         true => "The reading voice picks it; turn off Match the reading voice to choose",
         false => "Which English the cards say",
@@ -126,7 +126,7 @@ fn pronunciation(ui: &mut Ui, p: &mut PronunciationSettings, english: Option<&En
 fn following(on: bool, voice: Spoken, english: Option<&EnglishVoice>) -> (String, String, bool) {
     let name = english.map_or("Your voice", |v| v.name.as_str());
     let tag = english.map_or("", |v| v.tag.as_str());
-    let named = crate::sounds::named;
+    let named = mareader_engine::sounds::named;
     match (on, voice) {
         (false, _) => (
             "Cards use the accent you pick below".into(),
@@ -143,7 +143,7 @@ fn following(on: bool, voice: Spoken, english: Option<&EnglishVoice>) -> (String
                 "{name} speaks {english} English · showing {}, the nearest",
                 named(dialect)
             ),
-            crate::sounds::stand_in(english, dialect),
+            mareader_engine::sounds::stand_in(english, dialect),
             true,
         ),
         (true, Spoken::Unsure) if english.is_some() => (

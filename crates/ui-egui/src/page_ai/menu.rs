@@ -1,6 +1,6 @@
 //! The page's menu and a bubble's: what to ask, and what to do after.
 
-use super::{BubbleMenu, Ledger, Menu, PageAiUi, Step, label};
+use super::{BubbleMenu, Menu, PageAiUi, Step, label};
 use crate::documents::DocumentsView;
 use crate::icons::Icon;
 use crate::theme::Tokens;
@@ -12,6 +12,7 @@ use egui::{
     ScrollArea, Sense, Stroke, TextEdit, Ui, Vec2, pos2, vec2,
 };
 use mareader_engine::command::Command;
+use mareader_engine::page_ai::ledger::Ledger;
 use mareader_engine::page_ai::{Action, How, Slot};
 use mareader_engine::settings::Tab;
 use mareader_library::Library;

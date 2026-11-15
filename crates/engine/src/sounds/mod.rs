@@ -124,7 +124,7 @@ impl Sounds {
     }
 
     /// A voice model came or went: the pack takes in what it holds.
-    pub fn voices_changed(&mut self) {
+    pub(crate) fn voices_changed(&mut self) {
         self.shelf.adopt();
     }
 

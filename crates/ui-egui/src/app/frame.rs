@@ -23,7 +23,6 @@ impl eframe::App for MareaderApp {
             ctx.set_zoom_factor(1.0);
             self.ui.fonts = FontState::Installed;
             self.ui.wake.bind(ctx);
-            self.session.set_repaint(crate::repaint::of(ctx));
         }
         self.restyle(ctx);
     }

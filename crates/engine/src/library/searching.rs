@@ -32,7 +32,7 @@ pub struct Search {
 }
 
 impl Search {
-    pub fn set_text(&mut self, text: String) {
+    pub(crate) fn set_text(&mut self, text: String) {
         self.query = Query::new(&text);
         self.text = text;
         self.open = !self.query.is_empty();
@@ -283,7 +283,7 @@ impl State {
         Some((Lit { pick, age }, scroll))
     }
 
-    pub fn search_act(&mut self, action: SearchAction, now: f64) {
+    pub(crate) fn search_act(&mut self, action: SearchAction, now: f64) {
         let s = &mut self.search;
         match action {
             // The app focuses the field; it holds the context.

@@ -1,6 +1,6 @@
 //! The Dictionary's own parts: its search field, pickers, keys and cards.
 
-use super::{Offer, Voice, entry};
+use super::{Voice, entry};
 use crate::icons::Icon;
 use crate::read_aloud::{SAY, STOP_SAYING};
 use crate::shaped;
@@ -13,7 +13,7 @@ use egui::{
     WidgetInfo, WidgetType, pos2, vec2,
 };
 use mareader_dict::Entry;
-use mareader_engine::command::Command;
+use mareader_engine::{command::Command, read_aloud::state::Offer};
 
 /// A search field: a pill whose ring lights while it has the keys.
 pub struct Field<'a> {

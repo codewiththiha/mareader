@@ -42,7 +42,7 @@ pub struct View<'a> {
     /// Its word is being said aloud.
     pub saying: bool,
     /// How it sounds, once looked up.
-    pub sound: &'a [crate::sounds::Line],
+    pub sound: &'a [mareader_engine::sounds::Line],
 }
 
 /// Draws the card under or over its word, pointing at it.

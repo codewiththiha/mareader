@@ -46,40 +46,6 @@ pub enum Slot {
 pub trait Sink {
     fn opened(
         &mut self,
-        pane: PaneId,
-        place: &mut Place,
-        page: usize,
-        count: usize,
-        anchor: Option<Anchor>,
-    );
-
-    fn closed(&mut self, pane: PaneId);
-
-    fn rendered(&mut self, key: PageKey, result: Result<Raster, RenderError>);
-
-    fn forget_pages(&mut self, doc: DocId);
-
-    fn adopt_pages(&mut self, old: DocId, new: DocId, was: &Document, is: &Document);
-
-    fn reloaded_fixed(&mut self, pane: PaneId, place: &mut Place, new: DocId, count: usize);
-
-    #[allow(clippy::too_many_arguments)]
-    fn retarget(
-        &mut self,
-        pane: PaneId,
-        place: &mut Place,
-        old: DocId,
-        new: DocId,
-        was: Option<&Document>,
-        is: Option<&Document>,
-        texts: &TextLayers,
-        said: Option<(PaneId, Anchor)>,
-    );
-}
-
-impl Sink for () {
-    fn opened(
-        &mut self,
         _: PaneId,
         place: &mut Place,
         page: usize,
@@ -105,6 +71,7 @@ impl Sink for () {
         place.go_to(place.current, count);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn retarget(
         &mut self,
         _: PaneId,
@@ -129,6 +96,8 @@ impl Sink for () {
         place.go_to(page, count);
     }
 }
+
+impl Sink for () {}
 
 /// Engine-owned document session, open pane places, typography, and caches.
 pub struct State {
@@ -176,14 +145,14 @@ impl Default for State {
 
 impl State {
     /// Zero runs every job on the calling thread: deterministic, for tests.
-    pub fn set_workers(&mut self, workers: usize) {
+    pub(crate) fn set_workers(&mut self, workers: usize) {
         if self.session.is_none() {
             self.workers = workers;
         }
     }
 
     /// Off opens EPUBs whole without waiting for a rasterized preview page.
-    pub fn set_progressive(&mut self, on: bool) {
+    pub(crate) fn set_progressive(&mut self, on: bool) {
         self.progressive = on;
     }
 
@@ -304,7 +273,7 @@ impl State {
     }
 
     /// Reopens selected panes at page 0 after saved positions are cleared.
-    pub fn restart_at_start(
+    pub(crate) fn restart_at_start(
         &mut self,
         waker: &Waker,
         panes: &[PaneId],
@@ -340,7 +309,7 @@ impl State {
         }
     }
 
-    pub fn want_demand(&mut self, wants: impl IntoIterator<Item = Want>) {
+    pub(crate) fn want_demand(&mut self, wants: impl IntoIterator<Item = Want>) {
         if let Some(s) = &mut self.session {
             s.want(wants);
         }

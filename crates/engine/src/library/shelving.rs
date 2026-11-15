@@ -30,7 +30,7 @@ impl State {
     }
 
     /// The shelf the rail's tree just made, once.
-    pub fn take_made(&mut self) -> Option<ShelfId> {
+    pub(crate) fn take_made(&mut self) -> Option<ShelfId> {
         self.made.take()
     }
 
@@ -109,7 +109,7 @@ impl State {
     }
 
     /// Made-up shelves for shots, over the seeded books.
-    pub fn seed_shelves(&mut self) {
+    pub(crate) fn seed_shelves(&mut self) {
         let now = wall_ms();
         let books: Vec<BookId> = self.model.books().map(|b| b.id).collect();
         let mut make = |name: &str, parent| self.model.create_shelf(name, parent, now).ok();
@@ -154,7 +154,7 @@ impl State {
         }
     }
 
-    pub fn shelf_act(&mut self, action: ShelfAction, out: &mut Vec<Out>) {
+    pub(crate) fn shelf_act(&mut self, action: ShelfAction, out: &mut Vec<Out>) {
         let Some(action) = self.unheld(action, out) else {
             return;
         };

@@ -1,6 +1,7 @@
 //! Narrated-book read-aloud playback using embedded recordings.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use mareader_audio::{Fault, Player, Segment};
 use mareader_epub::{Narration, Run, Skips};
@@ -14,7 +15,6 @@ use super::parts;
 use super::place::{Panes, Stand, follow, place_name};
 use super::player::{Act, View};
 use crate::play::fetch;
-use crate::repaint::Repaint;
 
 /// A narrated book being read aloud in one pane: its own recordings.
 pub(crate) struct Narrated {
@@ -38,12 +38,10 @@ pub(crate) struct Narrated {
     pub(crate) paused: bool,
     pub(crate) finished: bool,
     fault: Option<Fault>,
-    repaint: Repaint,
 }
 
 impl Narrated {
     pub(crate) fn new(
-        repaint: Repaint,
         stand: &Stand,
         narration: Arc<Narration>,
         first: usize,
@@ -66,7 +64,6 @@ impl Narrated {
             paused: false,
             finished: false,
             fault: None,
-            repaint,
         };
         s.play_from(first);
         Some(s)
@@ -77,10 +74,6 @@ impl Narrated {
         self.skip = skips(settings);
         self.rate = settings.rate;
         self.play_from(first);
-    }
-
-    pub(crate) fn set_repaint(&mut self, repaint: Repaint) {
-        self.repaint = repaint;
     }
 
     fn play_from(&mut self, from: usize) {
@@ -144,7 +137,7 @@ impl Narrated {
         panes: &mut dyn Panes,
         here: Option<&Stand>,
         settings: &ReadAloudSettings,
-    ) -> bool {
+    ) -> (bool, Option<Duration>) {
         if let Some(stand) = here {
             self.document = Arc::clone(&stand.document);
         }
@@ -180,10 +173,8 @@ impl Narrated {
             }
             follow(panes, stand, settings, page, &mut self.followed);
         }
-        if !self.paused && !self.finished {
-            self.repaint.after(TICK);
-        }
-        true
+        let wait = (!self.paused && !self.finished).then_some(TICK);
+        (true, wait)
     }
 
     /// What the player shows: phrases for steps, the recordings for time.

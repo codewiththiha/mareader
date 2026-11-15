@@ -45,7 +45,7 @@ impl State {
     }
 
     /// Drops the sheet asking to replace the paused run, if it's up.
-    pub fn close_replace(&mut self) {
+    pub(crate) fn close_replace(&mut self) {
         if matches!(self.sheet, Some(Sheet::Replace(_))) {
             self.close_sheet();
         }

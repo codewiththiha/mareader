@@ -1,5 +1,8 @@
 //! What the session reports back; a front end drains it once a frame.
 
+use std::ops::Range;
+
+use mareader_library::MarkId;
 use mareader_session::{Anchor, DocId};
 use mareader_settings::WordList;
 use mareader_speech::{Model, Spot};
@@ -13,6 +16,8 @@ use crate::pane::{Arrow, ViewMode, ZoomCommand};
 use crate::route::Route;
 use crate::settings::Tab;
 use crate::study::Action as StudyAction;
+use crate::study::state::Key as StudyKey;
+use crate::study::words::Asked;
 use crate::toast::Toast;
 
 /// A view-level movement or layout change applied to a pane's viewport.
@@ -81,12 +86,28 @@ pub enum Event {
     ReadAloudStarted { fresh: bool },
     /// Front-end study UI action (cards, pickers, note drafts).
     Study(StudyAction),
-    /// Open the AI Dictionary card on `pane`'s selected word.
-    Explain(PaneId),
-    /// Open the dictionary lookup card on `pane`'s selected phrase.
-    LookUp(PaneId),
-    /// Highlight `pane`'s selection and open a note draft on it.
-    Note(PaneId),
+    /// AI Dictionary mark and lookup started; open its card beside the word.
+    ExplainOpened {
+        pane: PaneId,
+        key: StudyKey,
+        asked: Asked,
+    },
+    /// Dictionary lookup started; open its card beside `spans`.
+    LookUpOpened {
+        pane: PaneId,
+        word: String,
+        ticket: mareader_dict::Ticket,
+        spans: Vec<(usize, Range<usize>)>,
+    },
+    /// Open floating dictionary window answers `word` instead of a card.
+    DictWindowFeed(String),
+    /// Selection highlighted for a note; open its draft beside `spans`.
+    NoteOpened {
+        pane: PaneId,
+        id: MarkId,
+        made: bool,
+        spans: Vec<(usize, Range<usize>)>,
+    },
     /// Move or toggle the floating dictionary window.
     DictWindow(DictWindow),
     /// Open the dictionary window focused on `word`.

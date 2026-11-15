@@ -1,6 +1,7 @@
 //! Study tools: marks, the word card, word lists and the dictionaries.
 
 use mareader_appearance::Rgb;
+use mareader_dict::Query;
 use mareader_library::{MarkKind, Pen};
 use mareader_workspace::PaneId;
 
@@ -9,8 +10,10 @@ use crate::dict::Action as DictAction;
 use crate::event::Event;
 use crate::library::wall_ms;
 use crate::notes_panel::{bookmark_label, bookmark_spot, page_of};
+use crate::route::Route;
 use crate::session::{Done, Session};
 use crate::study::state::{Bookmarking, Highlighted};
+use crate::toast::Toast;
 
 pub(super) fn run(session: &mut Session, intent: Command) -> Done {
     match intent {
@@ -25,10 +28,10 @@ pub(super) fn run(session: &mut Session, intent: Command) -> Done {
             session.emit(Event::WordListWindow { pane, pages, list });
         }
         Command::Study(action) => study(session, action),
-        Command::Explain(pane) => session.emit(Event::Explain(pane)),
-        Command::LookUp(pane) => session.emit(Event::LookUp(pane)),
+        Command::Explain(pane) => explain(session, pane),
+        Command::LookUp(pane) => look_up(session, pane),
         Command::Highlight { pane, pen, color } => highlight(session, pane, pen, color),
-        Command::Note(pane) => session.emit(Event::Note(pane)),
+        Command::Note(pane) => note(session, pane),
         Command::Bookmark(pane) => bookmark(session, pane.unwrap_or(session.active())),
         Command::ClearSelection(pane) => {
             if session.clear_document_selection(pane) {
@@ -47,6 +50,108 @@ pub(super) fn run(session: &mut Session, intent: Command) -> Done {
         _ => {}
     }
     Done::changed()
+}
+
+fn explain(session: &mut Session, pane: PaneId) {
+    if session.documents().selection(pane).is_none() {
+        return;
+    }
+    let Some(asked) = session.documents().asked(pane) else {
+        let rule = format!(
+            "The AI Dictionary takes one word, up to {} characters.",
+            mareader_study::MAX_GLOSS_CHARS
+        );
+        session.emit(Event::Toast(Toast::info(rule)));
+        return;
+    };
+    session.clear_document_selection(pane);
+    let book = session.book_in(pane);
+    let name = session
+        .documents()
+        .title(pane)
+        .unwrap_or_default()
+        .to_owned();
+    let key = session.study_explain(book, &name, &asked, wall_ms());
+    session.ask_role(&asked.word, &asked.context);
+    session.emit(Event::ExplainOpened { pane, key, asked });
+}
+
+fn look_up(session: &mut Session, pane: PaneId) {
+    let Some((text, spans)) = session.documents().selected_text_spans(pane) else {
+        return;
+    };
+    let max = mareader_study::MAX_GLOSS_CHARS;
+    let Some(word) = crate::dict::lookup_text(&text, max) else {
+        let rule = format!("Look up takes a word or short phrase, up to {max} characters.");
+        session.emit(Event::Toast(Toast::info(rule)));
+        return;
+    };
+    // An open window answers instead; selection stays.
+    if session.settings().dictionary.window.open && session.route() == Route::Reader {
+        session.apply(Command::SetField {
+            path: "dictionary.window.minimized".into(),
+            value: "false".into(),
+        });
+        session.emit(Event::DictWindowFeed(word));
+        return;
+    }
+    // Its sentence, so the card can name the word's class there.
+    let context = session.documents().asked(pane).map(|a| a.context);
+    session.clear_document_selection(pane);
+    let to = session.settings().dictionary.default_lang.clone();
+    let ticket = session.dict_ask(Query::LookUp {
+        word: word.clone(),
+        to,
+    });
+    session.ask_role(&word, context.as_deref().unwrap_or(&word));
+    session.emit(Event::LookUpOpened {
+        pane,
+        word,
+        ticket,
+        spans,
+    });
+}
+
+fn note(session: &mut Session, pane: PaneId) {
+    let Some((spot, text)) = session.documents().highlighted(pane) else {
+        return;
+    };
+    let spans = session.documents().selection_spans(pane);
+    session.clear_document_selection(pane);
+    let pen = session
+        .settings()
+        .study
+        .highlights
+        .bar
+        .iter()
+        .find_map(|i| match i {
+            mareader_settings::BarItem::Highlight(pen) => Some(*pen),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let book = session.book_in(pane);
+    let name = session
+        .documents()
+        .title(pane)
+        .unwrap_or_default()
+        .to_owned();
+    let at = Highlighted {
+        book,
+        name: &name,
+        text,
+        spot,
+        pen,
+        color: None,
+    };
+    let Some((id, made)) = session.study_highlight(at, wall_ms()) else {
+        return;
+    };
+    session.emit(Event::NoteOpened {
+        pane,
+        id,
+        made,
+        spans,
+    });
 }
 
 fn study(session: &mut Session, action: crate::study::Action) {

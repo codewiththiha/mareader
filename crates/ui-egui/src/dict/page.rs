@@ -500,7 +500,7 @@ fn column(ui: &mut Ui, t: &Tokens, h: &Answers<'_>, asked: &str, out: &mut Comma
 
 /// Downloads that would give these words a voice, two at most.
 fn offers(ui: &mut Ui, voice: &Voice, languages: impl Iterator<Item = String>, out: &mut Commands) {
-    let mut shown: Vec<super::Offer> = Vec::new();
+    let mut shown: Vec<mareader_engine::read_aloud::state::Offer> = Vec::new();
     for offer in languages.filter_map(|l| voice.offer(&l)) {
         if shown.len() < 2 && !shown.contains(&offer) {
             look::offer(ui, offer, out);

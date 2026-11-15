@@ -141,11 +141,10 @@ fn shout(ui: &Ui, act: Act, only_if_silent: bool) -> Announced {
 /// What the icons being built right now were told to do.
 fn current(ctx: &Context) -> Act {
     let pass = pass(ctx);
-    ctx.data(|d| {
-        d.get_temp::<Scope>(scope())
-            .filter(|s| s.pass == pass)
-            .and_then(|s| s.acts.last().copied())
-            .unwrap_or(Act::Still)
+    ctx.data_mut(|d| {
+        let s = d.get_temp_mut_or_default::<Scope>(scope());
+        let active = (s.pass == pass).then_some(s.acts.as_slice());
+        active.and_then(|a| a.last().copied()).unwrap_or(Act::Still)
     })
 }
 

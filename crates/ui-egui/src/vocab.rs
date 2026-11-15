@@ -9,7 +9,7 @@ use mareader_settings::{CefrMark, Reserved};
 use crate::selection::Pages;
 use crate::study::marks::Under;
 
-pub(crate) use mareader_engine::vocab::{ShadingSource, Vocab};
+use mareader_engine::vocab::ShadingSource;
 
 /// How long the pointer rests on a word before it is looked up.
 const DWELL: f64 = 0.16;

@@ -1,7 +1,7 @@
 //! Document search drawn: every hit on the pages shown, the current amber.
 
 use egui::{Color32, CornerRadius, Stroke, StrokeKind, Ui};
-pub(crate) use mareader_engine::search::{Found, Lit, Search};
+use mareader_engine::search::Lit;
 
 use crate::selection::Pages;
 use crate::theme::Tokens;

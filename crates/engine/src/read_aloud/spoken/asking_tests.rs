@@ -110,7 +110,7 @@ fn stood() -> Option<Stand> {
 /// A reading of the sample, with `tables` deciding what its table does.
 fn reading(tables: Skip) -> Result<Read, &'static str> {
     let stand = stood().ok_or("the sample didn't open")?;
-    let repaint = Repaint::new(Arc::new(|_: Duration| {}));
+    let wake: Waker = Arc::new(|| {});
     let settings = ReadAloudSettings {
         engine: SILENT.to_owned(),
         skips: Skips {
@@ -121,7 +121,7 @@ fn reading(tables: Skip) -> Result<Read, &'static str> {
     };
     let shelf = Shelf::default();
     let start = Start::Spot(Spot::default());
-    let spoken = Spoken::new(repaint, &stand, (start, None), (&settings, &shelf));
+    let spoken = Spoken::new(wake, &stand, (start, None), (&settings, &shelf));
     Ok(Read {
         spoken,
         glass: Glass,

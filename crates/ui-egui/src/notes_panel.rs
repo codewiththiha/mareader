@@ -19,7 +19,7 @@ use mareader_pdf::active_entry;
 use mareader_session::Document;
 use std::sync::Arc;
 
-use mareader_engine::notes_panel::query;
+use mareader_engine::notes_panel::{bookmark_chapter, page_of, query};
 
 const PAD_X: f32 = 12.0;
 /// The colour rule's width and the gap after it.
@@ -98,7 +98,7 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &[Row], out: &mut Commands) {
     let mut typed: String = ui.data(|d| d.get_temp(query_id)).unwrap_or_default();
     let words = query::terms(&typed);
     let book = reading.document.as_ref();
-    let chapter = |r: &Row| page_of(book, r.spot).and_then(|p| crate::bookmarks::chapter(book, p));
+    let chapter = |r: &Row| page_of(book, r.spot).and_then(|p| bookmark_chapter(book, p));
     // Each row with its chapter, which a search reads too.
     let placed: Vec<(Option<String>, &Row)> = rows
         .iter()
@@ -449,7 +449,7 @@ fn bookmark(
     let full = ui.available_width();
     let text_w = (full - PAD_X * 2.0 - RULE - RULE_GAP).max(40.0);
     // Its chapter as the book stands now; the page says the rest.
-    let chapter = page.and_then(|p| crate::bookmarks::chapter(doc, p));
+    let chapter = page.and_then(|p| bookmark_chapter(doc, p));
     let at = page.map(|p| format!("Page {}", p + 1));
     let (name, meta) = match (chapter, at) {
         (Some(c), Some(at)) => (c, at),
@@ -695,8 +695,6 @@ fn clamp(ui: &Ui, mut job: LayoutJob, w: f32, rows: usize) -> Arc<Galley> {
     };
     ui.painter().layout_job(job)
 }
-
-pub(crate) use mareader_engine::notes_panel::page_of;
 
 /// The reading order of `spot`, to list highlights as the book runs.
 pub fn order(spot: &Spot) -> (usize, usize) {

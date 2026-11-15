@@ -1,15 +1,14 @@
 //! The voice tabs' booth: an engine opened to list and try voices.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use mareader_settings::ReadAloudSettings;
 use mareader_speech::{Caps, Event, Shelf, Voice, Voicer, Waker};
 
 use super::{TICK, tone};
-use crate::repaint::Repaint;
 
 /// Opened while a voice tab shows; let go once it closes.
-#[derive(Default)]
 pub struct Booth {
     engine: String,
     /// The model build opened, for a model's engine.
@@ -25,14 +24,32 @@ pub struct Booth {
     /// The voice asked for by name, not the one picked.
     tried: Option<String>,
     said: u64,
-    /// Asks the window for frames; kept across a close.
-    repaint: Repaint,
+    /// Wakes the client when a voice signals an event; kept across closes.
+    wake: Waker,
+}
+
+impl Default for Booth {
+    fn default() -> Self {
+        Self {
+            engine: String::new(),
+            build: None,
+            voicer: None,
+            voices: Vec::new(),
+            seen: 0,
+            caps: Caps::default(),
+            fault: None,
+            trying: None,
+            tried: None,
+            said: 0,
+            wake: Arc::new(|| {}),
+        }
+    }
 }
 
 impl Booth {
-    /// Keeps `repaint`, which an engine opened here is woken through.
-    pub fn attach(&mut self, repaint: Repaint) {
-        self.repaint = repaint;
+    /// Keeps `wake`, which an engine opened here is woken through.
+    pub fn attach(&mut self, wake: Waker) {
+        self.wake = wake;
     }
 
     /// Opens `engine` in its picked build unless open, or failed, already.
@@ -50,8 +67,7 @@ impl Booth {
         self.close();
         self.engine = engine;
         self.build = build;
-        let repaint = self.repaint.clone();
-        let wake: Waker = Arc::new(move || repaint.now());
+        let wake = Arc::clone(&self.wake);
         match mareader_speech::open(&self.engine, build, shelf, wake) {
             Ok(voicer) => {
                 self.caps = voicer.caps();
@@ -73,15 +89,15 @@ impl Booth {
             .sort_by(|a, b| (a.language.as_str(), a.name.as_str()).cmp(&(&b.language, &b.name)));
     }
 
-    /// Stops any sample and lets the engine go; frames and count stay.
+    /// Stops any sample and lets the engine go; waker and count stay.
     pub fn close(&mut self) {
         if let Some(v) = self.voicer.as_mut() {
             v.stop();
         }
-        let (said, repaint) = (self.said, self.repaint.clone());
+        let (said, wake) = (self.said, Arc::clone(&self.wake));
         *self = Self::default();
         self.said = said;
-        self.repaint = repaint;
+        self.wake = wake;
     }
 
     pub fn is_open(&self) -> bool {
@@ -94,14 +110,14 @@ impl Booth {
     }
 
     /// Says a line in the voice and tone `settings` pick.
-    pub fn try_voice(&mut self, settings: &ReadAloudSettings) {
+    pub(crate) fn try_voice(&mut self, settings: &ReadAloudSettings) {
         let picked = settings.voice_for(&self.engine);
         self.say_sample(settings, picked);
         self.tried = None;
     }
 
     /// Says a line in the voice `id`, in the tone `settings` pick.
-    pub fn try_voice_of(&mut self, settings: &ReadAloudSettings, shelf: &Shelf, id: &str) {
+    pub(crate) fn try_voice_of(&mut self, settings: &ReadAloudSettings, shelf: &Shelf, id: &str) {
         // Downloaded since it opened: the engine lists it once reopened.
         if self.ready() && !self.voices.iter().any(|v| v.id == id) {
             self.start(self.engine.clone(), self.build, shelf);
@@ -116,7 +132,7 @@ impl Booth {
     }
 
     /// Says `text` in `voice`, or the one picked for the engine.
-    pub fn say_as(&mut self, settings: &ReadAloudSettings, voice: Option<&str>, text: &str) {
+    pub(crate) fn say_as(&mut self, settings: &ReadAloudSettings, voice: Option<&str>, text: &str) {
         let picked = voice.or(settings.voice_for(&self.engine));
         self.speak(settings, picked, text);
         self.tried = None;
@@ -150,7 +166,7 @@ impl Booth {
         }
     }
 
-    pub fn stop_trying(&mut self) {
+    pub(crate) fn stop_trying(&mut self) {
         if let Some(v) = self.voicer.as_mut() {
             v.stop();
         }
@@ -158,8 +174,8 @@ impl Booth {
         self.tried = None;
     }
 
-    /// Each frame while open: hears the sample end.
-    pub fn tick(&mut self) {
+    /// Polls the open booth; returns a tick wait while a sample plays.
+    pub fn tick(&mut self) -> Option<Duration> {
         // A voice found mute, here or by the book's reading, leaves the list.
         if self
             .voicer
@@ -169,14 +185,15 @@ impl Booth {
             self.relist();
         }
         let (Some(v), Some(id)) = (self.voicer.as_mut(), self.trying) else {
-            return;
+            return None;
         };
         if v.events().contains(&Event::Finished(id)) {
             self.trying = None;
             self.tried = None;
+            None
         } else {
             // Some systems only tell when asked.
-            self.repaint.after(TICK);
+            Some(TICK)
         }
     }
 
@@ -222,38 +239,30 @@ impl Booth {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-    use std::time::Duration;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use mareader_speech::SILENT;
 
     use super::*;
 
-    /// A window recording the waits asked of it, in order.
-    fn recording() -> (Repaint, Arc<Mutex<Vec<Duration>>>) {
-        let asks: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(Vec::new()));
-        let kept = Arc::clone(&asks);
-        let repaint = Repaint::new(Arc::new(move |after| {
-            if let Ok(mut log) = kept.lock() {
-                log.push(after);
-            }
-        }));
-        (repaint, asks)
-    }
-
-    /// The waits asked for; a poisoned lock reads as none asked.
-    fn asked(asks: &Mutex<Vec<Duration>>) -> Vec<Duration> {
-        asks.lock().map_or_else(|_| Vec::new(), |l| l.clone())
+    /// Counts wakes asked of the client.
+    fn recording() -> (Waker, Arc<AtomicUsize>) {
+        let count = Arc::new(AtomicUsize::new(0));
+        let kept = Arc::clone(&count);
+        let wake: Waker = Arc::new(move || {
+            kept.fetch_add(1, Ordering::Relaxed);
+        });
+        (wake, count)
     }
 
     /// A booth holding a mute engine, so a sample starts and ends on demand.
-    fn mute_booth() -> (Booth, Arc<Mutex<Vec<Duration>>>) {
-        let (repaint, asks) = recording();
+    fn mute_booth() -> (Booth, Arc<AtomicUsize>) {
+        let (wake, count) = recording();
         let mut booth = Booth::default();
-        booth.attach(repaint);
+        booth.attach(wake);
         let shelf = Shelf::default();
         booth.open(SILENT, &ReadAloudSettings::default(), &shelf);
-        (booth, asks)
+        (booth, count)
     }
 
     #[test]
@@ -271,7 +280,7 @@ mod tests {
 
     #[test]
     fn an_open_booth_lists_the_voices_by_language_then_name() {
-        let (booth, asks) = mute_booth();
+        let (booth, wakes) = mute_booth();
         assert!(booth.is_open());
         assert!(booth.ready(), "a mute engine still opens");
         assert_eq!(booth.engine(), SILENT);
@@ -279,55 +288,55 @@ mod tests {
         let ids: Vec<&str> = booth.voices().iter().map(|v| v.id.as_str()).collect();
         assert_eq!(ids, ["quiet-en", "hush-fr"], "en-US sorts before fr-FR");
         assert!(booth.caps().voices);
-        assert_eq!(asked(&asks).len(), 0, "opening asks for no frame");
+        assert_eq!(wakes.load(Ordering::Relaxed), 0, "opening asks for no wake");
     }
 
     #[test]
     fn an_engine_that_is_not_there_leaves_a_fault() {
-        let (repaint, asks) = recording();
+        let (wake, wakes) = recording();
         let mut booth = Booth::default();
-        booth.attach(repaint);
+        booth.attach(wake);
         let shelf = Shelf::default();
         booth.open("no-such-engine", &ReadAloudSettings::default(), &shelf);
         assert!(booth.is_open(), "a fault still counts as tried");
         assert!(!booth.ready());
         assert!(booth.voices().is_empty());
         assert!(booth.fault().is_some());
-        assert_eq!(asked(&asks).len(), 0);
+        assert_eq!(wakes.load(Ordering::Relaxed), 0);
     }
 
     #[test]
     fn a_sample_waiting_to_end_asks_for_a_frame_after_the_tick() {
-        let (mut booth, asks) = mute_booth();
+        let (mut booth, _) = mute_booth();
         let settings = ReadAloudSettings::default();
         booth.try_voice(&settings);
         assert!(booth.trying());
         assert_eq!(booth.samples(), 1);
 
         // The mute engine reports the start first, so the end is still owed.
-        booth.tick();
+        let first = booth.tick();
         assert!(booth.trying(), "a start is not an end");
-        assert_eq!(asked(&asks), vec![TICK], "it asks to be ticked again");
+        assert_eq!(first, Some(TICK), "it asks to be ticked again");
 
         // The second look hears the end, and then asks for nothing.
-        booth.tick();
+        let second = booth.tick();
         assert!(!booth.trying());
         assert!(booth.trying_voice().is_none());
-        assert_eq!(asked(&asks), vec![TICK], "one ask, not one per frame");
+        assert_eq!(second, None, "one ask, not one per frame");
         assert_eq!(booth.samples(), 1, "the count outlives the sample");
     }
 
     #[test]
-    fn a_close_lets_the_engine_go_but_keeps_the_window() {
-        let (mut booth, asks) = mute_booth();
+    fn a_close_lets_the_engine_go_but_keeps_the_waker() {
+        let (mut booth, wakes) = mute_booth();
         booth.close();
         assert!(!booth.is_open());
         assert!(!booth.ready());
         assert!(booth.voices().is_empty());
         assert!(booth.fault().is_none());
-        // The handle survives the wipe, so a reopened booth can still ask.
-        booth.repaint.after(TICK);
-        assert_eq!(asked(&asks), vec![TICK]);
+        // The waker survives the wipe, so a reopened booth can still wake.
+        (booth.wake)();
+        assert_eq!(wakes.load(Ordering::Relaxed), 1);
     }
 
     #[test]

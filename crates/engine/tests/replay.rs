@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use mareader_appearance::Rgb;
 use mareader_engine::command::Command;
-use mareader_engine::command_spec::SPECS;
 use mareader_engine::documents::OpenRequest;
 use mareader_engine::event::Event;
 use mareader_engine::export::{Entry, Format, Sheet, file_name, render};
@@ -177,16 +176,4 @@ fn opening_shows_the_reader_and_a_dial_is_written_by_its_path() {
     assert!(session.settings().chrome.sidebar_overlay);
     session.execute(Command::SetSidebarOverlay(false), 0.0);
     assert!(!session.settings().chrome.sidebar_overlay);
-}
-
-#[test]
-fn the_registry_lists_every_intent_once() {
-    let ids: Vec<&str> = SPECS.iter().map(|s| s.id).collect();
-    let unique: std::collections::BTreeSet<_> = ids.iter().collect();
-    assert_eq!(ids.len(), unique.len());
-    let go = Command::GoTo {
-        pane: mareader_workspace::PaneId(1),
-        page: 0,
-    };
-    assert!(ids.contains(&go.id()), "a script can name a jump");
 }

@@ -144,7 +144,7 @@ impl State {
     }
 
     /// Marks the explained word if it has a spot, returning its answer key.
-    pub fn explain_mark(
+    pub(crate) fn explain_mark(
         &mut self,
         main: &mut Library,
         book: Option<BookId>,
@@ -298,7 +298,7 @@ impl State {
     }
 
     /// Bookmarks the page, or removes its existing bookmark with an Undo toast.
-    pub fn toggle_bookmark(
+    pub(crate) fn toggle_bookmark(
         &mut self,
         main: &mut Library,
         at: Bookmarking<'_>,
@@ -313,7 +313,7 @@ impl State {
     }
 
     /// Removes marks, returning an Undo toast if any were alive.
-    pub fn remove_marks(
+    pub(crate) fn remove_marks(
         &mut self,
         main: &mut Library,
         ids: Vec<MarkId>,
@@ -340,14 +340,14 @@ impl State {
     }
 
     /// Removes marks quietly, as a cancelled note's placeholder highlight.
-    pub fn drop_marks(&mut self, main: &mut Library, ids: &[MarkId]) {
+    pub(crate) fn drop_marks(&mut self, main: &mut Library, ids: &[MarkId]) {
         let wall = crate::library::wall_ms();
         main.set_marks_alive(ids, false, wall);
         self.loose.set_marks_alive(ids, false, wall);
     }
 
     /// Brings removed marks back (Undo).
-    pub fn restore_marks(&mut self, main: &mut Library, ids: &[MarkId], wall: u64) {
+    pub(crate) fn restore_marks(&mut self, main: &mut Library, ids: &[MarkId], wall: u64) {
         main.set_marks_alive(ids, true, wall);
         self.loose.set_marks_alive(ids, true, wall);
     }
@@ -360,7 +360,7 @@ impl State {
     }
 
     /// Restyles picked highlights; returns an Undo toast when any changed.
-    pub fn restyle_all(
+    pub(crate) fn restyle_all(
         &mut self,
         main: &mut Library,
         changes: Vec<(MarkId, Style)>,
@@ -390,7 +390,7 @@ impl State {
     }
 
     /// Reverts picked highlights' previous styles (Undo).
-    pub fn unstyle(&mut self, main: &mut Library, looks: &[(MarkId, Style)], wall: u64) {
+    pub(crate) fn unstyle(&mut self, main: &mut Library, looks: &[(MarkId, Style)], wall: u64) {
         for &(id, style) in looks {
             if !main.set_style(id, style, wall) {
                 self.loose.set_style(id, style, wall);
@@ -406,7 +406,12 @@ impl State {
     }
 
     /// Deletes `id`'s note, returning an Undo toast when one was present.
-    pub fn forget_note(&mut self, main: &mut Library, id: MarkId, wall: u64) -> Option<Toast> {
+    pub(crate) fn forget_note(
+        &mut self,
+        main: &mut Library,
+        id: MarkId,
+        wall: u64,
+    ) -> Option<Toast> {
         let was = self.mark(main, id).and_then(|m| m.note.value.clone());
         if !main.set_note(id, None, wall) {
             self.loose.set_note(id, None, wall);
@@ -418,7 +423,7 @@ impl State {
     }
 
     /// Restores a deleted note's text (Undo).
-    pub fn restore_note(&mut self, main: &mut Library, id: MarkId, text: String, wall: u64) {
+    pub(crate) fn restore_note(&mut self, main: &mut Library, id: MarkId, text: String, wall: u64) {
         if !main.set_note(id, Some(text.clone()), wall) {
             self.loose.set_note(id, Some(text), wall);
         }

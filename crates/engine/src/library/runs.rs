@@ -165,7 +165,7 @@ impl Runs {
     }
 
     /// Each run, so the front end can ask one by one whether it is due.
-    pub fn list_mut(&mut self) -> &mut [Run] {
+    pub(crate) fn list_mut(&mut self) -> &mut [Run] {
         &mut self.list
     }
 
@@ -184,7 +184,7 @@ impl Runs {
     }
 
     /// Every card shows from the first frame, for shots.
-    pub fn show_now(&mut self) {
+    pub(crate) fn show_now(&mut self) {
         for run in &mut self.list {
             run.started = Some(f64::NEG_INFINITY);
         }

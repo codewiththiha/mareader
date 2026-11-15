@@ -19,8 +19,8 @@ use mareader_engine::session::Waker;
 use mareader_engine::toast::Toast;
 use mareader_workspace::PaneId;
 
-use crate::repaint::wake;
 use crate::ui_command::{Commands, Sent, UiCommand};
+use crate::wake;
 
 /// What the open dialog admits.
 /// Markdown and plain text open converted to books.

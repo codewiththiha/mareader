@@ -950,7 +950,7 @@ milestone = "M2"
 status = "shipped"
 ui_only = true
 reference = ["crates/reader-runtime/src/zoom/coordinator.rs"]
-evidence = ["crates/ui-egui/src/pdf_view.rs::zooming_holds_the_spot_under_the_pivot", "crates/ui-egui/src/zoom.rs::a_pinch_stretches_until_it_settles", "crates/ui-egui/tests/reading.rs::a_pinch_zooms_about_the_pointer"]
+evidence = ["crates/ui-egui/src/pdf_view/tests.rs::zooming_holds_the_spot_under_the_pivot", "crates/ui-egui/src/zoom.rs::a_pinch_stretches_until_it_settles", "crates/ui-egui/tests/reading.rs::a_pinch_zooms_about_the_pointer"]
 
 [[feature]]
 id = "pdf.mixed-sizes"
@@ -1099,7 +1099,7 @@ tier = "P0"
 milestone = "M4"
 status = "shipped"
 command = "pane.view"
-evidence = ["crates/ui-egui/tests/reading.rs::a_book_s_vertical_strip_streams_one_column_edge_to_edge", "crates/reflow/src/flow.rs::bands_hold_each_page_s_text_and_the_gap_its_cut_swallowed", "crates/ui-egui/src/layout.rs::a_column_off_centre_keeps_the_margin_from_its_edge", "crates/reflow/src/flow.rs::a_pane_sized_page_centres_a_column_no_longer_than_its_line", "crates/ui-egui/src/pdf_view.rs::a_resized_pane_resets_its_book_once_it_holds_still"]
+evidence = ["crates/ui-egui/tests/reading.rs::a_book_s_vertical_strip_streams_one_column_edge_to_edge", "crates/reflow/src/flow.rs::bands_hold_each_page_s_text_and_the_gap_its_cut_swallowed", "crates/ui-egui/src/layout.rs::a_column_off_centre_keeps_the_margin_from_its_edge", "crates/reflow/src/flow.rs::a_pane_sized_page_centres_a_column_no_longer_than_its_line", "crates/ui-egui/src/pdf_view/tests.rs::a_resized_pane_resets_its_book_once_it_holds_still"]
 reference = ["crates/reflow-core/src/geometry.rs"]
 notes = "Single, spread and the strip show whole pages; the vertical strip streams each page cut to its text, edge to edge on its paper. One raster per page in every mode (docs/epub.md). Single and spread pages take the pane's size and reset once a resize settles"
 
@@ -1581,7 +1581,7 @@ evidence = [
     "crates/ui-egui/tests/dictionary.rs::the_pill_goes_anywhere_and_unfolds_onto_the_stage",
     "crates/ui-egui/tests/dictionary.rs::dragging_past_a_side_peeks_the_dictionary_itself",
     "crates/ui-egui/tests/dictionary.rs::a_bridge_names_english_and_each_answer_its_word",
-    "crates/ui-egui/src/dict/window.rs::the_window_stays_on_the_stage_and_never_below_its_minimum",
+    "crates/ui-egui/src/dict/window_geom.rs::the_window_stays_on_the_stage_and_never_below_its_minimum",
     "crates/settings/src/study.rs::a_window_rect_is_finite_and_never_below_the_minimum",
 ]
 notes = "Its own page, not a rail panel: from the reader's and library's bars or Cmd/Ctrl+Shift+D. Results beside the chosen entry, its other senses, Copy and Look up in turn, recent searches, arrows and Enter. In the reader it floats, drags, resizes and folds; dragged past a side, its own shell peeks and clicks restore it without a tab. Settings can ask for the page instead"

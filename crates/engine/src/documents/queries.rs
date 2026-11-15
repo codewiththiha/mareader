@@ -20,6 +20,9 @@ use crate::reading::Place;
 use crate::study::words;
 use crate::texts::TextLayers;
 
+/// Per-page character ranges in a document selection.
+pub type PageSpans = Vec<(usize, Range<usize>)>;
+
 /// Split-borrowed view of one pane for drawing.
 pub enum PaneShow<'a> {
     Empty,
@@ -74,7 +77,7 @@ impl State {
         }
     }
 
-    pub fn place_mut(&mut self, pane: PaneId) -> Option<&mut Place> {
+    pub(crate) fn place_mut(&mut self, pane: PaneId) -> Option<&mut Place> {
         match self.panes.get_mut(&pane)? {
             Slot::Open(place) => Some(place),
             Slot::Opening(_) => None,
@@ -82,7 +85,7 @@ impl State {
     }
 
     /// Borrows `pane`'s open entry, place, text layers, and papers together.
-    pub fn split_pane(&mut self, pane: PaneId) -> PaneShow<'_> {
+    pub(crate) fn split_pane(&mut self, pane: PaneId) -> PaneShow<'_> {
         let Some(slot) = self.panes.get_mut(&pane) else {
             return PaneShow::Empty;
         };
@@ -201,11 +204,41 @@ impl State {
         self.place(pane)?.selection.filter(|s| !s.is_empty())
     }
 
-    pub fn clear_selection(&mut self, pane: PaneId) -> bool {
+    pub(crate) fn clear_selection(&mut self, pane: PaneId) -> bool {
         match self.panes.get_mut(&pane) {
             Some(Slot::Open(place)) => place.selection.take().is_some_and(|s| !s.is_empty()),
             _ => false,
         }
+    }
+
+    /// The pane's selection as a word to explain.
+    pub fn asked(&self, pane: PaneId) -> Option<crate::study::words::Asked> {
+        let sel = self.selection(pane)?;
+        words::asked(sel, |page| self.layer(pane, page))
+    }
+
+    /// Character ranges covered by `pane`'s current selection, per page.
+    pub fn selection_spans(&self, pane: PaneId) -> Vec<(usize, Range<usize>)> {
+        let Some(sel) = self.selection(pane) else {
+            return Vec::new();
+        };
+        sel.pages()
+            .filter_map(|page| {
+                let layer = self.layer(pane, page)?;
+                let range = sel.on_page(page, layer.text.len())?;
+                Some((page, range))
+            })
+            .collect()
+    }
+
+    /// Selected text and per-page character ranges for `pane`, if non-empty.
+    pub fn selected_text_spans(&self, pane: PaneId) -> Option<(String, PageSpans)> {
+        let sel = self.selection(pane)?;
+        let spans = self.selection_spans(pane);
+        if spans.is_empty() {
+            return None;
+        }
+        Some((sel.text(|page| self.layer(pane, page)), spans))
     }
 
     /// The pane's selection as a highlight's spot and text.

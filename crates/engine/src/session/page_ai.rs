@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use mareader_library::{AiPageId, AiTask, PageSpan};
 use mareader_session::Inserts;
@@ -13,7 +14,6 @@ use crate::page_ai::Slot;
 use crate::page_ai::ledger::Ledger;
 use crate::page_ai::state::{Around, Asked};
 use crate::page_ai::view::{AiView, Models, Views};
-use crate::repaint::Repaint;
 use crate::toast::Toast;
 
 use super::Session;
@@ -25,12 +25,6 @@ impl Session {
     /// The session's page-AI ledger, read-only.
     pub fn page_ai(&self) -> &Ledger {
         &self.page_ai
-    }
-
-    /// Attaches the window's repaint callback to the session's controllers.
-    pub fn set_repaint(&mut self, repaint: Repaint) {
-        self.page_ai.repaint = repaint.clone();
-        self.read_aloud.attach_repaint(repaint);
     }
 
     /// Tests: runs answer at once, in capitals, with no AI.
@@ -50,6 +44,29 @@ impl Session {
         }
     }
 
+    fn with_page_ai<R>(
+        &mut self,
+        pane: PaneId,
+        page: usize,
+        ai: &dyn Models,
+        run: impl FnOnce(&mut Ledger, Asked<'_>, &mut mareader_library::Library) -> R,
+    ) -> R {
+        let book = self.book_in(pane);
+        let name = self.documents.title(pane).unwrap_or_default().to_owned();
+        let asked = Asked {
+            pane,
+            page,
+            book,
+            name: &name,
+            documents: &self.documents,
+            ai,
+            settings: &self.settings.ai,
+        };
+        let out = run(&mut self.page_ai, asked, &mut self.library.model);
+        self.flush_page_ai_notes();
+        out
+    }
+
     /// Starts or carries on `pane`'s continuous run.
     pub fn page_ai_follow(
         &mut self,
@@ -60,37 +77,16 @@ impl Session {
         fresh: bool,
         now: f64,
     ) {
-        let book = self.book_in(pane);
-        let name = self.documents.title(pane).unwrap_or_default().to_owned();
-        let asked = Asked {
-            pane,
-            page,
-            book,
-            name: &name,
-            documents: &self.documents,
-            ai,
-            settings: &self.settings.ai,
-        };
-        self.page_ai
-            .follow(asked, &self.library.model, task, fresh, now);
-        self.flush_page_ai_notes();
+        self.with_page_ai(pane, page, ai, |ledger, asked, main| {
+            ledger.follow(asked, main, task, fresh, now);
+        });
     }
 
     /// Carries a stopped continuous run on from where it was.
     pub fn page_ai_resume(&mut self, pane: PaneId, page: usize, ai: &dyn Models, now: f64) {
-        let book = self.book_in(pane);
-        let name = self.documents.title(pane).unwrap_or_default().to_owned();
-        let asked = Asked {
-            pane,
-            page,
-            book,
-            name: &name,
-            documents: &self.documents,
-            ai,
-            settings: &self.settings.ai,
-        };
-        self.page_ai.resume(asked, &self.library.model, now);
-        self.flush_page_ai_notes();
+        self.with_page_ai(pane, page, ai, |ledger, asked, main| {
+            ledger.resume(asked, main, now);
+        });
     }
 
     /// Writes `task` for one page.
@@ -102,19 +98,9 @@ impl Session {
         task: AiTask,
         now: f64,
     ) {
-        let book = self.book_in(pane);
-        let name = self.documents.title(pane).unwrap_or_default().to_owned();
-        let asked = Asked {
-            pane,
-            page,
-            book,
-            name: &name,
-            documents: &self.documents,
-            ai,
-            settings: &self.settings.ai,
-        };
-        self.page_ai.redo(asked, task, None, now);
-        self.flush_page_ai_notes();
+        self.with_page_ai(pane, page, ai, |ledger, asked, _| {
+            ledger.redo(asked, task, None, now);
+        });
     }
 
     /// Writes `task` over picked pages, in groups.
@@ -126,19 +112,9 @@ impl Session {
         pages: &[usize],
         task: AiTask,
     ) {
-        let book = self.book_in(pane);
-        let name = self.documents.title(pane).unwrap_or_default().to_owned();
-        let asked = Asked {
-            pane,
-            page,
-            book,
-            name: &name,
-            documents: &self.documents,
-            ai,
-            settings: &self.settings.ai,
-        };
-        self.page_ai.run_pages(asked, pages, task);
-        self.flush_page_ai_notes();
+        self.with_page_ai(pane, page, ai, |ledger, asked, _| {
+            ledger.run_pages(asked, pages, task);
+        });
     }
 
     /// Writes a result's task again, replacing it once done.
@@ -150,19 +126,9 @@ impl Session {
         slot: Slot,
         now: f64,
     ) {
-        let book = self.book_in(pane);
-        let name = self.documents.title(pane).unwrap_or_default().to_owned();
-        let asked = Asked {
-            pane,
-            page,
-            book,
-            name: &name,
-            documents: &self.documents,
-            ai,
-            settings: &self.settings.ai,
-        };
-        self.page_ai.again(asked, &self.library.model, slot, now);
-        self.flush_page_ai_notes();
+        self.with_page_ai(pane, page, ai, |ledger, asked, main| {
+            ledger.again(asked, main, slot, now);
+        });
     }
 
     /// Ends `pane`'s continuous run.
@@ -211,8 +177,8 @@ impl Session {
         }
     }
 
-    /// Advances continuous and grouped page-AI runs one frame.
-    pub fn page_ai_tick(&mut self, ai: &dyn Models, now: f64) {
+    /// Advances continuous and grouped page-AI runs; returns any poll wait.
+    pub fn page_ai_tick(&mut self, ai: &dyn Models, now: f64) -> Option<Duration> {
         let around = Around {
             main: &self.library.model,
             documents: &self.documents,
@@ -221,6 +187,7 @@ impl Session {
         };
         self.page_ai.tick(&around, now);
         self.flush_page_ai_notes();
+        self.page_ai.take_wait()
     }
 
     /// Shots and tests: keeps and shows a canned result; false before text.
@@ -232,18 +199,9 @@ impl Session {
         task: AiTask,
         now: f64,
     ) -> bool {
-        let book = self.book_in(pane);
-        let name = self.documents.title(pane).unwrap_or_default().to_owned();
-        let asked = Asked {
-            pane,
-            page,
-            book,
-            name: &name,
-            documents: &self.documents,
-            ai,
-            settings: &self.settings.ai,
-        };
-        self.page_ai.seed(asked, &mut self.library.model, task, now)
+        self.with_page_ai(pane, page, ai, |ledger, asked, main| {
+            ledger.seed(asked, main, task, now)
+        })
     }
 
     /// Kept results `pane`'s reflowable book lays in; none for a PDF.

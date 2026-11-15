@@ -217,7 +217,8 @@ impl Session {
             session.set_inline(true);
         }
         let wake = Arc::clone(&session.waker);
-        session.set_repaint(crate::repaint::Repaint::new(Arc::new(move |_| wake())));
+        session.page_ai.waker = Arc::clone(&wake);
+        session.read_aloud.attach_waker(wake);
         session.wire_host();
         session
     }

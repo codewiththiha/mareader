@@ -20,7 +20,7 @@ impl State {
         !self.held.is_empty()
     }
 
-    pub fn unheld(&self, action: ShelfAction, out: &mut Vec<Out>) -> Option<ShelfAction> {
+    pub(crate) fn unheld(&self, action: ShelfAction, out: &mut Vec<Out>) -> Option<ShelfAction> {
         let held = &self.held;
         if held.is_empty() {
             return Some(action);
@@ -59,7 +59,7 @@ impl State {
     }
 
     /// Picks without the books a run holds; a toast says why.
-    pub fn unheld_picks(&self, mut picks: Vec<Pick>, out: &mut Vec<Out>) -> Vec<Pick> {
+    pub(crate) fn unheld_picks(&self, mut picks: Vec<Pick>, out: &mut Vec<Out>) -> Vec<Pick> {
         let held = &self.held;
         let n = picks.len();
         picks.retain(|p| !matches!(p, Pick::Book(b) if held.contains(b)));

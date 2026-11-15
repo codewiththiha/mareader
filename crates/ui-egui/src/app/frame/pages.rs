@@ -44,7 +44,7 @@ impl MareaderApp {
             let paused = lib_state
                 .organizer()
                 .paused()
-                .map(ui_library::Paused::short);
+                .map(mareader_engine::library::Paused::short);
             let shelves = PanelContext {
                 model: lib_state.model(),
                 tabs: &tabs,
@@ -170,7 +170,6 @@ impl MareaderApp {
     fn shots(&mut self, ctx: &Context) {
         if self.ui.read_aloud_shot && self.documents().reading(self.active()).is_some() {
             self.ui.read_aloud_shot = false;
-            self.session.set_repaint(crate::repaint::of(ctx));
             let cmd = Command::ReadAloud {
                 pane: self.active(),
                 from: ReadFrom::default(),
@@ -219,11 +218,14 @@ impl MareaderApp {
         for (doc, clip) in self.ui.documents.take_clips(self.session.documents()) {
             self.session.act_clip(&doc, clip);
         }
-        self.session.set_repaint(crate::repaint::of(ctx));
         let now = ctx.input(|i| i.time);
         let rise = self.ui.read_aloud.rise();
-        self.session
-            .read_aloud_tick(now, rise, &mut self.ui.documents);
+        if let Some(wait) = self
+            .session
+            .read_aloud_tick(now, rise, &mut self.ui.documents)
+        {
+            ctx.request_repaint_after(wait);
+        }
         self.ui.documents.reveal_read_markers(&mut self.session);
     }
 

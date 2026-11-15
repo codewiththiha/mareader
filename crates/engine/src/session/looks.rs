@@ -53,11 +53,6 @@ impl Session {
         self.texts.of(pane, &self.settings.text)
     }
 
-    /// Each pane with text settings of its own, mirroring the focused pane.
-    pub fn own_texts(&self) -> Vec<(PaneId, &TextSettings)> {
-        self.texts.own(&self.settings.text)
-    }
-
     /// Captures appearance state for a front-end cross-fade transition.
     pub fn appearance_snapshot(&self) -> AppearanceSnapshot {
         AppearanceSnapshot {

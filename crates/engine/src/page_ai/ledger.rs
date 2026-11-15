@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use mareader_library::{AiPage, AiPageId, AiTask, BookId, Library, PageSpan};
 use mareader_session::{Anchor, Document, Insert, Inserts};
@@ -18,14 +19,15 @@ use super::follow::Follow;
 use super::groups::Batch;
 use super::state::{Asked, Cover, Drawn, Handle, Index, Key, Loose, Run, Showing, Who, canned};
 use super::view::{page_task, source_of};
-use crate::repaint::Repaint;
+use crate::session::Waker;
 use crate::study::loose::{loose_book, loose_id};
 
 /// The page AI's state across panes.
-#[derive(Default)]
 pub struct Ledger {
-    /// This frame's window, so a run's threads can ask it to draw.
-    pub repaint: Repaint,
+    /// Wakes the client when background page-extraction threads finish.
+    pub waker: Waker,
+    /// Soonest deferred poll wait recorded by streaming or follow timers.
+    wait: Option<Duration>,
     pub loose: Loose,
     pub runs: Vec<Run>,
     pub next_run: u64,
@@ -60,7 +62,43 @@ pub struct Ledger {
     pub inline: bool,
 }
 
+impl Default for Ledger {
+    fn default() -> Self {
+        Self {
+            waker: Arc::new(|| {}),
+            wait: None,
+            loose: Loose::default(),
+            runs: Vec::new(),
+            next_run: 0,
+            showing: HashMap::new(),
+            index: HashMap::new(),
+            aligned: HashMap::new(),
+            made: HashMap::new(),
+            spans: HashMap::new(),
+            covers: HashMap::new(),
+            wants: HashMap::new(),
+            parsed: HashMap::new(),
+            drawn: HashMap::new(),
+            follows: HashMap::new(),
+            batches: HashMap::new(),
+            notes: Vec::new(),
+            canned: false,
+            held: false,
+            inline: false,
+        }
+    }
+}
+
 impl Ledger {
+    /// Schedules the soonest deferred frame poll owed by this ledger.
+    pub(crate) fn wait_after(&mut self, after: Duration) {
+        self.wait = Some(self.wait.map_or(after, |w| w.min(after)));
+    }
+
+    /// Takes any deferred poll wait recorded since the last check.
+    pub fn take_wait(&mut self) -> Option<Duration> {
+        self.wait.take()
+    }
     /// The book's library: the app's, else the session's for `name`.
     pub fn shelf<'a>(
         &'a mut self,
@@ -199,7 +237,7 @@ impl Ledger {
     }
 
     /// Shows `slot` on own page `key`; others of the same text give way.
-    pub fn show_on(&mut self, key: Key, slot: Slot, now: f64) {
+    pub(crate) fn show_on(&mut self, key: Key, slot: Slot, now: f64) {
         // Only one result of any text is laid in, or covers a PDF's page.
         if let Some(mine) = self.covering(slot) {
             let (pane, layout, _) = key;

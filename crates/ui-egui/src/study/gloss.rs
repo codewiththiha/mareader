@@ -78,5 +78,5 @@ pub enum Gloss {
         at: Pos2,
     },
     /// The continuous run's pill was pressed.
-    Pill(crate::page_ai::PillPress),
+    Pill(mareader_engine::page_ai::view::PillPress),
 }

@@ -41,7 +41,7 @@ pub struct UiState {
     /// Language packs, the lookup card and the Dictionary panel.
     pub(super) dict: crate::dict::DictUi,
     /// A stand-in English voice, for shots and tests.
-    pub(super) english: Option<crate::sounds::EnglishVoice>,
+    pub(super) english: Option<mareader_engine::sounds::EnglishVoice>,
     /// A selection the options asked for, made once its page is laid out.
     pub(super) staged: std::collections::VecDeque<Staged>,
     pub(super) lights: NativeLights,
@@ -77,6 +77,8 @@ pub struct UiState {
     pub(super) machine_fonts: MachineFonts,
     /// Commands from outside a view: tests, OS drops, later the keymap.
     pub(super) queued: Commands,
+    /// Session events requiring an egui context, deferred from `drain_local`.
+    pub(super) deferred_events: Vec<mareader_engine::event::Event>,
     pub(super) wake: setup::WakeSlot,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     pub(super) live: theme::live::LiveTokens,

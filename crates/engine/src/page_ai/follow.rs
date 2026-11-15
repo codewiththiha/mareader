@@ -66,7 +66,7 @@ pub fn doing(task: &AiTask) -> (String, &'static str) {
 }
 
 /// Pages asked at once: the setting, or fewer if the model has less room.
-pub fn allowance(ai: &dyn Models, settings: &AiSettings, task: &AiTask) -> usize {
+pub(crate) fn allowance(ai: &dyn Models, settings: &AiSettings, task: &AiTask) -> usize {
     let cap = usize::from(settings.tasks.pages.at_once.max(1));
     let preset = settings.page_preset(page_task(task));
     let room = preset.and_then(|p| ai.capacity(p));
@@ -137,7 +137,7 @@ impl Ledger {
     }
 
     /// Ends the pane's continuous run; pages ahead no one saw are let go.
-    pub fn stop_follow(&mut self, pane: PaneId) {
+    pub(crate) fn stop_follow(&mut self, pane: PaneId) {
         if let Some(f) = self.follows.remove(&pane) {
             self.let_go(&f);
         }
@@ -219,7 +219,7 @@ impl Ledger {
             (_, false) => State::Away,
         };
         if f.state == State::Away {
-            self.repaint.after(Duration::from_secs_f64(0.3));
+            self.wait_after(Duration::from_secs_f64(0.3));
         }
         if f.state != State::Going {
             f.dwell = None;
@@ -235,7 +235,7 @@ impl Ledger {
                 }
             };
             if now - since < f.dwell_secs {
-                self.repaint.after(Duration::from_secs_f64(0.25));
+                self.wait_after(Duration::from_secs_f64(0.25));
             } else if f.fired != Some(cur) {
                 f.fired = Some(cur);
                 self.top_up(f, (pane, cur, n), a, now);
@@ -249,7 +249,7 @@ impl Ledger {
                 f.next = cur + 1;
                 self.cover(f, pane, &[cur], a, now);
             } else {
-                self.repaint.after(Duration::from_secs_f64(0.3));
+                self.wait_after(Duration::from_secs_f64(0.3));
             }
         }
         true
@@ -298,7 +298,7 @@ impl Ledger {
             Document::Pdf(_) => {
                 f.pending += pages.len();
                 let document = Arc::clone(&view.document);
-                let wake = self.repaint.waker();
+                let wake = Arc::clone(&self.waker);
                 f.reading
                     .push(read::pages(wake, document, pages.to_vec(), self.inline));
             }

@@ -79,7 +79,7 @@ impl State {
     }
 
     /// The paused run as the service keeps it; a card shows it when idle.
-    pub fn set_paused(&mut self, paused: Option<Paused>) {
+    pub(crate) fn set_paused(&mut self, paused: Option<Paused>) {
         self.organizer.paused = paused;
         self.paused_card();
     }
@@ -117,7 +117,7 @@ impl State {
     }
 
     /// Asks whether a new run over `picked` replaces the paused one.
-    pub fn ask_replace(&mut self, picked: Option<Vec<BookId>>) {
+    pub(crate) fn ask_replace(&mut self, picked: Option<Vec<BookId>>) {
         self.sheet = Some(Sheet::Replace(picked));
     }
 
@@ -194,7 +194,7 @@ impl State {
     }
 
     /// The run stopped, or its plan was applied or let go: books move again.
-    pub fn organizer_end(&mut self) {
+    pub(crate) fn organizer_end(&mut self) {
         let ended = self.organizer.run.take();
         self.runs.finish(ended);
         let paused = self.organizer.paused.take();
@@ -206,7 +206,7 @@ impl State {
         self.set_paused(paused);
     }
 
-    pub fn apply_organized(&mut self, out: &mut Vec<Out>) {
+    pub(crate) fn apply_organized(&mut self, out: &mut Vec<Out>) {
         let Some(plan) = self.organizer.review.take() else {
             return;
         };
@@ -235,12 +235,12 @@ impl State {
     }
 
     /// A shelf move without the books a run holds; a toast says why.
-    pub fn undo_organized(&mut self, done: &Applied) {
+    pub(crate) fn undo_organized(&mut self, done: &Applied) {
         undo(&mut self.model, done, wall_ms());
     }
 
     /// A made-up run over the loose books, stopped at 3 of 8 or `ready`.
-    pub fn organize_paused_demo(&mut self, ready: bool) {
+    pub(crate) fn organize_paused_demo(&mut self, ready: bool) {
         let Ok(ask) = self.ask_organize(None) else {
             return;
         };
@@ -256,7 +256,7 @@ impl State {
     }
 
     /// A made-up run over the loose books, its plan up if `review`.
-    pub fn organize_demo(&mut self, review: bool) {
+    pub(crate) fn organize_demo(&mut self, review: bool) {
         let Ok(ask) = self.ask_organize(None) else {
             return;
         };

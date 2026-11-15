@@ -75,7 +75,11 @@ impl Session {
     }
 
     /// Highlights text in `pen`; returns the mark id and whether it is new.
-    pub fn study_highlight(&mut self, at: Highlighted<'_>, wall_ms: u64) -> Option<(MarkId, bool)> {
+    pub(crate) fn study_highlight(
+        &mut self,
+        at: Highlighted<'_>,
+        wall_ms: u64,
+    ) -> Option<(MarkId, bool)> {
         self.study.highlight(&mut self.library.model, at, wall_ms)
     }
 
@@ -151,7 +155,7 @@ impl Session {
     }
 
     /// Most recently added highlight mark on `pane`'s open book, if any.
-    pub fn latest_mark(&self, pane: PaneId) -> Option<MarkId> {
+    pub(crate) fn latest_mark(&self, pane: PaneId) -> Option<MarkId> {
         let book = self.book_in(pane);
         let name = self.documents.title(pane).unwrap_or_default();
         let (lib, id) = self.study.lib_of(&self.library.model, book, name);
@@ -162,7 +166,7 @@ impl Session {
     }
 
     /// Renders `pane`'s highlights and notes as `format`, with a file name.
-    pub fn export_notes(&self, pane: PaneId, format: Format) -> (String, String) {
+    pub(crate) fn export_notes(&self, pane: PaneId, format: Format) -> (String, String) {
         let book = self.book_in(pane);
         let title = self.documents.title(pane).unwrap_or("notes");
         let place = self.documents.place(pane);

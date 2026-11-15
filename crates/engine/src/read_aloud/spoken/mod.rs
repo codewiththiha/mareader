@@ -1,8 +1,8 @@
 //! One book said in one pane: its state, and how it is opened and set.
 //!
 //! The front end opens one, ticks it each frame, and asks what it shows. It
-//! names no window type: a `Waker` and a `Repaint` ask for its frames, `Stand`
-//! says where the book is open, and `Panes` turns and lights that pane.
+//! names no window type: a `Waker` asks for frames from workers, `Stand` says
+//! where the book is open, and `Panes` turns and lights that pane.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -18,7 +18,6 @@ use super::parts::{self, Part};
 use super::place::Stand;
 use super::tone;
 use super::words::{Clock, Pace, Steady};
-use crate::repaint::Repaint;
 
 mod saying;
 mod showing;
@@ -33,8 +32,6 @@ pub struct Spoken {
     document: Arc<Document>,
     voicer: Option<Box<dyn Voicer>>,
     wake: Waker,
-    /// Asks the window for a frame once a tick has passed.
-    repaint: Repaint,
     feed: Option<Receiver<Said>>,
     behind: VecDeque<Said>,
     /// The sentence said now, or next once the voice is free.
@@ -95,20 +92,17 @@ pub struct Spoken {
 
 impl Spoken {
     pub fn new(
-        repaint: Repaint,
+        wake: Waker,
         reading: &Stand,
         (start, until): (Start, Option<Spot>),
         (settings, shelf): (&ReadAloudSettings, &Shelf),
     ) -> Self {
-        let kept = repaint.clone();
-        let wake: Waker = Arc::new(move || kept.now());
         let mut spoken = Self {
             pane: reading.pane,
             doc: reading.doc,
             document: Arc::clone(&reading.document),
             voicer: None,
             wake,
-            repaint,
             feed: None,
             behind: VecDeque::new(),
             current: None,
@@ -317,7 +311,7 @@ impl Spoken {
     }
 
     /// Reads on in `reading`, the book opened again; false if it differs.
-    pub fn rehome(&mut self, reading: &Stand) -> bool {
+    pub(crate) fn rehome(&mut self, reading: &Stand) -> bool {
         if reading.document.narration().is_some() {
             return false;
         }

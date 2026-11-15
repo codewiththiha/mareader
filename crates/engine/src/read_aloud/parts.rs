@@ -34,7 +34,7 @@ impl Kind {
 
     pub const ALL: [Self; 4] = [Self::Table, Self::List, Self::Figure, Self::Aside];
 
-    pub fn set_skip(self, skips: &mut Skips) {
+    pub(crate) fn set_skip(self, skips: &mut Skips) {
         let skip = match self {
             Self::Table => &mut skips.tables,
             Self::List => &mut skips.lists,

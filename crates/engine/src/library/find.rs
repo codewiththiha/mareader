@@ -12,7 +12,7 @@ pub use super::{Finding, Step};
 
 impl State {
     /// The find-again sheet's work.
-    pub fn find_act(&mut self, action: Action, out: &mut Vec<Out>) {
+    pub(crate) fn find_act(&mut self, action: Action, out: &mut Vec<Out>) {
         match action {
             Action::FindAgain(book) => {
                 let step = Step::Ask;
@@ -79,7 +79,7 @@ impl State {
         })
     }
 
-    pub fn relink_measured(
+    pub(crate) fn relink_measured(
         &mut self,
         relink: Relink,
         measured: Option<(Format, Measure)>,
@@ -109,7 +109,7 @@ impl State {
         }
     }
 
-    pub fn sought_found(
+    pub(crate) fn sought_found(
         &mut self,
         book: BookId,
         folder: &Path,

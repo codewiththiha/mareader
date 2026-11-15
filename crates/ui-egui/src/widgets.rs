@@ -323,37 +323,31 @@ fn menu_inks(ui: &Ui, resp: &Response, on: bool, t: &Tokens) -> (Color32, Color3
     (icon, t.ink)
 }
 
-/// One menu row with an optional trailing shortcut or status.
-pub fn menu_row(ui: &mut Ui, icon: Icon, label: &str, keys: Option<&str>, on: bool) -> Response {
+/// Shared menu-row shell: background, trailing widget, and lead.
+fn menu_row_shell(
+    ui: &mut Ui,
+    icon: Option<Icon>,
+    label: &str,
+    on: bool,
+    selected: Option<bool>,
+    custom_inks: Option<(Color32, Color32)>,
+    trailing: impl FnOnce(&Ui, Rect, &Tokens) -> f32,
+) -> Response {
     let t = Tokens::get(ui.ctx());
     let enabled = ui.is_enabled();
     let (rect, resp) =
         ui.allocate_exact_size(vec2(ui.available_width(), MENU_ROW_H), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, label));
+    resp.widget_info(|| match selected {
+        Some(sel) => egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, sel, label),
+        None => egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label),
+    });
     paint_menu_row_bg(ui, rect, &resp, on, &t);
-    let y = rect.center().y;
-    let right_limit = match keys.filter(|k| !k.is_empty()) {
-        Some(k) if is_shortcut_hint(k) => {
-            paint_keycap(ui, rect.right() - MENU_PAD_X, y, k, &t) - 6.0
-        }
-        Some(k) => {
-            let galley = ui.painter().layout_no_wrap(
-                k.to_owned(),
-                egui::FontId::proportional(11.5),
-                t.muted,
-            );
-            let x = rect.right() - MENU_PAD_X - galley.size().x;
-            ui.painter()
-                .galley(pos2(x, y - galley.size().y * 0.5), galley, t.muted);
-            x - 6.0
-        }
-        None => rect.right() - MENU_PAD_X,
-    };
-    let (icon_tint, text_color) = menu_inks(ui, &resp, on, &t);
+    let right_limit = trailing(ui, rect, &t);
+    let (icon_tint, text_color) = custom_inks.unwrap_or_else(|| menu_inks(ui, &resp, on, &t));
     paint_menu_row_lead(
         ui,
         rect,
-        Some(icon),
+        icon,
         label,
         right_limit,
         icon_tint,
@@ -361,6 +355,35 @@ pub fn menu_row(ui: &mut Ui, icon: Icon, label: &str, keys: Option<&str>, on: bo
         &resp,
     );
     resp
+}
+
+/// One menu row with an optional trailing shortcut or status.
+pub fn menu_row(ui: &mut Ui, icon: Icon, label: &str, keys: Option<&str>, on: bool) -> Response {
+    menu_row_shell(
+        ui,
+        Some(icon),
+        label,
+        on,
+        Some(on),
+        None,
+        |ui, rect, t| match keys.filter(|k| !k.is_empty()) {
+            Some(k) if is_shortcut_hint(k) => {
+                paint_keycap(ui, rect.right() - MENU_PAD_X, rect.center().y, k, t) - 6.0
+            }
+            Some(k) => {
+                let galley = ui.painter().layout_no_wrap(
+                    k.to_owned(),
+                    egui::FontId::proportional(11.5),
+                    t.muted,
+                );
+                let x = rect.right() - MENU_PAD_X - galley.size().x;
+                let y = rect.center().y - galley.size().y * 0.5;
+                ui.painter().galley(pos2(x, y), galley, t.muted);
+                x - 6.0
+            }
+            None => rect.right() - MENU_PAD_X,
+        },
+    )
 }
 
 /// Destructive menu row painted in the danger ink.
@@ -375,20 +398,19 @@ pub fn menu_row_danger(ui: &mut Ui, icon: Icon, label: &str) -> Response {
 
 /// A menu row with a trailing accent badge.
 pub fn menu_row_tag(ui: &mut Ui, icon: Icon, label: &str, tag: Option<&str>, on: bool) -> Response {
-    let t = Tokens::get(ui.ctx());
-    let enabled = ui.is_enabled();
-    let (rect, resp) =
-        ui.allocate_exact_size(vec2(ui.available_width(), MENU_ROW_H), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, label));
-    paint_menu_row_bg(ui, rect, &resp, on, &t);
-    let y = rect.center().y;
-    let right_limit = if let Some(tag) = tag.filter(|s| !s.is_empty()) {
+    menu_row_shell(ui, Some(icon), label, on, Some(on), None, |ui, rect, t| {
+        let Some(tag) = tag.filter(|s| !s.is_empty()) else {
+            return rect.right() - MENU_PAD_X;
+        };
         let galley =
             ui.painter()
                 .layout_no_wrap(tag.to_owned(), crate::theme::medium(10.5), t.accent);
         let size = galley.size() + vec2(12.0, 4.0);
         let pill = Rect::from_min_size(
-            pos2(rect.right() - MENU_PAD_X - size.x, y - size.y * 0.5),
+            pos2(
+                rect.right() - MENU_PAD_X - size.x,
+                rect.center().y - size.y * 0.5,
+            ),
             size,
         );
         ui.painter()
@@ -396,83 +418,46 @@ pub fn menu_row_tag(ui: &mut Ui, icon: Icon, label: &str, tag: Option<&str>, on:
         ui.painter()
             .galley(pill.min + vec2(6.0, 2.0), galley, t.accent);
         pill.left() - 6.0
-    } else {
-        rect.right() - MENU_PAD_X
-    };
-    let (icon_tint, text_color) = menu_inks(ui, &resp, on, &t);
-    paint_menu_row_lead(
-        ui,
-        rect,
-        Some(icon),
-        label,
-        right_limit,
-        icon_tint,
-        text_color,
-        &resp,
-    );
-    resp
+    })
 }
 
 /// Menu row that drills into another step, ending with a stroke right chevron.
 pub fn menu_row_chevron(ui: &mut Ui, icon: Icon, label: &str, hint: Option<&str>) -> Response {
-    let t = Tokens::get(ui.ctx());
-    let enabled = ui.is_enabled();
-    let (rect, resp) =
-        ui.allocate_exact_size(vec2(ui.available_width(), MENU_ROW_H), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
-    paint_menu_row_bg(ui, rect, &resp, false, &t);
-    let y = rect.center().y;
-    let chev = Rect::from_min_size(
-        pos2(rect.right() - MENU_PAD_X - 14.0, y - 7.0),
-        Vec2::splat(14.0),
-    );
-    Icon::ChevronRight.paint(ui, chev, t.muted);
-    let mut right_limit = chev.left() - 4.0;
-    if let Some(hint) = hint.filter(|s| !s.is_empty()) {
-        let galley =
+    menu_row_shell(ui, Some(icon), label, false, None, None, |ui, rect, t| {
+        let y = rect.center().y;
+        let chev = Rect::from_min_size(
+            pos2(rect.right() - MENU_PAD_X - 14.0, y - 7.0),
+            Vec2::splat(14.0),
+        );
+        Icon::ChevronRight.paint(ui, chev, t.muted);
+        let mut right_limit = chev.left() - 4.0;
+        if let Some(hint) = hint.filter(|s| !s.is_empty()) {
+            let galley = ui.painter().layout_no_wrap(
+                hint.to_owned(),
+                egui::FontId::proportional(11.5),
+                t.muted,
+            );
+            let x = right_limit - galley.size().x;
             ui.painter()
-                .layout_no_wrap(hint.to_owned(), egui::FontId::proportional(11.5), t.muted);
-        let x = right_limit - galley.size().x;
-        ui.painter()
-            .galley(pos2(x, y - galley.size().y * 0.5), galley, t.muted);
-        right_limit = x - 6.0;
-    }
-    let (icon_tint, text_color) = menu_inks(ui, &resp, false, &t);
-    paint_menu_row_lead(
-        ui,
-        rect,
-        Some(icon),
-        label,
-        right_limit,
-        icon_tint,
-        text_color,
-        &resp,
-    );
-    resp
+                .galley(pos2(x, y - galley.size().y * 0.5), galley, t.muted);
+            right_limit = x - 6.0;
+        }
+        right_limit
+    })
 }
 
 /// Choice row inside a submenu: checkmark in the leading icon slot when active.
 pub fn menu_check_row(ui: &mut Ui, label: &str, checked: bool) -> Response {
     let t = Tokens::get(ui.ctx());
-    let enabled = ui.is_enabled();
-    let (rect, resp) =
-        ui.allocate_exact_size(vec2(ui.available_width(), MENU_ROW_H), Sense::click());
-    resp.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, checked, label)
-    });
-    paint_menu_row_bg(ui, rect, &resp, false, &t);
-    let icon = checked.then_some(Icon::Check);
-    paint_menu_row_lead(
+    menu_row_shell(
         ui,
-        rect,
-        icon,
+        checked.then_some(Icon::Check),
         label,
-        rect.right() - MENU_PAD_X,
-        t.accent,
-        t.ink,
-        &resp,
-    );
-    resp
+        false,
+        Some(checked),
+        Some((t.accent, t.ink)),
+        |_, rect, _| rect.right() - MENU_PAD_X,
+    )
 }
 
 #[derive(Clone, Copy, Default)]

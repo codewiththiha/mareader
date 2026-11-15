@@ -47,7 +47,7 @@ pub fn follow(
 }
 
 /// "Page 12 · Chapter Three": where a page is, for the seek track.
-pub fn place_name(document: &Document, page: usize) -> String {
+pub(crate) fn place_name(document: &Document, page: usize) -> String {
     let outline = document.outline();
     let chapter = mareader_pdf::active_entry(outline, page).and_then(|i| outline.get(i));
     match chapter {

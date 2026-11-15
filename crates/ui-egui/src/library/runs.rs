@@ -158,7 +158,7 @@ fn ring(ui: &Ui, centre: Pos2, fraction: Option<f32>, now: f64, t: &Tokens) {
 mod tests {
     use super::*;
 
-    use crate::library::{Heard, Proposal, Spot};
+    use mareader_engine::library::{Heard, Proposal, Spot};
     use mareader_engine::library::{Out, State};
     use mareader_library::{Book, BookId, Origin};
 

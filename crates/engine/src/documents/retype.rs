@@ -12,7 +12,7 @@ use super::state::{Sink, Slot, State};
 
 impl State {
     /// Each pane's book type: its `own` text, or `window`.
-    pub fn set_text(
+    pub(crate) fn set_text(
         &mut self,
         window: &TextSettings,
         own: &[(PaneId, &TextSettings)],
@@ -53,7 +53,7 @@ impl State {
     }
 
     /// Updates a pane's paged sheet size and retypesets when changed.
-    pub fn set_sheet(
+    pub(crate) fn set_sheet(
         &mut self,
         pane: PaneId,
         sheet: Option<(f32, f32)>,

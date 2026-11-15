@@ -40,7 +40,7 @@ impl MareaderApp {
                 pane, page, how, ..
             } => {
                 let Some(task) = task else { return };
-                let kind = crate::page_ai::page_task(&task);
+                let kind = mareader_engine::page_ai::view::page_task(&task);
                 if how.remember {
                     let start = match how.continuous {
                         true => PageStart::Continuous,

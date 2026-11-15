@@ -41,10 +41,9 @@ use crate::page_bar::{self, BarLook, PageBar};
 use crate::panes::{self as ui_panes, PaneStyle, PaneView};
 use crate::pdf_view::{PageLook, ViewContext};
 use crate::platform::{LightSpots, NativeLights, Platform};
-use crate::search::{Found, Lit, Search};
 use crate::settings_window::SettingsWindow;
 use crate::sidebar::{Panel, RailContext, Sidebar};
-use crate::study::{Explained, Gloss, Highlighted, StudyUi};
+use crate::study::{Explained, Gloss, StudyUi};
 use crate::thumbnails::ThumbState;
 use crate::titlebar::{self, BarContext, BarPage, DictionaryBar, LibraryBar, ReaderBar, TitleBar};
 use crate::toast::Toasts;
@@ -59,6 +58,7 @@ use mareader_engine::read_aloud::ReadFrom;
 use mareader_engine::route::Route;
 use mareader_engine::save::{LastDocument, Loaded};
 use mareader_engine::scope::{Scope, Shown};
+use mareader_engine::search::{Found, Lit, Search};
 use mareader_engine::session::{AppearanceSnapshot as Held, Session};
 use mareader_engine::settings::Tab;
 use mareader_engine::study::Action as StudyAction;
@@ -235,6 +235,7 @@ impl MareaderApp {
                 fonts: FontState::Missing,
                 machine_fonts: MachineFonts::default(),
                 queued: Commands::new(),
+                deferred_events: Vec::new(),
                 wake,
                 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
                 live: theme::live::LiveTokens::from_env(),
