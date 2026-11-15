@@ -18,7 +18,7 @@ repository = "https://github.com/codewiththiha/mareader2"
 mareader-appearance = { path = "crates/appearance" }
 mareader-workspace = { path = "crates/workspace" }
 mareader-settings = { path = "crates/settings" }
-mareader-ui = { path = "crates/ui" }
+mareader-ui-egui = { path = "crates/ui-egui" }
 mareader-pdf = { path = "crates/pdf" }
 mareader-session = { path = "crates/session" }
 mareader-reflow = { path = "crates/reflow" }
@@ -26,6 +26,7 @@ mareader-epub = { path = "crates/epub" }
 mareader-library = { path = "crates/library" }
 mareader-study = { path = "crates/study" }
 mareader-assist = { path = "crates/assist" }
+mareader-engine = { path = "crates/engine" }
 mareader-dict = { path = "crates/dict" }
 mareader-fetch = { path = "crates/fetch" }
 mareader-search = { path = "crates/search" }

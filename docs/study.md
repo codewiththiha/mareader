@@ -35,9 +35,9 @@ entries are `study.*` in `parity/mareader-features.toml`.
 |---|---|---|
 | The one-word rule, context, the answer's shape and limits, the `Explainer` contract | `crates/study` (L1) | pure rules, no egui, tested alone |
 | Mark records | `crates/library` | every synced row lives in one store, merged and absorbed alike (`docs/sync.md`) |
-| Bar, card, mark layer | `crates/ui/src/study/` | egui; one place hooks into the page view |
+| Bar, card, mark layer | `crates/ui-egui/src/study/` | egui; one place hooks into the page view |
 | Packs, downloads, conversion, lookups | `crates/dict` (L1) | threads and SQLite, no egui; the browser lists packs only |
-| Lookup card, Dictionary panel, Settings › Dictionary | `crates/ui/src/dict/`, `settings_window/dictionary.rs` | egui |
+| Lookup card, Dictionary panel, Settings › Dictionary | `crates/ui-egui/src/dict/`, `settings_window/dictionary.rs` | egui |
 
 The `study` crate is the "gloss requests and marks" row of
 `docs/architecture.md`; the marks' records join the library's rows so a

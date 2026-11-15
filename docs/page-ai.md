@@ -203,21 +203,21 @@ Dictionary", or None while that has none either.
 | The request, partials and retries | `Assist::rewrite` in `crates/assist/src/service.rs` |
 | Page types shared with the UI | `crates/study/src/page.rs` |
 | Saved results | `crates/library/src/ai_pages.rs` |
-| Runs, results, bubbles' state | `crates/ui/src/page_ai/mod.rs` |
-| Continuous mode | `crates/ui/src/page_ai/follow.rs` |
+| Runs, results, bubbles' state | `crates/ui-egui/src/page_ai/mod.rs` |
+| Continuous mode | `crates/ui-egui/src/page_ai/follow.rs` |
 | A book's results laid into its pages | `crates/epub/src/splice.rs`, `Flow::region` |
-| A page's text, and results back to blocks | `crates/ui/src/page_ai/extract.rs` |
-| Typesetting results off the frame | `crates/ui/src/page_ai/cards.rs` |
-| Drawing cards, bubbles and the pill | `crates/ui/src/page_ai/paint.rs` |
-| The page and bubble menus | `crates/ui/src/page_ai/menu.rs` |
-| Settings | `crates/settings/src/ai.rs`, `crates/ui/src/settings_window/ai.rs` |
+| A page's text, and results back to blocks | `crates/engine/src/page_ai/extract.rs` |
+| Typesetting results off the frame | `crates/ui-egui/src/page_ai/cards.rs` |
+| Drawing cards, bubbles and the pill | `crates/ui-egui/src/page_ai/paint.rs` |
+| The page and bubble menus | `crates/ui-egui/src/page_ai/menu.rs` |
+| Settings | `crates/settings/src/ai.rs`, `crates/ui-egui/src/settings_window/ai.rs` |
 
 ## Tests and shots
 
 - `crates/assist/src/page_tests.rs`: placeholders kept, dropped and
   invented; answers read leniently; PDF clean-up.
-- `crates/ui/src/page_ai/extract_tests.rs`: a page's text and blocks.
-- `crates/ui/tests/page_ai.rs`, headless, through the real menus. Without
+- `crates/engine/src/page_ai/extract_tests.rs`: a page's text and blocks.
+- `crates/ui-egui/tests/page_ai.rs`, headless, through the real menus. Without
   a model the menu offers setting one up; with one, the three tasks. A
   picked language is remembered. Marks keep their own menu. A kept result
   covers the page until the original is asked for. Asking how, and
@@ -292,7 +292,7 @@ and keep them untouched.
 
 ### Tests and shots
 
-- `crates/ui/tests/page_groups.rs`: eleven pages go as 5, 5 and 1; a
+- `crates/ui-egui/tests/page_groups.rs`: eleven pages go as 5, 5 and 1; a
   group's later pages are covered and Show original gives them all back;
   Pages per request sets the size and gaps split; a redo keeps one result;
   a book lays a group in, and covers all its pages while it writes; the

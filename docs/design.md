@@ -204,7 +204,7 @@ across ("Parchment" was "Parchme…"). Past three it is elided, whole on hover.
 
 ## Title bar
 
-`crates/ui/src/titlebar.rs`. An `egui::Area` at `Order::Foreground` floating
+`crates/ui-egui/src/titlebar.rs`. An `egui::Area` at `Order::Foreground` floating
 over the panes, so content never moves when it appears.
 
 - **Reveal.** The top 48 pt (after a docked sidebar) shows it at once.
@@ -245,7 +245,7 @@ over the panes, so content never moves when it appears.
 
 **macOS traffic lights** (owner decision, 2026-10-13). AppKit puts them at
 the top of a 28 pt strip; `apps/mareader/src/traffic_lights.rs` moves them to
-the middle of the 48 pt row; `NativeLights` (`crates/ui/src/platform.rs`)
+the middle of the 48 pt row; `NativeLights` (`crates/ui-egui/src/platform.rs`)
 says where, each frame:
 
 - **A drawn sidebar hosts them**, docked or floating: they sit in its header
@@ -266,11 +266,11 @@ workspace's one `unsafe` module and the `traffic-lights` feature (on by
 default); `--no-default-features` keeps AppKit's position.
 
 **Frameless edges.** On Windows and Linux the outer 5 pt resize the window
-(`crates/ui/src/resize.rs`); corners win over edges.
+(`crates/ui-egui/src/resize.rs`); corners win over edges.
 
 ## Panes
 
-Model `crates/workspace`, view `crates/ui/src/panes.rs`. Each pane is drawn in
+Model `crates/workspace`, view `crates/ui-egui/src/panes.rs`. Each pane is drawn in
 a scoped `Ui` region (`Ui::scope_builder` with a `max_rect`), the way
 egui_tiles lays out tiles. That is layout only: panes share the app's
 documents, caches and workers (ADR 0006).
@@ -352,7 +352,7 @@ shown without an update check.
 
 - **Tooltips.** `widgets::tip`: a chip on `surface` with a `line` edge,
   radius 6, 12 pt text, the shortcut beside it in `muted`. 350 ms delay.
-- **Toasts.** `crates/ui/src/toast.rs` and `toast/`. They stack in the
+- **Toasts.** `crates/ui-egui/src/toast.rs` and `toast/`. They stack in the
   bottom-right corner of the panes, 16 pt in, above the page bar in the
   reader; 360 pt wide.
   - **Card.** The tone icon and edge mark each card; the original gradient
@@ -553,13 +553,13 @@ A cover should look like a well-made book: quiet, still, never a sticker.
   and each caption names the shelf the plan files it on, or "Stays
   where it is". With Animations off, nothing moves and the words stay.
 
-Code: `crates/ui/src/library/view/face.rs` (the finish, cloth, the ribbon
+Code: `crates/ui-egui/src/library/view/face.rs` (the finish, cloth, the ribbon
 and the band) and `view/held.rs` (the pass, captions and tips).
 
 ## Icons
 
 Lucide 1.34.0 geometry is compiled from build-only declarations behind
-`crates/ui/src/icons/` (ADR 0004).
+`crates/ui-egui/src/icons/` (ADR 0004).
 
 - Code asks for an `Icon` by meaning; `icons::pack` is the only place that names
   a generated glyph. Add a variant when a feature needs one.
@@ -571,7 +571,7 @@ Lucide 1.34.0 geometry is compiled from build-only declarations behind
   original margins, then the button or `Icon::paint` applies the current tint.
   No animation atlas, XML parser or `egui-lucide` dependency is involved.
 - **Provider SVGs (2026-10-22).** `Icon::svg` serves providers' logos from
-  `crates/ui/assets/logos` (Simple Icons under CC0), white and tinted like the
+  `crates/ui-egui/assets/logos` (Simple Icons under CC0), white and tinted like the
   rest. They sit in ink on a quiet tile; a custom server shows the generated
   server glyph. The AI mark and all six voice marks use generated packs.
 - **The voices' own marks (2026-11-10).** `Icon::engine` maps an engine id to
@@ -600,7 +600,7 @@ Lucide 1.34.0 geometry is compiled from build-only declarations behind
 
 ## Motion
 
-- **Animations** is the master switch (`crates/ui/src/motion.rs`). Off zeroes
+- **Animations** is the master switch (`crates/ui-egui/src/motion.rs`). Off zeroes
   egui's `animation_time` and every motion duration; end states still arrive in
   the same frame. The system reduced-motion preference has the same authority.
 - Per-motion switches (M2): icon animations, sidebar slide, canvas follows the

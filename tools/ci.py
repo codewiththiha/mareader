@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """CI mode (docs/verification.md): let GitHub Actions build, test and render.
 
-  python3 tools/ci.py mode                 # local or ci for this machine, and why
-  python3 tools/ci.py watch                # CI on the branch head, to a verdict
+  python3 tools/ci.py mode                 # local, cache or ci for this machine, and why
+  python3 tools/ci.py watch                # the quick gate on the branch head, to a verdict
+  python3 tools/ci.py final                # the full pool on the branch head; waits for all
   python3 tools/ci.py watch --once         # one snapshot, no waiting
   python3 tools/ci.py watch --detach       # in the background; --tail, --stop
   python3 tools/ci.py shots "grid texture=grid gap=false" "dark theme=dark"
@@ -18,7 +19,9 @@
   python3 tools/ci.py installers --ref ci/x # every platform's installers, checked
   python3 tools/ci.py cache build          # refresh the sandbox cache for HEAD
                                            # (CI does this after every green push)
-  python3 tools/ci.py cache restore        # unpack the newest one here
+  python3 tools/ci.py cache restore        # unpack the closest one here (idempotent)
+  python3 tools/ci.py cache status         # is this sandbox warm, stale or wiped?
+  eval "$(python3 tools/ci.py cache env)"  # the cache's cargo env, in this shell
 
 Exit code: 0 green, 1 red, 2 not finished yet.
 
@@ -59,8 +62,14 @@ from dataclasses import dataclass, field
 API = "https://api.github.com"
 REPO_DEFAULT = "codewiththiha/mareader2"
 GATE = "CI"
+# ci.yml sets `run-name`, so a run's "name" is its display title;
+# the workflow it belongs to is the only stable handle.
+GATE_WORKFLOW = "ci.yml"
 REMOTE = "remote.yml"
 INSTALLERS = "installers.yml"
+CACHE_ROOT = "/home/user/.cache"
+SANDBOX_REPO = "/home/user/mareader2"
+ENV_SH = os.path.join(CACHE_ROOT, "env.sh")
 # Below either, a cold build takes half an hour; CI takes minutes.
 LOCAL_MIN_GIB = 8
 LOCAL_MIN_CORES = 4
@@ -133,6 +142,7 @@ class Job:
     status: str
     conclusion: str | None
     id: int
+    failed_steps: list[str] = field(default_factory=list)
 
 
 # CI's jobs that run after the verdict: the sandbox cache refresh.
@@ -171,7 +181,9 @@ class Run:
 
 def jobs_for(repo: str, token: str, run_id: int) -> list[Job]:
     payload = api(token, f"/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100")
-    return [Job(j["name"], j["status"], j.get("conclusion"), j["id"])
+    return [Job(j["name"], j["status"], j.get("conclusion"), j["id"],
+                [st["name"] for st in j.get("steps") or []
+                 if st.get("conclusion") == "failure"])
             for j in (payload or {}).get("jobs", [])]
 
 
@@ -191,7 +203,7 @@ def is_red(conclusion: str | None) -> bool:
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?")
-STEP_FAIL = re.compile(r"##\[error\]|error(\[|:)|FAILED|panicked|Diff in")
+STEP_FAIL = re.compile(r"##\[error\]|error(\[|:)|FAILED|panicked|Diff in|^---- .* stdout ----$")
 NOISE = re.compile(r"^\s*(Download|Extract|Cache|Receiving|Resolving|Updating files"
                    r"|##\[(end)?group\]|##\[(start|end)-action)")
 # A rustfmt diff needs its hunk, which follows the marker.
@@ -206,19 +218,28 @@ def digest(text: str) -> str:
     if marks:
         out.append("--- error lines ---")
         shown: set[int] = set()
-        for i in marks[:60]:
+        for i in marks[:80]:
             span = range(i, i + DIFF_CONTEXT) if "Diff in" in lines[i] else (i,)
             for j in span:
                 if j < len(lines) and j not in shown:
                     shown.add(j)
                     out.append(lines[j])
-    # The failing step: from its "Run" header to the first error.
+    # Check runs past failures, so one log may hold several failing steps.
     errors = [i for i, ln in enumerate(lines) if ln.startswith("##[error]")]
-    end = errors[0] + 1 if errors else len(lines)
-    runs = [i for i in range(end) if lines[i].startswith("##[group]Run ")]
-    start = runs[-1] if errors and runs else max(0, end - 250)
-    out.append("--- failing step ---" if errors else "--- tail ---")
-    out.extend([ln for ln in lines[start:end] if not NOISE.match(ln)][-80:])
+    runs = [i for i, ln in enumerate(lines) if ln.startswith("##[group]Run ")]
+    spans: list[tuple[int, int]] = []
+    for e in errors:
+        start = max((r for r in runs if r < e), default=max(0, e - 250))
+        if spans and spans[-1][0] == start:
+            continue
+        spans.append((start, e + 1))
+    for start, end in spans[:4]:
+        head = lines[start].removeprefix("##[group]Run ")[:90]
+        out.append(f"--- failing step: {head} ---")
+        out.extend([ln for ln in lines[start:end] if not NOISE.match(ln)][-60:])
+    if not spans:
+        out.append("--- tail ---")
+        out.extend([ln for ln in lines[-250:] if not NOISE.match(ln)][-80:])
     return "\n".join(out)
 
 
@@ -251,6 +272,7 @@ def follow(repo: str, token: str, run: Run, timeout: int, poll: int,
     """
     deadline = time.time() + timeout
     noted = ""
+    seen_steps: set[str] = set()
     while True:
         run = refresh(repo, token, run)
         # A Remote run is named by its title: "task sha id".
@@ -263,8 +285,17 @@ def follow(repo: str, token: str, run: Run, timeout: int, poll: int,
         if state != noted:
             noted = state
             log(f"  {run.name} {run.status}" + (f": {', '.join(running)}" if running else ""))
+        for job in run.gating:
+            for step in job.failed_steps:
+                if f"{job.name}/{step}" not in seen_steps:
+                    seen_steps.add(f"{job.name}/{step}")
+                    tail_note = "" if job.status == "completed" else " (the job goes on)"
+                    log(f"  step failed: {job.name} > {step}{tail_note}")
         red = any(is_red(j.conclusion) for j in run.gating)
         if (red and not whole) or run.finished:
+            if whole:
+                for job in run.jobs:
+                    log(f"    {job.conclusion or job.status:<10} {job.name}")
             log("  " + summarize(run))
             if any(is_red(j.conclusion) for j in run.gating):
                 log(f"\n########## failure digest ({run.url}) ##########")
@@ -318,9 +349,9 @@ def state_path(name: str) -> str:
 
 def gate_run(repo: str, token: str, sha: str) -> Run | None:
     """The newest CI run on this commit; older ones are context."""
-    payload = api(token, f"/repos/{repo}/actions/runs?head_sha={sha}&per_page=50")
-    runs = [Run.of(r) for r in (payload or {}).get("workflow_runs", [])
-            if r["name"] == GATE]
+    payload = api(token, f"/repos/{repo}/actions/workflows/{GATE_WORKFLOW}"
+                         f"/runs?head_sha={sha}&per_page=50")
+    runs = [Run.of(r) for r in (payload or {}).get("workflow_runs", [])]
     return max(runs, key=lambda r: r.created) if runs else None
 
 
@@ -352,6 +383,29 @@ def watch(args) -> int:
                           "failed": [j.name for j in run.gating if is_red(j.conclusion)]
                           if run else []}))
     return code
+
+
+def final(args) -> int:
+    """The full pool on the branch head, dispatched; waits for every job."""
+    token = token_from(args)
+    branch = args.branch
+    if not branch:
+        try:
+            branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        except (OSError, subprocess.CalledProcessError):
+            branch = "HEAD"
+    if branch in ("HEAD", ""):
+        raise SystemExit("final needs a branch: pass --branch <type>/<slug>")
+    sha = resolve(args.repo, token, branch)
+    try:
+        if git("rev-parse", "HEAD") != sha and not args.branch:
+            log(f"  note: local HEAD differs from {branch} on GitHub; final checks "
+                f"GitHub's {sha[:9]}. Push first if that is not what you mean.")
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    run = dispatch(args.repo, token, "", sha, branch, GATE_WORKFLOW, profile="full")
+    run = follow(args.repo, token, run, args.timeout, args.poll, whole=True)
+    return verdict(sha, run)
 
 
 def full_sha(rev: str) -> str:
@@ -543,147 +597,6 @@ def web(args) -> int:
     return code
 
 
-def cache_build(args) -> int:
-    token = token_from(args)
-    sha = pushed_sha(args.repo, token, args.rev)
-    cold = "true" if args.cold else "false"
-    full = "true" if args.full else "false"
-    run = follow(args.repo, token,
-                 dispatch(args.repo, token, "cache", sha, cold=cold, full=full),
-                 args.timeout, args.poll)
-    return 0 if run.conclusion == "success" else 1
-
-
-def newest_cache(repo: str, token: str) -> dict | None:
-    """The newest unexpired sandbox cache artifact, if any."""
-    payload = api(token, f"/repos/{repo}/actions/artifacts?name=sandbox-cache&per_page=20")
-    live = [a for a in (payload or {}).get("artifacts", []) if not a["expired"]]
-    return max(live, key=lambda a: a["created_at"]) if live else None
-
-
-def ensure_zstd() -> None:
-    if shutil.which("zstd"):
-        return
-    log("  installing zstd")
-    for cmd in (["sudo", "-n", "apt-get", "install", "-y", "-q", "zstd"],
-                ["sudo", "-n", "sh", "-c", "apt-get update -q && apt-get install -y -q zstd"]):
-        if subprocess.run(cmd, capture_output=True).returncode == 0 and shutil.which("zstd"):
-            return
-    raise SystemExit("zstd is missing and could not be installed; install it and retry")
-
-
-# Commits past which a restored cache recompiles most workspace crates.
-STALE = 30
-
-
-def cache_restore(args) -> int:
-    token = token_from(args)
-    if not token:
-        raise SystemExit("downloading needs a token: --token-file or $GITHUB_TOKEN")
-    started = time.time()
-    if args.run:
-        art = artifact(args.repo, token, args.run, "sandbox-cache")
-    else:
-        art = newest_cache(args.repo, token)
-        if art is None:
-            raise SystemExit("no live sandbox cache; make one: python3 tools/ci.py cache build")
-    meta = fetch_cache(token, art, "/home/user/.cache", args.force)
-    if meta["repo_dir"] != git("rev-parse", "--show-toplevel"):
-        log(f"  warning: the cache was built at {meta['repo_dir']}; cargo will rebuild")
-    log(f"restored in {time.time() - started:.0f}s; workspace crates edited since "
-        f"{meta['sha'][:9]} recompile, dependencies do not")
-    try:
-        behind = int(git("rev-list", "--count", f"{meta['sha']}..HEAD"))
-    except (subprocess.CalledProcessError, ValueError):
-        behind = -1
-    # Past this, most crates recompile: a 12-minute first lint here.
-    if behind > STALE or behind < 0:
-        log(f"  stale: {behind if behind >= 0 else '?'} commits behind HEAD. Lint in "
-            "CI (about 1 min) rather than here; a green push refreshes the cache")
-    return 0
-
-
-def fetch_cache(token: str, art: dict, root: str, force: bool) -> dict:
-    """Download a sandbox cache, unpack it, and redate the sources."""
-    log(f"== sandbox cache {art['id']} from {art['created_at']}, "
-        f"{art['size_in_bytes'] >> 20} MB")
-    os.makedirs(os.path.join(root, "tmp"), exist_ok=True)
-    zip_path = os.path.join(root, "tmp", "sandbox-cache.zip")
-    need = art["size_in_bytes"] * 4
-    if shutil.disk_usage(root).free < need:
-        raise SystemExit(f"not enough disk: need ~{need >> 30} GB free under {root}")
-    ensure_zstd()
-    download(token, art, zip_path)
-    with zipfile.ZipFile(zip_path) as zf:
-        meta = json.loads(zf.read("meta.json"))
-        root = meta["root"]
-        present = [d for d in meta["dirs"] if os.path.exists(os.path.join(root, d))]
-        if present and not force:
-            raise SystemExit(f"{', '.join(present)} already exist under {root}: this "
-                             "machine is warm already; --force replaces them")
-        for d in present:
-            shutil.rmtree(os.path.join(root, d))
-        log(f"  unpacking into {root} ({meta['rustc']})")
-        tar = subprocess.Popen(["tar", "--zstd", "-x", "-C", root, "-f", "-"],
-                               stdin=subprocess.PIPE)
-        with zf.open("sandbox-cache.tar.zst") as member:
-            shutil.copyfileobj(member, tar.stdin, 1 << 20)
-        tar.stdin.close()
-        if tar.wait() != 0:
-            raise SystemExit("tar failed; the cache is incomplete, delete it and retry")
-    os.unlink(zip_path)
-    log(f"  {redate(meta)} unchanged source files dated as at {meta['sha'][:9]}")
-    return meta
-
-
-def cache_seed(args) -> int:
-    """In the cache job: start from the newest cache, not from nothing.
-    Never fails the job; a cold build is the fallback."""
-    token = token_from(args)
-    try:
-        art = newest_cache(args.repo, token)
-        if art is None:
-            log("no live sandbox cache: building cold")
-            return 0
-        meta = fetch_cache(token, art, "/home/user/.cache", force=True)
-        # Nothing deletes a stale artifact: a lock or build-set change
-        # would carry the old files along, so target-mr starts afresh.
-        lock = hashlib.sha256(open("Cargo.lock", "rb").read()).hexdigest()
-        builds = os.environ.get("CACHE_BUILDS", "lint")
-        if meta.get("lock") != lock or meta.get("builds") != builds:
-            log(f"Cargo.lock or the build set ({builds}) changed since that "
-                "cache: target-mr builds from nothing; toolchain and registry stay")
-            shutil.rmtree("/home/user/.cache/target-mr", ignore_errors=True)
-    except (SystemExit, OSError, zipfile.BadZipFile) as exc:
-        log(f"seeding failed ({exc}): building cold")
-        for d in ("rustup", "cargo", "target-mr"):
-            shutil.rmtree(os.path.join("/home/user/.cache", d), ignore_errors=True)
-    return 0
-
-
-def redate(meta: dict) -> int:
-    """Give unchanged sources the times CI built them with, so cargo
-    rebuilds only what differs from the cached commit."""
-    sha = meta["sha"]
-    if subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"],
-                      capture_output=True).returncode != 0:
-        subprocess.run(["git", "fetch", "-q", "origin", sha], capture_output=True)
-    try:
-        changed = set(git("diff", "--name-only", sha).splitlines())
-    except subprocess.CalledProcessError:
-        log("  cached commit unknown here: every crate recompiles")
-        return 0
-    # Per-file times since seeding; older caches dated all to the commit.
-    times = meta.get("mtimes", {})
-    count = 0
-    for path in git("ls-files").splitlines():
-        if path not in changed and os.path.isfile(path) and not os.path.islink(path):
-            t = times.get(path, meta["time"])
-            os.utime(path, (t, t))
-            count += 1
-    return count
-
-
 def mem_gib() -> float:
     """RAM, or the cgroup's limit when that is lower."""
     total = 0.0
@@ -713,39 +626,90 @@ def facts() -> dict:
     # target/ may hold only downloaded shots; the sandbox builds elsewhere.
     targets = [os.environ.get("CARGO_TARGET_DIR") or "", "target",
                "/home/user/.cache/target-mr"]
-    warm = any(glob.glob(os.path.join(t, "debug", ".fingerprint", "mareader-ui-*"))
+    warm = any(glob.glob(os.path.join(t, "debug", ".fingerprint", "mareader-ui-egui-*"))
                for t in targets if t)
     cargo = bool(shutil.which("cargo")) or os.path.exists("/home/user/.cache/env.sh")
     free = shutil.disk_usage(".").free / (1 << 30)
+    root = CACHE_ROOT
+    while root and not os.path.isdir(root):
+        root = os.path.dirname(root)
+    cache_free = shutil.disk_usage(root or "/").free / (1 << 30)
+    try:
+        top = git("rev-parse", "--show-toplevel")
+    except (OSError, subprocess.CalledProcessError):
+        top = os.getcwd()
     return {"cores": cores, "ram_gib": round(mem_gib(), 1), "warm": warm,
-            "toolchain": cargo, "disk_free_gib": round(free, 1)}
+            "toolchain": cargo, "disk_free_gib": round(free, 1),
+            "cache_disk_free_gib": round(cache_free, 1),
+            "linux_x86_64": sys.platform.startswith("linux") and os.uname().machine == "x86_64",
+            "token": bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")),
+            "repo_dir": top}
+
+
+# Restore needs about 4x the 1.2 GB archive while unpacking.
+CACHE_MIN_FREE_GIB = 6
+NEXT = {
+    "local": [
+        "run the AGENTS.md gates here, scoped with -p <crate> -j N and a timeout",
+        "push; do not poll the quick gate, it repeats what passed",
+        "before merging: python3 tools/ci.py final (macOS, Windows, wasm, each commit)",
+    ],
+    "cache": [
+        "python3 tools/ci.py cache status   # every session start and after any reset",
+        "python3 tools/ci.py cache restore  # idempotent; downloads only when wiped",
+        f"source {ENV_SH}                    # in every new shell, before cargo",
+        "timeout 900 cargo clippy -p <crate> -j 2 --all-targets -- -D warnings",
+        "push; python3 tools/ci.py watch    # tests and runtime errors come from CI",
+        "before merging: python3 tools/ci.py final",
+    ],
+    "ci": [
+        "compile nothing here; run comment_check, commit_check, cargo fmt --check",
+        "push a <type>/<slug> branch; python3 tools/ci.py watch (quick gate, one job)",
+        "before merging: python3 tools/ci.py final (the full pool, waits for all)",
+    ],
+}
 
 
 def mode(args) -> int:
     f = facts()
     forced = os.environ.get("MAREADER_VERIFY", "").strip().lower()
     reasons = []
-    if forced in ("local", "ci"):
+    if forced in ("local", "cache", "ci"):
         choice = forced
         reasons.append(f"MAREADER_VERIFY={forced} overrides detection")
     else:
         capable = f["ram_gib"] >= LOCAL_MIN_GIB and f["cores"] >= LOCAL_MIN_CORES
-        choice = "local" if capable and f["disk_free_gib"] >= 10 else "ci"
         reasons.append(f"{f['ram_gib']} GiB RAM, {f['cores']} cores, "
                        f"{f['disk_free_gib']} GiB free (local wants >= "
                        f"{LOCAL_MIN_GIB} GiB, >= {LOCAL_MIN_CORES} cores, >= 10 GiB)")
-        if choice == "ci" and f["warm"]:
-            reasons.append("the build cache is warm: a targeted local test is fine, "
-                           "the gates still run in CI")
-        if choice == "ci" and not f["warm"] and f["toolchain"]:
-            reasons.append("cold cache: local mode would start with a ~30 min build "
-                           "(or: python3 tools/ci.py cache restore)")
+        blockers = []
+        if not f["linux_x86_64"]:
+            blockers.append("not x86_64 Linux")
+        if not f["token"]:
+            blockers.append("no $GITHUB_TOKEN to download it")
+        if f["cache_disk_free_gib"] < CACHE_MIN_FREE_GIB:
+            blockers.append(f"{f['cache_disk_free_gib']} GiB free under {CACHE_ROOT}, "
+                            f"wants {CACHE_MIN_FREE_GIB}")
+        if capable and f["disk_free_gib"] >= 10:
+            choice = "local"
+        elif not blockers:
+            choice = "cache"
+            reasons.append("low-end, but CI's sandbox cache fits: lint here, test in CI")
+            if f["repo_dir"] != SANDBOX_REPO:
+                reasons.append(f"clone at {SANDBOX_REPO} first, or every crate rebuilds")
+        else:
+            choice = "ci"
+            reasons.append("cache mode is out: " + "; ".join(blockers))
     if args.json:
-        print(json.dumps({"mode": choice, "facts": f, "reasons": reasons}))
+        print(json.dumps({"mode": choice, "facts": f, "reasons": reasons,
+                          "next": NEXT[choice]}))
     else:
         print(f"mode: {choice}")
         for r in reasons:
             print(f"  - {r}")
+        print("next:")
+        for step in NEXT[choice]:
+            print(f"  {step}")
         print("  an explicit request from the user overrides this (docs/verification.md)")
     return 0
 
@@ -807,6 +771,14 @@ def installers(args) -> int:
     return 0 if run.conclusion == "success" else 1
 
 
+def cache_module():
+    """tools/ci_cache.py, bound to this module rather than a second copy."""
+    sys.modules.setdefault("ci", sys.modules[__name__])
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import ci_cache
+    return ci_cache
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -826,6 +798,9 @@ def main() -> int:
     w.add_argument("--stop", action="store_true", help="stop the background watcher")
     w.add_argument("--lines", type=int, default=40, help="lines for --tail")
     w.add_argument("--json", action="store_true")
+
+    fi = sub.add_parser("final", help="dispatch the full pool on the branch head; wait for all")
+    fi.add_argument("--branch", help="branch to check (default: the current one)")
 
     s = sub.add_parser("shots", help="render shots in CI and download them")
     s.add_argument("spec", nargs="+", help='"NAME key=value ...", the shot example\'s keys')
@@ -862,7 +837,7 @@ def main() -> int:
     ins.add_argument("--download", action="store_true",
                      help="also download the installers (tens of MB each)")
     c = sub.add_parser("cache", help="a sandbox build cache made by CI")
-    c.add_argument("action", choices=["build", "restore", "seed"],
+    c.add_argument("action", choices=["build", "restore", "status", "env", "seed"],
                    help="seed is the cache job's own first step")
     c.add_argument("--full", action="store_true",
                    help="also test binaries and the shot example (local mode)")
@@ -870,7 +845,7 @@ def main() -> int:
                    help="build from nothing, e.g. for a new toolchain")
     c.add_argument("--run", type=int, help="restore this run's cache, not the newest")
     c.add_argument("--force", action="store_true", help="replace an existing cache")
-    for p in (w, s, wb, me, ko, pi, ki, ph, ip, hz, sy, ins, c):
+    for p in (w, fi, s, wb, me, ko, pi, ki, ph, ip, hz, sy, ins, c):
         p.add_argument("--timeout", type=int, default=3600, help="seconds to wait")
         p.add_argument("--poll", type=int, default=15, help="seconds between polls")
     for p in (s, wb, me, ko, pi, ki, ph, ip, hz, sy, ins, c):
@@ -887,6 +862,8 @@ def main() -> int:
         if args.stop:
             return stop()
         return detach(args) if args.detach else watch(args)
+    if args.cmd == "final":
+        return final(args)
     if args.cmd == "shots":
         return shots(args)
     if args.cmd == "web":
@@ -909,9 +886,14 @@ def main() -> int:
         return kokoro(args, "system")
     if args.cmd == "installers":
         return installers(args)
+    cache = cache_module()
     if args.action == "seed":
-        return cache_seed(args)
-    return cache_build(args) if args.action == "build" else cache_restore(args)
+        return cache.cache_seed(args)
+    if args.action == "status":
+        return cache.cache_status(args)
+    if args.action == "env":
+        return cache.print_env(args)
+    return cache.cache_build(args) if args.action == "build" else cache.cache_restore(args)
 
 
 if __name__ == "__main__":

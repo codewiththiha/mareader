@@ -1,0 +1,60 @@
+[package]
+name = "mareader-ui-egui"
+description = "One front end, in egui: theme, chrome, panes and the app state (L6)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+mareader-appearance = { workspace = true }
+# The app without a window: what outlives a frame lives there (L5).
+mareader-engine = { workspace = true }
+mareader-workspace = { workspace = true }
+mareader-settings = { workspace = true }
+mareader-epub = { workspace = true }
+mareader-reflow = { workspace = true }
+mareader-pdf = { workspace = true }
+mareader-session = { workspace = true }
+mareader-library = { workspace = true }
+mareader-study = { workspace = true }
+mareader-dict = { workspace = true }
+mareader-cefr = { workspace = true }
+mareader-search = { workspace = true }
+mareader-audio = { workspace = true }
+mareader-speech = { workspace = true }
+# How English words sound, written for the word cards.
+mareader-g2p = { workspace = true }
+mareader-animated-icons = { workspace = true }
+image = { workspace = true, features = ["jpeg"] }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "persistence"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# AI answers and API keys; a browser has neither threads nor a keychain.
+mareader-assist = { workspace = true }
+# A book's scripts; the browser build shows their pages as written.
+mareader-script = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+# A page picks its own files; a desktop's dialogs belong to the app at L7.
+rfd = { workspace = true }
+# The page's own store, where the engine's two files live: it has none.
+web-sys = { version = "0.3", features = ["Storage", "Window"] }
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["eframe", "wgpu"] }
+tempfile = { workspace = true }
+parquet = { workspace = true }
+
+[[test]]
+name = "ui"
+path = "tests/main.rs"

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 pub const FILE: &str = "parity/mareader-features.toml";
+const SPECS_FILE: &str = "crates/engine/src/command_spec/rows.rs";
 
 pub const AREAS: &[(&str, &str)] = &[
     ("A", "Window and chrome"),
@@ -43,11 +44,50 @@ pub struct Feature {
     /// `path::test_fn` that proves it; required once shipped.
     #[serde(default)]
     pub evidence: Vec<String>,
+    /// Engine command id in `SPECS`, when driven by a registered command.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// True for shipped features that belong purely to the UI layer.
+    #[serde(default)]
+    pub ui_only: bool,
     /// Where mareader implements it, relative to the mareader checkout.
     #[serde(default)]
     pub reference: Vec<String>,
     #[serde(default)]
     pub notes: String,
+}
+
+/// Extracts every registered command id from `command_spec/rows.rs`.
+pub fn parse_spec_ids(src: &str) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    let mut rest = src;
+    while let Some((before, after)) = rest.split_once("row(") {
+        let boundary = before
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_');
+        rest = after;
+        if !boundary {
+            continue;
+        }
+        if let Some(after_quote) = rest.trim_start().strip_prefix('"')
+            && let Some((id, tail)) = after_quote.split_once('"')
+        {
+            ids.insert(id.to_owned());
+            rest = tail;
+        }
+    }
+    ids
+}
+
+fn load_spec_ids(repo: &Path) -> Result<HashSet<String>, String> {
+    let text =
+        std::fs::read_to_string(repo.join(SPECS_FILE)).map_err(|e| format!("{SPECS_FILE}: {e}"))?;
+    let ids = parse_spec_ids(&text);
+    if ids.is_empty() {
+        return Err(format!("{SPECS_FILE}: no registered commands found"));
+    }
+    Ok(ids)
 }
 
 fn valid_id(id: &str) -> bool {
@@ -87,7 +127,12 @@ fn reference_root(repo: &Path) -> Option<PathBuf> {
     dir.join("AGENTS.md").is_file().then_some(dir)
 }
 
-pub fn validate(features: &[Feature], repo: &Path, reference: Option<&Path>) -> Vec<String> {
+pub fn validate(
+    features: &[Feature],
+    repo: &Path,
+    reference: Option<&Path>,
+    specs: &HashSet<String>,
+) -> Vec<String> {
     let mut errors = Vec::new();
     let mut ids = HashSet::new();
     for f in features {
@@ -113,8 +158,21 @@ pub fn validate(features: &[Feature], repo: &Path, reference: Option<&Path>) -> 
         if !valid_milestone(&f.milestone) {
             e(format!("milestone {:?} must be M0 to M8", f.milestone));
         }
-        if f.status == "shipped" && f.evidence.is_empty() {
-            e("shipped needs at least one `path::test_fn` in evidence".into());
+        if f.command.is_some() && f.ui_only {
+            e("cannot set both `command` and `ui_only`".into());
+        }
+        if let Some(cmd) = f.command.as_deref()
+            && !specs.contains(cmd)
+        {
+            e(format!("command {cmd:?} is not in engine SPECS"));
+        }
+        if f.status == "shipped" {
+            if f.evidence.is_empty() {
+                e("shipped needs at least one `path::test_fn` in evidence".into());
+            }
+            if f.command.is_none() && !f.ui_only {
+                e("shipped needs `command = \"<id>\"` or `ui_only = true`".into());
+            }
         }
         if matches!(f.status.as_str(), "partial" | "dropped") && f.notes.trim().is_empty() {
             e(format!(
@@ -182,11 +240,12 @@ fn report(features: &[Feature]) {
 pub fn run(args: &[String]) -> Result<(), String> {
     let repo = crate::root();
     let features = load(&repo)?;
+    let specs = load_spec_ids(&repo)?;
     let reference = reference_root(&repo);
     if reference.is_none() {
         eprintln!("parity: no ../mareader (or MAREADER_DIR); reference paths not checked");
     }
-    let errors = validate(&features, &repo, reference.as_deref());
+    let errors = validate(&features, &repo, reference.as_deref(), &specs);
     if !errors.is_empty() {
         return Err(format!(
             "{} error(s):\n  {}",
@@ -218,6 +277,8 @@ mod tests {
             milestone: "M0".into(),
             status: status.into(),
             evidence: evidence.iter().map(|s| (*s).into()).collect(),
+            command: None,
+            ui_only: true,
             reference: Vec::new(),
             notes: String::new(),
         }
@@ -226,14 +287,43 @@ mod tests {
     #[test]
     fn shipped_needs_evidence_that_exists() {
         let repo = crate::root();
-        assert_eq!(validate(&[feature("shipped", &[])], &repo, None).len(), 1);
+        let specs = HashSet::new();
+        let empty = feature("shipped", &[]);
+        assert_eq!(validate(&[empty], &repo, None, &specs).len(), 1);
         let fake = feature("shipped", &["xtask/src/parity.rs::no_such_fn"]);
-        assert_eq!(validate(&[fake], &repo, None).len(), 1);
+        assert_eq!(validate(&[fake], &repo, None, &specs).len(), 1);
         let real = feature(
             "shipped",
             &["xtask/src/parity.rs::shipped_needs_evidence_that_exists"],
         );
-        assert!(validate(&[real], &repo, None).is_empty());
+        assert!(validate(&[real], &repo, None, &specs).is_empty());
+    }
+
+    #[test]
+    fn shipped_requires_valid_command_or_ui_only() {
+        let repo = crate::root();
+        let specs = load_spec_ids(&repo).expect("load specs");
+        assert!(specs.contains("reader.open"));
+        assert!(specs.contains("pane.split"));
+
+        let ev = &["xtask/src/parity.rs::shipped_requires_valid_command_or_ui_only"];
+        let mut missing = feature("shipped", ev);
+        missing.ui_only = false;
+        assert_eq!(validate(&[missing], &repo, None, &specs).len(), 1);
+
+        let mut bogus = feature("shipped", ev);
+        bogus.ui_only = false;
+        bogus.command = Some("no.such-command".into());
+        assert_eq!(validate(&[bogus], &repo, None, &specs).len(), 1);
+
+        let mut both = feature("shipped", ev);
+        both.command = Some("reader.open".into());
+        assert_eq!(validate(&[both], &repo, None, &specs).len(), 1);
+
+        let mut ok = feature("shipped", ev);
+        ok.ui_only = false;
+        ok.command = Some("reader.open".into());
+        assert!(validate(&[ok], &repo, None, &specs).is_empty());
     }
 
     #[test]

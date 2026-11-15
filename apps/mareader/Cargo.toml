@@ -10,9 +10,15 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-mareader-ui = { workspace = true }
+mareader-engine = { workspace = true }
+mareader-ui-egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "persistence", "wayland", "x11", "links"] }
 egui = { workspace = true }
+# The open and save dialogs, run on a helper thread of their own: the machine
+# asks them, so the front end never names them (Law 6, and its four-file
+# thread allowlist).
+rfd = { workspace = true }
+pollster = "0.4"
 
 [features]
 default = ["traffic-lights", "open-files"]

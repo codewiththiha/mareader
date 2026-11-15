@@ -1,20 +1,28 @@
-//! Mareader's desktop entry point: the window, then `mareader_ui` runs.
+//! Mareader's desktop entry point: the window, then `mareader_ui_egui` runs.
 #![deny(unsafe_code)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::Arc;
 
-use mareader_ui::command::Command;
-use mareader_ui::{MareaderApp, OpenRequest};
+use mareader_engine::command::Command;
+use mareader_engine::documents::OpenRequest;
+use mareader_engine::host::{Machine, Shared};
+use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::ui_command::Sent;
 
+use desk::Desk;
+use dialogs::Shell;
 use inbox::Inbox;
 use single_instance::Claim;
 
+mod desk;
+mod dialogs;
 mod inbox;
 mod open_files;
 mod reduced_motion;
 mod single_instance;
+mod system;
 #[cfg(any(test, all(target_os = "macos", feature = "traffic-lights")))]
 mod traffic_lights;
 
@@ -29,7 +37,7 @@ fn open_latest(app: &mut MareaderApp, paths: Vec<PathBuf>) -> bool {
     let Some(path) = paths.into_iter().last() else {
         return false;
     };
-    app.queue(Command::Open(OpenRequest::path(path)));
+    app.queue(Sent::Engine(Command::Open(OpenRequest::path(path))));
     true
 }
 
@@ -58,12 +66,8 @@ impl eframe::App for Desktop {
         }
     }
 
-    fn auto_save_interval(&self) -> Duration {
-        self.app.auto_save_interval()
-    }
-
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        self.app.save(storage);
+    fn on_exit(&mut self) {
+        self.app.flush();
     }
 }
 
@@ -119,7 +123,7 @@ fn main() -> eframe::Result {
         .map(PathBuf::from)
         .collect();
     let inbox = Inbox::default();
-    if let Some(dir) = eframe::storage_dir("mareader")
+    if let Some(dir) = desk::state_dir()
         && single_instance::claim(&dir, &files, &inbox) == Claim::Forwarded
     {
         return Ok(());
@@ -138,17 +142,14 @@ fn main() -> eframe::Result {
         "mareader",
         options,
         Box::new(|cc| {
-            let mut app = MareaderApp::from_creation(cc);
-            if let Some(dir) = eframe::storage_dir("mareader") {
-                app.attach_library(dir.join("library"));
-                app.attach_ai(&cc.egui_ctx, dir.join("ai"), dev_helper());
-                app.attach_dictionaries(&cc.egui_ctx, dir.join("dictionaries"));
-                app.attach_vocabulary(&cc.egui_ctx, dir.join("vocabulary"));
-                app.attach_voice_models(&cc.egui_ctx, dir.join("voice-models"));
-            }
-            if let Some(dir) = cache_dir() {
-                app.attach_cache(dir);
-            }
+            // The machine arrives here, and the app is built on it.
+            let host: Shared = Arc::new(Desk::new(cc.egui_ctx.clone()));
+            let machine = Machine {
+                ai_helper: dev_helper(),
+                ..Machine::under(&*host)
+            };
+            // The machine's dialogs: the front end asks, this app runs them.
+            let mut app = MareaderApp::new(cc, host, machine).with_dialogs(Arc::new(Shell));
             inbox.wake_with(cc.egui_ctx.clone());
             // A file asked for at launch, else what was read last time.
             if !open_latest(&mut app, inbox.take().paths) {
@@ -158,24 +159,6 @@ fn main() -> eframe::Result {
             Ok(Box::new(Desktop { app, inbox }))
         }),
     )
-}
-
-/// Where rebuildable files such as covers go, as each platform expects.
-fn cache_dir() -> Option<std::path::PathBuf> {
-    use std::path::PathBuf;
-    let var = |k: &str| {
-        std::env::var_os(k)
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-    };
-    if cfg!(target_os = "windows") {
-        return var("LOCALAPPDATA").map(|d| d.join("mareader").join("cache"));
-    }
-    if cfg!(target_os = "macos") {
-        return var("HOME").map(|h| h.join("Library/Caches/mareader"));
-    }
-    let base = var("XDG_CACHE_HOME").or_else(|| var("HOME").map(|h| h.join(".cache")));
-    base.map(|d| d.join("mareader"))
 }
 
 /// Debug builds also find the helper `tools/fm-helper.sh` builds.

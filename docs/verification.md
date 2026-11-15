@@ -9,9 +9,9 @@ chooses per session, and the user can override the choice at any time.
 |---|---|---|
 | Builds and tests | on this machine | on GitHub Actions |
 | Verdict | the local gates | `python3 tools/ci.py watch` |
-| Screenshots | `cargo run -p mareader-ui --example shot` | `python3 tools/ci.py shots` |
+| Screenshots | `cargo run -p mareader-ui-egui --example shot` | `python3 tools/ci.py shots` |
 | Browser preview | `tools/web.sh --serve` | `python3 tools/ci.py web` |
-| Memory budgets | `cargo run -p mareader-ui --example memory -- BOOK` | `python3 tools/ci.py memory --ref BRANCH` |
+| Memory budgets | `cargo run -p mareader-ui-egui --example memory -- BOOK` | `python3 tools/ci.py memory --ref BRANCH` |
 | Kokoro parity | none (needs the 650 MB model and builds) | `python3 tools/ci.py kokoro --ref BRANCH` |
 | Piper parity | none (needs six voices and onnxruntime) | `python3 tools/ci.py piper --ref BRANCH` |
 | Kitten parity | none (needs four builds and onnxruntime) | `python3 tools/ci.py kitten --ref BRANCH` |
@@ -36,7 +36,7 @@ on 2026-10-14:
 | `tools/ci.py shots`, dispatch to PNGs on disk | 70–85 s |
 | `tools/ci.py web`, dispatch to the preview on disk (cold wasm build) | 2.5 min |
 | `tools/ci.py cache restore` (lint builds, 1.2 GB at 7–17 MB/s, then unpack; 2026-10-27) | 2–3.5 min |
-| The first local clippy after that restore (`-p mareader-ui --all-targets`) | 28 s |
+| The first local clippy after that restore (`-p mareader-ui-egui --all-targets`) | 28 s |
 | The full local gates right after a restore (nothing compiles) | 11 s |
 | `tools/ci.py cache build`, seeded from the previous cache | 2.5 min, plus changed crates |
 | `tools/ci.py cache build --cold`, from nothing | 13.5 min |
@@ -52,11 +52,13 @@ Highest precedence first:
    locally" mean CI mode, even on a fast machine. "Build locally" or "run the
    tests here" mean local mode, even on a slow one. The choice stands for the
    session, or until the user changes it.
-2. **`MAREADER_VERIFY=local` or `MAREADER_VERIFY=ci`** in the environment: a
+2. **`MAREADER_VERIFY=local`, `cache` or `ci`** in the environment: a
    standing preference for a machine.
-3. **Detection:** `python3 tools/ci.py mode` prints a recommendation and its
-   reasons. It picks local mode with at least 8 GiB of RAM (or cgroup limit),
-   4 cores and 10 GiB of free disk; otherwise CI mode.
+3. **Detection:** `python3 tools/ci.py mode` prints a recommendation, its
+   reasons and the next commands. It picks local mode with at least 8 GiB of
+   RAM (or cgroup limit), 4 cores and 10 GiB of free disk. Otherwise it picks
+   cache mode when the sandbox cache fits: x86_64 Linux, a token, and 6 GiB
+   free under `/home/user/.cache`. Failing that, CI mode.
 
 State the mode and the reason in the first report of a session, so the user
 can overrule it, e.g. "CI mode: 1.9 GiB RAM, 2 cores".
@@ -89,35 +91,39 @@ The loop, per change:
 2. **Commit on a `<type>/<slug>` branch and push it.** CI runs on pushes to
    those branches (`feat/`, `fix/`, `perf/`, `refactor/`, `docs/`, `test/`,
    `build/`, `ci/`, `chore/`), so `main` only ever takes green commits.
-3. **Watch the verdict:** run `python3 tools/ci.py watch`. It stops at the
+3. **Watch the quick verdict:** run `python3 tools/ci.py watch`. A branch
+   push runs one job, `Check` (see "Quick and full"). It stops at the
    first red job and prints the failing step: the command, its output and
    the error. Exit code 0 means green, 1 red, 2 still running. On a long
    wait, use `--detach` and read progress later with `watch --tail`; stop it
    with `watch --stop`.
 4. **Red:** fix it in a new commit, push, and watch again. Never re-run a
    green run, and never re-run a red one hoping it turns green.
-5. **Green:** merge into `main`, either by fast-forward
+5. **Final:** when the slice is done, run `python3 tools/ci.py final`. It
+   dispatches the full profile and waits for every job. Only a green final
+   (or a green pull-request run) may merge.
+6. **Green final:** merge into `main`, either by fast-forward
    (`git push origin HEAD:main`) or through a PR, then delete the branch. CI
    runs again on `main` for the same commit; there is no need to wait for it.
-6. **Look at the result:** run `python3 tools/ci.py shots` for any visible
+7. **Look at the result:** run `python3 tools/ci.py shots` for any visible
    change, at the four zooms ("Review every update").
 
 What CI covers, against the local gates:
 
-| Gate | CI job |
-|---|---|
-| `cargo fmt --all --check` | Rust / format |
-| `cargo clippy --workspace --all-targets` | Rust / lint |
-| clippy on macOS, with and without default features (native: bundled SQLite needs the SDK) | Build / macos-latest |
-| clippy for `wasm32-unknown-unknown` | none: the browser preview is best-effort, with no CI job |
-| `cargo test --workspace` (with lavapipe for GPU tests) | Rust / test |
-| `cargo xtask layers`, `parity`, `assets`, `unsafe` | Rust / test |
-| every commit builds alone (`--locked`) | Build / each commit |
-| native macOS and Windows builds | Build / macos-latest, windows-latest |
+| Gate | CI job | Profile |
+|---|---|---|
+| `cargo fmt --all --check`, shape, comments, commit subjects | Check | quick and full |
+| `cargo clippy --workspace --all-targets -D warnings` | Check | quick and full |
+| `cargo test --workspace --no-fail-fast` (lavapipe for GPU tests) | Check | quick and full |
+| `cargo xtask layers`, `trapped`, `parity`, `assets`, `unsafe` | Check | quick and full |
+| `cargo xtask wasm` | Rust / wasm | full |
+| every commit builds alone (`--locked`) | Build / each commit | full |
+| clippy on macOS, with and without default features | Build / macos-latest | full |
+| native macOS and Windows builds | Build / macos-latest, windows-latest | full |
 
 **Hybrid.** In CI mode on a machine whose cache is warm, one targeted local
 command is fine for a tight loop (for example
-`cargo test -p mareader-ui some_test`, under the memory cap). The gates
+`cargo test -p mareader-ui-egui some_test`, under the memory cap). The gates
 still come from CI. A restored sandbox cache holds lint builds only, so a
 local test first needs `cache build --full`.
 
@@ -125,7 +131,64 @@ local test first needs `cache build --full`.
 `watch` reports that run as superseded, not red; watch the branch head
 instead.
 
-## CI time
+## Quick and full (2026-11-11)
+
+The dev loop waits on one job; the merge waits on all of them.
+
+| | Quick | Full |
+|---|---|---|
+| Runs on | a push to a `<type>/<slug>` branch | pull requests, `main`, the schedule, `[ci full]` in the head commit, `ci.py final` |
+| Jobs | `Plan / profile`, `Check / fmt, clippy, test` | those, plus `Rust / wasm`, `Build / each commit`, `Build / macos-latest`, `Build / windows-latest` |
+| Stops | when Check ends; every step runs past a failure | when every job ends |
+| Command | `python3 tools/ci.py watch` | `python3 tools/ci.py final` |
+
+Why the loop was slow, measured from the GitHub API on 2026-11-11 over
+the 25 runs on `refactor/engine-g2-reducer`:
+
+- **No Rust cache existed.** `GET /actions/caches?key=v0-rust` returned 0
+  entries; the repository held 15,316 caches using 10.74 GB of its 10 GB.
+  15,310 were `sccache/*` entries from the deleted
+  `refactor/ipa-rule-engine` branch. They evicted main's caches (LRU). Work
+  branches could not save their own (`save-if` on main only), and main's
+  env differed anyway. So every job compiled all ~300 dependencies at
+  `opt-level = 2`: `rust-cache` restored in 0–8 s (a miss), Windows
+  `cargo build` took 24 min, `cargo test` 13.7 min, and green runs took
+  19–25 min from push to verdict.
+- **Cache GC never ran.** `delete` and `schedule` triggers fire only from
+  the default branch, and `cache-gc.yml` existed only on work branches.
+  Its `--limit 1000` would also have left 14,000 entries.
+- **The sandbox cache trailed the work.** It was rebuilt only after a green
+  push to `main`, last on 2026-11-07 at `bf2cd85`, 32 commits behind the
+  branch, which is past `restore`'s 30-commit staleness line.
+- **One failure per round.** `cargo test` stopped at the first failing
+  binary, and lint and test were separate jobs, each stopping at its first
+  failing step.
+
+The fixes: one quick job whose steps all run; Check saves its cache on
+pushes; Cache GC runs from `main`; and the sandbox cache follows every green
+push.
+
+First measurements on the branch, 2026-11-12: the cold quick gate (its first
+push, seeding `linux`) took 20.4 min; the next push, warm, took **5.0 min**,
+inside the 6–9 min estimate. The sandbox cache job took 11.7 min seeded and
+published a 1.61 GiB artifact; restoring it here took 3.9 min (1652 MB at
+8.1 MB/s) and the first scoped clippy after it took 1.1 min. A final on a
+warm Windows cache is still unmeasured.
+
+## Cache budget
+
+GitHub keeps 10 GB of Actions caches per repository and evicts the least
+recently used beyond that; an entry unused for 7 days expires. What CI
+needs, roughly: `linux` (Check, main and one or two branches), `wasm`,
+macOS and Windows (main only), apt `.deb`s, and the voice-model caches of
+the Remote tasks. Cache GC deletes caches of deleted branches and closed
+pull requests at once, and sweeps dead refs and any `sccache/*` key
+daily, 700 deletions per run (GITHUB_TOKEN allows 1,000 requests an hour).
+Until GC runs from `main`, the owner can clear the leftovers once with
+`gh cache delete --all -R codewiththiha/mareader2`; the next push to
+`main` rebuilds the caches CI needs.
+
+## CI time (before 2026-11-11)
 
 Measured on 2026-11-10 from the **20 most recent completed CI workflow runs**,
 then available from 2026-11-10 04:05 through 12:50 UTC. Each cell is the median
@@ -181,7 +244,7 @@ Checked, and left alone:
 - **The macOS and Windows builds.** They run in parallel and finish before
   the test job, so they add no time.
 - **Testing only the crates that changed.** Almost every change touches
-  `mareader-ui`, the top crate, which nearly every test builds.
+  `mareader-ui-egui`, the top crate, which nearly every test builds.
 - **More sharing of the GitHub cache.** Workspace crates still compile in
   each job, because a fresh checkout gives every source file a new time.
   Only the dependencies come from the cache, and they restore in under a
@@ -211,7 +274,7 @@ python3 tools/ci.py shots \
 ```
 
 - **Format.** Each argument is one shot: a file name, then the `shot`
-  example's `key=value` options (see `crates/ui/examples/shot.rs`).
+  example's `key=value` options (see `crates/ui-egui/examples/shot.rs`).
   `workers=0` renders pages synchronously, so page content appears in the
   shot; without it, the shot may show blank pages.
 - **Any setting (2026-10-22).** `set=<dotted.path>:<json>` writes one
@@ -219,7 +282,7 @@ python3 tools/ci.py shots \
   example `set=layout.progress_bar:false`. Every switch can be
   shot on and off without a new key; an unknown path fails the shot.
 - **What happens.** The `Remote` workflow renders on lavapipe, the same
-  software GPU the tests use. It reuses the test job's build cache and
+  software GPU the tests use. It reuses Check's `linux` build cache and
   uploads only the PNGs, kept for 3 days.
 - **Where they land.** In `target/remote/shots/<name>.png`; open them with
   `read_file`.
@@ -508,7 +571,7 @@ cache travels as a workflow artifact.
 
 Headless tests prove Mareader asks for the right thing: a caption click,
 a drag on the empty bar, a press on a frameless edge each send their
-window command (`crates/ui/tests/chrome.rs`). Whether the system then
+window command (`crates/ui-egui/tests/chrome.rs`). Whether the system then
 moves, resizes or closes the window is eframe's and the OS's, so the
 owner checks these on real machines before 1.0:
 

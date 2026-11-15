@@ -53,7 +53,7 @@ images, fonts, sounds, sample documents and screenshots.
   source with version, SPDX licence and SHA-256 for files. `cargo xtask assets`
   fails on an unlisted file, a wrong hash or a licence off the list.
 - **Stock icons are Lucide**, compiled from build-only declarations into typed
-  geometry behind `crates/ui/src/icons/` (ADR 0004). Code names an `Icon` by
+  geometry behind `crates/ui-egui/src/icons/` (ADR 0004). Code names an `Icon` by
   meaning; only `icons::pack` names a glyph. Custom provider and voice marks
   remain the documented static-SVG exceptions.
 - **Fonts:** Inter in `assets/fonts`. A new face needs an OFL source and an
@@ -73,26 +73,66 @@ it may crash the app or lose the user's place. In non-test code:
   zero and NaN or infinite casts (`f32::NAN.clamp(..)` stays NaN).
 - Cap allocations sized by input; bound recursion with depth limits. EPUB adds
   zip bombs, deep XML, path escapes and huge images to the list.
-- No `unsafe`: the workspace denies `unsafe_code`. The owner allowed six
+- No `unsafe`: the workspace denies `unsafe_code`. The owner allowed five
   exceptions: `apps/mareader/src/traffic_lights.rs` and `open_files.rs` for
   AppKit; `crates/speech/src/mac_voices.rs`, which asks which listed voices
   have their sound; `crates/memory/src/lib.rs`, which hands freed memory
-  back on macOS and Linux; and the twins `crates/kokoro/src/simd.rs` and
-  `crates/vits/src/simd.rs`, which run a loop's AVX2 build only once the CPU
-  is found to have AVX2 and FMA. `cargo xtask unsafe` fails if any other file
-  allows it.
+  back on macOS and Linux; and `crates/nn-core/src/simd.rs`, which runs a
+  loop's AVX2 build only once the CPU is found to have AVX2 and FMA.
+  `cargo xtask unsafe` fails if any other file allows it.
 - Every crash fix gets a synthetic regression test.
 
 ## Layering
 
-`cargo xtask layers` enforces the table in `docs/architecture.md`.
+`cargo xtask layers` enforces the table in `docs/architecture.md`, and ADR 0007
+records the engine-first decision.
 
-- Every crate marked Core in `xtask/src/layers.rs`
-  never depends on egui, eframe, winit or wgpu. They are testable without a
-  window.
-- Only the front layer (`crates/ui`) draws. `apps/mareader` only opens the
-  window.
+- The workspace is engine-first: `crates/engine` (`mareader-engine`, L5) is the
+  app without a window, `crates/ui-egui` (`mareader-ui-egui`, L6) is one front
+  end in egui, and the binaries at L7 (`apps/mareader`, `apps/mareader-web`,
+  `apps/mareader-cli`) hold a session and drive it.
+- Every crate marked Core in `xtask/src/layers.rs` never depends on egui,
+  eframe, winit or wgpu. They are testable without a window.
+- Only the front layer (`crates/ui-egui`) draws. `apps/mareader` only opens the
+  window and supplies the desktop `Host`, and `apps/mareader-cli` links no
+  toolkit at all (checked transitively with `cargo tree`).
+- `cargo xtask wasm` holds rule 3: every L0–L5 crate, the front end and the web
+  app compile for `wasm32-unknown-unknown`. `assist` is the one declared
+  exemption, and it says why.
+- A file under `crates/ui-egui/src` that names no toolkit belongs below the
+  front end. `cargo xtask trapped` fails on any such file outside the two-file
+  allowlist (`lib.rs`, `icons/pack.rs`). `tests/` and `examples/` are harnesses
+  and are not counted.
 - A new crate gets a row in the layer table in the same commit.
+
+### The eight engine-first laws
+
+1. **One owner.** `engine::Session` owns every piece of state that outlives a
+   frame or reaches disk: settings, pane tree, focus, route, open documents and
+   per-pane reading places/zoom/view mode/selection, the library, marks and
+   notes, read-aloud, page-AI results, dictionary/vocabulary state and running
+   jobs. `ui-egui` owns only window-ephemeral state (`UiState`).
+2. **One door.** State changes enter `Session` only via
+   `Session::execute(&mut self, Command)` (or `execute_id(id, params)`).
+   `Session` exposes no public mutable fields and no `_mut()` accessors.
+3. **Every command registered.** Every variant of `engine::Command` has a static
+   `CommandSpec { id, label, params, enabled, parse }` row in `engine::SPECS`,
+   enforced by an exhaustive `Command::id()`.
+4. **Two enums.** `engine::Command` holds every application action;
+   `ui_egui::UiCommand` holds chrome-only actions (popovers, focus, captions,
+   OS file dialogs). `ui-egui` never matches over `engine::Command`.
+5. **No toolkit below L6.** No crate at L0–L5 — and never `apps/mareader-cli` —
+   may depend on or name `egui`, `eframe`, `egui_extras`, `egui_kittest`,
+   `winit`, `wgpu` or `rfd`, even in dev-dependencies. Pass `now: f64`,
+   `engine::Waker` and plain bounds/coordinates instead.
+6. **The machine is a trait.** Platform capabilities (`state_dir`, `cache_dir`,
+   `set_clipboard`, `reveal`, `open_external`) cross `engine::Host`; file
+   pickers remain `UiCommand`s in the front end.
+7. **Results leave as events.** `Session::drain() -> Vec<Event>` delivers
+   toasts, titles, lifecycle notices and completions back to the client.
+8. **The engine saves itself.** `Session` writes `settings.json` and
+   `session.json` atomically under `Host::state_dir()`. `eframe::Storage` is
+   touched only by the one-time v0.0.5 importer on launch.
 
 ## Shape: one job per file, reuse before writing
 
@@ -120,7 +160,7 @@ it may crash the app or lose the user's place. In non-test code:
   records the search. Reuse existing logic; extract on the second use. Do not
   add speculative type parameters, traits or options without two real callers.
 - Shared feature code lives under its feature, cross-feature UI code under
-  `crates/ui/src`, integration fixtures under `tests/common/mod.rs`, unit
+  `crates/ui-egui/src`, integration fixtures under `tests/common/mod.rs`, unit
   fixtures in `src/test_support.rs`, core logic in the lowest shared crate, and
   parity-tool code in `tools/parity-kit`. A new L0 crate needs owner approval.
   Index each shared item in `docs/reuse.md`.
@@ -184,12 +224,15 @@ diff; pass changed files explicitly. Review the rules the tools do not enforce.
 The UI is immediate mode. Write it as egui code, not as a web app in egui
 syntax (`docs/architecture.md` § How the app is built in egui).
 
-- **State lives in plain structs** owned by `MareaderApp` or by L0–L3 types.
-  No signals, stores, observers or effects; no state mirrored in two places.
-  egui `Memory` holds only transient widget state.
-- **Views are functions** that take the state they show and push `Command`s.
-  They never mutate app state directly; `MareaderApp::apply` is the one place
-  commands take effect. Buttons, menus, shortcuts and drops share commands.
+- **State lives in plain structs.** Durable state lives in `engine::Session`
+  (and L0–L3 domain types); `MareaderApp` pairs `session` with window-ephemeral
+  `UiState`. No signals, stores, observers or effects; no state mirrored in two
+  places. egui `Memory` holds only transient widget state.
+- **Views are functions** that take the state they show and push
+  `engine::Command` or `ui_egui::UiCommand`. They never mutate application state
+  directly: `Command`s go through `Session::execute`, and `UiCommand`s run in
+  `MareaderApp::apply`. Buttons, menus, shortcuts, drops and `mareader-cli`
+  share the same registered engine commands.
 - **Use egui's containers and widgets:** `Panel`, `Popup`, `Modal`, `Area`,
   `ScrollArea::show_rows`, `Sides`, `Button`, `Slider`, `TextEdit`, drag and
   drop via `dnd_*`. Write a custom widget only where egui has nothing close,
@@ -224,9 +267,10 @@ is in progress, by looking and by using it.
   desktop-only piece (threads, mmap, file watching, the library database)
   doesn't build for wasm, stub it in `apps/mareader-web` or let the preview
   lag.
-- **Every state is reachable by name.** New views get a `set_option` key, so
-  the shot tool (`key=value`) and the browser preview (`?key=value`) can open
-  them directly.
+- **Every state is reachable by name.** Engine actions are registered command
+  ids in `engine::SPECS` (callable through `Session::execute_id` and
+  `mareader-cli`); window-only views get a `set_option` key so the shot tool
+  (`key=value`) and the browser preview (`?key=value`) can open them directly.
 - **Be honest in the app.** A control whose effect lands in a later phase says
   so in a muted line, and its parity entry stays `partial` with notes.
 - **Log each slice** in `ROADMAP.md` (what to try, where).
@@ -247,11 +291,11 @@ is in progress, by looking and by using it.
 ## UI work: look at the result
 
 - **Every UI change is looked at, not assumed.** Render it with
-  `cargo run -p mareader-ui --example shot -- OUT.png key=value…` (see
+  `cargo run -p mareader-ui-egui --example shot -- OUT.png key=value…` (see
   `CLAUDE.md`), open the PNG, and check it against `docs/design.md`: light,
   dark and one tint, wide and narrow, and each platform's chrome the change
   touches. Say what was checked.
-- **Behaviour is tested with egui_kittest** (`crates/ui/tests/`): hover, click
+- **Behaviour is tested with egui_kittest** (`crates/ui-egui/tests/`): hover, click
   and keyboard through AccessKit labels, at 60 fps steps
   (`with_step_dt(1.0 / 60.0)`).
 
@@ -285,63 +329,142 @@ Not an end-of-task pass: a habit per update, so a defect is never built on.
 ## Parity, honestly
 
 - `shipped` means it exists and a test proves it: `evidence` cites
-  `path::test_fn` in this repository, and the test exercises the feature, not a
-  neighbour of it.
+  `path::test_fn` in this repository, the test exercises the feature (not a
+  neighbour of it), and the entry cites either `command = "<id>"` from
+  `engine::SPECS` or `ui_only = true`.
 - `partial` and `dropped` say in `notes` what is missing or why.
 - Update the entry in the same commit as the feature. A status that became
   untrue is a bug.
 
 ## Gates
 
-Before every commit:
+The gates, wherever they run:
 
 ```sh
 cargo fmt --all --check
 cargo clippy -p <crate> -j 2 --all-targets -- -D warnings
 cargo test -p <crate> -j 2
-cargo xtask layers && cargo xtask parity && cargo xtask assets
+cargo xtask layers && cargo xtask wasm && cargo xtask trapped
+cargo xtask parity && cargo xtask assets
 cargo xtask comments
 ```
 
-Scope builds and tests to the crates you touched, under a `timeout`. The full
-workspace sweep (`cargo xtask ci`) is CI's job; run it locally only when the
-machine is free.
+Scope local builds and tests to the crates you touched, under a `timeout`.
+The workspace sweep is CI's job. **Where** the gates run is chosen once per
+session, below, before anything compiles.
 
-## Where the gates run: local mode or CI mode
+## Session start: choose where the gates run
 
-The gates are the same everywhere; only where they run differs. Details,
-numbers and the full loop are in [docs/verification.md](docs/verification.md).
+Do this first in every session, before any `cargo` command, and again after
+anything that may have reset the machine. Sandboxes are wiped without
+warning: assume no build cache, no env vars and no running watcher survived.
 
-- **Local mode** (a capable machine): run the gates here, push when green,
-  and **don't poll CI**. It repeats checks that already passed.
-- **CI mode** (a sandbox or a low-end machine): compile nothing locally.
-  Push a `<type>/<slug>` branch, then run `python3 tools/ci.py watch` until
-  the verdict; merge into `main` once it is green. Take screenshots with
-  `python3 tools/ci.py shots`, never with a local wasm build and browser.
-- **CI discipline.** Install `tools/hooks/pre-push` for format, shape,
-  comments, budget and commit checks. Never knowingly push a locally visible
-  failure. The Gate job never compiles; lint, test and platform jobs follow it.
-  Only main writes Rust build caches. Do not add sccache or SHA-based cache keys.
-  Change pinned toolchain and cache-key environment deliberately. Report a
-  `Rust / test` run over 12 minutes; read the whole failure before a fix push.
-  Small core crates can be checked locally in CI mode if the owner permits;
-  explicit owner instructions take precedence over local-build guidance.
-- **Choosing**, highest precedence first:
-  1. The user's explicit word, in either direction ("use CI" on a fast
-     machine, "build locally" on a slow one).
-  2. `MAREADER_VERIFY=local|ci`.
-  3. `python3 tools/ci.py mode`, which detects RAM, cores and free disk.
+1. Run `python3 tools/ci.py mode`. It prints `local`, `cache` or `ci`, the
+   reasons, and the exact next commands. Precedence, highest first:
+   1. the user's explicit word ("use CI", "build locally", "use the cache");
+   2. `MAREADER_VERIFY=local|cache|ci`;
+   3. detection: RAM, cores, free disk, x86_64 Linux, a GitHub token.
+2. Say the mode and why in the first report, for example
+   "Mode: cache. 1.9 GiB RAM, 2 cores, token present, cache 3 commits back."
+3. Follow that mode's loop below until the user changes it.
 
-  Say which mode you chose, and why, in the first report of a session.
-- **After a sandbox reset,** and only if local work is wanted,
-  `python3 tools/ci.py cache restore` unpacks a build that CI made, so the
-  cold build is skipped. Every green push refreshes that cache on its own.
-  It holds lint builds only (about 1.2 GB, a few minutes to restore); a
-  local test run first needs `cache build --full`.
-  If `restore` calls the cache stale, lint in CI, not locally.
-- **CI time.** Keep timing claims measured in `docs/verification.md`. Install
-  apt packages through `.github/actions/apt`. SZ updates timings after the
-  revised pipeline has enough runs.
+| Mode | Picked when | Compiles here | Tests and runtime errors | Waits on |
+|---|---|---|---|---|
+| `local` | >= 8 GiB RAM, >= 4 cores, >= 10 GiB disk | everything, scoped | here | nothing until final |
+| `cache` | low-end, but x86_64 Linux, a token, >= 6 GiB free | scoped clippy and fmt, on CI's restored build | the CI quick gate | quick gate, then final |
+| `ci` | anything else (no token, no disk, not Linux) | nothing | the CI quick gate | quick gate, then final |
+
+### The two CI profiles: quick while developing, full at the end
+
+- **Quick** runs on every push to a `<type>/<slug>` branch. It is one job,
+  `Check / fmt, clippy, test`: fmt, shape, comments, commit subjects,
+  `clippy -D warnings`, `cargo test --workspace --no-fail-fast`, then the
+  xtask rules. Every step runs even after an earlier one fails, so one push
+  returns every problem at once: formatting, warnings, compile errors and
+  failing tests. wasm, each-commit, macOS and Windows show as *skipped*.
+  Skipped is not red. `Plan / profile` is a 5-second bookkeeping job.
+- **Full** adds `Rust / wasm`, `Build / each commit`, `Build / macos-latest`
+  and `Build / windows-latest`, all run to the end. It runs for pull
+  requests, `main`, the schedule, a head commit whose message contains
+  `[ci full]`, and `python3 tools/ci.py final`.
+- **Dev loop:** push, then `python3 tools/ci.py watch`. It exits at the quick
+  verdict: 0 green, 1 red (with a digest of every failing step), 2 still
+  running. Fix the problems, push again, and watch again. A newer push
+  cancels the older quick run. Use `watch --detach` and `watch --tail` for
+  long waits, and never sleep-poll the API yourself.
+- **Final:** once the slice is done, run `python3 tools/ci.py final`. It
+  dispatches the full profile on the branch head, waits for **every** job,
+  and prints a per-job table with all failures. Merge into `main` only on a
+  green final, or on a green pull-request run. Don't run final for each
+  small change: that brings back the 25-minute loop.
+
+### Local mode
+
+Run the gates here, push when green, and **don't poll the quick gate**: it
+repeats checks that already passed. Run `ci.py final` before merging. A
+Linux machine cannot check macOS, Windows or every commit on its own.
+
+### Cache mode: CI builds, this sandbox resumes from it
+
+CI packs a lint build of the workspace (`Cache / sandbox` → `Remote / sandbox
+cache`, about 1.2 GB) after every green quick run, on every branch. The
+sandbox downloads it and compiles only what changed since.
+
+Run at the start of each session, and before the first `cargo` command
+after any pause:
+
+```sh
+python3 tools/ci.py cache status    # 0 ready; 1 prints the one NEXT command
+python3 tools/ci.py cache restore   # idempotent: downloads only if missing or partial
+source /home/user/.cache/env.sh     # in every new shell, before any cargo command
+```
+
+- **Paths are part of the cache.** Clone at `/home/user/mareader2`. The cache
+  lives in `/home/user/.cache/{rustup,cargo,target-mr}`.
+- **The env is part of the cache.** Cargo hashes `CARGO_INCREMENTAL=1`,
+  `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`, `CARGO_HOME`,
+  `RUSTUP_HOME` and `CARGO_TARGET_DIR` into every fingerprint. A shell
+  without `env.sh` silently rebuilds everything, which takes about 30 min.
+  `eval "$(python3 tools/ci.py cache env)"` does the same as sourcing it.
+- **Wiped again?** `status` says "none here" or "partial". Run `restore`
+  again; it replaces a partial cache by itself. Never delete
+  `/home/user/.cache` yourself.
+- **What runs here:** `cargo fmt` and scoped
+  `timeout 900 cargo clippy -p <crate> -j 2 --all-targets -- -D warnings`,
+  which takes about 30 s on a fresh cache. The cache holds lint builds only.
+  Tests and runtime errors come from the quick gate. Use
+  `cache build --full` (5.6 GB, 23 GB unpacked) only when the owner asks.
+- **Freshness:** `restore` picks the live cache closest behind HEAD. If
+  `status` says stale (more than 30 commits), lint in CI instead. After the
+  next green push, the refreshed cache arrives in 2–8 min; then run
+  `cache restore --force`.
+- **Fallback:** if restore fails (no token, no disk, no network), switch to
+  CI mode and say so.
+
+### CI mode
+
+Compile nothing locally. Run the cheap checks: `comment_check`,
+`commit_check` and `cargo fmt --check` if rustfmt is installed. Then push,
+`watch`, and fix; at the end, run `final`. Take screenshots with
+`python3 tools/ci.py shots`, never with a local wasm build and browser.
+
+### CI discipline
+
+- Install `tools/hooks/pre-push`. Never knowingly push a failure you can see
+  locally.
+- Read the whole digest before a fix push. It lists every failing step;
+  fix them all in one push.
+- **Caches.** `Check` saves `shared-key: linux` on pushes, both main and
+  branches; an exact hit on main's cache skips the save. Other jobs save
+  on main only. Never add sccache: on 2026-11-10, 15,310 sccache entries
+  filled the 10 GB budget and evicted every Rust cache, so every job
+  compiled ~300 dependencies (Windows 24 min, test 14 min). Never key a
+  cache on a commit SHA. Changing the toolchain, `Cargo.lock` or any
+  `CARGO_*` variable in `ci.yml` invalidates every key: do it on purpose, in
+  its own commit. `Cache GC` (from `main`) sweeps dead refs and sccache
+  leftovers daily.
+- Report a warm quick gate over 12 min. Keep timing claims measured in
+  `docs/verification.md`. Install apt packages through `.github/actions/apt`.
 
 ## Commits and pull requests
 
@@ -374,7 +497,9 @@ numbers and the full loop are in [docs/verification.md](docs/verification.md).
 ## Definition of done
 
 1. The change is implemented, and looked at (shots) if it touches UI.
-2. The gates above pass and `CI` is green for the pushed SHA.
+2. The gates pass, the quick gate is green, and the full profile
+   (`python3 tools/ci.py final` or the pull-request run) is green for the
+   pushed SHA.
 3. Docs describe the current behaviour: `docs/design.md` for the look,
    `docs/architecture.md` for structure, `docs/memory.md` for memory, and the
    parity entry for status.

@@ -10,6 +10,7 @@
 )]
 
 mod ai;
+mod ai_job;
 mod load;
 mod reader;
 mod study;
@@ -27,6 +28,7 @@ pub use ai::{
     PageStart, PageTask, PresetId, Provider, SimplifyTask, SummarizeTask, SummaryStyle,
     TranslateTask, language_name,
 };
+pub use ai_job::Job;
 pub use load::{Loaded, load, to_json};
 pub use reader::{
     AppearanceMenuStyle, Bar, ChromeSettings, FloatingLabelStyle, Highlight, LayoutSettings,

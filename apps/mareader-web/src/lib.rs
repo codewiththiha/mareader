@@ -2,7 +2,12 @@
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use mareader_ui::MareaderApp;
+    use std::sync::Arc;
+
+    use mareader_engine::host::{Machine, Shared};
+    use mareader_ui_egui::MareaderApp;
+
+    mod desk;
     use wasm_bindgen::JsCast as _;
     use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -34,7 +39,10 @@ mod web {
                 canvas,
                 eframe::WebOptions::default(),
                 Box::new(|cc| {
-                    let mut app = MareaderApp::from_creation(cc);
+                    // The machine arrives here, and the app is built on it.
+                    let host: Shared = Arc::new(desk::Table::new(cc.egui_ctx.clone()));
+                    let machine = Machine::under(&*host);
+                    let mut app = MareaderApp::new(cc, host, machine);
                     for (k, v) in options() {
                         let _ = app.set_option(&k, &v);
                     }

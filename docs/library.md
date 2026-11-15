@@ -740,7 +740,7 @@ on it; moving to another place restarts the clock.
 
 ## Routes: the reader and the library (2026-10-15)
 
-The window shows one of two routes, `crates/ui/src/route.rs`'s `Route`:
+The window shows one of two routes, `crates/engine/src/route.rs`'s `Route`:
 the reader (panes beside the rail) or the library (the shelf alone). The
 library replaces the panes without closing them, unlike mareader, which
 closes the book. `Route::allows` is one exhaustive table of which commands
@@ -775,7 +775,7 @@ View menu command (`open=menu` in shots) opens the library's own menu.
 Escape and the Library button go back only while a pane has a document.
 Entering the library closes the find bar and the settings window.
 
-## UI (`crates/ui`, M5)
+## UI (`crates/ui-egui`, M5)
 
 - **Sections:** All books, Shelves (a tree), Sources (each folder's own tree,
   read-only), Missing, Recent.
@@ -912,14 +912,15 @@ The AI can shelve loose books. How it plans is in `docs/assist.md`,
 - **Undo**, on that toast, takes the books off again and removes the new
   shelves that are empty.
 
-Code: `crates/ui/src/library/organizing.rs` (which books qualify, the run's
-state, Apply and Undo), `review.rs` (the sheet), `runs.rs` (the card), and
-`crates/ui/src/ai.rs`, which turns the library's ask into the service's
+Code: `crates/engine/src/library/organizing.rs` (which books qualify, the run's
+state, Apply and Undo) and `filing.rs` beside it (what the library asks, hears
+and files), `review.rs` (the sheet), `runs.rs` (the card), and
+`crates/ui-egui/src/ai.rs`, which turns the library's ask into the service's
 keys and its news back. The library side never names `mareader_assist`,
 so it builds for the browser preview too.
 
-Tests: the unit tests in `organizing.rs`, `review.rs` and `runs.rs`, and
-`crates/ui/tests/organize.rs` (a run held and stopped, Apply then Undo,
+Tests: `crates/engine/tests/filing.rs`, the unit tests in `review.rs` and
+`runs.rs`, and `crates/ui-egui/tests/organize.rs` (a run held and stopped, Apply then Undo,
 Discard, the View options row, books read in place refused). Shots:
 `organize=running` or `organize=review` with `copies=N`.
 
@@ -960,7 +961,7 @@ The library shows where it stands.
 Code: `organizing.rs` (`Paused`, `ask_resume`, the card's state),
 `runs.rs` (the paused and ready card), `sheets.rs` (Replace), and
 `app.rs` (`organize`, `resume_organizing`, `take_organized`). Tests in
-`crates/ui/tests/organize.rs`: a paused run waits on its card with its
+`crates/ui-egui/tests/organize.rs`: a paused run waits on its card with its
 books free, a new run while one is paused asks first, and a finished
 plan waits for review while a failure offers Resume. Shots:
 `organize=paused` or `organize=ready` with `copies=N`.
@@ -1005,7 +1006,7 @@ Code: `library_panel.rs` (`drop_action`, `tree_drop`, the menus and
 `rename_row`), `shelving.rs` (`ShelfAction::NewIn`, `take_made`),
 `menus.rs` (`organize_rows`, shared with View options) and `app.rs`
 (`Action::PickInto`, `drops_from_rail`). Tests: unit tests for
-`drop_action` in `library_panel.rs`, and in `crates/ui/tests/panel.rs` a
+`drop_action` in `library_panel.rs`, and in `crates/ui-egui/tests/panel.rs` a
 book dragged onto a shelf row moves, a shelf never goes inside itself,
 F2 renames in place, and at 4 panes the tree still moves books but
 splits no more.

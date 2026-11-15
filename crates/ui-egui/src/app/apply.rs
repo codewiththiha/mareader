@@ -1,0 +1,279 @@
+use super::navigation::found_in;
+use super::*;
+use crate::ui_command::UiCommand;
+use mareader_engine::event::{Event, PaneAction};
+use mareader_engine::session::EdgeTab;
+
+/// The Dictionary's tab parked on the window's edge.
+const EDGE_TAB: &str = "dict-edge-tab-button";
+
+impl MareaderApp {
+    /// A command goes to the engine; chrome is carried out here.
+    pub(super) fn apply(&mut self, ctx: &Context, command: Sent) {
+        if !self.route().allows(&command) {
+            return;
+        }
+        // Text edits must reach the pane focused when they were made.
+        self.reconcile_texts();
+        match command {
+            Sent::Engine(intent) => {
+                let now = ctx.input(|i| i.time);
+                self.session.set_area(Self::area(ctx));
+                self.session.set_edge_tab(EdgeTab {
+                    shown: self.ui.dict.edge_tab_active(),
+                    focused: ctx.memory(|m| m.has_focus(egui::Id::new(EDGE_TAB))),
+                });
+                self.session.execute(intent, now);
+                self.drain(ctx);
+            }
+            Sent::Ui(ui) => self.chrome(ctx, ui),
+        }
+    }
+
+    /// Shows what the session reported since it was last asked.
+    pub(super) fn drain(&mut self, ctx: &Context) {
+        for event in self.session.drain() {
+            self.handle_event(ctx, event);
+        }
+    }
+
+    fn handle_event(&mut self, ctx: &Context, event: Event) {
+        match event {
+            Event::Toast(toast) => self.ui.toasts.push(toast),
+            Event::RouteChanged(route) => self.arrived(route),
+            Event::OpenSettings(tab) => self.open_settings(Some(tab)),
+            Event::RevealVoice { model, language } => {
+                self.open_settings(Some(Tab::Model(model)));
+                let fold = crate::settings_window::voice_fold(model, language);
+                crate::settings_window::reveal(ctx, fold);
+            }
+            Event::Export {
+                name,
+                format,
+                contents,
+            } => self.ui.files.save(ctx, name, format, contents),
+            Event::WordListWindow { pane, pages, list } => {
+                if let Some(ask) = self.session.word_ask(pane, pages, list) {
+                    let chapters = !ask.document.outline().is_empty();
+                    self.ui.word_window.open(ctx, pane, ask, chapters);
+                }
+            }
+            Event::FocusEdgeTab => {
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new(EDGE_TAB)));
+                crate::focus::by_key(ctx);
+            }
+            Event::ReleaseFocus => {
+                ctx.memory_mut(|m| m.focused().map(|id| m.surrender_focus(id)));
+            }
+            Event::PaneOpened {
+                pane,
+                page,
+                count,
+                anchor,
+            } => {
+                self.ui
+                    .documents
+                    .on_opened(&mut self.session, pane, page, count, anchor);
+            }
+            Event::PaneClosed(pane) => {
+                self.ui.documents.on_closed(pane);
+                self.ui.page_ai.close_pane(pane);
+            }
+            Event::ForgetPages(doc) => self.ui.documents.forget_pages(doc),
+            Event::PaneView { pane, action, now } => self.handle_pane_view(pane, action, now),
+            other => self.handle_ui_event(ctx, other),
+        }
+    }
+
+    fn handle_pane_view(&mut self, pane: PaneId, action: PaneAction, now: f64) {
+        match action {
+            PaneAction::Zoom(zoom) => self.ui.documents.zoom(&mut self.session, pane, zoom, now),
+            PaneAction::SetMode(mode) => {
+                self.ui
+                    .documents
+                    .apply_mode(&mut self.session, pane, mode, now);
+            }
+            PaneAction::Arrow(arrow) => {
+                self.ui.documents.arrow(&mut self.session, pane, arrow, now);
+            }
+            PaneAction::PageKey { forward } => {
+                self.ui.documents.page_key(&mut self.session, pane, forward);
+            }
+            PaneAction::ToggleDrift => {
+                self.ui.documents.toggle_drift(&mut self.session, pane, now);
+            }
+            PaneAction::GoTo(page) => self.ui.documents.go_to(&mut self.session, pane, page),
+        }
+    }
+
+    fn handle_ui_event(&mut self, ctx: &Context, event: Event) {
+        match event {
+            Event::PlaceReadMarker { pane, spot, now } => {
+                self.ui.documents.place_read_marker(pane, spot, now);
+            }
+            Event::DismissReadMarkers(now) => {
+                self.ui.documents.dismiss_read_markers(now);
+            }
+            Event::ReadAloudStarted { fresh } => {
+                self.session.set_repaint(crate::repaint::of(ctx));
+                self.ui.read_aloud.on_started(fresh);
+            }
+            Event::Study(action) => self.ui.study.act(&mut self.session, action),
+            Event::Explain(pane) => self.explain(pane),
+            Event::LookUp(pane) => self.look_up(pane),
+            Event::Note(pane) => self.note(pane),
+            Event::DictWindow(window) => self.dict_window(window),
+            Event::Pursue(word) => self.pursue(&word),
+            Event::Dict(action) => self.ui.dict.act(action),
+            Event::PageAi(action) => self.page_ai_act(ctx, action),
+            #[cfg(not(target_arch = "wasm32"))]
+            Event::Ai(job) => self.ui.ai.send(job),
+            Event::Library(action) => self.library_action(ctx, action),
+            Event::Role { word, role } => {
+                self.ui.dict.set_role(&word, role.clone());
+                self.ui.study.set_role(&word, role);
+            }
+            Event::DictReplies { changed, replies } => {
+                let exact = !self.settings().dictionary.near;
+                self.ui.dict.set_exact_only(exact);
+                self.ui.dict.receive(changed, replies);
+            }
+            Event::WordList { made, list } => self.deliver_word_list(ctx, &made, list.output),
+            _ => {}
+        }
+    }
+
+    /// Handles session events that need no egui context (dials, focus, route).
+    pub(super) fn drain_local(&mut self) {
+        for event in self.session.drain() {
+            match event {
+                Event::Toast(toast) => self.ui.toasts.push(toast),
+                Event::RouteChanged(route) => self.arrived(route),
+                Event::OpenSettings(tab) => self.open_settings(Some(tab)),
+                _ => {}
+            }
+        }
+    }
+
+    fn chrome(&mut self, ctx: &Context, ui: UiCommand) {
+        match ui {
+            UiCommand::ToggleSidebar => self.ui.sidebar.toggle(),
+            UiCommand::OpenSidebar(panel) => self.ui.sidebar.open(panel),
+            UiCommand::CloseSidebar => self.ui.sidebar.close(),
+            UiCommand::ShowOpenDialog(placement) => self.ui.files.pick(ctx, placement),
+            UiCommand::LibraryDialog(dialog) => self.library_dialog(ctx, dialog),
+            UiCommand::Chromeless => self.toggle_chromeless(),
+            UiCommand::Window(w) => ctx.send_viewport_cmd(w.viewport(ctx)),
+            UiCommand::Notify(toast) => self.ui.toasts.push(toast),
+            UiCommand::CloseToast(id) => self.ui.toasts.close(id, ctx.input(|i| i.time)),
+            UiCommand::ClearToasts => self.ui.toasts.clear(ctx.input(|i| i.time)),
+            other => self.reveal(ctx, other),
+        }
+    }
+
+    /// The menus, windows and pages a command brings up.
+    fn reveal(&mut self, ctx: &Context, ui: UiCommand) {
+        match ui {
+            UiCommand::ShowAppearance => {
+                self.ui.titlebar.reveal();
+                egui::Popup::open_id(ctx, egui::Id::new(crate::titlebar::APPEARANCE_POPOVER));
+            }
+            UiCommand::ShowViewMenu => self.show_view_menu(ctx),
+            UiCommand::ShowSettings => self.open_settings(None),
+            UiCommand::ShowShortcuts => crate::shortcuts::toggle(ctx),
+            UiCommand::CloseSettings => self.ui.settings_window.close(),
+            UiCommand::FindStep { forward } => self.find_step(ctx, forward),
+            UiCommand::ShowFind => self.show_find(ctx),
+            UiCommand::ShowSearch if self.ui.find.is_open() => self.ui.find.close(),
+            UiCommand::ShowSearch => self.show_find(ctx),
+            UiCommand::ShowDictionary => self.show_dictionary(),
+            UiCommand::ShowReading => self.show_reading(ctx),
+            UiCommand::ShowLibrary => self.show_library(),
+            _ => {}
+        }
+    }
+
+    fn toggle_chromeless(&mut self) {
+        self.ui.chromeless = !self.ui.chromeless;
+        if self.ui.chromeless {
+            self.ui.sidebar.close();
+            let keys = keymap::hint(self.ui.platform, &Sent::Ui(UiCommand::Chromeless));
+            let keys = keys.map_or(String::new(), |k| format!(" or {k}"));
+            let how = format!("Distraction-free. Press Esc{keys} to leave.");
+            self.ui.toasts.push(Toast::info(how));
+        }
+    }
+
+    fn show_view_menu(&mut self, ctx: &Context) {
+        self.ui.titlebar.reveal();
+        let menu = match self.route() {
+            Route::Reader => crate::view_menu::VIEW_MENU,
+            Route::Library => crate::library::menu::LIBRARY_VIEW_MENU,
+            Route::Dictionary => crate::titlebar::DICTIONARY_MENU,
+        };
+        egui::Popup::open_id(ctx, egui::Id::new(menu));
+    }
+
+    /// F3 and Cmd+G: the next match, opening the bar if it is shut.
+    fn find_step(&mut self, ctx: &Context, forward: bool) {
+        if !self.ui.find.is_open() {
+            self.show_find(ctx);
+            return;
+        }
+        let docs = self.ui.documents.as_view(self.session.documents());
+        let found = found_in(self.session.search(), docs, &self.ui.find);
+        self.ui.find.key_step(found, forward, ctx.input(|i| i.time));
+    }
+
+    /// With nothing to search in, find searches the library.
+    fn show_find(&mut self, ctx: &Context) {
+        match (self.route(), self.documents().reading(self.active())) {
+            // The page's own field is its find.
+            (Route::Dictionary, _) => self.ui.dict.arrive(),
+            (Route::Reader, Some(_)) => {
+                self.ui.find.open(self.active());
+                self.ui.titlebar.reveal();
+            }
+            _ => {
+                self.go(Route::Library);
+                let focus = mareader_engine::library::Action::Search(
+                    mareader_engine::library::SearchAction::Focus,
+                );
+                self.apply(ctx, Sent::Engine(Command::Library(focus)));
+            }
+        }
+    }
+
+    fn show_dictionary(&mut self) {
+        match self.route() {
+            Route::Dictionary => self.go(self.dict_back()),
+            // Over the page, unless Settings ask for the page.
+            Route::Reader if self.settings().dictionary.opens == DictionaryOpens::Window => {
+                self.dict_window(mareader_engine::dict::Window::Toggle);
+            }
+            _ => self.go(Route::Dictionary),
+        }
+    }
+
+    /// Back to the pane reading aloud, turned to the words read.
+    fn show_reading(&mut self, ctx: &Context) {
+        if let Some((pane, page, _)) = self.session.read_aloud().spot() {
+            if self.route() != Route::Reader {
+                self.go(Route::Reader);
+            }
+            self.focus(pane);
+            self.ui.documents.go_to(&mut self.session, pane, page);
+        } else if let Some(origin) = self.session.read_aloud().away().cloned() {
+            self.reopen_reading(ctx, origin);
+        }
+    }
+
+    fn show_library(&mut self) {
+        match self.route() {
+            Route::Reader | Route::Dictionary => self.go(Route::Library),
+            // An empty reader is no place to go back to.
+            Route::Library if self.reading() => self.go(Route::Reader),
+            Route::Library => {}
+        }
+    }
+}

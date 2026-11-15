@@ -43,7 +43,7 @@ particular machine still requires a release profile.
 ## Implementation status
 
 The runtime-SVG replacement is implemented across
-`crates/animated-icons` and `crates/ui/src/icons/anim.rs`:
+`crates/animated-icons` and `crates/ui-egui/src/icons/anim.rs`:
 
 - the 104 source SVG/timeline declarations are build-script input only;
 - generated typed paths, ordered layers and animated-part ancestry are the
@@ -70,7 +70,7 @@ measurements are still required before claiming a performance magnitude.
 
 ### Animated icons
 
-`crates/ui/src/icons/anim.rs::advance` owns one finite run per icon and widget.
+`crates/ui-egui/src/icons/anim.rs::advance` owns one finite run per icon and widget.
 It selects a quantised sample and asks the context-local cache for the pack and
 device-pixel side. A hit selects that frame's ordered atlas cells and paints
 all of their quads through one egui mesh and texture. A miss queues one lazy
@@ -97,7 +97,7 @@ The repeated work is confined to active pack frames.
 
 ### Ordinary UI animation
 
-`crates/ui/src/motion.rs` turns the application's master motion setting into
+`crates/ui-egui/src/motion.rs` turns the application's master motion setting into
 `Style::animation_time` and `motion::secs`. Most fades, slides, lifts and morphs
 use `Context::animate_bool_with_time` or `animate_value_with_time`, then paint
 interpolated egui geometry.
@@ -612,7 +612,7 @@ The ownership boundary is deliberate:
 - Layer variants bake the quantised transform, path coverage, width and opacity
   state before tight alpha cropping. Equal states of a layer reuse one atlas
   cell. The deterministic packer admits no texture above 8 MiB.
-- `mareader-ui` owns semantic `Icon` → pack-id mapping, trigger policy, lazy
+- `mareader-ui-egui` owns semantic `Icon` → pack-id mapping, trigger policy, lazy
   worker publication, the byte-accounted LRUs and egui mesh construction.
   `raster_resting` evaluates only time zero and supplies one cropped texture per
   requested stock pack and physical side under a separate 4 MiB bound.

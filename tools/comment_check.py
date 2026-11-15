@@ -6,7 +6,7 @@ module docs have separate budgets; ordinary comments cannot use an allow marker.
 Arguments may be tracked files or directories. Directories are resolved through
 Git; outside a repository they are walked recursively.
 
-  python3 tools/comment_check.py crates/ui/src/titlebar.rs
+  python3 tools/comment_check.py crates/ui-egui/src/titlebar.rs
   python3 tools/comment_check.py --json crates/settings/src/reader.rs
   python3 tools/comment_check.py --self-test
 

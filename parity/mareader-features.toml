@@ -2,6 +2,7 @@
 # Parity is functional (ADR 0005): a title names what the user can do, not how mareader drew it.
 # status: planned | partial (notes say what is missing) | shipped (evidence cites a test) | dropped (notes say why)
 # evidence: `path::test_fn` in this repo. reference: paths in the ../mareader checkout.
+# command / ui_only: every shipped entry cites an engine SPECS command id or sets ui_only = true.
 # areas: A chrome, B workspace, C library, D pdf, E epub, F appearance, G typography,
 #        H navigation and search, I study, J settings, K motion/keys/a11y, L performance.
 
@@ -12,7 +13,8 @@ area = "A"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
-evidence = ["crates/ui/tests/shell.rs::the_bar_appears_on_hover_and_hides_after_the_grace"]
+ui_only = true
+evidence = ["crates/ui-egui/tests/shell.rs::the_bar_appears_on_hover_and_hides_after_the_grace"]
 reference = ["crates/app-chrome/src/titlebar/root.rs", "crates/app-chrome/src/hooks/hover_reveal.rs"]
 
 [[feature]]
@@ -22,7 +24,8 @@ area = "A"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
-evidence = ["crates/ui/tests/shell.rs::keep_title_bar_shown_holds_it_after_the_pointer_leaves", "crates/ui/tests/shell.rs::a_pinned_bar_stays_after_the_pointer_leaves", "crates/ui/tests/library.rs::the_library_keeps_its_own_title_bar_pin", "crates/ui/tests/dictionary.rs::the_page_bar_opens_its_settings_and_keeps_a_pin"]
+command = "settings.titlebar-pin"
+evidence = ["crates/ui-egui/tests/shell.rs::keep_title_bar_shown_holds_it_after_the_pointer_leaves", "crates/ui-egui/tests/shell.rs::a_pinned_bar_stays_after_the_pointer_leaves", "crates/ui-egui/tests/library.rs::the_library_keeps_its_own_title_bar_pin", "crates/ui-egui/tests/dictionary.rs::the_page_bar_opens_its_settings_and_keeps_a_pin"]
 reference = ["crates/app-chrome/src/titlebar/root.rs", "crates/reader-core/src/settings/mod.rs"]
 notes = "The library keeps its own pin, starting pinned (M5 slice 2). The pin is Keep title bar shown in each route's menu, off the bar itself; the dictionary page has its own, and unpinned pages rise into the bar's room"
 
@@ -33,9 +36,10 @@ area = "A"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 evidence = [
-    "crates/ui/tests/shell.rs::the_appearance_popover_switches_mode_and_keeps_the_bar",
-    "crates/ui/tests/keys.rs::find_opens_the_bar_which_holds_the_title_bar_until_escape",
+    "crates/ui-egui/tests/shell.rs::the_appearance_popover_switches_mode_and_keeps_the_bar",
+    "crates/ui-egui/tests/keys.rs::find_opens_the_bar_which_holds_the_title_bar_until_escape",
 ]
 reference = ["crates/app-ui/src/components/shell/titlebar/app_title_bar.rs"]
 notes = "Any open popover holds it, and so does the find bar"
@@ -47,7 +51,8 @@ area = "A"
 tier = "P1"
 milestone = "M1"
 status = "shipped"
-evidence = ["crates/ui/tests/shell.rs::the_bar_band_starts_after_a_docked_sidebar"]
+ui_only = true
+evidence = ["crates/ui-egui/tests/shell.rs::the_bar_band_starts_after_a_docked_sidebar"]
 reference = ["crates/app-chrome/src/titlebar/root.rs"]
 notes = "The rail's width feeds BarContext.left_inset; over a rail the macOS lights move to its header"
 
@@ -58,9 +63,10 @@ area = "A"
 tier = "P1"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-chrome/src/titlebar/root.rs"]
 evidence = [
-    "crates/ui/tests/chrome.rs::the_title_centres_truncates_and_hides_for_want_of_room",
+    "crates/ui-egui/tests/chrome.rs::the_title_centres_truncates_and_hides_for_want_of_room",
 ]
 notes = "Centred on the window, truncated to the gap, hidden without room or a document; named in full for screen readers"
 
@@ -71,9 +77,10 @@ area = "A"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-chrome/src/window/api.rs"]
 evidence = [
-    "crates/ui/tests/chrome.rs::the_empty_bar_drags_the_window_and_a_double_click_maximises",
+    "crates/ui-egui/tests/chrome.rs::the_empty_bar_drags_the_window_and_a_double_click_maximises",
 ]
 notes = "A drag sends StartDrag, a double-click Maximized; the OS's part is a real-machine check (docs/verification.md)"
 
@@ -84,9 +91,10 @@ area = "A"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-chrome/src/window/caption_windows.rs"]
 evidence = [
-    "crates/ui/tests/chrome.rs::windows_captions_minimise_maximise_and_close",
+    "crates/ui-egui/tests/chrome.rs::windows_captions_minimise_maximise_and_close",
 ]
 notes = "Drawn, labelled and clicked: each sends its window command; real-machine check listed in docs/verification.md"
 
@@ -97,9 +105,10 @@ area = "A"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-chrome/src/window/caption_gnome.rs"]
 evidence = [
-    "crates/ui/tests/chrome.rs::gnome_captions_minimise_and_close",
+    "crates/ui-egui/tests/chrome.rs::gnome_captions_minimise_and_close",
 ]
 notes = "Drawn, labelled and clicked: each sends its window command; real-machine check listed in docs/verification.md"
 
@@ -110,12 +119,13 @@ area = "A"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 evidence = [
     "apps/mareader/src/traffic_lights.rs::the_lights_sit_centred_in_the_bar",
     "apps/mareader/src/traffic_lights.rs::a_closing_rail_carries_them_off_the_left_edge",
-    "crates/ui/tests/shell.rs::closing_the_sidebar_slides_the_lights_away",
-    "crates/ui/tests/shell.rs::without_a_sidebar_the_lights_come_with_the_bar",
-    "crates/ui/tests/shell.rs::in_overlay_mode_the_lights_slide_in_with_the_rail_only",
+    "crates/ui-egui/tests/shell.rs::closing_the_sidebar_slides_the_lights_away",
+    "crates/ui-egui/tests/shell.rs::without_a_sidebar_the_lights_come_with_the_bar",
+    "crates/ui-egui/tests/shell.rs::in_overlay_mode_the_lights_slide_in_with_the_rail_only",
 ]
 reference = ["src-tauri/src/macos/traffic_light.rs", "crates/app-chrome/src/window/traffic_lights.rs"]
 notes = "Centred at x 20 in the bar. A drawn sidebar carries them and slides them away; otherwise they come with the bar, never in overlay mode (apps/mareader/src/traffic_lights.rs). The owner checked them on a Mac (2026-10-17, docs/verification.md)"
@@ -127,10 +137,11 @@ area = "A"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-chrome/src/window/mod.rs"]
 evidence = [
-    "crates/ui/src/resize.rs::corners_win_over_edges_and_the_middle_is_free",
-    "crates/ui/tests/chrome.rs::a_frameless_windows_edge_starts_a_resize_and_a_mac_leaves_it_to_the_system",
+    "crates/ui-egui/src/resize.rs::corners_win_over_edges_and_the_middle_is_free",
+    "crates/ui-egui/tests/chrome.rs::a_frameless_windows_edge_starts_a_resize_and_a_mac_leaves_it_to_the_system",
 ]
 notes = "A press on the 5 pt edge sends BeginResize on Windows and Linux, never on a Mac; real-machine check listed in docs/verification.md"
 
@@ -141,9 +152,10 @@ area = "A"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 evidence = [
-    "crates/ui/tests/gpu.rs::a_pinned_bar_blurs_the_page_scrolled_under_it",
-    "crates/ui/tests/gpu.rs::the_page_bar_is_glass_and_both_bars_turn_solid_without_it",
+    "crates/ui-egui/tests/gpu.rs::a_pinned_bar_blurs_the_page_scrolled_under_it",
+    "crates/ui-egui/tests/gpu.rs::the_page_bar_is_glass_and_both_bars_turn_solid_without_it",
 ]
 reference = ["styles/components/title_bar.css"]
 notes = "mareader's recipe: 72 % surface over a 20 pt blur, saturate 180 %; 96 % without a GPU. Beyond mareader (owner): the page bar is glass too, and Settings can turn both solid"
@@ -155,9 +167,10 @@ area = "A"
 tier = "P2"
 milestone = "M1"
 status = "shipped"
+command = "settings.set"
 evidence = [
-    "crates/ui/tests/chrome.rs::distraction_free_hides_every_bar_until_escape_or_its_key",
-    "crates/ui/tests/chrome.rs::distraction_free_leaves_the_library_its_bar",
+    "crates/ui-egui/tests/chrome.rs::distraction_free_hides_every_bar_until_escape_or_its_key",
+    "crates/ui-egui/tests/chrome.rs::distraction_free_leaves_the_library_its_bar",
 ]
 notes = "Cmd/Ctrl+Shift+F or the View menu; Esc leaves; page bars and sidebar hide too (M8 slice 2)"
 
@@ -168,18 +181,19 @@ area = "A"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+command = "settings.sidebar-overlay"
 reference = ["crates/reader-runtime/src/components/shell/sidebar/container.rs"]
 evidence = [
-    "crates/ui/tests/shell.rs::the_bar_toggle_docks_the_sidebar_and_hands_closing_to_it",
-    "crates/ui/tests/shell.rs::the_switcher_changes_panel_and_a_reclick_keeps_it",
-    "crates/ui/tests/shell.rs::a_floating_sidebar_opens_from_the_edge_and_closes_after_the_grace",
-    "crates/ui/tests/shell.rs::docking_a_floating_sidebar_keeps_it_open",
-    "crates/ui/tests/shell.rs::escape_closes_the_sidebar",
-    "crates/ui/tests/navigation.rs::clicking_a_chapter_jumps_there_and_marks_it",
-    "crates/ui/tests/navigation.rs::the_thumbnails_follow_the_page_and_a_click_jumps",
-    "crates/ui/tests/panel.rs::shelves_open_in_place_and_list_their_shelves_and_books",
-    "crates/ui/src/library_panel.rs::a_link_is_a_row_under_its_own_name_and_counts_on_its_shelf",
-    "crates/ui/src/library_panel.rs::a_book_on_two_open_shelves_is_two_rows_of_their_own",
+    "crates/ui-egui/tests/shell.rs::the_bar_toggle_docks_the_sidebar_and_hands_closing_to_it",
+    "crates/ui-egui/tests/shell.rs::the_switcher_changes_panel_and_a_reclick_keeps_it",
+    "crates/ui-egui/tests/shell.rs::a_floating_sidebar_opens_from_the_edge_and_closes_after_the_grace",
+    "crates/ui-egui/tests/shell.rs::docking_a_floating_sidebar_keeps_it_open",
+    "crates/ui-egui/tests/shell.rs::escape_closes_the_sidebar",
+    "crates/ui-egui/tests/navigation.rs::clicking_a_chapter_jumps_there_and_marks_it",
+    "crates/ui-egui/tests/navigation.rs::the_thumbnails_follow_the_page_and_a_click_jumps",
+    "crates/ui-egui/tests/panel.rs::shelves_open_in_place_and_list_their_shelves_and_books",
+    "crates/ui-egui/src/library_panel.rs::a_link_is_a_row_under_its_own_name_and_counts_on_its_shelf",
+    "crates/ui-egui/src/library_panel.rs::a_book_on_two_open_shelves_is_two_rows_of_their_own",
 ]
 notes = "Docked or floating, sliding, with the outline, thumbnails, library and notes panels serving the focused pane. The dictionary left the rail for its own page (study.dictionary-page)"
 
@@ -190,12 +204,13 @@ area = "A"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-chrome/src/floating/mod.rs"]
 evidence = [
-    "crates/ui/tests/shell.rs::the_appearance_popover_switches_mode_and_keeps_the_bar",
-    "crates/ui/tests/chrome.rs::a_popover_closes_on_escape_and_on_a_press_outside",
-    "crates/ui/tests/modes.rs::the_menu_row_switches_modes_and_marks_the_current_one",
-    "crates/ui/tests/shell.rs::a_narrow_bar_folds_tools_into_the_menu",
+    "crates/ui-egui/tests/shell.rs::the_appearance_popover_switches_mode_and_keeps_the_bar",
+    "crates/ui-egui/tests/chrome.rs::a_popover_closes_on_escape_and_on_a_press_outside",
+    "crates/ui-egui/tests/modes.rs::the_menu_row_switches_modes_and_marks_the_current_one",
+    "crates/ui-egui/tests/shell.rs::a_narrow_bar_folds_tools_into_the_menu",
 ]
 notes = "Appearance popover, view menu and overflow menu as egui popups; Escape and a press outside close them"
 
@@ -206,9 +221,10 @@ area = "A"
 tier = "P1"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-chrome/src/tooltip.rs"]
 notes = "Every icon control has a themed tooltip chip; bound commands show their shortcut"
-evidence = ["crates/ui/tests/shell.rs::a_toolbar_tooltip_names_the_control_and_its_shortcut"]
+evidence = ["crates/ui-egui/tests/shell.rs::a_toolbar_tooltip_names_the_control_and_its_shortcut"]
 
 [[feature]]
 id = "chrome.toasts"
@@ -217,8 +233,9 @@ area = "A"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-ui/src/components/primitives/overlay/toast.rs"]
-evidence = ["crates/ui/tests/shell.rs::a_toast_leaves_by_itself", "crates/ui/tests/shell.rs::reading_a_toast_keeps_it_up", "crates/ui/tests/shell.rs::a_refused_split_says_why"]
+evidence = ["crates/ui-egui/tests/shell.rs::a_toast_leaves_by_itself", "crates/ui-egui/tests/shell.rs::reading_a_toast_keeps_it_up", "crates/ui-egui/tests/shell.rs::a_refused_split_says_why"]
 notes = "A deduplicated stack fans on hover and opens by click; short player confirmations use an island when space permits. Errors, actions and narrow layouts use the corner stack."
 
 [[feature]]
@@ -228,7 +245,8 @@ area = "A"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/src/page_bar.rs::the_counter_reads_as_pages_or_a_percentage"]
+ui_only = true
+evidence = ["crates/ui-egui/src/page_bar.rs::the_counter_reads_as_pages_or_a_percentage"]
 reference = ["crates/reader-core/src/settings/layout.rs"]
 notes = "A click-through counter in each pane's corner, as pages or a percentage; it gives way while the bottom bar is up. Settings, Layout: on or off and its style"
 
@@ -239,8 +257,9 @@ area = "A"
 tier = "P1"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 reference = ["crates/reader-runtime/src/components/menus/reader_menu.rs"]
-evidence = ["crates/ui/tests/shell.rs::a_narrow_bar_folds_tools_into_the_menu", "crates/ui/tests/shell.rs::the_menu_opens_the_shortcut_sheet_in_the_middle"]
+evidence = ["crates/ui-egui/tests/shell.rs::a_narrow_bar_folds_tools_into_the_menu", "crates/ui-egui/tests/shell.rs::the_menu_opens_the_shortcut_sheet_in_the_middle"]
 notes = "View & tools menu: tools the bar has no room for, full screen, the shortcut list. Zoom, modes and fit join it with PDF viewing (M2)"
 
 [[feature]]
@@ -250,11 +269,12 @@ area = "A"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 reference = ["crates/reader-core/src/settings/animation.rs"]
 evidence = [
-    "crates/ui/src/loading_mark.rs::one_dot_moves_per_quarter",
-    "crates/ui/src/loading_mark.rs::the_fade_breathes_between_its_floor_and_full",
-    "crates/ui/tests/shell.rs::the_system_asking_for_less_motion_stills_it_like_the_master",
+    "crates/ui-egui/src/loading_mark.rs::one_dot_moves_per_quarter",
+    "crates/ui-egui/src/loading_mark.rs::the_fade_breathes_between_its_floor_and_full",
+    "crates/ui-egui/tests/shell.rs::the_system_asking_for_less_motion_stills_it_like_the_master",
 ]
 notes = "Three dots hop round a square while a book opens, and keep hopping with Animations off. The system's reduced-motion setting (macOS, Windows, GNOME), read at launch, makes it a fade and stills the app like the master switch"
 
@@ -265,8 +285,9 @@ area = "A"
 tier = "P1"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 evidence = [
-    "crates/ui/tests/gpu.rs::the_window_opens_on_the_remembered_paper_without_a_dark_flash",
+    "crates/ui-egui/tests/gpu.rs::the_window_opens_on_the_remembered_paper_without_a_dark_flash",
 ]
 reference = ["crates/reader-core/src/settings/mod.rs"]
 notes = "The clear colour is the paper; the font-wait frame paints it (M8 slice 2)"
@@ -278,7 +299,8 @@ area = "B"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
-evidence = ["crates/workspace/src/tree.rs::splits_stop_at_four", "crates/workspace/src/tree.rs::a_narrow_pane_refuses_to_split", "crates/ui/tests/shell.rs::a_split_adds_and_focuses_a_pane", "crates/ui/tests/panel.rs::a_book_dropped_on_a_pane_edge_splits_there", "crates/ui/tests/shell.rs::the_bar_has_no_split_buttons"]
+command = "pane.split"
+evidence = ["crates/workspace/src/tree.rs::splits_stop_at_four", "crates/workspace/src/tree.rs::a_narrow_pane_refuses_to_split", "crates/ui-egui/tests/shell.rs::a_split_adds_and_focuses_a_pane", "crates/ui-egui/tests/panel.rs::a_book_dropped_on_a_pane_edge_splits_there", "crates/ui-egui/tests/shell.rs::the_bar_has_no_split_buttons"]
 reference = ["crates/reader-runtime/src/host/tree.rs"]
 notes = "A book dragged from the sidebar's Library panel onto a pane's right or bottom edge splits it there. The title bar has no split buttons (owner, 2026-10-17)"
 
@@ -289,6 +311,7 @@ area = "B"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 evidence = ["crates/workspace/src/tree.rs::layout_tiles_the_area_exactly"]
 reference = ["crates/reader-runtime/src/host/geometry.rs"]
 
@@ -299,10 +322,11 @@ area = "B"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+command = "pane.ratio"
 reference = ["crates/reader-runtime/src/host/tree.rs"]
 evidence = [
     "crates/workspace/src/tree.rs::dividers_resize_within_limits",
-    "crates/ui/tests/chrome.rs::dragging_a_divider_resizes_panes_within_limits",
+    "crates/ui-egui/tests/chrome.rs::dragging_a_divider_resizes_panes_within_limits",
 ]
 notes = "Dragged with the pointer; the ratio stays 15 % from either end"
 
@@ -313,7 +337,8 @@ area = "B"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
-evidence = ["crates/workspace/src/tree.rs::closing_hands_the_space_to_the_sibling", "crates/ui/tests/shell.rs::closing_a_pane_from_its_button_focuses_the_survivor"]
+command = "pane.close"
+evidence = ["crates/workspace/src/tree.rs::closing_hands_the_space_to_the_sibling", "crates/ui-egui/tests/shell.rs::closing_a_pane_from_its_button_focuses_the_survivor"]
 reference = ["crates/reader-runtime/src/host/view.rs"]
 
 [[feature]]
@@ -323,11 +348,12 @@ area = "B"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+command = "pane.focus"
 reference = ["styles/components/shell.css", "crates/reader-runtime/src/pane/view.rs"]
 evidence = [
-    "crates/ui/tests/reading.rs::a_press_on_a_pane_page_focuses_that_pane",
-    "crates/ui/tests/focus.rs::f3_steps_through_matches_and_f6_moves_between_panes",
-    "crates/ui/tests/shell.rs::closing_a_pane_from_its_button_focuses_the_survivor",
+    "crates/ui-egui/tests/reading.rs::a_press_on_a_pane_page_focuses_that_pane",
+    "crates/ui-egui/tests/focus.rs::f3_steps_through_matches_and_f6_moves_between_panes",
+    "crates/ui-egui/tests/shell.rs::closing_a_pane_from_its_button_focuses_the_survivor",
 ]
 notes = "A press anywhere in a pane focuses it and draws the outline; F6 and Tab move focus between panes (M7)"
 
@@ -338,11 +364,12 @@ area = "B"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "reader.place-book"
 evidence = [
   "crates/workspace/src/tree.rs::nearest_edge_prefers_right_then_bottom_on_ties",
   "crates/workspace/src/drop.rs::a_pane_with_a_document_splits_at_its_nearest_edge",
-  "crates/ui/tests/panel.rs::a_book_dropped_on_a_pane_edge_splits_there",
-  "crates/ui/tests/panel.rs::a_book_dropped_on_an_empty_pane_opens_in_it",
+  "crates/ui-egui/tests/panel.rs::a_book_dropped_on_a_pane_edge_splits_there",
+  "crates/ui-egui/tests/panel.rs::a_book_dropped_on_an_empty_pane_opens_in_it",
 ]
 reference = ["crates/reader-runtime/src/host/drop_target.rs"]
 
@@ -353,9 +380,10 @@ area = "B"
 tier = "P1"
 milestone = "M1"
 status = "shipped"
+command = "settings.set"
 evidence = [
-  "crates/ui/tests/shell.rs::split_pane_outline_colour_comes_from_the_workspace_tab",
-  "crates/ui/tests/gpu.rs::pages_keep_inside_a_split_pane_s_round_corners",
+  "crates/ui-egui/tests/shell.rs::split_pane_outline_colour_comes_from_the_workspace_tab",
+  "crates/ui-egui/tests/gpu.rs::pages_keep_inside_a_split_pane_s_round_corners",
 ]
 reference = ["crates/reader-core/src/settings/workspace.rs", "crates/reader-runtime/src/host/mod.rs"]
 notes = "Settings, Theme tab, while split: outline thickness and colour (palette or custom), gap, corners, shadow. Pages stay inside rounded corners"
@@ -367,13 +395,14 @@ area = "B"
 tier = "P1"
 milestone = "M3"
 status = "shipped"
+command = "settings.independence"
 evidence = [
   "crates/appearance/src/pane_looks.rs::enabling_in_a_split_keeps_the_front_pane_and_spreads_the_rest",
   "crates/appearance/src/pane_looks.rs::a_shared_base_switch_moves_every_pane",
   "crates/appearance/src/pane_looks.rs::closing_to_one_pane_promotes_the_survivor_s_look",
-  "crates/ui/tests/shell.rs::independent_themes_from_settings_colour_the_other_pane",
-  "crates/ui/tests/shell.rs::a_mode_switch_changes_only_the_active_pane_unless_shared",
-  "crates/ui/tests/gpu.rs::split_panes_fill_with_their_own_paper",
+  "crates/ui-egui/tests/shell.rs::independent_themes_from_settings_colour_the_other_pane",
+  "crates/ui-egui/tests/shell.rs::a_mode_switch_changes_only_the_active_pane_unless_shared",
+  "crates/ui-egui/tests/gpu.rs::split_panes_fill_with_their_own_paper",
 ]
 reference = ["crates/reader-core/src/settings/workspace.rs", "crates/reader-runtime/src/host/theme.rs"]
 
@@ -384,12 +413,13 @@ area = "B"
 tier = "P2"
 milestone = "M4"
 status = "shipped"
+command = "settings.quick-text"
 evidence = [
-  "crates/ui/src/pane_texts.rs::each_pane_keeps_its_own_text_while_split",
-  "crates/ui/src/pane_texts.rs::the_focused_pane_hands_its_text_to_the_window",
-  "crates/ui/tests/reading.rs::independent_text_sets_each_pane_in_its_own_type",
+  "crates/engine/src/pane_texts.rs::each_pane_keeps_its_own_text_while_split",
+  "crates/engine/src/pane_texts.rs::the_focused_pane_hands_its_text_to_the_window",
+  "crates/ui-egui/tests/reading.rs::independent_text_sets_each_pane_in_its_own_type",
   "crates/session/src/tests.rs::each_slot_sets_one_book_in_its_own_type",
-  "crates/ui/tests/reading.rs::pane_text_shows_only_while_split_with_a_book",
+  "crates/ui-egui/tests/reading.rs::pane_text_shows_only_while_split_with_a_book",
 ]
 reference = ["crates/reader-core/src/settings/workspace.rs"]
 notes = "Owner's extension: mareader shares text across panes. While split, Settings › Panes' switch gives each pane its own Fonts settings; the tab edits the focused pane, and panes on one file share a parse while their type matches"
@@ -401,13 +431,14 @@ area = "B"
 tier = "P2"
 milestone = "M3"
 status = "shipped"
+command = "settings.independence"
 evidence = [
   "crates/appearance/src/pane_looks.rs::grain_and_unowned_families_are_the_window_s",
   "crates/appearance/src/pane_looks.rs::a_new_texture_is_painted_and_unlike_the_taken",
   "crates/appearance/src/pane_looks.rs::enabling_textures_paints_every_pane_unlike_the_others",
-  "crates/ui/tests/gpu.rs::texture_for_each_patterns_every_open_pane",
-  "crates/ui/tests/gpu.rs::the_palette_s_texture_for_each_patterns_every_open_pane",
-  "crates/ui/tests/shell.rs::the_popover_offers_pane_modes_only_while_split",
+  "crates/ui-egui/tests/gpu.rs::texture_for_each_patterns_every_open_pane",
+  "crates/ui-egui/tests/gpu.rs::the_palette_s_texture_for_each_patterns_every_open_pane",
+  "crates/ui-egui/tests/shell.rs::the_popover_offers_pane_modes_only_while_split",
 ]
 notes = "Unlike mareader, the front pane gets a texture too when it has none (owner)"
 reference = ["crates/reader-core/src/settings/workspace.rs", "crates/reader-runtime/src/host/theme.rs"]
@@ -419,11 +450,12 @@ area = "B"
 tier = "P1"
 milestone = "M5"
 status = "shipped"
+command = "reader.open-book"
 evidence = [
-  "crates/ui/tests/panel.rs::a_click_replaces_the_focused_pane_by_default",
-  "crates/ui/tests/panel.rs::a_click_can_open_beside_and_then_focuses_where_it_shows",
-  "crates/ui/tests/panel.rs::do_nothing_leaves_clicks_to_drags_and_keys",
-  "crates/ui/tests/panel.rs::the_workspace_tab_picks_what_a_click_does",
+  "crates/ui-egui/tests/panel.rs::a_click_replaces_the_focused_pane_by_default",
+  "crates/ui-egui/tests/panel.rs::a_click_can_open_beside_and_then_focuses_where_it_shows",
+  "crates/ui-egui/tests/panel.rs::do_nothing_leaves_clicks_to_drags_and_keys",
+  "crates/ui-egui/tests/panel.rs::the_workspace_tab_picks_what_a_click_does",
 ]
 reference = ["crates/reader-core/src/settings/workspace.rs"]
 
@@ -434,8 +466,9 @@ area = "B"
 tier = "P2"
 milestone = "M5"
 status = "shipped"
+command = "pane.move"
 evidence = [
-  "crates/ui/tests/selection.rs::a_held_pane_lifts_and_moves_where_it_is_let_go",
+  "crates/ui-egui/tests/selection.rs::a_held_pane_lifts_and_moves_where_it_is_let_go",
   "crates/workspace/src/lift.rs::a_pane_docks_beside_the_nearest_edge_and_swaps_in_the_middle",
   "crates/workspace/src/tree.rs::a_moved_pane_halves_its_target_and_keeps_its_id",
 ]
@@ -448,11 +481,12 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::a_folder_brings_in_its_books_where_they_are_and_says_how_many",
-  "crates/ui/tests/library.rs::coming_back_to_the_window_finds_new_files_and_notices_gone_ones",
-  "crates/ui/tests/library.rs::importing_a_folder_again_brings_nothing_twice",
-  "crates/ui/tests/library.rs::a_folder_read_in_place_keeps_the_sheets_choices",
+  "crates/ui-egui/tests/library.rs::a_folder_brings_in_its_books_where_they_are_and_says_how_many",
+  "crates/ui-egui/tests/library.rs::coming_back_to_the_window_finds_new_files_and_notices_gone_ones",
+  "crates/ui-egui/tests/library.rs::importing_a_folder_again_brings_nothing_twice",
+  "crates/ui-egui/tests/library.rs::a_folder_read_in_place_keeps_the_sheets_choices",
   "crates/library/src/run_tests.rs::a_folder_read_in_place_lands_its_books_on_a_shelf_per_subfolder",
   "crates/library/src/run_tests.rs::a_rescan_of_an_unchanged_folder_lands_nothing",
   "crates/library/src/run_tests.rs::a_rescan_adds_only_under_a_watched_rung",
@@ -472,13 +506,14 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::imports_are_copies_the_library_keeps_and_deletes_with_the_book",
+  "crates/ui-egui/tests/library.rs::imports_are_copies_the_library_keeps_and_deletes_with_the_book",
   "crates/library/src/removal_tests.rs::copies_land_in_the_store_and_only_store_files_are_deleted",
   "crates/library/src/removal_tests.rs::store_copies_are_deleted_with_the_last_book_reading_them",
   "crates/library/src/run_tests.rs::a_copying_folder_lands_store_copies_that_remember_their_source",
-  "crates/ui/tests/library.rs::a_folder_copied_in_takes_only_what_counts",
-  "crates/ui/tests/library.rs::a_book_read_in_place_asks_before_it_leaves_its_folder",
+  "crates/ui-egui/tests/library.rs::a_folder_copied_in_takes_only_what_counts",
+  "crates/ui-egui/tests/library.rs::a_book_read_in_place_asks_before_it_leaves_its_folder",
 ]
 reference = ["crates/library-core/src/store.rs", "crates/library-runtime/src/features/library/import_modal.rs"]
 notes = "Imports, dropped files and folders imported as copies go into the library's files folder, known content kept once"
@@ -490,12 +525,13 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
   "crates/library/src/tests.rs::a_moved_file_is_the_same_book_and_keeps_its_place",
   "crates/library/src/tests.rs::a_file_edited_in_place_is_the_same_book_with_new_content",
   "crates/library/src/run_tests.rs::a_moved_file_is_followed_not_added_twice",
   "crates/library/src/ledger_tests.rs::a_known_book_at_its_own_address_is_skipped_and_a_moved_one_relinked",
-  "crates/ui/tests/library.rs::a_file_moved_within_a_folder_keeps_its_book_and_place",
+  "crates/ui-egui/tests/library.rs::a_file_moved_within_a_folder_keeps_its_book_and_place",
   "crates/library/src/marks_tests.rs::a_moved_file_keeps_its_shelves_and_marks",
 ]
 reference = ["crates/library-core/src/hash.rs", "crates/library-core/src/ledger.rs"]
@@ -508,12 +544,13 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::a_missing_book_asks_where_it_went_instead_of_opening",
-  "crates/ui/tests/panel.rs::a_missing_book_is_shown_but_never_opened",
-  "crates/ui/tests/library.rs::a_lost_book_is_found_again_by_choosing_its_file",
-  "crates/ui/tests/library.rs::searching_a_folder_finds_a_lost_book_under_any_name",
-  "crates/ui/tests/library.rs::a_namesake_with_other_content_is_offered_not_taken",
+  "crates/ui-egui/tests/library.rs::a_missing_book_asks_where_it_went_instead_of_opening",
+  "crates/ui-egui/tests/panel.rs::a_missing_book_is_shown_but_never_opened",
+  "crates/ui-egui/tests/library.rs::a_lost_book_is_found_again_by_choosing_its_file",
+  "crates/ui-egui/tests/library.rs::searching_a_folder_finds_a_lost_book_under_any_name",
+  "crates/ui-egui/tests/library.rs::a_namesake_with_other_content_is_offered_not_taken",
   "crates/library/src/ledger_tests.rs::a_missing_book_is_relinked_by_a_folder_that_never_placed_it",
 ]
 reference = ["crates/library-runtime/src/features/library/relink_modal.rs"]
@@ -526,6 +563,7 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
   "crates/library/src/shelves_tests.rs::shelves_nest_sort_by_name_and_may_share_a_name",
   "crates/library/src/shelves_tests.rs::moves_refuse_loops_and_names_may_repeat",
@@ -541,18 +579,18 @@ evidence = [
   "crates/library/src/shelves_tests.rs::a_book_moves_anywhere_in_a_shelfs_order",
   "crates/library/src/shelves_tests.rs::shelves_and_their_order_come_back_from_disk",
   "crates/library/src/key.rs::inserting_anywhere_keeps_every_key_in_order_and_valid",
-  "crates/ui/tests/library.rs::a_new_shelf_opens_and_is_named_in_the_breadcrumb",
-  "crates/ui/tests/library.rs::taking_a_shelf_apart_moves_its_shelves_up",
-  "crates/ui/tests/library.rs::home_can_leave_shelved_books_to_their_shelves",
+  "crates/ui-egui/tests/library.rs::a_new_shelf_opens_and_is_named_in_the_breadcrumb",
+  "crates/ui-egui/tests/library.rs::taking_a_shelf_apart_moves_its_shelves_up",
+  "crates/ui-egui/tests/library.rs::home_can_leave_shelved_books_to_their_shelves",
   "crates/library/src/arrange_tests.rs::shelves_and_books_mix_anywhere_and_moves_keep_their_order",
   "crates/library/src/arrange_tests.rs::a_level_from_before_keys_keeps_its_order_when_first_arranged",
-  "crates/ui/tests/arrange.rs::a_card_dropped_on_anothers_side_moves_there",
-  "crates/ui/tests/arrange.rs::a_shelf_moves_by_its_edges_and_takes_books_in_its_middle",
-  "crates/ui/tests/arrange.rs::carried_cards_make_room_and_settle_where_dropped",
+  "crates/ui-egui/tests/arrange.rs::a_card_dropped_on_anothers_side_moves_there",
+  "crates/ui-egui/tests/arrange.rs::a_shelf_moves_by_its_edges_and_takes_books_in_its_middle",
+  "crates/ui-egui/tests/arrange.rs::carried_cards_make_room_and_settle_where_dropped",
   "crates/library/src/moves_tests.rs::a_link_stands_among_its_level_and_moves_as_a_card",
   "crates/library/src/run_tests.rs::a_shelfs_badge_says_where_its_books_live_down_its_tree",
-  "crates/ui/tests/library.rs::a_shelf_row_in_the_list_unfolds_in_place_and_its_button_opens_it",
-  "crates/ui/tests/library.rs::a_link_lights_what_it_points_at_and_goes_without_it",
+  "crates/ui-egui/tests/library.rs::a_shelf_row_in_the_list_unfolds_in_place_and_its_button_opens_it",
+  "crates/ui-egui/tests/library.rs::a_link_lights_what_it_points_at_and_goes_without_it",
 ]
 reference = ["crates/library-core/src/shelf/mod.rs"]
 notes = "Nested shelves with unique sibling names, books on many; Home shows every book or only unshelved ones (M5 slice 4). Shelves and books share one arranged order per level by sync-safe keys, dragged in the grid (M5 slice 10). The list shows shelves as rows, not a tree"
@@ -564,8 +602,9 @@ area = "C"
 tier = "P1"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::a_folder_is_shelved_through_its_own_subfolders",
+  "crates/ui-egui/tests/library.rs::a_folder_is_shelved_through_its_own_subfolders",
   "crates/library/src/run_tests.rs::one_shelf_for_everything_files_every_subfolder_on_the_root",
   "crates/library/src/run_tests.rs::rungs_hang_as_the_disk_does_unless_a_hand_moved_them",
   "crates/library/src/gate_tests.rs::a_re_import_with_the_other_shape_re_files_the_tree",
@@ -581,7 +620,8 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
-evidence = ["crates/ui/tests/library.rs::the_view_menu_sets_layout_columns_covers_and_order", "crates/ui/tests/library.rs::titles_with_numbers_sort_by_their_value", "crates/library/src/tests.rs::numbers_in_names_sort_by_value_ignoring_case", "crates/library/src/tests.rs::books_without_an_author_sort_last_both_ways", "crates/ui/src/library/view.rs::automatic_columns_keep_cards_wide_within_the_limits"]
+command = "library.view"
+evidence = ["crates/ui-egui/tests/library.rs::the_view_menu_sets_layout_columns_covers_and_order", "crates/ui-egui/tests/library.rs::titles_with_numbers_sort_by_their_value", "crates/library/src/tests.rs::numbers_in_names_sort_by_value_ignoring_case", "crates/library/src/tests.rs::books_without_an_author_sort_last_both_ways", "crates/ui-egui/src/library/view.rs::automatic_columns_keep_cards_wide_within_the_limits"]
 reference = ["crates/library-core/src/view.rs", "crates/library-runtime/src/features/library/grid.rs"]
 notes = "Grid of A4 covers (fit or crop) or list; Auto or 2-10 columns; last read, title, author or added, either way (M5 slice 2); Arranged, the default, is the reader's own order (M5 slice 10)"
 
@@ -592,11 +632,12 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
     "crates/library/src/query_tests.rs::a_subsequence_that_holds_its_shape_matches_and_a_scatter_does_not",
-    "crates/ui/tests/search.rs::typing_filters_the_page_and_says_how_many_match",
-    "crates/ui/tests/search.rs::arrows_and_enter_show_a_book_from_another_shelf",
-    "crates/ui/tests/search.rs::escape_peels_the_list_the_text_the_focus_then_the_page",
+    "crates/ui-egui/tests/search.rs::typing_filters_the_page_and_says_how_many_match",
+    "crates/ui-egui/tests/search.rs::arrows_and_enter_show_a_book_from_another_shelf",
+    "crates/ui-egui/tests/search.rs::escape_peels_the_list_the_text_the_focus_then_the_page",
 ]
 reference = ["crates/library-core/src/query.rs", "crates/library-runtime/src/features/library/search_suggest.rs"]
 notes = "Title, author and address; substring or shaped subsequence; accents folded. The chosen card is shown and ringed (M5 slice 6)"
@@ -608,10 +649,11 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::ctrl_click_starts_a_selection_that_plain_clicks_then_extend",
-  "crates/ui/tests/library.rs::shift_click_picks_the_run_between_and_ctrl_a_picks_all",
-  "crates/ui/tests/library.rs::picks_go_on_a_new_shelf_together_and_come_off_it",
+  "crates/ui-egui/tests/library.rs::ctrl_click_starts_a_selection_that_plain_clicks_then_extend",
+  "crates/ui-egui/tests/library.rs::shift_click_picks_the_run_between_and_ctrl_a_picks_all",
+  "crates/ui-egui/tests/library.rs::picks_go_on_a_new_shelf_together_and_come_off_it",
 ]
 reference = ["crates/library-runtime/src/features/library/selection.rs"]
 notes = "Ctrl/Cmd-click, Shift ranges, Ctrl/Cmd+A; plain clicks pick while picking; a bar to shelve, take off or remove (M5 slice 5)"
@@ -623,10 +665,11 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+ui_only = true
 evidence = [
-  "crates/ui/tests/library.rs::dragging_a_book_onto_a_shelf_files_it_and_says_so",
-  "crates/ui/tests/library.rs::a_dragged_selection_moves_onto_a_shelf_together",
-  "crates/ui/tests/library.rs::imports_are_copies_the_library_keeps_and_deletes_with_the_book",
+  "crates/ui-egui/tests/library.rs::dragging_a_book_onto_a_shelf_files_it_and_says_so",
+  "crates/ui-egui/tests/library.rs::a_dragged_selection_moves_onto_a_shelf_together",
+  "crates/ui-egui/tests/library.rs::imports_are_copies_the_library_keeps_and_deletes_with_the_book",
 ]
 reference = ["crates/library-runtime/src/features/library/dnd"]
 notes = "Books, selections and shelves drag onto shelf cards and crumbs, Alt adds (M5 slices 4-5). Files dropped from the OS are imported onto the shelf under the pointer, folders added in place. Dragging onto panes is workspace.library-click (slice 7)"
@@ -638,10 +681,11 @@ area = "C"
 tier = "P1"
 milestone = "M5"
 status = "shipped"
+ui_only = true
 evidence = [
-  "crates/ui/tests/library.rs::a_long_trail_folds_its_middle_and_leads_back_up",
-  "crates/ui/tests/library.rs::the_breadcrumb_starts_at_home_and_names_its_way_back",
-  "crates/ui/tests/library.rs::escape_while_naming_keeps_the_old_name_and_the_page",
+  "crates/ui-egui/tests/library.rs::a_long_trail_folds_its_middle_and_leads_back_up",
+  "crates/ui-egui/tests/library.rs::the_breadcrumb_starts_at_home_and_names_its_way_back",
+  "crates/ui-egui/tests/library.rs::escape_while_naming_keeps_the_old_name_and_the_page",
 ]
 reference = ["crates/library-runtime/src/features/library/breadcrumb"]
 notes = "Home, then each level; the oldest fold behind … by measured width (never one, three by count before a measure), opening on hover, a carry, a click or Down. The open shelf's crumb renames or removes it and notes a watched folder's cut"
@@ -653,10 +697,11 @@ area = "C"
 tier = "P1"
 milestone = "M5"
 status = "shipped"
+ui_only = true
 evidence = [
-  "crates/ui/tests/library.rs::a_card_menu_offers_what_a_book_can_do",
-  "crates/ui/tests/library.rs::duplicating_a_book_makes_the_librarys_own_copy_under_the_next_name",
-  "crates/ui/tests/library.rs::a_folders_shelf_menu_watches_its_own_subfolder",
+  "crates/ui-egui/tests/library.rs::a_card_menu_offers_what_a_book_can_do",
+  "crates/ui-egui/tests/library.rs::duplicating_a_book_makes_the_librarys_own_copy_under_the_next_name",
+  "crates/ui-egui/tests/library.rs::a_folders_shelf_menu_watches_its_own_subfolder",
   "crates/library/src/run_tests.rs::a_book_links_duplicate_copies_its_book_and_a_shelf_links_stays_a_link",
   "crates/library/src/run_tests.rs::a_shelfs_watch_writes_its_own_rung_and_the_root_writes_the_tree",
 ]
@@ -670,9 +715,10 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+ui_only = true
 evidence = [
-  "crates/ui/tests/library.rs::removing_a_folder_book_hides_it_until_restored_from_its_menu",
-  "crates/ui/tests/library.rs::imports_are_copies_the_library_keeps_and_deletes_with_the_book",
+  "crates/ui-egui/tests/library.rs::removing_a_folder_book_hides_it_until_restored_from_its_menu",
+  "crates/ui-egui/tests/library.rs::imports_are_copies_the_library_keeps_and_deletes_with_the_book",
   "crates/library/src/removal_tests.rs::store_copies_are_deleted_with_the_last_book_reading_them",
   "crates/library/src/gate_tests.rs::replace_takes_the_shelf_s_books_out_and_files_the_folder_there",
 ]
@@ -686,8 +732,9 @@ area = "C"
 tier = "P1"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::removing_a_folder_book_hides_it_until_restored_from_its_menu",
+  "crates/ui-egui/tests/library.rs::removing_a_folder_book_hides_it_until_restored_from_its_menu",
   "crates/library/src/removal_tests.rs::a_folder_book_removed_stays_out_until_restored_with_its_place",
   "crates/library/src/run_tests.rs::a_restore_lands_on_the_shelf_it_left_else_the_folders_root",
   "crates/library/src/run_tests.rs::a_book_moved_off_the_tree_is_offered_back_with_where_it_went",
@@ -703,9 +750,10 @@ area = "C"
 tier = "P2"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/src/library/runs.rs::a_scan_spins_then_reading_fills_the_ring",
-  "crates/ui/src/library/runs.rs::beats_are_sent_once_a_percent",
+  "crates/engine/src/library/runs.rs::a_scan_spins_then_reading_fills_the_ring",
+  "crates/engine/src/library/runs.rs::beats_are_sent_once_a_percent",
 ]
 reference = ["crates/library-runtime/src/features/library/progress_dock.rs"]
 
@@ -716,9 +764,10 @@ area = "C"
 tier = "P0"
 milestone = "M5"
 status = "shipped"
+command = "reader.open-book"
 evidence = [
-    "crates/ui/tests/library.rs::an_opened_book_is_recorded_once_and_reopens_where_it_was_left",
-    "crates/ui/tests/library.rs::the_library_and_positions_come_back_after_a_restart",
+    "crates/ui-egui/tests/library.rs::an_opened_book_is_recorded_once_and_reopens_where_it_was_left",
+    "crates/ui-egui/tests/library.rs::the_library_and_positions_come_back_after_a_restart",
 ]
 reference = ["crates/library-core/src/book/mod.rs"]
 
@@ -729,7 +778,8 @@ area = "C"
 tier = "P1"
 milestone = "M5"
 status = "shipped"
-evidence = ["crates/ui/tests/library.rs::a_book_with_a_cover_shows_it_in_the_library", "crates/session/src/cover.rs::a_book_shows_its_cover_shrunk_never_enlarged", "crates/session/src/cover.rs::a_pdf_shows_its_first_page", "crates/session/src/cover.rs::markdown_shows_its_opening_picture_and_text_has_none"]
+ui_only = true
+evidence = ["crates/ui-egui/tests/library.rs::a_book_with_a_cover_shows_it_in_the_library", "crates/session/src/cover.rs::a_book_shows_its_cover_shrunk_never_enlarged", "crates/session/src/cover.rs::a_pdf_shows_its_first_page", "crates/session/src/cover.rs::markdown_shows_its_opening_picture_and_text_has_none"]
 reference = ["crates/library-runtime/src/features/library/cover_thumb.rs"]
 notes = "Read on a worker, cached as JPEG or PNG in the platform cache; text without art gets a drawn cover (M5 slice 2)"
 
@@ -750,8 +800,9 @@ area = "C"
 tier = "P2"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::a_move_onto_a_shelf_holding_the_name_asks_first",
+  "crates/ui-egui/tests/library.rs::a_move_onto_a_shelf_holding_the_name_asks_first",
   "crates/library/src/conflict_tests.rs::a_name_already_on_the_level_asks_and_an_empty_level_never_does",
   "crates/library/src/gate_tests.rs::a_held_name_asks_and_offers_by_how_the_folder_is_read",
   "crates/library/src/gate_tests.rs::the_shelf_answers_merge_link_and_add_as_new",
@@ -772,8 +823,9 @@ area = "C"
 tier = "P2"
 milestone = "M5"
 status = "shipped"
+command = "library.act"
 evidence = [
-  "crates/ui/tests/library.rs::read_separately_keeps_a_second_place_in_the_same_file",
+  "crates/ui-egui/tests/library.rs::read_separately_keeps_a_second_place_in_the_same_file",
   "crates/library/src/removal_tests.rs::a_twin_reads_separately_and_follows_its_originals_file",
   "crates/library/src/removal_tests.rs::removing_an_original_hands_its_files_to_a_twin",
 ]
@@ -787,10 +839,11 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+command = "reader.open"
 evidence = [
-    "crates/ui/tests/reading.rs::an_empty_pane_offers_the_open_dialog",
-    "crates/ui/tests/reading.rs::open_beside_splits_and_opens_in_the_new_pane",
-    "crates/ui/tests/reading.rs::a_dropped_file_opens_in_the_pane_under_the_pointer",
+    "crates/ui-egui/tests/reading.rs::an_empty_pane_offers_the_open_dialog",
+    "crates/ui-egui/tests/reading.rs::open_beside_splits_and_opens_in_the_new_pane",
+    "crates/ui-egui/tests/reading.rs::a_dropped_file_opens_in_the_pane_under_the_pointer",
     "apps/mareader/src/single_instance.rs::a_second_launch_hands_its_files_to_the_first",
     "apps/mareader/src/inbox.rs::mail_is_taken_once",
     "crates/pdf/src/check.rs::each_refusal_names_its_cause",
@@ -805,11 +858,12 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 reference = ["crates/pdf-engine"]
 evidence = [
     "crates/pdf/src/document.rs::a_tile_matches_its_part_of_the_whole_page",
     "crates/pdf/src/tiles.rs::tiles_cover_the_page_once_and_stay_within_the_side",
-    "crates/ui/tests/pages.rs::a_deep_zoom_draws_tiles_once_the_view_rests",
+    "crates/ui-egui/tests/pages.rs::a_deep_zoom_draws_tiles_once_the_view_rests",
 ]
 notes = "Whole pages on worker threads at the device scale; the visible page is demanded before nearby prefetch, and a centered three-dot mark shows while its raster is missing. Past the GPU texture side or hayro's caps, a 2048 px backdrop sits under tiles of up to 2048 px, asked for once the view rests. PDF page-tree indexing is still complete before the view opens"
 
@@ -820,7 +874,8 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/modes.rs::a_single_page_shows_alone_and_every_arrow_turns_it"]
+command = "pane.view"
+evidence = ["crates/ui-egui/tests/modes.rs::a_single_page_shows_alone_and_every_arrow_turns_it"]
 reference = ["crates/reader-core/src/view.rs"]
 notes = "One page centred, scrolling once zoomed past the pane; every arrow and vim key turns it, as in mareader"
 
@@ -831,7 +886,8 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/modes.rs::a_spread_pairs_pages_and_turns_by_two"]
+command = "pane.view"
+evidence = ["crates/ui-egui/tests/modes.rs::a_spread_pairs_pages_and_turns_by_two"]
 reference = ["crates/reader-core/src/view.rs"]
 notes = "Pages 1-2, 3-4 touching at the spine; entering fits both widths; turns step by two"
 
@@ -842,11 +898,12 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+command = "pane.view"
 reference = ["crates/reader-runtime/src/features/virtualizers.rs"]
 evidence = [
-    "crates/ui/tests/reading.rs::the_wheel_scrolls_and_only_nearby_pages_are_kept_drawn",
-    "crates/ui/tests/pages.rs::the_progress_line_follows_the_scroll",
-    "crates/ui/tests/pages.rs::no_gap_lets_strip_pages_touch",
+    "crates/ui-egui/tests/reading.rs::the_wheel_scrolls_and_only_nearby_pages_are_kept_drawn",
+    "crates/ui-egui/tests/pages.rs::the_progress_line_follows_the_scroll",
+    "crates/ui-egui/tests/pages.rs::no_gap_lets_strip_pages_touch",
 ]
 notes = "Virtualised from page sizes alone (tested at 10,000 pages); the progress line follows the scroll; No Gap lets pages touch"
 
@@ -857,7 +914,8 @@ area = "D"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/modes.rs::a_plain_wheel_runs_the_horizontal_strip_sideways"]
+command = "pane.view"
+evidence = ["crates/ui-egui/tests/modes.rs::a_plain_wheel_runs_the_horizontal_strip_sideways"]
 reference = ["crates/reader-core/src/view.rs"]
 notes = "Zoom holds the point under its pivot on both axes; fit page fits the height; a plain wheel runs sideways"
 
@@ -868,8 +926,9 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+command = "pane.zoom"
 reference = ["crates/reader-core/src/zoom_math.rs", "crates/reader-runtime/src/zoom/mod.rs"]
-evidence = ["crates/ui/src/zoom.rs::steps_climb_to_the_next_preset_and_stop_at_the_ends", "crates/ui/src/zoom.rs::chained_steps_walk_the_whole_ladder", "crates/ui/tests/reading.rs::zoom_keys_step_the_ladder_and_keep_the_page_in_view"]
+evidence = ["crates/ui-egui/src/zoom.rs::steps_climb_to_the_next_preset_and_stop_at_the_ends", "crates/ui-egui/src/zoom.rs::chained_steps_walk_the_whole_ladder", "crates/ui-egui/tests/reading.rs::zoom_keys_step_the_ladder_and_keep_the_page_in_view"]
 
 [[feature]]
 id = "pdf.fit"
@@ -878,8 +937,9 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+command = "pane.zoom"
 reference = ["crates/reader-core/src/zoom_math.rs"]
-evidence = ["crates/ui/src/zoom.rs::fit_page_takes_the_tighter_side", "crates/ui/tests/reading.rs::the_menu_fits_the_page", "crates/ui/tests/reading.rs::a_resize_refits_and_keeps_the_page"]
+evidence = ["crates/ui-egui/src/zoom.rs::fit_page_takes_the_tighter_side", "crates/ui-egui/tests/reading.rs::the_menu_fits_the_page", "crates/ui-egui/tests/reading.rs::a_resize_refits_and_keeps_the_page"]
 
 [[feature]]
 id = "pdf.zoom-anchor"
@@ -888,8 +948,9 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 reference = ["crates/reader-runtime/src/zoom/coordinator.rs"]
-evidence = ["crates/ui/src/pdf_view.rs::zooming_holds_the_spot_under_the_pivot", "crates/ui/src/zoom.rs::a_pinch_stretches_until_it_settles", "crates/ui/tests/reading.rs::a_pinch_zooms_about_the_pointer"]
+evidence = ["crates/ui-egui/src/pdf_view.rs::zooming_holds_the_spot_under_the_pivot", "crates/ui-egui/src/zoom.rs::a_pinch_stretches_until_it_settles", "crates/ui-egui/tests/reading.rs::a_pinch_zooms_about_the_pointer"]
 
 [[feature]]
 id = "pdf.mixed-sizes"
@@ -898,12 +959,13 @@ area = "D"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+command = "pane.zoom"
 reference = ["crates/reader-core/src/settings/layout.rs"]
 evidence = [
-    "crates/ui/tests/pages.rs::a_fit_follows_pages_of_another_size_and_auto_resize_a_set_zoom",
-    "crates/ui/tests/pages.rs::a_set_zoom_shrinks_with_the_pane_and_grows_back_only_to_itself",
-    "crates/ui/src/zoom.rs::a_kept_zoom_shrinks_like_a_fit_and_grows_back_only_to_itself",
-    "crates/ui/tests/pages.rs::documents_open_at_the_default_fit",
+    "crates/ui-egui/tests/pages.rs::a_fit_follows_pages_of_another_size_and_auto_resize_a_set_zoom",
+    "crates/ui-egui/tests/pages.rs::a_set_zoom_shrinks_with_the_pane_and_grows_back_only_to_itself",
+    "crates/ui-egui/src/zoom.rs::a_kept_zoom_shrinks_like_a_fit_and_grows_back_only_to_itself",
+    "crates/ui-egui/tests/pages.rs::documents_open_at_the_default_fit",
 ]
 notes = "One zoom per pane; a fit measures the page read and follows a page of another size once it settles; Keep zoom on other page sizes makes a zoom set by hand scale as its fit would, with the pane and with wider pages, but never past the zoom set, which is remembered until a new one; the default fit opens documents"
 
@@ -914,7 +976,8 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/selection.rs::dragging_over_text_selects_it_and_copy_takes_exactly_that", "crates/ui/tests/selection.rs::double_and_triple_clicks_take_a_word_and_a_line", "crates/ui/tests/selection.rs::dragging_past_the_bottom_scrolls_and_selects_into_the_next_page", "crates/ui/tests/selection.rs::the_wheel_scrolls_during_a_drag_and_the_selection_follows", "crates/pdf/src/document.rs::a_page_reads_back_its_lines_words_and_links"]
+command = "mark.select"
+evidence = ["crates/ui-egui/tests/selection.rs::dragging_over_text_selects_it_and_copy_takes_exactly_that", "crates/ui-egui/tests/selection.rs::double_and_triple_clicks_take_a_word_and_a_line", "crates/ui-egui/tests/selection.rs::dragging_past_the_bottom_scrolls_and_selects_into_the_next_page", "crates/ui-egui/tests/selection.rs::the_wheel_scrolls_during_a_drag_and_the_selection_follows", "crates/pdf/src/document.rs::a_page_reads_back_its_lines_words_and_links"]
 reference = ["crates/reader-runtime/src/effects/reader/page_selection.rs"]
 notes = "Text layers from hayro glyph runs (OCR text included) for pages in view, read on a worker and kept by count. Drag across pages with edge scrolling or the wheel (egui ignores the wheel during drags, so the selection forwards it), double click for a word, triple for a line, Cmd/Ctrl+C copies, Escape clears. Selection.pages() gives the page range mareader tracks for the AI pill (M6)"
 
@@ -925,7 +988,8 @@ area = "D"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/selection.rs::an_internal_link_turns_this_pane_and_a_web_link_opens_the_browser", "crates/ui/tests/selection.rs::text_shows_a_text_cursor_and_links_a_hand", "crates/pdf/src/links.rs::only_web_and_mail_schemes_are_followed", "crates/pdf/src/links.rs::link_annotations_resolve_to_pages_and_checked_addresses"]
+command = "page.go"
+evidence = ["crates/ui-egui/tests/selection.rs::an_internal_link_turns_this_pane_and_a_web_link_opens_the_browser", "crates/ui-egui/tests/selection.rs::text_shows_a_text_cursor_and_links_a_hand", "crates/pdf/src/links.rs::only_web_and_mail_schemes_are_followed", "crates/pdf/src/links.rs::link_annotations_resolve_to_pages_and_checked_addresses"]
 reference = ["crates/reader-runtime/src/effects/reader/link_navigation.rs"]
 notes = "/Link annotations: /Dest, GoTo and named destinations through the outline's resolver, the four named page turns, and URI actions for http, https and mailto only (checked when read and again before opening). A hand cursor and a tooltip (the address, or Go to page N); a click turns only that pane"
 
@@ -936,6 +1000,7 @@ area = "D"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+command = "reader.open"
 reference = ["crates/reader-core/src/filename.rs"]
 evidence = ["crates/pdf/src/title.rs::junk_titles_fall_back_to_the_file_name", "crates/session/src/tests.rs::opening_names_the_document_by_title_or_file"]
 
@@ -946,14 +1011,15 @@ area = "D"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+command = "settings.set"
 reference = ["crates/reader-core/src/settings/layout.rs"]
 evidence = [
-    "crates/ui/tests/gpu.rs::page_shadow_darkens_the_paper_under_a_page_until_switched_off",
-    "crates/ui/tests/pages.rs::no_gap_lets_strip_pages_touch",
-    "crates/ui/tests/pages.rs::the_page_margin_is_air_beside_a_fitted_page",
-    "crates/ui/tests/pages.rs::the_floating_label_shows_while_the_bar_hides_and_room_allows",
-    "crates/ui/tests/pages.rs::always_show_keeps_the_label_under_a_pinned_bar",
-    "crates/ui/src/floating_label.rs::the_budget_is_the_blank_side_and_a_quarter_page",
+    "crates/ui-egui/tests/gpu.rs::page_shadow_darkens_the_paper_under_a_page_until_switched_off",
+    "crates/ui-egui/tests/pages.rs::no_gap_lets_strip_pages_touch",
+    "crates/ui-egui/tests/pages.rs::the_page_margin_is_air_beside_a_fitted_page",
+    "crates/ui-egui/tests/pages.rs::the_floating_label_shows_while_the_bar_hides_and_room_allows",
+    "crates/ui-egui/tests/pages.rs::always_show_keeps_the_label_under_a_pinned_bar",
+    "crates/ui-egui/src/floating_label.rs::the_budget_is_the_blank_side_and_a_quarter_page",
 ]
 notes = "Shadow, no gap, page margin (horizontal, none sideways), indicator, progress bar and the floating label with its content, persist and width limit"
 
@@ -964,12 +1030,13 @@ area = "D"
 tier = "P2"
 milestone = "M7"
 status = "shipped"
+command = "page.autoscroll"
 reference = ["crates/reader-runtime/src/effects/reader/auto_scroll.rs"]
 evidence = [
-    "crates/ui/tests/auto_scroll.rs::shift_a_drifts_at_its_pace_whatever_the_steps",
-    "crates/ui/tests/auto_scroll.rs::paged_modes_refuse_it_and_say_why",
-    "crates/ui/tests/auto_scroll.rs::escape_and_a_paged_mode_stop_it",
-    "crates/ui/tests/auto_scroll.rs::it_stops_at_the_strips_end",
+    "crates/ui-egui/tests/auto_scroll.rs::shift_a_drifts_at_its_pace_whatever_the_steps",
+    "crates/ui-egui/tests/auto_scroll.rs::paged_modes_refuse_it_and_say_why",
+    "crates/ui-egui/tests/auto_scroll.rs::escape_and_a_paged_mode_stop_it",
+    "crates/ui-egui/tests/auto_scroll.rs::it_stops_at_the_strips_end",
 ]
 notes = "Shift+A and the View menu row; 72 px a second at any frame rate, paused by a held press; stops at the end, on Escape, paged views and pane blur"
 
@@ -980,7 +1047,8 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/epub/src/book.rs::the_sample_opens_with_its_title_and_chapters", "crates/epub/src/book.rs::the_cover_comes_first_and_draws_in_colour", "crates/session/src/tests.rs::an_epub_opens_by_its_bytes_and_draws_its_pages", "crates/ui/tests/reading.rs::an_epub_opens_titled_with_its_pages_drawn", "crates/epub/tests/hostile.rs::a_real_epub_2_book_opens_with_its_ncx_and_cover", "crates/epub/tests/hostile.rs::an_epub_2_book_reads_its_ncx_cover_and_entities", "crates/session/src/cover.rs::a_books_author_is_its_first_creator"]
+command = "reader.open"
+evidence = ["crates/epub/src/book.rs::the_sample_opens_with_its_title_and_chapters", "crates/epub/src/book.rs::the_cover_comes_first_and_draws_in_colour", "crates/session/src/tests.rs::an_epub_opens_by_its_bytes_and_draws_its_pages", "crates/ui-egui/tests/reading.rs::an_epub_opens_titled_with_its_pages_drawn", "crates/epub/tests/hostile.rs::a_real_epub_2_book_opens_with_its_ncx_and_cover", "crates/epub/tests/hostile.rs::an_epub_2_book_reads_its_ncx_cover_and_entities", "crates/session/src/cover.rs::a_books_author_is_its_first_creator"]
 notes = "Replaces mareader's txt/md formats; docs/epub.md. Container, spine, title, language and the OPF cover (M4 slices 1-2); EPUB 2 with an NCX and a meta cover, proved on Project Gutenberg's The Raven (slice 7). The first dc:creator names the book's author in the library (M5 slice 2)"
 
 [[feature]]
@@ -990,10 +1058,11 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "reader.open"
 evidence = [
     "crates/epub/src/book.rs::opening_previews_a_stable_spine_place_then_finishes_once",
     "crates/session/src/tests.rs::an_epub_previews_a_stable_location_then_completes_once",
-    "crates/ui/src/page_bar.rs::a_preview_keeps_the_saved_global_page_number",
+    "crates/ui-egui/src/page_bar.rs::a_preview_keeps_the_saved_global_page_number",
 ]
 reference = ["crates/epub/src/book.rs", "crates/session/src/lib.rs"]
 notes = "Stable spine positions open a bounded target-centered preview without laying out the prefix, followed by one full completion pass. The page bar keeps the saved global page and shows the available count with + until complete"
@@ -1005,6 +1074,7 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "reader.open"
 evidence = ["crates/epub/tests/convert.rs::the_raven_as_text_finds_its_headings_wrapped_prose_and_verse", "crates/epub/tests/convert.rs::the_river_notes_open_with_chapters_links_a_note_and_a_picture", "crates/epub/src/convert/tests.rs::text_decodes_from_its_bom_utf_8_or_a_guessed_legacy_encoding", "crates/epub/src/convert/tests.rs::markdown_takes_its_title_author_and_language_from_front_matter", "crates/session/src/tests.rs::markdown_and_text_open_by_name_as_converted_books", "crates/session/src/tests.rs::a_markdown_file_s_pictures_are_read_from_beside_it"]
 reference = ["crates/txt-core/src/parser.rs", "crates/md-core/src/metadata.rs", "crates/md-core/src/outline.rs", "crates/reader-core/src/format.rs"]
 notes = "mareader's .txt/.text and .md/.markdown/.mdown open as EPUBs built in memory, so every EPUB setting applies (docs/epub.md). Markdown: GitHub's flavour, front matter title and author, a chapter per # heading, local pictures packed. Text: blank, indent or line paragraphs, wrapped prose joined, verse kept, headings found, legacy encodings guessed"
@@ -1016,6 +1086,7 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "reader.open"
 evidence = ["crates/reflow/src/flow.rs::long_paragraphs_split_between_lines", "crates/reflow/src/flow.rs::a_heading_never_ends_a_page", "crates/reflow/src/flow.rs::tables_split_between_rows", "crates/epub/src/xhtml.rs::lists_indent_mark_and_tighten_their_items", "crates/epub/src/xhtml.rs::tables_read_rows_cells_and_heads", "crates/epub/src/xhtml.rs::stylesheets_style_by_tag_and_class", "crates/reflow/src/flow.rs::layouts_are_laid_for_the_pages_drawn_and_no_others", "crates/reflow/src/flow.rs::a_page_laid_again_draws_and_reads_the_same", "crates/reflow/src/flow.rs::kept_layouts_stay_under_the_cap_and_the_used_stay", "crates/reflow/src/label.rs::scripts_without_spaces_break_between_words", "crates/reflow/src/flow.rs::styled_prose_keeps_its_boxes_at_the_readers_size", "crates/epub/src/xhtml.rs::avoiding_a_break_before_holds_the_block_before"]
 notes = "docs/epub.md: headings, lists, quotes, pre, inline code, tables, rules, images and a CSS subset (M4 slice 2); justification and hyphenation are type.justify-hyphenate. Only line boxes stay set; layouts are laid again for the pages drawn, 32 MiB kept at most. Every styled chapter keeps the book's boxes, margins and rules (docs/epub-layout.md)"
 reference = ["crates/reflow-core/src/pager.rs"]
@@ -1027,7 +1098,8 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/ui/tests/reading.rs::a_book_s_vertical_strip_streams_one_column_edge_to_edge", "crates/reflow/src/flow.rs::bands_hold_each_page_s_text_and_the_gap_its_cut_swallowed", "crates/ui/src/layout.rs::a_column_off_centre_keeps_the_margin_from_its_edge", "crates/reflow/src/flow.rs::a_pane_sized_page_centres_a_column_no_longer_than_its_line", "crates/ui/src/pdf_view.rs::a_resized_pane_resets_its_book_once_it_holds_still"]
+command = "pane.view"
+evidence = ["crates/ui-egui/tests/reading.rs::a_book_s_vertical_strip_streams_one_column_edge_to_edge", "crates/reflow/src/flow.rs::bands_hold_each_page_s_text_and_the_gap_its_cut_swallowed", "crates/ui-egui/src/layout.rs::a_column_off_centre_keeps_the_margin_from_its_edge", "crates/reflow/src/flow.rs::a_pane_sized_page_centres_a_column_no_longer_than_its_line", "crates/ui-egui/src/pdf_view.rs::a_resized_pane_resets_its_book_once_it_holds_still"]
 reference = ["crates/reflow-core/src/geometry.rs"]
 notes = "Single, spread and the strip show whole pages; the vertical strip streams each page cut to its text, edge to edge on its paper. One raster per page in every mode (docs/epub.md). Single and spread pages take the pane's size and reset once a resize settles"
 
@@ -1038,7 +1110,8 @@ area = "E"
 tier = "P1"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/reflow/src/picture.rs::junk_and_giants_are_refused", "crates/reflow/src/picture.rs::decodes_shrink_to_their_bucket_and_are_reused", "crates/reflow/src/flow.rs::images_shrink_to_the_column_and_the_page_never_split", "crates/reflow/src/raster.rs::images_draw_their_pixels_and_junk_draws_a_box", "crates/epub/src/xhtml.rs::rules_and_images_are_blocks_and_missing_images_show_alt", "crates/ui/tests/gpu.rs::a_book_s_pictures_keep_their_colours_in_the_dark_unless_themed", "crates/ui/tests/reading.rs::the_fonts_tab_switches_a_book_s_pictures_to_the_theme", "crates/reflow/src/page_text.rs::colour_fonts_are_told_by_their_tables", "crates/ui/tests/reading.rs::the_fonts_tab_switches_a_book_s_emoji_to_the_theme"]
+ui_only = true
+evidence = ["crates/reflow/src/picture.rs::junk_and_giants_are_refused", "crates/reflow/src/picture.rs::decodes_shrink_to_their_bucket_and_are_reused", "crates/reflow/src/flow.rs::images_shrink_to_the_column_and_the_page_never_split", "crates/reflow/src/raster.rs::images_draw_their_pixels_and_junk_draws_a_box", "crates/epub/src/xhtml.rs::rules_and_images_are_blocks_and_missing_images_show_alt", "crates/ui-egui/tests/gpu.rs::a_book_s_pictures_keep_their_colours_in_the_dark_unless_themed", "crates/ui-egui/tests/reading.rs::the_fonts_tab_switches_a_book_s_pictures_to_the_theme", "crates/reflow/src/page_text.rs::colour_fonts_are_told_by_their_tables", "crates/ui-egui/tests/reading.rs::the_fonts_tab_switches_a_book_s_emoji_to_the_theme"]
 notes = "PNG, JPEG, GIF and WebP; header-probed caps, lazy decode into a 64 MB cache, alt text when refused (docs/epub.md). Pictures keep their colours in every theme, as mareader's; Settings › Fonts › Theme pictures tints them with the page"
 
 [[feature]]
@@ -1048,7 +1121,8 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/epub/src/book.rs::the_contents_list_chapters_and_parts_where_they_are", "crates/epub/src/book.rs::a_book_without_contents_lists_its_headings", "crates/ui/tests/navigation.rs::a_book_s_contents_jump_to_its_parts_and_follow_the_page"]
+command = "page.go"
+evidence = ["crates/epub/src/book.rs::the_contents_list_chapters_and_parts_where_they_are", "crates/epub/src/book.rs::a_book_without_contents_lists_its_headings", "crates/ui-egui/tests/navigation.rs::a_book_s_contents_jump_to_its_parts_and_follow_the_page"]
 reference = ["crates/reader-runtime/src/effects/reader/reflow_outline.rs"]
 notes = "nav, else NCX, flattened with depth; a book listing nothing outlines its headings as mareader does. Pages recomputed from block places on every re-set"
 
@@ -1059,7 +1133,8 @@ area = "E"
 tier = "P1"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/ui/tests/selection.rs::a_book_s_links_turn_its_pages_and_open_the_browser", "crates/epub/src/xhtml.rs::links_mark_their_words_and_keep_where_they_lead", "crates/reflow/src/flow.rs::links_box_their_words_on_every_line_they_cross"]
+command = "page.go"
+evidence = ["crates/ui-egui/tests/selection.rs::a_book_s_links_turn_its_pages_and_open_the_browser", "crates/epub/src/xhtml.rs::links_mark_their_words_and_keep_where_they_lead", "crates/reflow/src/flow.rs::links_box_their_words_on_every_line_they_cross"]
 notes = "Underlined in the text's own ink, not the accent: pages are greys themed later. External links pass the PDF path's scheme check"
 
 [[feature]]
@@ -1069,7 +1144,8 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/ui/tests/reading.rs::bigger_type_sets_an_open_book_again_at_the_page_read", "crates/ui/tests/reading.rs::a_book_read_at_exit_reopens_at_its_place_in_new_type", "crates/epub/src/xhtml.rs::ids_mark_their_block_or_their_place_in_its_text"]
+command = "reader.open"
+evidence = ["crates/ui-egui/tests/reading.rs::bigger_type_sets_an_open_book_again_at_the_page_read", "crates/ui-egui/tests/reading.rs::a_book_read_at_exit_reopens_at_its_place_in_new_type", "crates/epub/src/xhtml.rs::ids_mark_their_block_or_their_place_in_its_text"]
 reference = ["crates/reader-runtime/src/effects/reader/reflow_layout.rs"]
 notes = "A place is a block and byte offset; re-sets and the next launch reopen on the page holding it"
 
@@ -1080,7 +1156,8 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/ui/tests/selection.rs::a_book_s_text_selects_and_copies_with_wrapped_lines_joined", "crates/reflow/src/page_text.rs::a_page_reads_back_its_words_with_wrapped_lines_joined", "crates/reflow/src/page_text.rs::justified_and_hyphenated_lines_box_each_letter_where_drawn", "crates/pdf/src/text.rs::set_lines_copy_wrapped_ones_unbroken", "crates/ui/src/selection.rs::a_page_going_on_from_the_last_copies_unbroken"]
+command = "mark.select"
+evidence = ["crates/ui-egui/tests/selection.rs::a_book_s_text_selects_and_copies_with_wrapped_lines_joined", "crates/reflow/src/page_text.rs::a_page_reads_back_its_words_with_wrapped_lines_joined", "crates/reflow/src/page_text.rs::justified_and_hyphenated_lines_box_each_letter_where_drawn", "crates/pdf/src/text.rs::set_lines_copy_wrapped_ones_unbroken", "crates/ui-egui/src/selection.rs::a_page_going_on_from_the_last_copies_unbroken"]
 reference = ["crates/reader-runtime/src/effects/reader/page_selection.rs"]
 notes = "Characters from parley's clusters in the PDF path's text layer, so every gesture is shared. Wrapped lines and pages copy unbroken; a triple click takes the paragraph, as a browser does"
 
@@ -1091,6 +1168,7 @@ area = "E"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "reader.open"
 evidence = ["crates/epub/tests/hostile.rs::a_lying_entry_size_can_t_inflate_past_it", "crates/epub/tests/hostile.rs::archives_past_the_caps_are_refused", "crates/epub/tests/hostile.rs::a_deep_nav_falls_back_to_the_headings", "crates/epub/tests/hostile.rs::a_deep_ncx_falls_back_to_the_headings", "crates/epub/tests/hostile.rs::a_long_refinement_chain_costs_only_the_metadata", "crates/epub/tests/hostile.rs::broken_markup_still_reads", "crates/epub/tests/hostile.rs::missing_and_escaping_paths_are_skipped", "crates/epub/tests/hostile.rs::a_giant_picture_shows_its_alt_text", "crates/epub/tests/hostile.rs::deep_markup_and_costly_styles_open", "crates/epub/tests/hostile.rs::a_flood_of_paragraphs_opens_and_past_the_cap_is_refused", "crates/epub/tests/hostile.rs::mangled_copies_of_a_book_never_crash", "crates/epub/src/guard.rs::contents_depth_counts_what_rbook_stacks", "crates/epub/src/guard.rs::refinement_chains_are_followed_and_cycles_end"]
 notes = "docs/epub.md: caps on the zip, contents and metadata nesting, markup, sheets and blocks; layouts are laid on demand (docs/memory.md); broken and non-UTF-8 markup reads; a refusal is a toast"
 
@@ -1101,6 +1179,7 @@ area = "F"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+command = "settings.appearance"
 evidence = ["crates/appearance/src/model.rs::mareader_json_reads_unchanged", "crates/appearance/src/model.rs::sanitize_clamps_every_range"]
 reference = ["crates/reader-core/src/appearance/model.rs"]
 
@@ -1111,6 +1190,7 @@ area = "F"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 evidence = ["crates/appearance/src/tokens.rs::untinted_tokens_are_the_css_values", "crates/appearance/src/tokens.rs::sepia_stays_in_its_own_hue"]
 reference = ["crates/reader-core/src/appearance/shared/tint.rs", "crates/reader-core/src/appearance/base.rs"]
 
@@ -1121,11 +1201,12 @@ area = "F"
 tier = "P0"
 milestone = "M3"
 status = "shipped"
+ui_only = true
 evidence = [
   "crates/appearance/src/filter.rs::the_tint_runs_after_the_inversion",
   "crates/appearance/src/filter.rs::a_tone_runs_the_chain_then_blends_over_the_paper",
-  "crates/ui/tests/gpu.rs::the_page_pass_themes_pages_as_the_cpu_reference_does",
-  "crates/ui/tests/gpu.rs::dark_pages_show_light_ink_on_dark_paper",
+  "crates/ui-egui/tests/gpu.rs::the_page_pass_themes_pages_as_the_cpu_reference_does",
+  "crates/ui-egui/tests/gpu.rs::dark_pages_show_light_ink_on_dark_paper",
 ]
 reference = ["crates/reader-core/src/appearance/raster", "styles/page_host.css"]
 notes = "The page pass runs the chain and the blend per quad; the CPU path stays unthemed"
@@ -1137,11 +1218,12 @@ area = "F"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "settings.appearance"
 evidence = [
   "crates/appearance/src/tokens.rs::book_pages_keep_mareader_s_paper_and_ink_lightness",
   "crates/appearance/src/filter.rs::a_book_maps_black_to_its_ink_and_white_to_its_paper",
   "crates/reflow/src/raster.rs::a_page_draws_dark_text_on_clear",
-  "crates/ui/tests/gpu.rs::a_book_page_takes_its_own_paper_not_the_pdf_filter",
+  "crates/ui-egui/tests/gpu.rs::a_book_page_takes_its_own_paper_not_the_pdf_filter",
 ]
 reference = ["crates/reader-core/src/appearance/reflowable/palette.rs", "styles/text.css"]
 notes = "docs/epub.md: the raster is clear, the page pass lays the palette's paper under it and recolours ink; emoji and pictures stay untoned unless themed; blend keeps the PDF's dominant paper"
@@ -1153,12 +1235,13 @@ area = "F"
 tier = "P0"
 milestone = "M3"
 status = "shipped"
+command = "settings.appearance"
 evidence = [
   "crates/appearance/src/pattern.rs::strokes_stay_between_half_a_pixel_and_two_and_a_half",
   "crates/appearance/src/pattern.rs::grain_tints_light_paper_faintly_darker",
-  "crates/ui/tests/gpu.rs::lined_paper_rules_the_page_in_page_units",
-  "crates/ui/tests/gpu.rs::real_paper_grains_the_page_around_the_reference",
-  "crates/ui/tests/gpu.rs::rules_run_on_across_touching_pages",
+  "crates/ui-egui/tests/gpu.rs::lined_paper_rules_the_page_in_page_units",
+  "crates/ui-egui/tests/gpu.rs::real_paper_grains_the_page_around_the_reference",
+  "crates/ui-egui/tests/gpu.rs::rules_run_on_across_touching_pages",
 ]
 reference = ["styles/textures.css", "styles/tokens.css"]
 notes = "One sheet per pane, so patterns run across pages (beyond mareader); EPUB in M4"
@@ -1170,11 +1253,12 @@ area = "F"
 tier = "P1"
 milestone = "M3"
 status = "shipped"
+command = "settings.appearance"
 evidence = [
   "crates/appearance/src/grain.rs::grain_is_off_at_zero_and_screens_on_dark_and_dim",
   "crates/appearance/src/grain.rs::the_crawl_steps_eight_times_a_cycle",
   "crates/appearance/src/grain.rs::the_noise_tiles_every_160_points",
-  "crates/ui/tests/gpu.rs::film_grain_multiplies_light_and_screens_dark_as_the_reference",
+  "crates/ui-egui/tests/gpu.rs::film_grain_multiplies_light_and_screens_dark_as_the_reference",
 ]
 reference = ["styles/noise.css", "styles/tokens.css"]
 notes = "A wgpu pass over every layer; the preset cards' grain comes with M3 slice 5"
@@ -1186,14 +1270,15 @@ area = "F"
 tier = "P0"
 milestone = "M3"
 status = "shipped"
+command = "settings.appearance"
 evidence = [
   "crates/pdf/src/paper.rs::the_edges_ignore_a_picture_filling_the_middle",
   "crates/pdf/src/paper.rs::the_palette_mixes_between_known_pages",
   "crates/appearance/src/filter.rs::a_backdrop_over_white_is_its_paper_themed",
-  "crates/ui/tests/blend.rs::the_gutter_takes_the_page_paper_through_the_theme",
-  "crates/ui/tests/blend.rs::the_texture_runs_from_the_page_into_the_gutter",
-  "crates/ui/tests/blend.rs::scrolling_between_chapters_mixes_their_papers",
-  "crates/ui/tests/blend.rs::a_book_focused_beside_a_pdf_keeps_the_pdf_s_paper",
+  "crates/ui-egui/tests/blend.rs::the_gutter_takes_the_page_paper_through_the_theme",
+  "crates/ui-egui/tests/blend.rs::the_texture_runs_from_the_page_into_the_gutter",
+  "crates/ui-egui/tests/blend.rs::scrolling_between_chapters_mixes_their_papers",
+  "crates/ui-egui/tests/blend.rs::a_book_focused_beside_a_pdf_keeps_the_pdf_s_paper",
 ]
 reference = ["crates/pdf-paper/src/detect.rs", "crates/reader-runtime/src/effects/reader/blend_backdrop.rs", "crates/reader-runtime/src/frame_pane/mod.rs"]
 notes = "Split: the latest focused pane with a paper paints every pane, so a focused book keeps the last PDF's (docs/epub.md); independent themes keep each pane's own"
@@ -1205,13 +1290,14 @@ area = "F"
 tier = "P0"
 milestone = "M3"
 status = "shipped"
+command = "settings.preset-save"
 evidence = [
   "crates/appearance/src/presets.rs::five_classics_with_unique_ids",
   "crates/appearance/src/presets.rs::sections_keep_first_seen_order_and_collect_the_unsectioned",
   "crates/appearance/src/presets.rs::ids_are_slugs_numbered_past_taken_ones",
   "crates/settings/src/lib.rs::presets_save_trimmed_and_delete_by_id",
-  "crates/ui/tests/shell.rs::saving_the_look_adds_a_preset_that_is_picked",
-  "crates/ui/tests/shell.rs::a_user_preset_shows_in_its_section_and_deletes_from_its_card",
+  "crates/ui-egui/tests/shell.rs::saving_the_look_adds_a_preset_that_is_picked",
+  "crates/ui-egui/tests/shell.rs::a_user_preset_shows_in_its_section_and_deletes_from_its_card",
 ]
 reference = ["crates/reader-core/src/appearance/presets.rs", "crates/app-ui/src/components/menus/appearance_menu/presets"]
 notes = "Presets saved without a section show under Custom"
@@ -1223,12 +1309,13 @@ area = "F"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 evidence = [
-  "crates/ui/tests/shell.rs::the_appearance_popover_switches_mode_and_keeps_the_bar",
-  "crates/ui/tests/shell.rs::a_preset_swatch_applies_its_look",
-  "crates/ui/tests/shell.rs::a_hue_landmark_tints_at_a_gentle_strength",
-  "crates/ui/tests/gpu.rs::preset_cards_carry_their_own_texture_and_grain",
-  "crates/ui/tests/reading.rs::a_book_offers_the_ink_dial_in_the_popover_and_the_fonts_tab",
+  "crates/ui-egui/tests/shell.rs::the_appearance_popover_switches_mode_and_keeps_the_bar",
+  "crates/ui-egui/tests/shell.rs::a_preset_swatch_applies_its_look",
+  "crates/ui-egui/tests/shell.rs::a_hue_landmark_tints_at_a_gentle_strength",
+  "crates/ui-egui/tests/gpu.rs::preset_cards_carry_their_own_texture_and_grain",
+  "crates/ui-egui/tests/reading.rs::a_book_offers_the_ink_dial_in_the_popover_and_the_fonts_tab",
 ]
 reference = ["crates/app-ui/src/components/menus/appearance_menu", "styles/components/appearance.css"]
 notes = "The text ink dial shows under the tint while the active pane shows a book"
@@ -1240,11 +1327,12 @@ area = "F"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+ui_only = true
 reference = ["crates/app-ui/src/components/menus/appearance_menu/mod.rs", "crates/app-chrome/src/appearance_hooks.rs"]
 evidence = [
-    "crates/ui/tests/shell.rs::an_appearance_change_restyles_on_the_frame_it_lands",
-    "crates/ui/tests/shell.rs::a_preset_swatch_applies_its_look",
-    "crates/ui/tests/gpu.rs::a_mode_click_fades_from_the_old_look",
+    "crates/ui-egui/tests/shell.rs::an_appearance_change_restyles_on_the_frame_it_lands",
+    "crates/ui-egui/tests/shell.rs::a_preset_swatch_applies_its_look",
+    "crates/ui-egui/tests/gpu.rs::a_mode_click_fades_from_the_old_look",
 ]
 notes = "Popover and settings controls restyle the window and the page pass on the frame they move"
 
@@ -1255,9 +1343,10 @@ area = "F"
 tier = "P2"
 milestone = "M3"
 status = "shipped"
+ui_only = true
 evidence = [
-  "crates/ui/tests/gpu.rs::a_mode_click_fades_from_the_old_look",
-  "crates/ui/tests/gpu.rs::with_animations_off_a_mode_click_lands_at_once",
+  "crates/ui-egui/tests/gpu.rs::a_mode_click_fades_from_the_old_look",
+  "crates/ui-egui/tests/gpu.rs::with_animations_off_a_mode_click_lands_at_once",
   "crates/appearance/src/model.rs::picks_leap_and_dial_steps_do_not",
 ]
 reference = ["styles/components/title_bar.css"]
@@ -1270,6 +1359,7 @@ area = "G"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "settings.set"
 evidence = ["crates/session/src/typeset.rs::picks_lead_their_stacks_and_bundled_faces_back_them", "crates/reflow/src/flow.rs::a_missing_face_falls_back_down_its_stack", "crates/reflow/src/fonts.rs::bundled_faces_count_as_installed_and_junk_does_not"]
 reference = ["crates/reader-core/src/settings/typography.rs"]
 notes = "Font, serif, sans and mono slots; a pick leads its stack, the bundled face (Literata, Inter, JetBrains Mono) ends it; system faces via fontique (docs/epub.md)"
@@ -1281,7 +1371,8 @@ area = "G"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/session/src/typeset.rs::every_knob_reaches_the_typography", "crates/reflow/src/flow.rs::bigger_type_takes_more_pages_and_anchors_keep_the_place", "crates/ui/tests/reading.rs::bigger_type_sets_an_open_book_again_at_the_page_read", "crates/settings/src/text.rs::text_size_reads_as_a_share_of_the_base"]
+command = "settings.quick-text"
+evidence = ["crates/session/src/typeset.rs::every_knob_reaches_the_typography", "crates/reflow/src/flow.rs::bigger_type_takes_more_pages_and_anchors_keep_the_place", "crates/ui-egui/tests/reading.rs::bigger_type_sets_an_open_book_again_at_the_page_read", "crates/settings/src/text.rs::text_size_reads_as_a_share_of_the_base"]
 reference = ["crates/reader-core/src/settings/typography.rs"]
 notes = "A change re-sets open books off the UI thread and keeps the reading place. Size reads as a share, 100 % being 17 pt, above a minimum size"
 
@@ -1292,6 +1383,7 @@ area = "G"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "settings.quick-text"
 evidence = ["crates/reflow/src/flow.rs::spacing_indent_and_weight_take_effect", "crates/session/src/typeset.rs::every_knob_reaches_the_typography", "crates/reflow/src/flow.rs::overrides_put_the_readers_type_and_spacing_over_the_books"]
 reference = ["crates/reader-core/src/settings/typography.rs"]
 notes = "Line height, paragraph margin, word and letter spacing; the indent applies to body paragraphs only, as mareader's. Override book font and Override book layout put the reader's over the book's"
@@ -1303,6 +1395,7 @@ area = "G"
 tier = "P0"
 milestone = "M4"
 status = "shipped"
+command = "settings.set"
 evidence = ["crates/reflow/src/flow.rs::justified_lines_reach_the_column_edge_but_the_last", "crates/reflow/src/flow.rs::hyphenation_breaks_long_words_and_marks_those_lines", "crates/reflow/src/hyphen.rs::long_words_get_soft_hyphens_short_ones_and_code_do_not", "crates/reflow/src/hyphen.rs::language_tags_pick_patterns_and_fall_back_to_english"]
 reference = ["crates/reader-core/src/settings/typography.rs"]
 notes = "hypher patterns by the book's dc:language, English when unknown; the raster draws the hyphen parley leaves out"
@@ -1314,7 +1407,8 @@ area = "G"
 tier = "P1"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/reflow/src/flow.rs::book_layout_moves_each_column_toward_the_spine", "crates/ui/tests/reading.rs::a_book_s_vertical_strip_streams_one_column_edge_to_edge", "crates/ui/tests/reading.rs::the_fonts_tab_steps_the_size_and_switches_justification", "crates/reflow/src/flow.rs::the_column_scale_widens_the_column_and_page_within_its_range", "crates/ui/tests/reading.rs::column_width_widens_a_book_s_pages_and_shows_only_for_books"]
+command = "settings.set"
+evidence = ["crates/reflow/src/flow.rs::book_layout_moves_each_column_toward_the_spine", "crates/ui-egui/tests/reading.rs::a_book_s_vertical_strip_streams_one_column_edge_to_edge", "crates/ui-egui/tests/reading.rs::the_fonts_tab_steps_the_size_and_switches_justification", "crates/reflow/src/flow.rs::the_column_scale_widens_the_column_and_page_within_its_range", "crates/ui-egui/tests/reading.rs::column_width_widens_a_book_s_pages_and_shows_only_for_books"]
 reference = ["crates/reader-core/src/settings/typography.rs"]
 notes = "Gutter by page parity, matching spreads paired from the first page; the stream straightens the column. Column alignment keeps at least 16 pt from the edge. Column Width, 60 to 140 % in Settings › Fonts (the owner moved it from Layout, so each pane may have its own); the page grows with its column"
 
@@ -1325,7 +1419,8 @@ area = "G"
 tier = "P1"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/ui/tests/gpu.rs::the_ink_dial_lightens_a_book_s_text_and_leaves_its_pictures", "crates/appearance/src/filter.rs::the_ink_dial_lightens_ink_toward_the_paper_in_every_mode", "crates/ui/tests/reading.rs::a_book_offers_the_ink_dial_in_the_popover_and_the_fonts_tab"]
+command = "settings.ink"
+evidence = ["crates/ui-egui/tests/gpu.rs::the_ink_dial_lightens_a_book_s_text_and_leaves_its_pictures", "crates/appearance/src/filter.rs::the_ink_dial_lightens_ink_toward_the_paper_in_every_mode", "crates/ui-egui/tests/reading.rs::a_book_offers_the_ink_dial_in_the_popover_and_the_fonts_tab"]
 reference = ["crates/reader-core/src/settings/typography.rs", "crates/reader-core/src/appearance/reflowable/tokens.rs"]
 notes = "10 to 100 % in the popover under the tint while a book is active, and in Settings › Fonts. Folded into the page pass's first matrix, so it moves with the slider without redrawing; pictures are drawn again in their own colours, or the plain tone with Theme pictures on"
 
@@ -1336,7 +1431,8 @@ area = "G"
 tier = "P1"
 milestone = "M4"
 status = "shipped"
-evidence = ["crates/ui/tests/reading.rs::the_fonts_tab_steps_the_size_and_switches_justification", "crates/ui/tests/reading.rs::a_book_offers_the_ink_dial_in_the_popover_and_the_fonts_tab", "crates/ui/tests/reading.rs::a_books_page_and_column_rows_follow_its_view", "crates/ui/tests/reading.rs::the_appearance_popover_offers_a_books_text_dials"]
+command = "settings.open"
+evidence = ["crates/ui-egui/tests/reading.rs::the_fonts_tab_steps_the_size_and_switches_justification", "crates/ui-egui/tests/reading.rs::a_book_offers_the_ink_dial_in_the_popover_and_the_fonts_tab", "crates/ui-egui/tests/reading.rs::a_books_page_and_column_rows_follow_its_view", "crates/ui-egui/tests/reading.rs::the_appearance_popover_offers_a_books_text_dials"]
 reference = ["crates/reader-runtime/src/components/settings/fonts.rs"]
 notes = "Shown while an EPUB is open; uninstalled system faces read Not installed. Text ink steps by 5 % beside the popover's dial. Grouped as Book, Font, Paragraph, Page or Column, and Colour; Page rows in paged views, Column rows in the stream; the popover has a Text group"
 
@@ -1347,7 +1443,8 @@ area = "H"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/navigation.rs::the_page_entry_jumps_and_snaps_back_from_nonsense", "crates/ui/tests/navigation.rs::the_bar_turns_by_spreads_and_hides_when_left"]
+command = "page.go"
+evidence = ["crates/ui-egui/tests/navigation.rs::the_page_entry_jumps_and_snaps_back_from_nonsense", "crates/ui-egui/tests/navigation.rs::the_bar_turns_by_spreads_and_hides_when_left"]
 reference = ["crates/reader-runtime/src/components/viewer/controls"]
 notes = "Each pane's bottom bar, up while its edge is hovered: previous and next (by spread in a spread), page entry (Enter jumps, past the end lands on the last page, anything else snaps back), the count and a page slider"
 
@@ -1358,7 +1455,8 @@ area = "H"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/navigation.rs::clicking_a_chapter_jumps_there_and_marks_it", "crates/pdf/src/outline.rs::named_and_action_destinations_resolve_like_direct_ones", "crates/ui/src/outline_panel.rs::a_click_keeps_its_entry_marked_until_the_page_changes"]
+command = "page.go"
+evidence = ["crates/ui-egui/tests/navigation.rs::clicking_a_chapter_jumps_there_and_marks_it", "crates/pdf/src/outline.rs::named_and_action_destinations_resolve_like_direct_ones", "crates/ui-egui/src/outline_panel.rs::a_click_keeps_its_entry_marked_until_the_page_changes"]
 reference = ["crates/reader-core/src/outline.rs", "crates/pdf-core/src/outline.rs"]
 notes = "Read from /Outlines at open (direct, GoTo, named and name-tree destinations; loops and depth capped). Rows indent to five levels with page numbers; a clicked entry stays marked while its page is read; the mark is revealed when off screen and centred on opening or a re-click of the panel button"
 
@@ -1369,7 +1467,8 @@ area = "H"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
-evidence = ["crates/ui/tests/navigation.rs::the_thumbnails_follow_the_page_and_a_click_jumps", "crates/ui/src/thumbnails.rs::a_window_of_rows_covers_the_band_and_stops_at_the_end"]
+ui_only = true
+evidence = ["crates/ui-egui/tests/navigation.rs::the_thumbnails_follow_the_page_and_a_click_jumps", "crates/ui-egui/src/thumbnails.rs::a_window_of_rows_covers_the_band_and_stops_at_the_end"]
 reference = ["crates/reader-runtime/src/components/shell/sidebar/panels/thumbnails"]
 notes = "Two columns, only rows near the viewport drawn and rendered; the page read gets an accent ring and badge and is centred, gliding as it moves, waiting 1.2 s after the grid is browsed. Thumbnails share the page cache's byte cap instead of their own LRU of 16 (ADR 0006)"
 
@@ -1380,13 +1479,14 @@ area = "H"
 tier = "P0"
 milestone = "M7"
 status = "shipped"
+command = "page.search"
 reference = ["crates/reader-core/src/search.rs", "crates/pdf-core/src/search.rs", "crates/reader-runtime/src/components/search/floating_search.rs"]
 evidence = [
-  "crates/ui/tests/find.rs::a_query_counts_every_page_and_enter_steps_through_them",
-  "crates/ui/tests/find.rs::the_results_list_goes_to_a_picked_hit",
-  "crates/ui/tests/find.rs::a_book_is_searched_and_its_hit_revealed",
-  "crates/ui/tests/find.rs::a_hit_below_a_tall_figure_is_scrolled_into_view",
-  "crates/ui/tests/find.rs::escape_closes_the_bar_and_keeps_the_query",
+  "crates/ui-egui/tests/find.rs::a_query_counts_every_page_and_enter_steps_through_them",
+  "crates/ui-egui/tests/find.rs::the_results_list_goes_to_a_picked_hit",
+  "crates/ui-egui/tests/find.rs::a_book_is_searched_and_its_hit_revealed",
+  "crates/ui-egui/tests/find.rs::a_hit_below_a_tall_figure_is_scrolled_into_view",
+  "crates/ui-egui/tests/find.rs::escape_closes_the_bar_and_keeps_the_query",
   "crates/search/src/walk.rs::a_shown_hit_stays_and_others_land_on_the_bias_line",
 ]
 notes = "Also matches across lines and line-end hyphens, folds accents, quotes and ligatures, and starts from the page read (docs/search.md)"
@@ -1398,8 +1498,9 @@ area = "H"
 tier = "P1"
 milestone = "M7"
 status = "shipped"
+command = "page.search"
 reference = ["crates/pdf-core/src/search.rs"]
-evidence = ["crates/ui/tests/find.rs::the_first_enter_starts_from_the_page_read"]
+evidence = ["crates/ui-egui/tests/find.rs::the_first_enter_starts_from_the_page_read"]
 notes = "One thread per searched document reads pages on the first query, answering as they come; tests and wasm read inline"
 
 [[feature]]
@@ -1409,7 +1510,8 @@ area = "I"
 tier = "P1"
 milestone = "M6"
 status = "shipped"
-evidence = ["crates/assist/tests/service.rs::apple_intelligence_streams_through_the_helper", "crates/assist/tests/service.rs::a_local_server_answers_without_keys", "crates/assist/tests/service.rs::providers_that_cannot_answer_say_why", "crates/ui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui/tests/study.rs::the_ai_tab_picks_who_explains", "crates/ui/src/study/mod.rs::a_saved_answer_shows_without_asking_and_ask_again_replaces_it", "crates/library/src/marks_tests.rs::an_answer_is_saved_with_its_mark_and_hides_with_it", "crates/ui/src/bubble.rs::a_placed_card_keeps_its_side_while_it_fits"]
+command = "word.explain"
+evidence = ["crates/assist/tests/service.rs::apple_intelligence_streams_through_the_helper", "crates/assist/tests/service.rs::a_local_server_answers_without_keys", "crates/assist/tests/service.rs::providers_that_cannot_answer_say_why", "crates/ui-egui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui-egui/tests/study.rs::the_ai_tab_picks_who_explains", "crates/ui-egui/src/study/mod.rs::a_saved_answer_shows_without_asking_and_ask_again_replaces_it", "crates/library/src/marks_tests.rs::an_answer_is_saved_with_its_mark_and_hides_with_it", "crates/ui-egui/src/bubble.rs::a_placed_card_keeps_its_side_while_it_fits"]
 reference = ["crates/ai-core/src/gloss/mod.rs", "src-tauri/src/ai"]
 notes = "Apple Intelligence through the fm-bridge helper on a Mac, and on every desktop OpenAI, Gemini, OpenRouter, Ollama, LM Studio or a custom server through ai-pool, chosen in Settings › AI with managed keys (M6 slice 2). The card fills as the answer streams; answers are saved with their marks, name who answered and can be asked again. The card points at its word with a caret"
 
@@ -1420,7 +1522,8 @@ area = "I"
 tier = "P1"
 milestone = "M6"
 status = "shipped"
-evidence = ["crates/ui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui/tests/study.rs::a_right_click_removes_a_mark_and_undo_brings_it_back", "crates/ui/tests/study.rs::a_book_s_mark_is_found_again_after_the_type_changes", "crates/ui/tests/study.rs::a_library_book_keeps_its_marks", "crates/library/src/marks_tests.rs::marks_travel_and_a_removal_wins_over_an_older_keep", "crates/ui/tests/study.rs::the_highlights_tab_sets_colours_the_menu_and_keeps_the_ai_look", "crates/settings/src/study.rs::the_ai_look_is_never_offered_to_its_pen", "crates/ui/tests/study.rs::several_marks_are_picked_and_removed_together"]
+command = "mark.highlight"
+evidence = ["crates/ui-egui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui-egui/tests/study.rs::a_right_click_removes_a_mark_and_undo_brings_it_back", "crates/ui-egui/tests/study.rs::a_book_s_mark_is_found_again_after_the_type_changes", "crates/ui-egui/tests/study.rs::a_library_book_keeps_its_marks", "crates/library/src/marks_tests.rs::marks_travel_and_a_removal_wins_over_an_older_keep", "crates/ui-egui/tests/study.rs::the_highlights_tab_sets_colours_the_menu_and_keeps_the_ai_look", "crates/settings/src/study.rs::the_ai_look_is_never_offered_to_its_pen", "crates/ui-egui/tests/study.rs::several_marks_are_picked_and_removed_together"]
 reference = ["crates/ai-core/src/gloss/mark.rs", "crates/reader-core/src/settings/gloss.rs"]
 notes = "Marks are drawn, kept per book and synced as records (M6 slice 1); Settings > Highlights sets the AI mark's pen and colour, fill strength and card spacing (slice 3)"
 
@@ -1431,7 +1534,8 @@ area = "I"
 tier = "P1"
 milestone = "M6"
 status = "shipped"
-evidence = ["crates/cefr/tests/cefr.rs::the_dataset_becomes_a_table_that_answers", "crates/cefr/tests/cefr.rs::a_downloaded_dataset_converts_then_shades_hard_words", "crates/ui/tests/vocabulary.rs::a_click_on_a_shaded_word_explains_it_and_marks_it", "crates/ui/tests/vocabulary.rs::the_tab_sets_the_level_and_removes_the_dataset"]
+command = "vocab.download"
+evidence = ["crates/cefr/tests/cefr.rs::the_dataset_becomes_a_table_that_answers", "crates/cefr/tests/cefr.rs::a_downloaded_dataset_converts_then_shades_hard_words", "crates/ui-egui/tests/vocabulary.rs::a_click_on_a_shaded_word_explains_it_and_marks_it", "crates/ui-egui/tests/vocabulary.rs::the_tab_sets_the_level_and_removes_the_dataset"]
 reference = ["crates/cefr-core/src/lib.rs", "crates/reader-core/src/settings/cefr.rs"]
 notes = "Dataset and tagger download with mirrors and resume; shading in a reserved look, click to explain with the tagged role and level (M6 slice 5)"
 
@@ -1442,7 +1546,8 @@ area = "I"
 tier = "P1"
 milestone = "M6"
 status = "shipped"
-evidence = ["crates/dict/tests/dict.rs::burmese_reaches_french_through_english", "crates/dict/tests/dict.rs::a_whole_download_converts_and_a_partial_one_waits", "crates/fetch/src/lib.rs::a_dropped_connection_resumes_where_it_stopped", "crates/fetch/src/lib.rs::mirrors_are_tried_in_turn_and_an_error_page_is_never_kept", "crates/ui/tests/dictionary.rs::look_up_answers_from_the_packs_in_the_default_language", "crates/ui/tests/dictionary.rs::the_tab_lists_packs_and_removes_one", "crates/ui/tests/dictionary.rs::the_panel_searches_every_pack_as_typed", "crates/ui/tests/vocabulary.rs::resting_on_a_shaded_word_opens_its_dictionary_card", "crates/ui/src/bubble.rs::a_card_takes_the_side_it_fits"]
+command = "word.lookup"
+evidence = ["crates/dict/tests/dict.rs::burmese_reaches_french_through_english", "crates/dict/tests/dict.rs::a_whole_download_converts_and_a_partial_one_waits", "crates/fetch/src/lib.rs::a_dropped_connection_resumes_where_it_stopped", "crates/fetch/src/lib.rs::mirrors_are_tried_in_turn_and_an_error_page_is_never_kept", "crates/ui-egui/tests/dictionary.rs::look_up_answers_from_the_packs_in_the_default_language", "crates/ui-egui/tests/dictionary.rs::the_tab_lists_packs_and_removes_one", "crates/ui-egui/tests/dictionary.rs::the_panel_searches_every_pack_as_typed", "crates/ui-egui/tests/vocabulary.rs::resting_on_a_shaded_word_opens_its_dictionary_card", "crates/ui-egui/src/bubble.rs::a_card_takes_the_side_it_fits"]
 reference = ["crates/dict-core/src/lib.rs", "crates/download-core/src/lib.rs", "crates/reader-core/src/settings/dict.rs"]
 notes = "Packs download with mirrors and resume, convert to SQLite, and answer Look up, the panel and pairs through English (M6 slice 4); resting on a shaded word opens its card (slice 5). The card shows one entry at a time beside its word, a caret pointing at it, as mareader's anchored bubble"
 
@@ -1453,29 +1558,30 @@ area = "I"
 tier = "P1"
 milestone = "M6"
 status = "shipped"
+command = "route.show"
 reference = ["crates/reader-runtime/src/components/shell/sidebar/panels/dictionary/mod.rs", "crates/dict-core/src/bridge.rs"]
 evidence = [
-    "crates/ui/tests/dictionary.rs::the_panel_searches_every_pack_as_typed",
-    "crates/ui/tests/dictionary.rs::the_shortcut_opens_the_page_and_escape_steps_back",
-    "crates/ui/tests/dictionary.rs::from_the_library_the_page_returns_to_the_library",
-    "crates/ui/tests/dictionary.rs::arrows_pick_a_result_and_enter_keeps_the_search",
-    "crates/ui/tests/dictionary.rs::an_answer_can_be_looked_up_in_turn",
-    "crates/ui/tests/chrome.rs::a_narrow_bar_folds_dictionary_into_the_menu",
-    "crates/ui/src/route.rs::the_dictionary_keeps_its_settings_and_drops_reading",
+    "crates/ui-egui/tests/dictionary.rs::the_panel_searches_every_pack_as_typed",
+    "crates/ui-egui/tests/dictionary.rs::the_shortcut_opens_the_page_and_escape_steps_back",
+    "crates/ui-egui/tests/dictionary.rs::from_the_library_the_page_returns_to_the_library",
+    "crates/ui-egui/tests/dictionary.rs::arrows_pick_a_result_and_enter_keeps_the_search",
+    "crates/ui-egui/tests/dictionary.rs::an_answer_can_be_looked_up_in_turn",
+    "crates/ui-egui/tests/chrome.rs::a_narrow_bar_folds_dictionary_into_the_menu",
+    "crates/ui-egui/src/ui_command.rs::the_dictionary_keeps_its_settings_and_drops_reading",
     "crates/settings/src/study.rs::recent_searches_stay_unique_newest_first_and_bounded",
-    "crates/ui/tests/dictionary.rs::in_the_reader_the_button_floats_a_window_that_folds_and_closes",
-    "crates/ui/tests/dictionary.rs::the_window_moves_and_resizes_and_remembers_where",
-    "crates/ui/tests/dictionary.rs::open_as_a_page_carries_the_search_over",
-    "crates/ui/tests/dictionary.rs::escape_in_the_window_clears_then_closes",
-    "crates/ui/tests/dictionary.rs::the_tab_chooses_how_the_reader_opens_it",
-    "crates/ui/tests/dictionary.rs::only_words_the_voice_speaks_can_be_said",
-    "crates/ui/tests/dictionary.rs::a_look_up_fills_the_open_window_and_keeps_the_selection",
-    "crates/ui/tests/dictionary.rs::the_card_carries_its_word_into_the_window_or_the_page",
-    "crates/ui/tests/dictionary.rs::the_shortcut_gives_an_idle_window_the_keys_then_closes_it",
-    "crates/ui/tests/dictionary.rs::the_pill_goes_anywhere_and_unfolds_onto_the_stage",
-    "crates/ui/tests/dictionary.rs::dragging_past_a_side_peeks_the_dictionary_itself",
-    "crates/ui/tests/dictionary.rs::a_bridge_names_english_and_each_answer_its_word",
-    "crates/ui/src/dict/window.rs::the_window_stays_on_the_stage_and_never_below_its_minimum",
+    "crates/ui-egui/tests/dictionary.rs::in_the_reader_the_button_floats_a_window_that_folds_and_closes",
+    "crates/ui-egui/tests/dictionary.rs::the_window_moves_and_resizes_and_remembers_where",
+    "crates/ui-egui/tests/dictionary.rs::open_as_a_page_carries_the_search_over",
+    "crates/ui-egui/tests/dictionary.rs::escape_in_the_window_clears_then_closes",
+    "crates/ui-egui/tests/dictionary.rs::the_tab_chooses_how_the_reader_opens_it",
+    "crates/ui-egui/tests/dictionary.rs::only_words_the_voice_speaks_can_be_said",
+    "crates/ui-egui/tests/dictionary.rs::a_look_up_fills_the_open_window_and_keeps_the_selection",
+    "crates/ui-egui/tests/dictionary.rs::the_card_carries_its_word_into_the_window_or_the_page",
+    "crates/ui-egui/tests/dictionary.rs::the_shortcut_gives_an_idle_window_the_keys_then_closes_it",
+    "crates/ui-egui/tests/dictionary.rs::the_pill_goes_anywhere_and_unfolds_onto_the_stage",
+    "crates/ui-egui/tests/dictionary.rs::dragging_past_a_side_peeks_the_dictionary_itself",
+    "crates/ui-egui/tests/dictionary.rs::a_bridge_names_english_and_each_answer_its_word",
+    "crates/ui-egui/src/dict/window.rs::the_window_stays_on_the_stage_and_never_below_its_minimum",
     "crates/settings/src/study.rs::a_window_rect_is_finite_and_never_below_the_minimum",
 ]
 notes = "Its own page, not a rail panel: from the reader's and library's bars or Cmd/Ctrl+Shift+D. Results beside the chosen entry, its other senses, Copy and Look up in turn, recent searches, arrows and Enter. In the reader it floats, drags, resizes and folds; dragged past a side, its own shell peeks and clicks restore it without a tab. Settings can ask for the page instead"
@@ -1487,7 +1593,8 @@ area = "I"
 tier = "P1"
 milestone = "M6"
 status = "shipped"
-evidence = ["crates/ui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui/tests/study.rs::a_phrase_is_not_explained_and_nothing_is_marked", "crates/ui/tests/study.rs::a_failed_answer_says_why_and_offers_a_retry", "crates/ui/tests/study.rs::the_bar_highlights_and_underlines_and_a_click_offers_removal", "crates/ui/tests/study.rs::asking_for_a_colour_each_time_never_offers_the_ai_look", "crates/ui/tests/dictionary.rs::look_up_answers_from_the_packs_in_the_default_language", "crates/settings/src/load.rs::v2_menus_gain_look_up_after_explain"]
+ui_only = true
+evidence = ["crates/ui-egui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui-egui/tests/study.rs::a_phrase_is_not_explained_and_nothing_is_marked", "crates/ui-egui/tests/study.rs::a_failed_answer_says_why_and_offers_a_retry", "crates/ui-egui/tests/study.rs::the_bar_highlights_and_underlines_and_a_click_offers_removal", "crates/ui-egui/tests/study.rs::asking_for_a_colour_each_time_never_offers_the_ai_look", "crates/ui-egui/tests/dictionary.rs::look_up_answers_from_the_packs_in_the_default_language", "crates/settings/src/load.rs::v2_menus_gain_look_up_after_explain"]
 reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
 notes = "Copy and Explain (M6 slice 1); highlighters, ordering and hiding (slice 3); Look up with the dictionary (slice 4), added to saved menus after Explain"
 
@@ -1498,9 +1605,10 @@ area = "J"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+command = "settings.write"
 reference = ["crates/reader-core/src/settings/mod.rs"]
 notes = "Every mareader setting has a typed field with its default; one bad section resets alone. Rows join the window with their features"
-evidence = ["crates/ui/tests/shell.rs::settings_survive_a_save_and_relaunch", "crates/settings/src/load.rs::an_empty_object_is_all_defaults", "crates/settings/src/lib.rs::a_round_trip_keeps_every_field"]
+evidence = ["crates/ui-egui/tests/shell.rs::settings_survive_a_save_and_relaunch", "crates/settings/src/load.rs::an_empty_object_is_all_defaults", "crates/settings/src/lib.rs::a_round_trip_keeps_every_field"]
 
 [[feature]]
 id = "settings.modal"
@@ -1509,18 +1617,19 @@ area = "J"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
+command = "settings.open"
 reference = ["crates/reader-runtime/src/components/settings/modal.rs"]
 evidence = [
-    "crates/ui/tests/shell.rs::the_gear_opens_settings_and_escape_closes_only_them",
-    "crates/ui/tests/shell.rs::the_motion_tab_hides_each_switch_with_the_master",
-    "crates/ui/tests/shell.rs::every_settings_tab_is_named_in_its_sidebar",
-    "crates/ui/tests/shell.rs::a_settings_switch_applies_on_the_frame_it_flips",
-    "crates/ui/src/settings_window.rs::the_window_grows_with_the_app_past_mareader_s_640",
-    "crates/ui/src/settings_window/scope.rs::the_focused_document_decides_what_applies",
-    "crates/ui/tests/reading.rs::layout_rows_follow_the_focused_document",
-    "crates/ui/tests/a11y.rs::every_control_has_a_name",
-    "crates/ui/tests/library.rs::the_library_settings_list_only_what_it_uses",
-    "crates/ui/tests/dictionary.rs::the_page_bar_opens_its_settings_and_keeps_a_pin",
+    "crates/ui-egui/tests/shell.rs::the_gear_opens_settings_and_escape_closes_only_them",
+    "crates/ui-egui/tests/shell.rs::the_motion_tab_hides_each_switch_with_the_master",
+    "crates/ui-egui/tests/shell.rs::every_settings_tab_is_named_in_its_sidebar",
+    "crates/ui-egui/tests/shell.rs::a_settings_switch_applies_on_the_frame_it_flips",
+    "crates/ui-egui/src/settings_window.rs::the_window_grows_with_the_app_past_mareader_s_640",
+    "crates/engine/src/scope.rs::the_focused_document_decides_what_applies",
+    "crates/ui-egui/tests/reading.rs::layout_rows_follow_the_focused_document",
+    "crates/ui-egui/tests/a11y.rs::every_control_has_a_name",
+    "crates/ui-egui/tests/library.rs::the_library_settings_list_only_what_it_uses",
+    "crates/ui-egui/tests/dictionary.rs::the_page_bar_opens_its_settings_and_keeps_a_pin",
 ]
 notes = "Tabs: Layout, Theme (paper detection and blend), Animations, Fonts, Highlights, Vocabulary (CEFR), Dictionary, AI, Panes. 92 % by 86 % of the window up to 760 by 960 points; rows follow the focused pane (docs/design.md). The library's and dictionary's bars open it with only the tabs they use"
 
@@ -1541,8 +1650,9 @@ area = "J"
 tier = "P2"
 milestone = "M1"
 status = "shipped"
+command = "settings.set"
 reference = ["crates/reader-core/src/settings/mod.rs"]
-evidence = ["crates/ui/tests/shell.rs::a_settings_switch_applies_on_the_frame_it_flips", "crates/ui/tests/shell.rs::settings_survive_a_save_and_relaunch"]
+evidence = ["crates/ui-egui/tests/shell.rs::a_settings_switch_applies_on_the_frame_it_flips", "crates/ui-egui/tests/shell.rs::settings_survive_a_save_and_relaunch"]
 notes = "Edits apply on the frame; eframe writes at most every 500 ms on its persist thread, only when changed"
 
 [[feature]]
@@ -1552,10 +1662,11 @@ area = "J"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+command = "reader.open"
 reference = ["crates/reader-core/src/settings/mod.rs"]
 evidence = [
-    "crates/ui/tests/reading.rs::the_book_read_at_exit_reopens_on_its_page",
-    "crates/ui/tests/reading.rs::a_dropped_book_or_an_empty_window_leaves_nothing_to_reopen",
+    "crates/ui-egui/tests/reading.rs::the_book_read_at_exit_reopens_on_its_page",
+    "crates/ui-egui/tests/reading.rs::a_dropped_book_or_an_empty_window_leaves_nothing_to_reopen",
 ]
 notes = "The active pane's book and page, saved with the settings; a launch without a file argument reopens it. A moved file or a dropped one (bytes) leaves the window empty"
 
@@ -1566,13 +1677,14 @@ area = "K"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+command = "settings.set"
 reference = ["crates/reader-core/src/settings/animation.rs"]
 evidence = [
-    "crates/ui/tests/shell.rs::the_motion_tab_hides_each_switch_with_the_master",
-    "crates/ui/tests/gpu.rs::with_animations_off_a_mode_click_lands_at_once",
-    "crates/ui/tests/keys.rs::with_scroll_to_page_off_a_jump_lands_at_once",
-    "crates/ui/tests/keys.rs::with_zoom_ease_off_a_step_lands_on_its_first_frame",
-    "crates/ui/tests/shell.rs::the_system_asking_for_less_motion_stills_it_like_the_master",
+    "crates/ui-egui/tests/shell.rs::the_motion_tab_hides_each_switch_with_the_master",
+    "crates/ui-egui/tests/gpu.rs::with_animations_off_a_mode_click_lands_at_once",
+    "crates/ui-egui/tests/keys.rs::with_scroll_to_page_off_a_jump_lands_at_once",
+    "crates/ui-egui/tests/keys.rs::with_zoom_ease_off_a_step_lands_on_its_first_frame",
+    "crates/ui-egui/tests/shell.rs::the_system_asking_for_less_motion_stills_it_like_the_master",
 ]
 notes = "Off, every motion lands on its end state in the first frame; the system's reduced motion acts the same"
 
@@ -1583,13 +1695,14 @@ area = "K"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+command = "settings.set"
 reference = ["crates/reader-core/src/settings/animation.rs"]
 evidence = [
-    "crates/ui/src/zoom.rs::without_follow_a_fit_waits_for_the_resize_to_rest",
-    "crates/ui/src/icons/anim.rs::the_icon_switch_prevents_a_run",
-    "crates/ui/tests/shell.rs::the_icon_animation_switch_stills_only_icons",
-    "crates/ui/tests/keys.rs::with_zoom_ease_off_a_step_lands_on_its_first_frame",
-    "crates/ui/tests/keys.rs::with_scroll_to_page_off_a_jump_lands_at_once",
+    "crates/ui-egui/src/zoom.rs::without_follow_a_fit_waits_for_the_resize_to_rest",
+    "crates/ui-egui/src/icons/anim.rs::the_icon_switch_prevents_a_run",
+    "crates/ui-egui/tests/shell.rs::the_icon_animation_switch_stills_only_icons",
+    "crates/ui-egui/tests/keys.rs::with_zoom_ease_off_a_step_lands_on_its_first_frame",
+    "crates/ui-egui/tests/keys.rs::with_scroll_to_page_off_a_jump_lands_at_once",
 ]
 notes = "Settings, Animations: icon animations, sidebar animation, canvas follows window, zoom in and out, scroll to page. Off, each change lands in one frame; icons use their resting glyph without animation repaints"
 
@@ -1600,12 +1713,13 @@ area = "K"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 reference = ["crates/reader-runtime/src/effects/reader/shortcuts"]
 evidence = [
-    "crates/ui/src/keymap.rs::the_sheet_lists_each_action_once_with_all_its_keys",
-    "crates/ui/tests/keys.rs::across_the_column_arrows_turn_and_paged_modes_turn_on_page_keys",
-    "crates/ui/tests/keys.rs::find_opens_the_bar_which_holds_the_title_bar_until_escape",
-    "crates/ui/tests/keys.rs::find_without_a_document_opens_the_library",
+    "crates/ui-egui/src/keymap.rs::the_sheet_lists_each_action_once_with_all_its_keys",
+    "crates/ui-egui/tests/keys.rs::across_the_column_arrows_turn_and_paged_modes_turn_on_page_keys",
+    "crates/ui-egui/tests/keys.rs::find_opens_the_bar_which_holds_the_title_bar_until_escape",
+    "crates/ui-egui/tests/keys.rs::find_without_a_document_opens_the_library",
 ]
 notes = "`keymap.rs` drives keys, tooltips and the reference. Bound: open, find, settings, full screen, zoom steps and fit width, view modes, arrows and h/j/k/l, PageUp/PageDown, Space and Shift+Space, Home and End. Find opens the bar; searching is search.document (M7)"
 
@@ -1616,11 +1730,12 @@ area = "K"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+command = "page.arrow"
 reference = ["crates/reader-runtime/src/effects/reader/shortcuts"]
 evidence = [
-    "crates/ui/tests/keys.rs::a_tap_moves_a_line_and_page_keys_nearly_a_screen",
-    "crates/ui/tests/keys.rs::a_held_arrow_glides_after_a_beat_and_stops_on_release",
-    "crates/ui/tests/keys.rs::a_jump_glides_and_only_its_landing_is_drawn",
+    "crates/ui-egui/tests/keys.rs::a_tap_moves_a_line_and_page_keys_nearly_a_screen",
+    "crates/ui-egui/tests/keys.rs::a_held_arrow_glides_after_a_beat_and_stops_on_release",
+    "crates/ui-egui/tests/keys.rs::a_jump_glides_and_only_its_landing_is_drawn",
 ]
 notes = "A tap moves 8 % of the pane (40 to 80 pt), a page key 90 %; a held arrow glides at 1000 pt/s after 350 ms and stops on release or blur. Page jumps glide too, drawing only where they land. In paged modes page keys turn pages, where mareader scrolled"
 
@@ -1631,9 +1746,10 @@ area = "K"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 evidence = [
-    "crates/ui/tests/shell.rs::the_bar_has_no_split_buttons",
-    "crates/ui/tests/a11y.rs::every_control_has_a_name",
+    "crates/ui-egui/tests/shell.rs::the_bar_has_no_split_buttons",
+    "crates/ui-egui/tests/a11y.rs::every_control_has_a_name",
 ]
 notes = "A sweep over the reader, panels, every settings tab, popover, menus, find and the library finds no nameless control"
 
@@ -1644,17 +1760,18 @@ area = "K"
 tier = "P1"
 milestone = "M7"
 status = "shipped"
+command = "pane.cycle"
 reference = [
     "crates/app-ui/src/components/primitives/overlay/modal_shell.rs",
     "crates/reader-runtime/src/host/library/view.rs",
 ]
 evidence = [
-    "crates/ui/tests/focus.rs::tab_brings_up_the_title_bar_rings_its_buttons_and_a_press_hides_the_ring",
-    "crates/ui/tests/focus.rs::enter_on_a_focused_link_follows_it",
-    "crates/ui/tests/focus.rs::shift_f10_opens_a_mark_s_menu_and_enter_its_card",
-    "crates/ui/tests/focus.rs::a_library_card_picks_on_shift_enter_and_opens_on_enter",
-    "crates/ui/tests/focus.rs::tab_stays_in_the_settings_window_and_comes_round",
-    "crates/ui/tests/focus.rs::f3_steps_through_matches_and_f6_moves_between_panes",
+    "crates/ui-egui/tests/focus.rs::tab_brings_up_the_title_bar_rings_its_buttons_and_a_press_hides_the_ring",
+    "crates/ui-egui/tests/focus.rs::enter_on_a_focused_link_follows_it",
+    "crates/ui-egui/tests/focus.rs::shift_f10_opens_a_mark_s_menu_and_enter_its_card",
+    "crates/ui-egui/tests/focus.rs::a_library_card_picks_on_shift_enter_and_opens_on_enter",
+    "crates/ui-egui/tests/focus.rs::tab_stays_in_the_settings_window_and_comes_round",
+    "crates/ui-egui/tests/focus.rs::f3_steps_through_matches_and_f6_moves_between_panes",
 ]
 notes = "focus.rs rings keyboard focus after Tab; reach.rs makes links, marks and words Tab stops. Beyond mareader: Tab reveals hidden chrome, F6 cycles panes, F3 steps matches"
 
@@ -1665,8 +1782,9 @@ area = "L"
 tier = "P0"
 milestone = "M0"
 status = "shipped"
+ui_only = true
 evidence = [
-    "crates/ui/tests/chrome.rs::an_idle_window_draws_nothing",
+    "crates/ui-egui/tests/chrome.rs::an_idle_window_draws_nothing",
 ]
 notes = "Reader, book with sidebar, library and a split with a toast all settle to no repaint and stay there"
 
@@ -1677,9 +1795,10 @@ area = "L"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+command = "pane.close"
 reference = ["crates/reader-runtime/src/services/document/close.rs"]
 evidence = [
-    "crates/ui/tests/reading.rs::closing_the_last_pane_on_a_book_frees_its_textures",
+    "crates/ui-egui/tests/reading.rs::closing_the_last_pane_on_a_book_frees_its_textures",
 ]
 notes = "Documents, rasters, text layers and jobs reach zero on close; RSS levels off over twelve open, read and close rounds (docs/memory.md, 2026-10-13)"
 
@@ -1690,11 +1809,12 @@ area = "L"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 reference = ["crates/reader-runtime/src/components/shell/sidebar/panels/thumbnails"]
 evidence = [
-    "crates/ui/src/pages.rs::the_cap_evicts_cold_pages_but_never_visible_ones",
-    "crates/ui/src/pages.rs::tiles_share_the_byte_cap_and_go_cold_first",
-    "crates/ui/src/pages.rs::a_page_drawn_at_another_scale_drops_its_old_tiles",
+    "crates/ui-egui/src/pages.rs::the_cap_evicts_cold_pages_but_never_visible_ones",
+    "crates/ui-egui/src/pages.rs::tiles_share_the_byte_cap_and_go_cold_first",
+    "crates/ui-egui/src/pages.rs::a_page_drawn_at_another_scale_drops_its_old_tiles",
     "crates/session/src/tests.rs::finished_pages_wait_in_a_bounded_queue",
 ]
 notes = "One 256 MiB byte cap holds pages, tiles and thumbnails (ADR 0006 replaced the LRU of 16); finished results wait at 32 items or 32 MiB"
@@ -1706,6 +1826,7 @@ area = "L"
 tier = "P0"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 reference = ["crates/reader-runtime/src/services/document/session.rs"]
 evidence = ["crates/session/src/tests.rs::only_the_latest_demand_is_drawn", "crates/session/src/tests.rs::closing_drops_the_document_and_its_late_pages"]
 notes = "The pool keeps only the latest demand: unwanted jobs and late results are dropped, as are pages of closed documents"
@@ -1717,7 +1838,8 @@ area = "L"
 tier = "P1"
 milestone = "M3"
 status = "shipped"
-evidence = ["crates/ui/tests/reading.rs::one_file_in_two_panes_is_read_once_and_drawn_once"]
+command = "reader.open"
+evidence = ["crates/ui-egui/tests/reading.rs::one_file_in_two_panes_is_read_once_and_drawn_once"]
 notes = "Improves on mareader, where each pane's iframe loads its own copy"
 
 [[feature]]
@@ -1727,10 +1849,11 @@ area = "L"
 tier = "P1"
 milestone = "M2"
 status = "shipped"
+ui_only = true
 evidence = [
-    "crates/ui/tests/reading.rs::one_file_in_two_panes_is_read_once_and_drawn_once",
-    "crates/ui/tests/reading.rs::closing_the_last_pane_on_a_book_frees_its_textures",
-    "crates/ui/tests/find.rs::a_book_set_again_or_closed_lets_its_old_search_go",
-    "crates/ui/tests/library.rs::covers_scrolled_past_never_pile_up_waiting",
+    "crates/ui-egui/tests/reading.rs::one_file_in_two_panes_is_read_once_and_drawn_once",
+    "crates/ui-egui/tests/reading.rs::closing_the_last_pane_on_a_book_frees_its_textures",
+    "crates/ui-egui/tests/find.rs::a_book_set_again_or_closed_lets_its_old_search_go",
+    "crates/ui-egui/tests/library.rs::covers_scrolled_past_never_pile_up_waiting",
 ]
-notes = "`crates/ui/examples/memory.rs` measures and checks budgets; CI runs it as the Remote memory task. The M2 and M8 audits are in docs/memory.md. Each later milestone adds a dated section"
+notes = "`crates/ui-egui/examples/memory.rs` measures and checks budgets; CI runs it as the Remote memory task. The M2 and M8 audits are in docs/memory.md. Each later milestone adds a dated section"

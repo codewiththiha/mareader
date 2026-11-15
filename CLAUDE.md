@@ -6,6 +6,10 @@ binding rules and wins over this file.
 
 ## Start every session here
 
+0. Choose where the gates run: `python3 tools/ci.py mode`, then follow
+   `AGENTS.md` § Session start (local, cache or ci). In cache mode, run
+   `python3 tools/ci.py cache status` and `source /home/user/.cache/env.sh`
+   before any cargo command; the sandbox may have been wiped.
 1. Read `ROADMAP.md`: the current milestone, the **Next** list and the progress
    log.
 2. Pick work with `cargo xtask parity --list planned` (or `partial`): the lowest
@@ -35,36 +39,50 @@ Don't stop to ask unless the decision is on the owner's list below.
 
 | Path | What |
 |---|---|
-| `apps/mareader` | The binary: opens the window, runs `MareaderApp` |
-| `crates/ui` | The front layer: theme, icons, title bar, panes, shell (egui) |
+| `apps/mareader` | The desktop binary (L7): opens the window, supplies desktop `Host`, runs `MareaderApp` |
+| `apps/mareader-web` | The browser viewer (L7): `MareaderApp` via eframe `WebRunner` with a web `Host` |
+| `apps/mareader-cli` | The headless CLI client (L7): `commands`, `exec`, `run`, `inspect` over `mareader-engine` with zero toolkit deps; five CI scripts in `scripts/` |
+| `crates/engine` | The app without a window (L5, ADR 0007): `Session`, `Command`, `SPECS`, `Event`, `Host`, atomic `settings.json`/`session.json` persistence, open documents, library, marks, read-aloud and study controllers |
+| `crates/ui-egui` | One front end in egui (L6): theme, icons, title bar, panes, shell, GPU textures and window-ephemeral `UiState` |
 | `crates/appearance` | Base modes, tints, filters, presets, UI tokens (no egui) |
 | `crates/workspace` | The pane split tree and its layout (no egui) |
 | `crates/settings` | Every user setting: schema, defaults, ranges, migration, mareader import (no egui) |
-| `crates/ui/src/command.rs` | `Command`: every user intent, applied in `MareaderApp::apply` |
-| `xtask` | `layers`, `parity`, `assets`, `unsafe`, `comments`, `ci` |
-| `parity/mareader-features.toml` | Every mareader feature, its status and evidence |
+| `crates/engine/src/command.rs` | `Command`: every application action, applied by `Session::execute` |
+| `crates/engine/src/command_spec/` | `SPECS`: static registry mapping every `Command` variant to its id, label, params, enabled check and parser |
+| `crates/engine/src/host.rs` | `Host`: the five-method platform seam (`state_dir`, `cache_dir`, `set_clipboard`, `reveal`, `open_external`) |
+| `crates/ui-egui/src/ui_command.rs` | `UiCommand`: chrome only, applied in `MareaderApp::apply` |
+| `xtask` | `layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `comments`, `ci` |
+| `parity/mareader-features.toml` | Every mareader feature, its status, evidence, and `command` / `ui_only` link |
 | `docs/design.md` | The design system: colour, type, metrics, chrome, motion |
 | `docs/library.md` | The library redesign: goals, model, UI |
-| `docs/architecture.md` | Layers, frame model, page pipeline, threads |
+| `docs/architecture.md` | Layers, engine-first laws, frame model, page pipeline, threads |
 | `docs/epub.md` | The EPUB pipeline and how mareader's typography maps onto it |
 | `docs/porting.md` | How to rebuild a feature, what not to port, crate and concept maps |
 | `docs/memory.md` | Measured memory, budgets |
-| `docs/adr/` | Decisions: egui+wgpu, EPUB via parley, page textures, Lucide, functional parity, shared documents |
+| `docs/adr/` | Decisions: egui+wgpu, EPUB via parley, page textures, Lucide, functional parity, shared documents, engine-first (0007) |
 | `tools/` | Scripts and parity tools; see the directory |
 
 ## Commands
 
 ```sh
 cargo run -p mareader                       # the app
+cargo run -p mareader-cli -- commands       # list every registered engine command
+cargo test -p mareader-cli --test scripts   # five headless CLI e2e scripts
 tools/web.sh --serve 8080                   # browser viewer, best effort (?panes=2)
-cargo test -p mareader-ui -j 2              # one crate's tests
-cargo clippy -p mareader-ui -j 2 --all-targets -- -D warnings
-cargo xtask parity                          # progress by area and tier
+cargo test -p mareader-ui-egui -j 2              # one crate's tests
+cargo clippy -p mareader-ui-egui -j 2 --all-targets -- -D warnings
+cargo xtask parity                          # progress by area and tier (checks SPECS)
 cargo xtask parity --list planned           # what is left
-cargo xtask layers                          # dependency rules
+cargo xtask layers                          # dependency rules (incl. headless CLI tree)
+cargo xtask wasm                            # L0-L5, ui-egui and web for wasm32
+cargo xtask trapped                         # toolkit-free files in ui-egui (must be 0)
 cargo xtask assets                          # ATTRIBUTION.toml check
 cargo xtask comments                        # comment rule on changed files
 cargo xtask ci                              # the full sweep (CI does this)
+python3 tools/ci.py mode                    # local, cache or ci, and the next steps
+python3 tools/ci.py watch                   # the quick gate on the pushed branch head
+python3 tools/ci.py final                   # the full pool; waits for every job
+python3 tools/ci.py cache status            # cache mode: warm, stale or wiped?
 python3 tools/commit_check.py --install     # once per clone
 ```
 
@@ -76,7 +94,7 @@ python3 tools/commit_check.py --install     # once per clone
 The shell renders headlessly, so a UI change can be seen without a display:
 
 ```sh
-cargo run -p mareader-ui --example shot -- /tmp/a.png \
+cargo run -p mareader-ui-egui --example shot -- /tmp/a.png \
   platform=windows theme=dark pinned=true panes=2 hover=1180,20 size=1240x720
 ```
 
@@ -103,7 +121,7 @@ To tune colours or sizes without recompiling, run a debug build with
 re-applies when the file is saved, in the app and in `shot`.
 
 Open the PNG and check it against `docs/design.md`. If something looks worse
-than mareader, improve it and update the doc. Interactions belong in kittest tests (`crates/ui/tests/shell.rs`
+than mareader, improve it and update the doc. Interactions belong in kittest tests (`crates/ui-egui/tests/shell.rs`
 shows the pattern: `Harness::builder().with_step_dt(1.0 / 60.0)`, `hover_at`,
 `get_by_label(..).click()`).
 

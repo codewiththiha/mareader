@@ -38,6 +38,8 @@ pub fn ci(_: &[String]) -> Result<(), String> {
     )?;
     run_step("test", &cargo, &["test", "--workspace"])?;
     crate::layers::run(&[])?;
+    crate::wasm::run(&[])?;
+    crate::trapped::run(&[])?;
     crate::parity::run(&[])?;
     crate::assets::run(&[])?;
     crate::unsafety::run(&[])?;

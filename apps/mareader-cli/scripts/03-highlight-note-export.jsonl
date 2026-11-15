@@ -1,0 +1,6 @@
+# Script 3: highlight a passage, add a note, and export notes as Markdown.
+{"id": "reader.open", "params": {"path": "${PDF}"}}
+{"id": "mark.select", "params": {"page": 0, "text": "The quick brown fox"}}
+{"id": "mark.highlight", "params": {"pen": "full"}}
+{"id": "study.act", "params": {"action": "set_note", "text": "Classic English pangram."}}
+{"id": "export.write", "params": {"format": "markdown"}}

@@ -38,7 +38,7 @@ jobs:
     name: Remote / shots
     if: inputs.task == 'shots'
     runs-on: ubuntu-24.04
-    # The same env as CI's test job, so its cache restores here.
+    # The same env as CI's Check job, so its shared linux cache restores here.
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -49,7 +49,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
+          shared-key: linux
           save-if: false
       - uses: ./.github/actions/apt
         with:
@@ -61,7 +61,7 @@ jobs:
         run: |
           set -f
           mkdir -p shots
-          cargo build -q -p mareader-ui --example shot
+          cargo build -q -p mareader-ui-egui --example shot
           while IFS= read -r line; do
             read -r name args <<< "$line" || true
             [ -z "${name:-}" ] && continue
@@ -92,7 +92,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
+          shared-key: linux
           save-if: false
       # A colour emoji font, so README books draw emoji as a Mac does.
       - uses: ./.github/actions/apt
@@ -112,7 +112,7 @@ jobs:
         run: |
           # Without it tee hides a breached budget.
           set -o pipefail
-          cargo build -q -p mareader-ui --example memory
+          cargo build -q -p mareader-ui-egui --example memory
           status=0
           run() {
             title=$1; shift
@@ -128,7 +128,7 @@ jobs:
           run "Markdown README of emoji, scrolled" --markdown 6
           run "Library, 3,000 PDFs read in place" --library 3000
           run "Library, 20,000 books without files" --seeded 20000
-          if cargo build -q -p mareader-ui --example epub_perf; then
+          if cargo build -q -p mareader-ui-egui --example epub_perf; then
             {
               echo "## EPUB saved-place opening and scroll (800 chapters)"
               echo
@@ -187,7 +187,7 @@ jobs:
       - name: Measure
         run: |
           set -o pipefail
-          cargo build -q -p mareader-ui --example memory
+          cargo build -q -p mareader-ui-egui --example memory
           md=out/memory-macos.md
           status=0
           # The app starts itself with the large-block cache off; so do these.
@@ -783,13 +783,11 @@ jobs:
         working-directory: /home/user/mareader2
         run: |
           cargo clippy -q --workspace --all-targets -- -D warnings
-          # The browser preview is best-effort: warn only.
-          cargo clippy -q -p mareader-web --target wasm32-unknown-unknown -- -D warnings ||
-            echo "::warning::the wasm build has lint errors (best-effort)"
-          cargo xtask layers && cargo xtask assets && cargo xtask unsafe
+          cargo clippy -q -p mareader-web --target wasm32-unknown-unknown -- -D warnings
+          cargo xtask layers && cargo xtask wasm && cargo xtask trapped
+          cargo xtask assets && cargo xtask unsafe
           if [ "$CACHE_BUILDS" = full ]; then
-            cargo test -q --workspace --no-run
-            cargo build -q -p mareader-ui --example shot
+            cargo test -q --workspace --no-run && cargo build -q -p mareader-ui-egui --example shot
           fi
       - name: Pack
         working-directory: /home/user/mareader2
@@ -804,8 +802,8 @@ jobs:
               "rustc": subprocess.check_output(["rustc", "-V"], text=True).strip(),
               "lock": hashlib.sha256(open("Cargo.lock", "rb").read()).hexdigest(),
               "builds": os.environ["CACHE_BUILDS"],
-              "root": "/home/user/.cache",
-              "repo_dir": os.environ["REPO_DIR"],
+              "root": "/home/user/.cache", "repo_dir": os.environ["REPO_DIR"],
+              "env": {k: v for k, v in os.environ.items() if k.startswith(("CARGO_", "RUSTUP_"))},
               "dirs": ["rustup", "cargo", "target-mr"],
               # Restore gives unchanged files these times back.
               "mtimes": {f: int(os.stat(f).st_mtime)
@@ -824,13 +822,13 @@ jobs:
           path: /home/user/out/
           compression-level: 0
           retention-days: 30
-      # 1.7 GB each: the newest, and one spare.
+      # 1.2 GB each: keep three, for main and work branches.
       - name: Drop older caches
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=sandbox-cache&per_page=100" \
-            --jq '.artifacts | sort_by(.created_at) | reverse | .[2:] | .[].id' |
+            --jq '.artifacts | sort_by(.created_at) | reverse | .[3:] | .[].id' |
           while read -r id; do
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" && echo "dropped $id"
           done

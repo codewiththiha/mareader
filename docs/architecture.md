@@ -1,6 +1,6 @@
 # Architecture
 
-> **Status:** M0 (foundation) · **Last updated:** 2026-10-13
+> **Status:** engine-first (G0–G6 complete) · **Last updated:** 2026-11-15
 
 mareader2 delivers what mareader does — the same features, the same reading
 experience, the blend backdrop, panes, appearance, library and study tools — as
@@ -25,6 +25,7 @@ the right place.
 | L0 | `animated-icons` | **exists** | build-time-normalised Lucide animation packs as typed paths, ordered layers and timelines; bounded tiny-skia atlas rasterisation, with no UI toolkit dependency |
 | L0 | `workspace` | **exists** | the pane split tree (≤ 4), layout, dividers, drop edges |
 | L0 | `fetch` | **exists** | resumable downloads from mirrors, checked by kind before kept; desktop only, empty in a browser |
+| L0 | `search` | **exists** | finding text in a document: case and diacritic folding, searchable page text, hit spans and snippets |
 | L0 | `audio` | **exists** | a book's narration: clips decoded (symphonia), brought to the device's rate, sped up at the same pitch, and played on the system output (cpal); also samples a voice made in memory, queued behind what plays; silent in a browser |
 | L0 | `memory` | **exists** | freed heap handed back to the system when the app is quiet (`malloc_trim` on Linux, pressure relief on macOS, nothing on Windows, which returns it already); the one small audited `unsafe` file for it; used when caches rest and when a voice model unloads |
 | L0 | `script` | **exists** | a book's scripts in a sandboxed JavaScript engine (Boa) over a small page model: elements, events, timers, form controls; pages written back as markup; desktop only |
@@ -36,56 +37,82 @@ the right place.
 | L0 | `vits` | **exists** | Piper's VITS voices: inference ported to candle and read straight from each voice's ONNX file (weights named by the module using them, convolution shapes from the graph), so every quality and multi-speaker voice loads with no tables; misaki's phonemes respelled the way espeak writes them for each voice; noise seeded so equal text sounds equal; credits in its `NOTICE`; desktop only |
 | L0 | `phonon` | **exists** | Gradium's Phonon 31M ported to candle: English text in and 24 kHz speech out, no phonemes; its own unigram tokenizer, a flow language model primed once per voice that writes Mimi latents a frame at a time, and Mimi's decoder; the reference's English normalisation (numbers, money, addresses, abbreviations and symbols spelled out; country and generic web domains only) and sentence grouping; a pace setting through the model's own duration condition; weights read from the 8-bit GGUF or the full safetensors (widened on load), voices from their safetensors; credits in its `NOTICE`; desktop only |
 | L1 | `speech` | **exists** | reading text aloud: sentences cut from page text with their page and character spans, and the engines behind one `Voicer` trait (the system's own voices through `tts`; local models, Kokoro, Piper, Kitten and Phonon, behind one engine that asks each only to load a voice and say a line, their sentences made a few ahead on a thread, the one wanted now in a short first piece so it sounds sooner, kept up to a set size, and played without gaps; a model loads on first use, says so while loading, and leaves memory after a set idle time; a silent one for tests); voice models on offer, each in builds of several sizes that share its voices (or, like Piper, voices that bring their own weights; or, like Kitten, builds that bring every voice, a file two builds share kept once; or, like Phonon, one build and a small file per voice), the build picked for the first download and more added or removed later, downloaded one at a time through `fetch` and checked by SHA-256, a file another model already has linked rather than fetched; a file several voices share, such as the Chinese dictionaries, fetched with the first and kept until the last goes; each model's own settings, such as Piper's expression and rhythm, as shares of each voice's normal; Phonon's speeds past the paces it keeps steady made up by `audio`'s same-pitch stretch; files of voices no longer offered deleted at start; the pronunciation pack the word cards use, a shelf of its own beside the voice models, sharing their files both ways; desktop only |
-| L1 | `pdf` | planned M2 | hayro: open, page sizes, tile raster, text and glyph boxes, outline, links, search index |
-| L1 | `reflow` | planned M4 | styled blocks → parley lines → pages; typography knobs; hit-testing |
-| L1 | `library` | planned M5 | books, locations, shelves, sources, scans (`docs/library.md`) |
-| L1 | `study` | planned M6 | dictionary packs, CEFR levels, gloss requests and marks |
+| L1 | `pdf` | **exists** | hayro: open, page sizes, tile raster, text and glyph boxes, outline, links, search index |
+| L1 | `reflow` | **exists** | styled blocks → parley lines → pages; typography knobs; hit-testing |
+| L1 | `library` | **exists** | books, locations, shelves, sources, scans, SQLite store (`docs/library.md`) |
+| L1 | `study` | **exists** | gloss requests, answers, marks and highlights |
 | L1 | `dict` | **exists** | dictionary packs: download with mirrors and resume, parquet → SQLite, card lookups, search, bridges through English; downloads and lookups need the desktop |
 | L1 | `cefr` | **exists** | word levels: the CEFR dataset (download, parquet → SQLite), which words of a text are hard, a clicked word's role from the tagger; downloads and answers need the desktop |
-| L2 | `epub` | planned M4 | rbook container, spine, ToC, XHTML+CSS subset → `reflow` blocks |
-| L2 | `settings` | planned M1 | the persisted schema and defaults |
-| L3 | `session` | planned M2 | open documents shared by panes, the tile cache, the job scheduler |
-| L3 | `assist` | **exists** | AI tasks and their prompts, the providers behind one `Backend` seam, API keys (`docs/assist.md`); desktop only, the one exception to rule 3 |
-| L7 | `ui` | **exists** | egui: theme, icons, title bar, panes, every view and popover |
-| — | `apps/mareader` | **exists** | the window and `main` |
-| — | `xtask` | **exists** | gates |
+| L2 | `epub` | **exists** | rbook container, spine, ToC, XHTML+CSS subset → `reflow` blocks |
+| L2 | `settings` | **exists** | the persisted schema, defaults, ranges and migration |
+| L3 | `session` | **exists** | open documents shared by panes, the tile cache, the job scheduler |
+| L3 | `assist` | **exists** | AI tasks and their prompts, the providers behind one `Backend` seam, API keys (`docs/assist.md`); desktop only, the one exception to rule 3, listed in `xtask/src/wasm.rs` `EXEMPT` with its reason |
+| L5 | `engine` | **exists** | the app without a window (ADR 0007): `Session` owns every piece of durable state (settings, pane tree, focus, route, open documents, reading places, library, marks and notes, read-aloud, study/dict/vocab, page AI, running jobs), `Command` + `SPECS` are the single door in, `Event` drains results out, `Host` isolates the five platform capabilities, and `Session` writes `settings.json` and `session.json` atomically; no toolkit may be named here |
+| L6 | `ui-egui` | **exists** | one front end in egui: theme, icons, title bar, panes, every view, popover, GPU textures and window-ephemeral `UiState` / `UiCommand` |
+| L7 | `apps/mareader` | **exists** | the desktop window, `main`, OS file pickers and `desk.rs`: the `Host` the engine reaches this machine through, with `system.rs` for its file manager and opener |
+| L7 | `apps/mareader-web` | **exists** | the browser preview: the same app through eframe's `WebRunner`, and a `Host` with a clipboard and no files |
+| L7 | `apps/mareader-cli` | **exists** | the headless second client (`commands`, `exec`, `run`, `inspect`) driving `mareader-engine` directly with zero toolkit dependencies |
+| — | `xtask` | **exists** | gates (`layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `comments`, `ci`) |
 
-The rules:
+The rules (enforced with the eight laws in `AGENTS.md` § Layering and ADR 0007):
 1. A crate depends only on lower layers. Same-layer edges need an entry in
    `SIDEWAYS`.
-2. egui, eframe, winit, wgpu and rfd appear only in L7 and the app.
-3. L0–L3 compile for `wasm32-unknown-unknown`. A gate for this arrives with the
-   first L1 crate.
+2. egui, eframe, egui_extras, egui_kittest, winit, wgpu and rfd appear only in
+   L6, in `apps/mareader`, `apps/mareader-web` and tooling. `apps/mareader-cli`
+   may link none of them (checked transitively with `cargo tree` by
+   `cargo xtask layers`), so the dependency graph itself proves the engine is
+   usable without a window.
+3. Every crate at L0–L5, `ui-egui` and `mareader-web` compiles for
+   `wasm32-unknown-unknown`. `cargo xtask wasm` checks them all; `assist` is the
+   one exemption, because AI needs threads, a keychain and TLS (see below).
+4. A file under `crates/ui-egui/src` that names no toolkit is a file that belongs
+   in the engine, and `cargo xtask trapped` fails on it: the gate is absolute, and
+   the count it was ratcheted down against — 52 files at G0, 33 at G1, 10 at G3,
+   7 for the option keys, 0 at G4 — was deleted with `tools/trapped_count.txt`.
+   Only `lib.rs` and `icons/pack.rs` are allowlisted, each being front-end
+   presentation with nowhere else to go, and a unit test pins that two-file list.
+   `tests/` and `examples/` are harnesses and are not counted.
+5. Every shipped entry in `parity/mareader-features.toml` cites a registered
+   command id from `engine::SPECS` (`command = "<id>"`) or explicitly declares
+   `ui_only = true`, checked by `cargo xtask parity`.
 
 ## How the app is built in egui
 
 egui is immediate mode: every frame, the UI is a function of the state. Write
 it that way rather than as a web app in egui syntax.
 
-**State.** One owner, `MareaderApp`, holds plain structs: settings, the pane
-tree, the open documents, the library, which popover is open. Domain state lives in
-the L0–L3 crates and has methods and tests of its own. egui's `Memory` keeps
-only transient widget state (scroll offsets, hover animations, a text field's
-cursor). There are no signals, effects, observers or stores, and no state is
-mirrored in two places.
+**State.** Durable application state has one owner: `engine::Session` (L5),
+holding plain structs — settings, the pane tree, focus, route, open documents
+and per-pane reading places, the library, marks and notes, read-aloud, study
+and page-AI results, and running background jobs. `MareaderApp` holds
+`{ session, ui }`: `ui` (`UiState`) keeps only window-ephemeral state (open
+popovers, hover timers, drag ghosts, animations, GPU textures and caches), and
+egui's `Memory` keeps transient widget state (scroll offsets, text cursors).
+There are no signals, effects, observers or stores, and no state is mirrored in
+two places.
 
-**Views are functions.** A view takes the state it shows and a `&mut Commands`:
-`fn show(ui: &mut Ui, state: &T, out: &mut Commands)`. It draws and pushes
-`Command`s (`crates/ui/src/command.rs`) for what the user asked. It does not
-mutate app state, call other views' handlers or keep its own copy of the data.
+**Views are functions.** A view takes the state it shows and pushes commands:
+`engine::Command` (`crates/engine/src/command.rs`) for application actions and
+`ui_egui::UiCommand` (`crates/ui-egui/src/ui_command.rs`) for chrome-only
+actions (popovers, focus, window captions, OS dialogs). Views do not mutate
+application state, call other views' handlers or keep their own copies of the
+data.
 
-**Commands are the only way to change state.** Buttons, menus, shortcuts and
-drops all produce the same `Command` values, and `MareaderApp::apply` is the
-one place they take effect, after the frame's UI pass. So a shortcut and its
-button cannot drift apart, and every user action can be tested by pushing a
-command.
+**Commands are the only way to change state.** Buttons, menus, shortcuts, drops
+and `mareader-cli` all produce the same registered `engine::Command` values
+(`engine::SPECS`). After the frame's UI pass, every `engine::Command` enters
+`Session::execute` (the one door into the engine) and every `UiCommand` runs in
+`MareaderApp::apply`. `ui-egui` never matches over `engine::Command`. Results
+leave the engine via `Session::drain() -> Vec<Event>`.
 
 **Frame order.**
-1. `logic`: apply settings changes (restyle, motion switch), drain finished
-   background jobs into state.
+1. `logic`: tick `Session` (`Session::tick(now)`), drain engine `Event`s into
+   chrome state (toasts, window title, notifications) and finished pixel rasters
+   into GPU textures.
 2. `ui`: panes, then the floating chrome (title bar, popovers, toasts) above
-   them, each pushing commands.
-3. Apply the commands.
+   them, each pushing `Command` or `UiCommand`.
+3. Apply `Command`s through `Session::execute` and `UiCommand`s through
+   `MareaderApp::apply`.
 
 **Use egui's tools, not re-creations of browser ones.**
 
@@ -114,9 +141,12 @@ its colours from `Tokens` or `Visuals` and gives AccessKit a label.
 threads call `Context::request_repaint` when a result is ready. Nothing polls,
 and an idle window renders no frames.
 
-**Persistence.** Settings and the library are serde structs written through
-eframe's storage or our own file with an atomic rename, debounced, off the UI
-thread for anything large.
+**Persistence.** The engine saves itself (Law 8): `Session` writes
+`settings.json` and `session.json` atomically (temp file + rename) under
+`Host::state_dir()`, debounced during interactive edits and flushed on
+shutdown (`Session::flush()`). The library keeps its own SQLite store under the
+same directory. `eframe::Storage` is touched only in the one-time v0.0.5
+importer on first launch.
 
 ## The page pipeline: every page is a texture
 
@@ -207,7 +237,7 @@ mareader typography setting has a parley equivalent.
   channels. Each result carries the document id and generation it was made
   for; a result for a closed pane, an old zoom or an old document is dropped
   before it is uploaded.
-- **File watch** (`crates/ui/src/watch.rs`). One thread looks at the open
+- **File watch** (`crates/engine/src/watch.rs`). One thread looks at the open
   files' size and modified time every second, and wakes the window only once
   a change has held for two looks; the window stays idle meanwhile. A file
   is first seen the moment it is shown, so a save right after it opens
@@ -252,6 +282,7 @@ mareader typography setting has a parley equivalent.
 | [0004](adr/0004-lucide-icons.md) | Build-generated Lucide geometry behind an `Icon` facade; bounded resting glyphs and active part atlases are tinted at draw time |
 | [0005](adr/0005-functional-parity.md) | Match mareader's features, not its pixels or its structure |
 | [0006](adr/0006-one-document-many-views.md) | A book opens once; panes are views sharing one cache and worker pool |
+| [0007](adr/0007-engine-first.md) | Engine-first architecture: `mareader-engine` (L5) owns all durable state and commands; `ui-egui` (L6) draws; `mareader-cli` (L7) proves zero-toolkit execution |
 
 ## Revision history
 
@@ -261,3 +292,10 @@ mareader typography setting has a parley equivalent.
 | 2026-10-13 | Functional parity and the egui architecture section (ADR 0005) |
 | 2026-10-13 | Shared documents, cache and workers across panes (ADR 0006); appearance as uniforms |
 | 2026-10-13 | Scrolling long documents: admission, tiling and upload rules |
+| 2026-11-11 | P0 of the engine-first review: `crates/ui` becomes `crates/ui-egui` (`mareader-ui-egui`), `mareader-engine` takes L5, the front end L6 and the three apps L7; `cargo xtask wasm` and `cargo xtask trapped` become gates |
+| 2026-11-11 | P1: the toolkit-free rules move to `mareader-engine`; the front end calls them across the crate boundary, and `cargo xtask trapped` falls to 33 |
+| 2026-11-12 | P2 (G2): the command enum splits into `engine::Command` and `ui_egui::UiCommand`, `Session::execute` becomes the door and the app is `{ session, ui }`; the reading place, the library's state and its work move down, and `cargo xtask trapped` falls to 11 |
+| 2026-11-13 | P3 (G3): documents, marks, read-aloud, study/dict/vocab and page-AI controllers move into `mareader-engine`, `Waker` replaces `ctx.clone()`, `ui-egui` thread spawns drop to the four pixel files (`icons/anim.rs`, `machine_fonts.rs`, `library/covers.rs`, `image_viewer.rs`) |
+| 2026-11-14 | P4 (G4): `engine::Host` isolates the five platform calls, `Session::new(host, waker)` replaces `attach_*`, engine writes `settings.json` and `session.json` atomically with one-time v0.0.5 `eframe::Storage` import, `cargo xtask trapped` hits 0 beyond the two-file allowlist (`lib.rs`, `icons/pack.rs`) and `tools/trapped_count.txt` is deleted |
+| 2026-11-15 | P5 (G5): `apps/mareader-cli` lands with `commands`, `exec`, `run` and `inspect`, zero toolkit dependencies (checked transitively by `cargo xtask layers`), and five headless end-to-end scripts running in CI |
+| 2026-11-15 | P6 (G6): ADR 0007, updated layer table and laws in docs, and all 122 shipped parity entries tied to `engine::SPECS` or `ui_only = true` in `cargo xtask parity` |

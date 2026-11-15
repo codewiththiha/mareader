@@ -124,9 +124,9 @@ mod tests {
 
     #[test]
     fn any_other_file_may_not() {
-        let src = one("crates/ui/src/x.rs", "#![allow(unsafe_code)]");
+        let src = one("crates/ui-egui/src/x.rs", "#![allow(unsafe_code)]");
         assert_eq!(check(ROOT, &[], &src).len(), 1);
-        let src = one("crates/ui/src/x.rs", "#[expect(unsafe_code)]");
+        let src = one("crates/ui-egui/src/x.rs", "#[expect(unsafe_code)]");
         assert_eq!(check(ROOT, &[], &src).len(), 1);
     }
 

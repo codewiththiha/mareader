@@ -116,7 +116,7 @@ answer says what's wrong.
 ## The service in the app
 
 `Assist::new(root, waker)` starts a small Tokio runtime. The UI owns it
-through `crates/ui/src/ai.rs`:
+through `crates/ui-egui/src/ai.rs`:
 
 - each frame, `follow(&settings.ai)` takes in finished jobs and, when the
   AI settings changed, hands the study tools a new `Explainer`;

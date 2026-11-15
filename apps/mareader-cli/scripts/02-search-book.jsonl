@@ -1,0 +1,3 @@
+# Script 2: open a book and search it for a term.
+{"id": "reader.open", "params": {"path": "${EPUB}"}}
+{"id": "page.search", "params": {"query": "Nevermore"}}

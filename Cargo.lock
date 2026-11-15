@@ -3565,11 +3565,14 @@ version = "0.0.5"
 dependencies = [
  "eframe",
  "egui",
- "mareader-ui",
+ "mareader-engine",
+ "mareader-ui-egui",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
+ "pollster 0.4.0",
  "raw-window-handle",
+ "rfd",
 ]
 
 [[package]]
@@ -3624,12 +3627,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "mareader-cli"
+version = "0.0.5"
+dependencies = [
+ "mareader-engine",
+ "mareader-epub",
+ "mareader-pdf",
+ "mareader-workspace",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "mareader-dict"
 version = "0.0.5"
 dependencies = [
  "mareader-fetch",
  "parquet",
  "rusqlite",
+ "tempfile",
+]
+
+[[package]]
+name = "mareader-engine"
+version = "0.0.5"
+dependencies = [
+ "mareader-appearance",
+ "mareader-audio",
+ "mareader-cefr",
+ "mareader-dict",
+ "mareader-epub",
+ "mareader-g2p",
+ "mareader-library",
+ "mareader-memory",
+ "mareader-pdf",
+ "mareader-reflow",
+ "mareader-search",
+ "mareader-session",
+ "mareader-settings",
+ "mareader-speech",
+ "mareader-study",
+ "mareader-workspace",
+ "serde",
+ "serde_json",
+ "sys-locale",
  "tempfile",
 ]
 
@@ -3813,7 +3855,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mareader-ui"
+name = "mareader-ui-egui"
 version = "0.0.5"
 dependencies = [
  "eframe",
@@ -3827,10 +3869,10 @@ dependencies = [
  "mareader-audio",
  "mareader-cefr",
  "mareader-dict",
+ "mareader-engine",
  "mareader-epub",
  "mareader-g2p",
  "mareader-library",
- "mareader-memory",
  "mareader-pdf",
  "mareader-reflow",
  "mareader-script",
@@ -3841,13 +3883,12 @@ dependencies = [
  "mareader-study",
  "mareader-workspace",
  "parquet",
- "pollster 0.4.0",
  "rfd",
  "serde",
  "serde_json",
- "sys-locale",
  "tempfile",
  "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -3866,7 +3907,8 @@ name = "mareader-web"
 version = "0.0.5"
 dependencies = [
  "eframe",
- "mareader-ui",
+ "mareader-engine",
+ "mareader-ui-egui",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

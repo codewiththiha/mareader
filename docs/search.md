@@ -45,8 +45,9 @@ keyboard alone. The parity entries are `search.document`,
 | Piece | Home | Why |
 |---|---|---|
 | Folding, a page's searchable text, matching, snippets, stepping and the reveal rule | `crates/search` (L0) | pure, no dependencies, tested alone; the library's search folds with it too |
-| Per-document indexes, threads, hit painting | `crates/ui/src/search.rs` | owns the `Document`, wakes egui |
-| The bar, count, results list, debounce and steps | `crates/ui/src/find_bar.rs` | egui |
+| Per-document indexes and their threads | `crates/engine/src/search.rs` (L5) | owns the `Document`, asks for a frame through a `Waker` |
+| Hit painting | `crates/ui-egui/src/search.rs` | egui |
+| The bar, count, results list, debounce and steps | `crates/ui-egui/src/find_bar.rs` | egui |
 | Revealing a hit | `PdfView::seek`, `Documents::reveal_hit` | the view knows its layout and scroll |
 
 ## The index
@@ -81,7 +82,7 @@ sideways to the hit.
 mareader gets keyboard use from the browser: Tab order, a 2 px accent
 ring on `:focus-visible`, Space and Enter on buttons, and focus trapped
 in modals. egui moves focus and fakes clicks but draws no ring, so
-`crates/ui/src/focus.rs` adds what is missing.
+`crates/ui-egui/src/focus.rs` adds what is missing.
 
 - **The ring.** 2 px accent, inside a control's edge. Cards ring their
   padded backing; links, marks and words ring outside, and a link is also
@@ -92,7 +93,7 @@ in modals. egui moves focus and fakes clicks but draws no ring, so
   while the ring is in it, and so does the floating sidebar. mareader's
   bar stayed hidden, so Tab reached buttons no one could see.
 - **The page.** Links, marks, and shaded words when a click explains them,
-  become Tab stops in reading order (`crates/ui/src/reach.rs`). Only what
+  become Tab stops in reading order (`crates/ui-egui/src/reach.rs`). Only what
   shows whole, clear of the bars Tab brings up, takes part, so Tab never
   scrolls the page or lands under a bar. Enter or Space
   does what a click there does. They are focus-only widgets, so clicks,
@@ -127,6 +128,6 @@ in modals. egui moves focus and fakes clicks but draws no ring, so
 
 | # | Slice | Check |
 |---|---|---|
-| 1 | Document search: the `search` crate, threaded lazy index, bar with count, steps and results, hit painting, reveal | `crates/search` unit tests; `crates/ui/tests/find.rs` |
-| 2 | Keyboard-only operation and focus rings | `crates/ui/tests/focus.rs`; `reach.rs` unit test |
-| 3 | Auto-scroll: Shift+A, the View menu row, Escape, stops at the end | `crates/ui/tests/auto_scroll.rs` |
+| 1 | Document search: the `search` crate, threaded lazy index, bar with count, steps and results, hit painting, reveal | `crates/search` unit tests; `crates/ui-egui/tests/find.rs` |
+| 2 | Keyboard-only operation and focus rings | `crates/ui-egui/tests/focus.rs`; `reach.rs` unit test |
+| 3 | Auto-scroll: Shift+A, the View menu row, Escape, stops at the end | `crates/ui-egui/tests/auto_scroll.rs` |

@@ -1,22 +1,68 @@
 name: Cache GC
+# Keeps the 10 GB budget for CI's caches (docs/verification.md, "Cache budget").
 on:
   delete:
   pull_request:
     types: [closed]
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * *"
 permissions:
   actions: write
+  contents: read
+concurrency:
+  group: cache-gc
+  cancel-in-progress: false
 jobs:
-  ref:
-    if: github.event_name == 'pull_request' || github.event.ref_type == 'branch'
+  gc:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      # GITHUB_TOKEN allows 1,000 requests an hour; leave room for CI.
+      BUDGET: "700"
     steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
+      - name: The ref that just went away
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+        env:
           REF: >-
             ${{ github.event_name == 'pull_request'
                 && format('refs/pull/{0}/merge', github.event.number)
                 || format('refs/heads/{0}', github.event.ref) }}
+          OK: ${{ github.event_name == 'pull_request' || github.event.ref_type == 'branch' }}
         run: |
-          gh cache list -R "$GITHUB_REPOSITORY" --ref "$REF" --limit 1000 \
-            --json id -q '.[].id' |
-            xargs -r -n1 gh cache delete -R "$GITHUB_REPOSITORY"
+          [ "$OK" = true ] || exit 0
+          gh api --paginate "repos/$REPO/actions/caches?per_page=100&ref=$(jq -rn --arg r "$REF" '$r|@uri')" \
+            --jq '.actions_caches[].id' | head -n "$BUDGET" |
+          while read -r id; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+      - name: Sweep dead refs and sccache leftovers
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          {
+            gh api --paginate "repos/$REPO/branches?per_page=100" --jq '.[].name | "refs/heads/" + .'
+            gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].number | "refs/pull/\(.)/merge"'
+          } | sort -u > live.txt
+          # Oldest first: what eviction would drop anyway goes first here too.
+          gh api "repos/$REPO/actions/caches?per_page=100&sort=last_accessed_at&direction=asc" \
+            --jq '.actions_caches[] | "\(.id) \(.ref) \(.key)"' > page.txt || true
+          deleted=0
+          while [ "$deleted" -lt "$BUDGET" ] && [ -s page.txt ]; do
+            while read -r id ref key; do
+              dead=false
+              grep -qxF "$ref" live.txt || dead=true
+              case "$key" in sccache/*) dead=true ;; esac
+              [ "$dead" = true ] || continue
+              gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null && deleted=$((deleted + 1))
+              [ "$deleted" -lt "$BUDGET" ] || break
+            done < page.txt
+            before=$(wc -l < page.txt)
+            gh api "repos/$REPO/actions/caches?per_page=100&sort=last_accessed_at&direction=asc" \
+              --jq '.actions_caches[] | "\(.id) \(.ref) \(.key)"' > next.txt || true
+            # Nothing deletable left on the oldest page: stop.
+            cmp -s page.txt next.txt && break
+            mv next.txt page.txt
+            [ "$before" -gt 0 ] || break
+          done
+          echo "deleted $deleted caches" | tee -a "$GITHUB_STEP_SUMMARY"
+          gh api "repos/$REPO/actions/cache/usage" | tee -a "$GITHUB_STEP_SUMMARY"

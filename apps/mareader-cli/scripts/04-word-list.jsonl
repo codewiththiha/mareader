@@ -1,0 +1,4 @@
+# Script 4: attach vocabulary levels and build a word list for page 0.
+{"id": "vocab.attach", "params": {"folder": "${VOCAB_DIR}"}}
+{"id": "reader.open", "params": {"path": "${PDF}"}}
+{"id": "word.list", "params": {"pages": [0]}}

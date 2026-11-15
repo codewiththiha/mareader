@@ -14,7 +14,8 @@ crate-type = ["cdylib", "rlib"]
 workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-mareader-ui = { workspace = true }
+mareader-engine = { workspace = true }
+mareader-ui-egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "persistence"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

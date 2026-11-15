@@ -32,9 +32,11 @@ pub const TABLE: &[(&str, Layer)] = &[
     ("settings", Layer::Core(2)),
     ("session", Layer::Core(3)),
     ("assist", Layer::Core(3)),
-    ("ui", Layer::Front),
-    ("mareader", Layer::Exempt),
-    ("web", Layer::Exempt),
+    ("engine", Layer::Core(5)),
+    ("ui-egui", Layer::Front),
+    ("mareader", Layer::App),
+    ("web", Layer::App),
+    ("cli", Layer::App),
     ("xtask", Layer::Exempt),
 ];
 
@@ -57,21 +59,27 @@ pub const UI_CRATES: &[&str] = &[
 /// Prefix families with the same rule.
 pub const UI_PREFIXES: &[&str] = &["wgpu", "egui"];
 
+/// The one app that must never link a toolkit: it is the proof.
+pub const HEADLESS: &str = "cli";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layer {
     /// Toolkit-free; may depend only on lower layers.
     Core(u8),
-    /// The egui front end; the only layer that may use a toolkit.
+    /// One front end, in egui; the only layer that may use a toolkit.
     Front,
-    /// Binaries and tooling.
+    /// A binary: it may use a toolkit, except the headless client.
+    App,
+    /// Tooling that builds and checks the tree.
     Exempt,
 }
 
 impl Layer {
-    fn rank(self) -> u8 {
+    pub fn rank(self) -> u8 {
         match self {
             Layer::Core(n) => n,
-            Layer::Front => 7,
+            Layer::Front => 6,
+            Layer::App => 7,
             Layer::Exempt => u8::MAX,
         }
     }
@@ -113,11 +121,18 @@ pub fn check(packages: &[Package]) -> Vec<String> {
         if layer == Layer::Exempt {
             continue;
         }
+        let headless = layer == Layer::App && short(&p.name) == HEADLESS;
         for dep in &p.deps {
-            if members.contains(&dep.as_str()) {
-                let Some(theirs) = layer_of(dep) else {
-                    continue;
-                };
+            if headless && (is_ui(dep) || short(dep) == "ui-egui") {
+                errors.push(format!(
+                    "{} is the headless client and must not depend on {dep}",
+                    p.name
+                ));
+                continue;
+            }
+            // Ours either way, but a bare `cefr` is the git crate of that name.
+            let ours = members.contains(&dep.as_str()) || dep.starts_with("mareader-");
+            if let Some(theirs) = layer_of(dep).filter(|_| ours) {
                 let sideways = SIDEWAYS.contains(&(short(&p.name), short(dep)));
                 let down =
                     theirs.rank() < layer.rank() || (theirs.rank() == layer.rank() && sideways);
@@ -130,7 +145,7 @@ pub fn check(packages: &[Package]) -> Vec<String> {
                         theirs.rank()
                     ));
                 }
-            } else if is_ui(dep) && layer != Layer::Front {
+            } else if is_ui(dep) && !matches!(layer, Layer::Front | Layer::App) {
                 errors.push(format!(
                     "{} is below the UI layer and must not depend on {dep}",
                     p.name
@@ -176,9 +191,53 @@ fn metadata() -> Result<Vec<Package>, String> {
         .collect())
 }
 
+/// Checks transitive `cargo tree` output for the headless client.
+pub fn check_headless_tree(tree: &str) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut errors = Vec::new();
+    for line in tree.lines() {
+        let Some(name) = line.split_whitespace().next() else {
+            continue;
+        };
+        if (is_ui(name) || short(name) == "ui-egui") && seen.insert(name) {
+            errors.push(format!(
+                "mareader-{HEADLESS} transitively links toolkit crate {name}"
+            ));
+        }
+    }
+    errors
+}
+
+fn headless_tree(packages: &[Package]) -> Result<Vec<String>, String> {
+    let Some(cli) = packages.iter().find(|p| short(&p.name) == HEADLESS) else {
+        return Ok(Vec::new());
+    };
+    let out = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+        .args([
+            "tree",
+            "-q",
+            "--locked",
+            "--offline",
+            "-p",
+            &cli.name,
+            "-e",
+            "normal,build",
+            "--prefix",
+            "none",
+        ])
+        .current_dir(crate::root())
+        .output()
+        .map_err(|e| format!("cargo tree: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+    }
+    Ok(check_headless_tree(&String::from_utf8_lossy(&out.stdout)))
+}
+
 pub fn run(_: &[String]) -> Result<(), String> {
     let packages = metadata()?;
-    let errors = check(&packages);
+    let mut errors = check(&packages);
+    errors.extend(headless_tree(&packages)?);
     if errors.is_empty() {
         println!("layers: {} crates ok", packages.len());
         Ok(())
@@ -206,19 +265,95 @@ mod tests {
     fn egui_below_the_front_end_is_refused() {
         let errs = check(&[pkg("mareader-pdf", &["egui"])]);
         assert_eq!(errs.len(), 1, "{errs:?}");
-        assert!(check(&[pkg("mareader-ui", &["egui", "wgpu"])]).is_empty());
+        assert!(check(&[pkg("mareader-ui-egui", &["egui", "wgpu"])]).is_empty());
     }
 
     #[test]
     fn edges_point_down_and_unknown_crates_need_a_layer() {
         let all = [
-            pkg("mareader-appearance", &["mareader-ui"]),
-            pkg("mareader-ui", &["mareader-appearance"]),
+            pkg("mareader-appearance", &["mareader-ui-egui"]),
+            pkg("mareader-ui-egui", &["mareader-appearance"]),
             pkg("mareader-mystery", &[]),
         ];
         let errs = check(&all);
         assert_eq!(errs.len(), 2, "{errs:?}");
         assert!(errs.iter().any(|e| e.contains("mareader-appearance (L0)")));
         assert!(errs.iter().any(|e| e.contains("mareader-mystery")));
+    }
+
+    #[test]
+    fn the_engine_sits_under_the_front_end_and_above_the_core() {
+        let ok = [
+            pkg("mareader-engine", &["mareader-session"]),
+            pkg("mareader-ui-egui", &["mareader-engine"]),
+            pkg("mareader", &["mareader-ui-egui"]),
+        ];
+        assert!(check(&ok).is_empty(), "{:?}", check(&ok));
+        let up = check(&[pkg("mareader-engine", &["mareader-ui-egui"])]);
+        assert_eq!(up.len(), 1, "{up:?}");
+        assert!(up[0].contains("(L5)"), "{up:?}");
+        let pixels = check(&[pkg("mareader-engine", &["egui"])]);
+        assert_eq!(pixels.len(), 1, "{pixels:?}");
+    }
+
+    #[test]
+    fn a_toolkit_smuggled_in_through_a_dev_dependency_is_refused() {
+        // The metadata list includes dev-dependencies, so they are checked too.
+        let dev = ["egui_kittest", "wgpu-core"];
+        let errs = check(&[pkg("mareader-engine", &dev)]);
+        assert_eq!(errs.len(), 2, "{errs:?}");
+        assert!(check(&[pkg("mareader-ui-egui", &dev)]).is_empty());
+    }
+
+    #[test]
+    fn the_headless_client_may_not_link_a_toolkit() {
+        let apps = [
+            pkg("mareader-cli", &["mareader-engine"]),
+            pkg("mareader-cli", &["mareader-ui-egui"]),
+            pkg("mareader-cli", &["eframe"]),
+            pkg("mareader", &["mareader-ui-egui", "eframe"]),
+        ];
+        let errs = check(&apps);
+        assert_eq!(errs.len(), 2, "{errs:?}");
+        assert!(
+            errs.iter().all(|e| e.contains("headless client")),
+            "{errs:?}"
+        );
+        assert!(check(&[pkg("mareader-cli", &["mareader-engine"])]).is_empty());
+    }
+
+    #[test]
+    fn the_layer_ranks_leave_the_engine_floor() {
+        assert_eq!(Layer::Core(5).rank(), 5);
+        assert_eq!(Layer::Front.rank(), 6);
+        assert_eq!(Layer::App.rank(), 7);
+        assert!(Layer::Exempt.rank() > Layer::App.rank());
+    }
+
+    #[test]
+    fn headless_tree_rejects_transitive_toolkit_crates() {
+        let clean = "mareader-cli v0.0.5\nmareader-engine v0.0.5\nserde_json v1.0.0\n";
+        assert!(check_headless_tree(clean).is_empty());
+        let bad = "mareader-cli v0.0.5\nwgpu-core v24.0.0\negui v0.31.0\negui v0.31.0\n";
+        let errs = check_headless_tree(bad);
+        assert_eq!(errs.len(), 2, "{errs:?}");
+    }
+
+    #[test]
+    fn every_row_names_a_crate_the_workspace_has() {
+        // Rows for planned crates must not outlive them by much: the tree wins.
+        let have = std::fs::read_dir(crate::root().join("crates"))
+            .map(|dirs| {
+                dirs.filter_map(|d| d.ok())
+                    .map(|d| d.file_name().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for (name, _) in TABLE {
+            if matches!(*name, "mareader" | "web" | "cli" | "xtask") {
+                continue;
+            }
+            assert!(have.iter().any(|d| d == name), "{name} has no crate");
+        }
     }
 }

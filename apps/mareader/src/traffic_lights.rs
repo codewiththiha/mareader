@@ -44,7 +44,7 @@ pub use mac::place;
 #[cfg(all(target_os = "macos", feature = "traffic-lights"))]
 #[allow(unsafe_code)]
 mod mac {
-    use mareader_ui::platform::{LightSpots, NativeLights};
+    use mareader_ui_egui::platform::{LightSpots, NativeLights};
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
     use objc2_app_kit::{NSButton, NSView, NSWindow, NSWindowButton};
@@ -144,7 +144,7 @@ mod mac {
         let spacing = buttons[1].frame().origin.x - close.origin.x;
         let want = super::layout(
             window.frame().size.height,
-            f64::from(mareader_ui::theme::TITLE_BAR_H) * zoom,
+            f64::from(mareader_ui_egui::theme::TITLE_BAR_H) * zoom,
             close.size.height,
             spacing,
             shift,
@@ -193,7 +193,7 @@ mod tests {
     fn they_fit_the_room_the_bar_leaves() {
         let l = layout(800.0, 48.0, 16.0, 20.0, 0.0);
         let right = l.xs[2] + 14.0;
-        assert!(right < f64::from(mareader_ui::platform::Platform::Mac.leading_inset()));
+        assert!(right < f64::from(mareader_ui_egui::platform::Platform::Mac.leading_inset()));
     }
 
     #[test]

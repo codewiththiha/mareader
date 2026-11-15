@@ -7,7 +7,9 @@ mod assets;
 mod gates;
 mod layers;
 mod parity;
+mod trapped;
 mod unsafety;
+mod wasm;
 
 type Command = fn(&[String]) -> Result<(), String>;
 
@@ -29,7 +31,7 @@ const COMMANDS: &[(&str, &str, Command)] = &[
     ),
     (
         "unsafe",
-        "Keep `unsafe` to the audited module (apps/mareader/src/traffic_lights.rs)",
+        "Keep `unsafe` to the files AGENTS.md allows, each audited by the owner",
         unsafety::run,
     ),
     (
@@ -38,8 +40,18 @@ const COMMANDS: &[(&str, &str, Command)] = &[
         gates::comments,
     ),
     (
+        "wasm",
+        "Check L0-L5, the front end and the web app for wasm32-unknown-unknown",
+        wasm::run,
+    ),
+    (
+        "trapped",
+        "Fail when a toolkit-free file hides in crates/ui-egui beyond the allowlist",
+        trapped::run,
+    ),
+    (
         "ci",
-        "fmt, clippy -D warnings, tests, layers, parity, assets, unsafe; stops at the first failure",
+        "fmt, clippy, tests, layers, wasm, trapped, parity, assets, unsafe; stops at the first failure",
         gates::ci,
     ),
 ];

@@ -50,8 +50,8 @@ Add a dated section per audit; never overwrite one.
 - **What:** process RSS and its peak (`VmRSS`, `VmHWM` in `/proc/self/status`;
   the peak is reset after each row), with the app's own counts: open
   documents, cached page rasters and their bytes, text layers, queued jobs.
-- **How:** `crates/ui/examples/memory.rs`, run as
-  `capped.sh cargo run -q -p mareader-ui --example memory -- BOOK.pdf 12`.
+- **How:** `crates/ui-egui/examples/memory.rs`, run as
+  `capped.sh cargo run -q -p mareader-ui-egui --example memory -- BOOK.pdf 12`.
 - **Workload:** a 1200 × 800 pt window at 2 px per pt, two panes, 0 workers,
   scroll jumps landing at once. Open the book in the right pane, go to every
   page in turn (each drawn), close the pane. Repeat open, read and close in a
@@ -167,7 +167,7 @@ through the kept few. CI's Linux runner, VmRSS and VmHWM.
 - **What:** as at M2 (`VmRSS`, `VmHWM` reset after each row), plus open
   searches, cover texture bytes and egui's texture count. Each workload ends
   in a table of budgets, and a breach fails the run.
-- **How:** `crates/ui/examples/memory.rs`, in CI on Linux as the Remote
+- **How:** `crates/ui-egui/examples/memory.rs`, in CI on Linux as the Remote
   memory task (`tools/ci.py memory --ref BRANCH`), which also runs the EPUB
   layout test. Run 38919011226 on `a2a844c`; tables in the `memory` artifact.
   Modes: `memory BOOK [ROUNDS]`, `memory --library N` (N one-page PDFs read
@@ -528,7 +528,7 @@ PDF page-tree enumeration remains eager, with rasters requested on demand.
 - **What changed:** active icon animation no longer retains independently parsed
   SVG frames. `mareader-animated-icons` generates atomic top-level part scenes,
   rasterises their tight state variants and packs them into one texture per pack
-  and device-pixel size. `mareader-ui` composes each sample as ordered egui mesh
+  and device-pixel size. `mareader-ui-egui` composes each sample as ordered egui mesh
   quads.
 - **Admission bound:** both one generated atlas and the context-local sum of
   retained atlas pixels are capped at 8 MiB. The cache also remains capped at
@@ -556,3 +556,33 @@ PDF page-tree enumeration remains eager, with rasters requested on demand.
 - **Limits:** generation is synchronous on the first use of each pack and size
   so the glyph is never blank. Release startup time, texture-manager overhead,
   cache churn across DPI changes, RSS and driver bytes remain to be measured.
+
+## 2026-11-13: what the engine writes, and when (G4)
+
+- **What changed:** the settings and the last document are written by the engine,
+  to a place the host names. `engine::save::Save` holds `settings.json` and
+  `session.json` under `host::Machine`'s library directory, and writes nothing at
+  all when the host gave it none. `ui-egui/src/import.rs` is the only module that
+  names `eframe::Storage`; it moves the browser's two keys into those files once,
+  and only when neither file exists yet and the store still holds a key.
+- **When it writes:** the cadence is `save::EVERY`, half a second, armed by
+  `Save::touch` — a dial moved, a page turned, a library write — so the next frame
+  more than half a second past the last one carries it to disk, and `on_exit`
+  flushes whatever is outstanding. A refused write re-arms the flag instead of
+  dropping it, and the refusal surfaces as a toast rather than a dialog.
+- **What survives an interrupted write:** `mareader_library::disk::write_atomic`
+  leaves a temp file behind when a write is cut short, and `load` does not read
+  it. `save_tests.rs`'s `a_temp_file_left_by_an_interrupted_write_is_not_read`
+  holds that, which is the second line of G4's exit gate.
+- **What reaches the engine by name:** `engine::options::parse` answers 49 of
+  `set_option`'s keys as `Command`s, in batches, because one key can write two
+  settings. A shot, a query string and — at G5 — a command line now set a dial the
+  same way, and the front end keeps only the 49 that read its own state. No file
+  under `crates/ui-egui/src` is toolkit-free any more, so `cargo xtask trapped`
+  fails on the first one that appears.
+- **Limits:** the browser still persists through the browser's store, because that
+  is the only store it has, so DoD #7 is reported unmet on web rather than forced.
+  `persist_window: true` leaves window geometry in eframe's own
+  `egui_storage.json`, which no code here reads. None of this measures RSS, write
+  latency or a real disk's behaviour under power loss; the bounds are about what
+  is written, by whom and when.

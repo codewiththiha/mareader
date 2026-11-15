@@ -1,0 +1,37 @@
+[package]
+name = "mareader-engine"
+description = "The app without a window: session, commands, events, jobs and saving (L5)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mareader-appearance = { workspace = true }
+mareader-audio = { workspace = true }
+mareader-cefr = { workspace = true }
+mareader-dict = { workspace = true }
+mareader-epub = { workspace = true }
+mareader-g2p = { workspace = true }
+mareader-library = { workspace = true }
+mareader-memory = { workspace = true }
+mareader-pdf = { workspace = true }
+mareader-reflow = { workspace = true }
+mareader-search = { workspace = true }
+mareader-session = { workspace = true }
+mareader-settings = { workspace = true }
+mareader-speech = { workspace = true }
+mareader-study = { workspace = true }
+mareader-workspace = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# The system's languages, to pick subtitles in. (with transcript.rs)
+sys-locale = "0.3"
+
+[dev-dependencies]
+tempfile = { workspace = true }

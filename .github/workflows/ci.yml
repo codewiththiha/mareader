@@ -1,15 +1,35 @@
 name: CI
+# tools/ci.py finds a dispatched run by the id at the end of its title.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('CI {0} {1} {2}', inputs.profile, inputs.sha, inputs.id)
+      || github.event.pull_request.title || github.event.head_commit.message || 'CI' }}
 
+# Profiles: docs/verification.md, "Quick and full". A branch push is quick.
 on:
   push:
     branches: [main, "feat/**", "fix/**", "perf/**", "refactor/**", "docs/**", "test/**", "build/**", "ci/**", "chore/**"]
     paths-ignore: ["docs/**", "*.md"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: quick (Check only) or full (every job)
+        type: choice
+        options: [full, quick]
+        default: full
+      sha:
+        description: Commit to check (default the dispatched ref's head)
+        default: ""
+      id:
+        description: Request id from tools/ci.py
+        default: ""
   schedule:
     - cron: "17 3 */3 * *"
 
+# A push never cancels a dispatched final run, nor the other way round.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -21,16 +41,38 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
-  gate:
-    name: Gate / no compiler
+  plan:
+    name: Plan / profile
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 2
     outputs:
-      base: ${{ steps.base.outputs.sha }}
+      full: ${{ steps.p.outputs.full }}
+    steps:
+      - id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PROFILE: ${{ inputs.profile }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          full=false
+          case "$EVENT" in pull_request|schedule) full=true ;; esac
+          [ "$REF" = refs/heads/main ] && full=true
+          [ "$EVENT" = workflow_dispatch ] && [ "$PROFILE" = full ] && full=true
+          case "$MESSAGE" in *"[ci full]"*) full=true ;; esac
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          profile=quick; [ "$full" = true ] && profile=full
+          echo "profile: $profile ($EVENT on $REF)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The dev loop's one gate; steps run past failures to report everything.
+  check:
+    name: Check / fmt, clippy, test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - id: base
         env:
@@ -43,37 +85,114 @@ jobs:
           fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
       - run: rustup toolchain install
-      - run: cargo fmt --all --check
-      - run: python3 tools/shape_check.py --dups
+      - name: Format
+        id: fmt
+        if: ${{ !cancelled() }}
+        run: cargo fmt --all --check
+      - name: Shape
+        if: ${{ !cancelled() }}
+        run: python3 tools/shape_check.py --dups
       - name: Docs, comments, commit subjects
+        if: ${{ !cancelled() }}
         env:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
+          status=0
           changed=$(git diff --name-only --diff-filter=AM "$BASE" -- '*.rs' ':!vendor/**')
-          [ -z "$changed" ] || python3 tools/comment_check.py $changed
-          python3 tools/comment_budget.py "$BASE"
-          python3 tools/commit_check.py --range "$BASE..HEAD"
+          [ -z "$changed" ] || python3 tools/comment_check.py $changed || status=1
+          python3 tools/comment_budget.py "$BASE" || status=1
+          python3 tools/commit_check.py --range "$BASE..HEAD" || status=1
+          exit $status
+      # mold links the ~50 test binaries faster; rust-cache's key ignores it.
+      - uses: rui314/setup-mold@v1
+        if: ${{ !cancelled() }}
+      # Branches save too, red runs included: a cache has to start somewhere.
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ !cancelled() }}
+        with:
+          shared-key: linux
+          cache-on-failure: true
+          save-if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
+      - uses: ./.github/actions/apt
+        if: ${{ !cancelled() }}
+        with:
+          packages: mesa-vulkan-drivers libasound2-dev libspeechd-dev libclang-dev
+      - name: Clippy (warnings are errors)
+        id: clippy
+        if: ${{ !cancelled() }}
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # --no-fail-fast reports every failing test binary, not just the first.
+      - name: Test
+        if: ${{ !cancelled() }}
+        timeout-minutes: 30
+        run: cargo test --workspace --locked --no-fail-fast
+      - name: Headless CLI scripts
+        if: ${{ !cancelled() }}
+        run: cargo test -p mareader-cli --test scripts --locked -- --nocapture
+      - name: Repository rules (xtask)
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          for t in layers trapped parity assets unsafe; do
+            echo "::group::xtask $t"
+            cargo xtask "$t" || { echo "::error::cargo xtask $t failed"; status=1; }
+            echo "::endgroup::"
+          done
+          exit $status
 
-  lint:
-    name: Rust / lint
-    needs: gate
+  wasm:
+    name: Rust / wasm
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: check
+          shared-key: wasm
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-      - uses: ./.github/actions/apt
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: cargo check each earlier commit
+      - run: cargo xtask wasm
+
+  commits:
+    name: Build / each commit
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: base
         env:
-          BASE: ${{ needs.gate.outputs.base }}
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base="$BEFORE"
+          if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git merge-base origin/main HEAD)
+            [ "$base" != "$(git rev-parse HEAD)" ] || base=$(git rev-parse HEAD~1)
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "count=$(git rev-list --count "$base..HEAD~1")" >> "$GITHUB_OUTPUT"
+      - if: steps.base.outputs.count != '0'
+        run: rustup toolchain install
+      # Restore only: Check's cache holds every dependency's metadata.
+      - if: steps.base.outputs.count != '0'
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux
+          save-if: false
+      - if: steps.base.outputs.count != '0'
+        uses: ./.github/actions/apt
+      - name: cargo check each earlier commit
+        if: steps.base.outputs.count != '0'
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
         run: |
           head=$(git rev-parse HEAD)
           for c in $(git rev-list --reverse "$BASE..HEAD~1"); do
@@ -84,42 +203,20 @@ jobs:
           done
           git checkout -q "$head"
 
-  test:
-    name: Rust / test
-    needs: gate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: test
-          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-      - uses: ./.github/actions/apt
-        with:
-          packages: mesa-vulkan-drivers libasound2-dev libspeechd-dev libclang-dev
-      - run: cargo test --workspace --locked
-      - run: cargo xtask layers
-      - run: cargo xtask parity
-      - run: cargo xtask assets
-      - run: cargo xtask unsafe
-
   platforms:
     name: Build / ${{ matrix.os }}
-    needs: gate
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
@@ -151,16 +248,18 @@ jobs:
         shell: pwsh
         run: ./tools/exe-icons.ps1 target/debug/mareader.exe
 
+  # The sandbox cache follows the branch being worked on, not just main.
   refresh:
     name: Cache / sandbox
-    needs: [lint, test, platforms]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    timeout-minutes: 3
     permissions:
       actions: write
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh workflow run remote.yml -R "$GITHUB_REPOSITORY" --ref main
+          gh workflow run remote.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
           -f task=cache -f sha="$GITHUB_SHA" -f id=after-ci

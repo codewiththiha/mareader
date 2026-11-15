@@ -1,0 +1,5 @@
+# Script 1: print page 0 text from a PDF and page 1 (first chapter) from an EPUB.
+{"id": "reader.open", "params": {"path": "${PDF}"}}
+{"id": "page.copy", "params": {"pages": [0]}}
+{"id": "reader.open", "params": {"path": "${EPUB}"}}
+{"id": "page.copy", "params": {"pages": [1]}}

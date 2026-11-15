@@ -56,9 +56,9 @@ rebuilt from its goal, as the smallest native design that delivers it.
 | `dict-core`, `cefr-core`, `ai-core`, `download-core` | `crates/study` (M6) | the behaviour; transports are new |
 | `pdf-core`, `pdf-engine`, `pdf-paper` | `crates/pdf` (M2) | on hayro; paper-colour detection for blend |
 | `reflow-core` (+ `txt-core`, `md-core`) | `crates/reflow` + `crates/epub` (M4) | EPUB via parley |
-| `app-chrome`, `app-ui`, `reader-runtime` components | `crates/ui` | view by view, egui-native |
-| `src-tauri/src/{ai,cefr,dict,download.rs}` | `crates/study` + `crates/ui` | the Apple Intelligence bridge needs a design (M6) |
-| `styles/*.css` | `crates/ui/src/theme.rs` | `docs/design.md` |
+| `app-chrome`, `app-ui`, `reader-runtime` components | `crates/ui-egui` | view by view, egui-native |
+| `src-tauri/src/{ai,cefr,dict,download.rs}` | `crates/study` + `crates/ui-egui` | the Apple Intelligence bridge needs a design (M6) |
+| `styles/*.css` | `crates/ui-egui/src/theme.rs` | `docs/design.md` |
 
 ## Concept map
 
