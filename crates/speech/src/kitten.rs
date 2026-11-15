@@ -11,7 +11,7 @@ use mareader_vits::{Style, espeak_like};
 
 use crate::local::{Line, Out, Synth, both, trim_join};
 use crate::piper::pieces;
-use crate::studio::Studio;
+use crate::studio::Engine;
 use crate::timing::{Words, offsets, place, shift, spell};
 
 /// The speeds offered, as shares of each voice's own pace.
@@ -39,28 +39,16 @@ struct Build {
 }
 
 /// What a voice needs once loaded.
-struct Loaded {
+pub(crate) struct Loaded {
     build: Arc<Build>,
     g2p: Arc<G2p>,
     voice: String,
 }
 
 /// Kitten's build from `source`, speaking a voice at a time.
-pub(crate) struct Kitten {
-    source: Source,
-    studio: Studio,
-    loaded: Option<Loaded>,
-}
+pub(crate) type Kitten = Engine<Source, Loaded>;
 
 impl Kitten {
-    pub(crate) fn new(source: Source, studio: Studio) -> Self {
-        Self {
-            source,
-            studio,
-            loaded: None,
-        }
-    }
-
     fn load_fresh(&self, voice: &str) -> Result<Loaded, String> {
         let source = &self.source;
         let build = || {
@@ -181,6 +169,7 @@ mod tests {
     use super::*;
     use crate::Voice as Listed;
     use crate::local::{Engine, Setup};
+    use crate::studio::Studio;
 
     fn source(nano: bool) -> Source {
         Source {

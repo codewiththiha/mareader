@@ -82,6 +82,14 @@ impl Default for Shelf {
 }
 
 impl Shelf {
+    #[cfg(not(target_arch = "wasm32"))]
+    mareader_fetch::attached_method!();
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn attached(&self) -> bool {
+        false
+    }
+
     pub fn catalogue(&self) -> &'static [Model] {
         self.catalogue
     }
@@ -151,14 +159,6 @@ impl Shelf {
         return self.studio.usage();
         #[cfg(target_arch = "wasm32")]
         crate::Usage::default()
-    }
-
-    /// Whether downloads can happen here.
-    pub fn attached(&self) -> bool {
-        #[cfg(not(target_arch = "wasm32"))]
-        return self.desk.is_some();
-        #[cfg(target_arch = "wasm32")]
-        false
     }
 
     pub fn stage(&self, item: Item) -> &Stage {
@@ -638,7 +638,7 @@ mod desk {
             drop_files(&self.folder(model), files).map_err(|e| e.to_string())
         }
 
-        /// Deletes what `model` kept of voices no longer offered.
+        /// Deletes what `model` kept of voices not offered.
         pub fn retire(&self, model: &Model) {
             let folder = self.folder(model);
             let retired = crate::models::RETIRED.iter();

@@ -1,7 +1,6 @@
 name: Remote
 # The id lets tools/ci.py find the run it dispatched.
 run-name: ${{ inputs.task }} ${{ inputs.sha }} ${{ inputs.id }}
-
 # CI mode's on-demand jobs (docs/verification.md); none gates a merge.
 on:
   workflow_dispatch:
@@ -28,15 +27,12 @@ on:
         description: Cache test binaries and the shot example too, not just lint
         type: boolean
         default: false
-
 permissions:
   contents: read
   # The cache job starts from the previous cache artifact.
   actions: read
-
 env:
   CARGO_TERM_COLOR: always
-
 jobs:
   shots:
     name: Remote / shots
@@ -44,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     # The same env as CI's test job, so its cache restores here.
     env:
-      RUSTFLAGS: -D warnings
+      CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +76,6 @@ jobs:
           path: shots/
           retention-days: 3
           if-no-files-found: error
-
   # docs/memory.md: each workload's table and budgets, in the summary too.
   memory:
     name: Remote / memory
@@ -88,7 +83,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      RUSTFLAGS: -D warnings
+      CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
@@ -156,7 +151,7 @@ jobs:
           set -o pipefail
           # One process each: run together, one test's memory counts in the other's.
           for t in set_books_hold_about_this_much markdown_drawn_again_and_again_holds_level; do
-            cargo test -q -p mareader-epub --test layout_memory -- --ignored --nocapture --exact "$t" \
+            cargo test -q -p mareader-epub --test epub -- --ignored --nocapture --exact "layout_memory::$t" \
               | tee -a out/layout.txt
           done
       - uses: actions/upload-artifact@v4
@@ -165,7 +160,6 @@ jobs:
           name: memory-linux
           path: out/
           retention-days: 7
-
   # macOS's footprint, as Activity Monitor shows it, on a real GPU.
   memory-macos:
     name: Remote / memory macOS
@@ -182,6 +176,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: memory-macos
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Books
         run: |
           mkdir -p books out
@@ -220,7 +215,6 @@ jobs:
           name: memory-macos
           path: out/
           retention-days: 7
-
   memory-report:
     name: Remote / memory report
     if: always() && inputs.task == 'memory'
@@ -256,6 +250,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: kokoro
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: tools/kokoro-parity
       # The pinned published model, its builds and G2P data; 740 MB, so kept.
       - uses: actions/cache@v4
@@ -354,6 +349,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: piper
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: tools/piper-parity
       # Seven pinned voices (every quality, one multi-speaker) and the G2P data.
       - uses: actions/cache@v4
@@ -460,6 +456,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: kitten
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: tools/kitten-parity
       # Every pinned Kitten 0.8 build and the American G2P data.
       - uses: actions/cache@v4
@@ -563,6 +560,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: phonon
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: |
             .
             tools/phonon-parity
@@ -711,6 +709,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: wasm-bindgen, the version Cargo.lock pins
         run: |
           v=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')
@@ -854,6 +853,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: system
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Test
         shell: bash
         run: |

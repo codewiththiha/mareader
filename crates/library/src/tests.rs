@@ -1,43 +1,25 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::disk::{self, Folder};
-use crate::{BookId, ContentId, DeviceId, FileStamp, Format, Library, Measure, Opened, Position};
+use crate::test_support::{opened, page};
+use crate::{BookId, ContentId, DeviceId, Format, Library, Opened};
 
 const DEVICE: DeviceId = DeviceId(7);
-
-fn opened(path: &str, content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(path),
-        measure: Measure {
-            content: ContentId(content),
-            stamp: FileStamp::default(),
-        },
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
-
-fn page(page: usize) -> Position {
-    Position {
-        page,
-        pages: 100,
-        place: None,
-        spine: None,
-    }
-}
 
 #[test]
 fn a_file_opened_twice_is_one_book_last_opened_first() {
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
-    let b = lib.record_open(opened("/b.pdf", 2), 2_000);
-    assert_eq!(lib.record_open(opened("/a.pdf", 1), 3_000), a);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    let b = lib.record_open(opened("/b.pdf", 2, Format::Pdf, None), 2_000);
+    assert_eq!(
+        lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 3_000),
+        a
+    );
     assert_eq!(lib.len(), 2);
     let order: Vec<BookId> = lib.recent().iter().map(|b| b.id).collect();
     assert_eq!(order, [a, b]);
     // The title is the document's at first sight; later opens keep it.
-    let mut renamed = opened("/a.pdf", 1);
+    let mut renamed = opened("/a.pdf", 1, Format::Pdf, None);
     renamed.title = "Other".into();
     lib.record_open(renamed, 4_000);
     assert_eq!(lib.book(a).map(|b| b.title.value.as_str()), Some("Book 1"));
@@ -46,23 +28,29 @@ fn a_file_opened_twice_is_one_book_last_opened_first() {
 #[test]
 fn a_moved_file_is_the_same_book_and_keeps_its_place() {
     let mut lib = Library::new(DEVICE);
-    let id = lib.record_open(opened("/old/a.pdf", 1), 1_000);
-    lib.record_position(id, page(41), 1_100);
-    assert_eq!(lib.record_open(opened("/new/a.pdf", 1), 2_000), id);
+    let id = lib.record_open(opened("/old/a.pdf", 1, Format::Pdf, None), 1_000);
+    lib.record_position(id, page(41, 100), 1_100);
+    assert_eq!(
+        lib.record_open(opened("/new/a.pdf", 1, Format::Pdf, None), 2_000),
+        id
+    );
     let book = lib.book(id).unwrap();
     assert_eq!(book.path(), Some(Path::new("/new/a.pdf")));
     assert_eq!(lib.book_at(Path::new("/new/a.pdf")), Some(id));
-    assert_eq!(lib.position(id), Some(page(41)));
+    assert_eq!(lib.position(id), Some(page(41, 100)));
 }
 
 #[test]
 fn a_file_edited_in_place_is_the_same_book_with_new_content() {
     let mut lib = Library::new(DEVICE);
-    let id = lib.record_open(opened("/notes.md", 1), 1_000);
-    lib.record_position(id, page(3), 1_100);
-    assert_eq!(lib.record_open(opened("/notes.md", 2), 2_000), id);
+    let id = lib.record_open(opened("/notes.md", 1, Format::Pdf, None), 1_000);
+    lib.record_position(id, page(3, 100), 1_100);
+    assert_eq!(
+        lib.record_open(opened("/notes.md", 2, Format::Pdf, None), 2_000),
+        id
+    );
     assert_eq!(lib.book(id).unwrap().content, ContentId(2));
-    assert_eq!(lib.position(id), Some(page(3)));
+    assert_eq!(lib.position(id), Some(page(3, 100)));
     assert_eq!(lib.len(), 1);
 }
 
@@ -70,9 +58,9 @@ fn a_file_edited_in_place_is_the_same_book_with_new_content() {
 fn a_path_holds_one_book() {
     // b.pdf is overwritten with a copy of a.pdf: it now reads book A.
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
-    let b = lib.record_open(opened("/b.pdf", 2), 2_000);
-    lib.record_open(opened("/b.pdf", 1), 3_000);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    let b = lib.record_open(opened("/b.pdf", 2, Format::Pdf, None), 2_000);
+    lib.record_open(opened("/b.pdf", 1, Format::Pdf, None), 3_000);
     assert_eq!(lib.book_at(Path::new("/b.pdf")), Some(a));
     assert!(lib.book(b).unwrap().missing());
     assert_eq!(lib.book(a).unwrap().locations.len(), 2);
@@ -81,18 +69,18 @@ fn a_path_holds_one_book() {
 #[test]
 fn only_changes_are_written_and_positions_apart_from_books() {
     let mut lib = Library::new(DEVICE);
-    let id = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let id = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let dirty = lib.take_dirty();
     assert_eq!(dirty.books.iter().collect::<Vec<_>>(), [&id]);
     assert!(dirty.states.is_empty());
-    assert!(lib.record_position(id, page(5), 1_100));
-    assert!(!lib.record_position(id, page(5), 1_200));
+    assert!(lib.record_position(id, page(5, 100), 1_100));
+    assert!(!lib.record_position(id, page(5, 100), 1_200));
     let dirty = lib.take_dirty();
     assert!(dirty.store_is_clean(), "a page turn leaves the store alone");
     assert_eq!(dirty.states.into_iter().collect::<Vec<_>>(), [id]);
     assert!(!lib.is_dirty());
     // An unknown book has no state to write.
-    assert!(!lib.record_position(BookId(99), page(1), 1_300));
+    assert!(!lib.record_position(BookId(99), page(1, 100), 1_300));
 }
 
 pub(crate) fn save(folder: &Folder, lib: &mut Library) {
@@ -110,11 +98,11 @@ fn the_library_comes_back_from_its_files_with_missing_books_marked() {
     let mut lib = folder.load(DEVICE).library;
     let here = Opened {
         path: book_file.clone(),
-        ..opened("", 1)
+        ..opened("", 1, Format::Pdf, None)
     };
     let a = lib.record_open(here, 1_000);
-    let gone = lib.record_open(opened("/nowhere/b.pdf", 2), 2_000);
-    lib.record_position(a, page(12), 2_100);
+    let gone = lib.record_open(opened("/nowhere/b.pdf", 2, Format::Pdf, None), 2_000);
+    lib.record_position(a, page(12, 100), 2_100);
     save(&folder, &mut lib);
 
     let loaded = folder.load(DeviceId(99));
@@ -127,7 +115,7 @@ fn the_library_comes_back_from_its_files_with_missing_books_marked() {
     // The device is the library's own, not the one asked for.
     assert_eq!(back.device(), DEVICE);
     assert_eq!(back.len(), 2);
-    assert_eq!(back.position(a), Some(page(12)));
+    assert_eq!(back.position(a), Some(page(12, 100)));
     assert_eq!(back.book_at(&book_file), Some(a));
     assert!(back.book(gone).unwrap().missing());
     assert!(!back.book(a).unwrap().missing());
@@ -195,7 +183,7 @@ mod view {
 
     fn titled(lib: &mut Library, title: &str, author: Option<&str>, at: u64) -> BookId {
         let content = u128::from(at);
-        let mut o = opened(&format!("/{at}.pdf"), content);
+        let mut o = opened(&format!("/{at}.pdf"), content, Format::Pdf, None);
         o.title = title.into();
         o.author = author.map(Into::into);
         lib.record_open(o, at)
@@ -296,8 +284,8 @@ mod view {
     #[test]
     fn an_author_fills_in_once_and_is_kept() {
         let mut lib = Library::new(DEVICE);
-        let id = lib.record_open(opened("/a.pdf", 1), 1_000);
-        let mut named = opened("/a.pdf", 1);
+        let id = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+        let mut named = opened("/a.pdf", 1, Format::Pdf, None);
         named.author = Some("Poe".into());
         lib.record_open(named.clone(), 2_000);
         let author = |lib: &Library| lib.book(id).and_then(|b| b.author.value.clone());

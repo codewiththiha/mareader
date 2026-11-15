@@ -96,3 +96,16 @@ pub fn jump(ctx: &Context) -> ScrollAnimation {
 pub fn reduced(ctx: &Context) -> bool {
     allowed(ctx).reduced
 }
+
+/// How far a view has opened, eased; 1 once settled.
+pub fn entrance(ctx: &Context, opened: f64, now: f64, enter: f32) -> f32 {
+    let span = secs(ctx, enter);
+    if span <= 0.0 {
+        return 1.0;
+    }
+    let x = ((now - opened) as f32 / span).clamp(0.0, 1.0);
+    if x < 1.0 {
+        ctx.request_repaint();
+    }
+    1.0 - (1.0 - x).powi(3)
+}

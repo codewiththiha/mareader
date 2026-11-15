@@ -15,6 +15,7 @@ pub const TABLE: &[(&str, Layer)] = &[
     ("memory", Layer::Core(0)),
     ("script", Layer::Core(0)),
     ("pdf", Layer::Core(1)),
+    ("nn-core", Layer::Core(0)),
     ("kokoro", Layer::Core(0)),
     ("g2p", Layer::Core(0)),
     ("ipa", Layer::Core(0)),
@@ -38,7 +39,11 @@ pub const TABLE: &[(&str, Layer)] = &[
 ];
 
 /// Same-layer edges that are allowed; any other must point down.
-pub const SIDEWAYS: &[(&str, &str)] = &[];
+pub const SIDEWAYS: &[(&str, &str)] = &[
+    ("kokoro", "nn-core"),
+    ("phonon", "nn-core"),
+    ("vits", "nn-core"),
+];
 
 /// Toolkit crates, allowed only in `Layer::Front` and exempt crates.
 pub const UI_CRATES: &[&str] = &[

@@ -8,21 +8,7 @@ use mareader_ui::command::Command;
 use mareader_ui::library::search::LABEL;
 use mareader_ui::library::{Action, Pick, SearchAction, ShelfAction};
 
-fn reader(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
-    let mut app = MareaderApp::default();
-    app.set_option("workers", "0").ok();
-    for (k, v) in options {
-        app.set_option(k, v).ok();
-    }
-    let mut h = Harness::builder()
-        .with_size(egui::vec2(900.0, 700.0))
-        .with_step_dt(1.0 / 60.0)
-        .with_max_steps(400)
-        .build_eframe(|_| app);
-    h.run_steps(3);
-    h.run();
-    h
-}
+use crate::common::reader;
 
 /// Ctrl+F, then the text, as typed into the bar.
 fn search(h: &mut Harness<'static, MareaderApp>, text: &str) {

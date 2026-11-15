@@ -1,5 +1,7 @@
 //! Seeded Gaussian noise, so the same phonemes always sound the same.
 
+use mareader_nn_core::noise;
+
 /// SplitMix64 numbers, paired into normal draws by Box–Muller.
 pub(crate) struct Noise {
     state: u64,
@@ -18,17 +20,9 @@ impl Noise {
         }
     }
 
-    fn next(&mut self) -> u64 {
-        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
     /// Uniform in `(0, 1]`, never zero so the log stays finite.
     fn unit(&mut self) -> f64 {
-        ((self.next() >> 11) as f64 + 1.0) / (1u64 << 53) as f64
+        ((noise::next(&mut self.state) >> 11) as f64 + 1.0) / (1u64 << 53) as f64
     }
 
     fn normal(&mut self) -> f32 {

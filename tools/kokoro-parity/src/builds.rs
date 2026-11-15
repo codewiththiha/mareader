@@ -5,8 +5,9 @@ use std::path::Path;
 use std::time::Instant;
 
 use mareader_kokoro as ours;
+use parity_kit::write_wav;
 
-use crate::{R, envelope, pearson, rms, seconds, write_wav};
+use crate::{R, envelope, pearson, rms, seconds};
 
 /// The builds offered, by name, file and the agreement each must reach.
 const BUILDS: [(&str, &str, Gate); 3] = [
@@ -108,7 +109,11 @@ pub fn check(
                 seconds(a.len()),
                 if ok { "ok" } else { "**DIFFERS**" },
             )?;
-            write_wav(&out.join(format!("{tag}-{}.wav", name.to_lowercase())), b)?;
+            write_wav(
+                &out.join(format!("{tag}-{}.wav", name.to_lowercase())),
+                b,
+                ours::SAMPLE_RATE,
+            )?;
         }
     }
     writeln!(report, "\nLoading: {}.\n", loads.trim_end_matches(", "))?;

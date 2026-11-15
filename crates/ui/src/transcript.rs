@@ -1,11 +1,12 @@
 //! Clip transcripts laid into a pane's book, in the reader's language.
 
 use std::collections::{BTreeMap, HashMap};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
 use mareader_epub::{Book, Insert, Inserts, Wanted};
 use mareader_settings::AiSettings;
+
+use crate::stable_hash::hash;
 
 /// Transcripts open in one pane, and those already laid out.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -126,12 +127,6 @@ fn language_name(tag: &str) -> Option<&'static str> {
     let lower = tag.to_ascii_lowercase();
     let head = lower.split('-').next().unwrap_or_default();
     mareader_settings::language_name(&lower).or_else(|| mareader_settings::language_name(head))
-}
-
-fn hash(v: impl Hash) -> u64 {
-    let mut h = DefaultHasher::new();
-    v.hash(&mut h);
-    h.finish()
 }
 
 #[cfg(test)]

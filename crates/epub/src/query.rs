@@ -1,6 +1,7 @@
 //! When conditional rules apply: `@media`, `@supports` and `@container`
 //! (`docs/epub-support.md`).
 
+use crate::calc::closing;
 use crate::css::{self, VIEW_HEIGHT, VIEW_WIDTH, split_top};
 
 /// Brackets within brackets one condition may hold.
@@ -159,23 +160,6 @@ fn group(text: &str) -> Option<(Group<'_>, &str)> {
         }
         _ => None,
     }
-}
-
-/// Where the bracket just opened closes, quotes skipped.
-fn closing(text: &str) -> Option<usize> {
-    let (mut depth, mut quote) = (0usize, None);
-    for (i, c) in text.char_indices() {
-        match (quote, c) {
-            (Some(q), c) if c == q => quote = None,
-            (Some(_), _) => {}
-            (None, '"' | '\'') => quote = Some(c),
-            (None, '(') => depth += 1,
-            (None, ')') if depth == 0 => return Some(i),
-            (None, ')') => depth -= 1,
-            _ => {}
-        }
-    }
-    None
 }
 
 /// `(display: grid)` holds if the cascade reads it; `selector()` too.

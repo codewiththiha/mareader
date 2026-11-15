@@ -15,6 +15,7 @@ use mareader_appearance::{
 use mareader_settings::TextSettings;
 
 use crate::command::{Command, Commands, Independence};
+use crate::dial_deck::labels::{mode_icon, noise_label, strength_percent};
 use crate::gpu::{Anchor, Gpu, GrainCallback, PagesCallback, Quad, crawl_offset};
 use crate::icons::Icon;
 use crate::theme::Tokens;
@@ -472,12 +473,6 @@ fn strength(ui: &mut Ui, a: &mut Appearance) {
     }
 }
 
-fn strength_percent(strength: u8) -> u8 {
-    let whole = u16::from(FULL_TINT);
-    let share = u16::from(strength.min(FULL_TINT)) * 100 / whole;
-    u8::try_from(share).unwrap_or(100)
-}
-
 fn percent_strength(percent: u8) -> u8 {
     let whole = u16::from(FULL_TINT);
     let strength = (u16::from(percent.min(100)) * whole + 50) / 100;
@@ -504,23 +499,6 @@ fn colour_summary(a: &Appearance) -> String {
     let hue = landmark.map_or_else(|| format!("{}°", a.tint_hue), |(_, n)| (*n).to_owned());
     let share = strength_percent(a.tint_strength);
     format!("{} · {hue} {share}%", a.base.label())
-}
-
-fn noise_label(n: NoiseMode) -> &'static str {
-    match n {
-        NoiseMode::Off => "Off",
-        NoiseMode::Static => "Static",
-        NoiseMode::Animated => "Animated",
-    }
-}
-
-fn mode_icon(b: BaseMode) -> Icon {
-    match b {
-        BaseMode::Light => Icon::Light,
-        BaseMode::Dark => Icon::Dark,
-        BaseMode::Dim => Icon::Dim,
-        BaseMode::Black => Icon::Black,
-    }
 }
 
 /// The hue strip in a slider's row, its landmarks spread beneath it.

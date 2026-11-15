@@ -6,6 +6,8 @@ use mareader_appearance::Rgb;
 use mareader_settings::PaperArea;
 use mareader_ui::MareaderApp;
 
+use crate::common::scroll;
+
 type Out = Result<(), String>;
 
 const SIZE: egui::Vec2 = egui::vec2(900.0, 700.0);
@@ -29,18 +31,6 @@ fn reader(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
     h.run_steps(3);
     h.run();
     h
-}
-
-fn scroll(h: &mut Harness<'static, MareaderApp>, points: f32) {
-    h.hover_at((SIZE / 2.0).to_pos2());
-    h.event(egui::Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -points),
-        modifiers: egui::Modifiers::NONE,
-        phase: egui::TouchPhase::Move,
-    });
-    h.run();
-    h.run_steps(2);
 }
 
 fn paper(h: &Harness<'static, MareaderApp>, area: PaperArea) -> Option<Rgb> {

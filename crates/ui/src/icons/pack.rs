@@ -110,7 +110,42 @@ pub(crate) fn of(icon: Icon) -> Option<&'static Pack> {
         Icon::Done => "circle-check",
         Icon::Alert => "circle-alert",
         Icon::Clock => "clock",
+        _ => return voice(icon),
+    };
+    mareader_animated_icons::find(id)
+}
+
+fn voice(icon: Icon) -> Option<&'static Pack> {
+    let id = match icon {
+        Icon::Kokoro => "kokoro",
+        Icon::Piper => "piper",
+        Icon::Kitten => "kitten",
+        Icon::Phonon => "phonon",
+        Icon::SystemVoice => "system",
+        Icon::SilentEngine => "silent",
         _ => return None,
     };
     mareader_animated_icons::find(id)
+}
+
+#[cfg(test)]
+mod pack_tests {
+    use super::*;
+
+    #[test]
+    fn ai_and_every_voice_use_generated_packs() {
+        let expected = [
+            (Icon::Ai, "ai-mark"),
+            (Icon::Kokoro, "kokoro"),
+            (Icon::Piper, "piper"),
+            (Icon::Kitten, "kitten"),
+            (Icon::Phonon, "phonon"),
+            (Icon::SystemVoice, "system"),
+            (Icon::SilentEngine, "silent"),
+        ];
+        for (icon, id) in expected {
+            assert_eq!(of(icon).map(|pack| pack.id()), Some(id));
+            assert!(icon.svg().is_none());
+        }
+    }
 }

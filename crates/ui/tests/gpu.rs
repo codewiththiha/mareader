@@ -7,6 +7,8 @@ use mareader_appearance::FilmGrain;
 use mareader_ui::MareaderApp;
 use mareader_ui::theme::TITLE_BAR_H;
 
+use crate::common::scroll;
+
 type Out = Result<(), String>;
 
 const SIZE: egui::Vec2 = egui::vec2(900.0, 700.0);
@@ -26,19 +28,6 @@ fn reader(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
     h.run_steps(3);
     h.run();
     h
-}
-
-fn scroll(h: &mut Harness<'static, MareaderApp>, points: f32) {
-    h.hover_at((SIZE / 2.0).to_pos2());
-    h.event(egui::Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -points),
-        modifiers: egui::Modifiers::NONE,
-        phase: egui::TouchPhase::Move,
-    });
-    h.run();
-    // Pages scrolled in are drawn next frame.
-    h.run_steps(2);
 }
 
 fn luma(image: &RgbaImage, x: u32, y: u32) -> i32 {
@@ -199,7 +188,7 @@ fn page_shadow_darkens_the_paper_under_a_page_until_switched_off() -> Out {
         let page = h.state().documents().sheets(pane).first().map(|s| s.rect);
         let page = page.ok_or("no page drawn")?;
         let image = h.render()?;
-        // Just right of the page's edge, halfway down.
+        // Two pixels right of the page, halfway down.
         let (x, y) = (page.right() as u32 + 2, page.center().y as u32);
         shades.push(luma(&image, x, y) - luma(&image, x + 20, y));
     }

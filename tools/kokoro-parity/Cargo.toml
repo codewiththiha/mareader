@@ -9,6 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
+parity-kit = { path = "../parity-kit" }
 mareader-kokoro = { path = "../../crates/kokoro" }
 mareader-g2p = { path = "../../crates/g2p" }
 loqui-g2p = "=0.4.0"

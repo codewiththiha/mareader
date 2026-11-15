@@ -8,6 +8,7 @@ use egui::{
 };
 use mareader_appearance::{Appearance, FULL_TINT};
 
+use super::labels::strength_percent;
 use crate::theme::{self, Tokens};
 use crate::widgets;
 
@@ -45,13 +46,6 @@ pub struct KnobSpec<'a> {
     pub default: f32,
     pub enabled: bool,
     pub shown: String,
-}
-
-/// Share of `FULL_TINT` in percent (`0..=100`).
-pub fn strength_percent(strength: u8) -> u8 {
-    let whole = u16::from(FULL_TINT);
-    let share = u16::from(strength.min(FULL_TINT)) * 100 / whole;
-    u8::try_from(share).unwrap_or(100)
 }
 
 /// Landmark name when `hue` sits on one, else `None`.
@@ -110,7 +104,7 @@ fn angular_distance(a: f32, b: f32) -> f32 {
     if diff > 180.0 { 360.0 - diff } else { diff }
 }
 
-/// Maps a pointer offset from the wheel's centre to `(tint_hue, tint_strength)`.
+/// Maps a wheel pointer offset to `(tint_hue, tint_strength)`.
 fn pointer_to_tint(delta: Vec2, fallback_hue: u16) -> (u16, u8) {
     let dist = delta.length();
     if dist < 3.5 {
@@ -391,8 +385,7 @@ pub fn rotary_knob(
     value: &mut f32,
 ) -> bool {
     let t = Tokens::get(ui.ctx());
-    // Dial band + a 34pt caption block, so the caption always ends flush with
-    // the bottom of the column no matter how large the dial is drawn.
+    // The 34pt caption ends flush at any dial size.
     let total_h = dial_px + 34.0;
     let (col_rect, _) = ui.allocate_exact_size(vec2(width, total_h), Sense::hover());
     let dial_c = pos2(col_rect.center().x, col_rect.top() + dial_px * 0.5);
@@ -423,7 +416,7 @@ pub fn rotary_knob(
     changed
 }
 
-/// Horizontal rotary lockup: dial on the left, label and value stacked beside it.
+/// Horizontal dial with label and value stacked at its right.
 pub fn inline_knob(ui: &mut Ui, width: f32, spec: &KnobSpec<'_>, value: &mut f32) -> bool {
     let t = Tokens::get(ui.ctx());
     const DIAL_PX: f32 = 48.0;
@@ -594,9 +587,7 @@ fn paint_dial_face(
 
     let frac = ((value - lo) / (hi - lo).max(f32::EPSILON)).clamp(0.0, 1.0);
     let angle = DIAL_FROM + frac * (DIAL_TO - DIAL_FROM);
-    // A dial that cannot be moved shows a face and a track only: a needle and
-    // a filled sweep would read as a value the reader cannot change, or worse,
-    // as one that is set to zero.
+    // Disabled dials omit value marks that would imply zero.
     if enabled {
         if frac > 0.005 {
             paint_arc(painter, c, r_arc, DIAL_FROM, angle, stroke_w, t.accent);

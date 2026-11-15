@@ -64,6 +64,8 @@ struct Card {
     role: Option<Role>,
 }
 
+crate::word_card::impl_card!(Card);
+
 /// How the Dictionary's words sound and which the voice can say.
 #[derive(Clone, Debug, Default)]
 pub struct Voice {
@@ -142,9 +144,7 @@ impl Dict {
 
     /// Answers on this thread, as tests need.
     pub fn set_inline(&mut self, inline: bool) {
-        #[cfg(not(target_arch = "wasm32"))]
         self.service.set_inline(inline);
-        let _ = inline;
     }
 
     pub fn attached(&self) -> bool {
@@ -209,9 +209,7 @@ impl Dict {
 
     /// The tagger's answer for the open card, if it is still `word`'s.
     pub fn set_role(&mut self, word: &str, role: Role) {
-        if let Some(card) = self.card.as_mut().filter(|c| c.word == word) {
-            card.role = Some(role);
-        }
+        crate::word_card::set_role(&mut self.card, word, role);
     }
 
     /// The role the open card shows, for tests.

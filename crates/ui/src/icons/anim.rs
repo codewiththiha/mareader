@@ -1,7 +1,6 @@
 //! Trigger policy, lazy atlas caching, and ordered icon mesh painting.
 
-use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -10,6 +9,7 @@ use mareader_animated_icons::{Atlas, AtlasCell, Pack};
 
 use crate::motion;
 
+use super::lru::{ByteLruCache, PackKey};
 use super::{GRID, Icon, pack};
 
 /// Canvas-to-glyph size ratio including authored headroom.
@@ -20,6 +20,7 @@ const FRAME_RATE: f32 = mareader_animated_icons::FRAME_RATE;
 const CACHE_BYTES: usize = mareader_animated_icons::MAX_ATLAS_BYTES;
 /// Tiny atlases are byte-cheap but still own texture-manager entries.
 const CACHE_ENTRIES: usize = 512;
+const ATLAS_STORE_ID: &str = "animated-icon-atlases";
 
 #[derive(Clone)]
 struct CachedFrame {
@@ -264,11 +265,11 @@ fn advance(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) -> Curren
     };
     let ctx = ui.ctx();
     let act = current(ctx);
-    let dur = if act == Act::Still {
-        0.0
-    } else {
-        motion::icon_secs(ctx, pack.duration())
-    };
+    let icon_dur = motion::icon_secs(ctx, pack.duration());
+    if icon_dur <= 0.0 {
+        ctx.data_mut(|data| data.remove::<AtlasStore>(Id::new(ATLAS_STORE_ID)));
+    }
+    let dur = if act == Act::Still { 0.0 } else { icon_dur };
     let id = key(ui, icon, tag);
     if dur <= 0.0 {
         // Disabling motion must discard a partial run.
@@ -298,6 +299,7 @@ fn advance(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) -> Curren
     }
     run.held = hovered;
     run.seen = seen;
+    let atlas_side = side(size * BOX, ctx.pixels_per_point());
     let t = match run.through(now, dur) {
         Some(t) => t,
         None => {
@@ -305,7 +307,7 @@ fn advance(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) -> Curren
             if run.again {
                 run.again = false;
                 run.start = now;
-                let out = cached_frame(ctx, pack, side(size * BOX, ctx.pixels_per_point()), 0);
+                let out = cached_frame(ctx, pack, atlas_side, 0, &mut run, now);
                 schedule(ctx, &run, dur, 0, now);
                 ctx.data_mut(|d| d.insert_temp(id, run));
                 return out;
@@ -316,7 +318,7 @@ fn advance(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) -> Curren
         }
     };
     let frame = frame_index(t, dur);
-    let out = cached_frame(ctx, pack, side(size * BOX, ctx.pixels_per_point()), frame);
+    let out = cached_frame(ctx, pack, atlas_side, frame, &mut run, now);
     schedule(ctx, &run, dur, frame, now);
     ctx.data_mut(|d| d.insert_temp(id, run));
     out
@@ -375,8 +377,20 @@ pub(crate) fn run_started(ui: &Ui, icon: Icon, tag: &str) -> bool {
         .is_some_and(|run| run.start >= 0.0)
 }
 
-fn cached_frame(ctx: &Context, pack: &'static Pack, side: u32, frame: u16) -> CurrentFrame {
-    atlas(ctx, pack, side as u16).map_or(CurrentFrame::Pending, |atlas| {
+/// The current quantised frame, holding a cold run while its atlas is pending.
+fn cached_frame(
+    ctx: &Context,
+    pack: &'static Pack,
+    side: u32,
+    frame: u16,
+    run: &mut Run,
+    now: f64,
+) -> CurrentFrame {
+    let (atlas, pending) = atlas(ctx, pack, side as u16);
+    if pending {
+        run.start = now;
+    }
+    atlas.map_or(CurrentFrame::Pending, |atlas| {
         CurrentFrame::Animated(CachedFrame { atlas, frame })
     })
 }
@@ -414,21 +428,6 @@ fn paint_cached(ui: &Ui, mark: Rect, tint: Color32, frame: &CachedFrame) {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct AtlasKey {
-    pack: usize,
-    side: u16,
-}
-
-impl AtlasKey {
-    fn new(pack: &'static Pack, side: u16) -> Self {
-        Self {
-            pack: pack as *const Pack as usize,
-            side,
-        }
-    }
-}
-
 #[derive(Clone)]
 struct CachedAtlas {
     texture: TextureHandle,
@@ -450,7 +449,7 @@ impl CachedAtlas {
 }
 
 struct Completed {
-    key: AtlasKey,
+    key: PackKey,
     pack_id: &'static str,
     atlas: Option<Atlas>,
     retry: bool,
@@ -469,7 +468,7 @@ impl Mailbox {
 }
 
 struct Published {
-    key: AtlasKey,
+    key: PackKey,
     atlas: Option<(CachedAtlas, usize)>,
     retry: bool,
 }
@@ -508,19 +507,23 @@ fn upload(ctx: &Context, completed: Completed) -> Published {
 
 #[derive(Clone)]
 struct AtlasStore {
-    cache: ByteLruCache<AtlasKey, CachedAtlas>,
-    pending: HashSet<AtlasKey>,
-    failed: HashSet<AtlasKey>,
+    cache: ByteLruCache<PackKey, CachedAtlas>,
+    pending: HashSet<PackKey>,
+    failed: HashSet<PackKey>,
     mailbox: Mailbox,
+    #[cfg(not(target_arch = "wasm32"))]
+    sender: std::sync::mpsc::SyncSender<Job>,
 }
 
 impl Default for AtlasStore {
     fn default() -> Self {
         Self {
-            cache: ByteLruCache::new(CACHE_BYTES),
+            cache: ByteLruCache::new(CACHE_BYTES, CACHE_ENTRIES),
             pending: HashSet::new(),
             failed: HashSet::new(),
             mailbox: Mailbox::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            sender: worker_sender(),
         }
     }
 }
@@ -538,8 +541,9 @@ impl AtlasStore {
     }
 }
 
-fn atlas(ctx: &Context, pack: &'static Pack, side: u16) -> Option<CachedAtlas> {
-    let store_id = Id::new("animated-icon-atlases");
+/// The cached atlas and whether its work is still pending.
+fn atlas(ctx: &Context, pack: &'static Pack, side: u16) -> (Option<CachedAtlas>, bool) {
+    let store_id = Id::new(ATLAS_STORE_ID);
     let mailbox = ctx.data_mut(|data| {
         data.get_temp_mut_or_default::<AtlasStore>(store_id)
             .mailbox
@@ -550,26 +554,30 @@ fn atlas(ctx: &Context, pack: &'static Pack, side: u16) -> Option<CachedAtlas> {
         .into_iter()
         .map(|completed| upload(ctx, completed))
         .collect();
-    let key = AtlasKey::new(pack, side);
+    let key = PackKey::new(pack, side);
     ctx.data_mut(|data| {
         let store = data.get_temp_mut_or_default::<AtlasStore>(store_id);
         store.publish(completed);
         if let Some(atlas) = store.cache.get(&key) {
-            return Some(atlas.clone());
+            return (Some(atlas.clone()), false);
         }
-        if store.pending.contains(&key) || store.failed.contains(&key) {
-            return None;
+        if store.pending.contains(&key) {
+            return (None, true);
         }
-        if request_atlas(ctx, store.mailbox.clone(), key, pack, side) {
+        if store.failed.contains(&key) {
+            return (None, false);
+        }
+        if store.request(ctx, key, pack, side) {
             store.pending.insert(key);
+            return (None, true);
         }
-        None
+        (None, false)
     })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 struct Job {
-    key: AtlasKey,
+    key: PackKey,
     pack: &'static Pack,
     side: u16,
     mailbox: Mailbox,
@@ -577,131 +585,71 @@ struct Job {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn request_atlas(
-    ctx: &Context,
-    mailbox: Mailbox,
-    key: AtlasKey,
-    pack: &'static Pack,
-    side: u16,
-) -> bool {
-    use std::sync::OnceLock;
-    use std::sync::mpsc::{SyncSender, TrySendError, sync_channel};
+fn worker_sender() -> std::sync::mpsc::SyncSender<Job> {
+    use std::sync::mpsc::sync_channel;
 
-    static WORKER: OnceLock<SyncSender<Job>> = OnceLock::new();
-    let sender = WORKER.get_or_init(|| {
-        let (sender, receiver) = sync_channel::<Job>(2);
-        let _worker = std::thread::Builder::new()
-            .name("animated-icon-atlas".to_owned())
-            .spawn(move || {
-                while let Ok(job) = receiver.recv() {
-                    // One unpublished atlas is retained per context.
-                    let retry = job.mailbox.0.lock().map_or(true, |mailbox| {
-                        mailbox.iter().any(|done| done.atlas.is_some())
+    let (sender, receiver) = sync_channel::<Job>(2);
+    let _worker = std::thread::Builder::new()
+        .name("animated-icon-atlas".to_owned())
+        .spawn(move || {
+            while let Ok(job) = receiver.recv() {
+                // One unpublished atlas is retained per context.
+                let retry = job.mailbox.0.lock().map_or(true, |mailbox| {
+                    mailbox.iter().any(|done| done.atlas.is_some())
+                });
+                let atlas = if retry {
+                    None
+                } else {
+                    mareader_animated_icons::raster_atlas(job.pack, u32::from(job.side))
+                };
+                if let Ok(mut mailbox) = job.mailbox.0.lock() {
+                    mailbox.push(Completed {
+                        key: job.key,
+                        pack_id: job.pack.id(),
+                        atlas,
+                        retry,
                     });
-                    let atlas = if retry {
-                        None
-                    } else {
-                        mareader_animated_icons::raster_atlas(job.pack, u32::from(job.side))
-                    };
-                    if let Ok(mut mailbox) = job.mailbox.0.lock() {
-                        mailbox.push(Completed {
-                            key: job.key,
-                            pack_id: job.pack.id(),
-                            atlas,
-                            retry,
-                        });
-                    }
-                    job.ctx.request_repaint();
                 }
-            });
-        sender
-    });
-    match sender.try_send(Job {
-        key,
-        pack,
-        side,
-        mailbox,
-        ctx: ctx.clone(),
-    }) {
-        Ok(()) => true,
-        Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => false,
+                job.ctx.request_repaint();
+            }
+        });
+    sender
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl AtlasStore {
+    fn request(&self, ctx: &Context, key: PackKey, pack: &'static Pack, side: u16) -> bool {
+        use std::sync::mpsc::TrySendError;
+
+        match self.sender.try_send(Job {
+            key,
+            pack,
+            side,
+            mailbox: self.mailbox.clone(),
+            ctx: ctx.clone(),
+        }) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => false,
+        }
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-fn request_atlas(
-    ctx: &Context,
-    mailbox: Mailbox,
-    key: AtlasKey,
-    pack: &'static Pack,
-    side: u16,
-) -> bool {
-    let atlas = mareader_animated_icons::raster_atlas(pack, u32::from(side));
-    if let Ok(mut mailbox) = mailbox.0.lock() {
-        mailbox.push(Completed {
-            key,
-            pack_id: pack.id(),
-            atlas,
-            retry: false,
-        });
-        ctx.request_repaint();
-        true
-    } else {
-        false
-    }
-}
-
-#[derive(Clone)]
-struct ByteLruCache<K, V> {
-    entries: HashMap<K, (V, usize, u64)>,
-    bytes: usize,
-    max_bytes: usize,
-    stamp: u64,
-}
-
-impl<K: Copy + Eq + Hash, V> ByteLruCache<K, V> {
-    fn new(max_bytes: usize) -> Self {
-        Self {
-            entries: HashMap::new(),
-            bytes: 0,
-            max_bytes,
-            stamp: 0,
+impl AtlasStore {
+    fn request(&self, ctx: &Context, key: PackKey, pack: &'static Pack, side: u16) -> bool {
+        let atlas = mareader_animated_icons::raster_atlas(pack, u32::from(side));
+        if let Ok(mut mailbox) = self.mailbox.0.lock() {
+            mailbox.push(Completed {
+                key,
+                pack_id: pack.id(),
+                atlas,
+                retry: false,
+            });
+            ctx.request_repaint();
+            true
+        } else {
+            false
         }
-    }
-
-    fn get(&mut self, key: &K) -> Option<&V> {
-        self.stamp = self.stamp.wrapping_add(1);
-        let entry = self.entries.get_mut(key)?;
-        entry.2 = self.stamp;
-        Some(&entry.0)
-    }
-
-    fn insert(&mut self, key: K, value: V, cost: usize) -> bool {
-        if cost > self.max_bytes {
-            return false;
-        }
-        if let Some((_, old_cost, _)) = self.entries.remove(&key) {
-            self.bytes = self.bytes.saturating_sub(old_cost);
-        }
-        while self.bytes.saturating_add(cost) > self.max_bytes
-            || self.entries.len() >= CACHE_ENTRIES
-        {
-            let Some(oldest) = self
-                .entries
-                .iter()
-                .min_by_key(|(_, (_, _, used))| *used)
-                .map(|(key, _)| *key)
-            else {
-                break;
-            };
-            if let Some((_, old_cost, _)) = self.entries.remove(&oldest) {
-                self.bytes = self.bytes.saturating_sub(old_cost);
-            }
-        }
-        self.stamp = self.stamp.wrapping_add(1);
-        self.entries.insert(key, (value, cost, self.stamp));
-        self.bytes = self.bytes.saturating_add(cost);
-        true
     }
 }
 
@@ -723,24 +671,34 @@ mod tests {
     }
 
     #[test]
-    fn byte_cache_reuses_a_hit_and_evicts_the_oldest() {
-        let mut cache = ByteLruCache::new(10);
-        assert!(cache.insert(1, "one", 4));
-        assert!(cache.insert(2, "two", 4));
-        assert_eq!(cache.get(&1), Some(&"one"));
-        assert!(cache.insert(3, "three", 4));
-        assert!(cache.get(&2).is_none());
-        assert_eq!(cache.get(&1), Some(&"one"));
-        assert_eq!(cache.get(&3), Some(&"three"));
-        assert_eq!(cache.bytes, 8);
-    }
+    fn only_pending_atlases_hold_cold_runs_open() {
+        let Some(pack) = mareader_animated_icons::find("sun") else {
+            panic!("sun pack is missing");
+        };
+        let ctx = Context::default();
+        let key = PackKey::new(pack, 41);
+        ctx.data_mut(|data| {
+            data.get_temp_mut_or_default::<AtlasStore>(Id::new(ATLAS_STORE_ID))
+                .pending
+                .insert(key);
+        });
+        let mut run = Run {
+            start: 1.0,
+            ..Run::default()
+        };
+        let pending = cached_frame(&ctx, pack, 41, 0, &mut run, 20.0);
+        assert!(matches!(pending, CurrentFrame::Pending));
+        assert_eq!(run.start, 20.0);
 
-    #[test]
-    fn byte_cache_refuses_one_entry_larger_than_its_bound() {
-        let mut cache = ByteLruCache::new(7);
-        assert!(!cache.insert(1, "too large", 8));
-        assert!(cache.entries.is_empty());
-        assert_eq!(cache.bytes, 0);
+        ctx.data_mut(|data| {
+            let store = data.get_temp_mut_or_default::<AtlasStore>(Id::new(ATLAS_STORE_ID));
+            store.pending.remove(&key);
+            store.failed.insert(key);
+        });
+        run.start = 1.0;
+        let failed = cached_frame(&ctx, pack, 41, 0, &mut run, 20.0);
+        assert!(matches!(failed, CurrentFrame::Pending));
+        assert_eq!(run.start, 1.0);
     }
 
     #[test]
@@ -761,7 +719,7 @@ mod tests {
 
     #[test]
     fn every_generated_pack_is_reachable() {
-        assert_eq!(mareader_animated_icons::all().len(), 98);
+        assert_eq!(mareader_animated_icons::all().len(), 104);
         for pack in mareader_animated_icons::all() {
             assert!(!pack.id().is_empty());
             assert!(pack.frame_count() > 0);
@@ -815,6 +773,12 @@ mod tests {
         };
         motion::set(&ctx, &settings, false);
         let cell = Rect::from_min_size(pos2(4.0, 4.0), Vec2::splat(18.0));
+        let atlas_key = PackKey::new(pack, side(cell.width() * BOX, 1.0) as u16);
+        ctx.data_mut(|data| {
+            data.get_temp_mut_or_default::<AtlasStore>(Id::new(ATLAS_STORE_ID))
+                .failed
+                .insert(atlas_key);
+        });
         let mut run_of = Id::new("never");
         let mut live = [false; 4];
         for (index, time) in [
@@ -876,5 +840,33 @@ mod tests {
     #[test]
     fn the_icon_switch_prevents_a_run() {
         assert_eq!(click_run_liveness(false), [false; 4]);
+    }
+
+    #[test]
+    fn switching_icons_off_releases_the_atlas_store() {
+        let ctx = Context::default();
+        ctx.data_mut(|data| {
+            data.insert_temp(Id::new(ATLAS_STORE_ID), AtlasStore::default());
+        });
+        let settings = mareader_settings::MotionSettings {
+            icon_animations: false,
+            ..Default::default()
+        };
+        motion::set(&ctx, &settings, false);
+        let cell = Rect::from_min_size(egui::Pos2::ZERO, Vec2::splat(18.0));
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, Vec2::splat(100.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| {
+            let response = ui.interact(cell, ui.id().with("cell"), egui::Sense::click());
+            let _act = announce(ui, Act::Click);
+            let _ = advance(ui, &response, Icon::Light, "cell", cell.width());
+        });
+        out.textures_delta.clear();
+        assert!(
+            ctx.data(|data| data.get_temp::<AtlasStore>(Id::new(ATLAS_STORE_ID)))
+                .is_none()
+        );
     }
 }

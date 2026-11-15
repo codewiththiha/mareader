@@ -45,7 +45,7 @@ particular machine still requires a release profile.
 The runtime-SVG replacement is implemented across
 `crates/animated-icons` and `crates/ui/src/icons/anim.rs`:
 
-- the 98 source SVG/timeline declarations are build-script input only;
+- the 104 source SVG/timeline declarations are build-script input only;
 - generated typed paths, ordered layers and animated-part ancestry are the
   runtime representation;
 - time is quantised to stable 60 Hz samples and repaints target the exact next
@@ -191,33 +191,21 @@ of the current cost.
 
 ### What the pack actually requires
 
-A source audit of all generated definitions in `pack.rs` found:
+A source audit of all declarations in `animated-icons/src/source.rs` found:
 
-- 98 packs, 265 independently animated parts and 331 primitive elements;
-- 255 paths, 35 rounded rectangles, 27 circles and 14 lines, with no polygon,
-  polyline or ellipse elements;
-- 78 packs whose parts only transform, fade or stay still;
-- 20 packs that use both path length and path offset;
-- one of those 20 (`baseline`) that also changes stroke width;
-- 233 of 265 parts whose pixel coverage does not otherwise change, leaving only
-  32 parts that need path/stroke variants; and
-- 3,394 whole-icon samples if every pack is expanded at 60 Hz, with 26–51
+- 104 packs, 269 independently animated parts and 336 path elements;
+- 56 packs whose parts only transform, fade or stay still;
+- 5 packs that use both path length and path offset;
+- 34 packs that change stroke width;
+- 198 of 269 parts whose pixel coverage does not otherwise change, leaving 71
+  parts that need path/stroke variants; and
+- 3,240 whole-icon samples if every pack is expanded at 60 Hz, with 26–41
   samples per pack.
 
-The path source is compact: the 255 `d` attributes contain 839 commands and
-2,709 numeric operands. Emitting typed path commands from the pack generator
-would therefore add only tens of KiB before normal Rust representation and
-linker effects, not a large vector asset bundle.
-
-A geometry-count estimate found 683 actual line/arc/cubic segments after
-expanding repeated command arguments. Flattening in the pack's 24-unit space to
-0.1 and 0.02 unit chord-error targets gives roughly 1,566 and 2,489 centreline
-points respectively. Using epaint's thick antialiased-stroke layout for an
-order-of-magnitude estimate—four 20-byte vertices and about 18 four-byte indices
-per point—puts all 255 path centreline meshes near 0.23–0.37 MiB for one tolerance
-bucket, before circles, rectangles, allocator capacity and any hard-property
-variants. Geometry storage is therefore plausible; stroke fidelity and dynamic
-tessellation are the harder questions.
+The path source is compact: the 336 `d` attributes contain 1,385 commands and
+4,353 numeric operands. Geometry remains build-only typed data rather than a
+runtime vector asset bundle. Stroke fidelity and dynamic tessellation remain
+the harder questions for a pure-vector alternative.
 
 All current strokes inherit round caps and round joins from the SVG root.
 Independent parts may translate, rotate, scale non-uniformly, flip, skew and
@@ -231,14 +219,14 @@ naive list of translucent painter shapes from matching every frame.
 | Representation | Expected warmed CPU | Memory and uploads | Semantic and visual coverage | DPI and renderer fit | Assessment |
 |---|---|---|---|---|---|
 | Generated epaint paths | Timeline evaluation plus curve flattening and tessellation each pass | Very little persistent memory; ordinary mesh upload with the rest of egui | Transforms and tint are natural. Reveal, offset, stroke width, round joins/caps and part-level compositing need new code | Resolution independent and standard egui | Best pure-vector experiment, not a drop-in replacement |
-| Retained epaint meshes | Very low for transform/opacity-only parts; dynamic topology needs variants | Bounded geometry, no icon textures | Good for 233 stable-coverage parts. The other 32 need retessellation or quantised meshes | Standard egui, but antialias feathering is scale-sensitive | Good second prototype if texture memory becomes the limiting cost |
-| Raster part atlas drawn as egui meshes | A few affine transforms, UVs and colours per visible part | One or a few bounded RGBA pages per active size; no warmed-frame upload | Preserves group opacity and round-stroke semantics; hard properties use variants for only 32 parts | Size-bucketed, but uses ordinary egui textures and meshes | **Best practical target** |
+| Retained epaint meshes | Very low for transform/opacity-only parts; dynamic topology needs variants | Bounded geometry, no icon textures | Good for 198 stable-coverage parts. The other 71 need retessellation or quantised meshes | Standard egui, but antialias feathering is scale-sensitive | Good second prototype if texture memory becomes the limiting cost |
+| Raster part atlas drawn as egui meshes | A few affine transforms, UVs and colours per visible part | One or a few bounded RGBA pages per active size; no warmed-frame upload | Preserves group opacity and round-stroke semantics; hard properties use variants for only 71 parts | Size-bucketed, but uses ordinary egui textures and meshes | **Best practical target** |
 | Whole-frame sprite atlas | Lowest: select one UV rectangle | Highest raster memory; one upload while an atlas is prepared | Every authored effect is baked exactly | Size-bucketed and standard egui | Lowest-risk control and per-pack fallback |
-| Icon or frame font | Low after glyph rasterisation | Competes with egui text in its shared RGBA font atlas | One glyph cannot transform parts independently; full frames require 3,394 glyphs per size | Font rasterisation handles DPI, but arbitrary part rotation/skew is absent | Reject for animated packs |
+| Icon or frame font | Low after glyph rasterisation | Competes with egui text in its shared RGBA font atlas | One glyph cannot transform parts independently; full frames require 3,240 glyphs per size | Font rasterisation handles DPI, but arbitrary part rotation/skew is absent | Reject for animated packs |
 | SDF/MSDF plus custom shader | Very low draw cost after preparation | Compact scalable fields and quads | Tint, opacity, transforms and some width changes are natural; path progress needs another parameter field or variants | Excellent scale range, but requires an egui-wgpu callback/pipeline and fallback work | Later specialist option, not the first replacement |
 
 A full-frame set for all packs at only one 62-pixel device size is about
-49.8 MiB of raw RGBA; at the 192-pixel cap it is about 477 MiB. Compression
+47.5 MiB of raw RGBA; at the 192-pixel cap it is about 455.6 MiB. Compression
 helps distribution, not resident GPU texture bytes. This confirms that any
 sprite design must remain lazy and byte-capped rather than becoming one eager
 application atlas.
@@ -273,13 +261,13 @@ replacement.
 A conventional icon font works well for static icons. It does not expose the
 parts of a glyph to egui, and egui text does not apply an arbitrary affine
 transform to each outline. Encoding every quantised whole frame as a glyph
-would instead add 3,394 glyphs for one sampling rate before size and DPI
+would instead add 3,240 glyphs for one sampling rate before size and DPI
 variants.
 
 Egui's font texture is a context-shared RGBA atlas. It is recreated after its
 fill passes the atlas threshold and is not governed by Mareader's 8 MiB icon
 budget. Animated frame glyphs would therefore move icon memory into the text
-cache, increase atlas pressure and still fail to exploit the 233 parts whose
+cache, increase atlas pressure and still fail to exploit the 198 parts whose
 coverage is stable.
 
 ### Recommended representation: generated parts in a raster atlas mesh
@@ -295,7 +283,7 @@ normal egui `Mesh` composites atlas tiles at paint time.
    bucket. Preserve a transparent gutter for linear sampling. Parts that can
    grow are prepared at a resolution sufficient for their audited maximum
    scale, or get a coarse scale bucket.
-3. For the 32 path/stroke-changing parts, rasterise deduplicated quantised
+3. For the 71 path/stroke-changing parts, rasterise deduplicated quantised
    variants. Tiny-skia already represents immutable Bézier paths and supports
    round caps, round joins and stroke dashes, so this can preserve the current
    reveal/offset/width semantics without parsing an SVG document.
@@ -310,12 +298,12 @@ normal egui `Mesh` composites atlas tiles at paint time.
    be split safely. Its transformed states remain cropped part cells, not
    whole-frame cells.
 
-For the 78 packs without path/stroke changes, this replaces 2,686 possible
-whole-frame cells with 213 reusable part cells, plus any static layer. Across
-the 20 harder packs, only 32 parts need frame variants; the other 20 parts stay
+For the 56 packs without path/stroke changes, this replaces 1,779 possible
+whole-frame cells with 146 reusable part cells, plus any static layer. Across
+the 48 harder packs, only 71 parts need frame variants; the other 52 parts stay
 reusable. Cropped packing matters more than raw cell counts, and all pages must
 still be lazy: an upper bound that gives every hard part one full-size tile for
-every frame is 1,099 variant cells before trimming.
+every frame is 2,192 variant cells before trimming.
 
 The compositor retains the strongest properties of both approaches:
 software-rasterised round-stroke coverage and group opacity, ordinary backend-neutral
@@ -342,7 +330,7 @@ API:
 4. In a release native run, record UI-thread frame time, worker preparation
    time, raster count, texture-upload calls/bytes, mesh vertices and resident
    cache bytes. Test one active icon, the maximum expected overlap and replay.
-5. Expand the generator and visual test to all 98 packs only after the six-pack
+5. Expand the generator and visual test to all 104 packs only after the six-pack
    spike meets its quality and memory thresholds.
 
 Success means a warmed transform-only run performs no SVG construction, XML
@@ -432,7 +420,7 @@ Build the atlas away from the UI pass:
 The first run can use the current per-frame path for missing cells while the
 worker warms the atlas, ensuring interaction never waits. Later runs change
 only UVs. Frequently visible title-bar packs may be warmed during an already
-scheduled idle pass, but all 98 packs must not be generated eagerly.
+scheduled idle pass, but all 104 packs must not be generated eagerly.
 
 A single atlas handle also avoids a large number of tiny texture objects. The
 cache's byte admission is checked before building; if an unusually large
@@ -441,7 +429,7 @@ bounded current-frame path instead of evicting visible atlases back and forth.
 
 This remains the lowest-risk next slice and the visual/performance control for
 the representation spike. It should not become an eager all-pack asset: the
-representation audit shows why whole frames waste memory for the 233 parts
+representation audit shows why whole frames waste memory for the 198 parts
 whose coverage does not change.
 
 ### Phase 3: generated part scenes and atlas-mesh composition
@@ -619,7 +607,7 @@ mesh composition.
 The ownership boundary is deliberate:
 
 - `mareader-animated-icons` is a toolkit-free L0 crate. Its build script alone
-  reads the 98 declarative SVG/timeline packs and emits typed geometry, nested
+  reads the 104 declarative SVG/timeline packs and emits typed geometry, nested
   scene groups, source-ordered layers and timelines into `OUT_DIR`.
 - Layer variants bake the quantised transform, path coverage, width and opacity
   state before tight alpha cropping. Equal states of a layer reuse one atlas
@@ -633,7 +621,7 @@ The ownership boundary is deliberate:
 - Each authored top-level part is an atomic generated scene. Nested opacity,
   transforms, path coverage and width changes are baked together in that part's
   cropped variants; no whole-frame atlas representation exists.
-- Tests compare every quantised frame of all 98 packs with the original SVG
+- Tests compare every quantised frame of all 104 packs with the original SVG
   renderer at 1×, 1.25×, 2× and the 192 px ceiling, then reconstruct every
   atlas frame from its ordered cells and compare it with the direct generated
   frame. Every one-frame resting crop is likewise reconstructed on its 24-unit

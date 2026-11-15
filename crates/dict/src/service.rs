@@ -101,13 +101,16 @@ pub struct Dictionaries {
 }
 
 impl Dictionaries {
-    /// Whether packs can be downloaded and asked here.
+    #[cfg(not(target_arch = "wasm32"))]
+    mareader_fetch::attached_method!();
+
+    #[cfg(target_arch = "wasm32")]
     pub fn attached(&self) -> bool {
-        #[cfg(not(target_arch = "wasm32"))]
-        return self.desk.is_some();
-        #[cfg(target_arch = "wasm32")]
         false
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn set_inline(&mut self, _inline: bool) {}
 
     pub fn state(&self, pack: &Pack) -> &State {
         let i = PACKS.iter().position(|p| p.id == pack.id);
@@ -171,6 +174,8 @@ pub use desk::Waker;
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Dictionaries {
+    mareader_fetch::inline_method!();
+
     /// Keeps packs in `dir`, made if missing; `waker` repaints the app.
     pub fn attach(&mut self, dir: std::path::PathBuf, waker: Waker) -> Result<(), String> {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -178,13 +183,6 @@ impl Dictionaries {
         self.states = states;
         self.desk = Some(desk);
         Ok(())
-    }
-
-    /// Answers asks on the caller's thread, for tests.
-    pub fn set_inline(&mut self, inline: bool) {
-        if let Some(desk) = &mut self.desk {
-            desk.inline = inline;
-        }
     }
 
     /// Starts or resumes `pack`'s download.

@@ -71,16 +71,16 @@ pub struct Vocabulary {
 }
 
 impl Vocabulary {
+    #[cfg(not(target_arch = "wasm32"))]
+    mareader_fetch::attached_method!();
+
+    #[cfg(target_arch = "wasm32")]
     pub fn attached(&self) -> bool {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.desk.is_some()
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            false
-        }
+        false
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn set_inline(&mut self, _inline: bool) {}
 
     pub fn state(&self, part: Part) -> &State {
         match part {
@@ -225,6 +225,8 @@ pub use desk::Waker;
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Vocabulary {
+    mareader_fetch::inline_method!();
+
     /// Keeps the files in `dir`, made if missing; `waker` repaints.
     pub fn attach(&mut self, dir: std::path::PathBuf, waker: Waker) -> Result<(), String> {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -234,13 +236,6 @@ impl Vocabulary {
         self.set(Part::Tagger, tagger);
         self.desk = Some(desk);
         Ok(())
-    }
-
-    /// Answers on the caller's thread, for tests.
-    pub fn set_inline(&mut self, inline: bool) {
-        if let Some(desk) = &mut self.desk {
-            desk.inline = inline;
-        }
     }
 
     /// Starts or resumes whichever download isn't done or running.

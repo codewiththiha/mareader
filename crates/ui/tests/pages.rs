@@ -7,23 +7,9 @@ use mareader_ui::MareaderApp;
 use mareader_ui::command::Command;
 use mareader_ui::zoom::Fit;
 
-type H = Harness<'static, MareaderApp>;
+use crate::common::reader_200 as reader;
 
-fn reader(options: &[(&str, &str)]) -> H {
-    let mut app = MareaderApp::default();
-    app.set_option("workers", "0").ok();
-    for (k, v) in options {
-        app.set_option(k, v).ok();
-    }
-    let mut h = Harness::builder()
-        .with_size(egui::vec2(900.0, 700.0))
-        .with_step_dt(1.0 / 60.0)
-        .with_max_steps(200)
-        .build_eframe(|_| app);
-    h.run_steps(3);
-    h.run();
-    h
-}
+type H = Harness<'static, MareaderApp>;
 
 fn sheets(h: &H) -> Vec<egui::Rect> {
     let pane = h.state().active_pane();

@@ -20,7 +20,6 @@ mod layers;
 mod noise;
 mod onnx;
 mod phonemes;
-mod simd;
 #[cfg(test)]
 mod tests;
 
@@ -28,6 +27,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use candle_core::{Device, Tensor};
+pub(crate) use mareader_nn_core::simd;
 use serde::Deserialize;
 
 pub use config::{Audio, Config, Espeak};

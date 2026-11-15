@@ -1,6 +1,4 @@
 //! Shading words above the reader's level, and the Vocabulary tab.
-#![cfg(not(target_arch = "wasm32"))]
-#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs::File;
 use std::path::Path;

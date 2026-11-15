@@ -528,6 +528,7 @@ dependencies = [
  "mareader-g2p",
  "mareader-kokoro",
  "mareader-vits",
+ "parity-kit",
  "serde",
  "serde_json",
 ]
@@ -552,7 +553,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "mareader-g2p"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "fancy-regex",
  "icu_normalizer",
@@ -563,21 +564,27 @@ dependencies = [
 
 [[package]]
 name = "mareader-kokoro"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "candle-core",
  "candle-nn",
+ "mareader-nn-core",
  "serde",
  "serde_json",
  "zip 9.0.3",
 ]
 
 [[package]]
+name = "mareader-nn-core"
+version = "0.0.5"
+
+[[package]]
 name = "mareader-vits"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "candle-core",
  "candle-nn",
+ "mareader-nn-core",
  "serde",
  "serde_json",
 ]
@@ -645,6 +652,10 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "parity-kit"
+version = "0.0.0"
 
 [[package]]
 name = "paste"

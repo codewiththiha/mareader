@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 use mareader_study::{Failure, Why};
 use serde_json::Value;
 
-use crate::backend::{Backend, BoxFuture, Partial};
+use crate::backend::{Partial, forward_backend};
 use crate::prompt::Prompt;
 
 /// One server and model; the client brings keys, retries and rotation.
@@ -57,15 +57,7 @@ impl Compat {
     }
 }
 
-impl Backend for Compat {
-    fn ask<'a>(
-        &'a self,
-        prompt: &'a Prompt,
-        partial: Partial<'a>,
-    ) -> BoxFuture<'a, Result<Value, Failure>> {
-        Box::pin(self.answer(prompt, partial))
-    }
-}
+forward_backend!(Compat);
 
 /// Like [`failure`], telling no keys from keys all turned away.
 pub async fn failure_with_keys(client: &AiClient, e: AiError) -> Failure {

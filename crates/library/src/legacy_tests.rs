@@ -1,36 +1,24 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::disk::Folder;
+use crate::test_support::opened;
 use crate::tests::save;
 use crate::{
-    ContentId, Data, DeviceId, FileStamp, FolderId, Format, Kind, Library, Measure, Opened, Origin,
-    Recovered, Row, ShelfKind,
+    Data, DeviceId, FileStamp, FolderId, Format, Kind, Library, Origin, Recovered, Row, ShelfKind,
 };
 
 const DEVICE: DeviceId = DeviceId(7);
 const OLD: FolderId = FolderId(0xabc);
 
-fn opened(path: &str, content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(path),
-        measure: Measure {
-            content: ContentId(content),
-            stamp: FileStamp {
-                size: 2048,
-                mtime_ms: 1,
-            },
-        },
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
-
 /// A book read in place under the old folder.
 fn found_in_old(lib: &mut Library, path: &str, content: u128) -> crate::BookId {
-    let id = lib.record_open(opened(path, content), 1_000);
+    let stamp = FileStamp {
+        size: 2048,
+        mtime_ms: 1,
+    };
+    let id = lib.record_open(opened(path, content, Format::Pdf, Some(stamp)), 1_000);
     for location in &mut lib.books.get_mut(&id).unwrap().locations {
         location.origin = Origin::Folder(OLD);
     }

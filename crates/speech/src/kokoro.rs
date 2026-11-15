@@ -9,7 +9,7 @@ use mareader_ipa::Language;
 use mareader_kokoro::{Kokoro as Model, SAMPLE_RATE, Voice as Pack};
 
 use crate::local::{Line, Out, Synth, both, trim_join};
-use crate::studio::Studio;
+use crate::studio::Engine;
 use crate::timing::{Words, place, shift, spell};
 
 pub(crate) use mareader_kokoro::SPEEDS;
@@ -27,7 +27,7 @@ pub(crate) struct Source {
 }
 
 /// What a voice needs once loaded.
-struct Loaded {
+pub(crate) struct Loaded {
     model: Arc<Model>,
     reader: Reader,
     voice: (String, Pack),
@@ -44,21 +44,9 @@ enum Reader {
 }
 
 /// Kokoro's build from `source`, speaking a voice at a time.
-pub(crate) struct Kokoro {
-    source: Source,
-    studio: Studio,
-    loaded: Option<Loaded>,
-}
+pub(crate) type Kokoro = Engine<Source, Loaded>;
 
 impl Kokoro {
-    pub(crate) fn new(source: Source, studio: Studio) -> Self {
-        Self {
-            source,
-            studio,
-            loaded: None,
-        }
-    }
-
     fn load_fresh(&self, voice: &str) -> Result<Loaded, String> {
         let Source {
             folder,
@@ -184,6 +172,7 @@ mod tests {
     use super::*;
     use crate::Voice;
     use crate::local::{Engine, Setup};
+    use crate::studio::Studio;
 
     #[test]
     fn chinese_voices_bring_what_the_reader_loads() {

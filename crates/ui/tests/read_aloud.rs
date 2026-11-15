@@ -8,6 +8,8 @@ use mareader_ui::command::Command;
 use mareader_ui::park::PEEK;
 use mareader_ui::read_aloud::{ReadFrom, Span};
 
+use crate::common::press;
+
 /// A sample PDF, read by the engine that says nothing.
 fn reader(pages: usize) -> Harness<'static, MareaderApp> {
     reader_sized(pages, egui::vec2(900.0, 700.0))
@@ -229,13 +231,6 @@ fn the_player_shows_time_left_and_seeks_to_a_page() {
     h.run_steps(3);
     assert!(!h.state().read_aloud().playing());
     let _ = h.get_by_label("Play");
-}
-
-/// Scrolls the control named `label` into view, then clicks it.
-fn press(h: &mut Harness<'static, MareaderApp>, label: &str) {
-    h.get_by_label(label).scroll_to_me();
-    h.run_steps(30);
-    h.get_by_label(label).click();
 }
 
 /// The reader with settings open on the Read aloud tab.
@@ -1760,7 +1755,7 @@ fn a_remembered_skip_belongs_to_one_book_and_can_be_undone() {
     h.get_by_label("Stop reading aloud").click();
     h.run_steps(5);
 
-    // Reopening the original book skips without asking, and options can undo it.
+    // Reopening skips asking; options can undo it.
     h.state_mut().queue(Command::Open(OpenRequest {
         pane: Some(pane),
         ..OpenRequest::path(kept_path)

@@ -1,7 +1,5 @@
 //! The selection bar, Explain, marks and the word card, headless.
 
-use std::sync::Arc;
-
 use egui::accesskit::Role;
 use egui::{Event, Modifiers, PointerButton, Pos2, Rect};
 use egui_kittest::Harness;
@@ -14,55 +12,10 @@ use mareader_ui::command::Command;
 use mareader_ui::selection::Sheet;
 use mareader_ui::study::words;
 
+use crate::common::{ai_reader as reader, find, page};
+
 type H = Harness<'static, MareaderApp>;
 type Out = Result<(), Box<dyn std::error::Error>>;
-
-fn reader(options: &[(&str, &str)]) -> H {
-    let mut app = MareaderApp::default();
-    for (k, v) in [
-        ("workers", "0"),
-        ("explain", "canned"),
-        ("animations", "false"),
-    ] {
-        app.set_option(k, v).ok();
-    }
-    for (k, v) in options {
-        app.set_option(k, v).ok();
-    }
-    let mut h = Harness::builder()
-        .with_size(egui::vec2(1000.0, 700.0))
-        .with_step_dt(1.0 / 60.0)
-        .with_max_steps(200)
-        .build_eframe(|_| app);
-    h.run_steps(3);
-    h.run();
-    h
-}
-
-/// Page `page`'s text and where it sits on screen.
-fn page(h: &H, page: usize) -> Result<(Arc<TextLayer>, Sheet), String> {
-    let pane = h.state().active_pane();
-    let docs = h.state().documents();
-    let reading = docs.reading(pane).ok_or("no document")?;
-    let layer = reading
-        .document
-        .text_layer(page)
-        .map_err(|e| e.to_string())?;
-    let sheets = docs.sheets(pane);
-    let sheet = *sheets
-        .iter()
-        .find(|s| s.page == page)
-        .ok_or("not on screen")?;
-    Ok((Arc::new(layer), sheet))
-}
-
-fn find(layer: &TextLayer, needle: &str) -> Result<usize, String> {
-    let chars: String = layer.text.chars().iter().map(|c| c.ch).collect();
-    let at = chars
-        .find(needle)
-        .ok_or(format!("{needle} not on the page"))?;
-    Ok(chars.get(..at).unwrap_or_default().chars().count())
-}
 
 /// Character `i`'s middle on screen.
 fn middle(layer: &TextLayer, sheet: Sheet, i: usize) -> Result<Pos2, String> {

@@ -380,7 +380,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "mareader-phonon"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "candle-core",
  "serde",
@@ -440,6 +440,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "parity-kit"
+version = "0.0.0"
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -450,6 +454,7 @@ name = "phonon-parity"
 version = "0.0.0"
 dependencies = [
  "mareader-phonon",
+ "parity-kit",
  "serde",
  "serde_json",
 ]

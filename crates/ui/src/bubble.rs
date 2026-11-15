@@ -2,7 +2,7 @@
 
 use egui::{Align2, Context, Frame, Id, Margin, Order, Rect, Shape, Stroke, Ui, pos2};
 
-use crate::motion;
+use crate::motion::entrance;
 use crate::theme::Tokens;
 
 /// From the words to the card's edge; the caret spans most of it.
@@ -109,7 +109,7 @@ impl Bubble {
             .center()
             .x
             .clamp(lo, (room.right() - MARGIN - half).max(lo));
-        let lift = (1.0 - entrance(ctx, memo.opened, now)) * LIFT;
+        let lift = (1.0 - entrance(ctx, memo.opened, now, ENTER)) * LIFT;
         let (pos, pivot) = match side {
             Side::Below => (pos2(x, at.bottom() + GAP + lift), Align2::CENTER_TOP),
             Side::Above => (pos2(x, at.top() - GAP - lift), Align2::CENTER_BOTTOM),
@@ -179,19 +179,6 @@ pub fn side(
         _ if room(prefer) >= room(other) => prefer,
         _ => other,
     }
-}
-
-/// How far open the card is, eased; 1 once settled.
-fn entrance(ctx: &Context, opened: f64, now: f64) -> f32 {
-    let span = motion::secs(ctx, ENTER);
-    if span <= 0.0 {
-        return 1.0;
-    }
-    let x = ((now - opened) as f32 / span).clamp(0.0, 1.0);
-    if x < 1.0 {
-        ctx.request_repaint();
-    }
-    1.0 - (1.0 - x).powi(3)
 }
 
 /// The caret on the card's near edge, under the words' middle.

@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use mareader_library::{Book, BookId, Library, Origin, ShelfId};
 
+use super::counted::counted;
 use super::runs::{Beat, Phase, RunId};
 use super::{LibraryState, Pick, ShelfAction};
 use crate::command::{Command, Commands};
@@ -556,13 +557,6 @@ fn locate(model: &Library, made: &[Option<ShelfId>], spot: Spot) -> Option<Shelf
         Spot::New(i) => made.get(i).copied().flatten()?,
     };
     model.shelf(id).map(|s| s.id)
-}
-
-fn counted(n: usize, one: &str, many: &str) -> String {
-    match n {
-        1 => format!("1 {one}"),
-        n => format!("{n} {many}"),
-    }
 }
 
 fn natural(a: &str, b: &str) -> std::cmp::Ordering {

@@ -80,3 +80,11 @@ author = "Lucide Contributors"
 source = "https://github.com/lucide-icons/lucide"
 license = "ISC"
 usage = "Generated resting and animated interface glyphs through crates/ui/src/icons"
+
+[[bundled]]
+name = "block 0.1.6 with Mareader's FFI compatibility patch"
+via = "vendored crates.io dependency selected by [patch.crates-io]"
+author = "Steven Sheldon"
+source = "https://github.com/SSheldon/rust-block"
+license = "MIT"
+usage = "Objective-C block runtime ABI used by tts through cocoa-foundation on Apple targets"

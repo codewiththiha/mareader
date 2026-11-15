@@ -16,6 +16,8 @@ use mareader_ui::library::{
     Action, BookAction, Named, Pick, PickAction, SearchAction, Sheet, ShelfAction,
 };
 
+use crate::common::{act, carry, go_to, reader, release};
+
 /// Canonical, as the library records it; opens take any spelling.
 fn fixture(name: &str) -> PathBuf {
     long(name).canonicalize().unwrap()
@@ -42,15 +44,6 @@ fn harness(app: MareaderApp) -> Harness<'static, MareaderApp> {
     h
 }
 
-fn reader(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
-    let mut app = MareaderApp::default();
-    app.set_option("workers", "0").ok();
-    for (k, v) in options {
-        app.set_option(k, v).ok();
-    }
-    harness(app)
-}
-
 fn open(h: &mut Harness<'static, MareaderApp>, key: &str, value: &str) {
     h.state_mut().set_option(key, value).ok();
     h.run();
@@ -63,12 +56,6 @@ fn library<'a>(h: &'a Harness<'static, MareaderApp>) -> &'a Library {
 /// The page the focused pane shows, as the library would record it.
 fn page(h: &Harness<'static, MareaderApp>) -> usize {
     h.state().last_document().map_or(usize::MAX, |d| d.page)
-}
-
-fn go_to(h: &mut Harness<'static, MareaderApp>, page: usize) {
-    let pane = h.state().active_pane();
-    h.state_mut().queue(Command::GoTo { pane, page });
-    h.run();
 }
 
 /// What the app holds, for a failing assertion's message.
@@ -451,13 +438,6 @@ fn put(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
     path.canonicalize().unwrap()
 }
 
-fn act(h: &mut Harness<'static, MareaderApp>, action: Action) {
-    h.state_mut().queue(Command::Library(action));
-    h.run();
-    // Inline disk work answers on the next frame.
-    h.run();
-}
-
 fn toast(h: &Harness<'static, MareaderApp>) -> String {
     let toast = h.state().toast().map(|t| t.message.clone());
     toast.unwrap_or_default()
@@ -809,29 +789,6 @@ fn a_shelf_may_take_a_name_already_beside_it() {
     act(&mut h, Action::Rename(Named::Shelf(other), "poetry".into()));
     assert_eq!(library(&h).shelf(other).unwrap().name.value, "poetry");
     assert_eq!(library(&h).children(None).len(), 2);
-}
-
-/// Presses on `from`, moves in steps past egui's drag threshold, and stops.
-fn carry(h: &mut Harness<'static, MareaderApp>, from: egui::Pos2, to: egui::Pos2) {
-    h.hover_at(from);
-    h.run();
-    h.drag_at(from);
-    h.run();
-    for step in 1..=6 {
-        h.hover_at(from.lerp(to, step as f32 / 6.0));
-        h.run();
-    }
-}
-
-/// Lets go at `at`, the pointer staying there.
-fn release(h: &mut Harness<'static, MareaderApp>, at: egui::Pos2) {
-    h.event(egui::Event::PointerButton {
-        pos: at,
-        button: egui::PointerButton::Primary,
-        pressed: false,
-        modifiers: egui::Modifiers::NONE,
-    });
-    h.run();
 }
 
 #[test]
@@ -1453,7 +1410,7 @@ fn a_folder_copied_in_takes_only_what_counts() {
     // Unticked, the books are copied in.
     h.get_by_label("Read books in place").click();
     h.run();
-    // Markdown no longer counts.
+    // Unticked, Markdown is excluded.
     h.get_by_label("MD").click();
     h.run();
     every_size(&mut h);

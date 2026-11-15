@@ -30,6 +30,45 @@ const MAX_BYTES: u64 = 256 * 1024 * 1024;
 /// Tries per address before the next mirror.
 const TRIES: usize = 2;
 
+/// Set a worker's inline mode when one is attached.
+pub fn set_inline<D>(desk: &mut Option<D>, inline: bool, set: impl FnOnce(&mut D, bool)) {
+    if let Some(desk) = desk {
+        set(desk, inline);
+    }
+}
+
+/// Whether a native worker is attached.
+pub fn attached<D>(desk: &Option<D>) -> bool {
+    desk.is_some()
+}
+
+/// Forward inline mode on native, and do nothing in a browser.
+#[macro_export]
+macro_rules! inline_method {
+    () => {
+        #[cfg(not(target_arch = "wasm32"))]
+        pub fn set_inline(&mut self, inline: bool) {
+            $crate::set_inline(&mut self.desk, inline, |desk, value| desk.inline = value);
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        pub fn set_inline(&mut self, _inline: bool) {}
+    };
+}
+
+/// Report the native worker's presence, always false in a browser.
+#[macro_export]
+macro_rules! attached_method {
+    () => {
+        pub fn attached(&self) -> bool {
+            #[cfg(not(target_arch = "wasm32"))]
+            return $crate::attached(&self.desk);
+            #[cfg(target_arch = "wasm32")]
+            false
+        }
+    };
+}
+
 /// What a download is told to do, between chunks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]

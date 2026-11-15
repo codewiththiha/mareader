@@ -142,7 +142,7 @@ impl Library {
         found.sort_by(|(a, x), (b, y)| {
             y.score
                 .cmp(&x.score)
-                .then_with(|| self.opened(*b).cmp(&self.opened(*a)))
+                .then_with(|| self.last_opened(*b).cmp(&self.last_opened(*a)))
                 .then_with(|| natural(&self.name_of(*a), &self.name_of(*b)))
         });
         found.truncate(limit);
@@ -174,7 +174,7 @@ impl Library {
         inside.unwrap_or_else(name).to_string_lossy().into_owned()
     }
 
-    fn opened(&self, target: Target) -> u64 {
+    fn last_opened(&self, target: Target) -> u64 {
         match target {
             Target::Book(id) => self.book(id).map_or(0, |b| b.opened.value),
             Target::Shelf(_) => 0,

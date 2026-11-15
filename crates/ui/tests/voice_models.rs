@@ -7,6 +7,8 @@ use mareader_ui::MareaderApp;
 use mareader_ui::command::Command;
 use mareader_ui::settings_window::Tab;
 
+use crate::common::press;
+
 /// Never checked here: only sizes say what is on disk.
 const NO_SUM: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -164,13 +166,6 @@ fn settings(dir: &std::path::Path) -> Harness<'static, MareaderApp> {
     h.state_mut().queue(Command::OpenSettings(Tab::ReadAloud));
     h.run_steps(4);
     h
-}
-
-/// Scrolls the control named `label` into view, then clicks it.
-fn press(h: &mut Harness<'static, MareaderApp>, label: &str) {
-    h.get_by_label(label).scroll_to_me();
-    h.run_steps(30);
-    h.get_by_label(label).click();
 }
 
 /// Puts the model's first download on disk, as a finished one leaves it.

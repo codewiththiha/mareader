@@ -5,6 +5,8 @@ use std::collections::hash_map::Entry;
 
 use candle_core::{DType, Device, Tensor};
 
+use mareader_nn_core::wire::{self, Value, take, text, varint};
+
 use crate::{Error, Result};
 
 const FLOAT: u64 = 1;
@@ -37,12 +39,6 @@ pub(crate) struct Graph {
     pub(crate) convs: HashMap<String, ConvSpec>,
 }
 
-enum Value<'a> {
-    Int(u64),
-    Bytes(&'a [u8]),
-    Fixed32,
-}
-
 struct Fields<'a> {
     buf: &'a [u8],
     pos: usize,
@@ -56,48 +52,23 @@ fn bad(what: &str) -> Error {
     Error::Load(format!("the model file is damaged ({what})"))
 }
 
-fn varint(buf: &[u8], pos: &mut usize) -> Result<u64> {
-    let mut value = 0u64;
-    for shift in (0..64).step_by(7) {
-        let byte = *buf
-            .get(*pos)
-            .ok_or_else(|| bad("a number runs off the end"))?;
-        *pos += 1;
-        value |= u64::from(byte & 0x7f) << shift;
-        if byte < 0x80 {
-            return Ok(value);
-        }
-    }
-    Err(bad("a number is too long"))
-}
-
 impl<'a> Fields<'a> {
-    fn take(&mut self, len: usize) -> Result<&'a [u8]> {
-        let end = self.pos.checked_add(len).ok_or_else(|| bad("a length"))?;
-        let out = self
-            .buf
-            .get(self.pos..end)
-            .ok_or_else(|| bad("a field runs off the end"))?;
-        self.pos = end;
-        Ok(out)
-    }
-
     fn field(&mut self) -> Result<(u64, Value<'a>)> {
-        let key = varint(self.buf, &mut self.pos)?;
+        let key = varint(self.buf, &mut self.pos).map_err(bad)?;
         let value = match key & 7 {
-            0 => Value::Int(varint(self.buf, &mut self.pos)?),
+            0 => Value::Int(varint(self.buf, &mut self.pos).map_err(bad)?),
             1 => {
-                self.take(8)?;
+                take(self.buf, &mut self.pos, 8).map_err(bad)?;
                 Value::Int(0)
             }
             2 => {
-                let len = varint(self.buf, &mut self.pos)?;
+                let len = varint(self.buf, &mut self.pos).map_err(bad)?;
                 let len = usize::try_from(len).map_err(|_| bad("a length"))?;
-                Value::Bytes(self.take(len)?)
+                Value::Bytes(take(self.buf, &mut self.pos, len).map_err(bad)?)
             }
             5 => {
-                self.take(4)?;
-                Value::Fixed32
+                take(self.buf, &mut self.pos, 4).map_err(bad)?;
+                Value::Fixed32(0)
             }
             _ => return Err(bad("an unknown field kind")),
         };
@@ -115,24 +86,7 @@ impl<'a> Iterator for Fields<'a> {
 
 /// A repeated integer, written packed or one field at a time.
 fn push_ints(value: &Value<'_>, out: &mut Vec<u64>) -> Result<()> {
-    match value {
-        Value::Int(v) => out.push(*v),
-        Value::Bytes(packed) => {
-            let mut pos = 0;
-            while pos < packed.len() {
-                out.push(varint(packed, &mut pos)?);
-            }
-        }
-        Value::Fixed32 => return Err(bad("an integer list")),
-    }
-    Ok(())
-}
-
-fn text(value: &Value<'_>) -> Result<String> {
-    match value {
-        Value::Bytes(b) => String::from_utf8(b.to_vec()).map_err(|_| bad("a name")),
-        _ => Err(bad("a name")),
-    }
+    wire::push_ints(value, out).map_err(bad)
 }
 
 struct Initializer<'a> {
@@ -156,7 +110,7 @@ fn initializer(buf: &[u8]) -> Result<(String, Initializer<'_>)> {
             (1, v) => push_ints(&v, &mut dims)?,
             (2, Value::Int(t)) => init.dtype = t,
             (4 | 9, Value::Bytes(b)) => init.data = b,
-            (8, v) => name = text(&v)?,
+            (8, v) => name = text(&v).map_err(bad)?,
             (14, Value::Int(loc)) => init.external = loc == EXTERNAL,
             _ => {}
         }
@@ -180,7 +134,7 @@ fn attribute(buf: &[u8]) -> Result<(String, Vec<u64>)> {
     let mut ints = Vec::new();
     for field in fields(buf) {
         match field? {
-            (1, v) => name = text(&v)?,
+            (1, v) => name = text(&v).map_err(bad)?,
             (3 | 8, v) => push_ints(&v, &mut ints)?,
             _ => {}
         }
@@ -197,9 +151,9 @@ fn node(buf: &[u8]) -> Result<Node> {
     };
     for field in fields(buf) {
         match field? {
-            (1, v) => node.inputs.push(text(&v)?),
-            (3, v) => node.name = text(&v)?,
-            (4, v) => node.op = text(&v)?,
+            (1, v) => node.inputs.push(text(&v).map_err(bad)?),
+            (3, v) => node.name = text(&v).map_err(bad)?,
+            (4, v) => node.op = text(&v).map_err(bad)?,
             (5, Value::Bytes(b)) => {
                 let (name, ints) = attribute(b)?;
                 node.ints.insert(name, ints);

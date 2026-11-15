@@ -17,6 +17,7 @@ use any_tts::{ModelType, SynthesisRequest, TtsConfig};
 use candle_core::{DType, Device, Module, Tensor};
 use candle_nn::VarBuilder;
 use mareader_kokoro as ours;
+use parity_kit::write_wav;
 
 mod builds;
 mod g2p;
@@ -385,29 +386,6 @@ impl Audio {
     }
 }
 
-fn write_wav(path: &Path, samples: &[f32]) -> R<()> {
-    let data = (samples.len() * 2) as u32;
-    let mut out = Vec::with_capacity(44 + samples.len() * 2);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&ours::SAMPLE_RATE.to_le_bytes());
-    out.extend_from_slice(&(ours::SAMPLE_RATE * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data.to_le_bytes());
-    for s in samples {
-        let v = (s.clamp(-1.0, 1.0) * 32767.0).round() as i16;
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    std::fs::write(path, out)?;
-    Ok(())
-}
-
 fn seconds(samples: usize) -> f64 {
     samples as f64 / f64::from(ours::SAMPLE_RATE)
 }
@@ -506,7 +484,7 @@ fn main() -> R<()> {
             failed.push(format!("{tag}: decoded audio differs"));
         }
         writeln!(audio_rows, "{}", audio.row(&format!("{tag} decoder")))?;
-        write_wav(&out.join(format!("{tag}-ours.wav")), &trace.audio)?;
+        write_wav(&out.join(format!("{tag}-ours.wav")), &trace.audio, ours::SAMPLE_RATE)?;
         // Which side the gap comes from: our noise, or something fixed.
         let reseeded = model
             .trace_noise(&ids, &style, 1.0, 12345, 1.0, false)?
@@ -548,7 +526,7 @@ fn main() -> R<()> {
             pearson(&quiet, &theirs.audio),
             rms(&quiet) / rms(&theirs.audio),
         )?;
-        write_wav(&out.join(format!("{tag}-reference.wav")), &theirs.audio)?;
+        write_wav(&out.join(format!("{tag}-reference.wav")), &theirs.audio, ours::SAMPLE_RATE)?;
 
         // End to end: every chunk, voice rows and pauses included.
         let mut whole = Vec::new();
@@ -569,10 +547,11 @@ fn main() -> R<()> {
             failed.push(format!("{tag}: whole-text audio differs"));
         }
         writeln!(audio_rows, "{}", audio.row(&format!("{tag} whole text")))?;
-        write_wav(&out.join(format!("{tag}-whole-ours.wav")), &whole)?;
+        write_wav(&out.join(format!("{tag}-whole-ours.wav")), &whole, ours::SAMPLE_RATE)?;
         write_wav(
             &out.join(format!("{tag}-whole-reference.wav")),
             &their_whole,
+            ours::SAMPLE_RATE,
         )?;
 
         let said = seconds(trace.audio.len());

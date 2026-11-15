@@ -50,15 +50,7 @@ pub enum Error {
     Compute(String),
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Load(why) => write!(f, "couldn't load the voice model: {why}"),
-            Self::Input(why) => write!(f, "couldn't speak this: {why}"),
-            Self::Compute(why) => write!(f, "the voice model failed: {why}"),
-        }
-    }
-}
+mareader_nn_core::voice_error_display!();
 
 impl std::error::Error for Error {}
 

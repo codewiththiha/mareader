@@ -1,0 +1,22 @@
+name: Cache GC
+on:
+  delete:
+  pull_request:
+    types: [closed]
+permissions:
+  actions: write
+jobs:
+  ref:
+    if: github.event_name == 'pull_request' || github.event.ref_type == 'branch'
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REF: >-
+            ${{ github.event_name == 'pull_request'
+                && format('refs/pull/{0}/merge', github.event.number)
+                || format('refs/heads/{0}', github.event.ref) }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --ref "$REF" --limit 1000 \
+            --json id -q '.[].id' |
+            xargs -r -n1 gh cache delete -R "$GITHUB_REPOSITORY"

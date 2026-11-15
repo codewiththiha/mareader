@@ -1,5 +1,4 @@
 //! Look up, the Dictionary page and Settings over fixture packs.
-#![cfg(not(target_arch = "wasm32"))]
 
 use std::path::Path;
 
@@ -17,6 +16,8 @@ use mareader_ui::park::PEEK;
 use mareader_ui::route::Route;
 use mareader_ui::settings_window::Tab;
 use mareader_ui::settings_window::{ALL_LANGUAGES, MORE_LANGUAGES};
+
+use crate::common::click_at;
 
 type H = Harness<'static, MareaderApp>;
 
@@ -361,22 +362,6 @@ fn drag(h: &mut H, from: egui::Pos2, by: egui::Vec2) {
     }
     h.event(button(from + by, false));
     h.run_steps(3);
-}
-
-/// Clicks a visible point without relying on an accessibility label.
-fn click_at(h: &mut H, at: egui::Pos2) {
-    let button = |pressed| egui::Event::PointerButton {
-        pos: at,
-        button: egui::PointerButton::Primary,
-        pressed,
-        modifiers: egui::Modifiers::NONE,
-    };
-    h.hover_at(at);
-    h.run_steps(1);
-    h.event(button(true));
-    h.run_steps(1);
-    h.event(button(false));
-    h.run_steps(2);
 }
 
 #[test]

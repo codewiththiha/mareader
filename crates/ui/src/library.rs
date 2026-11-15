@@ -5,6 +5,7 @@ mod add;
 pub mod asks;
 pub mod books;
 mod copying;
+mod counted;
 mod covers;
 pub mod crumbs;
 mod duplicating;
@@ -31,11 +32,10 @@ use std::hash::{BuildHasher, RandomState};
 use std::path::{Path, PathBuf};
 
 use egui::Context;
-use mareader_library::disk::Folder;
 use mareader_library::{
-    BookId, DeviceId, Format, Library, Opened, Position, ShelfId, SpinePosition, display_title,
+    BookId, Copied, DeviceId, Format, Found, Library, Opened, Position, ShelfId, SpinePosition,
+    disk::Folder, display_title,
 };
-use mareader_library::{Copied, Found};
 use mareader_session::{Anchor, Document, Source, SpinePlace};
 use mareader_workspace::PaneId;
 

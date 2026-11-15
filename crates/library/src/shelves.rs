@@ -71,11 +71,7 @@ impl ShelfKind {
 impl Shelf {
     /// Not removed, or restored since; removal is a tombstone.
     pub fn alive(&self) -> bool {
-        match (self.removed, self.restored) {
-            (None, _) => true,
-            (Some(removed), Some(restored)) => restored > removed,
-            (Some(_), None) => false,
-        }
+        crate::book::alive(self.removed, self.restored)
     }
 }
 

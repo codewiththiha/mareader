@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use mareader_phonon::{Noise, Pace, Phonon, SAMPLE_RATE, normalize};
+use parity_kit::{correlation, envelope, read_f32, write_wav};
 use serde::{Deserialize, Serialize};
 
 type R<T> = Result<T, Box<dyn std::error::Error>>;
@@ -172,36 +173,6 @@ fn prepare(model: &Path, out: &Path) -> R<()> {
     Ok(())
 }
 
-fn read_f32(path: &Path) -> R<Vec<f32>> {
-    let bytes = std::fs::read(path)?;
-    let (chunks, _) = bytes.as_chunks::<4>();
-    Ok(chunks.iter().map(|&c| f32::from_le_bytes(c)).collect())
-}
-
-fn correlation(a: &[f32], b: &[f32]) -> f64 {
-    let n = a.len().min(b.len());
-    if n == 0 {
-        return 0.0;
-    }
-    let mean = |v: &[f32]| v[..n].iter().map(|&x| f64::from(x)).sum::<f64>() / n as f64;
-    let (ma, mb) = (mean(a), mean(b));
-    let (mut num, mut da, mut db) = (0.0, 0.0, 0.0);
-    for (&x, &y) in a[..n].iter().zip(&b[..n]) {
-        let (x, y) = (f64::from(x) - ma, f64::from(y) - mb);
-        num += x * y;
-        da += x * x;
-        db += y * y;
-    }
-    num / (da.sqrt() * db.sqrt()).max(1e-12)
-}
-
-/// Loudness per 10 ms, so timing near-misses still compare.
-fn envelope(v: &[f32]) -> Vec<f32> {
-    v.chunks(240)
-        .map(|c| (c.iter().map(|x| x * x).sum::<f32>() / c.len() as f32).sqrt())
-        .collect()
-}
-
 /// The median, NaN last.
 fn middle(values: &[f64]) -> f64 {
     let mut sorted = values.to_vec();
@@ -220,29 +191,6 @@ fn max_diff(a: &[f32], b: &[f32]) -> f32 {
                 m.max(d)
             }
         })
-}
-
-fn write_wav(path: &Path, samples: &[f32], rate: u32) -> R<()> {
-    let data: Vec<u8> = samples
-        .iter()
-        .flat_map(|&s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
-        .collect();
-    let mut out = Vec::with_capacity(44 + data.len());
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&rate.to_le_bytes());
-    out.extend_from_slice(&(rate * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    out.extend_from_slice(&data);
-    std::fs::write(path, out)?;
-    Ok(())
 }
 
 fn voice_path(model: &Path, voices: &Path, name: &str) -> PathBuf {

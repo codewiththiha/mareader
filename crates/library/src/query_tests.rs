@@ -3,22 +3,10 @@ use std::path::PathBuf;
 use crate::folder::Mode;
 use crate::query::fold;
 use crate::run_tests::import;
-use crate::{
-    BookId, ContentId, Data, DeviceId, FileStamp, Format, Found, Library, Measure, Opened, Query,
-    SUGGEST_LIMIT, Target,
-};
+use crate::test_support::measure;
+use crate::{BookId, Data, DeviceId, Format, Found, Library, Opened, Query, SUGGEST_LIMIT, Target};
 
 const DEVICE: DeviceId = DeviceId(7);
-
-fn measure(content: u128) -> Measure {
-    Measure {
-        content: ContentId(content),
-        stamp: FileStamp {
-            size: 100,
-            mtime_ms: 1,
-        },
-    }
-}
 
 /// A book opened from `path`, read at `when`.
 fn add(lib: &mut Library, path: &str, title: &str, author: Option<&str>, when: u64) -> BookId {

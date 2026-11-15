@@ -1,30 +1,16 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use rusqlite::Connection;
 
 use crate::disk::Folder;
 use crate::store::Store;
+use crate::test_support::opened;
 use crate::tests::save;
-use crate::{
-    ContentId, DeviceId, FileStamp, Format, Kind, Library, Measure, Opened, Position, SpinePosition,
-};
+use crate::{DeviceId, Format, Kind, Library, Position, SpinePosition};
 
 const DEVICE: DeviceId = DeviceId(7);
-
-fn opened(path: &str, content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(path),
-        measure: Measure {
-            content: ContentId(content),
-            stamp: FileStamp::default(),
-        },
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
 
 fn sql(dir: &Path) -> Connection {
     Connection::open(dir.join("library.sqlite")).unwrap()
@@ -35,8 +21,8 @@ fn a_save_writes_only_the_rows_that_changed() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
-    lib.record_open(opened("/b.pdf", 2), 1_100);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    lib.record_open(opened("/b.pdf", 2, Format::Pdf, None), 1_100);
     save(&folder, &mut lib);
 
     assert!(lib.rename_book(a, "Renamed", 2_000));
@@ -63,7 +49,7 @@ fn library_json_moves_into_the_store_once() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let shelf = lib.create_shelf("Poems", None, 1_100).unwrap();
     lib.file(a, shelf, 1_200);
     let books: Vec<_> = lib.books.values().collect();
@@ -111,7 +97,7 @@ fn a_newer_store_is_read_but_never_written() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     save(&folder, &mut lib);
     sql(dir.path())
         .pragma_update(None, "user_version", 99)
@@ -128,7 +114,7 @@ fn rows_this_build_cant_read_are_kept_as_they_were() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = Library::new(DEVICE);
-    lib.record_open(opened("/a.pdf", 1), 1_000);
+    lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     save(&folder, &mut lib);
     let conn = sql(dir.path());
     let add = "INSERT INTO records(kind, id, body, seq) VALUES(?1, ?2, ?3, 1)";
@@ -139,7 +125,9 @@ fn rows_this_build_cant_read_are_kept_as_they_were() {
     let mut loaded = folder.load(DEVICE);
     // An unknown kind is a newer build's: silent. A broken row is told.
     assert_eq!(loaded.notes.len(), 1, "{:?}", loaded.notes);
-    let id = loaded.library.record_open(opened("/b.pdf", 2), 2_000);
+    let id = loaded
+        .library
+        .record_open(opened("/b.pdf", 2, Format::Pdf, None), 2_000);
     let dirty = loaded.library.take_dirty();
     let changes = loaded.library.changes(&dirty);
     loaded.store.as_mut().unwrap().apply(&changes).unwrap();
@@ -159,8 +147,8 @@ fn the_change_cursor_names_what_each_save_wrote() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
-    let b = lib.record_open(opened("/b.pdf", 2), 1_100);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    let b = lib.record_open(opened("/b.pdf", 2, Format::Pdf, None), 1_100);
     save(&folder, &mut lib);
     lib.rename_book(b, "Later", 2_000);
     save(&folder, &mut lib);
@@ -180,7 +168,7 @@ fn state_files_move_into_the_store_once() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     save(&folder, &mut lib);
     let position = Position {
         page: 12,
@@ -214,7 +202,7 @@ fn erased_words_leave_the_files_while_the_store_stays_open() {
     let folder = Folder::new(dir.path());
     let loaded = folder.load(DEVICE);
     let (mut lib, mut store) = (loaded.library, loaded.store.unwrap());
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let a = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let spot = crate::Spot::Page {
         page: 1,
         rect: [0.0, 0.0, 1.0, 1.0],

@@ -87,17 +87,56 @@ it may crash the app or lose the user's place. In non-test code:
 
 `cargo xtask layers` enforces the table in `docs/architecture.md`.
 
-- L0–L3 crates (appearance, workspace, pdf, epub, library, settings, session)
-  never depend on egui, eframe, winit or wgpu. They are testable without a
+- Every crate marked Core in `xtask/src/layers.rs`
+  never depends on egui, eframe, winit or wgpu. They are testable without a
   window.
 - Only the front layer (`crates/ui`) draws. `apps/mareader` only opens the
   window.
 - A new crate gets a row in the layer table in the same commit.
 
+## Shape: one job per file, reuse before writing
+
+### File and function size
+
+- New files stop at 500 lines, tests included. Existing oversized files have
+  ceilings in `tools/shape_baseline.toml`; they must not grow.
+- Ceilings only go down; only SZ tightens the baseline. The declared data files
+  in its `[exempt]` section are exempt; adding an exemption is an owner decision.
+- New functions stop at 80 lines. Baseline functions must not grow.
+- Move inline test modules over 150 lines into `foo/tests/<topic>.rs` files
+  under 500 lines. Tests cited in the parity ledger stay at their paths.
+- Matches over 12 arms for commands, options or properties only route to
+  functions in child modules.
+
+### Splitting and reuse
+
+- Keep `foo.rs` as the facade; put private children under `foo/`. Split by
+  responsibility, and use `pub(super)` at most for moved internals. The
+  public API stays unchanged. Aim for a facade of at most 200 lines.
+- Move-only commits do not rename items, alter signatures or change behavior;
+  behavior changes follow separately. Avoid modules named `utils`, `helpers`,
+  `misc` or `common`, except `tests/common/mod.rs`.
+- Search for existing helpers first and consult `docs/reuse.md`. The commit body
+  records the search. Reuse existing logic; extract on the second use. Do not
+  add speculative type parameters, traits or options without two real callers.
+- Shared feature code lives under its feature, cross-feature UI code under
+  `crates/ui/src`, integration fixtures under `tests/common/mod.rs`, unit
+  fixtures in `src/test_support.rs`, core logic in the lowest shared crate, and
+  parity-tool code in `tools/parity-kit`. A new L0 crate needs owner approval.
+  Index each shared item in `docs/reuse.md`.
+- Delete dead code in the same commit. Avoid argument-forwarding-only functions
+  and one-field types without an invariant.
+- Commits changing more than 50 lines need a body describing what, why and
+  verification. A `perf` commit records command, machine, before and after.
+- `python3 tools/shape_check.py` checks tracked file and Rust function sizes;
+  `--dups` reports matching bodies after the duplicate-removal slices. Its
+  lightweight scanner is not a Rust parser, so review its results and rules
+  it cannot enforce, including inline tests and routing matches.
+
 ## Code style
 
 - Rust: default rustfmt (`max_width = 100`); clippy clean with `-D warnings`.
-- Comments: see `### Comments` below. It is a constraint, not an argument.
+- Comments: see `### Docs and comments` below. It is a constraint, not an argument.
 - No `TODO`/`FIXME`, no scaffolding for work not being done now, no
   speculative abstractions. A planned feature lives in the parity file, not as
   an empty function.
@@ -105,47 +144,22 @@ it may crash the app or lose the user's place. In non-test code:
   compatibility layers, no unbounded fallbacks.
 - No per-frame, per-page or per-scroll logging.
 
-### Comments
+### Docs and comments
 
-Write clean, self-documenting code. Do not write comments that explain what the
-code is doing; only write comments explaining why something non-obvious was done.
-Avoid repeating variable names in comments.
+Docs (`///` items and `//!` modules) state contracts. The first line is one
+sentence within 80 columns; after a blank doc line, item docs may use 12 lines
+and module docs 20. State invariants, units, failure cases, ordering and at most
+one example. Public core items need a first line; a private function under ten
+lines gets at most one. Docs must not exceed the item they document. A
+`comment-check: allow` marker on a doc is a reviewer-visible claim.
 
-A comment carries a constraint the code cannot show; it never argues for a
-decision. Test every added line: **would a reader who never saw the diff need
-this?** If not, cut it and put what it said in the commit message. Measure it
-with `python3 tools/comment_check.py FILE...`: three lines, eighty characters a
-line counted from the left margin, fifteen words per block by default, all three
-raisable with `--max-lines`, `--max-line`, `--max-words`. Pass the files you
-touched explicitly (`cargo xtask comments` does this for the branch); directory
-arguments are not walked. A comment that genuinely needs more than the ceiling
-states so itself with `comment-check: allow` on the line above it, which the
-tool honours and a reviewer can read as a claim, not an escape.
-
-Blocking — remove rather than shorten:
-
-- **Narration** of the change: "now uses…", "no longer FIFO", "this round
-  added…", "changed because…". Git holds the change; the file holds the result.
-- **Justification** of a choice the code cannot debate: why the alternative is
-  worse, why the design is right, a debate with a deleted sibling. Pick the
-  better shape and name it; the argument goes in the commit body.
-- **Restatement**: what the next line says, or a parameter whose name already
-  carries it. `// the page index` above `page: usize` is noise.
-- **History**: what the code used to be, or what something removed did.
-- An **essay on a leaf function**: a doc comment longer than its body belongs in
-  `docs/` as design, not in the file.
-
-Wanted, at one to three lines next to the thing it governs:
-
-- An invariant another file owns, or an order a callback depends on.
-- A unit, precision or width trap: points against pixels, `ms` against seconds,
-  a sRGB hue against an OKLCH one.
-- A hazard that makes the obvious edit wrong: a texture another pane still
-  shows, a job result for a closed document, a frame that must be skipped.
-
-When the rule needs more than three lines, the fix is usually a better name or a
-smaller function. Reasoning is not banned — it has two homes, `docs/` for the
-design and the commit message for the decision — and neither is a comment.
+Ordinary comments are one line, at most 80 columns and 15 words, with no allow
+marker. A diff earns one `//` line per 25 added code lines, with a floor of two;
+a function has at most three. Comments state constraints code cannot show.
+Remove narration, history, justification, restatement, filler, dividers,
+commented-out code, TODOs and FIXMEs. Put reasoning in docs or commit bodies.
+`tools/comment_check.py` checks blocks and `tools/comment_budget.py` checks a
+diff; pass changed files explicitly. Review the rules the tools do not enforce.
 
 ## Resource rules
 
@@ -216,6 +230,19 @@ is in progress, by looking and by using it.
 - **Be honest in the app.** A control whose effect lands in a later phase says
   so in a muted line, and its parity entry stays `partial` with notes.
 - **Log each slice** in `ROADMAP.md` (what to try, where).
+
+## Parallel slices
+
+- Each slice owns the exact write-set in `docs/slices/BATCH.md`. Write-sets in
+  the same batch must be disjoint. Stop and report required outside edits.
+- Shared registries have one writer per batch; see the batch table. S0 is the
+  opening slice; SZ alone tightens the baseline and folds slice reports into
+  ROADMAP and `docs/reuse.md`.
+- A slice reports what changed, what was verified, limits and seen-but-untouched
+  issues in `docs/slices/<id>.md`; do not edit ROADMAP during parallel work.
+- Branch parallel slices from S0 and do not merge or rebase another slice into
+  them. Each slice must stand alone and keep parity evidence addresses intact.
+- No drive-by edits. Moves and behavior changes are separate commits.
 
 ## UI work: look at the result
 
@@ -291,10 +318,14 @@ numbers and the full loop are in [docs/verification.md](docs/verification.md).
   Push a `<type>/<slug>` branch, then run `python3 tools/ci.py watch` until
   the verdict; merge into `main` once it is green. Take screenshots with
   `python3 tools/ci.py shots`, never with a local wasm build and browser.
-- **Fail fast on commit checks.** Watch `Build / each commit` first. If it
-  fails, cancel the remaining jobs, fix and squash that commit, push one
-  replacement, then watch its commit check before another cycle. Wait for the
-  full matrix only after the commit check passes.
+- **CI discipline.** Install `tools/hooks/pre-push` for format, shape,
+  comments, budget and commit checks. Never knowingly push a locally visible
+  failure. The Gate job never compiles; lint, test and platform jobs follow it.
+  Only main writes Rust build caches. Do not add sccache or SHA-based cache keys.
+  Change pinned toolchain and cache-key environment deliberately. Report a
+  `Rust / test` run over 12 minutes; read the whole failure before a fix push.
+  Small core crates can be checked locally in CI mode if the owner permits;
+  explicit owner instructions take precedence over local-build guidance.
 - **Choosing**, highest precedence first:
   1. The user's explicit word, in either direction ("use CI" on a fast
      machine, "build locally" on a slow one).
@@ -308,11 +339,9 @@ numbers and the full loop are in [docs/verification.md](docs/verification.md).
   It holds lint builds only (about 1.2 GB, a few minutes to restore); a
   local test run first needs `cache build --full`.
   If `restore` calls the cache stale, lint in CI, not locally.
-- **CI time.** A healthy run takes 5.5–7 min, and `Rust / test` is the
-  critical path. Install apt packages only through `.github/actions/apt`:
-  it installs cached `.deb` files, because the mirror once stalled jobs for
-  up to 29 min. Start `shots` alongside `watch`, not after it. Numbers and
-  reasons are in docs/verification.md, "CI time".
+- **CI time.** Keep timing claims measured in `docs/verification.md`. Install
+  apt packages through `.github/actions/apt`. SZ updates timings after the
+  revised pipeline has enough runs.
 
 ## Commits and pull requests
 
@@ -349,7 +378,7 @@ numbers and the full loop are in [docs/verification.md](docs/verification.md).
 3. Docs describe the current behaviour: `docs/design.md` for the look,
    `docs/architecture.md` for structure, `docs/memory.md` for memory, and the
    parity entry for status.
-4. Every added comment passes the diff-blind test (`### Comments`) and
+4. Every added comment passes the diff-blind test (`### Docs and comments`) and
    `python3 tools/comment_check.py` is clean on the files the round changed.
    The round that adds a rule also applies it in the same round.
 5. The summary states what changed, what was verified and any limits. If a

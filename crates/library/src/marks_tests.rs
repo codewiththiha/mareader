@@ -1,29 +1,14 @@
 //! Marks: made once per spot, removed and brought back, saved, traded.
 
-use std::path::PathBuf;
-
 use crate::disk::Folder;
+use crate::test_support::{opened, unsent};
 use crate::tests::save;
 use crate::{
-    BookId, ContentId, DeviceId, FileStamp, Format, Gloss, Kind, Library, MarkId, MarkKind,
-    Measure, NewMark, Opened, Pen, Row, Spot, Style,
+    BookId, DeviceId, Format, Gloss, Kind, Library, MarkId, MarkKind, NewMark, Pen, Spot, Style,
 };
 
 const A: DeviceId = DeviceId(1);
 const B: DeviceId = DeviceId(2);
-
-fn opened(path: &str, content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(path),
-        measure: Measure {
-            content: ContentId(content),
-            stamp: FileStamp::default(),
-        },
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
 
 fn fox(x: f32) -> NewMark {
     let spot = Spot::Page {
@@ -37,16 +22,10 @@ fn words(lib: &Library, book: BookId) -> Vec<String> {
     lib.marks(book).iter().map(|m| m.word.clone()).collect()
 }
 
-fn unsent(lib: &mut Library) -> Vec<Row> {
-    let dirty = lib.take_dirty();
-    let rows = lib.changes(&dirty).put.into_iter();
-    rows.filter(|r| r.kind.synced()).collect()
-}
-
 #[test]
 fn a_word_is_marked_once_per_spot() {
     let mut lib = Library::new(A);
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let first = lib.add_mark(book, fox(100.0), 2_000).unwrap();
     // A selection a hair off is the same spot; another place is not.
     assert_eq!(lib.add_mark(book, fox(100.4), 2_100), Some(first));
@@ -60,11 +39,14 @@ fn a_word_is_marked_once_per_spot() {
 #[test]
 fn a_moved_file_keeps_its_shelves_and_marks() {
     let mut lib = Library::new(A);
-    let book = lib.record_open(opened("/old/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/old/a.pdf", 1, Format::Pdf, None), 1_000);
     let shelf = lib.create_shelf("Essays", None, 1_100).unwrap();
     assert!(lib.file(book, shelf, 1_200));
     lib.add_mark(book, fox(100.0), 1_300).unwrap();
-    assert_eq!(lib.record_open(opened("/new/b.pdf", 1), 2_000), book);
+    assert_eq!(
+        lib.record_open(opened("/new/b.pdf", 1, Format::Pdf, None), 2_000),
+        book
+    );
     assert!(lib.shelves_of(book).contains(&shelf));
     assert_eq!(words(&lib, book), ["fox"]);
 }
@@ -72,7 +54,7 @@ fn a_moved_file_keeps_its_shelves_and_marks() {
 #[test]
 fn removing_and_undo_bring_a_mark_back_as_it_was() {
     let mut lib = Library::new(A);
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let id = lib.add_mark(book, fox(100.0), 2_000).unwrap();
     lib.take_dirty();
     assert_eq!(lib.set_marks_alive(&[id], false, 3_000), 1);
@@ -87,7 +69,7 @@ fn removing_and_undo_bring_a_mark_back_as_it_was() {
 #[test]
 fn every_mark_change_moves_the_marks_stamp() {
     let mut lib = Library::new(A);
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let opened_at = lib.marks_stamp();
     let id = lib.add_mark(book, fox(100.0), 2_000).unwrap();
     let added = lib.marks_stamp();
@@ -106,7 +88,7 @@ fn marks_are_saved_and_read_back() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = folder.load(A).library;
-    let book = lib.record_open(opened("/a.epub", 1), 1_000);
+    let book = lib.record_open(opened("/a.epub", 1, Format::Pdf, None), 1_000);
     let spot = Spot::Text {
         block: 3,
         start: 40,
@@ -125,8 +107,8 @@ fn marks_are_saved_and_read_back() {
 fn marks_travel_and_a_removal_wins_over_an_older_keep() {
     let mut a = Library::new(A);
     let mut b = Library::new(B);
-    let book = a.record_open(opened("/a.pdf", 1), 1_000);
-    b.record_open(opened("/elsewhere/a.pdf", 1), 1_100);
+    let book = a.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    b.record_open(opened("/elsewhere/a.pdf", 1, Format::Pdf, None), 1_100);
     let id = a.add_mark(book, fox(100.0), 2_000).unwrap();
     b.absorb(unsent(&mut a), 2_500);
     assert_eq!(words(&b, book), ["fox"]);
@@ -139,10 +121,10 @@ fn marks_travel_and_a_removal_wins_over_an_older_keep() {
 fn folding_two_originals_moves_the_marks_to_the_keeper() {
     // Here a file edited in place; there the edited file, imported new.
     let mut a = Library::new(A);
-    let kept = a.record_open(opened("/notes.md", 1), 1_000);
-    a.record_open(opened("/notes.md", 2), 2_000);
+    let kept = a.record_open(opened("/notes.md", 1, Format::Pdf, None), 1_000);
+    a.record_open(opened("/notes.md", 2, Format::Pdf, None), 2_000);
     let mut b = Library::new(B);
-    let gone = b.record_open(opened("/elsewhere/notes.md", 2), 2_500);
+    let gone = b.record_open(opened("/elsewhere/notes.md", 2, Format::Pdf, None), 2_500);
     let id = b.add_mark(gone, fox(100.0), 2_600).unwrap();
     assert!(kept < gone);
     for _ in 0..4 {
@@ -169,7 +151,7 @@ fn an_answer_is_saved_with_its_mark_and_hides_with_it() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = folder.load(A).library;
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let id = lib.add_mark(book, fox(100.0), 2_000).unwrap();
     assert!(lib.set_gloss(id, said("A wild dog."), 2_100));
     save(&folder, &mut lib);
@@ -191,8 +173,8 @@ fn an_answer_is_saved_with_its_mark_and_hides_with_it() {
 fn the_later_answer_wins_on_every_machine() {
     let mut a = Library::new(A);
     let mut b = Library::new(B);
-    let book = a.record_open(opened("/a.pdf", 1), 1_000);
-    b.record_open(opened("/elsewhere/a.pdf", 1), 1_100);
+    let book = a.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    b.record_open(opened("/elsewhere/a.pdf", 1, Format::Pdf, None), 1_100);
     let id = a.add_mark(book, fox(100.0), 2_000).unwrap();
     a.set_gloss(id, said("First."), 2_100);
     b.absorb(unsent(&mut a), 2_500);
@@ -213,7 +195,7 @@ fn a_note_is_trimmed_saved_and_cleared_by_blank() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = folder.load(A).library;
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let id = lib.add_mark(book, fox(100.0), 2_000).unwrap();
     assert!(lib.set_note(id, Some("  Check the date.\n".into()), 2_100));
     save(&folder, &mut lib);
@@ -229,8 +211,8 @@ fn a_note_is_trimmed_saved_and_cleared_by_blank() {
 fn the_later_note_wins_on_every_machine() {
     let mut a = Library::new(A);
     let mut b = Library::new(B);
-    let book = a.record_open(opened("/a.pdf", 1), 1_000);
-    b.record_open(opened("/elsewhere/a.pdf", 1), 1_100);
+    let book = a.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    b.record_open(opened("/elsewhere/a.pdf", 1, Format::Pdf, None), 1_100);
     let id = a.add_mark(book, fox(100.0), 2_000).unwrap();
     a.set_note(id, Some("First.".into()), 2_100);
     b.absorb(unsent(&mut a), 2_500);
@@ -246,7 +228,7 @@ fn highlights_span_pages_and_keep_their_pen_and_colour() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = folder.load(A).library;
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let spot = Spot::Chars {
         from: [0, 120],
         to: [1, 30],
@@ -269,7 +251,7 @@ fn highlights_span_pages_and_keep_their_pen_and_colour() {
 #[test]
 fn a_mark_saved_before_highlights_reads_as_an_explain_mark() {
     let mut lib = Library::new(A);
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let id = lib.add_mark(book, fox(100.0), 2_000).unwrap();
     let mut row = serde_json::to_value(lib.mark(id).unwrap()).unwrap();
     let fields = row.as_object_mut().unwrap();
@@ -296,7 +278,7 @@ fn a_highlight_is_restyled_and_keeps_it_after_a_reload() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = folder.load(A).library;
-    let book = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let book = lib.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
     let id = lib.add_mark(book, quick(), 2_000).unwrap();
     let style = Style {
         pen: Pen::Underline,
@@ -319,8 +301,8 @@ fn a_highlight_is_restyled_and_keeps_it_after_a_reload() {
 fn the_later_style_wins_on_every_machine() {
     let mut a = Library::new(A);
     let mut b = Library::new(B);
-    let book = a.record_open(opened("/a.pdf", 1), 1_000);
-    b.record_open(opened("/elsewhere/a.pdf", 1), 1_100);
+    let book = a.record_open(opened("/a.pdf", 1, Format::Pdf, None), 1_000);
+    b.record_open(opened("/elsewhere/a.pdf", 1, Format::Pdf, None), 1_100);
     let id = a.add_mark(book, quick(), 2_000).unwrap();
     let half = Style {
         pen: Pen::Half,
@@ -345,7 +327,7 @@ fn a_bookmark_is_kept_once_carries_a_note_and_takes_no_style() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = folder.load(A).library;
-    let book = lib.record_open(opened("/a.epub", 1), 1_000);
+    let book = lib.record_open(opened("/a.epub", 1, Format::Pdf, None), 1_000);
     let spot = Spot::Text {
         block: 4,
         start: 120,

@@ -4,6 +4,8 @@ use std::sync::Arc;
 use mareader_epub::{Book, Destination, Inserts, Wanted};
 use mareader_reflow::Typography;
 
+use crate::common::text;
+
 const BOOK: &[u8] = include_bytes!("books/subtitles.epub");
 
 fn open() -> Book {
@@ -28,15 +30,6 @@ fn wanted(tags: &[String]) -> Wanted<'_> {
 
 fn tags(list: &[&str]) -> Vec<String> {
     list.iter().map(|t| t.to_string()).collect()
-}
-
-fn text(book: &Book) -> String {
-    let pages = 0..book.page_count();
-    let lines = pages.flat_map(|p| book.text(p));
-    lines
-        .map(|l| l.chars.iter().map(|c| c.ch).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn transcripts(book: &Book) -> Vec<(usize, Option<usize>)> {

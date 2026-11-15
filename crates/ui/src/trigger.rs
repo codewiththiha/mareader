@@ -1,7 +1,6 @@
 //! A book's triggers: what they show in a pane, and the clips they play.
 
 use std::collections::{BTreeMap, HashSet};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, Weak};
 
 use mareader_audio::{Player, Segment};
@@ -9,6 +8,7 @@ use mareader_epub::{Action, Book, Insert, Triggered};
 use mareader_session::Document;
 
 use crate::read_aloud::ReadAloud;
+use crate::stable_hash::hash;
 
 /// A clip a trigger acts on, waiting for the window to act.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,12 +178,6 @@ impl Clips {
             self.playing = None;
         }
     }
-}
-
-fn hash(v: impl Hash) -> u64 {
-    let mut h = DefaultHasher::new();
-    v.hash(&mut h);
-    h.finish()
 }
 
 #[cfg(test)]

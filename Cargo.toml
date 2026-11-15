@@ -1,11 +1,16 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
+exclude = ["vendor/block"]
+
+[patch.crates-io]
+# tts 0.26 still uses the uninhabited-static declaration in block 0.1.6.
+block = { path = "vendor/block" }
 
 [workspace.package]
 version = "0.0.5"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.99.1"
 license = "MIT"
 repository = "https://github.com/codewiththiha/mareader2"
 
@@ -35,6 +40,7 @@ mareader-ipa = { path = "crates/ipa" }
 mareader-hanzi = { path = "crates/hanzi" }
 mareader-vits = { path = "crates/vits" }
 mareader-memory = { path = "crates/memory" }
+mareader-nn-core = { path = "crates/nn-core" }
 mareader-animated-icons = { path = "crates/animated-icons" }
 
 serde = { version = "1", features = ["derive"] }

@@ -1,31 +1,19 @@
-use std::path::PathBuf;
-
 use crate::disk::Folder;
-use crate::{
-    BookId, ContentId, DeviceId, FileStamp, Format, Item, Library, Measure, Opened, ShelfError,
-    ShelfId, ShelfRemoved,
-};
+use crate::test_support::opened;
+use crate::{BookId, DeviceId, Format, Item, Library, ShelfError, ShelfId, ShelfRemoved};
 
 const DEVICE: DeviceId = DeviceId(7);
-
-fn opened(content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(format!("/books/{content}.pdf")),
-        measure: Measure {
-            content: ContentId(content),
-            stamp: FileStamp::default(),
-        },
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
 
 /// A library holding books 1 to `count`.
 fn library(count: u128) -> (Library, Vec<BookId>) {
     let mut lib = Library::new(DEVICE);
     let ids = (1..=count)
-        .map(|n| lib.record_open(opened(n), n as u64))
+        .map(|n| {
+            lib.record_open(
+                opened(&format!("/books/{n}.pdf"), n, Format::Pdf, None),
+                n as u64,
+            )
+        })
         .collect();
     lib.take_dirty();
     (lib, ids)

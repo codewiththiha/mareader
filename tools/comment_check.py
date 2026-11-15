@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
 """Flag comments that cost more than they say.
 
-Consecutive comment lines are aggregated into blocks and each block is measured
-against the repository's brevity rule (AGENTS.md, "Comments"): a line no wider
-than --max-line, a block no longer than --max-lines and no wordier than
---max-words. A block is exempt when it carries `comment-check: allow` — on the
-line directly above the prose or inside it, since adjacent comment lines are one
-block. That is how a constraint needing four lines stays honest about needing four.
+Consecutive comments are measured by kind against AGENTS.md. Rust item and
+module docs have separate budgets; ordinary comments cannot use an allow marker.
+Arguments may be tracked files or directories. Directories are resolved through
+Git; outside a repository they are walked recursively.
 
-  python3 tools/comment_check.py                      # every tracked source file
-  python3 tools/comment_check.py crates/reader-runtime/src
-  python3 tools/comment_check.py crates/ui/src/titlebar.rs xtask/
-  python3 tools/comment_check.py --json crates/virtual-list/src
-  python3 tools/comment_check.py --strip path/to/file.rs
+  python3 tools/comment_check.py crates/ui/src/titlebar.rs
+  python3 tools/comment_check.py --json crates/settings/src/reader.rs
+  python3 tools/comment_check.py --self-test
 
-Directories recurse into everything nested under them. Tracked files are listed
-through git, so generated output (the `scripts/` build dir, node_modules) is out
-of scope by itself. Exit 1 when anything is flagged, 0 when clean, so the check
-can gate a round; --self-test proves the scanner on built-in fixtures.
 """
 
 from __future__ import annotations
@@ -44,6 +36,9 @@ LANGS = {
     ".yml": {"line": ["#"], "block": [], "nesting": False},
 }
 ALLOW = "comment-check: allow"
+DOC_ITEM = (12, 140)
+DOC_MODULE = (20, 240)
+NARRATION = re.compile(r"\b(no longer|previously|used to|this round|as before|note that|simply|basically|todo|fixme)\b|^(now|we|just)\b", re.I)
 SKIP_DIRS = {".git", "node_modules", "target", "dist", "build", "__pycache__",
              ".venv", "coverage", "out"}
 RUST_RAW = re.compile(r'r(#*)"')
@@ -87,7 +82,19 @@ class Comment:
     def lines(self) -> int:
         return self.end_line - self.start_line + 1
 
+    def kind(self) -> str:
+        head = self.raw.lstrip()
+        if head.startswith("//!"):
+            return "module-doc"
+        if head.startswith("///"):
+            return "doc"
+        return "comment"
+
     def to_dict(self, path: str, max_line: int, max_words: int, max_lines: int) -> dict:
+        if self.kind() == "doc":
+            max_lines, max_words = DOC_ITEM
+        elif self.kind() == "module-doc":
+            max_lines, max_words = DOC_MODULE
         reasons = []
         if self.widest() > max_line:
             reasons.append(f"a line here is {self.widest()} characters, over {max_line}")
@@ -95,6 +102,9 @@ class Comment:
             reasons.append(f"the block is {self.lines()} lines, over {max_lines}")
         if self.words() > max_words:
             reasons.append(f"the block runs {self.words()} words, over {max_words}")
+        told = NARRATION.search(self.prose())
+        if told:
+            reasons.append(f"'{told.group(0)}' narrates or pads; state the constraint")
         return {
             "file": path,
             "line": self.start_line,
@@ -262,7 +272,7 @@ def _owns_its_lines(text: str, start_byte: int, end_byte: int) -> bool:
 def _style(stripped: str) -> str:
     for marker in ("///", "//!", "//", "/*", "#"):
         if stripped.startswith(marker):
-            return marker[:2]
+            return marker
     return ""
 
 
@@ -270,7 +280,7 @@ def offending(comments: list[Comment], max_line: int, max_words: int,
               max_lines: int) -> list[dict]:
     hits = []
     for c in comments:
-        if ALLOW in c.raw:
+        if ALLOW in c.raw and c.kind() != "comment":
             continue
         info = c.to_dict("", max_line, max_words, max_lines)
         if info["reasons"]:
@@ -387,9 +397,12 @@ def self_test() -> int:
     assert ".md" not in LANGS, "markdown has no grammar, and must not be read"
     sh = scan("#!/usr/bin/env sh\n# one short line\n", LANGS[".sh"])
     assert [c.start_line for c in sh] == [2], "a shebang was read as a comment"
-    exempted = scan(RUST_FIXTURE.replace("    // NOTE:",
-                                         "    // comment-check: allow\n    // NOTE:"), lang)
-    assert not offending(exempted, 80, 15, 3), "the allow marker did not exempt"
+    doc = scan("/// comment-check: allow\n/// " + "word " * 150 + "\n", lang)
+    assert not offending(doc, 80, 15, 1), "doc allow marker did not exempt"
+    ordinary = scan("// comment-check: allow\n// " + "word " * 20 + "\n", lang)
+    assert offending(ordinary, 80, 15, 1), "ordinary comment was exempted"
+    split = scan("/// documentation\n// ordinary\n", lang)
+    assert len(split) == 2, "docs and comments were grouped"
     pad, mark = " " * 8, "/// "
     edge = pad + mark + "x" * (80 - len(pad) - len(mark))
     deep = scan(f"fn f() {{\n{edge}\n{pad}{mark}short\n{pad}let y = 1;\n}}\n",
@@ -408,7 +421,7 @@ def main() -> int:
                     help="files or directories (directories recurse); default: the checkout")
     ap.add_argument("--max-line", type=int, default=80, help="widest comment line")
     ap.add_argument("--max-words", type=int, default=15, help="words per block")
-    ap.add_argument("--max-lines", type=int, default=3, help="lines per block")
+    ap.add_argument("--max-lines", type=int, default=1, help="lines per ordinary comment")
     ap.add_argument("--json", action="store_true", help="emit the payload instead of prose")
     ap.add_argument("--strip", action="store_true",
                     help="delete the flagged blocks that own their lines")

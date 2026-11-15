@@ -65,6 +65,7 @@ pub mod shaped;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod sounds;
+pub mod stable_hash;
 pub mod study;
 pub mod texts;
 pub mod theme;
@@ -77,6 +78,7 @@ pub mod view_menu;
 pub mod vocab;
 pub mod watch;
 pub mod widgets;
+mod word_card;
 pub mod word_list;
 pub mod zoom;
 

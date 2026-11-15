@@ -5,6 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use candle_core::{Device, Tensor};
 
+use mareader_nn_core::wire::{self, Value, take, text, varint};
+
 use crate::config::{Activation, Config, Istft, Plbert};
 use crate::{Error, Result};
 
@@ -45,12 +47,6 @@ fn own(name: &str) -> Option<String> {
     roots.find_map(|(from, to)| name.strip_prefix(from).map(|rest| format!("{to}{rest}")))
 }
 
-enum Value<'a> {
-    Int(u64),
-    Bytes(&'a [u8]),
-    Fixed32(u32),
-}
-
 struct Fields<'a> {
     buf: &'a [u8],
     pos: usize,
@@ -64,47 +60,25 @@ fn bad(what: &str) -> Error {
     Error::Load(format!("the model file is damaged ({what})"))
 }
 
-fn varint(buf: &[u8], pos: &mut usize) -> Result<u64> {
-    let mut value = 0u64;
-    for shift in (0..64).step_by(7) {
-        let byte = *buf
-            .get(*pos)
-            .ok_or_else(|| bad("a number runs off the end"))?;
-        *pos += 1;
-        value |= u64::from(byte & 0x7f) << shift;
-        if byte < 0x80 {
-            return Ok(value);
-        }
-    }
-    Err(bad("a number is too long"))
-}
-
 impl<'a> Fields<'a> {
-    fn take(&mut self, len: usize) -> Result<&'a [u8]> {
-        let end = self.pos.checked_add(len).ok_or_else(|| bad("a length"))?;
-        let out = self
-            .buf
-            .get(self.pos..end)
-            .ok_or_else(|| bad("a field runs off the end"))?;
-        self.pos = end;
-        Ok(out)
-    }
-
     fn field(&mut self) -> Result<(u64, Value<'a>)> {
-        let key = varint(self.buf, &mut self.pos)?;
+        let key = varint(self.buf, &mut self.pos).map_err(bad)?;
         let value = match key & 7 {
-            0 => Value::Int(varint(self.buf, &mut self.pos)?),
+            0 => Value::Int(varint(self.buf, &mut self.pos).map_err(bad)?),
             1 => {
-                self.take(8)?;
+                take(self.buf, &mut self.pos, 8).map_err(bad)?;
                 Value::Int(0)
             }
             2 => {
-                let len = varint(self.buf, &mut self.pos)?;
+                let len = varint(self.buf, &mut self.pos).map_err(bad)?;
                 let len = usize::try_from(len).map_err(|_| bad("a length"))?;
-                Value::Bytes(self.take(len)?)
+                Value::Bytes(take(self.buf, &mut self.pos, len).map_err(bad)?)
             }
             5 => {
-                let four = self.take(4)?.first_chunk::<4>().copied();
+                let four = take(self.buf, &mut self.pos, 4)
+                    .map_err(bad)?
+                    .first_chunk::<4>()
+                    .copied();
                 Value::Fixed32(u32::from_le_bytes(four.unwrap_or_default()))
             }
             _ => return Err(bad("an unknown field kind")),
@@ -123,24 +97,7 @@ impl<'a> Iterator for Fields<'a> {
 
 /// A repeated integer, written packed or one field at a time.
 fn push_ints(value: &Value<'_>, out: &mut Vec<u64>) -> Result<()> {
-    match value {
-        Value::Int(v) => out.push(*v),
-        Value::Bytes(packed) => {
-            let mut pos = 0;
-            while pos < packed.len() {
-                out.push(varint(packed, &mut pos)?);
-            }
-        }
-        Value::Fixed32(_) => return Err(bad("an integer list")),
-    }
-    Ok(())
-}
-
-fn text(value: &Value<'_>) -> Result<String> {
-    match value {
-        Value::Bytes(b) => String::from_utf8(b.to_vec()).map_err(|_| bad("a name")),
-        _ => Err(bad("a name")),
-    }
+    wire::push_ints(value, out).map_err(bad)
 }
 
 /// One stored tensor, before it is named or widened.
@@ -167,7 +124,7 @@ fn stored(buf: &[u8]) -> Result<(String, Stored<'_>)> {
             (4, Value::Bytes(b)) => s.floats.extend_from_slice(b),
             (4, Value::Fixed32(v)) => s.floats.extend_from_slice(&v.to_le_bytes()),
             (5, v) => push_ints(&v, &mut s.ints)?,
-            (8, v) => name = text(&v)?,
+            (8, v) => name = text(&v).map_err(bad)?,
             (9, Value::Bytes(b)) => s.raw = b,
             (14, Value::Int(loc)) => s.external = loc == EXTERNAL,
             _ => {}
@@ -332,10 +289,10 @@ fn node(buf: &[u8]) -> Result<Node> {
     };
     for field in fields(buf) {
         match field? {
-            (1, v) => node.inputs.push(text(&v)?),
-            (2, v) => node.outputs.push(text(&v)?),
-            (3, v) => node.name = text(&v)?,
-            (4, v) => node.op = text(&v)?,
+            (1, v) => node.inputs.push(text(&v).map_err(bad)?),
+            (2, v) => node.outputs.push(text(&v).map_err(bad)?),
+            (3, v) => node.name = text(&v).map_err(bad)?,
+            (4, v) => node.op = text(&v).map_err(bad)?,
             _ => {}
         }
     }

@@ -132,16 +132,10 @@ fn busy(name: &str, cap: usize, long: Option<&str>) -> Failure {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::backend::block;
 
     const P: PresetId = PresetId(1);
     const WAIT: Duration = Duration::from_millis(200);
-
-    fn block<F: std::future::Future>(f: F) -> F::Output {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build();
-        rt.expect("a runtime").block_on(f)
-    }
 
     #[test]
     fn a_full_model_refuses_and_a_dropped_ticket_frees_it() {

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::disk::{self, FoundAgain, Limits, Sought};
-use crate::{ContentId, DeviceId, FileStamp, Format, Library, Measure, Opened, RelinkError};
+use crate::test_support::opened;
+use crate::{ContentId, DeviceId, FileStamp, Format, Library, Measure, RelinkError};
 
 const DEVICE: DeviceId = DeviceId(7);
 
@@ -12,16 +13,6 @@ fn measure(content: u128, size: u64) -> Measure {
     }
 }
 
-fn opened(path: &str, content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(path),
-        measure: measure(content, 100),
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
-
 fn path_of(lib: &Library, id: crate::BookId) -> Option<PathBuf> {
     lib.book(id).and_then(|b| b.path()).map(Path::to_path_buf)
 }
@@ -29,8 +20,14 @@ fn path_of(lib: &Library, id: crate::BookId) -> Option<PathBuf> {
 #[test]
 fn relinking_heals_the_same_content_and_asks_about_other() {
     let mut lib = Library::new(DEVICE);
-    let id = lib.record_open(opened("/old/a.pdf", 1), 1_000);
-    let other = lib.record_open(opened("/b.pdf", 2), 1_000);
+    let id = lib.record_open(
+        opened("/old/a.pdf", 1, Format::Pdf, Some(measure(1, 100).stamp)),
+        1_000,
+    );
+    let other = lib.record_open(
+        opened("/b.pdf", 2, Format::Pdf, Some(measure(2, 100).stamp)),
+        1_000,
+    );
     lib.check_present(|p| p != Path::new("/old/a.pdf"));
     assert!(lib.book(id).unwrap().missing());
     let to = Path::new("/new/renamed.pdf");
@@ -102,7 +99,7 @@ fn a_walk_keeps_books_and_skips_hidden_litter_and_deep_folders() {
     assert_eq!(names, [Path::new("a.pdf"), Path::new("sub/b.EPUB")]);
     assert!(walked.truncated, "too deep to see everything");
     assert!(!walked.offline);
-    // Just written: maybe still copying, so left for a later look.
+    // A file being copied is left for a later look.
     let now = Limits::new(u64::MAX / 2);
     let fresh = Limits {
         now_ms: walked.files[0].2.mtime_ms,

@@ -362,7 +362,7 @@ fn find_var(v: &str) -> Option<usize> {
 }
 
 /// Where the bracket open before `text` closes, quotes skipped.
-fn closing(text: &str) -> Option<usize> {
+pub(crate) fn closing(text: &str) -> Option<usize> {
     let (mut depth, mut quote) = (0usize, None);
     for (i, c) in text.char_indices() {
         match (quote, c) {

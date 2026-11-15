@@ -9,6 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
+parity-kit = { path = "../parity-kit" }
 candle-core = "=0.9.2"
 mareader-kokoro = { path = "../../crates/kokoro" }
 mareader-vits = { path = "../../crates/vits" }

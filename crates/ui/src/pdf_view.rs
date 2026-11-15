@@ -718,6 +718,78 @@ fn sheet_for(view: &PdfView, doc: &Document, room: Vec2) -> Option<(f32, f32)> {
     (w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0).then_some((w, h))
 }
 
+mod input;
+mod overlay;
+mod paint;
+mod scroll;
+
+/// Frame context passed through the four show stages.
+pub(super) struct ShowContext<'a> {
+    ui: Option<&'a mut Ui>,
+    view: &'a mut PdfView,
+    doc: &'a Arc<Document>,
+    view_cx: &'a ViewContext,
+    pages: &'a mut PageCache,
+    demand: &'a mut Demand,
+    texts: &'a mut TextLayers,
+    drawn: &'a mut Vec<Quad>,
+    pass: Option<&'a Arc<PagePass>>,
+    gloss: &'a mut Vec<Gloss>,
+    vocab: Option<&'a mut vocab::Vocab>,
+    ctx: egui::Context,
+    now: f64,
+    frame: Rect,
+    sizes: &'a [PageSize],
+    bands: Option<&'a [Band]>,
+    gliding: bool,
+    shown: Option<f32>,
+    margin: f32,
+    room: Vec2,
+    rebuilt: bool,
+    viewport: Vec2,
+    input: Option<InputState>,
+    scroll: Option<ScrollState>,
+    paint: PaintState,
+}
+
+pub(super) struct InputState {
+    viewport: Vec2,
+    keyed: Option<f32>,
+    sideways: bool,
+    down: bool,
+    ppp: f32,
+    scale: Scale,
+    max_side: f32,
+    resting: bool,
+    urgency: Urgency,
+    t: Tokens,
+    reflow: bool,
+    picture_tone: PageTone,
+    emoji_tone: PageTone,
+}
+
+pub(super) struct ScrollState {
+    area: Option<ScrollArea>,
+    landing: Option<std::ops::Range<usize>>,
+    jump_started: bool,
+}
+
+#[derive(Default)]
+pub(super) struct PaintState {
+    out: Option<ScrollOutput<()>>,
+    shown_pages: std::ops::Range<usize>,
+    sheets: Vec<Sheet>,
+    paper_at: Option<f64>,
+    follow: Option<LinkTarget>,
+    quads: Vec<Quad>,
+    covered: Vec<usize>,
+    open: Vec<Sheet>,
+    placed: Vec<study::marks::Placed>,
+    shaded: vocab::Shading,
+    on_word: Option<usize>,
+    did: selection::Outcome,
+}
+
 pub fn show(ui: &mut Ui, view: &mut PdfView, doc: &Arc<Document>, io: Sinks<'_>, cx: &ViewContext) {
     let Sinks {
         pages,
@@ -726,716 +798,46 @@ pub fn show(ui: &mut Ui, view: &mut PdfView, doc: &Arc<Document>, io: Sinks<'_>,
         drawn,
         pass,
         gloss,
-        mut vocab,
+        vocab,
     } = io;
     let ctx = ui.ctx().clone();
     let now = ctx.input(|i| i.time);
-    view.ease = motion::zoom(&ctx);
     let frame = ui.max_rect();
-    let sizes = doc.page_sizes();
-    view.rtl = doc.right_to_left();
-    view.lead = doc.lead();
-    // A book's vertical strip is a stream: each page cut to its text.
     let bands = doc.bands().filter(|_| view.mode == ViewMode::Vertical);
-    if ui.rect_contains_pointer(frame) {
-        let (factor, pointer) = ctx.input(|i| (i.zoom_delta(), i.pointer.hover_pos()));
-        if let (Some(p), true) = (pointer, factor != 1.0) {
-            let at = p - frame.min - vec2(0.0, cx.top_inset);
-            view.zoom.pinch(factor, at, now);
-            // A zoom set by hand is measured from the page read.
-            view.zoom.fit_page = view.current;
-        }
-    }
-    if std::mem::take(&mut view.fresh) && view.zoom.fit.is_some() {
-        view.zoom.fit = Some(cx.page.fit);
-    }
-    // A book's set zoom is its type size: the pane reflows it instead.
-    let keep = cx.page.auto_resize && !doc.is_reflowable();
-    // Remembered on the page it was set on, before a turn moves it.
-    let set_on = layout::fit_box(view.mode, sizes, (view.zoom.fit_page, view.lead));
-    view.zoom.hold(keep, set_on);
-    if let Some(wait) = view.follow_size(sizes, keep, now) {
-        ctx.request_repaint_after_secs(wait as f32);
-    }
-    let margin = if view.mode == ViewMode::Horizontal {
-        MARGIN
-    } else if bands.is_some() {
-        // A stream's column never touches the pane's edge.
-        cx.page.margin.max(MARGIN)
-    } else {
-        cx.page.margin
+    let mut context = ShowContext {
+        ui: Some(ui),
+        view,
+        doc,
+        view_cx: cx,
+        pages,
+        demand,
+        texts,
+        drawn,
+        pass,
+        gloss,
+        vocab,
+        ctx,
+        now,
+        frame,
+        sizes: doc.page_sizes(),
+        bands,
+        gliding: false,
+        shown: None,
+        margin: 0.0,
+        room: Vec2::ZERO,
+        rebuilt: false,
+        viewport: Vec2::ZERO,
+        input: None,
+        scroll: None,
+        paint: PaintState::default(),
     };
-    let mut room = frame.size() - vec2(2.0 * margin, 2.0 * MARGIN + cx.top_inset);
-    // The strip fits a page's height alone: it scrolls sideways.
-    if view.mode == ViewMode::Horizontal && view.zoom.measure() == Fit::Page {
-        room.x = f32::INFINITY;
-    }
-    if let Some(wait) = view.settle_sheet(sheet_for(view, doc, room), now) {
-        ctx.request_repaint_after_secs(wait as f32);
-    }
-    let fit_box = layout::fit_box(view.mode, sizes, (view.zoom.fit_page, view.lead));
-    let follow = motion::follow(&ctx);
-    if let Some(wait) = view
-        .zoom
-        .refit(fit_box, room, view.layout.is_some(), follow, now)
-    {
-        ctx.request_repaint_after_secs(wait);
-    }
-    let (shown, gliding) = view.zoom.advance(now);
-    if gliding {
-        ctx.request_repaint();
-    }
-    let viewport = frame.size() - vec2(0.0, cx.top_inset);
-    let inputs = Inputs {
-        mode: view.mode,
-        frame: frame.size(),
-        inset: cx.top_inset,
-        zoom: shown,
-        focus: if view.mode.paged() { view.focus } else { 0 },
-        gap: if bands.is_some() { 0.0 } else { cx.page.gap },
-        margin,
-        align: match bands {
-            Some(_) => cx.page.column,
-            None => egui::Align::Center,
-        },
-        rtl: view.rtl,
-        lead: view.lead,
-    };
-    let rebuilt = view.layout.as_ref().is_none_or(|l| l.inputs != inputs);
-    if rebuilt {
-        let new = match bands {
-            Some(bands) => {
-                let cut = |b: &Band| PageSize {
-                    width: b.width,
-                    height: b.height,
-                };
-                Layout::new(&bands.iter().map(cut).collect::<Vec<_>>(), inputs)
-            }
-            None => Layout::new(sizes, inputs),
-        };
-        match view.layout.take() {
-            // Zooms and resizes keep the reading spot in place.
-            Some(old) if view.reveal.is_none() && old.inputs.mode == view.mode => {
-                let pivot = view.zoom.pivot;
-                let pivots = (
-                    pivot.unwrap_or(view.viewport / 2.0),
-                    pivot.unwrap_or(viewport / 2.0),
-                );
-                if let Some(to) = hold(&old, &new, view.offset, pivots) {
-                    view.scroll_to = Some((to, 2));
-                }
-            }
-            _ => {
-                view.reveal.get_or_insert(view.current);
-            }
-        }
-        view.layout = Some(new);
-        // Results laid in or out: the strip stays on what was read.
-        let keep = view.keep.take();
-        let spot = keep.and_then(|(p, at)| view.layout.as_ref()?.place(p, at));
-        if let Some(spot) = spot {
-            let to = (spot - viewport / 2.0).to_vec2().max(Vec2::ZERO);
-            view.reveal = None;
-            view.scroll_to = Some((to, 2));
-        }
-    }
-    if let Some(page) = view.reveal.take()
-        && let Some(to) = view.layout.as_ref().and_then(|l| l.reveal(page))
-    {
-        view.landed = (!view.mode.paged()).then_some((page, None));
-        // A strip glides to the page; a new layout or a turn lands there.
-        let glide = motion::jump(&ctx);
-        if !rebuilt && !view.mode.paged() && glide.duration.max > 0.0 {
-            let until = now + f64::from(glide.duration.max) + 0.2;
-            let end = view.layout.as_ref().map_or(Vec2::ZERO, |l| l.size) - viewport;
-            let to = to.min(end.max(Vec2::ZERO));
-            // Along the strip it glides with the keys' glide; across, it lands.
-            let pick = |v: Vec2| {
-                if view.mode == ViewMode::Horizontal {
-                    v.x
-                } else {
-                    v.y
-                }
-            };
-            view.aim = Some(Glide::new(pick(view.offset), pick(to), now, glide));
-            view.jump = Some(Jump {
-                to,
-                started: false,
-                until,
-            });
-        } else {
-            view.scroll_to = Some((to, 2));
-            view.jump = None;
-        }
-    }
-    land(view);
-    if let Some(wait) = view.zoom.sharpen(now) {
-        ctx.request_repaint_after_secs(wait);
-    }
-    // Keys move along the strip: sideways in the horizontal one.
-    let sideways = view.mode == ViewMode::Horizontal;
-    let along = |d: f32| if sideways { vec2(d, 0.0) } else { vec2(0.0, d) };
-    let len = if sideways { viewport.x } else { viewport.y };
-    // Auto-scroll belongs to the focused pane, as in mareader.
-    if !cx.active {
-        view.drift = None;
-    }
-    let keyed = keyed_scroll(view, &ctx, len, now);
-    let Some(layout) = &view.layout else {
+    input::run(&mut context);
+    if context.view.layout.is_none() {
         return;
-    };
-    let ppp = ctx.pixels_per_point();
-    let wanted = Scale::covering(view.zoom.sharp() * ppp);
-    let max_side = ctx.input(|i| i.max_texture_side) as f32;
-    // Past the GPU's and hayro's limits, a page is drawn in tiles.
-    let plan = |page: usize| {
-        let size = sizes.get(page).copied().unwrap_or(PageSize {
-            width: 1.0,
-            height: 1.0,
-        });
-        let long = size.width.max(size.height);
-        let cap = Scale::within(doc.fitted_scale(page, max_side / long).unwrap_or(1.0));
-        let whole = |scale| PageKey {
-            doc: view.doc,
-            page,
-            scale,
-            part: Part::Whole,
-        };
-        if wanted <= cap {
-            return Plan::Whole(whole(wanted));
-        }
-        let backdrop = Scale::within((BACKDROP_SIDE / long).min(cap.value()));
-        let tiling = Tiling::new(size, wanted.value());
-        Plan::Tiled {
-            backdrop: whole(backdrop),
-            tiling,
-            scale: wanted,
-        }
-    };
-    let key = |page: usize| plan(page).base();
-    let resting = now - view.moved_at >= TILE_REST;
-    let urgency = if cx.active {
-        Urgency::ActivePane
-    } else {
-        Urgency::OtherPane
-    };
-    let mut t = cx.tokens;
-    let reflow = doc.is_reflowable();
-    // A book's pictures and emoji keep their colours unless themed.
-    let (mut picture_tone, mut emoji_tone) = (PageTone::NONE, PageTone::NONE);
-    if reflow {
-        let mut text = t.book.inked(cx.page.ink);
-        // Blend's paper, as the PDF beside it shows it.
-        if let Some(raw) = cx.paper {
-            text.paper = t.page.apply(raw.to_unit());
-        }
-        let themed = t.page.for_pictures(&text);
-        let pick = |on: bool| if on { themed } else { PageTone::NONE };
-        (picture_tone, emoji_tone) = (pick(cx.page.theme_pictures), pick(cx.page.theme_emojis));
-        t.page = text;
     }
-    // egui turns a plain wheel sideways only if that's the sole direction.
-    let down = view.mode != ViewMode::Horizontal || layout.size.y > frame.height() + 0.5;
-    ui.style_mut().always_scroll_the_only_direction = true;
-    let mut area = ScrollArea::new([true, down]).id_salt(("pdf", view.doc, view.mode));
-    if let Some((to, _)) = view.scroll_to {
-        area = area.scroll_offset(to);
-    }
-    let jump = view.jump;
-    let mut jump_started = false;
-    // While a jump glides, only the pages it lands on are worth drawing.
-    let landing = jump.map(|j| layout.visible(Rect::from_min_size(Pos2::ZERO + j.to, viewport)));
-    let wanted = |page: usize| landing.as_ref().is_none_or(|r| r.contains(&page));
-    let mut shown_pages = 0..0;
-    let mut sheets = Vec::new();
-    // Pages under an AI result.
-    let mut covered = Vec::new();
-    let mut paper_at = None;
-    let mut follow = None;
-    // Where a link was clicked, for a footnote's card to point at.
-    let mut clicked = None;
-    let mut double = None;
-    let doc_id = view.doc;
-    let selection = &mut view.selection;
-    let marker = &mut view.marker;
-    let out = area
-        .auto_shrink(false)
-        // The view runs its own glides, so each delta lands this frame.
-        .animated(false)
-        .content_margin(0.0)
-        // Dragging will select text, not scroll.
-        .scroll_source(ScrollSource {
-            drag: DragScroll::Never,
-            ..Default::default()
-        })
-        .show_viewport(ui, |ui, viewport| {
-            ui.set_min_size(layout.size);
-            if let Some(points) = keyed {
-                ui.scroll_with_delta_animation(-along(points), ScrollAnimation::none());
-            }
-            if let Some(j) = jump.filter(|j| !j.started) {
-                let d = viewport.min.to_vec2() - j.to;
-                let across = if sideways {
-                    vec2(0.0, d.y)
-                } else {
-                    vec2(d.x, 0.0)
-                };
-                ui.scroll_with_delta_animation(across, ScrollAnimation::none());
-                jump_started = true;
-            }
-            let origin = ui.max_rect().min.to_vec2();
-            // One sheet under every page, so patterns run across seams.
-            let anchor = Anchor {
-                origin: ui.max_rect().min,
-                zoom: layout.zoom(),
-            };
-            // Blend's paper under the shadows; a stream always has its own.
-            let white = Rgb(255, 255, 255);
-            let paper = match reflow {
-                // A book's tone holds its paper already.
-                true => (cx.paper.is_some() || bands.is_some()).then_some(white),
-                false => cx.paper.or(bands.map(|_| white)),
-            };
-            if let (Some(paper), Some(pass)) = (paper, pass) {
-                let tone = t.page.backdrop(paper.to_unit());
-                let quad = Quad::backdrop(frame, cx.corner, tone, anchor);
-                let shape = PagesCallback::shape(pass.clone(), frame, vec![quad.clone()]);
-                ui.painter().add(shape);
-                drawn.push(quad);
-            }
-            let shown = layout.visible(viewport);
-            shown_pages = shown.clone();
-            let mut quads = Vec::new();
-            for page in shown.clone() {
-                let Some(rect) = layout.rect(page) else {
-                    continue;
-                };
-                let rect = rect.translate(origin).round_to_pixels(ppp);
-                let (rect, clip) = match bands.and_then(|b| b.get(page)) {
-                    Some(band) => streamed(rect, band, sizes.get(page), layout.zoom(), ppp),
-                    None => (rect, ui.clip_rect()),
-                };
-                let clip = clip.intersect(ui.clip_rect());
-                let plan = plan(page);
-                let look = pages.lookup(plan.base());
-                if wanted(page) && !matches!(look, Lookup::Sharp(_) | Lookup::Failed) {
-                    demand.push((urgency, plan.base().into()));
-                }
-                if wanted(page) && !texts.touch(doc_id, page) {
-                    demand.push((Urgency::Text, Want::Text { doc: doc_id, page }));
-                }
-                let round = (frame, cx.corner);
-                let style = (&t, cx.page.shadow && bands.is_none());
-                let first = quads.len();
-                paint_page(ui, ((rect, clip), anchor, round), look, style, &mut quads);
-                if let Plan::Tiled {
-                    backdrop,
-                    tiling,
-                    scale,
-                } = plan
-                {
-                    let key = PageKey { scale, ..backdrop };
-                    let tiles = Tiles {
-                        page: rect,
-                        clip,
-                        anchor,
-                        tiling,
-                        key,
-                    };
-                    let ask = resting && wanted(page);
-                    tiles.paint(
-                        ui,
-                        pages,
-                        ask.then_some((&mut *demand, urgency)),
-                        (&mut quads, t.page),
-                    );
-                }
-                let width = sizes.get(page).map_or(1.0, |s| s.width);
-                if reflow {
-                    let to_screen = |b: Bounds| {
-                        let k = rect.width() / width;
-                        Rect::from_min_max(
-                            rect.min + vec2(b.x0, b.y0) * k,
-                            rect.min + vec2(b.x1, b.y1) * k,
-                        )
-                    };
-                    let shown = doc.pictures(page).into_iter().map(to_screen);
-                    keep_pictures(&mut quads, first, shown, picture_tone);
-                    let emojis = doc.emojis(page).into_iter().map(to_screen);
-                    keep_pictures(&mut quads, first, emojis, emoji_tone);
-                }
-                let overlay = cx.ai.overlays.iter().find(|o| o.page == page);
-                if let Some(shown) = overlay.and_then(|o| o.card.as_ref()) {
-                    let tones = (&t, picture_tone, emoji_tone);
-                    let place = ((rect, clip), anchor);
-                    page_ai::paint::card(ui, place, shown, tones, &mut quads);
-                    covered.push(page);
-                }
-                sheets.push(Sheet {
-                    page,
-                    rect,
-                    shown: rect.intersect(clip),
-                    scale: rect.width() / width,
-                });
-            }
-            paper_at = mareader_pdf::position(sheets.iter().map(|s| {
-                let seen = s.shown;
-                (s.page, if seen.is_positive() { seen.area() } else { 0.0 })
-            }));
-            // One callback draws every GPU page, over the shadows.
-            for quad in &mut quads {
-                quad.round_to(frame, cx.corner);
-            }
-            if let (Some(pass), false) = (pass, quads.is_empty()) {
-                let shape = PagesCallback::shape(pass.clone(), ui.clip_rect(), quads.clone());
-                ui.painter().add(shape);
-                drawn.extend(quads.iter().cloned());
-            }
-            // A result covers its page's text: nothing there selects or marks.
-            let open: Vec<Sheet> = sheets
-                .iter()
-                .filter(|s| !covered.contains(&s.page))
-                .copied()
-                .collect();
-            let text = Pages {
-                doc: doc_id,
-                sheets: &open,
-                texts,
-                sideways: !down,
-                lift: cx.lift,
-            };
-            let placed = study::marks::place(&cx.marks, &text);
-            // Shading sits under the reader's own marks.
-            let shading = cx.shading.as_ref().zip(vocab.as_mut());
-            let shaded =
-                shading.map_or_else(vocab::Shading::default, |(look, v)| v.place(look, &text));
-            let on_word = vocab::hovered(ui, &shaded).filter(|_| cx.picked.is_none());
-            // Fills go under the page's ink, so marked text stays crisp.
-            let mut under = study::marks::Under::new(t.page);
-            if let Some(look) = &cx.shading {
-                let under_mark = |i: usize| {
-                    let w = shaded.get(i);
-                    w.is_some_and(|w| placed.iter().any(|m| m.contains(w.bounds().center())))
-                };
-                let lit = on_word.filter(|i| !under_mark(*i));
-                vocab::add(&shaded, look, lit, &mut under);
-                let id = ui.id().with(("shade-rest", doc_id));
-                if let Some(i) = vocab::dwell(ui, id, &shaded, lit, look)
-                    && let Some(w) = shaded.get(i)
-                    && let Some(layer) = texts.get(doc_id, w.page)
-                {
-                    let word = study::words::text_of(&layer, w.chars.clone());
-                    let asked = study::words::asked_at(&layer, w.page, w.chars.clone());
-                    gloss.push(Gloss::Rest {
-                        context: asked.map_or_else(|| word.clone(), |a| a.context),
-                        word,
-                        at: w.bounds(),
-                    });
-                }
-            }
-            study::marks::add(&placed, cx.highlights.opacity, &mut under);
-            under.show(ui, pass, ui.clip_rect(), &quads);
-            study::marks::badges(ui, &placed);
-            for s in sheets.iter().filter(|s| cx.bookmarks.contains(&s.page)) {
-                crate::bookmarks::ribbon(ui.painter(), s.rect, t.accent);
-            }
-            if let Some(picked) = &cx.picked {
-                study::marks::ring(ui.painter(), &placed, picked, t.accent);
-            }
-            if let Some(wash) = &cx.ai.wash {
-                page_ai::paint::wash(ui, &text, wash, &t);
-            }
-            if let Some(lit) = &cx.aloud {
-                crate::read_aloud::paint(ui, &text, lit, &t);
-            }
-            if let Some(lit) = &cx.found {
-                crate::search::paint(ui, &text, lit, &t);
-            }
-            if let Some(sel) = selection.filter(|s| !s.is_empty()) {
-                selection::paint(ui, &text, sel, t.accent.gamma_multiply(0.32));
-            }
-            let did = selection::interact(ui, ui.clip_rect(), &text, selection);
-            // The read-aloud pin goes over the text, so it takes the press.
-            if let Some(m) = marker.as_mut() {
-                let begun = selection.is_some_and(|s| !s.is_empty());
-                if (did.click.is_some() || begun) && !m.held() {
-                    m.dismiss(ui.input(|i| i.time));
-                }
-                match marker::show(ui, ui.clip_rect(), &text, m, &t) {
-                    marker::Step::Stay => {}
-                    marker::Step::Read(from) => gloss.push(Gloss::ReadFrom(from)),
-                    marker::Step::Gone => *marker = None,
-                }
-            }
-            ai_bubbles(ui, &sheets, &cx.ai.overlays, &t, gloss);
-            if let Some(pill) = &cx.ai.pill
-                && let Some(press) = page_ai::paint::pill(ui, frame, pill, &t)
-            {
-                gloss.push(Gloss::Pill(press));
-            }
-            follow = did.follow;
-            clicked = did.click;
-            double = did.double;
-            if let Some(at) = did.lift {
-                gloss.push(Gloss::Lift(at));
-            }
-            let on_mark = |p: Option<Pos2>| p.and_then(|p| study::marks::hit(&placed, p));
-            // A long press picks; the click its release makes does nothing.
-            if study::marks::swallowed(ui, did.click.is_some()) {
-                follow = None;
-            } else if let Some(m) = on_mark(did.click) {
-                follow = None;
-                gloss.push(match cx.picked {
-                    Some(_) => Gloss::Toggle(m.id),
-                    None => Gloss::Open {
-                        mark: m.id,
-                        at: m.bounds(),
-                    },
-                });
-            } else if let (Some(p), Some(look), None) = (did.click, &cx.shading, &cx.picked)
-                && look.click
-                && let Some(w) = vocab::hit(&shaded, p).and_then(|i| shaded.get(i))
-            {
-                follow = None;
-                gloss.push(Gloss::Shaded {
-                    page: w.page,
-                    chars: w.chars.clone(),
-                    at: w.bounds(),
-                });
-            }
-            if let Some(id) = study::marks::long_press(ui, &placed) {
-                gloss.push(Gloss::Pick(id));
-            }
-            if let (Some(m), Some(at), None) = (on_mark(did.context), did.context, &cx.picked) {
-                let words = m.bounds();
-                gloss.push(Gloss::Menu {
-                    mark: m.id,
-                    at,
-                    words,
-                });
-            } else if let (Some(at), None) = (did.context, &cx.picked)
-                && !on_selection(&text, *selection, at)
-                && let Some(s) = sheets.iter().find(|s| s.shown.contains(at))
-            {
-                let layer = text.texts.get(text.doc, s.page);
-                let (x, y) = s.to_page(at);
-                let caret = (layer.as_ref()).filter(|l| l.text.on_line(x, y)).map(|l| {
-                    l.text
-                        .char_at(x, y)
-                        .unwrap_or_else(|| l.text.caret_at(x, y))
-                });
-                let place = layer.and_then(|layer| {
-                    let i = layer.text.caret_at(x, y);
-                    let before = i.checked_sub(1).and_then(|i| layer.place(i));
-                    layer.place(i).or(before)
-                });
-                let place = place.map(|(block, offset)| mareader_session::Anchor { block, offset });
-                gloss.push(Gloss::PageMenu {
-                    page: s.page,
-                    at,
-                    place,
-                    caret,
-                });
-            } else if cx.menu_shot
-                && let Some(m) = placed.last()
-            {
-                let at = m.bounds().center_bottom();
-                let words = m.bounds();
-                gloss.push(Gloss::Menu {
-                    mark: m.id,
-                    at,
-                    words,
-                });
-            }
-            let on = reach::On {
-                pages: &text,
-                placed: &placed,
-                shaded: &shaded,
-                words: cx.shading.as_ref().is_some_and(|l| l.click),
-                accent: t.accent,
-            };
-            let press = reach::show(ui, &on);
-            let picking = cx.picked.is_some();
-            if let Some(target) = at_stop(press, &placed, &shaded, picking, gloss) {
-                follow = Some(target);
-            }
-            if cx.picked.is_some() {
-                // A mark across two pages is placed on each.
-                let mut page: Vec<MarkId> = Vec::new();
-                for m in &placed {
-                    if !page.contains(&m.id) {
-                        page.push(m.id);
-                    }
-                }
-                let all = cx.marks.iter().map(|m| m.id).collect();
-                gloss.push(Gloss::Seen { page, all });
-            }
-            if let Some(m) = placed.iter().find(|m| Some(m.id) == cx.card) {
-                gloss.push(Gloss::Anchor(Some(m.bounds())));
-            } else if cx.card.is_some() {
-                // A page whose text hasn't come may hold the mark.
-                let shown = sheets.iter().filter(|s| s.shown.is_positive());
-                if shown
-                    .into_iter()
-                    .any(|s| texts.get(doc_id, s.page).is_none())
-                {
-                    gloss.push(Gloss::Anchor(None));
-                }
-            }
-            // A jump's landing renders while the glide is on its way.
-            if let Some(landing) = &landing {
-                for page in landing.clone().filter(|p| !shown.contains(p)) {
-                    if !matches!(pages.lookup(key(page)), Lookup::Sharp(_) | Lookup::Failed) {
-                        demand.push((urgency, key(page).into()));
-                    }
-                }
-                return;
-            }
-            // The strips' neighbours, or the next and last turn's pages.
-            let (near, count) = match view.mode {
-                ViewMode::Single | ViewMode::Spread => (layout.pages(), sizes.len()),
-                ViewMode::Vertical | ViewMode::Horizontal => (shown.clone(), sizes.len()),
-            };
-            let reach = PREFETCH * if view.mode == ViewMode::Spread { 2 } else { 1 };
-            let before = near.start.saturating_sub(reach)..near.start;
-            let after = near.end..(near.end + reach).min(count);
-            for page in before.chain(after) {
-                if !pages.touch(key(page)) {
-                    demand.push((Urgency::Prefetch, key(page).into()));
-                }
-            }
-        });
-    if let Some(j) = &mut view.jump {
-        j.started |= jump_started;
-        // Its glide ended, or a wheel or a key took over.
-        let arrived = (out.state.offset - j.to).length() < 1.0;
-        if arrived || view.aim.is_none() || now > j.until {
-            view.jump = None;
-            // Taken over midway: the page under the centre is read.
-            if !arrived {
-                view.landed = None;
-            }
-        } else {
-            ctx.request_repaint();
-        }
-    }
-    // A jump keeps its page as the one read until it lands.
-    if !view.mode.paged() && view.scroll_to.is_none() && view.jump.is_none() {
-        let centre = Pos2::ZERO + out.state.offset + viewport / 2.0;
-        view.current = layout.locate(centre).map_or(0, |(page, _)| page);
-        // A short page jumped to stays the one read until the strip moves.
-        let offset = out.state.offset;
-        view.landed = view.landed.and_then(|(page, at)| match at {
-            None => Some((page, Some(offset))),
-            Some(at) => ((offset - at).length() < 1.0).then_some((page, Some(at))),
-        });
-        if let Some((page, _)) = view.landed {
-            view.current = page;
-        }
-    }
-    view.progress = progress(view, layout, &out, sizes.len());
-    view.visible = shown_pages;
-    view.sheets = sheets;
-    // Nothing shown, as mid-jump: the backdrop holds its colour.
-    view.paper_at = paper_at.or(view.paper_at);
-    if view.offset != out.state.offset || view.viewport != viewport {
-        view.moved_at = now;
-    }
-    if now - view.moved_at < TILE_REST {
-        ctx.request_repaint_after_secs((TILE_REST - (now - view.moved_at)) as f32 + 0.01);
-    }
-    view.offset = out.state.offset;
-    view.viewport = viewport;
-    view.zoom.end_frame(gliding, now);
-    // A new area clamps offsets to last frame's size, so retry once.
-    if let Some((to, tries)) = view.scroll_to {
-        let reached = (out.state.offset - to).length() < 0.5;
-        view.scroll_to = (!reached && tries > 1).then_some((to, tries - 1));
-        if view.scroll_to.is_some() {
-            ctx.request_repaint();
-        }
-    }
-    if cx.active {
-        copy(&ctx, view, doc, texts);
-        let room = Rect::from_min_max(frame.min + vec2(0.0, cx.top_inset), frame.max);
-        let pressed = selection_bar(&ctx, view, texts, room, &cx.highlights);
-        match pressed {
-            Some(BarPress::Copy) => {
-                if let Some(text) = selected_text(view, doc, texts) {
-                    ctx.copy_text(text);
-                    gloss.push(Gloss::Copied);
-                }
-            }
-            Some(BarPress::Explain) => gloss.push(Gloss::Explain),
-            Some(BarPress::LookUp) => gloss.push(Gloss::LookUp),
-            Some(BarPress::Note) => gloss.push(Gloss::Note),
-            Some(BarPress::ReadAloud) => gloss.push(Gloss::ReadAloud),
-            Some(BarPress::Highlight(pen, color)) => gloss.push(Gloss::Highlight(pen, color)),
-            None => {}
-        }
-    }
-    if !cx.active {
-        view.footnote = None;
-    }
-    match follow {
-        Some(LinkTarget::Page(page)) => view.go_to(page, sizes.len()),
-        Some(LinkTarget::Note { page, text }) => {
-            let target = LinkTarget::Note {
-                page,
-                text: text.clone(),
-            };
-            match mark_of(&view.sheets, texts, view.doc, &target, clicked) {
-                Some((on, at)) => {
-                    view.footnote = Some(crate::footnote::Footnote {
-                        page: on,
-                        at,
-                        text,
-                        target: page,
-                    });
-                }
-                None => view.go_to(page, sizes.len()),
-            }
-        }
-        // Checked when read; checked again before leaving the app.
-        Some(LinkTarget::Web(url)) if web_address(url.as_bytes()).is_some() => {
-            ctx.open_url(egui::OpenUrl::new_tab(url));
-        }
-        Some(LinkTarget::Media { path, .. }) => {
-            crate::play::play(Arc::clone(doc), path);
-        }
-        Some(LinkTarget::Transcript { card, track }) => view.transcripts.click(card, track),
-        Some(LinkTarget::Trigger { link, .. }) => {
-            view.triggers.click(doc.trigger(link));
-            ctx.request_repaint();
-        }
-        Some(LinkTarget::Script { chapter, node }) => {
-            let target = LinkTarget::Script { chapter, node };
-            let mark = mark_of(&view.sheets, texts, view.doc, &target, clicked);
-            view.triggers.script.click(chapter, node, mark);
-            ctx.request_repaint();
-        }
-        _ => {}
-    }
-    if cx.active {
-        let room = Rect::from_min_max(frame.min + vec2(0.0, cx.top_inset), frame.max);
-        let paged = &mut view.triggers.script;
-        crate::scripts::edit(&ctx, paged, &view.sheets, room, &cx.tokens);
-    } else {
-        view.triggers.script.editing = None;
-    }
-    if cx.active {
-        let room = Rect::from_min_max(frame.min + vec2(0.0, cx.top_inset), frame.max);
-        footnote(&ctx, view, room, sizes.len(), &cx.tokens);
-    }
-    if let Some(p) = double {
-        view.viewer =
-            open_picture(&ctx, (&view.sheets, texts, view.doc), doc, p).or(view.viewer.take());
-    }
-    if let Some(viewer) = &mut view.viewer
-        && !crate::image_viewer::show(&ctx, viewer, &cx.tokens)
-    {
-        view.viewer = None;
-    }
+    scroll::run(&mut context);
+    paint::run(&mut context);
+    overlay::run(&mut context);
 }
 
 /// A book's picture, or a PDF's figure, under a double click at `p`.

@@ -192,14 +192,19 @@ pub struct Book {
     pub extra: Extra,
 }
 
+/// Whether a restoration postdates a removal tombstone.
+pub(crate) fn alive(removed: Option<Stamp>, restored: Option<Stamp>) -> bool {
+    match (removed, restored) {
+        (None, _) => true,
+        (Some(removed), Some(restored)) => restored > removed,
+        (Some(_), None) => false,
+    }
+}
+
 impl Book {
     /// Not removed, or restored since; removal is a tombstone.
     pub fn alive(&self) -> bool {
-        match (self.removed, self.restored) {
-            (None, _) => true,
-            (Some(removed), Some(restored)) => restored > removed,
-            (Some(_), None) => false,
-        }
+        alive(self.removed, self.restored)
     }
 
     /// The file to open: the newest location still there.

@@ -11,9 +11,10 @@ use mareader_search::{Hit, from_page, step};
 use mareader_workspace::PaneId;
 
 use crate::icons::Icon;
+use crate::motion::entrance;
 use crate::search::Found;
 use crate::theme::{self, Tokens};
-use crate::{loading_mark, motion, widgets};
+use crate::{loading_mark, widgets};
 
 pub const PLACEHOLDER: &str = "Search in document…";
 const WIDTH: f32 = 520.0;
@@ -217,7 +218,7 @@ impl FindBar {
         }
         let t = Tokens::get(ctx);
         let width = WIDTH.min(rect.width() - 2.0 * INSET).max(160.0);
-        let risen = entrance(ctx, *self.shown_at.get_or_insert(now), now);
+        let risen = entrance(ctx, *self.shown_at.get_or_insert(now), now, ENTER);
         let y = top.max(rect.top()) + 12.0 - (1.0 - risen) * RISE;
         let at = pos2(rect.right() - INSET - width, y);
         let mut close = false;
@@ -466,19 +467,6 @@ fn hint(ui: &mut Ui, t: &Tokens) {
 enum Tone {
     Some,
     None,
-}
-
-/// The bar's rise as it opens, eased; whole at once without motion.
-fn entrance(ctx: &Context, opened: f64, now: f64) -> f32 {
-    let span = motion::secs(ctx, ENTER);
-    if span <= 0.0 {
-        return 1.0;
-    }
-    let x = ((now - opened) as f32 / span).clamp(0.0, 1.0);
-    if x < 1.0 {
-        ctx.request_repaint();
-    }
-    1.0 - (1.0 - x).powi(3)
 }
 
 /// A round, borderless button: washed on hover, accented while `on`.

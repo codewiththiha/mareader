@@ -9,7 +9,7 @@ use mareader_audio::Stretch;
 use mareader_phonon::{Noise, Pace, Phonon as Model, SAMPLE_RATE, TEMPERATURE, Voice};
 
 use crate::local::{Line, Out, Synth};
-use crate::studio::Studio;
+use crate::studio::Engine;
 
 /// The speeds offered, as other models give.
 pub(crate) const SPEEDS: RangeInclusive<f32> = 0.5..=3.0;
@@ -41,28 +41,16 @@ pub(crate) struct Source {
 }
 
 /// What a voice needs once loaded.
-struct Loaded {
+pub(crate) struct Loaded {
     model: Arc<Model>,
     id: String,
     voice: Voice,
 }
 
 /// Phonon from `source`, speaking a voice at a time.
-pub(crate) struct Phonon {
-    source: Source,
-    studio: Studio,
-    loaded: Option<Loaded>,
-}
+pub(crate) type Phonon = Engine<Source, Loaded>;
 
 impl Phonon {
-    pub(crate) fn new(source: Source, studio: Studio) -> Self {
-        Self {
-            source,
-            studio,
-            loaded: None,
-        }
-    }
-
     fn load_fresh(&self, id: &str) -> Result<Loaded, String> {
         let source = &self.source;
         let path =
@@ -165,6 +153,7 @@ mod tests {
     use super::*;
     use crate::Voice as Listed;
     use crate::local::{Engine, Setup};
+    use crate::studio::Studio;
 
     #[test]
     fn phonon_reads_each_speed_as_a_pace_between_the_measured_ones() {

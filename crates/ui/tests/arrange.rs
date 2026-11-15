@@ -5,8 +5,9 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 use mareader_library::{Home, Item, Library, ShelfId, SortKey};
 use mareader_ui::MareaderApp;
-use mareader_ui::command::Command;
 use mareader_ui::library::{Action, Named, ShelfAction};
+
+use crate::common::{act, carry, release};
 
 fn reader(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
     let mut app = MareaderApp::default();
@@ -48,12 +49,6 @@ fn shelve(h: &mut Harness<'static, MareaderApp>, action: ShelfAction) {
     act(h, Action::Shelf(action));
 }
 
-fn act(h: &mut Harness<'static, MareaderApp>, action: Action) {
-    h.state_mut().queue(Command::Library(action));
-    h.run();
-    h.run();
-}
-
 /// Shelves are made through the page's own action, at the top level.
 fn new_shelf(h: &mut Harness<'static, MareaderApp>, name: &str) -> Item {
     shelve(h, ShelfAction::New);
@@ -67,28 +62,6 @@ fn new_shelf(h: &mut Harness<'static, MareaderApp>, name: &str) -> Item {
 fn drop_on(h: &mut Harness<'static, MareaderApp>, item: Item, onto: Item, along: f32) {
     let (from, to) = (on(h, item, 0.5), on(h, onto, along));
     drag(h, from, to);
-}
-
-/// Presses on `from`, moves in steps past egui's drag threshold, holds.
-fn carry(h: &mut Harness<'static, MareaderApp>, from: egui::Pos2, to: egui::Pos2) {
-    h.hover_at(from);
-    h.run();
-    h.drag_at(from);
-    h.run();
-    for step in 1..=6 {
-        h.hover_at(from.lerp(to, step as f32 / 6.0));
-        h.run();
-    }
-}
-
-fn release(h: &mut Harness<'static, MareaderApp>, at: egui::Pos2) {
-    h.event(egui::Event::PointerButton {
-        pos: at,
-        button: egui::PointerButton::Primary,
-        pressed: false,
-        modifiers: egui::Modifiers::NONE,
-    });
-    h.run();
 }
 
 fn drag(h: &mut Harness<'static, MareaderApp>, from: egui::Pos2, to: egui::Pos2) {

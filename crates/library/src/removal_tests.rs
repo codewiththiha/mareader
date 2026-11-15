@@ -4,41 +4,10 @@ use crate::disk::{self, Folder};
 use crate::folder::Mode;
 use crate::ledger::Recovered;
 use crate::run_tests::{found, import, rescan};
-use crate::{
-    BookId, ContentId, Data, Design, DeviceId, FileStamp, Format, Library, Measure, Opened, Origin,
-    Position,
-};
+use crate::test_support::{measure, opened, page};
+use crate::{BookId, ContentId, Data, Design, DeviceId, Format, Library, Origin};
 
 const DEVICE: DeviceId = DeviceId(7);
-
-fn measure(content: u128) -> Measure {
-    Measure {
-        content: ContentId(content),
-        stamp: FileStamp {
-            size: 100,
-            mtime_ms: 1,
-        },
-    }
-}
-
-fn opened(path: &str, content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(path),
-        measure: measure(content),
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
-
-fn page(page: usize) -> Position {
-    Position {
-        page,
-        pages: 10,
-        place: None,
-        spine: None,
-    }
-}
 
 #[test]
 fn a_folder_book_removed_stays_out_until_restored_with_its_place() {
@@ -46,7 +15,7 @@ fn a_folder_book_removed_stays_out_until_restored_with_its_place() {
     let files = [found("/s/a.pdf", 1)];
     let (s, landed) = import(&mut lib, "/s", Mode::InPlace, &files);
     let id = landed.placed[0];
-    lib.record_position(id, page(4), 2_000);
+    lib.record_position(id, page(4, 10), 2_000);
     let shelf = lib.create_shelf("Read", None, 2_000).unwrap();
     lib.file(id, shelf, 2_000);
     let receipt = lib.receipt(&[id]);
@@ -69,7 +38,7 @@ fn a_folder_book_removed_stays_out_until_restored_with_its_place() {
     let back = lib.restore_removed(s, ContentId(1), &files[0], None, 4_000);
     assert_eq!(back, Some(id));
     assert!(lib.recoverables(s).is_empty());
-    assert_eq!(lib.position(id), Some(page(4)));
+    assert_eq!(lib.position(id), Some(page(4, 10)));
     assert!(
         lib.shelf_books(shelf).is_empty(),
         "a removal forgets its spots"
@@ -86,7 +55,13 @@ fn opening_a_removed_folder_book_brings_it_back_and_lifts_its_tombstone() {
     let id = landed.placed[0];
     lib.remove_books(&[id], Data::Keep, 2_000);
     assert!(lib.folder(s).unwrap().tombstone(ContentId(1)).is_some());
-    assert_eq!(lib.record_open(opened("/s/a.pdf", 1), 3_000), id);
+    assert_eq!(
+        lib.record_open(
+            opened("/s/a.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+            3_000,
+        ),
+        id
+    );
     assert!(lib.folder(s).unwrap().tombstone(ContentId(1)).is_none());
     // Back but off its folder's shelf: offered as a move, not a removal.
     let offered = lib.recoverables(s);
@@ -96,10 +71,16 @@ fn opening_a_removed_folder_book_brings_it_back_and_lifts_its_tombstone() {
 #[test]
 fn a_twin_reads_separately_and_follows_its_originals_file() {
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
-    lib.record_position(a, page(5), 1_000);
+    let a = lib.record_open(
+        opened("/a.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+        1_000,
+    );
+    lib.record_position(a, page(5, 10), 1_000);
     let shelf = lib.create_shelf("S", None, 1_000).unwrap();
-    let other = lib.record_open(opened("/b.pdf", 2), 1_000);
+    let other = lib.record_open(
+        opened("/b.pdf", 2, Format::Pdf, Some(measure(2).stamp)),
+        1_000,
+    );
     lib.file(a, shelf, 1_000);
     lib.file(other, shelf, 1_000);
     let t = lib.twin(a, 2_000).unwrap();
@@ -116,11 +97,24 @@ fn a_twin_reads_separately_and_follows_its_originals_file() {
     assert_eq!(order, [a, t, t3, other]);
     // Paths still name the original; a move reaches every twin.
     assert_eq!(lib.book_at("/a.pdf".as_ref()), Some(a));
-    lib.record_open(opened("/moved.pdf", 1), 3_000);
+    lib.record_open(
+        opened("/moved.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+        3_000,
+    );
     assert_eq!(lib.book(t).unwrap().path(), Some("/moved.pdf".as_ref()));
-    assert_eq!(lib.record_open(opened("/moved.pdf", 1), 3_000), a);
+    assert_eq!(
+        lib.record_open(
+            opened("/moved.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+            3_000,
+        ),
+        a
+    );
     // Read as the twin, only the twin was opened.
-    lib.record_open_as(opened("/moved.pdf", 1), 9_000, Some(t));
+    lib.record_open_as(
+        opened("/moved.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+        9_000,
+        Some(t),
+    );
     assert_eq!(lib.book(t).unwrap().opened.value, 9_000);
     assert_eq!(lib.book(a).unwrap().opened.value, 3_000);
 }
@@ -167,24 +161,36 @@ fn store_copies_are_deleted_with_the_last_book_reading_them() {
 #[test]
 fn renames_are_trimmed_and_blank_ones_refused() {
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let a = lib.record_open(
+        opened("/a.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+        1_000,
+    );
     assert!(!lib.rename_book(a, "  \n ", 2_000));
     assert!(!lib.rename_book(a, "Book 1", 2_000));
     assert!(lib.rename_book(a, "  Moby\n Dick ", 2_000));
     assert_eq!(lib.book(a).unwrap().title.value, "Moby Dick");
     // A reopen keeps the reader's own name.
-    lib.record_open(opened("/a.pdf", 1), 3_000);
+    lib.record_open(
+        opened("/a.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+        3_000,
+    );
     assert_eq!(lib.book(a).unwrap().title.value, "Moby Dick");
 }
 
 #[test]
 fn a_books_own_design_is_kept_saved_and_cleared() {
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.epub", 1), 1_000);
+    let a = lib.record_open(
+        opened("/a.epub", 1, Format::Pdf, Some(measure(1).stamp)),
+        1_000,
+    );
     assert!(lib.book(a).unwrap().design.is_unset());
     assert!(lib.set_design(a, Some(Design::Off), 2_000));
     assert!(!lib.set_design(a, Some(Design::Off), 2_500));
-    lib.record_open(opened("/a.epub", 1), 3_000);
+    lib.record_open(
+        opened("/a.epub", 1, Format::Pdf, Some(measure(1).stamp)),
+        3_000,
+    );
     let book = lib.book(a).unwrap().clone();
     assert_eq!(book.design.value, Some(Design::Off));
     let json = serde_json::to_string(&book).unwrap();
@@ -258,7 +264,10 @@ fn twins_and_store_copies_come_back_from_disk() {
     let dir = tempfile::tempdir().unwrap();
     let folder = Folder::new(dir.path());
     let mut lib = Library::new(DEVICE);
-    let a = lib.record_open(opened("/a.pdf", 1), 1_000);
+    let a = lib.record_open(
+        opened("/a.pdf", 1, Format::Pdf, Some(measure(1).stamp)),
+        1_000,
+    );
     let t = lib.twin(a, 2_000).unwrap();
     import(&mut lib, "/s", Mode::Copy, &[found("/s/b.pdf", 2)]);
     crate::tests::save(&folder, &mut lib);

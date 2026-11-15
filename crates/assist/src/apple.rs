@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use mareader_study::{Failure, Why};
 use serde_json::Value;
 
-use crate::backend::{Backend, BoxFuture, Partial};
+use crate::backend::{Partial, forward_backend};
 use crate::board::AppleState;
 use crate::prompt::Prompt;
 
@@ -62,15 +62,7 @@ impl Apple {
     }
 }
 
-impl Backend for Apple {
-    fn ask<'a>(
-        &'a self,
-        prompt: &'a Prompt,
-        partial: Partial<'a>,
-    ) -> BoxFuture<'a, Result<Value, Failure>> {
-        Box::pin(self.answer(prompt, partial))
-    }
-}
+forward_backend!(Apple);
 
 /// What the card says for `e`.
 pub fn failure(e: &Error) -> Failure {

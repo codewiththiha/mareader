@@ -11,6 +11,13 @@ use crate::task::Task;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Box a provider's answer future at the backend seam.
+pub fn boxed<'a>(
+    answer: impl Future<Output = Result<Value, Failure>> + Send + 'a,
+) -> BoxFuture<'a, Result<Value, Failure>> {
+    Box::pin(answer)
+}
+
 /// Sees an answer as it fills in.
 pub type Partial<'a> = &'a (dyn Fn(Value) + Sync);
 
@@ -27,6 +34,23 @@ pub trait Backend: Send + Sync {
         Box::pin(async { 1 })
     }
 }
+
+/// Implement a backend whose `answer` method already returns its future.
+macro_rules! forward_backend {
+    ($type:ty) => {
+        impl $crate::backend::Backend for $type {
+            fn ask<'a>(
+                &'a self,
+                prompt: &'a $crate::prompt::Prompt,
+                partial: $crate::backend::Partial<'a>,
+            ) -> $crate::backend::BoxFuture<'a, Result<serde_json::Value, mareader_study::Failure>>
+            {
+                $crate::backend::boxed(self.answer(prompt, partial))
+            }
+        }
+    };
+}
+pub(crate) use forward_backend;
 
 /// Runs `task` on `backend`; `partial` sees readable answers so far.
 pub async fn run<T: Task>(
@@ -73,6 +97,15 @@ impl Backend for Nobody {
 
 #[cfg(test)]
 #[allow(clippy::expect_used)]
+pub(crate) fn block<F: Future>(f: F) -> F::Output {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build();
+    rt.expect("a runtime").block_on(f)
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use std::sync::Mutex;
 
@@ -96,11 +129,6 @@ mod tests {
                 Ok(json!({"pos": "adj", "meaning": "fast"}))
             })
         }
-    }
-
-    fn block<F: Future>(f: F) -> F::Output {
-        let rt = tokio::runtime::Builder::new_current_thread().build();
-        rt.expect("a runtime").block_on(f)
     }
 
     #[test]

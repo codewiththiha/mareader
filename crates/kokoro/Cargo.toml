@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 candle-core = { workspace = true }
 candle-nn = { workspace = true }
+mareader-nn-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 zip = { workspace = true }

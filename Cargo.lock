@@ -664,8 +664,6 @@ dependencies = [
 [[package]]
 name = "block"
 version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
 
 [[package]]
 name = "block-buffer"
@@ -3691,6 +3689,7 @@ version = "0.0.5"
 dependencies = [
  "candle-core",
  "candle-nn",
+ "mareader-nn-core",
  "serde",
  "serde_json",
  "zip 9.0.3",
@@ -3713,6 +3712,10 @@ name = "mareader-memory"
 version = "0.0.5"
 
 [[package]]
+name = "mareader-nn-core"
+version = "0.0.5"
+
+[[package]]
 name = "mareader-pdf"
 version = "0.0.5"
 dependencies = [
@@ -3726,6 +3729,7 @@ name = "mareader-phonon"
 version = "0.0.5"
 dependencies = [
  "candle-core",
+ "mareader-nn-core",
  "serde",
  "serde_json",
 ]
@@ -3852,6 +3856,7 @@ version = "0.0.5"
 dependencies = [
  "candle-core",
  "candle-nn",
+ "mareader-nn-core",
  "serde",
  "serde_json",
 ]

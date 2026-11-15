@@ -23,6 +23,7 @@ use mareader_workspace::PaneId;
 use crate::command::{Command, Commands};
 use crate::documents::{AiView, Documents};
 use crate::gpu::Gpu;
+use crate::stable_hash::hash;
 use crate::toast::Toast;
 
 use extract::Source;
@@ -435,12 +436,6 @@ fn pages_label((from, to): (usize, usize)) -> String {
 /// A kept span's end, as a place in the book.
 fn anchor([block, offset]: [usize; 2]) -> Anchor {
     Anchor { block, offset }
-}
-
-fn hash(v: impl Hash) -> u64 {
-    let mut h = DefaultHasher::new();
-    v.hash(&mut h);
-    h.finish()
 }
 
 /// Own page `page`'s text, to send or show beside a result.

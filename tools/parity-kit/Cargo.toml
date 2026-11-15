@@ -1,0 +1,9 @@
+[package]
+name = "parity-kit"
+description = "Shared measurements and file formats for Mareader's voice parity tools"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Standalone CI support, kept out of the app's workspace.
+[workspace]

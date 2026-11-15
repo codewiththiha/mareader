@@ -16,6 +16,23 @@ const MEMORY: usize = 64 << 20;
 /// How long an unused model stays loaded by default.
 const IDLE: Duration = Duration::from_secs(120);
 
+/// A source and its studio, with no voice loaded until one is asked for.
+pub(crate) struct Engine<S, L> {
+    pub source: S,
+    pub studio: Studio,
+    pub loaded: Option<L>,
+}
+
+impl<S, L> Engine<S, L> {
+    pub(crate) fn new(source: S, studio: Studio) -> Self {
+        Self {
+            source,
+            studio,
+            loaded: None,
+        }
+    }
+}
+
 /// One loaded thing, kept only while someone holds it.
 struct Slot<T>(Mutex<Weak<T>>);
 

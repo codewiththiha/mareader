@@ -1,29 +1,18 @@
-use std::path::PathBuf;
-
 use crate::clock::Field;
-use crate::{
-    BookId, ContentId, DeviceId, FileStamp, Format, Home, Item, Library, Measure, Opened, ShelfId,
-};
+use crate::test_support::opened;
+use crate::{BookId, DeviceId, Format, Home, Item, Library, ShelfId};
 
 const DEVICE: DeviceId = DeviceId(7);
-
-fn opened(content: u128) -> Opened {
-    Opened {
-        path: PathBuf::from(format!("/b{content}.pdf")),
-        measure: Measure {
-            content: ContentId(content),
-            stamp: FileStamp::default(),
-        },
-        format: Format::Pdf,
-        title: format!("Book {content}"),
-        author: None,
-    }
-}
 
 fn library(count: u128) -> (Library, Vec<BookId>) {
     let mut lib = Library::new(DEVICE);
     let ids = (1..=count)
-        .map(|n| lib.record_open(opened(n), n as u64))
+        .map(|n| {
+            lib.record_open(
+                opened(&format!("/b{n}.pdf"), n, Format::Pdf, None),
+                n as u64,
+            )
+        })
         .collect();
     (lib, ids)
 }
@@ -40,7 +29,7 @@ fn shelf(id: ShelfId) -> Item {
 fn new_books_and_shelves_join_the_end_of_their_level() {
     let (mut lib, ids) = library(2);
     let s = lib.create_shelf("S", None, 10).unwrap();
-    let c = lib.record_open(opened(3), 11);
+    let c = lib.record_open(opened("/b3.pdf", 3, Format::Pdf, None), 11);
     let top = lib.arranged(None, Home::Everything);
     assert_eq!(top, [books(&ids), vec![shelf(s), Item::Book(c)]].concat());
     // On a shelf, an inner shelf and books share one order too.

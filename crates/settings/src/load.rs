@@ -67,20 +67,7 @@ fn migrate(root: &mut Map<String, Value>, notes: &mut Vec<String>) {
     if stored < 6 {
         v5_to_v6(root);
     }
-    if stored < 7 {
-        v6_to_v7(root);
-    }
     root.insert("version".to_owned(), json!(SCHEMA_VERSION));
-}
-
-/// v7 added a separate switch for animated icons, on by default.
-fn v6_to_v7(root: &mut Map<String, Value>) {
-    let Some(Value::Object(motion)) = root.get_mut("motion") else {
-        return;
-    };
-    motion
-        .entry("icon_animations".to_owned())
-        .or_insert_with(|| json!(true));
 }
 
 /// v6 added Read aloud to the selection menu, after Look up if shown.

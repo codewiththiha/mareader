@@ -23,8 +23,7 @@ Don't stop to ask unless the decision is on the owner's list below.
 
 ## Owner decisions (ask, don't guess)
 
-- Allowing any new `unsafe` (only `apps/mareader/src/traffic_lights.rs`,
-  `open_files.rs` and `crates/speech/src/mac_voices.rs` have it).
+- Allowing any new `unsafe` (the complete exception list is in `AGENTS.md`).
 - Adding a dependency that is heavy (over ~50 transitive crates), copyleft, or
   replaces one named in an ADR (parley for EPUB is settled).
 - Dropping or changing a behaviour mareader users rely on. (Improving the
@@ -42,7 +41,7 @@ Don't stop to ask unless the decision is on the owner's list below.
 | `crates/workspace` | The pane split tree and its layout (no egui) |
 | `crates/settings` | Every user setting: schema, defaults, ranges, migration, mareader import (no egui) |
 | `crates/ui/src/command.rs` | `Command`: every user intent, applied in `MareaderApp::apply` |
-| `xtask` | `layers`, `parity`, `assets`, `comments`, `ci` |
+| `xtask` | `layers`, `parity`, `assets`, `unsafe`, `comments`, `ci` |
 | `parity/mareader-features.toml` | Every mareader feature, its status and evidence |
 | `docs/design.md` | The design system: colour, type, metrics, chrome, motion |
 | `docs/library.md` | The library redesign: goals, model, UI |
@@ -51,11 +50,7 @@ Don't stop to ask unless the decision is on the owner's list below.
 | `docs/porting.md` | How to rebuild a feature, what not to port, crate and concept maps |
 | `docs/memory.md` | Measured memory, budgets |
 | `docs/adr/` | Decisions: egui+wgpu, EPUB via parley, page textures, Lucide, functional parity, shared documents |
-| `tools/` | `commit_check.py`, `comment_check.py` (from mareader) |
-
-Planned crates (pdf, epub, reflow, library, settings, session, study) already
-have rows in the layer table in `xtask/src/layers.rs`. Create each when its
-milestone starts, not before.
+| `tools/` | Scripts and parity tools; see the directory |
 
 ## Commands
 

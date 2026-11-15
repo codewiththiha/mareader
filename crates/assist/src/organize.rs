@@ -124,7 +124,7 @@ impl Checkpoint {
         }
     }
 
-    /// This run, fitted to `req`: books no longer in it drop out.
+    /// This run, fitted to `req`: books absent from it drop out.
     pub fn carry_on(mut self, req: &Request) -> Self {
         let now = |key: u128| req.books.iter().find(|b| b.key == key);
         for batch in &mut self.batches {
@@ -743,6 +743,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+    use crate::backend::block;
     use crate::backend::{BoxFuture, Partial};
 
     /// Answers each prompt with what `answer` makes of it; keeps them all.
@@ -780,13 +781,6 @@ mod tests {
             title: title.to_owned(),
             author: String::new(),
         }
-    }
-
-    fn block<T>(f: impl std::future::Future<Output = T>) -> T {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build();
-        rt.expect("a runtime").block_on(f)
     }
 
     /// The book ids a Filing prompt lists, as `b1`, `b2`.

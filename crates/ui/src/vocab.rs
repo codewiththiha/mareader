@@ -120,9 +120,7 @@ impl Vocab {
 
     /// Answers on this thread, as tests need.
     pub fn set_inline(&mut self, inline: bool) {
-        #[cfg(not(target_arch = "wasm32"))]
         self.service.set_inline(inline);
-        let _ = inline;
     }
 
     pub fn attached(&self) -> bool {

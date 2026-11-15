@@ -10,6 +10,8 @@ use mareader_ui::MareaderApp;
 use mareader_ui::command::Command;
 use mareader_ui::selection::Sheet;
 
+use crate::common::find;
+
 type H = Harness<'static, MareaderApp>;
 type Out = Result<(), Box<dyn std::error::Error>>;
 
@@ -47,15 +49,6 @@ fn edge(layer: &TextLayer, sheet: Sheet, i: usize, right: bool) -> Result<Pos2, 
         r.left() + 1.0
     };
     Ok(pos2(x, r.center().y))
-}
-
-/// Where `needle` starts in the page's text, as a character index.
-fn find(layer: &TextLayer, needle: &str) -> Result<usize, String> {
-    let chars: String = layer.text.chars().iter().map(|c| c.ch).collect();
-    let at = chars
-        .find(needle)
-        .ok_or(format!("{needle} not on the page"))?;
-    Ok(chars.get(..at).unwrap_or_default().chars().count())
 }
 
 fn button(h: &mut H, pos: Pos2, pressed: bool) {

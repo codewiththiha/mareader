@@ -6,6 +6,7 @@ use egui::{Align, Layout, RichText, ScrollArea, Ui, vec2};
 use mareader_library::{BookId, Library};
 
 use super::Action;
+use super::counted::counted;
 use super::organizing::{Proposal, Spot};
 use crate::icons::Icon;
 use crate::modal::{buttons, primary, title};
@@ -195,13 +196,6 @@ fn new_tag(ui: &mut Ui, t: &Tokens) {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         ui.label(text);
     });
-}
-
-fn counted(n: usize, one: &str, many: &str) -> String {
-    match n {
-        1 => format!("1 {one}"),
-        n => format!("{n} {many}"),
-    }
 }
 
 #[cfg(test)]

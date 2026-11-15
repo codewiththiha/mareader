@@ -1,6 +1,7 @@
 //! Dial deck Appearance popover: compact tabs, colour wheel and rotary dials.
 
 mod dials;
+pub(crate) mod labels;
 mod presets;
 
 use egui::{
@@ -16,6 +17,7 @@ use crate::icons::Icon;
 use crate::icons::anim::{self, Act};
 use crate::theme::{self, Tokens};
 use crate::widgets;
+use labels::{mode_icon, noise_label, strength_percent};
 
 pub use dials::{HUES, KnobSpec, STRENGTH_ON_HUE, WHEEL_SIZE, color_wheel, rotary_knob};
 pub use presets::forget_draft;
@@ -333,7 +335,7 @@ fn tint_compact_header(
     a: &mut Appearance,
     t: &Tokens,
 ) {
-    let pct = dials::strength_percent(a.tint_strength);
+    let pct = strength_percent(a.tint_strength);
     let matched = presets.iter().find(|p| p.appearance == *a);
     let headline = if !a.has_tint() {
         "No tint".to_owned()
@@ -388,7 +390,7 @@ fn tint_compact_header(
 }
 
 fn look_side_readout(ui: &mut Ui, width: f32, presets: &[Preset], a: &mut Appearance, t: &Tokens) {
-    let pct = dials::strength_percent(a.tint_strength);
+    let pct = strength_percent(a.tint_strength);
     let matched = presets.iter().find(|p| p.appearance == *a);
     let eyebrow = match matched {
         Some(p) => format!("Preset · {}", p.name),
@@ -718,21 +720,4 @@ fn switch_line(ui: &mut Ui, title: &str, hint: &str, on: &mut bool) {
             widgets::tip(&sw, hint, None);
         });
     });
-}
-
-fn noise_label(n: NoiseMode) -> &'static str {
-    match n {
-        NoiseMode::Off => "Off",
-        NoiseMode::Static => "Static",
-        NoiseMode::Animated => "Animated",
-    }
-}
-
-fn mode_icon(b: BaseMode) -> Icon {
-    match b {
-        BaseMode::Light => Icon::Light,
-        BaseMode::Dark => Icon::Dark,
-        BaseMode::Dim => Icon::Dim,
-        BaseMode::Black => Icon::Black,
-    }
 }

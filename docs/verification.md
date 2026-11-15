@@ -31,8 +31,8 @@ on 2026-10-14:
 | | Time |
 |---|---|
 | Cold build of the gates, after a reset (one compiler at a time) | 30–35 min |
-| CI, push to a green verdict (warm GitHub cache; 2026-10-27, see "CI time") | 5.5–7 min |
-| CI, push to a red format job, digest included | 28 s |
+| CI, push to a green verdict (Rust / test median; 2026-11-10, see "CI time") | 15.2 min plus queue |
+| CI, push to a red Gate job (median Gate time, before digest) | 15.5 s |
 | `tools/ci.py shots`, dispatch to PNGs on disk | 70–85 s |
 | `tools/ci.py web`, dispatch to the preview on disk (cold wasm build) | 2.5 min |
 | `tools/ci.py cache restore` (lint builds, 1.2 GB at 7–17 MB/s, then unpack; 2026-10-27) | 2–3.5 min |
@@ -127,20 +127,23 @@ instead.
 
 ## CI time
 
-Measured over 16 runs on 2026-10-27, before the fixes below. A healthy run
-took **7.5–8 min** from push to verdict. `Rust / test` is the critical
-path; every other job runs beside it and finishes first. After the fixes,
-a run takes **5.5 min** when no crate changed, and **6.7 min** after
-editing `mareader-audio`, which most of the workspace depends on.
+Measured on 2026-11-10 from the **20 most recent completed CI workflow runs**,
+then available from 2026-11-10 04:05 through 12:50 UTC. Each cell is the median
+of that job's executed attempts; skipped and cancelled attempts are excluded,
+so `n` varies. These are job durations, not push-to-verdict promises: queueing,
+cache state and parallel jobs still determine wall-clock time. The current
+critical path is `Rust / test`, with a 15.2-minute median.
 
-| Job | Time | Note |
-|---|---|---|
-| Rust / test | 7–8 min | compile and link 5.8 min, the tests themselves 0.7 min |
-| Build / windows-latest | 4–6 min | in parallel |
-| Build / macos-latest | 3–5 min | in parallel; its queue sometimes adds 5–10 min |
-| Build / each commit | 1–2 min | in parallel |
-| Rust / lint | about 1 min | |
-| Rust / format | 20 s | |
+| Job | Median | Executed attempts |
+|---|---:|---:|
+| Gate / no compiler | 15.5 s | 18 |
+| Rust / lint | 5 min 14 s | 7 |
+| Rust / test | 15 min 11 s | 7 |
+| Build / macos-latest | 16 min 41 s | 5 |
+| Build / windows-latest | 24 min 12 s | 5 |
+| Gate / shape + fmt + changed crates (former job) | 3 min 38 s | 2 |
+| Check / macos-latest (former job) | 5 min 8 s | 2 |
+| Check / windows-latest (former job) | 7 min 7 s | 2 |
 
 What made a change take an hour or more, and the fix for each:
 
@@ -523,3 +526,10 @@ in the bar and slide with the sidebar, and books open from Finder into
 the running window. All passed. Each installer's launch is also checked
 in CI on every OS (`docs/packaging.md` § Installers from CI).
 
+
+### Review batch transition
+
+The S0 branch proposes a pinned toolchain, a no-compiler gate, main-only build
+cache writes and cache garbage collection. Timings and cache behavior are not
+verified until the owner authorizes the final merged CI run. The review's
+one-time cache purge is an owner operation and has not been performed here.

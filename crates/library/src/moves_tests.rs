@@ -26,7 +26,7 @@ fn copy_of(lib: &Library, id: BookId) -> Copied {
 }
 
 /// A book opened from nowhere a folder reads, filed on `shelf`.
-fn opened_on(lib: &mut Library, title: &str, content: u128, shelf: ShelfId) -> BookId {
+fn recorded_on(lib: &mut Library, title: &str, content: u128, shelf: ShelfId) -> BookId {
     let opened = Opened {
         path: PathBuf::from(format!("/loose/{content}.pdf")),
         measure: Measure {
@@ -110,8 +110,8 @@ fn two_dunes() -> (Library, BookId, BookId, [ShelfId; 3]) {
     let here = lib.create_shelf("Here", None, 1).unwrap();
     let there = lib.create_shelf("There", None, 1).unwrap();
     let also = lib.create_shelf("Also", None, 1).unwrap();
-    let kept = opened_on(&mut lib, "Dune", 1, here);
-    let moving = opened_on(&mut lib, "dune", 2, there);
+    let kept = recorded_on(&mut lib, "Dune", 1, here);
+    let moving = recorded_on(&mut lib, "dune", 2, there);
     lib.file(moving, also, 2);
     (lib, kept, moving, [here, there, also])
 }
@@ -334,7 +334,7 @@ fn off_to_the_top_a_book_leaves_only_the_shelf_it_left() {
 fn a_link_stands_among_its_level_and_moves_as_a_card() {
     let mut lib = Library::new(DEVICE);
     let poems = lib.create_shelf("Poems", None, 1_000).unwrap();
-    let dune = opened_on(&mut lib, "Dune", 1, poems);
+    let dune = recorded_on(&mut lib, "Dune", 1, poems);
     let link = lib.link_to(crate::LinkTo::Book(dune), None, 2_000).unwrap();
     let top = lib.arranged(None, crate::Home::Unshelved);
     assert_eq!(
@@ -408,8 +408,8 @@ fn a_book_turned_copy_onto_the_librarys_own_may_become_a_link_to_it() {
     let stone = lib.folder(folder).unwrap().tombstone(ContentId(1)).unwrap();
     assert!(stone.moved, "the folder doesn't place it again");
     // A book that was already a copy meets the plain question.
-    let b = opened_on(&mut lib, "b", 20, root);
-    let twin = opened_on(&mut lib, "b", 21, mine);
+    let b = recorded_on(&mut lib, "b", 20, root);
+    let twin = recorded_on(&mut lib, "b", 21, mine);
     let plain = ask_moving(&mut lib, b, root, mine);
     assert_eq!((plain.offers(), plain.existing), (Placement::MOVE, twin));
 }

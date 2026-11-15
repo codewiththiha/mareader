@@ -14,6 +14,7 @@ use mareader_library::{
 };
 
 use super::add::{self, Here};
+use super::counted::counted;
 use super::covers::Covers;
 use super::folders;
 use super::living::{Grab, Motion};
@@ -323,14 +324,6 @@ pub fn page_columns(page_width: f32) -> u8 {
 fn auto_columns(width: f32) -> u8 {
     let n = ((width + GAP) / (CARD_MIN + GAP)).floor();
     (n.clamp(0.0, 255.0) as u8).clamp(COLUMNS_MIN, COLUMNS_MAX)
-}
-
-/// "3 books", "1 shelf": a count and its noun.
-fn counted(n: usize, one: &str, many: &str) -> String {
-    match n {
-        1 => format!("1 {one}"),
-        n => format!("{n} {many}"),
-    }
 }
 
 /// One left edge for the title, the chips and the covers or thumbnails.

@@ -115,9 +115,5 @@ fn a_run_in_another_family_gets_its_own_face() {
 
 #[test]
 fn every_page_draws() {
-    let book = open();
-    for page in 0..book.page_count() {
-        let pixels = book.render(page, 0.5, [0, 0, 397, 561]).unwrap();
-        assert!(pixels.rgba.chunks(4).any(|p| p[0] < 128), "page {page}");
-    }
+    crate::common::every_page_draws(&open());
 }

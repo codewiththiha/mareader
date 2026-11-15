@@ -9,6 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
+parity-kit = { path = "../parity-kit" }
 mareader-vits = { path = "../../crates/vits" }
 mareader-g2p = { path = "../../crates/g2p" }
 serde = { version = "1", features = ["derive"] }

@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+autotests = false
 
 [lints]
 workspace = true
@@ -30,3 +31,7 @@ zip = { workspace = true }
 mareader-script = { workspace = true }
 # Checks rebuilt WOFF2 glyphs outline as the originals do.
 skrifa = { workspace = true }
+
+[[test]]
+name = "epub"
+path = "tests/main.rs"

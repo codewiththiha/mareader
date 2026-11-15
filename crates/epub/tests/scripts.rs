@@ -6,19 +6,12 @@ use mareader_epub::{Book, Destination, Inserts, Scripted};
 use mareader_reflow::Typography;
 use mareader_script::{Ask, Change, Engine, Page};
 
+use crate::common::text;
+
 const BOOK: &[u8] = include_bytes!("books/scripts.epub");
 
 fn open() -> Book {
     Book::open(Arc::new(BOOK.to_vec()), &Typography::default()).unwrap()
-}
-
-fn text(book: &Book) -> String {
-    let pages = 0..book.page_count();
-    let lines = pages.flat_map(|p| book.text(p));
-    lines
-        .map(|l| l.chars.iter().map(|c| c.ch).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn page(s: &Scripted) -> Page {

@@ -1,27 +1,12 @@
 //! One-frame generated resting glyphs and their bounded texture cache.
 
-use std::collections::HashMap;
-
 use egui::{Context, Id, Image, Rect, TextureHandle, TextureOptions, Ui, Vec2};
 use mareader_animated_icons::{Pack, RestingGlyph};
 
+use super::lru::{ByteLruCache, PackKey};
+
 const CACHE_BYTES: usize = 4 * 1024 * 1024;
 const CACHE_ENTRIES: usize = 512;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct GlyphKey {
-    pack: usize,
-    side: u16,
-}
-
-impl GlyphKey {
-    fn new(pack: &'static Pack, side: u16) -> Self {
-        Self {
-            pack: pack as *const Pack as usize,
-            side,
-        }
-    }
-}
 
 #[derive(Clone)]
 struct CachedGlyph {
@@ -56,55 +41,29 @@ impl CachedGlyph {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct RestingStore {
-    entries: HashMap<GlyphKey, (CachedGlyph, usize, u64)>,
-    bytes: usize,
-    stamp: u64,
+    cache: ByteLruCache<PackKey, CachedGlyph>,
 }
 
-impl RestingStore {
-    fn get(&mut self, key: &GlyphKey) -> Option<CachedGlyph> {
-        self.stamp = self.stamp.wrapping_add(1);
-        let entry = self.entries.get_mut(key)?;
-        entry.2 = self.stamp;
-        Some(entry.0.clone())
-    }
-
-    fn insert(&mut self, key: GlyphKey, glyph: CachedGlyph, cost: usize) {
-        if cost > CACHE_BYTES {
-            return;
+impl Default for RestingStore {
+    fn default() -> Self {
+        Self {
+            cache: ByteLruCache::new(CACHE_BYTES, CACHE_ENTRIES),
         }
-        if let Some((_, old_cost, _)) = self.entries.remove(&key) {
-            self.bytes = self.bytes.saturating_sub(old_cost);
-        }
-        while self.bytes.saturating_add(cost) > CACHE_BYTES || self.entries.len() >= CACHE_ENTRIES {
-            let Some(oldest) = self
-                .entries
-                .iter()
-                .min_by_key(|(_, (_, _, used))| *used)
-                .map(|(key, _)| *key)
-            else {
-                break;
-            };
-            if let Some((_, old_cost, _)) = self.entries.remove(&oldest) {
-                self.bytes = self.bytes.saturating_sub(old_cost);
-            }
-        }
-        self.stamp = self.stamp.wrapping_add(1);
-        self.entries.insert(key, (glyph, cost, self.stamp));
-        self.bytes = self.bytes.saturating_add(cost);
     }
 }
 
 pub(super) fn image(ui: &Ui, pack: &'static Pack, size: f32) -> Image<'static> {
     let ctx = ui.ctx();
     let side = side(size, ctx.pixels_per_point());
-    let key = GlyphKey::new(pack, side as u16);
+    let key = PackKey::new(pack, side as u16);
     let store_id = Id::new("resting-icon-glyphs");
     if let Some(glyph) = ctx.data_mut(|data| {
         data.get_temp_mut_or_default::<RestingStore>(store_id)
+            .cache
             .get(&key)
+            .cloned()
     }) {
         return glyph.image(size);
     }
@@ -116,6 +75,7 @@ pub(super) fn image(ui: &Ui, pack: &'static Pack, size: f32) -> Image<'static> {
     let image = cached.image(size);
     ctx.data_mut(|data| {
         data.get_temp_mut_or_default::<RestingStore>(store_id)
+            .cache
             .insert(key, cached, bytes);
     });
     image
@@ -193,7 +153,10 @@ mod tests {
         output.textures_delta.clear();
         let store_id = Id::new("resting-icon-glyphs");
         let store = ctx.data(|data| data.get_temp::<RestingStore>(store_id));
-        assert_eq!(store.as_ref().map(|store| store.entries.len()), Some(1));
-        assert!(store.is_some_and(|store| store.bytes > 0));
+        assert_eq!(
+            store.as_ref().map(|store| store.cache.entries.len()),
+            Some(1)
+        );
+        assert!(store.is_some_and(|store| store.cache.bytes > 0));
     }
 }

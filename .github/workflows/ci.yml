@@ -2,60 +2,106 @@ name: CI
 
 on:
   push:
-    # Work branches too (AGENTS.md): CI mode proves them before main.
-    branches: [main, "feat/**", "fix/**", "perf/**", "refactor/**", "docs/**",
-               "test/**", "build/**", "ci/**", "chore/**"]
-    # Prose only: docs/ and the top-level notes (AGENTS.md, README.md).
+    branches: [main, "feat/**", "fix/**", "perf/**", "refactor/**", "docs/**", "test/**", "build/**", "ci/**", "chore/**"]
     paths-ignore: ["docs/**", "*.md"]
   pull_request:
+  schedule:
+    - cron: "17 3 */3 * *"
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Linux jobs stay on 24.04: 26.04's Mesa crashes the GPU tests at random.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
-  # Full DWARF slowed linking the test binaries; lines still name frames.
+  CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
-  format:
-    name: Rust / format
+  gate:
+    name: Gate / no compiler
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      base: ${{ steps.base.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: base
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base="$BEFORE"
+          if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git merge-base origin/main HEAD)
+            [ "$base" != "$(git rev-parse HEAD)" ] || base=$(git rev-parse HEAD~1)
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - run: rustup toolchain install
       - run: cargo fmt --all --check
+      - run: python3 tools/shape_check.py --dups
+      - name: Docs, comments, commit subjects
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          changed=$(git diff --name-only --diff-filter=AM "$BASE" -- '*.rs' ':!vendor/**')
+          [ -z "$changed" ] || python3 tools/comment_check.py $changed
+          python3 tools/comment_budget.py "$BASE"
+          python3 tools/commit_check.py --range "$BASE..HEAD"
 
   lint:
     name: Rust / lint
+    needs: gate
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      # ALSA's headers, for the narration's sound output.
+        with:
+          shared-key: check
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
       - uses: ./.github/actions/apt
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo check each earlier commit
+        env:
+          BASE: ${{ needs.gate.outputs.base }}
+        run: |
+          head=$(git rev-parse HEAD)
+          for c in $(git rev-list --reverse "$BASE..HEAD~1"); do
+            git checkout -q "$c"
+            echo "::group::$(git log -1 --format='%h %s')"
+            cargo check --workspace --all-targets --locked
+            echo "::endgroup::"
+          done
+          git checkout -q "$head"
 
   test:
     name: Rust / test
+    needs: gate
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      # lavapipe gives wgpu a software Vulkan device for kittest renders.
+        with:
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
       - uses: ./.github/actions/apt
         with:
           packages: mesa-vulkan-drivers libasound2-dev libspeechd-dev libclang-dev
-      - run: cargo test --workspace
+      - run: cargo test --workspace --locked
       - run: cargo xtask layers
       - run: cargo xtask parity
       - run: cargo xtask assets
@@ -63,65 +109,52 @@ jobs:
 
   platforms:
     name: Build / ${{ matrix.os }}
+    needs: gate
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      # The macOS-only modules, with and without their feature flags. Native:
-      # bundled SQLite's C can't cross-compile without the macOS SDK.
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
       - if: runner.os == 'macOS'
-        run: cargo clippy -p mareader -- -D warnings
+        run: cargo clippy -p mareader --locked -- -D warnings
       - if: runner.os == 'macOS'
-        run: cargo clippy -p mareader --no-default-features -- -D warnings
-      - run: cargo build -p mareader
-      # Explorer and shortcuts read the icon from the exe (build.rs).
+        run: cargo clippy -p mareader --locked --no-default-features -- -D warnings
+      - run: cargo build -p mareader --locked
+      - if: runner.os == 'macOS'
+        name: Verify Apple dependency future compatibility
+        run: |
+          cargo tree -i block@0.1.6 --locked | tee "$RUNNER_TEMP/block-tree.txt"
+          grep -F 'vendor/block' "$RUNNER_TEMP/block-tree.txt"
+          report="$RUNNER_TEMP/future-incompat.txt"
+          set +e
+          cargo report future-incompatibilities --locked >"$report" 2>&1
+          status=$?
+          set -e
+          cat "$report"
+          if [ "$status" -ne 0 ] && ! grep -q 'no reports are currently available' "$report"; then
+            exit "$status"
+          fi
+          if grep -q 'future incompatibility lints' "$report"; then
+            echo '::error::a dependency still has a future-incompatibility report'
+            exit 1
+          fi
       - if: runner.os == 'Windows'
         shell: pwsh
         run: ./tools/exe-icons.ps1 target/debug/mareader.exe
 
-  commits:
-    name: Build / each commit
-    runs-on: ubuntu-24.04
-    # Every commit builds alone, so `git bisect` never stops on a broken one.
-    # Warnings are the lint job's: a split commit may briefly leave dead code.
-    env:
-      RUSTFLAGS: ""
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: ./.github/actions/apt
-      - name: cargo check each new commit
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          # A new branch has no "before": check what it adds to main.
-          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            BASE=$(git merge-base origin/main "$HEAD")
-            [ "$BASE" = "$HEAD" ] && BASE="$HEAD~1"
-          fi
-          for c in $(git rev-list --reverse "$BASE..$HEAD"); do
-            git checkout -q "$c"
-            echo "::group::$(git log -1 --format='%h %s')"
-            cargo check --workspace --all-targets --locked
-            echo "::endgroup::"
-          done
-
-  # A green push refreshes the sandbox cache; tools/ci.py's verdict skips it.
   refresh:
     name: Cache / sandbox
-    needs: [format, lint, test, platforms, commits]
-    if: github.event_name == 'push'
+    needs: [lint, test, platforms]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       actions: write
@@ -129,5 +162,5 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh workflow run remote.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+          gh workflow run remote.yml -R "$GITHUB_REPOSITORY" --ref main
           -f task=cache -f sha="$GITHUB_SHA" -f id=after-ci

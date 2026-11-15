@@ -176,6 +176,8 @@ struct Card {
     role: Option<Role>,
 }
 
+crate::word_card::impl_card!(Card);
+
 /// The right-click menu on a mark.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MarkMenu {
@@ -409,9 +411,7 @@ impl Study {
 
     /// The tagger's answer for the open card, if it is still `word`'s.
     pub fn set_role(&mut self, word: &str, role: Role) {
-        if let Some(card) = self.card.as_mut().filter(|c| c.word == word) {
-            card.role = Some(role);
-        }
+        crate::word_card::set_role(&mut self.card, word, role);
     }
 
     /// The open card's answer, once it came, for tests.

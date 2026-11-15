@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::run::Copied;
 use crate::run_tests::{DEVICE, found};
+use crate::test_support::opened as base_opened;
 use crate::{BookId, ContentId, Found, Library, Opened, Origin};
 
 const STORE: &str = "/lib/files";
@@ -26,15 +27,16 @@ fn picked(lib: &mut Library, file: &Found) -> (BookId, PathBuf) {
 }
 
 /// An open of `path`, as the reader records one.
-fn opened(path: &Path, content: u128) -> Opened {
+fn store_open(path: &Path, content: u128) -> Opened {
     let file = found(&path.to_string_lossy(), content);
-    Opened {
-        path: file.path,
-        measure: file.measure,
-        format: file.format,
-        title: "x".into(),
-        author: None,
-    }
+    let mut opened = base_opened(
+        &path.to_string_lossy(),
+        content,
+        file.format,
+        Some(file.measure.stamp),
+    );
+    opened.title = "x".into();
+    opened
 }
 
 fn home(lib: &Library, id: BookId) -> (Origin, Option<PathBuf>) {
@@ -47,7 +49,7 @@ fn opening_the_library_s_copy_keeps_it_the_library_s() {
     let mut lib = Library::new(DEVICE);
     let file = found("/downloads/a.pdf", 1);
     let (book, path) = picked(&mut lib, &file);
-    assert_eq!(lib.record_open(opened(&path, 1), 5), book);
+    assert_eq!(lib.record_open(store_open(&path, 1), 5), book);
     assert_eq!(home(&lib, book), (Origin::Store, Some(file.path.clone())));
     assert_eq!(lib.book(book).unwrap().locations.len(), 1);
     assert_eq!(lib.receipt(&[book]).copies, 1, "removing deletes it");
@@ -64,7 +66,7 @@ fn opening_a_kept_copy_stays_with_its_own_book() {
     };
     let kept = lib.land_copies(&[(file, copy.clone())], None, 3)[0];
     assert_ne!(kept, first, "a second book of the same content");
-    assert_eq!(lib.record_open(opened(&copy.path, 1), 5), kept);
+    assert_eq!(lib.record_open(store_open(&copy.path, 1), 5), kept);
     assert_eq!(home(&lib, kept).0, Origin::Store);
     assert_eq!(lib.book(first).unwrap().locations.len(), 1);
 }
@@ -72,7 +74,7 @@ fn opening_a_kept_copy_stays_with_its_own_book() {
 #[test]
 fn opening_a_file_by_hand_still_reads_it_in_place() {
     let mut lib = Library::new(DEVICE);
-    let book = lib.record_open(opened(Path::new("/desk/b.pdf"), 2), 5);
+    let book = lib.record_open(store_open(Path::new("/desk/b.pdf"), 2), 5);
     assert_eq!(home(&lib, book), (Origin::Opened, None));
 }
 
@@ -80,8 +82,8 @@ fn opening_a_file_by_hand_still_reads_it_in_place() {
 fn copies_an_open_marked_as_opened_are_the_library_s_again() {
     let mut lib = Library::new(DEVICE);
     let (book, _) = picked(&mut lib, &found("/downloads/a.pdf", 1));
-    let by_hand = lib.record_open(opened(Path::new("/desk/b.pdf"), 2), 3);
-    let odd = lib.record_open(opened(Path::new("/lib/files/c.pdf"), 3), 3);
+    let by_hand = lib.record_open(store_open(Path::new("/desk/b.pdf"), 2), 3);
+    let odd = lib.record_open(store_open(Path::new("/lib/files/c.pdf"), 3), 3);
     for location in lib.books.get_mut(&book).unwrap().locations.iter_mut() {
         location.origin = Origin::Opened;
     }

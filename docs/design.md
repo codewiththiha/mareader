@@ -570,18 +570,14 @@ Lucide 1.34.0 geometry is compiled from build-only declarations behind
   context-local bound. One image quad uses virtual-canvas UVs to preserve the
   original margins, then the button or `Icon::paint` applies the current tint.
   No animation atlas, XML parser or `egui-lucide` dependency is involved.
-- **Our own SVGs (2026-10-22).** `Icon::svg` serves the few marks outside the
-  stock set, white and tinted like the rest. The **AI mark**, "AI" in strokes
-  in a rounded frame, marks everything the AI does. The AI models tab pairs it
-  with the generated chip. Providers' logos (`crates/ui/assets/logos`, from
-  Simple Icons under CC0) sit in ink on a quiet tile; a custom server shows the
-  generated server glyph.
-- **The voices' own marks (2026-11-06).** Each voice engine has a custom static
-  mark under `crates/ui/assets/engines`. `Icon::engine` maps an engine id to its
-  mark; an engine with no mark of its own keeps the generated waveform. These
-  SVGs use the same 24-unit grid and stroke 2, so they tint and align with the
-  generated stock glyphs.
-- **Icons that move (2026-11-06).** `mareader-animated-icons` holds 98 generated
+- **Provider SVGs (2026-10-22).** `Icon::svg` serves providers' logos from
+  `crates/ui/assets/logos` (Simple Icons under CC0), white and tinted like the
+  rest. They sit in ink on a quiet tile; a custom server shows the generated
+  server glyph. The AI mark and all six voice marks use generated packs.
+- **The voices' own marks (2026-11-10).** `Icon::engine` maps an engine id to
+  its generated Kokoro, Piper, Kitten, Phonon, system or silent pack. They use
+  the same 24-unit grid and stroke 2 as the other glyphs.
+- **Icons that move (2026-11-10).** `mareader-animated-icons` holds 104 generated
   typed scenes and finite timelines. On the first interaction for a pack and
   physical side, one bounded worker rasterises tightly cropped, deduplicated
   layer-state variants and packs them into one neutral-white texture. The UI
