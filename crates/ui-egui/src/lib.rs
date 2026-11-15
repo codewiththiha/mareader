@@ -70,6 +70,7 @@ pub mod view_menu;
 pub mod vocab;
 pub mod widgets;
 pub mod word_list;
+pub mod z_order;
 pub mod zoom;
 
 pub use app::MareaderApp;

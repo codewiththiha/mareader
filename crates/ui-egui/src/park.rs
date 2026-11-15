@@ -1,6 +1,8 @@
 //! Whole floating panels resting partly beyond a stage edge.
 
-use egui::{Context, CursorIcon, Id, Order, Rect, Sense, Vec2, pos2};
+use egui::{Context, CursorIcon, Id, Rect, Sense, Vec2, pos2};
+
+use crate::z_order::{self, Tier};
 
 /// The visible part of a panel left at rest, in points.
 pub const PEEK: f32 = 20.0;
@@ -213,8 +215,7 @@ pub fn reveal(ctx: &Context, id: Id, rect: Rect, stage: Rect, label: &str) -> bo
     if peek.width() <= 0.0 || peek.height() <= 0.0 {
         return false;
     }
-    egui::Area::new(id)
-        .order(Order::Tooltip)
+    z_order::area(ctx, Tier::FloatingTool, id)
         .fixed_pos(peek.min)
         .constrain(false)
         .interactable(true)

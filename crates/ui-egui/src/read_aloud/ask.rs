@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use egui::{
-    Align2, Context, CornerRadius, CursorIcon, Galley, Id, Order, Rect, Sense, Shadow, Stroke, Ui,
+    Align2, Context, CornerRadius, CursorIcon, Galley, Id, Rect, Sense, Shadow, Stroke, Ui,
     WidgetInfo, WidgetType, pos2, vec2,
 };
 use mareader_engine::read_aloud::parts::Kind;
@@ -11,6 +11,7 @@ use mareader_engine::read_aloud::parts::Kind;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
+use crate::z_order::{self, Tier};
 
 /// The pill's height, and its gap above the player.
 const HEIGHT: f32 = 44.0;
@@ -33,9 +34,8 @@ pub(super) fn show(
     remember: Option<&mut bool>,
 ) -> Option<bool> {
     let foot = pos2(player.center().x, player.top() - GAP + (1.0 - shown) * RISE);
-    let area = egui::Area::new(Id::new("read-aloud-ask"))
+    let area = z_order::area(ctx, Tier::FloatingTool, Id::new("read-aloud-ask"))
         .fade_in(false)
-        .order(Order::Foreground)
         .pivot(Align2::CENTER_BOTTOM)
         .fixed_pos(foot)
         .constrain(false)

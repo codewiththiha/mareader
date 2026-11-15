@@ -1,8 +1,8 @@
 //! Chrome, header bar, and resize handles for the Dictionary window.
 
 use egui::{
-    Align, Context, CursorIcon, Id, Layout, Order, Rect, RichText, Sense, Stroke, Ui, UiBuilder,
-    pos2, vec2,
+    Align, Context, CursorIcon, Id, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, pos2,
+    vec2,
 };
 use mareader_engine::command::Command;
 use mareader_engine::dict::{Action, Window};
@@ -11,6 +11,7 @@ use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
+use crate::z_order::{self, Tier};
 
 use super::window::{CLOSE, EXPAND, Frame, MINIMIZE, RESTORE};
 use super::window_geom::{GRIP, HEAD, Morph, ease, stretch};
@@ -36,13 +37,12 @@ pub(super) fn paint_window_area(
     out: &mut Commands,
 ) -> (egui::LayerId, bool) {
     let mut released = false;
-    let area = egui::Area::new(Id::new("dict-window"))
-        .order(Order::Middle)
+    let area = z_order::area(ctx, Tier::FloatingTool, Id::new("dict-window"))
         .fixed_pos(state.shown.min)
         .constrain(false)
         .movable(false)
         .interactable(!state.closing && !state.parked);
-    let layer = egui::LayerId::new(Order::Middle, area.layer().id);
+    let layer = area.layer();
     let grow = 0.96 + 0.04 * state.appear;
     let anchor = pos2(state.shown.center().x, state.shown.top());
     let lift = vec2(0.0, 8.0 * (1.0 - state.appear));

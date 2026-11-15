@@ -1,9 +1,10 @@
 //! Compact floating orb mode for the read-aloud player while obstructed.
 
-use egui::{Context, Id, Order, Rect};
+use egui::{Context, Id, Rect};
 use mareader_engine::read_aloud::player::{Lyrics, View};
 
 use crate::theme::Tokens;
+use crate::z_order::{self, Tier};
 
 use super::{card, control};
 
@@ -73,8 +74,7 @@ pub(super) fn show_orb(
     view: &View<'_>,
     lyrics: Option<&Lyrics>,
 ) -> bool {
-    egui::Area::new(Id::new("read-aloud-orb"))
-        .order(Order::Foreground)
+    z_order::area(ctx, Tier::FloatingTool, Id::new("read-aloud-orb"))
         .fixed_pos(rect.min)
         .constrain(false)
         .movable(false)

@@ -4,6 +4,7 @@ mod card;
 mod stack;
 
 use crate::ui_command::{Commands, Sent, UiCommand};
+use crate::z_order::{self, Tier};
 use egui::{Context, Id, Rect, pos2};
 use mareader_engine::toast::{Toast, Tone};
 
@@ -64,7 +65,7 @@ fn open_menus(ctx: &Context) -> Vec<Rect> {
         return Vec::new();
     }
     let shown: Vec<(Id, Rect)> = ctx.memory(|m| {
-        let up = |l: &egui::LayerId| l.order == egui::Order::Foreground && m.areas().is_visible(l);
+        let up = |l: &egui::LayerId| z_order::is_popup_order(*l) && m.areas().is_visible(l);
         let layers = m.layer_ids().filter(up);
         layers
             .filter_map(|l| Some((l.id, m.area_rect(l.id)?)))
@@ -470,8 +471,7 @@ impl Toasts {
             ((now - live.born.unwrap_or(now)) / fade).clamp(0.0, 1.0) as f32
         };
         let shown = rect.translate(egui::vec2(0.0, (1.0 - progress) * 12.0));
-        let response = egui::Area::new(Id::new("toast-island"))
-            .order(egui::Order::Middle)
+        let response = z_order::area(ctx, Tier::AttachedPill, Id::new("toast-island"))
             .fixed_pos(shown.min)
             .constrain(false)
             .show(ctx, |ui| {

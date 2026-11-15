@@ -1,8 +1,7 @@
 //! The word card and the mark menu.
 
 use egui::{
-    Align, Align2, Context, Frame, Id, Layout, Margin, Order, Rect, RichText, ScrollArea, Stroke,
-    Ui, vec2,
+    Align, Align2, Context, Frame, Id, Layout, Margin, Rect, RichText, ScrollArea, Stroke, Ui, vec2,
 };
 use mareader_cefr::Role;
 use mareader_library::{MarkId, Style};
@@ -14,6 +13,7 @@ use crate::bubble::{Bubble, Side};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
+use crate::z_order::{self, Tier};
 use crate::{motion, widgets};
 use mareader_engine::command::Command;
 use mareader_engine::study::Action;
@@ -263,8 +263,7 @@ pub fn menu(
 ) -> Rect {
     let id = Id::new("study-mark-menu");
     let (pos, pivot) = menu_place(ctx, id, at, words);
-    let rect = egui::Area::new(id)
-        .order(Order::Foreground)
+    let rect = z_order::area(ctx, Tier::Popover, id)
         .pivot(pivot)
         .fixed_pos(pos)
         .constrain(true)

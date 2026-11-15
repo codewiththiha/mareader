@@ -4,9 +4,9 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use egui::{
-    Align, Area, Color32, ColorImage, Context, CursorIcon, FontId, Id, Key, Layout, Modifiers,
-    Order, Pos2, Rect, Sense, Spinner, TextureHandle, TextureOptions, UiBuilder, Vec2, WidgetInfo,
-    WidgetType, pos2, vec2,
+    Align, Color32, ColorImage, Context, CursorIcon, FontId, Id, Key, Layout, Modifiers, Pos2,
+    Rect, Sense, Spinner, TextureHandle, TextureOptions, UiBuilder, Vec2, WidgetInfo, WidgetType,
+    pos2, vec2,
 };
 use mareader_pdf::Bounds;
 use mareader_reflow::Picture;
@@ -15,6 +15,7 @@ use mareader_session::Document;
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::widgets;
+use crate::z_order::{self, Tier};
 
 /// Decoded no larger than this on its long edge.
 const SIDE: u32 = 4096;
@@ -170,103 +171,102 @@ pub fn show(ctx: &Context, viewer: &mut Viewer, t: &Tokens) -> bool {
     ctx.data_mut(|d| d.insert_temp(shown_id(), pass));
     let screen = ctx.content_rect();
     let mut open = true;
-    Area::new(Id::new("picture viewer"))
-        .order(Order::Foreground)
-        .fixed_pos(screen.min)
-        .show(ctx, |ui| {
-            let sense = Sense::click_and_drag();
-            let (rect, back) = ui.allocate_exact_size(screen.size(), sense);
-            back.widget_info(|| WidgetInfo::labeled(WidgetType::Image, true, &viewer.label));
-            ui.painter()
-                .rect_filled(rect, 0.0, Color32::from_black_alpha(225));
-            let mut room = rect.shrink(GAP);
-            room.max.y -= BAR + GAP / 2.0;
-            let centre = room.center();
-            let fit = (room.width() / viewer.size.x)
-                .min(room.height() / viewer.size.y)
-                .clamp(0.01, ENLARGE);
-            let scale = viewer.zoom.unwrap_or(fit);
-            let pointer = ctx.pointer_hover_pos().map_or(Vec2::ZERO, |p| p - centre);
-            if back.hovered() {
-                let (scroll, pinch) = ctx.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
-                let by = pinch * ((scroll.x + scroll.y) * 0.002).exp();
-                if (by - 1.0).abs() > 1e-4 {
-                    viewer.zoom_to(scale * by, (scale, fit), pointer);
-                }
+    let area = z_order::area(ctx, Tier::Modal, Id::new("picture viewer")).fixed_pos(screen.min);
+    ctx.memory_mut(|m| m.set_modal_layer(area.layer()));
+    area.show(ctx, |ui| {
+        let sense = Sense::click_and_drag();
+        let (rect, back) = ui.allocate_exact_size(screen.size(), sense);
+        back.widget_info(|| WidgetInfo::labeled(WidgetType::Image, true, &viewer.label));
+        ui.painter()
+            .rect_filled(rect, 0.0, Color32::from_black_alpha(225));
+        let mut room = rect.shrink(GAP);
+        room.max.y -= BAR + GAP / 2.0;
+        let centre = room.center();
+        let fit = (room.width() / viewer.size.x)
+            .min(room.height() / viewer.size.y)
+            .clamp(0.01, ENLARGE);
+        let scale = viewer.zoom.unwrap_or(fit);
+        let pointer = ctx.pointer_hover_pos().map_or(Vec2::ZERO, |p| p - centre);
+        if back.hovered() {
+            let (scroll, pinch) = ctx.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
+            let by = pinch * ((scroll.x + scroll.y) * 0.002).exp();
+            if (by - 1.0).abs() > 1e-4 {
+                viewer.zoom_to(scale * by, (scale, fit), pointer);
             }
-            if back.dragged() {
-                viewer.pan += back.drag_delta();
+        }
+        if back.dragged() {
+            viewer.pan += back.drag_delta();
+        }
+        if back.double_clicked() {
+            if viewer.zoom.is_some() {
+                viewer.zoom = None;
+                viewer.pan = Vec2::ZERO;
+            } else {
+                let near = if fit < 1.0 { 1.0 } else { fit * 2.0 };
+                viewer.zoom_to(near, (scale, fit), pointer);
             }
-            if back.double_clicked() {
-                if viewer.zoom.is_some() {
-                    viewer.zoom = None;
-                    viewer.pan = Vec2::ZERO;
-                } else {
-                    let near = if fit < 1.0 { 1.0 } else { fit * 2.0 };
-                    viewer.zoom_to(near, (scale, fit), pointer);
-                }
+        }
+        let mut press = keys(ctx);
+        let shown = vec2(viewer.size.x, viewer.size.y) * viewer.zoom.unwrap_or(fit);
+        let extra = ((shown - room.size()) / 2.0).max(Vec2::ZERO);
+        viewer.pan = viewer.pan.clamp(-extra, extra);
+        let at = Rect::from_center_size(centre + viewer.pan, shown);
+        let pixels = viewer.pixels.lock().unwrap_or_else(PoisonError::into_inner);
+        match &*pixels {
+            Pixels::Shown(texture) => {
+                let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));
+                ui.painter().image(texture.id(), at, uv, Color32::WHITE);
             }
-            let mut press = keys(ctx);
-            let shown = vec2(viewer.size.x, viewer.size.y) * viewer.zoom.unwrap_or(fit);
-            let extra = ((shown - room.size()) / 2.0).max(Vec2::ZERO);
-            viewer.pan = viewer.pan.clamp(-extra, extra);
-            let at = Rect::from_center_size(centre + viewer.pan, shown);
-            let pixels = viewer.pixels.lock().unwrap_or_else(PoisonError::into_inner);
-            match &*pixels {
-                Pixels::Shown(texture) => {
-                    let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));
-                    ui.painter().image(texture.id(), at, uv, Color32::WHITE);
-                }
-                Pixels::Waiting(_) => {
-                    let spin = Rect::from_center_size(centre, Vec2::splat(28.0));
-                    ui.put(spin, Spinner::new().color(Color32::from_gray(200)));
-                }
-                Pixels::Failed => {
-                    ui.painter().text(
-                        centre,
-                        egui::Align2::CENTER_CENTER,
-                        "This picture couldn't be opened.",
-                        FontId::proportional(t.text),
-                        Color32::from_gray(220),
-                    );
-                }
+            Pixels::Waiting(_) => {
+                let spin = Rect::from_center_size(centre, Vec2::splat(28.0));
+                ui.put(spin, Spinner::new().color(Color32::from_gray(200)));
             }
-            drop(pixels);
-            let outside = back.interact_pointer_pos().is_some_and(|p| !at.contains(p));
-            if back.clicked() && outside {
-                press = Some(Press::Close);
+            Pixels::Failed => {
+                ui.painter().text(
+                    centre,
+                    egui::Align2::CENTER_CENTER,
+                    "This picture couldn't be opened.",
+                    FontId::proportional(t.text),
+                    Color32::from_gray(220),
+                );
             }
-            if back.dragged() {
-                ctx.set_cursor_icon(CursorIcon::Grabbing);
-            } else if back.hovered()
-                && (extra.x > 0.0 || extra.y > 0.0)
-                && ctx.pointer_hover_pos().is_some_and(|p| at.contains(p))
-            {
-                ctx.set_cursor_icon(CursorIcon::Grab);
+        }
+        drop(pixels);
+        let outside = back.interact_pointer_pos().is_some_and(|p| !at.contains(p));
+        if back.clicked() && outside {
+            press = Some(Press::Close);
+        }
+        if back.dragged() {
+            ctx.set_cursor_icon(CursorIcon::Grabbing);
+        } else if back.hovered()
+            && (extra.x > 0.0 || extra.y > 0.0)
+            && ctx.pointer_hover_pos().is_some_and(|p| at.contains(p))
+        {
+            ctx.set_cursor_icon(CursorIcon::Grab);
+        }
+        let bar = Rect::from_center_size(
+            pos2(rect.center().x, rect.bottom() - GAP / 2.0 - BAR / 2.0),
+            vec2(4.0 * t.control + 120.0, BAR),
+        );
+        press = bar_ui(
+            ui,
+            bar,
+            viewer.zoom.unwrap_or(fit),
+            viewer.zoom.is_none(),
+            t,
+        )
+        .or(press);
+        match press {
+            Some(Press::Close) => open = false,
+            Some(Press::Fit) => {
+                viewer.zoom = None;
+                viewer.pan = Vec2::ZERO;
             }
-            let bar = Rect::from_center_size(
-                pos2(rect.center().x, rect.bottom() - GAP / 2.0 - BAR / 2.0),
-                vec2(4.0 * t.control + 120.0, BAR),
-            );
-            press = bar_ui(
-                ui,
-                bar,
-                viewer.zoom.unwrap_or(fit),
-                viewer.zoom.is_none(),
-                t,
-            )
-            .or(press);
-            match press {
-                Some(Press::Close) => open = false,
-                Some(Press::Fit) => {
-                    viewer.zoom = None;
-                    viewer.pan = Vec2::ZERO;
-                }
-                Some(Press::By(by)) => viewer.zoom_to(scale * by, (scale, fit), Vec2::ZERO),
-                Some(Press::Actual) => viewer.zoom_to(1.0, (scale, fit), Vec2::ZERO),
-                None => {}
-            }
-        });
+            Some(Press::By(by)) => viewer.zoom_to(scale * by, (scale, fit), Vec2::ZERO),
+            Some(Press::Actual) => viewer.zoom_to(1.0, (scale, fit), Vec2::ZERO),
+            None => {}
+        }
+    });
     if !open {
         ctx.data_mut(|d| d.remove::<u64>(shown_id()));
     }

@@ -1,9 +1,9 @@
 //! Where the cards go: a pile in the corner, or opened into a short list.
 
 use egui::{
-    Align, Align2, Area, Button, Context, CornerRadius, CursorIcon, Frame, Id, Key, Layout, Margin,
-    Modifiers, Order, Pos2, Rect, Response, RichText, ScrollArea, Sense, Stroke, Ui, UiBuilder,
-    Vec2, WidgetInfo, WidgetType, pos2, vec2,
+    Align, Align2, Button, Context, CornerRadius, CursorIcon, Frame, Id, Key, Layout, Margin,
+    Modifiers, Pos2, Rect, Response, RichText, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2,
+    WidgetInfo, WidgetType, pos2, vec2,
 };
 
 use super::card::{self, Body, Card};
@@ -12,6 +12,7 @@ use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
+use crate::z_order::{self, Tier};
 
 /// Where the stack sits and the clock it runs on.
 pub(super) struct Place {
@@ -239,8 +240,7 @@ pub(super) fn closed(
     toasts.seen = Some(seen);
     let aside = place.aside(Some(seen));
     // Placed exactly: kept on screen, it would creep up and grow.
-    let area = Area::new(Id::new("toasts"))
-        .order(Order::Tooltip)
+    let area = z_order::area(ctx, Tier::Notification, Id::new("toasts"))
         .constrain(false)
         .interactable(takes_pointer(ctx, toasts, aside, Some(seen)))
         .fixed_pos(bounds.min)
@@ -379,8 +379,7 @@ pub(super) fn open(
     let rise = (1.0 - shown) * 10.0;
     let last = ctx.memory(|m| m.area_rect(Id::new("toasts-open")));
     let aside = place.aside(last);
-    let area = Area::new(Id::new("toasts-open"))
-        .order(Order::Tooltip)
+    let area = z_order::area(ctx, Tier::Notification, Id::new("toasts-open"))
         .interactable(takes_pointer(ctx, toasts, aside, last))
         .pivot(Align2::RIGHT_BOTTOM)
         .fixed_pos(place.corner + vec2(0.0, rise))

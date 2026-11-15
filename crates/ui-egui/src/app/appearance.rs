@@ -202,9 +202,13 @@ impl MareaderApp {
             return;
         };
         let offset = crawl_offset(ctx, grain);
-        let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("film-grain"));
         let shape = GrainCallback::window(gpu.grain.clone(), ctx.content_rect(), grain, offset);
-        ctx.layer_painter(layer).add(shape);
+        crate::z_order::painter(
+            ctx,
+            crate::z_order::Tier::PostEffect,
+            egui::Id::new("film-grain"),
+        )
+        .add(shape);
     }
 
     /// The reader's half of the bar: rail toggle, tools and the menu's state.
@@ -260,10 +264,11 @@ fn baked(t: &theme::Tokens, raw: Rgb) -> egui::Color32 {
 
 /// The lights' layer: backings, then the stand-ins drawn off a Mac.
 fn lights_layer(ctx: &Context) -> egui::Painter {
-    ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Tooltip,
+    crate::z_order::painter(
+        ctx,
+        crate::z_order::Tier::WindowLights,
         egui::Id::new("lights"),
-    ))
+    )
 }
 
 /// A dark disc just inside each glass light on light themes, edging its

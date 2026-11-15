@@ -1,7 +1,7 @@
 //! The auto-hiding title bar, kept open by the pin or its popups.
 
 use egui::text::{LayoutJob, TextWrapping};
-use egui::{Align, Context, Id, Layout, Order, Rect, Sense, UiBuilder, pos2, vec2};
+use egui::{Align, Context, Id, Layout, Rect, Sense, UiBuilder, pos2, vec2};
 use mareader_appearance::{Appearance, Preset};
 use mareader_library::{ShelfId, View};
 use mareader_settings::AppearanceMenuStyle;
@@ -18,6 +18,7 @@ use crate::theme::{self, TITLE_BAR_H, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand, WindowCommand};
 use crate::view_menu::{self, MenuContext, Tool};
 use crate::widgets::{self, CaptionStyle};
+use crate::z_order::{self, Tier};
 use crate::zoom::ZoomState;
 use mareader_engine::command::Independence;
 use mareader_engine::library::{Crumb, Field};
@@ -209,7 +210,7 @@ impl TitleBar {
 
     fn update_hover(&mut self, ctx: &Context, band: Rect) {
         let now = ctx.input(|i| i.time);
-        let own = egui::LayerId::new(Order::Foreground, Id::new("titlebar"));
+        let own = z_order::layer(Tier::WindowChrome, Id::new("titlebar"));
         let at = crate::widgets::bare_pointer(ctx, own);
         let calm = at.is_some_and(|p| self.quiet.is_some_and(|q| q.contains(p)));
         let inside = !calm && at.is_some_and(|p| band.contains(p));
@@ -253,9 +254,8 @@ impl TitleBar {
             return;
         }
         // Our own fade below; egui's would stack on it.
-        egui::Area::new(Id::new("titlebar"))
+        z_order::area(ctx, Tier::WindowChrome, Id::new("titlebar"))
             .fade_in(false)
-            .order(Order::Foreground)
             .fixed_pos(band.min)
             .constrain(false)
             .interactable(visible)

@@ -1,12 +1,13 @@
 //! Drag-to-tuck rail hint and parked edge tab for the Dictionary window.
 
 use egui::{
-    Align2, Context, FontId, Id, Order, Rect, RichText, Sense, Stroke, Ui, Vec2, WidgetInfo,
-    WidgetType, epaint::TextShape, pos2, vec2,
+    Align2, Context, FontId, Id, Rect, RichText, Sense, Stroke, Ui, Vec2, WidgetInfo, WidgetType,
+    epaint::TextShape, pos2, vec2,
 };
 
 use crate::icons::Icon;
 use crate::theme::Tokens;
+use crate::z_order::{self, Tier};
 
 use super::page::Page;
 
@@ -22,10 +23,7 @@ pub(super) fn drag_hint(ctx: &Context, stage: Rect, left: bool, ready: bool) {
         pos2(x, stage.top() + 12.0),
         pos2(x + 6.0, (stage.bottom() - 12.0).max(stage.top() + 12.0)),
     );
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        Order::Foreground,
-        Id::new("dict-edge-hint"),
-    ));
+    let painter = z_order::painter(ctx, Tier::ChromeOverlay, Id::new("dict-edge-hint"));
     painter.rect_filled(
         rail,
         3.0,
@@ -79,8 +77,7 @@ pub(super) fn edge_tab(
     if size.x <= 0.0 || size.y <= 0.0 {
         return (rect, false);
     }
-    let response = egui::Area::new(Id::new("dict-edge-tab"))
-        .order(Order::Foreground)
+    let response = z_order::area(ctx, Tier::FloatingTool, Id::new("dict-edge-tab"))
         .fixed_pos(rect.min)
         .constrain(false)
         .movable(false)
@@ -202,8 +199,7 @@ fn edge_tab_peek(
     } else {
         rect.left() - 216.0
     };
-    egui::Area::new(Id::new("dict-edge-peek"))
-        .order(Order::Tooltip)
+    z_order::area(ctx, Tier::Tooltip, Id::new("dict-edge-peek"))
         .fixed_pos(pos2(
             x.clamp(stage.left(), (stage.right() - 210.0).max(stage.left())),
             rect.top(),

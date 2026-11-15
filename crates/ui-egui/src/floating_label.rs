@@ -1,6 +1,6 @@
 //! A pane's document name or chapter, in its top-left corner.
 
-use egui::{Context, Id, Label, LayerId, Order, Rect, RichText, WidgetInfo, WidgetType, pos2};
+use egui::{Context, Id, Label, Rect, RichText, WidgetInfo, WidgetType, pos2};
 use mareader_pdf::{OutlineEntry, active_entry};
 use mareader_settings::{FloatingLabelStyle, LayoutSettings};
 
@@ -8,6 +8,7 @@ use crate::documents::Reading;
 use crate::motion;
 use crate::theme::Tokens;
 use crate::titlebar::FADE;
+use crate::z_order::{self, Tier};
 
 /// Inset from the pane's corner.
 const INSET: f32 = 12.0;
@@ -57,8 +58,10 @@ pub fn show(
     let text = text(reading, layout.floating_label_style);
     let t = Tokens::get(ctx);
     let font = egui::FontId::proportional(t.text_small);
-    let painter = ctx.layer_painter(LayerId::new(Order::Middle, id));
-    let width = painter.layout_no_wrap(text.clone(), font, t.muted).size().x;
+    let width = ctx
+        .fonts_mut(|f| f.layout_no_wrap(text.clone(), font, t.muted))
+        .size()
+        .x;
     let limit = budget(pane, reading.page) * layout.floating_label_max_pct / 100.0;
     let persist = layout.floating_label_persist;
     let wanted = layout.floating_label && (persist || (chrome.bar.is_none() && width <= limit));
@@ -67,10 +70,9 @@ pub fn show(
         return;
     }
     let top = chrome.bar.map_or(pane.top(), |b| b.max(pane.top()));
-    // Under the floating sidebar's Foreground, so it slides over the label.
-    egui::Area::new(id)
+    // Below the floating sidebar's WindowChrome tier so it slides over labels.
+    z_order::area(ctx, Tier::PaneMark, id)
         .fade_in(false)
-        .order(Order::Middle)
         .fixed_pos(pos2(pane.left() + INSET, top + INSET * 0.75))
         .constrain(false)
         .interactable(false)

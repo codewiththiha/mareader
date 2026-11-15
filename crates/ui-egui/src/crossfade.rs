@@ -5,9 +5,11 @@
 use std::sync::Arc;
 
 use egui::{
-    Color32, ColorImage, Context, Event, Id, LayerId, Order, Rect, TextureHandle, TextureOptions,
-    UserData, ViewportCommand, pos2,
+    Color32, ColorImage, Context, Event, Id, Rect, TextureHandle, TextureOptions, UserData,
+    ViewportCommand, pos2,
 };
+
+use crate::z_order::{self, Tier};
 
 /// How long the old frame takes to fade out, in seconds.
 pub const FADE: f32 = 0.2;
@@ -103,10 +105,9 @@ impl<T> Crossfade<T> {
         }
         // Ease out: most of the change shows early.
         let left = (1.0 - t) * (1.0 - t);
-        let layer = LayerId::new(Order::Debug, Id::new("crossfade"));
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
         let tint = Color32::WHITE.gamma_multiply(left);
-        let painter = ctx.layer_painter(layer);
+        let painter = z_order::painter(ctx, Tier::Transition, Id::new("crossfade"));
         painter.image(image.id(), ctx.viewport_rect(), uv, tint);
         ctx.request_repaint();
     }

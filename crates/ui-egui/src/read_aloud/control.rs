@@ -4,10 +4,11 @@ use super::rate_label;
 use crate::icons::anim::{self, Act as IconAct};
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
+use crate::z_order::{self, Tier};
 use crate::{icons::Icon, motion, widgets};
 use egui::{
-    Color32, CornerRadius, Id, LayerId, Order, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui,
-    UiBuilder, pos2, vec2,
+    Color32, CornerRadius, Id, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, UiBuilder, pos2,
+    vec2,
 };
 use mareader_audio::RATES;
 use mareader_engine::{
@@ -408,9 +409,7 @@ fn bubble(ui: &Ui, track: Rect, share: f32, view: &View<'_>) {
     if text.is_empty() {
         return;
     }
-    let painter = ui
-        .ctx()
-        .layer_painter(LayerId::new(Order::Tooltip, Id::new("read-aloud-bubble")));
+    let painter = z_order::painter(ui.ctx(), Tier::Tooltip, Id::new("read-aloud-bubble"));
     let galley = painter.layout_no_wrap(text, theme::medium(t.text_small), t.ink);
     let size = galley.size() + vec2(16.0, 8.0);
     let x = track.left() + 6.0 + (track.width() - 12.0) * share;
@@ -690,19 +689,14 @@ fn menu(
     add: impl FnOnce(&mut Ui),
 ) -> egui::Response {
     let r = ui.add(button);
-    let popup = egui::Popup::menu(&r)
+    egui::Popup::menu(&r)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .gap(6.0)
-        .width(width);
-    let layer = LayerId::new(Order::Foreground, popup.get_id());
-    popup.show(|ui| {
-        ui.set_width(width);
-        add(ui);
-    });
-    // A press raises the player over it until the release closes it.
-    if egui::Popup::is_id_open(ui.ctx(), layer.id) {
-        ui.ctx().move_to_top(layer);
-    }
+        .width(width)
+        .show(|ui| {
+            ui.set_width(width);
+            add(ui);
+        });
     r
 }
 

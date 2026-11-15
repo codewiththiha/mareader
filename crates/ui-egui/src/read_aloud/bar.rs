@@ -1,6 +1,6 @@
 //! Floating read-aloud player bar layout, morphing, parking, and prompts.
 
-use egui::{Context, Id, Order, Pos2, Rect, Ui};
+use egui::{Context, Id, Pos2, Rect, Ui};
 use mareader_engine::read_aloud::player::{Act, Lyrics, View};
 use mareader_engine::read_aloud::state::{About, State as ReadAloudState, remember_skip};
 use mareader_settings::{Player as Look, ReadAloudSettings};
@@ -8,6 +8,7 @@ use mareader_settings::{Player as Look, ReadAloudSettings};
 use crate::motion;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent, UiCommand};
+use crate::z_order::{self, Tier};
 
 use super::bar_layout::place_bar;
 use super::control::Fit;
@@ -290,9 +291,8 @@ fn paint_bar_area(
     let fit = Fit::new(place.width, escape).fill(place.width, escape);
     let mut resize = None;
     let mut act = None;
-    egui::Area::new(Id::new("read-aloud-bar"))
+    z_order::area(ctx, Tier::FloatingTool, Id::new("read-aloud-bar"))
         .fade_in(false)
-        .order(Order::Foreground)
         .fixed_pos(place.rect.min)
         .constrain(false)
         .interactable(!place.parked)

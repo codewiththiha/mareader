@@ -53,7 +53,7 @@ the right place.
 | L7 | `apps/mareader` | **exists** | the desktop window, `main`, OS file pickers, optional loopback control server (`--control`, `--control-file`) for live UI automation, and `desk.rs`: the `Host` the engine reaches this machine through, with `system.rs` for its file manager and opener |
 | L7 | `apps/mareader-web` | **exists** | the browser preview: the same app through eframe's `WebRunner`, and a `Host` with a clipboard and no files |
 | L7 | `apps/mareader-cli` | **exists** | the headless second client (`commands`, `exec`, `run`, `inspect`, `mcp`, `ui`) driving `mareader-engine` and `mareader-mcp` directly with zero toolkit dependencies |
-| — | `xtask` | **exists** | gates (`layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `ui-commands`, `panel-commands`, `comments`, `ci`) |
+| — | `xtask` | **exists** | gates (`layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `ui-commands`, `panel-commands`, `z-order`, `comments`, `ci`) |
 
 The rules (enforced with the eight laws in `AGENTS.md` § Layering and ADR 0007):
 1. A crate depends only on lower layers. Same-layer edges need an entry in
@@ -139,6 +139,15 @@ its colours from `Tokens` or `Visuals` and gives AccessKit a label.
 `request_repaint_after` (the title bar's hide grace, a toast's time line); worker
 threads call `Context::request_repaint` when a result is ready. Nothing polls,
 and an idle window renders no frames.
+
+**UI stacking (z-order).** No UI module outside `crates/ui-egui/src/z_order.rs`
+picks a raw `egui::Order`, constructs a bare `Area`/`LayerId`, or calls
+`move_to_top`. Every floating surface declares a semantic `z_order::Tier`
+(`Canvas` → `PaneMark` → `PaneBar` → `WindowChrome` → `AttachedPill` →
+`ChromeOverlay` → `FloatingTool` → `Popover` → `Modal` → `ModalPopover` →
+`Notification` → `Tooltip` → `WindowLights` → `PostEffect` → `Transition`),
+`z_order::enforce` reconciles within-bucket order at the end of every frame,
+and `cargo xtask z-order` rejects bypasses in CI (`docs/ui-layers.md`).
 
 **Persistence.** The engine saves itself (Law 8): `Session` writes
 `settings.json` and `session.json` atomically (temp file + rename) under

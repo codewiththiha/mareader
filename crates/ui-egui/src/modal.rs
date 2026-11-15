@@ -42,6 +42,11 @@ impl Dialog {
             .inner_margin(Margin::same(self.margin))
             .shadow(ctx.global_style().visuals.window_shadow);
         // egui's own area: centred, keyed by the dialog, so focus stays in.
+        crate::z_order::register(
+            ctx,
+            crate::z_order::Tier::Modal,
+            crate::z_order::layer(crate::z_order::Tier::Modal, self.id),
+        );
         Modal::new(self.id)
             .frame(frame)
             .backdrop_color(backdrop(&t))
@@ -120,8 +125,7 @@ pub fn switch_card(
         .corner_radius(t.radius)
         .inner_margin(Margin::symmetric(12, 10))
         .show(ui, |ui| {
-            // Words in the flow, the switch beside them: a row would centre
-            // the words low.
+            // Words in the flow beside the switch; a row would centre them low.
             ui.set_width(ui.available_width());
             let room = (ui.available_width() - SWITCH_ROOM).max(0.0);
             let layout = Layout::top_down(Align::Min);

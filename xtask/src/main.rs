@@ -12,6 +12,7 @@ mod trapped;
 mod ui_commands;
 mod unsafety;
 mod wasm;
+mod z_order;
 
 type Command = fn(&[String]) -> Result<(), String>;
 
@@ -60,6 +61,11 @@ const COMMANDS: &[(&str, &str, Command)] = &[
         "panel-commands",
         "Verify UI panel click handlers dispatch commands instead of mutating Session",
         panel_commands::run,
+    ),
+    (
+        "z-order",
+        "Enforce explicit z_order::Tier usage for every floating UI surface",
+        z_order::run,
     ),
     (
         "ci",

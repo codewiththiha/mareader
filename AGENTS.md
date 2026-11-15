@@ -22,7 +22,8 @@ and md formats.
 - **Feature tracking:** every capability has an entry in
   `parity/mareader-features.toml`, checked by `cargo xtask parity`.
 - **Architecture:** `docs/architecture.md` (read § How the app is built in
-  egui before writing UI). Decisions: `docs/adr/`.
+  egui before writing UI) and `docs/ui-layers.md` (z-order tiers enforced by
+  `cargo xtask z-order`). Decisions: `docs/adr/`.
 
 ## The reference checkout
 
@@ -343,7 +344,7 @@ cargo fmt --all --check
 cargo clippy -p <crate> -j 2 --all-targets -- -D warnings
 cargo test -p <crate> -j 2
 cargo xtask layers && cargo xtask wasm && cargo xtask trapped
-cargo xtask ui-commands --check && cargo xtask panel-commands
+cargo xtask ui-commands --check && cargo xtask panel-commands && cargo xtask z-order
 cargo xtask parity && cargo xtask assets
 cargo xtask comments
 ```

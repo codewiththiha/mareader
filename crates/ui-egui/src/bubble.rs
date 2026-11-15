@@ -1,9 +1,10 @@
 //! A card anchored to words on the page, its caret pointing at them.
 
-use egui::{Align2, Context, Frame, Id, Margin, Order, Rect, Shape, Stroke, Ui, pos2};
+use egui::{Align2, Context, Frame, Id, Margin, Rect, Shape, Stroke, Ui, pos2};
 
 use crate::motion::entrance;
 use crate::theme::Tokens;
+use crate::z_order::{self, Tier};
 
 /// From the words to the card's edge; the caret spans most of it.
 pub const GAP: f32 = 11.0;
@@ -114,8 +115,7 @@ impl Bubble {
             Side::Below => (pos2(x, at.bottom() + GAP + lift), Align2::CENTER_TOP),
             Side::Above => (pos2(x, at.top() - GAP - lift), Align2::CENTER_BOTTOM),
         };
-        let shown = egui::Area::new(self.id)
-            .order(Order::Foreground)
+        let shown = z_order::area(ctx, Tier::Popover, self.id)
             .pivot(pivot)
             .fixed_pos(pos)
             .constrain(false)

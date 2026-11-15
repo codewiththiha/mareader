@@ -1,8 +1,8 @@
 //! Each pane's counter, progress line and hover-revealed page bar.
 
 use egui::{
-    Align, Context, CornerRadius, FontId, Id, Key, LayerId, Layout, Order, Rect, RichText, Slider,
-    Stroke, TextEdit, UiBuilder, pos2, vec2,
+    Align, Context, CornerRadius, FontId, Id, Key, LayerId, Layout, Rect, RichText, Slider, Stroke,
+    TextEdit, UiBuilder, pos2, vec2,
 };
 use mareader_settings::{LayoutSettings, PageIndicatorStyle};
 use mareader_workspace::PaneId;
@@ -16,6 +16,7 @@ use crate::theme::{self, Tokens};
 use crate::titlebar::{FADE, HIDE_GRACE};
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
+use crate::z_order::{self, Tier};
 use mareader_engine::command::Command;
 
 pub const BAR_H: f32 = 40.0;
@@ -104,19 +105,17 @@ pub fn show(
     let entry_id = Id::new(("page-entry", reading.pane));
     let typing = ctx.memory(|m| m.has_focus(entry_id));
     let home = Rect::from_min_max(pos2(pane.left(), pane.bottom() - BAR_H), pane.max);
-    let dragging = bar.shown
-        && ctx.input(|i| {
-            let origin = i.pointer.press_origin();
-            i.pointer.any_down() && origin.is_some_and(|p| home.contains(p))
-        });
-    let tabbing = crate::focus::within(ctx, home);
     let id = Id::new(("page-bar", reading.pane));
-    let own = LayerId::new(Order::Foreground, id);
+    let own = z_order::layer(Tier::PaneBar, id);
+    let (down, origin) = ctx.input(|i| (i.pointer.any_down(), i.pointer.press_origin()));
+    let dragging = bar.shown
+        && down
+        && origin.is_some_and(|p| home.contains(p) && ctx.layer_id_at(p) == Some(own));
+    let tabbing = crate::focus::within(ctx, home);
     bar.update_hover(ctx, (pane, own), typing || dragging || tabbing);
     let fade = ctx.animate_bool_with_time(id, bar.shown, motion::secs(ctx, FADE));
     let t = Tokens::get(ctx);
-    let layer = LayerId::new(Order::Middle, id.with("marks"));
-    let painter = ctx.layer_painter(layer).with_clip_rect(pane);
+    let painter = z_order::canvas_painter(ctx).with_clip_rect(pane);
     if layout.progress_bar && reading.document.is_complete() {
         // A faint track first, so the bar shows even on the first page.
         let x = look.corner.min(pane.width() * 0.5);
@@ -156,9 +155,8 @@ pub fn show(
     // It rises a little as it fades in, as in mareader.
     let rise = (1.0 - fade) * 12.0;
     let rect = home.translate(vec2(0.0, rise));
-    egui::Area::new(id)
+    z_order::area(ctx, Tier::PaneBar, id)
         .fade_in(false)
-        .order(Order::Foreground)
         .fixed_pos(rect.min)
         .constrain(false)
         .interactable(bar.shown)

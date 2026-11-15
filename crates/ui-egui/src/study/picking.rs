@@ -1,6 +1,6 @@
 //! Picking several marks at once, to restyle or remove them together.
 
-use egui::{Align2, Context, Frame, Id, Margin, Order, Rect, RichText, Stroke, vec2};
+use egui::{Align2, Context, Frame, Id, Margin, Rect, RichText, Stroke, vec2};
 use mareader_library::{MarkId, Style};
 use mareader_settings::HighlightSettings;
 use mareader_workspace::PaneId;
@@ -8,6 +8,7 @@ use mareader_workspace::PaneId;
 use super::restyle;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
+use crate::z_order::{self, Tier};
 use mareader_engine::command::Command;
 use mareader_engine::study::Action;
 
@@ -64,8 +65,7 @@ pub fn bar(
     out: &mut Commands,
 ) {
     let n = picking.ids.len();
-    let shown = egui::Area::new(Id::new("study-picking"))
-        .order(Order::Foreground)
+    let shown = z_order::area(ctx, Tier::FloatingTool, Id::new("study-picking"))
         .pivot(Align2::CENTER_TOP)
         .fixed_pos(room.center_top() + vec2(0.0, DOWN))
         .constrain_to(room)

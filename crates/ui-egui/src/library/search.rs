@@ -5,10 +5,11 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
+use crate::z_order::{self, Tier};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Color32, Context, EventFilter, FontId, Id, Key, Modifiers, Order, Rect, Sense, Stroke,
-    StrokeKind, TextFormat, Ui, pos2, vec2,
+    Color32, Context, EventFilter, FontId, Id, Key, Modifiers, Rect, Sense, Stroke, StrokeKind,
+    TextFormat, Ui, pos2, vec2,
 };
 use mareader_engine::command::Command;
 use mareader_engine::library::{Action, Field, RING_END, RING_HOLD, SearchAction};
@@ -176,8 +177,7 @@ pub fn suggestions(ctx: &Context, session: &mut Session, covers: &mut Covers, ou
     let (model, t) = (session.library_model(), Tokens::get(ctx));
     let width = anchor.width().max(340.0);
     let left = (anchor.center().x - width / 2.0).max(ctx.content_rect().left() + 8.0);
-    let area = egui::Area::new(Id::new(PANEL))
-        .order(Order::Foreground)
+    let area = z_order::area(ctx, Tier::Popover, Id::new(PANEL))
         .fixed_pos(pos2(left, anchor.bottom() + 6.0))
         .constrain(true);
     let shown = area.show(ctx, |ui| {
@@ -201,7 +201,6 @@ pub fn suggestions(ctx: &Context, session: &mut Session, covers: &mut Covers, ou
             ui.add(egui::Label::new(hint).selectable(false));
         });
     });
-    ctx.move_to_top(shown.response.layer_id);
     ctx.data_mut(|d| d.insert_temp(rect_id, shown.response.rect));
 }
 

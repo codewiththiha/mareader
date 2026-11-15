@@ -48,6 +48,7 @@ impl eframe::App for MareaderApp {
         self.show_titlebar(&ctx, route, inset, overlay, &backdrop, &mut commands);
         self.lights(&ctx, route, inset, overlay, &mut commands);
         self.windows(&ctx, &mut commands);
+        crate::z_order::enforce(&ctx);
         self.finish(&ctx, outside, commands);
     }
 

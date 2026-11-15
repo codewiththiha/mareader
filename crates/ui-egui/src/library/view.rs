@@ -3,8 +3,8 @@
 use egui::epaint::Shadow;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Color32, CornerRadius, CursorIcon, DragAndDrop, FontId, Id, Key, KeyboardShortcut, LayerId,
-    Modifiers, Order, Painter, Rect, Sense, Stroke, StrokeKind, TextFormat, Ui, pos2, vec2,
+    Color32, CornerRadius, CursorIcon, DragAndDrop, FontId, Id, Key, KeyboardShortcut, Modifiers,
+    Painter, Rect, Sense, Stroke, StrokeKind, TextFormat, Ui, pos2, vec2,
 };
 use std::collections::BTreeSet;
 
@@ -21,6 +21,7 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
+use crate::z_order::{self, Tier};
 use mareader_engine::command::Command;
 use mareader_engine::library::Paused;
 use mareader_engine::library::{Action, Carry, Lit, Scope, ShelfAction};
@@ -518,12 +519,11 @@ fn carried(ui: &Ui, model: &Library, t: &Tokens) {
     let Some(pointer) = ctx.pointer_latest_pos() else {
         return;
     };
-    let keep = ctx.input(|i| i.modifiers.alt);
     let mut label = carry.label(model);
-    if keep && carry.off_shelf() {
+    if ctx.input(|i| i.modifiers.alt) && carry.off_shelf() {
         label = format!("+ {label}");
     }
-    let p = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("library-carried")));
+    let p = z_order::painter(ctx, Tier::Tooltip, Id::new("library-carried"));
     let mut job = LayoutJob::single_section(label, TextFormat::simple(theme::medium(13.0), t.ink));
     job.wrap = TextWrapping::truncate_at_width(240.0);
     let g = p.layout_job(job);

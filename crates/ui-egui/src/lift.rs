@@ -1,13 +1,14 @@
 //! A lifted pane: its space closes up, and it rides the pointer as a card.
 
 use egui::{
-    Align2, Area, Color32, Context, CornerRadius, CursorIcon, Frame, Id, Key, LayerId, Margin,
-    Modifiers, Order, Pos2, Rect, RichText, Stroke, StrokeKind, pos2, vec2,
+    Align2, Color32, Context, CornerRadius, CursorIcon, Frame, Id, Key, Margin, Modifiers, Pos2,
+    Rect, RichText, Stroke, StrokeKind, pos2, vec2,
 };
 use mareader_workspace::{Bounds, LiftTarget, PaneId, lift_target};
 
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
+use crate::z_order::{self, Tier};
 
 /// How long the card takes to shrink to its carried size.
 const SHRINK_SECS: f64 = 0.18;
@@ -41,7 +42,7 @@ pub fn show(ctx: &Context, lift: &Lift, rest: &[(PaneId, Rect)], title: &str) ->
     let pointer = ctx.pointer_latest_pos();
     let target = pointer.and_then(|p| lift_target(lift.pane, (p.x, p.y), &boxes));
     ctx.set_cursor_icon(CursorIcon::Grabbing);
-    let painter = ctx.layer_painter(LayerId::new(Order::Middle, Id::new("lift")));
+    let painter = z_order::painter(ctx, Tier::ChromeOverlay, Id::new("lift"));
     let lit = target.and_then(|target| {
         let (_, rect) = rest.iter().find(|(id, _)| *id == target.pane())?;
         let b = target.predicted(bounds(*rect));
@@ -87,8 +88,7 @@ fn card(ctx: &Context, lift: &Lift, pointer: Pos2, title: &str, t: &Tokens) {
     let scale = 1.0 - (1.0 - CARRIED) * shrink(ctx, lift.since);
     let rect = carried(lift, pointer, scale);
     let radius = CornerRadius::same(12);
-    Area::new(Id::new("lift-card"))
-        .order(Order::Foreground)
+    z_order::area(ctx, Tier::FloatingTool, Id::new("lift-card"))
         .fixed_pos(rect.min)
         .interactable(false)
         .show(ctx, |ui| {
@@ -120,8 +120,7 @@ fn card(ctx: &Context, lift: &Lift, pointer: Pos2, title: &str, t: &Tokens) {
 
 /// A pill of words, read aloud too; it never takes the pointer.
 fn chip(ctx: &Context, (at, pivot): (Pos2, Align2), words: &str, t: &Tokens) {
-    Area::new(Id::new("lift-target"))
-        .order(Order::Tooltip)
+    z_order::area(ctx, Tier::Tooltip, Id::new("lift-target"))
         .pivot(pivot)
         .fixed_pos(at)
         .interactable(false)

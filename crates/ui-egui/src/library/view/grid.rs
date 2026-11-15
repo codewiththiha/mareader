@@ -2,8 +2,8 @@
 
 use egui::epaint::Shadow;
 use egui::{
-    Color32, CornerRadius, CursorIcon, DragAndDrop, Id, LayerId, Order, Painter, Pos2, Rect, Sense,
-    Shape, Stroke, Ui, Vec2, vec2,
+    Color32, CornerRadius, CursorIcon, DragAndDrop, Id, Painter, Pos2, Rect, Sense, Shape, Stroke,
+    Ui, Vec2, vec2,
 };
 use mareader_library::BookId;
 
@@ -16,6 +16,7 @@ use super::{grid_card, links, shelf_card};
 use crate::motion;
 use crate::theme;
 use crate::ui_command::Sent;
+use crate::z_order::{self, Tier};
 use mareader_engine::command::Command;
 use mareader_engine::library::Action;
 use mareader_engine::library::{Carry, ShelfAction};
@@ -333,7 +334,7 @@ pub(super) fn ghost(ui: &mut Ui, cx: &mut Cx<'_>) -> bool {
     let rect = Rect::from_min_size(pointer - grab.offset, size);
     cx.motion.ghost = Some(rect.min - cx.motion.origin);
     ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
-    let layer = LayerId::new(Order::Tooltip, Id::new("library-ghost"));
+    let layer = z_order::layer(Tier::Tooltip, Id::new("library-ghost"));
     let ui = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(rect));
     let t = cx.t;
     // Lifted: a touch larger, on a deeper shadow.

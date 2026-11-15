@@ -4,8 +4,8 @@ use std::ops::Range;
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Context, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Order, Rect, Response,
-    RichText, Sense, Stroke, StrokeKind, TextEdit, TextFormat, Ui, UiBuilder, pos2, vec2,
+    Align, Context, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Rect, Response, RichText,
+    Sense, Stroke, StrokeKind, TextEdit, TextFormat, Ui, UiBuilder, pos2, vec2,
 };
 use mareader_search::{Hit, from_page, step};
 use mareader_workspace::PaneId;
@@ -13,6 +13,7 @@ use mareader_workspace::PaneId;
 use crate::icons::Icon;
 use crate::motion::entrance;
 use crate::theme::{self, Tokens};
+use crate::z_order::{self, Tier};
 use crate::{loading_mark, widgets};
 use mareader_engine::search::Found;
 
@@ -214,9 +215,8 @@ impl FindBar {
         let y = top.max(rect.top()) + 12.0 - (1.0 - risen) * RISE;
         let at = pos2(rect.right() - INSET - width, y);
         let mut close = false;
-        let area = egui::Area::new(Id::new("find-bar"))
+        let area = z_order::area(ctx, Tier::FloatingTool, Id::new("find-bar"))
             .fade_in(false)
-            .order(Order::Foreground)
             .fixed_pos(at)
             .constrain_to(rect)
             .show(ctx, |ui| {

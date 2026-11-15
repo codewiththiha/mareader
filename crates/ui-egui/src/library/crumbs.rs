@@ -257,6 +257,9 @@ fn folded(ui: &mut Ui, elided: &[Crumb], out: &mut Commands) {
             });
             chosen
         });
+    if let Some(ref c) = chosen {
+        crate::z_order::register_popup(ui.ctx(), c.response.layer_id);
+    }
     let inside = chosen
         .as_ref()
         .is_some_and(|c| c.response.contains_pointer());

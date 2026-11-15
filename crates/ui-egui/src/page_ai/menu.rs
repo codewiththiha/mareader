@@ -6,9 +6,10 @@ use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
+use crate::z_order::{self, Tier};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{
-    Context, CornerRadius, FontId, Frame, Id, Key, Margin, Modifiers, Order, Pos2, Rect, RichText,
+    Context, CornerRadius, FontId, Frame, Id, Key, Margin, Modifiers, Pos2, Rect, RichText,
     ScrollArea, Sense, Stroke, TextEdit, Ui, Vec2, pos2, vec2,
 };
 use mareader_engine::command::Command;
@@ -42,12 +43,16 @@ impl PageAiUi {
             p.filter(|_| i.pointer.any_pressed())
         });
         let in_popup = pressed.is_some_and(|p| {
-            ctx.memory(|m| {
+            let visible: Vec<(egui::LayerId, Rect)> = ctx.memory(|m| {
                 m.layer_ids()
-                    .filter(|l| l.order >= Order::Foreground && m.areas().is_visible(l))
-                    .filter_map(|l| m.area_rect(l.id))
-                    .any(|r| r.contains(p))
-            })
+                    .filter(|l| m.areas().is_visible(l))
+                    .filter_map(|l| Some((l, m.area_rect(l.id)?)))
+                    .collect()
+            });
+            visible
+                .into_iter()
+                .filter(|(l, _)| z_order::is_popover_or_above(ctx, *l))
+                .any(|(_, r)| r.contains(p))
         });
         let outside = |r: Option<Rect>| {
             pressed.is_some_and(|p| !in_popup && !r.is_some_and(|r| r.contains(p)))
@@ -617,8 +622,7 @@ impl PageAiUi {
 
 /// A menu's frame at `at`, kept on screen.
 fn popup(ctx: &Context, id: Id, at: egui::Pos2, t: &Tokens, add: impl FnOnce(&mut Ui)) -> Rect {
-    let rect = egui::Area::new(id)
-        .order(Order::Foreground)
+    let rect = z_order::area(ctx, Tier::Popover, id)
         .fixed_pos(at)
         .constrain(true)
         .show(ctx, |ui| {
@@ -686,8 +690,7 @@ fn page_popup(
 ) -> Rect {
     let ease = 1.0 - (1.0 - k).powi(3);
     let rise = (1.0 - ease) * 6.0 * if below { -1.0 } else { 1.0 };
-    let rect = egui::Area::new(id)
-        .order(Order::Foreground)
+    let rect = z_order::area(ctx, Tier::Popover, id)
         .fixed_pos(pos + vec2(0.0, rise))
         // Placed by hand: egui's own keeping-in would fight it.
         .constrain(false)

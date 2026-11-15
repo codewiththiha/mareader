@@ -21,7 +21,7 @@ the two disagree, `AGENTS.md` wins.
 | `crates/engine/src/command_spec/` | `SPECS`: static registry mapping every `Command` variant to its id, title, label, menu, shortcut, params, enabled/can_run checks, journal flag, and parser |
 | `crates/engine/src/host.rs` | `Host`: the five-method platform seam (`state_dir`, `cache_dir`, `set_clipboard`, `reveal`, `open_external`) |
 | `crates/ui-egui/src/ui_command.rs` | `UiCommand` & `UI_COMMANDS`: chrome-only actions and static metadata catalog mirrored to `crates/mcp/src/ui_catalog.rs` |
-| `xtask` | Workspace gates: `layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `ui-commands`, `panel-commands`, `comments`, `ci` |
+| `xtask` | Workspace gates: `layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `ui-commands`, `panel-commands`, `z-order`, `comments`, `ci` |
 | `parity/mareader-features.toml` | Feature parity ledger: status, test evidence, and `command` / `ui_only` links |
 | `docs/` | Architecture, ADRs, design system, format pipelines, memory audits and verification guides |
 | `tools/` | Verification, static checks (`shape_check`, `comment_check`, `commit_check`), CI driver and voice-model parity tools |
@@ -47,6 +47,7 @@ cargo xtask wasm                            # L0-L5, ui-egui and web for wasm32
 cargo xtask trapped                         # toolkit-free files in ui-egui (must be 0)
 cargo xtask ui-commands --check             # verify crates/mcp UI_COMMANDS mirror matches ui-egui
 cargo xtask panel-commands                  # verify panel click handlers dispatch commands only
+cargo xtask z-order                         # verify every floating UI surface declares a z_order::Tier
 cargo xtask assets                          # ATTRIBUTION.toml verification
 cargo xtask unsafe                          # audited unsafe allowlist check
 cargo xtask comments                        # comment rule on changed files

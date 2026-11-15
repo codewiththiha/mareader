@@ -3,14 +3,15 @@
 use std::f32::consts::TAU;
 
 use egui::{
-    Align, Align2, Area, Context, FontId, Frame, Id, Layout, Margin, Order, Pos2, Rect, RichText,
-    Shape, Stroke, Ui, pos2, vec2,
+    Align, Align2, Context, FontId, Frame, Id, Layout, Margin, Pos2, Rect, RichText, Shape, Stroke,
+    Ui, pos2, vec2,
 };
 
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
+use crate::z_order::{self, Tier};
 use mareader_engine::command::Command;
 use mareader_engine::library::Action;
 use mareader_engine::session::Session;
@@ -45,8 +46,7 @@ pub fn show(
             continue;
         }
         let pos = pos2(stage.left() + INSET, bottom);
-        let area = Area::new(Id::new(("import-run", run.id)))
-            .order(Order::Foreground)
+        let area = z_order::area(ctx, Tier::WindowChrome, Id::new(("import-run", run.id)))
             .pivot(Align2::LEFT_BOTTOM)
             .fixed_pos(pos)
             .interactable(run.stoppable() || run.paused());

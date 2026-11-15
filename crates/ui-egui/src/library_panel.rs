@@ -5,10 +5,11 @@ use crate::library::Organizer;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, LibraryDialog, Sent, UiCommand};
 use crate::widgets;
+use crate::z_order::{self, Tier};
 use egui::{
-    Align2, Color32, CornerRadius, CursorIcon, DragAndDrop, FontId, FontSelection, Id, Key,
-    LayerId, Order, Popup, PopupCloseBehavior, Rect, RichText, ScrollArea, Sense, Stroke,
-    TextWrapMode, Ui, WidgetText, pos2, vec2,
+    Align2, Color32, CornerRadius, CursorIcon, DragAndDrop, FontId, FontSelection, Id, Key, Popup,
+    PopupCloseBehavior, Rect, RichText, ScrollArea, Sense, Stroke, TextWrapMode, Ui, WidgetText,
+    pos2, vec2,
 };
 use mareader_engine::command::Command;
 use mareader_engine::documents::Placement;
@@ -478,8 +479,8 @@ fn tree_drop(
     let keep = ui.input(|i| i.modifiers.alt);
     let action = drop_action(cx.model, carried, target, keep);
     let t = Tokens::get(ctx);
-    let layer = LayerId::new(Order::Foreground, Id::new("library-panel-tree-drop"));
-    let painter = ctx.layer_painter(layer).with_clip_rect(ui.clip_rect());
+    let painter = z_order::painter(ctx, Tier::Tooltip, Id::new("library-panel-tree-drop"))
+        .with_clip_rect(ui.clip_rect());
     let name = match target {
         Some(id) => cx.model.shelf(id).map_or("", |s| s.name.value.as_str()),
         None => "",
@@ -1117,8 +1118,7 @@ pub fn drop_overlay(
         _ => None,
     };
     let target = found.filter(|_| refused.is_none());
-    let layer = LayerId::new(Order::Foreground, Id::new("library-panel-drop"));
-    let painter = ctx.layer_painter(layer);
+    let painter = z_order::painter(ctx, Tier::Tooltip, Id::new("library-panel-drop"));
     if let Some(pane) = refused
         && let Some((_, rect)) = panes.iter().find(|(id, _)| *id == pane)
     {

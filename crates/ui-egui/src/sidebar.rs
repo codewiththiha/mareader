@@ -2,8 +2,8 @@
 
 use egui::emath::easing;
 use egui::{
-    Align, Area, Context, CornerRadius, Id, Layout, Order, Rect, RichText, Sense, Stroke, Ui,
-    UiBuilder, Vec2, pos2, vec2,
+    Align, Context, CornerRadius, Id, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, Vec2,
+    pos2, vec2,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +14,7 @@ use crate::platform::Platform;
 use crate::theme::{self, TITLE_BAR_H, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand, WindowCommand};
 use crate::widgets;
+use crate::z_order::{self, Tier};
 use mareader_engine::command::Command;
 
 pub const WIDTH: f32 = 288.0;
@@ -230,9 +231,8 @@ impl Sidebar {
         }
         let rail = home.translate(vec2(width - WIDTH, 0.0));
         // egui fades new areas in by default; this rail only slides.
-        Area::new(Id::new("sidebar-float"))
+        z_order::area(ctx, Tier::WindowChrome, Id::new("sidebar-float"))
             .fade_in(false)
-            .order(Order::Foreground)
             .fixed_pos(rail.min)
             .constrain(false)
             .interactable(self.open)
@@ -264,17 +264,24 @@ impl Sidebar {
         screen: Rect,
         out: &mut Commands,
     ) {
-        let pointer = ctx.pointer_hover_pos();
         let down = ctx.input(|i| i.pointer.any_down());
         if !self.open {
             let edge = Rect::from_min_size(screen.min, vec2(EDGE, screen.height()));
-            match pointer.filter(|&p| !down && edge.contains(p)) {
+            let blocked = |p| {
+                ctx.layer_id_at(p)
+                    .is_some_and(|l| z_order::is_above_tier(ctx, l, Tier::WindowChrome))
+            };
+            let hit = ctx
+                .pointer_hover_pos()
+                .filter(|&p| !down && edge.contains(p) && !blocked(p));
+            match hit {
                 Some(p) if p.y < cx.bar_bottom => self.dwell(ctx, out),
                 Some(_) => out.push(Sent::Ui(UiCommand::OpenSidebar(None))),
                 None => self.edge_at = None,
             }
             return;
         }
+        let pointer = ctx.pointer_hover_pos();
         // Keyboard focus in it holds it, as the pointer does.
         if crate::focus::within(ctx, rail) {
             self.left_at = None;

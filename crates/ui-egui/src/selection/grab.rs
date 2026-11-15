@@ -1,9 +1,10 @@
 //! Dragging empty space pans and flings; held still in a split, it lifts.
 
 use egui::style::ScrollAnimation;
-use egui::{CursorIcon, Id, LayerId, Order, Pos2, Response, Shape, Stroke, Ui, Vec2};
+use egui::{CursorIcon, Id, Pos2, Response, Shape, Stroke, Ui, Vec2};
 
 use crate::theme::Tokens;
+use crate::z_order::{self, Tier};
 
 /// A release this long (s) after the last movement rests, not flings.
 const REST: f32 = 0.08;
@@ -120,8 +121,7 @@ pub fn pan(ui: &Ui, response: &Response, from_empty: bool, can_lift: bool) -> Gr
 /// The hold's countdown: a ring filling clockwise round the press.
 fn ring(ui: &Ui, at: Pos2, share: f32) {
     let t = Tokens::get(ui.ctx());
-    let layer = LayerId::new(Order::Foreground, Id::new("lift-ring"));
-    let painter = ui.ctx().layer_painter(layer);
+    let painter = z_order::painter(ui.ctx(), Tier::ChromeOverlay, Id::new("lift-ring"));
     painter.circle_filled(at, RING + 4.0, t.surface.gamma_multiply(0.85));
     painter.circle_stroke(at, RING, Stroke::new(3.0, t.line));
     let steps = 40;

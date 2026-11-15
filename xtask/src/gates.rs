@@ -45,6 +45,7 @@ pub fn ci(_: &[String]) -> Result<(), String> {
     crate::unsafety::run(&[])?;
     crate::ui_commands::run(&["--check".to_owned()])?;
     crate::panel_commands::run(&[])?;
+    crate::z_order::run(&[])?;
     comments(&[])
 }
 

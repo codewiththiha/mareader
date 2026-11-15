@@ -36,7 +36,7 @@ pub fn bare_pointer(ctx: &egui::Context, own: egui::LayerId) -> Option<egui::Pos
     let at = ctx.pointer_hover_pos()?;
     // Chrome under something else stays down, or it would rise above it.
     let on = ctx.layer_id_at(at);
-    on.is_none_or(|l| l == own || l.order == egui::Order::Background)
+    on.is_none_or(|l| l == own || crate::z_order::is_canvas(l))
         .then_some(at)
 }
 
@@ -517,6 +517,7 @@ pub fn submenu_row(
         .gap(4.0)
         .width(sub_width)
         .show(|ui| {
+            crate::z_order::register_popup(ui.ctx(), ui.layer_id());
             let click_id = sub_id.with("child-clicked");
             let scope_id = egui::Id::new("active-submenu-click");
             ui.data_mut(|d| {
@@ -529,7 +530,7 @@ pub fn submenu_row(
             ui.data_mut(|d| d.insert_temp(scope_id, None::<egui::Id>));
             ui.data(|d| d.get_temp::<bool>(click_id)).unwrap_or(false)
         });
-    let pos = ui.input(|i| i.pointer.interact_pos());
+    let (pos, any_pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
     let inside = shown.as_ref().is_some_and(|s| {
         s.response.contains_pointer() || pos.is_some_and(|p| s.response.rect.contains(p))
     });
@@ -537,7 +538,6 @@ pub fn submenu_row(
         state.over = Some(now);
     }
     let chosen = shown.as_ref().is_some_and(|s| s.inner);
-    let any_pressed = ui.input(|i| i.pointer.any_pressed());
     let pressed_away = any_pressed && !inside && !resp.contains_pointer();
     let escape = open && ui.input(|i| i.key_pressed(egui::Key::Escape));
     if chosen || pressed_away || escape {
