@@ -1871,6 +1871,8 @@ struct Cursor {
     height: f32,
     /// Where the last float on the page ends.
     float_bottom: f32,
+    /// Open-box depth of that float's enclosing parent.
+    float_depth: usize,
     /// Cells spanning rows down, waiting for those rows.
     hangs: Vec<Hang>,
 }
@@ -1919,6 +1921,8 @@ const BAR_ROOM: f32 = 3.0;
 const MAX_KEPT_LINES: u8 = 8;
 /// Pictures set in one block's lines, at most.
 const MAX_INLINES: usize = 256;
+/// Inline margin/padding spacers set in one block, at most.
+const MAX_SPACERS: usize = 16_384;
 /// Grid blocks measured for content widths; the rest share their sizes.
 const MAX_MEASURED: usize = 512;
 /// A grid item's most width is measured in this many rooms.
@@ -2062,6 +2066,7 @@ fn paginate_sheet(
             top: 0.0,
             continued: false,
             centre: None,
+            deco_at: 0,
         };
         decos.extend(open.deco(sheet.height, true));
         layers.push((0..decos.len(), 0..0));
@@ -2146,16 +2151,21 @@ fn paginate(blocks: &[Set], height: f32, typo: &Typography) -> (Vec<Vec<Piece>>,
 /// Places a float; what follows starts at its top, unless it ran over.
 fn place_float(c: &mut Cursor, blocks: &[Set], float: Range<usize>, room: (f32, &Typography)) {
     c.settle();
-    let (pages, top) = (c.pages.len(), c.y);
-    for k in float.clone() {
-        place_block(c, blocks, k, room);
-    }
     let depth = blocks
         .get(float.start)
         .and_then(|b| b.float())
         .map_or(0, |f| f.depth);
+    if let Some(first) = blocks.get(float.start) {
+        let outer = first.boxes.get(..depth).unwrap_or(&first.boxes);
+        c.close(c.common(outer));
+    }
+    let (pages, top) = (c.pages.len(), c.y);
+    for k in float.clone() {
+        place_block(c, blocks, k, room);
+    }
     c.close(depth.min(c.open.len()));
-    c.float_bottom = c.y;
+    c.float_bottom = c.float_bottom.max(c.y);
+    c.float_depth = depth;
     if c.pages.len() == pages {
         c.y = top;
     } else if c.page.first().is_some_and(|p| p.block == float.start) {
@@ -2236,8 +2246,11 @@ fn place_block(c: &mut Cursor, blocks: &[Set], i: usize, (height, typo): (f32, &
 fn cell_decos<'a>(stack: impl Iterator<Item = (&'a Set, f32)>, depth: usize, out: &mut Vec<Deco>) {
     let close = |open: &mut Vec<OpenBox>, keep: usize, bottom: f32, out: &mut Vec<Deco>| {
         while open.len() > keep {
-            if let Some(o) = open.pop() {
-                out.extend(o.deco(bottom + o.placed.bottom, true));
+            if let Some(o) = open.pop()
+                && let Some(d) = o.deco(bottom + o.placed.bottom, true)
+            {
+                let at = o.deco_at.min(out.len());
+                out.insert(at, d);
             }
         }
     };
@@ -2254,6 +2267,7 @@ fn cell_decos<'a>(stack: impl Iterator<Item = (&'a Set, f32)>, depth: usize, out
                 top: y - p.top,
                 continued: false,
                 centre: None,
+                deco_at: out.len(),
             });
         }
         bottom = y + span_height(b, 0..b.units.len());

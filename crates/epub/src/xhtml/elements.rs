@@ -91,7 +91,7 @@ impl State<'_> {
         match name {
             "html" if self.stack.is_empty() => self.root = Some(el.clone()),
             "body" => self.root_vars(),
-            "meta" if self.fixed && attr(tag, "name").is_some_and(|n| n.trim() == "viewport") => {
+            "meta" if attr(tag, "name").is_some_and(|n| n.trim() == "viewport") => {
                 self.viewport = attr(tag, "content").and_then(viewport).or(self.viewport);
             }
             "source" => self.source(tag),

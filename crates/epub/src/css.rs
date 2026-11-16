@@ -1358,7 +1358,14 @@ pub(crate) fn border_style(v: &str) -> Option<BorderStyle> {
 
 /// No paint: `transparent`, `none` or a fully clear colour.
 pub(crate) fn clear(v: &str) -> bool {
-    matches!(v, "transparent" | "none" | "initial") || v.replace(' ', "").ends_with(",0)")
+    if matches!(v, "transparent" | "none" | "initial") {
+        return true;
+    }
+    let compact = v.replace(' ', "");
+    let alpha_fn = compact.starts_with("rgba(") || compact.starts_with("hsla(");
+    (alpha_fn && (compact.ends_with(",0)") || compact.ends_with(",0.0)")))
+        || compact.ends_with("/0)")
+        || compact.ends_with("/0%)")
 }
 
 /// A colour that shows nothing: `transparent` or a zero alpha.

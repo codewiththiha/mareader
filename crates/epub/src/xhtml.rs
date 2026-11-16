@@ -98,6 +98,8 @@ const MAX_SHEET_SIDE: f32 = 10_000.0;
 const MAX_SPAN_DOWN: u16 = 64;
 /// Pictures set in one block's lines, at most.
 const MAX_INLINES: usize = 256;
+/// Inline margin/padding spacers kept in one block, at most.
+const MAX_SPACERS: usize = 16_384;
 /// A picture this many text ems tall or wide, at most, sits in a line.
 const INLINE_TALL: f32 = 3.0;
 const INLINE_WIDE: f32 = 8.0;

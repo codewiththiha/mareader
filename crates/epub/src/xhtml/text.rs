@@ -15,7 +15,7 @@ impl State<'_> {
         if space && !t.text.is_empty() && !t.text.ends_with('\n') {
             t.push(" ", Emphasis::default());
         }
-        if t.spacers.len() < MAX_INLINES {
+        if t.spacers.len() < MAX_SPACERS {
             t.spacers.push(mareader_reflow::InlineSpace {
                 at: t.text.len(),
                 width,

@@ -80,14 +80,17 @@ impl Cursor {
         self.settle();
         if !self.page.is_empty() {
             // A box running on is cut here and goes on overleaf.
-            for open in &mut self.open {
-                self.deco.extend(open.deco(self.y, false));
-                (open.top, open.continued, open.centre) = (0.0, true, None);
+            for open in self.open.iter_mut().rev() {
+                if let Some(deco) = open.deco(self.y, false) {
+                    let at = open.deco_at.min(self.deco.len());
+                    self.deco.insert(at, deco);
+                }
+                (open.top, open.continued, open.centre, open.deco_at) = (0.0, true, None, 0);
             }
             self.pages.push(std::mem::take(&mut self.page));
             self.decos.push(std::mem::take(&mut self.deco));
         }
-        (self.y, self.float_bottom) = (0.0, 0.0);
+        (self.y, self.float_bottom, self.float_depth) = (0.0, 0.0, 0);
     }
 
     /// Ends cells spanning down early: what follows starts below them.
@@ -157,6 +160,17 @@ impl Cursor {
             let Some(open) = self.open.pop() else {
                 break;
             };
+            if self.open.len() < self.float_depth {
+                let visual = open.placed.height.is_some()
+                    || open.placed.fill.is_some()
+                    || open.placed.fill_rgba.is_some()
+                    || open.placed.edges.iter().any(|e| e.draws());
+                if visual && self.float_bottom > self.y {
+                    self.y = self.float_bottom;
+                    self.float_bottom = 0.0;
+                }
+                self.float_depth = self.open.len();
+            }
             let mut bottom = self.y + open.placed.bottom;
             if let (Some((pieces, decos)), Some(share)) = (open.centre, open.placed.centre) {
                 // Its content sits mid-way down the height it fills.
@@ -177,7 +191,10 @@ impl Cursor {
                 self.y = self.y.max(floor.min(self.height));
                 bottom = bottom.max(self.y + open.placed.bottom);
             }
-            self.deco.extend(open.deco(bottom, true));
+            if let Some(deco) = open.deco(bottom, true) {
+                let at = open.deco_at.min(self.deco.len());
+                self.deco.insert(at, deco);
+            }
         }
     }
 
@@ -196,6 +213,7 @@ impl Cursor {
                 top: self.y - b.top,
                 continued: false,
                 centre,
+                deco_at: self.deco.len(),
             });
         }
     }
@@ -245,6 +263,8 @@ pub(super) struct OpenBox {
     pub(super) continued: bool,
     /// Centring, begun on a fresh page: the pieces and borders before it.
     pub(super) centre: Option<(usize, usize)>,
+    /// Index in `Cursor::deco` where this box paints (behind descendants).
+    pub(super) deco_at: usize,
 }
 
 impl OpenBox {

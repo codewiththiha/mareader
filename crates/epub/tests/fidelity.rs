@@ -170,3 +170,119 @@ fn floated_box_preserves_inner_list_offsets_and_keeps_backdrop_thumbnails() {
         "colour background-image thumbnail should be preserved in Flow::pictures"
     );
 }
+
+#[test]
+fn rgb_zero_blue_renders_and_outer_box_paints_behind_inner() {
+    let opf = "<?xml version='1.0' encoding='UTF-8'?>\
+        <package xmlns='http://www.idpf.org/2007/opf' version='3.0' unique-identifier='id' \
+        prefix='rendition: http://www.idpf.org/vocab/rendition/#'>\
+        <metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>\
+        <dc:identifier id='id'>urn:test:zorder</dc:identifier>\
+        <dc:title>Cover</dc:title><dc:language>en</dc:language>\
+        <meta property='dcterms:modified'>2026-01-01T00:00:00Z</meta>\
+        <meta property='rendition:layout'>pre-paginated</meta></metadata>\
+        <manifest><item id='p0' href='cover.xhtml' media-type='application/xhtml+xml'/>\
+        </manifest><spine><itemref idref='p0'/></spine></package>";
+    let xhtml = "<?xml version='1.0' encoding='UTF-8'?>\
+        <html xmlns='http://www.w3.org/1999/xhtml'><head>\
+        <meta name='viewport' content='width=400, height=300'/>\
+        <style>\
+        .outer { background-color: rgb(255, 255, 255); width: 400px; height: 300px; }\
+        .inner { background-color: rgb(250, 0, 0); width: 400px; height: 300px; }\
+        </style></head><body>\
+        <div class='outer'><section class='inner'><p>Cover</p></section></div>\
+        </body></html>";
+    let container = container_xml("OPS/book.opf");
+    let bytes = pack(&[
+        ("META-INF/container.xml", &container),
+        ("OPS/book.opf", opf.as_bytes()),
+        ("OPS/cover.xhtml", xhtml.as_bytes()),
+    ]);
+    let book = Book::open(Arc::new(bytes), &Typography::default()).unwrap();
+    let (bw, bh) = book.size(0);
+    let (w, h) = (bw.round() as u32, bh.round() as u32);
+    let pix = book.render(0, 1.0, [0, 0, w, h]).unwrap();
+    let mid = ((h / 2) * w + (w / 2)) as usize * 4;
+    let (r, g, b) = (pix.rgba[mid], pix.rgba[mid + 1], pix.rgba[mid + 2]);
+    assert!(
+        r > 200 && g < 40 && b < 40,
+        "expected red inner box above white outer box, got ({r}, {g}, {b})"
+    );
+}
+
+#[test]
+fn long_verse_chapter_keeps_inline_spacers_past_256_and_multicol_paginates() {
+    let mut body = String::new();
+    for n in 1..=120 {
+        body.push_str(&format!(
+            "<span class='num'>{n}</span><span>Verse {n} line one text</span><br/>\
+             <span class='lin'>Continuation line {n}</span><br/>"
+        ));
+    }
+    let opf = "<?xml version='1.0' encoding='UTF-8'?>\
+        <package xmlns='http://www.idpf.org/2007/opf' version='3.0' unique-identifier='id'>\
+        <metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>\
+        <dc:identifier id='id'>urn:test:maha</dc:identifier>\
+        <dc:title>Verses</dc:title><dc:language>en</dc:language>\
+        <meta property='dcterms:modified'>2026-01-01T00:00:00Z</meta></metadata>\
+        <manifest>\
+        <item id='c0' href='verses.xhtml' media-type='application/xhtml+xml'/>\
+        <item id='c1' href='cols.xhtml' media-type='application/xhtml+xml'/>\
+        </manifest><spine><itemref idref='c0'/><itemref idref='c1'/></spine></package>";
+    let verses = format!(
+        "<?xml version='1.0' encoding='UTF-8'?>\
+         <html xmlns='http://www.w3.org/1999/xhtml'><head><style>\
+         span.num {{ margin-left: 2em; margin-right: 1em; }}\
+         span.lin {{ margin-left: 5em; }}\
+         </style></head><body>{body}</body></html>"
+    );
+    let mut col_body = String::new();
+    for n in 0..36 {
+        col_body.push_str(&format!(
+            "<p>Paragraph {n} with enough prose words to fill multiple wrapped column lines \
+             across more than one page of multi-column layout cleanly.</p>"
+        ));
+    }
+    let cols = format!(
+        "<?xml version='1.0' encoding='UTF-8'?>\
+         <html xmlns='http://www.w3.org/1999/xhtml'><head><style>\
+         .cols {{ column-count: 2; column-gap: 24px; }}\
+         </style></head><body><div class='cols'>{col_body}</div></body></html>"
+    );
+    let container = container_xml("OPS/book.opf");
+    let bytes = pack(&[
+        ("META-INF/container.xml", &container),
+        ("OPS/book.opf", opf.as_bytes()),
+        ("OPS/verses.xhtml", verses.as_bytes()),
+        ("OPS/cols.xhtml", cols.as_bytes()),
+    ]);
+    let book = Book::open(Arc::new(bytes), &Typography::default()).unwrap();
+    let spacers: usize = book
+        .blocks()
+        .iter()
+        .filter_map(|b| match &b.content {
+            mareader_reflow::Content::Text(t) => Some(t.spacers.len()),
+            _ => None,
+        })
+        .sum();
+    assert!(
+        spacers >= 350,
+        "expected >=350 verse spacers, got {spacers}"
+    );
+    // Multi-column chapter must span multiple pages without clipping.
+    let last_col_pages: usize = (0..book.page_count())
+        .filter(|&p| {
+            book.text(p).iter().any(|l| {
+                l.chars
+                    .iter()
+                    .map(|c| c.ch)
+                    .collect::<String>()
+                    .contains("Paragraph ")
+            })
+        })
+        .count();
+    assert!(
+        last_col_pages >= 2,
+        "expected multicol chapter to paginate across >=2 pages, got {last_col_pages}"
+    );
+}

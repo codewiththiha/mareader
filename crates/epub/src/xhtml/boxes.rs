@@ -44,8 +44,12 @@ impl State<'_> {
             .flatten();
         let interaction = layout.then(|| self.interaction(el, c, d)).flatten();
         let sheet_h = self.sheet.as_deref().map(|s| s.height);
+        let reflow_vw = self
+            .viewport
+            .map(|(w, _)| w)
+            .filter(|&w| !self.fixed && w > css::BASE_WIDTH);
         let spec = layout
-            .then(|| boxed_spec(name, c, d, (cell, reflow_body, sheet_h)))
+            .then(|| boxed_spec(name, c, d, (cell, reflow_body, sheet_h, reflow_vw)))
             .flatten();
         let finish = finish.map(Arc::new);
         let paint = BoxPaint {
@@ -54,7 +58,7 @@ impl State<'_> {
             backdrop,
             finish: finish.clone(),
         };
-        let spec = self.finish_box_spec(name, c, spec, paint, (rule, interaction));
+        let spec = self.finish_box_spec(name, c, spec, paint, (rule, interaction, reflow_vw));
         let snapshot = self.gap;
         let inside = c.border[0] + c.padding[0];
         if inside > 0.0 {
@@ -80,7 +84,7 @@ impl State<'_> {
         c: &Computed,
         spec: Option<Boxed>,
         paint: BoxPaint,
-        (rule, interaction): (bool, Option<Arc<Interaction>>),
+        (rule, interaction, reflow_vw): (bool, Option<Arc<Interaction>>, Option<f32>),
     ) -> Option<Boxed> {
         let BoxPaint {
             contrast,
@@ -105,6 +109,12 @@ impl State<'_> {
             c.border_colour
                 .map(|ink| ink.and_then(|ink| self.drawn(ink, MAX_BORDER_FADE)))
         };
+        let multicol = extra.and_then(|e| e.multicol.clone()).map(|mut mc| {
+            if let (Some(vw), Length::Em(g)) = (reflow_vw, mc.gap) {
+                mc.gap = Length::Em(g * (css::BASE_WIDTH / vw));
+            }
+            Arc::new(mc)
+        });
         Some(Boxed {
             fill: fill_rgba
                 .is_none()
@@ -122,7 +132,7 @@ impl State<'_> {
             whole: c.whole,
             border_box: extra.is_some_and(|e| e.border_box),
             clip: extra.is_some_and(|e| e.clip),
-            multicol: extra.and_then(|e| e.multicol.clone()).map(Arc::new),
+            multicol,
             transform: extra.and_then(|e| e.transform_2d),
             interaction,
             ..spec
@@ -415,7 +425,7 @@ pub(super) fn boxed_spec(
     name: &str,
     c: &Computed,
     d: &Decl,
-    (cell, reflow_body, sheet_h): (bool, bool, Option<f32>),
+    (cell, reflow_body, sheet_h, reflow_vw): (bool, bool, Option<f32>, Option<f32>),
 ) -> Option<Boxed> {
     if matches!(name, "tr" | "thead" | "tbody" | "tfoot" | "caption" | "hr") {
         return None;
@@ -432,13 +442,14 @@ pub(super) fn boxed_spec(
             *w = 0.0;
         }
     }
-    let side = |i: usize| match c.margin.get(i).copied().unwrap_or(Len::Auto) {
-        Len::Auto => None,
-        Len::Percent(p) | Len::Vw(p) => Some(Length::Percent(p)),
-        Len::Mix { px, pct, .. } => Some(Length::Mix {
+    let side = |i: usize| match (c.margin.get(i).copied().unwrap_or(Len::Auto), reflow_vw) {
+        (Len::Auto, _) => None,
+        (Len::Percent(p) | Len::Vw(p), _) => Some(Length::Percent(p)),
+        (Len::Mix { px, pct, .. }, _) => Some(Length::Mix {
             em: px / ROOT_PX,
             percent: pct,
         }),
+        (Len::Px(px), Some(vw)) if px >= 64.0 => Some(Length::Percent((px / vw) * 100.0)),
         _ => Some(Length::Em(c.margin_px(i) / ROOT_PX)),
     };
     let zero = Some(Length::Em(0.0));
@@ -460,7 +471,10 @@ pub(super) fn boxed_spec(
         Some(Len::Vh(v)) if flex && v > 0.0 => Some((v / 100.0).min(1.0)),
         _ => None,
     };
-    let padding = c.padding.map(|p| p.max(0.0) / ROOT_PX);
+    let h_scale = reflow_vw.map_or(1.0, |vw| (css::BASE_WIDTH / vw).min(1.0));
+    let mut padding = c.padding.map(|p| p.max(0.0) / ROOT_PX);
+    padding[1] *= h_scale;
+    padding[3] *= h_scale;
     let flat = margin.iter().all(|m| m.is_none() || *m == zero);
     let drawn = border.iter().any(|w| *w > 0.0);
     let height = match c.height {

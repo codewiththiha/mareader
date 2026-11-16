@@ -161,7 +161,7 @@ pub(super) fn inlines(b: &mut RangedBuilder<'_, Ink>, text: &Text, style: Style<
             vertical_align: rise(inline.rise, style.size),
         });
     }
-    for (n, spacer) in text.spacers.iter().enumerate().take(MAX_INLINES) {
+    for (n, spacer) in text.spacers.iter().enumerate().take(MAX_SPACERS) {
         let w = (spacer.width * style.size).clamp(0.0, MAX_SIZE * 32.0);
         if w > 0.01 {
             let at = spacer.at.min(shown.len());
