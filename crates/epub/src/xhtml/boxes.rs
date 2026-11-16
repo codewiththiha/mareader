@@ -39,9 +39,12 @@ impl State<'_> {
             true => self.paint(c),
             false => (None, None, None),
         };
-        let fill_rgba = (layout && !ground && self.fixed)
+        let fill_rgba = (layout && !ground)
             .then(|| fixed_fill_rgba(c))
-            .flatten();
+            .flatten()
+            .filter(|&[r, g, b, a]| {
+                self.fixed || (a <= 96 && r.max(g).max(b) - r.min(g).min(b) >= 24)
+            });
         let interaction = layout.then(|| self.interaction(el, c, d)).flatten();
         let sheet_h = self.sheet.as_deref().map(|s| s.height);
         let reflow_vw = self
@@ -414,10 +417,10 @@ impl State<'_> {
 
 /// True RGBA background fill for a fixed-layout element.
 pub(super) fn fixed_fill_rgba(c: &Computed) -> Option<[u8; 4]> {
-    if let Some(rgba) = c.extra.as_deref().and_then(|e| e.fill_rgba) {
-        return (rgba[3] > 0).then_some(rgba);
+    match c.extra.as_deref().and_then(|e| e.fill_rgba) {
+        Some(rgba) => (rgba[3] > 0).then_some(rgba),
+        None => c.fill.map(|[r, g, b]| [r, g, b, 255]),
     }
-    c.fill.map(|[r, g, b]| [r, g, b, 255])
 }
 
 /// The box `name` draws or sits in; a cell's column sets its width.
@@ -471,10 +474,9 @@ pub(super) fn boxed_spec(
         Some(Len::Vh(v)) if flex && v > 0.0 => Some((v / 100.0).min(1.0)),
         _ => None,
     };
-    let h_scale = reflow_vw.map_or(1.0, |vw| (css::BASE_WIDTH / vw).min(1.0));
-    let mut padding = c.padding.map(|p| p.max(0.0) / ROOT_PX);
-    padding[1] *= h_scale;
-    padding[3] *= h_scale;
+    let s = reflow_vw.map_or(1.0, |vw| (css::BASE_WIDTH / vw).min(1.0));
+    let [pt, pr, pb, pl] = c.padding.map(|p| p.max(0.0) / ROOT_PX);
+    let padding = [pt, pr * s, pb, pl * s];
     let flat = margin.iter().all(|m| m.is_none() || *m == zero);
     let drawn = border.iter().any(|w| *w > 0.0);
     let height = match c.height {

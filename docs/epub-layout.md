@@ -201,6 +201,33 @@ A stored On keeps working.
 The Appearance popover adds a **Text** group while a book is focused:
 text size, line spacing, paragraph gaps and both overrides.
 
+## Complex EPUB 3 layouts and motion (2026-11-16)
+
+- **Multi-column flow**: `column-count`, `column-width`, `column-gap`,
+  `column-rule`, and `column-span: all` balance columns evenly across
+  pages, drawing per-page column rules and continuing cleanly overleaf
+  without clipping.
+- **Floats and box paint order**: nested boxes paint strictly
+  outer-to-inner even across page breaks; bordered or filled headers
+  expand to enclose inner floats; following text and sibling floats
+  align to the float's visual top below the preceding header border;
+  adjacent disjoint floats (`float: left` beside `float: right`) share
+  their opening page even when one spans a page break.
+- **Fixed-layout & hybrid books**: fixed-layout pages keep true RGBA
+  backgrounds and artwork colours across Light, Dark, Dim, and Black
+  themes (`PageTone::NONE`). Reflowable chapters with a wide
+  `<meta name="viewport">` scale large horizontal pixel margins,
+  padding, and column gaps proportionally, and keep subtle translucent
+  chromatic card tints.
+- **Interactive CSS**: `:hover` state deltas (`transform`,
+  `background-color`, `border-color`, `box-shadow`, `opacity`),
+  `transition`, and `@keyframes` animations composite smoothly on the
+  GPU without re-rasterising the page, respecting reduced motion.
+- **Scripts & resources**: Indic/Devanagari chapters preserve inline
+  margin/padding spacers up to 16,384 per block and fall back across
+  script-matched system fonts; percent-encoded and non-ASCII manifest
+  paths resolve reliably against archive entries.
+
 Checked on 2026-10-22 in a 1600 by 1000 window: Moby-Dick's extracts
 (two pages, Black), Alice and Children's Literature in Two pages view,
 and the table layout sample on a single page. Extracts sit in their

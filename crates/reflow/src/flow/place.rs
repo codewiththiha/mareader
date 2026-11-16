@@ -255,6 +255,125 @@ pub(super) fn place_row(
     true
 }
 
+/// Places a float; pairs a spanning float with an adjacent disjoint sibling.
+pub(super) fn place_float_group(
+    c: &mut Cursor,
+    blocks: &[Set],
+    first: Range<usize>,
+    room: (f32, &Typography),
+) -> usize {
+    c.settle();
+    let head = blocks.get(first.start);
+    let f1 = head.and_then(|b| b.float());
+    let depth = f1.map_or(0, |f| f.depth);
+    let outer_keys: Vec<usize> = head
+        .map(|b| b.boxes.get(..depth).unwrap_or(&b.boxes))
+        .map(|outer| {
+            c.close(c.common(outer));
+            outer.iter().map(|p| p.key).collect()
+        })
+        .unwrap_or_default();
+    let (pages, top) = (c.pages.len(), c.y);
+    let lead = if c.page.is_empty() {
+        0.0
+    } else {
+        head.map_or(0.0, |b| gap(b, room.1))
+    };
+    let own = head.and_then(|b| b.boxes.get(depth)).map_or(0.0, |p| p.top);
+    let visual_top = (top + lead - own).max(top);
+    for k in first.clone() {
+        place_block(c, blocks, k, room);
+    }
+    c.close(depth.min(c.open.len()));
+    if c.pages.len() > pages
+        && let Some(f1) = f1
+        && let Some(end2) = paired_float(blocks, first.end, f1)
+    {
+        merge_sibling_float(
+            c,
+            blocks,
+            first.end..end2,
+            (pages, visual_top, depth),
+            &outer_keys,
+            room,
+        );
+        return end2;
+    }
+    c.float_bottom = c.float_bottom.max(c.y);
+    c.float_depth = depth;
+    if c.pages.len() == pages {
+        let next_gap = blocks.get(first.end).map_or(0.0, |b| gap(b, room.1));
+        c.y = (visual_top - next_gap).max(top);
+    } else if c.page.first().is_some_and(|p| p.block == first.start) {
+        // The whole float went overleaf: text starts beside it there.
+        c.y = 0.0;
+    }
+    first.end
+}
+
+fn paired_float(blocks: &[Set], start: usize, f1: FloatAt) -> Option<usize> {
+    let b = blocks.get(start)?;
+    if b.cell().is_some() || b.clear {
+        return None;
+    }
+    let f2 = b.float()?;
+    let disjoint = f1.x + f1.width <= f2.x + 1.0 || f2.x + f2.width <= f1.x + 1.0;
+    if f2.key == f1.key || f2.depth != f1.depth || !disjoint {
+        return None;
+    }
+    let end = (start..blocks.len())
+        .find(|&j| blocks.get(j).and_then(|x| x.float()).map(|f| f.key) != Some(f2.key))
+        .unwrap_or(blocks.len())
+        .max(start + 1);
+    Some(end)
+}
+
+fn merge_sibling_float(
+    c: &mut Cursor,
+    blocks: &[Set],
+    second: Range<usize>,
+    (start_page, start_y, depth): (usize, f32, usize),
+    outer_keys: &[usize],
+    room: (f32, &Typography),
+) {
+    let mut sub = Cursor {
+        height: room.0,
+        y: start_y,
+        ..Cursor::default()
+    };
+    for k in second {
+        place_block(&mut sub, blocks, k, room);
+    }
+    sub.close(depth.min(sub.open.len()));
+    let last_y = sub.y;
+    let mut slices: Vec<_> = sub.pages.into_iter().zip(sub.decos).collect();
+    if !sub.page.is_empty() || !sub.deco.is_empty() {
+        slices.push((sub.page, sub.deco));
+    }
+    let total = slices.len();
+    for (offset, (pieces, decos)) in slices.into_iter().enumerate() {
+        let decos = decos
+            .into_iter()
+            .filter(|d| !outer_keys.contains(&d.box_key));
+        let target = start_page + offset;
+        if let (Some(p), Some(d)) = (c.pages.get_mut(target), c.decos.get_mut(target)) {
+            p.extend(pieces);
+            d.extend(decos);
+        } else {
+            while target > c.pages.len() {
+                c.break_page();
+            }
+            c.page.extend(pieces);
+            c.deco.extend(decos);
+            if offset + 1 == total {
+                c.y = c.y.max(last_y);
+            }
+        }
+    }
+    c.float_bottom = c.float_bottom.max(c.y);
+    c.float_depth = depth;
+}
+
 /// A book's box open on the page being filled.
 pub(super) struct OpenBox {
     pub(super) placed: Placed,

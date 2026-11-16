@@ -286,3 +286,49 @@ fn long_verse_chapter_keeps_inline_spacers_past_256_and_multicol_paginates() {
         "expected multicol chapter to paginate across >=2 pages, got {last_col_pages}"
     );
 }
+
+#[test]
+fn paired_spanning_floats_share_first_page() {
+    let mut left = String::new();
+    for n in 1..=28 {
+        left.push_str(&format!(
+            "<li>Left step {n} with enough words to wrap across multiple lines cleanly.</li>"
+        ));
+    }
+    let opf = "<?xml version='1.0' encoding='UTF-8'?>\
+        <package xmlns='http://www.idpf.org/2007/opf' version='3.0' unique-identifier='id'>\
+        <metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>\
+        <dc:identifier id='id'>urn:test:pair</dc:identifier>\
+        <dc:title>Pair</dc:title><dc:language>en</dc:language>\
+        <meta property='dcterms:modified'>2026-01-01T00:00:00Z</meta></metadata>\
+        <manifest><item id='c0' href='p.xhtml' media-type='application/xhtml+xml'/>\
+        </manifest><spine><itemref idref='c0'/></spine></package>";
+    let xhtml = format!(
+        "<?xml version='1.0' encoding='UTF-8'?>\
+         <html xmlns='http://www.w3.org/1999/xhtml'><head><style>\
+         .left {{ float: left; width: 50%; }}\
+         .right {{ float: right; width: 40%; }}\
+         </style></head><body>\
+         <div class='left'><ol>{left}</ol></div>\
+         <div class='right'><h2>About Right Column</h2><p>Visible on page one.</p></div>\
+         </body></html>"
+    );
+    let container = container_xml("OPS/book.opf");
+    let bytes = pack(&[
+        ("META-INF/container.xml", &container),
+        ("OPS/book.opf", opf.as_bytes()),
+        ("OPS/p.xhtml", xhtml.as_bytes()),
+    ]);
+    let book = Book::open(Arc::new(bytes), &Typography::default()).unwrap();
+    assert!(book.page_count() >= 2);
+    let page0: String = book
+        .text(0)
+        .into_iter()
+        .map(|l| l.chars.into_iter().map(|c| c.ch).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        page0.contains("Visible on page one."),
+        "right float should start on page 0 beside spanning left float: {page0}"
+    );
+}

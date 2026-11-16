@@ -2106,8 +2106,7 @@ fn paginate(blocks: &[Set], height: f32, typo: &Typography) -> (Vec<Vec<Piece>>,
                 .find(|&j| float(j) != Some(key))
                 .unwrap_or(blocks.len())
                 .max(i + 1);
-            place_float(&mut c, blocks, i..end, (height, typo));
-            i = end;
+            i = place::place_float_group(&mut c, blocks, i..end, (height, typo));
             continue;
         }
         if row(i).is_none()
@@ -2146,32 +2145,6 @@ fn paginate(blocks: &[Set], height: f32, typo: &Typography) -> (Vec<Vec<Piece>>,
         c.decos.push(Vec::new());
     }
     (c.pages, c.decos)
-}
-
-/// Places a float; what follows starts at its top, unless it ran over.
-fn place_float(c: &mut Cursor, blocks: &[Set], float: Range<usize>, room: (f32, &Typography)) {
-    c.settle();
-    let depth = blocks
-        .get(float.start)
-        .and_then(|b| b.float())
-        .map_or(0, |f| f.depth);
-    if let Some(first) = blocks.get(float.start) {
-        let outer = first.boxes.get(..depth).unwrap_or(&first.boxes);
-        c.close(c.common(outer));
-    }
-    let (pages, top) = (c.pages.len(), c.y);
-    for k in float.clone() {
-        place_block(c, blocks, k, room);
-    }
-    c.close(depth.min(c.open.len()));
-    c.float_bottom = c.float_bottom.max(c.y);
-    c.float_depth = depth;
-    if c.pages.len() == pages {
-        c.y = top;
-    } else if c.page.first().is_some_and(|p| p.block == float.start) {
-        // The whole float went overleaf: text starts beside it there.
-        c.y = 0.0;
-    }
 }
 
 /// Places block `i`, split between pages where it must be.
