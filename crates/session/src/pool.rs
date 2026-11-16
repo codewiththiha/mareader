@@ -3,6 +3,7 @@
 mod worker;
 
 use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 
@@ -34,17 +35,23 @@ pub(crate) enum Job {
         state: Box<OpenBook>,
     },
     /// `doc`, open as `id`, set again in `typo`, maybe with `inserts`.
-    Retypeset {
-        ticket: u64,
-        id: DocId,
-        doc: Arc<Document>,
-        typo: Arc<Typography>,
-        inserts: Option<Arc<Inserts>>,
-    },
+    Retypeset(RetypesetTask),
+    /// Finishes full-book layout after a local retypeset preview rendered.
+    ContinueRetypeset(RetypesetTask),
     Work {
         want: Want,
         doc: Arc<Document>,
     },
+}
+
+pub(crate) struct RetypesetTask {
+    pub ticket: u64,
+    pub id: DocId,
+    pub doc: Arc<Document>,
+    pub typo: Arc<Typography>,
+    pub inserts: Option<Arc<Inserts>>,
+    pub target: Option<OpenTarget>,
+    pub cancel: Arc<AtomicBool>,
 }
 
 impl Job {
@@ -75,6 +82,12 @@ pub(crate) enum Output {
     OpenFailed {
         ticket: u64,
         error: OpenError,
+    },
+    /// Instant local preview around the reading focus; full layout follows.
+    RetypesetPreview {
+        ticket: u64,
+        id: DocId,
+        doc: Document,
     },
     /// None when the book wouldn't set; the old one stays.
     Retypeset {
@@ -124,6 +137,7 @@ impl Output {
             | Self::OpenProgress { .. }
             | Self::OpenComplete { .. }
             | Self::OpenFailed { .. }
+            | Self::RetypesetPreview { .. }
             | Self::Retypeset { .. } => None,
         }
     }
@@ -229,26 +243,33 @@ impl Pool {
         );
     }
 
-    /// Replaces the `stale` re-set if still queued.
-    pub(crate) fn retypeset(
-        &self,
-        ticket: u64,
-        (id, doc): (DocId, Arc<Document>),
-        typo: Arc<Typography>,
-        inserts: Option<Arc<Inserts>>,
-        stale: Option<u64>,
-    ) {
-        let mut s = self.shared.lock();
-        let same = |j: &Job| matches!(j, Job::Retypeset { ticket: t, .. } if Some(*t) == stale);
-        s.queue.retain(|j| !same(j));
-        drop(s);
-        self.urgent(Job::Retypeset {
-            ticket,
-            id,
-            doc,
-            typo,
-            inserts,
+    pub(crate) fn cancel_retypeset(&self, ticket: u64) {
+        self.shared.lock().queue.retain(|job| {
+            !matches!(
+                job,
+                Job::Retypeset(task) | Job::ContinueRetypeset(task) if task.ticket == ticket
+            )
         });
+    }
+
+    /// Replaces the `stale` re-set if still queued.
+    pub(crate) fn retypeset(&self, task: RetypesetTask, stale: Option<u64>) {
+        if let Some(ticket) = stale {
+            self.cancel_retypeset(ticket);
+        }
+        self.urgent(Job::Retypeset(task));
+    }
+
+    pub(crate) fn continue_retypeset(&self, task: RetypesetTask) {
+        self.shared
+            .lock()
+            .queue
+            .push_back(Job::ContinueRetypeset(task));
+        if self.workers.is_empty() {
+            (self.shared.wake)();
+        } else {
+            self.shared.work.notify_one();
+        }
     }
 
     /// Opening and re-setting outrank drawing: the reader is waiting.
@@ -271,7 +292,10 @@ impl Pool {
         for job in s.queue.drain(..) {
             if job.urgent() {
                 priority.push_back(job);
-            } else if matches!(&job, Job::ContinueOpen { .. }) {
+            } else if matches!(
+                &job,
+                Job::ContinueOpen { .. } | Job::ContinueRetypeset { .. }
+            ) {
                 background.push_back(job);
             }
         }

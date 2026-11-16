@@ -198,28 +198,7 @@ impl Document {
 
     /// The book in `typo` with `inserts` laid in; none keeps its own.
     pub fn reset(&self, typo: &Typography, inserts: Option<&Arc<Inserts>>) -> Option<Self> {
-        match self {
-            Self::Pdf(_) => None,
-            Self::Epub {
-                book,
-                page_offset,
-                page_total,
-                ..
-            } => {
-                let mut reset = Self::from_book(book.reset(typo, inserts)?);
-                if !reset.is_complete()
-                    && let Self::Epub {
-                        page_offset: offset,
-                        page_total: total,
-                        ..
-                    } = &mut reset
-                {
-                    *offset = *page_offset;
-                    *total = *page_total;
-                }
-                Some(reset)
-            }
-        }
+        self.wrap_reset(|book| book.reset(typo, inserts))
     }
 
     /// The results a book was asked to show; zero for none, or a PDF.

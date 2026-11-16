@@ -751,37 +751,21 @@ impl Flow {
     fn set(
         blocks: Arc<Vec<Block>>,
         typo: &Typography,
-        mut fonts: Fonts,
+        fonts: Fonts,
+        room: (f32, f32),
+        cut: f32,
+    ) -> Self {
+        Self::set_cut(blocks, typo, fonts, room, cut)
+    }
+
+    fn finish(
+        blocks: Arc<Vec<Block>>,
+        set: Vec<Set>,
+        typo: &Typography,
+        (stacks, fonts): (Stacks, Fonts),
         (width, height): (f32, f32),
         cut: f32,
     ) -> Self {
-        let stacks = Stacks::new(&typo.faces);
-        // Laid to measure, then let go; endless streams never turn.
-        let turnable = cut.is_finite();
-        let set: Vec<Set> = {
-            let mut setter = Setter::new(typo, &stacks, &mut fonts);
-            let items: Vec<(usize, &Block)> = blocks
-                .iter()
-                .enumerate()
-                .filter(|(_, b)| !b.is_blank())
-                .collect();
-            let mut out = Vec::with_capacity(items.len());
-            // Vertical lines run down; fixed pages keep their viewport.
-            let part = |b: &Block| (b.frame.turned, sheet_key(&b.frame));
-            for group in items.chunk_by(|a, b| part(a.1) == part(b.1)) {
-                let first = group.first().map(|(_, b)| &b.frame);
-                let sheet = first.and_then(|f| f.sheet.as_deref());
-                let turned = turnable && sheet.is_none() && first.is_some_and(|f| f.turned);
-                (setter.turned, setter.fixed) = (turned, sheet.is_some());
-                (setter.column, setter.height) = match sheet {
-                    Some(s) => (s.width, s.height),
-                    None if turned => (height, width),
-                    None => (width, height),
-                };
-                out.extend(setter.set_all(group));
-            }
-            out
-        };
         let (pages, decos, fixed) = paginate_parts(&set, (cut, width), typo);
         meter::add(&meter::FLOWS, 1);
         let mut flow = Self {
@@ -1168,6 +1152,7 @@ struct Setter<'a> {
     measure: f32,
 }
 
+mod parallel;
 mod setter;
 
 /// A book's length in layout units; percentages are of `width`.

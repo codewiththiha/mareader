@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use super::*;
 
 mod blocks;
@@ -24,12 +26,8 @@ impl<'a> Setter<'a> {
 
     /// Block `frame`'s grid item place, as sized.
     pub(super) fn place_of(&self, frame: &Frame) -> Option<CellPlace> {
-        let sized = || {
-            item_key(frame)
-                .and_then(|key| self.places.get(&key))
-                .copied()
-        };
-        self.cell_place.or_else(sized)
+        self.cell_place
+            .or_else(|| self.places.get(&item_key(frame)?).copied())
     }
 
     /// Designed text's em: the A4 measure as a phone page, at reader scale.
@@ -54,34 +52,37 @@ impl<'a> Setter<'a> {
         }
     }
 
-    /// Sets `items` in order; floats and the text wrapping past them
-    /// need what came before.
-    pub(super) fn set_all(&mut self, items: &[(usize, &Block)]) -> Vec<Set> {
+    /// Sets `items` in order, stopping early if `cancel` is raised.
+    pub(super) fn set_all_cancellable(
+        &mut self,
+        items: &[(usize, &Block)],
+        cancel: Option<&AtomicBool>,
+    ) -> Option<Vec<Set>> {
         let mut out = Vec::with_capacity(items.len());
         let mut wrap: Option<Wrap> = None;
         let mut sized = None;
         let mut k = 0;
         while let Some(&(i, block)) = items.get(k) {
+            if k.is_multiple_of(32) && parallel::cancelled(cancel) {
+                return None;
+            }
             let grid = self.look(&block.frame).and(grid_key(&block.frame));
             if let Some(key) = grid.filter(|key| sized != Some(*key)) {
                 // A grid's items are sized together, as it starts.
                 let rest = items.get(k..).unwrap_or_default();
                 let same = |(_, b): &&(usize, &Block)| grid_key(&b.frame) == Some(key);
                 let end = k + rest.iter().take_while(same).count().max(1);
-                let places = self.size_grid(items.get(k..end).unwrap_or_default());
-                self.places = places;
+                self.places = self.size_grid(items.get(k..end).unwrap_or_default());
                 sized = Some(key);
             }
-            let floated = self.look(&block.frame).and(block.frame.float.as_ref());
-            if let Some(f) = floated {
+            if let Some(f) = self.look(&block.frame).and(block.frame.float.as_ref()) {
                 let key = Arc::as_ptr(f) as usize;
                 let rest = items.get(k..).unwrap_or_default();
                 let same = |(_, b): &(usize, &Block)| float_key(&b.frame) == Some(key);
                 let end = k + rest.iter().take_while(|b| same(b)).count().max(1);
                 let (sets, next) = self.float_group(items.get(k..end).unwrap_or_default(), f);
                 out.extend(sets);
-                wrap = next;
-                k = end;
+                (wrap, k) = (next, end);
                 continue;
             }
             self.exclusion = None;
@@ -111,7 +112,7 @@ impl<'a> Setter<'a> {
             k += 1;
         }
         self.exclusion = None;
-        out
+        Some(out)
     }
 
     /// Sizes a grid's items to their content: table columns or flex lines.

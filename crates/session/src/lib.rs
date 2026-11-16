@@ -13,6 +13,7 @@ mod cover;
 mod document;
 mod key;
 mod pool;
+mod retype;
 mod selection;
 mod typeset;
 
@@ -34,6 +35,7 @@ pub use typeset::{bundled, typography};
 
 use document::TextFile;
 use pool::{Output, Pool};
+use retype::Typesetting;
 
 /// Where a document's bytes come from; workers read paths.
 #[derive(Clone)]
@@ -177,12 +179,6 @@ pub struct Session {
     next: u64,
 }
 
-struct Typesetting {
-    ticket: u64,
-    doc: DocId,
-    typo: Arc<Typography>,
-}
-
 struct Opening {
     name: Option<String>,
     path: Option<PathBuf>,
@@ -285,7 +281,7 @@ impl Session {
 
     pub fn close(&mut self, id: DocId) {
         self.docs.remove(&id);
-        self.typesetting.retain(|_, t| t.doc != id);
+        self.close_typesetting(id);
         let tickets: Vec<_> = self
             .opening
             .iter()
@@ -295,38 +291,6 @@ impl Session {
             self.opening.remove(&ticket);
             self.pool.cancel_open(ticket);
         }
-    }
-
-    /// Sets book `id` again in `typo`; a newer request in `slot` wins.
-    pub fn retypeset(&mut self, id: DocId, typo: Arc<Typography>, slot: u64) {
-        self.reset(id, typo, None, slot);
-    }
-
-    /// Sets book `id` in `typo` with `inserts`; none keeps its own.
-    pub fn reset(
-        &mut self,
-        id: DocId,
-        typo: Arc<Typography>,
-        inserts: Option<Arc<Inserts>>,
-        slot: u64,
-    ) {
-        let Some(entry) = self.docs.get(&id) else {
-            return;
-        };
-        let doc = Arc::clone(&entry.doc);
-        let ticket = self.bump();
-        let set = Typesetting {
-            ticket,
-            doc: id,
-            typo: Arc::clone(&typo),
-        };
-        for opening in self.opening.values_mut() {
-            if opening.doc == Some(id) {
-                opening.typo = Arc::clone(&typo);
-            }
-        }
-        let stale = self.typesetting.insert(slot, set).map(|t| t.ticket);
-        self.pool.retypeset(ticket, (id, doc), typo, inserts, stale);
     }
 
     /// At rest: every open book keeps only what its pages in view need.
@@ -483,54 +447,10 @@ impl Session {
                     }),
                 }
             }
-            Output::Retypeset { ticket, id, result } => {
-                let slot = self
-                    .typesetting
-                    .iter()
-                    .find_map(|(slot, t)| (t.ticket == ticket).then_some(*slot))?;
-                let set = self.typesetting.remove(&slot)?;
-                let mut doc = result?;
-                for opening in self.opening.values() {
-                    if opening.doc == Some(id)
-                        && let Some(target) = opening.target.as_ref()
-                    {
-                        doc.set_preview_target(target);
-                    }
-                }
-                let old = self.docs.get(&id)?;
-                let entry = Entry {
-                    doc: Arc::new(doc),
-                    name: old.name.clone(),
-                    path: old.path.clone(),
-                    typo: set.typo,
-                };
-                let previous = Arc::clone(&old.doc);
-                let new = DocId(self.bump());
-                self.docs.insert(new, entry);
-                let target_doc = self.docs.get(&new).map(|entry| &*entry.doc);
-                let mut resumes = Vec::new();
-                for (ticket, opening) in &mut self.opening {
-                    if opening.doc == Some(id) {
-                        opening.doc = Some(new);
-                        opening.target_page = opening
-                            .target
-                            .as_ref()
-                            .and_then(|target| target_doc.and_then(|doc| doc.target_page(target)))
-                            .unwrap_or(opening.target_page);
-                        if opening.ready {
-                            resumes.push(*ticket);
-                        }
-                    }
-                }
-                for ticket in resumes {
-                    self.resume_opening(ticket);
-                }
-                Some(Event::Retypeset {
-                    old: id,
-                    new,
-                    previous,
-                })
+            Output::RetypesetPreview { ticket, id, doc } => {
+                self.accept_retypeset_preview(ticket, id, doc)
             }
+            Output::Retypeset { ticket, id, result } => self.accept_retypeset(ticket, id, result),
             Output::Rendered { key, result } => {
                 if !self.docs.contains_key(&key.doc) {
                     return None;
@@ -545,6 +465,7 @@ impl Session {
                     }
                     self.resume_opening(ticket);
                 }
+                self.resume_retypeset(key.doc);
                 Some(Event::Rendered { key, result })
             }
             Output::Read { doc, page, result } => {

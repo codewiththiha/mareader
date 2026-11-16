@@ -65,6 +65,16 @@ pub trait Sink {
 
     fn adopt_pages(&mut self, _: DocId, _: DocId, _: &Document, _: &Document) {}
 
+    fn reading_anchor(
+        &self,
+        _: PaneId,
+        place: &Place,
+        doc: &Document,
+        _: &TextLayers,
+    ) -> Option<Anchor> {
+        doc.anchor(place.current)
+    }
+
     fn reloaded_fixed(&mut self, _: PaneId, place: &mut Place, new: DocId, count: usize) {
         place.doc = new;
         place.selection = None;

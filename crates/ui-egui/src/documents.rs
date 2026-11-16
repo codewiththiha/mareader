@@ -376,6 +376,20 @@ impl Sink for UiSink<'_> {
             .adopt(old, new, |page| was.same_page(page, is));
     }
 
+    fn reading_anchor(
+        &self,
+        pane: PaneId,
+        place: &Place,
+        doc: &Document,
+        texts: &TextLayers,
+    ) -> Option<Anchor> {
+        self.ui
+            .views
+            .get(&pane)
+            .and_then(|view| reading_place(view, place, Some(doc), texts, place.doc))
+            .or_else(|| doc.anchor(place.current))
+    }
+
     fn reloaded_fixed(&mut self, pane: PaneId, place: &mut Place, new: DocId, count: usize) {
         if let Some(view) = self.ui.views.get_mut(&pane) {
             if !view.respliced(place, new, count, |p| (p < count).then_some(p)) {
@@ -516,13 +530,7 @@ impl DocumentsUi {
         anchor: Option<Anchor>,
     ) {
         session.with_document_place(pane, |place, _| {
-            let mut view = PdfView::new();
-            if page > 0 {
-                view.go_to(place, page, count);
-            }
-            view.hold_place(place, anchor);
-            place.zoom = view.zoom.sharp();
-            self.views.insert(pane, Box::new(view));
+            self.sink(None).opened(pane, place, page, count, anchor);
         });
     }
 
@@ -820,54 +828,47 @@ impl DocumentsUi {
         any
     }
 
+    fn with_view(
+        &mut self,
+        session: &mut Session,
+        pane: PaneId,
+        f: impl FnOnce(&mut PdfView, &mut Place, usize),
+    ) {
+        if let Some(view) = self.views.get_mut(&pane) {
+            session.with_document_place(pane, |place, count| f(view, place, count));
+        }
+    }
+
     pub fn zoom(&mut self, session: &mut Session, pane: PaneId, command: ZoomCommand, now: f64) {
-        let Some(view) = self.views.get_mut(&pane) else {
-            return;
-        };
-        session.with_document_place(pane, |place, _| view.command(place, command, now));
+        self.with_view(session, pane, |v, p, _| v.command(p, command, now));
     }
 
     pub fn apply_mode(&mut self, session: &mut Session, pane: PaneId, mode: ViewMode, now: f64) {
-        let Some(view) = self.views.get_mut(&pane) else {
-            return;
-        };
-        session.with_document_place(pane, |place, _| view.apply_mode(place, mode, now));
+        self.with_view(session, pane, |v, p, _| v.apply_mode(p, mode, now));
     }
 
     pub fn arrow(&mut self, session: &mut Session, pane: PaneId, arrow: Arrow, now: f64) {
-        let Some(view) = self.views.get_mut(&pane) else {
-            return;
-        };
-        session.with_document_place(pane, |place, count| view.arrow(place, arrow, count, now));
+        self.with_view(session, pane, |v, p, n| v.arrow(p, arrow, n, now));
     }
 
     pub fn page_key(&mut self, session: &mut Session, pane: PaneId, forward: bool) {
-        let Some(view) = self.views.get_mut(&pane) else {
-            return;
-        };
-        session.with_document_place(pane, |place, count| view.page_key(place, forward, count));
+        self.with_view(session, pane, |v, p, n| v.page_key(p, forward, n));
     }
 
     pub fn go_to(&mut self, session: &mut Session, pane: PaneId, page: usize) {
-        let Some(view) = self.views.get_mut(&pane) else {
-            return;
-        };
-        session.with_document_place(pane, |place, count| view.go_to(place, page, count));
+        self.with_view(session, pane, |v, p, n| v.go_to(p, page, n));
     }
 
     pub fn toggle_drift(&mut self, session: &mut Session, pane: PaneId, now: f64) -> bool {
-        let Some(view) = self.views.get_mut(&pane) else {
-            return false;
-        };
-        session
-            .with_document_place(pane, |place, _| view.toggle_drift(place, now))
-            .unwrap_or(false)
+        self.views.get_mut(&pane).is_some_and(|v| {
+            session
+                .with_document_place(pane, |p, _| v.toggle_drift(p, now))
+                .unwrap_or(false)
+        })
     }
 
     pub fn stop_drift(&mut self, pane: PaneId) -> bool {
-        self.views
-            .get_mut(&pane)
-            .is_some_and(|view| view.stop_drift())
+        self.views.get_mut(&pane).is_some_and(|v| v.stop_drift())
     }
 }
 
@@ -896,16 +897,16 @@ fn reading_place(
     id: DocId,
 ) -> Option<Anchor> {
     let doc = doc?;
-    if let Some(at) = view.place(place) {
-        return Some(at);
-    }
-    let line = view.reading_line(place).and_then(|(page, y)| {
-        let band = doc.bands().and_then(|b| b.get(page)).map_or(0.0, |b| b.y);
-        let held = texts.get(id, page);
-        let layer = held.or_else(|| doc.text_layer(page).ok().map(Arc::new))?;
-        reading_place::line_at(&layer, y + band)
-    });
-    line.or_else(|| doc.anchor(place.current))
+    view.place(place)
+        .or_else(|| {
+            let (page, y) = view.reading_line(place)?;
+            let band = doc.bands().and_then(|b| b.get(page)).map_or(0.0, |b| b.y);
+            let layer = texts
+                .get(id, page)
+                .or_else(|| doc.text_layer(page).ok().map(Arc::new))?;
+            reading_place::line_at(&layer, y + band)
+        })
+        .or_else(|| doc.anchor(place.current))
 }
 
 const OPENING_MARK: f32 = 48.0;

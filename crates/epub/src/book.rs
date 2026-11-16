@@ -26,6 +26,8 @@ use crate::trigger::{self, Action, Triggered};
 use crate::xhtml::{self, BOOK_FACE, Href, Library, Refs};
 use crate::{OpenError, guard};
 
+mod retype;
+
 /// Transcripts' insert ids: the top bit, then the card.
 const TRANSCRIPTS: u128 = 1 << 127;
 
@@ -259,6 +261,7 @@ pub struct Book {
     narration: Arc<Narration>,
     read: Option<Arc<Read>>,
     complete: bool,
+    windowed: bool,
 }
 
 const MAX_SPINE_HREF: usize = 4096;
@@ -806,13 +809,10 @@ fn assemble_book(assembly: BookAssembly<'_>) -> Result<Book, OpenError> {
         .any(|chapter| !chapter.scripts.code.is_empty());
     let shows = !refs.targets.is_empty() || scripted;
     let archive = (!complete || plays || shows).then(|| Arc::clone(bytes));
-    let book_read = if !shows {
-        None
-    } else if complete {
-        Some(Arc::new(std::mem::take(read)))
-    } else {
-        Some(Arc::new(read.clone()))
-    };
+    let book_read = shows.then(|| {
+        let copy = complete.then(|| std::mem::take(read));
+        Arc::new(copy.unwrap_or_else(|| read.clone()))
+    });
     Ok(Book {
         identity: Arc::clone(identity),
         blocks,
@@ -835,6 +835,7 @@ fn assemble_book(assembly: BookAssembly<'_>) -> Result<Book, OpenError> {
         narration: Arc::new(narration),
         read: book_read,
         complete,
+        windowed: false,
     })
 }
 
@@ -875,47 +876,7 @@ impl Book {
 
     /// The book in `typo` with `inserts` laid in; none keeps its own.
     pub fn reset(&self, typo: &Typography, inserts: Option<&Arc<Inserts>>) -> Option<Self> {
-        let set = || {
-            let same = *typo == self.typo;
-            let (flow, layout) = match same {
-                true => (Arc::clone(&self.flow), self.layout),
-                false => {
-                    let language = self.language.as_deref();
-                    let flow = set(&self.blocks, typo, language, &self.faces);
-                    (Arc::new(flow.keep_pictures(&self.flow)), next_layout())
-                }
-            };
-            let inserts = Arc::clone(inserts.unwrap_or(&self.inserts));
-            let old = self.spliced.as_deref().filter(|_| same);
-            let spliced = (!inserts.list.is_empty())
-                .then(|| Spliced::build(&flow, &self.blocks, &inserts, (old, &self.faces)))
-                .flatten()
-                .map(Arc::new);
-            Self {
-                identity: Arc::clone(&self.identity),
-                blocks: Arc::clone(&self.blocks),
-                flow,
-                typo: typo.clone(),
-                layout,
-                inserts,
-                spliced,
-                refs: Arc::clone(&self.refs),
-                spine: Arc::clone(&self.spine),
-                faces: Arc::clone(&self.faces),
-                notes: Arc::clone(&self.notes),
-                toc: Arc::clone(&self.toc),
-                title: self.title.clone(),
-                author: self.author.clone(),
-                language: self.language.clone(),
-                rtl: self.rtl,
-                lead: self.lead,
-                archive: self.archive.clone(),
-                narration: Arc::clone(&self.narration),
-                read: self.read.clone(),
-                complete: self.complete,
-            }
-        };
-        catch_unwind(AssertUnwindSafe(set)).ok()
+        self.reset_inner(typo, inserts, None)
     }
 
     /// Its narration; no phrases if it has none.
@@ -1482,6 +1443,7 @@ impl Book {
                 .zip(normal(other, mapped))
                 .is_some_and(|(a, b)| a == b)
                 && self.size(page) == other.size(mapped)
+                && self.column(page) == other.column(mapped)
                 && self.fixed(page) == other.fixed(mapped)
                 && self.turned(page) == other.turned(mapped);
             return same.then_some(mapped);

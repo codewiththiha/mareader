@@ -4,11 +4,15 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use mareader_session::{Anchor, DocId, Document, Entry, Inserts, Typography, typography};
+use mareader_session::{
+    Anchor, DocId, Document, Entry, Inserts, OpenTarget, Typography, typography,
+};
 use mareader_settings::TextSettings;
 use mareader_workspace::PaneId;
 
 use super::state::{Sink, Slot, State};
+use crate::reading::Place;
+use crate::texts::TextLayers;
 
 impl State {
     /// Each pane's book type: its `own` text, or `window`.
@@ -120,7 +124,7 @@ impl State {
         let Some(session) = &mut self.session else {
             return;
         };
-        let (mut moves, mut asks) = (Vec::new(), Vec::new());
+        let (mut moves, mut asks, mut cancels) = (Vec::new(), Vec::new(), Vec::new());
         for (pane, slot) in &self.panes {
             let Slot::Open(place) = slot else {
                 continue;
@@ -134,30 +138,46 @@ impl State {
             };
             let key = inserts.key;
             let looks = |e: &Entry| *e.typo == **want && e.doc.inserts_key() == key;
-            if !entry.doc.is_reflowable() || looks(entry) {
+            if !entry.doc.is_reflowable() {
+                continue;
+            }
+            if looks(entry) {
+                if self.asked.remove(pane).is_some() && entry.doc.is_complete() {
+                    cancels.push(pane.0);
+                }
                 continue;
             }
             let twin = self.panes.values().find_map(|s| match s {
                 Slot::Open(place) => {
                     let e = session.get(place.doc)?;
                     let same = entry.path.is_some() && e.path == entry.path;
-                    (same && looks(e)).then_some(place.doc)
+                    (same && looks(e) && e.doc.is_complete()).then_some(place.doc)
                 }
                 Slot::Opening(_) => None,
             });
             match twin {
                 Some(twin) => moves.push((*pane, place.doc, twin)),
-                None => asks.push((*pane, place.doc, (Arc::clone(want), inserts))),
+                None => {
+                    let target = if self.progressive {
+                        preview_target(&self.panes, &self.texts, (*pane, place, entry), said, sink)
+                    } else {
+                        None
+                    };
+                    asks.push((*pane, place.doc, (Arc::clone(want), inserts, target)));
+                }
             }
         }
-        for (pane, doc, (want, inserts)) in asks {
+        for slot in cancels {
+            session.cancel_retypeset(slot);
+        }
+        for (pane, doc, (want, inserts, target)) in asks {
             let key = inserts.key;
             let same =
                 |(d, t, k): &(DocId, Arc<Typography>, u64)| *d == doc && **t == *want && *k == key;
             if self.asked.values().any(same) {
                 continue;
             }
-            session.reset(doc, Arc::clone(&want), Some(inserts), pane.0);
+            session.reset_at(doc, Arc::clone(&want), Some(inserts), pane.0, target);
             self.asked.insert(pane, (doc, want, key));
         }
         for (pane, old, new) in moves {
@@ -221,4 +241,32 @@ impl State {
         }
         matched.or(first)
     }
+}
+
+fn preview_target(
+    panes: &BTreeMap<PaneId, Slot>,
+    texts: &TextLayers,
+    (pane, place, entry): (PaneId, &Place, &Entry),
+    said: Option<(PaneId, Anchor)>,
+    sink: &dyn Sink,
+) -> Option<OpenTarget> {
+    let shared = panes
+        .values()
+        .filter(|s| matches!(s, Slot::Open(other) if other.doc == place.doc))
+        .count()
+        > 1;
+    if shared {
+        return None;
+    }
+    let anchor = said
+        .filter(|(p, _)| *p == pane)
+        .map(|(_, a)| a)
+        .or_else(|| sink.reading_anchor(pane, place, &entry.doc, texts));
+    let spine = anchor.and_then(|a| entry.doc.spine_place(a));
+    Some(OpenTarget {
+        page: entry.doc.display_page(place.current),
+        pages: entry.doc.display_page_count(),
+        place: anchor,
+        spine,
+    })
 }
