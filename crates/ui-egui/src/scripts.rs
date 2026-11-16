@@ -1,6 +1,6 @@
 //! A book's scripts: the pages they made in a pane, and the clicks sent.
 
-use egui::{Context, Id, Margin, Pos2, Rect, RichText, TextEdit};
+use egui::{Context, Id, Margin, Pos2, Rect, RichText};
 use mareader_engine::scripts::Field;
 
 use mareader_engine::scripts::{Ask, Paged};
@@ -8,6 +8,7 @@ use mareader_engine::scripts::{Ask, Paged};
 use crate::bubble::{Bubble, Side};
 use crate::selection::Sheet;
 use crate::theme::Tokens;
+use crate::widgets;
 
 const WIDTH: f32 = 320.0;
 /// Characters of an alert shown in a toast.
@@ -46,17 +47,16 @@ pub fn edit(ctx: &Context, paged: &mut Paged, sheets: &[Sheet], room: Rect, t: &
     };
     let mut done = false;
     let (card, ()) = bubble.show(ctx, t, |ui, _| {
-        let hint = RichText::new(&editing.field.hint).color(t.muted);
-        let mut edit = match editing.field.multiline {
-            true => TextEdit::multiline(&mut editing.text).desired_rows(4),
-            false => TextEdit::singleline(&mut editing.text),
+        let input = match editing.field.multiline {
+            true => widgets::input_multiline(&mut editing.text).rows(4),
+            false => widgets::input(&mut editing.text),
         };
-        edit = edit
-            .hint_text(hint)
+        let response = input
+            .hint(&editing.field.hint)
             .password(editing.field.secret)
-            .font(egui::FontId::proportional(14.0))
-            .desired_width(f32::INFINITY);
-        let response = ui.add(edit);
+            .text_size(14.0)
+            .show(ui)
+            .response;
         if !editing.focused {
             response.request_focus();
             editing.focused = true;

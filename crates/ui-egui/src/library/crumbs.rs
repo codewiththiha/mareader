@@ -353,12 +353,14 @@ fn rename(ui: &mut Ui, id: ShelfId, name: &str, out: &mut Commands) {
     let draft = ui.data(|d| d.get_temp::<String>(field));
     let fresh = draft.is_none();
     let mut text = draft.unwrap_or_else(|| name.to_owned());
-    let edit = egui::TextEdit::singleline(&mut text)
+    let r = widgets::input(&mut text)
         .id(field)
+        .label("Shelf name")
         .char_limit(NAME_MAX)
-        .desired_width(CRUMB_MAX + 20.0);
-    let r = ui.add(edit);
-    widgets::name(&r, "Shelf name");
+        .width(CRUMB_MAX + 20.0)
+        .compact()
+        .show(ui)
+        .response;
     if fresh {
         // The whole name selected, so typing replaces it.
         select_all(&r, field, &text);

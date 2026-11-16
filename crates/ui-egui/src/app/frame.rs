@@ -43,7 +43,8 @@ impl eframe::App for MareaderApp {
         let drop_target = self.escape(&ctx, route, &mut commands);
         let (inset, overlay) = self.rail(ui, &ctx, route, &mut commands);
         let view = self.pages(ui, &ctx, route, drop_target, &mut commands);
-        self.reader_overlay(ui, &ctx, route, inset, &mut commands);
+        let docked_inset = if overlay { 0.0 } else { inset };
+        self.reader_overlay(ui, &ctx, route, docked_inset, &mut commands);
         let backdrop = self.bars(&ctx, route, &view, &mut commands);
         self.show_titlebar(&ctx, route, inset, overlay, &backdrop, &mut commands);
         self.lights(&ctx, route, inset, overlay, &mut commands);

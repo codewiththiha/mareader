@@ -73,18 +73,16 @@ fn paint_area_contents(
     }
     ui.set_min_size(shown.size());
     ui.set_max_size(shown.size());
-    if !(state.tucked_rest && f.parking == mareader_settings::EdgeParking::Tab) {
-        paint(ui, shown, morph.fold, t);
-    }
-    if state.tucked_rest {
+    if state.tucked_rest && f.parking == mareader_settings::EdgeParking::Tab {
         let _ = ui.allocate_exact_size(shown.size(), Sense::hover());
         return false;
     }
-    if state.parked {
-        ui.disable();
-    }
+    paint(ui, shown, morph.fold, t);
     let head = Rect::from_min_size(shown.min, vec2(shown.width(), HEAD));
-    let (grab_dragged, mut released) = paint_header_bar(ui, f, rect, (head, morph, state), t, out);
+    let mut ignored = Vec::new();
+    let target = if state.parked { &mut ignored } else { out };
+    let (grab_dragged, mut released) =
+        paint_header_bar(ui, f, rect, (head, morph, state), t, target);
     if state.folded {
         f.page.ask(ui.ctx(), f.session, f.settings);
     }
@@ -93,7 +91,7 @@ fn paint_area_contents(
         return released;
     }
     ui.multiply_opacity(body_shown);
-    paint_body(ui, f, (shown, head, morph.open), t, out);
+    paint_body(ui, f, (shown, head, morph.open), t, target);
     let (edges_released, edges_dragging) = if morph.fold <= 0.0 && !state.closing && !state.parked {
         edges(ui, shown, rect)
     } else {
@@ -106,7 +104,7 @@ fn paint_area_contents(
         if f.toasts
             .is_some_and(|toast| shown.intersects(toast) || rect.intersects(toast))
         {
-            out.push(Sent::Ui(UiCommand::ClearToasts));
+            target.push(Sent::Ui(UiCommand::ClearToasts));
         }
     }
     released
@@ -170,7 +168,7 @@ fn paint_body(
         .max_rect(body)
         .layout(Layout::top_down(Align::Min));
     ui.scope_builder(builder, |ui| {
-        ui.set_clip_rect(body.expand(2.0).intersect(cut));
+        ui.set_clip_rect(body.expand(2.0).intersect(cut).intersect(f.stage));
         f.page.compact(ui, f.session, (f.settings, f.voice), out);
     });
 }

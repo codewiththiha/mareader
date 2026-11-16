@@ -5,9 +5,7 @@ use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
-use egui::{
-    Align, Layout, Rect, RichText, ScrollArea, Sense, Stroke, TextEdit, Ui, Vec2, pos2, vec2,
-};
+use egui::{Align, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_assist::{AppleState, Board, Job, KeyRow, KeyState, Load, lanes};
 use mareader_engine::command::Command;
 use mareader_settings::{AiSettings, ModelPreset, PageTask, PresetId, Provider};
@@ -591,7 +589,8 @@ fn provider(
             "" => "https://host/v1/",
             url => url,
         };
-        field(ui, TextEdit::singleline(&mut e.url).hint_text(hint));
+        let input = widgets::input(&mut e.url).hint(hint).width(FIELD_W);
+        input.compact().show(ui);
     });
     if p.takes_keys() {
         key_rows(ui, p, board, out);
@@ -637,8 +636,10 @@ fn fields(ui: &mut Ui, p: &mut ModelPreset, board: Option<&Board>, out: &mut Com
     divider(ui);
     row(ui, "Name", "How tasks list this model", |ui| {
         let hint = ModelPreset::suggested_name(p.provider, &p.model);
-        let edit = TextEdit::singleline(&mut p.name).hint_text(hint);
-        field(ui, edit.char_limit(ModelPreset::NAME_MAX));
+        let input = widgets::input(&mut p.name)
+            .hint(hint)
+            .char_limit(ModelPreset::NAME_MAX);
+        input.width(FIELD_W).compact().show(ui);
     });
     divider(ui);
     row(ui, "Provider", "", |ui| provider_picker(ui, p));
@@ -699,11 +700,12 @@ fn model_row(ui: &mut Ui, p: &mut ModelPreset, board: Option<&Board>, out: &mut 
             "" => "The server's first",
             m => m,
         };
-        let mut edit = TextEdit::singleline(&mut p.model).hint_text(hint);
+        let input = widgets::input(&mut p.model).hint(hint).width(FIELD_W);
+        let mut input = input.compact();
         if lost {
-            edit = edit.text_color(t.muted);
+            input = input.text_color(t.muted);
         }
-        let r = field(ui, edit);
+        let r = input.show(ui).response;
         if lost {
             widgets::tip(&r, &gone, None);
         }
@@ -869,12 +871,15 @@ fn add_key(ui: &mut Ui, p: Provider, out: &mut Commands) {
         vec2(ui.available_width(), super::ROW_H),
         Layout::left_to_right(Align::Center),
         |ui| {
-            let t = Tokens::get(ui.ctx());
-            ui.add(Icon::Key.image(ui, 15.0).tint(t.muted));
-            let edit = TextEdit::singleline(&mut text)
+            let field = widgets::input(&mut text)
+                .id(id.with("field"))
+                .icon(Icon::Key)
                 .password(true)
-                .hint_text("Paste an API key");
-            let field = field(ui, edit);
+                .hint("Paste an API key")
+                .width(FIELD_W)
+                .compact()
+                .show(ui)
+                .response;
             let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             let add = ui.add_enabled(!text.trim().is_empty(), egui::Button::new("Add"));
             if (add.clicked() || entered) && !text.trim().is_empty() {
@@ -886,16 +891,6 @@ fn add_key(ui: &mut Ui, p: Provider, out: &mut Commands) {
         },
     );
     ui.data_mut(|d| d.insert_temp(id, text));
-}
-
-/// A text field outlined like the appearance menu's.
-fn field(ui: &mut Ui, edit: TextEdit<'_>) -> egui::Response {
-    let t = Tokens::get(ui.ctx());
-    let frame = egui::Frame::new()
-        .stroke(Stroke::new(1.0, t.line))
-        .corner_radius(6)
-        .inner_margin(egui::Margin::symmetric(8, 4));
-    ui.add(edit.frame(frame).desired_width(FIELD_W - 16.0))
 }
 
 fn failure(ui: &mut Ui, f: &Failure) {

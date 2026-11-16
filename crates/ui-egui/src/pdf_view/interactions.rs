@@ -193,7 +193,7 @@ pub(super) fn selection_bar(
     let id = place.doc;
     let bar_id = egui::Id::new(("study-bar", id));
     // Hidden while a press elsewhere may be selecting; a press on it stays.
-    let bar = crate::z_order::layer(crate::z_order::Tier::Popover, bar_id);
+    let bar = crate::z_order::layer(crate::z_order::Tier::PageCard, bar_id);
     let (down, from) = ctx.input(|i| (i.pointer.any_down(), i.pointer.press_origin()));
     if down && from.and_then(|p| ctx.layer_id_at(p)) != Some(bar) {
         return None;

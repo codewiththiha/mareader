@@ -250,7 +250,7 @@ impl Page {
         }
         let mut draft = s.clone();
         let now = ui.input(|i| i.time);
-        self.field(ui, t, now, &mut draft);
+        self.field(ui, now, &mut draft);
         let reply = self.reply.as_ref();
         match self.small {
             true => narrow_choices(ui, &mut draft, &ready, reply, t, out),
@@ -288,7 +288,7 @@ impl Page {
     }
 
     /// The search field; arrows pick a result, Enter keeps the search.
-    fn field(&mut self, ui: &mut Ui, t: &Tokens, now: f64, s: &mut DictionarySettings) {
+    fn field(&mut self, ui: &mut Ui, now: f64, s: &mut DictionarySettings) {
         let id = ui.make_persistent_id("dict-search");
         let had = ui.memory(|m| m.has_focus(id));
         let count = self.reply.as_ref().map_or(0, |r| r.entries.len());
@@ -319,7 +319,7 @@ impl Page {
             height,
             size,
         };
-        let typed = look::field(ui, look, t);
+        let typed = look::field(ui, look);
         let field = typed.field;
         self.field_at = Some(field.rect);
         let name = |b: &mut egui::accesskit::Node| b.set_label(LABEL);

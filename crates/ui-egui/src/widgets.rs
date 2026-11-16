@@ -7,6 +7,7 @@ use egui::{
 
 use crate::icons::Icon;
 use crate::icons::anim::{self, Act};
+pub use crate::input_field::{InputField, InputResponse, input, input_multiline};
 use crate::theme::Tokens;
 use crate::ui_command::WindowCommand;
 

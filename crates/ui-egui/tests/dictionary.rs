@@ -428,7 +428,7 @@ fn dragging_past_a_side_peeks_the_dictionary_itself() {
     );
     assert!((exposed.width() - PEEK).abs() < 1.0, "{exposed:?}");
     assert!(h.query_by_label("Show the dictionary").is_some());
-    assert!(h.query_by_label(CLOSE).is_none(), "no controls at the edge");
+    assert!(h.query_by_label(CLOSE).is_some(), "controls stay visible");
 
     h.hover_at(exposed.center());
     h.run_steps(20);

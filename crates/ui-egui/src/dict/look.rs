@@ -6,11 +6,12 @@ use crate::read_aloud::{SAY, STOP_SAYING};
 use crate::shaped;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
+use crate::widgets;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align, Color32, CornerRadius, CursorIcon, FontId, Frame, Id, Margin, Popup, PopupCloseBehavior,
-    Rect, RectAlign, Response, RichText, Sense, Shape, Stroke, StrokeKind, TextEdit, Ui, Vec2,
-    WidgetInfo, WidgetType, pos2, vec2,
+    Rect, RectAlign, Response, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, WidgetInfo,
+    WidgetType, pos2, vec2,
 };
 use mareader_dict::Entry;
 use mareader_engine::{command::Command, read_aloud::state::Offer};
@@ -31,81 +32,21 @@ pub struct Typed {
     pub cleared: bool,
 }
 
-/// The pill's radius for a height, capped as egui's corners are.
-fn round(height: f32) -> CornerRadius {
-    CornerRadius::same((height / 2.0).clamp(0.0, 255.0) as u8)
-}
-
-pub fn field(ui: &mut Ui, f: Field<'_>, t: &Tokens) -> Typed {
-    let size = vec2(ui.available_width(), f.height);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-    let ctx = ui.ctx().clone();
-    let focused = ui.memory(|m| m.has_focus(f.id));
-    let secs = crate::motion::secs(&ctx, 0.16);
-    let lit = ctx.animate_bool_with_time(f.id.with("lit"), focused, secs);
-    // A soft ring of the accent grows round it while it has the keys.
-    if lit > 0.0 {
-        let ring = rect.expand(3.0);
-        let glow = t.accent.gamma_multiply(0.16 * lit);
-        ui.painter().rect_filled(ring, round(ring.height()), glow);
-    }
-    let fill = t.surface.lerp_to_gamma(t.paper, lit);
-    let edge = Stroke::new(1.0 + 0.5 * lit, t.line.lerp_to_gamma(t.accent, lit));
-    (ui.painter()).rect(rect, round(f.height), fill, edge, StrokeKind::Inside);
-    let pad = (f.height * 0.36).round();
-    let glyph = f.size + 1.0;
-    let mark = Rect::from_center_size(
-        pos2(rect.left() + pad + glyph / 2.0, rect.center().y),
-        Vec2::splat(glyph),
-    );
-    let ink = t.muted.lerp_to_gamma(t.accent, lit);
-    Icon::Search.image(ui, glyph).tint(ink).paint_at(ui, mark);
-    let typed = !f.text.is_empty();
-    let button = f.height - 14.0;
-    let end = match typed {
-        true => rect.right() - 7.0 - button - 4.0,
-        false => rect.right() - pad,
-    };
-    let left = mark.right() + 9.0;
-    // As tall as the pill, so tall scripts and the hint sit centred, uncut.
-    let room = Rect::from_min_max(
-        pos2(left, rect.top()),
-        pos2(end.max(left + 24.0), rect.bottom()),
-    );
-    let edit = TextEdit::singleline(f.text)
+pub fn field(ui: &mut Ui, f: Field<'_>) -> Typed {
+    let res = widgets::input(f.text)
         .id(f.id)
-        .hint_text(f.hint)
-        .font(FontId::proportional(f.size))
-        .frame(Frame::NONE)
-        .margin(Margin::ZERO)
+        .icon(Icon::Search)
+        .hint(f.hint)
+        .clearable(true)
+        .pill()
+        .height(f.height)
+        .text_size(f.size)
         .return_key(None)
-        .vertical_align(Align::Center)
-        .min_size(room.size())
-        .desired_width(room.width());
-    let field = ui.put(room, edit);
-    let shown = ctx.animate_bool_with_time(f.id.with("clear"), typed, secs);
-    let mut cleared = false;
-    if shown > 0.0 {
-        let centre = pos2(rect.right() - 7.0 - button / 2.0, rect.center().y);
-        let spot = Rect::from_center_size(centre, Vec2::splat(button));
-        let r = ui.interact(spot, f.id.with("clear-button"), Sense::click());
-        let fill = match r.hovered() {
-            true => t.ink.gamma_multiply(0.12),
-            false => t.ink.gamma_multiply(0.06),
-        };
-        let radius = button / 2.0 * (0.7 + 0.3 * shown);
-        ui.painter()
-            .circle_filled(centre, radius, fill.gamma_multiply(shown));
-        let x = Rect::from_center_size(centre, Vec2::splat(12.0));
-        let tint = t.muted.gamma_multiply(shown);
-        Icon::Close.image(ui, 12.0).tint(tint).paint_at(ui, x);
-        if r.hovered() {
-            ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
-        }
-        r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, typed, "Clear search"));
-        cleared = typed && r.clicked();
+        .show(ui);
+    Typed {
+        field: res.response,
+        cleared: res.cleared,
     }
-    Typed { field, cleared }
 }
 
 /// One choice in a picker's list; true when picked.

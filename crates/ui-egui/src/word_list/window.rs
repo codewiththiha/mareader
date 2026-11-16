@@ -268,10 +268,9 @@ impl Open {
             .width(ui.available_width())
             .show_ui(ui, |ui| {
                 for p in &words.presets {
-                    let star = if words.instant.as_ref() == Some(&p.name) {
-                        " ★"
-                    } else {
-                        ""
+                    let star = match words.instant.as_ref() == Some(&p.name) {
+                        true => " ★",
+                        false => "",
                     };
                     let on = self.preset.as_ref() == Some(&p.name);
                     if ui
@@ -291,7 +290,8 @@ impl Open {
             self.naming = None;
         }
         if let Some((name, renaming)) = &mut self.naming {
-            let field = ui.add(egui::TextEdit::singleline(name).hint_text("Preset name"));
+            let input = widgets::input(name).hint("Preset name");
+            let field = input.label("Preset name").compact().show(ui).response;
             if !field.has_focus() && name.is_empty() {
                 field.request_focus();
             }

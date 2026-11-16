@@ -18,17 +18,23 @@ pub enum Tier {
     PaneMark,
     /// Per-pane hover-revealed chrome (`page-bar`).
     PaneBar,
-    /// Window-edge chrome (`titlebar`, `sidebar-float`, `import-run`).
+    /// Window-edge chrome (`titlebar`, `import-run`).
     WindowChrome,
     /// Status pill tucked behind a floating tool (`toast-island`).
     AttachedPill,
     /// Non-interactable drag guides above chrome and below floating tools.
     ChromeOverlay,
+    /// Page-anchored hover cards, word/AI/note bubbles, selection toolbar, and
+    /// page-AI menus: above page chrome, strictly below floating tools.
+    PageCard,
     /// Modeless floating tools and parked handles (`dict-window`,
     /// `dict-edge-tab`, `park::reveal`, `read-aloud-*`, `find-bar`,
     /// `study-picking`, `lift-card`).
     FloatingTool,
-    /// Ephemeral anchored popovers, bubbles and menus outside a modal.
+    /// Floating overlay sidebar (`sidebar-float`), sliding over floating tools
+    /// and staying below popovers and modals.
+    Sidebar,
+    /// Ephemeral anchored popovers, dropdowns and context menus outside modals.
     Popover,
     /// App-blocking modal dialogs and full-window lightbox.
     Modal,
@@ -48,14 +54,16 @@ pub enum Tier {
 
 impl Tier {
     /// Every tier in strict back-to-front order.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 17] = [
         Self::Canvas,
         Self::PaneMark,
         Self::PaneBar,
         Self::WindowChrome,
         Self::AttachedPill,
         Self::ChromeOverlay,
+        Self::PageCard,
         Self::FloatingTool,
+        Self::Sidebar,
         Self::Popover,
         Self::Modal,
         Self::ModalPopover,
@@ -75,9 +83,12 @@ impl Tier {
             | Self::WindowChrome
             | Self::AttachedPill
             | Self::ChromeOverlay => Order::Middle,
-            Self::FloatingTool | Self::Popover | Self::Modal | Self::ModalPopover => {
-                Order::Foreground
-            }
+            Self::PageCard
+            | Self::FloatingTool
+            | Self::Sidebar
+            | Self::Popover
+            | Self::Modal
+            | Self::ModalPopover => Order::Foreground,
             Self::Notification | Self::Tooltip | Self::WindowLights | Self::PostEffect => {
                 Order::Tooltip
             }

@@ -8,7 +8,7 @@ use crate::platform::Platform;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::{keymap, widgets};
-use egui::{Align, Color32, Id, Layout, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
+use egui::{Align, Id, Layout, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::read_aloud::booth::Booth;
 use mareader_engine::settings::Tab;
@@ -60,8 +60,7 @@ fn engine(ui: &mut Ui, s: &mut ReadAloudSettings, v: &Voices<'_>, out: &mut Comm
     let t = Tokens::get(ui.ctx());
     group(ui, |ui| {
         let on = Some(s.engine == system);
-        let mark = engine_mark(system, t.muted);
-        if pick_row(ui, ("System voices", &detail), "", on, mark, |_| {}) {
+        if pick_row(ui, ("System voices", &detail), "", on, |_| {}) {
             s.engine = system.to_owned();
         }
         for model in shelf.catalogue() {
@@ -81,8 +80,7 @@ fn engine(ui: &mut Ui, s: &mut ReadAloudSettings, v: &Voices<'_>, out: &mut Comm
                 _ => ("Unavailable engine", "Not in this build"),
             };
             divider(ui);
-            let mark = engine_mark(&s.engine, t.muted);
-            pick_row(ui, lines, "", Some(true), mark, |_| {});
+            pick_row(ui, lines, "", Some(true), |_| {});
         }
     });
     if !shelf.attached() {
@@ -92,11 +90,6 @@ fn engine(ui: &mut Ui, s: &mut ReadAloudSettings, v: &Voices<'_>, out: &mut Comm
         ui.add_space(8.0);
         ui.label(RichText::new(fault).size(t.text_small).color(t.danger));
     }
-}
-
-/// A muted engine mark keeps the row's text hierarchy.
-fn engine_mark(id: &str, ink: Color32) -> Option<(Icon, Color32)> {
-    Icon::engine(id).map(|mark| (mark, ink))
 }
 
 /// A model: picked once it runs here, else its download; true when picked.
@@ -111,9 +104,7 @@ fn model_row(
     let picked = wanted.or(model.builds.first());
     let offer = offer(model);
     let on = (runs || s.engine == model.id).then_some(s.engine == model.id);
-    let t = Tokens::get(ui.ctx());
-    let mark = engine_mark(model.id, t.muted);
-    pick_row(ui, (model.name, &offer), model.about, on, mark, |ui| {
+    pick_row(ui, (model.name, &offer), model.about, on, |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         if !shelf.attached() {
             let bytes = picked.map_or(model.bytes(), |b| model.bytes_with(b));

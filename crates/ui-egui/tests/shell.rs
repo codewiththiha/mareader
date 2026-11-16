@@ -597,12 +597,16 @@ fn the_menu_opens_the_shortcut_sheet_in_the_middle() {
     assert!(h.query_by_label("Esc").is_some());
     let f11 = h.get_by_label("F11").rect();
     let middle = h.ctx.content_rect().center();
-    let sheet = h.get_by_label("Filter shortcuts").rect();
+    let sheet = h
+        .ctx
+        .memory(|m| m.area_rect(egui::Id::new("shortcut-sheet")))
+        .expect("shortcut sheet rect");
     assert!(
         (sheet.center().x - middle.x).abs() < 4.0,
         "centred: {sheet:?}"
     );
-    assert!(f11.top() > sheet.bottom(), "keys sit under the filter");
+    let filter = h.get_by_label("Filter shortcuts").rect();
+    assert!(f11.top() > filter.bottom(), "keys sit under the filter");
 }
 
 #[test]

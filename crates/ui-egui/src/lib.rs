@@ -29,6 +29,7 @@ pub mod gpu;
 pub mod icons;
 pub mod image_viewer;
 pub mod import;
+pub mod input_field;
 pub mod keymap;
 pub mod layout;
 pub mod library;

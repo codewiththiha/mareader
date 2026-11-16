@@ -178,21 +178,21 @@ pub(crate) fn draft_form(
     }
     frame.show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
-        let name = ui.add(
-            egui::TextEdit::singleline(&mut draft.name)
-                .hint_text("Preset name")
-                .desired_width(f32::INFINITY),
-        );
-        widgets::name(&name, "Preset name");
+        let name = widgets::input(&mut draft.name)
+            .hint("Preset name")
+            .label("Preset name")
+            .compact()
+            .show(ui)
+            .response;
         if std::mem::take(&mut draft.focus) {
             name.request_focus();
         }
-        let group = ui.add(
-            egui::TextEdit::singleline(&mut draft.group)
-                .hint_text("Section (optional)")
-                .desired_width(f32::INFINITY),
-        );
-        widgets::name(&group, "Section");
+        let group = widgets::input(&mut draft.group)
+            .hint("Section (optional)")
+            .label("Section")
+            .compact()
+            .show(ui)
+            .response;
         let sections = section_names(user);
         if !sections.is_empty() {
             ui.horizontal_wrapped(|ui| {

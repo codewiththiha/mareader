@@ -301,12 +301,6 @@ fn paint_bar_area(
             ui.set_clip_rect(m.room);
             let (r, _) = ui.allocate_exact_size(place.rect.size(), egui::Sense::hover());
             card::frame(ui, r, m.k);
-            if place.tucked_rest {
-                return;
-            }
-            if place.parked {
-                ui.disable();
-            }
             let row = r.with_min_y(r.bottom() - control::HEIGHT);
             // Words wait for room; compact and full cross-fade.
             let words = ((m.k - 0.35) / 0.65).clamp(0.0, 1.0);
@@ -316,21 +310,27 @@ fn paint_bar_area(
             let small = words * (1.0 - m.f).powi(2);
             if small > 0.01 {
                 let at = (top, light(small), m.f < 0.5);
-                if card::compact(ui, at, both, &mut shape.ticker) {
+                if card::compact(ui, at, both, &mut shape.ticker) && !place.parked {
                     act = Some(Act::Reveal);
                 }
             }
             let large = words * m.f * m.f;
             if large > 0.01 {
                 let at = (top, light(large), m.f >= 0.5);
-                if card::show(ui, at, both, &mut shape.scroll, cover) {
+                if card::show(ui, at, both, &mut shape.scroll, cover) && !place.parked {
                     act = Some(Act::Reveal);
                 }
             }
-            if let Some(a) = control::show(ui, row, (view, fit, m.k), settings, stage.book, out) {
+            let mut ignored = Vec::new();
+            let target = if place.parked { &mut ignored } else { out };
+            if let Some(a) = control::show(ui, row, (view, fit, m.k), settings, stage.book, target)
+                && !place.parked
+            {
                 act = Some(a);
             }
-            resize = edges::show(ui, r, place.span);
+            if !place.parked {
+                resize = edges::show(ui, r, place.span);
+            }
         });
     (act, resize)
 }

@@ -115,7 +115,7 @@ impl Bubble {
             Side::Below => (pos2(x, at.bottom() + GAP + lift), Align2::CENTER_TOP),
             Side::Above => (pos2(x, at.top() - GAP - lift), Align2::CENTER_BOTTOM),
         };
-        let shown = z_order::area(ctx, Tier::Popover, self.id)
+        let shown = z_order::area(ctx, Tier::PageCard, self.id)
             .pivot(pivot)
             .fixed_pos(pos)
             .constrain(false)

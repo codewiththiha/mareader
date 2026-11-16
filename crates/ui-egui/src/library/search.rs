@@ -5,6 +5,7 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
+use crate::widgets;
 use crate::z_order::{self, Tier};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
@@ -49,30 +50,12 @@ fn act(out: &mut Commands, action: SearchAction) {
 
 /// The bar's pill in `rect`; arrows, Enter and Escape act before typing.
 pub fn field(ui: &mut Ui, rect: Rect, field: &Field, out: &mut Commands) {
-    let t = Tokens::get(ui.ctx());
     let id = Id::new(FIELD);
     let focused = ui.memory(|m| m.has_focus(id));
     if focused {
         keys(ui, field, out);
     }
-    let ring = match focused {
-        true => Stroke::new(1.5, t.accent),
-        false => Stroke::new(1.0, t.line),
-    };
-    let round = rect.height() / 2.0;
-    let fill = if focused { t.surface } else { t.hover };
-    ui.painter()
-        .rect(rect, round, fill, ring, StrokeKind::Inside);
-    let glass = Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(15.0, 15.0));
-    Icon::Search.paint(ui, glass, t.muted);
-    let clear = !field.text.is_empty();
-    let right = rect.right() - if clear { 34.0 } else { 12.0 };
-    let room = Rect::from_min_max(
-        pos2(glass.right() + 8.0, rect.top()),
-        pos2(right, rect.bottom()),
-    );
     let mut text = field.text.clone();
-    let hint = egui::RichText::new(&field.placeholder).color(t.muted);
     // Escape and the arrows are the field's own, not focus moves.
     let filter = EventFilter {
         horizontal_arrows: true,
@@ -80,41 +63,31 @@ pub fn field(ui: &mut Ui, rect: Rect, field: &Field, out: &mut Commands) {
         escape: true,
         ..EventFilter::default()
     };
-    let edit = egui::TextEdit::singleline(&mut text)
-        .id(id)
-        .frame(egui::Frame::NONE)
-        .margin(egui::Margin::ZERO)
-        .font(FontId::proportional(13.0))
-        .hint_text(hint)
-        .event_filter(filter)
-        .vertical_align(egui::Align::Center)
-        .min_size(room.size())
-        .desired_width(room.width());
-    let edited = ui.put(room, edit);
-    // Named for screen readers, and for tests to tell it from a name field.
-    let name = |b: &mut egui::accesskit::Node| b.set_label(LABEL);
-    ui.ctx().accesskit_node_builder(id, name);
+    let res = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            widgets::input(&mut text)
+                .id(id)
+                .icon(Icon::Search)
+                .hint(&field.placeholder)
+                .label(LABEL)
+                .clearable(true)
+                .pill()
+                .width(rect.width())
+                .height(rect.height())
+                .text_size(13.0)
+                .event_filter(filter)
+                .show(ui)
+        })
+        .inner;
     if ui.data_mut(|d| d.remove_temp::<bool>(Id::new(FOCUS_ASK))) == Some(true) {
-        super::crumbs::select_all(&edited, id, &text);
+        super::crumbs::select_all(&res.response, id, &text);
     }
     // Typing, or coming back to a search, lists what it finds.
-    let back = edited.gained_focus() && !text.trim().is_empty();
-    if edited.changed() || back {
+    let back = res.response.gained_focus() && !text.trim().is_empty();
+    if res.cleared {
+        act(out, SearchAction::Clear);
+    } else if res.response.changed() || back {
         act(out, SearchAction::Text(text));
-    }
-    if clear {
-        let x =
-            Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), vec2(22.0, 22.0));
-        let r = ui.interact(x, id.with("clear"), Sense::click());
-        r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Clear search"));
-        if r.hovered() {
-            ui.painter().circle_filled(x.center(), 11.0, t.pressed);
-        }
-        let mark = Rect::from_center_size(x.center(), vec2(13.0, 13.0));
-        Icon::Close.paint(ui, mark, t.muted);
-        if r.clicked() {
-            act(out, SearchAction::Clear);
-        }
     }
     let pass = ui.ctx().cumulative_pass_nr();
     ui.data_mut(|d| d.insert_temp(Id::new(PANEL).with("anchor"), (rect, pass)));

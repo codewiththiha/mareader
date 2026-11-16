@@ -10,7 +10,7 @@ use crate::z_order::{self, Tier};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{
     Context, CornerRadius, FontId, Frame, Id, Key, Margin, Modifiers, Pos2, Rect, RichText,
-    ScrollArea, Sense, Stroke, TextEdit, Ui, Vec2, pos2, vec2,
+    ScrollArea, Sense, Stroke, Ui, Vec2, pos2, vec2,
 };
 use mareader_engine::command::Command;
 use mareader_engine::page_ai::ledger::Ledger;
@@ -420,13 +420,12 @@ impl PageAiUi {
             *step = Step::Tasks;
             return false;
         }
-        ui.add_space(2.0);
-        let edit = TextEdit::singleline(&mut self.filter)
-            .hint_text("Find a language")
-            .desired_width(f32::INFINITY);
-        let field = ui.add(edit);
-        let name = |b: &mut egui::accesskit::Node| b.set_label(FIND);
-        ui.ctx().accesskit_node_builder(field.id, name);
+        let input = widgets::input(&mut self.filter)
+            .id(Id::new("page-ai-language-filter"))
+            .icon(Icon::Search)
+            .hint("Find a language")
+            .label(FIND);
+        let field = input.clearable(true).compact().show(ui).response;
         if !field.has_focus() && self.filter.is_empty() {
             field.request_focus();
         }
@@ -622,7 +621,7 @@ impl PageAiUi {
 
 /// A menu's frame at `at`, kept on screen.
 fn popup(ctx: &Context, id: Id, at: egui::Pos2, t: &Tokens, add: impl FnOnce(&mut Ui)) -> Rect {
-    let rect = z_order::area(ctx, Tier::Popover, id)
+    let rect = z_order::area(ctx, Tier::PageCard, id)
         .fixed_pos(at)
         .constrain(true)
         .show(ctx, |ui| {
@@ -690,7 +689,7 @@ fn page_popup(
 ) -> Rect {
     let ease = 1.0 - (1.0 - k).powi(3);
     let rise = (1.0 - ease) * 6.0 * if below { -1.0 } else { 1.0 };
-    let rect = z_order::area(ctx, Tier::Popover, id)
+    let rect = z_order::area(ctx, Tier::PageCard, id)
         .fixed_pos(pos + vec2(0.0, rise))
         // Placed by hand: egui's own keeping-in would fight it.
         .constrain(false)

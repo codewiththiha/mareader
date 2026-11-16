@@ -210,12 +210,12 @@ fn rename(ui: &mut Ui, library: &LibraryState, named: Named, t: &Tokens) -> Opti
     let key = Id::new(("library-rename", named));
     let first = ui.data(|d| d.get_temp::<String>(key).is_none());
     let mut draft = ui.data_mut(|d| d.get_temp_mut_or_insert_with(key, || name.clone()).clone());
-    let edit = egui::TextEdit::singleline(&mut draft)
+    let resp = crate::widgets::input(&mut draft)
         .id(key)
-        .desired_width(f32::INFINITY)
-        .char_limit(mareader_library::NAME_MAX);
-    let resp = ui.add(edit);
-    crate::widgets::name(&resp, "New name");
+        .label("New name")
+        .char_limit(mareader_library::NAME_MAX)
+        .show(ui)
+        .response;
     if first {
         super::crumbs::select_all(&resp, key, &draft);
     }

@@ -134,26 +134,60 @@ fn split_pane_page_bar_stays_behind_floating_dictionary_window() {
 }
 
 #[test]
-fn floating_sidebar_covers_page_bar_and_stays_under_dictionary_and_modals() {
+fn floating_sidebar_covers_page_bar_and_dictionary_and_stays_under_modals() {
     let mut h = reader(&[("set", "chrome.sidebar_overlay:true")]);
     let (pane_id, pane_rect) = h.state().pane_rects()[0];
 
-    h.state_mut().queue(Sent::Ui(UiCommand::OpenSidebar(None)));
     h.state_mut()
         .set_option("dict_window", "show")
         .expect("dict window opens");
     h.run_steps(6);
 
-    // Reveal the page bar from the right half, outside the floating sidebar.
+    // Move the floating dictionary into the left strip before opening sidebar.
+    let dict_rect = h.state().dict().window_rect().expect("drawn dict window");
+    let target_x = 120.0;
+    drag(
+        &mut h,
+        dict_rect.left_top() + vec2(60.0, 18.0),
+        vec2(target_x - dict_rect.left(), 0.0),
+    );
+    let dict_rect = h.state().dict().window_rect().expect("moved dict window");
+
+    // Reveal the page bar from the right edge, then open the floating sidebar.
     h.hover_at(pos2(pane_rect.right() - 40.0, pane_rect.bottom() - 4.0));
+    h.run_steps(6);
+    h.state_mut().queue(Sent::Ui(UiCommand::OpenSidebar(None)));
     h.run_steps(6);
 
     let bar = z_order::layer(Tier::PaneBar, Id::new(("page-bar", pane_id)));
-    let sidebar = z_order::layer(Tier::WindowChrome, Id::new("sidebar-float"));
+    let sidebar = z_order::layer(Tier::Sidebar, Id::new("sidebar-float"));
     let dict = z_order::layer(Tier::FloatingTool, Id::new("dict-window"));
 
     assert!(z_order::is_above(&h.ctx, sidebar, bar));
-    assert!(z_order::is_above(&h.ctx, dict, sidebar));
+    assert!(z_order::is_above(&h.ctx, sidebar, dict));
+
+    let sidebar_rect = h
+        .ctx
+        .memory(|m| m.area_rect(Id::new("sidebar-float")))
+        .expect("sidebar rect");
+    let overlap = dict_rect.intersect(sidebar_rect);
+    assert!(
+        overlap.width() > 20.0 && overlap.height() > 20.0,
+        "dictionary and floating sidebar overlap: dict={dict_rect:?}, sidebar={sidebar_rect:?}"
+    );
+    assert_eq!(
+        h.ctx.layer_id_at(overlap.center()),
+        Some(sidebar),
+        "hits inside the overlap land on the floating sidebar, not the dictionary"
+    );
+
+    // Clicking the exposed part of the dictionary cannot pull it above sidebar.
+    let exposed = pos2(dict_rect.right() - 24.0, dict_rect.center().y);
+    assert!(!sidebar_rect.contains(exposed));
+    click_at(&mut h, exposed);
+    h.run_steps(4);
+    assert!(z_order::is_above(&h.ctx, sidebar, dict));
+    assert_eq!(h.ctx.layer_id_at(overlap.center()), Some(sidebar));
 
     h.state_mut().queue(Sent::Ui(UiCommand::ShowSettings));
     h.run_steps(6);
@@ -161,6 +195,23 @@ fn floating_sidebar_covers_page_bar_and_stays_under_dictionary_and_modals() {
     let settings = z_order::layer(Tier::Modal, Id::new("settings-window"));
     assert!(z_order::is_above(&h.ctx, settings, dict));
     assert!(z_order::is_above(&h.ctx, settings, sidebar));
+}
+
+#[test]
+fn command_palette_expands_to_show_comfortable_list_height() {
+    let mut h = reader(&[]);
+    h.state_mut().queue(Sent::Ui(UiCommand::ShowPalette));
+    h.run_steps(6);
+
+    let palette_rect = h
+        .ctx
+        .memory(|m| m.area_rect(Id::new("command-palette")))
+        .expect("command palette modal rect");
+    assert!(
+        palette_rect.height() >= 360.0,
+        "command palette should show a full scrollable list, got {palette_rect:?}"
+    );
+    assert!(h.query_by_label("Command palette filter").is_some());
 }
 
 #[test]

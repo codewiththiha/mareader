@@ -282,3 +282,42 @@ fn modal_popup_stays_above_modal_while_pre_modal_popup_stays_below() {
     });
     assert!(is_above(&ctx, in_layer, modal_layer));
 }
+
+#[test]
+fn page_card_stays_below_floating_tool_which_stays_below_sidebar_and_popover() {
+    let ctx = Context::default();
+    let card_rect = Rect::from_min_size(pos2(80.0, 80.0), vec2(260.0, 180.0));
+    let tool_rect = Rect::from_min_size(pos2(120.0, 100.0), vec2(280.0, 200.0));
+    let side_rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(180.0, 400.0));
+    let pop_rect = Rect::from_min_size(pos2(150.0, 140.0), vec2(140.0, 100.0));
+
+    let card = layer(Tier::PageCard, Id::new("hover-card"));
+    let tool = layer(Tier::FloatingTool, Id::new("dict-window"));
+    let side = layer(Tier::Sidebar, Id::new("sidebar-float"));
+    let pop = layer(Tier::Popover, Id::new("dropdown"));
+
+    let draw = |ctx: &Context| {
+        box_area(ctx, Tier::Popover, "dropdown", pop_rect);
+        box_area(ctx, Tier::Sidebar, "sidebar-float", side_rect);
+        box_area(ctx, Tier::FloatingTool, "dict-window", tool_rect);
+        box_area(ctx, Tier::PageCard, "hover-card", card_rect);
+    };
+
+    for _ in 0..6 {
+        run_pass(&ctx, plain_input(), draw);
+    }
+    assert!(is_above(&ctx, tool, card));
+    assert!(is_above(&ctx, side, tool));
+    assert!(is_above(&ctx, pop, side));
+
+    // Clicking the page card or floating tool cannot invert the stack.
+    run_pass(&ctx, click_input(pos2(95.0, 95.0), true), draw);
+    run_pass(&ctx, click_input(pos2(340.0, 160.0), true), draw);
+
+    assert!(is_above(&ctx, tool, card));
+    assert!(is_above(&ctx, side, tool));
+    assert!(is_above(&ctx, pop, side));
+    assert_eq!(ctx.layer_id_at(pos2(160.0, 160.0)), Some(pop));
+    assert_eq!(ctx.layer_id_at(pos2(140.0, 120.0)), Some(side));
+    assert_eq!(ctx.layer_id_at(pos2(240.0, 120.0)), Some(tool));
+}

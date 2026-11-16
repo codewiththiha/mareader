@@ -231,7 +231,7 @@ impl Sidebar {
         }
         let rail = home.translate(vec2(width - WIDTH, 0.0));
         // egui fades new areas in by default; this rail only slides.
-        z_order::area(ctx, Tier::WindowChrome, Id::new("sidebar-float"))
+        z_order::area(ctx, Tier::Sidebar, Id::new("sidebar-float"))
             .fade_in(false)
             .fixed_pos(rail.min)
             .constrain(false)

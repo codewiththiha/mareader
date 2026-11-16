@@ -1059,7 +1059,6 @@ fn pick_row(
     lines: (&str, &str),
     tip: &str,
     on: Option<bool>,
-    flag: Option<(Icon, Color32)>,
     control: impl FnOnce(&mut Ui),
 ) -> bool {
     let rect = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 52.0));
@@ -1067,7 +1066,7 @@ fn pick_row(
     let id = ui.id().with(("pick_row", lines.0));
     let whole = on.map(|_| ui.interact(rect, id, Sense::click()));
     let mut picked = whole.is_some_and(|w| w.clicked());
-    flagged_row(ui, lines, tip, flag, |ui| {
+    flagged_row(ui, lines, tip, None, |ui| {
         if let Some(on) = on {
             picked |= radio(ui, on, lines.0);
         }

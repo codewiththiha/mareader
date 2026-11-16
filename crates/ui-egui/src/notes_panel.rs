@@ -9,8 +9,8 @@ use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Color32, FontId, Galley, Id, Key, Rect, RichText, ScrollArea, Sense, TextEdit,
-    TextFormat, Ui, vec2,
+    Align, Color32, FontId, Galley, Id, Key, Rect, RichText, ScrollArea, Sense, TextFormat, Ui,
+    vec2,
 };
 use mareader_appearance::Rgb;
 use mareader_engine::command::Command;
@@ -191,7 +191,7 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Command
     });
     ui.data_mut(|d| d.insert_temp(id, filter));
     ui.add_space(6.0);
-    search(ui, &mut typed, &t);
+    search(ui, &mut typed);
     ui.data_mut(|d| d.insert_temp(query_id, typed));
     ui.add_space(4.0);
     if placed.is_empty() && !words.is_empty() {
@@ -242,38 +242,26 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Command
 }
 
 /// The search over quotes, notes and chapters; Escape clears it.
-fn search(ui: &mut Ui, typed: &mut String, t: &Tokens) {
+fn search(ui: &mut Ui, typed: &mut String) {
     let pad = egui::Margin::symmetric(PAD_X as i8, 0);
-    let frame = egui::Frame::new()
-        .stroke(egui::Stroke::new(1.0, t.line))
-        .corner_radius(6)
-        .inner_margin(egui::Margin::symmetric(8, 2));
     egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-        frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-                Icon::Search.paint(ui, r, t.muted);
-                let clear = !typed.is_empty();
-                let w = ui.available_width() - if clear { 28.0 } else { 0.0 };
-                let edit = TextEdit::singleline(typed)
-                    .hint_text("Search highlights and notes")
-                    .frame(egui::Frame::NONE)
-                    .desired_width(w);
-                let field = ui.add(edit);
-                widgets::name(&field, "Search notes");
-                // The list read the old words this frame; draw again.
-                if field.changed() {
-                    ui.ctx().request_repaint();
-                }
-                let escaped = ui.input(|i| i.key_pressed(Key::Escape));
-                let cleared =
-                    clear && widgets::small_icon_button(ui, Icon::Close, "Clear search").clicked();
-                if (field.lost_focus() && escaped) || cleared {
-                    typed.clear();
-                    ui.ctx().request_repaint();
-                }
-            });
-        });
+        let res = widgets::input(typed)
+            .id(Id::new("notes-search"))
+            .icon(Icon::Search)
+            .hint("Search highlights and notes")
+            .label("Search notes")
+            .clearable(true)
+            .compact()
+            .show(ui);
+        // The list read the old words this frame; draw again.
+        if res.changed() {
+            ui.ctx().request_repaint();
+        }
+        let escaped = ui.input(|i| i.key_pressed(Key::Escape));
+        if res.response.lost_focus() && escaped {
+            typed.clear();
+            ui.ctx().request_repaint();
+        }
     });
 }
 

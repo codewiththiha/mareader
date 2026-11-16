@@ -2,7 +2,7 @@
 
 use egui::{
     Align, Color32, Context, CornerRadius, FontId, Frame, Id, Label, Layout, Margin, RichText,
-    ScrollArea, Stroke, TextEdit, Ui, vec2,
+    ScrollArea, Stroke, Ui, vec2,
 };
 
 use crate::icons::Icon;
@@ -75,11 +75,14 @@ pub fn show(ctx: &Context, platform: Platform) {
         ui.set_width(width);
         ui.spacing_mut().item_spacing.y = 12.0;
         shut = header(ui, platform);
-        let field = TextEdit::singleline(&mut typed.text)
-            .hint_text("Filter shortcuts")
-            .desired_width(f32::INFINITY);
-        let field = ui.add(field);
-        widgets::name(&field, "Filter shortcuts");
+        let field = widgets::input(&mut typed.text)
+            .id(Id::new((MODAL, "filter")))
+            .icon(Icon::Search)
+            .hint("Filter shortcuts")
+            .label("Filter shortcuts")
+            .clearable(true)
+            .show(ui)
+            .response;
         if std::mem::take(&mut typed.focus) {
             field.request_focus();
         }

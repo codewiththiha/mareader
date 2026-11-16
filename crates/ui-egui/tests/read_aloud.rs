@@ -1571,8 +1571,10 @@ fn the_player_peeks_as_its_shell_and_restores_on_click() {
         (visible.bottom() - bottom).abs() < 2.0,
         "the shell reaches the bottom edge: {visible:?} vs {bottom}"
     );
-    assert!(h.query_by_label("Pause").is_none());
-    assert!(h.query_by_label("Play").is_none());
+    assert!(
+        h.query_by_label("Pause").is_some() || h.query_by_label("Play").is_some(),
+        "parked player keeps its labels and controls visible"
+    );
     assert!(h.query_by_label("Show the read-aloud player").is_some());
 
     let edge = egui::pos2(tucked.center().x, tucked.top() + PEEK * 0.5);

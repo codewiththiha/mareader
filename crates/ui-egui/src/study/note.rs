@@ -118,16 +118,18 @@ fn write(
         had,
     } = *note;
     quoted(ui, quote, ink, t);
-    let field = egui::TextEdit::multiline(draft)
-        .id(Id::new("study-note-field"))
-        .hint_text("Write a note…")
-        .desired_rows(4)
-        .desired_width(f32::INFINITY)
-        .lock_focus(true);
     let r = ScrollArea::vertical()
         .max_height((cap - 96.0).max(80.0))
         .auto_shrink([false, true])
-        .show(ui, |ui| ui.add(field))
+        .show(ui, |ui| {
+            widgets::input_multiline(draft)
+                .id(Id::new("study-note-field"))
+                .hint("Write a note…")
+                .rows(4)
+                .lock_focus(true)
+                .show(ui)
+                .response
+        })
         .inner;
     if fresh {
         r.request_focus();
