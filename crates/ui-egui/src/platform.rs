@@ -35,7 +35,7 @@ impl Platform {
     /// Room the title bar leaves at its left edge: macOS's traffic lights.
     pub fn leading_inset(self) -> f32 {
         match self {
-            Self::Mac => 80.0,
+            Self::Mac => 92.0,
             Self::Windows | Self::Gnome => 8.0,
         }
     }

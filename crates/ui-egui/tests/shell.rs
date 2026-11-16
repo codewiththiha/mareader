@@ -931,7 +931,8 @@ fn the_overlay_bar_leaves_no_gutter_for_lights() {
     let mut h = with(&[("platform", "mac")]);
     h.hover_at(egui::pos2(600.0, 20.0));
     wait(&mut h, 0.5);
-    assert!(h.get_by_label("Toggle sidebar").rect().left() >= 80.0);
+    let inset = mareader_ui_egui::platform::Platform::Mac.leading_inset();
+    assert!(h.get_by_label("Toggle sidebar").rect().left() >= inset);
 }
 
 #[test]
