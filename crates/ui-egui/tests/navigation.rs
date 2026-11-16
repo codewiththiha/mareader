@@ -196,3 +196,77 @@ fn a_short_page_jumped_to_in_a_stream_stays_the_page_read() {
     h.run_steps(3);
     assert!(current(&h) > 5, "{}", current(&h));
 }
+
+fn set_mode(h: &mut H, mode: ViewMode) {
+    h.state_mut().queue(Sent::Engine(Command::View(mode)));
+    h.run_steps(3);
+    h.run();
+}
+
+#[test]
+fn spread_mode_highlights_both_thumbnails_of_the_open_spread() {
+    let mut h = book(&[
+        ("pdf", "sample:5"),
+        ("sidebar", "thumbnails"),
+        ("animations", "false"),
+    ]);
+    set_mode(&mut h, ViewMode::Spread);
+    assert_eq!(selected(&h, "Page 1"), Some(true));
+    assert_eq!(selected(&h, "Page 2"), Some(true));
+    assert_eq!(selected(&h, "Page 3"), Some(false));
+    h.get_by_label("Page 4").click();
+    h.run();
+    assert_eq!(selected(&h, "Page 1"), Some(false));
+    assert_eq!(selected(&h, "Page 2"), Some(false));
+    assert_eq!(selected(&h, "Page 3"), Some(true));
+    assert_eq!(selected(&h, "Page 4"), Some(true));
+    assert_eq!(selected(&h, "Page 5"), Some(false));
+    // An odd last page stands alone.
+    go(&mut h, 4);
+    assert_eq!(selected(&h, "Page 4"), Some(false));
+    assert_eq!(selected(&h, "Page 5"), Some(true));
+    // Single-page mode goes back to marking only the current page.
+    go(&mut h, 2);
+    set_mode(&mut h, ViewMode::Single);
+    assert_eq!(selected(&h, "Page 3"), Some(true));
+    assert_eq!(selected(&h, "Page 4"), Some(false));
+}
+
+#[test]
+fn spread_mode_keeps_a_cover_page_alone_and_pairs_the_rest() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../epub/tests/books");
+    let fxl = dir.join("fxl.epub");
+    let mut h = book(&[
+        ("epub", fxl.to_str().unwrap_or_default()),
+        ("sidebar", "thumbnails"),
+        ("animations", "false"),
+    ]);
+    set_mode(&mut h, ViewMode::Spread);
+    // Cover sits alone on the far side; the first spread pairs on the next row.
+    assert_eq!(selected(&h, "Page 1"), Some(true));
+    assert_eq!(selected(&h, "Page 2"), Some(false));
+    assert_eq!(selected(&h, "Page 3"), Some(false));
+    let (p1, p2, p3) = (
+        h.get_by_label("Page 1").rect(),
+        h.get_by_label("Page 2").rect(),
+        h.get_by_label("Page 3").rect(),
+    );
+    assert!(p1.left() > p2.left() && p1.bottom() < p2.top());
+    assert!((p2.top() - p3.top()).abs() < 1.0 && p2.left() < p3.left());
+    h.get_by_label("Page 2").click();
+    h.run();
+    assert_eq!(selected(&h, "Page 1"), Some(false));
+    assert_eq!(selected(&h, "Page 2"), Some(true));
+    assert_eq!(selected(&h, "Page 3"), Some(true));
+    assert_eq!(selected(&h, "Page 4"), Some(false));
+    // Clicking the other page of the same spread keeps both highlighted.
+    h.get_by_label("Page 3").click();
+    h.run();
+    assert_eq!(selected(&h, "Page 2"), Some(true));
+    assert_eq!(selected(&h, "Page 3"), Some(true));
+    go(&mut h, 3);
+    assert_eq!(selected(&h, "Page 2"), Some(false));
+    assert_eq!(selected(&h, "Page 3"), Some(false));
+    assert_eq!(selected(&h, "Page 4"), Some(true));
+    assert_eq!(selected(&h, "Page 5"), Some(true));
+}

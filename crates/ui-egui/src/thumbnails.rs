@@ -1,6 +1,9 @@
 //! The thumbnail grid: two columns of small pages that follow the reader.
 
+mod grid;
 mod picks;
+
+use std::ops::Range;
 
 use egui::emath::GuiRounding as _;
 use egui::style::ScrollAnimation;
@@ -20,18 +23,12 @@ use crate::pages::Lookup;
 use crate::pdf_view::{Sinks, Urgency, paint_page};
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
+pub use grid::CELL_W;
+use grid::{BAND, Grid, fitted, shown_pages, spread_align};
 use mareader_engine::command::Command;
 pub use picks::Offer;
 use picks::Picks;
 
-/// A cell's page width; two fit the rail with room either side.
-pub const CELL_W: f32 = 120.0;
-const COLUMNS: usize = 2;
-const GAP: f32 = 12.0;
-const PAD: f32 = 12.0;
-/// The page number band under each page.
-const BAND: f32 = 22.0;
-const ROW_GAP: f32 = 8.0;
 /// Rows drawn ahead each way, so a scroll finds them ready.
 const ROW_BUFFER: usize = 2;
 /// After the reader scrolls or clicks the grid, following waits this long.
@@ -40,8 +37,8 @@ pub const GRACE: f64 = 1.2;
 /// What the grid remembers between frames.
 #[derive(Debug, Default, Clone)]
 pub struct ThumbState {
-    /// The pane, document and page last brought into view.
-    followed: Option<(PaneId, DocId, usize)>,
+    /// The pane, document and active page span last brought into view.
+    followed: Option<(PaneId, DocId, usize, usize)>,
     /// When the reader last drove the grid by hand.
     driven_at: Option<f64>,
     /// Frames left to repeat a snap; a new area clamps its first one.
@@ -73,60 +70,6 @@ impl ThumbState {
     }
 }
 
-/// Where each page's cell sits, from the first page's shape.
-struct Grid {
-    left: f32,
-    /// The box every page is fitted into.
-    cell: Vec2,
-    pitch: f32,
-    rows: usize,
-}
-
-impl Grid {
-    fn new(width: f32, first: Option<(f32, f32)>, count: usize) -> Self {
-        // Mixed sizes share the first page's box; 3:4 if it has none.
-        let aspect = first
-            .map_or(4.0 / 3.0, |(w, h)| h / w.max(1.0))
-            .clamp(0.3, 3.0);
-        let cell = vec2(CELL_W, (CELL_W * aspect).round());
-        let span = COLUMNS as f32 * CELL_W + (COLUMNS - 1) as f32 * GAP;
-        Self {
-            left: ((width - span) / 2.0).max(PAD),
-            cell,
-            pitch: cell.y + BAND + ROW_GAP,
-            rows: count.div_ceil(COLUMNS),
-        }
-    }
-
-    fn height(&self) -> f32 {
-        2.0 * PAD + self.rows as f32 * self.pitch - ROW_GAP
-    }
-
-    /// The cell of `page`, page box and band, from the content's top left.
-    fn cell(&self, page: usize) -> Rect {
-        let (row, col) = (page / COLUMNS, page % COLUMNS);
-        let min = pos2(
-            self.left + col as f32 * (CELL_W + GAP),
-            PAD + row as f32 * self.pitch,
-        );
-        Rect::from_min_size(min, self.cell + vec2(0.0, BAND))
-    }
-
-    /// Rows meeting the band from `top` to `bottom`.
-    fn rows(&self, top: f32, bottom: f32) -> std::ops::Range<usize> {
-        let first = ((top - PAD) / self.pitch).floor().max(0.0) as usize;
-        let last = ((bottom - PAD) / self.pitch).ceil().max(0.0) as usize + 1;
-        first.min(self.rows)..last.min(self.rows)
-    }
-}
-
-/// The page's own shape, fitted and centred in the shared box.
-fn fitted(boxed: Rect, size: (f32, f32)) -> Rect {
-    let (w, h) = (size.0.max(1.0), size.1.max(1.0));
-    let scale = (boxed.width() / w).min(boxed.height() / h);
-    Rect::from_center_size(boxed.center(), vec2(w * scale, h * scale))
-}
-
 pub fn show(
     ui: &mut Ui,
     reading: &Reading,
@@ -151,11 +94,8 @@ pub fn show(
             .get(page)
             .map_or((612.0, 792.0), |s| (s.width, s.height))
     };
-    let grid = Grid::new(
-        panel.width(),
-        sizes.first().map(|s| (s.width, s.height)),
-        count,
-    );
+    let first = sizes.first().map(|s| (s.width, s.height));
+    let grid = Grid::new(panel.width(), first, count, spread_align(reading));
     let ppp = ctx.pixels_per_point();
     let key = |page: usize| {
         let (w, h) = size(page);
@@ -173,7 +113,8 @@ pub fn show(
             state.driven_at = Some(now);
         }
     }
-    let goal = follow(state, reading, recentre, now, &ctx);
+    let active = shown_pages(reading, count);
+    let goal = follow(state, reading, &active, recentre, now, &ctx);
     let (t, fixed_t) = thumb_tokens(&ctx, reading.document.is_reflowable());
     state.picks.follow(reading);
     if state.picks.active() {
@@ -185,14 +126,14 @@ pub fn show(
         .show_viewport(ui, |ui, viewport| {
             ui.set_min_size(vec2(panel.width(), grid.height()));
             let origin = ui.max_rect().min.to_vec2();
-            if let Some(animation) = goal {
-                let target = grid.cell(reading.current).translate(origin);
+            if let Some((animation, span)) = goal.zip(grid.span(active.clone())) {
+                let target = span.translate(origin);
                 ui.scroll_to_rect_animation(target, Some(Align::Center), animation);
             }
             let shown = grid.rows(viewport.top(), viewport.bottom());
             let mut quads = Vec::new();
             let mut picked = Vec::new();
-            for page in (shown.start * COLUMNS..shown.end * COLUMNS).take_while(|&p| p < count) {
+            for page in grid.pages(shown.clone(), count) {
                 let cell = grid.cell(page).translate(origin);
                 let boxed = Rect::from_min_size(cell.min, grid.cell);
                 let rect = fitted(boxed, size(page)).round_to_pixels(ppp);
@@ -214,7 +155,7 @@ pub fn show(
                     (page_t, true),
                     &mut quads,
                 );
-                let on = page == reading.current;
+                let on = active.contains(&page);
                 let r = ui.interact(cell, Id::new(("thumb", reading.pane, page)), Sense::click());
                 let label = format!("Page {}", page + 1);
                 r.widget_info(|| {
@@ -263,7 +204,7 @@ pub fn show(
             let ahead = shown.end..(shown.end + ROW_BUFFER).min(grid.rows);
             let behind = shown.start.saturating_sub(ROW_BUFFER)..shown.start;
             for row in behind.chain(ahead) {
-                for page in (row * COLUMNS..(row + 1) * COLUMNS).take_while(|&p| p < count) {
+                for page in grid.pages(row..row + 1, count) {
                     if !pages.touch(key(page)) {
                         demand.push((Urgency::Prefetch, key(page).into()));
                     }
@@ -289,14 +230,15 @@ fn thumb_tokens(ctx: &egui::Context, reflow: bool) -> (Tokens, Tokens) {
 fn follow(
     state: &mut ThumbState,
     reading: &Reading,
+    active: &Range<usize>,
     recentre: bool,
     now: f64,
     ctx: &egui::Context,
 ) -> Option<ScrollAnimation> {
-    let here = (reading.pane, reading.doc, reading.current);
+    let here = (reading.pane, reading.doc, active.start, active.end);
     let moved_away = state
         .followed
-        .is_none_or(|(pane, doc, _)| (pane, doc) != (here.0, here.1));
+        .is_none_or(|(pane, doc, _, _)| (pane, doc) != (here.0, here.1));
     if recentre || moved_away {
         state.snaps = 2;
     }
@@ -378,13 +320,14 @@ fn tick(ui: &Ui, page: Rect, t: &Tokens) {
 
 #[cfg(test)]
 mod tests {
+    use super::grid::{COLUMNS, GAP, PAD};
     use super::*;
 
     #[test]
     fn two_columns_fit_the_rail_and_rows_follow_the_first_page() {
         let span = COLUMNS as f32 * CELL_W + GAP;
         assert!(span + 2.0 * PAD <= crate::sidebar::WIDTH);
-        let grid = Grid::new(crate::sidebar::WIDTH, Some((612.0, 792.0)), 5);
+        let grid = Grid::new(crate::sidebar::WIDTH, Some((612.0, 792.0)), 5, (0, false));
         assert_eq!(grid.rows, 3);
         assert_eq!(grid.cell.y, (CELL_W * 792.0 / 612.0).round());
         // Page 3 starts the second row, in the first column.
@@ -396,7 +339,7 @@ mod tests {
 
     #[test]
     fn a_window_of_rows_covers_the_band_and_stops_at_the_end() {
-        let grid = Grid::new(288.0, Some((100.0, 100.0)), 10);
+        let grid = Grid::new(288.0, Some((100.0, 100.0)), 10, (0, false));
         assert_eq!(grid.rows(0.0, grid.pitch * 0.5), 0..2);
         assert_eq!(
             grid.rows(grid.pitch * 2.0 + PAD, grid.pitch * 2.5 + PAD),
