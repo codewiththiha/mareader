@@ -142,7 +142,7 @@ pub fn icon_button_tagged(
                 .selected(selected)
                 .min_size(Vec2::splat(t.control));
             let resp = ui.add(button);
-            anim::play(ui, &resp, icon, tag, t.icon);
+            anim::play(ui, &resp, icon, tag, t.icon, selected);
             resp
         })
         .inner;
@@ -163,7 +163,7 @@ pub fn small_icon_button(ui: &mut Ui, icon: Icon, label: &str) -> Response {
                 .frame_when_inactive(false)
                 .min_size(Vec2::splat(24.0));
             let resp = ui.add(button);
-            anim::play(ui, &resp, icon, label, 14.0);
+            anim::play(ui, &resp, icon, label, 14.0, false);
             resp
         })
         .inner;

@@ -183,7 +183,7 @@ fn footer_actions(ui: &mut Ui, platform: Platform, out: &mut Commands) {
                             .min_size(vec2(width, 34.0));
                     let response = ui.add(button);
                     let mark = footer_icon_rect(response.rect, ui.spacing().button_padding.x, 15.0);
-                    anim::play_at(ui, &response, icon, name, mark);
+                    anim::play_at(ui, &response, icon, name, mark, false);
                     response
                 })
                 .inner;

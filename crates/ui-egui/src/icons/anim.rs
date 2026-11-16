@@ -14,7 +14,9 @@ use crate::motion;
 /// Canvas-to-glyph size ratio including authored headroom.
 const BOX: f32 = mareader_animated_icons::SPAN / GRID;
 /// Animation samples per second. Repaints land on these frame boundaries.
-const FRAME_RATE: f32 = mareader_animated_icons::FRAME_RATE;
+pub(super) const FRAME_RATE: f32 = mareader_animated_icons::FRAME_RATE;
+/// Upper bound for rapid re-trigger acceleration so every burst stays legible.
+pub(super) const MAX_SPEED: f32 = 2.5;
 /// Hard bound for atlas RGBA pixels.
 const CACHE_BYTES: usize = mareader_animated_icons::MAX_ATLAS_BYTES;
 /// Tiny atlases are byte-cheap but still own texture-manager entries.
@@ -47,7 +49,7 @@ pub enum Act {
 
 impl Act {
     /// Whether this region waits for entry or a press.
-    fn fires(self, entering: bool, pressed: bool) -> bool {
+    pub(super) fn fires(self, entering: bool, pressed: bool) -> bool {
         match self {
             Self::Still => false,
             Self::Hover => entering,
@@ -58,25 +60,39 @@ impl Act {
 
 /// What a frame asks of a glyph's run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Order {
+pub(super) enum Order {
     /// Leave it as it is.
     None,
-    /// Begin after the current run lands.
-    Again,
-    /// Begin now.
+    /// Restart immediately while a run is already moving.
+    Restart,
+    /// Begin from rest.
     Start,
 }
 
 /// The ask, from what the pointer did and whether something is already moving.
-fn order(act: Act, entering: bool, pressed: bool, live: bool) -> Order {
+pub(super) fn order(act: Act, entering: bool, pressed: bool, live: bool) -> Order {
     if !act.fires(entering, pressed) {
         return Order::None;
     }
-    if live { Order::Again } else { Order::Start }
+    if live { Order::Restart } else { Order::Start }
+}
+
+/// Playback speed matched to the gap since the previous trigger.
+pub(super) fn trigger_speed(dur: f32, gap: Option<f64>) -> f32 {
+    let Some(gap) = gap else {
+        return 1.0;
+    };
+    if !gap.is_finite() || gap < 0.0 || gap >= f64::from(dur) {
+        return 1.0;
+    }
+    if gap == 0.0 {
+        return MAX_SPEED;
+    }
+    (dur / gap as f32).clamp(1.0, MAX_SPEED)
 }
 
 /// Treats a widget absent for several passes as left.
-fn entering(hovered: bool, held: bool, gone: bool) -> bool {
+pub(super) fn entering(hovered: bool, held: bool, gone: bool) -> bool {
     hovered && (!held || gone)
 }
 
@@ -139,7 +155,7 @@ fn shout(ui: &Ui, act: Act, only_if_silent: bool) -> Announced {
 }
 
 /// What the icons being built right now were told to do.
-fn current(ctx: &Context) -> Act {
+pub(super) fn current(ctx: &Context) -> Act {
     let pass = pass(ctx);
     ctx.data_mut(|d| {
         let s = d.get_temp_mut_or_default::<Scope>(scope());
@@ -158,32 +174,43 @@ fn pass(ctx: &Context) -> u64 {
 struct Run {
     /// When the run began, in input seconds; negative while nothing plays.
     start: f64,
+    /// When the run was last triggered, for rapid re-trigger pacing.
+    last: f64,
+    /// Playback rate for the active run (`1.0` normal, up to `MAX_SPEED`).
+    speed: f32,
     /// Whether the pointer rested on its widget the last frame it was built.
     held: bool,
     /// That frame, so a widget that has gone is treated as having been left.
     seen: u64,
-    /// A press that arrived mid-run asks to be played once the run lands.
-    again: bool,
 }
 
 impl Default for Run {
     fn default() -> Self {
         Self {
             start: -1.0,
+            last: -1.0,
+            speed: 1.0,
             held: false,
             seen: 0,
-            again: false,
         }
     }
 }
 
 impl Run {
+    fn rate(&self) -> f32 {
+        if self.speed.is_finite() && self.speed > 0.0 {
+            self.speed
+        } else {
+            1.0
+        }
+    }
+
     /// The active timeline second, excluding the landing instant.
     fn through(&self, now: f64, dur: f32) -> Option<f32> {
         if self.start < 0.0 {
             return None;
         }
-        let t = (now - self.start) as f32;
+        let t = ((now - self.start) * f64::from(self.rate())) as f32;
         (t < dur).then_some(t.max(0.0))
     }
 }
@@ -201,19 +228,21 @@ pub(crate) fn glyph(ui: &Ui, icon: Icon, size: f32, tag: &str) -> Image<'static>
 }
 
 /// Drives and overlays a button glyph without changing layout.
-pub(crate) fn play(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) {
+pub(crate) fn play(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32, selected: bool) {
     let mark = Rect::from_center_size(resp.rect.center(), Vec2::splat(size));
-    play_at(ui, resp, icon, tag, mark);
+    play_at(ui, resp, icon, tag, mark, selected);
 }
 
 /// Plays a glyph in its laid-out box instead of the response centre.
-pub(crate) fn play_at(ui: &Ui, resp: &Response, icon: Icon, tag: &str, mark: Rect) {
-    match advance(ui, resp, icon, tag, mark.width()) {
-        CurrentFrame::Animated(frame) => {
-            paint_cached(ui, mark, ink_of(ui, resp), &frame);
+pub(crate) fn play_at(ui: &Ui, resp: &Response, icon: Icon, tag: &str, at: Rect, selected: bool) {
+    let was_live = is_live(ui, icon, tag);
+    match advance(ui, resp, icon, tag, at.width()) {
+        CurrentFrame::Animated(frame) if was_live => {
+            paint_cached(ui, at, ink_of(ui, resp, selected), &frame);
         }
-        CurrentFrame::Pending => icon.paint(ui, mark, ink_of(ui, resp)),
-        CurrentFrame::Resting => {}
+        CurrentFrame::Animated(_) => {}
+        CurrentFrame::Pending if was_live => icon.paint(ui, at, ink_of(ui, resp, selected)),
+        CurrentFrame::Pending | CurrentFrame::Resting => {}
     }
 }
 
@@ -222,15 +251,15 @@ fn frame_box(mark: Rect) -> Rect {
 }
 
 /// The foreground tint egui applies to the button's resting glyph.
-fn ink_of(ui: &Ui, resp: &Response) -> Color32 {
-    let w = &ui.visuals().widgets;
-    if resp.is_pointer_button_down_on() {
-        w.active.fg_stroke.color
-    } else if resp.hovered() {
-        w.hovered.fg_stroke.color
-    } else {
-        w.inactive.fg_stroke.color
+pub(super) fn ink_of(ui: &Ui, resp: &Response, selected: bool) -> Color32 {
+    let v = ui.visuals();
+    if selected {
+        return v.selection.stroke.color;
     }
+    if let Some(color) = v.override_text_color {
+        return color;
+    }
+    v.widgets.state(resp.widget_state()).text_color()
 }
 
 /// Transparent layout placeholder for an overlaid active glyph.
@@ -288,11 +317,12 @@ fn advance(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) -> Curren
         live,
     );
     match ask {
-        Order::Start => {
+        Order::Start | Order::Restart => {
+            let gap = (run.last >= 0.0).then_some(now - run.last);
+            run.speed = trigger_speed(dur, gap);
             run.start = now;
-            run.again = false;
+            run.last = now;
         }
-        Order::Again => run.again = true,
         Order::None => {}
     }
     run.held = hovered;
@@ -301,15 +331,6 @@ fn advance(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) -> Curren
     let t = match run.through(now, dur) {
         Some(t) => t,
         None => {
-            // Landed. Either the queued press starts next or the glyph rests.
-            if run.again {
-                run.again = false;
-                run.start = now;
-                let out = cached_frame(ctx, pack, atlas_side, 0, &mut run, now);
-                schedule(ctx, &run, dur, 0, now);
-                ctx.data_mut(|d| d.insert_temp(id, run));
-                return out;
-            }
             run.start = -1.0;
             ctx.data_mut(|d| d.insert_temp(id, run));
             return CurrentFrame::Resting;
@@ -327,7 +348,7 @@ fn side(size: f32, ppp: f32) -> u32 {
     ((size * ppp).round() as i32).clamp(8, mareader_animated_icons::MAX_SIDE as i32) as u32
 }
 
-fn frame_index(t: f32, dur: f32) -> u16 {
+pub(super) fn frame_index(t: f32, dur: f32) -> u16 {
     let last = (dur * FRAME_RATE).ceil().max(1.0) as u32 - 1;
     ((t.max(0.0) * FRAME_RATE).floor() as u32)
         .min(last)
@@ -335,8 +356,9 @@ fn frame_index(t: f32, dur: f32) -> u16 {
 }
 
 fn schedule(ctx: &Context, run: &Run, dur: f32, frame: u16, now: f64) {
-    let next = run.start + (f64::from(frame) + 1.0) / f64::from(FRAME_RATE);
-    let end = run.start + f64::from(dur);
+    let rate = f64::from(run.rate());
+    let next = run.start + (f64::from(frame) + 1.0) / (f64::from(FRAME_RATE) * rate);
+    let end = run.start + f64::from(dur) / rate;
     let wait = next.min(end) - now;
     if wait.is_finite() && wait > 0.0 {
         ctx.request_repaint_after(Duration::from_secs_f64(wait));
@@ -373,6 +395,49 @@ pub(crate) fn run_started(ui: &Ui, icon: Icon, tag: &str) -> bool {
     ui.ctx()
         .data(|data| data.get_temp::<Run>(key(ui, icon, tag)))
         .is_some_and(|run| run.start >= 0.0)
+}
+
+#[cfg(test)]
+pub(super) fn run_state(ui: &Ui, icon: Icon, tag: &str) -> Option<(f64, f32)> {
+    ui.ctx()
+        .data(|data| data.get_temp::<Run>(key(ui, icon, tag)))
+        .map(|run| (run.start, run.speed))
+}
+
+#[cfg(test)]
+pub(super) fn seed_cached_atlas(ctx: &Context, icon: Icon, size: f32) -> Option<egui::TextureId> {
+    let pack = pack::of(icon)?;
+    let atlas_side = side(size * BOX, ctx.pixels_per_point());
+    let key = PackKey::new(pack, atlas_side as u16);
+    let image = egui::ColorImage::new([4, 4], vec![Color32::WHITE; 16]);
+    let texture = ctx.load_texture(
+        format!("test-atlas-{}-{atlas_side}", pack.id()),
+        image,
+        TextureOptions::LINEAR,
+    );
+    let tex_id = texture.id();
+    let cached = CachedAtlas {
+        texture,
+        width: 4,
+        height: 4,
+        side: atlas_side,
+        cells: Arc::from([AtlasCell {
+            atlas_x: 0,
+            atlas_y: 0,
+            target_x: 0,
+            target_y: 0,
+            width: 4,
+            height: 4,
+        }]),
+        frames: 1,
+        layers: 1,
+    };
+    ctx.data_mut(|data| {
+        data.get_temp_mut_or_default::<AtlasStore>(Id::new(ATLAS_STORE_ID))
+            .cache
+            .insert(key, cached, 64);
+    });
+    Some(tex_id)
 }
 
 /// The current quantised frame, holding a cold run while its atlas is pending.
@@ -656,19 +721,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn frame_times_are_quantised_and_bounded_by_the_run() {
-        assert_eq!(frame_index(0.0, 0.56), 0);
-        assert_eq!(frame_index(1.0 / FRAME_RATE - 1.0e-4, 0.56), 0);
-        assert_eq!(frame_index(1.0 / FRAME_RATE + 1.0e-4, 0.56), 1);
-        assert_eq!(frame_index(0.559, 0.56), 33);
-        assert_eq!(frame_index(8.0, 0.56), 33);
-        assert!(
-            mareader_animated_icons::all()
-                .all(|pack| { frame_index(pack.duration(), pack.duration()) <= 50 })
-        );
-    }
-
-    #[test]
     fn only_pending_atlases_hold_cold_runs_open() {
         let Some(pack) = mareader_animated_icons::find("sun") else {
             panic!("sun pack is missing");
@@ -697,65 +749,6 @@ mod tests {
         let failed = cached_frame(&ctx, pack, 41, 0, &mut run, 20.0);
         assert!(matches!(failed, CurrentFrame::Pending));
         assert_eq!(run.start, 1.0);
-    }
-
-    #[test]
-    fn each_act_waits_for_its_own_event() {
-        assert!(!Act::Still.fires(true, true));
-        assert!(Act::Hover.fires(true, false));
-        assert!(!Act::Hover.fires(false, true));
-        assert!(Act::Click.fires(false, true));
-        assert!(!Act::Click.fires(true, false));
-    }
-
-    #[test]
-    fn a_live_run_queues_instead_of_snapping() {
-        assert_eq!(order(Act::Click, false, true, false), Order::Start);
-        assert_eq!(order(Act::Click, false, true, true), Order::Again);
-        assert_eq!(order(Act::Hover, false, true, false), Order::None);
-    }
-
-    #[test]
-    fn every_generated_pack_is_reachable() {
-        assert_eq!(mareader_animated_icons::all().len(), 104);
-        for pack in mareader_animated_icons::all() {
-            assert!(!pack.id().is_empty());
-            assert!(pack.frame_count() > 0);
-        }
-    }
-
-    #[test]
-    fn the_nearest_announcement_overrides_its_menu() {
-        let ctx = Context::default();
-        let raw = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, Vec2::splat(100.0))),
-            ..Default::default()
-        };
-        let mut out = ctx.run_ui(raw, |ui| {
-            assert_eq!(current(ui.ctx()), Act::Still);
-            let menu = announce(ui, Act::Hover);
-            assert_eq!(current(ui.ctx()), Act::Hover);
-            {
-                let control = announce(ui, Act::Click);
-                assert_eq!(current(ui.ctx()), Act::Click);
-                drop(control);
-            }
-            assert_eq!(current(ui.ctx()), Act::Hover);
-            drop(menu);
-            assert_eq!(current(ui.ctx()), Act::Still);
-        });
-        out.textures_delta.clear();
-    }
-
-    #[test]
-    fn a_move_starts_on_a_reaching_not_a_resting() {
-        assert!(entering(true, false, false), "reached");
-        assert!(!entering(true, true, false), "already resting on it");
-        assert!(entering(true, true, true), "back after its menu closed");
-        assert!(!entering(false, false, false));
-        assert_eq!(order(Act::Hover, true, false, false), Order::Start);
-        assert_eq!(order(Act::Click, false, true, true), Order::Again);
-        assert_eq!(order(Act::Hover, false, false, true), Order::None);
     }
 
     fn click_run_liveness(icon_animations: bool) -> [bool; 4] {
