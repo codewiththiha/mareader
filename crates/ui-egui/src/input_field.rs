@@ -1,4 +1,4 @@
-//! Shared text input styled as a recessed paper well with an ink focus bar.
+//! Shared text input styled as a recessed paper well with focus lift.
 
 use egui::{
     Align, Color32, CornerRadius, CursorIcon, EventFilter, FontId, Frame, Id, KeyboardShortcut,
@@ -31,7 +31,7 @@ impl InputResponse {
     }
 }
 
-/// Global text field with recessed fill, animated focus lift and ink bar.
+/// Global text field with recessed fill, focus lift and ambient halo.
 pub struct InputField<'a> {
     text: &'a mut String,
     id: Option<Id>,
@@ -292,7 +292,6 @@ impl<'a> InputField<'a> {
             let shape = Shape::rect_filled(rect.expand(3.0), halo_r, glow);
             ui.painter().set(halo_slot, shape);
         }
-        paint_focus_bar(ui, rect, corner, lit, &t);
         if let Some(label) = &self.label {
             widgets::name(&shown.inner, label);
         }
@@ -394,7 +393,7 @@ fn well_stroke(t: &Tokens, lit: f32, hov: f32) -> Stroke {
     let hovered = idle.lerp_to_gamma(t.muted, 0.35);
     let color = idle
         .lerp_to_gamma(hovered, hov)
-        .lerp_to_gamma(t.accent, 0.45 * lit);
+        .lerp_to_gamma(t.accent, 0.65 * lit);
     Stroke::new(1.0, color)
 }
 
@@ -420,25 +419,6 @@ fn paint_well(ui: &Ui, rect: Rect, corner: f32, (lit, hov): (f32, f32), t: &Toke
             Stroke::new(1.0, shade),
         );
     }
-    paint_focus_bar(ui, rect, corner, lit, t);
-}
-
-fn paint_focus_bar(ui: &Ui, rect: Rect, corner: f32, lit: f32, t: &Tokens) {
-    if lit <= 0.01 {
-        return;
-    }
-    let inset = (corner * 0.85).clamp(10.0, (rect.width() * 0.25).max(10.0));
-    let span = (rect.width() - 2.0 * inset).max(0.0) * lit;
-    if span <= 1.0 {
-        return;
-    }
-    let cx = rect.center().x;
-    let bar = Rect::from_min_max(
-        pos2(cx - span * 0.5, rect.bottom() - 2.5),
-        pos2(cx + span * 0.5, rect.bottom() - 0.5),
-    );
-    let color = t.accent.gamma_multiply(0.95 * lit);
-    ui.painter().rect_filled(bar, CornerRadius::same(1), color);
 }
 
 fn paint_leading_icon(

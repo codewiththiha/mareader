@@ -2,7 +2,7 @@
 
 use egui::{
     Align, Color32, Context, CornerRadius, CursorIcon, Frame, Id, Key, Label, Layout, Margin,
-    Modifiers, Rect, RichText, ScrollArea, Sense, Shape, Stroke, Ui, pos2, vec2,
+    Modifiers, RichText, ScrollArea, Sense, Shape, Stroke, Ui, vec2,
 };
 use mareader_engine::command_spec::{CommandSpec, SPECS};
 use mareader_engine::session::Session;
@@ -245,14 +245,6 @@ fn draw_list(ui: &mut Ui, entries: &[Entry], selected: usize, scroll_to: bool) -
         if fill != Color32::TRANSPARENT {
             ui.painter()
                 .set(bg, Shape::rect_filled(rect, CornerRadius::same(8), fill));
-        }
-        if active {
-            let bar = Rect::from_min_max(
-                pos2(rect.left() + 2.0, rect.top() + 7.0),
-                pos2(rect.left() + 5.0, rect.bottom() - 7.0),
-            );
-            ui.painter()
-                .rect_filled(bar, CornerRadius::same(2), t.accent);
         }
         if let Some(reason) = entry.disabled {
             resp.on_hover_text(reason);
