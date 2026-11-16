@@ -3660,6 +3660,7 @@ dependencies = [
  "mareader-cefr",
  "mareader-dict",
  "mareader-epub",
+ "mareader-fetch",
  "mareader-g2p",
  "mareader-library",
  "mareader-memory",

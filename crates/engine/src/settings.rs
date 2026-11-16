@@ -20,12 +20,14 @@ pub enum Tab {
     Panes,
     /// The master switch, then each motion.
     Motion,
+    /// Software update checks, auto-update, and version status.
+    Updates,
     /// A downloaded voice model's voices; shown once it is ready.
     Model(&'static mareader_speech::Model),
 }
 
 impl Tab {
-    pub const ALL: [Tab; 10] = [
+    pub const ALL: [Tab; 11] = [
         Tab::Appearance,
         Tab::Layout,
         Tab::ReadAloud,
@@ -36,6 +38,7 @@ impl Tab {
         Tab::Models,
         Tab::Panes,
         Tab::Motion,
+        Tab::Updates,
     ];
 
     pub fn label(self) -> &'static str {
@@ -50,6 +53,7 @@ impl Tab {
             Tab::Models => "AI models",
             Tab::Panes => "Panes",
             Tab::Motion => "Motion",
+            Tab::Updates => "Updates",
             Tab::Model(m) => m.name,
         }
     }
@@ -63,6 +67,7 @@ impl Tab {
             "workspace" => Some(Tab::Panes),
             "models" => Some(Tab::Models),
             "voices" | "read_aloud" | "speech" => Some(Tab::ReadAloud),
+            "update" | "updates" => Some(Tab::Updates),
             _ => Self::ALL
                 .into_iter()
                 .find(|t| t.label().eq_ignore_ascii_case(&s)),
@@ -74,7 +79,7 @@ impl Tab {
         match self {
             Tab::Appearance | Tab::Layout | Tab::ReadAloud | Tab::Model(_) => "Reading",
             Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::Ai => "Study",
-            Tab::Models | Tab::Panes | Tab::Motion => "App",
+            Tab::Models | Tab::Panes | Tab::Motion | Tab::Updates => "App",
         }
     }
 
@@ -83,11 +88,11 @@ impl Tab {
         use Tab as T;
         let study = matches!(self, T::Highlights | T::Vocabulary | T::Dictionary);
         let voices = matches!(self, T::ReadAloud | T::Model(_));
-        study || voices || matches!(self, T::Ai | T::Models)
+        study || voices || matches!(self, T::Ai | T::Models | T::Updates)
     }
 
     /// Every tab always shows, so the list never shifts under the pointer.
     pub fn available(self) -> bool {
-        !matches!(self, Tab::Ai | Tab::Models) || cfg!(not(target_arch = "wasm32"))
+        !matches!(self, Tab::Ai | Tab::Models | Tab::Updates) || cfg!(not(target_arch = "wasm32"))
     }
 }

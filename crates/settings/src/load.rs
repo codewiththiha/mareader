@@ -240,7 +240,8 @@ fn parse_sections(
         ai,
         workspace,
         library,
-        read_aloud
+        read_aloud,
+        updates
     );
     // What's left was never read: a section missing above resets each launch.
     root.remove("version");
@@ -267,11 +268,14 @@ mod tests {
         saved.ai.tasks.explain.preset = Some(id);
         saved.ai.tasks.explain.language = Some("my".to_owned());
         saved.motion.icon_animations = false;
+        saved.updates.check_on_startup = false;
+        saved.updates.auto_update = false;
         let got = load(&to_json(&saved));
         assert!(got.notes.is_empty(), "{:?}", got.notes);
         assert!(got.unknown.is_empty(), "never read: {:?}", got.unknown);
         assert_eq!(got.settings.ai, saved.ai);
         assert_eq!(got.settings.motion, saved.motion);
+        assert_eq!(got.settings.updates, saved.updates);
     }
 
     #[test]

@@ -20,6 +20,7 @@ mod control_server;
 mod desk;
 mod dialogs;
 mod inbox;
+mod mock_update;
 mod open_files;
 mod reduced_motion;
 mod single_instance;
@@ -140,8 +141,16 @@ fn main() -> eframe::Result {
             std::process::exit(2);
         }
     };
+    let mock_update = match mock_update::resolve(control_cfg.mock_update.as_ref()) {
+        Ok(mock) => mock,
+        Err(why) => {
+            eprintln!("mareader: {why}");
+            std::process::exit(2);
+        }
+    };
     let inbox = Inbox::default();
-    if !control_cfg.isolated()
+    let isolated = control_cfg.isolated() || mock_update.is_some();
+    if !isolated
         && let Some(dir) = desk::state_dir()
         && single_instance::claim(&dir, &files, &inbox) == Claim::Forwarded
     {
@@ -174,6 +183,9 @@ fn main() -> eframe::Result {
             // A file asked for at launch, else what was read last time.
             if !open_latest(&mut app, inbox.take().paths) && control_cfg.screenshot.is_none() {
                 app.resume();
+            }
+            if mock_update.is_some() || control_cfg.screenshot.is_none() {
+                app.start_updates(mock_update);
             }
             reduced_motion::watch(app.reduced_motion(), cc.egui_ctx.clone());
             Ok(Box::new(Desktop {

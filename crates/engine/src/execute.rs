@@ -195,6 +195,7 @@ fn dispatch(session: &mut Session, intent: Command, now: f64) -> Done {
         | Command::PlaceBook { .. }
         | Command::Library(_)
         | Command::ForgetPositions { .. } => run_timed(session, intent, now, library::run),
+        Command::Update(action) => session.run_update(action),
     }
 }
 

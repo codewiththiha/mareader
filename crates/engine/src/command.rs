@@ -24,6 +24,7 @@ use crate::read_aloud::ReadFrom;
 use crate::route::Route;
 use crate::settings::Tab;
 use crate::study::Action as StudyAction;
+use crate::updates::Action as UpdateAction;
 
 /// Whether split panes take their own colour, texture, or both.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -214,6 +215,8 @@ pub enum Command {
         pane: PaneId,
         forward: bool,
     },
+    /// Software update check, install, modal, and mock controls.
+    Update(UpdateAction),
     /// The active pane's view mode, kept on the page read.
     View(ViewMode),
     /// The word-level dataset.

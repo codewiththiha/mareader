@@ -16,6 +16,7 @@ use crate::page_ai::Action as PageAiAction;
 use crate::read_aloud::player::Act as ReadAct;
 use crate::session::Session;
 use crate::study::Action as StudyAction;
+use crate::updates::{Action as UpdateAction, MockMode, MockUpdate, UpdatePlatform};
 
 /// The dictionary's asks a script can send.
 pub(crate) const DICT: &str = "close_card|pursue";
@@ -170,6 +171,55 @@ pub(crate) fn job(_at: &Session, params: &Value) -> Result<Command, String> {
         other => return Err(refused("ai.job", other, JOBS)),
     };
     Ok(Command::Ai(job))
+}
+
+/// Software update actions a script can send.
+pub(crate) const UPDATE: &str =
+    "check|install|restart|dismiss|show_modal|open_download|open_notes|mock";
+
+/// `update.act`: checks for updates, stages/restarts, or mocks a release.
+pub(crate) fn update(_at: &Session, params: &Value) -> Result<Command, String> {
+    let name = json::text(params, "action")?;
+    let act = match name.as_str() {
+        "check" => UpdateAction::Check {
+            manual: json::off_unless(params, "manual")?,
+        },
+        "install" => UpdateAction::Install,
+        "restart" => UpdateAction::Restart,
+        "dismiss" => UpdateAction::Dismiss,
+        "show_modal" => UpdateAction::ShowModal,
+        "open_download" => UpdateAction::OpenDownload,
+        "open_notes" => UpdateAction::OpenNotes,
+        "mock" => UpdateAction::Mock(mock_update(params)?),
+        other => return Err(refused("update.act", other, UPDATE)),
+    };
+    Ok(Command::Update(act))
+}
+
+fn mock_update(params: &Value) -> Result<MockUpdate, String> {
+    let version = json::maybe_text(params, "version")?.unwrap_or_else(|| "99.0.0".to_owned());
+    let notes = json::maybe_text(params, "notes")?;
+    let url = json::maybe_text(params, "url")?;
+    let platform = match json::maybe_text(params, "platform")? {
+        Some(raw) => Some(
+            UpdatePlatform::parse(&raw)
+                .ok_or_else(|| json::wants("platform", "mac|windows|linux"))?,
+        ),
+        None => None,
+    };
+    let mode = match json::maybe_text(params, "mode")? {
+        Some(raw) => Some(
+            MockMode::parse(&raw).ok_or_else(|| json::wants("mode", "notify|install|staged"))?,
+        ),
+        None => None,
+    };
+    Ok(MockUpdate {
+        version,
+        notes,
+        url,
+        platform,
+        mode,
+    })
 }
 
 /// An ask a script cannot send, beside the names it can send.

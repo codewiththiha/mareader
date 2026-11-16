@@ -227,6 +227,17 @@ pub(crate) const LIBRARY: &[(&str, &str)] = &[
     ("groups", "bool?"),
 ];
 
+/// Software update actions and optional mock payload fields.
+pub(crate) const UPDATE: &[(&str, &str)] = &[
+    ("action", acts::UPDATE),
+    ("manual", "bool?"),
+    ("version", "str?"),
+    ("notes", "str?"),
+    ("url", "str?"),
+    ("platform", "mac|windows|linux?"),
+    ("mode", "notify|install|staged?"),
+];
+
 /// A sequence of `{id, params}` steps run in order.
 pub(crate) const BATCH: &[(&str, &str)] = &[("commands", "objects")];
 

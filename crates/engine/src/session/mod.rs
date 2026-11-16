@@ -19,6 +19,7 @@ mod read_aloud;
 mod services;
 mod study;
 mod tick;
+mod updates;
 
 use std::sync::Arc;
 
@@ -88,6 +89,8 @@ pub struct Session {
     inline: bool,
     /// Word levels dataset and CEFR shading cache.
     vocab: Vocab,
+    /// Software update check, staging, and mock state.
+    updates: crate::updates::State,
     /// Pronunciation pack and lookup cache.
     sounds: Sounds,
     /// Per-document full-text search indexes.
@@ -211,6 +214,7 @@ impl Session {
             random: 0x9e37_79b9_7f4a_7c15,
             inline: false,
             vocab: Vocab::default(),
+            updates: crate::updates::State::default(),
             sounds: Sounds::default(),
             search: Search::default(),
             page_copy,
@@ -308,6 +312,7 @@ impl Session {
     pub fn settle(&mut self, last: Option<LastDocument>) {
         self.save.note(last);
         self.flush();
+        self.updates.apply_on_exit(self.host.as_ref());
     }
 
     /// Both files at once, with the document last noted.

@@ -13,11 +13,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use mareader_ui_egui::control::{ControlBridge, ControlReply, ControlRequest};
 use serde_json::{Value, json};
 
+use crate::mock_update::{self, MockUpdateArgs};
+
 const MAX_LINE_BYTES: usize = 256 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const ACCEPT_POLL: Duration = Duration::from_millis(50);
 
-/// Parsed `--control`, `--control-file`, and `--screenshot` CLI options.
+/// Parsed `--control`, `--screenshot`, and `--mock-update*` CLI options.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ControlArgs {
     pub port: Option<u16>,
@@ -25,6 +27,7 @@ pub struct ControlArgs {
     pub screenshot: Option<PathBuf>,
     pub script: Option<PathBuf>,
     pub wait_frames: u32,
+    pub mock_update: Option<MockUpdateArgs>,
 }
 
 impl Default for ControlArgs {
@@ -35,6 +38,7 @@ impl Default for ControlArgs {
             screenshot: None,
             script: None,
             wait_frames: 10,
+            mock_update: None,
         }
     }
 }
@@ -42,7 +46,7 @@ impl Default for ControlArgs {
 impl ControlArgs {
     /// Whether this launch runs isolated from any single-instance window.
     pub fn isolated(&self) -> bool {
-        self.port.is_some() || self.screenshot.is_some()
+        self.port.is_some() || self.screenshot.is_some() || self.mock_update.is_some()
     }
 }
 
@@ -84,6 +88,8 @@ where
             cfg.wait_frames = raw
                 .parse::<u32>()
                 .map_err(|_| format!("invalid --wait-frames {raw:?}"))?;
+        } else if mock_update::parse_flag(&mut cfg.mock_update, text, &mut iter)? {
+            continue;
         } else {
             files.push(PathBuf::from(arg));
         }
@@ -91,7 +97,7 @@ where
     Ok((cfg, files))
 }
 
-fn parse_path_arg(
+pub(crate) fn parse_path_arg(
     iter: &mut impl Iterator<Item = std::ffi::OsString>,
     flag: &str,
 ) -> Result<PathBuf, String> {
@@ -332,6 +338,7 @@ fn generate_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mareader_engine::updates::{MockMode, UpdatePlatform};
     use std::ffi::OsString;
 
     #[test]
@@ -368,6 +375,27 @@ mod tests {
         assert_eq!(cfg.script, Some(PathBuf::from("/tmp/steps.jsonl")));
         assert_eq!(cfg.wait_frames, 15);
         assert_eq!(files, vec![PathBuf::from("book.epub")]);
+    }
+
+    #[test]
+    fn parse_args_extracts_mock_update_flags() {
+        let raw = [
+            "--mock-update=0.0.9",
+            "--mock-update-platform",
+            "mac",
+            "--mock-update-mode=notify",
+            "--mock-update-file=/tmp/notes.md",
+        ]
+        .into_iter()
+        .map(OsString::from);
+        let (cfg, files) = parse_args(raw).expect("valid mock args");
+        assert!(cfg.isolated());
+        assert!(files.is_empty());
+        let mock = cfg.mock_update.expect("mock args present");
+        assert_eq!(mock.version.as_deref(), Some("0.0.9"));
+        assert_eq!(mock.platform, Some(UpdatePlatform::Mac));
+        assert_eq!(mock.mode, Some(MockMode::Notify));
+        assert_eq!(mock.file, Some(PathBuf::from("/tmp/notes.md")));
     }
 
     #[test]

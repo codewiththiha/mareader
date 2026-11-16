@@ -195,6 +195,12 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
 impl MareaderApp {
     fn option_platform(&mut self, _key: &str, value: &str) -> Result<(), String> {
         self.ui.platform = Platform::parse(value).ok_or("platform: mac, windows or gnome")?;
+        let update_platform = match self.ui.platform {
+            Platform::Mac => mareader_engine::updates::UpdatePlatform::Mac,
+            Platform::Windows => mareader_engine::updates::UpdatePlatform::Windows,
+            Platform::Gnome => mareader_engine::updates::UpdatePlatform::Linux,
+        };
+        self.session.set_update_platform(update_platform);
 
         Ok(())
     }

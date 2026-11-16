@@ -21,6 +21,10 @@ use reqwest::StatusCode;
 use reqwest::header::{CONTENT_RANGE, RANGE};
 use sha2::{Digest, Sha256};
 
+mod text;
+
+pub use text::{download_verified, get_text, sha256_hex};
+
 /// A parquet starts and ends with this; an error page does neither.
 const PARQUET: &[u8; 4] = b"PAR1";
 /// Every zstd frame starts with this.

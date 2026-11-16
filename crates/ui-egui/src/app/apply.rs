@@ -71,6 +71,10 @@ impl MareaderApp {
             Event::PageAi(action) => self.page_ai_act(ctx, action),
             Event::Library(action) => self.library_action(ctx, action),
             Event::WordList { made, list } => self.deliver_word_list(ctx, &made, list.output),
+            Event::UpdateRestart => {
+                self.flush();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
             _ => {}
         }
     }
@@ -81,6 +85,7 @@ impl MareaderApp {
             Event::Toast(toast) => self.ui.toasts.push(toast),
             Event::RouteChanged(route) => self.arrived(route),
             Event::OpenSettings(tab) => self.open_settings(Some(tab)),
+            Event::CloseSettings => self.ui.settings_window.close(),
             Event::PaneOpened {
                 pane,
                 page,

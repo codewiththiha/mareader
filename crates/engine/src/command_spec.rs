@@ -160,6 +160,7 @@ impl Command {
             Command::TryVoice => "voice.try",
             Command::TryVoiceOf(..) => "voice.try-of",
             Command::Turn { .. } => "page.turn",
+            Command::Update(..) => "update.act",
             Command::View(..) => "pane.view",
             Command::Vocab(..) => "vocab.download",
             Command::VoiceModel(..) => "voice.model",

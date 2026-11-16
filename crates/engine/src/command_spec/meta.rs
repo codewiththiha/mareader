@@ -129,6 +129,7 @@ const TABLE: &[(&str, Meta)] = &[
     ("settings.titlebar-pin", m("Pin Title Bar", Some("View"), None, always, true)),
     ("settings.write", m("Replace Settings", Some("App"), None, always, true)),
     ("study.act", m("Study Action", Some("Study"), None, in_reader, true)),
+    ("update.act", m("Check for Updates", Some("App"), None, always, false)),
     ("vocab.attach", m("Attach Vocabulary Dataset", Some("Study"), None, always, true)),
     ("vocab.download", m("Vocabulary Dataset Action", Some("Study"), None, always, true)),
     ("voice.model", m("Voice Model Action", Some("Reading"), None, always, false)),

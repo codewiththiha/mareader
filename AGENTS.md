@@ -494,6 +494,15 @@ Compile nothing locally. Run the cheap checks: `comment_check`,
   `git push --force-with-lease`.
 - Never commit credentials, tokens or personal documents.
 
+## Release notes
+
+When creating or updating `docs/releases/v<version>.md`, follow
+`docs/release-notes.md`: include the structured `## Summary` block wrapped in
+`<!-- release-summary:start -->` / `<!-- release-summary:end -->` with concise,
+user-facing `### New` and `### Fixes` bullets only (omitting empty subsections).
+Both the marketing site and the in-app updater parse `## Summary` directly from
+the GitHub Release body.
+
 ## Definition of done
 
 1. The change is implemented, and looked at (shots) if it touches UI.

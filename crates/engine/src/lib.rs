@@ -69,6 +69,7 @@ pub mod texts;
 pub mod toast;
 pub mod transcript;
 pub mod triggers;
+pub mod updates;
 pub mod vocab;
 pub mod watch;
 pub mod word_card;

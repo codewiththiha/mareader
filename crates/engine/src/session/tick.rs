@@ -61,6 +61,9 @@ impl Session {
         }
         self.poll_page_copy();
         self.tick_dict_and_word_list(&mut tick);
+        if self.poll_updates() {
+            tick.repaint = true;
+        }
         tick
     }
 

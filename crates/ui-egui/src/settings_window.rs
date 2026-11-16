@@ -28,6 +28,7 @@ mod highlights;
 #[cfg(not(target_arch = "wasm32"))]
 mod models;
 mod read_aloud;
+mod updates;
 mod vocabulary;
 mod voice_model;
 pub use voice_model::accent;
@@ -57,6 +58,15 @@ const HEADER_H: f32 = 56.0;
 const FOOT_H: f32 = 12.0;
 
 use mareader_engine::settings::Tab;
+
+/// Live engine/front-end services read by individual settings tabs.
+pub struct Services<'a> {
+    pub ai: &'a crate::ai::Ai,
+    pub dict: &'a mareader_engine::dict::Service,
+    pub vocab: &'a mareader_engine::vocab::Vocab,
+    pub voices: &'a Voices<'a>,
+    pub updates: &'a mareader_engine::updates::State,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct SettingsWindow {
@@ -106,18 +116,13 @@ impl SettingsWindow {
         ctx: &egui::Context,
         current: &Settings,
         cx: &Scope,
-        (ai, dict, vocab, voices): (
-            &crate::ai::Ai,
-            &mareader_engine::dict::Service,
-            &mareader_engine::vocab::Vocab,
-            &Voices<'_>,
-        ),
+        services: Services<'_>,
         out: &mut Commands,
     ) {
         if !self.open {
             return;
         }
-        let models = voices.shelf.ready();
+        let models = services.voices.shelf.ready();
         // A removed model's tab goes; its engine's settings stay.
         if let Tab::Model(m) = self.tab
             && !models.iter().any(|r| r.id == m.id)
@@ -156,8 +161,7 @@ impl SettingsWindow {
                             };
                             Frame::new().inner_margin(margin).show(ui, |ui| {
                                 ui.spacing_mut().item_spacing.y = 0.0;
-                                let live = (cx, ai, dict, vocab, voices);
-                                tab_body(ui, tab, &mut draft, live, out);
+                                tab_body(ui, tab, &mut draft, cx, &services, out);
                             });
                         });
                     widgets::scroll_fades(ui, &body, t.surface);
@@ -312,54 +316,49 @@ fn tab_body(
     ui: &mut Ui,
     tab: Tab,
     s: &mut Settings,
-    (cx, ai, dict, vocab, voices): (
-        &Scope,
-        &crate::ai::Ai,
-        &mareader_engine::dict::Service,
-        &mareader_engine::vocab::Vocab,
-        &Voices<'_>,
-    ),
+    cx: &Scope,
+    live: &Services<'_>,
     out: &mut Commands,
 ) {
     match tab {
         Tab::Appearance => appearance(ui, s, cx, out),
         Tab::Layout => layout(ui, s, cx),
-        Tab::ReadAloud => read_aloud::tab(ui, &mut s.read_aloud, voices, out),
-        Tab::Model(m) => voice_model::tab(ui, &mut s.read_aloud, m, voices, out),
+        Tab::ReadAloud => read_aloud::tab(ui, &mut s.read_aloud, live.voices, out),
+        Tab::Model(m) => voice_model::tab(ui, &mut s.read_aloud, m, live.voices, out),
         Tab::Motion => motion(ui, s, cx),
         Tab::Highlights => {
             let marks = highlights::Marks {
                 ai: cx.explains && Tab::Ai.available(),
-                shading: *vocab.state(mareader_cefr::Part::Dataset) == mareader_cefr::State::Ready,
+                shading: *live.vocab.state(mareader_cefr::Part::Dataset)
+                    == mareader_cefr::State::Ready,
             };
             highlights::tab(ui, &mut s.study.highlights, marks, out);
         }
         Tab::Vocabulary => {
-            let (study, dictionary) = (&mut s.study, &mut s.dictionary);
-            let heard = (vocab, voices.sounds, voices.english.as_ref());
-            vocabulary::tab(ui, (study, dictionary), heard, out);
+            let heard = (live.vocab, live.voices.sounds, live.voices.english.as_ref());
+            vocabulary::tab(ui, (&mut s.study, &mut s.dictionary), heard, out);
         }
-        Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, dict, out),
+        Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, live.dict, out),
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Ai => {
-            let study = &mut s.study;
-            let looks = (&mut study.highlights, &mut study.gloss);
-            ai::tab(ui, &mut s.ai, looks, ai.board(), out);
+            let looks = (&mut s.study.highlights, &mut s.study.gloss);
+            ai::tab(ui, &mut s.ai, looks, live.ai.board(), out);
         }
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Models => {
-            let in_use = |id| ai.in_use(id);
-            let live = ai.board().map(|board| models::Live {
+            let in_use = |id| live.ai.in_use(id);
+            let live_m = live.ai.board().map(|board| models::Live {
                 board,
                 in_use: &in_use,
             });
-            models::models_tab(ui, &mut s.ai, live, out);
+            models::models_tab(ui, &mut s.ai, live_m, out);
         }
         #[cfg(target_arch = "wasm32")]
         Tab::Ai | Tab::Models => pending(ui, "AI answers need the desktop app."),
+        Tab::Updates => updates::tab(ui, &mut s.updates, live.updates, out),
         Tab::Panes => panes(ui, s, cx),
     }
-    let _ = ai;
+    let _ = live.ai;
 }
 
 fn layout(ui: &mut Ui, s: &mut Settings, cx: &Scope) {
@@ -1181,6 +1180,7 @@ impl TabIcon for Tab {
             Tab::Models => Icon::Chip,
             Tab::Panes => Icon::SplitRight,
             Tab::Motion => Icon::Motion,
+            Tab::Updates => Icon::Download,
             Tab::Model(model) => Icon::engine(model.id).unwrap_or(Icon::VoiceModel),
         }
     }

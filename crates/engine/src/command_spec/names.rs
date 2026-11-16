@@ -75,6 +75,7 @@ pub(crate) const TAB: &[(&str, Tab)] = &[
     ("models", Tab::Models),
     ("panes", Tab::Panes),
     ("motion", Tab::Motion),
+    ("updates", Tab::Updates),
 ];
 
 /// What an export is written as.

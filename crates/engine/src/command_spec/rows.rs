@@ -444,6 +444,13 @@ pub(crate) const ROWS: &[CommandSpec] = &[
         pages::turn,
     ),
     row(
+        "update.act",
+        "Checks for releases, applies updates, or mocks an update on startup.",
+        keys::UPDATE,
+        anywhere,
+        acts::update,
+    ),
+    row(
         "pane.view",
         "The active pane's view mode, kept on the page read.",
         keys::MODE,

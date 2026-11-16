@@ -219,14 +219,18 @@ impl MareaderApp {
             ctx,
             &settings,
             &window,
-            (
-                &self.ui.ai,
-                self.session.dict(),
-                self.session.vocab(),
-                &voices,
-            ),
+            crate::settings_window::Services {
+                ai: &self.ui.ai,
+                dict: self.session.dict(),
+                vocab: self.session.vocab(),
+                voices: &voices,
+                updates: self.session.updates(),
+            },
             commands,
         );
+        if !self.ui.settings_window.is_open() {
+            crate::update_modal::show(ctx, self.session.updates(), commands);
+        }
         crate::shortcuts::show(ctx, self.ui.platform);
         crate::palette::show(ctx, &self.session, self.ui.platform, commands);
         crate::focus::paint(ctx);

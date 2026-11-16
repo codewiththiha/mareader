@@ -136,4 +136,8 @@ pub enum Event {
         made: crate::word_list::Made,
         list: WordList,
     },
+    /// A verified update was applied and relaunched; close cleanly.
+    UpdateRestart,
+    /// User asked to view an update; close Settings so modals never stack.
+    CloseSettings,
 }

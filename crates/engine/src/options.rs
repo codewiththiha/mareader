@@ -17,6 +17,7 @@ mod appearance;
 mod library;
 mod panes;
 mod study;
+mod updates;
 
 use mareader_workspace::{Bounds, Edge, SplitAxis};
 
@@ -35,6 +36,7 @@ pub fn parse(key: &str, value: &str, at: &Session) -> Option<Result<Vec<Command>
         .or_else(|| library::set(key, value, at))
         .or_else(|| panes::set(key, value, at))
         .or_else(|| study::set(key, value, at))
+        .or_else(|| updates::set(key, value, at))
 }
 
 /// Parses and applies an engine-owned option key against `session`.

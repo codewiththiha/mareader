@@ -16,6 +16,7 @@ mod reader;
 mod study;
 mod swatch;
 mod text;
+mod updates;
 mod words;
 mod workspace;
 
@@ -43,6 +44,7 @@ pub use study::{
 };
 pub use swatch::Swatch;
 pub use text::{BookDesign, ColumnAlign, FontChoice, FontFamily, SystemFont, TextSettings};
+pub use updates::UpdateSettings;
 pub use words::{
     WORD_LANGUAGES, WORD_PRESETS, WordFields, WordGroup, WordLayout, WordList, WordListSettings,
     WordOutput, WordPreset, WordSort,
@@ -74,6 +76,7 @@ pub struct Settings {
     /// The library page's layout and order.
     pub library: View,
     pub read_aloud: ReadAloudSettings,
+    pub updates: UpdateSettings,
 }
 
 impl Default for Settings {
@@ -93,6 +96,7 @@ impl Default for Settings {
             workspace: WorkspaceSettings::default(),
             library: View::default(),
             read_aloud: ReadAloudSettings::default(),
+            updates: UpdateSettings::default(),
         }
     }
 }

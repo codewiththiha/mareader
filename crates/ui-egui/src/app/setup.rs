@@ -20,6 +20,27 @@ impl MareaderApp {
         true
     }
 
+    /// Cleans stale update caches and runs a mock or automatic check.
+    pub fn start_updates(&mut self, mock: Option<mareader_engine::updates::MockUpdate>) {
+        self.session.cleanup_stale_updates();
+        if let Some(spec) = mock {
+            if let Some(platform) = spec.platform {
+                self.ui.platform = match platform {
+                    mareader_engine::updates::UpdatePlatform::Mac => Platform::Mac,
+                    mareader_engine::updates::UpdatePlatform::Windows => Platform::Windows,
+                    mareader_engine::updates::UpdatePlatform::Linux => Platform::Gnome,
+                };
+            }
+            self.queue(Sent::Engine(Command::Update(
+                mareader_engine::updates::Action::Mock(spec),
+            )));
+        } else {
+            self.queue(Sent::Engine(Command::Update(
+                mareader_engine::updates::Action::Check { manual: false },
+            )));
+        }
+    }
+
     /// Wires every controller this crate still holds to `machine`'s places.
     ///
     /// The host and the waker are the session's from its construction, and

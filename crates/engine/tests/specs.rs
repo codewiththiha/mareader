@@ -14,6 +14,7 @@ use mareader_engine::read_aloud::player::Act as ReadAct;
 use mareader_engine::route::Route;
 use mareader_engine::settings::Tab;
 use mareader_engine::study::Action as StudyAction;
+use mareader_engine::updates::Action as UpdateAction;
 use mareader_library::{BookId, Pen, View};
 use mareader_speech::{Item, KOKORO, Spot};
 use mareader_workspace::{Bounds, Edge, PaneId, SplitAxis};
@@ -283,6 +284,7 @@ fn settings_intents() -> Vec<Command> {
         Command::SetTitlebarPinned(false),
         Command::ShowRoute(Route::Reader),
         Command::PageAi(PageAiAction::StopFollow(pane)),
+        Command::Update(UpdateAction::Check { manual: true }),
         #[cfg(not(target_arch = "wasm32"))]
         Command::Ai(mareader_settings::Job::Probe),
     ]

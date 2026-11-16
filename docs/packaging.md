@@ -145,8 +145,9 @@ How to run it:
 - **A release:** push a `v<version>` tag that matches `Cargo.toml`. The
   same checks run, then a draft GitHub release collects the installers
   with `SHA256SUMS`, for the owner to publish. Its notes come from
-  `docs/releases/v<version>.md` when that file exists; otherwise GitHub
-  lists the changes.
+  `docs/releases/v<version>.md` when that file exists (follow the structured
+  `## Summary` format in `docs/release-notes.md` so the website and in-app
+  updater can parse highlights); otherwise GitHub lists the changes.
 - **On your own machine:** after `cargo packager --release`,
   `tools/check-installers.sh target/release` runs the same checks for
   your platform (it installs and removes the app). Without a GPU, a

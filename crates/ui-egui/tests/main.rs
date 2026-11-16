@@ -31,6 +31,7 @@ mod selection;
 mod shell;
 mod study;
 mod thumb_picks;
+mod updates;
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod vocabulary;
