@@ -27,7 +27,7 @@ use mareader_workspace::PaneId;
 use crate::gpu::{Gpu, Quad};
 use crate::loading_mark;
 use crate::pages::{PageCache, PageTexture};
-use crate::pdf_view::{self, Demand, PdfView, Sinks, Urgency, ViewContext};
+use crate::pdf_view::{self, Demand, PageLook, PdfView, Sinks, Urgency, ViewContext};
 use crate::selection::Sheet;
 use crate::study::Gloss;
 use crate::theme::Tokens;
@@ -623,13 +623,13 @@ impl DocumentsUi {
     pub fn thumbnails(
         &mut self,
         ui: &mut Ui,
-        reading: Option<&Reading>,
+        reading: Option<(&Reading, PageLook)>,
         texts: &mut TextLayers,
         state: &mut ThumbState,
         recentre: bool,
         out: &mut Commands,
     ) -> bool {
-        let Some(reading) = reading else {
+        let Some((reading, page_look)) = reading else {
             state.forget_book();
             return false;
         };
@@ -642,7 +642,7 @@ impl DocumentsUi {
             gloss: &mut Vec::new(),
             vocab: None,
         };
-        thumbnails::show(ui, reading, io, state, recentre, out);
+        thumbnails::show(ui, (reading, page_look), io, state, recentre, out);
         true
     }
 

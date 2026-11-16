@@ -15,12 +15,13 @@ use mareader_session::{DocId, PageKey, Part, Scale};
 use mareader_workspace::PaneId;
 
 use mareader_appearance::{PageTone, Pattern};
+use mareader_pdf::Bounds;
 
 use crate::documents::Reading;
-use crate::gpu::{Anchor, PagesCallback};
+use crate::gpu::{Anchor, PagesCallback, Quad};
 use crate::motion;
 use crate::pages::Lookup;
-use crate::pdf_view::{Sinks, Urgency, paint_page};
+use crate::pdf_view::{PageLook, Sinks, Urgency, keep_pictures, paint_page};
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 pub use grid::CELL_W;
@@ -72,7 +73,7 @@ impl ThumbState {
 
 pub fn show(
     ui: &mut Ui,
-    reading: &Reading,
+    (reading, page_look): (&Reading, PageLook),
     io: Sinks<'_>,
     state: &mut ThumbState,
     recentre: bool,
@@ -115,7 +116,8 @@ pub fn show(
     }
     let active = shown_pages(reading, count);
     let goal = follow(state, reading, &active, recentre, now, &ctx);
-    let (t, fixed_t) = thumb_tokens(&ctx, reading.document.is_reflowable());
+    let tones = thumb_tokens(&ctx, reading.document.is_reflowable(), page_look);
+    let t = tones.t;
     state.picks.follow(reading);
     if state.picks.active() {
         picks::bar(ui, &mut state.picks, count, &t);
@@ -141,18 +143,12 @@ pub fn show(
                 if !matches!(look, Lookup::Sharp(_) | Lookup::Failed) {
                     demand.push((Urgency::Thumbnail, key(page).into()));
                 }
-                let anchor = Anchor::page(rect, size(page).0);
-                let square = (ui.clip_rect(), 0.0);
-                let page_t = if reading.document.is_fixed_page(page) {
-                    &fixed_t
-                } else {
-                    &t
-                };
-                paint_page(
+                paint_thumb(
                     ui,
-                    ((rect, ui.clip_rect()), anchor, square),
+                    (reading, page),
+                    (rect, size(page).0),
                     look,
-                    (page_t, true),
+                    &tones,
                     &mut quads,
                 );
                 let on = active.contains(&page);
@@ -214,16 +210,70 @@ pub fn show(
     state.picks.settle(reading);
 }
 
-fn thumb_tokens(ctx: &egui::Context, reflow: bool) -> (Tokens, Tokens) {
+struct ThumbTones {
+    t: Tokens,
+    fixed: Tokens,
+    reflow: bool,
+    picture: PageTone,
+    emoji: PageTone,
+}
+
+fn thumb_tokens(ctx: &egui::Context, reflow: bool, look: PageLook) -> ThumbTones {
     let mut t = Tokens::get(ctx);
     t.page.pattern = Pattern::NONE;
     let mut fixed = t;
-    fixed.page = PageTone::NONE;
+    let (mut picture, mut emoji) = (PageTone::NONE, PageTone::NONE);
     if reflow {
-        t.page = t.book;
-        t.page.pattern = Pattern::NONE;
+        let mut text = t.book.inked(look.ink);
+        text.pattern = Pattern::NONE;
+        let themed = t.page.for_pictures(&text);
+        let pick = |on: bool| if on { themed } else { PageTone::NONE };
+        (picture, emoji) = (pick(look.theme_pictures), pick(look.theme_emojis));
+        fixed.page = picture;
+        t.page = text;
     }
-    (t, fixed)
+    ThumbTones {
+        t,
+        fixed,
+        reflow,
+        picture,
+        emoji,
+    }
+}
+
+fn paint_thumb(
+    ui: &Ui,
+    (reading, page): (&Reading, usize),
+    (rect, width): (Rect, f32),
+    look: Lookup,
+    tones: &ThumbTones,
+    quads: &mut Vec<Quad>,
+) {
+    let anchor = Anchor::page(rect, width);
+    let square = (ui.clip_rect(), 0.0);
+    let fixed_page = reading.document.is_fixed_page(page);
+    let page_t = if fixed_page { &tones.fixed } else { &tones.t };
+    let first = quads.len();
+    paint_page(
+        ui,
+        ((rect, ui.clip_rect()), anchor, square),
+        look,
+        (page_t, true),
+        quads,
+    );
+    if tones.reflow && !fixed_page {
+        let k = rect.width() / width.max(1.0);
+        let to_screen = |b: Bounds| {
+            Rect::from_min_max(
+                rect.min + vec2(b.x0, b.y0) * k,
+                rect.min + vec2(b.x1, b.y1) * k,
+            )
+        };
+        let shown = reading.document.pictures(page).into_iter().map(to_screen);
+        keep_pictures(quads, first, shown, tones.picture);
+        let emojis = reading.document.emojis(page).into_iter().map(to_screen);
+        keep_pictures(quads, first, emojis, tones.emoji);
+    }
 }
 
 /// Snaps to the page on opening; glides as it moves, unless browsed.

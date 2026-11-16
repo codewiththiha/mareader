@@ -72,7 +72,7 @@ impl Flow {
     fn each_para(&self, page: usize, mut visit: impl FnMut(&Para, Range<usize>, Origin)) {
         let (left, top) = self.origin(page);
         for piece in self.pages.get(page).map_or(&[][..], Vec::as_slice) {
-            let Some(set) = self.blocks.get(piece.block) else {
+            let Some(set) = self.blocks.get(piece.block).filter(|s| !s.hidden) else {
                 continue;
             };
             let x = left + set.x + piece.dx;
@@ -122,20 +122,8 @@ impl Flow {
     fn shown(&self, page: usize) -> Vec<([f32; 4], Arc<Picture>)> {
         let (left, top) = self.origin(page);
         let pieces = self.pages.get(page).map_or(&[][..], Vec::as_slice);
-        let mut out: Vec<([f32; 4], Arc<Picture>)> = pieces
-            .iter()
-            .filter_map(|piece| {
-                let set = self.blocks.get(piece.block)?;
-                let Draw::Image { rect, picture, .. } = &set.draw else {
-                    return None;
-                };
-                let [x, y, w, h] = *rect;
-                Some((
-                    [left + set.x + piece.dx + x, top + piece.dy + y, w, h],
-                    Arc::clone(picture),
-                ))
-            })
-            .collect();
+        let mut out = Vec::new();
+        crate::raster_fx::piece_pictures(&self.blocks, pieces, (left, top), &mut out);
         self.each_para(page, |para, range, ((x, y), _)| {
             if para.pictures.is_empty() {
                 return;
@@ -145,9 +133,9 @@ impl Flow {
                     let PositionedLayoutItem::InlineBox(b) = item else {
                         continue;
                     };
-                    let picture = usize::try_from(b.id)
-                        .ok()
-                        .and_then(|i| para.pictures.get(i));
+                    let idx = usize::try_from(b.id).ok();
+                    let veiled = idx.and_then(|i| para.veiled.get(i)).is_some_and(|v| *v);
+                    let picture = idx.filter(|_| !veiled).and_then(|i| para.pictures.get(i));
                     if let Some(picture) = picture {
                         out.push(([x + b.x, y + b.y, b.width, b.height], Arc::clone(picture)));
                     }
@@ -156,7 +144,12 @@ impl Flow {
         });
         let (pw, ph) = self.page_size();
         let decos = self.decos.get(page).map_or(&[][..], Vec::as_slice);
-        crate::raster_fx::deco_pictures(decos, (left, top), pw * ph * 0.5, &mut out);
+        crate::raster_fx::deco_pictures(
+            decos,
+            (&self.blocks, pieces),
+            ((left, top), pw * ph * 0.5),
+            &mut out,
+        );
         for (rect, _) in &mut out {
             *rect = self.shown_rect(page, *rect);
         }

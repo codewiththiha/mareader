@@ -1,8 +1,10 @@
 //! A generated EPUB for tests, screenshots and the web demo.
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 use rbook::Epub;
 use rbook::epub::EpubChapter;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 const PROSE: [&str; 6] = [
     "This book was written by mareader itself, so the demo needs no file. \
@@ -158,6 +160,51 @@ pub fn epub(chapters: usize, title: &str) -> Vec<u8> {
         book = book.resource(("images/river.png", river));
     }
     book.write().to_vec().unwrap_or_default()
+}
+
+/// A one-page pre-paginated EPUB filled with the dusk landscape artwork.
+pub fn fixed_epub(title: &str) -> Vec<u8> {
+    let opf = format!(
+        "<?xml version='1.0' encoding='UTF-8'?>\
+         <package xmlns='http://www.idpf.org/2007/opf' version='3.0' unique-identifier='id' \
+         prefix='rendition: http://www.idpf.org/vocab/rendition/#'>\
+         <metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>\
+         <dc:identifier id='id'>urn:mareader:fixed</dc:identifier>\
+         <dc:title>{title}</dc:title><dc:language>en</dc:language>\
+         <meta property='dcterms:modified'>2026-01-01T00:00:00Z</meta>\
+         <meta property='rendition:layout'>pre-paginated</meta></metadata>\
+         <manifest>\
+         <item id='p0' href='page.xhtml' media-type='application/xhtml+xml'/>\
+         <item id='art' href='cover.png' media-type='image/png'/>\
+         </manifest><spine><itemref idref='p0'/></spine></package>"
+    );
+    let xhtml = "<?xml version='1.0' encoding='UTF-8'?>\
+        <html xmlns='http://www.w3.org/1999/xhtml'><head>\
+        <meta name='viewport' content='width=600, height=900'/>\
+        <style>html, body { margin: 0; padding: 0; width: 600px; height: 900px; }\
+        img { display: block; width: 600px; height: 900px; }</style></head>\
+        <body><img src='cover.png' alt='Landscape'/></body></html>";
+    let container = "<?xml version='1.0' encoding='UTF-8'?>\
+        <container version='1.0' xmlns='urn:oasis:names:tc:opendocument:xmlns:container'>\
+        <rootfiles><rootfile full-path='OPS/book.opf' \
+        media-type='application/oebps-package+xml'/></rootfiles></container>";
+    let art = cover_png().unwrap_or_default();
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let _ = zip.start_file("mimetype", stored);
+    let _ = zip.write_all(b"application/epub+zip");
+    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let files: [(&str, &[u8]); 4] = [
+        ("META-INF/container.xml", container.as_bytes()),
+        ("OPS/book.opf", opf.as_bytes()),
+        ("OPS/page.xhtml", xhtml.as_bytes()),
+        ("OPS/cover.png", &art),
+    ];
+    for (name, data) in files {
+        let _ = zip.start_file(name, deflated);
+        let _ = zip.write_all(data);
+    }
+    zip.finish().map(Cursor::into_inner).unwrap_or_default()
 }
 
 /// What READMEs hold: emoji, tasks, code, tables, quotes and alerts.

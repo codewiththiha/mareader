@@ -43,6 +43,7 @@ impl MareaderApp {
             .set_offer(crate::thumbnails::Offer::of(self.settings()));
         let active = self.active();
         let reading = self.documents().reading(active);
+        let thumb_look = PageLook::new(&self.settings().layout, self.session.text(active));
         let click = self.settings().workspace.library_click;
         let home = self.settings().library.home;
         let ui_state = &mut self.ui;
@@ -73,7 +74,8 @@ impl MareaderApp {
                         true
                     }),
                     Panel::Thumbnails => {
-                        documents.thumbnails(ui, reading.as_ref(), texts, thumbs, recentre, out)
+                        let target = reading.as_ref().map(|r| (r, thumb_look));
+                        documents.thumbnails(ui, target, texts, thumbs, recentre, out)
                     }
                     Panel::Library => library_panel::show(ui, &shelves, shelf_tree, out),
                     Panel::Notes => reading.as_ref().is_some_and(|r| {

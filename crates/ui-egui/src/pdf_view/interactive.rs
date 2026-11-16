@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use egui::epaint::Vertex;
 use egui::{Color32, ColorImage, Pos2, Rect, Shape, TextureHandle, TextureOptions, Ui, pos2, vec2};
+use mareader_appearance::PageTone;
 use mareader_session::{DocId, InteractiveItem, Transform2d};
 
 use super::ShowContext;
@@ -17,6 +18,7 @@ const MAX_DT: f64 = 0.05;
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(super) struct InteractiveState {
     doc: Option<DocId>,
+    tone: Option<PageTone>,
     started_at: Option<f64>,
     tracks: HashMap<(usize, u64), Track>,
     textures: HashMap<(usize, u64, bool, u16), CachedTex>,
@@ -65,10 +67,14 @@ pub(super) fn paint(cx: &mut ShowContext<'_>, ui: &mut Ui) {
     let Some(input) = cx.input.as_ref() else {
         return;
     };
+    let (req_scale, tone) = (input.scale.value(), input.picture_tone);
+    if state.tone != Some(tone) {
+        state.tone = Some(tone);
+        state.textures.clear();
+    }
     let now = ui.ctx().input(|i| i.time);
     let started = *state.started_at.get_or_insert(now);
     let pointer = ui.ctx().input(|i| i.pointer.hover_pos());
-    let req_scale = input.scale.value();
 
     let mut need_repaint = false;
     let mut draws: Vec<DrawOverlay> = Vec::new();
@@ -84,7 +90,8 @@ pub(super) fn paint(cx: &mut ShowContext<'_>, ui: &mut Ui) {
     draws.sort_by_key(|d| (d.z, d.idx));
     for d in draws {
         let key = (d.page, d.idx, d.id);
-        let Some((tex, rect_pt)) = ensure_texture(cx, ui, key, d.use_hover_tex, req_scale) else {
+        let Some((tex, rect_pt)) = ensure_texture(cx, ui, key, d.use_hover_tex, (req_scale, tone))
+        else {
             continue;
         };
         paint_mesh(ui, &d, &tex, rect_pt);
@@ -252,7 +259,7 @@ fn ensure_texture(
     ui: &Ui,
     (page, idx, id): (usize, usize, u64),
     hovered: bool,
-    req_scale: f32,
+    (req_scale, tone): (f32, PageTone),
 ) -> Option<(TextureHandle, [f32; 4])> {
     let scale_key = (req_scale * 100.0).round().clamp(10.0, 60000.0) as u16;
     let key = (page, id, hovered, scale_key);
@@ -262,9 +269,10 @@ fn ensure_texture(
     if cx.view.interactive.textures.len() >= MAX_TEXTURES {
         cx.view.interactive.textures.clear();
     }
-    let pix = cx
+    let mut pix = cx
         .doc
         .render_interactive_item(page, idx, req_scale, hovered)?;
+    tone_pixels(&mut pix.pixels.rgba, tone);
     let size = [pix.pixels.width as usize, pix.pixels.height as usize];
     let image = ColorImage::from_rgba_premultiplied(size, &pix.pixels.rgba);
     let name = format!("epub-item-{page}-{id}-{hovered}");
@@ -278,6 +286,25 @@ fn ensure_texture(
         },
     );
     Some((tex, rect_pt))
+}
+
+fn tone_pixels(rgba: &mut [u8], tone: PageTone) {
+    if tone.blend.is_none() {
+        return;
+    }
+    for px in rgba.as_chunks_mut::<4>().0 {
+        let [r, g, b, a] = *px;
+        if a == 0 {
+            continue;
+        }
+        let af = f32::from(a) / 255.0;
+        let straight = [r, g, b].map(|c| (f32::from(c) / 255.0 / af).clamp(0.0, 1.0));
+        let out = tone.apply(straight);
+        let to_u8 = |v: f32| (v.clamp(0.0, 1.0) * af * 255.0).round() as u8;
+        px[0] = to_u8(out[0]);
+        px[1] = to_u8(out[1]);
+        px[2] = to_u8(out[2]);
+    }
 }
 
 fn paint_mesh(ui: &Ui, d: &DrawOverlay, tex: &TextureHandle, rect_pt: [f32; 4]) {

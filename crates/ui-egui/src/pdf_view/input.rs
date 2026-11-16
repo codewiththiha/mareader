@@ -234,11 +234,10 @@ fn finish(cx: &mut ShowContext<'_>) {
         Urgency::OtherPane
     };
     let mut t = view_cx.tokens;
-    // Fixed-layout EPUB pages are publisher artwork; never invert them.
-    let fixed_tone = PageTone::NONE;
     let reflow = doc.is_reflowable();
-    // A book's pictures and emoji keep their colours unless themed.
-    let (mut picture_tone, mut emoji_tone) = (PageTone::NONE, PageTone::NONE);
+    // Pictures, emoji and fixed artwork keep their colours unless themed.
+    let (mut picture_tone, mut emoji_tone, mut fixed_tone) =
+        (PageTone::NONE, PageTone::NONE, PageTone::NONE);
     if reflow {
         let mut text = t.book.inked(view_cx.page.ink);
         // Blend's paper, as the PDF beside it shows it.
@@ -251,6 +250,7 @@ fn finish(cx: &mut ShowContext<'_>) {
             pick(view_cx.page.theme_pictures),
             pick(view_cx.page.theme_emojis),
         );
+        fixed_tone = picture_tone;
         t.page = text;
     }
     // egui turns a plain wheel sideways only if that's the sole direction.
