@@ -38,18 +38,231 @@ pub fn layout(window_h: f64, bar_h: f64, button_h: f64, spacing: f64, shift: f64
     }
 }
 
+/// Container y inside its superview, honouring flipped coordinates.
+pub fn container_origin_y(want: Layout, superview_flipped: bool) -> f64 {
+    if superview_flipped {
+        0.0
+    } else {
+        want.container_y
+    }
+}
+
 #[cfg(all(target_os = "macos", feature = "traffic-lights"))]
 pub use mac::place;
 
 #[cfg(all(target_os = "macos", feature = "traffic-lights"))]
 #[allow(unsafe_code)]
 mod mac {
+    use std::cell::{Cell, RefCell};
+
     use mareader_ui_egui::platform::{LightSpots, NativeLights};
-    use objc2::MainThreadMarker;
-    use objc2::rc::Retained;
-    use objc2_app_kit::{NSButton, NSView, NSWindow, NSWindowButton};
-    use objc2_foundation::{NSPoint, NSProcessInfo};
+    use objc2::rc::{Retained, Weak};
+    use objc2::runtime::{AnyObject, NSObject, Sel};
+    use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
+    use objc2_app_kit::{
+        NSButton, NSView, NSViewFrameDidChangeNotification, NSWindow, NSWindowButton,
+        NSWindowDidBecomeKeyNotification, NSWindowDidChangeBackingPropertiesNotification,
+        NSWindowDidDeminiaturizeNotification, NSWindowDidEndLiveResizeNotification,
+        NSWindowDidExitFullScreenNotification, NSWindowDidResignKeyNotification,
+        NSWindowDidResizeNotification, NSWindowDidUpdateNotification, NSWindowStyleMask,
+        NSWindowWillCloseNotification,
+    };
+    use objc2_foundation::{
+        NSNotification, NSNotificationCenter, NSNotificationName, NSPoint, NSProcessInfo, NSRect,
+    };
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    #[derive(Clone, Copy)]
+    struct Desired {
+        shift: f64,
+        zoom: f64,
+        opacity: f64,
+        fullscreen: bool,
+    }
+
+    struct Ivars {
+        window: Weak<NSWindow>,
+        desired: Cell<Desired>,
+        metrics: Cell<Option<(f64, f64)>>,
+        views: Cell<Option<[usize; 5]>>,
+        arranging: Cell<bool>,
+        closed: Cell<bool>,
+    }
+
+    struct ArrangeGuard<'a>(&'a Cell<bool>);
+
+    impl Drop for ArrangeGuard<'_> {
+        fn drop(&mut self) {
+            self.0.set(false);
+        }
+    }
+
+    define_class!(
+        // SAFETY: NSObject has no subclassing rules; there is no Drop.
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "MareaderTrafficLights"]
+        #[ivars = Ivars]
+        struct Observer;
+
+        impl Observer {
+            #[unsafe(method(relayout:))]
+            fn relayout(&self, _note: &NSNotification) {
+                self.apply();
+            }
+
+            #[unsafe(method(windowWillClose:))]
+            fn window_will_close(&self, _note: &NSNotification) {
+                self.ivars().closed.set(true);
+                let center = NSNotificationCenter::defaultCenter();
+                // SAFETY: `self` was registered on this centre.
+                unsafe { center.removeObserver(self) };
+            }
+        }
+    );
+
+    thread_local! {
+        static OBSERVERS: RefCell<Vec<Retained<Observer>>> = const { RefCell::new(Vec::new()) };
+    }
+
+    impl Observer {
+        fn new(window: &NSWindow, mtm: MainThreadMarker, desired: Desired) -> Retained<Self> {
+            let ivars = Ivars {
+                window: Weak::new(window),
+                desired: Cell::new(desired),
+                metrics: Cell::new(None),
+                views: Cell::new(None),
+                arranging: Cell::new(false),
+                closed: Cell::new(false),
+            };
+            let this = Self::alloc(mtm).set_ivars(ivars);
+            // SAFETY: NSObject's plain initialiser.
+            let this: Retained<Self> = unsafe { msg_send![super(this), init] };
+            this.register_window(window);
+            this
+        }
+
+        fn observe(
+            &self,
+            center: &NSNotificationCenter,
+            action: Sel,
+            name: &NSNotificationName,
+            target: &AnyObject,
+        ) {
+            // SAFETY: `self` answers `action`; `target` is a live object.
+            unsafe {
+                center.addObserver_selector_name_object(self, action, Some(name), Some(target));
+            }
+        }
+
+        fn register_window(&self, window: &NSWindow) {
+            let center = NSNotificationCenter::defaultCenter();
+            let target: &AnyObject = window;
+            // SAFETY: AppKit notification names are immutable constants.
+            let names: [&NSNotificationName; 8] = unsafe {
+                [
+                    NSWindowDidResizeNotification,
+                    NSWindowDidEndLiveResizeNotification,
+                    NSWindowDidExitFullScreenNotification,
+                    NSWindowDidChangeBackingPropertiesNotification,
+                    NSWindowDidDeminiaturizeNotification,
+                    NSWindowDidBecomeKeyNotification,
+                    NSWindowDidResignKeyNotification,
+                    NSWindowDidUpdateNotification,
+                ]
+            };
+            for name in names {
+                self.observe(&center, sel!(relayout:), name, target);
+            }
+            // SAFETY: AppKit notification name is an immutable constant.
+            let close = unsafe { NSWindowWillCloseNotification };
+            self.observe(&center, sel!(windowWillClose:), close, target);
+        }
+
+        fn watch_views(
+            &self,
+            titlebar: &NSView,
+            container: &NSView,
+            buttons: &[Retained<NSButton>; 3],
+        ) {
+            let views: [&NSView; 5] = [container, titlebar, &buttons[0], &buttons[1], &buttons[2]];
+            let current = views.map(|v| std::ptr::from_ref(v).addr());
+            if self.ivars().views.get() == Some(current) {
+                return;
+            }
+            let center = NSNotificationCenter::defaultCenter();
+            // SAFETY: AppKit notification name is an immutable constant.
+            let frame_changed = unsafe { NSViewFrameDidChangeNotification };
+            // SAFETY: removes only our view frame observers on this centre.
+            unsafe {
+                center.removeObserver_name_object(self, Some(frame_changed), None);
+            }
+            for view in views {
+                view.setPostsFrameChangedNotifications(true);
+                self.observe(&center, sel!(relayout:), frame_changed, view);
+            }
+            self.ivars().views.set(Some(current));
+        }
+
+        fn apply(&self) -> bool {
+            let ivars = self.ivars();
+            if ivars.closed.get() || ivars.arranging.get() {
+                return false;
+            }
+            let Some(window) = ivars.window.load() else {
+                return false;
+            };
+            let Some(buttons) = buttons(&window) else {
+                return false;
+            };
+            let desired = ivars.desired.get();
+            let fullscreen =
+                desired.fullscreen || window.styleMask().contains(NSWindowStyleMask::FullScreen);
+            let opacity = if fullscreen { 1.0 } else { desired.opacity };
+            fade(&buttons, opacity);
+            if fullscreen || opacity <= 0.0 {
+                return false;
+            }
+            let Some((titlebar, container)) = titlebar_views(&window, &buttons) else {
+                return false;
+            };
+            ivars.arranging.set(true);
+            let _guard = ArrangeGuard(&ivars.arranging);
+            self.watch_views(&titlebar, &container, &buttons);
+            let metrics = measure_metrics(&buttons, ivars.metrics.get());
+            if let Some(m) = metrics {
+                ivars.metrics.set(Some(m));
+            }
+            arrange(&window, (&titlebar, &container, &buttons), desired, metrics);
+            true
+        }
+    }
+
+    fn ensure_observer(
+        window: &NSWindow,
+        mtm: MainThreadMarker,
+        desired: Desired,
+    ) -> Retained<Observer> {
+        let same_window = |obs: &Observer| {
+            obs.ivars()
+                .window
+                .load()
+                .as_deref()
+                .is_some_and(|w| std::ptr::eq(w, window))
+        };
+        let alive = |o: &Observer| !o.ivars().closed.get() && o.ivars().window.load().is_some();
+        OBSERVERS.with(|list| {
+            let mut list = list.borrow_mut();
+            list.retain(|o| alive(o));
+            if let Some(obs) = list.iter().find(|o| same_window(o)) {
+                obs.ivars().desired.set(desired);
+                return obs.clone();
+            }
+            let obs = Observer::new(window, mtm, desired);
+            list.push(obs.clone());
+            obs
+        })
+    }
 
     /// Places and fades the lights in a bar `zoom` times taller; returns
     /// where they landed.
@@ -60,17 +273,21 @@ mod mac {
         zoom: f32,
     ) -> Option<LightSpots> {
         // AppKit objects may only be touched on the main thread.
-        let _main = MainThreadMarker::new()?;
+        let main = MainThreadMarker::new()?;
         let window = ns_window(frame)?;
-        let buttons = buttons(&window)?;
-        let opacity = if fullscreen { 1.0 } else { lights.opacity };
-        fade(&buttons, f64::from(opacity.clamp(0.0, 1.0)));
-        if fullscreen || opacity <= 0.0 {
-            return None;
-        }
         let zoom = f64::from(zoom).max(0.1);
         let shift = f64::from(lights.shift) * zoom;
-        arrange(&window, &buttons, shift, zoom);
+        let opacity = f64::from(lights.opacity.clamp(0.0, 1.0));
+        let desired = Desired {
+            shift,
+            zoom,
+            opacity,
+            fullscreen,
+        };
+        if !ensure_observer(&window, main, desired).apply() {
+            return None;
+        }
+        let buttons = buttons(&window)?;
         spots(&window, &buttons, shift, zoom)
     }
 
@@ -121,6 +338,35 @@ mod mac {
         ])
     }
 
+    fn titlebar_views(
+        window: &NSWindow,
+        buttons: &[Retained<NSButton>; 3],
+    ) -> Option<(Retained<NSView>, Retained<NSView>)> {
+        // SAFETY: main-thread getters; titlebar sits inside the container.
+        let titlebar = unsafe { buttons[0].superview() }?;
+        // SAFETY: main-thread getter for the titlebar container view.
+        let container = unsafe { titlebar.superview() }?;
+        let same = container
+            .window()
+            .as_deref()
+            .is_some_and(|w| std::ptr::eq(w, window));
+        same.then_some((titlebar, container))
+    }
+
+    fn measure_metrics(
+        buttons: &[Retained<NSButton>; 3],
+        cached: Option<(f64, f64)>,
+    ) -> Option<(f64, f64)> {
+        if cached.is_some() {
+            return cached;
+        }
+        let close = buttons[0].frame();
+        let spacing = buttons[1].frame().origin.x - close.origin.x;
+        let button_h = close.size.height;
+        (spacing.is_finite() && spacing >= 1.0 && button_h.is_finite() && button_h >= 1.0)
+            .then_some((spacing, button_h))
+    }
+
     /// Hidden at zero, so invisible buttons can't take clicks.
     fn fade(buttons: &[Retained<NSButton>; 3], alpha: f64) {
         for b in buttons {
@@ -133,30 +379,49 @@ mod mac {
         }
     }
 
+    fn rect_differs(a: NSRect, b: NSRect) -> bool {
+        (a.origin.x - b.origin.x).abs() > 0.5
+            || (a.origin.y - b.origin.y).abs() > 0.5
+            || (a.size.width - b.size.width).abs() > 0.5
+            || (a.size.height - b.size.height).abs() > 0.5
+    }
+
     /// Centres them in the bar as egui draws it, `zoom` times its height.
-    fn arrange(window: &NSWindow, buttons: &[Retained<NSButton>; 3], shift: f64, zoom: f64) {
-        // SAFETY: main-thread getters; the grandparent is the container.
-        let container = unsafe { buttons[0].superview().and_then(|v| v.superview()) };
-        let Some(container) = container else {
-            return;
-        };
+    fn arrange(
+        window: &NSWindow,
+        views: (&NSView, &NSView, &[Retained<NSButton>; 3]),
+        desired: Desired,
+        metrics: Option<(f64, f64)>,
+    ) {
+        let (titlebar, container, buttons) = views;
         let close = buttons[0].frame();
-        let spacing = buttons[1].frame().origin.x - close.origin.x;
+        let fallback = (
+            buttons[1].frame().origin.x - close.origin.x,
+            close.size.height,
+        );
+        let (spacing, button_h) = metrics.unwrap_or(fallback);
         let want = super::layout(
             window.frame().size.height,
-            f64::from(mareader_ui_egui::theme::TITLE_BAR_H) * zoom,
-            close.size.height,
+            f64::from(mareader_ui_egui::theme::TITLE_BAR_H) * desired.zoom,
+            button_h,
             spacing,
-            shift,
+            desired.shift,
         );
+        // SAFETY: main-thread getter; checks whether theme frame is flipped.
+        let flipped = unsafe { container.superview() }.is_some_and(|s| s.isFlipped());
+        let target_y = super::container_origin_y(want, flipped);
         // AppKit resets these on resize, so write only what moved.
         let mut rect = container.frame();
-        if (rect.origin.y - want.container_y).abs() > 0.5
+        if (rect.origin.y - target_y).abs() > 0.5
             || (rect.size.height - want.container_h).abs() > 0.5
         {
-            rect.origin.y = want.container_y;
+            rect.origin.y = target_y;
             rect.size.height = want.container_h;
             container.setFrame(rect);
+        }
+        let want_bar = container.bounds();
+        if rect_differs(titlebar.frame(), want_bar) {
+            titlebar.setFrame(want_bar);
         }
         for (b, x) in buttons.iter().zip(want.xs) {
             let at = b.frame().origin;
@@ -215,5 +480,12 @@ mod tests {
         let l = layout(800.0, 48.0, 16.0, 20.0, -288.0);
         assert!(l.xs[2] + 14.0 < 0.0, "past the window edge, out of sight");
         assert_eq!(layout(800.0, 48.0, 16.0, 20.0, -100.0).xs[0], -80.0);
+    }
+
+    #[test]
+    fn flipped_superview_places_container_at_zero() {
+        let l = layout(800.0, 48.0, 16.0, 20.0, 0.0);
+        assert_eq!(container_origin_y(l, false), 752.0);
+        assert_eq!(container_origin_y(l, true), 0.0);
     }
 }

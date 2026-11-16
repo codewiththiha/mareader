@@ -26,7 +26,9 @@ traffic-lights = [
     "dep:objc2",
     "dep:objc2-app-kit",
     "dep:objc2-foundation",
+    "objc2-foundation/NSNotification",
     "objc2-foundation/NSProcessInfo",
+    "objc2-foundation/NSString",
     "dep:raw-window-handle",
 ]
 
