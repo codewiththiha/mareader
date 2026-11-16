@@ -190,7 +190,9 @@ impl State<'_> {
         let small = small.filter(|_| after_text || parent.is_some_and(in_line));
         let depth = self.stack.len();
         let own = |p: &Place| p.depth + 1 >= depth && p.spot.is_some();
-        let small = small.filter(|_| !self.places.last().is_some_and(own));
+        let small = small
+            .filter(|_| !self.places.last().is_some_and(own))
+            .filter(|_| computed.is_none_or(|c| c.float == Float::None));
         if let (Some(picture), Some((width, height))) = (&picture, small)
             && self.inline_picture(picture, width, height, computed, invisible, inline_link)
         {

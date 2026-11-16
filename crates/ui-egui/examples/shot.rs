@@ -346,7 +346,7 @@ fn main() -> Result<(), String> {
         wait_for_sounds(&mut harness)?;
     }
     if wait_for_opening {
-        wait_for_books(&mut harness);
+        wait_for_ready(&mut harness, true, false, 45);
     }
     let mut library_shown = false;
     for c in queued {
@@ -550,6 +550,7 @@ fn main() -> Result<(), String> {
     if scripted {
         wait_for_scripts(&mut harness)?;
     }
+    wait_for_ready(&mut harness, wait_for_opening, true, 20);
     harness.run_steps(wait);
     for label in &clicks {
         let node = (harness.query_by_label(label)).ok_or(format!("nothing named {label}"))?;
@@ -758,16 +759,11 @@ fn wait_for_dictionary_answer(harness: &mut Harness<'_, MareaderApp>) -> Result<
 
 /// Steps until the scripts have answered every click, for a minute at most.
 fn wait_for_scripts(harness: &mut Harness<'_, MareaderApp>) -> Result<(), String> {
-    let until = Instant::now() + Duration::from_secs(60);
-    let mut calm = 0;
+    let (until, mut calm) = (Instant::now() + Duration::from_secs(60), 0);
     // Settled for a second: clicks sent were taken and answered.
     while calm < 10 {
         harness.run_steps(1);
-        calm = if harness.state().scripts_settled() {
-            calm + 1
-        } else {
-            0
-        };
+        calm = usize::from(harness.state().scripts_settled()) * (calm + 1);
         if Instant::now() > until {
             let state = harness.state().scripts_state();
             return Err(format!("scripts: timed out ({state})"));
@@ -777,12 +773,22 @@ fn wait_for_scripts(harness: &mut Harness<'_, MareaderApp>) -> Result<(), String
     Ok(())
 }
 
-/// Frames in real time until every book asked for is open, or 30 s.
-fn wait_for_books(harness: &mut Harness<'_, MareaderApp>) {
-    let start = Instant::now();
-    while harness.state().documents().opening() && start.elapsed() < Duration::from_secs(30) {
+/// Frames until typesetting, scroll glides, and pending renders settle.
+fn wait_for_ready(harness: &mut Harness<'_, MareaderApp>, settled: bool, renders: bool, secs: u64) {
+    let (start, mut stable) = (Instant::now(), 0usize);
+    while start.elapsed() < Duration::from_secs(secs) {
+        let s = harness.state();
+        let drift = s.documents().drifting(s.active_pane()).unwrap_or(false);
+        let docs = s.session().documents();
+        let ok = (!settled || docs.settled()) && (!renders || (!drift && docs.pending() == 0));
+        stable = usize::from(ok) * (stable + 1);
+        if stable >= 4 {
+            break;
+        }
         harness.run_steps(1);
-        std::thread::sleep(Duration::from_millis(20));
+        if !ok && !drift {
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
 

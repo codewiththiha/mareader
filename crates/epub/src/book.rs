@@ -15,8 +15,10 @@ use rbook::Epub;
 use rbook::ebook::element::Properties;
 use rbook::epub::manifest::EpubManifestEntry;
 
+use crate::OpenError;
 use crate::css::{FontFace, MAX_SHEET, Stylesheet};
 use crate::fontfile;
+use crate::guard::{self, manifest_by_path, read_resource};
 use crate::media::{self, Media};
 use crate::overlay::{self, Narration};
 use crate::script::{self, Scripted};
@@ -24,7 +26,6 @@ use crate::splice::{At, Insert, Inserts, Spliced, next_layout};
 use crate::subtitles::{self, Subtitle, Track, Wanted};
 use crate::trigger::{self, Action, Triggered};
 use crate::xhtml::{self, BOOK_FACE, Href, Library, Refs};
-use crate::{OpenError, guard};
 
 mod retype;
 
@@ -116,7 +117,7 @@ impl<'e> Shelf<'e> {
 impl Shelf<'_> {
     /// The picture at `path` itself, its fallbacks aside.
     fn decode(&mut self, path: &str) -> Option<Arc<Picture>> {
-        let bytes = self.epub.read_resource_bytes(path).ok();
+        let bytes = read_resource(self.epub, path);
         let bytes = bytes.filter(|b| b.len() <= self.read.budget);
         bytes.and_then(|b| {
             self.read.budget -= b.len();
@@ -139,7 +140,7 @@ impl Library for Shelf<'_> {
         }
         let mut picture = self.decode(path);
         if picture.is_none() {
-            let paths: Vec<String> = match self.epub.manifest().by_href(path) {
+            let paths: Vec<String> = match manifest_by_path(self.epub, path) {
                 Some(e) => (e.fallbacks().take(media::MAX_FALLBACKS))
                     .map(|f| f.href().decode().into_owned())
                     .collect(),
@@ -152,7 +153,7 @@ impl Library for Shelf<'_> {
     }
 
     fn media_type(&mut self, path: &str) -> Option<String> {
-        let entry = self.epub.manifest().by_href(path)?;
+        let entry = manifest_by_path(self.epub, path)?;
         Some(entry.media_type().to_owned())
     }
 
@@ -160,7 +161,7 @@ impl Library for Shelf<'_> {
         if let Some(known) = self.read.files.get(path) {
             return known.clone();
         }
-        let bytes = self.epub.read_resource_bytes(path).ok();
+        let bytes = read_resource(self.epub, path);
         let bytes = bytes.filter(|b| b.len() <= self.read.budget).map(|b| {
             self.read.budget -= b.len();
             Arc::new(b)
@@ -173,7 +174,7 @@ impl Library for Shelf<'_> {
         if let Some(known) = self.read.sheets.get(path) {
             return known.clone();
         }
-        let bytes = self.epub.read_resource_bytes(path).ok();
+        let bytes = read_resource(self.epub, path);
         let sheet = bytes.filter(|b| b.len() <= MAX_SHEET).map(|b| {
             let text = String::from_utf8_lossy(&b);
             Arc::new(Stylesheet::parse(&text, path))
@@ -211,7 +212,7 @@ impl Files {
     /// The sound or video at `path`, if the manifest names its type.
     pub fn media(&self, path: &str) -> Option<Media> {
         let read = || {
-            let entry = self.epub()?.manifest().by_href(path)?;
+            let entry = manifest_by_path(self.epub()?, path)?;
             let extension = media::extension(entry.media_type())?;
             let data = entry.read_bytes().ok()?;
             Some(Media { data, extension })
@@ -222,7 +223,7 @@ impl Files {
     /// Any file the manifest lists at `path`, if not too large.
     fn read(&self, path: &str) -> Option<Vec<u8>> {
         let read = || {
-            let data = self.epub()?.manifest().by_href(path)?.read_bytes().ok()?;
+            let data = manifest_by_path(self.epub()?, path)?.read_bytes().ok()?;
             (data.len() <= subtitles::MAX_TRACK).then_some(data)
         };
         catch_unwind(AssertUnwindSafe(read)).ok().flatten()
@@ -291,6 +292,7 @@ pub enum OpenStep {
 #[derive(Debug, Clone)]
 struct SpineRecord {
     item: usize,
+    id: Option<String>,
     href: Option<String>,
     overlay: Option<String>,
     fixed: bool,
@@ -641,6 +643,7 @@ fn spine_records(epub: &Epub, book_fixed: bool) -> Vec<SpineRecord> {
         .enumerate()
         .map(|(item, spine)| {
             let listed = spine.manifest_entry();
+            let id = listed.as_ref().map(|entry| entry.id().to_owned());
             let href = listed
                 .as_ref()
                 .map(|entry| entry.href().decode().into_owned());
@@ -650,6 +653,7 @@ fn spine_records(epub: &Epub, book_fixed: bool) -> Vec<SpineRecord> {
                 .map(|entry| entry.href().decode().into_owned());
             SpineRecord {
                 item,
+                id,
                 href,
                 overlay,
                 fixed: fixed_item(spine.properties(), book_fixed),
@@ -674,7 +678,12 @@ fn read_item(
     let Some(href) = record.href.as_deref() else {
         return Ok(ParsedItem::empty());
     };
-    let Some(listed) = epub.manifest().by_href(href) else {
+    let listed = record
+        .id
+        .as_deref()
+        .and_then(|id| epub.manifest().by_id(id))
+        .or_else(|| manifest_by_path(epub, href));
+    let Some(listed) = listed else {
         return Ok(ParsedItem::empty());
     };
     let entry = readable(listed);
@@ -701,7 +710,7 @@ fn read_item(
         let overlay = record
             .overlay
             .as_deref()
-            .and_then(|path| epub.manifest().by_href(path))
+            .and_then(|path| manifest_by_path(epub, path))
             .or_else(|| entry.media_overlay());
         if let Some(smil) = overlay.filter(|_| phrase_count < overlay::MAX_PHRASES) {
             let xml = smil.read_bytes().unwrap_or_default();
@@ -989,7 +998,7 @@ impl Book {
             let epub = guard::open(archive).ok()?;
             let mut budget = script::MAX_CODE;
             let mut read = |path: &str| {
-                let bytes = epub.read_resource_bytes(path).ok()?;
+                let bytes = read_resource(&epub, path)?;
                 budget = budget.checked_sub(bytes.len())?;
                 Some(String::from_utf8_lossy(&bytes).into_owned())
             };
@@ -999,7 +1008,7 @@ impl Book {
                 if found.code.is_empty() {
                     continue;
                 }
-                let entry = epub.manifest().by_href(&laid.path);
+                let entry = manifest_by_path(&epub, &laid.path);
                 let Some(xhtml) = entry.and_then(|e| chapter_text(&e)) else {
                     continue;
                 };
@@ -1056,7 +1065,7 @@ impl Book {
             let Some(laid) = self.refs.chapters.get(chapter) else {
                 continue;
             };
-            let entry = epub.manifest().by_href(&laid.path);
+            let entry = manifest_by_path(&epub, &laid.path);
             let content = match pages.get(&chapter) {
                 Some(page) => Some(page.clone()),
                 None => entry.and_then(|e| chapter_text(&e)),
@@ -1582,7 +1591,7 @@ fn load_faces(epub: &Epub, faces: &[FontFace]) -> Vec<BookFace> {
     });
     let keys = (!hidden.is_empty()).then(|| book_keys(epub));
     let font = |path: &str| {
-        let bytes = epub.read_resource_bytes(path).ok()?;
+        let bytes = read_resource(epub, path)?;
         if bytes.len() > MAX_FACE_BYTES {
             return None;
         }
@@ -1690,9 +1699,22 @@ fn place_cover(
     opening: std::ops::Range<usize>,
     cover: Arc<Picture>,
 ) -> bool {
-    let shown = blocks.get_mut(opening).into_iter().flatten().find(
+    let slice = blocks.get_mut(opening).unwrap_or(&mut []);
+    let idx = slice.iter().position(
         |b| matches!(&b.content, Content::Image { picture, .. } if Arc::ptr_eq(picture, &cover)),
     );
+    let shown = idx
+        .filter(|&i| {
+            let prior = slice
+                .get(..i)
+                .is_some_and(|s| s.iter().any(|b| matches!(b.content, Content::Text(_))));
+            let styled = slice.get(i).is_some_and(|b| {
+                b.frame.float.is_some()
+                    || matches!(b.content, Content::Image { width: Some(_), .. })
+            });
+            !prior && !styled
+        })
+        .and_then(|i| slice.get_mut(i));
     if let Some(block) = shown {
         let links = match &mut block.content {
             Content::Image { links, .. } => std::mem::take(links),

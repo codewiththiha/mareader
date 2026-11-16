@@ -78,6 +78,89 @@ impl<'a> Setter<'a> {
         (set, laid)
     }
 
+    /// Containing room left by the first `depth` ancestor boxes.
+    pub(super) fn box_room(&self, frame: &Frame, depth: usize) -> (f32, f32) {
+        let em = self.em_of(frame);
+        let (mut x, mut width) = (0.0, self.column);
+        for b in frame.boxes.iter().take(depth) {
+            let p = place(b, (x, width), em);
+            let inside = (b.border[1] + b.border[3] + b.padding[1] + b.padding[3]) * em;
+            x = p.x + (b.border[3] + b.padding[3]) * em;
+            width = (p.width - inside).max(1.0);
+        }
+        (x, width)
+    }
+
+    /// Sets a float's blocks at its outer box width; gives its wrap.
+    pub(super) fn float_group(
+        &mut self,
+        group: &[(usize, &Block)],
+        f: &Floated,
+    ) -> (Vec<Set>, Option<Wrap>) {
+        (self.exclusion, self.float_box) = (None, None);
+        let Some((_, first)) = group.first() else {
+            return (Vec::new(), None);
+        };
+        let depth = usize::from(f.depth);
+        let em = self.em_of(&first.frame);
+        let (avail_x, avail_w) = self.box_room(&first.frame, depth);
+        let own_spec = first.frame.boxes.get(depth);
+        let side = |m: Option<Length>| m.map_or(0.0, |l| resolve(l, avail_w, em)).max(0.0);
+        let (ml, mr) = own_spec.map_or((0.0, 0.0), |s| (side(s.margin[0]), side(s.margin[1])));
+        let max_w = (avail_w - ml - mr).max(1.0);
+        let mut want: f32 = 0.0;
+        let mut explicit: Option<f32> = None;
+        for &(i, b) in group {
+            let (set, laid) = self.block(i, b);
+            if let Some(own) = set.boxes.get(depth) {
+                if own_spec.is_some_and(|s| s.width.is_some()) {
+                    explicit.get_or_insert(own.width);
+                }
+                let overhead = (set.x - own.x) + ((own.x + own.width) - (set.x + set.width));
+                want = want.max(natural(&set, &laid) + overhead.max(0.0));
+            } else {
+                want = want.max(natural(&set, &laid));
+            }
+        }
+        let float_w = explicit.unwrap_or(want).clamp(1.0, max_w);
+        let left = if f.right {
+            avail_x + avail_w - mr - float_w
+        } else {
+            avail_x + ml
+        };
+        self.float_box = Some((left, float_w));
+        let sets: Vec<Set> = group.iter().map(|&(i, b)| self.block(i, b).0).collect();
+        self.float_box = None;
+        let own = sets.first().and_then(|s| s.boxes.get(depth));
+        let (near, far) = own.map_or((left, left + float_w), |p| (p.x, p.x + p.width));
+        let edge = if f.right {
+            near - ml.max(FLOAT_GAP * em)
+        } else {
+            far + mr.max(FLOAT_GAP * em)
+        };
+        let mut height = 0.0;
+        for (n, set) in sets.iter().enumerate() {
+            let gap = gap(set, self.typo);
+            height += span_height(set, 0..set.units.len()) + gap;
+            if n == 0 {
+                height += own.map_or(0.0, |p| p.top);
+            }
+        }
+        height += own.map_or(0.0, |p| p.bottom);
+        let within = Holders::of(&first.frame, depth);
+        let exclusion = Exclusion {
+            right: f.right,
+            edge,
+            height: 0.0,
+        };
+        let wrap = Wrap {
+            exclusion,
+            height,
+            within,
+        };
+        (sets, Some(wrap))
+    }
+
     fn float_place(
         &mut self,
         frame: &Frame,
@@ -87,13 +170,22 @@ impl<'a> Setter<'a> {
         boxes: &mut [Placed],
     ) -> (f32, f32, Option<FloatAt>, Option<Beside>) {
         let float = self.float_box.filter(|_| designed).map(|(fx, fw)| {
-            // The float's own boxes wrap its narrower content.
             let depth = frame.float.as_ref().map_or(0, |f| usize::from(f.depth));
-            for p in boxes.iter_mut().skip(depth) {
-                let (near, far) = (x - p.x, p.x + p.width - x - width);
-                (p.x, p.width) = (fx - near, fw + near + far);
+            if let Some((ox, ow)) = boxes.get(depth).map(|p| (p.x, p.width)) {
+                // Shift the float's outer box while keeping inner offsets.
+                let (dx, dw) = (fx - ox, fw - ow);
+                if let Some(p) = boxes.get_mut(depth) {
+                    (p.x, p.width) = (fx, fw);
+                }
+                for p in boxes.iter_mut().skip(depth + 1) {
+                    p.x += dx;
+                    p.width = (p.width + dw).max(1.0);
+                }
+                x += dx;
+                width = (width + dw).max(1.0);
+            } else {
+                (x, width) = (fx, fw);
             }
-            (x, width) = (fx, fw);
             FloatAt {
                 key: float_key(frame).unwrap_or(0),
                 depth,

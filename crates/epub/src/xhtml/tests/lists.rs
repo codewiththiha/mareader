@@ -161,3 +161,12 @@ fn preformatted_text_keeps_its_spaces_and_lines() {
     assert_eq!(texts(&b), ["fn main() {\n    go(1);\n}", "a b"]);
     assert_eq!(role(b.first()), Some(Role::Preformatted));
 }
+
+#[test]
+fn unmarked_list_skips_list_inset() {
+    let html = "<style>ul.nav { list-style: none; }</style>\
+        <ul class='nav'><li>Home</li></ul><ul><li>Item</li></ul>";
+    let b = read(html);
+    let insets: Vec<f32> = b.iter().map(|b| b.frame.inset).collect();
+    assert_eq!(insets, [0.0, 1.6]);
+}

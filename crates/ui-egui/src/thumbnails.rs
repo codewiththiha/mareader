@@ -11,7 +11,7 @@ use egui::{
 use mareader_session::{DocId, PageKey, Part, Scale};
 use mareader_workspace::PaneId;
 
-use mareader_appearance::Pattern;
+use mareader_appearance::{PageTone, Pattern};
 
 use crate::documents::Reading;
 use crate::gpu::{Anchor, PagesCallback};
@@ -274,9 +274,10 @@ pub fn show(
 }
 
 fn thumb_tokens(ctx: &egui::Context, reflow: bool) -> (Tokens, Tokens) {
-    let mut fixed = Tokens::get(ctx);
-    fixed.page.pattern = Pattern::NONE;
-    let mut t = fixed;
+    let mut t = Tokens::get(ctx);
+    t.page.pattern = Pattern::NONE;
+    let mut fixed = t;
+    fixed.page = PageTone::NONE;
     if reflow {
         t.page = t.book;
         t.page.pattern = Pattern::NONE;

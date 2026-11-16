@@ -234,7 +234,8 @@ fn finish(cx: &mut ShowContext<'_>) {
         Urgency::OtherPane
     };
     let mut t = view_cx.tokens;
-    let fixed_tone = t.page;
+    // Fixed-layout EPUB pages are publisher artwork; never invert them.
+    let fixed_tone = PageTone::NONE;
     let reflow = doc.is_reflowable();
     // A book's pictures and emoji keep their colours unless themed.
     let (mut picture_tone, mut emoji_tone) = (PageTone::NONE, PageTone::NONE);

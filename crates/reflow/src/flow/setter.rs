@@ -216,74 +216,8 @@ impl<'a> Setter<'a> {
 
     /// Where a block's grid sits: the left and width its boxes leave.
     pub(super) fn grid_room(&self, frame: &Frame) -> (f32, f32) {
-        let em = self.em_of(frame);
-        let (mut x, mut width) = (0.0, self.column);
         let depth = frame.cell.as_ref().map_or(0, |c| usize::from(c.depth));
-        for b in frame.boxes.iter().take(depth) {
-            let p = place(b, (x, width), em);
-            let inside = (b.border[1] + b.border[3] + b.padding[1] + b.padding[3]) * em;
-            x = p.x + (b.border[3] + b.padding[3]) * em;
-            width = (p.width - inside).max(1.0);
-        }
-        (x, width)
-    }
-
-    /// Sets a float's blocks as wide as they need; gives its wrap.
-    pub(super) fn float_group(
-        &mut self,
-        group: &[(usize, &Block)],
-        f: &Floated,
-    ) -> (Vec<Set>, Option<Wrap>) {
-        (self.exclusion, self.float_box) = (None, None);
-        let mut room = None;
-        let mut want: f32 = 0.0;
-        for &(i, b) in group {
-            let (set, laid) = self.block(i, b);
-            room.get_or_insert((set.x, set.width));
-            want = want.max(natural(&set, &laid));
-        }
-        let Some((x, width)) = room else {
-            return (Vec::new(), None);
-        };
-        let want = want.clamp(1.0, width);
-        let left = if f.right { x + width - want } else { x };
-        self.float_box = Some((left, want));
-        let sets: Vec<Set> = group.iter().map(|&(i, b)| self.block(i, b).0).collect();
-        self.float_box = None;
-        let em = group
-            .first()
-            .map_or(self.typo.font_size, |(_, b)| self.em_of(&b.frame));
-        let depth = usize::from(f.depth);
-        let own = sets.first().and_then(|s| s.boxes.get(depth));
-        let (near, far) = own.map_or((left, left + want), |p| (p.x, p.x + p.width));
-        let edge = if f.right {
-            near - FLOAT_GAP * em
-        } else {
-            far + FLOAT_GAP * em
-        };
-        let mut height = 0.0;
-        for (n, set) in sets.iter().enumerate() {
-            let gap = gap(set, self.typo);
-            height += span_height(set, 0..set.units.len()) + gap;
-            if n == 0 {
-                height += own.map_or(0.0, |p| p.top);
-            }
-        }
-        height += own.map_or(0.0, |p| p.bottom);
-        let within = group
-            .first()
-            .map_or_else(Holders::default, |(_, b)| Holders::of(&b.frame, depth));
-        let exclusion = Exclusion {
-            right: f.right,
-            edge,
-            height: 0.0,
-        };
-        let wrap = Wrap {
-            exclusion,
-            height,
-            within,
-        };
-        (sets, Some(wrap))
+        self.box_room(frame, depth)
     }
 
     pub(super) fn body(&self, frame: &Frame) -> Style<'a> {

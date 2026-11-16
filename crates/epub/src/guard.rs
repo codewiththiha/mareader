@@ -13,9 +13,24 @@ use std::path::Path;
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use rbook::Epub;
+use rbook::epub::manifest::EpubManifestEntry;
 use zip::ZipArchive;
 
 use crate::OpenError;
+
+/// Finds a manifest entry by raw/encoded href, falling back to decoded paths.
+pub(crate) fn manifest_by_path<'a>(epub: &'a Epub, path: &str) -> Option<EpubManifestEntry<'a>> {
+    epub.manifest()
+        .by_href(path)
+        .or_else(|| epub.manifest().iter().find(|e| e.href().decode() == path))
+}
+
+/// Reads an archive resource at `path`, falling back to the manifest.
+pub(crate) fn read_resource(epub: &Epub, path: &str) -> Option<Vec<u8>> {
+    epub.read_resource_bytes(path)
+        .ok()
+        .or_else(|| manifest_by_path(epub, path)?.read_bytes().ok())
+}
 
 /// Files in one book; real books hold hundreds.
 pub const MAX_ENTRIES: usize = 10_000;

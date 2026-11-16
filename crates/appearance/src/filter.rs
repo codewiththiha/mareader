@@ -605,17 +605,13 @@ mod tests {
                 "{base:?}"
             );
         }
-        // Dim's low contrast mutes hues too.
-        let spread = |base| {
-            let [r, g, _] = Appearance {
-                base,
-                ..Default::default()
-            }
-            .text_tone()
-            .apply(red);
+        // Lowering ink contrast mutes hues to match.
+        let spread = |tone: PageTone| {
+            let [r, g, _] = tone.apply(red);
             r - g
         };
-        assert!(spread(BaseMode::Dim) < spread(BaseMode::Light) / 2.0);
+        let light = Appearance::default().text_tone();
+        assert!(spread(light.inked(0.25)) < spread(light) / 2.0);
     }
 
     #[test]

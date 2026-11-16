@@ -214,26 +214,26 @@ mod tests {
             base: BaseMode::Dim,
             ..Default::default()
         };
-        for tone in [dim.text_tone(), dim.page_tone()] {
-            for pen in PENS {
-                for opacity in [0.2, 0.5, 0.8] {
-                    let f = tone.mark(unit(pen), opacity);
-                    let Some(ink) = f.lift else {
-                        panic!("{pen:?} {opacity}: not lifted");
-                    };
-                    assert!(contrast(f.color, ink) >= LIFT_CONTRAST - 0.05);
-                    assert!(luminance(ink) > luminance(f.color));
-                    // The redraw: page white to the fill, black to the ink.
-                    let Some((paper, dark)) = f.tone().map(|t| t.paper_and_ink()) else {
-                        panic!("{pen:?}: no tone");
-                    };
-                    let near = |a: [f32; 3], b: [f32; 3]| {
-                        a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.004)
-                    };
-                    assert!(near(paper, f.color) && near(dark, ink), "{pen:?}");
-                }
+        let tone = dim.page_tone();
+        for pen in PENS {
+            for opacity in [0.2, 0.5, 0.8] {
+                let f = tone.mark(unit(pen), opacity);
+                let Some(ink) = f.lift else {
+                    panic!("{pen:?} {opacity}: not lifted");
+                };
+                assert!(contrast(f.color, ink) >= LIFT_CONTRAST - 0.05);
+                assert!(luminance(ink) > luminance(f.color));
+                // The redraw: page white to the fill, black to the ink.
+                let Some((paper, dark)) = f.tone().map(|t| t.paper_and_ink()) else {
+                    panic!("{pen:?}: no tone");
+                };
+                let near =
+                    |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.004);
+                assert!(near(paper, f.color) && near(dark, ink), "{pen:?}");
             }
         }
+        // Dim books already render light ink on dark paper, so marks screen.
+        assert_eq!(dim.text_tone().mark(unit(PENS[0]), 0.5).lift, None);
         // Other looks keep the page's own ink.
         let light = Appearance::default().page_tone();
         assert_eq!(light.mark(unit(PENS[0]), 0.5).lift, None);

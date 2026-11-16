@@ -41,6 +41,20 @@ impl State {
             || self.session.as_ref().is_some_and(DocSession::opening)
     }
 
+    /// True once every open document has finished background typesetting.
+    pub fn settled(&self) -> bool {
+        if self.opening() || !self.asked.is_empty() {
+            return false;
+        }
+        let Some(session) = self.session.as_ref() else {
+            return true;
+        };
+        self.panes.values().all(|slot| match slot {
+            Slot::Opening(_) => false,
+            Slot::Open(place) => session.get(place.doc).is_none_or(|e| e.doc.is_complete()),
+        })
+    }
+
     pub fn title(&self, pane: PaneId) -> Option<&str> {
         match self.panes.get(&pane)? {
             Slot::Opening(o) => Some(&o.name),

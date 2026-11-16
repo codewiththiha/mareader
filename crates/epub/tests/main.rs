@@ -3,6 +3,7 @@
 mod common;
 mod convert;
 mod direction;
+mod fidelity;
 mod fixed;
 mod fonts;
 mod frames;

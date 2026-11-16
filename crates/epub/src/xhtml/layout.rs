@@ -14,7 +14,8 @@ impl State<'_> {
         let mut f = Frame::default();
         for open in &self.stack {
             match open.name.as_str() {
-                "ul" | "ol" | "dd" => f.inset += LIST_INSET,
+                "ul" | "ol" if !open.style.unmarked => f.inset += LIST_INSET,
+                "dd" => f.inset += LIST_INSET,
                 "blockquote" => {
                     if f.bars.len() < MAX_BARS {
                         f.bars.push(f.inset);

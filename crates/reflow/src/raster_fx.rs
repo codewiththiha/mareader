@@ -8,14 +8,38 @@ use vello_cpu::peniko::Fill;
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
 use crate::anim::{Repeat, Transform2d};
-use crate::block::{Backdrop, Finish, Shadow, TextShadow};
+use crate::block::{Backdrop, Finish, Layer, Shadow, TextShadow};
 use crate::flow::interactive::TextHoverOverride;
 use crate::flow::{Deco, Laid, Piece, Set};
-use crate::picture::Decoded;
+use crate::picture::{Decoded, Picture};
 
 use crate::raster::{BODY, MAX_SHADOWS, MAX_TILES, Painter, reach, round_rect};
 
 type Color = AlphaColor<Srgb>;
+
+/// Collects colour CSS `background-image` thumbnails to keep uninverted.
+pub(crate) fn deco_pictures(
+    decos: &[Deco],
+    (left, top): (f32, f32),
+    max_area: f32,
+    out: &mut Vec<([f32; 4], Arc<Picture>)>,
+) {
+    for deco in decos {
+        let [x, y, w, h] = deco.rect;
+        if w <= 0.0 || h <= 0.0 || w * h >= max_area {
+            continue;
+        }
+        let rect = [left + x, top + y, w, h];
+        if let Some(b) = &deco.backdrop {
+            out.push((rect, Arc::clone(&b.picture)));
+        }
+        for layer in deco.finish.as_ref().map_or(&[][..], |f| &f.layers) {
+            if let Layer::Picture(b) = layer {
+                out.push((rect, Arc::clone(&b.picture)));
+            }
+        }
+    }
+}
 
 /// Builds a kurbo `Affine` for `t` around `t.origin` inside `rect`.
 pub(crate) fn transform_affine(t: Transform2d, rect: [f32; 4], em: f32) -> Affine {

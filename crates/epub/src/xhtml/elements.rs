@@ -230,6 +230,50 @@ impl State<'_> {
         }
     }
 
+    fn start_img(
+        &mut self,
+        tag: &Tag,
+        el: &El,
+        (computed, declared): (&Computed, &Decl),
+        shown: bool,
+    ) {
+        let width = picture_width(computed);
+        let alt = attr(tag, "alt");
+        let picked = self.sources.as_mut().and_then(|s| s.1.take());
+        let set = attr(tag, "srcset").and_then(media::best_candidate);
+        let tries = [picked.as_deref(), attr(tag, "src"), set.as_deref()];
+        let picture = tries.into_iter().flatten().find_map(|s| self.load(s));
+        if let Some(p) = &picture {
+            self.areas = self.map_areas(tag, p);
+        }
+        let link = self.observer_link(tag);
+        self.areas.extend(link.map(Area::whole));
+        self.inline_link = link;
+        self.pending_img_interaction = self.interaction(el, computed, declared);
+        let pushed_float =
+            self.float.is_none() && self.table.is_none() && computed.float != Float::None;
+        if pushed_float {
+            let depth = u8::try_from(self.boxes.len()).unwrap_or(u8::MAX);
+            self.float = Some((
+                self.stack.len(),
+                Arc::new(Floated {
+                    right: computed.float == Float::Right,
+                    depth,
+                }),
+            ));
+        }
+        if shown {
+            self.picture(picture, alt, (width, Some(computed)));
+        }
+        if pushed_float {
+            self.float = None;
+        }
+        self.pending_img_interaction = None;
+        self.areas.clear();
+        self.inline_link = None;
+        self.place_end(self.stack.len());
+    }
+
     fn start_void(
         &mut self,
         name: &str,
@@ -256,26 +300,7 @@ impl State<'_> {
                 return true;
             }
             "img" => {
-                let width = picture_width(computed);
-                let alt = attr(tag, "alt");
-                let picked = self.sources.as_mut().and_then(|s| s.1.take());
-                let set = attr(tag, "srcset").and_then(media::best_candidate);
-                let tries = [picked.as_deref(), attr(tag, "src"), set.as_deref()];
-                let picture = tries.into_iter().flatten().find_map(|s| self.load(s));
-                if let Some(p) = &picture {
-                    self.areas = self.map_areas(tag, p);
-                }
-                let link = self.observer_link(tag);
-                self.areas.extend(link.map(Area::whole));
-                self.inline_link = link;
-                self.pending_img_interaction = self.interaction(el, computed, declared);
-                if shown {
-                    self.picture(picture, alt, (width, Some(computed)));
-                }
-                self.pending_img_interaction = None;
-                self.areas.clear();
-                self.inline_link = None;
-                self.place_end(self.stack.len());
+                self.start_img(tag, el, (computed, declared), shown);
                 return true;
             }
             "embed" => {

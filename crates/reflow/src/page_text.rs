@@ -154,6 +154,9 @@ impl Flow {
                 }
             }
         });
+        let (pw, ph) = self.page_size();
+        let decos = self.decos.get(page).map_or(&[][..], Vec::as_slice);
+        crate::raster_fx::deco_pictures(decos, (left, top), pw * ph * 0.5, &mut out);
         for (rect, _) in &mut out {
             *rect = self.shown_rect(page, *rect);
         }
