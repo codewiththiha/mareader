@@ -498,12 +498,10 @@ fn interact_and_paint_dial(
             ui.data_mut(|d| d.remove::<f32>(drag_mem));
         }
 
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
+        }
         if resp.hovered() {
-            ui.ctx().set_cursor_icon(if resp.dragged() {
-                CursorIcon::Grabbing
-            } else {
-                CursorIcon::Grab
-            });
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll.abs() >= 1.0 {
                 let dir = if scroll > 0.0 { 1.0 } else { -1.0 };
