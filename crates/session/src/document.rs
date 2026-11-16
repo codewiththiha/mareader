@@ -6,7 +6,7 @@ use mareader_epub::{Book, Destination, Format, Inserts, OpenTarget, SpinePlace};
 use mareader_pdf::{Bounds, Link, LinkTarget, MAX_DEPTH, Tiling, web_address};
 use mareader_pdf::{OutlineEntry, PageSize, PageText, Paper, Raster, RenderError};
 use mareader_pdf::{Passage, PassageRun, TextLayer};
-use mareader_reflow::{Anchor, PassageKind, Picture, Typography};
+use mareader_reflow::{Anchor, InteractiveItem, ItemPixmap, PassageKind, Picture, Typography};
 
 use crate::OpenError;
 use crate::cover::read_picture;
@@ -418,6 +418,35 @@ impl Document {
     /// Whether the text reflows: the typography settings apply.
     pub fn is_reflowable(&self) -> bool {
         matches!(self, Self::Epub { .. })
+    }
+
+    /// Whether `page` is a fixed-layout EPUB page drawn in native colour.
+    pub fn is_fixed_page(&self, page: usize) -> bool {
+        matches!(self, Self::Epub { book, .. } if book.fixed(page))
+    }
+
+    /// Interactive or animated elements on `page`.
+    pub fn page_interactive(&self, page: usize) -> &[InteractiveItem] {
+        match self {
+            Self::Pdf(_) => &[],
+            Self::Epub { book, .. } => book.interactive(page),
+        }
+    }
+
+    /// Renders a single interactive item on `page` at `scale` pixels per point.
+    pub fn render_interactive_item(
+        &self,
+        page: usize,
+        item: usize,
+        scale: f32,
+        hovered: bool,
+    ) -> Option<ItemPixmap> {
+        let Self::Epub { book, .. } = self else {
+            return None;
+        };
+        let size = self.size(page).ok()?;
+        let scale = size.fit_scale(scale);
+        book.render_interactive_item(page, item, scale, hovered)
     }
 
     /// Whether all spine items have been parsed and laid out.

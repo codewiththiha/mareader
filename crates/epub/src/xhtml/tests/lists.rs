@@ -138,7 +138,7 @@ fn drop_caps_and_first_lines_mark_their_text() {
             .map(|s| s.emphasis.size)
     };
     assert_eq!((size(0), size(2)), (Some(300), Some(200)));
-    let lead = t.get(3).and_then(|t| t.first_line);
+    let lead = t.get(3).and_then(|t| t.first_line.as_deref().copied());
     assert_eq!(lead.map(|e| e.case), Some(Case::Small));
 }
 

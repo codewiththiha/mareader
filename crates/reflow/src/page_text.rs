@@ -75,7 +75,7 @@ impl Flow {
             let Some(set) = self.blocks.get(piece.block) else {
                 continue;
             };
-            let x = left + set.x;
+            let x = left + set.x + piece.dx;
             let y = top + piece.dy;
             match (&set.draw, &*self.laid(piece.block)) {
                 (Draw::Text { pad, .. }, Laid::Text { para, .. }) => {
@@ -131,7 +131,7 @@ impl Flow {
                 };
                 let [x, y, w, h] = *rect;
                 Some((
-                    [left + set.x + x, top + piece.dy + y, w, h],
+                    [left + set.x + piece.dx + x, top + piece.dy + y, w, h],
                     Arc::clone(picture),
                 ))
             })

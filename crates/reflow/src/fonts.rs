@@ -2,7 +2,8 @@
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use parley::fontique::{
-    Blob, Collection, CollectionOptions, FontInfoOverride, GenericFamily, SourceCache,
+    Blob, Collection, CollectionOptions, FallbackKey, FontInfoOverride, GenericFamily, Script,
+    SourceCache,
 };
 use parley::{FontContext, FontStyle, FontWeight, LayoutContext};
 
@@ -154,6 +155,154 @@ fn register(collection: &mut Collection) {
     }
 }
 
+/// Preferred full-coverage system families per complex script so combining
+/// marks (e.g. Sanskrit `U+094A` in Devanagari) never split across fonts.
+const SCRIPT_FALLBACKS: &[([u8; 4], &[&str])] = &[
+    (
+        *b"Deva",
+        &[
+            "Noto Serif Devanagari",
+            "Noto Sans Devanagari",
+            "Kohinoor Devanagari",
+            "Nirmala UI",
+            "ITF Devanagari",
+            "Mangal",
+        ],
+    ),
+    (
+        *b"Beng",
+        &[
+            "Noto Serif Bengali",
+            "Noto Sans Bengali",
+            "Kohinoor Bangla",
+            "Nirmala UI",
+        ],
+    ),
+    (
+        *b"Gujr",
+        &[
+            "Noto Serif Gujarati",
+            "Noto Sans Gujarati",
+            "Kohinoor Gujarati",
+            "Nirmala UI",
+        ],
+    ),
+    (
+        *b"Guru",
+        &["Noto Sans Gurmukhi", "Mukta Mahee", "Nirmala UI"],
+    ),
+    (
+        *b"Taml",
+        &[
+            "Noto Serif Tamil",
+            "Noto Sans Tamil",
+            "Tamil MN",
+            "Nirmala UI",
+        ],
+    ),
+    (
+        *b"Telu",
+        &[
+            "Noto Serif Telugu",
+            "Noto Sans Telugu",
+            "Kohinoor Telugu",
+            "Nirmala UI",
+        ],
+    ),
+    (
+        *b"Mlym",
+        &[
+            "Noto Serif Malayalam",
+            "Noto Sans Malayalam",
+            "Malayalam MN",
+            "Nirmala UI",
+        ],
+    ),
+    (
+        *b"Knda",
+        &[
+            "Noto Serif Kannada",
+            "Noto Sans Kannada",
+            "Kannada MN",
+            "Nirmala UI",
+        ],
+    ),
+    (
+        *b"Mymr",
+        &[
+            "Noto Serif Myanmar",
+            "Noto Sans Myanmar",
+            "Padauk",
+            "Myanmar MN",
+            "Myanmar Text",
+        ],
+    ),
+    (
+        *b"Khmr",
+        &[
+            "Noto Serif Khmer",
+            "Noto Sans Khmer",
+            "Khmer MN",
+            "Leelawadee UI",
+        ],
+    ),
+    (
+        *b"Thai",
+        &[
+            "Noto Serif Thai",
+            "Noto Sans Thai",
+            "Thonburi",
+            "Leelawadee UI",
+        ],
+    ),
+    (
+        *b"Arab",
+        &[
+            "Noto Naskh Arabic",
+            "Noto Sans Arabic",
+            "Geeza Pro",
+            "Segoe UI",
+            "DejaVu Sans",
+        ],
+    ),
+    (
+        *b"Hebr",
+        &[
+            "Noto Serif Hebrew",
+            "Noto Sans Hebrew",
+            "Arial Hebrew",
+            "Segoe UI",
+        ],
+    ),
+    (
+        *b"Tibt",
+        &["Noto Serif Tibetan", "Kailasa", "Microsoft Himalaya"],
+    ),
+];
+
+fn prioritize_fallbacks(collection: &mut Collection) {
+    for &(tag, names) in SCRIPT_FALLBACKS {
+        let script = Script::from_bytes(tag);
+        let mut preferred: Vec<_> = names
+            .iter()
+            .filter_map(|name| collection.family_id(name))
+            .collect();
+        if preferred.is_empty() {
+            continue;
+        }
+        let existing: Vec<_> = collection.fallback_families(script).collect();
+        for id in existing {
+            if !preferred.contains(&id) {
+                preferred.push(id);
+            }
+        }
+        collection.set_fallbacks(script, preferred.iter().copied());
+        if tag == *b"Deva" {
+            collection.set_fallbacks(FallbackKey::from((script, "sa")), preferred.into_iter());
+        }
+    }
+}
+
 /// The machine's faces and ours, scanned once; jobs take clones.
 fn system() -> &'static Mutex<Collection> {
     static SYSTEM: OnceLock<Mutex<Collection>> = OnceLock::new();
@@ -163,6 +312,7 @@ fn system() -> &'static Mutex<Collection> {
             system_fonts: true,
         });
         register(&mut collection);
+        prioritize_fallbacks(&mut collection);
         Mutex::new(collection)
     })
 }

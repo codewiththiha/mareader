@@ -66,6 +66,18 @@ pub(crate) fn hyphenate(text: &Text, lang: Lang) -> Hyphenated {
         done = end;
     }
     out.push_str(src.get(done..).unwrap_or_default());
+    let marks = at
+        .iter()
+        .enumerate()
+        .map(|(i, p)| p + i * SHY_LEN)
+        .collect();
+    Hyphenated {
+        text: shift_text(text, out, &at),
+        marks,
+    }
+}
+
+fn shift_text(text: &Text, out: String, at: &[usize]) -> Text {
     let shift = |x: usize, before: fn(usize, usize) -> bool| {
         x + SHY_LEN * at.partition_point(|&p| before(p, x))
     };
@@ -85,37 +97,35 @@ pub(crate) fn hyphenate(text: &Text, lang: Lang) -> Hyphenated {
             target: l.target,
         })
         .collect();
-    let marks = at
-        .iter()
-        .enumerate()
-        .map(|(i, p)| p + i * SHY_LEN)
-        .collect();
-    Hyphenated {
-        text: Text {
-            role: text.role,
-            text: out,
-            spans,
-            links,
-            initial: text.initial,
-            first_line: text.first_line,
-            ruby: (text.ruby.iter())
-                .map(|a| crate::block::Annotation {
-                    range: shift(a.range.start, |p, x| p <= x)..shift(a.range.end, |p, x| p < x),
-                    text: a.text.clone(),
-                })
-                .collect(),
-            faces: text.faces.clone(),
-            combine: (text.combine.iter())
-                .map(|r| shift(r.start, |p, x| p <= x)..shift(r.end, |p, x| p < x))
-                .collect(),
-            inlines: (text.inlines.iter())
-                .map(|i| crate::block::Inline {
-                    at: shift(i.at, |p, x| p <= x),
-                    ..i.clone()
-                })
-                .collect(),
-        },
-        marks,
+    Text {
+        role: text.role,
+        text: out,
+        spans,
+        links,
+        initial: text.initial,
+        first_line: text.first_line.clone(),
+        ruby: (text.ruby.iter())
+            .map(|a| crate::block::Annotation {
+                range: shift(a.range.start, |p, x| p <= x)..shift(a.range.end, |p, x| p < x),
+                text: a.text.clone(),
+            })
+            .collect(),
+        faces: text.faces.clone(),
+        combine: (text.combine.iter())
+            .map(|r| shift(r.start, |p, x| p <= x)..shift(r.end, |p, x| p < x))
+            .collect(),
+        inlines: (text.inlines.iter())
+            .map(|i| crate::block::Inline {
+                at: shift(i.at, |p, x| p <= x),
+                ..i.clone()
+            })
+            .collect(),
+        spacers: (text.spacers.iter())
+            .map(|s| crate::anim::InlineSpace {
+                at: shift(s.at, |p, x| p <= x),
+                ..*s
+            })
+            .collect(),
     }
 }
 

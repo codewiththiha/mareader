@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use thin_vec::ThinVec;
 
+use crate::anim::{InlineSpace, Interaction, MultiCol, Repeat, Transform2d};
 use crate::picture::Picture;
 
 /// A text block's part; it picks the face, size and spacing.
@@ -110,6 +111,8 @@ pub struct TextShadow {
     pub blur: u8,
     /// Of the theme's ink, out of 255.
     pub strength: u8,
+    /// True RGBA colour on fixed-layout pages; `None` uses theme ink.
+    pub colour: Option<[u8; 4]>,
 }
 
 /// Raised or lowered text, as `<sup>` and `<sub>`.
@@ -161,13 +164,15 @@ pub struct Text {
     /// Bytes of its drop cap, drawn large beside the first lines; 0 if none.
     pub initial: usize,
     /// What its first line adds, as `::first-line` does.
-    pub first_line: Option<Emphasis>,
+    pub first_line: Option<Box<Emphasis>>,
     /// Ruby: small notes set over runs of it, in order and apart.
     pub ruby: ThinVec<Annotation>,
     /// Families its runs ask for, as [`Look::faces`]; see [`Emphasis::face`].
     pub faces: ThinVec<Vec<String>>,
     /// Vertical text: runs set across the column, as `text-combine-upright`.
     pub combine: ThinVec<Range<usize>>,
+    /// Horizontal gaps inside lines (inline margins and padding), in ems.
+    pub spacers: ThinVec<InlineSpace>,
 }
 
 /// A ruby note, as `<rt>`, over the base text `range`.
@@ -243,6 +248,7 @@ impl Text {
             ruby: ThinVec::new(),
             faces: ThinVec::new(),
             combine: ThinVec::new(),
+            spacers: ThinVec::new(),
         }
     }
 
@@ -301,6 +307,10 @@ impl Text {
         for inline in &mut self.inlines {
             inline.at = inline.at.min(len);
         }
+        for spacer in &mut self.spacers {
+            spacer.at = spacer.at.min(len);
+        }
+        self.spacers.retain(|s| s.width > 0.0);
     }
 
     pub fn is_blank(&self) -> bool {
@@ -484,6 +494,18 @@ pub struct Boxed {
     pub rule: bool,
     /// Kept on one page when it fits, as `break-inside: avoid`.
     pub whole: bool,
+    /// True RGBA background on fixed pages or translucent overlays.
+    pub fill_rgba: Option<[u8; 4]>,
+    /// `box-sizing: border-box`: width and height include padding and borders.
+    pub border_box: bool,
+    /// `overflow: hidden | auto | scroll`: clips children to this box.
+    pub clip: bool,
+    /// CSS multi-column layout (`column-count`, `width`, `rule`).
+    pub multicol: Option<Arc<MultiCol>>,
+    /// 2D CSS transform (`scale`, `translate`, `rotate`, `skew`).
+    pub transform: Option<Transform2d>,
+    /// Hover transitions and `@keyframes` animations bound to this box.
+    pub interaction: Option<Arc<Interaction>>,
 }
 
 /// What a box draws beyond its ground, picture and borders.
@@ -531,6 +553,8 @@ pub struct Shadow {
     pub strength: f32,
     /// Cast inside the box, under its content.
     pub inset: bool,
+    /// True RGBA shadow colour on fixed-layout pages; `None` uses theme ink.
+    pub colour: Option<[u8; 4]>,
 }
 
 /// One background layer: a picture or a gradient.
@@ -607,6 +631,8 @@ pub struct Backdrop {
     pub at: [f32; 2],
     /// Tiled across the box rather than drawn once.
     pub repeat: bool,
+    /// Axis-specific tiling (`repeat-x`, `repeat-y`); overrides `repeat`.
+    pub repeat_axis: Option<Repeat>,
 }
 
 /// How large a background picture is drawn.
@@ -761,6 +787,50 @@ pub struct Frame {
     pub hidden: bool,
     /// The outermost list, figure and aside it is in, outer first.
     pub passages: ThinVec<Arc<Passage>>,
+    /// Rare CSS extras kept out of line so plain paragraphs stay small.
+    pub extra: Option<Box<FrameExtra>>,
+}
+
+/// Rare CSS layout and visual extras attached to a [`Frame`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FrameExtra {
+    /// 2D CSS transform on the block itself (images, transformed elements).
+    pub transform: Option<Transform2d>,
+    /// Hover transitions and `@keyframes` animations on this block.
+    pub interaction: Option<Arc<Interaction>>,
+    /// `position: relative` visual offset `[dx, dy]` in body ems.
+    pub rel_offset: [f32; 2],
+    /// `column-span: all`: spans across all columns in a multicol box.
+    pub column_span: bool,
+    /// Explicit `[height, max_height]` on an image block.
+    pub picture_fit: Option<[Option<Length>; 2]>,
+}
+
+impl Frame {
+    /// Allocates and returns mutable access to rare CSS extras.
+    pub fn extra_mut(&mut self) -> &mut FrameExtra {
+        self.extra.get_or_insert_with(Default::default)
+    }
+
+    pub fn rel_offset(&self) -> [f32; 2] {
+        self.extra.as_deref().map_or([0.0; 2], |e| e.rel_offset)
+    }
+
+    pub fn column_span(&self) -> bool {
+        self.extra.as_deref().is_some_and(|e| e.column_span)
+    }
+
+    pub fn transform(&self) -> Option<Transform2d> {
+        self.extra.as_deref().and_then(|e| e.transform)
+    }
+
+    pub fn interaction(&self) -> Option<&Arc<Interaction>> {
+        self.extra.as_deref().and_then(|e| e.interaction.as_ref())
+    }
+
+    pub fn picture_fit(&self) -> Option<[Option<Length>; 2]> {
+        self.extra.as_deref().and_then(|e| e.picture_fit)
+    }
 }
 
 /// A fixed-layout page: its blocks laid at the book's own viewport.
@@ -881,6 +951,13 @@ impl Text {
                 ..i.clone()
             })
             .collect();
+        out.spacers = (self.spacers.iter())
+            .filter(|s| (range.start..=range.end).contains(&s.at))
+            .map(|s| InlineSpace {
+                at: s.at - range.start,
+                width: s.width,
+            })
+            .collect();
         out
     }
 }
@@ -948,90 +1025,5 @@ pub const LAYOUT_BYTES: usize = 3000;
 pub const CHAR_BYTES: usize = 48;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const ITALIC: Emphasis = Emphasis {
-        italic: true,
-        bold: false,
-        light: false,
-        code: false,
-        size: 0,
-        script: Script::Normal,
-        case: Case::Normal,
-        underline: false,
-        strike: false,
-        colour: None,
-        shadow: None,
-        hidden: false,
-        features: Features { on: 0, off: 0 },
-        face: 0,
-    };
-
-    #[test]
-    fn neighbouring_runs_of_one_emphasis_share_a_span() {
-        let mut b = Text::new(Role::Paragraph);
-        b.push("a ", Emphasis::default());
-        b.push("bc", ITALIC);
-        b.push("d", ITALIC);
-        b.push(" e", Emphasis::default());
-        assert_eq!(b.text, "a bcd e");
-        assert_eq!(
-            b.spans,
-            [Span {
-                range: 2..5,
-                emphasis: ITALIC
-            }]
-        );
-    }
-
-    #[test]
-    fn trimming_clips_and_drops_spans() {
-        let mut b = Text::new(Role::Paragraph);
-        b.push("a", Emphasis::default());
-        b.push(" b ", ITALIC);
-        b.push("  ", ITALIC);
-        b.trim_end();
-        assert_eq!(b.text, "a b");
-        assert_eq!(b.spans.len(), 1);
-        assert_eq!(b.spans.first().map(|s| s.range.clone()), Some(1..3));
-    }
-
-    #[test]
-    fn tables_of_blank_cells_are_blank() {
-        let row = |s: &str| Row {
-            cells: vec![{
-                let mut t = Text::new(Role::Paragraph);
-                t.push(s, Emphasis::default());
-                t
-            }],
-            head: false,
-        };
-        let table = |rows| Block::new(Content::Table(Table { rows, rule: None }));
-        assert!(table(vec![row(" ")]).is_blank());
-        assert!(table(vec![]).is_blank());
-        assert!(!table(vec![row(" "), row("x")]).is_blank());
-        assert!(!Block::new(Content::Rule).is_blank());
-    }
-
-    #[test]
-    fn each_paragraph_and_cell_costs_a_layout_plus_its_text() {
-        let para = Block::text(Role::Paragraph, "four");
-        assert_eq!(para.layout_cost(), LAYOUT_BYTES + 4 * CHAR_BYTES);
-        let cell = |s: &str| {
-            let mut t = Text::new(Role::Paragraph);
-            t.push(s, Emphasis::default());
-            t
-        };
-        let row = Row {
-            cells: vec![cell("ab"), cell("")],
-            head: false,
-        };
-        let table = Block::new(Content::Table(Table {
-            rows: vec![row],
-            rule: None,
-        }));
-        assert_eq!(table.layout_cost(), 2 * LAYOUT_BYTES + 2 * CHAR_BYTES);
-        assert_eq!(Block::new(Content::Rule).layout_cost(), 0);
-    }
-}
+#[path = "block_tests.rs"]
+mod tests;

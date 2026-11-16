@@ -29,7 +29,10 @@ pub use document::Document;
 pub use key::{DocId, PageKey, Part, Scale, Want};
 pub use mareader_epub::{Insert, Inserts};
 pub use mareader_pdf::{PageSize, Paper, Passage, Raster, RenderError, TextLayer, Tiling};
-pub use mareader_reflow::{Anchor, Band, FACES, Face, Kind, Typography, has_family};
+pub use mareader_reflow::{
+    Anchor, Band, FACES, Face, InteractiveItem, ItemPixmap, Kind, Transform2d, Typography,
+    has_family,
+};
 pub use selection::{Caret, Selection};
 pub use typeset::{bundled, typography};
 

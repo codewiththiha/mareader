@@ -24,24 +24,28 @@ impl State<'_> {
         }
         let signals = self.start_page(name, &computed, &declared, shown);
         let (placed, id) = self.start_position(name, tag, &computed, shown);
-        if self.start_void(name, tag, &computed, shown) {
+        if self.start_void(name, tag, &el, (&computed, &declared), shown) {
             return false;
         }
-        let (extent, boxed, part, floated) =
-            self.start_block(name, tag, &computed, &declared, (shown, placed), id);
+        let block_el = is_block_el(name, &computed);
+        let (extent, boxed, part, floated) = self.start_block(
+            (name, tag, &el),
+            (&computed, &declared),
+            (shown, placed, block_el),
+            id,
+        );
         let empty = tag.self_closing && before.is_none() && after.is_none();
-        if self.close_unopened(name, tag, &computed, (shown, empty), boxed, part) {
+        if self.close_unopened(name, tag, &computed, (shown, empty, block_el), boxed, part) {
             return false;
         }
         if matches!(name, "ul" | "ol") && !self.in_list() {
             self.list_opened = true;
         }
         let (counter, mut style) = self.start_style(name, tag, &computed, shown, pseudos.marker);
-        self.start_inline(
-            name,
-            tag,
-            &computed,
-            (shown, generated),
+        let inline_space_after = self.start_inline(
+            (name, tag, &el),
+            (&computed, &declared),
+            (shown, generated, block_el),
             (pseudos.letter, pseudos.line),
             &mut style,
         );
@@ -62,6 +66,8 @@ impl State<'_> {
             signals,
             after: after.map(Box::new),
             passage,
+            is_block: block_el,
+            inline_space_after,
         });
         if name == "style" {
             self.style_text.clear();
@@ -166,7 +172,7 @@ impl State<'_> {
         name: &str,
         tag: &Tag,
         computed: &Computed,
-        (shown, empty): (bool, bool),
+        (shown, empty, block_el): (bool, bool, bool),
         boxed: bool,
         part: Part,
     ) -> bool {
@@ -176,7 +182,7 @@ impl State<'_> {
             self.closed_embeds();
         }
         if is_void(name) || empty || self.stack.len() >= MAX_DEPTH {
-            if shown && is_block(name) && self.table.is_none() {
+            if shown && block_el && self.table.is_none() {
                 self.finish();
                 let own = name == "p";
                 match boxed {
@@ -224,7 +230,14 @@ impl State<'_> {
         }
     }
 
-    fn start_void(&mut self, name: &str, tag: &Tag, computed: &Computed, shown: bool) -> bool {
+    fn start_void(
+        &mut self,
+        name: &str,
+        tag: &Tag,
+        el: &El,
+        (computed, declared): (&Computed, &Decl),
+        shown: bool,
+    ) -> bool {
         match name {
             "br" => {
                 self.line_break();
@@ -255,9 +268,11 @@ impl State<'_> {
                 let link = self.observer_link(tag);
                 self.areas.extend(link.map(Area::whole));
                 self.inline_link = link;
+                self.pending_img_interaction = self.interaction(el, computed, declared);
                 if shown {
                     self.picture(picture, alt, (width, Some(computed)));
                 }
+                self.pending_img_interaction = None;
                 self.areas.clear();
                 self.inline_link = None;
                 self.place_end(self.stack.len());
@@ -285,15 +300,13 @@ impl State<'_> {
 
     fn start_block(
         &mut self,
-        name: &str,
-        tag: &Tag,
-        computed: &Computed,
-        declared: &Decl,
-        (shown, placed): (bool, bool),
+        (name, tag, el): (&str, &Tag, &El),
+        (computed, declared): (&Computed, &Decl),
+        (shown, placed, block_el): (bool, bool, bool),
         id: Option<&str>,
     ) -> (Option<(String, usize, bool)>, bool, Part, bool) {
         let mut extent = None;
-        if is_block(name) {
+        if block_el {
             self.boundary(name);
             if let Some(id) = id {
                 self.mark(id);
@@ -302,17 +315,17 @@ impl State<'_> {
             }
         }
         let (mut boxed, mut part) = (false, Part::None);
-        if is_block(name) && shown && computed.break_before && self.table.is_none() {
+        if block_el && shown && computed.break_before && self.table.is_none() {
             self.chapter = true;
         }
-        let floats = computed.float != Float::None && is_block(name) && shown;
+        let floats = computed.float != Float::None && block_el && shown;
         let floated = floats && self.float.is_none() && self.table.is_none() && !tag.self_closing;
         if floated {
             let depth = u8::try_from(self.boxes.len()).unwrap_or(u8::MAX);
             let right = computed.float == Float::Right;
             self.float = Some((self.stack.len(), Arc::new(Floated { right, depth })));
         }
-        if is_block(name) && shown && self.table.is_none() {
+        if block_el && shown && self.table.is_none() {
             part = self.grid_start(name, tag, computed);
             // A positioned box's place is its own: no margins, no width.
             let own = placed.then(|| Computed {
@@ -321,7 +334,7 @@ impl State<'_> {
                 ..computed.clone()
             });
             let c = own.as_ref().unwrap_or(computed);
-            boxed = self.open_block(tag, (c, declared), part);
+            boxed = self.open_block(tag, el, (c, declared), part);
         }
         if matches!(
             name,
@@ -356,18 +369,17 @@ impl State<'_> {
 
     fn start_inline(
         &mut self,
-        name: &str,
-        tag: &Tag,
-        computed: &Computed,
-        (shown, generated): (bool, bool),
+        (name, tag, el): (&str, &Tag, &El),
+        (computed, declared): (&Computed, &Decl),
+        (shown, generated, block_el): (bool, bool, bool),
         (letter, line): (Option<Decl>, Option<Decl>),
         style: &mut Style,
-    ) {
-        let floated_inline = !is_block(name) && computed.float != Float::None;
+    ) -> f32 {
+        let floated_inline = !block_el && computed.float != Float::None;
         if floated_inline && shown && self.table.is_none() && self.drop.is_none() && self.fresh() {
             self.drop = Some(self.stack.len());
         }
-        if is_block(name) && shown {
+        if block_el && shown {
             let depth = self.stack.len();
             if let Some(d) = letter {
                 self.initial = Some((depth, d));
@@ -385,7 +397,17 @@ impl State<'_> {
         if !generated && let Some(link) = self.observer_link(tag) {
             style.link = Some(link);
         }
+        let mut space_after = 0.0f32;
+        if !block_el && shown && !style.hidden && self.table.is_none() {
+            let left_px = computed.margin_px(3).max(0.0) + computed.padding[3].max(0.0);
+            if left_px > 0.5 && !self.stack.is_empty() {
+                self.push_inline_space(left_px);
+            }
+            space_after = computed.margin_px(1).max(0.0) + computed.padding[1].max(0.0);
+            self.merge_inline_hover(el, computed, declared);
+        }
         self.pre_opened = name == "pre";
+        space_after
     }
 
     fn start_passage(&self, name: &str, tag: &Tag) -> Option<Arc<Passage>> {

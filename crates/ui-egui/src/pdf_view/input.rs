@@ -234,6 +234,7 @@ fn finish(cx: &mut ShowContext<'_>) {
         Urgency::OtherPane
     };
     let mut t = view_cx.tokens;
+    let fixed_tone = t.page;
     let reflow = doc.is_reflowable();
     // A book's pictures and emoji keep their colours unless themed.
     let (mut picture_tone, mut emoji_tone) = (PageTone::NONE, PageTone::NONE);
@@ -266,6 +267,7 @@ fn finish(cx: &mut ShowContext<'_>) {
         resting,
         urgency,
         t,
+        fixed_tone,
         reflow,
         picture_tone,
         emoji_tone,

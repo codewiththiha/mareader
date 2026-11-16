@@ -13,6 +13,7 @@ use parley::{
 };
 use thin_vec::ThinVec;
 
+use crate::anim::{Interaction, InteractiveItem, MultiCol, Transform2d};
 use crate::block::clip;
 use crate::block::{
     Align, Area, Backdrop, Block, Boxed, Case, Cell, Content, Dir, Edge, Emphasis, Features,
@@ -379,6 +380,7 @@ pub(crate) struct Placed {
     x: f32,
     width: f32,
     border: [f32; 4],
+    padding: [f32; 4],
     edges: [Edge; 4],
     colours: [Option<[u8; 3]>; 4],
     /// From its top border to its first block, its last block to the bottom.
@@ -389,6 +391,7 @@ pub(crate) struct Placed {
     inside_top: f32,
     height: Option<f32>,
     fill: Option<f32>,
+    fill_rgba: Option<[u8; 4]>,
     backdrop: Option<Arc<Backdrop>>,
     /// The body em its backdrop's lengths are in.
     em: f32,
@@ -397,6 +400,10 @@ pub(crate) struct Placed {
     finish: Option<Arc<Finish>>,
     /// Kept on one page when it fits.
     whole: bool,
+    clip: bool,
+    multicol: Option<Arc<MultiCol>>,
+    transform: Option<Transform2d>,
+    interaction: Option<Arc<Interaction>>,
 }
 
 /// A float placed in the column: its key, the boxes holding it, its place.
@@ -476,12 +483,18 @@ pub(crate) struct Deco {
     pub(crate) edges: [Edge; 4],
     pub(crate) colours: [Option<[u8; 3]>; 4],
     pub(crate) fill: Option<f32>,
+    pub(crate) fill_rgba: Option<[u8; 4]>,
     pub(crate) backdrop: Option<Arc<Backdrop>>,
     pub(crate) em: f32,
     pub(crate) radius: f32,
     pub(crate) finish: Option<Arc<Finish>>,
     /// Cut at the page's top and bottom: no frame picture there.
     pub(crate) continued: [bool; 2],
+    pub(crate) box_key: usize,
+    pub(crate) clip: bool,
+    pub(crate) transform: Option<Transform2d>,
+    pub(crate) interaction: Option<Arc<Interaction>>,
+    pub(crate) z: i32,
 }
 
 /// A table set in equal columns; row `i` spans `units[i]`.
@@ -586,7 +599,7 @@ pub(crate) struct Set {
     /// Each unit's top and bottom: lines, rows or the whole image.
     pub(crate) units: Vec<(f32, f32)>,
     /// Each unit's place in the block: a text offset or a row.
-    starts: Vec<usize>,
+    starts: ThinVec<usize>,
     keep_with_next: bool,
     break_before: bool,
     tight: bool,
@@ -622,6 +635,15 @@ pub(crate) struct Set {
     /// On a fixed page: that page, and the positioned box it is in.
     pub(crate) sheet: Option<Arc<Sheet>>,
     spot: Option<Box<(usize, Spot)>>,
+    pub(crate) em: f32,
+    extra: Option<Box<SetExtra>>,
+}
+
+pub(crate) struct SetExtra {
+    pub(crate) rel_offset: [f32; 2],
+    pub(crate) column_span: bool,
+    pub(crate) transform: Option<Transform2d>,
+    pub(crate) interaction: Option<Arc<Interaction>>,
 }
 
 impl Set {
@@ -633,6 +655,22 @@ impl Set {
     /// The float it is in, if designed in one.
     fn float(&self) -> Option<FloatAt> {
         self.float.as_deref().copied()
+    }
+
+    pub(crate) fn rel_offset(&self) -> [f32; 2] {
+        self.extra.as_deref().map_or([0.0; 2], |e| e.rel_offset)
+    }
+
+    pub(crate) fn column_span(&self) -> bool {
+        self.extra.as_deref().is_some_and(|e| e.column_span)
+    }
+
+    pub(crate) fn transform(&self) -> Option<Transform2d> {
+        self.extra.as_deref().and_then(|e| e.transform)
+    }
+
+    pub(crate) fn interaction(&self) -> Option<&Arc<Interaction>> {
+        self.extra.as_deref().and_then(|e| e.interaction.as_ref())
     }
 }
 
@@ -646,11 +684,12 @@ pub(crate) struct Fixed {
 /// Each unit's top and bottom within its block.
 type Units = Vec<(f32, f32)>;
 
-/// A run of one block's units on a page; `dy` maps block to page.
+/// A run of one block's units on a page; `(dx, dy)` maps block to page.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Piece {
     pub(crate) block: usize,
     pub(crate) units: Range<usize>,
+    pub(crate) dx: f32,
     pub(crate) dy: f32,
 }
 
@@ -689,6 +728,8 @@ pub struct Flow {
     pub(crate) bands: Vec<Band>,
     /// Each page's fixed layout, if it is a fixed page.
     pub(crate) fixed: Vec<Option<Fixed>>,
+    /// Each page's interactive / animated items (empty on plain text pages).
+    pub(crate) interactive: Vec<Vec<InteractiveItem>>,
     pub(crate) book_layout: bool,
     /// Pages before its first, which decide each page's spread side.
     shift: usize,
@@ -774,6 +815,7 @@ impl Flow {
             decos,
             bands: Vec::new(),
             fixed,
+            interactive: Vec::new(),
             book_layout: typo.book_layout,
             shift: 0,
             width,
@@ -789,7 +831,22 @@ impl Flow {
             }),
         };
         flow.bands = (0..flow.pages.len()).map(|n| flow.band(n, typo)).collect();
+        flow.build_interactive();
         flow
+    }
+
+    fn build_interactive(&mut self) {
+        let page_w = self.page_size().0;
+        self.interactive = (0..self.pages.len())
+            .map(|n| {
+                interactive::extract_page(
+                    &self.blocks,
+                    self.pages.get(n).map_or(&[][..], Vec::as_slice),
+                    self.decos.get(n).map_or(&[][..], Vec::as_slice),
+                    (self.origin(n), self.fit(n), self.turned(n), page_w),
+                )
+            })
+            .collect();
     }
 
     /// `blocks` in this type for `replaced` pages, ending a spread evenly.
@@ -813,8 +870,10 @@ impl Flow {
             flow.pages.push(Vec::new());
             flow.decos.push(Vec::new());
             flow.fixed.push(None);
+            flow.interactive.push(Vec::new());
         }
         flow.bands = (0..flow.pages.len()).map(|n| flow.band(n, &typo)).collect();
+        flow.build_interactive();
         flow.keep_pictures(self)
     }
 
@@ -1071,7 +1130,7 @@ impl Flow {
             let Some(set) = self.blocks.get(piece.block).filter(|s| !s.hidden) else {
                 continue;
             };
-            let x = left + set.x;
+            let x = left + set.x + piece.dx;
             let y = top + piece.dy;
             match (&set.draw, &*self.laid(piece.block)) {
                 (Draw::Text { pad, .. }, Laid::Text { para, .. }) => {
@@ -1152,8 +1211,12 @@ struct Setter<'a> {
     measure: f32,
 }
 
+pub(crate) mod interactive;
+mod multicol;
 mod parallel;
 mod setter;
+
+use place::{OpenBox, place};
 
 /// A book's length in layout units; percentages are of `width`.
 pub(crate) fn resolve(length: Length, width: f32, em: f32) -> f32 {
@@ -1161,44 +1224,6 @@ pub(crate) fn resolve(length: Length, width: f32, em: f32) -> f32 {
         Length::Em(e) => e * em,
         Length::Percent(p) => width * p / 100.0,
         Length::Mix { em: e, percent: p } => e * em + width * p / 100.0,
-    }
-}
-
-/// Box `b` in the room at `x`, `width` across: margins, width, centring.
-fn place(b: &Arc<Boxed>, (x, width): (f32, f32), em: f32) -> Placed {
-    let inside = (b.border[1] + b.border[3] + b.padding[1] + b.padding[3]) * em;
-    let side = |m: Option<Length>| m.map(|l| resolve(l, width, em));
-    let (left, right) = (side(b.margin[0]), side(b.margin[1]));
-    let content = match b.width {
-        // A set width wider than the room shrinks to it.
-        Some(l) => resolve(l, width, em).min(width - inside),
-        None => width - left.unwrap_or(0.0) - right.unwrap_or(0.0) - inside,
-    };
-    let outer = content.max(0.0) + inside;
-    let left = match (left, right, b.width) {
-        (l, _, None) => l.unwrap_or(0.0),
-        (None, None, Some(_)) => ((width - outer) / 2.0).max(0.0),
-        (None, Some(r), Some(_)) => (width - outer - r).max(0.0),
-        (Some(l), _, Some(_)) => l,
-    };
-    Placed {
-        key: Arc::as_ptr(b) as usize,
-        x: x + left,
-        width: outer,
-        border: b.border.map(|w| w * em),
-        edges: b.edges,
-        colours: b.colours,
-        top: b.top * em,
-        bottom: b.bottom * em,
-        centre: b.centre,
-        inside_top: (b.border[0] + b.padding[0]) * em,
-        height: b.height.map(|h| h * em),
-        fill: b.fill,
-        backdrop: b.backdrop.clone(),
-        em,
-        radius: b.radius.map_or(0.0, |r| resolve(r, outer, em).max(0.0)),
-        finish: b.finish.clone(),
-        whole: b.whole,
     }
 }
 
@@ -1863,49 +1888,6 @@ struct Hang {
     decos: Range<usize>,
 }
 
-/// A book's box open on the page being filled.
-struct OpenBox {
-    placed: Placed,
-    top: f32,
-    /// Begun on an earlier page: no top border here.
-    continued: bool,
-    /// Centring, begun on a fresh page: the pieces and borders before it.
-    centre: Option<(usize, usize)>,
-}
-
-impl OpenBox {
-    /// Its borders down to `bottom`; open there unless `closed`.
-    fn deco(&self, bottom: f32, closed: bool) -> Option<Deco> {
-        let (mut border, mut edges) = (self.placed.border, self.placed.edges);
-        if self.continued {
-            (border[0], edges[0]) = (0.0, Edge::None);
-        }
-        if !closed {
-            (border[2], edges[2]) = (0.0, Edge::None);
-        }
-        let edged = border
-            .iter()
-            .zip(&edges)
-            .any(|(w, e)| *w > 0.0 && e.draws());
-        let p = &self.placed;
-        let finished = p.finish.as_ref().is_some_and(|f| f.shows());
-        let drawn = edged || p.fill.is_some() || p.backdrop.is_some() || finished;
-        let rect = [p.x, self.top, p.width, bottom - self.top];
-        drawn.then(|| Deco {
-            rect: rect.map(|v| if v.is_finite() { v } else { 0.0 }),
-            border,
-            edges,
-            colours: p.colours,
-            fill: p.fill,
-            backdrop: p.backdrop.clone(),
-            em: p.em,
-            radius: p.radius,
-            finish: p.finish.clone(),
-            continued: [self.continued, !closed],
-        })
-    }
-}
-
 /// The text column's width; A4's own at a scale of 1.
 fn column_width(typo: &Typography) -> f32 {
     let page = if typo.book_layout {
@@ -2065,6 +2047,9 @@ fn paginate_sheet(
         }
         for d in &mut decos {
             d.rect[1] += top;
+            if let Some((_, s)) = spot {
+                d.z = s.z;
+            }
         }
         runs.push((key, pieces, decos));
         start += group.len();
@@ -2108,6 +2093,7 @@ fn paginate(blocks: &[Set], height: f32, typo: &Typography) -> (Vec<Vec<Piece>>,
     };
     let row = |i: usize| blocks.get(i).and_then(|b| b.cell()).map(|c| c.key);
     let float = |i: usize| blocks.get(i).and_then(|b| b.float()).map(|f| f.key);
+    let mc = |i: usize| blocks.get(i).and_then(multicol::box_key);
     let mut i = 0;
     while i < blocks.len() && c.pages.len() < MAX_PAGES {
         if let (None, Some(key)) = (row(i), float(i)) {
@@ -2116,6 +2102,18 @@ fn paginate(blocks: &[Set], height: f32, typo: &Typography) -> (Vec<Vec<Piece>>,
                 .unwrap_or(blocks.len())
                 .max(i + 1);
             place_float(&mut c, blocks, i..end, (height, typo));
+            i = end;
+            continue;
+        }
+        if row(i).is_none()
+            && float(i).is_none()
+            && let Some(mkey) = mc(i)
+        {
+            let end = (i..blocks.len())
+                .find(|&j| row(j).is_some() || float(j).is_some() || mc(j) != Some(mkey))
+                .unwrap_or(blocks.len())
+                .max(i + 1);
+            multicol::place_multicol(&mut c, blocks, i..end, mkey, (height, typo));
             i = end;
             continue;
         }

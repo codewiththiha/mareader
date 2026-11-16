@@ -174,12 +174,7 @@ pub fn show(
         }
     }
     let goal = follow(state, reading, recentre, now, &ctx);
-    let mut t = Tokens::get(&ctx);
-    if reading.document.is_reflowable() {
-        t.page = t.book;
-    }
-    // As in mareader: thumbnails take the theme but not the texture.
-    t.page.pattern = Pattern::NONE;
+    let (t, fixed_t) = thumb_tokens(&ctx, reading.document.is_reflowable());
     state.picks.follow(reading);
     if state.picks.active() {
         picks::bar(ui, &mut state.picks, count, &t);
@@ -207,11 +202,16 @@ pub fn show(
                 }
                 let anchor = Anchor::page(rect, size(page).0);
                 let square = (ui.clip_rect(), 0.0);
+                let page_t = if reading.document.is_fixed_page(page) {
+                    &fixed_t
+                } else {
+                    &t
+                };
                 paint_page(
                     ui,
                     ((rect, ui.clip_rect()), anchor, square),
                     look,
-                    (&t, true),
+                    (page_t, true),
                     &mut quads,
                 );
                 let on = page == reading.current;
@@ -271,6 +271,17 @@ pub fn show(
             }
         });
     state.picks.settle(reading);
+}
+
+fn thumb_tokens(ctx: &egui::Context, reflow: bool) -> (Tokens, Tokens) {
+    let mut fixed = Tokens::get(ctx);
+    fixed.page.pattern = Pattern::NONE;
+    let mut t = fixed;
+    if reflow {
+        t.page = t.book;
+        t.page.pattern = Pattern::NONE;
+    }
+    (t, fixed)
 }
 
 /// Snaps to the page on opening; glides as it moves, unless browsed.

@@ -8,8 +8,8 @@ use std::sync::{Arc, OnceLock};
 use std::path::Path;
 
 use mareader_reflow::{
-    Anchor, Block, BookFace, Content, Flow, Fonts, PageLine, Picture, Pixels, Region, Role,
-    Typography,
+    Anchor, Block, BookFace, Content, Flow, Fonts, InteractiveItem, ItemPixmap, PageLine, Picture,
+    Pixels, Region, Role, Typography,
 };
 use rbook::Epub;
 use rbook::ebook::element::Properties;
@@ -1121,6 +1121,24 @@ impl Book {
     pub fn fixed(&self, page: usize) -> bool {
         let (flow, page, _) = self.part(page);
         flow.is_fixed(page)
+    }
+
+    /// Interactive or animated elements laid out on `page`.
+    pub fn interactive(&self, page: usize) -> &[InteractiveItem] {
+        let (flow, page, _) = self.part(page);
+        flow.interactive(page)
+    }
+
+    /// Renders one interactive item on `page` at `scale`.
+    pub fn render_interactive_item(
+        &self,
+        page: usize,
+        item: usize,
+        scale: f32,
+        hovered: bool,
+    ) -> Option<ItemPixmap> {
+        let (flow, page, _) = self.part(page);
+        flow.render_item(page, item, scale, hovered)
     }
 
     /// Pages shown alone before spreads pair; `usize::MAX` pairs none.

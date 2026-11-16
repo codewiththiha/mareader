@@ -88,6 +88,34 @@ impl State<'_> {
         open.computed.dir = d.dir.unwrap_or(open.computed.dir);
     }
 
+    /// Builds an element's CSS hover/transition/keyframe `Interaction`, if any.
+    pub(super) fn interaction(
+        &self,
+        el: &El,
+        c: &Computed,
+        d: &Decl,
+    ) -> Option<Arc<mareader_reflow::Interaction>> {
+        let vars = d.vars.clone().unwrap_or_else(|| Arc::from([]));
+        let hover_decl = css::declared_hover(&self.sheets, &self.path(el), &vars);
+        let hover = hover_decl
+            .as_ref()
+            .map(|h| css::anim::build_hover_delta(h, c.size))
+            .filter(|h| !h.is_empty());
+        let extra = c.extra.as_deref();
+        let transition = extra.and_then(|e| e.transition);
+        let animation = extra
+            .and_then(|e| e.animation.as_ref())
+            .and_then(|a| a.resolve(&self.sheets));
+        if hover.is_none() && animation.is_none() {
+            return None;
+        }
+        Some(Arc::new(mareader_reflow::Interaction {
+            transition,
+            hover,
+            animation,
+        }))
+    }
+
     /// The generated boxes rules give `el`, about to open; `d` is its own.
     pub(super) fn pseudos(&self, el: &El, d: &Decl) -> Pseudos {
         let path = self.path(el);

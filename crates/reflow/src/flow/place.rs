@@ -135,10 +135,12 @@ impl Cursor {
         ) else {
             return;
         };
+        let off = block.rel_offset();
         self.page.push(Piece {
             block: index,
             units,
-            dy: self.y - top,
+            dx: off[0],
+            dy: self.y - top + off[1],
         });
         self.y += bottom - top;
     }
@@ -233,4 +235,123 @@ pub(super) fn place_row(
     c.open(outer);
     row::place(c, row, members, cell, measure);
     true
+}
+
+/// A book's box open on the page being filled.
+pub(super) struct OpenBox {
+    pub(super) placed: Placed,
+    pub(super) top: f32,
+    /// Begun on an earlier page: no top border here.
+    pub(super) continued: bool,
+    /// Centring, begun on a fresh page: the pieces and borders before it.
+    pub(super) centre: Option<(usize, usize)>,
+}
+
+impl OpenBox {
+    /// Its borders down to `bottom`; open there unless `closed`.
+    pub(super) fn deco(&self, bottom: f32, closed: bool) -> Option<Deco> {
+        let (mut border, mut edges) = (self.placed.border, self.placed.edges);
+        if self.continued {
+            (border[0], edges[0]) = (0.0, Edge::None);
+        }
+        if !closed {
+            (border[2], edges[2]) = (0.0, Edge::None);
+        }
+        let edged = border
+            .iter()
+            .zip(&edges)
+            .any(|(w, e)| *w > 0.0 && e.draws());
+        let p = &self.placed;
+        let finished = p.finish.as_ref().is_some_and(|f| f.shows());
+        let drawn = edged
+            || p.fill.is_some()
+            || p.fill_rgba.is_some()
+            || p.backdrop.is_some()
+            || finished
+            || p.interaction.is_some();
+        let rect = [p.x, self.top, p.width, bottom - self.top];
+        drawn.then(|| Deco {
+            rect: rect.map(|v| if v.is_finite() { v } else { 0.0 }),
+            border,
+            edges,
+            colours: p.colours,
+            fill: p.fill,
+            fill_rgba: p.fill_rgba,
+            backdrop: p.backdrop.clone(),
+            em: p.em,
+            radius: p.radius,
+            finish: p.finish.clone(),
+            continued: [self.continued, !closed],
+            box_key: p.key,
+            clip: p.clip,
+            transform: p.transform,
+            interaction: p.interaction.clone(),
+            z: 0,
+        })
+    }
+}
+
+/// Box `b` in the room at `x`, `width` across: margins, width, centring.
+pub(super) fn place(b: &Arc<Boxed>, (x, width): (f32, f32), em: f32) -> Placed {
+    let inside = (b.border[1] + b.border[3] + b.padding[1] + b.padding[3]) * em;
+    let v_inside = (b.border[0] + b.border[2] + b.padding[0] + b.padding[2]) * em;
+    let side = |m: Option<Length>| m.map(|l| resolve(l, width, em));
+    let (left, right) = (side(b.margin[0]), side(b.margin[1]));
+    let allow_overflow = left.is_some_and(|l| l < 0.0) || right.is_some_and(|r| r < 0.0);
+    let content = match b.width {
+        Some(l) => {
+            let raw = resolve(l, width, em);
+            let inner = if b.border_box {
+                (raw - inside).max(0.0)
+            } else {
+                raw
+            };
+            if allow_overflow {
+                inner
+            } else {
+                inner.min((width - inside).max(0.0))
+            }
+        }
+        None => width - left.unwrap_or(0.0) - right.unwrap_or(0.0) - inside,
+    };
+    let outer = content.max(0.0) + inside;
+    let left = match (left, right, b.width) {
+        (l, _, None) => l.unwrap_or(0.0),
+        (None, None, Some(_)) => ((width - outer) / 2.0).max(0.0),
+        (None, Some(r), Some(_)) => (width - outer - r).max(0.0),
+        (Some(l), _, Some(_)) => l,
+    };
+    let height = b.height.map(|h| {
+        let px = h * em;
+        if b.border_box {
+            (px - v_inside).max(0.0)
+        } else {
+            px
+        }
+    });
+    Placed {
+        key: Arc::as_ptr(b) as usize,
+        x: x + left,
+        width: outer,
+        border: b.border.map(|w| w * em),
+        padding: b.padding.map(|w| w * em),
+        edges: b.edges,
+        colours: b.colours,
+        top: b.top * em,
+        bottom: b.bottom * em,
+        centre: b.centre,
+        inside_top: (b.border[0] + b.padding[0]) * em,
+        height,
+        fill: b.fill,
+        fill_rgba: b.fill_rgba,
+        backdrop: b.backdrop.clone(),
+        em,
+        radius: b.radius.map_or(0.0, |r| resolve(r, outer, em).max(0.0)),
+        finish: b.finish.clone(),
+        whole: b.whole,
+        clip: b.clip,
+        multicol: b.multicol.clone(),
+        transform: b.transform,
+        interaction: b.interaction.clone(),
+    }
 }

@@ -48,7 +48,7 @@ impl<'a> Setter<'a> {
             rtl,
             draw,
             units,
-            starts,
+            starts: starts.into_iter().collect(),
             keep_with_next: block.is_heading() || (designed && frame.keep.with_next),
             // A fixed page is one page whatever its blocks ask.
             break_before: block.break_before && !self.fixed,
@@ -72,6 +72,8 @@ impl<'a> Setter<'a> {
             spot: spot
                 .zip(frame.spot.as_ref())
                 .map(|(s, a)| Box::new((Arc::as_ptr(a) as usize, s))),
+            em,
+            extra: set_extra(frame, designed, em),
         };
         (set, laid)
     }
@@ -159,11 +161,11 @@ impl<'a> Setter<'a> {
                 let (rect, unit) = if *cover {
                     cover_rect(aspect, column, height)
                 } else {
-                    let wanted = match asked {
-                        Some(l) => resolve(*l, width, em),
-                        None => natural as f32,
-                    };
-                    image_rect(aspect, frame.align, (wanted, width), height)
+                    fit_image_rect(
+                        (aspect, natural as f32),
+                        (asked, frame.picture_fit(), frame.align),
+                        (width, height, em),
+                    )
                 };
                 let picture = picture.clone();
                 let draw = Draw::Image {
@@ -219,6 +221,11 @@ impl<'a> Setter<'a> {
             let inside = (b.border[1] + b.border[3] + b.padding[1] + b.padding[3]) * em;
             x = p.x + (b.border[3] + b.padding[3]) * em;
             width = (p.width - inside).max(1.0);
+            if let Some(mc) = b.multicol.as_deref()
+                && !frame.column_span()
+            {
+                width = multicol::geometry(mc, width, em).width;
+            }
             placed.push(p);
         }
         if let Some(s) = spot.filter(|_| spot_depth.is_some_and(|d| d >= frame.boxes.len())) {
@@ -233,4 +240,51 @@ impl<'a> Setter<'a> {
         }
         (x, width, placed, at)
     }
+}
+
+fn fit_image_rect(
+    (aspect, natural): (f32, f32),
+    (asked, picture_fit, align): (&Option<Length>, Option<[Option<Length>; 2]>, Align),
+    (width, height, em): (f32, f32, f32),
+) -> ([f32; 4], (f32, f32)) {
+    let [fit_h, max_h] = picture_fit.unwrap_or([None, None]);
+    let limit_h = max_h.map_or(height, |l| resolve(l, height, em).min(height));
+    let explicit_h = fit_h.map(|l| resolve(l, height, em).min(limit_h));
+    match (asked, explicit_h) {
+        (Some(w_len), Some(h_px)) => {
+            let w = resolve(*w_len, width, em).max(1.0).min(width);
+            let h = h_px.max(1.0);
+            let x = match align {
+                Align::Start => 0.0,
+                Align::Center => (width - w) / 2.0,
+                Align::End => width - w,
+            };
+            ([x, 0.0, w, h], (0.0, h))
+        }
+        (None, Some(h_px)) => {
+            let wanted = if aspect > 0.0 && aspect.is_finite() {
+                h_px / aspect
+            } else {
+                natural
+            };
+            image_rect(aspect, align, (wanted, width), limit_h)
+        }
+        (Some(w_len), None) => {
+            image_rect(aspect, align, (resolve(*w_len, width, em), width), limit_h)
+        }
+        (None, None) => image_rect(aspect, align, (natural, width), limit_h),
+    }
+}
+
+fn set_extra(frame: &Frame, designed: bool, em: f32) -> Option<Box<SetExtra>> {
+    if !designed {
+        return None;
+    }
+    let e = frame.extra.as_deref()?;
+    Some(Box::new(SetExtra {
+        rel_offset: [e.rel_offset[0] * em, e.rel_offset[1] * em],
+        column_span: e.column_span,
+        transform: e.transform,
+        interaction: e.interaction.clone(),
+    }))
 }

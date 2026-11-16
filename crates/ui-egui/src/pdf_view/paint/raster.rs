@@ -106,8 +106,10 @@ fn paint_one(cx: &mut ShowContext<'_>, ui: &mut Ui, origin: Vec2, page: usize) {
     if wanted(page) && !texts.touch(doc_id, page) {
         demand.push((Urgency::Text, Want::Text { doc: doc_id, page }));
     }
+    let fixed_page = doc.is_fixed_page(page);
+    let page_tokens = page_tokens(t, input.fixed_tone, fixed_page);
     let round = (frame, view_cx.corner);
-    let style = (&t, view_cx.page.shadow && bands.is_none());
+    let style = (&page_tokens, view_cx.page.shadow && bands.is_none());
     let first = cx.paint.quads.len();
     paint_page(
         ui,
@@ -116,9 +118,9 @@ fn paint_one(cx: &mut ShowContext<'_>, ui: &mut Ui, origin: Vec2, page: usize) {
         style,
         &mut cx.paint.quads,
     );
-    paint_tiles(cx, ui, page, plan, rect, clip, anchor);
+    paint_tiles(cx, ui, page, plan, (rect, clip), anchor, page_tokens.page);
     let width = sizes.get(page).map_or(1.0, |s| s.width);
-    if reflow {
+    if reflow && !fixed_page {
         let to_screen = |b: Bounds| {
             let k = rect.width() / width;
             Rect::from_min_max(
@@ -186,9 +188,9 @@ fn paint_tiles(
     ui: &mut Ui,
     page: usize,
     plan: Plan,
-    rect: Rect,
-    clip: Rect,
+    (rect, clip): (Rect, Rect),
     anchor: Anchor,
+    tone: PageTone,
 ) {
     let Plan::Tiled {
         backdrop,
@@ -219,6 +221,13 @@ fn paint_tiles(
         ui,
         &mut *cx.pages,
         ask.then_some((&mut *cx.demand, input.urgency)),
-        (&mut cx.paint.quads, input.t.page),
+        (&mut cx.paint.quads, tone),
     );
+}
+
+fn page_tokens(mut t: Tokens, fixed_tone: PageTone, fixed_page: bool) -> Tokens {
+    if fixed_page {
+        t.page = fixed_tone;
+    }
+    t
 }

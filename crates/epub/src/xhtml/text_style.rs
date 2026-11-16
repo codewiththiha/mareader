@@ -3,7 +3,7 @@ use super::*;
 impl State<'_> {
     /// The computed style of the innermost open block element.
     pub(super) fn block_computed(&self) -> Option<&Computed> {
-        let open = self.stack.iter().rev().find(|o| is_block(&o.name));
+        let open = self.stack.iter().rev().find(|o| o.is_block);
         open.or(self.stack.last()).map(|o| &o.computed)
     }
 
@@ -113,30 +113,48 @@ impl State<'_> {
     /// The text's shadow, unless it barely differs from the page.
     pub(super) fn text_shadow(&self, c: &Computed) -> Option<TextShadow> {
         let s = c.text_shadow.as_ref()?;
-        let strength = self.strength(s.tint, c);
         let share = |l: Len| l.px(c.size, css::BASE_WIDTH).unwrap_or(0.0) / c.size.max(1.0) * 100.0;
+        let at = s.at.map(|l| share(l).round().clamp(-127.0, 127.0) as i8);
+        let blur = share(s.blur).round().clamp(0.0, 255.0) as u8;
+        if self.fixed {
+            let [r, g, b] = s.tint.0.or(c.ink).unwrap_or(self.book_ink);
+            let a = (s.tint.1.clamp(0.0, 1.0) * 255.0).round() as u8;
+            return (a > 0).then_some(TextShadow {
+                at,
+                blur,
+                strength: a,
+                colour: Some([r, g, b, a]),
+            });
+        }
+        let strength = self.strength(s.tint, c);
         (strength >= MIN_FILL).then(|| TextShadow {
-            at: s.at.map(|l| share(l).round().clamp(-127.0, 127.0) as i8),
-            blur: share(s.blur).round().clamp(0.0, 255.0) as u8,
+            at,
+            blur,
             strength: (strength * 255.0).round() as u8,
+            colour: None,
         })
     }
 
     /// Text's colour as drawn, faded toward its ground by opacity.
     pub(super) fn text_colour(&self, c: Option<&Computed>) -> Option<css::Rgb> {
         let c = c?;
+        let mix = |ink: css::Rgb| {
+            let ground = self.ground();
+            let a = c.opacity.clamp(0.0, 1.0);
+            std::array::from_fn(|i| {
+                let (f, g) = (ink.get(i).copied(), ground.get(i).copied());
+                let (f, g) = (f32::from(f.unwrap_or(0)), f32::from(g.unwrap_or(255)));
+                (f * a + g * (1.0 - a)).round().clamp(0.0, 255.0) as u8
+            })
+        };
+        if self.fixed {
+            let ink = c.ink?;
+            return Some(if c.opacity >= 0.99 { ink } else { mix(ink) });
+        }
         if c.opacity >= 0.99 {
             return c.ink.and_then(|ink| self.drawn(ink, MAX_FADE));
         }
-        let ink = c.ink.unwrap_or(self.book_ink);
-        let ground = self.ground();
-        let a = c.opacity.clamp(0.0, 1.0);
-        let mixed: css::Rgb = std::array::from_fn(|i| {
-            let (f, g) = (ink.get(i).copied(), ground.get(i).copied());
-            let (f, g) = (f32::from(f.unwrap_or(0)), f32::from(g.unwrap_or(255)));
-            (f * a + g * (1.0 - a)).round().clamp(0.0, 255.0) as u8
-        });
-        self.drawn(mixed, MAX_FADE)
+        self.drawn(mix(c.ink.unwrap_or(self.book_ink)), MAX_FADE)
     }
 
     /// The background text sits on: its nearest block's, or the page.

@@ -135,6 +135,9 @@ pub(super) fn small_caps(
     }
 }
 
+/// Inline-box ID base for zero-height horizontal inline spacers.
+const SPACER_BASE: u64 = 1 << 32;
+
 pub(super) fn inlines(b: &mut RangedBuilder<'_, Ink>, text: &Text, style: Style<'_>, shown: &str) {
     // A drop cap's letter keeps its place in the text but shows apart.
     let initial = text.initial.min(shown.len());
@@ -157,6 +160,23 @@ pub(super) fn inlines(b: &mut RangedBuilder<'_, Ink>, text: &Text, style: Style<
             baseline: None,
             vertical_align: rise(inline.rise, style.size),
         });
+    }
+    for (n, spacer) in text.spacers.iter().enumerate().take(MAX_INLINES) {
+        let w = (spacer.width * style.size).clamp(0.0, MAX_SIZE * 32.0);
+        if w > 0.01 {
+            let at = spacer.at.min(shown.len());
+            if shown.is_char_boundary(at) {
+                b.push_inline_box(InlineBox {
+                    id: SPACER_BASE + n as u64,
+                    kind: InlineBoxKind::InFlow,
+                    index: at,
+                    width: w,
+                    height: 0.0,
+                    baseline: None,
+                    vertical_align: VerticalAlign::BASELINE,
+                });
+            }
+        }
     }
 }
 

@@ -147,6 +147,7 @@ fn text_shadow_and_opacity_reach_the_text() {
         at: [6, 6],
         blur: 0,
         strength: 255,
+        colour: None,
     };
     assert_eq!(shadows, [one], "{spans:?}");
     let grey = |e: &Emphasis| e.colour.is_some_and(|[r, ..]| r > 60 && r < 200);

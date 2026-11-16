@@ -9,6 +9,7 @@
     clippy::indexing_slicing
 )]
 
+mod anim;
 mod block;
 mod flow;
 mod fonts;
@@ -18,14 +19,19 @@ mod meter;
 mod page_text;
 mod picture;
 mod raster;
+mod raster_fx;
 mod svg;
 
+pub use anim::{
+    AnimationSample, AnimationSpec, Easing, HoverDelta, InlineSpace, Interaction, InteractiveItem,
+    ItemPixmap, KeyframeStop, MultiCol, Repeat, Transform2d, TransitionSpec,
+};
 pub use block::{
     Align, Annotation, Area, Backdrop, BackdropSize, Block, Boxed, CHAR_BYTES, Case, Cell, Columns,
     Content, Dir, Edge, Emphasis, FEATURES, Features, Finish, Flex, Floated, Frame, Frame9,
-    Gradient, GradientShape, GridRow, Inline, Justify, Keep, LAYOUT_BYTES, LastLine, Layer, Length,
-    Link, Look, Orient, Outline, Passage, PassageKind, Rise, Role, Row, Script, Shadow, Sheet,
-    Span, Spot, Table, Text, TextShadow, Tile, VAlign, clip,
+    FrameExtra, Gradient, GradientShape, GridRow, Inline, Justify, Keep, LAYOUT_BYTES, LastLine,
+    Layer, Length, Link, Look, Orient, Outline, Passage, PassageKind, Rise, Role, Row, Script,
+    Shadow, Sheet, Span, Spot, Table, Text, TextShadow, Tile, VAlign, clip,
 };
 pub use flow::{
     Anchor, Band, COLUMN_SCALE, Design, Flow, MAX_LAID, MAX_PAGES, PAD, PAGE_HEIGHT, PAGE_WIDTH,

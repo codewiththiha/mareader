@@ -12,8 +12,9 @@ use html5ever::tokenizer::{
 use mareader_reflow::{
     Align, Anchor, Annotation, Area, Backdrop, BackdropSize, Block, Boxed, Case, Cell, Columns,
     Content, Dir, Edge, Emphasis, Features, Finish, Flex, Floated, Frame, Frame9, GradientShape,
-    GridRow, Inline, Justify, Keep, Length, Links, Look, Outline, Passage, PassageKind, Picture,
-    Rise, Role, Row, Script, Sheet, Spot, Table, Text, TextShadow, ThinVec, VAlign,
+    GridRow, Inline, Interaction, Justify, Keep, Length, Links, Look, Outline, Passage,
+    PassageKind, Picture, Rise, Role, Row, Script, Sheet, Spot, Table, Text, TextShadow, ThinVec,
+    VAlign,
 };
 
 use crate::calc::Vars;
@@ -249,6 +250,10 @@ struct Open {
     after: Option<Box<Decl>>,
     /// The list, figure or aside it starts, if none of its kind is open.
     passage: Option<Arc<Passage>>,
+    /// Computed blockness (tag default or CSS block/flex/grid/table).
+    is_block: bool,
+    /// Trailing horizontal spacer (px) emitted when an inline box closes.
+    inline_space_after: f32,
 }
 
 /// The generated boxes rules give an element.
@@ -626,6 +631,8 @@ struct State<'a> {
     overrides: HashMap<String, bool>,
     /// What clicking the picture being read sets off.
     inline_link: Option<u32>,
+    /// CSS interaction (`:hover`/transition/animation) for the next `<img>`.
+    pending_img_interaction: Option<Arc<mareader_reflow::Interaction>>,
     /// A scripted chapter's place in [`Refs::chapters`].
     script_at: Option<usize>,
 }
@@ -781,82 +788,37 @@ fn drawn(ink: css::Rgb, (ground, base, page): Grounds, most: f32) -> Option<css:
     Some(off.map(|o| ((fade + o * room) * 255.0).round().clamp(0.0, 255.0) as u8))
 }
 
-/// The box `name` draws or sits in; a cell's column sets its width.
-fn boxed(name: &str, c: &Computed, d: &Decl, cell: bool) -> Option<Boxed> {
-    if matches!(name, "tr" | "thead" | "tbody" | "tfoot" | "caption" | "hr") {
-        return None;
-    }
-    let mut edges = c.border_style.map(edge);
-    for (e, clear) in edges.iter_mut().zip(c.border_clear) {
-        if clear && *e != Edge::None {
-            *e = Edge::Clear;
-        }
-    }
-    let mut border = c.border.map(|w| w.max(0.0) / ROOT_PX);
-    for (w, e) in border.iter_mut().zip(&edges) {
-        if *e == Edge::None {
-            *w = 0.0;
-        }
-    }
-    let side = |i: usize| match c.margin.get(i).copied().unwrap_or(Len::Auto) {
-        Len::Auto => None,
-        Len::Percent(p) | Len::Vw(p) => Some(Length::Percent(p)),
-        Len::Mix { px, pct, .. } => Some(Length::Mix {
-            em: px / ROOT_PX,
-            percent: pct,
-        }),
-        _ => Some(Length::Em(c.margin_px(i) / ROOT_PX)),
-    };
-    let zero = Some(Length::Em(0.0));
-    let margin = if cell { [zero; 2] } else { [side(3), side(1)] };
-    let width = match c.width {
-        _ if cell => None,
-        Len::Px(px) if px > 0.0 => Some(Length::Em(px / ROOT_PX)),
-        Len::Percent(p) | Len::Vw(p) if p > 0.0 => Some(Length::Percent(p)),
-        Len::Mix { px, pct, .. } => mixed(px, pct),
+/// Whether `name` acts as a block element given its computed CSS `display`.
+fn is_block_el(name: &str, c: &Computed) -> bool {
+    is_block(name)
+        || matches!(
+            c.display,
+            Display::Block | Display::Flex | Display::Grid | Display::Table
+        )
+}
+
+fn len_fit(l: Len) -> Option<Length> {
+    match l {
+        Len::Px(px) if px > 0.0 => Some(Length::Em((px / ROOT_PX).min(200.0))),
+        Len::Percent(p) | Len::Vh(p) if p > 0.0 => Some(Length::Percent(p.min(100.0))),
+        Len::Mix { px, pct, .. } => mixed(px, pct.min(100.0)),
         _ => None,
-    };
-    let flex = matches!(c.display, Display::Flex | Display::Grid);
-    let centre = match d.height {
-        Some(Len::Vh(v)) if flex && v > 0.0 => Some((v / 100.0).min(1.0)),
-        _ => None,
-    };
-    let padding = c.padding.map(|p| p.max(0.0) / ROOT_PX);
-    let flat = margin.iter().all(|m| m.is_none() || *m == zero);
-    let drawn = border.iter().any(|w| *w > 0.0);
-    // A share of the screen is the page's, not a length to scale.
-    let height = match c.height {
-        _ if matches!(d.height, Some(Len::Vh(_))) => None,
-        Len::Px(px) if px > 0.0 && !cell => Some(px / ROOT_PX),
-        _ => None,
-    };
-    let apart = padding[1] > 0.0 || padding[3] > 0.0 || width.is_some() || centre.is_some();
-    (drawn || apart || !flat).then_some(Boxed {
-        margin,
-        border,
-        edges,
-        padding,
-        width,
-        centre,
-        height,
-        radius: radius(c),
-        ..Boxed::default()
-    })
+    }
+}
+
+fn picture_fit(c: &Computed) -> Option<[Option<Length>; 2]> {
+    let h = len_fit(c.height);
+    let max_h = c
+        .extra
+        .as_deref()
+        .and_then(|e| e.max_height)
+        .and_then(len_fit);
+    (h.is_some() || max_h.is_some()).then_some([h, max_h])
 }
 
 /// A border style as the page draws it.
 fn edge(s: BorderStyle) -> Edge {
-    match s {
-        BorderStyle::None => Edge::None,
-        BorderStyle::Solid => Edge::Solid,
-        BorderStyle::Double => Edge::Double,
-        BorderStyle::Dashed => Edge::Dashed,
-        BorderStyle::Dotted => Edge::Dotted,
-        BorderStyle::Groove => Edge::Groove,
-        BorderStyle::Ridge => Edge::Ridge,
-        BorderStyle::Inset => Edge::Inset,
-        BorderStyle::Outset => Edge::Outset,
-    }
+    crate::css::extra::border_edge(s)
 }
 
 /// A finish with its gradients no stronger than text can sit on.
@@ -1461,6 +1423,7 @@ fn read(
         triggers: trigger::read(xhtml),
         overrides,
         inline_link: None,
+        pending_img_interaction: None,
         script_at,
     }));
     let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
@@ -1471,22 +1434,7 @@ fn read(
     let state = tokenizer.sink.0.into_inner();
     let mut blocks = state.blocks;
     if fixed {
-        // One page: every block on it, and a page even when it is blank.
-        let (width, height) = state.viewport.unwrap_or(DEFAULT_SHEET);
-        let blank = || {
-            Arc::new(Sheet {
-                width,
-                height,
-                ground: None,
-            })
-        };
-        let sheet = state.sheet.unwrap_or_else(blank);
-        let mut end = Block::new(Content::Space(0.0));
-        end.break_before = blocks.is_empty();
-        blocks.push(end);
-        for block in &mut blocks {
-            block.frame.sheet = Some(Arc::clone(&sheet));
-        }
+        attach_sheet(&mut blocks, state.sheet, state.viewport);
     }
     if !state.triggers.targets.is_empty() || script_at.is_some() {
         let blocks = first..first + blocks.len();
@@ -1501,6 +1449,24 @@ fn read(
         });
     }
     out.extend(blocks);
+}
+
+fn attach_sheet(blocks: &mut Vec<Block>, sheet: Option<Arc<Sheet>>, viewport: Option<(f32, f32)>) {
+    // One page: every block on it, and a page even when it is blank.
+    let (width, height) = viewport.unwrap_or(DEFAULT_SHEET);
+    let sheet = sheet.unwrap_or_else(|| {
+        Arc::new(Sheet {
+            width,
+            height,
+            ground: None,
+        })
+    });
+    let mut end = Block::new(Content::Space(0.0));
+    end.break_before = blocks.is_empty();
+    blocks.push(end);
+    for block in blocks {
+        block.frame.sheet = Some(Arc::clone(&sheet));
+    }
 }
 
 /// A viewport `<meta>`'s size in CSS px, as `width=1200, height=1600`.

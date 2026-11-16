@@ -26,6 +26,7 @@ pub(super) fn run(cx: &mut ShowContext<'_>) {
             begin(cx, ui, viewport);
             raster::backdrop(cx, ui);
             raster::pages(cx, ui, viewport);
+            interactive::paint(cx, ui);
             prepare_ink(cx, ui);
             under(cx, ui);
             over(cx, ui);

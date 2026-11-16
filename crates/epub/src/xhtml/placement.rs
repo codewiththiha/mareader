@@ -10,19 +10,28 @@ impl State<'_> {
         let paints = |p: &(Option<f32>, Option<Arc<Backdrop>>, Option<Finish>)| {
             p.0.is_some() || p.1.is_some() || p.2.as_ref().is_some_and(Finish::shows)
         };
-        let from_root = root.map(|c| self.paint(&c)).filter(paints);
-        self.grounded = from_root.is_none();
+        let from_root = root.as_ref().map(|c| self.paint(c)).filter(paints);
+        let root_rgba = root.as_ref().and_then(boxes::fixed_fill_rgba);
+        self.grounded = from_root.is_none() && root_rgba.is_none();
         let (fill, backdrop, finish) = match from_root {
             Some(p) => p,
             None => self.paint(body),
         };
+        let fill_rgba = root_rgba.or_else(|| boxes::fixed_fill_rgba(body));
         let ground = Boxed {
-            fill: fill.map(|c| c.min(MAX_TEXT_FILL)),
+            fill: fill_rgba
+                .is_none()
+                .then(|| fill.map(|c| c.min(MAX_TEXT_FILL)))
+                .flatten(),
+            fill_rgba,
             backdrop,
-            finish: finish.map(|f| Arc::new(capped(&f))),
+            finish: finish.map(Arc::new),
             ..Boxed::default()
         };
-        let shows = ground.fill.is_some() || ground.backdrop.is_some() || ground.finish.is_some();
+        let shows = ground.fill.is_some()
+            || ground.fill_rgba.is_some()
+            || ground.backdrop.is_some()
+            || ground.finish.is_some();
         self.sheet = Some(Arc::new(Sheet {
             width,
             height,
@@ -56,19 +65,14 @@ impl State<'_> {
         let (top, right, bottom, left) = (side(0, ch), side(1, cw), side(2, ch), side(3, cw));
         let depth = self.stack.len();
         if c.placing == Placing::Relative {
-            // In the flow still: only what it holds is placed from it.
-            let x = cx + left.or(right.map(|r| -r)).unwrap_or(0.0);
-            let y = cy + top.or(bottom.map(|b| -b)).unwrap_or(0.0);
-            let (w, h) = (
-                at(c.width, cw).unwrap_or(cw),
-                at(c.height, ch).unwrap_or(ch),
-            );
-            let spot = outer.spot;
-            self.places.push(Place {
+            self.place_relative(
+                c,
                 depth,
-                rect: [x, y, w, h],
-                spot,
-            });
+                (cx, cy, cw, ch),
+                (top, right, bottom, left),
+                view,
+                outer.spot,
+            );
             return false;
         }
         let margin =
@@ -77,20 +81,22 @@ impl State<'_> {
             (margin(0, cw), margin(1, cw), margin(2, cw), margin(3, cw));
         let across = c.padding[1] + c.padding[3] + c.border[1] + c.border[3];
         let down = c.padding[0] + c.padding[2] + c.border[0] + c.border[2];
-        let room = |l: Option<f32>, r: Option<f32>| {
-            cw - l.unwrap_or(0.0) - r.unwrap_or(0.0) - m_left - m_right
-        };
+        let border_box = c.extra.as_deref().is_some_and(|e| e.border_box);
         let width = at(c.width, cw)
-            .map_or_else(|| room(left, right), |w| w + across)
+            .map_or_else(
+                || cw - left.unwrap_or(0.0) - right.unwrap_or(0.0) - m_left - m_right,
+                |w| if border_box { w } else { w + across },
+            )
             .max(1.0);
         let x = match (left, right) {
             (Some(l), _) => cx + l + m_left,
             (None, Some(r)) => cx + cw - r - m_right - width,
             (None, None) => cx + m_left,
         };
-        let height = at(c.height, ch).map(|h| h + down);
-        let height = height.or_else(|| top.zip(bottom).map(|(t, b)| ch - t - b - m_top - m_bottom));
-        let height = height.map(|h| h.max(1.0));
+        let height = at(c.height, ch)
+            .map(|h| if border_box { h } else { h + down })
+            .or_else(|| top.zip(bottom).map(|(t, b)| ch - t - b - m_top - m_bottom))
+            .map(|h| h.max(1.0));
         let (y, hung) = match (top, bottom, height) {
             (Some(t), _, _) => (cy + t + m_top, None),
             (None, Some(b), Some(h)) => (cy + ch - b - m_bottom - h, None),
@@ -125,6 +131,26 @@ impl State<'_> {
             .take_while(|p| p.depth < at || p.depth == 0);
         let keep = keep.count();
         self.places.truncate(keep);
+    }
+
+    fn place_relative(
+        &mut self,
+        c: &Computed,
+        depth: usize,
+        (cx, cy, cw, ch): (f32, f32, f32, f32),
+        (top, right, bottom, left): (Option<f32>, Option<f32>, Option<f32>, Option<f32>),
+        view: (f32, f32),
+        spot: Option<Arc<Spot>>,
+    ) {
+        let x = cx + left.or(right.map(|r| -r)).unwrap_or(0.0);
+        let y = cy + top.or(bottom.map(|b| -b)).unwrap_or(0.0);
+        let w = placed_px(c.width, cw, view).unwrap_or(cw);
+        let h = placed_px(c.height, ch, view).unwrap_or(ch);
+        self.places.push(Place {
+            depth,
+            rect: [x, y, w, h],
+            spot,
+        });
     }
 
     /// Shows `picture` in a line or as its own block, or else its alt.
@@ -176,27 +202,9 @@ impl State<'_> {
         if invisible {
             links.clear();
         }
+        let img_interaction = self.pending_img_interaction.take();
         if let Some(picture) = picture {
-            let mut block = Block::new(Content::Image {
-                picture,
-                cover: false,
-                width,
-                links,
-            });
-            block.frame = self.frame();
-            block.frame.hidden = invisible;
-            // A grid's portrait sits over its centred name, read in a row.
-            if self.laying > 0 && self.top().align == Align::Start {
-                block.frame.align = Align::Center;
-            }
-            // A column stack's picture takes the place it sets for items.
-            let stack = self.stack.last().filter(|o| o.part == Part::Stack);
-            match stack.and_then(|o| o.computed.align_items) {
-                Some(VAlign::Middle) => block.frame.align = Align::Center,
-                Some(VAlign::Bottom) => block.frame.align = Align::End,
-                _ => {}
-            }
-            self.emit(block);
+            self.emit_picture_block(picture, width, links, computed, invisible, img_interaction);
         } else if let Some(alt) = alt {
             let italic = Emphasis {
                 italic: true,
@@ -207,6 +215,49 @@ impl State<'_> {
             }
             self.finish();
         }
+    }
+
+    fn emit_picture_block(
+        &mut self,
+        picture: Arc<Picture>,
+        width: Option<Length>,
+        links: Vec<Area>,
+        computed: Option<&Computed>,
+        invisible: bool,
+        interaction: Option<Arc<Interaction>>,
+    ) {
+        let mut block = Block::new(Content::Image {
+            picture,
+            cover: false,
+            width,
+            links,
+        });
+        block.frame = self.frame();
+        block.frame.hidden = invisible;
+        if let Some(fit) = computed.and_then(picture_fit) {
+            block.frame.extra_mut().picture_fit = Some(fit);
+        }
+        if let Some(t) = computed
+            .and_then(|c| c.extra.as_deref())
+            .and_then(|e| e.transform_2d)
+        {
+            block.frame.extra_mut().transform = Some(t);
+        }
+        if interaction.is_some() {
+            block.frame.extra_mut().interaction = interaction;
+        }
+        // A grid's portrait sits over its centred name, read in a row.
+        if self.laying > 0 && self.top().align == Align::Start {
+            block.frame.align = Align::Center;
+        }
+        // A column stack's picture takes the place it sets for items.
+        let stack = self.stack.last().filter(|o| o.part == Part::Stack);
+        match stack.and_then(|o| o.computed.align_items) {
+            Some(VAlign::Middle) => block.frame.align = Align::Center,
+            Some(VAlign::Bottom) => block.frame.align = Align::End,
+            _ => {}
+        }
+        self.emit(block);
     }
 
     fn inline_picture(

@@ -32,6 +32,7 @@ use crate::{keymap, motion};
 
 mod input;
 mod interactions;
+mod interactive;
 mod navigation;
 mod overlay;
 mod paint;
@@ -184,6 +185,8 @@ pub struct PdfView {
     sheet_want: Option<(Option<(f32, f32)>, f64)>,
     /// The sheet changed this frame: the book is to be set anew.
     pub sheet_moved: bool,
+    /// Live `:hover` transitions and `@keyframes` animations over EPUB pages.
+    interactive: interactive::InteractiveState,
 }
 
 impl Default for PdfView {
@@ -226,6 +229,7 @@ impl PdfView {
             sheet: None,
             sheet_want: None,
             sheet_moved: false,
+            interactive: interactive::InteractiveState::default(),
         }
     }
 }
@@ -375,6 +379,8 @@ pub(super) struct InputState {
     resting: bool,
     urgency: Urgency,
     t: Tokens,
+    /// The artwork/PDF page tone kept for fixed-layout EPUB pages.
+    fixed_tone: PageTone,
     reflow: bool,
     picture_tone: PageTone,
     emoji_tone: PageTone,

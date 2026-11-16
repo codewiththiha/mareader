@@ -11,7 +11,7 @@ use skrifa::{FontRef, MetadataProvider};
 use vello_cpu::color::{AlphaColor, Srgb};
 use vello_cpu::kurbo::{Affine, BezPath, Point, Rect, RoundedRect, Shape, Stroke};
 use vello_cpu::peniko::{
-    ColorStop, Extend, Fill, Gradient as Ramp, ImageAlphaType, ImageQuality, ImageSampler,
+    ColorStop, Extend, Gradient as Ramp, ImageAlphaType, ImageQuality, ImageSampler,
 };
 use vello_cpu::{Glyph, Image, ImageSource, Pixmap, RenderContext, Resources};
 
@@ -19,10 +19,12 @@ use crate::block::{
     Backdrop, BackdropSize, Edge, Finish, Frame9, Gradient, GradientShape, Layer, Outline,
     TextShadow, Tile,
 };
+use crate::flow::interactive::TextHoverOverride;
 use crate::flow::{
     Deco, Draw, Flow, Grid, Initial, Laid, MARKER_GAP, Para, Piece, Set, resolve, span_height,
 };
 use crate::fonts::{Ink, Tone};
+use crate::raster_fx;
 
 /// A fixed page's layers: borders then pieces, bottom up.
 type Layers<'a> = &'a [(Range<usize>, Range<usize>)];
@@ -34,7 +36,7 @@ pub const MAX_SIDE: u32 = 4096;
 type Color = AlphaColor<Srgb>;
 
 // mareader's text inks as greys: the page pass maps black to the ink.
-const BODY: Color = Color::from_rgba8(0, 0, 0, 255);
+pub(crate) const BODY: Color = Color::from_rgba8(0, 0, 0, 255);
 const SOFT: Color = Color::from_rgba8(85, 85, 85, 255);
 const MUTED: Color = Color::from_rgba8(107, 107, 107, 255);
 const CODE_GROUND: Color = Color::from_rgba8(0, 0, 0, 14);
@@ -53,7 +55,7 @@ const NOTE_RISE: f32 = 0.95;
 /// The lit side of a carved or raised border, as a share of its ink.
 const LIGHT_SIDE: f32 = 0.45;
 /// The most shadows one box casts.
-const MAX_SHADOWS: usize = 4;
+pub(crate) const MAX_SHADOWS: usize = 4;
 const SQRT_2: f32 = std::f32::consts::SQRT_2;
 /// A full-strength text shadow's alpha.
 const TEXT_SHADOW_ALPHA: f32 = 0.6;
@@ -61,7 +63,7 @@ const TEXT_SHADOW_ALPHA: f32 = 0.6;
 const UNDERLINE_GAP: f32 = 2.0;
 const UNDERLINE_MIN: f32 = 0.75;
 /// The most tiles a repeated background draws.
-const MAX_TILES: usize = 256;
+pub(crate) const MAX_TILES: usize = 256;
 /// Book pixels to an em.
 const BOOK_EM_PX: f32 = 16.0;
 
@@ -152,6 +154,7 @@ impl Flow {
             bottom: shown_bottom,
             scale,
             coords: Vec::new(),
+            hover_text: None,
         };
         // Borders under text, or a fixed page's layers bottom up.
         let all = [(0..decos.len(), 0..pieces.len())];
@@ -185,14 +188,15 @@ impl Flow {
 }
 
 /// Draws in column units: the origin is the column's top left.
-struct Painter {
-    ctx: RenderContext,
-    resources: Resources,
-    view: Affine,
-    top: f64,
-    bottom: f64,
-    scale: f32,
-    coords: Vec<i16>,
+pub(crate) struct Painter {
+    pub(crate) ctx: RenderContext,
+    pub(crate) resources: Resources,
+    pub(crate) view: Affine,
+    pub(crate) top: f64,
+    pub(crate) bottom: f64,
+    pub(crate) scale: f32,
+    pub(crate) coords: Vec<i16>,
+    pub(crate) hover_text: TextHoverOverride,
 }
 
 impl Painter {
@@ -217,20 +221,35 @@ impl Painter {
     }
 
     /// Draws `piece` if in view; `laid` gives its layouts only then.
-    fn piece(&mut self, set: &Set, piece: &Piece, decoded: &Decoded, laid: impl Fn() -> Arc<Laid>) {
+    pub(crate) fn piece(
+        &mut self,
+        set: &Set,
+        piece: &Piece,
+        decoded: &Decoded,
+        laid: impl Fn() -> Arc<Laid>,
+    ) {
+        let bx = set.x + piece.dx;
+        if let Some(t) = set.transform().filter(|t| !t.is_identity()) {
+            let units = piece.units.clone();
+            let top = set.units.get(units.start).map_or(0.0, |u| u.0) + piece.dy;
+            let rect = [bx, top, set.width, span_height(set, units)];
+            let view = self.view;
+            self.view = view * raster_fx::transform_affine(t, rect, set.em);
+            self.unturned(set, piece, decoded, laid);
+            self.view = view;
+            return;
+        }
         if set.rotate == 0.0 || !set.rotate.is_finite() {
             return self.unturned(set, piece, decoded, laid);
         }
-        // A turn is drawn about the piece's middle; it takes no room.
         let units = piece.units.clone();
         let top = set.units.get(units.start).map_or(0.0, |u| u.0) + piece.dy;
         let middle = Point::new(
-            f64::from(set.x + set.width / 2.0),
+            f64::from(bx + set.width / 2.0),
             f64::from(top + span_height(set, units) / 2.0),
         );
         let view = self.view;
-        let turn = f64::from(set.rotate).to_radians();
-        self.view = view * Affine::rotate_about(turn, middle);
+        self.view = view * Affine::rotate_about(f64::from(set.rotate).to_radians(), middle);
         self.unturned(set, piece, decoded, laid);
         self.view = view;
     }
@@ -248,14 +267,15 @@ impl Painter {
         if !self.visible(top - 8.0, top + height + 8.0) || set.hidden {
             return;
         }
+        let bx = set.x + piece.dx;
         for &bar in &set.bars {
-            self.fill(BAR, bar, top, BAR_WIDTH as f32, height);
+            self.fill(BAR, bar + piece.dx, top, BAR_WIDTH as f32, height);
         }
         match &set.draw {
             Draw::Text { pad, shaded } => {
                 if *shaded {
-                    self.fill(PRE_GROUND, set.x, top, set.width, height);
-                    self.frame(BORDER, set.x, top, set.width, height);
+                    self.fill(PRE_GROUND, bx, top, set.width, height);
+                    self.frame(BORDER, bx, top, set.width, height);
                 }
                 let laid = laid();
                 let Laid::Text {
@@ -266,11 +286,11 @@ impl Painter {
                 else {
                     return;
                 };
-                let x = set.x + pad;
+                let x = bx + pad;
                 if units.start == 0
                     && let Some(marker) = marker
                 {
-                    let right = set.rtl.then_some(set.x + set.width - pad);
+                    let right = set.rtl.then_some(bx + set.width - pad);
                     self.marker(&para.layout, marker, (x, right, piece.dy), decoded);
                 }
                 if units.start == 0
@@ -284,7 +304,7 @@ impl Painter {
             }
             Draw::Rule => {
                 let y = top + height / 2.0 - 0.5;
-                self.fill(RULE, set.x, y, set.width, 1.0);
+                self.fill(RULE, bx, y, set.width, 1.0);
             }
             Draw::Image {
                 picture,
@@ -293,7 +313,7 @@ impl Painter {
                 ..
             } => {
                 let [x, y, w, h] = *rect;
-                let rect = [set.x + x, piece.dy + y, w, h];
+                let rect = [bx + x, piece.dy + y, w, h];
                 match turned {
                     true => self.standing(picture, decoded, rect),
                     false => self.image(picture, decoded, rect[0], rect[1], w, h),
@@ -301,7 +321,7 @@ impl Painter {
             }
             Draw::Table(grid) => {
                 if let Laid::Table(rows) = &*laid() {
-                    self.table(set, (grid, rows), (units, piece.dy), decoded);
+                    self.table(set, bx, (grid, rows), (units, piece.dy), decoded);
                 }
             }
             Draw::Space => {}
@@ -309,7 +329,7 @@ impl Painter {
     }
 
     /// A book box's borders, in the ink the page pass themes.
-    fn deco(&mut self, deco: &Deco, decoded: &Decoded) {
+    pub(crate) fn deco(&mut self, deco: &Deco, decoded: &Decoded) {
         let [_, y, w, h] = deco.rect;
         let finish = deco.finish.as_deref();
         let reach = finish.map_or(0.0, |f| reach(f, deco.em)) + 8.0;
@@ -319,6 +339,10 @@ impl Painter {
         let opacity = finish.map_or(1.0, |f| f.opacity.clamp(0.0, 1.0));
         if opacity < 0.01 {
             return;
+        }
+        let saved = self.view;
+        if let Some(t) = deco.transform.filter(|t| !t.is_identity()) {
+            self.view = saved * raster_fx::transform_affine(t, deco.rect, deco.em);
         }
         let faded = opacity < 0.99;
         if faded {
@@ -330,8 +354,8 @@ impl Painter {
             self.shadows(f, deco, radius, false);
         }
         self.ctx.set_transform(self.view);
-        if let Some(alpha) = deco.fill {
-            self.ctx.set_paint(BODY.with_alpha(alpha.clamp(0.0, 1.0)));
+        if let Some(paint) = raster_fx::deco_fill(deco, BODY) {
+            self.ctx.set_paint(paint);
             match &shape {
                 Some(path) => self.ctx.fill_path(path),
                 None => self.ctx.fill_rect(&rect_of(deco.rect)),
@@ -370,6 +394,7 @@ impl Painter {
         if faded {
             self.ctx.pop_layer();
         }
+        self.view = saved;
     }
 
     /// A round-cornered box's borders.
@@ -430,63 +455,6 @@ impl Painter {
             self.ctx.set_paint(ink.multiply_alpha(alpha));
             self.ctx.set_stroke(stroke);
             self.ctx.stroke_path(&path);
-        }
-    }
-
-    /// The box's shadows: those cast outside, or if `inset` inside.
-    fn shadows(&mut self, f: &Finish, deco: &Deco, radius: f32, inset: bool) {
-        let em = deco.em;
-        let [x, y, w, h] = deco.rect;
-        let mine = f.shadows.iter().rev().filter(|s| s.inset == inset);
-        let mut clipped = false;
-        for s in mine.take(MAX_SHADOWS) {
-            let strength = s.strength.clamp(0.0, 1.0);
-            if strength < 0.01 {
-                continue;
-            }
-            if !clipped {
-                // CSS shows outer shadows only outside the box, inner inside.
-                let mut clip = round_rect(deco.rect, radius, 0.0);
-                if !inset {
-                    let far = reach(f, em) + 1.0;
-                    let around = Rect::new(
-                        f64::from(x - far),
-                        f64::from(y - far),
-                        f64::from(x + w + far),
-                        f64::from(y + h + far),
-                    );
-                    clip.extend(around.path_elements(0.1));
-                    self.ctx.set_fill_rule(Fill::EvenOdd);
-                }
-                self.ctx.set_transform(self.view);
-                self.ctx.push_clip_layer(&clip);
-                self.ctx.set_fill_rule(Fill::NonZero);
-                clipped = true;
-            }
-            let spread = if inset { -s.spread } else { s.spread } * em;
-            let (dx, dy) = (s.at[0] * em, s.at[1] * em);
-            let (l, t) = (x - spread + dx, y - spread + dy);
-            let (r, b) = (x + w + spread + dx, y + h + spread + dy);
-            let rect = Rect::new(
-                f64::from(l),
-                f64::from(t),
-                f64::from(r.max(l)),
-                f64::from(b.max(t)),
-            );
-            let corner = (radius + spread).max(0.0);
-            let sigma = s.blur.max(0.0) * em / 2.0;
-            self.ctx.set_transform(self.view);
-            self.ctx.set_paint(BODY.with_alpha(strength));
-            if sigma * self.scale < 0.3 && !inset {
-                let path = RoundedRect::from_rect(rect, f64::from(corner)).to_path(0.1);
-                self.ctx.fill_path(&path);
-            } else {
-                self.ctx
-                    .fill_blurred_rounded_rect(&rect, corner, sigma.max(0.01), inset);
-            }
-        }
-        if clipped {
-            self.ctx.pop_layer();
         }
     }
 
@@ -726,19 +694,7 @@ impl Painter {
         }
         let [ax, ay] = b.at.map(|a| a.clamp(0.0, 1.0));
         let (ox, oy) = (x + (w - iw) * ax, y + (h - ih) * ay);
-        let (mut xs, mut ys) = (vec![ox], vec![oy]);
-        if b.repeat {
-            // Tiles from the box's corner past its far edges.
-            let first = |o: f32, start: f32, step: f32| o - ((o - start) / step).ceil() * step;
-            let tiles = |from: f32, end: f32, step: f32| {
-                std::iter::successors(Some(from), move |t| Some(t + step))
-                    .take_while(move |t| *t < end)
-                    .take(MAX_TILES)
-                    .collect::<Vec<f32>>()
-            };
-            xs = tiles(first(ox, x, iw), x + w, iw);
-            ys = tiles(first(oy, y, ih), y + h, ih);
-        }
+        let (xs, ys) = raster_fx::repeat_axes(b, (ox, oy), rect, (iw, ih));
         let mut drawn = 0;
         for ty in &ys {
             for tx in &xs {
@@ -958,15 +914,7 @@ impl Painter {
                     last = Some(glyphs);
                     continue;
                 }
-                if let Some(shadow) = glyphs.style().brush.shadow {
-                    self.text_shadow(&glyphs, shadow);
-                }
-                let placed = glyphs.positioned_glyphs().map(|g| Glyph {
-                    id: g.id,
-                    x: g.x,
-                    y: g.y,
-                });
-                self.glyphs(&glyphs, placed);
+                self.draw_glyph_run(&glyphs);
                 last = Some(glyphs);
             }
             // parley breaks at a soft hyphen but leaves the hyphen to us.
@@ -984,6 +932,26 @@ impl Painter {
                     self.glyphs(&run, std::iter::once(hyphen));
                 }
             }
+        }
+    }
+
+    fn draw_glyph_run(&mut self, glyphs: &GlyphRun<'_, Ink>) {
+        let shadow = self
+            .hover_text
+            .and_then(|(_, s)| s)
+            .or(glyphs.style().brush.shadow);
+        if let Some(shadow) = shadow {
+            self.text_shadow(glyphs, shadow);
+        }
+        let placed = glyphs.positioned_glyphs().map(|g| Glyph {
+            id: g.id,
+            x: g.x,
+            y: g.y,
+        });
+        if let Some([r, g, b]) = self.hover_text.and_then(|(c, _)| c) {
+            self.inked(glyphs, placed, Color::from_rgb8(r, g, b));
+        } else {
+            self.glyphs(glyphs, placed);
         }
     }
 
@@ -1095,7 +1063,7 @@ impl Painter {
             false => &[(0.0, 0.0)],
         };
         let share = if rings.len() > 1 { 0.5 } else { 1.0 };
-        let ink = tone(plain).multiply_alpha(alpha * share);
+        let ink = raster_fx::text_shadow_ink(s, tone(plain), alpha, share);
         for (rx, ry) in rings {
             let (ox, oy) = (dx + rx * reach, dy + ry * reach);
             let copy = run.positioned_glyphs().map(move |g| Glyph {
@@ -1191,7 +1159,7 @@ impl Painter {
             };
             let centre = x + ((b.x0 + b.x1) / 2.0) as f32;
             let left = centre - laid.layout.width() / 2.0;
-            // Just clear of the base's tallest letters.
+            // Clear of the base's tallest letters.
             let baseline = base.metrics().baseline - size * NOTE_RISE;
             self.lines(laid, 0..1, left, dy + baseline - own.metrics().baseline);
         }
@@ -1232,6 +1200,7 @@ impl Painter {
     fn table(
         &mut self,
         set: &Set,
+        bx: f32,
         (grid, laid): (&Grid, &[Vec<Para>]),
         (rows, dy): (Range<usize>, f32),
         decoded: &Decoded,
@@ -1245,10 +1214,10 @@ impl Painter {
             };
             let (top, h) = (top + dy, bottom - top);
             if *head {
-                self.fill(HEAD_GROUND, set.x, top, set.width, h);
+                self.fill(HEAD_GROUND, bx, top, set.width, h);
             }
             for (c, cell) in cells.iter().enumerate() {
-                let x = set.x + c as f32 * grid.column;
+                let x = bx + c as f32 * grid.column;
                 self.frame(book(grid.rule, BORDER), x, top, grid.column, h);
                 self.lines(cell, 0..cell.layout.len(), x + pad_x, top + pad_y);
                 // Formulas and small pictures in the cell's lines.
@@ -1270,7 +1239,7 @@ fn rect_of([x, y, w, h]: [f32; 4]) -> Rect {
 }
 
 /// `rect` with `radius` corners, `inset` in from its edge.
-fn round_rect(rect: [f32; 4], radius: f32, inset: f32) -> BezPath {
+pub(crate) fn round_rect(rect: [f32; 4], radius: f32, inset: f32) -> BezPath {
     let [x, y, w, h] = rect;
     let r = f64::from((radius - inset).max(0.0));
     let (l, t) = (f64::from(x + inset), f64::from(y + inset));
@@ -1279,7 +1248,7 @@ fn round_rect(rect: [f32; 4], radius: f32, inset: f32) -> BezPath {
 }
 
 /// How far past its border a box's shadows and outline reach.
-fn reach(f: &Finish, em: f32) -> f32 {
+pub(crate) fn reach(f: &Finish, em: f32) -> f32 {
     let shadow = f.shadows.iter().filter(|s| !s.inset).fold(0.0f32, |m, s| {
         let off = s.at[0].abs().max(s.at[1].abs());
         m.max(off + s.spread.max(0.0) + s.blur.max(0.0) * 1.5)
@@ -1505,6 +1474,7 @@ mod tests {
                 spread: 0.0,
                 strength: 0.8,
                 inset: false,
+                colour: None,
             }],
             ..Finish::default()
         };
@@ -1519,8 +1489,8 @@ mod tests {
             edge: Edge::Dashed,
             colour: None,
         };
-        let picture = Picture::probe(png(30, 30)).map(Arc::new);
-        let frame = picture.ok().map(|picture| Frame9 {
+        let picture = Picture::probe(png(30, 30)).ok().map(Arc::new);
+        let frame = picture.map(|picture| Frame9 {
             picture,
             slice: [1.0 / 3.0; 4],
             fill: false,
@@ -1528,35 +1498,23 @@ mod tests {
             outset: [0.0; 4],
             tile: [Tile::Round; 2],
         });
+        let finish_of = |layers, outline, frame| Finish {
+            layers,
+            outline,
+            frame,
+            ..Finish::default()
+        };
+        let grad = finish_of(vec![Layer::Gradient(ramp)], None, None);
         let cases = [
             ("shadow", shadow.clone()),
-            (
-                "gradient",
-                Finish {
-                    layers: vec![Layer::Gradient(ramp)],
-                    ..Finish::default()
-                },
-            ),
-            (
-                "outline",
-                Finish {
-                    outline: Some(outline),
-                    ..Finish::default()
-                },
-            ),
-            (
-                "frame",
-                Finish {
-                    frame,
-                    ..Finish::default()
-                },
-            ),
+            ("gradient", grad),
+            ("outline", finish_of(Vec::new(), Some(outline), None)),
+            ("frame", finish_of(Vec::new(), None, frame)),
         ];
         for (name, finish) in cases {
             let ink = box_ink(with(finish));
             assert!(ink > 2000, "{name}: {ink}");
         }
-        // Opacity fades the whole box.
         let full = box_ink(with(shadow.clone()));
         let half = box_ink(with(Finish {
             opacity: 0.5,

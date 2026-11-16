@@ -46,6 +46,29 @@ impl State<'_> {
             };
             f.dir = c.dir;
             f.orient = c.orient;
+            if let Some(extra) = c.extra.as_deref()
+                && extra.column_span
+            {
+                f.extra_mut().column_span = true;
+            }
+        }
+        // Accumulate `position: relative` visual offsets from open ancestors.
+        let (mut rx, mut ry) = (0.0f32, 0.0f32);
+        for open in &self.stack {
+            if open.computed.placing == Placing::Relative {
+                let sz = open.computed.size;
+                let off = |i: usize| {
+                    open.computed
+                        .offsets
+                        .get(i)
+                        .and_then(|l| l.px(sz, css::BASE_WIDTH))
+                };
+                rx += off(3).or_else(|| off(1).map(|r| -r)).unwrap_or(0.0);
+                ry += off(0).or_else(|| off(2).map(|b| -b)).unwrap_or(0.0);
+            }
+        }
+        if rx != 0.0 || ry != 0.0 {
+            f.extra_mut().rel_offset = [rx / ROOT_PX, ry / ROOT_PX];
         }
         f.passages = self
             .stack

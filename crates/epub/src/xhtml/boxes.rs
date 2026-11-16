@@ -1,13 +1,35 @@
 use super::*;
 
+/// Maximum vertical body margin on reflowable chapters.
+const MAX_BODY_V_MARGIN: f32 = 2.0 * ROOT_PX;
+
+struct BoxPaint {
+    contrast: Option<f32>,
+    fill_rgba: Option<[u8; 4]>,
+    backdrop: Option<Arc<Backdrop>>,
+    finish: Option<Arc<Finish>>,
+}
+
 impl State<'_> {
     /// Opens `name`'s space above, as a box if it draws or sits apart.
-    pub(super) fn open_block(&mut self, tag: &Tag, (c, d): (&Computed, &Decl), part: Part) -> bool {
+    pub(super) fn open_block(
+        &mut self,
+        tag: &Tag,
+        el: &El,
+        (c, d): (&Computed, &Decl),
+        part: Part,
+    ) -> bool {
         let cell = part == Part::Cell;
-        if !cell {
-            self.gap.margin(c.margin_px(0), &*tag.name == "p");
-        }
         let name: &str = &tag.name;
+        let reflow_body = name == "body" && !self.fixed;
+        if !cell {
+            let top = if reflow_body {
+                c.margin_px(0).min(MAX_BODY_V_MARGIN)
+            } else {
+                c.margin_px(0)
+            };
+            self.gap.margin(top, name == "p");
+        }
         // A table of data draws its own grid, not a box.
         let layout = name != "table" || self.lays_out(tag);
         let rule = std::mem::take(&mut self.rule_next);
@@ -17,25 +39,22 @@ impl State<'_> {
             true => self.paint(c),
             false => (None, None, None),
         };
-        let spec = layout.then(|| boxed(name, c, d, cell)).flatten();
-        let shows = finish.as_ref().is_some_and(Finish::shows);
-        let painted = contrast.is_some() || backdrop.is_some() || shows;
-        // Kept whole, a plain wrapper's blocks need a box to share.
-        let wraps = c.whole && !TEXT_BLOCKS.contains(&name);
-        let spec = spec.or_else(|| (painted || wraps).then(|| bare(c)));
-        let colours = c
-            .border_colour
-            .map(|ink| ink.and_then(|ink| self.drawn(ink, MAX_BORDER_FADE)));
+        let fill_rgba = (layout && !ground && self.fixed)
+            .then(|| fixed_fill_rgba(c))
+            .flatten();
+        let interaction = layout.then(|| self.interaction(el, c, d)).flatten();
+        let sheet_h = self.sheet.as_deref().map(|s| s.height);
+        let spec = layout
+            .then(|| boxed_spec(name, c, d, (cell, reflow_body, sheet_h)))
+            .flatten();
         let finish = finish.map(Arc::new);
-        let spec = spec.map(|spec| Boxed {
-            fill: contrast.map(|c| c.min(MAX_TEXT_FILL)),
-            colours,
+        let paint = BoxPaint {
+            contrast,
+            fill_rgba,
             backdrop,
-            finish: finish.as_deref().map(|f| Arc::new(capped(f))),
-            rule,
-            whole: c.whole,
-            ..spec
-        });
+            finish: finish.clone(),
+        };
+        let spec = self.finish_box_spec(name, c, spec, paint, (rule, interaction));
         let snapshot = self.gap;
         let inside = c.border[0] + c.padding[0];
         if inside > 0.0 {
@@ -53,6 +72,104 @@ impl State<'_> {
             finish,
         });
         true
+    }
+
+    fn finish_box_spec(
+        &self,
+        name: &str,
+        c: &Computed,
+        spec: Option<Boxed>,
+        paint: BoxPaint,
+        (rule, interaction): (bool, Option<Arc<Interaction>>),
+    ) -> Option<Boxed> {
+        let BoxPaint {
+            contrast,
+            fill_rgba,
+            backdrop,
+            finish,
+        } = paint;
+        let extra = c.extra.as_deref();
+        let shows = finish.as_deref().is_some_and(Finish::shows);
+        let painted = contrast.is_some()
+            || fill_rgba.is_some()
+            || backdrop.is_some()
+            || shows
+            || interaction.is_some();
+        // Kept whole, a plain wrapper's blocks need a box to share.
+        let wraps = c.whole && !TEXT_BLOCKS.contains(&name);
+        let has_extra = extra.is_some_and(|e| e.multicol.is_some() || e.transform_2d.is_some());
+        let spec = spec.or_else(|| (painted || wraps || has_extra).then(|| bare(c)))?;
+        let colours = if self.fixed {
+            c.border_colour
+        } else {
+            c.border_colour
+                .map(|ink| ink.and_then(|ink| self.drawn(ink, MAX_BORDER_FADE)))
+        };
+        Some(Boxed {
+            fill: fill_rgba
+                .is_none()
+                .then(|| contrast.map(|v| v.min(MAX_TEXT_FILL)))
+                .flatten(),
+            fill_rgba,
+            colours,
+            backdrop,
+            finish: if self.fixed {
+                finish
+            } else {
+                finish.as_deref().map(|f| Arc::new(capped(f)))
+            },
+            rule,
+            whole: c.whole,
+            border_box: extra.is_some_and(|e| e.border_box),
+            clip: extra.is_some_and(|e| e.clip),
+            multicol: extra.and_then(|e| e.multicol.clone()).map(Arc::new),
+            transform: extra.and_then(|e| e.transform_2d),
+            interaction,
+            ..spec
+        })
+    }
+
+    /// Merges inline `:hover` text styles into the enclosing box.
+    pub(super) fn merge_inline_hover(&mut self, el: &El, c: &Computed, d: &Decl) {
+        if !self.sheets.iter().any(|s| s.has_hover) {
+            return;
+        }
+        let vars = d.vars.clone().unwrap_or_else(|| Arc::from([]));
+        let Some(hover_decl) = css::declared_hover(&self.sheets, &self.path(el), &vars) else {
+            return;
+        };
+        let delta = css::anim::build_hover_delta(&hover_decl, c.size);
+        if delta.text_colour.is_none() && delta.text_shadow.is_none() {
+            return;
+        }
+        let Some(open) = self.boxes.last_mut() else {
+            return;
+        };
+        let mut inter = open
+            .spec
+            .interaction
+            .as_deref()
+            .cloned()
+            .unwrap_or_default();
+        let h = inter.hover.get_or_insert_with(Default::default);
+        if delta.text_colour.is_some() {
+            h.text_colour = delta.text_colour;
+        }
+        if delta.text_shadow.is_some() {
+            h.text_shadow = delta.text_shadow;
+        }
+        open.spec.interaction = Some(Arc::new(inter));
+        if let Some(old_arc) = open.arc.as_ref() {
+            let new_arc = Arc::new(open.spec.clone());
+            for block in self.blocks.iter_mut().skip(open.first) {
+                for b in &mut block.frame.boxes {
+                    if Arc::ptr_eq(b, old_arc) {
+                        *b = Arc::clone(&new_arc);
+                    }
+                }
+            }
+            open.arc = Some(new_arc);
+        }
     }
 
     /// A background's ink strength, its contrast with the page; its picture.
@@ -95,6 +212,7 @@ impl State<'_> {
             size,
             at: c.picture_at,
             repeat: c.picture_repeat,
+            repeat_axis: c.extra.as_deref().and_then(|e| e.repeat_axis),
         }))
     }
 
@@ -108,14 +226,24 @@ impl State<'_> {
     /// Shadows, gradients, a border picture, an outline and opacity.
     pub(super) fn box_finish(&mut self, c: &Computed) -> Option<Finish> {
         let em = |l: Len| l.px(c.size, css::BASE_WIDTH).unwrap_or(0.0) / ROOT_PX;
-        let shadows = c.shadows.iter().map(|s| mareader_reflow::Shadow {
-            at: s.at.map(em),
-            blur: em(s.blur).max(0.0),
-            spread: em(s.spread),
-            strength: self.strength(s.tint, c),
-            inset: s.inset,
+        let shadows = c.shadows.iter().map(|s| {
+            let colour = self.fixed.then(|| {
+                let [r, g, b] = s.tint.0.or(c.ink).unwrap_or(self.book_ink);
+                let a = (s.tint.1.clamp(0.0, 1.0) * 255.0).round() as u8;
+                [r, g, b, a]
+            });
+            mareader_reflow::Shadow {
+                at: s.at.map(em),
+                blur: em(s.blur).max(0.0),
+                spread: em(s.spread),
+                strength: self.strength(s.tint, c),
+                inset: s.inset,
+                colour,
+            }
         });
-        let shadows = shadows.filter(|s| s.strength >= 0.01).collect();
+        let shadows = shadows
+            .filter(|s| s.colour.is_some_and(|c| c[3] > 0) || s.strength >= 0.01)
+            .collect();
         let mut layers = Vec::new();
         for layer in c.layers.iter() {
             let made = match layer {
@@ -226,7 +354,10 @@ impl State<'_> {
         };
         let inside = c.border[2] + c.padding[2];
         let shows = open.spec.finish.as_ref().is_some_and(|f| f.shows());
-        let painted = open.spec.fill.is_some() || open.spec.backdrop.is_some() || shows;
+        let painted = open.spec.fill.is_some()
+            || open.spec.fill_rgba.is_some()
+            || open.spec.backdrop.is_some()
+            || shows;
         let edged = painted || open.spec.border.iter().any(|w| *w > 0.0);
         let held = self.blocks.get(open.first..).unwrap_or_default();
         if edged && open.arc.is_some() && held.iter().all(Block::is_blank) {
@@ -269,4 +400,85 @@ impl State<'_> {
         }
         self.gap.margin(c.margin_px(2), own);
     }
+}
+
+/// True RGBA background fill for a fixed-layout element.
+pub(super) fn fixed_fill_rgba(c: &Computed) -> Option<[u8; 4]> {
+    if let Some(rgba) = c.extra.as_deref().and_then(|e| e.fill_rgba) {
+        return (rgba[3] > 0).then_some(rgba);
+    }
+    c.fill.map(|[r, g, b]| [r, g, b, 255])
+}
+
+/// The box `name` draws or sits in; a cell's column sets its width.
+pub(super) fn boxed_spec(
+    name: &str,
+    c: &Computed,
+    d: &Decl,
+    (cell, reflow_body, sheet_h): (bool, bool, Option<f32>),
+) -> Option<Boxed> {
+    if matches!(name, "tr" | "thead" | "tbody" | "tfoot" | "caption" | "hr") {
+        return None;
+    }
+    let mut edges = c.border_style.map(edge);
+    for (e, clear) in edges.iter_mut().zip(c.border_clear) {
+        if clear && *e != Edge::None {
+            *e = Edge::Clear;
+        }
+    }
+    let mut border = c.border.map(|w| w.max(0.0) / ROOT_PX);
+    for (w, e) in border.iter_mut().zip(&edges) {
+        if *e == Edge::None {
+            *w = 0.0;
+        }
+    }
+    let side = |i: usize| match c.margin.get(i).copied().unwrap_or(Len::Auto) {
+        Len::Auto => None,
+        Len::Percent(p) | Len::Vw(p) => Some(Length::Percent(p)),
+        Len::Mix { px, pct, .. } => Some(Length::Mix {
+            em: px / ROOT_PX,
+            percent: pct,
+        }),
+        _ => Some(Length::Em(c.margin_px(i) / ROOT_PX)),
+    };
+    let zero = Some(Length::Em(0.0));
+    // Reflowable body horizontal margins sit inside mareader's page margins.
+    let margin = if cell || reflow_body {
+        [zero; 2]
+    } else {
+        [side(3), side(1)]
+    };
+    let width = match c.width {
+        _ if cell => None,
+        Len::Px(px) if px > 0.0 => Some(Length::Em(px / ROOT_PX)),
+        Len::Percent(p) | Len::Vw(p) if p > 0.0 => Some(Length::Percent(p)),
+        Len::Mix { px, pct, .. } => mixed(px, pct),
+        _ => None,
+    };
+    let flex = matches!(c.display, Display::Flex | Display::Grid);
+    let centre = match d.height {
+        Some(Len::Vh(v)) if flex && v > 0.0 => Some((v / 100.0).min(1.0)),
+        _ => None,
+    };
+    let padding = c.padding.map(|p| p.max(0.0) / ROOT_PX);
+    let flat = margin.iter().all(|m| m.is_none() || *m == zero);
+    let drawn = border.iter().any(|w| *w > 0.0);
+    let height = match c.height {
+        _ if matches!(d.height, Some(Len::Vh(_))) => None,
+        Len::Px(px) if px > 0.0 && !cell => Some(px / ROOT_PX),
+        Len::Percent(p) if p > 0.0 && !cell => sheet_h.map(|h| (h * p / 100.0) / ROOT_PX),
+        _ => None,
+    };
+    let apart = padding[1] > 0.0 || padding[3] > 0.0 || width.is_some() || centre.is_some();
+    (drawn || apart || !flat).then_some(Boxed {
+        margin,
+        border,
+        edges,
+        padding,
+        width,
+        centre,
+        height,
+        radius: radius(c),
+        ..Boxed::default()
+    })
 }

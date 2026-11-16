@@ -13,6 +13,13 @@ use crate::generated::{self, Content, ListStyle};
 use crate::href;
 use crate::query;
 
+pub(crate) mod anim;
+pub(crate) mod extra;
+pub(crate) mod hover;
+
+pub(crate) use hover::declared_hover;
+use hover::initial_value;
+
 /// A stylesheet's text past this is ignored.
 pub const MAX_SHEET: usize = 1 << 20;
 const MAX_RULES: usize = 10_000;
@@ -324,6 +331,15 @@ pub(crate) struct Decl {
     pub(crate) cleared: Option<Arc<Decl>>,
     /// The element's custom properties, once its cascade is done.
     pub(crate) vars: Option<Vars>,
+    /// Extended properties (RGBA fills, box-sizing, multicol, transforms).
+    pub(crate) extra: Option<Box<extra::ExtraDecl>>,
+}
+
+impl Decl {
+    pub(crate) fn extra_mut(&mut self) -> &mut extra::ExtraDecl {
+        self.extra
+            .get_or_insert_with(|| Box::new(extra::ExtraDecl::default()))
+    }
 }
 
 /// Counters a declaration names, with their values.
@@ -454,6 +470,7 @@ impl Decl {
     }
 
     fn set(&mut self, name: &str, value: &str) {
+        let name = extra::strip_vendor(name);
         let v = value.to_ascii_lowercase();
         let v = v.as_str();
         if matches!(
@@ -508,14 +525,22 @@ impl Decl {
             "background-color" => {
                 self.background = Some(!clear(v));
                 self.fill = colour(v).or(self.fill);
+                if let Some(rgba) = extra::parse_rgba(v) {
+                    self.extra_mut().fill_rgba = Some(rgba);
+                }
             }
             "color" => self.ink = colour(v).flatten().or(self.ink),
             "background-image" => self.set_layers(decor::layers(value)),
             "background-size" => self.picture_size = picture_size(v).or(self.picture_size),
             "background-position" => self.picture_at = Some(position(v)),
-            "background-repeat" => self.picture_repeat = Some(!v.starts_with("no-repeat")),
+            "background-repeat" => {
+                self.picture_repeat = Some(!v.starts_with("no-repeat"));
+                if let Some(rep) = extra::parse_repeat(v) {
+                    self.extra_mut().repeat_axis = Some(rep);
+                }
+            }
             "background" => self.background_shorthand(value),
-            "box-shadow" | "-webkit-box-shadow" => self.shadows = Some(decor::shadows(v)),
+            "box-shadow" => self.shadows = Some(decor::shadows(v)),
             "text-shadow" => self.text_shadow = Some(decor::shadows(v).first().cloned()),
             "opacity" => self.opacity = opacity(v).or(self.opacity),
             "visibility" => {
@@ -525,13 +550,13 @@ impl Decl {
                     _ => self.visible,
                 }
             }
-            "filter" | "-webkit-filter" => self.filter(v),
+            "filter" => self.filter(v),
             "outline" => self.outline(v),
             "outline-width" => self.outline_width = border_width(v).or(self.outline_width),
             "outline-style" => self.outline_style = outline_style(v).or(self.outline_style),
             "outline-color" => self.outline_colour = colour(v).or(self.outline_colour),
             "outline-offset" => self.outline_offset = len(v).or(self.outline_offset),
-            "border-image" | "-webkit-border-image" => self.border_image(value),
+            "border-image" => self.border_image(value),
             "border-image-source" => self.frame = Some(generated::url(value).map(Arc::from)),
             "border-image-slice" => self.frame_slice = decor::slice(v).or(self.frame_slice),
             "border-image-width" => self.frame_width = decor::spans(v).or(self.frame_width),
@@ -595,16 +620,11 @@ impl Decl {
                     _ => self.dir,
                 }
             }
-            "writing-mode" | "-epub-writing-mode" | "-webkit-writing-mode" | "-ms-writing-mode" => {
-                self.writing = writing_words(v).or(self.writing)
+            "writing-mode" => self.writing = writing_words(v).or(self.writing),
+            "text-orientation" => self.orient = orient_words(v).or(self.orient),
+            "text-combine-upright" | "text-combine" | "text-combine-horizontal" => {
+                self.combine = combine_words(v).or(self.combine)
             }
-            "text-orientation" | "-epub-text-orientation" | "-webkit-text-orientation" => {
-                self.orient = orient_words(v).or(self.orient)
-            }
-            "text-combine-upright"
-            | "-epub-text-combine"
-            | "-webkit-text-combine"
-            | "-ms-text-combine-horizontal" => self.combine = combine_words(v).or(self.combine),
             "orphans" => self.orphans = lines_kept(v).or(self.orphans),
             "widows" => self.widows = lines_kept(v).or(self.widows),
             "break-inside" | "page-break-inside" => {
@@ -624,17 +644,7 @@ impl Decl {
             }
             "flex-direction" => self.flex_column = Some(v.starts_with("column")),
             "flex-wrap" => self.wrap = Some(v.starts_with("wrap")),
-            "flex-flow" => {
-                for w in v.split_ascii_whitespace() {
-                    match w {
-                        "row" | "row-reverse" => self.flex_column = Some(false),
-                        "column" | "column-reverse" => self.flex_column = Some(true),
-                        "wrap" | "wrap-reverse" => self.wrap = Some(true),
-                        "nowrap" => self.wrap = Some(false),
-                        _ => {}
-                    }
-                }
-            }
+            "flex-flow" => hover::apply_flex_flow(self, v),
             "justify-content" => self.justify = justify(v).or(self.justify),
             "align-items" => {
                 self.align_items = flex_align(v).or(self.align_items);
@@ -651,7 +661,7 @@ impl Decl {
                 self.row_gap = len(first).or(self.row_gap);
                 self.gap = len(last).or(self.gap);
             }
-            "column-gap" | "grid-column-gap" => self.gap = len(v).or(self.gap),
+            "column-gap" | "grid-column-gap" => hover::apply_column_gap(self, len(v)),
             "row-gap" | "grid-row-gap" => self.row_gap = len(v).or(self.row_gap),
             "flex-grow" => self.grow = v.parse::<f32>().ok().or(self.grow),
             "flex-basis" => self.basis = len(v).or(self.basis),
@@ -661,9 +671,7 @@ impl Decl {
                 let first = words(first).into_iter().next().unwrap_or_default();
                 self.radius = len(first).or(self.radius);
             }
-            "transform" | "-webkit-transform" | "-ms-transform" => {
-                self.rotate = Some(rotation(v).unwrap_or(0.0));
-            }
+            "transform" => hover::apply_transform_decl(self, value, v),
             "page-break-before" | "break-before" => {
                 self.break_before = Some(page_break(v));
                 self.keep_last = Some(matches!(v, "avoid" | "avoid-page"));
@@ -672,7 +680,8 @@ impl Decl {
                 self.break_after = Some(page_break(v));
                 self.keep_next = Some(matches!(v, "avoid" | "avoid-page"));
             }
-            _ => self.side(name, v),
+            _ if !extra::apply_extra(self, name, value, v) => self.side(name, v),
+            _ => {}
         }
     }
 
@@ -727,6 +736,7 @@ impl Decl {
         let (at, size) = rest.split_once('/').unwrap_or((&rest, ""));
         let words: Vec<&str> = at.split_ascii_whitespace().collect();
         self.picture_repeat = Some(!words.contains(&"no-repeat"));
+        extra::record_background_shorthand(self, &last, &words);
         let placed: Vec<&str> = words.iter().copied().filter(|w| is_place(w)).collect();
         self.picture_at = Some(position(&placed.join(" ")));
         let size = size
@@ -737,7 +747,7 @@ impl Decl {
         self.picture_size = Some(picture_size(&size).unwrap_or_default());
     }
 
-    /// Background layers: a lone picture as before, else the list.
+    /// Background layers: a lone picture, else the list.
     fn set_layers(&mut self, layers: Vec<decor::Layer>) {
         let single = match layers.as_slice() {
             [decor::Layer::Url(url)] => Some(Arc::from(url.as_str())),
@@ -959,6 +969,7 @@ impl Decl {
             self.clear(cleared);
         }
         each_field!(layer, self, top);
+        extra::layer_extra(&mut self.extra, &top.extra);
         if top.vars.is_some() {
             self.vars.clone_from(&top.vars);
         }
@@ -1187,81 +1198,6 @@ fn combine_words(v: &str) -> Option<bool> {
         "all" | "horizontal" | "digits" => Some(true),
         _ => None,
     }
-}
-
-/// A property's initial value, whether it is literal, whether it inherits.
-fn initial_value(name: &str) -> Option<(&'static str, bool, bool)> {
-    Some(match name {
-        "color" => ("black", true, true),
-        "font-family" => ("serif", false, true),
-        "font" => ("16px serif", false, true),
-        "quotes" => ("none", false, true),
-        "font-style" | "font-weight" | "font-variant" | "font-variant-caps" => {
-            ("normal", true, true)
-        }
-        "font-variant-numeric"
-        | "font-variant-ligatures"
-        | "font-variant-position"
-        | "font-feature-settings" => ("normal", true, true),
-        "font-kerning" | "text-align-last" => ("auto", true, true),
-        "direction" => ("ltr", true, true),
-        "writing-mode" | "-epub-writing-mode" | "-webkit-writing-mode" => {
-            ("horizontal-tb", true, true)
-        }
-        "text-orientation" | "-epub-text-orientation" | "-webkit-text-orientation" => {
-            ("mixed", true, true)
-        }
-        "text-combine-upright" | "-epub-text-combine" | "-webkit-text-combine" => {
-            ("none", true, false)
-        }
-        "orphans" | "widows" => ("2", true, true),
-        "break-inside" | "page-break-inside" => ("auto", true, false),
-        "line-height" | "letter-spacing" | "word-spacing" => ("normal", true, true),
-        "font-size" => ("medium", true, true),
-        "text-indent" => ("0", true, true),
-        "text-align" => ("start", true, true),
-        "text-transform" | "text-shadow" | "list-style-image" => ("none", true, true),
-        "visibility" => ("visible", true, true),
-        "list-style" | "list-style-type" => ("disc", true, true),
-        "display" => ("inline", true, false),
-        "width" | "height" | "flex-basis" => ("auto", true, false),
-        "background-color" => ("transparent", true, false),
-        "opacity" => ("1", true, false),
-        "vertical-align" => ("baseline", true, false),
-        "content" => ("normal", true, false),
-        "flex-direction" => ("row", true, false),
-        "flex-wrap" => ("nowrap", true, false),
-        "justify-content" => ("normal", true, false),
-        "flex-grow" | "gap" | "border-radius" => ("0", true, false),
-        "page-break-before" | "page-break-after" | "break-before" | "break-after" => {
-            ("auto", true, false)
-        }
-        "position" => ("static", true, false),
-        "top" | "right" | "bottom" | "left" | "inset" | "z-index" => ("auto", true, false),
-        "float"
-        | "text-decoration"
-        | "text-decoration-line"
-        | "box-shadow"
-        | "outline"
-        | "transform"
-        | "filter"
-        | "background"
-        | "background-image"
-        | "border-image"
-        | "counter-reset"
-        | "counter-increment"
-        | "counter-set"
-        | "border"
-        | "border-top"
-        | "border-right"
-        | "border-bottom"
-        | "border-left" => ("none", true, false),
-        n if n.starts_with("margin") || n.starts_with("padding") => ("0", true, false),
-        n if n.starts_with("border-") && n.ends_with("-width") => ("medium", true, false),
-        n if n.starts_with("border-") && n.ends_with("-style") => ("none", true, false),
-        n if n.starts_with("border-") && n.ends_with("-color") => ("currentcolor", true, false),
-        _ => return None,
-    })
 }
 
 /// Whether `@supports` finds a declaration this cascade reads.
@@ -1891,6 +1827,7 @@ enum Pseudo {
     },
     Root,
     Link,
+    Hover,
     Not(Box<Compound>),
     /// Needs what the stream hasn't read yet, or user action.
     Never,
@@ -1940,7 +1877,7 @@ impl Compound {
     fn known(&self) -> bool {
         self.pseudo.iter().all(|p| match p {
             Pseudo::Never => false,
-            Pseudo::Not(inner) => inner.known(),
+            Pseudo::Not(inner) => inner.known() && !inner.has_hover(),
             _ => true,
         })
     }
@@ -1960,7 +1897,11 @@ impl Compound {
             + not
     }
 
-    fn matches(&self, el: &El) -> bool {
+    fn has_hover(&self) -> bool {
+        self.pseudo.iter().any(|p| matches!(p, Pseudo::Hover))
+    }
+
+    fn matches_mode(&self, el: &El, hover: bool) -> bool {
         self.tag.as_ref().is_none_or(|t| *t == el.tag)
             && self.id.as_ref().is_none_or(|id| el.id.as_ref() == Some(id))
             && self.classes.iter().all(|c| el.classes.contains(c))
@@ -1972,7 +1913,8 @@ impl Compound {
                 }
                 Pseudo::Root => el.tag == "html",
                 Pseudo::Link => el.tag == "a" && el.attr("href").is_some(),
-                Pseudo::Not(c) => !c.matches(el),
+                Pseudo::Hover => hover,
+                Pseudo::Not(c) => !c.matches_mode(el, hover),
                 Pseudo::Never => false,
             })
     }
@@ -2092,11 +2034,11 @@ fn previous(path: &[Ctx<'_>], pos: Pos) -> Option<Pos> {
     }
 }
 
-fn matches_at(parts: &[(Compound, Combinator)], path: &[Ctx<'_>], pos: Pos) -> bool {
+fn matches_at(parts: &[(Compound, Combinator)], path: &[Ctx<'_>], pos: Pos, hover: bool) -> bool {
     let Some(((compound, combinator), rest)) = parts.split_first() else {
         return true;
     };
-    if !el_at(path, pos).is_some_and(|el| compound.matches(el)) {
+    if !el_at(path, pos).is_some_and(|el| compound.matches_mode(el, hover)) {
         return false;
     }
     if rest.is_empty() {
@@ -2108,7 +2050,7 @@ fn matches_at(parts: &[(Compound, Combinator)], path: &[Ctx<'_>], pos: Pos) -> b
     };
     let mut at = step(path, pos);
     while let Some(p) = at {
-        if matches_at(rest, path, p) {
+        if matches_at(rest, path, p, hover) {
             return true;
         }
         if matches!(combinator, Combinator::Child | Combinator::Next) {
@@ -2120,12 +2062,24 @@ fn matches_at(parts: &[(Compound, Combinator)], path: &[Ctx<'_>], pos: Pos) -> b
 }
 
 impl Selector {
+    fn has_hover(&self) -> bool {
+        self.parts.iter().any(|(c, _)| c.has_hover())
+    }
+
     /// Whether it matches the last element of `path`.
     fn matches(&self, path: &[Ctx<'_>]) -> bool {
         let Some(last) = path.len().checked_sub(1) else {
             return false;
         };
-        matches_at(&self.parts, path, Pos::Path(last))
+        matches_at(&self.parts, path, Pos::Path(last), false)
+    }
+
+    /// Whether it matches `path` when `:hover` is active.
+    fn matches_hover(&self, path: &[Ctx<'_>]) -> bool {
+        let Some(last) = path.len().checked_sub(1) else {
+            return false;
+        };
+        matches_at(&self.parts, path, Pos::Path(last), true)
     }
 }
 
@@ -2294,6 +2248,7 @@ fn pseudo(name: &str, args: Option<&str>) -> Option<Pseudo> {
         "nth-of-type" => nth_args(true),
         "root" => Some(Pseudo::Root),
         "link" | "any-link" => Some(Pseudo::Link),
+        "hover" | "focus" | "focus-visible" | "active" => Some(Pseudo::Hover),
         "not" => {
             let (inner, rest) = parse_compound(args?.trim())?;
             rest.trim().is_empty().then(|| Pseudo::Not(Box::new(inner)))
@@ -2328,16 +2283,16 @@ fn an_b(s: &str) -> Option<(i32, i32)> {
     Some((a, b))
 }
 
-struct Rule {
+pub(super) struct Rule {
     selector: Selector,
     element: Option<PseudoEl>,
-    normal: Decl,
-    important: Decl,
-    specificity: u32,
+    pub(super) normal: Decl,
+    pub(super) important: Decl,
+    pub(super) specificity: u32,
     /// Where it last appeared among the sheet's rules.
-    order: usize,
+    pub(super) order: usize,
     /// Its `@layer`'s place, first named first; outside any, [`UNLAYERED`].
-    rank: u16,
+    pub(super) rank: u16,
 }
 
 /// The rank of rules outside every `@layer`, above them all.
@@ -2365,6 +2320,10 @@ pub struct Stylesheet {
     layer_names: Vec<String>,
     /// The `@layer` blocks reading is inside, innermost last.
     layer_path: Vec<String>,
+    /// Parsed `@keyframes` rules indexed by name.
+    pub(crate) keyframes: HashMap<String, Vec<mareader_reflow::KeyframeStop>>,
+    /// True if any rule uses `:hover`, `:focus`, or `:active`.
+    pub(super) has_hover: bool,
 }
 
 /// A class's rules: any tag, and by tag.
@@ -2419,8 +2378,9 @@ impl Stylesheet {
     }
 
     fn read(&mut self, css: &str, path: &str, depth: usize) {
+        const OPEN: char = '\u{7b}';
         let mut rest = css;
-        while let Some(open) = rest.find('{') {
+        while let Some(open) = rest.find(OPEN) {
             // Statements like `@import x;` end before the selector.
             let mut statements: Vec<&str> =
                 rest.get(..open).unwrap_or_default().split(';').collect();
@@ -2456,6 +2416,7 @@ impl Stylesheet {
                 }
             } else if lower.starts_with("@font-face") {
                 self.face(inner, path);
+            } else if hover::try_keyframes(self, prelude, &lower, inner) {
             } else if !prelude.starts_with('@') {
                 let (mut normal, mut important) = Decl::parse_both(inner);
                 normal.resolve(path);
@@ -2653,6 +2614,7 @@ impl Stylesheet {
         self.known.insert(key, at);
         let element = selector.element();
         self.elements |= element.map_or(0, PseudoEl::bit);
+        self.has_hover |= selector.has_hover();
         self.rules.push(Rule {
             specificity: selector.specificity(),
             element,
@@ -2926,11 +2888,7 @@ pub(crate) struct Computed {
     pub(crate) invisible: bool,
     // Inherited.
     pub(crate) small_caps: Caps,
-    pub(crate) numeric: Features,
-    pub(crate) ligatures: Features,
-    pub(crate) position: Features,
-    pub(crate) kerning: Features,
-    pub(crate) settings: Features,
+    pub(crate) features: [Features; 5],
     pub(crate) last: Option<LastLine>,
     /// 0 is the usual 2.
     pub(crate) orphans: u8,
@@ -2947,6 +2905,8 @@ pub(crate) struct Computed {
     pub(crate) text_shadow: Option<decor::Shadow>,
     /// Custom properties, inherited.
     pub(crate) vars: Vars,
+    /// Extended computed properties (RGBA fills, box-sizing, multicol).
+    pub(crate) extra: Option<Box<extra::ExtraComputed>>,
 }
 
 impl Default for Computed {
@@ -3018,11 +2978,7 @@ impl Default for Computed {
             opacity: 1.0,
             invisible: false,
             small_caps: Caps::Normal,
-            numeric: Features::default(),
-            ligatures: Features::default(),
-            position: Features::default(),
-            kerning: Features::default(),
-            settings: Features::default(),
+            features: [Features::default(); 5],
             last: None,
             orphans: 0,
             widows: 0,
@@ -3036,6 +2992,7 @@ impl Default for Computed {
             transform: Case::Normal,
             text_shadow: None,
             vars: Arc::from([]),
+            extra: None,
         }
     }
 }
@@ -3159,11 +3116,7 @@ impl Computed {
             opacity: self.opacity * d.opacity.unwrap_or(1.0) * d.filter_opacity.unwrap_or(1.0),
             invisible: d.visible.map_or(self.invisible, |v| !v),
             small_caps: d.small_caps.unwrap_or(self.small_caps),
-            numeric: d.numeric.unwrap_or(self.numeric),
-            ligatures: d.ligatures.unwrap_or(self.ligatures),
-            position: d.position.unwrap_or(self.position),
-            kerning: d.kerning.unwrap_or(self.kerning),
-            settings: d.settings.unwrap_or(self.settings),
+            features: child_features(self.features, d),
             last: d.last.unwrap_or(self.last),
             orphans: d.orphans.unwrap_or(self.orphans),
             widows: d.widows.unwrap_or(self.widows),
@@ -3175,11 +3128,12 @@ impl Computed {
             orient: d.orient.unwrap_or(self.orient),
             combine: d.combine.unwrap_or(false),
             transform: d.transform.unwrap_or(self.transform),
-            text_shadow: match &d.text_shadow {
-                Some(own) => own.clone(),
-                None => self.text_shadow.clone(),
-            },
+            text_shadow: d
+                .text_shadow
+                .clone()
+                .unwrap_or_else(|| self.text_shadow.clone()),
             vars: d.vars.clone().unwrap_or_else(|| Arc::clone(&self.vars)),
+            extra: extra::compute_extra(d, size),
         }
     }
 
@@ -3194,10 +3148,23 @@ impl Computed {
 
     /// The type features its text asks for, settings last.
     pub(crate) fn features(&self) -> Features {
-        let groups = [self.ligatures, self.position, self.kerning, self.settings];
-        groups.into_iter().fold(self.numeric, Features::then)
+        self.features
+            .into_iter()
+            .fold(Features::default(), Features::then)
     }
+}
 
+fn child_features(base: [Features; 5], d: &Decl) -> [Features; 5] {
+    [
+        d.numeric.unwrap_or(base[0]),
+        d.ligatures.unwrap_or(base[1]),
+        d.position.unwrap_or(base[2]),
+        d.kerning.unwrap_or(base[3]),
+        d.settings.unwrap_or(base[4]),
+    ]
+}
+
+impl Computed {
     /// One line's height in px.
     pub(crate) fn line_px(&self) -> f32 {
         match self.line {

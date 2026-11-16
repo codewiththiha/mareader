@@ -11,8 +11,10 @@ impl State<'_> {
         }
         if let Some(at) = self.stack.iter().rposition(|o| o.name == name) {
             self.generate_after(at);
-        }
-        if is_block(name) {
+            if self.stack.get(at).is_some_and(|o| o.is_block) {
+                self.boundary(name);
+            }
+        } else if is_block(name) {
             self.boundary(name);
         }
         self.end_table(name);
@@ -80,7 +82,10 @@ impl State<'_> {
             self.first_line = None;
         }
         for open in closed.iter().rev() {
-            if is_block(&open.name) && !open.style.hidden && self.table.is_none() {
+            if !open.is_block && open.inline_space_after > 0.5 && !open.style.hidden {
+                self.push_inline_space(open.inline_space_after);
+            }
+            if open.is_block && !open.style.hidden && self.table.is_none() {
                 let own = open.name == "p";
                 match open.boxed {
                     true => self.close_box(&open.computed, own),

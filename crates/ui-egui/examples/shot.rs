@@ -178,7 +178,7 @@ fn main() -> Result<(), String> {
                 searched = true;
             }
             // A book from the web, fetched first: `epub=https://…/a.epub`.
-            "epub" | "pdf" if v.starts_with("https://") => {
+            "epub" | "pdf" if v.starts_with("https://") || v.starts_with("http://") => {
                 let path = download(v)?;
                 app.set_option(k, &path.to_string_lossy())?;
             }

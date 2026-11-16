@@ -49,7 +49,7 @@ impl<'a> Setter<'a> {
         };
         let (initial, beside) = self.initial_beside(text, style, beside);
         let mut para = layout_text(self.fonts, text, style, (Some(inner), beside));
-        if let Some(extra) = text.first_line.filter(|_| style.sized) {
+        if let Some(extra) = text.first_line.as_deref().copied().filter(|_| style.sized) {
             para = self.first_line(text, (extra, para), style, (inner, beside));
         }
         self.notes(text, &mut para, style);

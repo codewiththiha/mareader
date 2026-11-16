@@ -1,6 +1,28 @@
 use super::*;
 
 impl State<'_> {
+    /// Inserts a zero-height horizontal inline spacer (`px`).
+    pub(super) fn push_inline_space(&mut self, px: f32) {
+        if !(px > 0.5 && px.is_finite()) || self.table.is_some() {
+            return;
+        }
+        let block_size = self.block_computed().map_or(ROOT_PX, |c| c.size).max(1.0);
+        let width = (px / block_size).clamp(0.0, 32.0);
+        let space = std::mem::take(&mut self.space);
+        let Some(t) = self.target() else {
+            return;
+        };
+        if space && !t.text.is_empty() && !t.text.ends_with('\n') {
+            t.push(" ", Emphasis::default());
+        }
+        if t.spacers.len() < MAX_INLINES {
+            t.spacers.push(mareader_reflow::InlineSpace {
+                at: t.text.len(),
+                width,
+            });
+        }
+    }
+
     /// Text, its block's first letter and line styled as rules say.
     pub(super) fn characters(&mut self, input: &str) {
         let pending = self.initial.is_some() || self.first_line.is_some();
@@ -26,7 +48,7 @@ impl State<'_> {
         if let (Some(line), Some(Content::Text(t))) =
             (line, self.current.as_mut().map(|b| &mut b.content))
         {
-            t.first_line = Some(line);
+            t.first_line = Some(Box::new(line));
         }
     }
 

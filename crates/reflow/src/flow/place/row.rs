@@ -130,10 +130,12 @@ pub(super) fn place(
         if let Some(pieces) = hung.get_mut(col).filter(|_| down(col) > 1) {
             pieces.push(c.page.len());
         }
+        let off = b.rel_offset();
         c.page.push(Piece {
             block: k,
             units: 0..b.units.len(),
-            dy: y - unit,
+            dx: off[0],
+            dy: y - unit + off[1],
         });
         placed.push((col, b, y));
     }
