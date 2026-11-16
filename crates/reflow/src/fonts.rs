@@ -212,7 +212,6 @@ impl Fonts {
     }
 
     /// Another layout scratch sharing the same font collection and file cache.
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn fork(&self) -> Self {
         Self::with(
             self.fonts.collection.clone(),

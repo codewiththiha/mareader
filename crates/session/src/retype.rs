@@ -413,4 +413,68 @@ mod tests {
         }));
         Ok(())
     }
+
+    fn wait_events(session: &mut Session, done: impl Fn(&Event) -> bool) -> Vec<Event> {
+        let start = std::time::Instant::now();
+        let mut out = Vec::new();
+        while start.elapsed() < std::time::Duration::from_secs(10) {
+            let batch = session.poll(ALL);
+            let hit = batch.iter().any(&done);
+            out.extend(batch);
+            if hit {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        out
+    }
+
+    fn wait_retypeset(session: &mut Session, from: DocId) -> Option<DocId> {
+        let events = wait_events(
+            session,
+            |e| matches!(e, Event::Retypeset { old, .. } if *old == from),
+        );
+        events.iter().find_map(|e| match e {
+            Event::Retypeset { old, new, .. } if *old == from => Some(*new),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn threaded_retypeset_debounces_background_and_completes_latest() -> Result<(), &'static str> {
+        let mut s = Session::new(2, || {});
+        let bytes = Arc::new(mareader_epub::sample::epub(80, "Bg"));
+        s.open(Source::Bytes(bytes), None, Arc::default());
+        let opened = wait_events(&mut s, |e| matches!(e, Event::Opened { .. }));
+        let doc = opened
+            .iter()
+            .find_map(|e| match e {
+                Event::Opened { result: Ok(id), .. } => Some(*id),
+                _ => None,
+            })
+            .ok_or("book did not open")?;
+        let target = OpenTarget::default();
+        let t1 = Arc::new(Typography {
+            font_size: 20.0,
+            ..Typography::default()
+        });
+        let t2 = Arc::new(Typography {
+            font_size: 26.0,
+            ..Typography::default()
+        });
+        s.reset_at(doc, t1, None, 1, Some(target.clone()));
+        let p1 = wait_retypeset(&mut s, doc).ok_or("first preview missing")?;
+        s.close(doc);
+        s.want([key(p1, 0)]);
+        let _ = wait_events(&mut s, |e| matches!(e, Event::Rendered { .. }));
+        s.reset_at(p1, Arc::clone(&t2), None, 1, Some(target));
+        let p2 = wait_retypeset(&mut s, p1).ok_or("second preview missing")?;
+        s.close(p1);
+        s.want([key(p2, 0)]);
+        let _ = wait_events(&mut s, |e| matches!(e, Event::Rendered { .. }));
+        let full = wait_retypeset(&mut s, p2).ok_or("full book missing")?;
+        let entry = s.get(full).ok_or("missing completed entry")?;
+        assert!(entry.typo == t2 && entry.doc.is_complete());
+        Ok(())
+    }
 }

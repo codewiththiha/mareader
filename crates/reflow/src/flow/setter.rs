@@ -63,7 +63,7 @@ impl<'a> Setter<'a> {
         let mut sized = None;
         let mut k = 0;
         while let Some(&(i, block)) = items.get(k) {
-            if k.is_multiple_of(32) && parallel::cancelled(cancel) {
+            if k.is_multiple_of(8) && parallel::cancelled(cancel) {
                 return None;
             }
             let grid = self.look(&block.frame).and(grid_key(&block.frame));

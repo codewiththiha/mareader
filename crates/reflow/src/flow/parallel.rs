@@ -7,9 +7,18 @@ use super::*;
 #[cfg(not(target_arch = "wasm32"))]
 const PARALLEL_MIN_BLOCKS: usize = 600;
 #[cfg(not(target_arch = "wasm32"))]
-const MAX_PARALLEL_THREADS: usize = 6;
+const MAX_PARALLEL_THREADS: usize = 4;
 
 impl Flow {
+    /// Reuses this flow's loaded system and book faces without re-parsing.
+    pub fn clone_fonts(&self) -> Fonts {
+        self.relay
+            .fonts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .fork()
+    }
+
     pub(super) fn set_cut(
         blocks: Arc<Vec<Block>>,
         typo: &Typography,
@@ -162,7 +171,7 @@ fn measure_group(
     #[cfg(not(target_arch = "wasm32"))]
     if !room.fixed && group.len() >= PARALLEL_MIN_BLOCKS {
         let workers = std::thread::available_parallelism().map_or(1, |n| {
-            n.get().saturating_sub(1).clamp(1, MAX_PARALLEL_THREADS)
+            n.get().saturating_sub(2).clamp(1, MAX_PARALLEL_THREADS)
         });
         let slices = split_safe(group, workers);
         if slices.len() > 1 {

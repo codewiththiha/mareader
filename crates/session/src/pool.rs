@@ -3,9 +3,10 @@
 mod worker;
 
 use std::collections::{HashSet, VecDeque};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use mareader_epub::{Inserts, OpenBook, OpenTarget};
 use mareader_pdf::{Paper, Raster, RenderError, TextLayer};
@@ -18,6 +19,8 @@ use crate::{Document, OpenError, Source};
 /// Finished results wait here; past it, workers pause until a poll.
 const DONE_ITEMS: usize = 32;
 const DONE_BYTES: usize = 32 << 20;
+/// Settle delay before background full-book layout starts after a preview.
+const RETYPESET_SETTLE: Duration = Duration::from_millis(220);
 
 pub(crate) type Wake = Arc<dyn Fn() + Send + Sync>;
 
@@ -143,9 +146,16 @@ impl Output {
     }
 }
 
+pub(super) struct PendingBg {
+    pub ready_at: Instant,
+    pub task: RetypesetTask,
+}
+
 #[derive(Default)]
 pub(super) struct State {
     pub(super) queue: VecDeque<Job>,
+    pub(super) bg_retypeset: VecDeque<PendingBg>,
+    pub(super) bg_cancel: Option<Arc<AtomicBool>>,
     pub(super) running: HashSet<Want>,
     pub(super) wanted: HashSet<Want>,
     pub(super) done: VecDeque<Output>,
@@ -172,6 +182,7 @@ impl State {
 pub(super) struct Shared {
     state: Mutex<State>,
     pub(super) work: Condvar,
+    pub(super) bg_work: Condvar,
     pub(super) wake: Wake,
 }
 
@@ -186,6 +197,7 @@ impl Shared {
 pub(crate) struct Pool {
     shared: Arc<Shared>,
     workers: Vec<JoinHandle<()>>,
+    bg_worker: Option<JoinHandle<()>>,
 }
 
 impl Pool {
@@ -194,9 +206,10 @@ impl Pool {
         let shared = Arc::new(Shared {
             state: Mutex::default(),
             work: Condvar::new(),
+            bg_work: Condvar::new(),
             wake,
         });
-        let workers = (0..workers)
+        let threads = (0..workers)
             .filter_map(|i| {
                 let shared = Arc::clone(&shared);
                 std::thread::Builder::new()
@@ -205,7 +218,20 @@ impl Pool {
                     .ok()
             })
             .collect();
-        Self { shared, workers }
+        let bg_worker = if workers > 0 {
+            let shared = Arc::clone(&shared);
+            std::thread::Builder::new()
+                .name("mareader-retype-bg".to_owned())
+                .spawn(move || worker::work_retype_bg(&shared))
+                .ok()
+        } else {
+            None
+        };
+        Self {
+            shared,
+            workers: threads,
+            bg_worker,
+        }
     }
 
     pub(crate) fn open(
@@ -244,12 +270,17 @@ impl Pool {
     }
 
     pub(crate) fn cancel_retypeset(&self, ticket: u64) {
-        self.shared.lock().queue.retain(|job| {
+        let mut s = self.shared.lock();
+        s.queue.retain(|job| {
             !matches!(
                 job,
                 Job::Retypeset(task) | Job::ContinueRetypeset(task) if task.ticket == ticket
             )
         });
+        s.bg_retypeset
+            .retain(|pending| pending.task.ticket != ticket);
+        drop(s);
+        self.shared.bg_work.notify_one();
     }
 
     /// Replaces the `stale` re-set if still queued.
@@ -261,6 +292,15 @@ impl Pool {
     }
 
     pub(crate) fn continue_retypeset(&self, task: RetypesetTask) {
+        if self.bg_worker.is_some() {
+            let ready_at = Instant::now() + RETYPESET_SETTLE;
+            self.shared
+                .lock()
+                .bg_retypeset
+                .push_back(PendingBg { ready_at, task });
+            self.shared.bg_work.notify_one();
+            return;
+        }
         self.shared
             .lock()
             .queue
@@ -360,16 +400,26 @@ impl Pool {
     /// Jobs not yet finished, queued or running, for tests and meters.
     pub(crate) fn pending(&self) -> usize {
         let s = self.shared.lock();
-        s.queue.len() + s.running.len()
+        s.queue.len() + s.running.len() + s.bg_retypeset.len() + usize::from(s.bg_cancel.is_some())
     }
 }
 
 impl Drop for Pool {
     fn drop(&mut self) {
-        self.shared.lock().quit = true;
+        {
+            let mut s = self.shared.lock();
+            s.quit = true;
+            if let Some(cancel) = s.bg_cancel.as_ref() {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        }
         self.shared.work.notify_all();
+        self.shared.bg_work.notify_all();
         for w in self.workers.drain(..) {
             let _ = w.join();
+        }
+        if let Some(bg) = self.bg_worker.take() {
+            let _ = bg.join();
         }
     }
 }

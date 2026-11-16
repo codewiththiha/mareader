@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mareader_epub::{OpenBook, OpenStep, OpenTarget};
 use mareader_pdf::RenderSession;
@@ -29,6 +29,57 @@ pub(super) fn work(shared: &Shared) {
                 pending = work_pdf(shared, doc, want);
             }
             other => finish(shared, other),
+        }
+    }
+}
+
+/// Background thread for full-book layout after retypeset previews.
+pub(super) fn work_retype_bg(shared: &Shared) {
+    loop {
+        let Some(task) = take_bg_retypeset(shared) else {
+            return;
+        };
+        if let Some(out) = continue_retypeset(task) {
+            commit(shared, out);
+        }
+        shared.lock().bg_cancel = None;
+    }
+}
+
+fn take_bg_retypeset(shared: &Shared) -> Option<RetypesetTask> {
+    let mut s = shared.lock();
+    loop {
+        if s.quit {
+            return None;
+        }
+        while s
+            .bg_retypeset
+            .front()
+            .is_some_and(|p| p.task.cancel.load(Ordering::Relaxed))
+        {
+            s.bg_retypeset.pop_front();
+        }
+        let Some(ready_at) = s.bg_retypeset.front().map(|p| p.ready_at) else {
+            s = shared
+                .bg_work
+                .wait(s)
+                .unwrap_or_else(PoisonError::into_inner);
+            continue;
+        };
+        let wait = ready_at.saturating_duration_since(Instant::now());
+        if !wait.is_zero() {
+            (s, _) = shared
+                .bg_work
+                .wait_timeout(s, wait)
+                .unwrap_or_else(PoisonError::into_inner);
+            continue;
+        }
+        if let Some(pending) = s.bg_retypeset.pop_front() {
+            if pending.task.cancel.load(Ordering::Relaxed) {
+                continue;
+            }
+            s.bg_cancel = Some(Arc::clone(&pending.task.cancel));
+            return Some(pending.task);
         }
     }
 }

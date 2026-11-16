@@ -255,6 +255,10 @@ impl MareaderApp {
                 let after = self.held();
                 self.restore(before);
                 self.ui.fade.hold(ctx, after);
+            } else {
+                // Start text changes now instead of idling through VSync.
+                self.reconcile_texts();
+                self.ui.documents.sync_text(&mut self.session);
             }
         }
         // This frame drew with the old look; show the new one next frame.
