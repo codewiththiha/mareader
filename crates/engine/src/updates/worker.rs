@@ -89,11 +89,7 @@ fn detect_windows_nsis() -> InstallKind {
     if lower.contains("\\program files") || lower.contains("\\windows\\") {
         return InstallKind::PackageManaged;
     }
-    let has_nsis = parent.join("uninstall.exe").is_file();
-    let in_local_app_data = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .is_some_and(|dir| parent.starts_with(dir));
-    if (has_nsis || in_local_app_data) && dir_is_writable(parent) {
+    if parent.join("uninstall.exe").is_file() && dir_is_writable(parent) {
         InstallKind::WindowsNsis(exe)
     } else {
         InstallKind::PackageManaged
@@ -323,7 +319,7 @@ pub(super) fn apply_staged(
     }
     match install {
         InstallKind::LinuxAppImage(target) => apply_appimage(staged, target, state_dir, restart),
-        InstallKind::WindowsNsis(exe) => apply_windows_nsis(staged, exe, state_dir, restart),
+        InstallKind::WindowsNsis(_) => apply_windows_nsis(staged, state_dir, restart),
         InstallKind::NotifyOnly | InstallKind::PackageManaged => {
             Err("This installation must be updated manually.".into())
         }
@@ -342,6 +338,7 @@ fn apply_appimage(
     state_dir: Option<&Path>,
     restart: bool,
 ) -> Result<(), String> {
+    let target = std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
     let parent = target
         .parent()
         .ok_or_else(|| "AppImage has no parent directory.".to_owned())?;
@@ -356,59 +353,44 @@ fn apply_appimage(
             return Err(format!("Could not mark update executable: {e}"));
         }
     }
-    if let Err(e) = std::fs::rename(&tmp, target) {
+    if let Err(e) = std::fs::rename(&tmp, &target) {
         let _ = std::fs::remove_file(&tmp);
         return Err(format!("Could not replace AppImage: {e}"));
     }
     let _ = std::fs::remove_file(staged);
     if restart {
         release_instance_lock(state_dir);
-        Process::new(target)
-            .spawn()
+        let mut cmd = Process::new(&target);
+        // Drop the old AppImage's mount vars so the new bundle mounts fresh.
+        for key in ["APPIMAGE", "APPDIR", "ARGV0", "OWD"] {
+            cmd.env_remove(key);
+        }
+        cmd.spawn()
             .map_err(|e| format!("Updated AppImage, but failed to relaunch: {e}"))?;
     }
     Ok(())
 }
 
+/// Spawns cargo-packager's NSIS installer (`/S /NS`, plus `/R` on restart).
 fn apply_windows_nsis(
     staged: &Path,
-    exe: &Path,
     state_dir: Option<&Path>,
     restart: bool,
 ) -> Result<(), String> {
-    let old = exe.with_extension("exe.old");
-    let _ = std::fs::remove_file(&old);
-    std::fs::rename(exe, &old).map_err(|e| format!("Could not move current binary aside: {e}"))?;
+    // Release lock first; NSIS replaces mareader.exe and `/R` relaunches it.
+    release_instance_lock(state_dir);
     let mut cmd = Process::new(staged);
-    cmd.arg("/S");
+    cmd.arg("/S").arg("/NS");
+    if restart {
+        cmd.arg("/R");
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    if !restart {
-        if let Err(e) = cmd.spawn() {
-            let _ = std::fs::rename(&old, exe);
-            return Err(format!("Could not launch silent installer: {e}"));
-        }
-        return Ok(());
-    }
-    let status = match cmd.status() {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = std::fs::rename(&old, exe);
-            return Err(format!("Installer failed to start: {e}"));
-        }
-    };
-    if !status.success() || !exe.is_file() {
-        let _ = std::fs::rename(&old, exe);
-        return Err("Installer exited without replacing the application.".into());
-    }
-    let _ = std::fs::remove_file(staged);
-    release_instance_lock(state_dir);
-    Process::new(exe)
-        .spawn()
-        .map_err(|e| format!("Updated Mareader, but failed to relaunch: {e}"))?;
+    cmd.spawn()
+        .map_err(|e| format!("Could not launch silent installer: {e}"))?;
     Ok(())
 }

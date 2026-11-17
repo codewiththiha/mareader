@@ -351,3 +351,94 @@ fn mock_modes_cover_notify_install_and_silent_staged() {
         Status::ReadyToRestart { silent: true, .. }
     ));
 }
+
+#[test]
+fn self_update_asset_matching_refuses_wrong_arch_or_msi() {
+    let json = r#"{
+  "tag_name": "v0.0.6",
+  "html_url": "https://github.com/codewiththiha/mareader2/releases/tag/v0.0.6",
+  "assets": [
+    {
+      "name": "mareader_0.0.6_x64_en-US.msi",
+      "browser_download_url": "https://github.com/codewiththiha/mareader2/releases/download/v0.0.6/mareader_0.0.6_x64_en-US.msi"
+    },
+    {
+      "name": "mareader_0.0.6_x86_64.AppImage",
+      "browser_download_url": "https://github.com/codewiththiha/mareader2/releases/download/v0.0.6/mareader_0.0.6_x86_64.AppImage"
+    }
+  ]
+}"#;
+
+    let nsis = parse_release_json(
+        json,
+        UpdatePlatform::Windows,
+        Arch::X86_64,
+        &InstallKind::WindowsNsis(PathBuf::from("C:\\App\\mareader.exe")),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(nsis.info.asset_url.is_none());
+
+    let pkg = parse_release_json(
+        json,
+        UpdatePlatform::Windows,
+        Arch::X86_64,
+        &InstallKind::PackageManaged,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        pkg.info.asset_name.as_deref(),
+        Some("mareader_0.0.6_x64_en-US.msi")
+    );
+
+    let arm_linux = parse_release_json(
+        json,
+        UpdatePlatform::Linux,
+        Arch::Aarch64,
+        &InstallKind::LinuxAppImage(PathBuf::from("/home/u/Mareader.AppImage")),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(arm_linux.info.asset_url.is_none());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn appimage_apply_verifies_sha256_and_swaps_atomically() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("Mareader.AppImage");
+    let staged = dir.path().join("staged.AppImage");
+    std::fs::write(&target, b"old-binary").unwrap();
+    std::fs::write(&staged, b"new-binary-v2").unwrap();
+
+    let bad = super::worker::apply_staged(
+        &InstallKind::LinuxAppImage(target.clone()),
+        &staged,
+        &"0".repeat(64),
+        None,
+        false,
+    );
+    assert!(bad.is_err());
+    assert_eq!(std::fs::read(&target).unwrap(), b"old-binary");
+    assert!(!staged.exists());
+
+    std::fs::write(&staged, b"new-binary-v2").unwrap();
+    let good_sha = mareader_fetch::sha256_hex(&staged).unwrap();
+    let ok = super::worker::apply_staged(
+        &InstallKind::LinuxAppImage(target.clone()),
+        &staged,
+        &good_sha,
+        None,
+        false,
+    );
+    assert!(ok.is_ok(), "unexpected error: {ok:?}");
+    assert_eq!(std::fs::read(&target).unwrap(), b"new-binary-v2");
+    assert!(!staged.exists());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o755);
+    }
+}

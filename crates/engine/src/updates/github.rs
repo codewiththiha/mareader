@@ -207,17 +207,29 @@ fn pick_asset<'a>(
             Arch::X86_64 => find_suffix("_x64.dmg").or_else(|| find_suffix(".dmg")),
             Arch::Other => find_suffix(".dmg"),
         },
-        UpdatePlatform::Windows => match arch {
-            Arch::Aarch64 => find_suffix("_arm64-setup.exe")
+        UpdatePlatform::Windows => match (install, arch) {
+            (InstallKind::WindowsNsis(_), Arch::Aarch64) => {
+                find_suffix("_arm64-setup.exe").or_else(|| find_suffix("_x64-setup.exe"))
+            }
+            (InstallKind::WindowsNsis(_), Arch::X86_64) => find_suffix("_x64-setup.exe"),
+            (InstallKind::WindowsNsis(_), Arch::Other) => None,
+            (_, Arch::Aarch64) => find_suffix("_arm64-setup.exe")
                 .or_else(|| find_suffix("_x64-setup.exe"))
                 .or_else(|| find_suffix(".msi")),
-            Arch::X86_64 | Arch::Other => {
+            (_, Arch::X86_64 | Arch::Other) => {
                 find_suffix("_x64-setup.exe").or_else(|| find_suffix(".msi"))
             }
         },
-        UpdatePlatform::Linux => match install {
-            InstallKind::LinuxAppImage(_) => find_suffix(".appimage"),
-            _ => find_suffix(".appimage").or_else(|| find_suffix("_amd64.deb")),
+        UpdatePlatform::Linux => match (install, arch) {
+            (InstallKind::LinuxAppImage(_), Arch::X86_64) => find_suffix("_x86_64.appimage"),
+            (InstallKind::LinuxAppImage(_), Arch::Aarch64) => find_suffix("_aarch64.appimage"),
+            (InstallKind::LinuxAppImage(_), Arch::Other) => None,
+            (_, Arch::Aarch64) => {
+                find_suffix("_aarch64.appimage").or_else(|| find_suffix("_arm64.deb"))
+            }
+            (_, Arch::X86_64 | Arch::Other) => {
+                find_suffix("_x86_64.appimage").or_else(|| find_suffix("_amd64.deb"))
+            }
         },
     }
 }
