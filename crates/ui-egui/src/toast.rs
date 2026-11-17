@@ -477,28 +477,7 @@ impl Toasts {
             .show(ctx, |ui| {
                 let (r, resp) = ui.allocate_exact_size(shown.size(), egui::Sense::hover());
                 ui.set_opacity(progress);
-                ui.painter().rect(
-                    r,
-                    egui::CornerRadius::same(12),
-                    t.surface,
-                    egui::Stroke::new(1.0, t.line),
-                    egui::StrokeKind::Inside,
-                );
-                crate::icons::Icon::Done.paint(
-                    ui,
-                    Rect::from_center_size(
-                        pos2(r.left() + 17.0, r.center().y),
-                        egui::vec2(14.0, 14.0),
-                    ),
-                    t.accent,
-                );
-                ui.painter().text(
-                    pos2(r.left() + 30.0, r.center().y),
-                    egui::Align2::LEFT_CENTER,
-                    &live.toast.message,
-                    egui::FontId::proportional(t.text_small),
-                    t.ink,
-                );
+                card::island(ui, r, live, &t);
                 resp.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &live.toast.message)
                 });

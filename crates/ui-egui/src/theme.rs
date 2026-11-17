@@ -3,7 +3,7 @@
 use egui::{
     Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Shadow, Stroke,
 };
-use mareader_appearance::{Appearance, PageTone, Rgb};
+use mareader_appearance::{Appearance, PageTone, Rgb, ToastPalette};
 
 /// Chrome geometry, not a theme choice: the hover band follows it.
 pub const TITLE_BAR_H: f32 = 48.0;
@@ -41,6 +41,8 @@ pub struct Tokens {
     pub track: Color32,
     /// Errors: a toast's icon and edge.
     pub danger: Color32,
+    /// Theme-inflected green, amber and red swatches for toast cards.
+    pub toast: ToastPalette,
     /// The title bar fill without a blurred backdrop.
     pub glass: Color32,
     /// The bar over its blurred backdrop: mareader's 72 % surface.
@@ -103,6 +105,7 @@ impl Tokens {
                     &[t.paper, t.surface, marks.card, marks.selected],
                 )),
             },
+            toast: a.toast_palette(),
             glass: Color32::from_rgba_unmultiplied(surface.r(), surface.g(), surface.b(), 245),
             // Thin enough that pages under a bar read as soft shapes.
             frost: Color32::from_rgba_unmultiplied(surface.r(), surface.g(), surface.b(), FROST),
@@ -156,6 +159,7 @@ impl Tokens {
             card: mix(self.card, to.card),
             track: mix(self.track, to.track),
             danger: mix(self.danger, to.danger),
+            toast: self.toast.mix(to.toast, f64::from(k.clamp(0.0, 1.0))),
             glass: mix(self.glass, to.glass),
             frost: mix(self.frost, to.frost),
             shadow: mix(self.shadow, to.shadow),

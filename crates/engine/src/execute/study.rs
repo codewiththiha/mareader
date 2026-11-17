@@ -61,7 +61,7 @@ fn explain(session: &mut Session, pane: PaneId) {
             "The AI Dictionary takes one word, up to {} characters.",
             mareader_study::MAX_GLOSS_CHARS
         );
-        session.emit(Event::Toast(Toast::info(rule)));
+        session.emit(Event::Toast(Toast::warning(rule)));
         return;
     };
     session.clear_document_selection(pane);
@@ -83,7 +83,7 @@ fn look_up(session: &mut Session, pane: PaneId) {
     let max = mareader_study::MAX_GLOSS_CHARS;
     let Some(word) = crate::dict::lookup_text(&text, max) else {
         let rule = format!("Look up takes a word or short phrase, up to {max} characters.");
-        session.emit(Event::Toast(Toast::info(rule)));
+        session.emit(Event::Toast(Toast::warning(rule)));
         return;
     };
     // An open window answers instead; selection stays.

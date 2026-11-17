@@ -268,7 +268,7 @@ impl Session {
         if let Some(dir) = machine.dictionaries.clone()
             && let Err(why) = self.wire_dict(dir)
         {
-            self.emit(Event::Toast(Toast::info(format!(
+            self.emit(Event::Toast(Toast::warning(format!(
                 "Dictionaries are off: {why}"
             ))));
         }
@@ -278,7 +278,7 @@ impl Session {
         if let Some(dir) = machine.voices.clone()
             && let Err(why) = self.wire_voices(dir, mareader_speech::MODELS)
         {
-            self.emit(Event::Toast(Toast::info(format!(
+            self.emit(Event::Toast(Toast::warning(format!(
                 "Voice models are off: {why}"
             ))));
         }

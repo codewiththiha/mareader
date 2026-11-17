@@ -58,7 +58,7 @@ impl Session {
             Err(TreeError::Full) => format!("A workspace holds {MAX_PANES} panes at most."),
             Err(_) => "This pane is too small to split.".to_owned(),
         };
-        self.emit(Event::Toast(Toast::info(why)));
+        self.emit(Event::Toast(Toast::warning(why)));
         None
     }
 
@@ -110,7 +110,7 @@ impl Session {
     /// A pane surgery the tree has no room for: the reader is told.
     fn no_room(&mut self) -> Done {
         let why = "There's no room for the pane there.";
-        self.emit(Event::Toast(Toast::info(why)));
+        self.emit(Event::Toast(Toast::warning(why)));
         Done::quiet()
     }
 }

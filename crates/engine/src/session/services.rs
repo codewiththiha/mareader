@@ -86,7 +86,7 @@ impl Session {
     pub fn wire_vocab(&mut self, dir: PathBuf) {
         let waker = Arc::clone(&self.waker);
         if let Err(why) = self.vocab.attach(dir, waker) {
-            self.emit(Event::Toast(Toast::info(format!(
+            self.emit(Event::Toast(Toast::warning(format!(
                 "Word levels are off: {why}"
             ))));
             return;

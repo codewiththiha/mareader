@@ -112,7 +112,7 @@ impl MareaderApp {
         }
         match self.session.library().ask_organize(picked.as_deref()) {
             Ok(ask) => self.start_organizing(&ask, false),
-            Err(why) => self.ui.toasts.push(Toast::info(why)),
+            Err(why) => self.ui.toasts.push(Toast::warning(why)),
         }
     }
 
@@ -126,7 +126,7 @@ impl MareaderApp {
                     self.ui.ai.forget();
                     self.session.library_set_paused(None);
                 }
-                self.ui.toasts.push(Toast::info(why));
+                self.ui.toasts.push(Toast::warning(why));
             }
         }
     }

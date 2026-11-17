@@ -17,6 +17,7 @@ mod model;
 mod pane_looks;
 mod pattern;
 mod presets;
+mod toast;
 mod tokens;
 
 pub use color::{Oklch, Rgb};
@@ -31,4 +32,5 @@ pub use pattern::{
 pub use presets::{
     Preset, PresetGroup, UNSECTIONED, builtin_presets, group_presets, preset_id, section_names,
 };
+pub use toast::{ToastPalette, ToastSwatch};
 pub use tokens::{Marks, TextPalette, UiTokens, base_tokens, legible};

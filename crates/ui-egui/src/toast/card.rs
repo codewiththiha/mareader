@@ -36,7 +36,7 @@ pub(super) struct Card {
     action: f32,
 }
 
-fn action_job(ctx: &Context, live: &Live, t: &Tokens) -> LayoutJob {
+fn action_job(ctx: &Context, live: &Live, mark: Color32, t: &Tokens) -> LayoutJob {
     let mut job = LayoutJob::default();
     let med = theme::medium(12.5);
     let label_font = if ctx.fonts_mut(|f| f.families().contains(&med.family)) {
@@ -44,11 +44,7 @@ fn action_job(ctx: &Context, live: &Live, t: &Tokens) -> LayoutJob {
     } else {
         FontId::proportional(12.5)
     };
-    job.append(
-        live.toast.label,
-        0.0,
-        TextFormat::simple(label_font, t.accent),
-    );
+    job.append(live.toast.label, 0.0, TextFormat::simple(label_font, mark));
     if live.toast.label == "Undo" {
         let platform = ctx
             .data(|d| d.get_temp::<crate::platform::Platform>(egui::Id::new("toast-platform")))
@@ -69,9 +65,10 @@ fn action_job(ctx: &Context, live: &Live, t: &Tokens) -> LayoutJob {
 
 pub(super) fn measure(ctx: &Context, live: &Live, width: f32, t: &Tokens) -> Card {
     let font = FontId::proportional(t.text);
+    let (_, swatch) = look(live.toast.tone, t);
     let action = match live.toast.undo {
         Some(_) => {
-            let job = action_job(ctx, live, t);
+            let job = action_job(ctx, live, swatch.mark, t);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
             galley.size().x + 20.0
         }
@@ -95,16 +92,30 @@ pub(super) fn measure(ctx: &Context, live: &Live, width: f32, t: &Tokens) -> Car
     }
 }
 
-/// The tone's icon, its colour and the card's edge.
-fn look(tone: Tone, t: &Tokens) -> (Icon, Color32, Color32) {
-    match tone {
-        Tone::Info => (Icon::Done, t.accent, t.line),
-        Tone::Error => (Icon::Alert, t.danger, t.danger.gamma_multiply(0.5)),
-        Tone::Warning => {
-            let amber = crate::theme::caution(t);
-            (Icon::Alert, amber, amber.gamma_multiply(0.5))
-        }
-    }
+/// Theme-inflected semantic colours for one toast card.
+pub(super) struct Swatch {
+    pub mark: Color32,
+    pub fill: Color32,
+    pub listed: Color32,
+    pub edge: Color32,
+    pub soft: Color32,
+}
+
+/// The tone's icon and its theme-harmonised semantic swatch.
+pub(super) fn look(tone: Tone, t: &Tokens) -> (Icon, Swatch) {
+    let (icon, raw) = match tone {
+        Tone::Info => (Icon::Done, t.toast.info),
+        Tone::Warning => (Icon::Alert, t.toast.warning),
+        Tone::Error => (Icon::Alert, t.toast.error),
+    };
+    let swatch = Swatch {
+        mark: theme::color(raw.mark),
+        fill: theme::color(raw.fill),
+        listed: theme::color(raw.listed),
+        edge: theme::color(raw.edge),
+        soft: theme::color(raw.soft),
+    };
+    (icon, swatch)
 }
 
 /// How a card's body is drawn where it sits.
@@ -120,18 +131,18 @@ pub(super) enum Body {
 
 /// The card's body alone, as a toast behind the front one shows.
 pub(super) fn shell(ui: &Ui, rect: Rect, tone: Tone, body: Body, t: &Tokens) {
-    let (_, _, edge) = look(tone, t);
+    let (_, swatch) = look(tone, t);
     let radius = CornerRadius::from(t.radius_lg);
     let painter = ui.painter();
     let fill = match body {
-        Body::Front => t.surface,
-        Body::Behind => t.surface.lerp_to_gamma(t.ink, 0.07),
-        Body::Listed => t.card,
+        Body::Front => swatch.fill,
+        Body::Behind => swatch.fill.lerp_to_gamma(t.ink, 0.07),
+        Body::Listed => swatch.listed,
     };
     if body == Body::Front {
         painter.add(ui.style().visuals.popup_shadow.as_shape(rect, radius));
     }
-    let stroke = Stroke::new(1.0, edge);
+    let stroke = Stroke::new(1.0, swatch.edge);
     painter.rect(rect, radius, fill, stroke, StrokeKind::Inside);
 }
 
@@ -211,13 +222,19 @@ fn wash(tone: Tone, tint: Color32) -> Color32 {
 /// The time left, the mark, the words and the buttons.
 pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
-    let (icon, tint, _) = look(live.toast.tone, &t);
+    let (icon, swatch) = look(live.toast.tone, &t);
     let painter = ui.painter().clone();
     let left = live.remaining();
     if left > 0.0 && !live.listed {
         let inner = rect.shrink(1.0);
         let radius = t.radius_lg - 1.0;
-        countdown(&painter, inner, radius, wash(live.toast.tone, tint), left);
+        countdown(
+            &painter,
+            inner,
+            radius,
+            wash(live.toast.tone, swatch.mark),
+            left,
+        );
     }
     // Mark, words and buttons share the card's middle, however many lines.
     let middle = rect.center().y;
@@ -228,7 +245,7 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
     icon.paint(
         ui,
         Rect::from_center_size(mark.center(), Vec2::splat(MARK)),
-        tint,
+        swatch.mark,
     );
     let words = card.galley.size().y;
     let text = pos2(mark.right() + GAP, (middle - words / 2.0).round());
@@ -248,8 +265,8 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
         return;
     };
     let at = action_at(rect, card);
-    let button = Button::new(action_job(ui.ctx(), live, &t))
-        .fill(t.accent_soft)
+    let button = Button::new(action_job(ui.ctx(), live, swatch.mark, &t))
+        .fill(swatch.soft)
         .stroke(Stroke::NONE)
         .corner_radius(8);
     let pressed = ui.put(at, button).on_hover_cursor(CursorIcon::PointingHand);
@@ -259,5 +276,59 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
     if pressed.clicked() {
         out.push(Sent::Engine((**command).clone()));
         out.push(Sent::Ui(UiCommand::CloseToast(live.id)));
+    }
+}
+
+/// The compact pill above the read-aloud player, in its semantic swatch.
+pub(super) fn island(ui: &mut Ui, rect: Rect, live: &Live, t: &Tokens) {
+    let (icon, swatch) = look(live.toast.tone, t);
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(12),
+        swatch.fill,
+        Stroke::new(1.0, swatch.edge),
+        StrokeKind::Inside,
+    );
+    let center = pos2(rect.left() + 17.0, rect.center().y);
+    let mark = Rect::from_center_size(center, Vec2::splat(14.0));
+    icon.paint(ui, mark, swatch.mark);
+    ui.painter().text(
+        pos2(rect.left() + 30.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        &live.toast.message,
+        FontId::proportional(t.text_small),
+        t.ink,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mareader_appearance::{Appearance, BaseMode};
+
+    #[test]
+    fn tones_use_distinct_theme_inflected_swatches() {
+        let light = Tokens::new(&Appearance::default());
+        let sepia = Tokens::new(&Appearance {
+            tint_hue: 34,
+            tint_strength: 25,
+            ..Appearance::default()
+        });
+        let dark = Tokens::new(&Appearance {
+            base: BaseMode::Dark,
+            ..Appearance::default()
+        });
+        let (_, info) = look(Tone::Info, &light);
+        let (_, warn) = look(Tone::Warning, &light);
+        let (_, err) = look(Tone::Error, &light);
+        assert_ne!(info.mark, light.accent);
+        assert_ne!(info.fill, light.surface);
+        assert_ne!(info.mark, warn.mark);
+        assert_ne!(warn.mark, err.mark);
+        assert_ne!(info.mark, err.mark);
+        assert_ne!(info.fill, look(Tone::Info, &sepia).1.fill);
+        let mid = light.toward(&dark, 0.5);
+        assert_ne!(mid.toast, light.toast);
+        assert_ne!(mid.toast, dark.toast);
     }
 }

@@ -92,7 +92,7 @@ impl PageCopy {
                 self.reading = None;
                 return Some(Read {
                     text: String::new(),
-                    toast: Toast::info("Couldn't read those pages"),
+                    toast: Toast::error("Couldn't read those pages"),
                 });
             }
         };
@@ -100,7 +100,7 @@ impl PageCopy {
         if copied.text.is_empty() {
             return Some(Read {
                 text: String::new(),
-                toast: Toast::info("No text to copy on these pages"),
+                toast: Toast::warning("No text to copy on these pages"),
             });
         }
         let toast = Toast::info(match copied.pages {

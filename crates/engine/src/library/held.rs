@@ -53,7 +53,7 @@ impl State {
             other => (Some(other), false),
         };
         if dropped {
-            out.push(Out::Toast(Toast::info(HELD)));
+            out.push(Out::Toast(Toast::warning(HELD)));
         }
         action
     }
@@ -64,7 +64,7 @@ impl State {
         let n = picks.len();
         picks.retain(|p| !matches!(p, Pick::Book(b) if held.contains(b)));
         if picks.len() < n {
-            out.push(Out::Toast(Toast::info(HELD)));
+            out.push(Out::Toast(Toast::warning(HELD)));
         }
         picks
     }

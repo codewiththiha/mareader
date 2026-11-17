@@ -40,7 +40,7 @@ impl Session {
     /// Emits any queued page-AI notices as toast events.
     fn flush_page_ai_notes(&mut self) {
         for why in std::mem::take(&mut self.page_ai.notes) {
-            self.emit(Event::Toast(Toast::info(why)));
+            self.emit(Event::Toast(Toast::warning(why)));
         }
     }
 

@@ -96,7 +96,8 @@ impl MareaderApp {
     /// A service that refused to start says so, through the session's events.
     #[cfg(not(target_arch = "wasm32"))]
     fn refused(&mut self, what: &str, why: String) {
-        self.session.report(Toast::info(format!("{what}: {why}")));
+        self.session
+            .report(Toast::warning(format!("{what}: {why}")));
     }
 }
 

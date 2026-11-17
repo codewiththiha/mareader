@@ -203,7 +203,7 @@ impl Gather {
                     }
                     Err(TryRecvError::Empty) => return Ok(Progress::Reading),
                     Err(TryRecvError::Disconnected) => {
-                        return Err(Toast::info("Couldn't read those pages"));
+                        return Err(Toast::error("Couldn't read those pages"));
                     }
                 },
                 Stage::Levels { next } => {
@@ -213,7 +213,7 @@ impl Gather {
                     if !levels.ready() {
                         let why =
                             "Word levels aren't downloaded yet. Get them in Settings › Vocabulary.";
-                        return Err(Toast::info(why));
+                        return Err(Toast::warning(why));
                     }
                     let round = self.keys.get(*next..).unwrap_or_default();
                     let round = round
@@ -224,7 +224,7 @@ impl Gather {
                         if self.words.is_empty() {
                             let level = mareader_cefr::label(self.level);
                             let why = format!("No words above {level} on these pages");
-                            return Err(Toast::info(why));
+                            return Err(Toast::warning(why));
                         }
                         self.stage = Stage::Dictionary {
                             next: 0,

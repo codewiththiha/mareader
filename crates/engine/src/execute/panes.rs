@@ -108,7 +108,7 @@ fn auto_scroll(session: &mut Session, pane: PaneId, now: f64) {
     } else {
         note(
             session,
-            Toast::info("Auto-scroll runs in the scrolling views"),
+            Toast::warning("Auto-scroll runs in the scrolling views"),
         );
     }
 }

@@ -31,7 +31,7 @@ impl MareaderApp {
         };
         if let Some(why) = why {
             let note = format!("{why}, so it can't open again. Reading goes on.");
-            self.ui.toasts.push(Toast::info(note));
+            self.ui.toasts.push(Toast::warning(note));
             return;
         }
         let shelved = origin
