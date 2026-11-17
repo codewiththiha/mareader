@@ -149,20 +149,8 @@ fn pill(
         let layout = base_layout.with_main_align(align);
         let builder = egui::UiBuilder::new().max_rect(foot).layout(layout);
         ui.scope_builder(builder, |ui| {
-            let w = &mut ui.visuals_mut().widgets;
-            let stroke = Stroke::new(1.0, t.muted.gamma_multiply(0.45));
-            for s in [&mut w.inactive, &mut w.hovered, &mut w.active] {
-                s.corner_radius = CornerRadius::same(4);
-                s.bg_stroke = stroke;
-            }
-            if *remember {
-                w.inactive.bg_fill = t.accent;
-                w.inactive.bg_stroke = Stroke::NONE;
-                w.inactive.fg_stroke = Stroke::new(1.5, theme::ink_on(t.accent));
-            }
-            ui.add_space(4.0);
             let text = egui::RichText::new(rem_label).size(t.text_small);
-            ui.checkbox(remember, text.color(t.muted));
+            crate::widgets::checkbox(ui, remember, text.color(t.muted));
         });
     }
     answer

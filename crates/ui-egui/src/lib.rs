@@ -14,6 +14,7 @@ pub mod appearance_menu;
 pub mod backdrop;
 pub mod bookmarks;
 pub mod bubble;
+pub mod checkbox;
 pub mod control;
 pub mod crossfade;
 pub mod dial_deck;

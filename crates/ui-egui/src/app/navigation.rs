@@ -140,6 +140,7 @@ impl MareaderApp {
 
     /// Opens settings on `tab`; away from the books, only their tabs.
     pub(super) fn open_settings(&mut self, tab: Option<Tab>) {
+        self.ui.find.close();
         let route = self.route();
         let limited = route != Route::Reader && tab.is_none_or(Tab::beyond_books);
         let tab = match (route, tab) {

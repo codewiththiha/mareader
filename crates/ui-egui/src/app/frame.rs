@@ -47,6 +47,10 @@ impl eframe::App for MareaderApp {
         self.reader_overlay(ui, &ctx, route, docked_inset, &mut commands);
         let backdrop = self.bars(&ctx, route, &view, &mut commands);
         self.show_titlebar(&ctx, route, inset, overlay, &backdrop, &mut commands);
+        if self.ui.find.is_open() && egui::Popup::is_any_open(&ctx) {
+            self.ui.find.close();
+            ctx.request_repaint();
+        }
         self.lights(&ctx, route, inset, overlay, &mut commands);
         self.windows(&ctx, &mut commands);
         crate::z_order::enforce(&ctx);

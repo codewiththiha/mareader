@@ -400,7 +400,7 @@ impl PageAiUi {
         ui.horizontal(|ui| {
             ui.add_space(ui.spacing().button_padding.x);
             let label = RichText::new("Remember my choice").size(t.text_small);
-            ui.checkbox(&mut self.remember, label)
+            widgets::checkbox(ui, &mut self.remember, label)
                 .on_hover_text("Change it later in Settings › AI");
         });
         ui.add_space(2.0);

@@ -187,7 +187,7 @@ fn formats(ui: &mut Ui, opts: &mut Options, t: &Tokens) {
         for format in Format::ALL {
             let mut on = taken.contains(&format);
             let text = RichText::new(format.label()).color(t.ink);
-            if ui.checkbox(&mut on, text).changed() {
+            if widgets::checkbox(ui, &mut on, text).changed() {
                 match on {
                     true => taken.push(format),
                     false => taken.retain(|f| *f != format),
@@ -230,7 +230,13 @@ fn min_size(ui: &mut Ui, opts: &mut Options, t: &Tokens) {
 fn held(ui: &mut Ui, opts: &mut Options, inside: bool, t: &Tokens) {
     let text = RichText::new("Read books in place").color(t.ink);
     let hint = "Read from the folder instead of copying into the library.";
-    hinted(ui, 0, |ui| ui.checkbox(&mut opts.in_place, text), hint, t);
+    hinted(
+        ui,
+        0,
+        |ui| widgets::checkbox(ui, &mut opts.in_place, text),
+        hint,
+        t,
+    );
     if !opts.in_place {
         opts.watch = false;
         return;
@@ -240,7 +246,13 @@ fn held(ui: &mut Ui, opts: &mut Options, inside: bool, t: &Tokens) {
         true => "Only this subfolder is looked through again.",
         false => "Looked through again when the app opens or comes back.",
     };
-    hinted(ui, NEST, |ui| ui.checkbox(&mut opts.watch, text), hint, t);
+    hinted(
+        ui,
+        NEST,
+        |ui| widgets::checkbox(ui, &mut opts.watch, text),
+        hint,
+        t,
+    );
 }
 
 /// A checkbox or radio with a small line under its words.
@@ -252,9 +264,8 @@ fn hinted(ui: &mut Ui, indent: i8, add: impl FnOnce(&mut Ui) -> Response, hint: 
     Frame::new().inner_margin(nest).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 1.0;
         add(ui);
-        let words = ui.spacing().icon_width + ui.spacing().icon_spacing;
         let under = Margin {
-            left: words.round() as i8,
+            left: widgets::CHECKBOX_INDENT.round() as i8,
             ..Margin::ZERO
         };
         Frame::new()

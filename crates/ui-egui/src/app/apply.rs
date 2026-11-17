@@ -265,13 +265,23 @@ impl MareaderApp {
     fn reveal(&mut self, ctx: &Context, ui: UiCommand) {
         match ui {
             UiCommand::ShowAppearance => {
+                self.ui.find.close();
                 self.ui.titlebar.reveal();
                 egui::Popup::open_id(ctx, egui::Id::new(crate::titlebar::APPEARANCE_POPOVER));
             }
-            UiCommand::ShowViewMenu => self.show_view_menu(ctx),
+            UiCommand::ShowViewMenu => {
+                self.ui.find.close();
+                self.show_view_menu(ctx);
+            }
             UiCommand::ShowSettings => self.open_settings(None),
-            UiCommand::ShowShortcuts => crate::shortcuts::toggle(ctx),
-            UiCommand::ShowPalette => crate::palette::toggle(ctx),
+            UiCommand::ShowShortcuts => {
+                self.ui.find.close();
+                crate::shortcuts::toggle(ctx);
+            }
+            UiCommand::ShowPalette => {
+                self.ui.find.close();
+                crate::palette::toggle(ctx);
+            }
             UiCommand::CloseSettings => self.ui.settings_window.close(),
             UiCommand::FindStep { forward } => self.find_step(ctx, forward),
             UiCommand::ShowFind => self.show_find(ctx),
@@ -322,6 +332,7 @@ impl MareaderApp {
             // The page's own field is its find.
             (Route::Dictionary, _) => self.ui.dict.arrive(),
             (Route::Reader, Some(_)) => {
+                egui::Popup::close_all(ctx);
                 self.ui.find.open(self.active());
                 self.ui.titlebar.reveal();
             }

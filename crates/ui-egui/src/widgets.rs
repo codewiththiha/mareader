@@ -5,6 +5,7 @@ use egui::{
     Ui, Vec2, pos2, vec2,
 };
 
+pub use crate::checkbox::{CHECKBOX_INDENT, checkbox, checkbox_labeled};
 use crate::icons::Icon;
 use crate::icons::anim::{self, Act};
 pub use crate::input_field::{InputField, InputResponse, input, input_multiline};

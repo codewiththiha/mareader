@@ -1,6 +1,7 @@
 //! The AI models tab: saved models, their providers and keys.
 
-use super::model_picker::{add_key, model_row, provider_address};
+use super::model_picker::model_row;
+use super::provider_card::{add_key, provider_address};
 use super::{divider, group, note, row, section};
 use crate::icons::Icon;
 use crate::theme::Tokens;
@@ -992,22 +993,44 @@ mod tests {
             .finish(Reply::Models(Provider::Gemini, Ok(list)));
         h.step();
         h.step();
-        // Open the model editor and expand Choose: more than 2 rows visible.
+        // Open the model editor and click Choose: focuses input & lists all.
         h.get_by_label("Google Gemini · gemini-2.5-pro").click();
         h.step();
         h.step();
         h.get_by_label("Choose").click();
         h.step();
         h.step();
+        let field = h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Model");
+        assert!(field.is_focused(), "Choose focuses the model input");
         let first_y = h.get_by_label("gemini-2.5-pro").rect().top();
         let sixth_y = h.get_by_label("gemini-2.0-flash").rect().bottom();
-        assert!(sixth_y - first_y > 100.0, "Choose menu shows many rows");
-        h.get_by_label("gemini-2.5-flash").click();
+        assert!(sixth_y - first_y > 100.0, "Suggestions show many rows");
+        // Top suggestion starts selected; Down + Enter picks the second one.
+        h.key_press(egui::Key::ArrowDown);
+        h.step();
+        h.key_press(egui::Key::Enter);
         h.step();
         h.step();
         assert_eq!(
             h.state().ai.preset(id).map(|p| p.model.as_str()),
             Some("gemini-2.5-flash")
+        );
+        // Typing a partial model hides the missing-model error.
+        if let Some(p) = h.state_mut().ai.preset_mut(id) {
+            p.model = "gemma".into();
+        }
+        let field = h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Model");
+        field.click();
+        h.step();
+        h.step();
+        let gone = "gemma isn't on the server now; choose another.";
+        assert!(h.query_by_label(gone).is_none());
+        h.get_by_label("gemma-3-27b").click();
+        h.step();
+        h.step();
+        assert_eq!(
+            h.state().ai.preset(id).map(|p| p.model.as_str()),
+            Some("gemma-3-27b")
         );
     }
 }

@@ -201,6 +201,10 @@ impl FindBar {
         let Some(pane) = self.pane else {
             return;
         };
+        if egui::Popup::is_any_open(ctx) {
+            self.close();
+            return;
+        }
         let Some(rect) = panes.iter().find(|(p, _)| *p == pane).map(|(_, r)| *r) else {
             self.close();
             return;

@@ -29,6 +29,8 @@ mod highlights;
 mod model_picker;
 #[cfg(not(target_arch = "wasm32"))]
 mod models;
+#[cfg(not(target_arch = "wasm32"))]
+mod provider_card;
 mod read_aloud;
 mod updates;
 mod vocabulary;

@@ -296,3 +296,25 @@ fn the_search_button_toggles_the_find_bar() {
     h.run();
     assert!(!h.state().find().is_open(), "its own button closes it");
 }
+
+#[test]
+fn opening_a_menu_closes_the_find_bar() {
+    use egui_kittest::kittest::Queryable as _;
+    let mut h = reader(&[("pdf", "sample:5"), ("pinned", "true")]);
+    h.get_by_label("Search").click();
+    h.run();
+    assert!(h.state().find().is_open());
+
+    h.get_by_label("Appearance").click();
+    h.run_steps(4);
+    assert!(
+        !h.state().find().is_open(),
+        "opening a menu dismisses the find bar"
+    );
+
+    h.get_by_label("Search").click();
+    h.run_steps(4);
+    assert!(h.state().find().is_open());
+    let menu = egui::Id::new(mareader_ui_egui::titlebar::APPEARANCE_POPOVER);
+    assert!(!egui::Popup::is_id_open(&h.ctx, menu));
+}

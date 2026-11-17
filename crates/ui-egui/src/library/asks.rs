@@ -43,7 +43,7 @@ pub fn show(ui: &mut Ui, model: &Library, asks: &[&Question], t: &Tokens) -> Opt
     }
     if alike > 0 && matches!(kind, Kind::Held | Kind::Merge) {
         let label = format!("Apply to all {}", alike + 1);
-        ui.checkbox(&mut all, label)
+        crate::widgets::checkbox(ui, &mut all, label)
             .on_hover_text("Give every waiting question this same answer");
     }
     ui.add_space(6.0);
