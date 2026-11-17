@@ -16,6 +16,32 @@ const DWELL: f64 = 0.16;
 /// How much stronger the word under the pointer is drawn.
 const HOVER_LIFT: f32 = 0.2;
 
+/// The page's colour for CEFR band 1 (A1) through 6 (C2).
+pub fn level_color(band: u8) -> mareader_appearance::Rgb {
+    use mareader_appearance::Rgb;
+    match band {
+        1 => Rgb(0x5b, 0x8f, 0x3a),
+        2 => Rgb(0x7c, 0x9a, 0x2e),
+        3 => Rgb(0xc2, 0x8a, 0x12),
+        4 => Rgb(0xd0, 0x6a, 0x1c),
+        5 => Rgb(0xc2, 0x41, 0x2d),
+        _ => Rgb(0x9b, 0x2c, 0x5a),
+    }
+}
+
+/// Parses a CEFR label ("A1".."C2") into its band 1..=6.
+pub fn cefr_band(label: &str) -> Option<u8> {
+    match label {
+        "A1" => Some(1),
+        "A2" => Some(2),
+        "B1" => Some(3),
+        "B2" => Some(4),
+        "C1" => Some(5),
+        "C2" => Some(6),
+        _ => None,
+    }
+}
+
 /// How shading looks and acts in a pane, from the settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Look {

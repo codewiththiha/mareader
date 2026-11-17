@@ -95,20 +95,22 @@ fn look_up(session: &mut Session, pane: PaneId) {
         session.emit(Event::DictWindowFeed(word));
         return;
     }
-    // Its sentence, so the card can name the word's class there.
-    let context = session.documents().asked(pane).map(|a| a.context);
+    // Its sentence, so the card can name the word's class or ask AI.
+    let asked = session.documents().asked(pane);
+    let context = asked.as_ref().map(|a| a.context.as_str());
     session.clear_document_selection(pane);
     let to = session.settings().dictionary.default_lang.clone();
     let ticket = session.dict_ask(Query::LookUp {
         word: word.clone(),
         to,
     });
-    session.ask_role(&word, context.as_deref().unwrap_or(&word));
+    session.ask_role(&word, context.unwrap_or(&word));
     session.emit(Event::LookUpOpened {
         pane,
         word,
         ticket,
         spans,
+        asked,
     });
 }
 

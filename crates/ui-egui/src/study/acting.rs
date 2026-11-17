@@ -23,6 +23,7 @@ impl StudyUi {
             }
             Action::Close => {
                 self.card = None;
+                self.stash = None;
                 self.menu = None;
             }
             Action::SelectSeveral(pane, mark) => self.pick(pane, mark),

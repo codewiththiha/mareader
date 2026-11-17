@@ -3,10 +3,11 @@
 use egui::Rect;
 use mareader_cefr::Role;
 use mareader_engine::session::Session;
-use mareader_library::MarkId;
+use mareader_library::{BookId, MarkId};
 use mareader_workspace::PaneId;
 
 use super::{Card, Explained, StudyUi};
+use crate::word_card::TabSnapshot;
 use mareader_engine::study::state::Key;
 
 impl StudyUi {
@@ -60,6 +61,7 @@ impl StudyUi {
     ) {
         self.menu = None;
         self.note = None;
+        self.stash = None;
         self.card = Some(Card {
             pane,
             key,
@@ -68,6 +70,70 @@ impl StudyUi {
             at,
             seen: true,
             role: None,
+        });
+    }
+
+    /// Drops any stashed AI card.
+    pub fn clear_stash(&mut self) {
+        self.stash = None;
+    }
+
+    /// Stashes the open AI card so returning to AI in context is instant.
+    pub fn stash_for_tab(&mut self) -> Option<TabSnapshot> {
+        let card = self.card.take()?;
+        let snap = TabSnapshot {
+            pane: card.pane,
+            word: card.word.clone(),
+            context: card.context.clone(),
+            asked: None,
+            at: card.at,
+            role: card.role.clone(),
+            rect: self.card_rect,
+        };
+        self.stash = Some(card);
+        Some(snap)
+    }
+
+    /// Opens the AI tab from a Dictionary card, restoring any stashed card.
+    pub fn open_from_tab(
+        &mut self,
+        session: &mut Session,
+        book: Option<BookId>,
+        name: &str,
+        snap: TabSnapshot,
+        wall_ms: u64,
+    ) {
+        self.menu = None;
+        self.note = None;
+        let matches = |c: &Card| c.pane == snap.pane && c.word == snap.word && c.at == snap.at;
+        if let Some(mut card) = self.stash.take().filter(matches) {
+            if card.role.is_none() {
+                card.role = snap.role;
+            }
+            card.seen = true;
+            self.card_rect = snap.rect;
+            self.card = Some(card);
+            return;
+        }
+        let (key, word, context) = match snap.asked {
+            Some(asked) => {
+                let key = session.study_explain(book, name, &asked, wall_ms);
+                (key, asked.word, asked.context)
+            }
+            None => {
+                let key = session.study_explain_loose(&snap.word, &snap.context);
+                (key, snap.word, snap.context)
+            }
+        };
+        self.card_rect = snap.rect;
+        self.card = Some(Card {
+            pane: snap.pane,
+            key,
+            word,
+            context,
+            at: snap.at,
+            seen: true,
+            role: snap.role,
         });
     }
 
@@ -95,6 +161,7 @@ impl StudyUi {
         let (word, context) = words;
         self.menu = None;
         self.note = None;
+        self.stash = None;
         session.study_prepare_card(key, &word, &context);
         self.card = Some(Card {
             pane,

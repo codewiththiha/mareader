@@ -60,6 +60,13 @@ impl Session {
             .prepare_card(&mut self.library.model, wake, key, word, context);
     }
 
+    /// Starts an unanchored AI explanation for an open word card.
+    pub fn study_explain_loose(&mut self, word: &str, context: &str) -> Key {
+        let key = self.study.next_loose_key();
+        self.study_prepare_card(key, word, context);
+        key
+    }
+
     /// Retries a failed explanation lookup.
     pub fn study_retry(&mut self, key: Key, word: &str, context: &str) {
         let wake = Arc::clone(&self.waker);

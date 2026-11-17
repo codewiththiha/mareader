@@ -87,6 +87,7 @@ struct Note {
 #[derive(Default)]
 pub struct StudyUi {
     card: Option<Card>,
+    stash: Option<Card>,
     menu: Option<MarkMenu>,
     note: Option<Note>,
     /// Marks picked to remove together, in one pane.
@@ -198,6 +199,7 @@ impl StudyUi {
         }
         if self.card.is_some() || self.menu.is_some() {
             self.card = None;
+            self.stash = None;
             self.menu = None;
             return true;
         }
@@ -218,6 +220,11 @@ impl StudyUi {
         }
     }
 
+    fn drop_card(&mut self) {
+        self.card = None;
+        self.stash = None;
+    }
+
     /// After the panes: the card and the mark menu, over them.
     pub fn show(
         &mut self,
@@ -233,7 +240,7 @@ impl StudyUi {
         });
         let outside = |r: Option<Rect>| pressed.is_some_and(|p| !r.is_some_and(|r| r.contains(p)));
         if self.card.is_some() && outside(self.card_rect) {
-            self.card = None;
+            self.drop_card();
         }
         let room = |pane| panes.iter().find(|(p, _)| *p == pane).map(|(_, r)| *r);
         // A press elsewhere, or its words scrolled away, closes the menu.
@@ -256,7 +263,7 @@ impl StudyUi {
             .as_ref()
             .is_some_and(|c| !c.seen || room(c.pane).is_none())
         {
-            self.card = None;
+            self.drop_card();
         }
         let t = Tokens::get(ctx);
         self.card_rect = self.card.as_ref().and_then(|c| {

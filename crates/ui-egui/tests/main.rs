@@ -36,5 +36,8 @@ mod updates;
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod vocabulary;
 mod voice_models;
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod word_card;
 mod z_order;
 mod z_order_enforce;

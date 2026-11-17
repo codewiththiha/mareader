@@ -137,7 +137,12 @@ impl MareaderApp {
                 self.ui.documents.dismiss_read_markers(now);
             }
             Event::ReadAloudStarted { fresh } => self.ui.read_aloud.on_started(fresh),
-            Event::Study(action) => self.ui.study.act(&mut self.session, action),
+            Event::Study(action) => {
+                if action == mareader_engine::study::Action::Close {
+                    self.ui.dict.clear_stash();
+                }
+                self.ui.study.act(&mut self.session, action);
+            }
             Event::ExplainOpened { pane, key, asked } => {
                 self.ui.dict.escape();
                 let rect = self
@@ -153,16 +158,8 @@ impl MareaderApp {
                 word,
                 ticket,
                 spans,
-            } => {
-                // One card at a time.
-                self.ui.study.escape(&mut self.session);
-                let rect = self
-                    .documents()
-                    .spans_rect(pane, &spans)
-                    .unwrap_or(Rect::ZERO);
-                let offset = self.documents().offset(pane);
-                self.ui.dict.show_lookup(pane, word, ticket, rect, offset);
-            }
+                asked,
+            } => self.open_lookup(pane, word, ticket, &spans, asked),
             Event::DictWindowFeed(word) => {
                 self.ui.dict.escape();
                 self.ui.dict.feed(&word);
@@ -184,7 +181,12 @@ impl MareaderApp {
             }
             Event::DictWindow(window) => self.dict_window(window),
             Event::Pursue(word) => self.pursue(&word),
-            Event::Dict(action) => self.ui.dict.act(action),
+            Event::Dict(action) => {
+                if action == mareader_engine::dict::Action::CloseCard {
+                    self.ui.study.clear_stash();
+                }
+                self.ui.dict.act(action);
+            }
             #[cfg(not(target_arch = "wasm32"))]
             Event::Ai(job) => self.ui.ai.send(job),
             Event::Role { word, role } => {
@@ -210,6 +212,25 @@ impl MareaderApp {
         }
     }
 
+    fn open_lookup(
+        &mut self,
+        pane: PaneId,
+        word: String,
+        ticket: mareader_dict::Ticket,
+        spans: &[(usize, std::ops::Range<usize>)],
+        asked: Option<mareader_engine::study::words::Asked>,
+    ) {
+        self.ui.study.escape(&mut self.session);
+        let rect = self
+            .documents()
+            .spans_rect(pane, spans)
+            .unwrap_or(Rect::ZERO);
+        let offset = self.documents().offset(pane);
+        self.ui
+            .dict
+            .show_lookup(pane, word, ticket, rect, offset, asked);
+    }
+
     fn chrome(&mut self, ctx: &Context, ui: UiCommand) {
         match ui {
             UiCommand::ToggleSidebar => self.ui.sidebar.toggle(),
@@ -222,6 +243,13 @@ impl MareaderApp {
             UiCommand::Notify(toast) => self.ui.toasts.push(toast),
             UiCommand::CloseToast(id) => self.ui.toasts.close(id, ctx.input(|i| i.time)),
             UiCommand::ClearToasts => self.ui.toasts.clear(ctx.input(|i| i.time)),
+            UiCommand::WordCardMode(mode) => self.word_card_mode(mode),
+            UiCommand::WordCardSwapLang => {
+                if let Some(query) = self.ui.dict.swap_query() {
+                    let ticket = self.session.dict_ask(query);
+                    self.ui.dict.set_card_ticket(ticket);
+                }
+            }
             other => self.reveal(ctx, other),
         }
     }

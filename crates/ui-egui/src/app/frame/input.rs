@@ -87,6 +87,7 @@ impl MareaderApp {
                 ));
             }
         }
+        self.page_word_card(ctx);
         let read = commands.len();
         keymap::read(ctx, self.ui.platform, route, &mut commands);
         // The shortcut gives an idle open window the keys before closing it.
@@ -104,6 +105,27 @@ impl MareaderApp {
             }
         }
         (commands, route, outside)
+    }
+
+    fn page_word_card(&self, ctx: &Context) {
+        if self.ui.dict.card_entries() <= 1
+            || ctx.egui_wants_keyboard_input()
+            || egui::Popup::is_any_open(ctx)
+        {
+            return;
+        }
+        let step = ctx.input_mut(|i| {
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight) {
+                1
+            } else if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft) {
+                -1
+            } else {
+                0
+            }
+        });
+        if step != 0 {
+            self.ui.dict.step_page(ctx, step);
+        }
     }
 
     pub(super) fn escape(
@@ -149,6 +171,8 @@ impl MareaderApp {
             free = false;
         }
         if free && (self.ui.dict.escape() || self.ui.study.escape(&mut self.session)) {
+            self.ui.dict.clear_stash();
+            self.ui.study.clear_stash();
             free = false;
         }
         if free

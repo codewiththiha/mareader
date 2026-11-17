@@ -15,6 +15,7 @@ use mareader_dict::{Pack, Query, Reply, State, Ticket, WordMatch};
 use mareader_engine::dict::{Action, Service as DictService};
 use mareader_engine::read_aloud::state::{Offer, Speaker};
 use mareader_engine::session::Session;
+use mareader_engine::study::words::Asked;
 use mareader_settings::DictionarySettings;
 use mareader_workspace::PaneId;
 
@@ -34,6 +35,8 @@ fn bounds(rect: Rect) -> [f32; 4] {
 struct Card {
     pane: PaneId,
     word: String,
+    context: String,
+    asked: Option<Asked>,
     at: Rect,
     /// The pane's scroll when it opened; a scroll away closes it.
     offset: Option<Vec2>,
@@ -87,6 +90,7 @@ impl Voice {
 #[derive(Default)]
 pub struct DictUi {
     card: Option<Card>,
+    stash: Option<Card>,
     card_rect: Option<Rect>,
     page: page::Page,
     /// The floating window's rect mid-drag, and where it was drawn.
@@ -185,10 +189,18 @@ impl DictUi {
         ticket: Ticket,
         at: Rect,
         offset: Option<Vec2>,
+        asked: Option<Asked>,
     ) {
+        self.stash = None;
+        let context = asked
+            .as_ref()
+            .map(|a| a.context.clone())
+            .unwrap_or_default();
         self.card = Some(Card {
             pane,
             word,
+            context,
+            asked,
             at,
             offset,
             ticket,
@@ -198,31 +210,12 @@ impl DictUi {
         });
     }
 
-    /// Look up pressed: the card for `word` beside it, answered in the
-    /// default language.
-    pub fn look_up(
-        &mut self,
-        session: &mut Session,
-        pane: PaneId,
-        word: String,
-        at: Rect,
-        offset: Option<Vec2>,
-        to: Option<String>,
-    ) {
-        let query = Query::LookUp {
-            word: word.clone(),
-            to,
-        };
-        let ticket = session.dict_ask(query);
-        self.show_lookup(pane, word, ticket, at, offset);
-    }
-
     /// A rest on a shaded word opens its card, unless one was asked.
     pub fn rest(
         &mut self,
         session: &mut Session,
         pane: PaneId,
-        word: String,
+        (word, context): (String, String),
         at: Rect,
         offset: Option<Vec2>,
         to: Option<String>,
@@ -231,9 +224,15 @@ impl DictUi {
             Some(c) if !c.rest || (c.word == word && c.at == at) => return false,
             _ => {}
         }
-        self.look_up(session, pane, word, at, offset, to);
+        let query = Query::LookUp {
+            word: word.clone(),
+            to,
+        };
+        let ticket = session.dict_ask(query);
+        self.show_lookup(pane, word, ticket, at, offset, None);
         if let Some(card) = &mut self.card {
             card.rest = true;
+            card.context = context;
         }
         self.card_rect = None;
         true
@@ -278,12 +277,13 @@ impl DictUi {
 
     /// Escape: closes the card; false if none was open.
     pub fn escape(&mut self) -> bool {
+        self.stash = None;
         self.card.take().is_some()
     }
 
     pub fn act(&mut self, action: Action) {
         if action == Action::CloseCard {
-            self.card = None;
+            self.escape();
         }
     }
 
@@ -316,8 +316,8 @@ impl DictUi {
     /// Applies dictionary replies and pack changes; true if packs changed.
     pub fn receive(&mut self, changed: bool, replies: Vec<Reply>) -> bool {
         for reply in replies {
-            match &mut self.card {
-                Some(card) if card.ticket == reply.ticket => {
+            match (&mut self.card, &mut self.stash) {
+                (Some(card), _) | (_, Some(card)) if card.ticket == reply.ticket => {
                     let mut reply = reply;
                     if self.exact_only {
                         reply.entries.retain(|e| e.fit == WordMatch::Exact);
@@ -340,13 +340,13 @@ impl DictUi {
         ctx: &Context,
         attached: bool,
         (panes, heard): (&[(PaneId, Rect)], mareader_engine::sounds::Heard<'_>),
-        offset: impl Fn(PaneId) -> Option<Vec2>,
+        pane_info: impl Fn(PaneId) -> (Option<Vec2>, Option<usize>),
         out: &mut Commands,
     ) {
         let pressed = ctx.input(|i| i.pointer.press_origin().filter(|_| i.pointer.any_pressed()));
         let outside = pressed.is_some_and(|p| !self.card_rect.is_some_and(|r| r.contains(p)));
         let room = |pane| panes.iter().find(|(p, _)| *p == pane).map(|(_, r)| *r);
-        let moved = |c: &Card| match (c.offset, offset(c.pane)) {
+        let moved = |c: &Card| match (c.offset, pane_info(c.pane).0) {
             (Some(a), Some(b)) => (a - b).length() > 0.5,
             _ => false,
         };
@@ -356,18 +356,25 @@ impl DictUi {
             let near = self.card_rect.map_or(c.at, |r| r.union(c.at)).expand(LEAVE);
             c.rest && !pointer.is_some_and(|p| near.contains(p))
         };
-        if outside
-            || self
-                .card
-                .as_ref()
-                .is_some_and(|c| room(c.pane).is_none() || moved(c) || left(c))
-        {
+        let dismiss = self
+            .card
+            .as_ref()
+            .is_some_and(|c| outside || room(c.pane).is_none() || moved(c) || left(c));
+        if dismiss {
             self.card = None;
+            self.stash = None;
         }
         let t = Tokens::get(ctx);
         self.card_rect = self.card.as_ref().and_then(|c| {
             let speaker = self.card_speaker(c);
+            let page = c
+                .asked
+                .as_ref()
+                .map(|a| a.page)
+                .or_else(|| pane_info(c.pane).1);
             let view = card::View {
+                pane: c.pane,
+                page,
                 word: &c.word,
                 reply: c.reply.as_ref(),
                 role: c.role.as_ref(),

@@ -1,39 +1,25 @@
 //! The lookup card: one entry at a time, its caret on the words.
 
-use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Color32, Context, CornerRadius, Direction, Frame, Id, Label, Layout, Margin, Rect,
-    RichText, ScrollArea, Sense, Stroke, TextFormat, Ui, vec2,
+    Align, Context, CornerRadius, CursorIcon, FontId, Id, Layout, Margin, Rect, RichText,
+    ScrollArea, Sense, Ui, Vec2, WidgetInfo, WidgetType, pos2, vec2,
 };
 use mareader_cefr::Role;
-use mareader_dict::{Entry, Reply, language};
+use mareader_dict::{Entry, Pair, Query, Reply, Ticket, language};
+use mareader_engine::command::Command;
+use mareader_engine::dict::Action;
+use mareader_engine::settings::Tab;
+use mareader_workspace::PaneId;
 
 use super::entry;
 use crate::bubble::{Bubble, Side};
 use crate::icons::Icon;
-use crate::shaped;
-use crate::theme::{self, Tokens};
-use crate::ui_command::{Commands, Sent};
-use crate::widgets;
-use mareader_engine::command::Command;
-use mareader_engine::dict::Action;
-use mareader_engine::settings::Tab;
+use crate::theme::Tokens;
+use crate::ui_command::{Commands, Sent, UiCommand};
+use crate::{widgets, word_card};
 
-const WIDTH: f32 = 320.0;
-/// The word asked stays whole on up to this many lines, then ends in "…".
-const WORD_ROWS: usize = 3;
-/// Three header buttons and the air before them.
-const BUTTONS_W: f32 = 24.0 * 3.0 + 12.0;
-/// Up to this many entries page by dots; more, by a count.
-const DOTS_MAX: usize = 7;
-const DOT: f32 = 6.0;
-/// Room each section keeps from the card's sides, and above and below.
-const PAD: i8 = 14;
-const PAD_Y: i8 = 10;
-/// An entry taller than the card's room scrolls, never below this.
-const ENTRY_MIN: f32 = 96.0;
-/// The pager row under a word with several entries.
-const FOOT: f32 = 36.0;
+pub use crate::word_card::PURSUE;
+
 /// Wheel travel that turns to the next entry.
 const STEP: f32 = 24.0;
 /// A pause this long, in seconds, ends one flick of the wheel.
@@ -55,6 +41,8 @@ struct Pager {
 }
 
 pub struct View<'a> {
+    pub pane: PaneId,
+    pub page: Option<usize>,
     pub word: &'a str,
     /// None while the packs are asked.
     pub reply: Option<&'a Reply>,
@@ -71,13 +59,133 @@ pub struct View<'a> {
     pub speaker: Option<&'a mareader_engine::read_aloud::state::Speaker>,
 }
 
+/// Steps the open lookup card's pager by `delta` (`-1` or `+1`).
+pub fn step(ctx: &Context, word: &str, n: usize, delta: i32) {
+    if n <= 1 {
+        return;
+    }
+    let pager_id = word_card::bubble_id(word).with(n);
+    let mut p: Pager = ctx.data(|d| d.get_temp(pager_id)).unwrap_or_default();
+    let max = (n - 1) as i32;
+    let next = (p.at as i32 + delta).clamp(0, max) as usize;
+    if next != p.at {
+        p.at = next;
+        p.edges = (true, true);
+        ctx.data_mut(|d| d.insert_temp(pager_id, p));
+        ctx.request_repaint();
+    }
+}
+
+impl super::DictUi {
+    /// Drops any stashed lookup card.
+    pub fn clear_stash(&mut self) {
+        self.stash = None;
+    }
+
+    /// Number of entries currently on the open lookup card.
+    pub fn card_entries(&self) -> usize {
+        self.card
+            .as_ref()
+            .and_then(|c| c.reply.as_ref())
+            .map_or(0, |r| r.entries.len())
+    }
+
+    /// Steps the open lookup card's pager by `delta` (`-1` or `+1`).
+    pub fn step_page(&self, ctx: &Context, delta: i32) {
+        if let Some(c) = &self.card {
+            step(ctx, &c.word, self.card_entries(), delta);
+        }
+    }
+
+    /// Stashes the open lookup card so switching back to Dictionary is instant.
+    pub fn stash_for_tab(&mut self) -> Option<word_card::TabSnapshot> {
+        let mut card = self.card.take()?;
+        card.rest = false;
+        let snap = word_card::TabSnapshot {
+            pane: card.pane,
+            word: card.word.clone(),
+            context: card.context.clone(),
+            asked: card.asked.clone(),
+            at: card.at,
+            role: card.role.clone(),
+            rect: self.card_rect,
+        };
+        self.stash = Some(card);
+        Some(snap)
+    }
+
+    /// Restores a stashed lookup card matching `snap`; false if none fits.
+    pub fn restore_from_tab(
+        &mut self,
+        snap: &word_card::TabSnapshot,
+        offset: Option<Vec2>,
+    ) -> bool {
+        let same = |c: &super::Card| c.pane == snap.pane && c.word == snap.word && c.at == snap.at;
+        let Some(mut card) = self.stash.take().filter(same) else {
+            return false;
+        };
+        if card.role.is_none() {
+            card.role = snap.role.clone();
+        }
+        card.offset = offset;
+        self.card_rect = snap.rect;
+        self.card = Some(card);
+        true
+    }
+
+    /// Opens the Dictionary tab for `snap` with an already-submitted `ticket`.
+    pub fn open_tab_lookup(
+        &mut self,
+        snap: word_card::TabSnapshot,
+        ticket: Ticket,
+        offset: Option<Vec2>,
+    ) {
+        self.card_rect = snap.rect;
+        self.card = Some(super::Card {
+            pane: snap.pane,
+            word: snap.word,
+            context: snap.context,
+            asked: snap.asked,
+            at: snap.at,
+            offset,
+            ticket,
+            reply: None,
+            rest: false,
+            role: snap.role,
+        });
+    }
+
+    /// Builds a reversed-pair search query for the open lookup card.
+    pub fn swap_query(&self) -> Option<Query> {
+        let card = self.card.as_ref()?;
+        let reply = card.reply.as_ref()?;
+        let (from, to) = (reply.from.as_ref()?, reply.to.as_ref()?);
+        let pair = Pair {
+            from: Some(to.clone()),
+            to: Some(from.clone()),
+        };
+        Some(Query::Search {
+            text: card.word.clone(),
+            pair: Some(pair),
+            pack: None,
+        })
+    }
+
+    /// Updates the open lookup card's pending dictionary query ticket.
+    pub fn set_card_ticket(&mut self, ticket: Ticket) {
+        if let Some(card) = &mut self.card {
+            card.ticket = ticket;
+        }
+    }
+}
+
 pub fn show(ctx: &Context, view: &View<'_>, t: &Tokens, out: &mut Commands) -> Rect {
-    let id = Id::new((CARD, view.word));
+    let id = word_card::bubble_id(view.word);
     let bubble = Bubble {
         id,
         at: view.at,
         room: view.room,
-        width: WIDTH,
+        width: word_card::WIDTH,
         margin: Margin::ZERO,
         snug: false,
         prefer: Side::Below,
@@ -90,35 +198,53 @@ pub fn show(ctx: &Context, view: &View<'_>, t: &Tokens, out: &mut Commands) -> R
 fn card(ui: &mut Ui, id: Id, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Commands) {
     ui.spacing_mut().item_spacing.y = 0.0;
     let top = ui.cursor().top();
-    let way = view.reply.and_then(|r| match (&r.from, &r.to) {
-        (Some(from), Some(to)) => Some(format!("{} → {}", language(from), language(to))),
-        _ => None,
+    let (class, level) = class_and_level(view.role, shown_entry(ui, id, view));
+    let say = view.speaker.map(|s| word_card::Say {
+        saying: view.saying,
+        voice: s.voice.as_deref(),
     });
-    let class = Class::of(view.role, shown_entry(ui, id, view));
-    header(ui, view, (way.as_deref(), &class), t, out);
-    rule(ui, t);
+    let head = word_card::Header {
+        word: view.word,
+        class: &class,
+        level,
+        sound: view.sound,
+        say,
+        mode: word_card::Mode::Dictionary,
+        close: Command::Dict(Action::CloseCard),
+    };
+    word_card::header(ui, &head, t, out);
+    word_card::rule(ui, t);
     let Some(reply) = view.reply else {
-        section(ui, |ui| muted(ui, t, "Looking up…"));
+        word_card::section(ui, word_card::PAD_Y, |ui| muted(ui, t, "Looking up…"));
+        word_card::rule(ui, t);
+        footer(ui, view, None, (&mut Pager::default(), 0), t, out);
         return;
     };
+    let pair = reply.from.as_deref().zip(reply.to.as_deref());
     let n = reply.entries.len();
     let pager_id = id.with(n);
     let mut p: Pager = ui.data(|d| d.get_temp(pager_id)).unwrap_or_default();
     p.at = p.at.min(n.saturating_sub(1));
     let Some(e) = reply.entries.get(p.at).filter(|_| view.attached) else {
-        section(ui, |ui| empty(ui, view, reply, t, out));
+        word_card::section(ui, word_card::PAD_Y, |ui| {
+            if pair.is_some() {
+                lang_row(ui, None, pair, t, out);
+                ui.add_space(4.0);
+            }
+            empty(ui, view, reply, t, out);
+        });
+        word_card::rule(ui, t);
+        footer(ui, view, None, (&mut p, 0), t, out);
         return;
     };
-    let paged = n > 1;
-    let used = ui.cursor().top() - top + f32::from(PAD_Y) * 2.0;
-    let list = (cap - used - if paged { FOOT } else { 0.0 }).max(ENTRY_MIN);
-    section(ui, |ui| body(ui, view.word, e, (&mut p, list), t));
-    if paged {
-        rule(ui, t);
-        footer(ui, &mut p, n, t);
-    }
-    let wheel = wheel_over(ui.ctx(), id);
-    turn(&mut p, n, wheel, ui.input(|i| i.time));
+    let used = ui.cursor().top() - top + f32::from(word_card::PAD_Y) * 2.0 + word_card::FOOT;
+    let list = (cap - used).max(word_card::BODY_MIN);
+    word_card::section(ui, word_card::PAD_Y, |ui| {
+        body(ui, view.word, e, pair, (&mut p, list), t, out);
+    });
+    word_card::rule(ui, t);
+    footer(ui, view, Some(e), (&mut p, n), t, out);
+    turn(&mut p, n, wheel_over(ui.ctx(), id), ui.input(|i| i.time));
     ui.data_mut(|d| d.insert_temp(pager_id, p));
 }
 
@@ -130,190 +256,25 @@ fn shown_entry<'a>(ui: &Ui, id: Id, view: &View<'a>) -> Option<&'a Entry> {
     reply.entries.get(p.at.min(n.saturating_sub(1)))
 }
 
-/// The word's class beside it, as the AI card shows it, and its level.
-#[derive(Default)]
-struct Class {
-    name: String,
-    level: Option<&'static str>,
-}
-
-impl Class {
-    /// The tagger's, read in the sentence; else the entry's own tags.
-    fn of(role: Option<&Role>, entry: Option<&Entry>) -> Self {
-        match (role, entry) {
-            (Some(r), _) => Self {
-                name: r.class().to_owned(),
-                level: r.cefr(),
-            },
-            (None, Some(e)) => Self {
-                name: e.tags(),
-                level: None,
-            },
-            (None, None) => Self::default(),
-        }
+/// The word's class and CEFR level: tagger first, else the entry's tags.
+fn class_and_level(role: Option<&Role>, entry: Option<&Entry>) -> (String, Option<&'static str>) {
+    match (role, entry) {
+        (Some(r), _) => (r.class().to_owned(), r.cefr()),
+        (None, Some(e)) => (e.tags(), None),
+        (None, None) => (String::new(), None),
     }
-
-    fn name(&self, t: &Tokens) -> RichText {
-        RichText::new(&self.name)
-            .size(t.text)
-            .italics()
-            .color(t.muted)
-    }
-
-    fn level(level: &str, t: &Tokens) -> RichText {
-        let text = RichText::new(level).size(t.text_small).strong();
-        text.color(t.muted)
-    }
-
-    /// Its width on one line, to keep room for it beside the word.
-    fn width(&self, ui: &Ui, t: &Tokens) -> f32 {
-        // Each part's space before it, plus a point to spare.
-        let gap = 7.0;
-        let wide = |text: &str, size: f32| {
-            let font = egui::FontId::proportional(size);
-            ui.painter()
-                .layout_no_wrap(text.to_owned(), font, t.muted)
-                .size()
-                .x
-                + gap
-        };
-        let name = (!self.name.is_empty()).then(|| wide(&self.name, t.text));
-        let level = self.level.map(|l| wide(l, t.text_small));
-        name.unwrap_or(0.0) + level.unwrap_or(0.0)
-    }
-
-    fn show(&self, ui: &mut Ui, t: &Tokens) {
-        if !self.name.is_empty() {
-            ui.add_space(6.0);
-            ui.add(Label::new(self.name(t)).selectable(false));
-        }
-        if let Some(level) = self.level {
-            ui.add_space(6.0);
-            let r = ui.add(Label::new(Self::level(level, t)).selectable(false));
-            widgets::tip(&r, "This sense's CEFR level", None);
-        }
-    }
-}
-
-/// The button carrying the card's word into the Dictionary.
-pub const PURSUE: &str = "Open in the Dictionary";
-
-/// The word large and whole, its buttons, and the languages under it.
-fn header(
-    ui: &mut Ui,
-    view: &View<'_>,
-    (way, class): (Option<&str>, &Class),
-    t: &Tokens,
-    out: &mut Commands,
-) {
-    let word = view.word;
-    let margin = Margin {
-        left: PAD,
-        right: 8,
-        top: 10,
-        bottom: 10,
-    };
-    Frame::new().inner_margin(margin).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 6.0;
-        let room = (ui.available_width() - BUTTONS_W - class.width(ui, t)).max(60.0);
-        let headword = Headword::new(ui, word, room, t);
-        // One line sits level with the buttons; more hang from the top.
-        let align = if headword.rows() > 1 {
-            Align::Min
-        } else {
-            Align::Center
-        };
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            ui.with_layout(Layout::right_to_left(align), |ui| {
-                if widgets::small_icon_button(ui, Icon::Close, "Close").clicked() {
-                    out.push(Sent::Engine(Command::Dict(Action::CloseCard)));
-                }
-                if widgets::small_icon_button(ui, Icon::Dictionary, PURSUE).clicked() {
-                    out.push(Sent::Engine(Command::Dict(Action::Pursue(word.to_owned()))));
-                }
-                if let Some(s) = view.speaker {
-                    let voice = s.voice.as_deref();
-                    crate::read_aloud::say_button(ui, word, (view.saying, voice), out);
-                }
-                ui.with_layout(Layout::left_to_right(align), |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    // Its own scope, so a width it sets leaves the class room.
-                    ui.scope(|ui| headword.show(ui, t));
-                    class.show(ui, t);
-                });
-            });
-        });
-        crate::sounds::show(ui, view.sound, t);
-        if let Some(way) = way {
-            languages(ui, way, t);
-        }
-    });
-}
-
-/// The word asked, laid out for the header.
-enum Headword<'a> {
-    /// Burmese and its kin, shaped on drawing.
-    Shaped(&'a str, f32),
-    Laid(&'a str, std::sync::Arc<egui::Galley>),
-}
-
-impl<'a> Headword<'a> {
-    /// `word` laid out within `room`.
-    fn new(ui: &Ui, word: &'a str, room: f32, t: &Tokens) -> Self {
-        if shaped::needs_shaping(word) {
-            return Self::Shaped(word, room);
-        }
-        let font = theme::medium(t.text * 1.3);
-        let mut job = LayoutJob::single_section(word.to_owned(), TextFormat::simple(font, t.ink));
-        job.wrap = TextWrapping {
-            max_width: room,
-            max_rows: WORD_ROWS,
-            break_anywhere: false,
-            overflow_character: Some('…'),
-        };
-        Self::Laid(word, ui.painter().layout_job(job))
-    }
-
-    fn rows(&self) -> usize {
-        match self {
-            Self::Shaped(..) => 1,
-            Self::Laid(_, galley) => galley.rows.len(),
-        }
-    }
-
-    fn show(self, ui: &mut Ui, t: &Tokens) {
-        match self {
-            Self::Shaped(word, room) => {
-                ui.set_max_width(room);
-                shaped::label(ui, word, t.text * 1.15, t.ink);
-            }
-            Self::Laid(word, galley) => {
-                let cut = galley.rows.len() >= WORD_ROWS;
-                let shown = ui.add(Label::new(galley).selectable(false));
-                if cut {
-                    shown.on_hover_text(word);
-                }
-            }
-        }
-    }
-}
-
-/// "English → Burmese" in a quiet pill under the word.
-fn languages(ui: &mut Ui, way: &str, t: &Tokens) {
-    Frame::new()
-        .fill(t.ink.gamma_multiply(0.07))
-        .corner_radius(CornerRadius::same(255))
-        .inner_margin(Margin::symmetric(8, 2))
-        .show(ui, |ui| {
-            let text = RichText::new(way).size(t.text_small * 0.95);
-            ui.add(Label::new(text.color(t.muted)).selectable(false));
-        });
 }
 
 /// The entry turned to, scrolling only when taller than the room.
-fn body(ui: &mut Ui, asked: &str, e: &Entry, (p, list): (&mut Pager, f32), t: &Tokens) {
-    // Only an entry that scrolls gives its bar the room.
+fn body(
+    ui: &mut Ui,
+    asked: &str,
+    e: &Entry,
+    pair: Option<(&str, &str)>,
+    (p, list): (&mut Pager, f32),
+    t: &Tokens,
+    out: &mut Commands,
+) {
     let scrolls_id = Id::new((CARD, asked, p.at, "scrolls"));
     let scrolls = ui.data(|d| d.get_temp::<bool>(scrolls_id).unwrap_or(false));
     let shown = ScrollArea::vertical()
@@ -325,10 +286,10 @@ fn body(ui: &mut Ui, asked: &str, e: &Entry, (p, list): (&mut Pager, f32), t: &T
                 super::page::clear_of_bar(ui);
             }
             ui.spacing_mut().item_spacing.y = 4.0;
-            if let Some(word) = entry::near(e, asked) {
-                entry::heading(ui, word, t);
+            let near = entry::near(e, asked);
+            if near.is_some() || pair.is_some() {
+                lang_row(ui, near, pair, t, out);
             }
-            // The class sits by the word, as on the AI card.
             entry::rows(ui, e, t, false);
         });
     let room = (shown.content_size.y - shown.inner_rect.height()).max(0.0);
@@ -337,67 +298,121 @@ fn body(ui: &mut Ui, asked: &str, e: &Entry, (p, list): (&mut Pager, f32), t: &T
     p.edges = (off <= 0.5, off >= room - 0.5);
 }
 
-/// Dots, or "2 of 9", between the arrows: one entry at a time.
-fn footer(ui: &mut Ui, p: &mut Pager, n: usize, t: &Tokens) {
-    Frame::new()
-        .inner_margin(Margin::symmetric(8, 5))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                let back = ui.add_enabled_ui(p.at > 0, |ui| {
-                    widgets::small_icon_button(ui, Icon::ChevronLeft, "Previous entry").clicked()
+/// Near lemma on the left, compact swappable language pair on the right.
+fn lang_row(
+    ui: &mut Ui,
+    near: Option<&str>,
+    pair: Option<(&str, &str)>,
+    t: &Tokens,
+    out: &mut Commands,
+) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if let Some((from, to)) = pair {
+                lang_swap_pill(ui, from, to, t, out);
+            }
+            if let Some(word) = near {
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    entry::heading(ui, word, t);
                 });
-                let middle = vec2(ui.available_width() - 24.0, 24.0);
-                let centred = Layout::centered_and_justified(Direction::LeftToRight);
-                ui.allocate_ui_with_layout(middle, centred, |ui| {
-                    if n <= DOTS_MAX {
-                        dots(ui, p, n, t);
-                    } else {
-                        let count = format!("{} of {n}", p.at + 1);
-                        ui.label(RichText::new(count).size(t.text_small).color(t.muted));
-                    }
-                });
-                let next = ui.add_enabled_ui(p.at + 1 < n, |ui| {
-                    widgets::small_icon_button(ui, Icon::ChevronRight, "Next entry").clicked()
-                });
-                if back.inner {
-                    p.at = p.at.saturating_sub(1);
-                }
-                if next.inner {
-                    p.at += 1;
-                }
-            });
+            }
         });
+    });
 }
 
-/// A dot per entry, the shown one long and accented; a click turns.
-fn dots(ui: &mut Ui, p: &mut Pager, n: usize, t: &Tokens) {
-    let gap = DOT * 1.2;
-    let long = DOT * 2.6;
-    let width = long + (n.saturating_sub(1)) as f32 * (DOT + gap);
-    let row = Rect::from_center_size(ui.max_rect().center(), vec2(width, DOT * 3.0));
-    let response = ui.allocate_rect(row, Sense::hover());
-    let label = format!("Entry {} of {n}", p.at + 1);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &label));
-    let mut x = row.left();
-    for i in 0..n {
-        let w = if i == p.at { long } else { DOT };
-        let dot = Rect::from_min_size(egui::pos2(x, row.center().y - DOT / 2.0), vec2(w, DOT));
-        let hit = ui.interact(
-            dot.expand(gap / 2.0),
-            ui.id().with(("dot", i)),
-            Sense::click(),
-        );
-        let fill: Color32 = match (i == p.at, hit.hovered()) {
-            (true, _) => t.accent,
-            (false, true) => t.muted,
-            (false, false) => t.muted.gamma_multiply(0.45),
-        };
-        ui.painter().rect_filled(dot, CornerRadius::same(255), fill);
-        if hit.clicked() {
-            p.at = i;
-        }
-        x += w + gap;
+/// Compact `EN ⇄ FR` pill that swaps source and target languages on click.
+fn lang_swap_pill(ui: &mut Ui, from: &str, to: &str, t: &Tokens, out: &mut Commands) {
+    let font = FontId::proportional(t.text_small * 0.92);
+    let left = ui
+        .painter()
+        .layout_no_wrap(from.to_ascii_uppercase(), font.clone(), t.muted);
+    let right = ui
+        .painter()
+        .layout_no_wrap(to.to_ascii_uppercase(), font, t.muted);
+    let (icon_w, gap, pad_x) = (11.0, 4.0, 6.0);
+    let width = pad_x * 2.0 + left.size().x + gap * 2.0 + icon_w + right.size().x;
+    let height = (left.size().y.max(right.size().y) + 4.0).max(18.0);
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, height), Sense::click());
+    let fill = if resp.hovered() {
+        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+        t.hover
+    } else {
+        t.ink.gamma_multiply(0.06)
+    };
+    let ink = if resp.hovered() { t.ink } else { t.muted };
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(4), fill);
+    let (mut x, cy) = (rect.left() + pad_x, rect.center().y);
+    let lw = left.size().x;
+    p.galley(pos2(x, cy - left.size().y * 0.5), left, ink);
+    x += lw + gap;
+    let icon_rect = Rect::from_center_size(pos2(x + icon_w * 0.5, cy), Vec2::splat(icon_w));
+    Icon::Swap.paint(ui, icon_rect, ink);
+    x += icon_w + gap;
+    ui.painter()
+        .galley(pos2(x, cy - right.size().y * 0.5), right, ink);
+    let way = format!("{} → {}", language(from), language(to));
+    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &way));
+    let tip = format!("{way} — swap languages");
+    widgets::tip(&resp, &tip, None);
+    if resp.clicked() {
+        out.push(Sent::Ui(UiCommand::WordCardSwapLang));
+    }
+}
+
+/// Compact footer: `< 1 of N >` pager on the left, actions on the right.
+fn footer(
+    ui: &mut Ui,
+    view: &View<'_>,
+    shown: Option<&Entry>,
+    (p, n): (&mut Pager, usize),
+    t: &Tokens,
+    out: &mut Commands,
+) {
+    word_card::footer_frame(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                word_card::pursue_button(ui, view.word, out);
+                if let Some(e) = shown {
+                    word_card::copy_button(ui, e.answer(), "Copy translation", out);
+                }
+                if let Some(page) = view.page {
+                    let close = Command::Dict(Action::CloseCard);
+                    word_card::word_list_button(ui, view.pane, page, close, t, out);
+                }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    if n > 1 {
+                        pager(ui, p, n, t);
+                    }
+                });
+            });
+        });
+    });
+}
+
+/// Compact `< 1 of N >` numeric pager.
+fn pager(ui: &mut Ui, p: &mut Pager, n: usize, t: &Tokens) {
+    let back = ui.add_enabled_ui(p.at > 0, |ui| {
+        widgets::small_icon_button(ui, Icon::ChevronLeft, "Previous entry").clicked()
+    });
+    let text = format!("{} of {n}", p.at + 1);
+    let r = ui.add(
+        egui::Label::new(RichText::new(&text).size(t.text_small).color(t.muted)).selectable(false),
+    );
+    let accessible = format!("Entry {} of {n}", p.at + 1);
+    r.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &accessible));
+    widgets::tip(&r, "Use ← / → or scroll to switch entries", None);
+    let next = ui.add_enabled_ui(p.at + 1 < n, |ui| {
+        widgets::small_icon_button(ui, Icon::ChevronRight, "Next entry").clicked()
+    });
+    if back.inner {
+        p.at = p.at.saturating_sub(1);
+    }
+    if next.inner {
+        p.at += 1;
     }
 }
 
@@ -418,23 +433,6 @@ fn empty(ui: &mut Ui, view: &View<'_>, reply: &Reply, t: &Tokens, out: &mut Comm
         };
         muted(ui, t, &why);
     }
-}
-
-/// A padded block across the card.
-fn section(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
-    Frame::new()
-        .inner_margin(Margin::symmetric(PAD, PAD_Y))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            add(ui);
-        });
-}
-
-/// A hairline from edge to edge.
-fn rule(ui: &mut Ui, t: &Tokens) {
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter()
-        .hline(r.x_range(), r.center().y, Stroke::new(1.0, t.line));
 }
 
 fn muted(ui: &mut Ui, t: &Tokens, text: &str) {

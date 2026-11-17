@@ -100,12 +100,55 @@ impl MareaderApp {
         }
         let offset = self.documents().offset(pane);
         let to = self.settings().dictionary.default_lang.clone();
-        if self
-            .ui
-            .dict
-            .rest(&mut self.session, pane, word.clone(), at, offset, to)
-        {
+        if self.ui.dict.rest(
+            &mut self.session,
+            pane,
+            (word.clone(), context.clone()),
+            at,
+            offset,
+            to,
+        ) {
             self.session.ask_role(&word, &context);
+        }
+    }
+
+    /// Switches the open word card in place between Dictionary and AI.
+    pub(super) fn word_card_mode(&mut self, mode: crate::word_card::Mode) {
+        match mode {
+            crate::word_card::Mode::Ai => {
+                let Some(snap) = self.ui.dict.stash_for_tab() else {
+                    return;
+                };
+                let pane = snap.pane;
+                let book = self.book_in(pane);
+                let name = self
+                    .session
+                    .documents()
+                    .title(pane)
+                    .unwrap_or_default()
+                    .to_owned();
+                let wall_ms = mareader_engine::library::wall_ms();
+                self.ui
+                    .study
+                    .open_from_tab(&mut self.session, book, &name, snap, wall_ms);
+                self.ask_role();
+            }
+            crate::word_card::Mode::Dictionary => {
+                let Some(snap) = self.ui.study.stash_for_tab() else {
+                    return;
+                };
+                let offset = self.documents().offset(snap.pane);
+                if self.ui.dict.restore_from_tab(&snap, offset) {
+                    return;
+                }
+                let to = self.settings().dictionary.default_lang.clone();
+                let query = mareader_dict::Query::LookUp {
+                    word: snap.word.clone(),
+                    to,
+                };
+                let ticket = self.session.dict_ask(query);
+                self.ui.dict.open_tab_lookup(snap, ticket, offset);
+            }
         }
     }
 }

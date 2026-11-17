@@ -120,6 +120,10 @@ pub enum UiCommand {
     ShowViewMenu,
     ToggleSidebar,
     Window(WindowCommand),
+    /// Switches the open word card between Dictionary and AI in context.
+    WordCardMode(crate::word_card::Mode),
+    /// Swaps the open Dictionary card's source and target languages.
+    WordCardSwapLang,
 }
 
 /// The frame's command queue, handed to every view.
@@ -150,7 +154,9 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::CloseSidebar
         | U::ShowSearch
         | U::Chromeless
-        | U::FindStep { .. } => true,
+        | U::FindStep { .. }
+        | U::WordCardMode(_)
+        | U::WordCardSwapLang => true,
         // Settings, menus and pages open over any page.
         U::ShowSettings
         | U::ShowShortcuts

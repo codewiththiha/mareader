@@ -299,14 +299,7 @@ impl Under {
     /// A graded vocabulary mark, with a non-colour cue to its level.
     pub fn level_mark(&mut self, r: Rect, band: u8, style: mareader_settings::CefrMark, lift: f32) {
         use mareader_settings::CefrMark;
-        let color = match band {
-            1 => Rgb(0x5b, 0x8f, 0x3a),
-            2 => Rgb(0x7c, 0x9a, 0x2e),
-            3 => Rgb(0xc2, 0x8a, 0x12),
-            4 => Rgb(0xd0, 0x6a, 0x1c),
-            5 => Rgb(0xc2, 0x41, 0x2d),
-            _ => Rgb(0x9b, 0x2c, 0x5a),
-        };
+        let color = crate::vocab::level_color(band);
         match style {
             CefrMark::Wash => {
                 let strength = 0.12 + f32::from(band.min(6)) * 0.025 + lift;

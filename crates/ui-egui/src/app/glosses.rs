@@ -362,13 +362,13 @@ impl MareaderApp {
             .word_window
             .show(ctx, &settings, (&mut self.session, &self.ui.files), out);
         let docs = self.ui.documents.as_view(self.session.documents());
-        let offset = |pane| docs.offset(pane);
+        let pane_info = |pane| (docs.offset(pane), docs.current(pane));
         let saying = self.session.read_aloud().saying();
         let heard = mareader_engine::sounds::Heard { saying, sounds };
         let attached = self.session.dict().attached();
         self.ui
             .dict
-            .show(ctx, attached, (&self.ui.pane_rects, heard), offset, out);
+            .show(ctx, attached, (&self.ui.pane_rects, heard), pane_info, out);
     }
 }
 

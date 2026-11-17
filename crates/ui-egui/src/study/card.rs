@@ -1,9 +1,11 @@
-//! The word card and the mark menu.
+//! The AI word card and the mark menu.
 
 use egui::{
     Align, Align2, Context, Frame, Id, Layout, Margin, Rect, RichText, ScrollArea, Stroke, Ui, vec2,
 };
 use mareader_cefr::Role;
+use mareader_engine::command::Command;
+use mareader_engine::study::Action;
 use mareader_library::{MarkId, Style};
 use mareader_settings::{GlossDensity, HighlightSettings};
 use mareader_study::{Failure, WordInfo};
@@ -14,11 +16,7 @@ use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::z_order::{self, Tier};
-use crate::{motion, widgets};
-use mareader_engine::command::Command;
-use mareader_engine::study::Action;
-
-const WIDTH: f32 = 320.0;
+use crate::{motion, widgets, word_card};
 
 pub enum Answer<'a> {
     Waiting,
@@ -47,73 +45,68 @@ pub struct View<'a> {
 
 /// Draws the card under or over its word, pointing at it.
 pub fn show(ctx: &Context, view: &View<'_>, t: &Tokens, out: &mut Commands) -> Rect {
-    let comfy = view.density == GlossDensity::Comfortable;
+    let id = word_card::bubble_id(view.word);
     let bubble = Bubble {
-        id: Id::new(("study-card", view.word)),
+        id,
         at: view.at,
         room: view.room,
-        width: WIDTH,
-        margin: Margin::same(if comfy { 18 } else { 14 }),
+        width: word_card::WIDTH,
+        margin: Margin::ZERO,
         snug: false,
         prefer: Side::Below,
     };
-    let shown = bubble.show(ctx, t, |ui, cap| {
-        ui.spacing_mut().item_spacing.y = if comfy { 10.0 } else { 6.0 };
-        // Only an answer taller than the room scrolls.
+    bubble.show(ctx, t, |ui, cap| card(ui, view, cap, t, out)).0
+}
+
+fn card(ui: &mut Ui, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Commands) {
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let top = ui.cursor().top();
+    let said = match &view.answer {
+        Answer::Ready(info, _) | Answer::Partial(info) => Some(info.pos.as_str()),
+        _ => None,
+    };
+    let class = said
+        .filter(|p| !p.is_empty())
+        .or(view.role.map(Role::class))
+        .unwrap_or("");
+    let head = word_card::Header {
+        word: view.word,
+        class,
+        level: view.role.and_then(Role::cefr),
+        sound: view.sound,
+        say: Some(word_card::Say {
+            saying: view.saying,
+            voice: None,
+        }),
+        mode: word_card::Mode::Ai,
+        close: Command::Study(Action::Close),
+    };
+    word_card::header(ui, &head, t, out);
+    word_card::rule(ui, t);
+    let comfy = view.density == GlossDensity::Comfortable;
+    let pad_y = if comfy { 12 } else { word_card::PAD_Y };
+    let used = ui.cursor().top() - top + f32::from(pad_y) * 2.0 + word_card::FOOT;
+    let list = (cap - used).max(word_card::BODY_MIN);
+    word_card::section(ui, pad_y, |ui| {
+        ui.spacing_mut().item_spacing.y = if comfy { 8.0 } else { 5.0 };
         ScrollArea::vertical()
-            .max_height(cap)
+            .id_salt(("study-card", view.word))
+            .max_height(list)
             .auto_shrink([false, true])
             .show(ui, |ui| body(ui, view, t, out));
     });
-    shown.0
+    word_card::rule(ui, t);
+    footer(ui, view, t, out);
 }
 
 fn body(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
-    ui.horizontal(|ui| {
-        if crate::shaped::needs_shaping(view.word) {
-            crate::shaped::label(ui, view.word, t.text * 1.2, t.ink);
-        } else {
-            let word = RichText::new(view.word).size(t.text * 1.35).strong();
-            ui.label(word.color(t.ink));
-        }
-        let said = match &view.answer {
-            Answer::Ready(info, _) | Answer::Partial(info) => Some(info.pos.as_str()),
-            _ => None,
-        };
-        let class = said
-            .filter(|p| !p.is_empty())
-            .or(view.role.map(Role::class));
-        if let Some(class) = class {
-            ui.label(RichText::new(class).italics().color(t.muted));
-        }
-        if let Some(level) = view.role.and_then(Role::cefr) {
-            let tip = "This sense's CEFR level";
-            let r = ui.label(
-                RichText::new(level)
-                    .size(t.text_small)
-                    .strong()
-                    .color(t.muted),
-            );
-            widgets::tip(&r, tip, None);
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::small_icon_button(ui, Icon::Close, "Close").clicked() {
-                out.push(Sent::Engine(Command::Study(Action::Close)));
-            }
-            crate::read_aloud::say_button(ui, view.word, (view.saying, None), out);
-        });
-    });
-    crate::sounds::show(ui, view.sound, t);
     match &view.answer {
         Answer::Waiting => shimmer(ui, t),
         Answer::Partial(info) => {
             answer(ui, info, t);
             explaining(ui, t);
         }
-        Answer::Ready(info, by) => {
-            answer(ui, info, t);
-            footer(ui, by, t, out);
-        }
+        Answer::Ready(info, _) => answer(ui, info, t),
         Answer::Failed(e) => {
             ui.horizontal_wrapped(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), egui::Sense::hover());
@@ -130,26 +123,59 @@ fn body(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
     }
 }
 
-/// Who answered, and a way to ask the AI chosen now instead.
-fn footer(ui: &mut Ui, by: &str, t: &Tokens, out: &mut Commands) {
-    ui.add_space(2.0);
-    ui.horizontal(|ui| {
-        if !by.is_empty() {
-            ui.label(RichText::new(by).size(t.text_small).color(t.muted));
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let text = RichText::new("Ask again")
-                .size(t.text_small)
-                .color(t.accent);
-            let again = ui.add(egui::Button::new(text).frame(false));
-            if again
-                .on_hover_text("Ask the AI chosen in Settings")
-                .clicked()
-            {
-                out.push(Sent::Engine(Command::Study(Action::AskAgain)));
-            }
+/// Pinned footer with attribution on the left and actions on the right.
+fn footer(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
+    word_card::footer_frame(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                word_card::pursue_button(ui, view.word, out);
+                if let Answer::Ready(info, _) = &view.answer {
+                    let copied = copy_text(view.word, info);
+                    word_card::copy_button(ui, &copied, "Copy explanation", out);
+                    let text = RichText::new("Ask again")
+                        .size(t.text_small)
+                        .color(t.accent);
+                    let again = ui.add(egui::Button::new(text).frame(false));
+                    if again
+                        .on_hover_text("Ask the AI chosen in Settings")
+                        .clicked()
+                    {
+                        out.push(Sent::Engine(Command::Study(Action::AskAgain)));
+                    }
+                }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    match &view.answer {
+                        Answer::Ready(_, by) if !by.is_empty() => {
+                            let label = RichText::new(*by).size(t.text_small).color(t.muted);
+                            ui.add(egui::Label::new(label).truncate());
+                        }
+                        Answer::Waiting | Answer::Partial(_) => {
+                            ui.label(
+                                RichText::new("Asking AI…")
+                                    .size(t.text_small)
+                                    .color(t.muted),
+                            );
+                        }
+                        _ => {}
+                    }
+                });
+            });
         });
     });
+}
+
+fn copy_text(word: &str, info: &WordInfo) -> String {
+    let mut out = format!("{word}: {}", info.meaning);
+    if !info.synonyms.is_empty() {
+        out.push_str("\nSynonyms: ");
+        out.push_str(&info.synonyms.join(", "));
+    }
+    if !info.usages.is_empty() {
+        out.push('\n');
+        out.push_str(&info.usages.join("\n"));
+    }
+    out
 }
 
 fn heading(ui: &mut Ui, text: &str, t: &Tokens) {
@@ -216,9 +242,10 @@ fn shimmer(ui: &mut Ui, t: &Tokens) {
         0.5
     };
     let tint = t.line.gamma_multiply(0.6 + 0.4 * phase);
+    let width = ui.available_width().max(80.0);
     for share in [0.35, 1.0, 0.8] {
-        let (rect, _) = ui.allocate_exact_size(vec2(WIDTH, 12.0), egui::Sense::hover());
-        let bar = Rect::from_min_size(rect.min, vec2(WIDTH * share, rect.height()));
+        let (rect, _) = ui.allocate_exact_size(vec2(width, 12.0), egui::Sense::hover());
+        let bar = Rect::from_min_size(rect.min, vec2(width * share, rect.height()));
         ui.painter().rect_filled(bar, 4.0, tint);
     }
     explaining(ui, t);

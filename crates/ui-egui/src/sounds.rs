@@ -13,13 +13,18 @@ pub fn show(ui: &mut Ui, lines: &[Line], t: &Tokens) {
     }
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        for line in lines {
-            let label = ui.label(layout(line, t));
-            if let Some(why) = &line.why {
-                crate::widgets::tip(&label, why, None);
-            }
-        }
+        show_inline(ui, lines, t);
     });
+}
+
+/// Draws sound lines directly into an open horizontal row.
+pub fn show_inline(ui: &mut Ui, lines: &[Line], t: &Tokens) {
+    for line in lines {
+        let label = ui.label(layout(line, t));
+        if let Some(why) = &line.why {
+            crate::widgets::tip(&label, why, None);
+        }
+    }
 }
 
 fn layout(line: &Line, t: &Tokens) -> LayoutJob {

@@ -143,6 +143,12 @@ impl State {
         self.failed.get(&key)
     }
 
+    /// Allocates a loose card key for a word without a saved mark.
+    pub(crate) fn next_loose_key(&mut self) -> Key {
+        self.next_loose += 1;
+        Key::Loose(self.next_loose)
+    }
+
     /// Marks the explained word if it has a spot, returning its answer key.
     pub(crate) fn explain_mark(
         &mut self,

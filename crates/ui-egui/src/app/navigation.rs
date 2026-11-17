@@ -66,6 +66,7 @@ impl MareaderApp {
     /// The card's word, searched where the Dictionary opens from here.
     pub(super) fn pursue(&mut self, word: &str) {
         self.ui.dict.escape();
+        self.ui.study.escape(&mut self.session);
         let floats = self.settings().dictionary.opens == DictionaryOpens::Window;
         if self.route() == Route::Reader && floats {
             self.dict_window(mareader_engine::dict::Window::Focus);
