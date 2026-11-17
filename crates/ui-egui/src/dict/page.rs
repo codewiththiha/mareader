@@ -729,16 +729,11 @@ fn results_list(
     act
 }
 
-/// One result: lit with an accent edge when chosen, the whole row a button.
+/// One result: lit when chosen, the whole row a button.
 fn row(ui: &mut Ui, e: &Entry, i: usize, on: bool, t: &Tokens) -> Response {
     let bg = ui.painter().add(Shape::Noop);
     let inner = Frame::new()
-        .inner_margin(Margin {
-            left: 14,
-            right: 10,
-            top: 7,
-            bottom: 7,
-        })
+        .inner_margin(Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 2.0;
@@ -771,13 +766,8 @@ fn row(ui: &mut Ui, e: &Entry, i: usize, on: bool, t: &Tokens) -> Response {
         true => t.selected,
         false => t.hover.gamma_multiply(lift),
     };
-    let mut shapes = vec![Shape::rect_filled(rect, t.radius, fill)];
-    if on {
-        // An accent edge marks the pick where its fill barely shows.
-        let edge = Rect::from_min_size(rect.min + vec2(4.0, 8.0), vec2(3.0, rect.height() - 16.0));
-        shapes.push(Shape::rect_filled(edge, 2.0, t.accent));
-    }
-    ui.painter().set(bg, Shape::Vec(shapes));
+    ui.painter()
+        .set(bg, Shape::rect_filled(rect, t.radius, fill));
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }

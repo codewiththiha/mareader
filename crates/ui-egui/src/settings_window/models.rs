@@ -335,15 +335,6 @@ fn pills(ui: &Ui, names: &[&'static str], end: egui::Pos2) -> f32 {
     x
 }
 
-/// A thread down an open row's insides, tying them to its head.
-fn thread(ui: &Ui, top: f32) {
-    let t = Tokens::get(ui.ctx());
-    let x = ui.min_rect().left() - 8.0;
-    let span = egui::Rangef::new(top + 8.0, ui.cursor().top() - 8.0);
-    ui.painter()
-        .vline(x, span, Stroke::new(2.0, t.accent.gamma_multiply(0.5)));
-}
-
 /// Edits one model; what its buttons ask for, if anything.
 fn editor(
     ui: &mut Ui,
@@ -351,13 +342,10 @@ fn editor(
     (board, explains): (Option<&Board>, bool),
     out: &mut Commands,
 ) -> Option<Act> {
-    let top = ui.cursor().top();
     renaming(p, |p| fields(ui, p, board, out));
     room_note(ui, p, board);
     divider(ui);
-    let act = actions(ui, p, (board, explains), out);
-    thread(ui, top);
-    act
+    actions(ui, p, (board, explains), out)
 }
 
 /// Try, Use for the AI Dictionary, Duplicate, and a confirmed Delete.
@@ -577,7 +565,6 @@ fn provider(
     if !open {
         return false;
     }
-    let top = ui.cursor().top();
     divider(ui);
     let tip = if p.needs_key() {
         "Blank uses the provider's own; change it only for a proxy"
@@ -595,7 +582,6 @@ fn provider(
     if p.takes_keys() {
         key_rows(ui, p, board, out);
     }
-    thread(ui, top);
     p.takes_keys()
 }
 

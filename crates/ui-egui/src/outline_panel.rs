@@ -108,12 +108,11 @@ fn entry_row(
     let r = ui.interact(rect, id, Sense::click());
     r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &entry.title));
     let painter = ui.painter();
+    let bg = rect.shrink2(vec2(6.0, 1.0));
     if on {
-        painter.rect_filled(rect, CornerRadius::ZERO, t.hover);
-        let bar = Rect::from_min_size(rect.min, vec2(2.0, rect.height()));
-        painter.rect_filled(bar, CornerRadius::ZERO, t.accent);
+        painter.rect_filled(bg, CornerRadius::same(6), t.selected);
     } else if r.hovered() {
-        painter.rect_filled(rect, CornerRadius::ZERO, t.hover.gamma_multiply(0.6));
+        painter.rect_filled(bg, CornerRadius::same(6), t.hover);
     }
     let indent = PAD_X + INDENT * f32::from(entry.depth.min(MAX_DEPTH));
     let room = (rect.width() - indent - NUMBER_W).max(24.0);

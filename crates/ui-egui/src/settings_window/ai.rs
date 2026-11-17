@@ -181,8 +181,6 @@ fn dictionary_row(
 
 /// The AI's pen, colour and card room; highlights then can't take them.
 fn look_rows(ui: &mut Ui, h: &mut HighlightSettings, gloss: &mut GlossSettings) {
-    let t = Tokens::get(ui.ctx());
-    let top = ui.cursor().top();
     let mut ai = h.ai;
     divider(ui);
     row(ui, "Mark", "How its words are marked on the page", |ui| {
@@ -201,11 +199,6 @@ fn look_rows(ui: &mut Ui, h: &mut HighlightSettings, gloss: &mut GlossSettings) 
         let all = [GlossDensity::Compact, GlossDensity::Comfortable];
         choices(ui, &mut gloss.density, &all, GlossDensity::label);
     });
-    // A thread down the fold ties its rows to the name above.
-    let x = ui.min_rect().left() - 8.0;
-    let span = egui::Rangef::new(top + 8.0, ui.cursor().top() - 8.0);
-    let stroke = egui::Stroke::new(2.0, t.accent.gamma_multiply(0.5));
-    ui.painter().vline(x, span, stroke);
 }
 
 /// Sorting books onto shelves: its model and batch size.

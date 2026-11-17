@@ -613,10 +613,6 @@ fn result_row(ui: &mut Ui, t: &Tokens, (hit, needle): (&Hit, &str), on: bool) ->
         let fill = if on { t.selected } else { t.hover };
         painter.rect_filled(rect, t.radius, fill);
     }
-    if on {
-        let bar = Rect::from_min_size(rect.min + vec2(0.0, 10.0), vec2(3.0, ROW_H - 20.0));
-        painter.rect_filled(bar, CornerRadius::same(2), t.accent);
-    }
     // The page in a chip of its own.
     let number = format!("{}", hit.page + 1);
     let font = theme::medium(t.text_small - 1.0);
