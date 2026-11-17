@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** Core reader, library, study tools, neural read-aloud, installers
-(`v0.0.6`), and the engine-first architecture (ADR 0007) are complete.
+(`v0.0.7`), and the engine-first architecture (ADR 0007) are complete.
 Cross-device library sync (`docs/sync.md`) remains optional future work.
 **Parity:** 122 of 122 features (100 %; 83 command-backed, 39 `ui_only`,
 2 dropped). Run `cargo xtask parity` for live counts.
@@ -46,6 +46,7 @@ post-release and architectural milestones:
 
 | Date | Milestone |
 |---|---|
+| 2026-11-15 | **Release `v0.0.7`:** unified lookup and AI word cards with CEFR badges and in-place tabs, searchable AI model picker with default provider URL toggle, animated checkboxes, streamlined Vocabulary shading, live GPU theme/blend fades with background saving, flicker-free Read Aloud voice switching, bottom-only read-aloud parking, and static window control icons ([`docs/releases/v0.0.7.md`](docs/releases/v0.0.7.md)) |
 | 2026-11-15 | **Release `v0.0.6`:** native ARM64 Windows and ARM64 Linux installers, built-in updater with silent Windows/AppImage updates, progressive EPUB opening and instant reflow, Dial deck Appearance popover, animated icons, command palette, EPUB CSS/picture theming, eight offline dictionary packs, and engine-first headless CLI / MCP control ([`docs/releases/v0.0.6.md`](docs/releases/v0.0.6.md)) |
 | 2026-11-15 | **Performance and memory pass:** streamed EPUB cover extraction, cached PDF `RenderSession` across tiles, streamed Kokoro ONNX weights from disk, zero-allocation soft-hyphen search scanning, flattened G2P neural vectors with KV caching, and reused GPU buffers with cached notes rows ([`docs/memory.md`](docs/memory.md)) |
 | 2026-11-15 | **Post-split cleanup:** retired transitional re-exports and dead shims, deduplicated presets/menus/sinks, tightened `Session` boundaries, decomposed `read_aloud`/`dict`/`pdf_view` helpers, and fixed `DocumentsView::hit_box` text-layer loading and card anchor rects |

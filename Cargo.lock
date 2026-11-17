@@ -3561,7 +3561,7 @@ dependencies = [
 
 [[package]]
 name = "mareader"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "eframe",
  "egui",
@@ -3578,7 +3578,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-animated-icons"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "resvg",
  "roxmltree 0.20.0",
@@ -3587,7 +3587,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-appearance"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -3595,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-assist"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "ai-pool",
  "fm-bridge",
@@ -3610,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-audio"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "cpal",
  "symphonia",
@@ -3618,7 +3618,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-cefr"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "cefr",
  "mareader-fetch",
@@ -3629,7 +3629,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-cli"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "mareader-engine",
  "mareader-epub",
@@ -3643,7 +3643,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-dict"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "mareader-fetch",
  "parquet",
@@ -3653,7 +3653,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-engine"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "mareader-appearance",
  "mareader-audio",
@@ -3680,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-epub"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "brotli-decompressor",
  "chardetng",
@@ -3702,7 +3702,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-fetch"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "reqwest",
  "sha2",
@@ -3711,7 +3711,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-g2p"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "fancy-regex",
  "icu_normalizer",
@@ -3722,15 +3722,15 @@ dependencies = [
 
 [[package]]
 name = "mareader-hanzi"
-version = "0.0.6"
+version = "0.0.7"
 
 [[package]]
 name = "mareader-ipa"
-version = "0.0.6"
+version = "0.0.7"
 
 [[package]]
 name = "mareader-kokoro"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -3742,7 +3742,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-library"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "mareader-search",
  "rusqlite",
@@ -3754,7 +3754,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-mcp"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "image",
  "mareader-engine",
@@ -3767,15 +3767,15 @@ dependencies = [
 
 [[package]]
 name = "mareader-memory"
-version = "0.0.6"
+version = "0.0.7"
 
 [[package]]
 name = "mareader-nn-core"
-version = "0.0.6"
+version = "0.0.7"
 
 [[package]]
 name = "mareader-pdf"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "hayro",
  "mareader-appearance",
@@ -3784,7 +3784,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-phonon"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "candle-core",
  "mareader-nn-core",
@@ -3794,7 +3794,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-reflow"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "fontique",
  "hypher",
@@ -3809,7 +3809,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-script"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "boa_engine",
  "html5ever",
@@ -3818,11 +3818,11 @@ dependencies = [
 
 [[package]]
 name = "mareader-search"
-version = "0.0.6"
+version = "0.0.7"
 
 [[package]]
 name = "mareader-session"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "mareader-epub",
  "mareader-pdf",
@@ -3834,7 +3834,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-settings"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "mareader-appearance",
  "mareader-library",
@@ -3844,7 +3844,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-speech"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "mareader-audio",
  "mareader-fetch",
@@ -3865,14 +3865,14 @@ dependencies = [
 
 [[package]]
 name = "mareader-study"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "mareader-ui-egui"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "eframe",
  "egui",
@@ -3909,7 +3909,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-vits"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -3920,7 +3920,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-web"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "eframe",
  "mareader-engine",
@@ -3932,7 +3932,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-workspace"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -8480,7 +8480,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "serde",
  "serde_json",
