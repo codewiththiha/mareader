@@ -208,9 +208,7 @@ fn pick_asset<'a>(
             Arch::Other => find_suffix(".dmg"),
         },
         UpdatePlatform::Windows => match (install, arch) {
-            (InstallKind::WindowsNsis(_), Arch::Aarch64) => {
-                find_suffix("_arm64-setup.exe").or_else(|| find_suffix("_x64-setup.exe"))
-            }
+            (InstallKind::WindowsNsis(_), Arch::Aarch64) => find_suffix("_arm64-setup.exe"),
             (InstallKind::WindowsNsis(_), Arch::X86_64) => find_suffix("_x64-setup.exe"),
             (InstallKind::WindowsNsis(_), Arch::Other) => None,
             (_, Arch::Aarch64) => find_suffix("_arm64-setup.exe")

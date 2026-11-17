@@ -352,55 +352,83 @@ fn mock_modes_cover_notify_install_and_silent_staged() {
     ));
 }
 
+fn release_json(names: &[&str]) -> String {
+    let dl = "https://github.com/codewiththiha/mareader2/releases/download/v0.0.6";
+    let html = "https://github.com/codewiththiha/mareader2/releases/tag/v0.0.6";
+    let assets: Vec<String> = names
+        .iter()
+        .map(|n| format!(r#"{{"name":"{n}","browser_download_url":"{dl}/{n}"}}"#))
+        .collect();
+    let list = assets.join(",");
+    format!(r#"{{"tag_name":"v0.0.6","html_url":"{html}","assets":[{list}]}}"#)
+}
+
+fn picked_asset(
+    json: &str,
+    platform: UpdatePlatform,
+    arch: Arch,
+    install: &InstallKind,
+) -> Option<String> {
+    parse_release_json(json, platform, arch, install)
+        .unwrap()
+        .unwrap()
+        .info
+        .asset_name
+}
+
 #[test]
 fn self_update_asset_matching_refuses_wrong_arch_or_msi() {
-    let json = r#"{
-  "tag_name": "v0.0.6",
-  "html_url": "https://github.com/codewiththiha/mareader2/releases/tag/v0.0.6",
-  "assets": [
-    {
-      "name": "mareader_0.0.6_x64_en-US.msi",
-      "browser_download_url": "https://github.com/codewiththiha/mareader2/releases/download/v0.0.6/mareader_0.0.6_x64_en-US.msi"
-    },
-    {
-      "name": "mareader_0.0.6_x86_64.AppImage",
-      "browser_download_url": "https://github.com/codewiththiha/mareader2/releases/download/v0.0.6/mareader_0.0.6_x86_64.AppImage"
-    }
-  ]
-}"#;
+    use UpdatePlatform::{Linux, Windows};
+    let json = release_json(&[
+        "mareader_0.0.6_x64_en-US.msi",
+        "mareader_0.0.6_x86_64.AppImage",
+    ]);
+    let win_nsis = InstallKind::WindowsNsis(PathBuf::from("C:\\App\\mareader.exe"));
+    let appimage = InstallKind::LinuxAppImage(PathBuf::from("/home/u/Mareader.AppImage"));
+    let pkg = InstallKind::PackageManaged;
 
-    let nsis = parse_release_json(
-        json,
-        UpdatePlatform::Windows,
-        Arch::X86_64,
-        &InstallKind::WindowsNsis(PathBuf::from("C:\\App\\mareader.exe")),
-    )
-    .unwrap()
-    .unwrap();
-    assert!(nsis.info.asset_url.is_none());
-
-    let pkg = parse_release_json(
-        json,
-        UpdatePlatform::Windows,
-        Arch::X86_64,
-        &InstallKind::PackageManaged,
-    )
-    .unwrap()
-    .unwrap();
+    assert_eq!(picked_asset(&json, Windows, Arch::X86_64, &win_nsis), None);
     assert_eq!(
-        pkg.info.asset_name.as_deref(),
+        picked_asset(&json, Windows, Arch::X86_64, &pkg).as_deref(),
         Some("mareader_0.0.6_x64_en-US.msi")
     );
+    assert_eq!(picked_asset(&json, Linux, Arch::Aarch64, &appimage), None);
 
-    let arm_linux = parse_release_json(
-        json,
-        UpdatePlatform::Linux,
-        Arch::Aarch64,
-        &InstallKind::LinuxAppImage(PathBuf::from("/home/u/Mareader.AppImage")),
-    )
-    .unwrap()
-    .unwrap();
-    assert!(arm_linux.info.asset_url.is_none());
+    let x64_only = release_json(&["mareader_0.0.6_x64-setup.exe"]);
+    assert_eq!(
+        picked_asset(&x64_only, Windows, Arch::Aarch64, &win_nsis),
+        None
+    );
+}
+
+#[test]
+fn arm64_windows_and_linux_pick_native_installers() {
+    use UpdatePlatform::{Linux, Windows};
+    let json = release_json(&[
+        "mareader_0.0.6_x64-setup.exe",
+        "mareader_0.0.6_arm64-setup.exe",
+        "mareader_0.0.6_x86_64.AppImage",
+        "mareader_0.0.6_aarch64.AppImage",
+        "mareader_0.0.6_arm64.deb",
+    ]);
+    let win_nsis = InstallKind::WindowsNsis(PathBuf::from("C:\\App\\mareader.exe"));
+    let appimage = InstallKind::LinuxAppImage(PathBuf::from("/home/u/Mareader.AppImage"));
+    let pkg = InstallKind::PackageManaged;
+
+    assert_eq!(
+        picked_asset(&json, Windows, Arch::Aarch64, &win_nsis).as_deref(),
+        Some("mareader_0.0.6_arm64-setup.exe")
+    );
+    assert_eq!(
+        picked_asset(&json, Linux, Arch::Aarch64, &appimage).as_deref(),
+        Some("mareader_0.0.6_aarch64.AppImage")
+    );
+
+    let deb_only = release_json(&["mareader_0.0.6_arm64.deb"]);
+    assert_eq!(
+        picked_asset(&deb_only, Linux, Arch::Aarch64, &pkg).as_deref(),
+        Some("mareader_0.0.6_arm64.deb")
+    );
 }
 
 #[cfg(not(target_arch = "wasm32"))]

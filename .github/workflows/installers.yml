@@ -37,6 +37,10 @@ jobs:
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             formats: deb,appimage,pacman
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            formats: deb,appimage,pacman
           - name: macos-arm64
             os: macos-26
             target: aarch64-apple-darwin
@@ -50,6 +54,11 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             formats: nsis,wix
+          # cargo-packager 0.11.8 uses WiX 3.11, which lacks arm64 MSI support.
+          - name: windows-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            formats: nsis
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -57,6 +66,7 @@ jobs:
     env:
       # cargo-packager's own build step reads it, and so finds the binary.
       CARGO_BUILD_TARGET: ${{ matrix.target }}
+      FORMATS: ${{ matrix.formats }}
       MACOSX_DEPLOYMENT_TARGET: "11.0"
       HELPER: ${{ matrix.helper }}
       # Every runner draws (lavapipe, WARP, Metal): a launch that dies fails.
@@ -65,13 +75,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.sha || github.sha }}
+      - name: Ensure rustup
+        run: |
+          if command -v rustup >/dev/null 2>&1; then exit 0; fi
+          if [ "$RUNNER_OS" = Windows ]; then
+            url="https://static.rust-lang.org/rustup/dist/${CARGO_BUILD_TARGET}/rustup-init.exe"
+            curl --proto '=https' --tlsv1.2 -sSfL "$url" -o rustup-init.exe
+            ./rustup-init.exe -y --default-toolchain none
+            rm -f rustup-init.exe
+            printf '%s\n' "${USERPROFILE}\\.cargo\\bin" >> "$GITHUB_PATH"
+          else
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+              sh -s -- -y --default-toolchain none
+            printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: installers-${{ matrix.target }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: >-
+            ${{ github.ref == 'refs/heads/main'
+                || startsWith(github.ref, 'refs/heads/release/')
+                || startsWith(github.ref, 'refs/tags/v') }}
       - name: cargo-packager
         run: |
           cargo packager --version 2>/dev/null | grep -q "$PACKAGER_VERSION" ||
@@ -120,7 +147,7 @@ jobs:
           python3 tools/unsign-dmg.py target/"$CARGO_BUILD_TARGET"/release/*.dmg
       - name: Linux check tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y xvfb mesa-vulkan-drivers imagemagick
+        run: sudo apt-get update && sudo apt-get install -y xvfb mesa-vulkan-drivers imagemagick file
       - name: Install, launch, remove
         run: |
           out="target/$CARGO_BUILD_TARGET/release"
@@ -142,10 +169,13 @@ jobs:
         run: |
           mkdir -p dist
           out="target/$CARGO_BUILD_TARGET/release"
-          for f in "$out"/*.deb "$out"/*.AppImage "$out"/*.tar.gz "$out"/PKGBUILD \
+          for f in "$out"/*.deb "$out"/*.AppImage "$out"/*.tar.gz \
                    "$out"/*.dmg "$out"/*-setup.exe "$out"/*.msi; do
             if [ -f "$f" ]; then cp "$f" dist/; fi
           done
+          if [ -f "$out/PKGBUILD" ]; then
+            cp "$out/PKGBUILD" "dist/PKGBUILD.${{ matrix.name }}"
+          fi
           ls -l dist
       - uses: actions/upload-artifact@v4
         with:
@@ -183,6 +213,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          python3 tools/merge-pkgbuild.py dist
           (cd dist && sha256sum * > SHA256SUMS)
           # Written notes win; without them GitHub lists the changes.
           notes="docs/releases/$GITHUB_REF_NAME.md"

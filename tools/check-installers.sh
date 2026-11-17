@@ -76,15 +76,23 @@ shot() { # best effort: proof the window drew
 }
 
 linux() {
-  local deb appimage pacman_tar
+  local deb appimage pacman_tar want_arch want_deb want_elf
   deb=$(one "$out"/*.deb) || { bad "one .deb"; return; }
   appimage=$(one "$out"/*.AppImage) || { bad "one AppImage"; return; }
   pacman_tar=$(one "$out"/*.tar.gz) || { bad "one pacman .tar.gz"; return; }
+  case ${CARGO_BUILD_TARGET:-$(uname -m)} in
+    aarch64* | arm64*) want_arch=aarch64; want_deb=arm64; want_elf="ARM aarch64" ;;
+    *) want_arch=x86_64; want_deb=amd64; want_elf="x86-64" ;;
+  esac
   check "the pacman archive holds usr/bin/mareader" \
     bash -c "tar -tzf '$pacman_tar' | grep -qE '^(\./)?usr/bin/mareader$'"
+  check "PKGBUILD targets $want_arch" \
+    grep -qF "arch=('$want_arch')" "$out/PKGBUILD"
   check "PKGBUILD names the archive" \
     grep -qF "source=(\"$(basename "$pacman_tar")\")" "$out/PKGBUILD"
   check "PKGBUILD names its libraries" grep -q "^depends=(fontconfig" "$out/PKGBUILD"
+  check ".deb targets $want_deb" \
+    bash -c "[ \"\$(dpkg-deb -f '$deb' Architecture)\" = '$want_deb' ]"
   check ".deb holds /usr/bin/mareader" \
     bash -c "dpkg-deb -c '$deb' | grep -qE ' (\./)?usr/bin/mareader$'"
   # The .deb paths may or may not start with ./, so match either.
@@ -96,6 +104,8 @@ linux() {
   done
   check "desktop entry passes files" grep -q '^Exec=mareader %F' "$report/mareader.desktop"
   check ".deb installs with its dependencies" sudo apt-get install -y "$(cd "$(dirname "$deb")" && pwd)/$(basename "$deb")"
+  check "installed binary is $want_arch" \
+    bash -c "file /usr/bin/mareader | grep -q '$want_elf'"
   check "every linked library resolves" bash -c '! ldd /usr/bin/mareader | grep -q "not found"'
   smoke deb /usr/bin/mareader
   check ".deb uninstalls" sudo apt-get remove -y mareader
@@ -152,28 +162,43 @@ macos() {
 windows() {
   # Native tools read /S and friends as flags, not paths.
   export MSYS_NO_PATHCONV=1
-  local setup msi home exe
-  setup=$(one "$out"/*-setup.exe) || { bad "one -setup.exe"; return; }
-  msi=$(one "$out"/*.msi) || { bad "one .msi"; return; }
-  check "NSIS installs silently" "$setup" /S
-  home="$(cygpath -u "$LOCALAPPDATA")/Mareader"
-  check "it installs mareader.exe for this user" test -f "$home/mareader.exe"
-  for ext in pdf epub txt md; do
-    check ".$ext opens with Mareader" \
-      bash -c "reg query 'HKCU\\Software\\Classes\\.$ext' /ve | grep -qi 'Document\\|Book'"
-  done
-  check "the installed mareader.exe carries its icon" \
-    pwsh -NoProfile -File tools/exe-icons.ps1 "$(cygpath -w "$home/mareader.exe")"
-  smoke nsis "$home/mareader.exe"
-  check "NSIS uninstalls silently" "$home/uninstall.exe" /S
-  # The uninstaller hands off to a copy of itself; wait for it.
-  for _ in $(seq 30); do [ -f "$home/mareader.exe" ] || break; sleep 1; done
-  check "the uninstall removes mareader.exe" test ! -f "$home/mareader.exe"
-  check "the MSI installs silently" msiexec /i "$(cygpath -w "$msi")" /qn "/l*v" "$(cygpath -w "$report/msi.log")"
-  exe=$(find "/c/Program Files" -maxdepth 2 -iname mareader.exe | head -1)
-  check "the MSI installs mareader.exe" test -n "$exe"
-  if [ -n "$exe" ]; then smoke msi "$exe"; fi
-  check "the MSI uninstalls silently" msiexec /x "$(cygpath -w "$msi")" /qn
+  local formats setup msi home exe want_arch
+  formats=",${FORMATS:-nsis,wix},"
+  case ${CARGO_BUILD_TARGET:-$(uname -m)} in
+    aarch64* | arm64*) want_arch=arm64 ;;
+    *) want_arch=x64 ;;
+  esac
+  if [[ "$formats" == *,nsis,* ]]; then
+    setup=$(one "$out"/*-setup.exe) || { bad "one -setup.exe"; return; }
+    check "NSIS installs silently" "$setup" /S
+    home="$(cygpath -u "$LOCALAPPDATA")/Mareader"
+    check "it installs mareader.exe for this user" test -f "$home/mareader.exe"
+    check "the installed mareader.exe is $want_arch" \
+      pwsh -NoProfile -File tools/exe-arch.ps1 "$(cygpath -w "$home/mareader.exe")" "$want_arch"
+    for ext in pdf epub txt md; do
+      check ".$ext opens with Mareader" \
+        bash -c "reg query 'HKCU\\Software\\Classes\\.$ext' /ve | grep -qi 'Document\\|Book'"
+    done
+    check "the installed mareader.exe carries its icon" \
+      pwsh -NoProfile -File tools/exe-icons.ps1 "$(cygpath -w "$home/mareader.exe")"
+    smoke nsis "$home/mareader.exe"
+    check "NSIS uninstalls silently" "$home/uninstall.exe" /S
+    # The uninstaller hands off to a copy of itself; wait for it.
+    for _ in $(seq 30); do [ -f "$home/mareader.exe" ] || break; sleep 1; done
+    check "the uninstall removes mareader.exe" test ! -f "$home/mareader.exe"
+  fi
+  if [[ "$formats" == *,wix,* ]]; then
+    msi=$(one "$out"/*.msi) || { bad "one .msi"; return; }
+    check "the MSI installs silently" msiexec /i "$(cygpath -w "$msi")" /qn "/l*v" "$(cygpath -w "$report/msi.log")"
+    exe=$(find "/c/Program Files" -maxdepth 2 -iname mareader.exe | head -1)
+    check "the MSI installs mareader.exe" test -n "$exe"
+    if [ -n "$exe" ]; then
+      check "the MSI mareader.exe is $want_arch" \
+        pwsh -NoProfile -File tools/exe-arch.ps1 "$(cygpath -w "$exe")" "$want_arch"
+      smoke msi "$exe"
+    fi
+    check "the MSI uninstalls silently" msiexec /x "$(cygpath -w "$msi")" /qn
+  fi
 }
 
 case "$(uname -s)" in

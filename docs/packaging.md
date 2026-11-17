@@ -123,10 +123,12 @@ platform, then installs it, launches it with a book, and removes it:
 
 | Runner | Installers | Checked |
 | --- | --- | --- |
-| `ubuntu-22.04` | `.deb`, AppImage, pacman (`.tar.gz` and `PKGBUILD`) | the desktop entry's four types and `%F`; `apt` installs it with its dependencies; every linked library resolves; both the `.deb` and the AppImage launch; `apt` removes it |
+| `ubuntu-22.04` (x86_64) | `.deb`, AppImage, pacman (`.tar.gz` and `PKGBUILD`) | the `.deb`, `PKGBUILD` and binary match x86_64; the desktop entry's four types and `%F`; `apt` installs it with its dependencies; every linked library resolves; both the `.deb` and the AppImage launch; `apt` removes it |
+| `ubuntu-22.04-arm` (ARM64) | `.deb`, AppImage, pacman (`.tar.gz` and `PKGBUILD`) | the same checks for `aarch64` / `arm64`; `tools/merge-pkgbuild.py` combines both Linux runners' `PKGBUILD` files into one multi-arch `PKGBUILD` on release |
 | `macos-26` (Apple Silicon) | `.app` in a `.dmg` | `Info.plist` lists the four types and macOS 11; the signature verifies; the binary is arm64 and links only system libraries; the Apple Intelligence helper is inside; the `.dmg`'s checksums hold, an ad hoc build's `.dmg` is unsigned, and it mounts with the signed app and an Applications link; it launches |
 | `macos-26-intel` | `.app` in a `.dmg` | the same, x86_64, without the helper |
-| `windows-latest` | NSIS `-setup.exe`, MSI | each installs silently, registers `.pdf`, `.epub`, `.txt` and `.md`, launches and uninstalls silently |
+| `windows-latest` (x64) | NSIS `-setup.exe`, MSI | each installs silently, verifies x64 PE target and icon resource, registers `.pdf`, `.epub`, `.txt` and `.md`, launches and uninstalls silently |
+| `windows-11-arm` (ARM64) | NSIS `-setup.exe` | installs silently, verifies ARM64 PE target and icon resource, registers the four types, launches and uninstalls silently (WiX 3.11 in `cargo-packager 0.11.8` does not build ARM64 `.msi`) |
 
 "Launches" means the app is still running 12 s after opening an EPUB, on
 the runner's software GPU (lavapipe under Xvfb, WARP) or its Metal device.
@@ -138,7 +140,7 @@ installers are `installers-<platform>` artifacts.
 How to run it:
 
 - **On demand:** `python3 tools/ci.py installers` dispatches the workflow
-  on a pushed commit, waits for all four platforms, and prints their
+  on a pushed commit, waits for all six platforms, and prints their
   checks (`--download` also fetches the installers).
 - **A packaging change:** push it to a `release/<slug>` branch, which
   builds and checks the installers without a tag.
