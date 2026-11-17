@@ -438,28 +438,21 @@ fn open_progress_uses_the_latest_typography() -> Out {
 
     let ticket = 1;
     let mut session = inline();
-    session.opening.insert(
+    let mut opening = Opening::pending(
+        None,
+        None,
+        Arc::clone(&current),
+        Some(OpenTarget::default()),
+    );
+    opening.doc = Some(DocId(1));
+    session.opening.insert(ticket, opening);
+    let mut events = Vec::new();
+    let out = Output::OpenProgress {
         ticket,
-        Opening {
-            name: None,
-            path: None,
-            typo: Arc::clone(&current),
-            target: Some(OpenTarget::default()),
-            target_page: 0,
-            doc: Some(DocId(1)),
-            resume: None,
-            ready: false,
-            continuing: false,
-        },
-    );
-    assert!(
-        session
-            .accept(Output::OpenProgress {
-                ticket,
-                state: Box::new(state),
-            })
-            .is_none()
-    );
+        state: Box::new(state),
+    };
+    session.accept(out, &mut events);
+    assert!(events.is_empty());
     let Some(mut state) = session
         .opening
         .get_mut(&ticket)

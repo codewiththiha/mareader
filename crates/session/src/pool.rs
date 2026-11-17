@@ -1,5 +1,6 @@
 //! Workers fed by demand restated each frame; stale work is dropped.
 
+mod types;
 mod worker;
 
 use std::collections::{HashSet, VecDeque};
@@ -8,159 +9,34 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use mareader_epub::{Inserts, OpenBook, OpenTarget};
-use mareader_pdf::{Paper, Raster, RenderError, TextLayer};
+use mareader_epub::{OpenBook, OpenTarget};
 use mareader_reflow::Typography;
 
 use crate::document::TextFile;
-use crate::key::{DocId, PageKey, Want};
-use crate::{Document, OpenError, Source};
+use crate::key::Want;
+use crate::{Document, Source};
+
+use types::{BgJob, Job, PendingBg};
+pub(crate) use types::{Output, Primed, RetypesetTask};
 
 /// Finished results wait here; past it, workers pause until a poll.
 const DONE_ITEMS: usize = 32;
 const DONE_BYTES: usize = 32 << 20;
 /// Settle delay before background full-book layout starts after a preview.
-const RETYPESET_SETTLE: Duration = Duration::from_millis(220);
+pub(crate) const RETYPESET_SETTLE: Duration = Duration::from_millis(220);
 
 pub(crate) type Wake = Arc<dyn Fn() + Send + Sync>;
 
-pub(crate) enum Job {
-    Open {
-        ticket: u64,
-        source: Source,
-        typo: Arc<Typography>,
-        /// Set when the file is text to convert first.
-        text: Option<TextFile>,
-        target: Option<OpenTarget>,
-    },
-    ContinueOpen {
-        ticket: u64,
-        state: Box<OpenBook>,
-    },
-    /// `doc`, open as `id`, set again in `typo`, maybe with `inserts`.
-    Retypeset(RetypesetTask),
-    /// Finishes full-book layout after a local retypeset preview rendered.
-    ContinueRetypeset(RetypesetTask),
-    Work {
-        want: Want,
-        doc: Arc<Document>,
-    },
-}
-
-pub(crate) struct RetypesetTask {
-    pub ticket: u64,
-    pub id: DocId,
-    pub doc: Arc<Document>,
-    pub typo: Arc<Typography>,
-    pub inserts: Option<Arc<Inserts>>,
-    pub target: Option<OpenTarget>,
-    pub cancel: Arc<AtomicBool>,
-}
-
-impl Job {
-    /// Opens and re-sets jump the queue and its backlog limit.
-    fn urgent(&self) -> bool {
-        matches!(self, Self::Open { .. } | Self::Retypeset { .. })
-    }
-}
-
-pub(crate) enum Output {
-    Opened {
-        ticket: u64,
-        result: Result<Document, OpenError>,
-    },
-    OpenPreview {
-        ticket: u64,
-        doc: Document,
-        state: Box<OpenBook>,
-    },
-    OpenProgress {
-        ticket: u64,
-        state: Box<OpenBook>,
-    },
-    OpenComplete {
-        ticket: u64,
-        doc: Document,
-    },
-    OpenFailed {
-        ticket: u64,
-        error: OpenError,
-    },
-    /// Instant local preview around the reading focus; full layout follows.
-    RetypesetPreview {
-        ticket: u64,
-        id: DocId,
-        doc: Document,
-    },
-    /// None when the book wouldn't set; the old one stays.
-    Retypeset {
-        ticket: u64,
-        id: DocId,
-        result: Option<Document>,
-    },
-    Rendered {
-        key: PageKey,
-        result: Result<Raster, RenderError>,
-    },
-    Read {
-        doc: DocId,
-        page: usize,
-        result: Result<TextLayer, RenderError>,
-    },
-    Paper {
-        doc: DocId,
-        page: usize,
-        result: Result<Paper, RenderError>,
-    },
-}
-
-impl Output {
-    pub(crate) fn bytes(&self) -> usize {
-        match self {
-            Self::Rendered { result: Ok(r), .. } => r.bytes(),
-            Self::Read { result: Ok(t), .. } => t.bytes(),
-            _ => 0,
-        }
-    }
-
-    /// The demand this answers; opens answer none.
-    pub(super) fn want(&self) -> Option<Want> {
-        match self {
-            Self::Rendered { key, .. } => Some(Want::Raster(*key)),
-            Self::Read { doc, page, .. } => Some(Want::Text {
-                doc: *doc,
-                page: *page,
-            }),
-            Self::Paper { doc, page, .. } => Some(Want::Paper {
-                doc: *doc,
-                page: *page,
-            }),
-            Self::Opened { .. }
-            | Self::OpenPreview { .. }
-            | Self::OpenProgress { .. }
-            | Self::OpenComplete { .. }
-            | Self::OpenFailed { .. }
-            | Self::RetypesetPreview { .. }
-            | Self::Retypeset { .. } => None,
-        }
-    }
-}
-
-pub(super) struct PendingBg {
-    pub ready_at: Instant,
-    pub task: RetypesetTask,
-}
-
 #[derive(Default)]
-pub(super) struct State {
-    pub(super) queue: VecDeque<Job>,
-    pub(super) bg_retypeset: VecDeque<PendingBg>,
-    pub(super) bg_cancel: Option<Arc<AtomicBool>>,
-    pub(super) running: HashSet<Want>,
-    pub(super) wanted: HashSet<Want>,
-    pub(super) done: VecDeque<Output>,
-    pub(super) done_bytes: usize,
-    pub(super) quit: bool,
+struct State {
+    queue: VecDeque<Job>,
+    bg_jobs: VecDeque<PendingBg>,
+    bg_cancel: Option<Arc<AtomicBool>>,
+    running: HashSet<Want>,
+    wanted: HashSet<Want>,
+    done: VecDeque<Output>,
+    done_bytes: usize,
+    quit: bool,
 }
 
 impl State {
@@ -169,7 +45,7 @@ impl State {
     }
 
     /// The next job a worker may take: opens always, the rest if room.
-    pub(super) fn next(&mut self) -> Option<Job> {
+    fn next(&mut self) -> Option<Job> {
         let urgent = self.queue.front().is_some_and(Job::urgent);
         if urgent || !self.full() {
             self.queue.pop_front()
@@ -179,15 +55,15 @@ impl State {
     }
 }
 
-pub(super) struct Shared {
+struct Shared {
     state: Mutex<State>,
-    pub(super) work: Condvar,
-    pub(super) bg_work: Condvar,
-    pub(super) wake: Wake,
+    work: Condvar,
+    bg_work: Condvar,
+    wake: Wake,
 }
 
 impl Shared {
-    pub(super) fn lock(&self) -> MutexGuard<'_, State> {
+    fn lock(&self) -> MutexGuard<'_, State> {
         // Documents catch their own panics, so poison is only noise.
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -221,8 +97,8 @@ impl Pool {
         let bg_worker = if workers > 0 {
             let shared = Arc::clone(&shared);
             std::thread::Builder::new()
-                .name("mareader-retype-bg".to_owned())
-                .spawn(move || worker::work_retype_bg(&shared))
+                .name("mareader-book-bg".to_owned())
+                .spawn(move || worker::work_bg(&shared))
                 .ok()
         } else {
             None
@@ -251,34 +127,67 @@ impl Pool {
         });
     }
 
-    pub(crate) fn continue_open(&self, ticket: u64, state: Box<OpenBook>) {
-        self.shared
-            .lock()
-            .queue
-            .push_back(Job::ContinueOpen { ticket, state });
-        if self.workers.is_empty() {
-            (self.shared.wake)();
-        } else {
-            self.shared.work.notify_one();
-        }
+    pub(crate) fn continue_open(
+        &self,
+        ticket: u64,
+        state: Box<OpenBook>,
+        flags: (Arc<AtomicBool>, Arc<AtomicBool>),
+        delay: Duration,
+    ) {
+        let (pause, closed) = flags;
+        self.schedule_bg(
+            BgJob::Open {
+                ticket,
+                state,
+                pause,
+                closed,
+            },
+            delay,
+        );
+    }
+
+    pub(crate) fn complete_reset(
+        &self,
+        ticket: u64,
+        doc: Document,
+        typo: Arc<Typography>,
+        flags: (Arc<AtomicBool>, Arc<AtomicBool>),
+        delay: Duration,
+    ) {
+        let (pause, closed) = flags;
+        self.schedule_bg(
+            BgJob::CompleteReset {
+                ticket,
+                doc,
+                typo,
+                pause,
+                closed,
+            },
+            delay,
+        );
+    }
+
+    pub(crate) fn pause_open(&self) {
+        self.shared.bg_work.notify_one();
     }
 
     pub(crate) fn cancel_open(&self, ticket: u64) {
-        self.shared.lock().queue.retain(
-            |job| !matches!(job, Job::ContinueOpen { ticket: queued, .. } if *queued == ticket),
-        );
+        let mut s = self.shared.lock();
+        s.queue
+            .retain(|job| !matches!(job, Job::Background(bg) if bg.is_open_ticket(ticket)));
+        s.bg_jobs.retain(|p| !p.job.is_open_ticket(ticket));
+        drop(s);
+        self.shared.bg_work.notify_one();
     }
 
     pub(crate) fn cancel_retypeset(&self, ticket: u64) {
         let mut s = self.shared.lock();
-        s.queue.retain(|job| {
-            !matches!(
-                job,
-                Job::Retypeset(task) | Job::ContinueRetypeset(task) if task.ticket == ticket
-            )
+        s.queue.retain(|job| match job {
+            Job::Retypeset(t) => t.ticket != ticket,
+            Job::Background(bg) => !bg.is_retypeset_ticket(ticket),
+            _ => true,
         });
-        s.bg_retypeset
-            .retain(|pending| pending.task.ticket != ticket);
+        s.bg_jobs.retain(|p| !p.job.is_retypeset_ticket(ticket));
         drop(s);
         self.shared.bg_work.notify_one();
     }
@@ -292,19 +201,20 @@ impl Pool {
     }
 
     pub(crate) fn continue_retypeset(&self, task: RetypesetTask) {
+        self.schedule_bg(BgJob::Retypeset(task), RETYPESET_SETTLE);
+    }
+
+    fn schedule_bg(&self, job: BgJob, delay: Duration) {
         if self.bg_worker.is_some() {
-            let ready_at = Instant::now() + RETYPESET_SETTLE;
+            let ready_at = Instant::now() + delay;
             self.shared
                 .lock()
-                .bg_retypeset
-                .push_back(PendingBg { ready_at, task });
+                .bg_jobs
+                .push_back(PendingBg { ready_at, job });
             self.shared.bg_work.notify_one();
             return;
         }
-        self.shared
-            .lock()
-            .queue
-            .push_back(Job::ContinueRetypeset(task));
+        self.shared.lock().queue.push_back(Job::Background(job));
         if self.workers.is_empty() {
             (self.shared.wake)();
         } else {
@@ -332,10 +242,7 @@ impl Pool {
         for job in s.queue.drain(..) {
             if job.urgent() {
                 priority.push_back(job);
-            } else if matches!(
-                &job,
-                Job::ContinueOpen { .. } | Job::ContinueRetypeset { .. }
-            ) {
+            } else if matches!(&job, Job::Background(_)) {
                 background.push_back(job);
             }
         }
@@ -400,7 +307,7 @@ impl Pool {
     /// Jobs not yet finished, queued or running, for tests and meters.
     pub(crate) fn pending(&self) -> usize {
         let s = self.shared.lock();
-        s.queue.len() + s.running.len() + s.bg_retypeset.len() + usize::from(s.bg_cancel.is_some())
+        s.queue.len() + s.running.len() + s.bg_jobs.len() + usize::from(s.bg_cancel.is_some())
     }
 }
 

@@ -311,10 +311,23 @@ impl Document {
         }
     }
 
+    /// Whether a book snapshot currently holds only a local layout window.
+    pub fn is_windowed(&self) -> bool {
+        matches!(self, Self::Epub { book, .. } if book.is_windowed())
+    }
+
     /// The page of `other` drawn just like page `page`, if any.
     pub fn same_page(&self, page: usize, other: &Self) -> Option<usize> {
         match (self, other) {
             (Self::Epub { book, .. }, Self::Epub { book: o, .. }) => book.same_page(page, o),
+            _ => None,
+        }
+    }
+
+    /// Best-effort same-typography target page when `same_page` rejects `page`.
+    pub fn fallback_page(&self, page: usize, other: &Self) -> Option<usize> {
+        match (self, other) {
+            (Self::Epub { book, .. }, Self::Epub { book: o, .. }) => book.fallback_page(page, o),
             _ => None,
         }
     }

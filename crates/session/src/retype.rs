@@ -3,11 +3,11 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mareader_epub::{Book, Inserts, OpenTarget};
+use mareader_epub::{Book, Inserts, OpenBook, OpenTarget};
 use mareader_reflow::Typography;
 
-use crate::pool::RetypesetTask;
-use crate::{DocId, Document, Entry, Event, Session};
+use crate::pool::{Primed, RETYPESET_SETTLE, RetypesetTask};
+use crate::{DocId, Document, Entry, Event, PageKey, Part, Prime, Session};
 
 impl Document {
     pub(crate) fn can_preview_reset(&self, typo: &Typography) -> bool {
@@ -101,6 +101,18 @@ impl Session {
         slot: u64,
         target: Option<OpenTarget>,
     ) {
+        self.reset_primed(id, typo, inserts, slot, (target, None));
+    }
+
+    /// Like [`Self::reset_at`], optionally priming visible pages on the worker.
+    pub fn reset_primed(
+        &mut self,
+        id: DocId,
+        typo: Arc<Typography>,
+        inserts: Option<Arc<Inserts>>,
+        slot: u64,
+        (target, prime): (Option<OpenTarget>, Option<Prime>),
+    ) {
         let Some(entry) = self.docs.get(&id) else {
             return;
         };
@@ -116,10 +128,18 @@ impl Session {
             preview_doc: None,
             continuing: false,
         };
+        let mut paused = false;
         for opening in self.opening.values_mut() {
             if opening.doc == Some(id) {
                 opening.typo = Arc::clone(&typo);
+                opening.pause.store(true, Ordering::Relaxed);
+                opening.ready = false;
+                opening.delay = RETYPESET_SETTLE;
+                paused = true;
             }
+        }
+        if paused {
+            self.pool.pause_open();
         }
         let stale = self.typesetting.insert(slot, set).map(|prev| {
             prev.cancel.store(true, Ordering::Relaxed);
@@ -132,6 +152,7 @@ impl Session {
             typo,
             inserts,
             target,
+            prime,
             cancel,
         };
         self.pool.retypeset(task, stale);
@@ -142,7 +163,21 @@ impl Session {
         if let Some(prev) = self.typesetting.remove(&slot) {
             prev.cancel.store(true, Ordering::Relaxed);
             self.pool.cancel_retypeset(prev.ticket);
+            let resumes: Vec<_> = self
+                .opening
+                .iter()
+                .filter_map(|(ticket, opening)| {
+                    (opening.doc == Some(prev.doc) && opening.ready).then_some(*ticket)
+                })
+                .collect();
+            for ticket in resumes {
+                self.resume_opening(ticket);
+            }
         }
+    }
+
+    pub(crate) fn has_active_retypeset(&self, doc: DocId) -> bool {
+        self.typesetting.values().any(|t| t.doc == doc)
     }
 
     pub(crate) fn close_typesetting(&mut self, id: DocId) {
@@ -161,17 +196,24 @@ impl Session {
         ticket: u64,
         id: DocId,
         doc: Document,
-    ) -> Option<Event> {
-        let slot = self
+        primed: Primed,
+        out: &mut Vec<Event>,
+    ) {
+        let Some(slot) = self
             .typesetting
             .iter()
-            .find_map(|(slot, t)| (t.ticket == ticket).then_some(*slot))?;
+            .find_map(|(slot, t)| (t.ticket == ticket).then_some(*slot))
+        else {
+            return;
+        };
         let Some(old) = self.docs.get(&id) else {
             self.typesetting.remove(&slot);
-            return None;
+            return;
         };
         let (name, path, previous) = (old.name.clone(), old.path.clone(), Arc::clone(&old.doc));
-        let typo = self.typesetting.get(&slot).map(|t| Arc::clone(&t.typo))?;
+        let Some(typo) = self.typesetting.get(&slot).map(|t| Arc::clone(&t.typo)) else {
+            return;
+        };
         let new = DocId(self.bump());
         self.docs.insert(
             new,
@@ -187,11 +229,17 @@ impl Session {
             state.preview_doc = Some(new);
             state.continuing = false;
         }
-        Some(Event::Retypeset {
+        self.rebind_opening_doc(id, new);
+        let has_primed = !primed.rasters.is_empty();
+        out.push(Event::Retypeset {
             old: id,
             new,
             previous,
-        })
+        });
+        push_primed(new, primed, out);
+        if has_primed {
+            self.resume_retypeset(new);
+        }
     }
 
     pub(crate) fn accept_retypeset(
@@ -199,13 +247,26 @@ impl Session {
         ticket: u64,
         id: DocId,
         result: Option<Document>,
-    ) -> Option<Event> {
-        let slot = self
+        primed: Primed,
+        out: &mut Vec<Event>,
+    ) {
+        let Some(slot) = self
             .typesetting
             .iter()
-            .find_map(|(slot, t)| (t.ticket == ticket).then_some(*slot))?;
-        let set = self.typesetting.remove(&slot)?;
-        let mut doc = result?;
+            .find_map(|(slot, t)| (t.ticket == ticket).then_some(*slot))
+        else {
+            return;
+        };
+        let Some(set) = self.typesetting.remove(&slot) else {
+            return;
+        };
+        let Some(mut doc) = result else {
+            let resumes = self.mark_opening_ready(id);
+            for ticket in resumes {
+                self.resume_opening(ticket);
+            }
+            return;
+        };
         for opening in self.opening.values() {
             if opening.doc == Some(id)
                 && let Some(target) = opening.target.as_ref()
@@ -213,7 +274,9 @@ impl Session {
                 doc.set_preview_target(target);
             }
         }
-        let old = self.docs.get(&id)?;
+        let Some(old) = self.docs.get(&id) else {
+            return;
+        };
         let entry = Entry {
             doc: Arc::new(doc),
             name: old.name.clone(),
@@ -223,29 +286,56 @@ impl Session {
         let previous = Arc::clone(&old.doc);
         let new = DocId(self.bump());
         self.docs.insert(new, entry);
+        let has_primed = !primed.rasters.is_empty();
+        self.rebind_opening_doc(id, new);
+        if has_primed {
+            let resumes = self.mark_opening_ready(new);
+            for ticket in resumes {
+                self.resume_opening(ticket);
+            }
+        } else {
+            let resumes: Vec<_> = self
+                .opening
+                .iter()
+                .filter_map(|(ticket, opening)| {
+                    (opening.doc == Some(new) && opening.ready).then_some(*ticket)
+                })
+                .collect();
+            for ticket in resumes {
+                self.resume_opening(ticket);
+            }
+        }
+        out.push(Event::Retypeset {
+            old: id,
+            new,
+            previous,
+        });
+        push_primed(new, primed, out);
+    }
+
+    fn rebind_opening_doc(&mut self, old: DocId, new: DocId) {
         let target_doc = self.docs.get(&new).map(|entry| &*entry.doc);
-        let mut resumes = Vec::new();
-        for (ticket, opening) in &mut self.opening {
-            if opening.doc == Some(id) {
+        for opening in self.opening.values_mut() {
+            if opening.doc == Some(old) {
                 opening.doc = Some(new);
                 opening.target_page = opening
                     .target
                     .as_ref()
                     .and_then(|target| target_doc.and_then(|doc| doc.target_page(target)))
                     .unwrap_or(opening.target_page);
-                if opening.ready {
-                    resumes.push(*ticket);
-                }
             }
         }
-        for ticket in resumes {
-            self.resume_opening(ticket);
+    }
+
+    fn mark_opening_ready(&mut self, doc: DocId) -> Vec<u64> {
+        let mut resumes = Vec::new();
+        for (ticket, opening) in &mut self.opening {
+            if opening.doc == Some(doc) {
+                opening.ready = true;
+                resumes.push(*ticket);
+            }
         }
-        Some(Event::Retypeset {
-            old: id,
-            new,
-            previous,
-        })
+        resumes
     }
 
     pub(crate) fn resume_retypeset(&mut self, doc: DocId) {
@@ -269,212 +359,75 @@ impl Session {
                 typo: Arc::clone(&state.typo),
                 inserts: state.inserts.clone(),
                 target: None,
+                prime: None,
                 cancel: Arc::clone(&state.cancel),
             };
             self.pool.continue_retypeset(task);
         }
     }
+
+    pub(crate) fn resume_opening(&mut self, ticket: u64) {
+        let active = self
+            .opening
+            .get(&ticket)
+            .and_then(|o| o.doc)
+            .is_some_and(|id| self.has_active_retypeset(id));
+        if active {
+            return;
+        }
+        enum Next {
+            Open(Box<OpenBook>),
+            Reset(Box<Document>, Arc<Typography>),
+        }
+        let next = {
+            let Some(opening) = self.opening.get_mut(&ticket) else {
+                return;
+            };
+            if (opening.doc.is_some() && !opening.ready) || opening.continuing {
+                return;
+            }
+            let work = if let Some(doc) = opening.completed.take() {
+                Next::Reset(Box::new(doc), Arc::clone(&opening.typo))
+            } else if let Some(mut state) = opening.resume.take() {
+                state.set_typography(opening.typo.as_ref());
+                Next::Open(state)
+            } else {
+                return;
+            };
+            opening.pause.store(false, Ordering::Relaxed);
+            opening.continuing = true;
+            let flags = (Arc::clone(&opening.pause), Arc::clone(&opening.closed));
+            let delay = std::mem::take(&mut opening.delay);
+            (work, flags, delay)
+        };
+        match next.0 {
+            Next::Open(state) => self.pool.continue_open(ticket, state, next.1, next.2),
+            Next::Reset(doc, typo) => self.pool.complete_reset(ticket, *doc, typo, next.1, next.2),
+        }
+    }
+}
+
+fn push_primed(doc: DocId, primed: Primed, out: &mut Vec<Event>) {
+    for (page, scale, result) in primed.rasters {
+        out.push(Event::Rendered {
+            key: PageKey {
+                doc,
+                page,
+                scale,
+                part: Part::Whole,
+            },
+            result,
+        });
+    }
+    for (page, result) in primed.texts {
+        out.push(Event::Text {
+            doc,
+            page,
+            result: result.map(Arc::new),
+        });
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{Budget, PageKey, Part, Scale, Source};
-
-    const ALL: Budget = Budget {
-        items: 64,
-        bytes: usize::MAX,
-    };
-
-    fn key(doc: DocId, page: usize) -> PageKey {
-        PageKey {
-            doc,
-            page,
-            scale: Scale::covering(0.5),
-            part: Part::Whole,
-        }
-    }
-
-    fn drain_until(session: &mut Session, done: impl Fn(&Event) -> bool) -> Vec<Event> {
-        let mut out = Vec::new();
-        for _ in 0..200 {
-            let batch = session.poll(ALL);
-            let hit = batch.iter().any(&done);
-            out.extend(batch);
-            if hit {
-                break;
-            }
-        }
-        out
-    }
-
-    #[test]
-    fn large_epub_retypesets_with_local_preview_then_completes() -> Result<(), &'static str> {
-        let mut s = Session::new(0, || {});
-        let bytes = Arc::new(mareader_epub::sample::epub(80, "Novel"));
-        s.open(Source::Bytes(bytes), None, Arc::default());
-        let events = drain_until(&mut s, |e| matches!(e, Event::Opened { .. }));
-        let doc = events
-            .iter()
-            .find_map(|e| match e {
-                Event::Opened { result: Ok(id), .. } => Some(*id),
-                _ => None,
-            })
-            .ok_or("book did not open")?;
-        let entry = s.get(doc).ok_or("missing open entry")?;
-        let page = entry.doc.page_count() / 2;
-        let anchor = entry.doc.anchor(page);
-        let spine = anchor.and_then(|a| entry.doc.spine_place(a));
-        let target = OpenTarget {
-            page,
-            pages: entry.doc.page_count(),
-            place: anchor,
-            spine,
-        };
-        let big = Arc::new(Typography {
-            font_size: 24.0,
-            ..Typography::default()
-        });
-        s.reset_at(doc, Arc::clone(&big), None, 7, Some(target));
-        let events = drain_until(&mut s, |e| matches!(e, Event::Retypeset { .. }));
-        let preview = events
-            .iter()
-            .find_map(|e| match e {
-                Event::Retypeset { old, new, .. } if *old == doc => Some(*new),
-                _ => None,
-            })
-            .ok_or("preview was not produced")?;
-        assert!(s.get(preview).is_some_and(|e| !e.doc.is_complete()));
-        // Closing the superseded doc keeps full layout alive for the preview.
-        s.close(doc);
-        assert_eq!(s.pending(), 0, "full layout waits for preview render");
-        let local = anchor
-            .and_then(|a| s.get(preview).and_then(|e| e.doc.locate(a)))
-            .unwrap_or(0);
-        s.want([key(preview, local)]);
-        let rendered = s.poll(ALL);
-        assert!(rendered.iter().any(|e| matches!(e, Event::Rendered { .. })));
-        let done = drain_until(&mut s, |e| matches!(e, Event::Retypeset { .. }));
-        let full = done.iter().find_map(|e| match e {
-            Event::Retypeset { old, new, .. } if *old == preview => Some(*new),
-            _ => None,
-        });
-        assert!(
-            full.and_then(|id| s.get(id))
-                .is_some_and(|e| e.doc.is_complete())
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn rapid_retypeset_cancels_superseded_preview_continuation() -> Result<(), &'static str> {
-        let mut s = Session::new(0, || {});
-        let bytes = Arc::new(mareader_epub::sample::epub(80, "Drag"));
-        s.open(Source::Bytes(bytes), None, Arc::default());
-        let events = drain_until(&mut s, |e| matches!(e, Event::Opened { .. }));
-        let doc = events
-            .iter()
-            .find_map(|e| match e {
-                Event::Opened { result: Ok(id), .. } => Some(*id),
-                _ => None,
-            })
-            .ok_or("book did not open")?;
-        let target = OpenTarget::default();
-        let t1 = Arc::new(Typography {
-            font_size: 20.0,
-            ..Typography::default()
-        });
-        let t2 = Arc::new(Typography {
-            font_size: 26.0,
-            ..Typography::default()
-        });
-        s.reset_at(doc, t1, None, 1, Some(target.clone()));
-        let first = drain_until(&mut s, |e| matches!(e, Event::Retypeset { .. }));
-        let p1 = first
-            .iter()
-            .find_map(|e| match e {
-                Event::Retypeset { new, .. } => Some(*new),
-                _ => None,
-            })
-            .ok_or("first preview missing")?;
-        s.close(doc);
-        s.want([key(p1, 0)]);
-        let _ = s.poll(ALL);
-        // Dragging again cancels p1's full layout and previews t2 immediately.
-        s.reset_at(p1, Arc::clone(&t2), None, 1, Some(target));
-        let second = drain_until(&mut s, |e| matches!(e, Event::Retypeset { .. }));
-        let p2 = second.iter().find_map(|e| match e {
-            Event::Retypeset { old, new, .. } if *old == p1 => Some(*new),
-            _ => None,
-        });
-        assert!(p2.is_some_and(|id| {
-            s.get(id)
-                .is_some_and(|e| e.typo == t2 && !e.doc.is_complete())
-        }));
-        Ok(())
-    }
-
-    fn wait_events(session: &mut Session, done: impl Fn(&Event) -> bool) -> Vec<Event> {
-        let start = std::time::Instant::now();
-        let mut out = Vec::new();
-        while start.elapsed() < std::time::Duration::from_secs(10) {
-            let batch = session.poll(ALL);
-            let hit = batch.iter().any(&done);
-            out.extend(batch);
-            if hit {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        out
-    }
-
-    fn wait_retypeset(session: &mut Session, from: DocId) -> Option<DocId> {
-        let events = wait_events(
-            session,
-            |e| matches!(e, Event::Retypeset { old, .. } if *old == from),
-        );
-        events.iter().find_map(|e| match e {
-            Event::Retypeset { old, new, .. } if *old == from => Some(*new),
-            _ => None,
-        })
-    }
-
-    #[test]
-    fn threaded_retypeset_debounces_background_and_completes_latest() -> Result<(), &'static str> {
-        let mut s = Session::new(2, || {});
-        let bytes = Arc::new(mareader_epub::sample::epub(80, "Bg"));
-        s.open(Source::Bytes(bytes), None, Arc::default());
-        let opened = wait_events(&mut s, |e| matches!(e, Event::Opened { .. }));
-        let doc = opened
-            .iter()
-            .find_map(|e| match e {
-                Event::Opened { result: Ok(id), .. } => Some(*id),
-                _ => None,
-            })
-            .ok_or("book did not open")?;
-        let target = OpenTarget::default();
-        let t1 = Arc::new(Typography {
-            font_size: 20.0,
-            ..Typography::default()
-        });
-        let t2 = Arc::new(Typography {
-            font_size: 26.0,
-            ..Typography::default()
-        });
-        s.reset_at(doc, t1, None, 1, Some(target.clone()));
-        let p1 = wait_retypeset(&mut s, doc).ok_or("first preview missing")?;
-        s.close(doc);
-        s.want([key(p1, 0)]);
-        let _ = wait_events(&mut s, |e| matches!(e, Event::Rendered { .. }));
-        s.reset_at(p1, Arc::clone(&t2), None, 1, Some(target));
-        let p2 = wait_retypeset(&mut s, p1).ok_or("second preview missing")?;
-        s.close(p1);
-        s.want([key(p2, 0)]);
-        let _ = wait_events(&mut s, |e| matches!(e, Event::Rendered { .. }));
-        let full = wait_retypeset(&mut s, p2).ok_or("full book missing")?;
-        let entry = s.get(full).ok_or("missing completed entry")?;
-        assert!(entry.typo == t2 && entry.doc.is_complete());
-        Ok(())
-    }
-}
+#[path = "retype_tests.rs"]
+mod tests;

@@ -49,7 +49,6 @@ impl State {
             if is_retype {
                 self.retyped(old, new, said, sink);
             } else {
-                self.adopt_page_rasters(old, new, sink);
                 self.reloaded(old, new, said, sink);
             }
         }
@@ -204,6 +203,7 @@ impl State {
                 _ => self.retarget(pane, old, new, said, sink),
             }
         }
+        self.hand_over(old, new, sink);
         self.release(new, sink);
         self.release(old, sink);
         self.retype(said, sink);

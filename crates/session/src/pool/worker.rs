@@ -1,6 +1,6 @@
 //! Worker loop and job execution, reusing hayro caches across PDF jobs.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -8,10 +8,11 @@ use mareader_epub::{OpenBook, OpenStep, OpenTarget};
 use mareader_pdf::RenderSession;
 use mareader_reflow::Typography;
 
-use super::{Job, Output, RetypesetTask, Shared};
+use super::Shared;
+use super::types::{BgJob, Job, Output, Primed, RetypesetTask};
 use crate::document::TextFile;
 use crate::key::{Part, Want};
-use crate::{Document, OpenError, Source};
+use crate::{Document, OpenError, Prime, Source};
 
 /// Consecutive jobs served by one PDF render cache before rebuilding it.
 const PDF_SESSION_CAP: usize = 64;
@@ -33,54 +34,89 @@ pub(super) fn work(shared: &Shared) {
     }
 }
 
-/// Background thread for full-book layout after retypeset previews.
-pub(super) fn work_retype_bg(shared: &Shared) {
+/// Background thread for full-book layout and progressive EPUB completion.
+pub(super) fn work_bg(shared: &Shared) {
     loop {
-        let Some(task) = take_bg_retypeset(shared) else {
+        let Some(job) = take_bg_job(shared) else {
             return;
         };
-        if let Some(out) = continue_retypeset(task) {
+        if let Some(out) = run_bg_job(job) {
             commit(shared, out);
         }
         shared.lock().bg_cancel = None;
     }
 }
 
-fn take_bg_retypeset(shared: &Shared) -> Option<RetypesetTask> {
+fn take_bg_job(shared: &Shared) -> Option<BgJob> {
     let mut s = shared.lock();
     loop {
         if s.quit {
             return None;
         }
-        while s
-            .bg_retypeset
-            .front()
-            .is_some_and(|p| p.task.cancel.load(Ordering::Relaxed))
+        s.bg_jobs.retain(|p| match &p.job {
+            BgJob::Retypeset(t) => !t.cancel.load(Ordering::Relaxed),
+            BgJob::Open { closed, .. } | BgJob::CompleteReset { closed, .. } => {
+                !closed.load(Ordering::Relaxed)
+            }
+        });
+        if let Some(idx) = s.bg_jobs.iter().position(|p| match &p.job {
+            BgJob::Open { pause, .. } | BgJob::CompleteReset { pause, .. } => {
+                pause.load(Ordering::Relaxed)
+            }
+            BgJob::Retypeset(_) => false,
+        }) && let Some(pending) = s.bg_jobs.remove(idx)
         {
-            s.bg_retypeset.pop_front();
+            return Some(pending.job);
         }
-        let Some(ready_at) = s.bg_retypeset.front().map(|p| p.ready_at) else {
+        let now = Instant::now();
+        let ready = s
+            .bg_jobs
+            .iter()
+            .position(|p| matches!(p.job, BgJob::Retypeset(_)) && p.ready_at <= now)
+            .or_else(|| s.bg_jobs.iter().position(|p| p.ready_at <= now));
+        if let Some(idx) = ready
+            && let Some(pending) = s.bg_jobs.remove(idx)
+        {
+            let flag = match &pending.job {
+                BgJob::Retypeset(t) => Arc::clone(&t.cancel),
+                BgJob::Open { pause, .. } | BgJob::CompleteReset { pause, .. } => Arc::clone(pause),
+            };
+            s.bg_cancel = Some(flag);
+            return Some(pending.job);
+        }
+        let Some(earliest) = s.bg_jobs.iter().map(|p| p.ready_at).min() else {
             s = shared
                 .bg_work
                 .wait(s)
                 .unwrap_or_else(PoisonError::into_inner);
             continue;
         };
-        let wait = ready_at.saturating_duration_since(Instant::now());
+        let wait = earliest.saturating_duration_since(now);
         if !wait.is_zero() {
             (s, _) = shared
                 .bg_work
                 .wait_timeout(s, wait)
                 .unwrap_or_else(PoisonError::into_inner);
-            continue;
         }
-        if let Some(pending) = s.bg_retypeset.pop_front() {
-            if pending.task.cancel.load(Ordering::Relaxed) {
-                continue;
-            }
-            s.bg_cancel = Some(Arc::clone(&pending.task.cancel));
-            return Some(pending.task);
-        }
+    }
+}
+
+fn run_bg_job(job: BgJob) -> Option<Output> {
+    match job {
+        BgJob::Retypeset(task) => continue_retypeset(task),
+        BgJob::Open {
+            ticket,
+            state,
+            pause,
+            closed,
+        } => (!closed.load(Ordering::Relaxed)).then(|| continue_open(ticket, state, &pause)),
+        BgJob::CompleteReset {
+            ticket,
+            doc,
+            typo,
+            pause,
+            closed,
+        } => (!closed.load(Ordering::Relaxed)).then(|| complete_reset(ticket, doc, &typo, &pause)),
     }
 }
 
@@ -188,9 +224,8 @@ pub(super) fn finish(shared: &Shared, job: Job) {
                 result: Err(error),
             },
         }),
-        Job::ContinueOpen { ticket, state } => Some(continue_open(ticket, state)),
         Job::Retypeset(task) => retypeset_job(task),
-        Job::ContinueRetypeset(task) => continue_retypeset(task),
+        Job::Background(bg) => run_bg_job(bg),
         Job::Work {
             want: Want::Raster(key),
             doc,
@@ -237,10 +272,12 @@ fn retypeset_job(task: RetypesetTask) -> Option<Output> {
             task.doc
                 .reset_preview(&task.typo, task.inserts.as_ref(), target, &task.cancel);
         if let Some(doc) = preview {
+            let primed = prime_pages(&doc, task.target.as_ref(), task.prime, &task.cancel)?;
             return Some(Output::RetypesetPreview {
                 ticket: task.ticket,
                 id: task.id,
                 doc,
+                primed,
             });
         }
         if task.cancel.load(Ordering::Relaxed) {
@@ -260,16 +297,68 @@ fn continue_retypeset(task: RetypesetTask) -> Option<Output> {
     if task.cancel.load(Ordering::Relaxed) {
         return None;
     }
+    let primed = match result.as_ref() {
+        Some(doc) => prime_pages(doc, task.target.as_ref(), task.prime, &task.cancel)?,
+        None => Primed::default(),
+    };
     Some(Output::Retypeset {
         ticket: task.ticket,
         id: task.id,
         result,
+        primed,
     })
 }
 
-fn continue_open(ticket: u64, mut state: Box<OpenBook>) -> Output {
+fn prime_pages(
+    doc: &Document,
+    target: Option<&OpenTarget>,
+    prime: Option<Prime>,
+    cancel: &AtomicBool,
+) -> Option<Primed> {
+    let Some(prime) = prime else {
+        return Some(Primed::default());
+    };
+    let count = doc.page_count();
+    if count == 0 || prime.pages == 0 {
+        return Some(Primed::default());
+    }
+    let focus = target
+        .and_then(|t| doc.target_page(t))
+        .unwrap_or(0)
+        .min(count.saturating_sub(1));
+    let start = if prime.spread && prime.pages > 1 {
+        let lead = doc.lead();
+        if focus < lead || focus == 0 {
+            focus
+        } else {
+            lead + ((focus - lead) / 2) * 2
+        }
+    } else {
+        focus
+    };
+    let end = start.saturating_add(prime.pages.min(2)).min(count);
+    let mut out = Primed::default();
+    for page in start..end {
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        let raster = doc.render(page, prime.scale.value());
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        let text = doc.text_layer(page);
+        out.rasters.push((page, prime.scale, raster));
+        out.texts.push((page, text));
+    }
+    Some(out)
+}
+
+fn continue_open(ticket: u64, mut state: Box<OpenBook>, pause: &AtomicBool) -> Output {
+    if pause.load(Ordering::Relaxed) {
+        return Output::OpenProgress { ticket, state };
+    }
     let target = state.target().cloned();
-    match state.step() {
+    match state.step_cancellable(pause) {
         Ok(OpenStep::Continue) => Output::OpenProgress { ticket, state },
         Ok(OpenStep::Preview(book)) => Output::OpenPreview {
             ticket,
@@ -283,6 +372,22 @@ fn continue_open(ticket: u64, mut state: Box<OpenBook>) -> Output {
         Err(error) => Output::OpenFailed {
             ticket,
             error: OpenError::Epub(error),
+        },
+    }
+}
+
+fn complete_reset(ticket: u64, doc: Document, typo: &Typography, pause: &AtomicBool) -> Output {
+    if pause.load(Ordering::Relaxed) {
+        return Output::OpenCompleteStale { ticket, doc };
+    }
+    match doc.reset_cancellable(typo, None, pause) {
+        Some(reset) if !pause.load(Ordering::Relaxed) => {
+            Output::OpenComplete { ticket, doc: reset }
+        }
+        _ if pause.load(Ordering::Relaxed) => Output::OpenCompleteStale { ticket, doc },
+        _ => Output::OpenFailed {
+            ticket,
+            error: OpenError::Epub(mareader_epub::OpenError::Invalid),
         },
     }
 }

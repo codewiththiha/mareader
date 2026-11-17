@@ -57,6 +57,7 @@ struct Slot {
     /// The frame it was last drawn in, and last drawn sharp in.
     used: u64,
     sharp: u64,
+    stale: bool,
 }
 
 /// A tile of a page too big for one texture, at one exact scale.
@@ -107,11 +108,10 @@ impl PageCache {
     /// Keeps an uploaded page; a slot at the same scale is replaced.
     pub fn insert(&mut self, key: PageKey, texture: PageTexture, bytes: usize) {
         if key.part != Part::Whole {
-            let used = self.frame;
             let tile = Tile {
                 texture,
                 bytes,
-                used,
+                used: self.frame,
             };
             self.bytes += bytes;
             if let Some(old) = self.tiles.insert(key, tile) {
@@ -130,6 +130,7 @@ impl PageCache {
             bytes,
             used: self.frame,
             sharp: 0,
+            stale: false,
         });
         self.failed.remove(&(key.doc, key.page));
     }
@@ -156,30 +157,25 @@ impl PageCache {
         let Some(slots) = self.pages.get_mut(&(key.doc, key.page)) else {
             return self.missing(key);
         };
-        if let Some(s) = slots.iter_mut().find(|s| s.scale == key.scale) {
-            s.used = frame;
-            s.sharp = frame;
+        if let Some(s) = slots.iter_mut().find(|s| s.scale == key.scale && !s.stale) {
+            (s.used, s.sharp) = (frame, frame);
             return Lookup::Sharp(s.texture.clone());
         }
-        // The nearest scale; on a tie, the sharper one.
         let nearest = slots.iter_mut().min_by_key(|s| {
             let away = (i32::from(s.scale.steps()) - i32::from(key.scale.steps())).abs();
             (away, -i32::from(s.scale.steps()))
         });
-        match nearest {
-            Some(s) => {
-                s.used = frame;
-                Lookup::Stale(s.texture.clone())
-            }
-            None => self.missing(key),
-        }
+        let Some(slot) = nearest else {
+            return self.missing(key);
+        };
+        slot.used = frame;
+        Lookup::Stale(slot.texture.clone())
     }
 
     fn missing(&self, key: PageKey) -> Lookup {
-        if self.failed.contains(&(key.doc, key.page)) {
-            Lookup::Failed
-        } else {
-            Lookup::Missing
+        match self.failed.contains(&(key.doc, key.page)) {
+            true => Lookup::Failed,
+            false => Lookup::Missing,
         }
     }
 
@@ -193,41 +189,44 @@ impl PageCache {
         let slot = self
             .pages
             .get_mut(&(key.doc, key.page))
-            .and_then(|slots| slots.iter_mut().find(|s| s.scale == key.scale));
+            .and_then(|slots| slots.iter_mut().find(|s| s.scale == key.scale && !s.stale));
         slot.map(|s| s.used = frame).is_some() || self.failed.contains(&(key.doc, key.page))
     }
 
-    /// Hands `old`'s textures to `new` where `map` finds the same page;
-    /// the rest go.
-    pub fn adopt(&mut self, old: DocId, new: DocId, map: impl Fn(usize) -> Option<usize>) {
-        let pages: Vec<usize> = (self.pages.keys())
-            .filter(|(d, _)| *d == old)
-            .map(|(_, p)| *p)
+    /// Hands `old`'s textures to `new` where `map` yields `(page, stale)`.
+    pub fn adopt(&mut self, old: DocId, new: DocId, map: impl Fn(usize) -> Option<(usize, bool)>) {
+        let pages: Vec<usize> = self
+            .pages
+            .keys()
+            .filter_map(|&(d, p)| (d == old).then_some(p))
             .collect();
         for page in pages {
-            let Some(to) = map(page).filter(|to| !self.pages.contains_key(&(new, *to))) else {
+            let Some((to, stale)) = map(page) else {
                 continue;
             };
-            if let Some(slots) = self.pages.remove(&(old, page)) {
+            if !self.pages.contains_key(&(new, to))
+                && let Some(mut slots) = self.pages.remove(&(old, page))
+            {
+                if stale {
+                    slots.iter_mut().for_each(|s| s.stale = true);
+                }
                 self.pages.insert((new, to), slots);
             }
         }
-        let tiles: Vec<PageKey> = self
-            .tiles
-            .keys()
-            .filter(|k| k.doc == old)
-            .copied()
-            .collect();
+        let keys = self.tiles.keys();
+        let tiles: Vec<PageKey> = keys.filter(|k| k.doc == old).copied().collect();
         for key in tiles {
-            let moved = map(key.page).map(|page| PageKey {
-                doc: new,
-                page,
-                ..key
+            let moved = map(key.page).and_then(|(page, stale)| {
+                let to = PageKey {
+                    doc: new,
+                    page,
+                    ..key
+                };
+                (!stale && !self.tiles.contains_key(&to)).then_some(to)
             });
-            let Some(to) = moved.filter(|k| !self.tiles.contains_key(k)) else {
-                continue;
-            };
-            if let Some(tile) = self.tiles.remove(&key) {
+            if let Some(to) = moved
+                && let Some(tile) = self.tiles.remove(&key)
+            {
                 self.tiles.insert(to, tile);
             }
         }
@@ -466,44 +465,42 @@ mod tests {
 
     #[test]
     fn growing_a_document_keeps_unchanged_page_textures() -> Out {
+        use mareader_session::{Budget, Event, Session, Source};
         let ctx = Context::default();
         let mut c = PageCache::default();
-        let mut session = mareader_session::Session::new(0, || {});
-        let bytes = || std::sync::Arc::new(mareader_pdf::sample::pdf(1, "Cache"));
-        let one = session.open(
-            mareader_session::Source::Bytes(bytes()),
-            None,
-            Default::default(),
+        let mut session = Session::new(0, || {});
+        let bytes = || Arc::new(mareader_pdf::sample::pdf(1, "Cache"));
+        let _ = (
+            session.open(Source::Bytes(bytes()), None, Default::default()),
+            session.open(Source::Bytes(bytes()), None, Default::default()),
         );
-        let two = session.open(
-            mareader_session::Source::Bytes(bytes()),
-            None,
-            Default::default(),
-        );
-        let budget = mareader_session::Budget {
+        let budget = Budget {
             items: 1,
             bytes: usize::MAX,
         };
-        let events = session.poll(budget).into_iter().chain(session.poll(budget));
-        let ids: Vec<DocId> = events
-            .filter_map(|event| match event {
-                mareader_session::Event::Opened {
-                    ticket,
-                    result: Ok(id),
-                } if ticket == one || ticket == two => Some(id),
+        let ids: Vec<DocId> = session
+            .poll(budget)
+            .into_iter()
+            .chain(session.poll(budget))
+            .filter_map(|e| match e {
+                Event::Opened { result: Ok(id), .. } => Some(id),
                 _ => None,
             })
             .collect();
-        let (Some(old), Some(new)) = (ids.first().copied(), ids.get(1).copied()) else {
+        let [old, new] = ids.as_slice() else {
             return Err("the samples didn't open");
         };
+        let (old, new) = (*old, *new);
         for page in 0..3 {
             put(&mut c, &ctx, key(old, page, 1.0), 8);
         }
-        c.adopt(old, new, |page| (page < 2).then_some(page));
-        assert!(c.touch(key(new, 0, 1.0)) && c.touch(key(new, 1, 1.0)));
+        c.adopt(old, new, |page| (page < 2).then_some((page, page == 1)));
+        assert!(c.touch(key(new, 0, 1.0)) && !c.touch(key(new, 1, 1.0)));
+        assert!(matches!(c.lookup(key(new, 0, 1.0)), Lookup::Sharp(_)));
+        assert!(matches!(c.lookup(key(new, 1, 1.0)), Lookup::Stale(_)));
         assert!(!c.touch(key(old, 0, 1.0)) && !c.touch(key(new, 2, 1.0)));
-        assert_eq!(c.len(), 2);
+        put(&mut c, &ctx, key(new, 1, 1.0), 8);
+        assert!(matches!(c.lookup(key(new, 1, 1.0)), Lookup::Sharp(_)) && c.len() == 2);
         Ok(())
     }
 

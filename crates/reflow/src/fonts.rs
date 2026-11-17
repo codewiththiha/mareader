@@ -362,7 +362,7 @@ impl Fonts {
     }
 
     /// Another layout scratch sharing the same font collection and file cache.
-    pub(crate) fn fork(&self) -> Self {
+    pub fn fork(&self) -> Self {
         Self::with(
             self.fonts.collection.clone(),
             self.fonts.source_cache.clone(),

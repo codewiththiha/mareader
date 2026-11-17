@@ -341,3 +341,120 @@ fn resting_keeps_visible_page_text_and_other_highlights_steady() -> Result<(), S
     assert_eq!(h.state().marks(pane).len(), 1);
     Ok(())
 }
+
+fn progressive_epub_preview(chapters: usize) -> H {
+    let mut app = MareaderApp::default();
+    app.set_option("workers", "0").ok();
+    app.set_option("animations", "false").ok();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(900.0, 700.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(200)
+        .build_eframe(|_| app);
+    h.state_mut()
+        .set_option("epub", &format!("sample:{chapters}"))
+        .ok();
+    for _ in 0..40 {
+        h.step();
+        let pane = h.state().active_pane();
+        let docs = h.state().documents();
+        let meter = docs.meter();
+        if let Some(r) = docs.reading(pane)
+            && !r.document.is_complete()
+            && meter.pages > 0
+            && meter.texts > 0
+        {
+            return h;
+        }
+    }
+    h
+}
+
+#[test]
+fn progressive_epub_completion_keeps_first_view_steady_without_flicker() {
+    let mut h = progressive_epub_preview(40);
+    let pane = h.state().active_pane();
+    let preview = h.state().documents().reading(pane).expect("preview opened");
+    assert!(!preview.document.is_complete(), "must start in preview");
+    let preview_doc = preview.doc;
+    let preview_offset = h.state().documents().offset(pane).unwrap_or_default();
+
+    let mut completed = false;
+    for step in 0..120 {
+        h.step();
+        let docs = h.state().documents();
+        let meter = docs.meter();
+        assert!(
+            meter.pages > 0,
+            "step {step}: page texture vanished during progressive completion"
+        );
+        assert!(
+            meter.texts > 0,
+            "step {step}: text layer vanished during progressive completion"
+        );
+        let offset = docs.offset(pane).unwrap_or_default();
+        assert!(
+            (offset - preview_offset).length() < 0.5,
+            "step {step}: scroll jumped from {preview_offset:?} to {offset:?}"
+        );
+        if let Some(r) = docs.reading(pane)
+            && r.document.is_complete()
+        {
+            assert_ne!(r.doc, preview_doc);
+            completed = true;
+            break;
+        }
+    }
+    assert!(completed, "progressive EPUB never completed");
+}
+
+#[test]
+fn progressive_epub_preview_typography_change_is_instant_and_completes() {
+    let mut h = progressive_epub_preview(40);
+    let pane = h.state().active_pane();
+    let base_size = h
+        .state()
+        .documents()
+        .typography(pane)
+        .expect("preview typography")
+        .font_size;
+    h.state_mut().queue(Sent::Engine(Command::SetField {
+        path: "text.font_size".into(),
+        value: "24".into(),
+    }));
+
+    let mut saw_preview_edit = false;
+    let mut saw_complete = false;
+    for step in 0..160 {
+        h.step();
+        let docs = h.state().documents();
+        let meter = docs.meter();
+        let Some(r) = docs.reading(pane) else {
+            continue;
+        };
+        let size = docs.typography(pane).map_or(base_size, |t| t.font_size);
+        if size > base_size + 0.5 {
+            assert!(
+                meter.pages > 0,
+                "step {step}: blank page frame after preview typography change"
+            );
+            assert!(
+                meter.texts > 0,
+                "step {step}: missing text layer after preview typography change"
+            );
+            if r.document.is_complete() {
+                saw_complete = true;
+                break;
+            }
+            saw_preview_edit = true;
+        }
+    }
+    assert!(
+        saw_preview_edit,
+        "typography change should apply to the preview before full-book load completes"
+    );
+    assert!(
+        saw_complete,
+        "progressive EPUB should finish loading in the new typography"
+    );
+}

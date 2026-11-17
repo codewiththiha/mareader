@@ -20,6 +20,8 @@ mod typeset;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use mareader_epub::OpenBook;
 pub use mareader_epub::{OpenTarget, SpinePlace};
@@ -172,6 +174,14 @@ pub struct Budget {
     pub bytes: usize,
 }
 
+/// Visible-page rendering hint to prime a retypeset before publishing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Prime {
+    pub scale: Scale,
+    pub pages: usize,
+    pub spread: bool,
+}
+
 pub struct Session {
     pool: Pool,
     docs: BTreeMap<DocId, Entry>,
@@ -190,8 +200,38 @@ struct Opening {
     target_page: usize,
     doc: Option<DocId>,
     resume: Option<Box<OpenBook>>,
+    completed: Option<Document>,
+    pause: Arc<AtomicBool>,
+    closed: Arc<AtomicBool>,
+    delay: Duration,
     ready: bool,
     continuing: bool,
+}
+
+impl Opening {
+    fn pending(
+        name: Option<String>,
+        path: Option<PathBuf>,
+        typo: Arc<Typography>,
+        target: Option<OpenTarget>,
+    ) -> Self {
+        let target_page = target.as_ref().map_or(0, |t| t.page);
+        Self {
+            name,
+            path,
+            typo,
+            target,
+            target_page,
+            doc: None,
+            resume: None,
+            completed: None,
+            pause: Arc::new(AtomicBool::new(false)),
+            closed: Arc::new(AtomicBool::new(false)),
+            delay: Duration::ZERO,
+            ready: false,
+            continuing: false,
+        }
+    }
 }
 
 impl std::fmt::Debug for Session {
@@ -263,20 +303,9 @@ impl Session {
                     .and_then(|p| p.parent().map(Path::to_path_buf)),
             })
         });
-        let target_page = target.as_ref().map_or(0, |target| target.page);
         self.opening.insert(
             ticket,
-            Opening {
-                name,
-                path,
-                typo: Arc::clone(&typo),
-                target: target.clone(),
-                target_page,
-                doc: None,
-                resume: None,
-                ready: false,
-                continuing: false,
-            },
+            Opening::pending(name, path, Arc::clone(&typo), target.clone()),
         );
         self.pool.open(ticket, source, typo, text, target);
         Ticket(ticket)
@@ -291,7 +320,10 @@ impl Session {
             .filter_map(|(ticket, opening)| (opening.doc == Some(id)).then_some(*ticket))
             .collect();
         for ticket in tickets {
-            self.opening.remove(&ticket);
+            if let Some(opening) = self.opening.remove(&ticket) {
+                opening.closed.store(true, Ordering::Relaxed);
+                opening.pause.store(true, Ordering::Relaxed);
+            }
             self.pool.cancel_open(ticket);
         }
     }
@@ -328,7 +360,11 @@ impl Session {
     /// Finished work, within `budget` (always at least one item).
     pub fn poll(&mut self, budget: Budget) -> Vec<Event> {
         let done = self.pool.poll(budget.items, budget.bytes);
-        done.into_iter().filter_map(|o| self.accept(o)).collect()
+        let mut events = Vec::with_capacity(done.len());
+        for out in done {
+            self.accept(out, &mut events);
+        }
+        events
     }
 
     /// Jobs queued or running.
@@ -362,24 +398,29 @@ impl Session {
         id
     }
 
-    fn accept(&mut self, out: Output) -> Option<Event> {
+    fn accept(&mut self, out: Output, events: &mut Vec<Event>) {
         match out {
             Output::Opened { ticket, result } => {
-                let Opening {
+                let Some(Opening {
                     name, path, typo, ..
-                } = self.opening.remove(&ticket)?;
+                }) = self.opening.remove(&ticket)
+                else {
+                    return;
+                };
                 let result = result.map(|doc| {
                     let name = mareader_pdf::display_name(doc.raw_title(), name.as_deref())
                         .unwrap_or_else(|| "Untitled".to_string());
                     self.admit(doc, name, path, typo)
                 });
-                Some(Event::Opened {
+                events.push(Event::Opened {
                     ticket: Ticket(ticket),
                     result,
-                })
+                });
             }
             Output::OpenPreview { ticket, doc, state } => {
-                let opening = self.opening.get(&ticket)?;
+                let Some(opening) = self.opening.get(&ticket) else {
+                    return;
+                };
                 let name = mareader_pdf::display_name(doc.raw_title(), opening.name.as_deref())
                     .unwrap_or_else(|| "Untitled".to_string());
                 let path = opening.path.clone();
@@ -390,73 +431,104 @@ impl Session {
                     .and_then(|target| doc.target_page(target))
                     .unwrap_or(opening.target_page);
                 let id = self.admit(doc, name, path, typo);
-                let opening = self.opening.get_mut(&ticket)?;
+                let Some(opening) = self.opening.get_mut(&ticket) else {
+                    return;
+                };
                 opening.doc = Some(id);
                 opening.target_page = target_page;
                 opening.resume = Some(state);
                 opening.ready = false;
                 opening.continuing = false;
-                Some(Event::Preview {
+                events.push(Event::Preview {
                     ticket: Ticket(ticket),
                     doc: id,
-                })
+                });
             }
             Output::OpenProgress { ticket, mut state } => {
-                let opening = self.opening.get_mut(&ticket)?;
+                let Some(opening) = self.opening.get_mut(&ticket) else {
+                    return;
+                };
                 state.set_typography(opening.typo.as_ref());
                 opening.resume = Some(state);
                 opening.continuing = false;
-                let ready = opening.doc.is_none() || opening.ready;
-                if ready {
-                    self.resume_opening(ticket);
-                }
-                None
+                self.resume_opening(ticket);
             }
             Output::OpenComplete { ticket, doc } => {
-                let opening = self.opening.remove(&ticket)?;
-                let doc = if doc.has_typography(opening.typo.as_ref()) {
-                    doc
-                } else {
-                    doc.reset(opening.typo.as_ref(), None).unwrap_or(doc)
+                let matches = self
+                    .opening
+                    .get(&ticket)
+                    .map(|o| doc.has_typography(o.typo.as_ref()));
+                let Some(matches) = matches else {
+                    return;
+                };
+                if !matches {
+                    if let Some(opening) = self.opening.get_mut(&ticket) {
+                        opening.completed = Some(doc);
+                        opening.continuing = false;
+                    }
+                    self.resume_opening(ticket);
+                    return;
+                }
+                let Some(opening) = self.opening.remove(&ticket) else {
+                    return;
                 };
                 let name = mareader_pdf::display_name(doc.raw_title(), opening.name.as_deref())
                     .unwrap_or_else(|| "Untitled".to_string());
-                let path = opening.path.clone();
-                let typo = Arc::clone(&opening.typo);
-                let new = self.admit(doc, name, path, typo);
+                let new = self.admit(doc, name, opening.path, opening.typo);
                 match opening.doc {
-                    Some(old) => Some(Event::Completed {
-                        ticket: Ticket(ticket),
-                        old,
-                        new,
-                    }),
-                    None => Some(Event::Opened {
+                    Some(old) => {
+                        self.close_typesetting(old);
+                        events.push(Event::Completed {
+                            ticket: Ticket(ticket),
+                            old,
+                            new,
+                        });
+                    }
+                    None => events.push(Event::Opened {
                         ticket: Ticket(ticket),
                         result: Ok(new),
                     }),
                 }
             }
+            Output::OpenCompleteStale { ticket, doc } => {
+                let Some(opening) = self.opening.get_mut(&ticket) else {
+                    return;
+                };
+                opening.completed = Some(doc);
+                opening.continuing = false;
+                self.resume_opening(ticket);
+            }
             Output::OpenFailed { ticket, error } => {
-                let opening = self.opening.remove(&ticket)?;
+                let Some(opening) = self.opening.remove(&ticket) else {
+                    return;
+                };
                 match opening.doc {
-                    Some(doc) => Some(Event::Incomplete {
+                    Some(doc) => events.push(Event::Incomplete {
                         ticket: Ticket(ticket),
                         doc,
                         error,
                     }),
-                    None => Some(Event::Opened {
+                    None => events.push(Event::Opened {
                         ticket: Ticket(ticket),
                         result: Err(error),
                     }),
                 }
             }
-            Output::RetypesetPreview { ticket, id, doc } => {
-                self.accept_retypeset_preview(ticket, id, doc)
-            }
-            Output::Retypeset { ticket, id, result } => self.accept_retypeset(ticket, id, result),
+            Output::RetypesetPreview {
+                ticket,
+                id,
+                doc,
+                primed,
+            } => self.accept_retypeset_preview(ticket, id, doc, primed, events),
+            Output::Retypeset {
+                ticket,
+                id,
+                result,
+                primed,
+            } => self.accept_retypeset(ticket, id, result, primed, events),
             Output::Rendered { key, result } => {
                 if !self.docs.contains_key(&key.doc) {
-                    return None;
+                    return;
                 }
                 let ticket = self.opening.iter().find_map(|(ticket, opening)| {
                     (opening.doc == Some(key.doc) && opening.target_page == key.page)
@@ -469,37 +541,23 @@ impl Session {
                     self.resume_opening(ticket);
                 }
                 self.resume_retypeset(key.doc);
-                Some(Event::Rendered { key, result })
+                events.push(Event::Rendered { key, result });
             }
             Output::Read { doc, page, result } => {
-                self.docs.contains_key(&doc).then(|| Event::Text {
-                    doc,
-                    page,
-                    result: result.map(Arc::new),
-                })
+                if self.docs.contains_key(&doc) {
+                    events.push(Event::Text {
+                        doc,
+                        page,
+                        result: result.map(Arc::new),
+                    });
+                }
             }
-            Output::Paper { doc, page, result } => self
-                .docs
-                .contains_key(&doc)
-                .then_some(Event::Paper { doc, page, result }),
+            Output::Paper { doc, page, result } => {
+                if self.docs.contains_key(&doc) {
+                    events.push(Event::Paper { doc, page, result });
+                }
+            }
         }
-    }
-
-    fn resume_opening(&mut self, ticket: u64) {
-        let state = {
-            let Some(opening) = self.opening.get_mut(&ticket) else {
-                return;
-            };
-            if (opening.doc.is_some() && !opening.ready) || opening.continuing {
-                return;
-            }
-            let Some(state) = opening.resume.take() else {
-                return;
-            };
-            opening.continuing = true;
-            state
-        };
-        self.pool.continue_open(ticket, state);
     }
 
     fn bump(&mut self) -> u64 {

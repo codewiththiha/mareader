@@ -8,7 +8,7 @@ use mareader_session::{DocId, RenderError, TextLayer};
 /// Text layers kept; a few screens of pages across every pane.
 pub const MAX_PAGES: usize = 96;
 
-/// A page's read text, or the note that reading it failed.
+/// A page's read text, or the record of a read failure.
 #[derive(Debug, Clone)]
 enum Slot {
     Ready(Arc<TextLayer>),
@@ -42,6 +42,14 @@ impl TextLayers {
     pub fn insert(&mut self, doc: DocId, page: usize, result: Result<Arc<TextLayer>, RenderError>) {
         let slot = result.map_or(Slot::Failed, Slot::Ready);
         self.slots.insert((doc, page), (slot, self.frame));
+    }
+
+    /// Cached pages currently stored for `doc`.
+    pub fn pages_of(&self, doc: DocId) -> Vec<usize> {
+        self.slots
+            .keys()
+            .filter_map(|&(d, page)| (d == doc).then_some(page))
+            .collect()
     }
 
     /// Hands `old`'s layers to `new` where `map` finds the same page.

@@ -226,6 +226,8 @@ fn finish(cx: &mut ShowContext<'_>) {
     let ppp = ctx.pixels_per_point();
     let wanted = Scale::covering(view.zoom.sharp() * ppp);
     let max_side = ctx.input(|i| i.max_texture_side) as f32;
+    view.ppp = ppp;
+    view.max_side = max_side;
     // Past the GPU's and hayro's limits, a page is drawn in tiles.
     let resting = now - view.moved_at >= TILE_REST;
     let urgency = if view_cx.active {

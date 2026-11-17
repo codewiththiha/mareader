@@ -15,7 +15,8 @@ pub(super) fn run(cx: &mut ShowContext<'_>) {
     };
     let viewport = input.viewport;
     let down = input.down;
-    let mut area = ScrollArea::new([true, down]).id_salt(("pdf", doc, mode));
+    let scroll_doc = *view.scroll_id.get_or_insert(doc);
+    let mut area = ScrollArea::new([true, down]).id_salt(("pdf", scroll_doc, mode));
     if let Some((to, _)) = view.scroll_to {
         area = area.scroll_offset(to);
     }

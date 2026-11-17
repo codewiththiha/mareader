@@ -19,7 +19,8 @@ use mareader_engine::triggers::ClipAction;
 use mareader_library::{BookId, Spot};
 use mareader_pdf::Bounds;
 use mareader_session::{
-    Anchor, DocId, Document, Entry, PageKey, Raster, RenderError, Selection, Typography, Want,
+    Anchor, DocId, Document, Entry, PageKey, Prime, Raster, RenderError, Selection, Typography,
+    Want,
 };
 use mareader_settings::PaperArea;
 use mareader_workspace::PaneId;
@@ -30,7 +31,6 @@ use crate::pages::{PageCache, PageTexture};
 use crate::pdf_view::{self, Demand, PageLook, PdfView, Sinks, Urgency, ViewContext};
 use crate::selection::Sheet;
 use crate::study::Gloss;
-use crate::theme::Tokens;
 use crate::thumbnails::{self, ThumbState};
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::zoom::ZoomState;
@@ -371,9 +371,15 @@ impl Sink for UiSink<'_> {
     }
 
     fn adopt_pages(&mut self, old: DocId, new: DocId, was: &Document, is: &Document) {
-        self.ui
-            .pages
-            .adopt(old, new, |page| was.same_page(page, is));
+        self.ui.pages.adopt(old, new, |page| {
+            was.same_page(page, is)
+                .map(|p| (p, false))
+                .or_else(|| was.fallback_page(page, is).map(|p| (p, true)))
+        });
+    }
+
+    fn prime_hint(&self, pane: PaneId, place: &Place, doc: &Document) -> Option<Prime> {
+        self.ui.views.get(&pane)?.prime_hint(place, doc)
     }
 
     fn reading_anchor(
@@ -417,6 +423,9 @@ impl Sink for UiSink<'_> {
             return;
         };
         let count = is.map_or(0, Document::page_count);
+        if let Some(is) = is {
+            (place.rtl, place.lead) = (is.right_to_left(), is.lead());
+        }
         if let (Some(was), Some(is)) = (was, is)
             && view.respliced(place, new, count, |p| was.same_page(p, is))
         {
@@ -573,7 +582,7 @@ impl DocumentsUi {
         let shown = session.show_document_pane(pane, |shown, vocab| match shown {
             PaneShow::Empty => false,
             PaneShow::Opening => {
-                opening(ui, &cx.tokens);
+                loading_mark::paint_opening(ui, cx.tokens.muted);
                 true
             }
             PaneShow::Open {
@@ -906,28 +915,4 @@ fn reading_place(
             reading_place::line_at(&layer, y + band)
         })
         .or_else(|| doc.anchor(place.current))
-}
-
-const OPENING_MARK: f32 = 48.0;
-
-fn opening_mark_rect(rect: Rect) -> Rect {
-    Rect::from_center_size(rect.center(), Vec2::splat(OPENING_MARK))
-}
-
-fn opening(ui: &mut Ui, t: &Tokens) {
-    let mark = opening_mark_rect(ui.max_rect());
-    loading_mark::paint(ui, mark, t.muted);
-}
-
-#[cfg(test)]
-mod opening_mark_tests {
-    use super::*;
-
-    #[test]
-    fn the_opening_mark_is_large_and_centered() {
-        let pane = Rect::from_min_size(egui::pos2(20.0, 30.0), Vec2::new(400.0, 300.0));
-        let mark = opening_mark_rect(pane);
-        assert_eq!(mark.center(), pane.center());
-        assert_eq!(mark.size(), Vec2::splat(OPENING_MARK));
-    }
 }

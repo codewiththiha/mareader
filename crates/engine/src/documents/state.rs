@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use mareader_library::BookId;
 use mareader_session::{
-    Anchor, DocId, Document, Inserts, OpenTarget, PageKey, Raster, RenderError,
+    Anchor, DocId, Document, Inserts, OpenTarget, PageKey, Prime, Raster, RenderError,
     Session as DocSession, Source, SpinePlace, Ticket, Typography, Want, typography,
 };
 use mareader_settings::TextSettings;
@@ -64,6 +64,10 @@ pub trait Sink {
     fn forget_pages(&mut self, _: DocId) {}
 
     fn adopt_pages(&mut self, _: DocId, _: DocId, _: &Document, _: &Document) {}
+
+    fn prime_hint(&self, _: PaneId, _: &Place, _: &Document) -> Option<Prime> {
+        None
+    }
 
     fn reading_anchor(
         &self,

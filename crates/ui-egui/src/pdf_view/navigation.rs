@@ -114,14 +114,63 @@ impl PdfView {
             return false;
         };
         let centre = Pos2::ZERO + self.offset + self.viewport / 2.0;
-        let spot = self.layout.as_ref().and_then(|l| l.locate(centre));
+        let spot = self.layout.as_ref().and_then(|l| {
+            l.locate(centre).or_else(|| {
+                let rect = l.rect(at.current)?;
+                Some((at.current, (centre - rect.min) / l.zoom().max(0.01)))
+            })
+        });
         let keep = spot.and_then(|(p, at)| Some((map(p)?, at)));
         let anchor = self.place.and_then(|(a, p)| Some((a, map(p)?)));
+        let hold = self.hold;
+        let selection = at.selection.and_then(|sel| {
+            Some(mareader_session::Selection {
+                anchor: mareader_session::Caret {
+                    page: map(sel.anchor.page)?,
+                    ..sel.anchor
+                },
+                focus: mareader_session::Caret {
+                    page: map(sel.focus.page)?,
+                    ..sel.focus
+                },
+            })
+        });
+        let panned = self.offset != Vec2::ZERO;
         let paged = at.mode.paged();
         self.retypeset(at, doc, page, count, None);
+        at.selection = selection;
+        self.hold = hold;
         self.place = anchor;
-        self.keep = keep.filter(|_| !paged);
+        self.keep = keep.filter(|_| !paged || panned);
         true
+    }
+
+    /// Visible-page rendering hint to prime a retypeset off the UI thread.
+    pub fn prime_hint(&self, place: &Place, doc: &Document) -> Option<mareader_session::Prime> {
+        let zoom = self.zoom.sharp();
+        if !zoom.is_finite() || zoom <= 0.0 || self.ppp <= 0.0 {
+            return None;
+        }
+        let wanted = Scale::covering(zoom * self.ppp);
+        let sizes = doc.page_sizes();
+        let size = sizes
+            .get(place.current)
+            .or_else(|| sizes.first())
+            .copied()?;
+        let long = size.width.max(size.height).max(1.0);
+        let cap = Scale::within(
+            doc.fitted_scale(place.current, self.max_side / long)
+                .unwrap_or(1.0),
+        );
+        if wanted > cap {
+            return None;
+        }
+        let pages = if place.mode == ViewMode::Single { 1 } else { 2 };
+        Some(mareader_session::Prime {
+            scale: wanted,
+            pages,
+            spread: place.mode == ViewMode::Spread,
+        })
     }
 
     pub fn command(&mut self, at: &mut Place, command: ZoomCommand, now: f64) {

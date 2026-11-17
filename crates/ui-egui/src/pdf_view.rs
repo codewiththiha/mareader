@@ -185,6 +185,11 @@ pub struct PdfView {
     sheet_want: Option<(Option<(f32, f32)>, f64)>,
     /// The sheet changed this frame: the book is to be set anew.
     pub sheet_moved: bool,
+    /// Stable scroll-area salt across `DocId` swaps of the same open book.
+    scroll_id: Option<DocId>,
+    /// Last frame's pixel density and texture ceiling, for retypeset priming.
+    ppp: f32,
+    max_side: f32,
     /// Live `:hover` transitions and `@keyframes` animations over EPUB pages.
     interactive: interactive::InteractiveState,
 }
@@ -229,6 +234,9 @@ impl PdfView {
             sheet: None,
             sheet_want: None,
             sheet_moved: false,
+            scroll_id: None,
+            ppp: 1.0,
+            max_side: 4096.0,
             interactive: interactive::InteractiveState::default(),
         }
     }

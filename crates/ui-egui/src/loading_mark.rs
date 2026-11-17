@@ -52,9 +52,28 @@ pub fn paint(ui: &Ui, rect: Rect, color: Color32) {
     ctx.request_repaint();
 }
 
+const OPENING_MARK: f32 = 48.0;
+
+fn opening_mark_rect(rect: Rect) -> Rect {
+    Rect::from_center_size(rect.center(), Vec2::splat(OPENING_MARK))
+}
+
+/// Paints the full-size opening mark centred in `ui.max_rect()`.
+pub fn paint_opening(ui: &Ui, color: Color32) {
+    paint(ui, opening_mark_rect(ui.max_rect()), color);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_opening_mark_is_large_and_centered() {
+        let pane = Rect::from_min_size(egui::pos2(20.0, 30.0), Vec2::new(400.0, 300.0));
+        let mark = opening_mark_rect(pane);
+        assert_eq!(mark.center(), pane.center());
+        assert_eq!(mark.size(), Vec2::splat(OPENING_MARK));
+    }
 
     fn near(a: Vec2, b: Vec2) -> bool {
         (a - b).length() < 1e-4

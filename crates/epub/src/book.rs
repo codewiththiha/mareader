@@ -2,6 +2,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -28,6 +29,7 @@ use crate::trigger::{self, Action, Triggered};
 use crate::xhtml::{self, BOOK_FACE, Href, Library, Refs};
 
 mod retype;
+mod same;
 
 /// Transcripts' insert ids: the top bit, then the card.
 const TRANSCRIPTS: u128 = 1 << 127;
@@ -261,7 +263,7 @@ pub struct Book {
     archive: Option<Arc<Vec<u8>>>,
     narration: Arc<Narration>,
     read: Option<Arc<Read>>,
-    complete: bool,
+    full_spine: bool,
     windowed: bool,
 }
 
@@ -323,19 +325,59 @@ struct ItemPass<'a> {
 struct BookAssembly<'a> {
     epub: &'a Epub,
     bytes: &'a Arc<Vec<u8>>,
-    identity: &'a Arc<()>,
-    typo: &'a Typography,
     read: &'a mut Read,
-    title: Option<String>,
-    author: Option<String>,
-    language: Option<String>,
+    language: Option<&'a str>,
     blocks: Vec<Block>,
     refs: Refs,
     spine: Vec<SpineRange>,
     opening: Option<Range<usize>>,
     pars: Vec<overlay::Par>,
-    complete: bool,
+    full_spine: bool,
     include_cover: bool,
+}
+
+struct ParsedBook {
+    blocks: Arc<Vec<Block>>,
+    refs: Arc<Refs>,
+    spine: Arc<Vec<SpineRange>>,
+    faces: Arc<Vec<BookFace>>,
+    fonts: Fonts,
+    notes: Arc<HashMap<u32, String>>,
+    toc: Arc<Vec<TocEntry>>,
+    rtl: bool,
+    lead: usize,
+    archive: Option<Arc<Vec<u8>>>,
+    narration: Arc<Narration>,
+    read: Option<Arc<Read>>,
+}
+
+impl ParsedBook {
+    fn into_book(self, open: &OpenBook, flow: Arc<Flow>, full_spine: bool) -> Book {
+        Book {
+            identity: Arc::clone(&open.identity),
+            blocks: self.blocks,
+            flow,
+            typo: open.typo.clone(),
+            layout: next_layout(),
+            inserts: Arc::default(),
+            spliced: None,
+            refs: self.refs,
+            spine: self.spine,
+            faces: self.faces,
+            notes: self.notes,
+            toc: self.toc,
+            title: open.title.clone(),
+            author: open.author.clone(),
+            language: open.language.clone(),
+            rtl: self.rtl,
+            lead: self.lead,
+            archive: self.archive,
+            narration: self.narration,
+            read: self.read,
+            full_spine,
+            windowed: false,
+        }
+    }
 }
 
 impl ParsedItem {
@@ -370,6 +412,7 @@ pub struct OpenBook {
     escapes: u32,
     next: usize,
     preview: Option<Book>,
+    parsed: Option<ParsedBook>,
     finished: bool,
 }
 
@@ -416,6 +459,7 @@ impl OpenBook {
                 escapes: 0,
                 next: 0,
                 preview: None,
+                parsed: None,
                 finished: false,
             };
             if let Some(target) = state.target.clone() {
@@ -443,6 +487,11 @@ impl OpenBook {
 
     /// Publishes the preview, then batches the remaining spine.
     pub fn step(&mut self) -> Result<OpenStep, OpenError> {
+        self.step_cancellable(&AtomicBool::new(false))
+    }
+
+    /// Like [`Self::step`], pausing on `cancel` with [`OpenStep::Continue`].
+    pub fn step_cancellable(&mut self, cancel: &AtomicBool) -> Result<OpenStep, OpenError> {
         let step = || {
             if let Some(book) = self.preview.take() {
                 return Ok(OpenStep::Preview(book));
@@ -451,13 +500,19 @@ impl OpenBook {
                 return Err(OpenError::Invalid);
             }
             for _ in 0..OPEN_BATCH_ITEMS {
+                if cancel.load(Ordering::Relaxed) {
+                    return Ok(OpenStep::Continue);
+                }
                 if self.next >= self.records.len() {
-                    return self.complete();
+                    return self.complete_cancellable(cancel);
                 }
                 self.advance()?;
             }
+            if cancel.load(Ordering::Relaxed) {
+                return Ok(OpenStep::Continue);
+            }
             if self.next >= self.records.len() {
-                self.complete()
+                self.complete_cancellable(cancel)
             } else {
                 Ok(OpenStep::Continue)
             }
@@ -465,10 +520,53 @@ impl OpenBook {
         catch_unwind(AssertUnwindSafe(step)).unwrap_or(Err(OpenError::Invalid))
     }
 
-    fn complete(&mut self) -> Result<OpenStep, OpenError> {
+    fn complete_cancellable(&mut self, cancel: &AtomicBool) -> Result<OpenStep, OpenError> {
+        if self.parsed.is_none() {
+            let blocks = std::mem::take(&mut self.blocks);
+            let refs = std::mem::take(&mut self.refs);
+            let spine = std::mem::take(&mut self.spine);
+            let opening = self.opening.take();
+            let pars = std::mem::take(&mut self.pars);
+            let parsed = prepare_book(BookAssembly {
+                epub: &self.epub,
+                bytes: &self.bytes,
+                read: &mut self.read,
+                language: self.language.as_deref(),
+                blocks,
+                refs,
+                spine,
+                opening,
+                pars,
+                full_spine: true,
+                include_cover: true,
+            })?;
+            self.parsed = Some(parsed);
+            if cancel.load(Ordering::Relaxed) {
+                return Ok(OpenStep::Continue);
+            }
+        }
+        let Some(parsed) = self.parsed.as_ref() else {
+            return Err(OpenError::Invalid);
+        };
+        let fonts = parsed.fonts.fork();
+        let Some(flow) = retype::set_cancellable(
+            &parsed.blocks,
+            &self.typo,
+            self.language.as_deref(),
+            fonts,
+            cancel,
+        ) else {
+            return Ok(OpenStep::Continue);
+        };
         self.finished = true;
-        let book = self.snapshot(true)?;
-        Ok(OpenStep::Complete(book))
+        let Some(parsed) = self.parsed.take() else {
+            return Err(OpenError::Invalid);
+        };
+        Ok(OpenStep::Complete(parsed.into_book(
+            self,
+            Arc::new(flow),
+            true,
+        )))
     }
 
     fn advance(&mut self) -> Result<(), OpenError> {
@@ -584,23 +682,26 @@ impl OpenBook {
         if blocks.is_empty() {
             return Ok(None);
         }
-        let book = assemble_book(BookAssembly {
+        let parsed = prepare_book(BookAssembly {
             epub: &self.epub,
             bytes: &self.bytes,
-            identity: &self.identity,
-            typo: &self.typo,
             read: &mut self.read,
-            title: self.title.clone(),
-            author: self.author.clone(),
-            language: self.language.clone(),
+            language: self.language.as_deref(),
             blocks,
             refs,
             spine,
             opening,
             pars,
-            complete: false,
+            full_spine: false,
             include_cover: first == 0,
         })?;
+        let flow = Arc::new(retype::set_with_fonts(
+            &parsed.blocks,
+            &self.typo,
+            self.language.as_deref(),
+            parsed.fonts.fork(),
+        ));
+        let book = parsed.into_book(self, flow, false);
         if target
             .spine
             .as_ref()
@@ -609,31 +710,6 @@ impl OpenBook {
             return Ok(None);
         }
         Ok(Some(book))
-    }
-
-    fn snapshot(&mut self, complete: bool) -> Result<Book, OpenError> {
-        let blocks = std::mem::take(&mut self.blocks);
-        let refs = std::mem::take(&mut self.refs);
-        let spine = std::mem::take(&mut self.spine);
-        let opening = self.opening.take();
-        let pars = std::mem::take(&mut self.pars);
-        assemble_book(BookAssembly {
-            epub: &self.epub,
-            bytes: &self.bytes,
-            identity: &self.identity,
-            typo: &self.typo,
-            read: &mut self.read,
-            title: self.title.clone(),
-            author: self.author.clone(),
-            language: self.language.clone(),
-            blocks,
-            refs,
-            spine,
-            opening,
-            pars,
-            complete,
-            include_cover: true,
-        })
     }
 }
 
@@ -739,61 +815,65 @@ fn read_item(
     })
 }
 
-fn assemble_book(assembly: BookAssembly<'_>) -> Result<Book, OpenError> {
+fn prepend_cover(
+    epub: &Epub,
+    read: &mut Read,
+    opening: Option<Range<usize>>,
+    (blocks, refs, spine): (&mut Vec<Block>, &mut Refs, &mut [SpineRange]),
+) {
+    let mut shelf = Shelf::on(epub, read);
+    let cover = epub
+        .manifest()
+        .cover_image()
+        .map(|entry| entry.href().decode())
+        .and_then(|path| shelf.picture(&path));
+    let drawn = blocks
+        .first()
+        .is_some_and(|block| block.frame.sheet.is_some());
+    if let Some(cover) = cover.filter(|_| !drawn)
+        && place_cover(blocks, opening.unwrap_or(0..0), cover)
+    {
+        for at in refs.places.values_mut().chain(refs.ends.values_mut()) {
+            at.block = at.block.saturating_add(1);
+        }
+        for extent in refs.extents.values_mut() {
+            extent.blocks =
+                extent.blocks.start.saturating_add(1)..extent.blocks.end.saturating_add(1);
+        }
+        for card in &mut refs.cards {
+            card.caption = card.caption.map(|block| block.saturating_add(1));
+        }
+        for chapter in &mut refs.chapters {
+            chapter.blocks =
+                chapter.blocks.start.saturating_add(1)..chapter.blocks.end.saturating_add(1);
+        }
+        for item in spine {
+            item.blocks = item.blocks.start.saturating_add(1)..item.blocks.end.saturating_add(1);
+        }
+    }
+}
+
+fn prepare_book(assembly: BookAssembly<'_>) -> Result<ParsedBook, OpenError> {
     let BookAssembly {
         epub,
         bytes,
-        identity,
-        typo,
         read,
-        title,
-        author,
         language,
         mut blocks,
         mut refs,
         mut spine,
         opening,
         pars,
-        complete,
+        full_spine,
         include_cover,
     } = assembly;
-    let mut shelf = Shelf::on(epub, read);
     if include_cover {
-        let cover = epub
-            .manifest()
-            .cover_image()
-            .map(|entry| entry.href().decode());
-        let cover = cover.and_then(|path| shelf.picture(&path));
-        let drawn = blocks
-            .first()
-            .is_some_and(|block| block.frame.sheet.is_some());
-        if let Some(cover) = cover.filter(|_| !drawn)
-            && place_cover(&mut blocks, opening.unwrap_or(0..0), cover)
-        {
-            for at in refs.places.values_mut().chain(refs.ends.values_mut()) {
-                at.block = at.block.saturating_add(1);
-            }
-            for extent in refs.extents.values_mut() {
-                extent.blocks =
-                    extent.blocks.start.saturating_add(1)..extent.blocks.end.saturating_add(1);
-            }
-            for card in &mut refs.cards {
-                card.caption = card.caption.map(|block| block.saturating_add(1));
-            }
-            for chapter in &mut refs.chapters {
-                chapter.blocks =
-                    chapter.blocks.start.saturating_add(1)..chapter.blocks.end.saturating_add(1);
-            }
-            for item in &mut spine {
-                item.blocks =
-                    item.blocks.start.saturating_add(1)..item.blocks.end.saturating_add(1);
-            }
-        }
+        prepend_cover(epub, read, opening, (&mut blocks, &mut refs, &mut spine));
     }
     if blocks.is_empty() {
         return Err(OpenError::Empty);
     }
-    let rtl = right_to_left(epub, language.as_deref(), &blocks);
+    let rtl = right_to_left(epub, language, &blocks);
     let lead = if include_cover {
         spread_lead(epub, rtl, &blocks)
     } else {
@@ -802,7 +882,7 @@ fn assemble_book(assembly: BookAssembly<'_>) -> Result<Book, OpenError> {
     blocks.shrink_to_fit();
     let blocks = Arc::new(blocks);
     let faces = load_faces(epub, &refs.faces);
-    let flow = Arc::new(set(&blocks, typo, language.as_deref(), &faces));
+    let fonts = Fonts::system().with_faces(&faces);
     let toc = contents(epub, &refs, &blocks);
     let notes = crate::notes::find(&blocks, &refs);
     let narration = narration(epub, pars, (&refs, blocks.len()));
@@ -817,34 +897,24 @@ fn assemble_book(assembly: BookAssembly<'_>) -> Result<Book, OpenError> {
         .iter()
         .any(|chapter| !chapter.scripts.code.is_empty());
     let shows = !refs.targets.is_empty() || scripted;
-    let archive = (!complete || plays || shows).then(|| Arc::clone(bytes));
+    let archive = (!full_spine || plays || shows).then(|| Arc::clone(bytes));
     let book_read = shows.then(|| {
-        let copy = complete.then(|| std::mem::take(read));
+        let copy = full_spine.then(|| std::mem::take(read));
         Arc::new(copy.unwrap_or_else(|| read.clone()))
     });
-    Ok(Book {
-        identity: Arc::clone(identity),
+    Ok(ParsedBook {
         blocks,
-        flow,
-        typo: typo.clone(),
-        layout: next_layout(),
-        inserts: Arc::default(),
-        spliced: None,
         refs: Arc::new(refs),
         spine: Arc::new(spine),
         faces: Arc::new(faces),
+        fonts,
         notes: Arc::new(notes),
         toc: Arc::new(toc),
-        title,
-        author,
-        language,
         rtl,
         lead,
         archive,
         narration: Arc::new(narration),
         read: book_read,
-        complete,
-        windowed: false,
     })
 }
 
@@ -870,7 +940,7 @@ impl Book {
 
     /// Whether every spine item has been parsed and laid out.
     pub fn is_complete(&self) -> bool {
-        self.complete
+        self.full_spine && !self.windowed
     }
 
     /// Whether the book already has this typography.
@@ -1432,66 +1502,6 @@ impl Book {
     pub fn same_book(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.identity, &other.identity)
     }
-
-    /// The page of `other` that looks just like page `page`, if any.
-    pub fn same_page(&self, page: usize, other: &Self) -> Option<usize> {
-        if !Arc::ptr_eq(&self.flow, &other.flow) {
-            let same_faces = self.faces.len() == other.faces.len()
-                && self.faces.iter().zip(other.faces.iter()).all(|(a, b)| {
-                    a.family == b.family
-                        && a.weight == b.weight
-                        && a.italic == b.italic
-                        && a.len() == b.len()
-                });
-            if !Arc::ptr_eq(&self.identity, &other.identity)
-                || self.typo != other.typo
-                || self.language != other.language
-                || self.rtl != other.rtl
-                || self.lead != other.lead
-                || !same_faces
-                || self.spliced.is_some()
-                || other.spliced.is_some()
-                || (!self.complete && page.saturating_add(1) == self.page_count())
-            {
-                return None;
-            }
-            let place = self.spine_place(self.anchor(page)?)?;
-            let mapped = other.locate_spine(&place)?;
-            let normal = |book: &Self, page| {
-                book.excerpts(page)
-                    .into_iter()
-                    .map(|(block, range)| {
-                        let place = book.spine_place(Anchor { block, offset: 0 })?;
-                        Some((place.href, place.item, place.block, range))
-                    })
-                    .collect::<Option<Vec<_>>>()
-            };
-            let same = normal(self, page)
-                .zip(normal(other, mapped))
-                .is_some_and(|(a, b)| a == b)
-                && self.size(page) == other.size(mapped)
-                && self.column(page) == other.column(mapped)
-                && self.fixed(page) == other.fixed(mapped)
-                && self.turned(page) == other.turned(mapped);
-            return same.then_some(mapped);
-        }
-        let at = match &self.spliced {
-            Some(s) => s.at(page)?,
-            None => At::Base(page),
-        };
-        match (at, &other.spliced) {
-            (At::Base(p), None) => (p < other.base_count()).then_some(p),
-            (At::Base(p), Some(o)) => {
-                let q = *o.from_base.get(p)?;
-                (o.at(q) == Some(At::Base(p))).then_some(q)
-            }
-            (At::Region(r, i), Some(o)) => {
-                let region = self.spliced.as_ref()?.region(r)?;
-                Some(o.find(region)? + i)
-            }
-            (At::Region(..), None) => None,
-        }
-    }
 }
 
 /// The `dc:title` and first non-blank `dc:creator`, as written.
@@ -1630,26 +1640,6 @@ fn book_keys(epub: &Epub) -> fontfile::Keys {
     let others = metadata.identifiers().map(|i| i.value().to_owned());
     let ids: Vec<String> = unique.into_iter().chain(others).collect();
     fontfile::Keys::new(ids.iter().map(String::as_str))
-}
-
-/// Lays the blocks out; the book's language beats the default.
-fn set(
-    blocks: &Arc<Vec<Block>>,
-    typo: &Typography,
-    language: Option<&str>,
-    faces: &[BookFace],
-) -> Flow {
-    let (blocks, fonts) = (Arc::clone(blocks), Fonts::system().with_faces(faces));
-    match language {
-        Some(tag) if *tag != typo.language => {
-            let typo = Typography {
-                language: tag.to_owned(),
-                ..typo.clone()
-            };
-            Flow::new(blocks, &typo, fonts)
-        }
-        _ => Flow::new(blocks, typo, fonts),
-    }
 }
 
 /// The listed contents whose places are known; else the headings.

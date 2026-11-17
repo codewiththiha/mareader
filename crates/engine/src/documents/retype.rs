@@ -108,6 +108,24 @@ impl State {
         let Some((was, is)) = self.adoption_docs(old, new) else {
             return;
         };
+        if !was.is_complete() && is.is_complete() {
+            for page in self.texts.pages_of(old) {
+                let Some(mapped) = was
+                    .same_page(page, &is)
+                    .or_else(|| was.fallback_page(page, &is))
+                else {
+                    continue;
+                };
+                if self.texts.get(new, mapped).is_some() {
+                    continue;
+                }
+                if let Ok(layer) = is.text_layer(mapped) {
+                    self.texts.insert(new, mapped, Ok(Arc::new(layer)));
+                }
+            }
+            self.texts.forget(old);
+            return;
+        }
         self.texts.adopt(old, new, |page| was.same_page(page, &is));
     }
 
@@ -142,7 +160,7 @@ impl State {
                 continue;
             }
             if looks(entry) {
-                if self.asked.remove(pane).is_some() && entry.doc.is_complete() {
+                if self.asked.remove(pane).is_some() && !entry.doc.is_windowed() {
                     cancels.push(pane.0);
                 }
                 continue;
@@ -163,21 +181,32 @@ impl State {
                     } else {
                         None
                     };
-                    asks.push((*pane, place.doc, (Arc::clone(want), inserts, target)));
+                    let prime = if self.progressive {
+                        sink.prime_hint(*pane, place, &entry.doc)
+                    } else {
+                        None
+                    };
+                    asks.push((*pane, place.doc, (Arc::clone(want), inserts, target, prime)));
                 }
             }
         }
         for slot in cancels {
             session.cancel_retypeset(slot);
         }
-        for (pane, doc, (want, inserts, target)) in asks {
+        for (pane, doc, (want, inserts, target, prime)) in asks {
             let key = inserts.key;
             let same =
                 |(d, t, k): &(DocId, Arc<Typography>, u64)| *d == doc && **t == *want && *k == key;
             if self.asked.values().any(same) {
                 continue;
             }
-            session.reset_at(doc, Arc::clone(&want), Some(inserts), pane.0, target);
+            session.reset_primed(
+                doc,
+                Arc::clone(&want),
+                Some(inserts),
+                pane.0,
+                (target, prime),
+            );
             self.asked.insert(pane, (doc, want, key));
         }
         for (pane, old, new) in moves {

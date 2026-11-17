@@ -31,21 +31,24 @@ struct FlowState {
     layout: u64,
     inserts: Arc<Inserts>,
     spliced: Option<Arc<Spliced>>,
-    complete: bool,
+    full_spine: bool,
     windowed: bool,
 }
 
 impl Book {
     /// Whether every parsed block of the book is already in memory.
     pub fn has_all_blocks(&self) -> bool {
-        self.complete || self.windowed
+        self.full_spine
+    }
+
+    /// Whether this snapshot only laid out a local window of its blocks.
+    pub fn is_windowed(&self) -> bool {
+        self.windowed
     }
 
     /// Whether retypesetting to `typo` benefits from a local preview first.
     pub fn can_preview_reset(&self, typo: &Typography) -> bool {
-        self.has_all_blocks()
-            && exceeds_small(&self.blocks)
-            && (*typo != self.typo || self.windowed)
+        exceeds_small(&self.blocks) && (*typo != self.typo || self.windowed)
     }
 
     /// Full retypeset, stopping early if `cancel` is raised.
@@ -83,7 +86,7 @@ impl Book {
                 layout: next_layout(),
                 inserts,
                 spliced,
-                complete: false,
+                full_spine: self.full_spine,
                 windowed: true,
             };
             Some(self.with_flow(typo, state))
@@ -122,7 +125,7 @@ impl Book {
                 layout,
                 inserts,
                 spliced,
-                complete: self.has_all_blocks(),
+                full_spine: self.full_spine,
                 windowed: false,
             };
             Some(self.with_flow(typo, state))
@@ -152,7 +155,7 @@ impl Book {
             archive: self.archive.clone(),
             narration: Arc::clone(&self.narration),
             read: self.read.clone(),
-            complete: state.complete,
+            full_spine: state.full_spine,
             windowed: state.windowed,
         }
     }
@@ -168,7 +171,7 @@ fn effective_typo(typo: &Typography, language: Option<&str>) -> Typography {
     }
 }
 
-fn set_with_fonts(
+pub(super) fn set_with_fonts(
     blocks: &Arc<Vec<Block>>,
     typo: &Typography,
     language: Option<&str>,
@@ -178,7 +181,7 @@ fn set_with_fonts(
     Flow::new(Arc::clone(blocks), &typo, fonts)
 }
 
-fn set_cancellable(
+pub(super) fn set_cancellable(
     blocks: &Arc<Vec<Block>>,
     typo: &Typography,
     language: Option<&str>,
