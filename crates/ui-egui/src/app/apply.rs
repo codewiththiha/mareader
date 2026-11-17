@@ -152,6 +152,7 @@ impl MareaderApp {
                 self.ui
                     .study
                     .show_explained(pane, key, asked.word, asked.context, rect);
+                self.probe_dict_for_study();
             }
             Event::LookUpOpened {
                 pane,
@@ -246,6 +247,12 @@ impl MareaderApp {
             UiCommand::WordCardMode(mode) => self.word_card_mode(mode),
             UiCommand::WordCardSwapLang => {
                 if let Some(query) = self.ui.dict.swap_query() {
+                    let ticket = self.session.dict_ask(query);
+                    self.ui.dict.set_card_ticket(ticket);
+                }
+            }
+            UiCommand::WordCardTryLang(lang) => {
+                if let Some(query) = self.ui.dict.try_lang_query(&lang) {
                     let ticket = self.session.dict_ask(query);
                     self.ui.dict.set_card_ticket(ticket);
                 }

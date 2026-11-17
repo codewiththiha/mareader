@@ -176,13 +176,21 @@ impl MareaderApp {
             }
             Gloss::Copied => out.push(Sent::Ui(UiCommand::Notify(Toast::info("Copied")))),
             Gloss::Open { mark, at } => {
+                self.ui.dict.escape();
                 self.ui
                     .study
                     .open_mark(ctx, &mut self.session, pane, mark, at);
                 self.ask_role();
+                self.probe_dict_for_study();
             }
             Gloss::Shaded { page, chars, at } => self.explain_shaded(pane, page, chars, at),
-            Gloss::Rest { word, context, at } => self.rest(pane, (word, context), at),
+            Gloss::Rest {
+                word,
+                context,
+                page,
+                chars,
+                at,
+            } => self.rest(pane, (word, context), (page, chars), at),
             Gloss::Menu { mark, at, words } => {
                 self.ui.menu_shot = false;
                 let state = self.session.study();
@@ -316,7 +324,17 @@ impl MareaderApp {
         };
         let panes = (&self.ui.pane_rects[..], heard);
         let study_state = (self.session.study(), model);
-        self.ui.study.show(ctx, study_state, panes, looks, out);
+        let dict_ready = self.session.dict().attached()
+            && self
+                .ui
+                .study
+                .card_pane_word()
+                .is_some_and(|(p, w)| self.ui.dict.has_stashed_entries(p, w));
+        let docs = self.ui.documents.as_view(self.session.documents());
+        let extra = (dict_ready, |pane| docs.offset(pane));
+        self.ui
+            .study
+            .show(ctx, study_state, panes, looks, extra, out);
         sounds
     }
 
@@ -366,9 +384,20 @@ impl MareaderApp {
         let saying = self.session.read_aloud().saying();
         let heard = mareader_engine::sounds::Heard { saying, sounds };
         let attached = self.session.dict().attached();
-        self.ui
-            .dict
-            .show(ctx, attached, (&self.ui.pane_rects, heard), pane_info, out);
+        let ai_ready = self.session.study().explains()
+            || self
+                .ui
+                .dict
+                .card_pane_word()
+                .is_some_and(|(p, w)| self.ui.study.has_stash_for(p, w));
+        let languages = self.session.dict().languages();
+        self.ui.dict.show(
+            ctx,
+            (attached, ai_ready, &languages),
+            (&self.ui.pane_rects, heard),
+            pane_info,
+            out,
+        );
     }
 }
 

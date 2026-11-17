@@ -18,7 +18,7 @@ mod restyle;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use egui::{Context, Pos2, Rect};
+use egui::{Context, Pos2, Rect, Vec2};
 use mareader_cefr::Role;
 use mareader_engine::command::Command;
 use mareader_engine::session::Session;
@@ -43,6 +43,8 @@ struct Card {
     context: String,
     /// The word on screen, as of the last frame it was seen.
     at: Rect,
+    /// Pane scroll when a loose card opened; scrolling dismisses it.
+    offset: Option<Vec2>,
     /// Seen on screen this frame; a mark scrolled away closes it.
     seen: bool,
     /// The word's role in its sentence, once the tagger said.
@@ -232,6 +234,7 @@ impl StudyUi {
         (state, main): (&StudyState, &Library),
         (panes, heard): (&[(PaneId, Rect)], mareader_engine::sounds::Heard<'_>),
         (look, pens): (&GlossSettings, &HighlightSettings),
+        (dict_ready, pane_offset): (bool, impl Fn(PaneId) -> Option<Vec2>),
         out: &mut Commands,
     ) {
         let pressed = ctx.input(|i| {
@@ -257,35 +260,25 @@ impl StudyUi {
                 None => self.note = None,
             }
         }
-        // A mark that scrolled away, or a pane that closed, takes its card.
+        // A scrolled-away mark, scrolled loose card, or closed pane drops it.
+        let loose_moved = |c: &Card| {
+            matches!(c.key, Key::Loose(_))
+                && match (c.offset, pane_offset(c.pane)) {
+                    (Some(a), Some(b)) => (a - b).length() > 0.5,
+                    _ => false,
+                }
+        };
         if self
             .card
             .as_ref()
-            .is_some_and(|c| !c.seen || room(c.pane).is_none())
+            .is_some_and(|c| !c.seen || room(c.pane).is_none() || loose_moved(c))
         {
             self.drop_card();
         }
         let t = Tokens::get(ctx);
         self.card_rect = self.card.as_ref().and_then(|c| {
-            let answer = match (state.answer(c.key), state.failure(c.key)) {
-                (Some(said), _) => card::Answer::Ready(&said.info, &said.by),
-                (None, Some(e)) => card::Answer::Failed(e),
-                (None, None) => match state.partial(c.key) {
-                    Some(info) => card::Answer::Partial(info),
-                    None => card::Answer::Waiting,
-                },
-            };
-            let view = card::View {
-                word: &c.word,
-                role: c.role.as_ref(),
-                answer,
-                at: c.at,
-                room: room(c.pane)?,
-                density: look.density,
-                saying: heard.saying(&c.word),
-                sound: heard.lines(&c.word),
-            };
-            Some(card::show(ctx, &view, &t, out))
+            let extra = (room(c.pane)?, heard, look, dict_ready);
+            show_card(ctx, c, state, extra, &t, out)
         });
         self.menu_rect = self.menu.map(|m| {
             card::menu(
@@ -337,6 +330,41 @@ impl StudyUi {
             picking::bar(ctx, p, (r, &looks, pens), &t, out);
         }
     }
+}
+
+fn show_card(
+    ctx: &Context,
+    c: &Card,
+    state: &StudyState,
+    (room, heard, look, show_tabs): (
+        Rect,
+        mareader_engine::sounds::Heard<'_>,
+        &GlossSettings,
+        bool,
+    ),
+    t: &Tokens,
+    out: &mut Commands,
+) -> Option<Rect> {
+    let answer = match (state.answer(c.key), state.failure(c.key)) {
+        (Some(said), _) => card::Answer::Ready(&said.info, &said.by),
+        (None, Some(e)) => card::Answer::Failed(e),
+        (None, None) => match state.partial(c.key) {
+            Some(info) => card::Answer::Partial(info),
+            None => card::Answer::Waiting,
+        },
+    };
+    let view = card::View {
+        word: &c.word,
+        role: c.role.as_ref(),
+        answer,
+        show_tabs,
+        at: c.at,
+        room,
+        density: look.density,
+        saying: heard.saying(&c.word),
+        sound: heard.lines(&c.word),
+    };
+    Some(card::show(ctx, &view, t, out))
 }
 
 /// Explain's ask, as the app gathers it.

@@ -35,7 +35,7 @@ pub fn wakes(kept: &Mutex<usize>) -> usize {
 }
 
 /// Waits for `met`, five milliseconds at a time, a second at most.
-pub fn waited(met: impl Fn() -> bool) -> bool {
+pub fn waited(mut met: impl FnMut() -> bool) -> bool {
     for _ in 0..TRIES {
         if met() {
             return true;

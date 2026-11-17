@@ -53,6 +53,8 @@ pub enum Gloss {
     Rest {
         word: String,
         context: String,
+        page: usize,
+        chars: std::ops::Range<usize>,
         at: Rect,
     },
     /// A hold on empty space lifted the pane, to be moved.

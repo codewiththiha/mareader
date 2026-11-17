@@ -142,6 +142,8 @@ fn under(cx: &mut ShowContext<'_>, ui: &mut Ui) {
             gloss.push(Gloss::Rest {
                 context: asked.map_or_else(|| word.clone(), |a| a.context),
                 word,
+                page: w.page,
+                chars: w.chars.clone(),
                 at: w.bounds(),
             });
         }

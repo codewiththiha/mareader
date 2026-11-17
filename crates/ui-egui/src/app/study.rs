@@ -88,10 +88,17 @@ impl MareaderApp {
             .study
             .explain(&mut self.session, at, mareader_engine::library::wall_ms());
         self.ask_role();
+        self.probe_dict_for_study();
     }
 
     /// Resting on a shaded word looks it up, when a pack can answer.
-    pub(super) fn rest(&mut self, pane: PaneId, (word, context): (String, String), at: Rect) {
+    pub(super) fn rest(
+        &mut self,
+        pane: PaneId,
+        (word, context): (String, String),
+        (page, chars): (usize, std::ops::Range<usize>),
+        at: Rect,
+    ) {
         if !self.settings().dictionary.hover
             || self.session.dict().ready().is_empty()
             || self.ui.study.card_open()
@@ -99,17 +106,38 @@ impl MareaderApp {
             return;
         }
         let offset = self.documents().offset(pane);
+        let asked = self.documents().asked_at(pane, page, chars);
         let to = self.settings().dictionary.default_lang.clone();
         if self.ui.dict.rest(
             &mut self.session,
             pane,
             (word.clone(), context.clone()),
-            at,
-            offset,
-            to,
+            (at, offset),
+            (to, asked),
         ) {
             self.session.ask_role(&word, &context);
         }
+    }
+
+    /// Silently checks offline dictionaries so an AI card knows if tabs apply.
+    pub(super) fn probe_dict_for_study(&mut self) {
+        if !self.session.dict().attached() || self.session.dict().ready().is_empty() {
+            return;
+        }
+        let Some((pane, word, at)) = self.ui.study.card_probe_info() else {
+            return;
+        };
+        if self.ui.dict.has_stash_for(pane, &word) {
+            return;
+        }
+        let offset = self.documents().offset(pane);
+        let to = self.settings().dictionary.default_lang.clone();
+        let query = mareader_dict::Query::LookUp {
+            word: word.clone(),
+            to,
+        };
+        let ticket = self.session.dict_ask(query);
+        self.ui.dict.stash_probe(pane, word, ticket, at, offset);
     }
 
     /// Switches the open word card in place between Dictionary and AI.
@@ -127,10 +155,11 @@ impl MareaderApp {
                     .title(pane)
                     .unwrap_or_default()
                     .to_owned();
+                let offset = self.documents().offset(pane);
                 let wall_ms = mareader_engine::library::wall_ms();
                 self.ui
                     .study
-                    .open_from_tab(&mut self.session, book, &name, snap, wall_ms);
+                    .open_from_tab(&mut self.session, book, &name, snap, offset, wall_ms);
                 self.ask_role();
             }
             crate::word_card::Mode::Dictionary => {

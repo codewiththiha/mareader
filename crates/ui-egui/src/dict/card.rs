@@ -5,7 +5,7 @@ use egui::{
     ScrollArea, Sense, Ui, Vec2, WidgetInfo, WidgetType, pos2, vec2,
 };
 use mareader_cefr::Role;
-use mareader_dict::{Entry, Pair, Query, Reply, Ticket, language};
+use mareader_dict::{Entry, Reply, language};
 use mareader_engine::command::Command;
 use mareader_engine::dict::Action;
 use mareader_engine::settings::Tab;
@@ -49,6 +49,10 @@ pub struct View<'a> {
     /// The tagger's class and level for the word in its sentence.
     pub role: Option<&'a Role>,
     pub attached: bool,
+    /// True when an AI explainer is available for this word.
+    pub ai_ready: bool,
+    /// Target languages available across downloaded dictionary packs.
+    pub languages: &'a [&'a str],
     pub at: Rect,
     pub room: Rect,
     /// Its word is being said aloud.
@@ -76,109 +80,6 @@ pub fn step(ctx: &Context, word: &str, n: usize, delta: i32) {
     }
 }
 
-impl super::DictUi {
-    /// Drops any stashed lookup card.
-    pub fn clear_stash(&mut self) {
-        self.stash = None;
-    }
-
-    /// Number of entries currently on the open lookup card.
-    pub fn card_entries(&self) -> usize {
-        self.card
-            .as_ref()
-            .and_then(|c| c.reply.as_ref())
-            .map_or(0, |r| r.entries.len())
-    }
-
-    /// Steps the open lookup card's pager by `delta` (`-1` or `+1`).
-    pub fn step_page(&self, ctx: &Context, delta: i32) {
-        if let Some(c) = &self.card {
-            step(ctx, &c.word, self.card_entries(), delta);
-        }
-    }
-
-    /// Stashes the open lookup card so switching back to Dictionary is instant.
-    pub fn stash_for_tab(&mut self) -> Option<word_card::TabSnapshot> {
-        let mut card = self.card.take()?;
-        card.rest = false;
-        let snap = word_card::TabSnapshot {
-            pane: card.pane,
-            word: card.word.clone(),
-            context: card.context.clone(),
-            asked: card.asked.clone(),
-            at: card.at,
-            role: card.role.clone(),
-            rect: self.card_rect,
-        };
-        self.stash = Some(card);
-        Some(snap)
-    }
-
-    /// Restores a stashed lookup card matching `snap`; false if none fits.
-    pub fn restore_from_tab(
-        &mut self,
-        snap: &word_card::TabSnapshot,
-        offset: Option<Vec2>,
-    ) -> bool {
-        let same = |c: &super::Card| c.pane == snap.pane && c.word == snap.word && c.at == snap.at;
-        let Some(mut card) = self.stash.take().filter(same) else {
-            return false;
-        };
-        if card.role.is_none() {
-            card.role = snap.role.clone();
-        }
-        card.offset = offset;
-        self.card_rect = snap.rect;
-        self.card = Some(card);
-        true
-    }
-
-    /// Opens the Dictionary tab for `snap` with an already-submitted `ticket`.
-    pub fn open_tab_lookup(
-        &mut self,
-        snap: word_card::TabSnapshot,
-        ticket: Ticket,
-        offset: Option<Vec2>,
-    ) {
-        self.card_rect = snap.rect;
-        self.card = Some(super::Card {
-            pane: snap.pane,
-            word: snap.word,
-            context: snap.context,
-            asked: snap.asked,
-            at: snap.at,
-            offset,
-            ticket,
-            reply: None,
-            rest: false,
-            role: snap.role,
-        });
-    }
-
-    /// Builds a reversed-pair search query for the open lookup card.
-    pub fn swap_query(&self) -> Option<Query> {
-        let card = self.card.as_ref()?;
-        let reply = card.reply.as_ref()?;
-        let (from, to) = (reply.from.as_ref()?, reply.to.as_ref()?);
-        let pair = Pair {
-            from: Some(to.clone()),
-            to: Some(from.clone()),
-        };
-        Some(Query::Search {
-            text: card.word.clone(),
-            pair: Some(pair),
-            pack: None,
-        })
-    }
-
-    /// Updates the open lookup card's pending dictionary query ticket.
-    pub fn set_card_ticket(&mut self, ticket: Ticket) {
-        if let Some(card) = &mut self.card {
-            card.ticket = ticket;
-        }
-    }
-}
-
 pub fn show(ctx: &Context, view: &View<'_>, t: &Tokens, out: &mut Commands) -> Rect {
     let id = word_card::bubble_id(view.word);
     let bubble = Bubble {
@@ -203,6 +104,7 @@ fn card(ui: &mut Ui, id: Id, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Co
         saying: view.saying,
         voice: s.voice.as_deref(),
     });
+    let has_entries = view.attached && view.reply.is_some_and(|r| !r.entries.is_empty());
     let head = word_card::Header {
         word: view.word,
         class: &class,
@@ -210,6 +112,7 @@ fn card(ui: &mut Ui, id: Id, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Co
         sound: view.sound,
         say,
         mode: word_card::Mode::Dictionary,
+        show_tabs: view.ai_ready && has_entries,
         close: Command::Dict(Action::CloseCard),
     };
     word_card::header(ui, &head, t, out);
@@ -227,11 +130,7 @@ fn card(ui: &mut Ui, id: Id, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Co
     p.at = p.at.min(n.saturating_sub(1));
     let Some(e) = reply.entries.get(p.at).filter(|_| view.attached) else {
         word_card::section(ui, word_card::PAD_Y, |ui| {
-            if pair.is_some() {
-                lang_row(ui, None, pair, t, out);
-                ui.add_space(4.0);
-            }
-            empty(ui, view, reply, t, out);
+            empty(ui, view, reply, pair, t, out);
         });
         word_card::rule(ui, t);
         footer(ui, view, None, (&mut p, 0), t, out);
@@ -372,7 +271,7 @@ fn footer(
 ) {
     word_card::footer_frame(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.spacing_mut().item_spacing.x = 4.0;
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 word_card::pursue_button(ui, view.word, out);
                 if let Some(e) = shown {
@@ -416,23 +315,89 @@ fn pager(ui: &mut Ui, p: &mut Pager, n: usize, t: &Tokens) {
     }
 }
 
-/// Why there is no entry, and the way to one when there is.
-fn empty(ui: &mut Ui, view: &View<'_>, reply: &Reply, t: &Tokens, out: &mut Commands) {
-    ui.spacing_mut().item_spacing.y = 8.0;
+/// Why there is no entry, and helpful next actions (AI or other languages).
+fn empty(
+    ui: &mut Ui,
+    view: &View<'_>,
+    reply: &Reply,
+    pair: Option<(&str, &str)>,
+    t: &Tokens,
+    out: &mut Commands,
+) {
+    ui.spacing_mut().item_spacing.y = 10.0;
     if !view.attached {
         muted(ui, t, "Dictionaries need the desktop app.");
-    } else if reply.ready == 0 {
-        muted(ui, t, "No dictionary is downloaded.");
-        if ui.button("Get dictionaries…").clicked() {
-            out.push(Sent::Engine(Command::OpenSettings(Tab::Dictionary)));
-        }
-    } else {
-        let why = match &reply.failed {
-            Some(e) => format!("The dictionary couldn't be read: {e}"),
-            None => format!("No entry for “{}”.", view.word),
-        };
-        muted(ui, t, &why);
+        return;
     }
+    if reply.ready == 0 {
+        muted(ui, t, "No dictionary is downloaded.");
+        empty_actions(ui, view.ai_ready, &[], true, t, out);
+        return;
+    }
+    if let Some(e) = &reply.failed {
+        muted(ui, t, &format!("The dictionary couldn't be read: {e}"));
+        if view.ai_ready {
+            empty_actions(ui, true, &[], false, t, out);
+        }
+        return;
+    }
+    let why = format!("No entry for “{}”.", view.word);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if let Some((from, to)) = pair {
+                lang_swap_pill(ui, from, to, t, out);
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(egui::Label::new(RichText::new(&why).color(t.muted)).wrap());
+            });
+        });
+    });
+    let mut others: Vec<&str> = Vec::new();
+    for &code in view.languages {
+        let same = reply.from.as_deref() == Some(code) || reply.to.as_deref() == Some(code);
+        if !same && !others.contains(&code) {
+            others.push(code);
+        }
+    }
+    empty_actions(ui, view.ai_ready, &others, false, t, out);
+}
+
+fn empty_actions(
+    ui: &mut Ui,
+    ai_ready: bool,
+    others: &[&str],
+    no_packs: bool,
+    t: &Tokens,
+    out: &mut Commands,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        if ai_ready {
+            let ask = word_card::action_pill(ui, Some(Icon::Ai), "Ask AI in context", true, t);
+            if ask.clicked() {
+                out.push(Sent::Ui(UiCommand::WordCardMode(word_card::Mode::Ai)));
+            }
+        }
+        for &code in others.iter().take(4) {
+            let label = format!("Try {}", language(code));
+            let try_it = word_card::action_pill(ui, None, &label, !ai_ready, t);
+            if try_it.clicked() {
+                out.push(Sent::Ui(UiCommand::WordCardTryLang(code.to_owned())));
+            }
+        }
+        if no_packs {
+            let get = word_card::action_pill(ui, None, "Get dictionaries…", !ai_ready, t);
+            if get.clicked() {
+                out.push(Sent::Engine(Command::OpenSettings(Tab::Dictionary)));
+            }
+        } else if !ai_ready && others.is_empty() {
+            let more = word_card::action_pill(ui, None, "Get more dictionaries…", false, t);
+            if more.clicked() {
+                out.push(Sent::Engine(Command::OpenSettings(Tab::Dictionary)));
+            }
+        }
+    });
 }
 
 fn muted(ui: &mut Ui, t: &Tokens, text: &str) {

@@ -124,6 +124,8 @@ pub enum UiCommand {
     WordCardMode(crate::word_card::Mode),
     /// Swaps the open Dictionary card's source and target languages.
     WordCardSwapLang,
+    /// Looks up the open Dictionary card's word in another target language.
+    WordCardTryLang(String),
 }
 
 /// The frame's command queue, handed to every view.
@@ -156,7 +158,8 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::Chromeless
         | U::FindStep { .. }
         | U::WordCardMode(_)
-        | U::WordCardSwapLang => true,
+        | U::WordCardSwapLang
+        | U::WordCardTryLang(_) => true,
         // Settings, menus and pages open over any page.
         U::ShowSettings
         | U::ShowShortcuts

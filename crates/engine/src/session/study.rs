@@ -27,8 +27,8 @@ impl Session {
     }
 
     /// Polls active explainer threads and files completed glosses into marks.
-    pub(crate) fn study_receive(&mut self) {
-        self.study.receive(&mut self.library.model);
+    pub(crate) fn study_receive(&mut self) -> bool {
+        self.study.receive(&mut self.library.model)
     }
 
     /// Marks an explained word and seeds or starts its lookup.

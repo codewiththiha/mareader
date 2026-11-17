@@ -20,11 +20,21 @@ pub fn show(ui: &mut Ui, lines: &[Line], t: &Tokens) {
 /// Draws sound lines directly into an open horizontal row.
 pub fn show_inline(ui: &mut Ui, lines: &[Line], t: &Tokens) {
     for line in lines {
-        let label = ui.label(layout(line, t));
-        if let Some(why) = &line.why {
-            crate::widgets::tip(&label, why, None);
-        }
+        show_one(ui, line, t);
     }
+}
+
+/// Draws a single sound line without wrapping, preserving vertical alignment.
+pub fn show_one(ui: &mut Ui, line: &Line, t: &Tokens) {
+    let label = ui.add(egui::Label::new(layout(line, t)).selectable(false));
+    if let Some(why) = &line.why {
+        crate::widgets::tip(&label, why, None);
+    }
+}
+
+/// Width a single sound line needs on one row.
+pub fn width(ui: &Ui, line: &Line, t: &Tokens) -> f32 {
+    ui.painter().layout_job(layout(line, t)).size().x
 }
 
 fn layout(line: &Line, t: &Tokens) -> LayoutJob {

@@ -32,6 +32,8 @@ pub struct View<'a> {
     /// The tagger's role: its class until the AI's, and its level.
     pub role: Option<&'a Role>,
     pub answer: Answer<'a>,
+    /// True when offline dictionary data exists for this word.
+    pub show_tabs: bool,
     /// The word on screen.
     pub at: Rect,
     /// The pane it's kept inside.
@@ -79,6 +81,7 @@ fn card(ui: &mut Ui, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Commands) 
             voice: None,
         }),
         mode: word_card::Mode::Ai,
+        show_tabs: view.show_tabs,
         close: Command::Study(Action::Close),
     };
     word_card::header(ui, &head, t, out);
@@ -102,11 +105,7 @@ fn card(ui: &mut Ui, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Commands) 
 fn body(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
     match &view.answer {
         Answer::Waiting => shimmer(ui, t),
-        Answer::Partial(info) => {
-            answer(ui, info, t);
-            explaining(ui, t);
-        }
-        Answer::Ready(info, _) => answer(ui, info, t),
+        Answer::Partial(info) | Answer::Ready(info, _) => answer(ui, info, t),
         Answer::Failed(e) => {
             ui.horizontal_wrapped(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), egui::Sense::hover());
@@ -116,8 +115,12 @@ fn body(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
             if let Some(detail) = &e.detail {
                 ui.label(RichText::new(detail).size(t.text_small).color(t.muted));
             }
-            if e.why.retry() && ui.button("Try again").clicked() {
-                out.push(Sent::Engine(Command::Study(Action::Retry)));
+            if e.why.retry() {
+                ui.add_space(4.0);
+                let retry = word_card::action_pill(ui, Some(Icon::Rescan), "Try again", true, t);
+                if retry.clicked() {
+                    out.push(Sent::Engine(Command::Study(Action::Retry)));
+                }
             }
         }
     }
@@ -133,22 +136,20 @@ fn footer(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
                 if let Answer::Ready(info, _) = &view.answer {
                     let copied = copy_text(view.word, info);
                     word_card::copy_button(ui, &copied, "Copy explanation", out);
-                    let text = RichText::new("Ask again")
-                        .size(t.text_small)
-                        .color(t.accent);
-                    let again = ui.add(egui::Button::new(text).frame(false));
-                    if again
-                        .on_hover_text("Ask the AI chosen in Settings")
-                        .clicked()
-                    {
+                    let icon = Some(Icon::Rescan);
+                    let again = word_card::footer_action(ui, icon, "Ask again", true, t);
+                    widgets::tip(&again, "Ask the AI chosen in Settings", None);
+                    if again.clicked() {
                         out.push(Sent::Engine(Command::Study(Action::AskAgain)));
                     }
                 }
+                ui.add_space(6.0);
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     match &view.answer {
                         Answer::Ready(_, by) if !by.is_empty() => {
                             let label = RichText::new(*by).size(t.text_small).color(t.muted);
-                            ui.add(egui::Label::new(label).truncate());
+                            let resp = ui.add(egui::Label::new(label).truncate());
+                            widgets::tip(&resp, by, None);
                         }
                         Answer::Waiting | Answer::Partial(_) => {
                             ui.label(
@@ -248,15 +249,6 @@ fn shimmer(ui: &mut Ui, t: &Tokens) {
         let bar = Rect::from_min_size(rect.min, vec2(width * share, rect.height()));
         ui.painter().rect_filled(bar, 4.0, tint);
     }
-    explaining(ui, t);
-}
-
-fn explaining(ui: &mut Ui, t: &Tokens) {
-    ui.label(
-        RichText::new("Looking up…")
-            .size(t.text_small)
-            .color(t.muted),
-    );
 }
 
 /// Below the words, else above, keeping a restyle in view.

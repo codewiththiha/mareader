@@ -63,6 +63,8 @@ pub struct Header<'a> {
     pub sound: &'a [mareader_engine::sounds::Line],
     pub say: Option<Say<'a>>,
     pub mode: Mode,
+    /// Show the Dictionary / AI switcher only when both sides have content.
+    pub show_tabs: bool,
     pub close: Command,
 }
 
@@ -114,17 +116,28 @@ pub fn header(ui: &mut Ui, info: &Header<'_>, t: &Tokens, out: &mut Commands) {
         if info.level.is_some() || !info.sound.is_empty() || info.say.is_some() {
             meta_row(ui, info, t, out);
         }
-        let mut mode = info.mode;
-        let tab_id = Id::new(("word-card-tab", info.word));
-        let all = [Mode::Dictionary, Mode::Ai];
-        let changed = widgets::tab_bar(ui, tab_id, &mut mode, &all, |m| match m {
-            Mode::Dictionary => (Some(Icon::Dictionary), "Dictionary"),
-            Mode::Ai => (Some(Icon::Ai), "AI in context"),
-        });
-        if changed {
-            out.push(Sent::Ui(UiCommand::WordCardMode(mode)));
+        if info.show_tabs {
+            let mut mode = info.mode;
+            let tab_id = Id::new(("word-card-tab", info.word));
+            let all = [Mode::Dictionary, Mode::Ai];
+            let changed = widgets::tab_bar(ui, tab_id, &mut mode, &all, |m| match m {
+                Mode::Dictionary => (Some(Icon::Dictionary), "Dictionary"),
+                Mode::Ai => (Some(Icon::Ai), "AI in context"),
+            });
+            if changed {
+                out.push(Sent::Ui(UiCommand::WordCardMode(mode)));
+            }
         }
     });
+}
+
+fn cefr_chip_width(ui: &Ui, level: &str, t: &Tokens) -> f32 {
+    let font = theme::medium(t.text_small * 0.92);
+    ui.painter()
+        .layout_no_wrap(level.to_owned(), font, t.ink)
+        .size()
+        .x
+        + 12.0
 }
 
 fn title_row(ui: &mut Ui, info: &Header<'_>, t: &Tokens, out: &mut Commands) {
@@ -168,19 +181,46 @@ fn title_row(ui: &mut Ui, info: &Header<'_>, t: &Tokens, out: &mut Commands) {
 }
 
 fn meta_row(ui: &mut Ui, info: &Header<'_>, t: &Tokens, out: &mut Commands) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
-        ui.spacing_mut().interact_size.y = 20.0;
-        if let Some(level) = info.level {
-            cefr_chip(ui, level, t);
+    let gap = 6.0;
+    let mut used = info.level.map_or(0.0, |l| cefr_chip_width(ui, l, t) + gap);
+    if info.say.is_some() {
+        used += 24.0 + gap;
+    }
+    let avail = ui.available_width();
+    let mut fit = 0;
+    for line in info.sound {
+        let w = crate::sounds::width(ui, line, t);
+        let need = if fit > 0 { w + gap } else { w };
+        if used + need <= avail + 1.0 {
+            used += need;
+            fit += 1;
+        } else {
+            break;
         }
-        if !info.sound.is_empty() {
-            crate::sounds::show_inline(ui, info.sound, t);
-        }
-        if let Some(say) = info.say {
-            crate::read_aloud::say_button(ui, info.word, (say.saying, say.voice), out);
-        }
-    });
+    }
+    if info.level.is_some() || fit > 0 || info.say.is_some() {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            ui.spacing_mut().interact_size.y = 24.0;
+            if let Some(level) = info.level {
+                cefr_chip(ui, level, t);
+            }
+            for line in info.sound.iter().take(fit) {
+                crate::sounds::show_one(ui, line, t);
+            }
+            if let Some(say) = info.say {
+                crate::read_aloud::say_button(ui, info.word, (say.saying, say.voice), out);
+            }
+        });
+    }
+    if let Some(rest) = info.sound.get(fit..)
+        && !rest.is_empty()
+    {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(8.0, 2.0);
+            crate::sounds::show_inline(ui, rest, t);
+        });
+    }
 }
 
 /// The word asked, laid out for the header.
@@ -273,6 +313,88 @@ pub fn copy_button(ui: &mut Ui, text: &str, label: &str, out: &mut Commands) {
     }
 }
 
+/// Compact hover-reactive footer action button matching icon button height.
+pub fn footer_action(
+    ui: &mut Ui,
+    icon: Option<Icon>,
+    label: &str,
+    accent: bool,
+    t: &Tokens,
+) -> egui::Response {
+    let font = FontId::proportional(t.text_small);
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, t.ink);
+    let pad_x = 7.0;
+    let icon_part = if icon.is_some() { 16.0 } else { 0.0 };
+    let size = vec2(galley.size().x + pad_x * 2.0 + icon_part, 24.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+        let fill = if accent { t.accent_soft } else { t.hover };
+        ui.painter().rect_filled(rect, t.radius, fill);
+    }
+    let ink = match (accent, resp.hovered()) {
+        (true, _) => t.accent,
+        (false, true) => t.ink,
+        (false, false) => t.muted,
+    };
+    let mut x = rect.left() + pad_x;
+    if let Some(icon) = icon {
+        let glyph = Rect::from_center_size(pos2(x + 6.0, rect.center().y), Vec2::splat(12.0));
+        icon.paint(ui, glyph, ink);
+        x += icon_part;
+    }
+    let text_pos = pos2(x, rect.center().y - galley.size().y * 0.5);
+    ui.painter().galley(text_pos, galley, ink);
+    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+    resp
+}
+
+/// Action pill for empty states and retry prompts inside the card body.
+pub fn action_pill(
+    ui: &mut Ui,
+    icon: Option<Icon>,
+    label: &str,
+    primary: bool,
+    t: &Tokens,
+) -> egui::Response {
+    let font = if primary {
+        theme::medium(t.text_small)
+    } else {
+        FontId::proportional(t.text_small)
+    };
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, t.ink);
+    let pad_x = 10.0;
+    let icon_part = if icon.is_some() { 18.0 } else { 0.0 };
+    let size = vec2(galley.size().x + pad_x * 2.0 + icon_part, 28.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+    }
+    let (fill, edge, ink) = match (primary, resp.hovered()) {
+        (true, true) => (t.accent_soft, t.accent, t.accent),
+        (true, false) => (t.accent_soft, t.accent.gamma_multiply(0.35), t.accent),
+        (false, true) => (t.hover, t.line, t.ink),
+        (false, false) => (t.ink.gamma_multiply(0.05), t.line, t.ink),
+    };
+    ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
+    ui.painter().rect_stroke(
+        rect,
+        CornerRadius::same(6),
+        Stroke::new(1.0, edge),
+        egui::StrokeKind::Inside,
+    );
+    let mut x = rect.left() + pad_x;
+    if let Some(icon) = icon {
+        let glyph = Rect::from_center_size(pos2(x + 6.5, rect.center().y), Vec2::splat(13.0));
+        icon.paint(ui, glyph, ink);
+        x += icon_part;
+    }
+    let text_pos = pos2(x, rect.center().y - galley.size().y * 0.5);
+    ui.painter().galley(text_pos, galley, ink);
+    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+    resp
+}
+
 /// Opens this page's word list window from the card footer.
 pub fn word_list_button(
     ui: &mut Ui,
@@ -282,23 +404,7 @@ pub fn word_list_button(
     t: &Tokens,
     out: &mut Commands,
 ) {
-    let font = FontId::proportional(t.text_small);
-    let galley = ui
-        .painter()
-        .layout_no_wrap("Word list".to_owned(), font, t.ink);
-    let size = vec2(galley.size().x + 26.0, 24.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, t.radius, t.hover);
-    }
-    let ink = if resp.hovered() { t.ink } else { t.muted };
-    let icon_at = pos2(rect.left() + 11.0, rect.center().y);
-    let glyph = Rect::from_center_size(icon_at, Vec2::splat(12.0));
-    Icon::Plus.paint(ui, glyph, ink);
-    let text_pos = pos2(rect.left() + 21.0, rect.center().y - galley.size().y * 0.5);
-    ui.painter().galley(text_pos, galley, ink);
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Word list"));
+    let resp = footer_action(ui, Some(Icon::Plus), "Word list", false, t);
     widgets::tip(&resp, "Open this page's word list", None);
     if resp.clicked() {
         out.push(Sent::Engine(close));

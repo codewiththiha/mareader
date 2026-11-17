@@ -1,17 +1,26 @@
 //! Unified lookup and AI word card: tabs, swap, paging, and footer.
 
+use std::fs::File;
 use std::path::Path;
+use std::sync::Arc;
 
+use egui::Pos2;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 use mareader_dict::{PACKS, build, db_file};
 use mareader_engine::command::Command;
 use mareader_engine::documents::OpenRequest;
+use mareader_settings::CefrLevel;
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::dict::card::PURSUE;
 use mareader_ui_egui::ui_command::Sent;
+use parquet::basic::{Compression, ZstdLevel};
+use parquet::data_type::{ByteArray, ByteArrayType, FloatType};
+use parquet::file::properties::WriterProperties;
+use parquet::file::writer::SerializedFileWriter;
+use parquet::schema::parser::parse_message_type;
 
-use crate::common::click_at;
+use crate::common::{click_at, find, go_to, page};
 
 type H = Harness<'static, MareaderApp>;
 
@@ -142,4 +151,177 @@ fn ai_card_switches_to_dictionary_and_pursues() {
     h.run();
     assert_eq!(h.state().study().card_word(), None);
     assert_eq!(h.state().dict().page_text(), "quick");
+}
+
+fn reader_with(extra: &[(&str, &str)]) -> H {
+    let mut app = MareaderApp::default();
+    let defaults = [
+        ("workers", "0"),
+        ("animations", "false"),
+        ("pdf", "sample:5"),
+    ];
+    for (k, v) in defaults.iter().chain(extra) {
+        app.set_option(k, v).expect("a known option");
+    }
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1000.0, 800.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(200)
+        .build_eframe(|_| app);
+    h.run_steps(3);
+    h.run();
+    h
+}
+
+fn cefr_shelf() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("cefr temp dir");
+    let parquet = dir.path().join("words.parquet");
+    let schema = Arc::new(
+        parse_message_type(
+            "message schema {
+                REQUIRED BYTE_ARRAY word (UTF8);
+                OPTIONAL BYTE_ARRAY pos_tag (UTF8);
+                REQUIRED FLOAT level;
+                OPTIONAL BYTE_ARRAY lemma (UTF8);
+            }",
+        )
+        .expect("schema parses"),
+    );
+    let props = Arc::new(
+        WriterProperties::builder()
+            .set_compression(Compression::ZSTD(ZstdLevel::default()))
+            .build(),
+    );
+    let mut w = SerializedFileWriter::new(File::create(&parquet).expect("create"), schema, props)
+        .expect("writer");
+    let mut rg = w.next_row_group().expect("row group");
+    let words: Vec<ByteArray> = ["the", "quick", "brown", "fox"]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    let tags: Vec<ByteArray> = ["DT", "JJ", "JJ", "NN"]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    let def_some = [1i16; 4];
+    let def_none = [0i16; 4];
+    let levels = [1.0f32, 6.0, 1.0, 2.0];
+    let mut c = rg.next_column().expect("c1").expect("col");
+    c.typed::<ByteArrayType>()
+        .write_batch(&words, None, None)
+        .expect("words");
+    c.close().expect("close");
+    let mut c = rg.next_column().expect("c2").expect("col");
+    c.typed::<ByteArrayType>()
+        .write_batch(&tags, Some(&def_some), None)
+        .expect("tags");
+    c.close().expect("close");
+    let mut c = rg.next_column().expect("c3").expect("col");
+    c.typed::<FloatType>()
+        .write_batch(&levels, None, None)
+        .expect("levels");
+    c.close().expect("close");
+    let mut c = rg.next_column().expect("c4").expect("col");
+    c.typed::<ByteArrayType>()
+        .write_batch(&[], Some(&def_none), None)
+        .expect("lemmas");
+    c.close().expect("close");
+    rg.close().expect("rg");
+    w.close().expect("file");
+    mareader_cefr::build(&parquet, &dir.path().join("cefr.db")).expect("build cefr");
+    dir
+}
+
+#[test]
+fn card_hides_tabs_when_one_side_lacks_data_and_offers_empty_actions() {
+    let dir = shelf();
+    let path = dir.path().to_string_lossy().into_owned();
+    // Without AI, Dictionary card hides the tab switcher.
+    let mut no_ai = reader_with(&[("dictionaries", path.as_str()), ("explain", "none")]);
+    select(&mut no_ai, "quick");
+    no_ai.get_by_label("Look up").click();
+    no_ai.run();
+    assert_eq!(no_ai.state().dict().card_word(), Some("quick"));
+    assert!(no_ai.query_by_label("AI in context").is_none());
+
+    // With AI and two packs, a missing entry hides tabs and offers CTAs.
+    let mut h = reader_with(&[("dictionaries", path.as_str()), ("explain", "canned")]);
+    select(&mut h, "quick brown");
+    h.get_by_label("Look up").click();
+    h.run();
+    assert!(h.query_by_label("AI in context").is_none());
+    h.get_by_label("No entry for “quick brown”.");
+    h.get_by_label("Ask AI in context");
+    h.get_by_label("Try French").click();
+    h.run();
+    h.get_by_label("English → French");
+    h.get_by_label("Try Burmese");
+
+    // Asking AI from the empty card switches to AI and hides the Dict tab.
+    h.get_by_label("Ask AI in context").click();
+    h.run();
+    assert_eq!(h.state().study().card_word(), Some("quick brown"));
+    let card_dict_tab = h
+        .query_all_by_label("Dictionary")
+        .any(|n| n.rect().top() > 50.0);
+    assert!(
+        !card_dict_tab,
+        "AI card hides Dictionary tab when word has no dict entry"
+    );
+}
+
+#[test]
+fn hover_card_switched_to_ai_tracks_scroll_and_aligns_meta_row() {
+    let packs = shelf();
+    let words = cefr_shelf();
+    let packs_s = packs.path().to_string_lossy().into_owned();
+    let words_s = words.path().to_string_lossy().into_owned();
+    let mut h = reader_with(&[
+        ("dictionaries", packs_s.as_str()),
+        ("cefr", words_s.as_str()),
+        ("explain", "canned"),
+    ]);
+    let mut s = h.state().settings().clone();
+    s.study.cefr.level = CefrLevel::B1;
+    h.state_mut()
+        .queue(Sent::Engine(Command::SetSettings(Box::new(s))));
+    h.run();
+
+    let (layer, sheet) = page(&h, 0).expect("page 0");
+    let at = find(&layer, "quick").expect("quick");
+    let word_pos = sheet.to_screen(layer.text.chars()[at + 2].bounds).center();
+    h.hover_at(word_pos);
+    h.run_steps(20);
+    assert_eq!(h.state().dict().card_word(), Some("quick"));
+    assert!(h.state().dict().card_rested());
+    let role = mareader_cefr::Role {
+        pos: "JJ".into(),
+        kind: "adjective",
+        level: Some(6.0),
+    };
+    h.state_mut().dict_mut().set_role("quick", role);
+    h.run_steps(2);
+
+    // Switching hover card to AI exits hover mode and anchors as a mark.
+    h.get_by_label("AI in context").click();
+    h.run();
+    assert_eq!(h.state().dict().card_word(), None);
+    assert_eq!(h.state().study().card_word(), Some("quick"));
+
+    // Metadata row centers CEFR chip and Say aloud on the same centerline.
+    let chip = h.get_by_label("C2").rect();
+    let say = h.get_by_label("Say aloud").rect();
+    assert!(
+        (chip.center().y - say.center().y).abs() <= 2.0,
+        "chip {chip:?} and say {say:?} should share vertical center"
+    );
+
+    // Moving pointer away does not dismiss (exited hover mode).
+    h.hover_at(Pos2::new(5.0, 790.0));
+    h.run_steps(3);
+    assert_eq!(h.state().study().card_word(), Some("quick"));
+    // Scrolling away to another page dismisses the anchored AI card.
+    go_to(&mut h, 4);
+    h.run_steps(3);
+    assert_eq!(h.state().study().card_word(), None);
 }

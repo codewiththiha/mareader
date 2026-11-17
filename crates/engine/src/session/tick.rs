@@ -53,7 +53,9 @@ impl Session {
         self.tick_clips();
         self.read_aloud_find();
         self.read_aloud_remember();
-        self.study_receive();
+        if self.study_receive() {
+            tick.repaint = true;
+        }
         self.tick_vocab_and_audio(now, &mut tick);
         self.page_ai_receive(now);
         if let Some(wait) = self.page_ai.take_wait() {

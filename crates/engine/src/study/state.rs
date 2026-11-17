@@ -183,6 +183,7 @@ impl State {
         // A failed answer is asked for again; a saved one is shown.
         self.failed.remove(&key);
         if let Key::Mark(id) = key
+            && !self.asking.contains_key(&key)
             && !self.answers.contains_key(&key)
             && let Some(said) = self.mark(main, id).and_then(Said::of)
         {
@@ -196,8 +197,11 @@ impl State {
 
     /// Retries a failed explanation lookup for `key`.
     pub fn retry(&mut self, main: &mut Library, wake: Waker, key: Key, word: &str, context: &str) {
-        self.failed.remove(&key);
-        self.ask(wake, key, word, context);
+        if !self.asking.contains_key(&key) {
+            self.answers.remove(&key);
+            self.failed.remove(&key);
+            self.ask(wake, key, word, context);
+        }
         self.save(main);
     }
 
@@ -239,21 +243,25 @@ impl State {
         self.asking.insert(key, rx);
     }
 
-    /// Takes in answers, finished or still filling in; marks keep theirs.
-    pub fn receive(&mut self, main: &mut Library) {
+    /// Takes in answers, finished or still filling in; returns true on change.
+    pub fn receive(&mut self, main: &mut Library) -> bool {
+        let mut changed = false;
         let mut done = Vec::new();
         for (key, rx) in &self.asking {
             loop {
                 match rx.try_recv() {
                     Ok(Got::Partial(info)) => {
                         self.partial.insert(*key, info.clamped());
+                        changed = true;
                     }
                     Ok(Got::Done(answer)) => {
                         done.push((*key, Some(answer)));
+                        changed = true;
                         break;
                     }
                     Err(TryRecvError::Disconnected) => {
                         done.push((*key, None));
+                        changed = true;
                         break;
                     }
                     Err(TryRecvError::Empty) => break,
@@ -272,6 +280,7 @@ impl State {
             }
         }
         self.save(main);
+        changed
     }
 
     /// Files finished answers: in the session, and with their marks.

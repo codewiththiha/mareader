@@ -1,6 +1,6 @@
 //! The open word card's window state: placement, role, and opening.
 
-use egui::Rect;
+use egui::{Rect, Vec2};
 use mareader_cefr::Role;
 use mareader_engine::session::Session;
 use mareader_library::{BookId, MarkId};
@@ -32,6 +32,17 @@ impl StudyUi {
     /// The word the open card explains.
     pub fn card_word(&self) -> Option<&str> {
         self.card.as_ref().map(|c| c.word.as_str())
+    }
+
+    /// Pane and word of the open AI card.
+    pub fn card_pane_word(&self) -> Option<(PaneId, &str)> {
+        mareader_engine::word_card::pane_word(&self.card)
+    }
+
+    /// Pane, word, and screen rect of the open AI card, for dict probing.
+    pub fn card_probe_info(&self) -> Option<(PaneId, String, Rect)> {
+        let c = self.card.as_ref()?;
+        Some((c.pane, c.word.clone(), c.at))
     }
 
     /// The open card's word and context, to ask for its role.
@@ -68,6 +79,7 @@ impl StudyUi {
             word,
             context,
             at,
+            offset: None,
             seen: true,
             role: None,
         });
@@ -76,6 +88,11 @@ impl StudyUi {
     /// Drops any stashed AI card.
     pub fn clear_stash(&mut self) {
         self.stash = None;
+    }
+
+    /// True when a stashed AI card exists for `(pane, word)`.
+    pub fn has_stash_for(&self, pane: PaneId, word: &str) -> bool {
+        mareader_engine::word_card::matches(&self.stash, pane, word)
     }
 
     /// Stashes the open AI card so returning to AI in context is instant.
@@ -101,15 +118,18 @@ impl StudyUi {
         book: Option<BookId>,
         name: &str,
         snap: TabSnapshot,
+        offset: Option<Vec2>,
         wall_ms: u64,
     ) {
         self.menu = None;
         self.note = None;
-        let matches = |c: &Card| c.pane == snap.pane && c.word == snap.word && c.at == snap.at;
+        let matches = |c: &Card| c.pane == snap.pane && c.word == snap.word;
         if let Some(mut card) = self.stash.take().filter(matches) {
             if card.role.is_none() {
                 card.role = snap.role;
             }
+            card.at = snap.at;
+            card.offset = offset.filter(|_| matches!(card.key, Key::Loose(_)));
             card.seen = true;
             self.card_rect = snap.rect;
             self.card = Some(card);
@@ -132,6 +152,7 @@ impl StudyUi {
             word,
             context,
             at: snap.at,
+            offset: offset.filter(|_| matches!(key, Key::Loose(_))),
             seen: true,
             role: snap.role,
         });
@@ -169,6 +190,7 @@ impl StudyUi {
             word,
             context,
             at,
+            offset: None,
             seen: true,
             role: None,
         });

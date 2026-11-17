@@ -145,3 +145,106 @@ fn an_answer_saves_as_the_gloss_of_the_mark_it_answers() {
     assert_eq!(gloss.synonyms, said.info.synonyms, "and the synonyms");
     assert_eq!(gloss.usages, said.info.usages, "and the usages");
 }
+
+struct GateExplainer {
+    by: &'static str,
+    meaning: &'static str,
+    release: Arc<std::sync::Condvar>,
+    open: Arc<Mutex<bool>>,
+}
+
+impl Explainer for GateExplainer {
+    fn by(&self) -> String {
+        self.by.to_owned()
+    }
+
+    fn explain(
+        &self,
+        _word: &str,
+        _context: &str,
+        _partial: &(dyn Fn(WordInfo) + Sync),
+    ) -> Result<WordInfo, Failure> {
+        if let Ok(mut open) = self.open.lock() {
+            while !*open {
+                let Ok(next) = self.release.wait(open) else {
+                    break;
+                };
+                open = next;
+            }
+        }
+        Ok(info(self.meaning))
+    }
+}
+
+#[test]
+fn ask_again_replaces_saved_gloss_and_stays_clear_while_pending() {
+    use super::super::state::{Key, State};
+    use super::super::words::Asked;
+    use mareader_library::{DeviceId, Library, Spot};
+
+    let (wake, _) = asked();
+    let mut main = Library::new(DeviceId(1));
+    let mut state = State::default();
+    state.set_inline(true);
+    let first = Arc::new(GateExplainer {
+        by: "Model A",
+        meaning: "old meaning",
+        release: Arc::new(std::sync::Condvar::new()),
+        open: Arc::new(Mutex::new(true)),
+    });
+    state.set_explainer(first);
+    let ask = Asked {
+        word: "slumber".into(),
+        context: "deep slumber".into(),
+        page: 0,
+        chars: 5..12,
+        spot: Some(Spot::Page {
+            page: 0,
+            rect: [40.0, 0.0, 50.0, 20.0],
+        }),
+    };
+    let key = state.explain_mark(&mut main, None, "book", &ask, 1);
+    state.prepare_card(&mut main, Arc::clone(&wake), key, &ask.word, &ask.context);
+    assert_eq!(
+        state.answer(key).map(|s| s.info.meaning.as_str()),
+        Some("old meaning")
+    );
+    let Key::Mark(id) = key else {
+        panic!("expected a mark key");
+    };
+
+    // Switch to a gated explainer and ask again off-thread.
+    let release = Arc::new(std::sync::Condvar::new());
+    let open = Arc::new(Mutex::new(false));
+    state.set_inline(false);
+    state.set_explainer(Arc::new(GateExplainer {
+        by: "Model B",
+        meaning: "fresh meaning",
+        release: Arc::clone(&release),
+        open: Arc::clone(&open),
+    }));
+    state.ask_again(&mut main, Arc::clone(&wake), key, &ask.word, &ask.context);
+    assert!(state.answer(key).is_none());
+    // Reopening mid-flight must not resurrect the old saved gloss.
+    state.prepare_card(&mut main, Arc::clone(&wake), key, &ask.word, &ask.context);
+    assert!(state.answer(key).is_none());
+
+    // Release the new answer: session state and saved mark replace old data.
+    if let Ok(mut flag) = open.lock() {
+        *flag = true;
+        release.notify_all();
+    }
+    assert!(waited(|| {
+        state.receive(&mut main);
+        state.answer(key).is_some()
+    }));
+    let got = state.answer(key).expect("new answer landed");
+    assert_eq!(got.info.meaning, "fresh meaning");
+    assert_eq!(got.by, "Model B");
+    let saved = state
+        .mark(&main, id)
+        .and_then(|m| m.gloss.value.as_ref())
+        .expect("saved gloss updated");
+    assert_eq!(saved.meaning, "fresh meaning");
+    assert_eq!(saved.by, "Model B");
+}

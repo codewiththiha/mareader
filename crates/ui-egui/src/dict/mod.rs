@@ -1,6 +1,7 @@
 //! Dictionaries in the app: the lookup card, the page, the packs.
 
 pub mod card;
+mod card_state;
 mod entry;
 mod look;
 pub mod page;
@@ -216,9 +217,8 @@ impl DictUi {
         session: &mut Session,
         pane: PaneId,
         (word, context): (String, String),
-        at: Rect,
-        offset: Option<Vec2>,
-        to: Option<String>,
+        (at, offset): (Rect, Option<Vec2>),
+        (to, asked): (Option<String>, Option<Asked>),
     ) -> bool {
         match &self.card {
             Some(c) if !c.rest || (c.word == word && c.at == at) => return false,
@@ -229,10 +229,12 @@ impl DictUi {
             to,
         };
         let ticket = session.dict_ask(query);
-        self.show_lookup(pane, word, ticket, at, offset, None);
+        self.show_lookup(pane, word, ticket, at, offset, asked);
         if let Some(card) = &mut self.card {
             card.rest = true;
-            card.context = context;
+            if card.context.is_empty() {
+                card.context = context;
+            }
         }
         self.card_rect = None;
         true
@@ -338,7 +340,7 @@ impl DictUi {
     pub fn show(
         &mut self,
         ctx: &Context,
-        attached: bool,
+        (attached, ai_ready, languages): (bool, bool, &[&str]),
         (panes, heard): (&[(PaneId, Rect)], mareader_engine::sounds::Heard<'_>),
         pane_info: impl Fn(PaneId) -> (Option<Vec2>, Option<usize>),
         out: &mut Commands,
@@ -379,6 +381,8 @@ impl DictUi {
                 reply: c.reply.as_ref(),
                 role: c.role.as_ref(),
                 attached,
+                ai_ready,
+                languages,
                 at: c.at,
                 room: room(c.pane)?,
                 saying: heard.saying(&c.word),
