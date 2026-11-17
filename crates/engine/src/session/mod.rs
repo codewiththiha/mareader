@@ -234,11 +234,13 @@ impl Session {
             batch_depth: 0,
             recording_json: false,
         };
+        let wake = Arc::clone(&session.waker);
+        session.save.set_waker(Arc::clone(&wake));
+        session.save.set_inline(inline);
         if inline {
             session.set_document_workers(0);
             session.set_inline(true);
         }
-        let wake = Arc::clone(&session.waker);
         session.page_ai.waker = Arc::clone(&wake);
         session.read_aloud.attach_waker(wake);
         session.wire_host();
@@ -295,6 +297,7 @@ impl Session {
     /// Any write failure leaves as an [`Event::Toast`].
     pub fn keep(&mut self, now: f64, last: Option<LastDocument>) -> Option<f64> {
         match guard::catch_panic(|| {
+            self.save.poll();
             self.save.note(last);
             let wait = self.save.write(now, &self.settings);
             self.emit_save_failure();

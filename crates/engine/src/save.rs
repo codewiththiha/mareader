@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use mareader_settings::Settings;
 
+use crate::session::Waker;
+
 /// Settings reach disk this long after a change, at most.
 pub const EVERY: f64 = 0.5;
 
@@ -49,7 +51,6 @@ pub struct Loaded {
 }
 
 /// The engine's writing: where, when it last did, and whether it owes one.
-#[derive(Debug, Default)]
 pub struct Save {
     dir: Option<PathBuf>,
     wrote: f64,
@@ -57,6 +58,41 @@ pub struct Save {
     failed: Option<String>,
     /// What was read, as the front end last reported it.
     last: Option<LastDocument>,
+    inline: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    waker: Option<Waker>,
+    #[cfg(not(target_arch = "wasm32"))]
+    writer: Option<writer::Writer>,
+}
+
+impl std::fmt::Debug for Save {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Save")
+            .field("dir", &self.dir)
+            .field("wrote", &self.wrote)
+            .field("dirty", &self.dirty)
+            .field("failed", &self.failed)
+            .field("last", &self.last)
+            .field("inline", &self.inline)
+            .finish()
+    }
+}
+
+impl Default for Save {
+    fn default() -> Self {
+        Self {
+            dir: None,
+            wrote: 0.0,
+            dirty: false,
+            failed: None,
+            last: None,
+            inline: true,
+            #[cfg(not(target_arch = "wasm32"))]
+            waker: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            writer: None,
+        }
+    }
 }
 
 impl Save {
@@ -68,6 +104,24 @@ impl Save {
             last: None,
             ..Self::default()
         }
+    }
+
+    /// Runs writes inline on this thread when `on`, else on a worker thread.
+    pub fn set_inline(&mut self, on: bool) {
+        if on {
+            self.drain(false);
+        }
+        self.inline = on;
+    }
+
+    /// Registers a wake callback notified when a background write fails.
+    pub fn set_waker(&mut self, waker: Waker) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.waker = Some(waker);
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = waker;
     }
 
     /// Where the two files live, if they live anywhere.
@@ -99,8 +153,19 @@ impl Save {
         self.touch();
     }
 
+    /// Collects any background write error so callers can retry and report it.
+    pub fn poll(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(why) = self.writer.as_mut().and_then(writer::Writer::take_failure) {
+            self.failed = Some(why);
+            // A refused write is still owed, so the next frame tries again.
+            self.dirty = true;
+        }
+    }
+
     /// Writes at most every [`EVERY`]; else the wait left, for a frame.
     pub fn write(&mut self, now: f64, settings: &Settings) -> Option<f64> {
+        self.poll();
         if self.dir.is_none() || !self.dirty {
             return None;
         }
@@ -111,7 +176,21 @@ impl Save {
         self.wrote = now;
         self.dirty = false;
         let dir = self.dir.clone()?;
-        self.failed = store(&dir, settings, self.last.as_ref()).err();
+        let encoded = match blobs(settings, self.last.as_ref()) {
+            Ok(encoded) => encoded,
+            Err(why) => {
+                self.failed = Some(why);
+                self.dirty = true;
+                return None;
+            }
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.inline {
+            let writer = self.writer.get_or_insert_with(writer::Writer::spawn);
+            writer.enqueue(dir, encoded, self.waker.as_ref());
+            return None;
+        }
+        self.failed = write_blobs(&dir, &encoded).err();
         // A refused write is still owed, so the next frame tries again.
         self.dirty = self.failed.is_some();
         None
@@ -119,14 +198,29 @@ impl Save {
 
     /// Writes now: the app is exiting, or a test asks.
     pub fn flush(&mut self, settings: &Settings) {
+        self.drain(true);
         self.wrote = f64::NEG_INFINITY;
         self.touch();
+        let was_inline = self.inline;
+        self.inline = true;
         self.write(0.0, settings);
+        self.inline = was_inline;
     }
 
     /// Why a write was refused, once; a caller turns it into a toast.
     pub(crate) fn take_failure(&mut self) -> Option<String> {
+        self.poll();
         self.failed.take()
+    }
+
+    fn drain(&mut self, drop_pending: bool) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(writer) = &mut self.writer {
+            writer.drain(drop_pending);
+            self.poll();
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = drop_pending;
     }
 }
 
@@ -183,7 +277,12 @@ pub fn blobs(settings: &Settings, last: Option<&LastDocument>) -> Result<Blobs, 
 
 /// Both files whole: a temp beside each, then a rename.
 pub fn store(dir: &Path, settings: &Settings, last: Option<&LastDocument>) -> Result<(), String> {
-    for (name, text) in blobs(settings, last)? {
+    let encoded = blobs(settings, last)?;
+    write_blobs(dir, &encoded)
+}
+
+fn write_blobs(dir: &Path, encoded: &Blobs) -> Result<(), String> {
+    for (name, text) in encoded {
         write(dir, name, text.as_bytes())?;
     }
     Ok(())
@@ -201,6 +300,141 @@ fn read(dir: &Path, name: &str, notes: &mut Vec<String>) -> Option<String> {
         Err(why) => {
             notes.push(format!("{name} could not be read: {why}"));
             None
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+mod writer {
+    use std::fmt;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Condvar, Mutex, PoisonError};
+    use std::thread::JoinHandle;
+
+    use crate::session::Waker;
+
+    use super::{Blobs, write_blobs};
+
+    struct Slot {
+        pending: Option<(PathBuf, Blobs)>,
+        writing: bool,
+        closed: bool,
+        failed: Option<String>,
+        waker: Option<Waker>,
+    }
+
+    /// Coalescing off-thread writer so atomic fsyncs never stall the UI frame.
+    pub(super) struct Writer {
+        shared: Arc<(Mutex<Slot>, Condvar)>,
+        handle: Option<JoinHandle<()>>,
+    }
+
+    impl fmt::Debug for Writer {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("Writer")
+        }
+    }
+
+    fn lock(mutex: &Mutex<Slot>) -> std::sync::MutexGuard<'_, Slot> {
+        mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    impl Writer {
+        pub(super) fn spawn() -> Self {
+            let shared = Arc::new((
+                Mutex::new(Slot {
+                    pending: None,
+                    writing: false,
+                    closed: false,
+                    failed: None,
+                    waker: None,
+                }),
+                Condvar::new(),
+            ));
+            let worker = Arc::clone(&shared);
+            let handle = std::thread::Builder::new()
+                .name("mareader-save".into())
+                .spawn(move || run(&worker))
+                .ok();
+            Self { shared, handle }
+        }
+
+        pub(super) fn enqueue(&mut self, dir: PathBuf, blobs: Blobs, waker: Option<&Waker>) {
+            if self.handle.is_none() {
+                let err = write_blobs(&dir, &blobs).err();
+                lock(&self.shared.0).failed = err;
+                return;
+            }
+            let (mutex, cvar) = &*self.shared;
+            let mut slot = lock(mutex);
+            slot.pending = Some((dir, blobs));
+            if let Some(waker) = waker {
+                slot.waker = Some(Arc::clone(waker));
+            }
+            cvar.notify_one();
+        }
+
+        pub(super) fn take_failure(&mut self) -> Option<String> {
+            lock(&self.shared.0).failed.take()
+        }
+
+        pub(super) fn drain(&mut self, drop_pending: bool) {
+            let (mutex, cvar) = &*self.shared;
+            let mut slot = lock(mutex);
+            if drop_pending {
+                slot.pending = None;
+            }
+            while slot.writing || (!drop_pending && slot.pending.is_some()) {
+                slot = cvar.wait(slot).unwrap_or_else(PoisonError::into_inner);
+            }
+        }
+    }
+
+    impl Drop for Writer {
+        fn drop(&mut self) {
+            let (mutex, cvar) = &*self.shared;
+            {
+                let mut slot = lock(mutex);
+                slot.closed = true;
+                cvar.notify_all();
+            }
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    fn run(shared: &(Mutex<Slot>, Condvar)) {
+        let (mutex, cvar) = shared;
+        loop {
+            let job = {
+                let mut slot = lock(mutex);
+                while slot.pending.is_none() && !slot.closed {
+                    slot = cvar.wait(slot).unwrap_or_else(PoisonError::into_inner);
+                }
+                match slot.pending.take() {
+                    Some(job) => {
+                        slot.writing = true;
+                        job
+                    }
+                    None => return,
+                }
+            };
+            let err = write_blobs(&job.0, &job.1).err();
+            let wake = {
+                let mut slot = lock(mutex);
+                let wake = err.as_ref().and_then(|_| slot.waker.clone());
+                if err.is_some() {
+                    slot.failed = err;
+                }
+                wake
+            };
+            if let Some(wake) = wake {
+                wake();
+            }
+            let mut slot = lock(mutex);
+            slot.writing = false;
+            cvar.notify_all();
         }
     }
 }

@@ -65,8 +65,8 @@ pub struct UiState {
     pub(super) library_rect: Option<egui::Rect>,
     /// What an empty pane offers, as of a library revision.
     pub(super) reopen: (u64, Vec<(mareader_library::BookId, String)>),
-    /// A theme change held for, or fading over, a snapshot.
-    pub(super) fade: Crossfade<Held>,
+    /// Live look transition blending tokens, pane fills, and shaders.
+    pub(super) fade: LookFade,
     pub(super) styled: Option<(Appearance, MotionSettings, bool)>,
     /// The system asks for less motion; set off the UI thread at launch.
     pub(super) reduced_motion: Arc<AtomicBool>,

@@ -254,6 +254,8 @@ pub struct ViewContext {
     pub page: PageLook,
     /// Blend's paper behind the pages, raw; none draws no backdrop.
     pub paper: Option<Rgb>,
+    /// Active look transition blending from a prior pane state.
+    pub fade: Option<crate::crossfade::PaneFade>,
     /// The pane's corner radius, which the backdrop keeps.
     pub corner: f32,
     /// Read this pane's paper: blend is on and the pane is focused.
@@ -392,6 +394,17 @@ pub(super) struct InputState {
     reflow: bool,
     picture_tone: PageTone,
     emoji_tone: PageTone,
+    fade: Option<FadeTones>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct FadeTones {
+    t: Tokens,
+    fixed_tone: PageTone,
+    picture_tone: PageTone,
+    emoji_tone: PageTone,
+    paper: Option<Rgb>,
+    progress: f32,
 }
 
 pub(super) struct ScrollState {

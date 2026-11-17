@@ -235,26 +235,21 @@ fn finish(cx: &mut ShowContext<'_>) {
     } else {
         Urgency::OtherPane
     };
-    let mut t = view_cx.tokens;
     let reflow = doc.is_reflowable();
-    // Pictures, emoji and fixed artwork keep their colours unless themed.
-    let (mut picture_tone, mut emoji_tone, mut fixed_tone) =
-        (PageTone::NONE, PageTone::NONE, PageTone::NONE);
-    if reflow {
-        let mut text = t.book.inked(view_cx.page.ink);
-        // Blend's paper, as the PDF beside it shows it.
-        if let Some(raw) = view_cx.paper {
-            text.paper = t.page.apply(raw.to_unit());
+    let (t, picture_tone, emoji_tone, fixed_tone) =
+        resolve_tones(view_cx.tokens, view_cx.paper, &view_cx.page, reflow);
+    let fade = view_cx.fade.map(|f| {
+        let (t, picture_tone, emoji_tone, fixed_tone) =
+            resolve_tones(f.tokens, f.paper, &view_cx.page, reflow);
+        FadeTones {
+            t,
+            fixed_tone,
+            picture_tone,
+            emoji_tone,
+            paper: f.paper,
+            progress: f.progress,
         }
-        let themed = t.page.for_pictures(&text);
-        let pick = |on: bool| if on { themed } else { PageTone::NONE };
-        (picture_tone, emoji_tone) = (
-            pick(view_cx.page.theme_pictures),
-            pick(view_cx.page.theme_emojis),
-        );
-        fixed_tone = picture_tone;
-        t.page = text;
-    }
+    });
     // egui turns a plain wheel sideways only if that's the sole direction.
     let down = cx.place.mode != ViewMode::Horizontal || layout.size.y > frame.height() + 0.5;
     ui.style_mut().always_scroll_the_only_direction = true;
@@ -274,5 +269,28 @@ fn finish(cx: &mut ShowContext<'_>) {
         reflow,
         picture_tone,
         emoji_tone,
+        fade,
     });
+}
+
+fn resolve_tones(
+    mut t: Tokens,
+    paper: Option<Rgb>,
+    page: &PageLook,
+    reflow: bool,
+) -> (Tokens, PageTone, PageTone, PageTone) {
+    // Pictures, emoji and fixed artwork keep their colours unless themed.
+    if !reflow {
+        return (t, PageTone::NONE, PageTone::NONE, PageTone::NONE);
+    }
+    let mut text = t.book.inked(page.ink);
+    // Blend's paper, as the PDF beside it shows it.
+    if let Some(raw) = paper {
+        text.paper = t.page.apply(raw.to_unit());
+    }
+    let themed = t.page.for_pictures(&text);
+    let pick = |on: bool| if on { themed } else { PageTone::NONE };
+    let (picture, emoji) = (pick(page.theme_pictures), pick(page.theme_emojis));
+    t.page = text;
+    (t, picture, emoji, picture)
 }

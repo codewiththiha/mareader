@@ -235,18 +235,14 @@ impl MareaderApp {
         crate::palette::show(ctx, &self.session, self.ui.platform, commands);
         crate::focus::paint(ctx);
         self.film_grain(ctx);
-        self.ui.fade.paint(ctx);
     }
 
     pub(super) fn finish(&mut self, ctx: &Context, outside: bool, commands: Commands) {
         // Applied after drawing, so the next frame must show the result.
         if !commands.is_empty() {
             ctx.request_repaint();
-            // A change still waiting on its snapshot lands first.
-            if let Some(after) = self.ui.fade.take() {
-                self.restore(after);
-            }
             let before = self.held();
+            let before_look = self.look_snap(ctx);
             for command in commands {
                 self.apply(ctx, command);
             }
@@ -255,15 +251,16 @@ impl MareaderApp {
             if *self.settings() != *before.settings() {
                 ctx.request_repaint_after(SAVE_EVERY + Duration::from_millis(50));
             }
-            if !outside && self.may_fade(ctx) && self.leapt(&before) {
-                let after = self.held();
-                self.restore(before);
-                self.ui.fade.hold(ctx, after);
-            } else {
-                // Start text changes now instead of idling through VSync.
-                self.reconcile_texts();
-                self.ui.documents.sync_text(&mut self.session);
+            if self.leapt(&before) {
+                if !outside && self.may_fade(ctx) {
+                    self.ui.fade.start(ctx.input(|i| i.time), before_look);
+                } else {
+                    self.ui.fade.clear();
+                }
             }
+            // Start text changes now instead of idling through VSync.
+            self.reconcile_texts();
+            self.ui.documents.sync_text(&mut self.session);
         }
         // This frame drew with the old look; show the new one next frame.
         if self.restyle(ctx) {

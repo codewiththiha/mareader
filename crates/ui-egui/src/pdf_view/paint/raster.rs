@@ -7,34 +7,71 @@ pub(super) fn backdrop(cx: &mut ShowContext<'_>, ui: &mut Ui) {
     let Some(input) = cx.input.as_ref() else {
         return;
     };
+    let Some(pass) = cx.pass else {
+        return;
+    };
     let view = &mut *cx.view;
     let Some(layout) = view.layout.as_ref() else {
         return;
     };
     let frame = cx.frame;
-    let bands = cx.bands;
+    let has_bands = cx.bands.is_some();
     let reflow = input.reflow;
-    let t = input.t;
-    let pass = cx.pass;
     let drawn = &mut *cx.drawn;
     // One sheet under every page, so patterns run across seams.
     let anchor = Anchor {
         origin: ui.max_rect().min,
         zoom: layout.zoom(),
     };
+    let rect = (frame, view_cx.corner);
+    let make =
+        |paper: Option<Rgb>, t: &Tokens| backdrop_quad(rect, anchor, (reflow, has_bands), paper, t);
+    let to = make(view_cx.paper, &input.t);
+    let quads = match input.fade {
+        None => to.into_iter().collect(),
+        Some(fade) => blend_backdrop(make(fade.paper, &fade.t), to, fade.progress),
+    };
+    if !quads.is_empty() {
+        let shape = PagesCallback::shape(pass.clone(), frame, quads.clone());
+        ui.painter().add(shape);
+        drawn.extend(quads);
+    }
+}
+
+fn backdrop_quad(
+    (frame, corner): (Rect, f32),
+    anchor: Anchor,
+    (reflow, has_bands): (bool, bool),
+    blend_paper: Option<Rgb>,
+    t: &Tokens,
+) -> Option<Quad> {
     // Blend's paper under the shadows; a stream always has its own.
     let white = Rgb(255, 255, 255);
     let paper = match reflow {
         // A book's tone holds its paper already.
-        true => (view_cx.paper.is_some() || bands.is_some()).then_some(white),
-        false => view_cx.paper.or(bands.map(|_| white)),
-    };
-    if let (Some(paper), Some(pass)) = (paper, pass) {
-        let tone = t.page.backdrop(paper.to_unit());
-        let quad = Quad::backdrop(frame, view_cx.corner, tone, anchor);
-        let shape = PagesCallback::shape(pass.clone(), frame, vec![quad.clone()]);
-        ui.painter().add(shape);
-        drawn.push(quad);
+        true => (blend_paper.is_some() || has_bands).then_some(white),
+        false => blend_paper.or(has_bands.then_some(white)),
+    }?;
+    let tone = t.page.backdrop(paper.to_unit());
+    Some(Quad::backdrop(frame, corner, tone, anchor))
+}
+
+fn blend_backdrop(from: Option<Quad>, to: Option<Quad>, progress: f32) -> Vec<Quad> {
+    match (from, to) {
+        (Some(old), Some(mut new)) if old.tone != new.tone => {
+            new.tint = fade_tint(progress);
+            vec![old, new]
+        }
+        (Some(old), Some(_)) => vec![old],
+        (Some(mut old), None) => {
+            old.tint = fade_tint(1.0 - progress);
+            vec![old]
+        }
+        (None, Some(mut new)) => {
+            new.tint = fade_tint(progress);
+            vec![new]
+        }
+        (None, None) => Vec::new(),
     }
 }
 
@@ -77,6 +114,7 @@ fn paint_one(cx: &mut ShowContext<'_>, ui: &mut Ui, origin: Vec2, page: usize) {
     };
     let (ppp, reflow, t) = (input.ppp, input.reflow, input.t);
     let (urgency, picture_tone, emoji_tone) = (input.urgency, input.picture_tone, input.emoji_tone);
+    let fade = input.fade;
     let (view_cx, doc, sizes, bands, frame) = (cx.view_cx, cx.doc, cx.sizes, cx.bands, cx.frame);
     let doc_id = cx.place.doc;
     let view = &mut *cx.view;
@@ -107,9 +145,9 @@ fn paint_one(cx: &mut ShowContext<'_>, ui: &mut Ui, origin: Vec2, page: usize) {
         demand.push((Urgency::Text, Want::Text { doc: doc_id, page }));
     }
     let fixed_page = doc.is_fixed_page(page);
-    let page_tokens = page_tokens(t, input.fixed_tone, fixed_page);
+    let paged = page_tokens(t, input.fixed_tone, fixed_page);
     let round = (frame, view_cx.corner);
-    let style = (&page_tokens, view_cx.page.shadow && bands.is_none());
+    let style = (&paged, view_cx.page.shadow && bands.is_none());
     let first = cx.paint.quads.len();
     paint_page(
         ui,
@@ -118,20 +156,12 @@ fn paint_one(cx: &mut ShowContext<'_>, ui: &mut Ui, origin: Vec2, page: usize) {
         style,
         &mut cx.paint.quads,
     );
-    paint_tiles(cx, ui, page, plan, (rect, clip), anchor, page_tokens.page);
+    paint_tiles(cx, ui, page, plan, (rect, clip), anchor, paged.page);
     let width = sizes.get(page).map_or(1.0, |s| s.width);
     if reflow && !fixed_page {
-        let to_screen = |b: Bounds| {
-            let k = rect.width() / width;
-            Rect::from_min_max(
-                rect.min + vec2(b.x0, b.y0) * k,
-                rect.min + vec2(b.x1, b.y1) * k,
-            )
-        };
-        let shown = doc.pictures(page).into_iter().map(to_screen);
-        keep_pictures(&mut cx.paint.quads, first, shown, picture_tone);
-        let emojis = doc.emojis(page).into_iter().map(to_screen);
-        keep_pictures(&mut cx.paint.quads, first, emojis, emoji_tone);
+        let dest = (&mut cx.paint.quads, first);
+        let tones = (picture_tone, emoji_tone);
+        paint_media(doc, page, (rect, width), dest, tones);
     }
     let overlay = view_cx.ai.overlays.iter().find(|o| o.page == page);
     if let Some(shown) = overlay.and_then(|o| o.card.as_ref()) {
@@ -139,6 +169,12 @@ fn paint_one(cx: &mut ShowContext<'_>, ui: &mut Ui, origin: Vec2, page: usize) {
         let place = ((rect, clip), anchor);
         page_ai::paint::card(ui, place, shown, tones, &mut cx.paint.quads);
         cx.paint.covered.push(page);
+    }
+    if let Some(fade) = fade {
+        let from_page = page_tokens(fade.t, fade.fixed_tone, fixed_page).page;
+        let to = (paged.page, picture_tone, emoji_tone);
+        let from = (from_page, fade.picture_tone, fade.emoji_tone);
+        blend_quads(&mut cx.paint.quads, first, to, from, fade.progress);
     }
     cx.paint.sheets.push(Sheet {
         page,
@@ -230,4 +266,67 @@ fn page_tokens(mut t: Tokens, fixed_tone: PageTone, fixed_page: bool) -> Tokens 
         t.page = fixed_tone;
     }
     t
+}
+
+fn paint_media(
+    doc: &Document,
+    page: usize,
+    (rect, width): (Rect, f32),
+    (quads, first): (&mut Vec<Quad>, usize),
+    (picture_tone, emoji_tone): (PageTone, PageTone),
+) {
+    let to_screen = |b: Bounds| {
+        let k = rect.width() / width;
+        Rect::from_min_max(
+            rect.min + vec2(b.x0, b.y0) * k,
+            rect.min + vec2(b.x1, b.y1) * k,
+        )
+    };
+    let shown = doc.pictures(page).into_iter().map(to_screen);
+    keep_pictures(quads, first, shown, picture_tone);
+    let emojis = doc.emojis(page).into_iter().map(to_screen);
+    keep_pictures(quads, first, emojis, emoji_tone);
+}
+
+fn fade_tint(progress: f32) -> egui::Color32 {
+    let a = (progress.clamp(0.0, 1.0) * 255.0).round() as u8;
+    egui::Color32::from_rgba_premultiplied(a, a, a, a)
+}
+
+fn blend_quads(
+    quads: &mut Vec<Quad>,
+    first: usize,
+    to: (PageTone, PageTone, PageTone),
+    from: (PageTone, PageTone, PageTone),
+    progress: f32,
+) {
+    let map = |tone: PageTone| {
+        if tone == to.0 {
+            from.0
+        } else if tone == to.1 {
+            from.1
+        } else if tone == to.2 {
+            from.2
+        } else {
+            tone
+        }
+    };
+    if quads
+        .get(first..)
+        .is_none_or(|tail| tail.iter().all(|q| map(q.tone) == q.tone))
+    {
+        return;
+    }
+    let tint = fade_tint(progress);
+    let tail = quads.split_off(first);
+    for mut q in tail {
+        let old_tone = map(q.tone);
+        if old_tone != q.tone {
+            let mut under = q.clone();
+            under.tone = old_tone;
+            quads.push(under);
+            q.tint = tint;
+        }
+        quads.push(q);
+    }
 }

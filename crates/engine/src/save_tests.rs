@@ -266,6 +266,7 @@ fn a_session_keeps_its_own_two_files() -> Result<(), String> {
             ..Default::default()
         },
     );
+    session.set_inline(true);
     assert!(session.persists(), "the host named a directory");
     assert_eq!(session.keep(0.0, None), None, "nothing is owed yet");
     assert!(!dir.path().join(SETTINGS_FILE).exists());
@@ -277,5 +278,40 @@ fn a_session_keeps_its_own_two_files() -> Result<(), String> {
     session.settle(None);
     assert_eq!(load(Some(dir.path())).last, None);
     assert!(session.drain().is_empty());
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn background_writes_persist_and_surface_failures() -> Result<(), String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let dir = dir()?;
+    let mut save = Save::new(Some(dir.path().to_path_buf()));
+    save.set_inline(false);
+    let mut first = choices();
+    first.paper.blend = true;
+    save.touch();
+    assert_eq!(save.write(0.0, &first), None);
+    assert!(!save.dirty());
+    // Switching back inline waits for the queued background write.
+    save.set_inline(true);
+    assert!(load(Some(dir.path())).settings.paper.blend);
+
+    // A background write failure wakes the UI and re-marks the save dirty.
+    let blocker = dir.path().join("not-a-dir");
+    std::fs::write(&blocker, b"x").map_err(|e| e.to_string())?;
+    let woken = Arc::new(AtomicUsize::new(0));
+    let woken_hit = Arc::clone(&woken);
+    let mut bad = Save::new(Some(blocker));
+    bad.set_waker(Arc::new(move || {
+        woken_hit.fetch_add(1, Ordering::SeqCst);
+    }));
+    bad.set_inline(false);
+    bad.touch();
+    assert_eq!(bad.write(0.0, &first), None);
+    bad.set_inline(true);
+    assert!(woken.load(Ordering::SeqCst) >= 1);
+    assert!(bad.dirty());
+    assert!(bad.take_failure().is_some());
     Ok(())
 }

@@ -212,8 +212,9 @@ impl SettingsWindow {
                 nav_heading(&mut ui, tab.group());
                 group = Some(tab.group());
             }
-            if nav_row(&mut ui, tab, tab == shown).clicked() {
+            if nav_row(&mut ui, tab, tab == shown).clicked() && self.tab != tab {
                 self.tab = tab;
+                ui.ctx().request_repaint();
             }
             // The downloaded models fold under Read aloud.
             if tab == Tab::ReadAloud && !models.is_empty() {
@@ -244,8 +245,9 @@ impl SettingsWindow {
             rows,
             |ui, tab, live| {
                 let r = nav_row(ui, tab, live && tab == shown);
-                if live && r.clicked() {
+                if live && r.clicked() && self.tab != tab {
                     self.tab = tab;
+                    ui.ctx().request_repaint();
                 }
             },
         );

@@ -49,6 +49,7 @@ impl Session {
     /// Runs background service work inline on this thread (for tests/shots).
     pub fn set_inline(&mut self, on: bool) {
         self.inline = on;
+        self.save.set_inline(on);
         self.vocab.set_inline(on);
         self.sounds.set_inline(on);
         self.search.set_inline(on);

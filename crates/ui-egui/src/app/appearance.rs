@@ -1,28 +1,36 @@
 use super::*;
 
 impl MareaderApp {
-    /// Restyles egui when the look changed; true if it did.
+    /// Current window tokens from settings, plus debug overrides if active.
+    pub(super) fn target_tokens(&self) -> theme::Tokens {
+        #[allow(unused_mut)]
+        let mut tokens = theme::Tokens::new(&self.settings().appearance);
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        self.ui.live.overlay(&mut tokens);
+        tokens
+    }
+
+    /// Restyles egui when the look changed or is fading; true if it did.
     pub(super) fn restyle(&mut self, ctx: &Context) -> bool {
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
         if self.ui.live.poll(ctx) {
             self.ui.styled = None;
         }
+        let fading = self.ui.fade.advance(ctx);
         let reduced = self.ui.reduced_motion.load(Ordering::Relaxed);
         let want = (
             self.settings().appearance,
             self.settings().motion.clone(),
             reduced,
         );
-        if self.ui.styled.as_ref() == Some(&want) {
+        if !fading && self.ui.styled.as_ref() == Some(&want) {
             return false;
         }
-        #[allow(unused_mut)]
-        let mut tokens = theme::Tokens::new(&self.settings().appearance);
-        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
-        self.ui.live.overlay(&mut tokens);
+        let target = self.target_tokens();
+        let tokens = self.ui.fade.tokens(&target);
         theme::apply(ctx, &tokens);
         motion::set(ctx, &self.settings().motion, reduced);
-        self.ui.styled = Some(want);
+        self.ui.styled = (!fading).then_some(want);
         true
     }
 
@@ -131,8 +139,27 @@ impl MareaderApp {
         self.session.appearance_snapshot()
     }
 
-    pub(super) fn restore(&mut self, held: Held) {
-        self.session.restore_appearance(held);
+    /// Captures the current displayed look across window and panes for a fade.
+    pub(super) fn look_snap(&self, ctx: &Context) -> LookSnap {
+        let tokens = theme::Tokens::get(ctx);
+        let grain = FilmGrain::of(&self.settings().appearance);
+        let panes = self
+            .pane_styles()
+            .into_iter()
+            .map(|(id, style)| {
+                let snap = PaneSnap {
+                    tokens: style.tokens,
+                    fill: style.fill,
+                    paper: style.paper,
+                };
+                (id, snap)
+            })
+            .collect();
+        LookSnap {
+            tokens,
+            grain,
+            panes,
+        }
     }
 
     /// Whether the window or a pane jumped to another look since `before`.
@@ -140,10 +167,10 @@ impl MareaderApp {
         before.leapt(&self.session)
     }
 
-    /// A fade needs motion, the GPU's snapshot, and no slider held.
+    /// A fade needs motion and no slider held.
     pub(super) fn may_fade(&self, ctx: &Context) -> bool {
         let held = ctx.input(|i| i.pointer.any_down());
-        motion::enabled(ctx) && self.ui.documents.gpu().is_some() && !held
+        motion::enabled(ctx) && !held
     }
 
     /// `pane`'s look as drawn: the window's, or its own while split.
@@ -167,26 +194,29 @@ impl MareaderApp {
     }
 
     /// Each pane's theme this frame, and its blend paper.
-    pub(super) fn pane_styles(&self, window: &theme::Tokens) -> Vec<(PaneId, PaneStyle)> {
+    pub(super) fn pane_styles(&self) -> Vec<(PaneId, PaneStyle)> {
         let own = self.routing().any();
+        let window = self.target_tokens();
         let style = |id: PaneId| {
-            let tokens = if own {
+            let target_tokens = if own {
                 theme::Tokens::new(&self.look(id))
             } else {
-                *window
+                window
             };
             let paper = self.blend_paper(id);
             // A book's pane takes its page's paper, as mareader's text panes.
             let plain = match self.session.documents().reflowable(id) {
-                true => theme::color(Rgb::from_unit(tokens.book.paper)),
-                false => tokens.paper,
+                true => theme::color(Rgb::from_unit(target_tokens.book.paper)),
+                false => target_tokens.paper,
             };
-            let fill = paper.map_or(plain, |raw| baked(&tokens, raw));
+            let target_fill = paper.map_or(plain, |raw| baked(&target_tokens, raw));
+            let (tokens, fill, fade) = self.ui.fade.pane(id, &target_tokens, target_fill);
             let style = PaneStyle {
                 tokens,
                 paper,
                 fill,
                 own,
+                fade,
             };
             (id, style)
         };
@@ -195,20 +225,25 @@ impl MareaderApp {
 
     /// The grain over every layer, menus and windows included, as mareader's.
     pub(super) fn film_grain(&self, ctx: &Context) {
-        let (Some(grain), Some(gpu)) = (
-            FilmGrain::of(&self.settings().appearance),
-            self.ui.documents.gpu(),
-        ) else {
+        let Some(gpu) = self.ui.documents.gpu() else {
             return;
         };
-        let offset = crawl_offset(ctx, grain);
-        let shape = GrainCallback::window(gpu.grain.clone(), ctx.content_rect(), grain, offset);
-        crate::z_order::painter(
+        let target = FilmGrain::of(&self.settings().appearance);
+        let (old, new) = self.ui.fade.grain(target);
+        if old.is_none() && new.is_none() {
+            return;
+        }
+        let painter = crate::z_order::painter(
             ctx,
             crate::z_order::Tier::PostEffect,
             egui::Id::new("film-grain"),
-        )
-        .add(shape);
+        );
+        let rect = ctx.content_rect();
+        for grain in [old, new].into_iter().flatten() {
+            let offset = crawl_offset(ctx, grain);
+            let shape = GrainCallback::window(gpu.grain.clone(), rect, grain, offset);
+            painter.add(shape);
+        }
     }
 
     /// The reader's half of the bar: rail toggle, tools and the menu's state.

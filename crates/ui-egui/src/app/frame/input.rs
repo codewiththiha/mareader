@@ -24,11 +24,6 @@ impl MareaderApp {
             ctx.request_repaint();
             return false;
         }
-        if let Some(after) = self.ui.fade.poll(ctx) {
-            self.restore(after);
-            self.restyle(ctx);
-            ctx.request_repaint_after(SAVE_EVERY + Duration::from_millis(50));
-        }
         self.reconcile_looks(ctx);
         self.reconcile_texts();
         resize::edges(ctx, self.ui.platform.frameless());

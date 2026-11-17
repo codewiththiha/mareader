@@ -32,17 +32,18 @@ const VOICE_H: f32 = 34.0;
 const ALL: &str = "";
 
 pub fn tab(ui: &mut Ui, s: &mut ReadAloudSettings, v: &Voices<'_>, out: &mut Commands) {
+    // Keep dependent sections on the loaded engine until booth switches.
+    let shown = s.engine.clone();
     engine(ui, s, v, out);
-    voice(ui, s, v.booth, out);
-    sound(ui, s, v.booth);
+    voice(ui, s, &shown, v.booth, out);
+    sound(ui, &shown, s, v.booth);
     reading(ui, s);
     let keys =
         keymap::hint(v.platform, &Sent::Engine(Command::ToggleReadAloud)).unwrap_or_default();
-    note(
-        ui,
-        &format!("Start or pause reading with {keys}, or right-click a page to read from there."),
-    );
-    memory(ui, s, v.shelf);
+    let tip =
+        format!("Start or pause reading with {keys}, or right-click a page to read from there.");
+    note(ui, &tip);
+    memory(ui, &shown, s, v.shelf);
 }
 
 /// The system's voices, then each model: picked here, managed in its tab.
@@ -52,10 +53,14 @@ fn engine(ui: &mut Ui, s: &mut ReadAloudSettings, v: &Voices<'_>, out: &mut Comm
     let runs = mareader_speech::engines(shelf);
     let system = mareader_speech::SYSTEM;
     let booth = v.booth;
+    let count_id = Id::new("system-voice-count");
     let heard = booth.engine() == system && booth.ready() && booth.caps().voices;
-    let detail = match heard {
-        true => format!("Built into your system · {}", count(booth.voices().len())),
-        false => "Built into your system".to_owned(),
+    if heard {
+        ui.data_mut(|d| d.insert_temp(count_id, booth.voices().len()));
+    }
+    let detail = match ui.data(|d| d.get_temp::<usize>(count_id)) {
+        Some(n) => format!("Built into your system · {}", count(n)),
+        None => "Built into your system".to_owned(),
     };
     let t = Tokens::get(ui.ctx());
     group(ui, |ui| {
@@ -189,7 +194,7 @@ fn build_pick(ui: &mut Ui, model: &'static Model, on: &Build) -> Option<&'static
 }
 
 /// What downloaded models keep in memory, once one is downloaded.
-fn memory(ui: &mut Ui, s: &mut ReadAloudSettings, shelf: &Shelf) {
+fn memory(ui: &mut Ui, shown: &str, s: &mut ReadAloudSettings, shelf: &Shelf) {
     if shelf.ready().is_empty() {
         return;
     }
@@ -197,9 +202,9 @@ fn memory(ui: &mut Ui, s: &mut ReadAloudSettings, shelf: &Shelf) {
     section(ui, "Memory");
     group(ui, |ui| {
         let (least, _, most) = ReadAloudSettings::MEMORY_MB;
-        let rate = speech_rate(ui, s, shelf);
+        let rate = speech_rate(ui, shown, s, shelf);
         let made = "Made ahead and heard lately, to play again at once.";
-        let hint = match (rate, shelf.model(&s.engine)) {
+        let hint = match (rate, shelf.model(shown)) {
             (Some(rate), Some(m)) => {
                 let khz = f64::from(rate) / 1000.0;
                 format!("{made} Minutes are for {}, at {khz} kHz.", m.name)
@@ -236,14 +241,15 @@ fn memory(ui: &mut Ui, s: &mut ReadAloudSettings, shelf: &Shelf) {
 }
 
 /// The engine's rate, as [`mareader_speech::speech_rate`], read once.
-fn speech_rate(ui: &Ui, s: &ReadAloudSettings, shelf: &Shelf) -> Option<u32> {
+fn speech_rate(ui: &Ui, engine: &str, s: &ReadAloudSettings, shelf: &Shelf) -> Option<u32> {
     // A download can tell the rate; the count keys it afresh.
     let here = shelf.ready().len();
-    let id = Id::new(("speech rate", s.engine.as_str(), s.voice(), here));
+    let voice = s.voices.get(engine).map(String::as_str);
+    let id = Id::new(("speech rate", engine, voice, here));
     if let Some(rate) = ui.data(|d| d.get_temp::<Option<u32>>(id)) {
         return rate;
     }
-    let rate = mareader_speech::speech_rate(&s.engine, s.voice(), shelf);
+    let rate = mareader_speech::speech_rate(engine, voice, shelf);
     ui.data_mut(|d| d.insert_temp(id, rate));
     rate
 }
@@ -285,10 +291,10 @@ fn usage_label(usage: &mareader_speech::Usage) -> String {
     }
 }
 
-fn voice(ui: &mut Ui, s: &mut ReadAloudSettings, booth: &Booth, out: &mut Commands) {
+fn voice(ui: &mut Ui, s: &mut ReadAloudSettings, shown: &str, booth: &Booth, out: &mut Commands) {
     section(ui, "Voice");
-    let open = booth.engine() == s.engine && booth.ready();
-    let failed = booth.engine() == s.engine && booth.fault().is_some() && !open;
+    let open = booth.engine() == shown && booth.ready();
+    let failed = booth.engine() == shown && booth.fault().is_some() && !open;
     group(ui, |ui| {
         if failed {
             row(ui, "Voice", "", |ui| {
@@ -296,13 +302,13 @@ fn voice(ui: &mut Ui, s: &mut ReadAloudSettings, booth: &Booth, out: &mut Comman
             });
             divider(ui);
         } else if open && booth.caps().voices {
-            let picked = s.voice().map(str::to_owned);
-            let language = language_filter(ui, booth.voices(), picked.as_deref());
+            let picked = s.voices.get(shown).cloned();
+            let language = language_filter(ui, shown, booth.voices(), picked.as_deref());
             divider(ui);
             if let Some(pick) = voice_list(ui, booth, &language, picked.as_deref(), out) {
                 match pick {
-                    Some(id) => s.voices.insert(s.engine.clone(), id),
-                    None => s.voices.remove(&s.engine),
+                    Some(id) => s.voices.insert(shown.to_owned(), id),
+                    None => s.voices.remove(shown),
                 };
             }
             divider(ui);
@@ -317,12 +323,14 @@ fn voice(ui: &mut Ui, s: &mut ReadAloudSettings, booth: &Booth, out: &mut Comman
 }
 
 /// The language picker over the voices; returns the primary tag picked.
-fn language_filter(ui: &mut Ui, voices: &[Voice], picked: Option<&str>) -> String {
-    let id = Id::new("read-aloud-language");
+fn language_filter(ui: &mut Ui, engine: &str, voices: &[Voice], picked: Option<&str>) -> String {
+    let id = Id::new(("read-aloud-language", engine));
     let mut languages: Vec<String> = voices.iter().map(|v| primary(&v.language)).collect();
     languages.sort_by_key(|l| language_name(l));
     languages.dedup();
-    let chosen = ui.data(|d| d.get_temp::<String>(id));
+    let chosen = ui
+        .data(|d| d.get_temp::<String>(id))
+        .filter(|l| l == ALL || languages.iter().any(|tag| tag == l));
     // First shown: the picked voice's language, else English, else all.
     let mut language = chosen.unwrap_or_else(|| {
         let of_pick = picked.and_then(|p| voices.iter().find(|v| v.id == p));
@@ -341,7 +349,7 @@ fn language_filter(ui: &mut Ui, voices: &[Voice], picked: Option<&str>) -> Strin
                 ALL => "All languages".to_owned(),
                 tag => language_name(tag),
             };
-            widgets::combo("read-aloud-language")
+            widgets::combo(("read-aloud-language", engine))
                 .selected_text(shown)
                 .width(180.0)
                 .show_ui(ui, |ui| {
@@ -473,11 +481,11 @@ fn preview_row(ui: &mut Ui, booth: &Booth, open: bool, out: &mut Commands) {
     });
 }
 
-fn sound(ui: &mut Ui, s: &mut ReadAloudSettings, booth: &Booth) {
+fn sound(ui: &mut Ui, shown: &str, s: &mut ReadAloudSettings, booth: &Booth) {
     section(ui, "Sound");
     let caps = booth.caps();
     // Before the engine opens, nothing is greyed out on a guess.
-    let known = booth.engine() == s.engine && booth.ready();
+    let known = booth.engine() == shown && booth.ready();
     group(ui, |ui| {
         row(ui, "Speed", "Narrated books play at this speed too", |ui| {
             ui.spacing_mut().slider_width = 160.0;

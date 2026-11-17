@@ -15,7 +15,8 @@ impl eframe::App for MareaderApp {
 
     /// The remembered paper from the very first frame, never a dark flash.
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        let paper = theme::Tokens::new(&self.settings().appearance).paper;
+        let target = self.target_tokens();
+        let paper = self.ui.fade.tokens(&target).paper;
         paper.to_normalized_gamma_f32()
     }
 

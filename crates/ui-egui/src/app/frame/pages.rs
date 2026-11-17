@@ -145,7 +145,7 @@ impl MareaderApp {
             look: self.settings().workspace.look,
             chrome_bottom: self.ui.titlebar.band_bottom(ctx),
             drop_target,
-            styles: self.pane_styles(&tokens),
+            styles: self.pane_styles(),
             recent,
         };
         // Each pane reads its own paper while it has a colour of its own.
@@ -255,13 +255,6 @@ impl MareaderApp {
         commands: &mut Commands,
     ) {
         let view = &context.view;
-        let tokens = context.tokens;
-        let every = context.every;
-        let source = context.source;
-        let corner = context.corner;
-        let blend = context.blend;
-        let pinned_bottom = context.pinned_bottom;
-        let lit = &context.lit;
         // Every setting is read before any field of `self` is borrowed below.
         let layout = self.settings().layout.clone();
         let (window, library_look) = (self.settings().text.clone(), self.settings().library);
@@ -280,7 +273,6 @@ impl MareaderApp {
         let study = &mut self.ui.study;
         let page_ai = &mut self.ui.page_ai;
         study.begin_frame();
-        let shading = context.shading;
         let host = self.session.host().clone();
         let layout = &layout;
         let session = &mut self.session;
@@ -310,20 +302,21 @@ impl MareaderApp {
                 let cx = ViewContext {
                     active: id == view.active,
                     lift,
-                    tokens: style.map_or(tokens, |s| s.tokens),
-                    top_inset: (pinned_bottom - ui.max_rect().top()).max(0.0),
+                    tokens: style.map_or(context.tokens, |s| s.tokens),
+                    top_inset: (context.pinned_bottom - ui.max_rect().top()).max(0.0),
                     page: PageLook::new(layout, pane_text),
                     paper: style.and_then(|s| s.paper),
-                    corner,
-                    sample: blend && (every || Some(id) == source),
+                    fade: style.and_then(|s| s.fade),
+                    corner: context.corner,
+                    sample: context.blend && (context.every || Some(id) == context.source),
                     marks,
                     bookmarks,
                     highlights: highlights.clone(),
                     card: study.card_mark(id),
                     picked: study.picked(id),
-                    shading,
+                    shading: context.shading,
                     menu_shot: menu_shot && id == view.active,
-                    found: pane_found(lit, id),
+                    found: pane_found(&context.lit, id),
                     aloud: session.read_aloud().lit(id),
                     ai,
                     host: host.clone(),

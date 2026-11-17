@@ -8,6 +8,7 @@ use mareader_library::BookId;
 use mareader_settings::PaneLook;
 use mareader_workspace::{Bounds, PaneId, PaneTree, SplitAxis};
 
+use crate::crossfade::PaneFade;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
@@ -37,6 +38,8 @@ pub struct PaneStyle {
     pub fill: Color32,
     /// A look of its own, so its widgets take its visuals.
     pub own: bool,
+    /// Active look transition blending from a prior pane state.
+    pub fade: Option<PaneFade>,
 }
 
 impl PaneView {

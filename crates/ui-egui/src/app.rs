@@ -27,7 +27,7 @@ use mareader_workspace::{Bounds, LiftTarget, MAX_PANES, PaneId};
 
 use crate::backdrop::Backdrop;
 use crate::bookmarks;
-use crate::crossfade::Crossfade;
+use crate::crossfade::{LookFade, LookSnap, PaneSnap};
 use crate::documents::{DocumentsUi, DocumentsView};
 use crate::files::{Files, Runner};
 use crate::find_bar::FindBar;
@@ -229,7 +229,7 @@ impl MareaderApp {
                 lifting: None,
                 library_rect: None,
                 reopen: (u64::MAX, Vec::new()),
-                fade: Crossfade::default(),
+                fade: LookFade::default(),
                 styled: None,
                 reduced_motion: Arc::new(AtomicBool::new(false)),
                 resumed: false,

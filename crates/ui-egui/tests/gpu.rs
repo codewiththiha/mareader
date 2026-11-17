@@ -8,7 +8,7 @@ use mareader_appearance::FilmGrain;
 use mareader_engine::command::Command;
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::theme::TITLE_BAR_H;
-use mareader_ui_egui::ui_command::UiCommand;
+use mareader_ui_egui::ui_command::{Sent, UiCommand};
 
 type Out = Result<(), String>;
 
@@ -514,20 +514,21 @@ fn a_mode_click_fades_from_the_old_look() -> Out {
     use mareader_appearance::BaseMode;
     let mut h = reader(&[("pdf", "sample"), ("open", "appearance")]);
     let base = |h: &Harness<'static, MareaderApp>| h.state().look(h.state().active_pane()).base;
+    let light = luma(&h.render()?, 80, 625);
     h.get_by_label("Dark").click();
     h.step();
-    assert_eq!(base(&h), BaseMode::Light, "held for its snapshot");
-    h.step();
-    assert_eq!(base(&h), BaseMode::Dark);
+    assert_eq!(base(&h), BaseMode::Dark, "state lands at once");
     assert!(h.state().fading(), "the old look fades out over the new");
+    h.run_steps(4);
+    let mid = luma(&h.render()?, 80, 625);
     h.run();
     assert!(!h.state().fading(), "the fade ends");
+    let dark = luma(&h.render()?, 80, 625);
+    assert!(light > mid + 15 && mid > dark + 15, "{light} {mid} {dark}");
     let mut look = h.state().look(h.state().active_pane());
     look.base = BaseMode::Dim;
-    h.state_mut()
-        .queue(mareader_ui_egui::ui_command::Sent::Engine(
-            Command::SetAppearance(look),
-        ));
+    let cmd = Sent::Engine(Command::SetAppearance(look));
+    h.state_mut().queue(cmd);
     h.step();
     assert_eq!(base(&h), BaseMode::Dim, "a queued change lands at once");
     assert!(!h.state().fading());
@@ -572,7 +573,6 @@ fn page_spread(h: &mut Harness<'static, MareaderApp>) -> Result<Vec<(i32, i32)>,
 fn texture_for_each_patterns_every_open_pane() -> Out {
     use mareader_appearance::TextureMode;
     use mareader_engine::settings::Tab;
-    use mareader_ui_egui::ui_command::Sent;
     let options = [
         ("pdf", "sample"),
         ("panes", "2"),
@@ -621,7 +621,6 @@ fn texture_for_each_patterns_every_open_pane() -> Out {
 #[test]
 fn the_palette_s_texture_for_each_patterns_every_open_pane() -> Out {
     use mareader_appearance::TextureMode;
-    use mareader_ui_egui::ui_command::Sent;
     let options = [
         ("pdf", "sample"),
         ("panes", "2"),

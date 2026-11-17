@@ -1,214 +1,227 @@
-//! Theme changes cross-fade: the old frame fades out over the new.
+//! Theme and paper transitions: live token and shader blends with no readback.
 
-// As the web's view transitions: snap the frame, change, fade the snap.
+use std::collections::BTreeMap;
 
-use std::sync::Arc;
+use egui::{Color32, Context};
+use mareader_appearance::{FilmGrain, Rgb};
+use mareader_workspace::PaneId;
 
-use egui::{
-    Color32, ColorImage, Context, Event, Id, Rect, TextureHandle, TextureOptions, UserData,
-    ViewportCommand, pos2,
-};
+use crate::theme::Tokens;
 
-use crate::z_order::{self, Tier};
-
-/// How long the old frame takes to fade out, in seconds.
+/// How long a look transition takes, in seconds.
 pub const FADE: f32 = 0.2;
-/// Frames to wait for the snapshot before changing without one.
-const PATIENCE: u32 = 4;
-/// egui rejects a texture with a longer side than this, while a snapshot of a
-/// maximised window at 2x scale easily passes it — so the snap shrinks to fit.
-const MAX_SIDE: usize = 2048;
 
-/// Tags this module's screenshot requests.
-struct Snapshot;
-
-/// A change held for its snapshot, then the fade over it.
-pub struct Crossfade<T> {
-    state: State<T>,
+/// Visual state captured right before a discrete appearance or paper change.
+#[derive(Clone, Debug)]
+pub struct LookSnap {
+    pub tokens: Tokens,
+    pub grain: Option<FilmGrain>,
+    pub panes: BTreeMap<PaneId, PaneSnap>,
 }
 
-impl<T> Default for Crossfade<T> {
-    fn default() -> Self {
-        Self { state: State::Idle }
+/// One pane's visual look at the instant a transition starts.
+#[derive(Clone, Copy, Debug)]
+pub struct PaneSnap {
+    pub tokens: Tokens,
+    pub fill: Color32,
+    pub paper: Option<Rgb>,
+}
+
+/// Active transition state for one pane, blending `tokens`/`paper` toward now.
+#[derive(Clone, Copy, Debug)]
+pub struct PaneFade {
+    pub tokens: Tokens,
+    pub paper: Option<Rgb>,
+    pub progress: f32,
+}
+
+/// Live cross-fade between the prior visual snapshot and the current look.
+#[derive(Default)]
+pub struct LookFade {
+    active: Option<Active>,
+}
+
+struct Active {
+    from: LookSnap,
+    start: f64,
+    progress: f32,
+}
+
+impl LookFade {
+    /// Starts a live fade from `from` at `now`.
+    pub fn start(&mut self, now: f64, from: LookSnap) {
+        self.active = Some(Active {
+            from,
+            start: now,
+            progress: 0.0,
+        });
     }
-}
 
-enum State<T> {
-    Idle,
-    /// The change waits for a snapshot of the frame before it.
-    Waiting {
-        after: T,
-        frames: u32,
-    },
-    Fading {
-        image: TextureHandle,
-        start: f64,
-    },
-}
+    /// Cancels any active transition so an instant change lands cleanly.
+    pub fn clear(&mut self) {
+        self.active = None;
+    }
 
-impl<T> Crossfade<T> {
-    /// Holds `after` back and asks for a snapshot of the current look.
-    pub fn hold(&mut self, ctx: &Context, after: T) {
-        ctx.send_viewport_cmd(ViewportCommand::Screenshot(UserData::new(Snapshot)));
-        self.state = State::Waiting { after, frames: 0 };
+    /// Advances the active fade for this frame; returns true while fading.
+    pub fn advance(&mut self, ctx: &Context) -> bool {
+        let Some(active) = &mut self.active else {
+            return false;
+        };
+        let t = ((ctx.input(|i| i.time) - active.start) as f32 / FADE).clamp(0.0, 1.0);
+        if t >= 1.0 {
+            self.active = None;
+            return false;
+        }
+        // Ease out: most of the change lands early, settling softly.
+        active.progress = 1.0 - (1.0 - t) * (1.0 - t);
         ctx.request_repaint();
-    }
-
-    /// The held change, now due: its snapshot came, or waiting ran out.
-    pub fn poll(&mut self, ctx: &Context) -> Option<T> {
-        let State::Waiting { frames, .. } = &mut self.state else {
-            return None;
-        };
-        let image = ctx.input(|i| i.events.iter().find_map(snapshot));
-        if image.is_none() && *frames < PATIENCE {
-            *frames += 1;
-            ctx.request_repaint();
-            return None;
-        }
-        let state = std::mem::replace(&mut self.state, State::Idle);
-        let State::Waiting { after, .. } = state else {
-            return None;
-        };
-        if let Some(image) = image {
-            let image = Arc::unwrap_or_clone(image);
-            let image = ctx.load_texture("crossfade", fitted(image), TextureOptions::LINEAR);
-            let start = ctx.input(|i| i.time);
-            self.state = State::Fading { image, start };
-        }
-        Some(after)
-    }
-
-    /// The held change, given up on because another lands over it.
-    pub fn take(&mut self) -> Option<T> {
-        match std::mem::replace(&mut self.state, State::Idle) {
-            State::Waiting { after, .. } => Some(after),
-            other => {
-                self.state = other;
-                None
-            }
-        }
+        true
     }
 
     pub fn is_fading(&self) -> bool {
-        matches!(self.state, State::Fading { .. })
+        self.active.is_some()
     }
 
-    /// Lays the old frame over everything, fading, till it is gone.
-    pub fn paint(&mut self, ctx: &Context) {
-        let State::Fading { image, start } = &self.state else {
-            return;
+    /// Current window tokens blended from the prior snapshot toward `target`.
+    pub fn tokens(&self, target: &Tokens) -> Tokens {
+        match &self.active {
+            Some(active) => active.from.tokens.toward(target, active.progress),
+            None => *target,
+        }
+    }
+
+    /// Current pane tokens, fill, and GPU fade payload toward `target`.
+    pub fn pane(
+        &self,
+        id: PaneId,
+        target_tokens: &Tokens,
+        target_fill: Color32,
+    ) -> (Tokens, Color32, Option<PaneFade>) {
+        let Some(active) = &self.active else {
+            return (*target_tokens, target_fill, None);
         };
-        let t = ((ctx.input(|i| i.time) - start) as f32 / FADE).clamp(0.0, 1.0);
-        if t >= 1.0 {
-            self.state = State::Idle;
-            return;
-        }
-        // Ease out: most of the change shows early.
-        let left = (1.0 - t) * (1.0 - t);
-        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        let tint = Color32::WHITE.gamma_multiply(left);
-        let painter = z_order::painter(ctx, Tier::Transition, Id::new("crossfade"));
-        painter.image(image.id(), ctx.viewport_rect(), uv, tint);
-        ctx.request_repaint();
+        let fallback = PaneSnap {
+            tokens: active.from.tokens,
+            fill: active.from.tokens.paper,
+            paper: None,
+        };
+        let from = active.from.panes.get(&id).copied().unwrap_or(fallback);
+        let k = active.progress;
+        let tokens = from.tokens.toward(target_tokens, k);
+        let fill = from.fill.lerp_to_gamma(target_fill, k);
+        let fade = PaneFade {
+            tokens: from.tokens,
+            paper: from.paper,
+            progress: k,
+        };
+        (tokens, fill, Some(fade))
     }
-}
 
-fn snapshot(event: &Event) -> Option<Arc<ColorImage>> {
-    match event {
-        Event::Screenshot {
-            user_data, image, ..
-        } => {
-            let data = user_data.data.as_ref()?;
-            data.downcast_ref::<Snapshot>().map(|_| Arc::clone(image))
+    /// Prior grain fading out and `target` grain fading in.
+    pub fn grain(&self, target: Option<FilmGrain>) -> (Option<FilmGrain>, Option<FilmGrain>) {
+        let Some(active) = &self.active else {
+            return (None, target);
+        };
+        if active.from.grain == target {
+            return (None, target);
         }
-        _ => None,
+        let k = active.progress;
+        let scale = |grain: Option<FilmGrain>, factor: f32| {
+            grain
+                .map(|mut g| {
+                    g.opacity *= factor;
+                    g
+                })
+                .filter(|g| g.opacity > 0.001)
+        };
+        (scale(active.from.grain, 1.0 - k), scale(target, k))
     }
-}
-
-/// Box-filters `image` down until its longest side fits a texture.
-///
-/// The snap is only ever drawn stretched over the viewport for `FADE`, so a
-/// softened copy is invisible in practice while an oversized one is a crash.
-fn fitted(image: ColorImage) -> ColorImage {
-    let (sw, sh) = (image.width(), image.height());
-    let longest = sw.max(sh);
-    if longest <= MAX_SIDE {
-        return image;
-    }
-    // Integer maths keeps a side already at the limit from losing a pixel.
-    let dw = (sw * MAX_SIDE / longest).clamp(1, sw);
-    let dh = (sh * MAX_SIDE / longest).clamp(1, sh);
-    let src: &[Color32] = image.pixels.as_ref();
-    let mut pixels = Vec::with_capacity(dw * dh);
-    for dy in 0..dh {
-        let (y0, y1) = band_rows(dy, sh, dh);
-        for dx in 0..dw {
-            let (x0, x1) = band_rows(dx, sw, dw);
-            let (mut r, mut g, mut b, mut a, mut n) = (0_u32, 0_u32, 0_u32, 0_u32, 0_u32);
-            for row in src.chunks(sw).take(y1).skip(y0) {
-                for c in &row[x0..x1] {
-                    r += u32::from(c.r());
-                    g += u32::from(c.g());
-                    b += u32::from(c.b());
-                    a += u32::from(c.a());
-                    n += 1;
-                }
-            }
-            let n = n.max(1);
-            pixels.push(Color32::from_rgba_premultiplied(
-                (r / n) as u8,
-                (g / n) as u8,
-                (b / n) as u8,
-                (a / n) as u8,
-            ));
-        }
-    }
-    ColorImage::new([dw, dh], pixels)
-}
-
-/// The half-open source span one downscaled column or row covers.
-fn band_rows(part: usize, from: usize, to: usize) -> (usize, usize) {
-    let lo = part * from / to;
-    let hi = ((part + 1) * from / to).max(lo + 1).min(from);
-    (lo, hi)
 }
 
 #[cfg(test)]
 mod tests {
+    use mareader_appearance::{Appearance, BaseMode, NoiseMode};
+
     use super::*;
 
-    fn image(w: usize, h: usize) -> ColorImage {
-        let mut raw = vec![0_u8; w * h * 4];
-        for px in raw.chunks_mut(4) {
-            px.copy_from_slice(&[0x80, 0x80, 0x80, 0xff]);
+    fn snap(appearance: &Appearance) -> LookSnap {
+        let tokens = Tokens::new(appearance);
+        LookSnap {
+            tokens,
+            grain: FilmGrain::of(appearance),
+            panes: BTreeMap::new(),
         }
-        ColorImage::from_rgba_premultiplied([w, h], &raw)
+    }
+
+    fn step_at(ctx: &Context, time: f64, mut f: impl FnMut()) {
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            },
+            |_| f(),
+        );
+        out.textures_delta.clear();
     }
 
     #[test]
-    fn a_small_snap_is_passed_through_untouched() {
-        let kept = fitted(image(900, 600));
-        assert_eq!([kept.width(), kept.height()], [900, 600]);
+    fn fade_blends_tokens_and_finishes_cleanly() {
+        let ctx = Context::default();
+        let light = Appearance {
+            base: BaseMode::Light,
+            ..Appearance::default()
+        };
+        let dark = Appearance {
+            base: BaseMode::Dark,
+            ..Appearance::default()
+        };
+        let from = Tokens::new(&light);
+        let to = Tokens::new(&dark);
+        let mut fade = LookFade::default();
+        fade.start(1.0, snap(&light));
+        assert!(fade.is_fading());
+        assert_eq!(fade.tokens(&to).paper, from.paper);
+
+        step_at(&ctx, 1.0 + f64::from(FADE) * 0.5, || {
+            assert!(fade.advance(&ctx));
+        });
+        let mid = fade.tokens(&to);
+        assert!(mid.paper.r() < from.paper.r() && mid.paper.r() > to.paper.r());
+
+        step_at(&ctx, 1.0 + f64::from(FADE) + 0.05, || {
+            assert!(!fade.advance(&ctx));
+        });
+        assert!(!fade.is_fading());
+        assert_eq!(fade.tokens(&to).paper, to.paper);
     }
 
     #[test]
-    fn an_oversized_snap_shrinks_to_the_texture_limit() {
-        let shrunk = fitted(image(3000, 2000));
-        assert_eq!(shrunk.width(), MAX_SIDE);
-        assert_eq!(shrunk.height(), MAX_SIDE * 2000 / 3000);
-    }
+    fn grain_crossfades_opacity_and_skips_unchanged() {
+        let ctx = Context::default();
+        let plain = Appearance {
+            base: BaseMode::Light,
+            ..Appearance::default()
+        };
+        let grainy = Appearance {
+            base: BaseMode::Light,
+            noise: NoiseMode::Static,
+            noise_intensity: 40,
+            ..Appearance::default()
+        };
+        let mut fade = LookFade::default();
+        fade.start(0.0, snap(&plain));
+        step_at(&ctx, f64::from(FADE) * 0.5, || {
+            assert!(fade.advance(&ctx));
+        });
+        let (old, new) = fade.grain(FilmGrain::of(&grainy));
+        assert!(old.is_none());
+        let new = new.unwrap();
+        assert!(new.opacity > 0.25 && new.opacity < 0.35);
 
-    #[test]
-    fn a_snap_wider_than_tall_keeps_its_shape() {
-        let shrunk = fitted(image(2400, 1600));
-        assert_eq!(shrunk.width(), MAX_SIDE);
-        assert_eq!(shrunk.height(), MAX_SIDE * 1600 / 2400);
-    }
-
-    #[test]
-    fn downscaling_covers_every_target_pixel() {
-        let shrunk = fitted(image(4097, 101));
-        assert_eq!(shrunk.pixels.len(), shrunk.width() * shrunk.height());
-        assert!(shrunk.pixels.iter().all(|c| (0x70..=0x90).contains(&c.r())));
+        let mut steady = LookFade::default();
+        steady.start(0.0, snap(&grainy));
+        let (old, new) = steady.grain(FilmGrain::of(&grainy));
+        assert!(old.is_none());
+        assert_eq!(new, FilmGrain::of(&grainy));
     }
 }

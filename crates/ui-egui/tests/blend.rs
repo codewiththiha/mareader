@@ -185,3 +185,27 @@ fn a_book_focused_beside_a_pdf_keeps_the_pdf_s_paper() -> Out {
     assert_eq!(h.state().blend_paper(pdf), raw);
     Ok(())
 }
+
+#[test]
+fn blend_mode_click_lands_at_once_and_fades_smoothly() -> Out {
+    use egui_kittest::kittest::Queryable as _;
+    use mareader_engine::command::Command;
+    use mareader_engine::settings::Tab;
+    use mareader_ui_egui::ui_command::Sent;
+    let mut h = reader(&[("pdf", "scan:6"), ("margin", "48")]);
+    h.state_mut()
+        .queue(Sent::Engine(Command::OpenSettings(Tab::Appearance)));
+    h.run_steps(4);
+    assert!(!h.state().settings().paper.blend);
+    h.get_by_role_and_label(egui::accesskit::Role::CheckBox, "Blend mode")
+        .click();
+    h.step();
+    assert!(
+        h.state().settings().paper.blend,
+        "blend mode lands at once without rollback"
+    );
+    assert!(h.state().fading(), "blend toggle starts a live look fade");
+    h.run();
+    assert!(!h.state().fading());
+    Ok(())
+}
