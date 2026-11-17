@@ -8,7 +8,7 @@ use crate::z_order::{self, Tier};
 
 use super::{card, control};
 
-/// Picks the least-obstructed corner rect for the compact read-aloud orb.
+/// Picks the least-obstructed bottom corner for the compact read-aloud orb.
 pub(super) fn orb_rect(room: Rect, obstacle: Rect, toast: Option<Rect>) -> Rect {
     let size = egui::vec2(
         room.width().clamp(0.0, 160.0),
@@ -23,13 +23,9 @@ pub(super) fn orb_rect(room: Rect, obstacle: Rect, toast: Option<Rect>) -> Rect 
         right
     };
     let second = if first == left { right } else { left };
-    let above =
-        (obstacle.top() - size.y - 8.0).clamp(room.top(), (room.bottom() - size.y).max(room.top()));
     let candidates = [
         Rect::from_min_size(egui::pos2(first, y), size),
         Rect::from_min_size(egui::pos2(second, y), size),
-        Rect::from_min_size(egui::pos2(first, above), size),
-        Rect::from_min_size(egui::pos2(second, above), size),
     ];
     candidates
         .into_iter()
@@ -43,7 +39,7 @@ pub(super) fn orb_rect(room: Rect, obstacle: Rect, toast: Option<Rect>) -> Rect 
             };
             overlap(*a).total_cmp(&overlap(*b))
         })
-        .unwrap_or(Rect::from_min_size(room.min, size))
+        .unwrap_or(Rect::from_min_size(egui::pos2(first, y), size))
 }
 
 /// Picks the widest phrase slice in `lyrics` that passes `fits`.
@@ -166,5 +162,16 @@ mod tests {
         lyrics.preferred = lyrics.words.len()..1;
         lyrics.lit = 9..10;
         assert_eq!(fit_orb_text(&lyrics, |_| true), "one two three four");
+    }
+
+    #[test]
+    fn orb_rect_stays_along_the_bottom_edge_under_wide_obstacles() {
+        let room = Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(900.0, 760.0));
+        // Even a full-width obstacle near the bottom keeps the orb edged below.
+        let wide = Rect::from_min_size(egui::pos2(0.0, 620.0), egui::vec2(900.0, 160.0));
+        let orb = orb_rect(room, wide, None);
+        let expected_y = room.bottom() - orb.height() - 12.0;
+        assert!((orb.top() - expected_y).abs() < 0.5, "orb: {orb:?}");
+        assert!(orb.top() > wide.top(), "orb must not jump above: {orb:?}");
     }
 }

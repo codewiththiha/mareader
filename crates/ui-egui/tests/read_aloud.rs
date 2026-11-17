@@ -1416,7 +1416,7 @@ fn player_at_wide_width_minimizes_for_toast_and_restores() {
 }
 
 #[test]
-fn player_rises_above_the_selection_bar_and_comes_back_down() {
+fn player_tucks_below_the_selection_bar_and_comes_back_up() {
     use egui_kittest::kittest::Queryable as _;
     use mareader_engine::library::Action;
     use mareader_engine::library::{Pick, PickAction};
@@ -1442,20 +1442,25 @@ fn player_rises_above_the_selection_bar_and_comes_back_down() {
             .memory(|m| m.area_rect(egui::Id::new("read-aloud-bar")))
     };
     let low = bar_rect(&h).expect("the player's bar");
-    // A pick summons the selection bar along the foot, under the player.
+    // A pick summons the selection bar along the foot; the player tucks below.
     h.state_mut()
         .queue(Sent::Engine(Command::Library(Action::Pick(
             PickAction::Only(vec![Pick::Book(book)]),
         ))));
-    h.run_steps(20);
-    let risen = bar_rect(&h).expect("the player's bar");
+    h.run_steps(40);
+    let tucked = bar_rect(&h).expect("the player's bar");
+    let visible = tucked.intersect(h.ctx.content_rect());
     assert!(
-        risen.bottom() < low.bottom() - 20.0,
-        "{risen:?} should rise well above {low:?}"
+        tucked.top() >= low.top() + 20.0,
+        "{tucked:?} should stay edged below {low:?}, never above"
+    );
+    assert!(
+        (visible.height() - PEEK).abs() < 1.0,
+        "tucked player should peek at the bottom edge: {visible:?}"
     );
     // Selection done: it glides back to where it sat.
     h.get_by_label("Done").click();
-    h.run_steps(30);
+    h.run_steps(40);
     let back = bar_rect(&h).expect("the player's bar");
     assert!(
         (back.bottom() - low.bottom()).abs() < 2.0,
