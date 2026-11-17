@@ -390,14 +390,9 @@ fn layout(ui: &mut Ui, s: &mut Settings, cx: &Scope) {
         if l.page_indicator {
             r.always(|ui| {
                 row(ui, "Indicator shows", "", |ui| {
-                    let all = [
-                        PageIndicatorStyle::PageNumber,
-                        PageIndicatorStyle::Percentage,
-                    ];
-                    widgets::inline_segments(ui, &mut l.page_indicator_style, &all, |s| match s {
-                        PageIndicatorStyle::PageNumber => "Pages",
-                        PageIndicatorStyle::Percentage => "Percent",
-                    });
+                    let style = &mut l.page_indicator_style;
+                    ui.selectable_value(style, PageIndicatorStyle::Percentage, "Percent");
+                    ui.selectable_value(style, PageIndicatorStyle::PageNumber, "Pages");
                 });
             });
         }
@@ -425,11 +420,9 @@ fn label_rows(r: &mut Rows<'_>, l: &mut LayoutSettings) {
     }
     r.always(|ui| {
         row(ui, "Label shows", "", |ui| {
-            let all = [FloatingLabelStyle::FileName, FloatingLabelStyle::Chapter];
-            widgets::inline_segments(ui, &mut l.floating_label_style, &all, |s| match s {
-                FloatingLabelStyle::FileName => "File name",
-                FloatingLabelStyle::Chapter => "Chapter",
-            });
+            let style = &mut l.floating_label_style;
+            ui.selectable_value(style, FloatingLabelStyle::Chapter, "Chapter");
+            ui.selectable_value(style, FloatingLabelStyle::FileName, "File name");
         });
     });
     r.always(|ui| {
@@ -454,11 +447,8 @@ fn page_rows(r: &mut Rows<'_>, l: &mut LayoutSettings) {
     let sideways = r.cx.sideways;
     r.always(|ui| {
         row(ui, "Default fit", "How a document opens", |ui| {
-            let all = [StartupFit::Page, StartupFit::Width];
-            widgets::inline_segments(ui, &mut l.startup_fit, &all, |f| match f {
-                StartupFit::Page => "Page",
-                StartupFit::Width => "Width",
-            });
+            ui.selectable_value(&mut l.startup_fit, StartupFit::Width, "Width");
+            ui.selectable_value(&mut l.startup_fit, StartupFit::Page, "Page");
         });
     });
     // A book's vertical stream has neither gaps nor shadows.
@@ -550,8 +540,10 @@ pub(super) fn colours_row(ui: &mut Ui, out: &mut Commands) {
 pub(super) fn appearance_menu_row(ui: &mut Ui, style: &mut AppearanceMenuStyle) {
     let hint = "Compact tabs with a colour wheel and rotary dials, or the classic list";
     row(ui, "Appearance menu", hint, |ui| {
-        let all = [AppearanceMenuStyle::Classic, AppearanceMenuStyle::DialDeck];
-        widgets::inline_segments(ui, style, &all, AppearanceMenuStyle::label);
+        // Right to left: Classic lands on the left, Dial deck on the right.
+        for v in [AppearanceMenuStyle::DialDeck, AppearanceMenuStyle::Classic] {
+            ui.selectable_value(style, v, v.label());
+        }
     });
 }
 
@@ -588,11 +580,14 @@ fn paper(r: &mut Rows<'_>, s: &mut Settings) {
     r.always(|ui| {
         row(ui, "Detection", "Where the paper colour is read", |ui| {
             ui.add_enabled_ui(p.blend, |ui| {
-                let all = [PaperArea::WholePage, PaperArea::Edges];
-                widgets::inline_segments(ui, &mut p.area, &all, |a| match a {
-                    PaperArea::WholePage => "Whole page",
-                    PaperArea::Edges => "Edges",
-                });
+                // Right to left: the last option is drawn first.
+                let options = [
+                    (PaperArea::Edges, "Edges"),
+                    (PaperArea::WholePage, "Whole page"),
+                ];
+                for (area, label) in options {
+                    ui.selectable_value(&mut p.area, area, label);
+                }
             });
         });
     });
@@ -631,14 +626,17 @@ fn pane_look(r: &mut Rows<'_>, w: &mut PaneLook) {
     });
     r.always(|ui| {
         row(ui, "Corners", EDGE_HINT, |ui| {
-            let was = w.corners;
-            let all = [Corners::Rounded, Corners::Square];
-            widgets::inline_segments(ui, &mut w.corners, &all, |c| match c {
-                Corners::Rounded => "Rounded",
-                Corners::Square => "Square",
-            });
-            if w.corners != was && w.rounded() {
-                w.make_room();
+            // Right to left: the last option is drawn first.
+            for (corners, label) in [(Corners::Rounded, "Rounded"), (Corners::Square, "Square")] {
+                if ui
+                    .add(Button::selectable(w.corners == corners, label))
+                    .clicked()
+                {
+                    w.corners = corners;
+                    if w.rounded() {
+                        w.make_room();
+                    }
+                }
             }
         });
     });
@@ -1027,14 +1025,19 @@ fn mark(painter: &egui::Painter, t: &Tokens, at: egui::Pos2, on: bool, hot: bool
     }
 }
 
-/// Each of `all` in one smooth sliding track, laid in a settings row.
+/// Each of `all` as a selectable button, laid right to left in a row.
 fn choices<T: Copy + PartialEq>(
     ui: &mut Ui,
     value: &mut T,
     all: &[T],
     label: impl Fn(T) -> &'static str,
 ) {
-    widgets::inline_segments(ui, value, all, label);
+    for &choice in all.iter().rev() {
+        let button = egui::Button::selectable(*value == choice, label(choice));
+        if ui.add(button).clicked() {
+            *value = choice;
+        }
+    }
 }
 
 /// A lone settings radio named `name`; true when newly picked.

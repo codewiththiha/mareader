@@ -9,8 +9,7 @@ pub use crate::checkbox::{CHECKBOX_INDENT, checkbox, checkbox_labeled};
 use crate::icons::Icon;
 use crate::icons::anim::{self, Act};
 pub use crate::input_field::{InputField, InputResponse, input, input_multiline};
-use crate::switches::{SWITCH, paint_switch};
-pub use crate::switches::{choices, inline_segments, segments, segments_of, switch, tab_bar};
+pub use crate::tab_bar::tab_bar;
 use crate::theme::Tokens;
 use crate::ui_command::WindowCommand;
 
@@ -820,6 +819,26 @@ fn rgb(hex: u32) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+/// Stock selectable buttons, `cols` to a row, sharing the width.
+pub fn choices<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    value: &mut T,
+    all: &[T],
+    label: fn(T) -> &'static str,
+    cols: usize,
+) {
+    for row in all.chunks(cols) {
+        ui.columns(cols, |cols| {
+            for (ui, &v) in cols.iter_mut().zip(row) {
+                let button = egui::Button::selectable(*value == v, label(v));
+                if ui.add_sized([ui.available_width(), 28.0], button).clicked() {
+                    *value = v;
+                }
+            }
+        });
+    }
+}
+
 /// Minus, the value, plus; laid right to left, as rows place controls.
 pub fn stepper(
     ui: &mut Ui,
@@ -847,6 +866,40 @@ pub fn stepper(
     }
 }
 
+/// An on/off switch; `label` names it for screen readers and tests.
+pub fn switch(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
+    let (rect, mut resp) = ui.allocate_exact_size(SWITCH, Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let (enabled, value) = (ui.is_enabled(), *on);
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, value, label)
+    });
+    paint_switch(ui, rect, &resp, value);
+    resp
+}
+
+const SWITCH: Vec2 = vec2(36.0, 20.0);
+
+/// A switch's track and knob, sliding with `resp`'s animation.
+fn paint_switch(ui: &Ui, rect: Rect, resp: &Response, on: bool) {
+    let t = Tokens::get(ui.ctx());
+    let how = ui.ctx().animate_bool_responsive(resp.id, on);
+    let mut track = t.track.lerp_to_gamma(t.accent, how);
+    if resp.hovered() {
+        track = track.lerp_to_gamma(t.ink, 0.08);
+    }
+    ui.painter()
+        .rect_filled(rect, CornerRadius::same(10), track);
+    let x = egui::lerp(rect.left() + 10.0..=rect.right() - 10.0, how);
+    // A faint edge keeps the knob off a pale track.
+    let edge = Stroke::new(1.0, Color32::from_black_alpha(if t.dark { 0 } else { 28 }));
+    ui.painter()
+        .circle(pos2(x, rect.center().y), 8.0, Color32::WHITE, edge);
+}
+
 /// A menu row that flips a setting: icon and name, its switch at the end.
 pub fn menu_switch(ui: &mut Ui, icon: Icon, label: &str, on: &mut bool) -> Response {
     menu_switch_keyed(ui, icon, label, on, None)
@@ -864,7 +917,7 @@ pub fn menu_switch_keyed(
     let enabled = ui.is_enabled();
     let size = vec2(ui.available_width(), MENU_ROW_H);
     let (rect, mut resp) = ui.allocate_exact_size(size, Sense::click());
-    if enabled && resp.clicked() {
+    if resp.clicked() {
         *on = !*on;
         resp.mark_changed();
     }
@@ -897,6 +950,90 @@ pub fn menu_switch_keyed(
     );
     paint_switch(ui, knob, &resp, value);
     resp
+}
+
+/// A segmented track's row height.
+const SEGMENT: f32 = 24.0;
+
+/// Choices as one segmented track, `cols` equal cells to a row.
+pub fn segments<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    value: &mut T,
+    all: &[T],
+    cols: usize,
+    face: impl Fn(T) -> (Option<Icon>, &'static str),
+) {
+    segments_of(ui, SEGMENT, value, all, cols, face);
+}
+
+/// Segments with rows `row` tall, to line up with taller controls.
+pub fn segments_of<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    row: f32,
+    value: &mut T,
+    all: &[T],
+    cols: usize,
+    face: impl Fn(T) -> (Option<Icon>, &'static str),
+) {
+    let t = Tokens::get(ui.ctx());
+    // A segment animates on selection because its track stays visible.
+    let _act = anim::announce(ui, Act::Click);
+    let cols = cols.max(1);
+    let rows = all.len().div_ceil(cols);
+    let size = vec2(ui.available_width(), row * rows as f32);
+    let (track, track_resp) = ui.allocate_exact_size(size, Sense::hover());
+    let base = track_resp.id;
+    let line = Stroke::new(1.0, t.line);
+    ui.painter()
+        .rect_stroke(track, CornerRadius::same(6), line, egui::StrokeKind::Inside);
+    let w = track.width() / cols as f32;
+    let row_h = row;
+    let cell = |i: f32, row: f32| {
+        let min = track.min + vec2(i * w, row * row_h);
+        Rect::from_min_size(min, vec2(w, row_h)).shrink(2.0)
+    };
+    // The pick's fill slides to a new pick instead of jumping.
+    let thumb = base.with("thumb");
+    if let Some(i) = all.iter().position(|v| v == value) {
+        let ctx = ui.ctx();
+        let x = ctx.animate_value_with_time(thumb.with("x"), (i % cols) as f32, 0.16);
+        let y = ctx.animate_value_with_time(thumb.with("y"), (i / cols) as f32, 0.16);
+        (ui.painter()).rect_filled(cell(x, y), CornerRadius::same(4), t.selected);
+    }
+    for (i, &v) in all.iter().enumerate() {
+        let (icon, label) = face(v);
+        let cell = cell((i % cols) as f32, (i / cols) as f32);
+        let resp = ui.interact(cell, base.with(("segment", i, label)), Sense::click());
+        if resp.clicked() {
+            *value = v;
+        }
+        let on = *value == v;
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            if !on {
+                (ui.painter()).rect_filled(cell, CornerRadius::same(4), t.hover);
+            }
+        }
+        // Accent ink marks the pick where the soft fill barely shows (Dim).
+        let ink = if on { t.accent } else { t.ink };
+        let font = egui::FontId::proportional(t.text);
+        let galley = ui.painter().layout_no_wrap(label.to_owned(), font, ink);
+        let icon_w = if icon.is_some() { 18.0 } else { 0.0 };
+        let mut x = cell.center().x - (icon_w + galley.size().x) / 2.0;
+        let y = cell.center().y;
+        if let Some(icon) = icon {
+            let at = Rect::from_min_size(pos2(x, y - 7.0), Vec2::splat(14.0));
+            // Stable cell names preserve runs when earlier controls change.
+            ui.push_id(("segment-icon", base, label), |ui| {
+                anim::paint(ui, at, icon, ink, label, &resp);
+            });
+            x += icon_w;
+        }
+        let top = y - galley.size().y / 2.0;
+        ui.painter().galley(pos2(x, top), galley, ink);
+        let info = || egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label);
+        resp.widget_info(info);
+    }
 }
 
 /// A dropdown with the Lucide chevron; every combo box starts here.

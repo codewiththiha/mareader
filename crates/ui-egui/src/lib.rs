@@ -63,7 +63,7 @@ pub mod shortcuts;
 pub mod sidebar;
 pub mod sounds;
 pub mod study;
-pub mod switches;
+pub mod tab_bar;
 pub mod theme;
 pub mod thumbnails;
 pub mod titlebar;

@@ -539,12 +539,10 @@ fn reading(ui: &mut Ui, s: &mut ReadAloudSettings) {
         divider(ui);
         let hint = "What the player becomes when the words read are out of view";
         row(ui, "Player", hint, |ui| {
-            let all = [Player::Bar, Player::Compact, Player::Full];
-            widgets::inline_segments(ui, &mut s.player, &all, |p| match p {
-                Player::Bar => "Bar only",
-                Player::Compact => "Compact",
-                Player::Full => "Full",
-            });
+            // Added right to left, so they read left to right.
+            ui.selectable_value(&mut s.player, Player::Full, "Full");
+            ui.selectable_value(&mut s.player, Player::Compact, "Compact");
+            ui.selectable_value(&mut s.player, Player::Bar, "Bar only");
         });
         divider(ui);
         let hint = "Numbers at the top or foot of a page are passed over";
@@ -597,9 +595,9 @@ fn skip_row(ui: &mut Ui, label: &str, hint: &str, skip: &mut Skip) {
             let hint = "Ask first, holding until you answer, or always pass over";
             widgets::tip(&r, hint, None);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                widgets::inline_segments(ui, &mut skip.ask, &[true, false], |ask| {
-                    if ask { "Ask me" } else { "Skip" }
-                });
+                // Added right to left, so they read left to right.
+                ui.selectable_value(&mut skip.ask, false, "Skip");
+                ui.selectable_value(&mut skip.ask, true, "Ask me");
             });
         },
     );
@@ -609,12 +607,10 @@ fn skip_row(ui: &mut Ui, label: &str, hint: &str, skip: &mut Skip) {
 fn highlight(ui: &mut Ui, s: &mut ReadAloudSettings) {
     let hint = "Light the whole sentence, the phrase between pauses, or a few words";
     row(ui, "Highlight", hint, |ui| {
-        let all = [Highlight::Sentence, Highlight::Phrases, Highlight::Words];
-        widgets::inline_segments(ui, &mut s.highlight, &all, |h| match h {
-            Highlight::Sentence => "Sentence",
-            Highlight::Phrases => "Phrases",
-            Highlight::Words => "Words",
-        });
+        // Added right to left, so they read left to right.
+        ui.selectable_value(&mut s.highlight, Highlight::Words, "Words");
+        ui.selectable_value(&mut s.highlight, Highlight::Phrases, "Phrases");
+        ui.selectable_value(&mut s.highlight, Highlight::Sentence, "Sentence");
     });
     if s.highlight != Highlight::Words {
         return;
