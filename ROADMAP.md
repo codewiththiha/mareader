@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** Core reader, library, study tools, neural read-aloud, installers
-(`v0.0.5`), and the engine-first architecture (ADR 0007) are complete.
+(`v0.0.6`), and the engine-first architecture (ADR 0007) are complete.
 Cross-device library sync (`docs/sync.md`) remains optional future work.
 **Parity:** 122 of 122 features (100 %; 83 command-backed, 39 `ui_only`,
 2 dropped). Run `cargo xtask parity` for live counts.
@@ -19,7 +19,7 @@ Cross-device library sync (`docs/sync.md`) remains optional future work.
 | Study tools & AI | Selection bar, full/half/underline highlights & notes, AI dictionary & page AI (summarize/translate/simplify) over Apple Intelligence or OpenAI-compatible servers, offline dictionary packs, CEFR shading & word pronunciation | [`docs/study.md`](docs/study.md), [`docs/assist.md`](docs/assist.md), [`docs/page-ai.md`](docs/page-ai.md) |
 | Read aloud | System voices plus offline candle neural models (Kokoro in 6 languages, Piper, Kitten, Phonon), word-by-word tracking, floating/tucked player, idle model unloading | [`docs/architecture.md`](docs/architecture.md) |
 | Search & keyboard | Streaming cross-line/diacritic-folded document search, full Tab/keyboard focus navigation, auto-scroll, distraction-free mode | [`docs/search.md`](docs/search.md) |
-| Packaging & releases | Native installers for macOS (`.dmg` Apple Silicon & Intel), Windows (NSIS & MSI), and Linux (`.deb`, AppImage, Arch) verified end-to-end in CI | [`docs/packaging.md`](docs/packaging.md), [`docs/releases/`](docs/releases/) |
+| Packaging & releases | Native installers for macOS (`.dmg` Apple Silicon & Intel), Windows (x64 NSIS & MSI, ARM64 NSIS), and Linux (x86_64 & ARM64 `.deb`, AppImage, multi-arch Arch `PKGBUILD`) verified end-to-end in CI | [`docs/packaging.md`](docs/packaging.md), [`docs/releases/`](docs/releases/) |
 | Engine-first & headless CLI | `mareader-engine` (L5) owns all durable state, registered commands (`SPECS`), panic guard, coalescing session journal/replay, `command.batch`, `Host` seam and atomic JSON persistence; `ui-egui` (L6) draws and provides the `Mod+K` command palette; `mareader-cli` (L7) runs scripts with zero toolkit dependencies | [`docs/adr/0007-engine-first.md`](docs/adr/0007-engine-first.md) |
 | Live UI control & MCP | Loopback TCP `--control` channel in `apps/mareader` + `crates/ui-egui` (state inspection, command execution, synthetic input injection, PNG screenshots), synchronous stdio `mareader-mcp` server (L6) via `mareader-cli mcp` / `mareader-cli ui`, and `xtask ui-commands` + `xtask panel-commands` gates | [`docs/architecture.md`](docs/architecture.md), [`docs/development.md`](docs/development.md) |
 
@@ -46,6 +46,7 @@ post-release and architectural milestones:
 
 | Date | Milestone |
 |---|---|
+| 2026-11-15 | **Release `v0.0.6`:** native ARM64 Windows and ARM64 Linux installers, built-in updater with silent Windows/AppImage updates, progressive EPUB opening and instant reflow, Dial deck Appearance popover, animated icons, command palette, EPUB CSS/picture theming, eight offline dictionary packs, and engine-first headless CLI / MCP control ([`docs/releases/v0.0.6.md`](docs/releases/v0.0.6.md)) |
 | 2026-11-15 | **Performance and memory pass:** streamed EPUB cover extraction, cached PDF `RenderSession` across tiles, streamed Kokoro ONNX weights from disk, zero-allocation soft-hyphen search scanning, flattened G2P neural vectors with KV caching, and reused GPU buffers with cached notes rows ([`docs/memory.md`](docs/memory.md)) |
 | 2026-11-15 | **Post-split cleanup:** retired transitional re-exports and dead shims, deduplicated presets/menus/sinks, tightened `Session` boundaries, decomposed `read_aloud`/`dict`/`pdf_view` helpers, and fixed `DocumentsView::hit_box` text-layer loading and card anchor rects |
 | 2026-11-15 | **Engine-first architecture & headless CLI (ADR 0007):** separated `crates/engine` (L5) from `crates/ui-egui` (L6) behind `Session::execute`, `SPECS`, `Event`, `Host`, and atomic `settings.json`/`session.json` persistence with one-time v0.0.5 import; added zero-toolkit `apps/mareader-cli` with five CI scripts; enforced `xtask wasm`, `xtask trapped`, and command-linked `xtask parity` |
