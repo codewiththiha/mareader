@@ -1,6 +1,6 @@
 //! The library's View menu: layout, columns, covers and order.
 
-use egui::{Id, Popup, PopupCloseBehavior, RectAlign, RichText, Ui};
+use egui::{Id, Popup, PopupCloseBehavior, RectAlign, RichText, Ui, vec2};
 use mareader_library::{COLUMNS_MAX, COLUMNS_MIN, CoverFit, Home, Layout, SortKey, View};
 
 use crate::icons::Icon;
@@ -79,12 +79,16 @@ fn contents(ui: &mut Ui, view: &mut View, auto: u8) {
     widgets::menu_section(ui, None, "Book covers");
     ui.horizontal(|ui| {
         ui.add_space(4.0);
-        for (fit, label) in [(CoverFit::Fit, "Fit"), (CoverFit::Crop, "Crop")] {
-            let button = egui::Button::selectable(view.cover == fit, label);
-            if ui.add_sized([(WIDTH - 16.0) / 2.0, 28.0], button).clicked() {
-                view.cover = fit;
-            }
-        }
+        ui.allocate_ui(vec2(WIDTH - 8.0, 28.0), |ui| {
+            let all = [CoverFit::Fit, CoverFit::Crop];
+            widgets::segments_of(ui, 28.0, &mut view.cover, &all, 2, |fit| {
+                let label = match fit {
+                    CoverFit::Fit => "Fit",
+                    CoverFit::Crop => "Crop",
+                };
+                (None, label)
+            });
+        });
     });
     widgets::menu_rule(ui);
     // Shut, it keeps the order in use and its direction.
@@ -105,12 +109,11 @@ fn contents(ui: &mut Ui, view: &mut View, auto: u8) {
     if let Some([up, down]) = view.sort.directions() {
         ui.horizontal(|ui| {
             ui.add_space(4.0);
-            for (ascending, label) in [(true, up), (false, down)] {
-                let button = egui::Button::selectable(view.ascending == ascending, label);
-                if ui.add_sized([(WIDTH - 16.0) / 2.0, 28.0], button).clicked() {
-                    view.ascending = ascending;
-                }
-            }
+            ui.allocate_ui(vec2(WIDTH - 8.0, 28.0), |ui| {
+                widgets::segments_of(ui, 28.0, &mut view.ascending, &[true, false], 2, |asc| {
+                    (None, if asc { up } else { down })
+                });
+            });
         });
     }
     widgets::menu_rule(ui);
@@ -118,15 +121,16 @@ fn contents(ui: &mut Ui, view: &mut View, auto: u8) {
     widgets::menu_section(ui, None, "Library shows");
     ui.horizontal(|ui| {
         ui.add_space(4.0);
-        for (home, label) in [
-            (Home::Everything, "All books"),
-            (Home::Unshelved, "Unshelved"),
-        ] {
-            let button = egui::Button::selectable(view.home == home, label);
-            if ui.add_sized([(WIDTH - 16.0) / 2.0, 28.0], button).clicked() {
-                view.home = home;
-            }
-        }
+        ui.allocate_ui(vec2(WIDTH - 8.0, 28.0), |ui| {
+            let all = [Home::Everything, Home::Unshelved];
+            widgets::segments_of(ui, 28.0, &mut view.home, &all, 2, |home| {
+                let label = match home {
+                    Home::Everything => "All books",
+                    Home::Unshelved => "Unshelved",
+                };
+                (None, label)
+            });
+        });
     });
 }
 

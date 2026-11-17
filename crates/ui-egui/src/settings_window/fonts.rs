@@ -25,10 +25,12 @@ fn this_book(ui: &mut Ui, (book, own): (BookId, Option<Design>), out: &mut Comma
     row(ui, "This book", hint, |ui| {
         let shown = own.map(|d| d != Design::Off);
         let mut pick = shown;
-        // Added right to left, so they read left to right.
-        ui.selectable_value(&mut pick, Some(false), "Off");
-        ui.selectable_value(&mut pick, Some(true), "On");
-        ui.selectable_value(&mut pick, None, "As set");
+        let all = [None, Some(true), Some(false)];
+        widgets::inline_segments(ui, &mut pick, &all, |v| match v {
+            None => "As set",
+            Some(true) => "On",
+            Some(false) => "Off",
+        });
         if pick != shown {
             let design = pick.map(|on| if on { Design::Auto } else { Design::Off });
             out.push(Sent::Engine(Command::Library(Action::Design(book, design))));
@@ -50,9 +52,8 @@ pub(super) fn tab(
         row(ui, "Book styles", hint, |ui| {
             let was = t.book_design != BookDesign::Off;
             let mut on = was;
-            // Added right to left, so they read left to right.
-            ui.selectable_value(&mut on, false, "Off");
-            ui.selectable_value(&mut on, true, "On");
+            let labels = |v| if v { "On" } else { "Off" };
+            widgets::inline_segments(ui, &mut on, &[true, false], labels);
             if on != was {
                 t.book_design = if on {
                     BookDesign::Auto
@@ -137,11 +138,12 @@ fn column(ui: &mut Ui, t: &mut TextSettings) {
         "Column alignment",
         "Where the stream's text sits",
         |ui| {
-            // Added right to left, so they read left to right.
-            let align = &mut t.column_align;
-            ui.selectable_value(align, ColumnAlign::Right, "Right");
-            ui.selectable_value(align, ColumnAlign::Center, "Center");
-            ui.selectable_value(align, ColumnAlign::Left, "Left");
+            let all = [ColumnAlign::Left, ColumnAlign::Center, ColumnAlign::Right];
+            widgets::inline_segments(ui, &mut t.column_align, &all, |a| match a {
+                ColumnAlign::Left => "Left",
+                ColumnAlign::Center => "Center",
+                ColumnAlign::Right => "Right",
+            });
         },
     );
 }

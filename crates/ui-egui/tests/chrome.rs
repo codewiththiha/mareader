@@ -418,3 +418,27 @@ fn window_captions_do_not_animate_on_hover() {
         }
     }
 }
+
+#[test]
+fn settings_switches_slide_across_frames_on_click() {
+    use mareader_engine::command::Command;
+    use mareader_engine::settings::Tab;
+    use mareader_ui_egui::ui_command::Sent;
+
+    let mut h = with(&[("pinned", "true")], SIZE);
+    h.state_mut()
+        .queue(Sent::Engine(Command::OpenSettings(Tab::Appearance)));
+    h.run_steps(10);
+    let classic = h.get_by_label("Classic").rect();
+    let deck = h.get_by_label("Dial deck").rect();
+    let area = classic.union(deck);
+    h.get_by_label("Dial deck").click();
+    h.step();
+    let start = caption_shapes(h.output(), area);
+    h.run_steps(2);
+    let mid = caption_shapes(h.output(), area);
+    h.run_steps(20);
+    let end = caption_shapes(h.output(), area);
+    assert_ne!(start, mid, "clicking Dial deck should animate the pill");
+    assert_ne!(mid, end, "the pill should keep gliding until settled");
+}

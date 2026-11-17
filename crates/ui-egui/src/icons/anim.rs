@@ -307,9 +307,17 @@ fn advance(ui: &Ui, resp: &Response, icon: Icon, tag: &str, size: f32) -> Curren
     }
     let now = ctx.input(|i| i.time);
     let (hovered, pressed) = (resp.hovered(), resp.clicked());
-    let seen = pass(ctx);
-    let mut run = ctx.data(|d| d.get_temp::<Run>(id)).unwrap_or_default();
+    let stored = ctx.data(|d| d.get_temp::<Run>(id));
+    let mut run = stored.unwrap_or_default();
     let live = run.through(now, dur).is_some();
+    if act == Act::Click && !pressed && !live {
+        if run.start >= 0.0 {
+            run.start = -1.0;
+            ctx.data_mut(|d| d.insert_temp(id, run));
+        }
+        return CurrentFrame::Resting;
+    }
+    let seen = pass(ctx);
     let ask = order(
         act,
         entering(hovered, run.held, seen > run.seen + 2),

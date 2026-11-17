@@ -232,13 +232,24 @@ fn read_aloud_row(ui: &mut Ui, on: bool, platform: Platform, out: &mut Commands)
 
 /// The four view modes, each named under its icon; the menu stays open.
 fn view_row(ui: &mut Ui, current: ViewMode, platform: Platform, out: &mut Commands) {
-    let t = Tokens::get(ui.ctx());
+    let ctx = ui.ctx().clone();
+    let t = Tokens::get(&ctx);
     // This menu stays open, so selection is the visible event.
     let _act = anim::announce(ui, Act::Click);
     let size = vec2(ui.available_width(), 46.0);
     let (band, _) = ui.allocate_exact_size(size, Sense::hover());
     let band = band.shrink2(vec2(4.0, 0.0));
+    let bg = ui.painter().add(egui::Shape::Noop);
     let slot = band.width() / ViewMode::ALL.len() as f32;
+    let cell_at = |i: f32| {
+        Rect::from_min_size(
+            pos2(band.left() + slot * i, band.top()),
+            vec2(slot, band.height()),
+        )
+        .shrink(1.0)
+    };
+    let mut picked = current;
+    let mut cells = Vec::with_capacity(ViewMode::ALL.len());
     for (i, mode) in ViewMode::ALL.into_iter().enumerate() {
         let icon = match mode {
             ViewMode::Single => Icon::SinglePage,
@@ -246,36 +257,46 @@ fn view_row(ui: &mut Ui, current: ViewMode, platform: Platform, out: &mut Comman
             ViewMode::Vertical => Icon::ScrollVertical,
             ViewMode::Horizontal => Icon::ScrollHorizontal,
         };
-        let cell = Rect::from_min_size(
-            pos2(band.left() + slot * i as f32, band.top()),
-            vec2(slot, band.height()),
-        )
-        .shrink(1.0);
-        let on = mode == current;
+        let cell = cell_at(i as f32);
         let label = mode.label();
         let r = ui.interact(cell, ui.id().with(("view-mode", label)), Sense::click());
-        let mark = Rect::from_center_size(cell.center() - vec2(0.0, 8.0), egui::Vec2::splat(16.0));
-        r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
         let command = Sent::Engine(Command::View(mode));
         let keys = keymap::hint(platform, &command);
         widgets::tip(&r, label, keys.as_deref());
-        let fill = if on {
-            t.selected
-        } else if r.hovered() {
-            t.hover
-        } else {
-            egui::Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(cell, t.radius, fill);
-        let ink = if on { t.accent } else { t.ink };
-        anim::paint(ui, mark, icon, ink, label, &r);
-        let at = cell.center() + vec2(0.0, 11.0);
-        let font = egui::FontId::proportional(11.0);
-        ui.painter()
-            .text(at, egui::Align2::CENTER_CENTER, mode.short(), font, ink);
         if r.clicked() {
+            picked = mode;
             out.push(command);
         }
+        cells.push((mode, icon, label, i as f32, cell, r));
+    }
+    let idx = ViewMode::ALL.iter().position(|&m| m == picked).unwrap_or(0) as f32;
+    let slide_x = crate::motion::slide(&ctx, ui.id().with("view-mode-pill"), idx, 0.18);
+    ui.painter().set(
+        bg,
+        egui::Shape::rect_filled(cell_at(slide_x), t.radius, t.selected),
+    );
+    let font = egui::FontId::proportional(11.0);
+    for (mode, icon, label, col, cell, r) in cells {
+        let on = mode == picked;
+        if r.hovered() {
+            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+            if !on {
+                ui.painter().rect_filled(cell, t.radius, t.hover);
+            }
+        }
+        let lit = (1.0 - (slide_x - col).abs()).clamp(0.0, 1.0);
+        let ink = t.ink.lerp_to_gamma(t.accent, lit);
+        let mark = Rect::from_center_size(cell.center() - vec2(0.0, 8.0), egui::Vec2::splat(16.0));
+        anim::paint(ui, mark, icon, ink, label, &r);
+        let at = cell.center() + vec2(0.0, 11.0);
+        ui.painter().text(
+            at,
+            egui::Align2::CENTER_CENTER,
+            mode.short(),
+            font.clone(),
+            ink,
+        );
+        r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
     }
 }
 
