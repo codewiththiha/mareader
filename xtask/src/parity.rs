@@ -121,9 +121,19 @@ fn evidence_exists(repo: &Path, cite: &str) -> bool {
 
 /// The mareader checkout, if one sits beside this repository.
 fn reference_root(repo: &Path) -> Option<PathBuf> {
-    let dir = std::env::var_os("MAREADER_DIR")
-        .map(PathBuf::from)
-        .or_else(|| repo.parent().map(|p| p.join("mareader")))?;
+    let explicit = std::env::var_os("MAREADER_DIR").map(PathBuf::from);
+    resolve_reference(repo, explicit)
+}
+
+fn resolve_reference(repo: &Path, explicit: Option<PathBuf>) -> Option<PathBuf> {
+    let dir = explicit.or_else(|| repo.parent().map(|p| p.join("mareader")))?;
+    let same = match (repo.canonicalize(), dir.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => repo == dir,
+    };
+    if same {
+        return None;
+    }
     dir.join("AGENTS.md").is_file().then_some(dir)
 }
 
@@ -331,5 +341,18 @@ mod tests {
         assert!(valid_id("shell.title-bar"));
         assert!(!valid_id("Shell.title_bar"));
         assert!(valid_milestone("M8") && !valid_milestone("M9") && !valid_milestone("none"));
+    }
+
+    #[test]
+    fn reference_root_ignores_self_checkout() {
+        let tag = format!("xtask-parity-{}", std::process::id());
+        let base = std::env::temp_dir().join(tag);
+        let dir = base.join("mareader");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let marker = dir.join("AGENTS.md");
+        std::fs::write(marker, "# temp\n").expect("write marker");
+        assert_eq!(resolve_reference(&dir, None), None);
+        assert_eq!(resolve_reference(&dir, Some(dir.clone())), None);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
