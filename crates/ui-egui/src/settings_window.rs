@@ -26,6 +26,8 @@ mod downloads;
 mod fonts;
 mod highlights;
 #[cfg(not(target_arch = "wasm32"))]
+mod model_picker;
+#[cfg(not(target_arch = "wasm32"))]
 mod models;
 mod read_aloud;
 mod updates;

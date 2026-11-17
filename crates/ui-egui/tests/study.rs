@@ -471,8 +471,9 @@ fn the_ai_tab_picks_who_explains() {
     if !cfg!(target_os = "macos") {
         assert_eq!(ai.tasks.explain.preset, id, "the first model explains");
     }
-    // Its provider opens below it, address and all.
-    assert!(h.query_all_by_label("Address").next().is_some());
+    // Its provider opens below it with the default-address toggle.
+    let toggle = h.query_all_by_label("Use default address").next();
+    assert!(toggle.is_some());
 }
 
 #[test]

@@ -1,17 +1,18 @@
 //! The AI models tab: saved models, their providers and keys.
 
+use super::model_picker::{add_key, model_row, provider_address};
 use super::{divider, group, note, row, section};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
-use egui::{Align, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{Align, Layout, Rect, RichText, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_assist::{AppleState, Board, Job, KeyRow, KeyState, Load, lanes};
 use mareader_engine::command::Command;
 use mareader_settings::{AiSettings, ModelPreset, PageTask, PresetId, Provider};
 use mareader_study::Failure;
 
-const FIELD_W: f32 = 260.0;
+pub(super) const FIELD_W: f32 = 260.0;
 const PICK_W: f32 = 240.0;
 
 /// What the running service adds to the settings.
@@ -566,19 +567,7 @@ fn provider(
         return false;
     }
     divider(ui);
-    let tip = if p.needs_key() {
-        "Blank uses the provider's own; change it only for a proxy"
-    } else {
-        "Up to and including /v1"
-    };
-    row(ui, "Address", tip, |ui| {
-        let hint = match p.default_url() {
-            "" => "https://host/v1/",
-            url => url,
-        };
-        let input = widgets::input(&mut e.url).hint(hint).width(FIELD_W);
-        input.compact().show(ui);
-    });
+    provider_address(ui, p, e);
     if p.takes_keys() {
         key_rows(ui, p, board, out);
     }
@@ -664,44 +653,6 @@ fn provider_picker(ui: &mut Ui, p: &mut ModelPreset) {
     }
 }
 
-fn model_row(ui: &mut Ui, p: &mut ModelPreset, board: Option<&Board>, out: &mut Commands) {
-    let t = Tokens::get(ui.ctx());
-    let server = p.provider;
-    let lost = board.is_some_and(|b| missing(&p.model, b.models(server)));
-    let gone = format!(
-        "{} isn't on the server now; choose another.",
-        p.model.trim()
-    );
-    let tip = if lost {
-        gone.as_str()
-    } else {
-        "Blank uses the default"
-    };
-    row(ui, "Model", tip, |ui| {
-        if let Some(b) = board {
-            refresh(ui, server, b, out);
-            model_menu(ui, server, &mut p.model, b.models(server), out);
-        }
-        let hint = match server.default_model() {
-            "" => "The server's first",
-            m => m,
-        };
-        let input = widgets::input(&mut p.model).hint(hint).width(FIELD_W);
-        let mut input = input.compact();
-        if lost {
-            input = input.text_color(t.muted);
-        }
-        let r = input.show(ui).response;
-        if lost {
-            widgets::tip(&r, &gone, None);
-        }
-    });
-    if lost {
-        ui.label(RichText::new(&gone).size(t.text_small).color(t.danger));
-        ui.add_space(8.0);
-    }
-}
-
 /// How much room the model has, and the honest catch with keys.
 fn room_note(ui: &mut Ui, p: &ModelPreset, board: Option<&Board>) {
     if !p.provider.takes_keys() {
@@ -752,7 +703,7 @@ fn tried(ui: &mut Ui, tried: &Load<mareader_assist::Tried>) {
 }
 
 /// Whether the server's list lacks `model`; Ollama may add ":latest".
-fn missing(model: &str, models: &Load<Vec<String>>) -> bool {
+pub(super) fn missing(model: &str, models: &Load<Vec<String>>) -> bool {
     let model = model.trim();
     let Load::Ready(list) = models else {
         return false;
@@ -761,59 +712,9 @@ fn missing(model: &str, models: &Load<Vec<String>>) -> bool {
 }
 
 /// Whether `model` names `listed`; Ollama reads "x" as "x:latest".
-fn same(model: &str, listed: &str) -> bool {
+pub(super) fn same(model: &str, listed: &str) -> bool {
     let model = model.trim();
     listed == model || listed.strip_suffix(":latest") == Some(model)
-}
-
-/// Asks the server for its models again; a spinner while it answers.
-fn refresh(ui: &mut Ui, p: Provider, board: &Board, out: &mut Commands) {
-    if board.fetching(p) {
-        let r = ui.add_sized(vec2(24.0, 24.0), egui::Spinner::new().size(12.0));
-        widgets::name(&r, "Refreshing models");
-    } else if widgets::small_icon_button(ui, Icon::Rescan, "Refresh models").clicked() {
-        out.push(Sent::Engine(Command::Ai(Job::Models(p))));
-    }
-}
-
-/// The server's models, fetched when the menu first opens.
-fn model_menu(
-    ui: &mut Ui,
-    p: Provider,
-    model: &mut String,
-    models: &Load<Vec<String>>,
-    out: &mut Commands,
-) {
-    let menu = ui.menu_button("Choose", |ui| {
-        ui.set_max_width(FIELD_W);
-        match models {
-            Load::Idle | Load::Busy => {
-                ui.label("Loading models…");
-            }
-            Load::Failed(f) => {
-                failure(ui, f);
-                if ui.button("Try again").clicked() {
-                    out.push(Sent::Engine(Command::Ai(Job::Models(p))));
-                }
-            }
-            Load::Ready(list) if list.is_empty() => {
-                ui.label("The server lists no models.");
-            }
-            Load::Ready(list) => {
-                ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                    for id in list {
-                        if ui.selectable_label(same(model, id), id).clicked() {
-                            model.clone_from(id);
-                            ui.close();
-                        }
-                    }
-                });
-            }
-        }
-    });
-    if menu.response.clicked() && matches!(models, Load::Idle | Load::Failed(_)) {
-        out.push(Sent::Engine(Command::Ai(Job::Models(p))));
-    }
 }
 
 fn key_row(ui: &mut Ui, p: Provider, r: &KeyRow, out: &mut Commands) {
@@ -849,37 +750,7 @@ fn key_row(ui: &mut Ui, p: Provider, r: &KeyRow, out: &mut Commands) {
     });
 }
 
-/// A field for a new key; it empties once the key is sent.
-fn add_key(ui: &mut Ui, p: Provider, out: &mut Commands) {
-    let id = egui::Id::new(("ai-new-key", p.scope()));
-    let mut text: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
-    ui.allocate_ui_with_layout(
-        vec2(ui.available_width(), super::ROW_H),
-        Layout::left_to_right(Align::Center),
-        |ui| {
-            let field = widgets::input(&mut text)
-                .id(id.with("field"))
-                .icon(Icon::Key)
-                .password(true)
-                .hint("Paste an API key")
-                .width(FIELD_W)
-                .compact()
-                .show(ui)
-                .response;
-            let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            let add = ui.add_enabled(!text.trim().is_empty(), egui::Button::new("Add"));
-            if (add.clicked() || entered) && !text.trim().is_empty() {
-                out.push(Sent::Engine(Command::Ai(Job::AddKey(
-                    p,
-                    std::mem::take(&mut text),
-                ))));
-            }
-        },
-    );
-    ui.data_mut(|d| d.insert_temp(id, text));
-}
-
-fn failure(ui: &mut Ui, f: &Failure) {
+pub(super) fn failure(ui: &mut Ui, f: &Failure) {
     let t = Tokens::get(ui.ctx());
     ui.vertical(|ui| {
         ui.label(RichText::new(f.why.message()).color(t.danger));
@@ -1047,5 +918,96 @@ mod tests {
         let want = ["AI Dictionary", "Library", "Translate", "Simplify"];
         assert_eq!(uses(&ai, first), want);
         assert_eq!(uses(&ai, local), ["Summarize"]);
+    }
+
+    #[test]
+    fn provider_hides_address_until_unchecked_and_spaces_add_key() {
+        let mut ai = no_models();
+        ai.add_preset(Provider::Gemini, "gemini-2.5-pro");
+        let mut h = harness(ai);
+        h.step();
+        h.step();
+        h.get_by_label("Google Gemini").click();
+        h.step();
+        h.step();
+        // Default URL is checked; raw Address box stays hidden.
+        let check = egui::accesskit::Role::CheckBox;
+        let toggle = h.get_by_role_and_label(check, "Use default address");
+        assert!(h.query_by_label("Address").is_none());
+        let add = h.get_by_label("Add").rect();
+        assert!(
+            add.height() >= 30.0,
+            "Add button matches compact field height"
+        );
+        // Unchecking reveals Address while blank still falls back to default.
+        toggle.click();
+        h.step();
+        h.step();
+        assert!(h.query_all_by_label("Address").next().is_some());
+        assert_eq!(
+            h.state().ai.url(Provider::Gemini),
+            Provider::Gemini.default_url()
+        );
+        // Re-checking clears any custom URL and hides Address again.
+        h.state_mut().ai.gemini.url = "https://proxy.example/v1/".into();
+        let toggle = h.get_by_role_and_label(check, "Use default address");
+        toggle.click();
+        h.step();
+        h.step();
+        assert!(h.state().ai.gemini.url.is_empty());
+        assert!(h.query_by_label("Address").is_none());
+    }
+
+    #[test]
+    fn model_picker_filters_suggestions_and_expands_choose_menu() {
+        use super::super::model_picker;
+
+        let list: Vec<String> = [
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3-flash-preview",
+            "gemini-2.5-pro-preview-tts",
+            "gemini-2.0-flash",
+            "gemini-2.0-pro",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
+            "gemma-3-27b",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        assert_eq!(model_picker::matching(&list, "gemma"), vec!["gemma-3-27b"]);
+        assert!(model_picker::matching(&list, "gemma-3-27b").is_empty());
+        let flash = model_picker::matching(&list, "flash");
+        assert!(flash.contains(&"gemini-2.5-flash"));
+        assert!(flash.contains(&"gemini-3-flash-preview"));
+
+        let mut ai = no_models();
+        let id = ai.add_preset(Provider::Gemini, "gemini-2.5-pro");
+        let mut h = harness(ai);
+        h.state_mut().board.start(&Job::Models(Provider::Gemini));
+        h.state_mut()
+            .board
+            .finish(Reply::Models(Provider::Gemini, Ok(list)));
+        h.step();
+        h.step();
+        // Open the model editor and expand Choose: more than 2 rows visible.
+        h.get_by_label("Google Gemini · gemini-2.5-pro").click();
+        h.step();
+        h.step();
+        h.get_by_label("Choose").click();
+        h.step();
+        h.step();
+        let first_y = h.get_by_label("gemini-2.5-pro").rect().top();
+        let sixth_y = h.get_by_label("gemini-2.0-flash").rect().bottom();
+        assert!(sixth_y - first_y > 100.0, "Choose menu shows many rows");
+        h.get_by_label("gemini-2.5-flash").click();
+        h.step();
+        h.step();
+        assert_eq!(
+            h.state().ai.preset(id).map(|p| p.model.as_str()),
+            Some("gemini-2.5-flash")
+        );
     }
 }
