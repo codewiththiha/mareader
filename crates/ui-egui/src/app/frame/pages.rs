@@ -166,7 +166,6 @@ impl MareaderApp {
         let cefr = &self.settings().study.cefr;
         let shading = cefr.enabled.then_some(crate::vocab::Look {
             level: cefr.level.band(),
-            mark: cefr.mark,
             click: cefr.click_explain,
             hover: self.settings().dictionary.hover,
             ink: self.settings().study.highlights.cefr,

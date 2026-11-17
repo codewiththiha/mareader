@@ -108,7 +108,8 @@ pub fn segments_of<T: Copy + PartialEq>(
     let cols = cols.max(1);
     let rows = all.len().div_ceil(cols);
     let size = vec2(ui.available_width(), row * rows as f32);
-    let (track, _) = ui.allocate_exact_size(size, Sense::hover());
+    let (track, track_resp) = ui.allocate_exact_size(size, Sense::hover());
+    let base = track_resp.id;
     let line = Stroke::new(1.0, t.line);
     ui.painter()
         .rect_stroke(track, CornerRadius::same(6), line, StrokeKind::Inside);
@@ -124,14 +125,13 @@ pub fn segments_of<T: Copy + PartialEq>(
         let col = (i % cols) as f32;
         let r = (i / cols) as f32;
         let rect = cell_at(col, r);
-        let resp = ui.interact(rect, ui.id().with(("segment", label)), Sense::click());
+        let resp = ui.interact(rect, base.with(("segment", i, label)), Sense::click());
         if enabled && resp.clicked() {
             *value = v;
         }
         cells.push((v, icon, label, col, r, rect, resp));
     }
-    let first = cells.first().map_or("", |c| c.2);
-    let thumb = ui.id().with(("segments", first));
+    let thumb = base.with("thumb");
     let (tx, ty) = match all.iter().position(|v| v == value) {
         Some(i) => {
             let x = motion::slide(&ctx, thumb.with("x"), (i % cols) as f32, SLIDE_SECS);
@@ -151,7 +151,7 @@ pub fn segments_of<T: Copy + PartialEq>(
         }
         None => (None, 0.0),
     };
-    paint_segment_cells(ui, &cells, (first, tx, ty, enabled), value, &t);
+    paint_segment_cells(ui, &cells, (base, tx, ty, enabled), value, &t);
 }
 
 fn hover_cell(
@@ -175,7 +175,7 @@ fn hover_cell(
 fn paint_segment_cells<T: Copy + PartialEq>(
     ui: &mut Ui,
     cells: &[(T, Option<Icon>, &'static str, f32, f32, Rect, Response)],
-    (first, tx, ty, enabled): (&'static str, Option<f32>, f32, bool),
+    (base, tx, ty, enabled): (Id, Option<f32>, f32, bool),
     value: &T,
     t: &Tokens,
 ) {
@@ -202,7 +202,7 @@ fn paint_segment_cells<T: Copy + PartialEq>(
         let y = cell.center().y;
         if let Some(icon) = icon {
             let at = Rect::from_min_size(pos2(x, y - 7.0), Vec2::splat(14.0));
-            ui.push_id(("segment-icon", first, label), |ui| {
+            ui.push_id(("segment-icon", base, label), |ui| {
                 anim::paint(ui, at, icon, ink, label, resp);
             });
             x += icon_w;
@@ -239,7 +239,8 @@ pub fn inline_segments<T: Copy + PartialEq>(
         widths.push(w);
         total_w += w;
     }
-    let (track, _) = ui.allocate_exact_size(vec2(total_w, INLINE_H), Sense::hover());
+    let (track, track_resp) = ui.allocate_exact_size(vec2(total_w, INLINE_H), Sense::hover());
+    let base = track_resp.id;
     ui.painter().rect_stroke(
         track,
         CornerRadius::same(6),
@@ -249,17 +250,16 @@ pub fn inline_segments<T: Copy + PartialEq>(
     let bg = ui.painter().add(Shape::Noop);
     let mut x = track.left() + 2.0;
     let mut cells = Vec::with_capacity(all.len());
-    for ((v, text), w) in labels.into_iter().zip(widths) {
+    for (i, ((v, text), w)) in labels.into_iter().zip(widths).enumerate() {
         let cell = Rect::from_min_size(pos2(x, track.top() + 2.0), vec2(w, INLINE_H - 4.0));
-        let resp = ui.interact(cell, ui.id().with(("inline-seg", text)), Sense::click());
+        let resp = ui.interact(cell, base.with(("inline-seg", i, text)), Sense::click());
         if enabled && resp.clicked() {
             *value = v;
         }
         cells.push((v, text, cell, resp));
         x += w;
     }
-    let first = cells.first().map_or("", |c| c.1);
-    let thumb = ui.id().with(("inline-segments", first));
+    let thumb = base.with("thumb");
     let pill = cells.iter().find(|c| c.0 == *value).map(|c| {
         let edge = track.left();
         let l = motion::slide(&ctx, thumb.with("l"), c.2.left() - edge, SLIDE_SECS);

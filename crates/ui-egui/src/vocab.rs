@@ -4,7 +4,7 @@
 use std::ops::Range;
 
 use egui::{CursorIcon, Id, Pos2, Rect, Ui};
-use mareader_settings::{CefrMark, Reserved};
+use mareader_settings::Reserved;
 
 use crate::selection::Pages;
 use crate::study::marks::Under;
@@ -47,7 +47,6 @@ pub fn cefr_band(label: &str) -> Option<u8> {
 pub struct Look {
     /// The reader's band; words above it are shaded.
     pub level: u8,
-    pub mark: CefrMark,
     /// A click on a shaded word explains it.
     pub click: bool,
     /// Resting on a shaded word looks it up.
@@ -132,12 +131,7 @@ pub fn add(shaded: &Shading, look: &Look, hovered: Option<usize>, under: &mut Un
     for (i, word) in shaded.iter().enumerate() {
         let lift = if hovered == Some(i) { HOVER_LIFT } else { 0.0 };
         for r in shaded.rects_of(word) {
-            match look.mark {
-                CefrMark::Custom => {
-                    under.add(*r, look.ink.pen, look.ink.color, look.opacity + lift)
-                }
-                style => under.level_mark(*r, word.band, style, lift),
-            }
+            under.add(*r, look.ink.pen, look.ink.color, look.opacity + lift);
         }
     }
 }

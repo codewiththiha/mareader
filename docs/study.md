@@ -295,9 +295,8 @@ slice 5.
   Download for the rest.
 - **Shading.** With the switch on, a word whose level is above My level
   (A2 to C2, B2 by default; C2 shades nothing) is shaded on PDFs and
-  books alike. New settings use a soft, level-graded wash; underline and
-  dot styles offer a non-colour cue by weight. Existing settings keep their
-  custom pen and colour, which remains available. A word counts as hard when it, a
+  books alike using its reserved pen (Highlight, Half highlight, or
+  Underline) and colour. A word counts as hard when it, a
   contraction's base or a part of a hyphenated compound is.
   Pages are planned once per text layer, level and dataset, and capped
   at 5,000 words; levels not yet known are asked off the frame and the

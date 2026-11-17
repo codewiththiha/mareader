@@ -335,7 +335,8 @@ fn run_singleline(
     let builder = UiBuilder::new()
         .max_rect(room)
         .layout(Layout::left_to_right(Align::Center));
-    let response = ui.scope_builder(builder, |ui| ui.add(edit)).inner;
+    let mut child = ui.new_child(builder);
+    let response = child.add(edit);
     if let Some(label) = &cfg.label {
         widgets::name(&response, label);
     }

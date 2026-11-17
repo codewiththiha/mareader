@@ -251,7 +251,6 @@ pub struct Under {
     /// Boxes on dim pages, redrawn with their text lifted: box, tone, tint.
     lifts: Vec<(Rect, PageTone, Color32)>,
     lines: Vec<(Rect, Color32)>,
-    dots: Vec<(Pos2, f32, Color32)>,
     /// Each colour and strength's fill, worked out once.
     seen: Vec<((Rgb, u32), MarkFill)>,
 }
@@ -264,7 +263,6 @@ impl Under {
             fills: Vec::new(),
             lifts: Vec::new(),
             lines: Vec::new(),
-            dots: Vec::new(),
             seen: Vec::new(),
         }
     }
@@ -296,56 +294,6 @@ impl Under {
         }
     }
 
-    /// A graded vocabulary mark, with a non-colour cue to its level.
-    pub fn level_mark(&mut self, r: Rect, band: u8, style: mareader_settings::CefrMark, lift: f32) {
-        use mareader_settings::CefrMark;
-        let color = crate::vocab::level_color(band);
-        match style {
-            CefrMark::Wash => {
-                let strength = 0.12 + f32::from(band.min(6)) * 0.025 + lift;
-                self.add(r, Pen::Full, color, strength);
-            }
-            CefrMark::Underline => {
-                let thickness = (r.height() * if band >= 5 { 0.14 } else { 0.08 }).max(1.0);
-                let ink = self.level_ink(color);
-                let line = Rect::from_min_max(pos2(r.left(), r.bottom() - thickness), r.max);
-                if band == 3 {
-                    let mut x = line.left();
-                    while x < line.right() {
-                        let right = (x + thickness).min(line.right());
-                        self.lines.push((
-                            Rect::from_min_max(pos2(x, line.top()), pos2(right, line.bottom())),
-                            ink,
-                        ));
-                        x += thickness * 2.5;
-                    }
-                } else {
-                    self.lines.push((line, ink));
-                }
-            }
-            CefrMark::Dot => {
-                let radius = (r.height() * (0.08 + f32::from(band.min(6)) * 0.012)).clamp(1.5, 3.5);
-                self.dots.push((
-                    pos2(r.center().x, r.top() - radius - 1.0),
-                    radius,
-                    self.level_ink(color),
-                ));
-            }
-            CefrMark::Custom => {}
-        }
-    }
-
-    fn level_ink(&self, color: Rgb) -> Color32 {
-        let (paper, ink) = self.tone.paper_and_ink();
-        let brightness = |c: [f32; 3]| c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114;
-        let color = crate::theme::color(color);
-        if brightness(paper) < brightness(ink) {
-            color.lerp_to_gamma(Color32::WHITE, 0.38)
-        } else {
-            color
-        }
-    }
-
     /// Draws them within `clip` over `pages`, the quads just drawn.
     pub fn show(self, ui: &Ui, pass: Option<&Arc<PagePass>>, clip: Rect, pages: &[Quad]) {
         let blend = self.tone.mark([1.0; 3], 1.0).blend;
@@ -371,9 +319,6 @@ impl Under {
         }
         for (line, colour) in self.lines {
             ui.painter().rect_filled(line, 0.0, colour);
-        }
-        for (centre, radius, colour) in self.dots {
-            ui.painter().circle_filled(centre, radius, colour);
         }
     }
 }

@@ -936,10 +936,18 @@ mod tests {
         let toggle = h.get_by_role_and_label(check, "Use default address");
         assert!(h.query_by_label("Address").is_none());
         let add = h.get_by_label("Add").rect();
+        let field = h
+            .get_by_role_and_label(egui::accesskit::Role::PasswordInput, "Paste an API key")
+            .rect();
         assert!(
             add.height() >= 30.0,
             "Add button matches compact field height"
         );
+        assert!(
+            add.left() - field.right() >= 18.0,
+            "Add button sits after the input box with margin"
+        );
+        assert!((add.center().y - field.center().y).abs() < 2.0);
         // Unchecking reveals Address while blank still falls back to default.
         toggle.click();
         h.step();

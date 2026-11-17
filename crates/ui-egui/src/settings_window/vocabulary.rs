@@ -3,8 +3,7 @@
 use egui::{RichText, Slider, Ui};
 use mareader_cefr::{DATASET, Part, State, TAGGER};
 use mareader_settings::{
-    Accent, CefrLevel, CefrMark, DictionarySettings, Notation, Pen, PronunciationSettings,
-    StudySettings,
+    Accent, CefrLevel, DictionarySettings, Notation, Pen, PronunciationSettings, StudySettings,
 };
 use mareader_speech::Stage;
 
@@ -84,7 +83,7 @@ fn shading(ui: &mut Ui, study: &mut StudySettings, dictionary: &mut DictionarySe
     group(ui, |ui| look_rows(ui, study));
     note(
         ui,
-        "Custom shading keeps its own pen and colour, distinct from highlights.",
+        "Shading keeps its own pen and colour, distinct from highlights.",
     );
 }
 
@@ -237,18 +236,6 @@ fn level_row(ui: &mut Ui, level: &mut CefrLevel) {
 
 /// The shading's pen and colour, which highlights then can't take.
 fn look_rows(ui: &mut Ui, study: &mut StudySettings) {
-    row(
-        ui,
-        "Style",
-        "Level colours and weight, or your original custom pen",
-        |ui| {
-            choices(ui, &mut study.cefr.mark, &CefrMark::ALL, CefrMark::label);
-        },
-    );
-    if study.cefr.mark != CefrMark::Custom {
-        return;
-    }
-    divider(ui);
     let h = &mut study.highlights;
     let mut cefr = h.cefr;
     row(ui, "Mark", "How hard words are shaded", |ui| {

@@ -14,6 +14,7 @@ use crate::widgets;
 
 const KEY_BTN_H: f32 = 32.0;
 const KEY_BTN_W: f32 = 64.0;
+const KEY_GAP: f32 = 10.0;
 
 /// Provider URL: default-checked toggle for built-in servers, raw for custom.
 pub(super) fn provider_address(ui: &mut Ui, p: Provider, e: &mut Endpoint) {
@@ -67,19 +68,20 @@ pub(super) fn add_key(ui: &mut Ui, p: Provider, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     let id = Id::new(("ai-new-key", p.scope()));
     let mut text: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
-    let gap = 8.0;
     let row_w = ui.available_width();
-    let field_w = (row_w - KEY_BTN_W - gap).max(160.0);
+    let field_w = (row_w - KEY_BTN_W - KEY_GAP).max(160.0);
     ui.allocate_ui_with_layout(
         vec2(row_w, ROW_H),
         Layout::left_to_right(Align::Center),
         |ui| {
-            ui.spacing_mut().item_spacing.x = gap;
+            ui.set_min_height(ROW_H);
+            ui.spacing_mut().item_spacing.x = KEY_GAP;
             let field = widgets::input(&mut text)
                 .id(id.with("field"))
                 .icon(Icon::Key)
                 .password(true)
                 .hint("Paste an API key")
+                .label("Paste an API key")
                 .width(field_w)
                 .compact()
                 .show(ui)
@@ -104,7 +106,7 @@ pub(super) fn add_key(ui: &mut Ui, p: Provider, out: &mut Commands) {
             let button = egui::Button::new(RichText::new("Add").color(ink))
                 .fill(fill)
                 .stroke(stroke)
-                .corner_radius(t.radius)
+                .corner_radius(t.radius + 1.0)
                 .min_size(vec2(KEY_BTN_W, KEY_BTN_H));
             let add = ui.add_enabled(ready, button);
             if ready && add.hovered() {
@@ -119,4 +121,46 @@ pub(super) fn add_key(ui: &mut Ui, p: Provider, out: &mut Commands) {
         },
     );
     ui.data_mut(|d| d.insert_temp(id, text));
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::Rect;
+    use egui_kittest::Harness;
+
+    use super::*;
+
+    #[test]
+    fn add_key_keeps_margin_and_aligns_with_field() {
+        let mut h = Harness::new_ui_state(
+            |ui, state: &mut (String, Option<(Rect, Rect)>)| {
+                let row_w = 400.0;
+                let field_w = row_w - KEY_BTN_W - KEY_GAP;
+                ui.allocate_ui_with_layout(
+                    vec2(row_w, ROW_H),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.set_min_height(ROW_H);
+                        ui.spacing_mut().item_spacing.x = KEY_GAP;
+                        let shown = widgets::input(&mut state.0)
+                            .icon(Icon::Key)
+                            .width(field_w)
+                            .compact()
+                            .show(ui);
+                        let size = vec2(KEY_BTN_W, KEY_BTN_H);
+                        let btn = egui::Button::new("Add").min_size(size);
+                        let add = ui.add(btn);
+                        state.1 = Some((shown.rect, add.rect));
+                    },
+                );
+            },
+            (String::new(), None),
+        );
+        h.step();
+        let (field, add) = h.state().1.expect("measured rects");
+        let gap = add.left() - field.right();
+        assert!((gap - KEY_GAP).abs() < 0.5, "gap={gap}");
+        assert!((add.center().y - field.center().y).abs() < 0.5);
+        assert!((add.height() - field.height()).abs() < 0.5);
+    }
 }

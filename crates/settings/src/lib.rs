@@ -38,7 +38,7 @@ pub use reader::{
 };
 pub use study::StudySettings;
 pub use study::{
-    Accent, BarItem, CefrLevel, CefrMark, CefrSettings, DictionaryOpens, DictionarySettings,
+    Accent, BarItem, CefrLevel, CefrSettings, DictionaryOpens, DictionarySettings,
     DictionaryWindow, GlossDensity, GlossSettings, HighlightSettings, Notation, Pen, PickColor,
     PronunciationSettings, Reserved, WINDOW_MIN,
 };

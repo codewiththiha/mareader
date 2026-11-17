@@ -13,7 +13,7 @@ use mareader_dict::{PACKS, build as build_pack, db_file};
 use mareader_engine::command::Command;
 use mareader_engine::documents::OpenRequest;
 use mareader_engine::settings::Tab;
-use mareader_settings::CefrLevel;
+use mareader_settings::{CefrLevel, Pen};
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::ui_command::Sent;
 use parquet::basic::{Compression, ZstdLevel};
@@ -224,7 +224,6 @@ fn a_dictionary_card_names_the_class_beside_its_word_as_the_ai_card_does() {
 
 #[test]
 fn the_tab_sets_the_level_and_removes_the_dataset() {
-    use egui::accesskit::Role;
     let (words, _) = shelves();
     let mut h = reader(words.path(), None);
     h.set_size(egui::vec2(1000.0, 1200.0));
@@ -233,17 +232,15 @@ fn the_tab_sets_the_level_and_removes_the_dataset() {
     h.run();
     h.get_by_label("Reading level");
     h.get_by_label("4 words");
-    assert_eq!(
-        h.state().settings().study.cefr.mark,
-        mareader_settings::CefrMark::Wash
-    );
-    h.get_by_role_and_label(Role::Button, "Underline").click();
+    for old in ["Soft wash", "Dot", "Custom"] {
+        assert!(h.query_by_label(old).is_none());
+    }
+    assert_eq!(h.state().settings().study.highlights.cefr.pen, Pen::Full);
+    h.get_by_role_and_label(Role::Button, "Half highlight")
+        .click();
     h.run();
-    assert_eq!(
-        h.state().settings().study.cefr.mark,
-        mareader_settings::CefrMark::Underline
-    );
-    h.get_by_role_and_label(Role::Button, "Custom").click();
+    assert_eq!(h.state().settings().study.highlights.cefr.pen, Pen::Half);
+    h.get_by_role_and_label(Role::Button, "Underline").click();
     h.run();
     h.get_by_role_and_label(Role::CheckBox, "Shade words above my level")
         .click();
@@ -253,7 +250,7 @@ fn the_tab_sets_the_level_and_removes_the_dataset() {
     let study = &h.state().settings().study;
     assert!(!study.cefr.enabled);
     assert_eq!(study.cefr.level, CefrLevel::default());
-    assert_eq!(study.cefr.mark, mareader_settings::CefrMark::Custom);
+    assert_eq!(study.highlights.cefr.pen, Pen::Underline);
     assert_eq!(study.highlights.cefr.color.to_hex(), "#00b2f4");
     h.get_by_label("Remove word data").click();
     h.run();
