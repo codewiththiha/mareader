@@ -761,7 +761,7 @@ pub fn captions(ui: &mut Ui, style: CaptionStyle, maximized: bool) -> Option<Win
             CaptionStyle::Gnome => 12.0,
         };
         let mark = Rect::from_center_size(rect.center(), Vec2::splat(glyph));
-        anim::paint(ui, mark, icon, ink, label, &resp);
+        icon.paint(ui, mark, ink);
         if resp.clicked() {
             clicked = Some(which);
         }

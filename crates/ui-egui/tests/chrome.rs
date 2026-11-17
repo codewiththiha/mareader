@@ -362,3 +362,59 @@ fn an_interface_zoom_saved_before_is_put_back_to_full_size() {
         h.ctx.zoom_factor()
     );
 }
+
+fn rightmost_box(h: &Harness<'static, MareaderApp>, label: &str) -> Option<egui::Rect> {
+    let boxes = h.query_all_by_label(label).filter_map(|n| {
+        let b = n.accesskit_node().bounding_box()?;
+        Some(egui::Rect::from_min_max(
+            pos2(b.x0 as f32, b.y0 as f32),
+            pos2(b.x1 as f32, b.y1 as f32),
+        ))
+    });
+    boxes.max_by(|a, b| a.center().x.total_cmp(&b.center().x))
+}
+
+fn caption_shapes(out: &egui::FullOutput, area: egui::Rect) -> Vec<String> {
+    fn walk(shape: &egui::Shape, area: egui::Rect, out: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Vec(children) => {
+                for child in children {
+                    walk(child, area, out);
+                }
+            }
+            egui::Shape::Noop | egui::Shape::Callback(_) => {}
+            other if other.visual_bounding_rect().intersects(area) => {
+                out.push(format!("{other:?}"));
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for clipped in &out.shapes {
+        if clipped.clip_rect.intersects(area) {
+            walk(&clipped.shape, area, &mut found);
+        }
+    }
+    found
+}
+
+#[test]
+fn window_captions_do_not_animate_on_hover() {
+    for platform in ["windows", "gnome"] {
+        let mut h = with(&[("platform", platform), ("pinned", "true")], SIZE);
+        h.run_steps(20);
+        for label in ["Minimize", "Maximize", "Close"] {
+            let area = rightmost_box(&h, label).unwrap_or_else(|| panic!("{platform} {label}"));
+            h.hover_at(area.center());
+            h.step();
+            let first = caption_shapes(h.output(), area);
+            assert!(!first.is_empty(), "{platform} {label} drew caption shapes");
+            h.run_steps(4);
+            let later = caption_shapes(h.output(), area);
+            assert_eq!(
+                first, later,
+                "{platform} {label} must stay static across hover frames"
+            );
+        }
+    }
+}
