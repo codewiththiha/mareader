@@ -8,7 +8,7 @@ use mareader_settings::StartupFit;
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::ui_command::Sent;
 
-use crate::common::{Dials, reader_200 as reader};
+use crate::common::{Dials, go_to, reader_200 as reader};
 
 type H = Harness<'static, MareaderApp>;
 
@@ -290,4 +290,54 @@ fn a_strip_centres_upright_pages_in_its_widest_column() {
         first.min.x.abs() < 0.5,
         "fitted, the page fills the pane: {first:?}"
     );
+}
+
+#[test]
+fn resting_keeps_visible_page_text_and_other_highlights_steady() -> Result<(), String> {
+    use mareader_engine::study::Action;
+    use mareader_library::Pen;
+
+    let mut h = reader(&[("pdf", "sample:5")]);
+    let pane = h.state().active_pane();
+    // Visit a far page so resting still has an off-screen layer to trim.
+    go_to(&mut h, 4);
+    go_to(&mut h, 0);
+    assert!(h.state().documents().asked_at(pane, 4, 0..1).is_some());
+    assert!(h.state().documents().asked_at(pane, 0, 0..1).is_some());
+    for word in ["quick", "lazy"] {
+        let (page, text) = (0, word.to_owned());
+        h.state_mut()
+            .queue(Sent::Engine(Command::SelectText { pane, page, text }));
+        h.run();
+        let (pen, color) = (Pen::Full, None);
+        h.state_mut()
+            .queue(Sent::Engine(Command::Highlight { pane, pen, color }));
+        h.run();
+    }
+    let marks = h.state().marks(pane);
+    let removed = marks.last().ok_or("missing highlight")?.id;
+    let remove = Command::Study(Action::Remove(vec![removed]));
+    h.state_mut().queue(Sent::Engine(remove));
+    h.run();
+    let _ = h.get_by_label("Removed highlight");
+    h.hover_at(egui::pos2(450.0, 350.0));
+    h.step();
+    assert_eq!(h.state().documents().meter().jobs, 0);
+    // Idle past the 3s cache-rest threshold, the 6s undo toast, and its fade.
+    for step in 0..450 {
+        h.step();
+        let docs = h.state().documents();
+        assert!(
+            docs.asked_at(pane, 0, 0..1).is_some(),
+            "visible text layer dropped at frame {step}"
+        );
+        assert_eq!(docs.meter().jobs, 0, "spurious re-read at frame {step}");
+    }
+    assert!(h.query_by_label("Removed highlight").is_none());
+    assert!(
+        h.state().documents().asked_at(pane, 4, 0..1).is_none(),
+        "off-screen text layers still trim at rest"
+    );
+    assert_eq!(h.state().marks(pane).len(), 1);
+    Ok(())
 }

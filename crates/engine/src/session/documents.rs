@@ -246,9 +246,13 @@ impl Session {
         f(&self.library, &mut self.documents.texts)
     }
 
-    /// Publishes this frame's page demand and ends the text-layer frame.
-    pub fn end_document_frame(&mut self, wants: impl IntoIterator<Item = Want>) {
+    /// Publishes this frame's page and text demand to the worker pool.
+    pub fn want_document_demand(&mut self, wants: impl IntoIterator<Item = Want>) {
         self.documents.want_demand(wants);
+    }
+
+    /// Ends the text-layer frame, trimming stale layers past the cap.
+    pub fn end_document_frame(&mut self) {
         self.documents.end_frame();
     }
 
@@ -292,7 +296,8 @@ impl Session {
         self.documents.set_progressive(on);
     }
 
-    /// Shrinks document worker and text caches while idle.
+    /// Shrinks document worker and text caches while idle; call before
+    /// [`Self::end_document_frame`] so pages touched this frame stay.
     pub fn rest_documents(&mut self) {
         self.documents.rest();
     }

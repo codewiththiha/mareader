@@ -649,18 +649,17 @@ impl DocumentsUi {
     pub fn end_frame(&mut self, ctx: &Context, session: &mut Session) {
         let mut demand = std::mem::take(&mut self.demand);
         demand.sort_by_key(|(urgency, _)| *urgency);
-        session.end_document_frame(demand.into_iter().map(|(_, want)| want));
+        session.want_document_demand(demand.into_iter().map(|(_, want)| want));
         self.settle(ctx, session);
         self.pages.end_frame();
+        session.end_document_frame();
     }
 
     fn settle(&mut self, ctx: &Context, session: &mut Session) {
         let (now, input) = ctx.input(|i| {
             let p = &i.pointer;
-            (
-                i.time,
-                !i.events.is_empty() || p.is_moving() || p.any_down(),
-            )
+            let active = !i.events.is_empty() || p.is_moving() || p.any_down();
+            (i.time, active)
         });
         let working = session.documents().pending() > 0;
         if input || working {
