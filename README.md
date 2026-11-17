@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/codewiththiha/mareader2/releases/latest">Latest release</a>
-  · <a href="https://github.com/codewiththiha/mareader2/releases">All releases</a>
+  <a href="https://github.com/codewiththiha/mareader/releases/latest">Latest release</a>
+  · <a href="https://github.com/codewiththiha/mareader/releases">All releases</a>
 </p>
 
 ## Features
@@ -79,8 +79,8 @@ Playback continues after switching to Library.
 ## Download
 
 Choose a macOS, Windows, or Linux build from the
-[latest release](https://github.com/codewiththiha/mareader2/releases/latest), or browse
-[all releases](https://github.com/codewiththiha/mareader2/releases).
+[latest release](https://github.com/codewiththiha/mareader/releases/latest), or browse
+[all releases](https://github.com/codewiththiha/mareader/releases).
 
 The macOS download is not notarized and its disk image is unsigned. If macOS blocks
 Mareader, use **Open Anyway** in System Settings under **Privacy & Security**. If you
@@ -105,18 +105,34 @@ cargo test --workspace                  # run all workspace tests
 
 ## Developer guides
 
-[Development](docs/development.md) · [Architecture](docs/architecture.md) ·
-[Contributor rules](AGENTS.md) · [Roadmap](ROADMAP.md) ·
-[EPUB pipeline](docs/epub.md) · [AI integration](docs/assist.md) ·
-[Packaging](docs/packaging.md) · [Verification](docs/verification.md) ·
-[Showcase samples](docs/showcase/README.md)
+- [Development](docs/development.md)
+- [Architecture](docs/architecture.md)
+- [Contributor rules](AGENTS.md)
+- [Roadmap](ROADMAP.md)
+- [EPUB pipeline](docs/epub.md)
+- [AI integration](docs/assist.md)
+- [Packaging](docs/packaging.md)
+- [Verification](docs/verification.md)
+- [Showcase samples](docs/showcase/README.md)
 
-## Core crates and licenses
+## Companion repositories
 
-Mareader and its first-party workspace crates are MIT-licensed ([LICENSE](LICENSE)).
-Core libraries: [egui/eframe](https://crates.io/crates/egui) (MIT OR Apache-2.0),
-[hayro](https://crates.io/crates/hayro) (MIT OR Apache-2.0),
-[parley](https://crates.io/crates/parley) (MIT OR Apache-2.0),
-[rbook](https://crates.io/crates/rbook) (Apache-2.0), and
-[ai-pool](https://github.com/codewiththiha/ai-pool) (MIT OR Apache-2.0).
-Bundled fonts and icons have separate notices in [ATTRIBUTION.toml](ATTRIBUTION.toml).
+Standalone crates maintained by the same author and used by Mareader:
+
+- [ai-pool](https://github.com/codewiththiha/ai-pool) — OpenAI-compatible Rust client with key pooling, rotation, quotas, streaming, and OS-keychain storage (`MIT OR Apache-2.0`)
+- [fm-bridge](https://github.com/codewiththiha/fm-bridge) — Async Rust bindings for Apple's on-device Foundation Models framework via a Swift helper (`MIT OR Apache-2.0`)
+
+## Core libraries and licenses
+
+Mareader and its first-party workspace crates are licensed under the MIT License ([LICENSE](LICENSE)).
+
+Core third-party dependencies:
+
+- [egui](https://crates.io/crates/egui) / [eframe](https://crates.io/crates/eframe) — Immediate-mode GUI and application shell (`MIT OR Apache-2.0`)
+- [hayro](https://crates.io/crates/hayro) — Pure-Rust PDF parsing and rendering (`MIT OR Apache-2.0`)
+- [parley](https://crates.io/crates/parley) — Rich text layout and shaping (`MIT OR Apache-2.0`)
+- [vello_cpu](https://crates.io/crates/vello_cpu) — CPU 2D vector rasterization (`MIT OR Apache-2.0`)
+- [rbook](https://crates.io/crates/rbook) — EPUB container reading and writing (`Apache-2.0`)
+- [candle](https://crates.io/crates/candle-core) — Pure-Rust tensor and neural inference runtime (`MIT OR Apache-2.0`)
+
+Bundled fonts, icon geometry, and vendored components carry separate notices in [ATTRIBUTION.toml](ATTRIBUTION.toml).
