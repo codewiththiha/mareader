@@ -1,10 +1,14 @@
 //! The Highlights tab: each pen's colour and the selection menu.
 
-use egui::{Align2, Color32, FontId, Sense, Stroke, Ui, Vec2, vec2};
+use egui::{Align2, Color32, FontId, Sense, Slider, Stroke, Ui, Vec2, vec2};
 use mareader_appearance::Rgb;
-use mareader_settings::{BarItem, HighlightSettings, Pen, PickColor, Reserved};
+use mareader_settings::{
+    BarItem, HighlightSettings, Pen, PickColor, Reserved, StudyBatchUnit, StudyCardSource,
+    StudyModeSettings,
+};
+use mareader_study::Avail;
 
-use super::{choice_row, divider, group, note, row, section};
+use super::{Services, choice_row, divider, group, note, row, section, switch_row};
 use crate::icons::Icon;
 use crate::study::marks::pen_area;
 use crate::theme::{self, Tokens};
@@ -247,4 +251,171 @@ fn menu(ui: &mut Ui, bar: &mut Vec<BarItem>) {
         Some(Move::Down(i)) => bar.swap(i, i + 1),
         None => {}
     }
+}
+
+/// Study mode's choices, with what this machine can run.
+pub fn study_tab(
+    ui: &mut Ui,
+    s: &mut mareader_settings::Settings,
+    live: &Services<'_>,
+    _out: &mut Commands,
+) {
+    let env = mareader_study::StudyEnv {
+        cefr: *live.vocab.state(mareader_cefr::Part::Dataset) == mareader_cefr::State::Ready,
+        ai: s.ai.study_preset().is_some(),
+        dict: !live.dict.ready().is_empty(),
+        english: true,
+    };
+    let (proactive, reactive) = mareader_study::availability(env);
+    let mode = &mut s.study.mode;
+    modes(ui, mode, (proactive, reactive));
+    batches(ui, mode);
+    feel(ui, mode);
+}
+
+fn modes(ui: &mut Ui, _mode: &mut StudyModeSettings, (proactive, reactive): (Avail, Avail)) {
+    section(ui, "Study mode");
+    group(ui, |ui| {
+        avail_row(
+            ui,
+            "Proactive",
+            "Study a deck before each batch",
+            &proactive,
+        );
+        divider(ui);
+        avail_row(
+            ui,
+            "Reactive",
+            "Click a shaded word and recall it",
+            &reactive,
+        );
+    });
+    note(
+        ui,
+        "Turn a mode on from a book's page menu. Progress is kept per book.",
+    );
+}
+
+fn avail_row(ui: &mut Ui, label: &str, hint: &str, avail: &Avail) {
+    let why = match avail.ok {
+        true => "Ready".to_owned(),
+        false => avail.reason.unwrap_or("Not available here.").to_owned(),
+    };
+    row(ui, label, hint, |ui| {
+        ui.label(why);
+    });
+}
+
+fn num_row(
+    ui: &mut Ui,
+    label: &str,
+    hint: &str,
+    value: &mut u8,
+    range: std::ops::RangeInclusive<u8>,
+) {
+    divider(ui);
+    row(ui, label, hint, |ui| {
+        ui.add(Slider::new(value, range));
+    });
+}
+
+fn batches(ui: &mut Ui, mode: &mut StudyModeSettings) {
+    section(ui, "Batches and decks");
+    group(ui, |ui| {
+        num_row(
+            ui,
+            "Pages per batch",
+            "One to ten pages",
+            &mut mode.pages,
+            1..=10,
+        );
+        num_row(
+            ui,
+            "Decks ahead",
+            "Prepared while you read",
+            &mut mode.ahead,
+            0..=3,
+        );
+        num_row(
+            ui,
+            "Words per deck",
+            "Four to thirty",
+            &mut mode.max_cards,
+            4..=30,
+        );
+        num_row(
+            ui,
+            "Seconds per card",
+            "The timer's floor",
+            &mut mode.sec_per_card,
+            2..=20,
+        );
+        divider(ui);
+        row(
+            ui,
+            "Characters per batch",
+            "Converted back to whole pages",
+            |ui| {
+                ui.add(Slider::new(&mut mode.chars, 400..=12000));
+            },
+        );
+        divider(ui);
+        row(
+            ui,
+            "Batch size",
+            "Pages, or a character budget per batch",
+            |ui| {
+                if ui
+                    .selectable_label(mode.unit == StudyBatchUnit::Pages, "Pages")
+                    .clicked()
+                {
+                    mode.unit = StudyBatchUnit::Pages;
+                }
+                if ui
+                    .selectable_label(mode.unit == StudyBatchUnit::Chars, "Chars")
+                    .clicked()
+                {
+                    mode.unit = StudyBatchUnit::Chars;
+                }
+            },
+        );
+    });
+}
+
+fn feel(ui: &mut Ui, mode: &mut StudyModeSettings) {
+    section(ui, "How it feels");
+    group(ui, |ui| {
+        switch_row(
+            ui,
+            "Strict timer",
+            "Reading waits until the deck's time is up",
+            &mut mode.strict,
+        );
+        divider(ui);
+        switch_row(
+            ui,
+            "Hint shading",
+            "Shade hard words while proactive mode runs",
+            &mut mode.hints,
+        );
+        divider(ui);
+        switch_row(
+            ui,
+            "Ask before memorizing",
+            "After a correct recall, ask to add the word to memorized",
+            &mut mode.ask_memorize,
+        );
+        divider(ui);
+        row(ui, "Card source", "Who writes the cards", |ui| {
+            for (source, label) in [
+                (StudyCardSource::Auto, "Auto"),
+                (StudyCardSource::Ai, "AI"),
+                (StudyCardSource::Dictionary, "Dictionary"),
+            ] {
+                if ui.selectable_label(mode.source == source, label).clicked() {
+                    mode.source = source;
+                }
+            }
+        });
+    });
 }

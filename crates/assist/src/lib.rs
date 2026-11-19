@@ -19,6 +19,7 @@ mod page;
 mod prompt;
 mod service;
 mod slots;
+mod study;
 mod task;
 
 pub use apple::Apple;
@@ -34,4 +35,5 @@ pub use page::{PAGE_CHARS, PageAsk, PageJob, Rewrite, rewrite};
 pub use prompt::{Prompt, quote};
 pub use service::{Assist, Organized, Organizing, Rewriting, Rewrote, Waker};
 pub use slots::{Kind, Slots, Ticket};
+pub use study::{StudyCards, StudyItem, StudyJudge};
 pub use task::{Explain, Task, word_info_schema};

@@ -345,6 +345,7 @@ fn tab_body(
             vocabulary::tab(ui, (&mut s.study, &mut s.dictionary), heard, out);
         }
         Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, live.dict, out),
+        Tab::StudyMode => highlights::study_tab(ui, s, live, out),
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Ai => {
             let looks = (&mut s.study.highlights, &mut s.study.gloss);
@@ -1175,6 +1176,7 @@ impl TabIcon for Tab {
             Tab::Highlights => Icon::Highlight,
             Tab::Vocabulary => Icon::Levels,
             Tab::Dictionary => Icon::Dictionary,
+            Tab::StudyMode => Icon::Levels,
             Tab::Ai => Icon::Ai,
             Tab::Models => Icon::Chip,
             Tab::Panes => Icon::SplitRight,

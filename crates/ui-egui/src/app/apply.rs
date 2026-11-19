@@ -311,6 +311,7 @@ impl MareaderApp {
             Route::Reader => crate::view_menu::VIEW_MENU,
             Route::Library => crate::library::menu::LIBRARY_VIEW_MENU,
             Route::Dictionary => crate::titlebar::DICTIONARY_MENU,
+            Route::Space => crate::titlebar::DICTIONARY_MENU,
         };
         egui::Popup::open_id(ctx, egui::Id::new(menu));
     }
@@ -372,7 +373,7 @@ impl MareaderApp {
 
     fn show_library(&mut self) {
         match self.route() {
-            Route::Reader | Route::Dictionary => self.go(Route::Library),
+            Route::Reader | Route::Dictionary | Route::Space => self.go(Route::Library),
             // An empty reader is no place to go back to.
             Route::Library if self.reading() => self.go(Route::Reader),
             Route::Library => {}

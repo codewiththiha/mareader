@@ -73,6 +73,7 @@ pub enum BarPage<'a> {
     Reader(ReaderBar),
     Library(LibraryBar<'a>),
     Dictionary(DictionaryBar),
+    Space,
 }
 
 /// The dictionary's bar: a way to the library, and back.
@@ -318,7 +319,7 @@ impl TitleBar {
             BarPage::Library(library) => {
                 search_field(ui, &library.search, (lead_end, trail_start), &mut field)
             }
-            BarPage::Reader(_) | BarPage::Dictionary(_) => {
+            BarPage::Reader(_) | BarPage::Dictionary(_) | BarPage::Space => {
                 title(ui, bar.title, lead_end, trail_start)
             }
         }
@@ -364,6 +365,10 @@ fn leading(
             // Pressed, it undoes itself, as the library's does.
             out.extend(dictionary(ui, page.back, true));
         }
+        BarPage::Space => {
+            let r = widgets::icon_button(ui, Icon::Library, "Library", false);
+            out.extend(clicked(r, Sent::Ui(UiCommand::ShowLibrary)));
+        }
         BarPage::Library(library) => {
             // Pressed, it undoes itself; with nothing open there's no way back.
             if library.can_return {
@@ -405,7 +410,7 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
     };
     let (dictionary, fit) = match &bar.page {
         BarPage::Reader(reader) => fitting(bar, reader, width),
-        BarPage::Library(_) | BarPage::Dictionary(_) => (true, 0),
+        BarPage::Library(_) | BarPage::Dictionary(_) | BarPage::Space => (true, 0),
     };
     let (shown, folded) = tools.split_at(fit.min(tools.len()));
     let mut folded = folded.to_vec();
@@ -431,6 +436,9 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
             library_menu::button(ui, library, pinned, bar.platform, &mut out);
         }
         // The page's own choices sit on it; the menu keeps the pin.
+        BarPage::Space => {
+            let _ = pinned;
+        }
         BarPage::Dictionary(_) => dictionary_menu(ui, pinned, bar.platform, &mut out),
     }
     appearance_button(ui, bar, &mut out);
@@ -492,7 +500,7 @@ fn appearance_button(ui: &mut egui::Ui, bar: &BarContext<'_>, out: &mut Commands
         .show(|ui| {
             let reader = match &bar.page {
                 BarPage::Reader(reader) => Some(reader),
-                BarPage::Library(_) | BarPage::Dictionary(_) => None,
+                BarPage::Library(_) | BarPage::Dictionary(_) | BarPage::Space => None,
             };
             let cx = crate::appearance_menu::MenuContext {
                 current: bar.appearance,

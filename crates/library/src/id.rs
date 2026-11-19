@@ -96,6 +96,30 @@ impl TryFrom<String> for AiPageId {
     }
 }
 
+/// A learned word; random, so two machines never clash.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub struct StudyWordId(pub u128);
+
+impl fmt::Display for StudyWordId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:032x}", self.0)
+    }
+}
+
+impl From<StudyWordId> for String {
+    fn from(id: StudyWordId) -> Self {
+        id.to_string()
+    }
+}
+
+impl TryFrom<String> for StudyWordId {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, String> {
+        parse_hex(&s, 32).map(Self)
+    }
+}
+
 /// A pointer row at a book or a shelf; random, like a shelf's id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(into = "String", try_from = "String")]

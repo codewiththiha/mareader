@@ -6,6 +6,7 @@ use crate::clock::{NEVER, Stamp};
 use crate::link::Link;
 use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
+use crate::study_words::StudyWord;
 
 pub trait Merge {
     /// Takes in `other`, a copy of the same record from elsewhere.
@@ -163,11 +164,34 @@ impl Merge for AiPage {
 impl Merge for State {
     fn merge(&mut self, other: Self) {
         self.position.merge(other.position);
+        self.study.merge(other.study);
         self.extra.merge(other.extra);
     }
 
     fn latest(&self) -> Stamp {
-        newest([Some(self.position.at), self.extra.latest()])
+        newest([
+            Some(self.position.at),
+            Some(self.study.at),
+            self.extra.latest(),
+        ])
+    }
+}
+
+impl Merge for StudyWord {
+    fn merge(&mut self, other: Self) {
+        self.book.merge(other.book);
+        self.status.merge(other.status);
+        self.alive.merge(other.alive);
+        self.extra.merge(other.extra);
+    }
+
+    fn latest(&self) -> Stamp {
+        let fields = [
+            Some(self.book.at),
+            Some(self.status.at),
+            Some(self.alive.at),
+        ];
+        newest(fields.into_iter().chain([self.extra.latest()]))
     }
 }
 
@@ -365,6 +389,7 @@ mod tests {
         };
         State {
             position: Field::new(position, at),
+            study: Field::default(),
             extra: extra(rng),
         }
     }

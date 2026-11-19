@@ -209,6 +209,7 @@ impl MareaderApp {
                 find: FindBar::default(),
                 toasts: Toasts::default(),
                 study: StudyUi::default(),
+                study_mode: Default::default(),
                 page_ai: crate::page_ai::PageAiUi::default(),
                 read_aloud: crate::read_aloud::ReadAloudUi::default(),
                 ai: crate::ai::Ai::default(),

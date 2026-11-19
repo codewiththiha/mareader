@@ -347,6 +347,7 @@ pub struct AiTasks {
     pub summarize: SummarizeTask,
     pub translate: TranslateTask,
     pub simplify: SimplifyTask,
+    pub study: crate::study_mode::StudyTask,
     pub pages: PageRun,
 }
 
@@ -557,6 +558,7 @@ impl AiSettings {
             &mut tasks.summarize.preset,
             &mut tasks.translate.preset,
             &mut tasks.simplify.preset,
+            &mut tasks.study.preset,
         ];
         for slot in slots {
             if slot.is_some_and(|id| !ids.contains(&id)) {
@@ -579,20 +581,18 @@ impl AiSettings {
             p.sanitize();
         }
         self.unassign_missing();
-        let lang = &mut self.tasks.explain.language;
-        if lang.as_deref().is_some_and(|l| language_name(l).is_none()) {
-            *lang = None;
+        for lang in [
+            &mut self.tasks.explain.language,
+            &mut self.tasks.study.language,
+            &mut self.tasks.translate.language,
+        ] {
+            if lang.as_deref().is_some_and(|l| language_name(l).is_none()) {
+                *lang = None;
+            }
         }
         let batch = &mut self.tasks.organize.batch;
         *batch = (*batch).clamp(OrganizeTask::BATCH_MIN, OrganizeTask::BATCH_MAX);
         let translate = &mut self.tasks.translate;
-        if translate
-            .language
-            .as_deref()
-            .is_some_and(|l| language_name(l).is_none())
-        {
-            translate.language = None;
-        }
         let mut seen = std::collections::HashSet::new();
         translate
             .recent

@@ -75,12 +75,32 @@ fn view_action(session: &mut Session, pane: PaneId, action: PaneAction, now: f64
 }
 
 fn go_to(session: &mut Session, pane: PaneId, page: usize, now: f64) {
+    if session.study_blocks_page(pane, page) {
+        note(
+            session,
+            Toast::warning("Locked. Study the next words first.".to_owned()),
+        );
+        return;
+    }
     if let Some(landed) = session.document_go_to(pane, page) {
         view_action(session, pane, PaneAction::GoTo(landed), now);
     }
 }
 
 fn turn(session: &mut Session, pane: PaneId, forward: bool, now: f64) {
+    if forward {
+        let next = session
+            .documents()
+            .current(pane)
+            .map_or(1, |p| p.saturating_add(1));
+        if session.study_blocks_page(pane, next) {
+            note(
+                session,
+                Toast::warning("Locked. Study the next words first.".to_owned()),
+            );
+            return;
+        }
+    }
     if let Some(landed) = session.document_turn(pane, forward) {
         view_action(session, pane, PaneAction::GoTo(landed), now);
     }

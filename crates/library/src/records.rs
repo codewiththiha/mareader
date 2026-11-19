@@ -1,6 +1,6 @@
 //! The library as rows: what changed becomes rows, rows become a library.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -9,10 +9,12 @@ use crate::ai_pages::AiPage;
 use crate::book::{Book, Location, State};
 use crate::clock::Clock;
 use crate::folder::Folder;
-use crate::library::{Dirty, Library, Parts};
+use crate::id::{AiPageId, BookId, FolderId, LinkId, MarkId, ShelfId, StudyWordId};
+use crate::library::{Dirty, Library};
 use crate::link::Link;
 use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
+use crate::study_words::StudyWord;
 
 /// What a row holds. Synced kinds are shared; the rest stay on this machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -34,6 +36,8 @@ pub enum Kind {
     Link,
     /// A page the AI summarized, translated or simplified.
     AiPage,
+    /// A word learned in study mode in a book.
+    StudyWord,
 }
 
 impl Kind {
@@ -49,6 +53,7 @@ impl Kind {
             Self::Folder => "folder",
             Self::Link => "link",
             Self::AiPage => "ai_page",
+            Self::StudyWord => "study_word",
         }
     }
 
@@ -65,6 +70,7 @@ impl Kind {
             Self::Folder,
             Self::Link,
             Self::AiPage,
+            Self::StudyWord,
         ];
         all.into_iter().find(|k| k.name() == name)
     }
@@ -79,6 +85,7 @@ impl Kind {
             Self::Mark,
             Self::Link,
             Self::AiPage,
+            Self::StudyWord,
         ];
         shared.contains(&self)
     }
@@ -184,6 +191,13 @@ fn changes(library: &Library, dirty: &Dirty) -> Changes {
     {
         out.put(Kind::AiPage, page.id.to_string(), page);
     }
+    for word in dirty
+        .study_words
+        .iter()
+        .filter_map(|id| library.study_words.get(id))
+    {
+        out.put(Kind::StudyWord, word.id.to_string(), word);
+    }
     if !out.is_empty() {
         out.clock = serde_json::to_string(&library.clock).ok();
     }
@@ -228,6 +242,9 @@ pub(crate) fn assemble(rows: Vec<Row>, clock: Clock) -> (Parts, usize) {
             Kind::AiPage => parse::<AiPage>(&row).map(|p| {
                 parts.ai_pages.insert(p.id, p);
             }),
+            Kind::StudyWord => parse::<StudyWord>(&row).map(|w| {
+                parts.study_words.insert(w.id, w);
+            }),
         };
         skipped += usize::from(read.is_none());
     }
@@ -245,4 +262,39 @@ pub(crate) fn assemble(rows: Vec<Row>, clock: Clock) -> (Parts, usize) {
 
 fn parse<T: DeserializeOwned>(row: &Row) -> Option<T> {
     serde_json::from_str(&row.body).ok()
+}
+
+/// What a saved library is made of, read back from disk.
+#[derive(Debug)]
+pub(crate) struct Parts {
+    pub clock: Clock,
+    pub books: BTreeMap<BookId, Book>,
+    pub states: BTreeMap<BookId, State>,
+    /// Folder rows from before ledgers, adopted on load.
+    pub legacy: Vec<crate::legacy::OldFolder>,
+    pub folders: BTreeMap<FolderId, Folder>,
+    pub links: BTreeMap<LinkId, Link>,
+    pub shelves: BTreeMap<ShelfId, Shelf>,
+    pub members: BTreeMap<(ShelfId, BookId), Membership>,
+    pub marks: BTreeMap<MarkId, Mark>,
+    pub ai_pages: BTreeMap<AiPageId, AiPage>,
+    pub study_words: BTreeMap<StudyWordId, StudyWord>,
+}
+
+impl Parts {
+    pub fn new(clock: Clock) -> Self {
+        Self {
+            clock,
+            books: BTreeMap::new(),
+            states: BTreeMap::new(),
+            legacy: Vec::new(),
+            folders: BTreeMap::new(),
+            links: BTreeMap::new(),
+            shelves: BTreeMap::new(),
+            members: BTreeMap::new(),
+            marks: BTreeMap::new(),
+            ai_pages: BTreeMap::new(),
+            study_words: BTreeMap::new(),
+        }
+    }
 }

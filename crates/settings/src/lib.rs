@@ -14,6 +14,7 @@ mod ai_job;
 mod load;
 mod reader;
 mod study;
+mod study_mode;
 mod swatch;
 mod text;
 mod updates;
@@ -38,10 +39,11 @@ pub use reader::{
 };
 pub use study::StudySettings;
 pub use study::{
-    Accent, BarItem, CefrLevel, CefrSettings, DictionaryOpens, DictionarySettings,
-    DictionaryWindow, GlossDensity, GlossSettings, HighlightSettings, Notation, Pen, PickColor,
+    Accent, BarItem, CefrLevel, DictionaryOpens, DictionarySettings, DictionaryWindow,
+    GlossDensity, GlossSettings, HighlightSettings, Notation, Pen, PickColor,
     PronunciationSettings, Reserved, WINDOW_MIN,
 };
+pub use study_mode::{CefrSettings, StudyBatchUnit, StudyCardSource, StudyModeSettings, StudyTask};
 pub use swatch::Swatch;
 pub use text::{BookDesign, ColumnAlign, FontChoice, FontFamily, SystemFont, TextSettings};
 pub use updates::UpdateSettings;

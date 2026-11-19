@@ -3,6 +3,7 @@
 mod cards;
 pub mod menu;
 pub mod paint;
+mod study_section;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -116,7 +117,6 @@ pub struct PageAiView<'a> {
     pub ledger: &'a Ledger,
     ui: &'a PageAiUi,
 }
-
 impl<'a> PageAiView<'a> {
     pub fn new(ledger: &'a Ledger, ui: &'a PageAiUi) -> Self {
         Self { ledger, ui }

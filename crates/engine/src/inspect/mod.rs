@@ -34,6 +34,7 @@ pub fn route_name(route: Route) -> &'static str {
         Route::Reader => "reader",
         Route::Library => "library",
         Route::Dictionary => "dictionary",
+        Route::Space => "space",
     }
 }
 

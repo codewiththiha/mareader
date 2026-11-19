@@ -68,6 +68,13 @@ impl MareaderApp {
         let Some(asked) = self.documents().asked_at(pane, page, chars) else {
             return;
         };
+        if self.session.study_mode(pane) == mareader_study::StudyMode::Reactive {
+            self.session.execute(Command::ClearSelection(pane), 0.0);
+            self.ui
+                .study_mode
+                .open_recall(pane, &asked.word, &asked.context, page);
+            return;
+        }
         self.session.execute(Command::ClearSelection(pane), 0.0);
         self.ui.dict.escape();
         let book = self.book_in(pane);

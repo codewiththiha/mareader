@@ -41,7 +41,7 @@ impl Session {
         };
         self.route = route;
         if route != Route::Dictionary {
-            self.library.showing = route == Route::Library;
+            self.library.showing = matches!(route, Route::Library | Route::Space);
         }
         if route != here || route == Route::Dictionary {
             self.emit(Event::RouteChanged(route));

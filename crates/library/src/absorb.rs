@@ -15,6 +15,7 @@ use crate::marks::Mark;
 use crate::merge::Merge;
 use crate::records::{Kind, Row};
 use crate::shelves::{Membership, Shelf};
+use crate::study_words::StudyWord;
 
 /// What taking in a batch of records did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -100,6 +101,17 @@ impl Library {
                     self.ai_pages.insert(id, p);
                     true
                 }))
+            }
+            Kind::StudyWord => {
+                let word: StudyWord = parse(row)?;
+                self.clock.observe(word.latest());
+                let id = word.id;
+                Some(
+                    merge_into(self.study_words.get(&id), word).is_some_and(|w| {
+                        self.study_words.insert(id, w);
+                        true
+                    }),
+                )
             }
             Kind::Link => {
                 let link: Link = parse(row)?;
@@ -211,6 +223,7 @@ impl Library {
         }
         self.move_marks(gone, keeper, at);
         self.move_ai_pages(gone, keeper, at);
+        self.move_study_words(gone, keeper, at);
     }
 
     /// Breaks each loop of parents at its newest move, which goes back.

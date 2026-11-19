@@ -99,6 +99,9 @@ impl Position {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct State {
     pub position: Field<Position>,
+    /// Where study mode's lock stands in this book.
+    #[serde(default, skip_serializing_if = "Field::is_unset")]
+    pub study: Field<Option<crate::study_words::StudyProgress>>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -107,6 +110,7 @@ impl State {
     pub fn new(position: Field<Position>) -> Self {
         Self {
             position,
+            study: Field::default(),
             extra: Extra::default(),
         }
     }

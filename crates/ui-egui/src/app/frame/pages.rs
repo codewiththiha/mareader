@@ -286,6 +286,12 @@ impl MareaderApp {
             return;
         }
         // Copied out above: the closures below need `&mut self`.
+        if route == Route::Space {
+            egui::CentralPanel::no_frame().show(ui, |ui| {
+                crate::space::show(ui, session, page_top, commands);
+            });
+            return;
+        }
         let mut library_rect = None;
         let rects = egui::CentralPanel::no_frame().show(ui, |ui| {
             if route == Route::Library {

@@ -9,10 +9,12 @@ use crate::book::{Book, FileStamp, Format, Location, Origin, Position, State};
 use crate::clock::{Clock, Field, Stamp};
 use crate::extra::Extra;
 use crate::folder::{Folder, Tombstone};
-use crate::id::{AiPageId, BookId, ContentId, DeviceId, FolderId, LinkId, MarkId, ShelfId};
+use crate::id::{AiPageId, BookId, ContentId, DeviceId, FolderId, LinkId, MarkId};
+use crate::id::{ShelfId, StudyWordId};
 use crate::link::Link;
 use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
+use crate::study_words::StudyWord;
 use crate::tracked::Tracked;
 
 /// What a measured file is: its content and its size and time.
@@ -48,6 +50,7 @@ pub struct Dirty {
     pub states: BTreeSet<BookId>,
     pub marks: BTreeSet<MarkId>,
     pub ai_pages: BTreeSet<AiPageId>,
+    pub study_words: BTreeSet<StudyWordId>,
     /// A book's data was erased: its old words must leave the disk too.
     pub erased: bool,
 }
@@ -67,6 +70,7 @@ impl Dirty {
             && self.links.is_empty()
             && self.marks.is_empty()
             && self.ai_pages.is_empty()
+            && self.study_words.is_empty()
     }
 }
 
@@ -81,6 +85,7 @@ pub struct Library {
     pub(crate) members: Tracked<(ShelfId, BookId), Membership>,
     pub(crate) marks: Tracked<MarkId, Mark>,
     pub(crate) ai_pages: Tracked<AiPageId, AiPage>,
+    pub(crate) study_words: Tracked<StudyWordId, StudyWord>,
     /// Each location's path to its book; rebuilt, never saved.
     pub(crate) at: HashMap<PathBuf, BookId>,
     /// Positions to write; the maps track their own changes.
@@ -121,6 +126,7 @@ impl Library {
             members: Tracked::new(parts.members),
             marks: Tracked::new(parts.marks),
             ai_pages: Tracked::new(parts.ai_pages),
+            study_words: Tracked::new(parts.study_words),
             at: HashMap::new(),
             states_dirty: BTreeSet::new(),
             swept: Vec::new(),
@@ -287,7 +293,7 @@ impl Library {
             if opening {
                 book.opened = Field::new(wall_ms, at);
             }
-            // Back on purpose: folders no longer leave it out.
+            // A reopened book leaves its folders' ignore lists.
             let content = opened.measure.content;
             let stoned = |s: &Tombstone| !s.moved && s.content == content;
             let holding = self
@@ -435,6 +441,7 @@ impl Library {
             states: std::mem::take(&mut self.states_dirty),
             marks: self.marks.take_changed(),
             ai_pages: self.ai_pages.take_changed(),
+            study_words: self.study_words.take_changed(),
             erased: std::mem::take(&mut self.erased),
         }
     }
@@ -447,6 +454,7 @@ impl Library {
             || self.links.has_changes()
             || self.marks.has_changes()
             || self.ai_pages.has_changes()
+            || self.study_words.has_changes()
             || !self.states_dirty.is_empty()
             || !self.retired.is_empty()
     }
@@ -460,38 +468,8 @@ impl Library {
         self.links.mark_all();
         self.marks.mark_all();
         self.ai_pages.mark_all();
+        self.study_words.mark_all();
     }
 }
 
-/// What a saved library is made of, read back from disk.
-#[derive(Debug)]
-pub(crate) struct Parts {
-    pub clock: Clock,
-    pub books: BTreeMap<BookId, Book>,
-    pub states: BTreeMap<BookId, State>,
-    /// Folder rows from before ledgers, adopted on load.
-    pub legacy: Vec<crate::legacy::OldFolder>,
-    pub folders: BTreeMap<FolderId, Folder>,
-    pub links: BTreeMap<LinkId, Link>,
-    pub shelves: BTreeMap<ShelfId, Shelf>,
-    pub members: BTreeMap<(ShelfId, BookId), Membership>,
-    pub marks: BTreeMap<MarkId, Mark>,
-    pub ai_pages: BTreeMap<AiPageId, AiPage>,
-}
-
-impl Parts {
-    pub fn new(clock: Clock) -> Self {
-        Self {
-            clock,
-            books: BTreeMap::new(),
-            states: BTreeMap::new(),
-            legacy: Vec::new(),
-            folders: BTreeMap::new(),
-            links: BTreeMap::new(),
-            shelves: BTreeMap::new(),
-            members: BTreeMap::new(),
-            marks: BTreeMap::new(),
-            ai_pages: BTreeMap::new(),
-        }
-    }
-}
+pub(crate) use crate::records::Parts;

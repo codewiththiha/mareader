@@ -1,5 +1,6 @@
 //! Reading aids: word glosses, CEFR highlighting and dictionaries.
 
+use crate::study_mode::{CefrSettings, StudyModeSettings};
 use mareader_appearance::Rgb;
 use serde::{Deserialize, Serialize};
 
@@ -104,6 +105,26 @@ pub struct HighlightSettings {
     pub ai: Reserved,
     /// How words above the reader's level are shaded.
     pub cefr: Reserved,
+    /// How a word recalled correctly is marked.
+    #[serde(default = "default_solved")]
+    pub solved: Reserved,
+    /// How a word missed in recall is marked.
+    #[serde(default = "default_missed")]
+    pub missed: Reserved,
+}
+
+fn default_solved() -> Reserved {
+    Reserved {
+        pen: Pen::Underline,
+        color: Rgb(0x2f, 0x9e, 0x44),
+    }
+}
+
+fn default_missed() -> Reserved {
+    Reserved {
+        pen: Pen::Underline,
+        color: Rgb(0xe0, 0x31, 0x31),
+    }
 }
 
 impl HighlightSettings {
@@ -137,9 +158,9 @@ impl HighlightSettings {
         }
     }
 
-    /// Looks kept for other purposes: the AI's and CEFR's.
-    pub fn reserved(&self) -> [Reserved; 2] {
-        [self.ai, self.cefr]
+    /// Looks kept for other purposes: the AI's, CEFR's and study's.
+    pub fn reserved(&self) -> [Reserved; 4] {
+        [self.ai, self.cefr, self.solved, self.missed]
     }
 
     /// Whether the reader may highlight with `pen` in `color`.
@@ -170,6 +191,18 @@ impl HighlightSettings {
             let (ai, own) = (self.ai.color, self.color(self.cefr.pen));
             let free = Self::PALETTE.into_iter().find(|c| *c != ai && *c != own);
             self.cefr.color = free.unwrap_or(Self::default().cefr.color);
+        }
+        for look in [&mut self.solved, &mut self.missed] {
+            let taken = [self.ai, self.cefr];
+            if taken.contains(look) {
+                let free = Self::PALETTE
+                    .into_iter()
+                    .find(|c| !taken.iter().any(|t| t.color == *c));
+                look.color = free.unwrap_or(Self::default().solved.color);
+            }
+        }
+        if self.solved == self.missed {
+            self.missed.color = Self::default().missed.color;
         }
         // A pen whose colour became reserved moves to the next one free.
         for pen in Pen::ALL {
@@ -207,6 +240,8 @@ impl Default for HighlightSettings {
                 pen: Pen::Full,
                 color: Rgb(0xff, 0x00, 0x00),
             },
+            solved: default_solved(),
+            missed: default_missed(),
         }
     }
 }
@@ -254,25 +289,6 @@ impl CefrLevel {
             Self::B2 => "Highlights C1 and above",
             Self::C1 => "Highlights C2",
             Self::C2 => "Nothing left above C2",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct CefrSettings {
-    pub enabled: bool,
-    pub level: CefrLevel,
-    /// Clicking a highlighted word explains it.
-    pub click_explain: bool,
-}
-
-impl Default for CefrSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            level: CefrLevel::B2,
-            click_explain: true,
         }
     }
 }
@@ -363,12 +379,14 @@ pub struct StudySettings {
     pub cefr: CefrSettings,
     pub words: crate::words::WordListSettings,
     pub pronunciation: PronunciationSettings,
+    pub mode: StudyModeSettings,
 }
 
 impl StudySettings {
     pub fn sanitize(&mut self) {
         self.highlights.sanitize();
         self.words.sanitize();
+        self.mode.sanitize();
     }
 }
 

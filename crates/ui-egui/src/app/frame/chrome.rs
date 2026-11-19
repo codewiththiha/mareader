@@ -130,6 +130,7 @@ impl MareaderApp {
                 let page = BarPage::Dictionary(DictionaryBar { back });
                 ("Dictionary", self.settings().appearance, page)
             }
+            Route::Space => ("Space", self.settings().appearance, BarPage::Space),
         };
         let bar = BarContext {
             title,
@@ -186,7 +187,7 @@ impl MareaderApp {
         // Runs and toasts rise over the page bar while it shows.
         let lift = match route {
             Route::Reader => self.toast_lift(ctx, stage),
-            Route::Library | Route::Dictionary => 0.0,
+            Route::Library | Route::Dictionary | Route::Space => 0.0,
         };
         ctx.data_mut(|d| d.insert_temp(egui::Id::new("toast-platform"), self.ui.platform));
         let active = self.session.read_aloud().active();

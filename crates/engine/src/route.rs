@@ -12,6 +12,8 @@ pub enum Route {
     Reader,
     Library,
     Dictionary,
+    /// Space, the study words' page, in the panes' place.
+    Space,
 }
 
 impl Route {
@@ -21,6 +23,7 @@ impl Route {
             Route::Reader => Bar::Reader,
             Route::Library => Bar::Library,
             Route::Dictionary => Bar::Dictionary,
+            Route::Space => Bar::Library,
         }
     }
 

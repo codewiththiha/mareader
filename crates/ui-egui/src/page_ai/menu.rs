@@ -344,7 +344,7 @@ impl PageAiUi {
             out.push(Sent::Engine(Command::PageAi(Action::StopFollow(pane))));
             return true;
         }
-        false
+        super::study_section::show(ui, m, out)
     }
 
     /// This page, or on as the reader reads; true once one is picked.

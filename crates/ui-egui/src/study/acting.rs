@@ -87,7 +87,12 @@ impl StudyUi {
             | Action::Unstyle(_)
             | Action::RestoreNote(..)
             | Action::SetNote(..)
-            | Action::DropMarks(_) => {}
+            | Action::DropMarks(_)
+            | Action::SetMode(..)
+            | Action::RecordWord(..)
+            | Action::SetWordStatus(..)
+            | Action::ForgetWords(_)
+            | Action::Unlock(..) => {}
         }
     }
 }

@@ -105,4 +105,5 @@ pub(crate) const ROUTE: &[(&str, Route)] = &[
     ("reader", Route::Reader),
     ("library", Route::Library),
     ("dictionary", Route::Dictionary),
+    ("space", Route::Space),
 ];

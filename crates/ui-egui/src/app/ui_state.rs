@@ -34,6 +34,7 @@ pub struct UiState {
     pub(super) toasts: Toasts,
     /// The selection bar's answers, marks and the word card.
     pub(super) study: StudyUi,
+    pub(super) study_mode: crate::study_mode::StudyModeUi,
     pub(super) page_ai: crate::page_ai::PageAiUi,
     pub(super) read_aloud: crate::read_aloud::ReadAloudUi,
     /// Who answers Explain, and the AI settings' background work.

@@ -36,7 +36,7 @@ pub(crate) fn dict(_at: &Session, params: &Value) -> Result<Command, String> {
 pub(crate) const STUDY: &str = concat!(
     "retry|ask_again|close|pick_page|",
     "pick_all|done_picking|edit_note|",
-    "cancel_note|set_note",
+    "cancel_note|set_note|set_mode|mark_known",
 );
 
 /// `study.act`: the word card's and the mark menu's asks.
@@ -51,6 +51,36 @@ pub(crate) fn study(at: &Session, params: &Value) -> Result<Command, String> {
         "done_picking" => StudyAction::DonePicking,
         "edit_note" => StudyAction::EditNote,
         "cancel_note" => StudyAction::CancelNote,
+        "set_mode" => {
+            let pane = json::pane(at, params)?;
+            let mode = json::text(params, "mode")?;
+            let mode = mareader_study::StudyMode::parse(&mode)
+                .ok_or_else(|| format!("unknown study mode {mode}"))?;
+            StudyAction::SetMode(pane, mode)
+        }
+        "mark_known" => {
+            let pane = json::pane(at, params)?;
+            let lemma = json::text(params, "lemma")?;
+            let class = json::text(params, "class").unwrap_or_else(|_| "other".to_owned());
+            StudyAction::RecordWord(
+                pane,
+                crate::study::WordRecord {
+                    lemma,
+                    class,
+                    band: 0,
+                    meaning: String::new(),
+                    context: String::new(),
+                    spot: mareader_library::Spot::Page {
+                        page: 0,
+                        rect: [0.0; 4],
+                    },
+                    by: mareader_library::LearnedBy::Card,
+                    status: mareader_library::WordStatus::Memorized,
+                    attempts: 0,
+                    first_try: false,
+                },
+            )
+        }
         "set_note" => {
             let text = json::text(params, "text")?;
             let mark = match json::maybe_mark(params, "mark")? {

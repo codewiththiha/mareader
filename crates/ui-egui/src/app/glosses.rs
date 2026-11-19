@@ -335,6 +335,7 @@ impl MareaderApp {
         self.ui
             .study
             .show(ctx, study_state, panes, looks, extra, out);
+        self.ui.study_mode.show(ctx, &mut self.session, out);
         sounds
     }
 

@@ -179,6 +179,13 @@ fn study(session: &mut Session, action: crate::study::Action) {
         Action::RestoreNote(id, text) => session.study_restore_note(id, text),
         Action::SetNote(id, text) => session.study_set_note(id, text),
         Action::DropMarks(ids) => session.study_drop_marks(&ids),
+        Action::SetMode(pane, mode) => session.study_set_mode(pane, mode),
+        Action::RecordWord(pane, record) => {
+            session.study_record_word(pane, record);
+        }
+        Action::SetWordStatus(id, status) => session.study_set_word_status(id, status),
+        Action::ForgetWords(ids) => session.study_forget_words(&ids),
+        Action::Unlock(pane, spot) => session.study_unlock(pane, spot),
         other => session.emit(Event::Study(other)),
     }
 }

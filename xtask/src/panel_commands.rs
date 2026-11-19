@@ -11,6 +11,8 @@ pub const MUT_SESSION_ALLOWED: &[&str] = &[
     "library/search.rs",
     "library/view.rs",
     "page_ai/mod.rs",
+    "space.rs",
+    "study_mode/mod.rs",
     "study/acting.rs",
     "study/answers.rs",
     "study/keeping.rs",

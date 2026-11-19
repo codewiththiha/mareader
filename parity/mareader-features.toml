@@ -1599,6 +1599,39 @@ reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
 notes = "Copy and Explain (M6 slice 1); highlighters, ordering and hiding (slice 3); Look up with the dictionary (slice 4), added to saved menus after Explain"
 
 [[feature]]
+id = "study-mode.proactive"
+title = "Proactive study mode: a deck of cards gates each batch of pages"
+area = "I"
+tier = "P1"
+milestone = "M6"
+status = "shipped"
+command = "study.act"
+evidence = ["crates/study/src/batch.rs::pages_mode_counts_whole_pages", "crates/study/src/batch.rs::timer_scales_and_known_cards_take_time_off", "crates/study/src/deck.rs::memorized_and_easy_words_are_set_aside", "crates/study/src/mode.rs::no_word_levels_blocks_both_modes", "crates/engine/src/study/mode_tests.rs::an_unavailable_mode_stays_off_and_says_why", "crates/library/src/study_words_tests.rs::a_word_is_one_record_per_book_and_memorized_is_global"]
+notes = "Batches are whole pages by count or character budget, light pages ride along and a short tail merges; the deck dedupes by lemma and class, skips memorized words, and its strict timer floor is seconds per card with known cards taking their seconds off. Finishing records the words and unlocks the batch; forward turns past the gate are refused"
+
+[[feature]]
+id = "study-mode.reactive"
+title = "Reactive study mode: recall a shaded word's meaning, judged in any language"
+area = "I"
+tier = "P1"
+milestone = "M6"
+status = "shipped"
+command = "study.act"
+evidence = ["crates/study/src/judge.rs::attempts_and_hints_follow_the_rules", "crates/assist/src/study.rs::judge_reads_verdicts_and_needs_feedback_when_whole", "crates/assist/src/study.rs::cards_prompt_quotes_items_and_schema_is_closed", "crates/engine/src/study/mode_tests.rs::recorded_words_memorize_unmemorize_and_forget"]
+notes = "Clicking a shaded word asks what it means; the study_judge task grades meaning not spelling as correct, close or wrong over three attempts with a hint after the first miss, reveal records missed, and a correct answer can memorize. The study_cards task writes deck cards under a closed schema"
+
+[[feature]]
+id = "study-mode.space"
+title = "Space: every study word across books, with summary and CSV export"
+area = "I"
+tier = "P1"
+milestone = "M6"
+status = "shipped"
+command = "route.show"
+evidence = ["crates/study/src/space.rs::merged_collapses_a_word_across_books", "crates/study/src/space.rs::filters_search_and_summarizes", "crates/library/src/study_words_tests.rs::a_word_is_one_record_per_book_and_memorized_is_global"]
+notes = "A top-level page beside the Library over synced study_word records: search, status filter, five sorts, memorized and first-try summary, mark memorized, un-memorize, forget and CSV export. Per-book progress rides the book State; library sync itself is unchanged"
+
+[[feature]]
 id = "settings.persist"
 title = "Every setting persists; a new field defaults to the old behaviour"
 area = "J"

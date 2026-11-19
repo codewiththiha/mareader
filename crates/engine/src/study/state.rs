@@ -8,7 +8,8 @@ use mareader_appearance::Rgb;
 use mareader_library::{
     BookId, DeviceId, Library, Mark, MarkId, MarkKind, NewMark, Pen, Spot, Style,
 };
-use mareader_study::{Explainer, Failure, Unavailable, WordInfo};
+use mareader_study::{Explainer, Failure, StudyMode, Unavailable, WordInfo};
+use mareader_workspace::PaneId;
 
 use super::Action;
 use super::asking::{self, Got, Said};
@@ -62,6 +63,8 @@ pub struct State {
     /// Finished answers not yet filed, as inline asks leave them.
     done: Vec<(Key, Said)>,
     next_loose: u64,
+    /// Study mode per pane; progress itself is kept with the book.
+    modes: HashMap<PaneId, StudyMode>,
 }
 
 impl Default for State {
@@ -76,6 +79,7 @@ impl Default for State {
             asking: HashMap::new(),
             done: Vec::new(),
             next_loose: 0,
+            modes: HashMap::new(),
         }
     }
 }
@@ -98,6 +102,16 @@ impl State {
         // Saved answers stay; Ask again reaches the new AI.
         self.explainer = explainer;
         self.failed.clear();
+    }
+
+    /// A pane's study mode, off until set.
+    pub fn mode(&self, pane: PaneId) -> StudyMode {
+        self.modes.get(&pane).copied().unwrap_or_default()
+    }
+
+    /// Sets a pane's study mode.
+    pub fn set_mode(&mut self, pane: PaneId, mode: StudyMode) {
+        self.modes.insert(pane, mode);
     }
 
     /// The book's library: the app's, else the session's for `name`.
@@ -147,6 +161,31 @@ impl State {
     pub(crate) fn next_loose_key(&mut self) -> Key {
         self.next_loose += 1;
         Key::Loose(self.next_loose)
+    }
+
+    /// Loose books' recorded study words.
+    pub fn loose_words(&self) -> Vec<&mareader_library::StudyWord> {
+        self.loose.study_words(None)
+    }
+
+    /// Loose books' memorized `lemma|class` keys.
+    pub fn loose_memorized_keys(&self) -> Vec<String> {
+        self.loose.memorized_keys()
+    }
+
+    /// Sets a loose book's word status; false if it isn't there.
+    pub fn loose_status(
+        &mut self,
+        id: mareader_library::StudyWordId,
+        status: mareader_library::WordStatus,
+        wall_ms: u64,
+    ) -> bool {
+        self.loose.set_study_status(id, status, wall_ms)
+    }
+
+    /// Forgets loose books' words.
+    pub fn loose_forget(&mut self, ids: &[mareader_library::StudyWordId], wall_ms: u64) {
+        self.loose.set_study_words_alive(ids, false, wall_ms);
     }
 
     /// Marks the explained word if it has a spot, returning its answer key.
