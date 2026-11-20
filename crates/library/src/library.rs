@@ -15,6 +15,10 @@ use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
 use crate::tracked::Tracked;
 
+mod parts;
+
+pub(crate) use parts::Parts;
+
 /// What a measured file is: its content and its size and time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Measure {
@@ -460,38 +464,5 @@ impl Library {
         self.links.mark_all();
         self.marks.mark_all();
         self.ai_pages.mark_all();
-    }
-}
-
-/// What a saved library is made of, read back from disk.
-#[derive(Debug)]
-pub(crate) struct Parts {
-    pub clock: Clock,
-    pub books: BTreeMap<BookId, Book>,
-    pub states: BTreeMap<BookId, State>,
-    /// Folder rows from before ledgers, adopted on load.
-    pub legacy: Vec<crate::legacy::OldFolder>,
-    pub folders: BTreeMap<FolderId, Folder>,
-    pub links: BTreeMap<LinkId, Link>,
-    pub shelves: BTreeMap<ShelfId, Shelf>,
-    pub members: BTreeMap<(ShelfId, BookId), Membership>,
-    pub marks: BTreeMap<MarkId, Mark>,
-    pub ai_pages: BTreeMap<AiPageId, AiPage>,
-}
-
-impl Parts {
-    pub fn new(clock: Clock) -> Self {
-        Self {
-            clock,
-            books: BTreeMap::new(),
-            states: BTreeMap::new(),
-            legacy: Vec::new(),
-            folders: BTreeMap::new(),
-            links: BTreeMap::new(),
-            shelves: BTreeMap::new(),
-            members: BTreeMap::new(),
-            marks: BTreeMap::new(),
-            ai_pages: BTreeMap::new(),
-        }
     }
 }
