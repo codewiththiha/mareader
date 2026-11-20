@@ -1599,6 +1599,40 @@ reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
 notes = "Copy and Explain (M6 slice 1); highlighters, ordering and hiding (slice 3); Look up with the dictionary (slice 4), added to saved menus after Explain"
 
 [[feature]]
+id = "study.mode-proactive"
+title = "Proactive study mode: a batch's hard words as cards before its pages unlock"
+area = "I"
+tier = "P1"
+milestone = "M8"
+status = "planned"
+notes = "From the lab's best-study-mode prototype. The batch planner, deck builder, word keys and time floor live in crates/study/src/mode"
+
+[[feature]]
+id = "study.mode-reactive"
+title = "Reactive study mode: recall a shaded word's meaning, judged by the AI"
+area = "I"
+tier = "P1"
+milestone = "M8"
+status = "planned"
+notes = "The recall rules (three tries, a hint, I don't know) live in crates/study/src/mode/recall.rs"
+
+[[feature]]
+id = "study.space"
+title = "Space: every studied word across books, filtered, grouped and exported"
+area = "I"
+tier = "P1"
+milestone = "M8"
+status = "planned"
+
+[[feature]]
+id = "study.mode-ai-cards"
+title = "Study cards written by the AI, prepared ahead while reading"
+area = "I"
+tier = "P1"
+milestone = "M8"
+status = "planned"
+
+[[feature]]
 id = "settings.persist"
 title = "Every setting persists; a new field defaults to the old behaviour"
 area = "J"

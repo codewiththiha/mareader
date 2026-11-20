@@ -12,6 +12,7 @@
 mod answer;
 mod explain;
 mod gloss;
+pub mod mode;
 pub mod page;
 
 pub use answer::WordInfo;

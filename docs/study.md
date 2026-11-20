@@ -38,6 +38,7 @@ entries are `study.*` in `parity/mareader-features.toml`.
 | Bar, card, mark layer | `crates/ui-egui/src/study/` | egui; one place hooks into the page view |
 | Packs, downloads, conversion, lookups | `crates/dict` (L1) | threads and SQLite, no egui; the browser lists packs only |
 | Lookup card, Dictionary panel, Settings › Dictionary | `crates/ui-egui/src/dict/`, `settings_window/dictionary.rs` | egui |
+| Study mode's batches, decks, keys and recall | `crates/study/src/mode` (L1) | pure rules; see [`study-mode.md`](study-mode.md) |
 
 The `study` crate is the "gloss requests and marks" row of
 `docs/architecture.md`; the marks' records join the library's rows so a
