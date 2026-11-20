@@ -90,3 +90,29 @@ silently.
 - **Removal:** forgetting a word is a tombstone that Undo lifts. Erasing a
   book's data takes its sightings and gate; the words stay the reader's.
 - **Sync:** both kinds are synced records and merge per field, newest wins.
+
+## In the session (`crates/engine/src/study_mode`)
+
+Each pane runs its own mode; `study.mode` turns it on and works the deck
+(`toggle`, `off`, `start`, `known`, `undo`, `next_batch`, `retry`,
+`read_previous`). Reactive answers that it comes in a later update.
+
+- **Planning:** once the layout is complete, every page's characters are
+  counted off the frame and batches are planned from the settings. A new
+  layout or batch size plans again, keeping unlocked text unlocked.
+- **The gate:** the first locked page. The pane may show it, veiled with its
+  deck, but no further: jumps and turns past it land on it with a toast.
+  Read-aloud stops when it reaches it. `Session::study_gate` answers it.
+- **Decks:** the gate batch's words are read, levelled, tagged when the
+  tagger is there (a proper-noun tag drops the word) and given meanings by the
+  dictionary pack in study's language, else Explain's, else the first ready
+  pack. A silent tagger is given up after 10 s and the dictionary after 20 s.
+  A deck with no new words unlocks its batch with a toast.
+- **Known** saves the word as memorized and gives its seconds back; **Undo**
+  puts back what the word was. **Start** keeps the rest as learning, unlocks
+  the batch and shows it from its first page.
+- **Kept:** a library book keeps its gate as `unlocked`, so every pane on it
+  shares one gate. A file outside the library keeps its gate for the session.
+- **Refused while on:** Explain, Look up and the page AI in that pane.
+- **Turns itself off** with a toast when the pane's document closes or a need
+  above is lost; another file opened in the pane ends it quietly.

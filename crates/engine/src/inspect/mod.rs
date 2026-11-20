@@ -14,6 +14,7 @@ use crate::export::Format;
 use crate::notes_panel::page_of;
 use crate::route::Route;
 use crate::session::Session;
+use crate::study_mode::DeckState;
 
 /// Upper bound on pages extracted per [`read_pages`] call.
 pub const MAX_READ_PAGES: usize = 20;
@@ -335,6 +336,33 @@ fn pane_summary(session: &Session, pane: PaneId) -> Value {
         "rtl": doc.as_ref().is_some_and(|d| d.right_to_left()),
         "outline_entries": doc.as_ref().map_or(0, |d| d.outline().len()),
         "mark_count": mark_count,
+        "study": study_mode(session, pane),
+    })
+}
+
+/// `pane`'s study mode: its gate and the deck there; null while it is off.
+pub fn study_mode(session: &Session, pane: PaneId) -> Value {
+    let Some(run) = session.study_mode().run(pane) else {
+        return Value::Null;
+    };
+    let (deck, cards, why) = match &run.deck {
+        DeckState::None => ("none", Vec::new(), None),
+        DeckState::Making { .. } => ("making", Vec::new(), None),
+        DeckState::Open(open) => {
+            let keys = open.cards.iter().map(|s| s.card.key.id());
+            ("open", keys.collect(), None)
+        }
+        DeckState::Failed { why, .. } => ("failed", Vec::new(), Some(why.as_str())),
+    };
+    json!({
+        "mode": run.mode,
+        "planned": run.planned(),
+        "gate": run.gate(),
+        "unlocked": run.unlocked,
+        "batches": run.batches.len(),
+        "deck": deck,
+        "cards": cards,
+        "why": why,
     })
 }
 

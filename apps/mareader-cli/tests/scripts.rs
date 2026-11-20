@@ -1,4 +1,4 @@
-//! End-to-end headless tests for `mareader-cli` and its five JSONL scripts.
+//! End-to-end headless tests for `mareader-cli` and its six JSONL scripts.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
 use std::path::{Path, PathBuf};
@@ -226,6 +226,71 @@ fn script_04_build_word_list() {
         .to_ascii_lowercase();
     assert!(md.contains("sphinx"), "{md}");
     assert!(md.contains("quartz"), "{md}");
+}
+
+/// Settings with a model for study mode's cards and no time floor.
+fn write_study_settings(state: &Path) {
+    std::fs::create_dir_all(state).expect("mkdir state");
+    let settings = serde_json::json!({
+        "ai": {
+            "presets": [
+                {"id": 1, "name": "Local", "provider": "ollama", "model": "", "at_once": 1}
+            ],
+            "tasks": {"explain": {"preset": 1}},
+        },
+        "study": {"mode": {"strict": false}},
+    });
+    std::fs::write(state.join("settings.json"), settings.to_string()).expect("write settings");
+}
+
+fn toasts(out: &Value) -> Vec<String> {
+    let events = out["events"].as_array().expect("events");
+    events
+        .iter()
+        .filter(|e| e["kind"] == "toast")
+        .filter_map(|e| e["message"].as_str())
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn script_06_study_mode_gates_the_first_batch() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let state = tmp.path().join("state");
+    let pdf = tmp.path().join("sample.pdf");
+    let vocab = tmp.path().join("vocab");
+    write_sample_pdf(&pdf, 6);
+    write_vocab_db(&vocab);
+    write_study_settings(&state);
+
+    let path = script("06-study-mode.jsonl");
+    let out = run_cli(
+        Some(&state),
+        &["run", path.to_str().expect("utf8")],
+        &[("PDF", &pdf), ("VOCAB_DIR", &vocab)],
+    );
+    assert_eq!(out["steps"], 8);
+    let said = toasts(&out);
+    let said_one = |start: &str| said.iter().any(|t| t.starts_with(start));
+    assert!(said_one("Proactive study mode on"), "{said:?}");
+    assert!(said_one("Locked. Study the words for"), "{said:?}");
+
+    let pane = &out["state"]["panes"][0];
+    let study = &pane["study"];
+    assert_eq!(study["mode"], "proactive", "{study}");
+    assert_eq!(study["unlocked"], 3, "Start unlocks the first batch: {study}");
+    assert_eq!(study["gate"], 3, "{study}");
+    assert_eq!(pane["page"], 0, "Start shows the batch from its first page");
+    assert_eq!(study["deck"], "open", "the next batch's deck is ready: {study}");
+    let cards: Vec<&str> = study["cards"]
+        .as_array()
+        .expect("cards")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(cards.contains(&"vow"), "kept as learning, so it comes again: {cards:?}");
+    assert!(!cards.contains(&"sphinx"), "a capital mid-sentence is a name: {cards:?}");
+    assert!(!cards.contains(&"quartz"), "memorized words are skipped: {cards:?}");
 }
 
 fn backdate(path: &Path) {

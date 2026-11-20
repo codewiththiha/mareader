@@ -8,6 +8,7 @@
 mod library;
 mod panes;
 mod study;
+mod study_mode;
 mod voice;
 
 use serde_json::{Map, Value};
@@ -46,7 +47,7 @@ impl Session {
 
     fn execute_inner(&mut self, intent: Command, now: f64) -> Done {
         self.reconcile_texts();
-        if !self.route().takes(&intent) {
+        if !self.route().takes(&intent) || study_mode::locks(self, &intent) {
             return Done::quiet();
         }
         dispatch(self, intent, now)
@@ -176,6 +177,7 @@ fn dispatch(session: &mut Session, intent: Command, now: f64) -> Done {
         | Command::SelectText { .. }
         | Command::Dict(_) => study::run(session, intent),
         Command::PageAi(action) => page_ai(session, action, now),
+        Command::StudyMode(action) => study_mode::run(session, action, now),
         #[cfg(not(target_arch = "wasm32"))]
         Command::Ai(job) => emit_changed(session, Event::Ai(job)),
         Command::PlaceReadMarker { .. }

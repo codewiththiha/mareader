@@ -1,0 +1,9 @@
+# Script 6: study mode locks the first batch behind its deck of hard words.
+{"id": "vocab.attach", "params": {"folder": "${VOCAB_DIR}"}}
+{"id": "reader.open", "params": {"path": "${PDF}"}}
+{"id": "study.mode", "params": {"action": "toggle", "mode": "proactive"}}
+{"id": "page.go", "params": {"page": 5}}
+{"id": "study.mode", "params": {"action": "known", "word": "vow"}}
+{"id": "study.mode", "params": {"action": "undo"}}
+{"id": "study.mode", "params": {"action": "known", "word": "quartz"}}
+{"id": "study.mode", "params": {"action": "start"}}

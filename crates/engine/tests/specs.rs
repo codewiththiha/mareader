@@ -14,6 +14,7 @@ use mareader_engine::read_aloud::player::Act as ReadAct;
 use mareader_engine::route::Route;
 use mareader_engine::settings::Tab;
 use mareader_engine::study::Action as StudyAction;
+use mareader_engine::study_mode::Action as ModeAction;
 use mareader_engine::updates::Action as UpdateAction;
 use mareader_library::{BookId, Pen, View};
 use mareader_speech::{Item, KOKORO, Spot};
@@ -214,6 +215,7 @@ fn mark_intents() -> Vec<Command> {
         Command::Explain(pane),
         Command::LookUp(pane),
         Command::Study(StudyAction::Close),
+        Command::StudyMode(ModeAction::Off(pane)),
         Command::Dict(DictAction::CloseCard),
         Command::Vocab(Download::Start),
         #[cfg(not(target_arch = "wasm32"))]

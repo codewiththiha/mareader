@@ -2,7 +2,7 @@
 
 use crate::command_spec::params as keys;
 use crate::command_spec::{
-    CommandSpec, acts, anywhere, keeps, marks, pages, panes, reader_only, row,
+    CommandSpec, acts, anywhere, keeps, marks, pages, panes, reader_only, row, rows_study,
 };
 
 /// Every command there is, one row each.
@@ -408,6 +408,7 @@ pub(crate) const ROWS: &[CommandSpec] = &[
         anywhere,
         acts::study,
     ),
+    rows_study::MODE,
     row(
         "pane.swap",
         "Trades two panes' places in the tree.",

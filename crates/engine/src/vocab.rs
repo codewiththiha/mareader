@@ -15,12 +15,15 @@ use mareader_session::{DocId, TextLayer};
 
 use crate::dict::Download;
 use crate::study::words;
+use crate::study_mode::Tags;
 use crate::word_list::Levels;
 
 /// Shaded words per page at most; a book's stream page holds many.
 const PAGE_CAP: usize = 5_000;
 /// Pages remembered; past this the least recently used goes.
 const MEMO_CAP: usize = 32;
+/// Deck tag asks held at once; answered ones go first when full.
+const TAG_CAP: usize = 1_024;
 
 /// One page's hard words: each one's characters and its run of `boxes`.
 #[derive(Default)]
@@ -47,6 +50,8 @@ pub struct Vocab {
     asks: u64,
     /// The role asked for the open card, and its word, if any.
     role: Option<(Ticket, String)>,
+    /// Study decks' tag asks: `None` while waiting, then the tag if any.
+    tags: HashMap<Ticket, Option<Option<String>>>,
 }
 
 impl Vocab {
@@ -116,6 +121,10 @@ impl Vocab {
         let polled = self.service.poll();
         let mut role = None;
         for (ticket, answer) in polled.roles {
+            if let Some(slot) = self.tags.get_mut(&ticket) {
+                *slot = Some(answer.map(|r| r.pos));
+                continue;
+            }
             if let Some((asked, word)) = self.role.take() {
                 match asked == ticket {
                     true => role = answer.map(|r| (word, r)),
@@ -125,6 +134,34 @@ impl Vocab {
         }
         (polled.changed, role)
     }
+}
+
+impl Tags for Vocab {
+    fn tagging(&self) -> bool {
+        *self.service.state(Part::Tagger) == State::Ready
+    }
+
+    fn ask_tag(&mut self, word: &str, sentence: &str) -> Option<Ticket> {
+        if self.tags.len() >= TAG_CAP {
+            self.tags.retain(|_, tag| tag.is_none());
+        }
+        if self.tags.len() >= TAG_CAP {
+            return None;
+        }
+        let ticket = self.service.role(word, sentence)?;
+        self.tags.insert(ticket, None);
+        Some(ticket)
+    }
+
+    fn take_tag(&mut self, ticket: Ticket) -> Option<Option<String>> {
+        if matches!(self.tags.get(&ticket), Some(None)) {
+            return None;
+        }
+        Some(self.tags.remove(&ticket).flatten().flatten())
+    }
+}
+
+impl Vocab {
     /// `page`'s hard words, planned again only when something changed.
     pub fn page(
         &mut self,

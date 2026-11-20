@@ -199,6 +199,8 @@ pub enum Command {
     StopVoiceTry,
     /// The word card's and the mark menu's asks.
     Study(StudyAction),
+    /// Study mode in a pane: on and off, its deck and its gate.
+    StudyMode(crate::study_mode::Action),
     /// A lifted pane let go on another: the two trade places.
     SwapPanes {
         pane: PaneId,

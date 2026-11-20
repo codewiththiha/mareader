@@ -2,7 +2,7 @@
 
 use mareader_engine::command_spec::SPECS;
 use mareader_engine::event::Event;
-use mareader_engine::inspect::route_name;
+use mareader_engine::inspect::{route_name, study_mode};
 use mareader_engine::notes_panel::page_of;
 use mareader_engine::route::Route;
 use mareader_engine::session::Session;
@@ -153,6 +153,7 @@ fn pane_json(session: &Session, pane: PaneId) -> Value {
         "text": text,
         "search": search,
         "marks": marks_json(session, pane),
+        "study": study_mode(session, pane),
     })
 }
 

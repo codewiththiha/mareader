@@ -50,6 +50,15 @@ impl Batch {
     pub fn holds(&self, page: usize) -> bool {
         (self.from..=self.to).contains(&page)
     }
+
+    /// Its pages as a reader counts them: `page 4` or `pages 4–6`.
+    pub fn label(&self) -> String {
+        let (from, to) = (self.from.saturating_add(1), self.to.saturating_add(1));
+        match from == to {
+            true => format!("page {from}"),
+            false => format!("pages {from}–{to}"),
+        }
+    }
 }
 
 /// The batches of pages with `sizes` characters each, in order.
@@ -222,5 +231,12 @@ mod tests {
         assert_eq!(entering(3, 0, &b), 3);
         assert_eq!(entering(1, 6, &b), 6);
         assert_eq!(entering(99, 2, &b), 2);
+    }
+
+    #[test]
+    fn a_batch_names_its_pages_from_one() {
+        let b = plan(&[400; 6], pages(3));
+        assert_eq!(b[0].label(), "pages 1–3");
+        assert_eq!(plan(&[400], pages(3))[0].label(), "page 1");
     }
 }

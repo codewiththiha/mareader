@@ -3,7 +3,7 @@
 use mareader_settings::EdgeParking;
 use mareader_workspace::{Edge, PaneId, SplitAxis};
 
-use super::note;
+use super::{note, study_mode};
 use crate::command::Command;
 use crate::documents::{OpenRequest, Placement};
 use crate::event::{Event, PaneAction};
@@ -75,14 +75,21 @@ fn view_action(session: &mut Session, pane: PaneId, action: PaneAction, now: f64
 }
 
 fn go_to(session: &mut Session, pane: PaneId, page: usize, now: f64) {
+    let page = study_mode::clamp(session, pane, page);
     if let Some(landed) = session.document_go_to(pane, page) {
         view_action(session, pane, PaneAction::GoTo(landed), now);
     }
 }
 
 fn turn(session: &mut Session, pane: PaneId, forward: bool, now: f64) {
-    if let Some(landed) = session.document_turn(pane, forward) {
+    let Some(landed) = session.document_turn(pane, forward) else {
+        return;
+    };
+    let held = study_mode::clamp(session, pane, landed);
+    if held == landed {
         view_action(session, pane, PaneAction::GoTo(landed), now);
+    } else {
+        go_to(session, pane, held, now);
     }
 }
 

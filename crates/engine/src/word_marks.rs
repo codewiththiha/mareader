@@ -85,17 +85,28 @@ pub fn spawn(
     pages: Vec<usize>,
     inline: bool,
 ) -> Receiver<Vec<Page>> {
+    off_thread(wake, inline, "word-list", move || read(&document, &pages))
+}
+
+/// Runs `work` on a thread named `name`, or here when `inline`; then wakes.
+///
+/// A thread that can't be spawned leaves the receiver disconnected.
+pub(crate) fn off_thread<T: Send + 'static>(
+    wake: Waker,
+    inline: bool,
+    name: &str,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Receiver<T> {
     let (tx, rx) = channel();
-    let work = move || {
-        let _ = tx.send(read(&document, &pages));
+    let run = move || {
+        let _ = tx.send(work());
         wake();
     };
     if inline || cfg!(target_arch = "wasm32") {
-        work();
+        run();
     } else {
-        let named = std::thread::Builder::new().name("word-list".into());
-        // Unspawned, the list never comes; the reader still works.
-        let _ = named.spawn(work);
+        let named = std::thread::Builder::new().name(name.into());
+        let _ = named.spawn(run);
     }
     rx
 }

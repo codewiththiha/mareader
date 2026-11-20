@@ -22,9 +22,11 @@ use mareader_engine::route::Route;
 use mareader_engine::session::Session;
 use mareader_engine::settings::Tab;
 use mareader_engine::study::Action as StudyAction;
+use mareader_engine::study_mode::Action as ModeAction;
 use mareader_library::{BookId, MarkId, Options, Pen};
 use mareader_session::Anchor;
 use mareader_speech::{Item, KOKORO, Model, Spot};
+use mareader_study::mode::{Key, Mode, Pos};
 use mareader_workspace::{Bounds, Edge, PaneId, SplitAxis};
 use serde_json::Value;
 
@@ -350,6 +352,22 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
             "study.act",
             r#"{"action":"set_note","mark":42,"text":"key passage"}"#,
             Command::Study(StudyAction::SetNote(MarkId(42), "key passage".into())),
+        ),
+        (
+            "study.mode",
+            r#"{"action":"toggle","pane":1,"mode":"proactive"}"#,
+            Command::StudyMode(ModeAction::Toggle {
+                pane: PaneId(1),
+                mode: Mode::Proactive,
+            }),
+        ),
+        (
+            "study.mode",
+            r#"{"action":"known","pane":1,"word":"arcane|adjective"}"#,
+            Command::StudyMode(ModeAction::Known {
+                pane: PaneId(1),
+                key: Key::new("arcane", Some(Pos::Adjective)),
+            }),
         ),
         (
             "library.act",

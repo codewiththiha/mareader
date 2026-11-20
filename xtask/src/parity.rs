@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 pub const FILE: &str = "parity/mareader-features.toml";
-const SPECS_FILE: &str = "crates/engine/src/command_spec/rows.rs";
+/// The registry's row files: `rows.rs`, then features' own.
+const SPECS_FILES: &[&str] = &[
+    "crates/engine/src/command_spec/rows.rs",
+    "crates/engine/src/command_spec/rows_study.rs",
+];
 
 pub const AREAS: &[(&str, &str)] = &[
     ("A", "Window and chrome"),
@@ -57,7 +61,7 @@ pub struct Feature {
     pub notes: String,
 }
 
-/// Extracts every registered command id from `command_spec/rows.rs`.
+/// Extracts every command id a row file registers.
 pub fn parse_spec_ids(src: &str) -> HashSet<String> {
     let mut ids = HashSet::new();
     let mut rest = src;
@@ -81,11 +85,14 @@ pub fn parse_spec_ids(src: &str) -> HashSet<String> {
 }
 
 fn load_spec_ids(repo: &Path) -> Result<HashSet<String>, String> {
-    let text =
-        std::fs::read_to_string(repo.join(SPECS_FILE)).map_err(|e| format!("{SPECS_FILE}: {e}"))?;
-    let ids = parse_spec_ids(&text);
-    if ids.is_empty() {
-        return Err(format!("{SPECS_FILE}: no registered commands found"));
+    let mut ids = HashSet::new();
+    for file in SPECS_FILES {
+        let text = std::fs::read_to_string(repo.join(file)).map_err(|e| format!("{file}: {e}"))?;
+        let found = parse_spec_ids(&text);
+        if found.is_empty() {
+            return Err(format!("{file}: no registered commands found"));
+        }
+        ids.extend(found);
     }
     Ok(ids)
 }

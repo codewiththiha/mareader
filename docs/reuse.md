@@ -14,4 +14,5 @@ name the owning modules for shared primitives across the workspace.
 | counted | `crates/engine/src/library/mod.rs` | Sole counted-book label helper shared across library views. |
 | preset labels | `crates/ui-egui/src/dial_deck/presets.rs` | Shared `mode_icon`, `noise_label` and `strength_percent` formatting for appearance and dial widgets. |
 | entrance | `crates/ui-egui/src/motion.rs` | Shared entrance easing; callers pass their own duration. |
+| off_thread | `crates/engine/src/word_marks.rs` | One result from a named thread, or in the frame when inline or on wasm; wakes once sent. Word lists, study decks and study page sizes. |
 | stable_hash | `crates/engine/src/lib.rs` | Deterministic hash helper shared by Page AI, transcripts and triggers; unrelated direct `DefaultHasher` uses remain local. |

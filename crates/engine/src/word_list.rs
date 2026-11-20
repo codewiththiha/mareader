@@ -37,9 +37,9 @@ pub trait Meanings {
 }
 
 /// Pages this few, or a book's, are read in the frame.
-const INLINE: usize = 4;
+pub(crate) const INLINE: usize = 4;
 /// Keys asked for levels at a time; the level cache holds 8,192.
-const LEVEL_ROUND: usize = 2_000;
+pub(crate) const LEVEL_ROUND: usize = 2_000;
 /// Words asked of the dictionaries at a time, so cards still answer.
 const DICT_ROUND: usize = 48;
 

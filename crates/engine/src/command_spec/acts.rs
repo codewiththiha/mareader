@@ -223,6 +223,6 @@ fn mock_update(params: &Value) -> Result<MockUpdate, String> {
 }
 
 /// An ask a script cannot send, beside the names it can send.
-fn refused(id: &str, name: &str, forms: &str) -> String {
+pub(super) fn refused(id: &str, name: &str, forms: &str) -> String {
     format!("{id} takes {forms} from a script; {name:?} is not one of them")
 }

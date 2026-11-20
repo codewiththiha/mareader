@@ -25,6 +25,7 @@ impl Session {
             || self.word_lists.busy()
             || self.page_copy.busy()
             || self.vocab.coming()
+            || self.study_mode.busy()
     }
 
     /// Advances every engine-owned background job and timer for time `now`.
@@ -63,6 +64,10 @@ impl Session {
         }
         self.poll_page_copy();
         self.tick_dict_and_word_list(&mut tick);
+        // Deck stages wait on time as well as answers, so they need frames.
+        if self.tick_study_mode(now) {
+            tick.repaint = true;
+        }
         if self.poll_updates() {
             tick.repaint = true;
         }

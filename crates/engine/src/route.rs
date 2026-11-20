@@ -48,6 +48,7 @@ impl Route {
             I::FirstPage | I::LastPage | I::AutoScroll => true,
             I::GoTo { .. } | I::Turn { .. } | I::CopyPages { .. } => true,
             I::WordList { .. } | I::WordListWindow { .. } => true,
+            I::StudyMode(_) => true,
             I::Split(_) | I::FocusPane(_) | I::ClosePane(_) => true,
             I::MovePane { .. } | I::SwapPanes { .. } => true,
             I::SetRatio(..) | I::CyclePane { .. } | I::PlaceBook { .. } => true,

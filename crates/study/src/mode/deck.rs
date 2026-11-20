@@ -124,6 +124,11 @@ impl Floor {
         self.credit += self.per_card;
     }
 
+    /// An undone known card takes its seconds again.
+    pub fn unknown(&mut self) {
+        self.credit = (self.credit - self.per_card).max(0.0);
+    }
+
     pub fn total(&self) -> f64 {
         self.total
     }
@@ -228,5 +233,15 @@ mod tests {
         assert_eq!(f.progress(200.0), 1.0);
         assert_eq!(f.left(f64::NAN), 18.0);
         assert_eq!(Floor::new(0, 6, 0.0).progress(0.0), 1.0);
+    }
+
+    #[test]
+    fn an_undone_known_card_takes_its_time_again() {
+        let mut f = Floor::new(4, 6, 0.0);
+        f.known();
+        f.unknown();
+        assert_eq!(f.left(0.0), 24.0);
+        f.unknown();
+        assert_eq!(f.left(0.0), 24.0);
     }
 }
