@@ -14,6 +14,7 @@ mod ai_job;
 mod load;
 mod reader;
 mod study;
+mod study_mode;
 mod swatch;
 mod text;
 mod updates;
@@ -31,6 +32,7 @@ pub use ai::{
 };
 pub use ai_job::Job;
 pub use load::{Loaded, load, to_json};
+pub use mareader_study::{BatchUnit, Mode as StudyMode, Source as StudySource};
 pub use reader::{
     AppearanceMenuStyle, Bar, ChromeSettings, FloatingLabelStyle, Highlight, LayoutSettings,
     MotionSettings, PageIndicatorStyle, PaperArea, PaperSettings, Pass, Player, ReadAloudSettings,
@@ -42,6 +44,7 @@ pub use study::{
     DictionaryWindow, GlossDensity, GlossSettings, HighlightSettings, Notation, Pen, PickColor,
     PronunciationSettings, Reserved, WINDOW_MIN,
 };
+pub use study_mode::StudyModeSettings;
 pub use swatch::Swatch;
 pub use text::{BookDesign, ColumnAlign, FontChoice, FontFamily, SystemFont, TextSettings};
 pub use updates::UpdateSettings;
