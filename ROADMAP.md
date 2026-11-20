@@ -3,7 +3,7 @@
 **Status:** Core reader, library, study tools, neural read-aloud, installers
 (`v0.0.7`), and the engine-first architecture (ADR 0007) are complete.
 Cross-device library sync (`docs/sync.md`) remains optional future work.
-**Parity:** 122 of 122 features (100 %; 83 command-backed, 39 `ui_only`,
+**Parity:** 125 of 125 features (100 %; 86 command-backed, 39 `ui_only`,
 2 dropped). Run `cargo xtask parity` for live counts.
 
 ## Shipped capabilities
@@ -16,7 +16,7 @@ Cross-device library sync (`docs/sync.md`) remains optional future work.
 | Appearance & GPU passes | Single wgpu page pass (filter chain, colour blends, seamless pane paper textures, blend backdrop, film grain), saved presets, independent per-pane themes and text | [`docs/adr/0003-pages-are-textures.md`](docs/adr/0003-pages-are-textures.md) |
 | EPUB & text pipeline | `rbook` + HTML5/CSS subset + `parley` + `vello_cpu` pagination, book CSS/layout support, vertical CJK/RTL, MathML, footnotes, hostile-input guards, progressive opening, in-memory Markdown & plain-text conversion | [`docs/epub.md`](docs/epub.md), [`docs/epub-layout.md`](docs/epub-layout.md), [`docs/epub-support.md`](docs/epub-support.md) |
 | Library | SQLite sync-ready store, read-in-place folders with move tracking, store-copy imports, nested shelves & breadcrumbs, arranged spring-physics grid, multi-selection stacking, fast search, sidebar library panel | [`docs/library.md`](docs/library.md) |
-| Study tools & AI | Selection bar, full/half/underline highlights & notes, AI dictionary & page AI (summarize/translate/simplify) over Apple Intelligence or OpenAI-compatible servers, offline dictionary packs, CEFR shading & word pronunciation | [`docs/study.md`](docs/study.md), [`docs/assist.md`](docs/assist.md), [`docs/page-ai.md`](docs/page-ai.md) |
+| Study tools & AI | Selection bar, full/half/underline highlights & notes, AI dictionary & page AI (summarize/translate/simplify) over Apple Intelligence or OpenAI-compatible servers, offline dictionary packs, CEFR shading & word pronunciation, proactive/reactive study mode with batch gates and recall | [`docs/study.md`](docs/study.md), [`docs/assist.md`](docs/assist.md), [`docs/page-ai.md`](docs/page-ai.md) |
 | Read aloud | System voices plus offline candle neural models (Kokoro in 6 languages, Piper, Kitten, Phonon), word-by-word tracking, floating/tucked player, idle model unloading | [`docs/architecture.md`](docs/architecture.md) |
 | Search & keyboard | Streaming cross-line/diacritic-folded document search, full Tab/keyboard focus navigation, auto-scroll, distraction-free mode | [`docs/search.md`](docs/search.md) |
 | Packaging & releases | Native installers for macOS (`.dmg` Apple Silicon & Intel), Windows (x64 NSIS & MSI, ARM64 NSIS), and Linux (x86_64 & ARM64 `.deb`, AppImage, multi-arch Arch `PKGBUILD`) verified end-to-end in CI | [`docs/packaging.md`](docs/packaging.md), [`docs/releases/`](docs/releases/) |

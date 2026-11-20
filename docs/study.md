@@ -478,3 +478,60 @@ word sounds under the word.
   voice that is already holding it. Only short English selections (up to
   three words) are sounded out, and a word that can't be sounded out
   shows nothing.
+
+
+## Study mode (2026-11-20)
+
+Two ways to study before or while reading, switched in Settings › Study
+mode, the page's right-click menu, or `study=proactive|reactive|off`.
+Parity entries are `study.mode-*`.
+
+### Proactive
+
+Words come first, then the pages.
+
+- **Batches.** The book is cut into whole-page batches: 1–10 pages, or a
+  character budget rounded to whole pages (never over 10). Light pages
+  under 140 characters ride along without spending quota; a short tail
+  merges into the last full batch. Progress unlocks per batch end.
+- **Gate.** Scrolling or jumping past the lock opens a deck dialog over
+  the dimmed window: one card per (lemma, class), ranked by how often it
+  appeared then by band, capped (default 12), with memorized keys dropped
+  at show time. Reveal, mark known (shrinks the timer and drops the
+  card), or step through the deck.
+- **Timer.** Strict (on by default) waits `seconds per card × cards`
+  before **Start reading** unlocks. **Read previous pages** is always
+  free; a forward jump past the lock reopens the gate instead of
+  stepping.
+- **Look-ahead.** `Prepare ahead` (0–3) keeps later decks ready while
+  you read.
+
+### Reactive
+
+Free scroll; a click on a shaded word asks for its meaning.
+
+- Three tries; the offline judge scores meaning, not spelling (correct,
+  close, wrong) with feedback. First miss shows a hint; **I don't know**
+  or three misses reveal the answer.
+- Correct offers **Add to memorized** (when asked): the word stops being
+  shaded and is dropped from every future deck. Missed and practising
+  outcomes are recorded the same way.
+- In Proactive, clicks on cards and dictionary are locked with a toast
+  until the mode is turned off.
+
+### Dials
+
+Settings › Study mode: mode, my level (A2–C2), batch size by pages or
+characters, prepare ahead, seconds per card, strict timer, shade hard
+words while reading, words per deck, card source (Auto/AI/Dictionary),
+and ask-before-memorized. Unavailable capability turns the mode off with
+a toast rather than half-working.
+
+### Where it lives
+
+| Piece | Home |
+|---|---|
+| Modes, dials, batch planner, deck, judge | `crates/study` |
+| `StudyModeSettings` | `crates/settings` |
+| Progress, memorized keys, gate, `study.mode` command | `crates/engine/src/study_mode/` |
+| Gate dialog, recall popover, menu, settings tab | `crates/ui-egui/src/study/`, `settings_window/` |

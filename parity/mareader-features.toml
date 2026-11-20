@@ -1599,6 +1599,62 @@ reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
 notes = "Copy and Explain (M6 slice 1); highlighters, ordering and hiding (slice 3); Look up with the dictionary (slice 4), added to saved menus after Explain"
 
 [[feature]]
+id = "study.mode-proactive"
+title = "Proactive study mode: batch gate deck before reading, timer floor, strict lock"
+area = "I"
+tier = "P1"
+milestone = "M7"
+status = "shipped"
+command = "study.mode"
+evidence = [
+    "crates/engine/src/study_mode/tests.rs::plan_builds_batches_and_rounds_unlock_to_a_batch_end",
+    "crates/engine/src/study_mode/tests.rs::blocks_past_the_unlock_only_in_proactive",
+    "crates/engine/src/study_mode/tests.rs::open_gate_unlocks_the_batch_and_marks_known_shrinks_the_timer",
+    "crates/engine/src/study_mode/tests.rs::empty_deck_still_unlocks_when_started",
+    "crates/study/src/batches.rs::pages_mode_counts_heavy_pages_to_the_quota",
+    "crates/study/src/batches.rs::light_pages_ride_and_do_not_use_quota",
+    "crates/study/src/deck.rs::memorized_keys_are_dropped_at_show_time",
+    "crates/study/src/deck.rs::rank_is_count_then_band_then_cap",
+]
+notes = "Whole-page batches (1–10 or chars budget, light ride-along, short tail merge); forward jumps past the lock open a deck dialog; strict timer floor sec_per_card×cards; mark known shrinks the timer; empty deck auto-unlocks"
+
+[[feature]]
+id = "study.mode-reactive"
+title = "Reactive study mode: click a shaded word for recall with verdicts and memorize"
+area = "I"
+tier = "P1"
+milestone = "M7"
+status = "shipped"
+command = "study.mode"
+evidence = [
+    "crates/study/src/judge.rs::a_synonym_is_correct",
+    "crates/study/src/judge.rs::a_meaning_word_is_close",
+    "crates/study/src/judge.rs::repeating_the_word_is_wrong",
+    "crates/study/src/judge.rs::nonsense_is_wrong_with_the_sentence_reason",
+    "crates/engine/src/study_mode/tests.rs::memorized_is_global_and_reversible",
+    "crates/study/src/deck.rs::memorized_keys_are_dropped_at_show_time",
+]
+notes = "Click opens a recall popover: free text, three tries, offline judge correct/close/wrong, hint after first miss, show answer, optional Add to memorized; Proactive locks card and dictionary clicks with a toast"
+
+[[feature]]
+id = "study.mode-dials"
+title = "Study mode dials: level, batch size, timer, deck cap and source"
+area = "I"
+tier = "P1"
+milestone = "M7"
+status = "shipped"
+command = "study.mode"
+evidence = [
+    "crates/settings/src/study_mode.rs::mode_dials_clamp_on_sanitize",
+    "crates/settings/src/study_mode.rs::mode_defaults_to_off",
+    "crates/study/src/mode.rs::dials_clamp_to_their_ranges",
+    "crates/study/src/mode.rs::levels_gate_both_modes",
+    "crates/study/src/mode.rs::dict_alone_can_write_cards_but_not_judge",
+    "crates/study/src/mode.rs::auto_prefers_ai_then_dictionary",
+]
+notes = "Settings › Study mode tab plus study=proactive|reactive|off option; capability availability turns a mode off with a toast rather than half-working"
+
+[[feature]]
 id = "settings.persist"
 title = "Every setting persists; a new field defaults to the old behaviour"
 area = "J"
