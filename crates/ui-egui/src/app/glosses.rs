@@ -335,6 +335,17 @@ impl MareaderApp {
         self.ui
             .study
             .show(ctx, study_state, panes, looks, extra, out);
+        let mode_settings = self.settings().study.mode.clone();
+        if self
+            .ui
+            .study
+            .mode
+            .show(ctx, &self.session, &mode_settings, out)
+        {
+            self.session
+                .study_mode_act(mareader_engine::study_mode::Action::CloseGate, 0);
+        }
+        self.ui.study.recall.show(ctx, &mode_settings, out);
         sounds
     }
 
@@ -368,6 +379,9 @@ impl MareaderApp {
         }
         let state = (self.session.page_ai(), self.session.library_model());
         let docs = self.ui.documents.as_view(self.session.documents());
+        self.ui
+            .page_ai
+            .set_study_mode(self.session.study_mode().mode());
         self.ui
             .page_ai
             .show(ctx, state, &ai_look, (&self.ui.pane_rects, docs), out);

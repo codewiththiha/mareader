@@ -10,8 +10,10 @@ pub use gloss::Gloss;
 mod keeping;
 mod marking;
 pub mod marks;
+mod mode;
 mod note;
 mod picking;
+mod recall;
 pub use picking::STYLE_ID as PICK_STYLE;
 mod restyle;
 
@@ -102,6 +104,8 @@ pub struct StudyUi {
     listed: RefCell<Vec<Listed>>,
     /// The notes panel's rows as last built, cached by marks stamp.
     noted: RefCell<Option<Noted>>,
+    pub(crate) mode: mode::ModeUi,
+    pub(crate) recall: recall::RecallUi,
 }
 
 /// Read-only view over engine study state and window study overlays.

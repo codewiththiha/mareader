@@ -57,7 +57,7 @@ impl MareaderApp {
         }
     }
 
-    /// A click on a shaded word: explained like a selected one.
+    /// A click on a shaded word: explained, or recalled in reactive mode.
     pub(super) fn explain_shaded(
         &mut self,
         pane: PaneId,
@@ -71,6 +71,20 @@ impl MareaderApp {
         self.session.execute(Command::ClearSelection(pane), 0.0);
         self.ui.dict.escape();
         let book = self.book_in(pane);
+        let mode = self.settings().study.mode.mode;
+        if mode == mareader_study::Mode::Proactive {
+            self.ui.toasts.push(mareader_engine::toast::Toast::warning(
+                "Locked in study mode: no cards or dictionary until you turn it off.",
+            ));
+            return;
+        }
+        if mode == mareader_study::Mode::Reactive {
+            self.ui
+                .study
+                .recall
+                .open(&asked.word, &asked.context, "", "");
+            return;
+        }
         let name = self
             .session
             .documents()

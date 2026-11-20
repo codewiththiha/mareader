@@ -63,6 +63,7 @@ pub mod stable_hash {
     }
 }
 pub mod study;
+pub mod study_mode;
 #[cfg(test)]
 mod testing;
 pub mod texts;

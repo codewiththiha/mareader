@@ -167,6 +167,7 @@ fn dispatch(session: &mut Session, intent: Command, now: f64) -> Done {
         Command::WordList { .. }
         | Command::WordListWindow { .. }
         | Command::Study(_)
+        | Command::StudyMode(_)
         | Command::Explain(_)
         | Command::LookUp(_)
         | Command::Highlight { .. }

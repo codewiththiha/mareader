@@ -9,13 +9,14 @@
 use serde_json::Value;
 
 use crate::command::Command;
-use crate::command_spec::json;
+use crate::command_spec::{json, names};
 use crate::dict::Action as DictAction;
 use crate::library::Action as LibraryAction;
 use crate::page_ai::Action as PageAiAction;
 use crate::read_aloud::player::Act as ReadAct;
 use crate::session::Session;
 use crate::study::Action as StudyAction;
+use crate::study_mode::Action as StudyModeAction;
 use crate::updates::{Action as UpdateAction, MockMode, MockUpdate, UpdatePlatform};
 
 /// The dictionary's asks a script can send.
@@ -66,6 +67,32 @@ pub(crate) fn study(at: &Session, params: &Value) -> Result<Command, String> {
         other => return Err(refused("study.act", other, STUDY)),
     };
     Ok(Command::Study(act))
+}
+
+/// `study.mode`: every ask a script can send.
+pub(crate) const STUDY_MODE_ACT: &str = names::STUDY_MODE_ACT;
+
+/// `study.mode`: the switch, the gate deck and memorized words.
+pub(crate) fn study_mode(_at: &Session, params: &Value) -> Result<Command, String> {
+    let name = json::text(params, "action")?;
+    let act = match name.as_str() {
+        "set" => {
+            let mode = json::one_of(params, "mode", names::STUDY_MODE)?;
+            StudyModeAction::Set(mode)
+        }
+        "mark_known" => StudyModeAction::MarkKnown(json::text(params, "key")?),
+        "start_reading" => StudyModeAction::StartReading,
+        "read_back" => StudyModeAction::ReadBack,
+        "close_gate" => StudyModeAction::CloseGate,
+        "recall_done" => StudyModeAction::RecallDone {
+            key: json::text(params, "key")?,
+            memorized: json::off_unless(params, "memorized")?,
+            missed: json::off_unless(params, "missed")?,
+        },
+        "unlock_batch" => StudyModeAction::UnlockBatch,
+        other => return Err(refused("study.mode", other, names::STUDY_MODE_ACT)),
+    };
+    Ok(Command::StudyMode(act))
 }
 
 /// The page AI's asks a script can send.

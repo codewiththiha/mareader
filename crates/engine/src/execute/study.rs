@@ -28,6 +28,7 @@ pub(super) fn run(session: &mut Session, intent: Command) -> Done {
             session.emit(Event::WordListWindow { pane, pages, list });
         }
         Command::Study(action) => study(session, action),
+        Command::StudyMode(action) => study_mode(session, action),
         Command::Explain(pane) => explain(session, pane),
         Command::LookUp(pane) => look_up(session, pane),
         Command::Highlight { pane, pen, color } => highlight(session, pane, pen, color),
@@ -235,4 +236,8 @@ fn bookmark(session: &mut Session, pane: PaneId) {
         existing,
     };
     session.study_toggle_bookmark(at, wall_ms());
+}
+
+fn study_mode(session: &mut Session, action: crate::study_mode::Action) {
+    session.study_mode_act(action, crate::library::wall_ms());
 }

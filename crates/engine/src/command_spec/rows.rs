@@ -5,6 +5,10 @@ use crate::command_spec::{
     CommandSpec, acts, anywhere, keeps, marks, pages, panes, reader_only, row,
 };
 
+/// Study mode's row, kept short of rustfmt's one-line-per-arg expansion.
+#[rustfmt::skip]
+const STUDY_MODE_ROW: CommandSpec = row("study.mode", "Study mode switch, gate deck, memorized words.", keys::STUDY_MODE, reader_only, acts::study_mode);
+
 /// Every command there is, one row each.
 pub(crate) const ROWS: &[CommandSpec] = &[
     #[cfg(not(target_arch = "wasm32"))]
@@ -408,6 +412,7 @@ pub(crate) const ROWS: &[CommandSpec] = &[
         anywhere,
         acts::study,
     ),
+    STUDY_MODE_ROW,
     row(
         "pane.swap",
         "Trades two panes' places in the tree.",

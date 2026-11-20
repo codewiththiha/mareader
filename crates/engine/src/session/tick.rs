@@ -56,6 +56,9 @@ impl Session {
         if self.study_receive() {
             tick.repaint = true;
         }
+        if self.study_mode_tick() {
+            tick.repaint = true;
+        }
         self.tick_vocab_and_audio(now, &mut tick);
         self.page_ai_receive(now);
         if let Some(wait) = self.page_ai.take_wait() {

@@ -1,5 +1,4 @@
 //! The page's menu and a bubble's: what to ask, and what to do after.
-
 use super::{BubbleMenu, Menu, PageAiUi, Step, label};
 use crate::documents::DocumentsView;
 use crate::icons::Icon;
@@ -19,7 +18,6 @@ use mareader_engine::settings::Tab;
 use mareader_library::Library;
 use mareader_settings::{AiSettings, LANGUAGES, PageStart, PageTask, language_name};
 use mareader_workspace::PaneId;
-
 /// The language search field, for screen readers and tests.
 pub const FIND: &str = "Find a language";
 
@@ -125,6 +123,9 @@ impl PageAiUi {
                 Step::Languages => self.languages(ui, &m, ai, &mut step, out),
                 Step::How(task, tag) => self.how(ui, &m, (task, tag), &mut step, out),
             };
+            if !close && step == Step::Tasks {
+                super::study_menu::rows(self.study_mode, ui, out);
+            }
         });
         match (close, &mut self.menu) {
             (true, _) => self.menu = None,

@@ -24,6 +24,7 @@ use crate::read_aloud::ReadFrom;
 use crate::route::Route;
 use crate::settings::Tab;
 use crate::study::Action as StudyAction;
+use crate::study_mode::Action as StudyModeAction;
 use crate::updates::Action as UpdateAction;
 
 /// Whether split panes take their own colour, texture, or both.
@@ -199,6 +200,8 @@ pub enum Command {
     StopVoiceTry,
     /// The word card's and the mark menu's asks.
     Study(StudyAction),
+    /// Study mode: the switch, the gate deck and memorized words.
+    StudyMode(StudyModeAction),
     /// A lifted pane let go on another: the two trade places.
     SwapPanes {
         pane: PaneId,

@@ -155,6 +155,7 @@ impl Command {
             Command::StopSaying => "word.stop",
             Command::StopVoiceTry => "voice.stop-try",
             Command::Study(..) => "study.act",
+            Command::StudyMode(..) => "study.mode",
             Command::SwapPanes { .. } => "pane.swap",
             Command::ToggleReadAloud => "read.toggle",
             Command::TryVoice => "voice.try",

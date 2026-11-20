@@ -1,9 +1,8 @@
 //! Pages summarized, translated or simplified by the AI, shown over them.
-
 mod cards;
 pub mod menu;
 pub mod paint;
-
+mod study_menu;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -36,7 +35,6 @@ const WASH_FADE: f32 = 0.22;
 fn aloud_hot(pane: PaneId) -> Id {
     Id::new(("page-ai-aloud-hot", pane))
 }
-
 /// What pdf_view draws of the page AI in one pane.
 #[derive(Clone, Default)]
 pub struct PaneAi {
@@ -45,7 +43,6 @@ pub struct PaneAi {
     /// The pages the open menu would ask about, washed to show it.
     pub wash: Option<paint::Wash>,
 }
-
 /// A result to place: its task, span, words, source and identity.
 type What = (AiTask, PageSpan, Arc<Rewritten>, Option<Arc<Source>>, u64);
 
@@ -108,6 +105,7 @@ pub struct PageAiUi {
     filter: String,
     /// The menu's "Remember my choice" toggle.
     remember: bool,
+    study_mode: mareader_study::Mode,
 }
 
 /// Read-only view over engine page-AI ledger and window menu state.
@@ -205,8 +203,10 @@ fn group_note(task: &AiTask, (from, to): (usize, usize)) -> Arc<Vec<mareader_ref
 fn pages_label((from, to): (usize, usize)) -> String {
     format!("pages {}–{}", from + 1, to + 1)
 }
-
 impl PageAiUi {
+    pub fn set_study_mode(&mut self, mode: mareader_study::Mode) {
+        self.study_mode = mode;
+    }
     /// Uploads finished card rasters to the GPU and drops stale textures.
     pub fn receive_cards(&mut self, ctx: &Context, gpu: Option<&Gpu>) {
         let now = ctx.input(|i| i.time);

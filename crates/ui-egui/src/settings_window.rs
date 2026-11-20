@@ -32,6 +32,7 @@ mod models;
 #[cfg(not(target_arch = "wasm32"))]
 mod provider_card;
 mod read_aloud;
+mod study_mode_tab;
 mod updates;
 mod vocabulary;
 mod voice_model;
@@ -60,7 +61,6 @@ const ENGINE_INDENT: f32 = 10.0;
 const HEADER_H: f32 = 56.0;
 /// Clear space under the page, below the scroll's fade.
 const FOOT_H: f32 = 12.0;
-
 use mareader_engine::settings::Tab;
 
 /// Live engine/front-end services read by individual settings tabs.
@@ -345,6 +345,7 @@ fn tab_body(
             vocabulary::tab(ui, (&mut s.study, &mut s.dictionary), heard, out);
         }
         Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, live.dict, out),
+        Tab::StudyMode => study_mode_tab::tab(ui, &mut s.study.mode, out),
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Ai => {
             let looks = (&mut s.study.highlights, &mut s.study.gloss);
@@ -1175,6 +1176,7 @@ impl TabIcon for Tab {
             Tab::Highlights => Icon::Highlight,
             Tab::Vocabulary => Icon::Levels,
             Tab::Dictionary => Icon::Dictionary,
+            Tab::StudyMode => Icon::Check,
             Tab::Ai => Icon::Ai,
             Tab::Models => Icon::Chip,
             Tab::Panes => Icon::SplitRight,

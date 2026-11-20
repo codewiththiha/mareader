@@ -18,6 +18,7 @@ mod panes;
 mod read_aloud;
 mod services;
 mod study;
+mod study_mode;
 mod tick;
 mod updates;
 
@@ -107,6 +108,8 @@ pub struct Session {
     page_ai: crate::page_ai::ledger::Ledger,
     /// Loose study marks, AI gloss answers, and active explainer lookups.
     study: crate::study::state::State,
+    /// Study mode: batches, the proactive gate, memorized words.
+    study_mode: crate::study_mode::State,
     /// Dictionary packs, queries, and word-list meaning lookups.
     dict: crate::dict::Service,
     /// Read-aloud playback, voice booths, and speech model shelf.
@@ -223,6 +226,7 @@ impl Session {
             library: LibraryState::default(),
             page_ai: crate::page_ai::ledger::Ledger::default(),
             study: crate::study::state::State::default(),
+            study_mode: crate::study_mode::State::default(),
             dict: crate::dict::Service::default(),
             read_aloud: crate::read_aloud::state::State::default(),
             documents: DocumentsState::default(),

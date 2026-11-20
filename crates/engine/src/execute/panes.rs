@@ -75,12 +75,33 @@ fn view_action(session: &mut Session, pane: PaneId, action: PaneAction, now: f64
 }
 
 fn go_to(session: &mut Session, pane: PaneId, page: usize, now: f64) {
+    if session.study_mode_blocks(page) {
+        session.study_mode_open_gate(pane);
+        session.emit(Event::Toast(crate::toast::Toast::warning(
+            "Locked. Study the next batch of words first.",
+        )));
+        return;
+    }
     if let Some(landed) = session.document_go_to(pane, page) {
         view_action(session, pane, PaneAction::GoTo(landed), now);
     }
 }
 
 fn turn(session: &mut Session, pane: PaneId, forward: bool, now: f64) {
+    if forward {
+        let at = session
+            .documents()
+            .current(pane)
+            .map(|p| p.saturating_add(1))
+            .unwrap_or(0);
+        if session.study_mode_blocks(at) {
+            session.study_mode_open_gate(pane);
+            session.emit(Event::Toast(crate::toast::Toast::warning(
+                "Locked. Study the next batch of words first.",
+            )));
+            return;
+        }
+    }
     if let Some(landed) = session.document_turn(pane, forward) {
         view_action(session, pane, PaneAction::GoTo(landed), now);
     }

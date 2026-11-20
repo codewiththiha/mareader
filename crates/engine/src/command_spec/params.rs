@@ -102,6 +102,15 @@ pub(crate) const HIGHLIGHT: &[(&str, &str)] = &[
 /// The first of some text on a page, as a drag selects it.
 pub(crate) const SELECT: &[(&str, &str)] = &[("pane", "int?"), ("page", "int"), ("text", "str")];
 
+/// Study mode: the switch, or a gate/recall ask with its keys.
+pub(crate) const STUDY_MODE: &[(&str, &str)] = &[
+    ("action", acts::STUDY_MODE_ACT),
+    ("mode", "off|proactive|reactive?"),
+    ("key", "str?"),
+    ("memorized", "bool?"),
+    ("missed", "bool?"),
+];
+
 /// A word a card says.
 pub(crate) const WORD: &[(&str, &str)] = &[("word", "str")];
 

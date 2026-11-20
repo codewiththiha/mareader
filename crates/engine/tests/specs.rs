@@ -198,6 +198,7 @@ fn page_intents() -> Vec<Command> {
 fn mark_intents() -> Vec<Command> {
     let pane = PaneId(1);
     vec![
+        Command::StudyMode(mareader_engine::study_mode::Action::CloseGate),
         Command::Bookmark(Some(pane)),
         Command::ClearSelection(pane),
         Command::Highlight {

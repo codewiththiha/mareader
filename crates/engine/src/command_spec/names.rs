@@ -106,3 +106,16 @@ pub(crate) const ROUTE: &[(&str, Route)] = &[
     ("library", Route::Library),
     ("dictionary", Route::Dictionary),
 ];
+
+/// The study-mode switch a script can send.
+pub(crate) const STUDY_MODE: &[(&str, mareader_study::Mode)] = &[
+    ("off", mareader_study::Mode::Off),
+    ("proactive", mareader_study::Mode::Proactive),
+    ("reactive", mareader_study::Mode::Reactive),
+];
+
+/// The gate and recall asks a script can send.
+pub(crate) const STUDY_MODE_ACT: &str = concat!(
+    "set|mark_known|start_reading|read_back|close_gate|",
+    "recall_done|unlock_batch",
+);

@@ -13,6 +13,7 @@ pub(super) fn set(key: &str, value: &str, at: &Session) -> Option<Result<Vec<Com
     let parsed = match key {
         "meaning" => meaning(value),
         "provider" => provider(value, at),
+        "study" => study_mode(value),
         #[cfg(not(target_arch = "wasm32"))]
         "cefr" => cefr(value),
         _ => return None,
@@ -47,4 +48,17 @@ fn provider(value: &str, at: &Session) -> Result<Vec<Command>, String> {
     let id = ai.add_preset(found, "");
     ai.tasks.explain.preset = Some(id);
     field("ai", ai)
+}
+
+/// The study-mode switch: `study=proactive`, `reactive` or `off`.
+fn study_mode(value: &str) -> Result<Vec<Command>, String> {
+    let mode = match value {
+        "off" => mareader_study::Mode::Off,
+        "proactive" => mareader_study::Mode::Proactive,
+        "reactive" => mareader_study::Mode::Reactive,
+        _ => return Err("study: off, proactive or reactive".to_owned()),
+    };
+    Ok(vec![Command::StudyMode(crate::study_mode::Action::Set(
+        mode,
+    ))])
 }

@@ -13,6 +13,8 @@ pub enum Tab {
     Highlights,
     Vocabulary,
     Dictionary,
+    /// The study-mode switch and its batch/deck dials.
+    StudyMode,
     /// What the AI does: the AI Dictionary, the library, pages.
     Ai,
     /// The models tasks ask, and their providers' keys.
@@ -27,13 +29,14 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 11] = [
+    pub const ALL: [Tab; 12] = [
         Tab::Appearance,
         Tab::Layout,
         Tab::ReadAloud,
         Tab::Highlights,
         Tab::Vocabulary,
         Tab::Dictionary,
+        Tab::StudyMode,
         Tab::Ai,
         Tab::Models,
         Tab::Panes,
@@ -49,6 +52,7 @@ impl Tab {
             Tab::Highlights => "Highlights",
             Tab::Vocabulary => "Vocabulary",
             Tab::Dictionary => "Dictionary",
+            Tab::StudyMode => "Study mode",
             Tab::Ai => "AI",
             Tab::Models => "AI models",
             Tab::Panes => "Panes",
@@ -78,7 +82,9 @@ impl Tab {
     pub fn group(self) -> &'static str {
         match self {
             Tab::Appearance | Tab::Layout | Tab::ReadAloud | Tab::Model(_) => "Reading",
-            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::Ai => "Study",
+            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::StudyMode | Tab::Ai => {
+                "Study"
+            }
             Tab::Models | Tab::Panes | Tab::Motion | Tab::Updates => "App",
         }
     }
@@ -86,7 +92,10 @@ impl Tab {
     /// Shown away from the books too, in the library and the dictionary.
     pub fn beyond_books(self) -> bool {
         use Tab as T;
-        let study = matches!(self, T::Highlights | T::Vocabulary | T::Dictionary);
+        let study = matches!(
+            self,
+            T::Highlights | T::Vocabulary | T::Dictionary | T::StudyMode
+        );
         let voices = matches!(self, T::ReadAloud | T::Model(_));
         study || voices || matches!(self, T::Ai | T::Models | T::Updates)
     }
