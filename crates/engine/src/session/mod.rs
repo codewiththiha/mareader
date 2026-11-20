@@ -226,7 +226,7 @@ impl Session {
             library: LibraryState::default(),
             page_ai: crate::page_ai::ledger::Ledger::default(),
             study: crate::study::state::State::default(),
-            study_mode: crate::study_mode::State::default(),
+            study_mode: loaded.study.unwrap_or_default(),
             dict: crate::dict::Service::default(),
             read_aloud: crate::read_aloud::state::State::default(),
             documents: DocumentsState::default(),
@@ -374,7 +374,7 @@ impl Session {
 
     /// The two files' text, for a platform that has no files to write them to.
     pub fn blobs(&self) -> Result<save::Blobs, String> {
-        save::blobs(&self.settings, self.save.last())
+        save::blobs(&self.settings, self.save.last(), self.save.study())
     }
 
     /// Builds an open request for the saved document if its file still exists.

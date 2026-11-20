@@ -68,7 +68,7 @@ fn settings_and_the_last_document_come_back_from_disk() -> Result<(), String> {
 fn the_two_files_travel_as_text_and_read_back() -> Result<(), String> {
     let dir = dir()?;
     let read = last(dir.path());
-    let made = blobs(&choices(), Some(&read))?;
+    let made = blobs(&choices(), Some(&read), None)?;
     let names: Vec<&str> = made.iter().map(|(name, _)| *name).collect();
     assert_eq!(names, vec![SETTINGS_FILE, SESSION_FILE]);
     let mut texts = made.into_iter();
@@ -88,7 +88,7 @@ fn the_two_files_travel_as_text_and_read_back() -> Result<(), String> {
 /// note is owed. On a page the same two blobs travel through the store.
 #[test]
 fn a_flush_with_nothing_open_travels_as_null_and_says_nothing() -> Result<(), String> {
-    let made = blobs(&choices(), None)?;
+    let made = blobs(&choices(), None, None)?;
     let mut texts = made.into_iter();
     let Some((_, settings)) = texts.next() else {
         return Err("no settings".into());
@@ -263,6 +263,7 @@ fn a_session_keeps_its_own_two_files() -> Result<(), String> {
         Arc::new(|| {}),
         Loaded {
             settings: choices(),
+            study: None,
             ..Default::default()
         },
     );
@@ -313,5 +314,39 @@ fn background_writes_persist_and_surface_failures() -> Result<(), String> {
     assert!(woken.load(Ordering::SeqCst) >= 1);
     assert!(bad.dirty());
     assert!(bad.take_failure().is_some());
+    Ok(())
+}
+
+#[test]
+fn study_mode_travels_in_session_and_comes_back() -> Result<(), String> {
+    let dir = dir()?;
+    let mut study = crate::study_mode::State::default();
+    study.set_mode(crate::study_mode::Mode::Proactive);
+    study.set_unlocked(7, 3);
+    assert!(study.mark_known("visit|verb"));
+    let made = blobs(&choices(), None, Some(&study))?;
+    let session = made
+        .iter()
+        .find(|(name, _)| *name == SESSION_FILE)
+        .map(|(_, text)| text.clone())
+        .ok_or("no session")?;
+    let loaded = parse(None, Some(session));
+    let back = loaded.study.ok_or("no study")?;
+    assert_eq!(back.mode(), crate::study_mode::Mode::Proactive);
+    assert_eq!(back.unlocked_to(7), 3);
+    assert!(back.is_memorized("visit|verb"));
+    assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
+    Ok(())
+}
+
+#[test]
+fn a_legacy_session_file_still_reopens_the_document() -> Result<(), String> {
+    let dir = dir()?;
+    let file = dir.path().join("sample.epub");
+    let legacy = serde_json::to_string(&Some(last(&file))).unwrap();
+    let loaded = parse(None, Some(legacy));
+    assert_eq!(loaded.last.as_ref(), Some(&last(&file)));
+    assert!(loaded.study.is_none());
+    assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
     Ok(())
 }

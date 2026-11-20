@@ -46,6 +46,8 @@ pub struct LastDocument {
 pub struct Loaded {
     pub settings: Settings,
     pub last: Option<LastDocument>,
+    /// Study mode's durable half: mode, unlocks, memorized, recall notes.
+    pub study: Option<crate::study_mode::State>,
     /// What could not be read, for the log and a toast.
     pub notes: Vec<String>,
 }
@@ -73,6 +75,7 @@ impl std::fmt::Debug for Save {
             .field("dirty", &self.dirty)
             .field("failed", &self.failed)
             .field("last", &self.last)
+            .field("study", &self.study)
             .field("inline", &self.inline)
             .finish()
     }
@@ -86,6 +89,7 @@ impl Default for Save {
             dirty: false,
             failed: None,
             last: None,
+            study: None,
             inline: true,
             #[cfg(not(target_arch = "wasm32"))]
             waker: None,
@@ -153,6 +157,20 @@ impl Save {
         self.touch();
     }
 
+    /// Snapshots study mode; a difference owes a write.
+    pub fn note_study(&mut self, study: crate::study_mode::State) {
+        if self.study.as_ref() == Some(&study) {
+            return;
+        }
+        self.study = Some(study);
+        self.touch();
+    }
+
+    /// The study snapshot last owed to disk.
+    pub fn study(&self) -> Option<&crate::study_mode::State> {
+        self.study.as_ref()
+    }
+
     /// Collects any background write error so callers can retry and report it.
     pub fn poll(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
@@ -176,7 +194,7 @@ impl Save {
         self.wrote = now;
         self.dirty = false;
         let dir = self.dir.clone()?;
-        let encoded = match blobs(settings, self.last.as_ref()) {
+        let encoded = match blobs(settings, self.last.as_ref(), self.study.as_ref()) {
             Ok(encoded) => encoded,
             Err(why) => {
                 self.failed = Some(why);
@@ -250,34 +268,69 @@ pub fn parse(settings: Option<String>, session: Option<String>) -> Loaded {
             loaded.settings
         }
     };
-    let last = match session {
-        None => None,
-        Some(json) => match serde_json::from_str::<Option<LastDocument>>(&json) {
-            Ok(last) => last,
+    let (last, study) = match session {
+        None => (None, None),
+        Some(json) => match parse_session(&json) {
+            Ok(pair) => pair,
             Err(why) => {
                 notes.push(format!("{SESSION_FILE} could not be read: {why}"));
-                None
+                (None, None)
             }
         },
     };
     Loaded {
         settings: choices,
         last,
+        study,
         notes,
     }
 }
 
+/// `session.json` as written today, or as it was before study mode.
+fn parse_session(json: &str) -> Result<(Option<LastDocument>, Option<crate::study_mode::State>), String> {
+    if json.trim() == "null" {
+        return Ok((None, None));
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| e.to_string())?;
+    if value.get("last").is_some() || value.get("study").is_some() {
+        let file: SessionFile = serde_json::from_value(value).map_err(|e| e.to_string())?;
+        return Ok((file.last, file.study));
+    }
+    // A pre-study file is the document alone (or null, handled above).
+    let last: Option<LastDocument> = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    Ok((last, None))
+}
+
 /// The two files' text, as a flush writes them and a platform with no files
 /// keeps them: the names and the bytes are the engine's either way.
-pub fn blobs(settings: &Settings, last: Option<&LastDocument>) -> Result<Blobs, String> {
+pub fn blobs(
+    settings: &Settings,
+    last: Option<&LastDocument>,
+    study: Option<&crate::study_mode::State>,
+) -> Result<Blobs, String> {
     let choices = mareader_settings::to_json(settings);
-    let session = serde_json::to_string(&last).map_err(|e| format!("{SESSION_FILE}: {e}"))?;
+    // An empty window still writes four bytes, so the next launch starts clean.
+    let session = if last.is_none() && study.is_none() {
+        "null".to_owned()
+    } else {
+        let file = SessionFile {
+            last: last.cloned(),
+            study: study.cloned(),
+        };
+        serde_json::to_string(&file).map_err(|e| format!("{SESSION_FILE}: {e}"))?
+    };
     Ok([(SETTINGS_FILE, choices), (SESSION_FILE, session)])
 }
 
 /// Both files whole: a temp beside each, then a rename.
-pub fn store(dir: &Path, settings: &Settings, last: Option<&LastDocument>) -> Result<(), String> {
-    let encoded = blobs(settings, last)?;
+pub fn store(
+    dir: &Path,
+    settings: &Settings,
+    last: Option<&LastDocument>,
+    study: Option<&crate::study_mode::State>,
+) -> Result<(), String> {
+    let encoded = blobs(settings, last, study)?;
     write_blobs(dir, &encoded)
 }
 

@@ -2,6 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use serde::{Deserialize, Serialize};
+
 use mareader_study::{
     Batch, BatchCfg, Candidate, Deck, Mode, build_batches, build_deck, range_label,
 };
@@ -49,14 +51,16 @@ pub struct Gate {
 }
 
 /// Where a book's proactive lock stands, and the words already learned.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Progress {
     /// First page not yet unlocked; pages before it are free.
     pub unlocked_to: usize,
 }
 
 /// Engine-owned study-mode state: batches, the gate, memorized keys.
-#[derive(Clone, Debug, Default, PartialEq)]
+///
+/// Serializable for `session.json`; the open gate is ephemeral and skipped.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct State {
     mode: Mode,
     /// Last planned sizes, so a layout change re-plans once.
@@ -66,6 +70,7 @@ pub struct State {
     progress: HashMap<u128, Progress>,
     /// Global memorized keys: lemma|pos, never shaded or carded again.
     memorized: HashSet<String>,
+    #[serde(skip)]
     gate: Option<Gate>,
     /// Reactive answers this session: key → (solved, missed).
     recall: HashMap<String, (bool, bool)>,

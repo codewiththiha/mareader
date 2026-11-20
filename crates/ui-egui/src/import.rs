@@ -61,6 +61,7 @@ pub fn browser(storage: Option<&Store<'_>>) -> Loaded {
     Loaded {
         settings,
         last,
+        study: None,
         notes,
     }
 }
