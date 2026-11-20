@@ -45,6 +45,8 @@ pub struct Receipt {
     pub marks: usize,
     /// Saved AI page results.
     pub ai_pages: usize,
+    /// Words studied in them.
+    pub words: usize,
     /// Their formats, each once, and their measured size.
     pub formats: Vec<Format>,
     pub size: u64,
@@ -66,7 +68,7 @@ pub struct Removing {
 impl Receipt {
     /// Whether the data switch means anything: marks or a place.
     pub fn has_data(&self) -> bool {
-        self.marks > 0 || self.ai_pages > 0 || self.positions > 0
+        self.marks > 0 || self.ai_pages > 0 || self.words > 0 || self.positions > 0
     }
 }
 
@@ -141,6 +143,7 @@ impl Library {
             receipt.copies += usize::from(!fate.copies.is_empty());
             receipt.marks += self.marks_on(id).count();
             receipt.ai_pages += self.ai_pages(id).len();
+            receipt.words += self.sightings(id).len();
             let book = self.book(id);
             let placed = |c| self.folders.values().any(|f| f.placed.contains(&c));
             let in_folder =
@@ -288,7 +291,7 @@ impl Library {
         }
     }
 
-    /// Marks, AI pages and place go; its file returns as a new book.
+    /// Marks, AI pages, studied words and place go; it returns as new.
     fn forget_data(&mut self, id: BookId, at: Stamp) {
         // Ones removed before go too, words and all: kept only for Undo.
         for mark in self.marks.values_mut_where(|m| m.book.value == id) {
@@ -303,6 +306,7 @@ impl Library {
             page.result.clear();
             page.source.clear();
         }
+        self.forget_sightings(id, at);
         if let Some(state) = self.states.get_mut(&id) {
             state.position = Field::new(
                 Position {
@@ -313,6 +317,7 @@ impl Library {
                 },
                 at,
             );
+            state.unlocked = Field::new(None, at);
             self.states_dirty.insert(id);
         }
         if let Some(book) = self.books.get_mut(&id) {

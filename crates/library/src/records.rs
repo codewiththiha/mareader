@@ -13,6 +13,7 @@ use crate::library::{Dirty, Library, Parts};
 use crate::link::Link;
 use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
+use crate::study_words::{WordSighting, WordState};
 
 /// What a row holds. Synced kinds are shared; the rest stay on this machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -34,6 +35,10 @@ pub enum Kind {
     Link,
     /// A page the AI summarized, translated or simplified.
     AiPage,
+    /// A word studied, and where it stands, in every book.
+    Word,
+    /// A word studied in one book.
+    Sighting,
 }
 
 impl Kind {
@@ -49,6 +54,8 @@ impl Kind {
             Self::Folder => "folder",
             Self::Link => "link",
             Self::AiPage => "ai_page",
+            Self::Word => "word",
+            Self::Sighting => "sighting",
         }
     }
 
@@ -65,6 +72,8 @@ impl Kind {
             Self::Folder,
             Self::Link,
             Self::AiPage,
+            Self::Word,
+            Self::Sighting,
         ];
         all.into_iter().find(|k| k.name() == name)
     }
@@ -79,6 +88,8 @@ impl Kind {
             Self::Mark,
             Self::Link,
             Self::AiPage,
+            Self::Word,
+            Self::Sighting,
         ];
         shared.contains(&self)
     }
@@ -184,6 +195,16 @@ fn changes(library: &Library, dirty: &Dirty) -> Changes {
     {
         out.put(Kind::AiPage, page.id.to_string(), page);
     }
+    for word in dirty.words.iter().filter_map(|id| library.words.get(id)) {
+        out.put(Kind::Word, word.id.to_string(), word);
+    }
+    for seen in dirty
+        .sightings
+        .iter()
+        .filter_map(|id| library.sightings.get(id))
+    {
+        out.put(Kind::Sighting, seen.id.to_string(), seen);
+    }
     if !out.is_empty() {
         out.clock = serde_json::to_string(&library.clock).ok();
     }
@@ -227,6 +248,12 @@ pub(crate) fn assemble(rows: Vec<Row>, clock: Clock) -> (Parts, usize) {
             }),
             Kind::AiPage => parse::<AiPage>(&row).map(|p| {
                 parts.ai_pages.insert(p.id, p);
+            }),
+            Kind::Word => parse::<WordState>(&row).map(|w| {
+                parts.words.insert(w.id, w);
+            }),
+            Kind::Sighting => parse::<WordSighting>(&row).map(|s| {
+                parts.sightings.insert(s.id, s);
             }),
         };
         skipped += usize::from(read.is_none());

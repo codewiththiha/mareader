@@ -41,6 +41,7 @@ pub mod screen;
 mod shelves;
 #[cfg_attr(target_arch = "wasm32", path = "store_none.rs")]
 pub mod store;
+mod study_words;
 mod tracked;
 mod tree;
 mod view;
@@ -61,7 +62,9 @@ pub use folder::{
     parent_key,
 };
 pub use holding::Holding;
-pub use id::{AiPageId, BookId, ContentId, DeviceId, FolderId, LinkId, MarkId, ShelfId};
+pub use id::{
+    AiPageId, BookId, ContentId, DeviceId, FolderId, LinkId, MarkId, ShelfId, SightingId, WordId,
+};
 pub use ledger::{Held, Recovered};
 pub use library::{Dirty, Library, Measure, Opened};
 pub use link::{Link, LinkTo};
@@ -75,6 +78,7 @@ pub use relink::RelinkError;
 pub use removal::{Data, Receipt, Removing};
 pub use run::{Asked, Copied, Fold, Landed, MergeAsk, Plan, Planned};
 pub use shelves::{Membership, NAME_MAX, Shelf, ShelfError, ShelfKind, ShelfRemoved, ShelfWatch};
+pub use study_words::{LearnedBy, NewWord, WordSighting, WordState, WordStatus};
 pub use tree::Duplicated;
 pub use view::{COLUMNS_MAX, COLUMNS_MIN, CoverFit, Home, Layout, SortKey, View, natural};
 pub use words::{free_name, human_age, human_size, plural, same_name};

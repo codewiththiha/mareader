@@ -120,6 +120,54 @@ impl TryFrom<String> for LinkId {
     }
 }
 
+/// A word studied, by lemma and class; the same on every machine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub struct WordId(pub u128);
+
+impl fmt::Display for WordId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:032x}", self.0)
+    }
+}
+
+impl From<WordId> for String {
+    fn from(id: WordId) -> Self {
+        id.to_string()
+    }
+}
+
+impl TryFrom<String> for WordId {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, String> {
+        parse_hex(&s, 32).map(Self)
+    }
+}
+
+/// A word met in one book; its book and word decide it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub struct SightingId(pub u128);
+
+impl fmt::Display for SightingId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:032x}", self.0)
+    }
+}
+
+impl From<SightingId> for String {
+    fn from(id: SightingId) -> Self {
+        id.to_string()
+    }
+}
+
+impl TryFrom<String> for SightingId {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, String> {
+        parse_hex(&s, 32).map(Self)
+    }
+}
+
 impl BookId {
     /// Its first content's id: two machines agree unasked (`docs/sync.md`).
     pub fn original(content: ContentId) -> Self {

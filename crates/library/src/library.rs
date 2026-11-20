@@ -9,10 +9,13 @@ use crate::book::{Book, FileStamp, Format, Location, Origin, Position, State};
 use crate::clock::{Clock, Field, Stamp};
 use crate::extra::Extra;
 use crate::folder::{Folder, Tombstone};
-use crate::id::{AiPageId, BookId, ContentId, DeviceId, FolderId, LinkId, MarkId, ShelfId};
+use crate::id::{
+    AiPageId, BookId, ContentId, DeviceId, FolderId, LinkId, MarkId, ShelfId, SightingId, WordId,
+};
 use crate::link::Link;
 use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
+use crate::study_words::{WordSighting, WordState};
 use crate::tracked::Tracked;
 
 mod parts;
@@ -52,6 +55,8 @@ pub struct Dirty {
     pub states: BTreeSet<BookId>,
     pub marks: BTreeSet<MarkId>,
     pub ai_pages: BTreeSet<AiPageId>,
+    pub words: BTreeSet<WordId>,
+    pub sightings: BTreeSet<SightingId>,
     /// A book's data was erased: its old words must leave the disk too.
     pub erased: bool,
 }
@@ -71,6 +76,8 @@ impl Dirty {
             && self.links.is_empty()
             && self.marks.is_empty()
             && self.ai_pages.is_empty()
+            && self.words.is_empty()
+            && self.sightings.is_empty()
     }
 }
 
@@ -85,6 +92,8 @@ pub struct Library {
     pub(crate) members: Tracked<(ShelfId, BookId), Membership>,
     pub(crate) marks: Tracked<MarkId, Mark>,
     pub(crate) ai_pages: Tracked<AiPageId, AiPage>,
+    pub(crate) words: Tracked<WordId, WordState>,
+    pub(crate) sightings: Tracked<SightingId, WordSighting>,
     /// Each location's path to its book; rebuilt, never saved.
     pub(crate) at: HashMap<PathBuf, BookId>,
     /// Positions to write; the maps track their own changes.
@@ -125,6 +134,8 @@ impl Library {
             members: Tracked::new(parts.members),
             marks: Tracked::new(parts.marks),
             ai_pages: Tracked::new(parts.ai_pages),
+            words: Tracked::new(parts.words),
+            sightings: Tracked::new(parts.sightings),
             at: HashMap::new(),
             states_dirty: BTreeSet::new(),
             swept: Vec::new(),
@@ -439,6 +450,8 @@ impl Library {
             states: std::mem::take(&mut self.states_dirty),
             marks: self.marks.take_changed(),
             ai_pages: self.ai_pages.take_changed(),
+            words: self.words.take_changed(),
+            sightings: self.sightings.take_changed(),
             erased: std::mem::take(&mut self.erased),
         }
     }
@@ -451,6 +464,8 @@ impl Library {
             || self.links.has_changes()
             || self.marks.has_changes()
             || self.ai_pages.has_changes()
+            || self.words.has_changes()
+            || self.sightings.has_changes()
             || !self.states_dirty.is_empty()
             || !self.retired.is_empty()
     }
@@ -464,5 +479,7 @@ impl Library {
         self.links.mark_all();
         self.marks.mark_all();
         self.ai_pages.mark_all();
+        self.words.mark_all();
+        self.sightings.mark_all();
     }
 }

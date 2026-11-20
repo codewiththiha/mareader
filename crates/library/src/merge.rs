@@ -16,7 +16,7 @@ pub trait Merge {
 }
 
 /// The largest of `stamps`; never written if there are none.
-fn newest(stamps: impl IntoIterator<Item = Option<Stamp>>) -> Stamp {
+pub(crate) fn newest(stamps: impl IntoIterator<Item = Option<Stamp>>) -> Stamp {
     stamps.into_iter().flatten().max().unwrap_or(NEVER)
 }
 
@@ -163,11 +163,13 @@ impl Merge for AiPage {
 impl Merge for State {
     fn merge(&mut self, other: Self) {
         self.position.merge(other.position);
+        self.unlocked.merge(other.unlocked);
         self.extra.merge(other.extra);
     }
 
     fn latest(&self) -> Stamp {
-        newest([Some(self.position.at), self.extra.latest()])
+        let fields = [Some(self.position.at), Some(self.unlocked.at)];
+        newest(fields.into_iter().chain([self.extra.latest()]))
     }
 }
 
@@ -363,8 +365,14 @@ mod tests {
             place: None,
             spine: None,
         };
+        let gate = rng.stamp();
+        let spot = (gate.ms % 2 == 0).then_some(Spot::Page {
+            page: usize::try_from(gate.ms).unwrap_or(0),
+            rect: [0.0; 4],
+        });
         State {
             position: Field::new(position, at),
+            unlocked: Field::new(spot, gate),
             extra: extra(rng),
         }
     }

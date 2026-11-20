@@ -545,8 +545,7 @@ impl Library {
         {
             self.record_position(keeper, theirs, wall_ms);
         }
-        self.move_marks(gone, keeper, at);
-        self.move_ai_pages(gone, keeper, at);
+        self.move_data(gone, keeper, at);
         // The level the move left is the one shelf the keeper doesn't take.
         for shelf in self.shelves_of(gone) {
             if Some(shelf) != left {

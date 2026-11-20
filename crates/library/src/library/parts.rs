@@ -6,10 +6,11 @@ use crate::ai_pages::AiPage;
 use crate::book::{Book, State};
 use crate::clock::Clock;
 use crate::folder::Folder;
-use crate::id::{AiPageId, BookId, FolderId, LinkId, MarkId, ShelfId};
+use crate::id::{AiPageId, BookId, FolderId, LinkId, MarkId, ShelfId, SightingId, WordId};
 use crate::link::Link;
 use crate::marks::Mark;
 use crate::shelves::{Membership, Shelf};
+use crate::study_words::{WordSighting, WordState};
 
 /// What a saved library is made of, read back from disk.
 #[derive(Debug)]
@@ -25,6 +26,8 @@ pub(crate) struct Parts {
     pub members: BTreeMap<(ShelfId, BookId), Membership>,
     pub marks: BTreeMap<MarkId, Mark>,
     pub ai_pages: BTreeMap<AiPageId, AiPage>,
+    pub words: BTreeMap<WordId, WordState>,
+    pub sightings: BTreeMap<SightingId, WordSighting>,
 }
 
 impl Parts {
@@ -40,6 +43,8 @@ impl Parts {
             members: BTreeMap::new(),
             marks: BTreeMap::new(),
             ai_pages: BTreeMap::new(),
+            words: BTreeMap::new(),
+            sightings: BTreeMap::new(),
         }
     }
 }

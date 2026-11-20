@@ -76,3 +76,17 @@ adjective or adverb).
 
 *Cards from* picks Auto (AI first), AI or Dictionary. A pick never falls back
 silently.
+
+## What is kept (`crates/library/src/study_words.rs`)
+
+- **Words** (kind `word`): one per lemma and class for the reader, in every
+  book. The id is a hash of both, so two machines agree unasked. Status is
+  learning, memorized or missed; a card never lowers memorized.
+- **Sightings** (kind `sighting`): a word met in one book, with its form,
+  sentence, meaning, who asked it and the last tries. The id hashes the book
+  and the word.
+- **The gate** is `unlocked` on the book's position record: the text read
+  past its cards, as a `Spot`. Older builds keep it as an unknown field.
+- **Removal:** forgetting a word is a tombstone that Undo lifts. Erasing a
+  book's data takes its sightings and gate; the words stay the reader's.
+- **Sync:** both kinds are synced records and merge per field, newest wins.

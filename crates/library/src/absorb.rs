@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 
 use crate::ai_pages::AiPage;
 use crate::book::{Book, State};
-use crate::clock::{Field, Stamp};
+use crate::clock::{Clock, Field, Stamp};
 use crate::extra::Extra;
 use crate::id::{BookId, ContentId, ShelfId};
 use crate::library::Library;
@@ -15,6 +15,7 @@ use crate::marks::Mark;
 use crate::merge::Merge;
 use crate::records::{Kind, Row};
 use crate::shelves::{Membership, Shelf};
+use crate::tracked::Tracked;
 
 /// What taking in a batch of records did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -110,6 +111,8 @@ impl Library {
                     true
                 }))
             }
+            Kind::Word => take_into(&mut self.clock, &mut self.words, row, |w| w.id),
+            Kind::Sighting => take_into(&mut self.clock, &mut self.sightings, row, |s| s.id),
             Kind::Locations | Kind::OldFolder | Kind::Folder => None,
         }
     }
@@ -209,8 +212,14 @@ impl Library {
             into.merge(state);
             self.states_dirty.insert(keeper);
         }
+        self.move_data(gone, keeper, at);
+    }
+
+    /// `gone`'s marks, results and study go to `keeper`.
+    pub(crate) fn move_data(&mut self, gone: BookId, keeper: BookId, at: Stamp) {
         self.move_marks(gone, keeper, at);
         self.move_ai_pages(gone, keeper, at);
+        self.move_study(gone, keeper, at);
     }
 
     /// Breaks each loop of parents at its newest move, which goes back.
@@ -256,6 +265,26 @@ impl Library {
 }
 
 /// The merged record if it differs from what's here, else none.
+/// Merges one row into `map` by `key`; whether it changed anything.
+fn take_into<K, T>(
+    clock: &mut Clock,
+    map: &mut Tracked<K, T>,
+    row: &Row,
+    key: fn(&T) -> K,
+) -> Option<bool>
+where
+    K: Ord + Copy,
+    T: Merge + Clone + PartialEq + DeserializeOwned,
+{
+    let theirs: T = parse(row)?;
+    clock.observe(theirs.latest());
+    let id = key(&theirs);
+    Some(merge_into(map.get(&id), theirs).is_some_and(|t| {
+        map.insert(id, t);
+        true
+    }))
+}
+
 fn merge_into<T: Merge + Clone + PartialEq>(here: Option<&T>, theirs: T) -> Option<T> {
     let Some(here) = here else {
         return Some(theirs);
