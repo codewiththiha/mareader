@@ -363,12 +363,14 @@ pub struct StudySettings {
     pub cefr: CefrSettings,
     pub words: crate::words::WordListSettings,
     pub pronunciation: PronunciationSettings,
+    pub mode: crate::StudyModeSettings,
 }
 
 impl StudySettings {
     pub fn sanitize(&mut self) {
         self.highlights.sanitize();
         self.words.sanitize();
+        self.mode.sanitize();
     }
 }
 

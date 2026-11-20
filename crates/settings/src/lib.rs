@@ -14,6 +14,7 @@ mod ai_job;
 mod load;
 mod reader;
 mod study;
+mod study_mode;
 mod swatch;
 mod text;
 mod updates;
@@ -37,6 +38,7 @@ pub use reader::{
     Skip, Skips, StartupFit,
 };
 pub use study::StudySettings;
+pub use study_mode::{StudyModeSettings, StudyTask};
 pub use study::{
     Accent, BarItem, CefrLevel, CefrSettings, DictionaryOpens, DictionarySettings,
     DictionaryWindow, GlossDensity, GlossSettings, HighlightSettings, Notation, Pen, PickColor,

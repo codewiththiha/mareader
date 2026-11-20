@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::study_mode::drop_unknown;
+
 /// Who answers. Keys are not here: they live encrypted, apart.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -348,6 +350,7 @@ pub struct AiTasks {
     pub translate: TranslateTask,
     pub simplify: SimplifyTask,
     pub pages: PageRun,
+    pub study: crate::StudyTask,
 }
 
 /// The AI tasks that rewrite a page.
@@ -557,6 +560,7 @@ impl AiSettings {
             &mut tasks.summarize.preset,
             &mut tasks.translate.preset,
             &mut tasks.simplify.preset,
+            &mut tasks.study.preset,
         ];
         for slot in slots {
             if slot.is_some_and(|id| !ids.contains(&id)) {
@@ -579,20 +583,12 @@ impl AiSettings {
             p.sanitize();
         }
         self.unassign_missing();
-        let lang = &mut self.tasks.explain.language;
-        if lang.as_deref().is_some_and(|l| language_name(l).is_none()) {
-            *lang = None;
-        }
+        drop_unknown(&mut self.tasks.explain.language);
+        drop_unknown(&mut self.tasks.study.language);
         let batch = &mut self.tasks.organize.batch;
         *batch = (*batch).clamp(OrganizeTask::BATCH_MIN, OrganizeTask::BATCH_MAX);
         let translate = &mut self.tasks.translate;
-        if translate
-            .language
-            .as_deref()
-            .is_some_and(|l| language_name(l).is_none())
-        {
-            translate.language = None;
-        }
+        drop_unknown(&mut translate.language);
         let mut seen = std::collections::HashSet::new();
         translate
             .recent

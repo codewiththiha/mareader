@@ -3838,6 +3838,7 @@ version = "0.0.7"
 dependencies = [
  "mareader-appearance",
  "mareader-library",
+ "mareader-study",
  "serde",
  "serde_json",
 ]
