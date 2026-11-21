@@ -156,22 +156,31 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   words. While the locked pages only peek in it says what unlocks them and
   offers *Study the words*; once they fill 30 % of the strip (or any of a
   paged spread) the veil covers the pane and holds the deck.
-- **The deck:** the batch, its count of new words and a ring for the time
-  floor. A card shows the word, its class and band, how often it appears,
-  its other classes and its sentence from the book; the meaning waits for
-  *reveal* (Space). *I already know this* (K) marks it known; the arrows
-  step between cards. *Start reading* waits for the floor when Strict is on.
-  An AI card's back adds its synonyms and example, and the header says who
-  wrote the deck.
+- **The deck:** flash cards under a capsule giving the pages (*Before
+  pages 1–2*), the count, a ring and clock for the time floor, and a
+  shuffle that only reorders what is shown. A card's front holds the word
+  alone, its band in the top right corner; nothing from the book's
+  sentence, which would give it away. Its back gives the meaning and the
+  word class, and an AI card adds its synonyms and an example of its own.
+  The card (`study_mode/flip_card.rs`) is painted as shapes, tessellated
+  and turned in perspective about its upright axis. A click, Space or
+  Enter turns it over; a drag past 28 % of its width or a flick moves on,
+  rubber-banded at either end, and the arrows step too. Two cards peek out
+  beneath. With motion off it changes at once. *I already know this* (K)
+  marks the word known; *Start reading* waits for the floor when Strict is
+  on.
 - **Waiting:** while the deck is made it says which stage it is at (finding
   the words, writing them with the model, looking them up). After 7 s of the
   AI it says it is slow and offers *Use the dictionary instead*.
 - **Failed:** the card says why, with *Try again*, *Use the dictionary* and
   *Read previous pages*.
-- **The pill:** while the gate is out of reach, a pill above the page bar
-  shows the batch and page read and how the next deck is coming along
-  (waiting, writing, looking up, failed, ready), with *Open words* to go to
-  the gate.
+- **The corner toast** (`study_mode/progress.rs`): while the AI writes a
+  deck, the gate's or one made ahead, a ring sits at the pane's bottom
+  left, spinning while the words are found, filling as cards are written,
+  red once writing failed. A hover widens it to say so (*Writing cards 3
+  of 8 · pages 4–6*). A finished deck shows *Next cards ready* for 3 s.
+  Dictionary cards come at once and never show it; the deck opens at the
+  gate.
 - **Word help is off:** the selection bar drops Explain and Look up, and
   CEFR shading hides unless Hints is on.
 - **Reactive:** shading stays, a click on a shaded word opens the recall
@@ -193,7 +202,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   (study's model and language, desktop only); and *Open Space*.
 - **Shots:** `settings=study` opens the tab,
   `study_mode=proactive|reactive|off`, `study_gate=on`,
-  `study_deck=reveal`, `study_cards=ready|silent|failing` (a scripted AI that
+  `study_deck=reveal` (the card turned) or `study_deck=drag:-140` (held
+  mid-swipe), `study_cards=ready|silent|failing` (a scripted AI that
   writes every back and judges "right" correct and "close" close, never
   answers, or fails) and `recall=word` or `recall=word:answer`, a recall on
   the first `word` of the page read. The shot applies them once the book and

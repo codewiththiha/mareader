@@ -145,7 +145,7 @@ fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mu
         let size = vec2(width, (width * ASPECT).min(300.0));
         let order = cursor.order.clone();
         let face = |i: usize| order.get(i).and_then(|&c| open.cards.get(c)).map(faces);
-        let id = Id::new(("study-card", pane.id, cursor.batch));
+        let id = card_id(pane.id, cursor.batch);
         let shown = (cursor.at, count, cursor.turned);
         match flip_card::show(ui, id, size, shown, &face) {
             Some(Gesture::Turn) => cursor.turned = !cursor.turned,
@@ -162,6 +162,11 @@ fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mu
         let tick = left.fract().max(0.05) as f32;
         ui.ctx().request_repaint_after_secs(tick);
     }
+}
+
+/// The flip card's id in `pane`, for the batch from page to page.
+pub fn card_id(pane: PaneId, batch: (usize, usize)) -> Id {
+    Id::new(("study-card", pane, batch))
 }
 
 /// A card's faces: the word and band, then what it means.

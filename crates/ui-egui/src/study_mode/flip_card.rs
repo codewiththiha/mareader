@@ -157,6 +157,9 @@ pub fn show(
         false => target,
     };
     let gesture = s.handle(ui, &resp, (at, count), dt, moving);
+    if let Some(held) = ctx.data(|d| d.get_temp::<f32>(id.with("held"))) {
+        s.dx = held;
+    }
     s.fly = s.fly.and_then(|mut fly| {
         fly.t += dt / FLY;
         (fly.t < 1.0).then_some(fly)
@@ -177,6 +180,11 @@ pub fn show(
     s.shown = Some(at);
     ctx.data_mut(|d| d.insert_temp(id, s));
     gesture
+}
+
+/// Shots: holds the card `dx` aside, as a drag would.
+pub fn hold(ctx: &egui::Context, id: Id, dx: f32) {
+    ctx.data_mut(|d| d.insert_temp(id.with("held"), dx));
 }
 
 impl State {

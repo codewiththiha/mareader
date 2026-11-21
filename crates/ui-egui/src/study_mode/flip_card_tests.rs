@@ -1,5 +1,7 @@
 //! The flip card's turn, swipe and spoken faces.
 
+use egui::{pos2, vec2};
+
 use super::*;
 
 fn pose(angle: f32) -> Pose {

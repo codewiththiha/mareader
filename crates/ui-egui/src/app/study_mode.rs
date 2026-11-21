@@ -102,7 +102,8 @@ impl MareaderApp {
 ///
 /// `study_mode=proactive|reactive|off` turns it on or off in the focused
 /// pane, `study_gate=on` takes that pane to its gate,
-/// `study_deck=reveal` turns the deck's card over once the deck opens,
+/// `study_deck=reveal` turns the deck's card over once the deck opens and
+/// `study_deck=drag:-140` holds it 140 points to the left, mid-swipe,
 /// `study_cards=ready|silent|failing` has a scripted AI write the cards and
 /// judge recalls, and `recall=word` or `recall=word:answer` opens a recall on
 /// the first `word` of the page read, and answers it.
@@ -130,9 +131,16 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
             app.ui.study_mode.reveal_shot = true;
             return Some(Ok(()));
         }
+        ("study_deck", held) if held.starts_with("drag:") => {
+            let Ok(dx) = held.trim_start_matches("drag:").parse() else {
+                return Some(Err("study_deck: drag:points".into()));
+            };
+            app.ui.study_mode.drag_shot = Some(dx);
+            return Some(Ok(()));
+        }
         ("study_mode", _) => return Some(Err("study_mode: proactive, reactive or off".into())),
         ("study_gate", _) => return Some(Err("study_gate: on".into())),
-        ("study_deck", _) => return Some(Err("study_deck: reveal".into())),
+        ("study_deck", _) => return Some(Err("study_deck: reveal or drag:points".into())),
         _ => return None,
     };
     app.queue(Sent::Engine(Command::StudyMode(action)));

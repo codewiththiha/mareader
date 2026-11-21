@@ -165,6 +165,8 @@ pub struct StudyModeUi {
     keyed: Option<PaneId>,
     /// Shots: the shown card turns over once the deck opens.
     pub reveal_shot: bool,
+    /// Shots: the shown card held this far aside, as if dragged.
+    pub drag_shot: Option<f32>,
     /// The answer typed in the open recall.
     pub recall: recall::Draft,
     /// Shots: the recall to open, as `word` or `word:answer`.
@@ -212,6 +214,9 @@ impl StudyModeUi {
         if self.reveal_shot && matches!(pane.run.deck, DeckState::Open(_)) {
             self.reveal_shot = false;
             cursor.turned = true;
+        }
+        if let Some(dx) = self.drag_shot {
+            flip_card::hold(ctx, deck::card_id(pane.id, cursor.batch), dx);
         }
         gate::cover(ctx, pane.id, pane.rect, |ui| {
             deck::show(ui, pane, cursor, out);

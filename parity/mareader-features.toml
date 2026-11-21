@@ -1663,9 +1663,10 @@ evidence = [
     "crates/engine/src/study_mode/run_tests.rs::decks_ahead_follow_the_batches_still_coming",
     "crates/ui-egui/tests/study_cards.rs::a_slow_ai_offers_the_dictionary_which_then_writes_the_deck",
     "crates/ui-egui/tests/study_cards.rs::a_failed_deck_tries_again_or_turns_to_the_dictionary",
-    "crates/ui-egui/tests/study_cards.rs::decks_made_ahead_open_at_once_and_the_pill_leads_to_them",
+    "crates/ui-egui/tests/study_cards.rs::decks_made_ahead_open_at_once",
+    "crates/ui-egui/tests/study_cards.rs::a_writing_ai_shows_a_ring_that_widens_on_hover",
 ]
-notes = "StudyCards writes a deck's backs in one request (crates/assist/src/study_mode.rs, service/cards.rs) behind the CardWriter trait in crates/study/src/mode/cards.rs; the engine keeps backs per word, sentence and writer, makes look-ahead decks and falls back to the dictionary on request; the reader shows the waiting stages, the slow offer, the error card and the pill. Settings › Study mode picks where cards come from, study's model and its language"
+notes = "StudyCards writes a deck's backs in one request (crates/assist/src/study_mode.rs, service/cards.rs) behind the CardWriter trait in crates/study/src/mode/cards.rs; the engine keeps backs per word, sentence and writer, makes look-ahead decks and falls back to the dictionary on request; the reader shows the waiting stages, the slow offer, the error card and the corner toast while the AI writes. Settings › Study mode picks where cards come from, study's model and its language"
 
 [[feature]]
 id = "settings.persist"
