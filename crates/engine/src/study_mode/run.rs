@@ -252,6 +252,14 @@ impl Run {
         gate(&self.batches, self.unlocked)
     }
 
+    /// The first page the pane may show: the start with `lock`, else 0.
+    pub fn floor(&self, lock: bool) -> usize {
+        match lock && self.mode == Mode::Proactive {
+            true => self.start,
+            false => 0,
+        }
+    }
+
     /// The page just before the gate, where Read back goes; with `lock`
     /// never one before the start.
     pub fn back(&self, lock: bool) -> Option<usize> {

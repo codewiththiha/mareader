@@ -100,6 +100,7 @@ fn the_first_batch_starts_where_the_mode_turned_on() {
     assert_eq!(run.gate_batch().map(|b| b.from), Some(2));
     assert_eq!(run.back(false), Some(1), "Read back shows the page before");
     assert_eq!(run.back(true), None, "a lock keeps the pages before shut");
+    assert_eq!((run.floor(true), run.floor(false)), (2, 0));
 }
 
 #[test]

@@ -31,6 +31,12 @@ impl Session {
         self.study_mode.gate(pane)
     }
 
+    /// The first page `pane` may show while study mode locks the ones before.
+    pub fn study_floor(&self, pane: PaneId) -> usize {
+        let lock = self.settings.study.mode.lock;
+        self.study_mode.run(pane).map_or(0, |run| run.floor(lock))
+    }
+
     /// What the machine and `pane`'s book have, as study mode needs it.
     pub fn study_have(&self, pane: PaneId) -> Have {
         let english = match self.documents.document_of(pane).as_deref() {

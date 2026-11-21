@@ -54,6 +54,14 @@ pub fn shading(
     look.filter(|_| !hidden)
 }
 
+/// How far study mode lets `pane` go: its locked start up to its gate.
+pub fn span(session: &Session, pane: PaneId) -> gate::StudySpan {
+    gate::StudySpan {
+        floor: session.study_floor(pane),
+        gate: session.study_gate(pane),
+    }
+}
+
 /// The words `pane` recalled this run, in the solved or the missed look.
 pub fn settled(session: &Session, pane: PaneId) -> Vec<Settled> {
     let looks = &session.settings().study.highlights;
@@ -200,6 +208,11 @@ impl StudyModeUi {
             progress::show(ctx, pane, work, watch.alpha(now));
         }
         let shown = self.deck_or_veil(ctx, pane, out);
+        let floor = pane.run.floor(pane.lock);
+        let frost = gate::frost(pane.sheets, pane.rect, floor, pane.mode);
+        if let Some(rect) = frost.filter(|_| !shown) {
+            gate::before(ctx, pane.id, rect);
+        }
         if self.showing.contains(&pane.id) != shown {
             match shown {
                 true => self.showing.insert(pane.id),

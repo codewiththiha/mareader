@@ -397,9 +397,10 @@ impl PdfView {
         }
     }
 
-    /// Shows `place`'s `page` from its start, or the gate before it.
+    /// Shows `place`'s `page` from its start, or the nearest page study
+    /// mode holds the pane to.
     fn go(&mut self, at: &mut Place, page: usize) {
-        let page = self.gate.map_or(page, |gate| page.min(gate));
+        let page = self.study_span.clamp(page);
         self.focus = at.mode.start(page, at.lead);
         at.current = page;
         self.reveal = Some(if at.mode.paged() { self.focus } else { page });

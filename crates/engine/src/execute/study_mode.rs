@@ -83,8 +83,13 @@ fn say(session: &mut Session, toast: Toast) {
     session.emit(Event::Toast(toast));
 }
 
-/// `page`, or `pane`'s gate when study mode locks the pages past it.
+/// `page`, held by study mode between its locked start and its gate.
 pub(super) fn clamp(session: &mut Session, pane: PaneId, page: usize) -> usize {
+    let floor = session.study_floor(pane);
+    if page < floor {
+        say(session, Toast::warning(mode::before(floor)));
+        return floor;
+    }
     let Some(gate) = session.study_gate(pane) else {
         return page;
     };

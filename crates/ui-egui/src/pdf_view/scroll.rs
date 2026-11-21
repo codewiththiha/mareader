@@ -36,28 +36,36 @@ pub(super) fn finish(cx: &mut ShowContext<'_>) {
     finish_scroll(cx);
 }
 
-/// A strip scrolls no further than the end of study mode's gate page.
+/// A strip scrolls no further than the end of study mode's gate page, nor,
+/// with the lock on, above the top of its start page.
 ///
 /// The frame that overshoots shows only veiled pages; the next one is held.
 fn hold_at_gate(cx: &mut ShowContext<'_>) {
-    let Some(gate) = cx.view.gate.filter(|_| !cx.place.mode.paged()) else {
+    let hold = cx.view.study_span;
+    if cx.place.mode.paged() || hold == StudySpan::default() {
         return;
-    };
-    cx.place.current = cx.place.current.min(gate);
+    }
+    cx.place.current = hold.clamp(cx.place.current);
     let (Some(out), Some(input)) = (cx.paint.out.as_ref(), cx.input.as_ref()) else {
         return;
     };
-    let Some(end) = cx.view.layout.as_ref().and_then(|l| l.rect(gate)) else {
+    let Some(layout) = cx.view.layout.as_ref() else {
         return;
     };
-    let most = (end.max.to_vec2() - input.viewport).max(Vec2::ZERO);
-    let offset = out.state.offset;
-    let held = match cx.place.mode {
-        ViewMode::Horizontal => vec2(offset.x.min(most.x), offset.y),
-        _ => vec2(offset.x, offset.y.min(most.y)),
+    let top = |r: Rect| (r.min.to_vec2() - Vec2::splat(GAP)).max(Vec2::ZERO);
+    let least = layout.rect(hold.floor).map_or(Vec2::ZERO, top);
+    let end = hold.gate.and_then(|gate| layout.rect(gate));
+    let bottom = |r: Rect| (r.max.to_vec2() - input.viewport).max(least);
+    let most = end.map_or(Vec2::INFINITY, bottom);
+    let mode = cx.place.mode;
+    let fit = |v: Vec2| match mode {
+        ViewMode::Horizontal => vec2(v.x.clamp(least.x, most.x), v.y),
+        _ => vec2(v.x, v.y.clamp(least.y, most.y)),
     };
+    let offset = out.state.offset;
+    let held = fit(offset);
     if held != offset {
-        let to = cx.view.scroll_to.map_or(held, |(to, _)| to.min(held));
+        let to = cx.view.scroll_to.map_or(held, |(to, _)| fit(to));
         cx.view.scroll_to = Some((to, 2));
         cx.ctx.request_repaint();
     }

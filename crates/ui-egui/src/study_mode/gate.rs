@@ -2,7 +2,8 @@
 //!
 //! The view stops at the end of the gate page (`pdf_view`), so locked pages
 //! peek in under the veil. Once they fill enough of the pane the veil covers
-//! all of it and holds the deck.
+//! all of it and holds the deck. With the lock on, the view also stops at
+//! the start page, and a frost covers the pages before it.
 
 use egui::{
     Align, Context, CornerRadius, Id, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, pos2,
@@ -23,10 +24,27 @@ use crate::z_order::{self, Tier};
 const REACHED: f32 = 0.3;
 /// The button that brings back cards left for the pages before.
 pub const OPEN_CARDS: &str = "Open the cards";
+/// What the frost over the pages before the start says.
+pub const BEFORE: &str = "Locked while you study";
 /// A veil this short shows its button alone.
 const ROOMY: f32 = 120.0;
 /// How much of the paper the veil lets through: none of the words.
 const FROST: f32 = 0.97;
+
+/// How far study mode lets a pane go: from `floor` up to `gate`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StudySpan {
+    pub floor: usize,
+    pub gate: Option<usize>,
+}
+
+impl StudySpan {
+    /// `page`, kept within the hold; the gate wins if the two cross.
+    pub fn clamp(self, page: usize) -> usize {
+        let page = page.max(self.floor);
+        self.gate.map_or(page, |gate| page.min(gate))
+    }
+}
 
 /// Where locked pages show in a pane, and whether the gate is reached.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -58,10 +76,38 @@ pub fn veil(sheets: &[Sheet], pane: Rect, gate: usize, mode: ViewMode) -> Option
     Some(Veil { rect, reached })
 }
 
+/// The pages before `floor` as they show in a pane, if any do.
+pub fn frost(sheets: &[Sheet], pane: Rect, floor: usize, mode: ViewMode) -> Option<Rect> {
+    let before = sheets.iter().filter(|s| s.page < floor);
+    let end = before.clone().max_by_key(|s| s.page)?.rect.max;
+    let rect = match mode {
+        ViewMode::Vertical => Rect::from_min_max(pane.min, pos2(pane.right(), end.y)),
+        ViewMode::Horizontal => Rect::from_min_max(pane.min, pos2(end.x, pane.bottom())),
+        ViewMode::Single | ViewMode::Spread => before.fold(Rect::NOTHING, |r, s| r.union(s.shown)),
+    };
+    let rect = rect.intersect(pane);
+    rect.is_positive().then_some(rect)
+}
+
+/// The frost over the locked pages before the start, which says why.
+pub fn before(ctx: &Context, pane: PaneId, rect: Rect) {
+    let id = Id::new(("study-before", pane));
+    frosted(ctx, id, (rect, rect.bottom() - 0.5), |ui| {
+        let t = Tokens::get(ui.ctx());
+        ui.add_space((ui.max_rect().height() * 0.5 - 10.0).max(0.0));
+        ui.label(RichText::new(BEFORE).size(t.text_small).color(t.muted));
+    });
+}
+
 /// Frosted paper over `rect`, taking every press on it, with `content` on top.
 pub fn cover(ctx: &Context, pane: PaneId, rect: Rect, content: impl FnOnce(&mut Ui)) {
-    let t = Tokens::get(ctx);
     let id = Id::new(("study-veil", pane));
+    frosted(ctx, id, (rect, rect.top() + 0.5), content);
+}
+
+/// Frost over `rect` with a rule along `edge`, and `content` on top.
+fn frosted(ctx: &Context, id: Id, (rect, edge): (Rect, f32), content: impl FnOnce(&mut Ui)) {
+    let t = Tokens::get(ctx);
     z_order::keep_under(ctx, Tier::PageCard, id);
     z_order::area(ctx, Tier::PageCard, id)
         .fixed_pos(rect.min)
@@ -72,7 +118,7 @@ pub fn cover(ctx: &Context, pane: PaneId, rect: Rect, content: impl FnOnce(&mut 
             ui.painter()
                 .rect_filled(rect, CornerRadius::ZERO, t.paper.gamma_multiply(FROST));
             ui.painter()
-                .hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, t.line));
+                .hline(rect.x_range(), edge, Stroke::new(1.0, t.line));
             let inner = UiBuilder::new()
                 .max_rect(rect.shrink(16.0))
                 .layout(Layout::top_down(Align::Center));
@@ -151,6 +197,20 @@ mod tests {
         let veil = veil(&sheets, pane, 4, ViewMode::Vertical);
         assert_eq!(veil.map(|v| v.reached), Some(false));
         assert!(super::veil(&sheets[..1], pane, 4, ViewMode::Vertical).is_none());
+    }
+
+    #[test]
+    fn a_lock_frosts_the_pages_before_the_start_and_holds_jumps() {
+        let pane = Rect::from_min_size(pos2(0.0, 0.0), vec2(600.0, 800.0));
+        let sheets = [sheet(1, -300.0), sheet(2, 310.0)];
+        let frost = frost(&sheets, pane, 2, ViewMode::Vertical);
+        let expected = Rect::from_min_max(pos2(0.0, 0.0), pos2(600.0, 300.0));
+        assert_eq!(frost, Some(expected));
+        let hold = StudySpan {
+            floor: 2,
+            gate: Some(6),
+        };
+        assert_eq!([0, 4, 9].map(|p| hold.clamp(p)), [2, 4, 6]);
     }
 
     #[test]

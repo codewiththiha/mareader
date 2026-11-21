@@ -83,6 +83,11 @@ pub fn locked(range: &str) -> String {
     format!("Locked. Study the words for {range} first.")
 }
 
+/// Why a page before a locked start won't show.
+pub fn before(start: usize) -> String {
+    format!("Pages before {} are locked while you study.", start + 1)
+}
+
 /// The cards offered again on coming back to `range`, with the time left.
 pub fn ask_back(range: &str, left: Option<f64>) -> String {
     match left {

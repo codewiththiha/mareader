@@ -25,6 +25,7 @@ use crate::reach::{self, Press, Stop};
 use crate::read_aloud::marker::{self, Marker};
 use crate::selection::{self, Pages, Sheet};
 use crate::study::{self, BarPress, Gloss};
+use crate::study_mode::gate::StudySpan;
 use crate::theme::Tokens;
 use crate::vocab;
 use crate::zoom::PaneZoom;
@@ -192,8 +193,8 @@ pub struct PdfView {
     max_side: f32,
     /// Live `:hover` transitions and `@keyframes` animations over EPUB pages.
     interactive: interactive::InteractiveState,
-    /// The last page study mode lets the pane reach, as of this frame.
-    gate: Option<usize>,
+    /// The pages study mode lets the pane reach, as of this frame.
+    study_span: StudySpan,
 }
 
 impl Default for PdfView {
@@ -240,7 +241,7 @@ impl PdfView {
             ppp: 1.0,
             max_side: 4096.0,
             interactive: interactive::InteractiveState::default(),
-            gate: None,
+            study_span: StudySpan::default(),
         }
     }
 }
@@ -286,8 +287,8 @@ pub struct ViewContext {
     pub ai: page_ai::PaneAi,
     /// The machine, so a clip a page links to is handed to its own opener.
     pub host: Shared,
-    /// Study mode's gate: the pane goes no further than this page.
-    pub gate: Option<usize>,
+    /// Study mode's span: the pane stays between its start and its gate.
+    pub study_span: StudySpan,
 }
 
 /// The Layout settings the pages follow.
@@ -457,7 +458,7 @@ pub fn show(
     let now = ctx.input(|i| i.time);
     let frame = ui.max_rect();
     let bands = doc.bands().filter(|_| place.mode == ViewMode::Vertical);
-    view.gate = cx.gate;
+    view.study_span = cx.study_span;
     let mut context = ShowContext {
         ui: Some(ui),
         view,

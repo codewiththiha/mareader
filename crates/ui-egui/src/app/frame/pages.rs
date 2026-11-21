@@ -325,7 +325,7 @@ impl MareaderApp {
                     aloud: session.read_aloud().lit(id),
                     ai,
                     host: host.clone(),
-                    gate: session.study_gate(id),
+                    study_span: study_mode::span(session, id),
                 };
                 documents.show(ui, session, id, &cx, true)
             })
