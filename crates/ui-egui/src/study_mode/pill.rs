@@ -67,7 +67,7 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, veil_top: Option<f32>, out: &mut Com
         .stroke(Stroke::new(1.0, t.line))
         .corner_radius(CornerRadius::same(16))
         .inner_margin(Margin::symmetric(12, 4));
-    z_order::area(ctx, Tier::PageCard, Id::new(("study-pill", pane.id)))
+    let shown = z_order::area(ctx, Tier::PageCard, Id::new(("study-pill", pane.id)))
         .pivot(Align2::CENTER_BOTTOM)
         .fixed_pos(at)
         .constrain(false)
@@ -90,4 +90,6 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, veil_top: Option<f32>, out: &mut Com
                 });
             });
         });
+    // Toasts give the way to the deck the room.
+    crate::toast::keep_clear(ctx, shown.response.rect);
 }

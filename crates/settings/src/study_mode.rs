@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn study_recall_keeps_two_looks_no_pen_takes() {
         let mut h = crate::HighlightSettings {
-            underline: mareader_appearance::Rgb(0x83, 0xd3, 0x3c),
+            underline: mareader_appearance::Rgb(0x2e, 0xa0, 0x4f),
             ..crate::HighlightSettings::default()
         };
         h.missed = h.solved;

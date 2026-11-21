@@ -158,8 +158,13 @@ fn decks_made_ahead_open_at_once_and_the_pill_leads_to_them() {
         h.query_by_label_contains("next words ready").is_some(),
         "the pill tells"
     );
+    let at = h.get_by_label(OPEN).rect().center();
+    let met = h.ctx.layer_id_at(at);
     h.get_by_label(OPEN).click();
     h.run_steps(3);
     let current = h.state().documents().reading(pane).map(|r| r.current);
-    assert_eq!(current, gate, "Open words goes to the gate");
+    assert_eq!(
+        current, gate,
+        "Open words goes to the gate; {at:?} met {met:?}"
+    );
 }

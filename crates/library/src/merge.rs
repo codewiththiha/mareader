@@ -366,7 +366,7 @@ mod tests {
             spine: None,
         };
         let gate = rng.stamp();
-        let spot = (gate.ms % 2 == 0).then_some(Spot::Page {
+        let spot = gate.ms.is_multiple_of(2).then_some(Spot::Page {
             page: usize::try_from(gate.ms).unwrap_or(0),
             rect: [0.0; 4],
         });

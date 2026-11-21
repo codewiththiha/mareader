@@ -218,11 +218,11 @@ impl Default for HighlightSettings {
             },
             solved: Reserved {
                 pen: Pen::Underline,
-                color: Rgb(0x83, 0xd3, 0x3c),
+                color: Rgb(0x2e, 0xa0, 0x4f),
             },
             missed: Reserved {
                 pen: Pen::Underline,
-                color: Rgb(0xff, 0x00, 0x00),
+                color: Rgb(0xe0, 0x3e, 0x3e),
             },
         }
     }

@@ -159,7 +159,9 @@ impl Session {
         let study = &self.settings.study;
         let fallback = self.study_mode.run(pane)?.fallback == Some(batch.from);
         let picked = via(study.mode.source, self.study_have(pane));
-        let via = match fallback {
+        let writer = self.study_mode.writer();
+        let via = match fallback || writer.is_none() {
+            // A headless session has no writer: the dictionary looks up.
             true => Via::Dictionary,
             false => picked.unwrap_or(Via::Ai),
         };
@@ -171,7 +173,7 @@ impl Session {
             known: memorized(&self.library.model),
             to: self.study_dict_language(),
             via,
-            writer: (via == Via::Ai).then(|| self.study_mode.writer()).flatten(),
+            writer: writer.filter(|_| via == Via::Ai),
         })
     }
 

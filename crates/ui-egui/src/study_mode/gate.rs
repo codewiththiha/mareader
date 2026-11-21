@@ -5,7 +5,8 @@
 //! all of it and holds the deck.
 
 use egui::{
-    Align, Context, CornerRadius, Id, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, pos2,
+    Align, Context, CornerRadius, Id, LayerId, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder,
+    pos2,
 };
 use mareader_engine::command::Command;
 use mareader_engine::pane::ViewMode;
@@ -59,7 +60,10 @@ pub fn veil(sheets: &[Sheet], pane: Rect, gate: usize, mode: ViewMode) -> Option
 /// Frosted paper over `rect`, taking every press on it, with `content` on top.
 pub fn cover(ctx: &Context, pane: PaneId, rect: Rect, content: impl FnOnce(&mut Ui)) {
     let t = Tokens::get(ctx);
-    z_order::area(ctx, Tier::PageCard, Id::new(("study-veil", pane)))
+    let id = Id::new(("study-veil", pane));
+    let veil = z_order::layer(Tier::PageCard, id);
+    let fresh = !ctx.memory(|m| m.areas().is_visible(&veil));
+    z_order::area(ctx, Tier::PageCard, id)
         .fixed_pos(rect.min)
         .constrain(false)
         .show(ctx, |ui| {
@@ -74,6 +78,22 @@ pub fn cover(ctx: &Context, pane: PaneId, rect: Rect, content: impl FnOnce(&mut 
                 .layout(Layout::top_down(Align::Center));
             ui.scope_builder(inner, content);
         });
+    if fresh {
+        under_cards(ctx, veil);
+    }
+}
+
+/// Keeps the page cards already open, such as the page menu, over `veil`.
+fn under_cards(ctx: &Context, veil: LayerId) {
+    let shown: Vec<LayerId> = ctx.memory(|m| {
+        let up = |l: &LayerId| *l != veil && m.areas().is_visible(l);
+        m.layer_ids().filter(up).collect()
+    });
+    // Asked outside the memory's lock, which the tier check takes too.
+    let card = |l: &LayerId| z_order::tier_of(ctx, *l) == Some(Tier::PageCard);
+    for layer in shown.into_iter().filter(card) {
+        ctx.move_to_top(layer);
+    }
 }
 
 /// What unlocks the veiled pages, and the way to their words.

@@ -231,7 +231,9 @@ fn script_04_build_word_list() {
 /// Settings with a model for study mode's cards and no time floor.
 fn write_study_settings(state: &Path) {
     std::fs::create_dir_all(state).expect("mkdir state");
+    // The current schema, so loading keeps the presets as written.
     let settings = serde_json::json!({
+        "version": 7,
         "ai": {
             "presets": [
                 {"id": 1, "name": "Local", "provider": "ollama", "model": "", "at_once": 1}

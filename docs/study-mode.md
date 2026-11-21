@@ -75,7 +75,8 @@ adjective or adverb).
 | Reactive | word levels, an English book, and an AI model |
 
 *Cards from* picks Auto (AI first), AI or Dictionary. A pick never falls back
-silently.
+silently; only a session with no AI writer at all, such as `mareader-cli`,
+looks every deck up in the dictionary.
 
 ## What is kept (`crates/library/src/study_words.rs`)
 

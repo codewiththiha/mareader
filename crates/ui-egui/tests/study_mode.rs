@@ -85,9 +85,12 @@ fn the_page_menu_turns_study_mode_on_and_keeps_the_pages_as_written() -> Out {
         page_menu(&mut h)?;
     }
     assert!(h.query_by_label(KEEPS).is_some(), "the AI tasks wait");
+    let at = h.get_by_label("Study mode").rect().center();
+    let met = h.ctx.layer_id_at(at);
     h.get_by_label("Study mode").click();
     h.run();
-    assert!(!h.state().session().study_mode().on(pane));
+    let on = h.state().session().study_mode().on(pane);
+    assert!(!on, "the switch turns it off; {at:?} met {met:?}");
     Ok(())
 }
 
