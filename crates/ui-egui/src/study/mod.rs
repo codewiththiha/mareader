@@ -13,7 +13,9 @@ pub mod marks;
 mod note;
 mod picking;
 pub use picking::STYLE_ID as PICK_STYLE;
+pub mod mode;
 mod restyle;
+pub use mode::StudyModeUi;
 
 use std::cell::RefCell;
 use std::sync::Arc;

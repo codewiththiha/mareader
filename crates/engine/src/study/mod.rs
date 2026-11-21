@@ -1,6 +1,7 @@
 //! What the word card and the mark menu ask of the app.
 
 use mareader_library::{MarkId, Style};
+use mareader_study::StudyMode;
 use mareader_workspace::PaneId;
 
 pub mod asking;
@@ -37,6 +38,7 @@ pub(crate) mod loose {
         ContentId(u128::from(hash(name)))
     }
 }
+pub mod mode;
 pub mod state;
 pub mod words;
 
@@ -50,6 +52,16 @@ pub enum Action {
     Retry,
     /// Asks the AI chosen now; its answer replaces the saved one.
     AskAgain,
+    /// Turns study mode on or off.
+    Mode(StudyMode),
+    /// Marks a studied word memorized, globally across books.
+    MarkKnown {
+        key: String,
+    },
+    /// Puts a memorized word back into rotation.
+    Unmemorize {
+        key: String,
+    },
     Close,
     /// The mark menu's Select several: picking begins with its mark.
     SelectSeveral(PaneId, MarkId),

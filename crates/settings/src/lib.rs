@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 pub use ai::{
     AiSettings, AiTasks, Endpoint, ExplainTask, LANGUAGES, ModelPreset, OrganizeTask, PageRun,
-    PageStart, PageTask, PresetId, Provider, SimplifyTask, SummarizeTask, SummaryStyle,
+    PageStart, PageTask, PresetId, Provider, SimplifyTask, StudyTask, SummarizeTask, SummaryStyle,
     TranslateTask, language_name,
 };
 pub use ai_job::Job;

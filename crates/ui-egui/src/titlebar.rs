@@ -23,6 +23,7 @@ use crate::zoom::ZoomState;
 use mareader_engine::command::Independence;
 use mareader_engine::library::{Crumb, Field};
 use mareader_engine::pane::ViewMode;
+use mareader_study::StudyMode;
 
 /// How long the bar stays after the pointer leaves the band.
 pub const HIDE_GRACE: f64 = 0.4;
@@ -73,6 +74,14 @@ pub enum BarPage<'a> {
     Reader(ReaderBar),
     Library(LibraryBar<'a>),
     Dictionary(DictionaryBar),
+    /// The study dashboard: what's known, what's due, the open deck.
+    Space(SpaceBar),
+}
+
+/// The study dashboard's bar: a way back to reading or the library.
+pub struct SpaceBar {
+    /// The pressed Space button's name: where it returns to.
+    pub back: &'static str,
 }
 
 /// The dictionary's bar: a way to the library, and back.
@@ -96,6 +105,8 @@ pub struct ReaderBar {
     pub auto_scroll: Option<bool>,
     /// Whether a book reads aloud, once the active pane shows one.
     pub aloud: Option<bool>,
+    /// Study mode: off, proactive, or reactive, for the menu's toggle row.
+    pub study_mode: Option<StudyMode>,
     /// The ink dial, offered while the active pane shows a book.
     pub ink: Option<f32>,
     /// The popover's text dials, offered while the active pane shows a book.
@@ -318,7 +329,7 @@ impl TitleBar {
             BarPage::Library(library) => {
                 search_field(ui, &library.search, (lead_end, trail_start), &mut field)
             }
-            BarPage::Reader(_) | BarPage::Dictionary(_) => {
+            BarPage::Reader(_) | BarPage::Dictionary(_) | BarPage::Space(_) => {
                 title(ui, bar.title, lead_end, trail_start)
             }
         }
@@ -375,6 +386,10 @@ fn leading(
             let room = end.map(|end| end - ui.cursor().min.x - SEARCH_MIN - 24.0);
             crumbs::show(ui, &library.trail, library.renaming, room, &mut out);
         }
+        BarPage::Space(page) => {
+            let r = widgets::icon_button(ui, Icon::Library, page.back, false);
+            out.extend(clicked(r, Sent::Ui(UiCommand::ShowLibrary)));
+        }
     }
     (ui.min_rect().right(), out)
 }
@@ -405,7 +420,7 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
     };
     let (dictionary, fit) = match &bar.page {
         BarPage::Reader(reader) => fitting(bar, reader, width),
-        BarPage::Library(_) | BarPage::Dictionary(_) => (true, 0),
+        BarPage::Library(_) | BarPage::Dictionary(_) | BarPage::Space(_) => (true, 0),
     };
     let (shown, folded) = tools.split_at(fit.min(tools.len()));
     let mut folded = folded.to_vec();
@@ -423,6 +438,7 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
                 mode: reader.mode,
                 auto_scroll: reader.auto_scroll,
                 aloud: reader.aloud,
+                study_mode: reader.study_mode,
                 pinned,
             };
             view_menu::button(ui, &menu, &mut out);
@@ -432,6 +448,10 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
         }
         // The page's own choices sit on it; the menu keeps the pin.
         BarPage::Dictionary(_) => dictionary_menu(ui, pinned, bar.platform, &mut out),
+        BarPage::Space(_) => {
+            view_menu::pin_row(ui, pinned, &mut out);
+            view_menu::shortcuts_row(ui, bar.platform, &mut out);
+        }
     }
     appearance_button(ui, bar, &mut out);
     if !matches!(bar.page, BarPage::Reader(_)) {
@@ -492,7 +512,7 @@ fn appearance_button(ui: &mut egui::Ui, bar: &BarContext<'_>, out: &mut Commands
         .show(|ui| {
             let reader = match &bar.page {
                 BarPage::Reader(reader) => Some(reader),
-                BarPage::Library(_) | BarPage::Dictionary(_) => None,
+                BarPage::Library(_) | BarPage::Dictionary(_) | BarPage::Space(_) => None,
             };
             let cx = crate::appearance_menu::MenuContext {
                 current: bar.appearance,

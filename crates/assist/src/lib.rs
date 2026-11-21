@@ -34,4 +34,4 @@ pub use page::{PAGE_CHARS, PageAsk, PageJob, Rewrite, rewrite};
 pub use prompt::{Prompt, quote};
 pub use service::{Assist, Organized, Organizing, Rewriting, Rewrote, Waker};
 pub use slots::{Kind, Slots, Ticket};
-pub use task::{Explain, Task, word_info_schema};
+pub use task::{Explain, StudyCards, StudyJudge, Task, word_info_schema};

@@ -33,11 +33,9 @@ pub struct ChromeSettings {
     pub titlebar_pinned: bool,
     pub library_titlebar_pinned: bool,
     pub dictionary_titlebar_pinned: bool,
-    /// The sidebar floats over the page rather than pushing it aside.
+    pub space_titlebar_pinned: bool,
     pub sidebar_overlay: bool,
-    /// The bars blur the page behind them; off, they are solid.
     pub glass: bool,
-    /// Which layout the Appearance popover opens in.
     pub appearance_menu: AppearanceMenuStyle,
 }
 
@@ -47,6 +45,7 @@ impl Default for ChromeSettings {
             titlebar_pinned: false,
             library_titlebar_pinned: true,
             dictionary_titlebar_pinned: true,
+            space_titlebar_pinned: true,
             sidebar_overlay: false,
             glass: true,
             appearance_menu: AppearanceMenuStyle::Classic,
@@ -60,10 +59,12 @@ pub enum Bar {
     Reader,
     Library,
     Dictionary,
+    /// The study dashboard: what's known, what's due, the open deck.
+    Space,
 }
 
 impl Bar {
-    pub const ALL: [Bar; 3] = [Bar::Reader, Bar::Library, Bar::Dictionary];
+    pub const ALL: [Bar; 4] = [Bar::Reader, Bar::Library, Bar::Dictionary, Bar::Space];
 }
 
 impl ChromeSettings {
@@ -73,6 +74,7 @@ impl ChromeSettings {
             Bar::Reader => self.titlebar_pinned,
             Bar::Library => self.library_titlebar_pinned,
             Bar::Dictionary => self.dictionary_titlebar_pinned,
+            Bar::Space => self.space_titlebar_pinned,
         }
     }
 
@@ -82,11 +84,11 @@ impl ChromeSettings {
             Bar::Reader => &mut self.titlebar_pinned,
             Bar::Library => &mut self.library_titlebar_pinned,
             Bar::Dictionary => &mut self.dictionary_titlebar_pinned,
+            Bar::Space => &mut self.space_titlebar_pinned,
         };
         *slot = on;
     }
 }
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PageIndicatorStyle {
@@ -256,7 +258,7 @@ pub enum Highlight {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Player {
-    /// Just the bar; it opens only when asked, and then compact.
+    /// Bar only; opens when asked, stays compact.
     Bar,
     /// The bar with one line of words streaming above it.
     #[default]
@@ -482,11 +484,11 @@ mod tests {
     fn each_bar_keeps_its_own_pin() {
         let mut c = ChromeSettings::default();
         let pins = |c: &ChromeSettings| Bar::ALL.map(|b| c.pinned(b));
-        assert_eq!(pins(&c), [false, true, true], "the defaults");
+        assert_eq!(pins(&c), [false, true, true, true], "the defaults");
         c.pin(Bar::Dictionary, false);
-        assert_eq!(pins(&c), [false, true, false]);
+        assert_eq!(pins(&c), [false, true, false, true]);
         c.pin(Bar::Reader, true);
-        assert_eq!(pins(&c), [true, true, false]);
+        assert_eq!(pins(&c), [true, true, false, true]);
     }
 
     #[test]
@@ -494,7 +496,7 @@ mod tests {
         let old = r#"{"titlebar_pinned":true,"library_titlebar_pinned":false}"#;
         let c: ChromeSettings = serde_json::from_str(old).expect("old settings read");
         let pins = Bar::ALL.map(|b| c.pinned(b));
-        assert_eq!(pins, [true, false, true], "the new pin takes its default");
+        assert_eq!(pins, [true, false, true, true], "the new pin takes its default");
         assert_eq!(c.appearance_menu, AppearanceMenuStyle::Classic);
     }
 

@@ -21,6 +21,8 @@ impl MareaderApp {
             let dictionary = self.settings().dictionary.clone();
             let lift = self.toast_lift(ctx, ctx.content_rect());
             let active = self.session.read_aloud().active();
+            // Study mode draws over the stage: the gate or the recall popover.
+            let _studying = self.ui.study_mode.show(ctx, &self.session, stage, commands);
             let toasts = self.ui.toasts.active_bed_for(
                 ctx,
                 ctx.content_rect(),
@@ -130,6 +132,14 @@ impl MareaderApp {
                 let page = BarPage::Dictionary(DictionaryBar { back });
                 ("Dictionary", self.settings().appearance, page)
             }
+            Route::Space => {
+                let back = match route {
+                    Route::Reader => "Back to reading",
+                    _ => "Back to the library",
+                };
+                let page = BarPage::Space(SpaceBar { back });
+                ("Space", self.settings().appearance, page)
+            }
         };
         let bar = BarContext {
             title,
@@ -186,7 +196,7 @@ impl MareaderApp {
         // Runs and toasts rise over the page bar while it shows.
         let lift = match route {
             Route::Reader => self.toast_lift(ctx, stage),
-            Route::Library | Route::Dictionary => 0.0,
+            Route::Library | Route::Dictionary | Route::Space => 0.0,
         };
         ctx.data_mut(|d| d.insert_temp(egui::Id::new("toast-platform"), self.ui.platform));
         let active = self.session.read_aloud().active();

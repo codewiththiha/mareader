@@ -179,6 +179,9 @@ fn study(session: &mut Session, action: crate::study::Action) {
         Action::RestoreNote(id, text) => session.study_restore_note(id, text),
         Action::SetNote(id, text) => session.study_set_note(id, text),
         Action::DropMarks(ids) => session.study_drop_marks(&ids),
+        Action::Mode(mode) => session.study_mode_set(mode),
+        Action::MarkKnown { key } => session.study_mark_known(&key),
+        Action::Unmemorize { key } => session.study_unmemorize(&key),
         other => session.emit(Event::Study(other)),
     }
 }

@@ -1599,6 +1599,50 @@ reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
 notes = "Copy and Explain (M6 slice 1); highlighters, ordering and hiding (slice 3); Look up with the dictionary (slice 4), added to saved menus after Explain"
 
 [[feature]]
+id = "study.mode"
+title = "Study mode: proactive batch gating or reactive recall, with a Space dashboard"
+area = "I"
+tier = "P2"
+milestone = "M7"
+status = "planned"
+ui_only = true
+reference = ["crates/study/src/mode.rs", "crates/settings/src/study.rs"]
+notes = "Off, proactive (learn each batch's words before reading on) or reactive (recall each shaded word as it comes up). Settings › Study mode sets mode, card source, batch unit and budgets. The View menu toggles mode; Space shows the dashboard."
+
+[[feature]]
+id = "study.mode-proactive"
+title = "Proactive mode: a batch gates its pages until its deck is studied"
+area = "I"
+tier = "P2"
+milestone = "M7"
+status = "planned"
+ui_only = true
+reference = ["crates/study/src/batches.rs", "crates/study/src/deck.rs", "crates/engine/src/study/mode.rs"]
+notes = "The gate covers the stage with the batch's deck and a floor timer (sec per card, strict on by default). Reading past the batch is locked until its words are studied or the gate is dismissed."
+
+[[feature]]
+id = "study.mode-reactive"
+title = "Reactive mode: click a shaded word to recall it in a popover judged by the model"
+area = "I"
+tier = "P2"
+milestone = "M7"
+status = "planned"
+ui_only = true
+reference = ["crates/study/src/judge.rs", "crates/study/src/mode.rs"]
+notes = "Clicking a shaded word opens a recall popover: type the meaning, get a correct/close/wrong verdict, up to three attempts with a hint after the first miss. A correct answer marks the word memorized globally."
+
+[[feature]]
+id = "study.space"
+title = "Space dashboard: study mode in force, words known, and the open deck"
+area = "I"
+tier = "P2"
+milestone = "M7"
+status = "planned"
+ui_only = true
+reference = ["crates/ui-egui/src/titlebar.rs", "crates/settings/src/reader.rs"]
+notes = "A new top-level route beside Library, reached from the View menu. Shows mode, memorized/learning/missed counts, batch and deck settings, and a way to open Settings."
+
+[[feature]]
 id = "settings.persist"
 title = "Every setting persists; a new field defaults to the old behaviour"
 area = "J"

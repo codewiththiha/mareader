@@ -34,6 +34,8 @@ pub struct UiState {
     pub(super) toasts: Toasts,
     /// The selection bar's answers, marks and the word card.
     pub(super) study: StudyUi,
+    /// Study mode overlays: the proactive gate and the recall popover.
+    pub(super) study_mode: crate::study::mode::StudyModeUi,
     pub(super) page_ai: crate::page_ai::PageAiUi,
     pub(super) read_aloud: crate::read_aloud::ReadAloudUi,
     /// Who answers Explain, and the AI settings' background work.

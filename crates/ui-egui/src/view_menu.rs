@@ -15,6 +15,9 @@ use crate::zoom::ZoomState;
 use mareader_engine::command::Command;
 use mareader_engine::pane::ViewMode;
 use mareader_engine::pane::{Fit, Step, ZoomCommand};
+use mareader_engine::route::Route;
+use mareader_engine::study::Action as StudyAction;
+use mareader_study::StudyMode;
 
 pub const VIEW_MENU: &str = "view-menu";
 const WIDTH: f32 = 272.0;
@@ -40,6 +43,8 @@ pub struct MenuContext<'a> {
     pub aloud: Option<bool>,
     /// The title bar stays shown instead of waiting for a hover.
     pub pinned: bool,
+    /// Study mode: off, proactive, or reactive; no row without a book.
+    pub study_mode: Option<StudyMode>,
 }
 
 /// The menu button and its popup.
@@ -76,6 +81,21 @@ fn contents(ui: &mut Ui, cx: &MenuContext<'_>, out: &mut Commands) {
     }
     if let Some(on) = cx.aloud {
         read_aloud_row(ui, on, cx.platform, out);
+    }
+    if let Some(mode) = cx.study_mode {
+        widgets::menu_section(ui, None, "Study mode");
+        for m in StudyMode::ALL {
+            let on = mode == m;
+            if widgets::menu_row(ui, Icon::Book, m.label(), None, on).clicked() {
+                out.push(Sent::Engine(Command::Study(StudyAction::Mode(m))));
+                ui.close();
+            }
+        }
+    }
+    widgets::menu_section(ui, None, "Space");
+    if widgets::menu_row(ui, Icon::Book, "Go to Space", None, false).clicked() {
+        out.push(Sent::Engine(Command::ShowRoute(Route::Space)));
+        ui.close();
     }
     let full = Sent::Ui(UiCommand::Window(WindowCommand::ToggleFullscreen));
     let (icon, label) = if cx.fullscreen {

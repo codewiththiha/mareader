@@ -93,7 +93,7 @@ impl MareaderApp {
             .map(|pane| theme::Tokens::new(&self.look(pane)));
         let lift = match route {
             Route::Reader => self.toast_lift(ctx, ctx.content_rect()),
-            Route::Library | Route::Dictionary => 0.0,
+            Route::Library | Route::Dictionary | Route::Space => 0.0,
         };
         let dict = (reader).then(|| self.ui.dict.window_cover()).flatten();
         let active = self.session.read_aloud().active();

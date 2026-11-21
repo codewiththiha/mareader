@@ -4,14 +4,16 @@ use mareader_settings::Bar;
 
 use crate::command::Command;
 
-/// The page in the window: the panes being read, the library, or the
-/// dictionary.
+/// The page in the window: the panes being read, the library, the
+/// dictionary, or the study dashboard.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Route {
     #[default]
     Reader,
     Library,
     Dictionary,
+    /// Study mode's dashboard: what's known, what's due, the open deck.
+    Space,
 }
 
 impl Route {
@@ -21,6 +23,7 @@ impl Route {
             Route::Reader => Bar::Reader,
             Route::Library => Bar::Library,
             Route::Dictionary => Bar::Dictionary,
+            Route::Space => Bar::Space,
         }
     }
 

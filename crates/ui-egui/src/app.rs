@@ -44,9 +44,11 @@ use crate::pdf_view::{PageLook, ViewContext};
 use crate::platform::{LightSpots, NativeLights, Platform};
 use crate::settings_window::SettingsWindow;
 use crate::sidebar::{Panel, RailContext, Sidebar};
-use crate::study::{Explained, Gloss, StudyUi};
+use crate::study::{Explained, Gloss, StudyModeUi, StudyUi};
 use crate::thumbnails::ThumbState;
-use crate::titlebar::{self, BarContext, BarPage, DictionaryBar, LibraryBar, ReaderBar, TitleBar};
+use crate::titlebar::{
+    self, BarContext, BarPage, DictionaryBar, LibraryBar, ReaderBar, SpaceBar, TitleBar,
+};
 use crate::toast::Toasts;
 use crate::ui_command::Allows;
 use crate::ui_command::{Commands, Sent};
@@ -64,6 +66,7 @@ use mareader_engine::session::{AppearanceSnapshot as Held, Session};
 use mareader_engine::settings::Tab;
 use mareader_engine::study::Action as StudyAction;
 use mareader_engine::toast::Toast;
+use mareader_study::{CardMakerCanned, StudyJudgeCanned};
 use ui_state::UiState;
 
 /// Settings reach disk this long after a change, at most: the engine's own
@@ -189,7 +192,10 @@ impl MareaderApp {
     fn built(loaded: Loaded, ctx: &Context, host: Shared, machine: Machine) -> Self {
         let titlebar = TitleBar::default();
         let (wake, waker) = setup::WakeSlot::new(ctx);
-        let session = Session::from_loaded(host, waker, loaded);
+        let mut session = Session::from_loaded(host, waker, loaded);
+        // Canned card maker and judge until a provider resolves.
+        session.study_set_card_maker(Arc::new(CardMakerCanned));
+        session.study_set_judge(Arc::new(StudyJudgeCanned));
         let mut app = Self {
             session,
             ui: UiState {
@@ -209,6 +215,7 @@ impl MareaderApp {
                 find: FindBar::default(),
                 toasts: Toasts::default(),
                 study: StudyUi::default(),
+                study_mode: StudyModeUi::default(),
                 page_ai: crate::page_ai::PageAiUi::default(),
                 read_aloud: crate::read_aloud::ReadAloudUi::default(),
                 ai: crate::ai::Ai::default(),

@@ -17,6 +17,7 @@ use crate::read_aloud::player::Act as ReadAct;
 use crate::session::Session;
 use crate::study::Action as StudyAction;
 use crate::updates::{Action as UpdateAction, MockMode, MockUpdate, UpdatePlatform};
+use mareader_study::StudyMode;
 
 /// The dictionary's asks a script can send.
 pub(crate) const DICT: &str = "close_card|pursue";
@@ -36,7 +37,8 @@ pub(crate) fn dict(_at: &Session, params: &Value) -> Result<Command, String> {
 pub(crate) const STUDY: &str = concat!(
     "retry|ask_again|close|pick_page|",
     "pick_all|done_picking|edit_note|",
-    "cancel_note|set_note",
+    "cancel_note|set_note|",
+    "mode|mark_known|unmemorize",
 );
 
 /// `study.act`: the word card's and the mark menu's asks.
@@ -46,6 +48,26 @@ pub(crate) fn study(at: &Session, params: &Value) -> Result<Command, String> {
         "retry" => StudyAction::Retry,
         "ask_again" => StudyAction::AskAgain,
         "close" => StudyAction::Close,
+        "mode" => {
+            let mode = json::text(params, "mode")?;
+            let mode = match mode.as_str() {
+                "off" => StudyMode::Off,
+                "proactive" => StudyMode::Proactive,
+                "reactive" => StudyMode::Reactive,
+                other => {
+                    return Err(format!(
+                        "study.act mode wants off|proactive|reactive; {other:?} is not one of them"
+                    ));
+                }
+            };
+            StudyAction::Mode(mode)
+        }
+        "mark_known" => StudyAction::MarkKnown {
+            key: json::text(params, "key")?,
+        },
+        "unmemorize" => StudyAction::Unmemorize {
+            key: json::text(params, "key")?,
+        },
         "pick_page" => StudyAction::PickPage,
         "pick_all" => StudyAction::PickAll,
         "done_picking" => StudyAction::DonePicking,

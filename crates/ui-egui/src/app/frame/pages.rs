@@ -1,4 +1,6 @@
 use super::*;
+use crate::ui_command::UiCommand;
+use mareader_engine::study::mode::WordStatus;
 
 struct PageContext {
     view: PaneView,
@@ -268,7 +270,6 @@ impl MareaderApp {
         let page_top = self.ui.titlebar.page_top(ctx, route.bar(), pinned);
         let menu_shot = self.ui.menu_shot;
         let (highlights, dictionary) = (&highlight_look, &dictionary_look);
-        let documents = &mut self.ui.documents;
         let (library, library_view) = (&mut self.ui.library, &library_look);
         let study = &mut self.ui.study;
         let page_ai = &mut self.ui.page_ai;
@@ -277,7 +278,7 @@ impl MareaderApp {
         let layout = &layout;
         let session = &mut self.session;
         self.ui.library_rect = None;
-        // The dictionary page needs all of `self`: drawn outside the closure.
+        // Dictionary and space pages draw outside the closure.
         if route == Route::Dictionary {
             self.ui.pane_rects.clear();
             self.ui
@@ -285,8 +286,14 @@ impl MareaderApp {
                 .page(ui, session, dictionary, page_top, commands);
             return;
         }
+        if route == Route::Space {
+            self.space(ui, &self.session, commands);
+            self.ui.pane_rects.clear();
+            return;
+        }
         // Copied out above: the closures below need `&mut self`.
         let mut library_rect = None;
+        let documents = &mut self.ui.documents;
         let rects = egui::CentralPanel::no_frame().show(ui, |ui| {
             if route == Route::Library {
                 library_rect = Some(ui.max_rect());
@@ -371,4 +378,41 @@ fn pane_bookmarks(session: &Session, study: &StudyUi, pane: PaneId) -> Vec<usize
         .into_iter()
         .map(|(_, page)| page)
         .collect()
+}
+
+/// The study dashboard: the mode in force, what is known, and the open deck.
+impl MareaderApp {
+    pub(super) fn space(&self, ui: &mut egui::Ui, session: &Session, _commands: &mut Commands) {
+        let mode = session.study_mode().mode;
+        let settings = &session.study_mode().settings;
+        let words = &session.study_mode().words;
+        let mut counts = [0usize; 3];
+        for state in words.values() {
+            match state.status {
+                WordStatus::Learning => counts[0] += 1,
+                WordStatus::Memorized => counts[1] += 1,
+                WordStatus::Missed => counts[2] += 1,
+            }
+        }
+        ui.heading("Space");
+        ui.add_space(8.0);
+        ui.label(format!("Mode: {}", mode.label()));
+        ui.label(mode.detail());
+        ui.add_space(12.0);
+        ui.label(format!(
+            "Words known: {} memorized, {} learning, {} missed",
+            counts[1], counts[0], counts[2]
+        ));
+        ui.label(format!(
+            "Batch: {} pages, {} cards per deck, {} s per card, strict {}",
+            settings.pages,
+            settings.max_cards,
+            settings.sec_per_card,
+            if settings.strict { "on" } else { "off" }
+        ));
+        ui.add_space(12.0);
+        if ui.button("Open the settings").clicked() {
+            _commands.push(Sent::Ui(UiCommand::ShowSettings));
+        }
+    }
 }

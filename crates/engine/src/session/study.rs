@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use mareader_appearance::Rgb;
 use mareader_library::{BookId, MarkId, MarkKind, Style};
-use mareader_study::Explainer;
+use mareader_settings::Settings;
+use mareader_study::{CardMaker, Explainer, StudyJudge, StudyMode};
 use mareader_workspace::PaneId;
 
 use crate::event::Event;
@@ -210,5 +211,48 @@ impl Session {
             now_ms: crate::library::wall_ms(),
         };
         (file_name(title, format), render(&sheet, format))
+    }
+
+    /// Study mode: on or off, where each book's lock stands, which words are
+    /// known, and any decks being prepared ahead.
+    pub fn study_mode(&self) -> &crate::study::mode::Mode {
+        &self.study_mode
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn study_mode_mut(&mut self) -> &mut crate::study::mode::Mode {
+        &mut self.study_mode
+    }
+
+    pub(crate) fn settings_mut(&mut self) -> &mut Settings {
+        &mut self.settings
+    }
+
+    /// Configures who writes a batch's cards (the AI, a dictionary pack, or
+    /// nobody), as with the gloss explainer.
+    pub fn study_set_card_maker(&mut self, card_maker: Arc<dyn CardMaker>) {
+        self.study_mode.set_card_maker(card_maker);
+    }
+
+    /// Configures who judges a recall attempt (the model, or nobody).
+    pub fn study_set_judge(&mut self, judge: Arc<dyn StudyJudge>) {
+        self.study_mode.set_judge(judge);
+    }
+
+    /// Turns study mode on or off, persisting the choice with the settings.
+    pub fn study_mode_set(&mut self, mode: StudyMode) {
+        self.settings_mut().study.study_mode.mode = mode;
+        self.study_mode.set_mode(mode);
+    }
+
+    /// Marks a studied word memorized, globally across books.
+    pub fn study_mark_known(&mut self, key: &str) {
+        let band = self.study_mode.words.get(key).map_or(0, |state| state.band);
+        self.study_mode.mark_known(key, band);
+    }
+
+    /// Puts a memorized word back into rotation.
+    pub fn study_unmemorize(&mut self, key: &str) {
+        self.study_mode.unmemorize(key);
     }
 }

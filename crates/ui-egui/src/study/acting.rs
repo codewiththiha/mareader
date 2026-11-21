@@ -21,6 +21,15 @@ impl StudyUi {
                     session.study_ask_again(card.key, &card.word, &card.context);
                 }
             }
+            Action::Mode(mode) => {
+                session.study_mode_set(mode);
+            }
+            Action::MarkKnown { key } => {
+                session.study_mark_known(&key);
+            }
+            Action::Unmemorize { key } => {
+                session.study_unmemorize(&key);
+            }
             Action::Close => {
                 self.card = None;
                 self.stash = None;

@@ -215,6 +215,15 @@ pub struct ExplainTask {
     pub language: Option<String>,
 }
 
+/// Studying words: who answers, and the meaning's language.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StudyTask {
+    pub preset: Option<PresetId>,
+    /// A tag from [`LANGUAGES`]; none writes in the context's language.
+    pub language: Option<String>,
+}
+
 /// Filing loose books onto shelves.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -343,6 +352,7 @@ impl Default for PageRun {
 #[serde(default)]
 pub struct AiTasks {
     pub explain: ExplainTask,
+    pub study: StudyTask,
     pub organize: OrganizeTask,
     pub summarize: SummarizeTask,
     pub translate: TranslateTask,
@@ -501,6 +511,12 @@ impl AiSettings {
         self.tasks.explain.preset.and_then(|id| self.preset(id))
     }
 
+    /// The model study cards and the study judge ask: its own, else Explain's.
+    pub fn study_preset(&self) -> Option<&ModelPreset> {
+        let own = self.tasks.study.preset.and_then(|id| self.preset(id));
+        own.or_else(|| self.explain_preset())
+    }
+
     /// The model Organize asks: its own, else Explain's.
     pub fn organize_preset(&self) -> Option<&ModelPreset> {
         let own = self.tasks.organize.preset.and_then(|id| self.preset(id));
@@ -553,6 +569,7 @@ impl AiSettings {
         let tasks = &mut self.tasks;
         let slots = [
             &mut tasks.explain.preset,
+            &mut tasks.study.preset,
             &mut tasks.organize.preset,
             &mut tasks.summarize.preset,
             &mut tasks.translate.preset,
@@ -582,6 +599,13 @@ impl AiSettings {
         let lang = &mut self.tasks.explain.language;
         if lang.as_deref().is_some_and(|l| language_name(l).is_none()) {
             *lang = None;
+        }
+        let study_lang = &mut self.tasks.study.language;
+        if study_lang
+            .as_deref()
+            .is_some_and(|l| language_name(l).is_none())
+        {
+            *study_lang = None;
         }
         let batch = &mut self.tasks.organize.batch;
         *batch = (*batch).clamp(OrganizeTask::BATCH_MIN, OrganizeTask::BATCH_MAX);
@@ -751,5 +775,36 @@ mod tests {
         assert_eq!(ai.tasks.pages.per_request, 1);
         assert_eq!(PageRun::default().per_request, 5);
         assert_eq!(ai.tasks.simplify.start, PageStart::Ask);
+    }
+
+    #[test]
+    fn study_preset_follows_explain_until_given_its_own() {
+        let mut ai = AiSettings::default();
+        let explain = ai.add_preset(Provider::Ollama, "qwen3");
+        let own = ai.add_preset(Provider::OpenAi, "");
+        ai.tasks.explain.preset = Some(explain);
+        // Study follows Explain until it has its own preset.
+        assert_eq!(ai.study_preset().map(|p| p.id), Some(explain));
+        ai.tasks.study.preset = Some(own);
+        assert_eq!(ai.study_preset().map(|p| p.id), Some(own));
+        ai.remove_preset(own);
+        assert_eq!(ai.tasks.study.preset, None);
+        assert_eq!(ai.study_preset().map(|p| p.id), Some(explain));
+    }
+
+    #[test]
+    fn study_preset_removal_unassigns_and_bad_language_is_dropped() {
+        let mut ai = AiSettings::default();
+        let id = ai.add_preset(Provider::Custom, "m");
+        ai.tasks.study.preset = Some(id);
+        ai.tasks.study.language = Some("xx".into());
+        ai.remove_preset(id);
+        assert_eq!(ai.tasks.study.preset, None);
+        assert_eq!(ai.tasks.study.language, None);
+        ai.tasks.study.preset = Some(id);
+        ai.tasks.study.language = Some("fr".into());
+        ai.sanitize();
+        assert_eq!(ai.tasks.study.language.as_deref(), Some("fr"));
+        assert_eq!(ai.study_preset().map(|p| p.id), Some(id));
     }
 }

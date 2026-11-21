@@ -32,6 +32,7 @@ mod models;
 #[cfg(not(target_arch = "wasm32"))]
 mod provider_card;
 mod read_aloud;
+mod study_mode;
 mod updates;
 mod vocabulary;
 mod voice_model;
@@ -344,6 +345,7 @@ fn tab_body(
             let heard = (live.vocab, live.voices.sounds, live.voices.english.as_ref());
             vocabulary::tab(ui, (&mut s.study, &mut s.dictionary), heard, out);
         }
+        Tab::StudyMode => study_mode::tab(ui, &mut s.study.study_mode),
         Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, live.dict, out),
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Ai => {
@@ -1180,6 +1182,7 @@ impl TabIcon for Tab {
             Tab::Panes => Icon::SplitRight,
             Tab::Motion => Icon::Motion,
             Tab::Updates => Icon::Download,
+            Tab::StudyMode => Icon::Book,
             Tab::Model(model) => Icon::engine(model.id).unwrap_or(Icon::VoiceModel),
         }
     }

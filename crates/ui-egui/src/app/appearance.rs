@@ -261,6 +261,7 @@ impl MareaderApp {
             mode: docs.mode(self.active()),
             auto_scroll: docs.drifting(self.active()),
             aloud: (docs.reading(self.active())).map(|_| self.session.read_aloud().active()),
+            study_mode: Some(self.session.study_mode().mode),
             ink: (docs.reflowable(self.active())).then_some(self.settings().text.ink_contrast),
             text: (docs.reflowable(self.active()))
                 .then(|| mareader_engine::appearance_menu::QuickText::of(&self.settings().text)),

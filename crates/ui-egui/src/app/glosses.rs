@@ -183,7 +183,17 @@ impl MareaderApp {
                 self.ask_role();
                 self.probe_dict_for_study();
             }
-            Gloss::Shaded { page, chars, at } => self.explain_shaded(pane, page, chars, at),
+            Gloss::Shaded { page, chars, at } => {
+                if self.settings().study.study_mode.mode == mareader_study::StudyMode::Reactive {
+                    if let Some(asked) = self.documents().asked_at(pane, page, chars.clone()) {
+                        self.ui
+                            .study_mode
+                            .open_recall(pane, asked.word, asked.context, at);
+                    }
+                } else {
+                    self.explain_shaded(pane, page, chars, at);
+                }
+            }
             Gloss::Rest {
                 word,
                 context,

@@ -22,12 +22,14 @@ pub enum Tab {
     Motion,
     /// Software update checks, auto-update, and version status.
     Updates,
+    /// Study mode: proactive/reactive learning and the space dashboard.
+    StudyMode,
     /// A downloaded voice model's voices; shown once it is ready.
     Model(&'static mareader_speech::Model),
 }
 
 impl Tab {
-    pub const ALL: [Tab; 11] = [
+    pub const ALL: [Tab; 12] = [
         Tab::Appearance,
         Tab::Layout,
         Tab::ReadAloud,
@@ -39,6 +41,7 @@ impl Tab {
         Tab::Panes,
         Tab::Motion,
         Tab::Updates,
+        Tab::StudyMode,
     ];
 
     pub fn label(self) -> &'static str {
@@ -54,6 +57,7 @@ impl Tab {
             Tab::Panes => "Panes",
             Tab::Motion => "Motion",
             Tab::Updates => "Updates",
+            Tab::StudyMode => "Study mode",
             Tab::Model(m) => m.name,
         }
     }
@@ -68,6 +72,7 @@ impl Tab {
             "models" => Some(Tab::Models),
             "voices" | "read_aloud" | "speech" => Some(Tab::ReadAloud),
             "update" | "updates" => Some(Tab::Updates),
+            "study" | "study_mode" => Some(Tab::StudyMode),
             _ => Self::ALL
                 .into_iter()
                 .find(|t| t.label().eq_ignore_ascii_case(&s)),
@@ -78,7 +83,9 @@ impl Tab {
     pub fn group(self) -> &'static str {
         match self {
             Tab::Appearance | Tab::Layout | Tab::ReadAloud | Tab::Model(_) => "Reading",
-            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::Ai => "Study",
+            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::Ai | Tab::StudyMode => {
+                "Study"
+            }
             Tab::Models | Tab::Panes | Tab::Motion | Tab::Updates => "App",
         }
     }
@@ -86,7 +93,10 @@ impl Tab {
     /// Shown away from the books too, in the library and the dictionary.
     pub fn beyond_books(self) -> bool {
         use Tab as T;
-        let study = matches!(self, T::Highlights | T::Vocabulary | T::Dictionary);
+        let study = matches!(
+            self,
+            T::Highlights | T::Vocabulary | T::Dictionary | T::StudyMode
+        );
         let voices = matches!(self, T::ReadAloud | T::Model(_));
         study || voices || matches!(self, T::Ai | T::Models | T::Updates)
     }

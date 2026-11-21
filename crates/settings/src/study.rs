@@ -1,6 +1,7 @@
 //! Reading aids: word glosses, CEFR highlighting and dictionaries.
 
 use mareader_appearance::Rgb;
+use mareader_study::StudyModeSettings;
 use serde::{Deserialize, Serialize};
 
 pub use mareader_library::Pen;
@@ -361,6 +362,8 @@ pub struct StudySettings {
     pub gloss: GlossSettings,
     pub highlights: HighlightSettings,
     pub cefr: CefrSettings,
+    /// Study mode: proactive, reactive or off.
+    pub study_mode: StudyModeSettings,
     pub words: crate::words::WordListSettings,
     pub pronunciation: PronunciationSettings,
 }
@@ -368,6 +371,7 @@ pub struct StudySettings {
 impl StudySettings {
     pub fn sanitize(&mut self) {
         self.highlights.sanitize();
+        self.study_mode.sanitize();
         self.words.sanitize();
     }
 }

@@ -201,6 +201,7 @@ fn bar_path(bar: Bar) -> &'static str {
         Bar::Reader => "chrome.titlebar_pinned",
         Bar::Library => "chrome.library_titlebar_pinned",
         Bar::Dictionary => "chrome.dictionary_titlebar_pinned",
+        Bar::Space => "chrome.space_titlebar_pinned",
     }
 }
 
