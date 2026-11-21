@@ -442,6 +442,7 @@ impl Cards {
             italics,
             ..TextFormat::default()
         };
+        crate::machine_fonts::note(self.painter.ctx(), text);
         let mut job = LayoutJob::single_section(text.to_owned(), format);
         job.wrap.max_width = width;
         job.halign = Align::Center;

@@ -5,12 +5,31 @@ use std::hash::{Hash, Hasher};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
-use egui::{Context, FontData, FontFamily, FontId, LayerId, Shape};
+use egui::{Context, FontData, FontFamily, FontId, Id, LayerId, Shape};
 
 use crate::theme::{MEDIUM, SEMIBOLD, SERIF};
 
 /// Texts remembered as checked before the memory starts over.
 const SEEN: usize = 20_000;
+
+/// Where texts drawn some other way than as text wait for the frame's end.
+fn noted() -> Id {
+    Id::new("machine-fonts-noted")
+}
+
+/// Asks for faces for `text`, which this frame draws not as a text shape
+/// but some other way, as a mesh: the scan of shapes would never see it.
+pub fn note(ctx: &Context, text: &str) {
+    if text.is_ascii() {
+        return;
+    }
+    ctx.data_mut(|d| {
+        let list = d.get_temp_mut_or_default::<Vec<String>>(noted());
+        if !list.iter().any(|t| t == text) {
+            list.push(text.to_owned());
+        }
+    });
+}
 
 /// Scans drawn text after each frame; a worker asks parley for faces.
 pub struct MachineFonts {
@@ -101,6 +120,12 @@ impl MachineFonts {
         let mut layers: Vec<LayerId> = ctx.memory(|m| m.layer_ids().collect());
         layers.push(LayerId::background());
         let mut texts = Vec::new();
+        let noted: Vec<String> = ctx.data_mut(|d| d.remove_temp(noted())).unwrap_or_default();
+        for text in noted {
+            if self.seen.insert(hash(&text)) {
+                texts.push(text);
+            }
+        }
         let seen = &mut self.seen;
         ctx.graphics(|g| {
             for layer in layers {
@@ -161,9 +186,7 @@ fn collect(shape: &Shape, seen: &mut HashSet<u64>, out: &mut Vec<String>) {
             if text.is_ascii() {
                 return;
             }
-            let mut h = std::hash::DefaultHasher::new();
-            text.hash(&mut h);
-            if seen.insert(h.finish()) {
+            if seen.insert(hash(text)) {
                 out.push(text.to_owned());
             }
         }
@@ -176,6 +199,12 @@ fn collect(shape: &Shape, seen: &mut HashSet<u64>, out: &mut Vec<String>) {
     }
 }
 
+fn hash(text: &str) -> u64 {
+    let mut h = std::hash::DefaultHasher::new();
+    text.hash(&mut h);
+    h.finish()
+}
+
 /// Letters a face could draw: not spaces, controls or private icons.
 fn worth_asking(c: char) -> bool {
     let private = matches!(u32::from(c), 0xE000..=0xF8FF | 0xF0000..);
@@ -185,6 +214,18 @@ fn worth_asking(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn noted_texts_are_checked_once_and_ascii_never() {
+        let ctx = Context::default();
+        let mut fonts = MachineFonts::default();
+        note(&ctx, "မင်္ဂလာပါ");
+        note(&ctx, "plain");
+        note(&ctx, "မင်္ဂလာပါ");
+        assert_eq!(fonts.new_texts(&ctx), vec!["မင်္ဂလာပါ".to_owned()]);
+        note(&ctx, "မင်္ဂလာပါ");
+        assert!(fonts.new_texts(&ctx).is_empty(), "seen before");
+    }
 
     #[test]
     fn icons_and_spaces_are_never_asked_for() {
