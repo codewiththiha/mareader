@@ -1,6 +1,6 @@
 //! Study mode's AI cards, headless: the waiting card and its slow offer,
-//! the error card's way to the dictionary, decks made ahead, and the pill
-//! before the gate.
+//! the error card's way to the dictionary, decks made ahead, and the corner
+//! toast while the AI writes.
 
 use std::time::Duration;
 
@@ -11,7 +11,7 @@ use mareader_study::mode::Via;
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::study_mode::deck::START;
 use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
-use mareader_ui_egui::study_mode::pill::OPEN;
+use mareader_ui_egui::study_mode::progress::PROGRESS;
 use mareader_ui_egui::study_mode::waiting::{DICTIONARY, RETRY, SLOW, stage};
 use mareader_workspace::PaneId;
 
@@ -110,7 +110,7 @@ fn a_failed_deck_tries_again_or_turns_to_the_dictionary() {
 }
 
 #[test]
-fn decks_made_ahead_open_at_once_and_the_pill_leads_to_them() {
+fn decks_made_ahead_open_at_once() {
     let (mut h, pane, _shelves) = studying("ready", 2);
     assert!(
         wait(&mut h, |h| open_via(h, pane) == Some(Via::Ai)),
@@ -151,21 +151,22 @@ fn decks_made_ahead_open_at_once_and_the_pill_leads_to_them() {
         open_via(&h, pane).is_some(),
         "the next deck is open at once"
     );
-    // A gate already in view shows its deck; one out of reach, the pill.
-    if h.query_by_label(START).is_some() {
-        return;
-    }
+}
+
+#[test]
+fn a_writing_ai_shows_a_ring_that_widens_on_hover() {
+    let (mut h, pane, _shelves) = studying("silent", 1);
+    assert!(wait(&mut h, |h| writing(h, pane)), "the AI is asked");
+    h.run_steps(4);
+    assert!(h.query_by_label(PROGRESS).is_some(), "the ring shows");
     assert!(
-        h.query_by_label_contains("next words ready").is_some(),
-        "the pill tells"
+        h.query_by_label_contains("Writing cards").is_none(),
+        "folded, it says nothing"
     );
-    let at = h.get_by_label(OPEN).rect().center();
-    let met = h.ctx.layer_id_at(at);
-    h.get_by_label(OPEN).click();
-    h.run_steps(3);
-    let current = h.state().documents().reading(pane).map(|r| r.current);
-    assert_eq!(
-        current, gate,
-        "Open words goes to the gate; {at:?} met {met:?}"
+    h.get_by_label(PROGRESS).hover();
+    h.run_steps(20);
+    assert!(
+        h.query_by_label_contains("Writing cards").is_some(),
+        "a hover widens it to say so"
     );
 }

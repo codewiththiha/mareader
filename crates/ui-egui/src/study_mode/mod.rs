@@ -4,15 +4,15 @@
 //! The engine holds every run (`mareader_engine::study_mode`); this module
 //! only draws a run and sends what the reader asks. A pane's view stops at
 //! its gate in `pdf_view`; here the pages past it are veiled, and the deck
-//! covers the pane once the gate is in view. Until then a pill tells how
-//! the next deck is coming along. In Reactive mode a click on a shaded word
-//! opens a recall beside it instead.
+//! covers the pane once the gate is in view. A corner toast tells how the
+//! AI is getting on with the cards. In Reactive mode a click on a shaded
+//! word opens a recall beside it instead.
 
 pub mod deck;
 pub mod flip_card;
 pub mod gate;
 pub mod menu;
-pub mod pill;
+pub mod progress;
 pub mod recall;
 pub mod waiting;
 
@@ -159,6 +159,8 @@ pub struct Pane<'a> {
 #[derive(Default)]
 pub struct StudyModeUi {
     cursors: HashMap<PaneId, Cursor>,
+    /// Each pane's corner toast, across frames.
+    watches: HashMap<PaneId, progress::Watch>,
     /// The focused pane whose deck showed last frame; it takes the keys.
     keyed: Option<PaneId>,
     /// Shots: the shown card turns over once the deck opens.
@@ -173,11 +175,17 @@ impl StudyModeUi {
     /// Keeps the decks of the panes in `studying` and forgets the rest.
     pub fn begin(&mut self, studying: &[PaneId]) {
         self.cursors.retain(|pane, _| studying.contains(pane));
+        self.watches.retain(|pane, _| studying.contains(pane));
         self.keyed = None;
     }
 
     /// The veil past `pane`'s gate, or its deck once the gate is in view.
     pub fn show(&mut self, ctx: &Context, pane: &Pane<'_>, out: &mut Commands) {
+        let now = ctx.input(|i| i.time);
+        let watch = self.watches.entry(pane.id).or_default();
+        if let Some(work) = watch.status(progress::work(pane.run), now) {
+            progress::show(ctx, pane, work, watch.alpha(now));
+        }
         let Some(batch) = pane.run.gate_batch() else {
             return;
         };
@@ -192,7 +200,6 @@ impl StudyModeUi {
                     gate::prompt(ui, pane.id, &range, out);
                 });
             }
-            pill::show(ctx, pane, veil.map(|v| v.rect.top()), out);
             return;
         }
         let cursor = self.cursors.entry(pane.id).or_default();
