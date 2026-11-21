@@ -116,3 +116,27 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **Refused while on:** Explain, Look up and the page AI in that pane.
 - **Turns itself off** with a toast when the pane's document closes or a need
   above is lost; another file opened in the pane ends it quietly.
+
+## In the reader (`crates/ui-egui/src/study_mode`)
+
+- **The page menu** opens with a Study section: the switch, Proactive or
+  Reactive, and the pages per batch. When a need is missing the switch is
+  off, the reason shows and a row opens the settings tab that fixes it.
+  While a pane studies the AI tasks below it are disabled.
+- **The view holds at the gate:** a strip scrolls no further than the end
+  of the gate page, and a paged mode turns no further than it.
+- **The veil:** frosted paper over every locked page on screen, opaque to the
+  words. While the locked pages only peek in it says what unlocks them and
+  offers *Study the words*; once they fill 30 % of the strip (or any of a
+  paged spread) the veil covers the pane and holds the deck.
+- **The deck:** the batch, its count of new words and a ring for the time
+  floor. A card shows the word, its class and band, how often it appears,
+  its other classes and its sentence from the book; the meaning waits for
+  *reveal* (Space). *I already know this* (K) marks it known; the arrows
+  step between cards. *Start reading* waits for the floor when Strict is on.
+  The deck also says when it is being prepared and when it failed, with
+  *Try again* and *Read previous pages*.
+- **Word help is off:** the selection bar drops Explain and Look up, and
+  CEFR shading hides unless Hints is on.
+- **Shots:** `study_mode=proactive|reactive|off`, `study_gate=on` and
+  `study_deck=reveal`.

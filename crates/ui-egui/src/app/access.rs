@@ -321,6 +321,7 @@ impl MareaderApp {
             Family(super::library::own_key),
             Family(super::study::own_key),
             Family(super::page_ai::own_key),
+            Family(super::study_mode::own_key),
             Family(super::read_aloud::own_key),
             Family(super::panes::own_key),
         ] {

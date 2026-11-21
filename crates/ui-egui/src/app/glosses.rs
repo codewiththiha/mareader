@@ -9,6 +9,7 @@ impl MareaderApp {
         self.gloss_events(ctx, out);
         self.poll_services(ctx);
         let sounds = self.show_study(ctx, out);
+        self.show_study_mode(ctx, out);
         self.show_page_ai(ctx, out, &sounds);
     }
 

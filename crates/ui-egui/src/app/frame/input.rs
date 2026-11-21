@@ -83,6 +83,7 @@ impl MareaderApp {
             }
         }
         self.page_word_card(ctx);
+        self.ui.study_mode.keys(ctx, &self.session, &mut commands);
         let read = commands.len();
         keymap::read(ctx, self.ui.platform, route, &mut commands);
         // The shortcut gives an idle open window the keys before closing it.

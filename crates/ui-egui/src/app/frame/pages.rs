@@ -1,4 +1,5 @@
 use super::*;
+use crate::study_mode;
 
 struct PageContext {
     view: PaneView,
@@ -311,15 +312,16 @@ impl MareaderApp {
                     sample: context.blend && (context.every || Some(id) == context.source),
                     marks,
                     bookmarks,
-                    highlights: highlights.clone(),
+                    highlights: study_mode::bar(highlights, session.study_mode().on(id)),
                     card: study.card_mark(id),
                     picked: study.picked(id),
-                    shading: context.shading,
+                    shading: study_mode::shading(session, id, context.shading),
                     menu_shot: menu_shot && id == view.active,
                     found: pane_found(&context.lit, id),
                     aloud: session.read_aloud().lit(id),
                     ai,
                     host: host.clone(),
+                    gate: session.study_gate(id),
                 };
                 documents.show(ui, session, id, &cx, true)
             })

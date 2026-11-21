@@ -1606,8 +1606,11 @@ tier = "P1"
 milestone = "M8"
 status = "partial"
 command = "study.mode"
-evidence = ["apps/mareader-cli/tests/scripts.rs::script_06_study_mode_gates_the_first_batch"]
-notes = "From the lab's best-study-mode prototype. The batch planner, deck builder, word keys and time floor live in crates/study/src/mode; the engine plans each pane's batches, builds dictionary decks, holds the gate and saves progress. Missing: the deck and gate in the reader, AI cards and look-ahead decks"
+evidence = [
+    "apps/mareader-cli/tests/scripts.rs::script_06_study_mode_gates_the_first_batch",
+    "crates/ui-egui/tests/study_mode.rs::the_gate_holds_the_view_until_the_deck_is_studied",
+]
+notes = "From the lab's best-study-mode prototype. The batch planner, deck builder, word keys and time floor live in crates/study/src/mode; the engine plans each pane's batches, builds dictionary decks, holds the gate and saves progress; the reader's page menu turns it on, the view holds at the gate under a frosted veil and the deck opens it. Missing: AI cards and look-ahead decks"
 
 [[feature]]
 id = "study.mode-reactive"

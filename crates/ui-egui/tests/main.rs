@@ -30,6 +30,8 @@ mod search;
 mod selection;
 mod shell;
 mod study;
+#[cfg(not(target_arch = "wasm32"))]
+mod study_mode;
 mod thumb_picks;
 mod updates;
 #[cfg(not(target_arch = "wasm32"))]

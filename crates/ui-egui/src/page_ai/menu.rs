@@ -3,6 +3,7 @@
 use super::{BubbleMenu, Menu, PageAiUi, Step, label};
 use crate::documents::DocumentsView;
 use crate::icons::Icon;
+use crate::study_mode;
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
@@ -162,34 +163,20 @@ impl PageAiUi {
             PageTask::Translate => ai.tasks.translate.start,
             PageTask::Simplify => ai.tasks.simplify.start,
         };
-        let how = |continuous| How {
+        let continuous = match start {
+            PageStart::Ask => {
+                *step = Step::How(task, tag);
+                return false;
+            }
+            PageStart::Page => false,
+            PageStart::Continuous => true,
+        };
+        let how = How {
             continuous,
             remember: false,
         };
-        match start {
-            PageStart::Ask => {
-                *step = Step::How(task, tag);
-                false
-            }
-            PageStart::Page => {
-                out.push(Sent::Engine(Command::PageAi(action(
-                    m,
-                    task,
-                    tag,
-                    how(false),
-                ))));
-                true
-            }
-            PageStart::Continuous => {
-                out.push(Sent::Engine(Command::PageAi(action(
-                    m,
-                    task,
-                    tag,
-                    how(true),
-                ))));
-                true
-            }
-        }
+        out.push(Sent::Engine(Command::PageAi(action(m, task, tag, how))));
+        true
     }
 
     /// The tasks; true once one is picked.
@@ -231,6 +218,9 @@ impl PageAiUi {
             1 => "Ask AI · 1 page".to_owned(),
             n => format!("Ask AI · {n} pages"),
         };
+        if m.pages.is_empty() && study_mode::menu::show(ui, &self.study, m.pane, out) {
+            ui.disable();
+        }
         widgets::menu_section(ui, Some(Icon::Ai), &heading);
         if !PageTask::ALL
             .iter()

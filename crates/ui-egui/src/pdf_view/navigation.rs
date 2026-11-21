@@ -397,8 +397,9 @@ impl PdfView {
         }
     }
 
-    /// Shows `place`'s `page` from its start.
+    /// Shows `place`'s `page` from its start, or the gate before it.
     fn go(&mut self, at: &mut Place, page: usize) {
+        let page = self.gate.map_or(page, |gate| page.min(gate));
         self.focus = at.mode.start(page, at.lead);
         at.current = page;
         self.reveal = Some(if at.mode.paged() { self.focus } else { page });

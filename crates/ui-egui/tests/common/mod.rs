@@ -14,6 +14,9 @@ use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::selection::Sheet;
 use mareader_ui_egui::ui_command::Sent;
 
+mod levels;
+pub(crate) use levels::{levels_reader, shelves};
+
 fn harness(
     options: &[(&str, &str)],
     defaults: &[(&str, &str)],

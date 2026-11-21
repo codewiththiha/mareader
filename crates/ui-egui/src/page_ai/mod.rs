@@ -18,13 +18,12 @@ use mareader_workspace::PaneId;
 use crate::gpu::Gpu;
 use mareader_engine::page_ai::cards::Job as CardJob;
 use mareader_engine::page_ai::extract::{self, Source};
-use mareader_engine::page_ai::view::{AiView, group_span};
+use mareader_engine::page_ai::view::{AiView, Pill, group_span};
 use mareader_engine::page_ai::{Slot, pages_of};
 use mareader_engine::session::Session;
 use mareader_engine::stable_hash::hash;
 
 use mareader_engine::page_ai::ledger::Ledger;
-use mareader_engine::page_ai::view::Pill;
 pub(crate) use paint::Overlay;
 
 /// Seconds a result takes to fade in over its page.
@@ -108,6 +107,7 @@ pub struct PageAiUi {
     filter: String,
     /// The menu's "Remember my choice" toggle.
     remember: bool,
+    pub(crate) study: crate::study_mode::menu::Look,
 }
 
 /// Read-only view over engine page-AI ledger and window menu state.

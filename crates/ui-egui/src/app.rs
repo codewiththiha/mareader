@@ -13,6 +13,7 @@ mod panes;
 mod read_aloud;
 mod setup;
 mod study;
+mod study_mode;
 mod ui_state;
 
 use std::path::PathBuf;
@@ -210,6 +211,7 @@ impl MareaderApp {
                 toasts: Toasts::default(),
                 study: StudyUi::default(),
                 page_ai: crate::page_ai::PageAiUi::default(),
+                study_mode: crate::study_mode::StudyModeUi::default(),
                 read_aloud: crate::read_aloud::ReadAloudUi::default(),
                 ai: crate::ai::Ai::default(),
                 dict: crate::dict::DictUi::default(),

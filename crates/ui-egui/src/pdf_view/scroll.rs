@@ -32,7 +32,35 @@ pub(super) fn run(cx: &mut ShowContext<'_>) {
 
 pub(super) fn finish(cx: &mut ShowContext<'_>) {
     finish_jump(cx);
+    hold_at_gate(cx);
     finish_scroll(cx);
+}
+
+/// A strip scrolls no further than the end of study mode's gate page.
+///
+/// The frame that overshoots shows only veiled pages; the next one is held.
+fn hold_at_gate(cx: &mut ShowContext<'_>) {
+    let Some(gate) = cx.view.gate.filter(|_| !cx.place.mode.paged()) else {
+        return;
+    };
+    cx.place.current = cx.place.current.min(gate);
+    let (Some(out), Some(input)) = (cx.paint.out.as_ref(), cx.input.as_ref()) else {
+        return;
+    };
+    let Some(end) = cx.view.layout.as_ref().and_then(|l| l.rect(gate)) else {
+        return;
+    };
+    let most = (end.max.to_vec2() - input.viewport).max(Vec2::ZERO);
+    let offset = out.state.offset;
+    let held = match cx.place.mode {
+        ViewMode::Horizontal => vec2(offset.x.min(most.x), offset.y),
+        _ => vec2(offset.x, offset.y.min(most.y)),
+    };
+    if held != offset {
+        let to = cx.view.scroll_to.map_or(held, |(to, _)| to.min(held));
+        cx.view.scroll_to = Some((to, 2));
+        cx.ctx.request_repaint();
+    }
 }
 
 fn finish_jump(cx: &mut ShowContext<'_>) {

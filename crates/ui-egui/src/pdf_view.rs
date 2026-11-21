@@ -192,6 +192,8 @@ pub struct PdfView {
     max_side: f32,
     /// Live `:hover` transitions and `@keyframes` animations over EPUB pages.
     interactive: interactive::InteractiveState,
+    /// The last page study mode lets the pane reach, as of this frame.
+    gate: Option<usize>,
 }
 
 impl Default for PdfView {
@@ -238,6 +240,7 @@ impl PdfView {
             ppp: 1.0,
             max_side: 4096.0,
             interactive: interactive::InteractiveState::default(),
+            gate: None,
         }
     }
 }
@@ -281,6 +284,8 @@ pub struct ViewContext {
     pub ai: page_ai::PaneAi,
     /// The machine, so a clip a page links to is handed to its own opener.
     pub host: Shared,
+    /// Study mode's gate: the pane goes no further than this page.
+    pub gate: Option<usize>,
 }
 
 /// The Layout settings the pages follow.
@@ -450,6 +455,7 @@ pub fn show(
     let now = ctx.input(|i| i.time);
     let frame = ui.max_rect();
     let bands = doc.bands().filter(|_| place.mode == ViewMode::Vertical);
+    view.gate = cx.gate;
     let mut context = ShowContext {
         ui: Some(ui),
         view,
