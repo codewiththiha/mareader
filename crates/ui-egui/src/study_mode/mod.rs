@@ -9,6 +9,7 @@
 //! opens a recall beside it instead.
 
 pub mod deck;
+pub mod flip_card;
 pub mod gate;
 pub mod menu;
 pub mod pill;
