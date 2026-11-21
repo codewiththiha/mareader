@@ -2,6 +2,7 @@
 
 mod grid;
 mod picks;
+mod study;
 
 use std::ops::Range;
 
@@ -29,6 +30,7 @@ use grid::{BAND, Grid, fitted, shown_pages, spread_align};
 use mareader_engine::command::Command;
 pub use picks::Offer;
 use picks::Picks;
+pub use study::StudyMarks;
 
 /// Rows drawn ahead each way, so a scroll finds them ready.
 const ROW_BUFFER: usize = 2;
@@ -48,6 +50,8 @@ pub struct ThumbState {
     picks: Picks,
     /// What the page AI can do with them.
     offer: Offer,
+    /// The reading pane's study, marked on its pages.
+    study: StudyMarks,
 }
 
 impl ThumbState {
@@ -63,6 +67,10 @@ impl ThumbState {
 
     pub fn set_offer(&mut self, offer: Offer) {
         self.offer = offer;
+    }
+
+    pub fn set_study(&mut self, study: StudyMarks) {
+        self.study = study;
     }
 
     /// No book to show: picks and the book they held let go.
@@ -183,18 +191,19 @@ pub fn show(
                     false => picks::page_menu(ui, pane, page, &mut state.picks, out),
                 });
                 let chosen = state.picks.contains(page);
-                if chosen {
-                    picked.push(rect);
-                }
+                picked.push((rect, page, chosen));
                 decorate(ui, (rect, cell), page, (on, chosen), r.hovered(), &t);
             }
             if let (Some(pass), false) = (pass, quads.is_empty()) {
                 ui.painter()
                     .add(PagesCallback::shape(pass.clone(), ui.clip_rect(), quads));
             }
-            // Over the pages, which draw last: a wash and a tick.
-            for rect in picked {
-                tick(ui, rect, &t);
+            // Over the pages, which draw last: study's wash, a pick's tick.
+            for (rect, page, chosen) in picked {
+                study::over(ui, rect, state.study.shade(page), &t);
+                if chosen {
+                    tick(ui, rect, &t);
+                }
             }
             // Rows just off screen render too, after what's on screen.
             let ahead = shown.end..(shown.end + ROW_BUFFER).min(grid.rows);

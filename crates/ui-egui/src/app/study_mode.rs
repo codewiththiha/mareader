@@ -21,6 +21,8 @@ impl MareaderApp {
         let now = ctx.input(|i| i.time);
         let active = self.active();
         let lock = self.session.settings().study.mode.lock;
+        let marks = crate::study_mode::marks(&self.session, active);
+        self.ui.thumbs.set_study(marks);
         let docs = self.ui.documents.as_view(self.session.documents());
         for &(id, rect) in &self.ui.pane_rects {
             let (Some(run), Some(reading)) = (state.run(id), docs.reading(id)) else {

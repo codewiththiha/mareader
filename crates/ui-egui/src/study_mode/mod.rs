@@ -30,6 +30,7 @@ use mareader_study::mode::{Batch, Mode, Outcome};
 use mareader_workspace::PaneId;
 
 use crate::selection::Sheet;
+use crate::thumbnails::StudyMarks;
 use crate::ui_command::Commands;
 use crate::vocab::Settled;
 
@@ -52,6 +53,24 @@ pub fn shading(
     let hints = session.settings().study.mode.hints;
     let hidden = run.is_some() && !hints;
     look.filter(|_| !hidden)
+}
+
+/// What the page grid marks of `pane`'s Proactive study.
+pub fn marks(session: &Session, pane: PaneId) -> StudyMarks {
+    let run = session.study_mode().run(pane);
+    let Some(run) = run.filter(|r| r.mode == Mode::Proactive) else {
+        return StudyMarks::default();
+    };
+    let place = session.documents().place(pane);
+    let current = place.map_or(run.start, |place| place.current);
+    let batch = run.batches.iter().find(|b| b.holds(current));
+    StudyMarks {
+        on: true,
+        batch: batch.map(|b| (b.from, b.to)),
+        start: run.start,
+        lock: session.settings().study.mode.lock,
+        gate: run.gate(),
+    }
 }
 
 /// How far study mode lets `pane` go: its locked start up to its gate.
