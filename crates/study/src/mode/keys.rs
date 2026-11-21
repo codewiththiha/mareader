@@ -127,7 +127,7 @@ pub fn bases(word: &str) -> Vec<String> {
         let Some(stem) = word.strip_suffix(cut) else {
             continue;
         };
-        if stem.chars().count() < MIN_STEM {
+        if stem.chars().count() < MIN_STEM || (*cut == "es" && !hissing(stem)) {
             continue;
         }
         let base = format!("{stem}{put}");
@@ -144,6 +144,13 @@ pub fn bases(word: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// A stem whose plural takes "es": boxes, wishes, heroes; pages takes "s".
+fn hissing(stem: &str) -> bool {
+    ["s", "x", "z", "ch", "sh", "o"]
+        .iter()
+        .any(|end| stem.ends_with(end))
 }
 
 fn doubled(stem: &str) -> bool {
@@ -200,6 +207,15 @@ mod tests {
         assert_eq!(lemma("making", &k), "make");
         assert_eq!(lemma("boxes", &k), "box");
         assert_eq!(lemma("vexing", &k), "vex");
+    }
+
+    #[test]
+    fn a_plural_in_s_keeps_its_e() {
+        let k = known(&["pag", "page", "wish", "hero", "glass"]);
+        assert_eq!(lemma("pages", &k), "page");
+        assert_eq!(lemma("wishes", &k), "wish");
+        assert_eq!(lemma("heroes", &k), "hero");
+        assert_eq!(lemma("glasses", &k), "glass");
     }
 
     #[test]

@@ -64,7 +64,7 @@ impl Judge for Practice {
         let feedback = match verdict {
             Verdict::Correct => format!("Yes, that is what “{word}” means here."),
             Verdict::Close => format!("Close, but say what “{word}” means more exactly."),
-            Verdict::Wrong => format!("That doesn't fit “{word}” in this sentence."),
+            Verdict::Wrong => format!("That doesn’t fit “{word}” in this sentence."),
         };
         let judged = match self {
             Self::Ready => Some(Ok(Judged { verdict, feedback })),

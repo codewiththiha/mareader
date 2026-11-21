@@ -18,6 +18,10 @@ pub const OPEN_SPACE: &str = "Open Space";
 const LEVEL: &str = "Words above your level are shaded or become cards; Vocabulary shares it.";
 /// Under Reactive: what the judge reads an answer for.
 const ANY_LANGUAGE: &str = "Answers may be in any language: the AI judges meaning, not spelling.";
+/// A count's unit for one, then for more.
+const BATCHES: (&str, &str) = (" batch", " batches");
+const SECONDS: (&str, &str) = (" s", " s");
+const BARE: (&str, &str) = ("", "");
 
 pub fn tab(ui: &mut Ui, s: &mut Settings, out: &mut Commands) {
     section(ui, "Mode");
@@ -58,7 +62,7 @@ fn batches(ui: &mut Ui, m: &mut StudyModeSettings) {
             Unit::Pages => {
                 let most = u8::try_from(MAX_PAGES).unwrap_or(u8::MAX);
                 let hint = "Most is 10";
-                count_row(ui, ("Pages per batch", hint), &mut m.pages, (1, most), "");
+                count_row(ui, ("Pages per batch", hint), &mut m.pages, (1, most), BARE);
             }
             Unit::Chars => {
                 let hint = "Turned back into whole pages, never more than 10";
@@ -78,12 +82,12 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings) {
     group(ui, |ui| {
         let hint = "Decks made while you read; 0 waits for the gate";
         let ahead = (0, StudyModeSettings::AHEAD_MAX);
-        count_row(ui, ("Prepare ahead", hint), &mut m.ahead, ahead, " batches");
+        count_row(ui, ("Prepare ahead", hint), &mut m.ahead, ahead, BATCHES);
         divider(ui);
         let hint = "Added up across the deck; a word known gives its time back";
         let secs = (StudyModeSettings::SEC_MIN, StudyModeSettings::SEC_MAX);
         let each = &mut m.sec_per_card;
-        count_row(ui, ("Study time per word", hint), each, secs, " s");
+        count_row(ui, ("Study time per word", hint), each, secs, SECONDS);
         divider(ui);
         let hint = "Start reading waits for the time to run out";
         switch_row(ui, "Strict timer", hint, &mut m.strict);
@@ -93,7 +97,7 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings) {
         divider(ui);
         let hint = "The hardest, most repeated words come first";
         let cards = (StudyModeSettings::CARDS_MIN, StudyModeSettings::CARDS_MAX);
-        count_row(ui, ("Words per deck", hint), &mut m.max_cards, cards, "");
+        count_row(ui, ("Words per deck", hint), &mut m.max_cards, cards, BARE);
         divider(ui);
         let hint = "Auto asks the AI when study has a model, else the dictionary";
         row(ui, "Cards from", hint, |ui| {
@@ -140,12 +144,21 @@ fn space(ui: &mut Ui, out: &mut Commands) {
     });
 }
 
-/// A count stepped between `lo` and `hi`, shown with `unit`.
-fn count_row(ui: &mut Ui, (label, hint): (&str, &str), n: &mut u8, (lo, hi): (u8, u8), unit: &str) {
+/// A count stepped between `lo` and `hi`, shown with its unit for one or more.
+fn count_row(
+    ui: &mut Ui,
+    (label, hint): (&str, &str),
+    n: &mut u8,
+    (lo, hi): (u8, u8),
+    (one, many): (&str, &str),
+) {
     row(ui, label, hint, |ui| {
         let mut value = f32::from(*n);
         let range = f32::from(lo)..=f32::from(hi);
-        let show = |v: f32| format!("{v:.0}{unit}");
+        let show = |v: f32| {
+            let unit = if (v - 1.0).abs() < 0.5 { one } else { many };
+            format!("{v:.0}{unit}")
+        };
         widgets::stepper(ui, &mut value, range, 1.0, show, label);
         *n = value.round().clamp(f32::from(lo), f32::from(hi)) as u8;
     });

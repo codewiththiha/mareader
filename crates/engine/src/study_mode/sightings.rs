@@ -58,6 +58,13 @@ pub fn words(text: &str) -> Vec<Read> {
     out
 }
 
+/// The sentence of `text` holding character `at`, cut as a card's is.
+pub fn sentence_of(text: &str, at: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let found = sentence(&stops(&chars), at, chars.len());
+    clip(&chars, found, at)
+}
+
 /// Where each sentence starts: past a stop and the space after it.
 fn stops(chars: &[char]) -> Vec<usize> {
     let mut out = vec![0];
@@ -103,6 +110,8 @@ mod tests {
         assert_eq!(of("cat"), "The cat sat.");
         assert_eq!(of("ran"), "Dogs ran far!");
         assert_eq!(of("flew"), "Birds flew");
+        let second = sentence_of("The cat sat. Dogs ran far!", 14);
+        assert_eq!(second, "Dogs ran far!");
     }
 
     #[test]

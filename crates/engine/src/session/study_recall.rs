@@ -11,14 +11,15 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use mareader_library::{BookId, LearnedBy, Library, NewWord, WordStatus};
+use mareader_session::TextLayer;
 use mareader_study::mode::{Done, Judge, Key, Mode, Outcome, lemma};
 use mareader_workspace::PaneId;
 
 use super::Session;
 use crate::event::Event;
 use crate::library::wall_ms;
-use crate::study::words::asked_at;
-use crate::study_mode::sightings::Read;
+use crate::study::words::{asked_at, read};
+use crate::study_mode::sightings::{Read, sentence_of};
 use crate::study_mode::{self as mode, Ask, Recalling, Word};
 use crate::toast::Toast;
 
@@ -72,7 +73,9 @@ impl Session {
             .layer(pane, page)
             .ok_or("That page has no text.")?;
         let asked = asked_at(&layer, page, chars).ok_or("No word is there.")?;
-        let word = self.study_word(asked.word, asked.context, page, asked.chars);
+        let around = sentence_around(&layer, &asked.chars);
+        let sentence = around.unwrap_or(asked.context);
+        let word = self.study_word(asked.word, sentence, page, asked.chars);
         let by = self.study_mode.judge().map(|j| j.by()).unwrap_or_default();
         let writer = self.study_mode.writer();
         self.study_mode
@@ -198,4 +201,12 @@ fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done) {
         first_try: done.first_try,
     };
     model.record_word(book, new, wall_ms());
+}
+
+/// The whole sentence around page characters `chars`, as a card shows it.
+fn sentence_around(layer: &TextLayer, chars: &Range<usize>) -> Option<String> {
+    let (text, index) = read(layer);
+    let at = index.iter().position(|i| *i == Some(chars.start))?;
+    let full: String = text.iter().collect();
+    Some(sentence_of(&full, at))
 }

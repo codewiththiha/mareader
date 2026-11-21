@@ -1,6 +1,6 @@
 //! Space's rows under their headings: a list, or cards in a grid.
 
-use egui::{Align, Frame, Label, Layout, Margin, RichText, ScrollArea, Stroke, Ui, vec2};
+use egui::{Align, Frame, Label, Layout, Margin, RichText, ScrollArea, Stroke, Ui};
 use mareader_engine::command::Command;
 use mareader_engine::space::{self, Action, Row, View};
 use mareader_library::{LearnedBy, WordStatus};
@@ -12,6 +12,9 @@ use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 
 const CARD_W: f32 = 236.0;
+/// A card's margins and stroke on both sides, around its `CARD_W`.
+const CARD_EDGES: f32 = 26.0;
+const GAP: f32 = 10.0;
 const NONE_YET: &str = "Study some pages, and the words you meet land here.";
 const NONE_MATCH: &str = "Clear a filter, or study some pages to add more.";
 
@@ -87,14 +90,20 @@ fn head(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut C
     });
 }
 
-/// The words as cards, wrapping across the page.
+/// The words as cards, as many to a line as the page has room for.
+///
+/// A framed card is a child area, which a wrapping layout cannot move down.
 fn grid(ui: &mut Ui, rows: &[Row], t: &Tokens, out: &mut Commands) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
-        for row in rows {
-            ui.push_id(row.key, |ui| card(ui, row, t, out));
-        }
-    });
+    let across = (ui.available_width() + GAP) / (CARD_W + CARD_EDGES + GAP);
+    let across = (across.floor() as usize).max(1);
+    for line in rows.chunks(across) {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP;
+            for row in line {
+                ui.push_id(row.key, |ui| card(ui, row, t, out));
+            }
+        });
+    }
 }
 
 fn card(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
