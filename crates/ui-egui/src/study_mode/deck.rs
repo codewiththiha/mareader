@@ -3,8 +3,10 @@
 //! A card's front holds the word alone and its band; turned over, it gives
 //! the meaning and the word class, with the AI's synonyms and example. A
 //! click or Space turns it, a drag or the arrows move on, K marks the word
-//! known. Read now unlocks the batch whenever the reader likes; with a time
-//! limit the deck also closes once its minutes are spent.
+//! known. Read now unlocks the batch whenever the reader likes, asking first
+//! while time is left, as the cards then close for good; with a time limit
+//! the deck also closes once its minutes are spent. Turning study mode off
+//! from here asks first too.
 
 use egui::{Align, Frame, Id, Key, Layout, Margin, RichText, Sense, Stroke, Ui, Vec2, vec2};
 use mareader_engine::command::Command;
@@ -12,6 +14,7 @@ use mareader_engine::study_mode::{Action, DeckState, Open, Shown};
 use mareader_study::mode::Batch;
 use mareader_workspace::PaneId;
 
+use super::confirm::Ask;
 use super::flip_card::{self, Faces, Gesture};
 use super::{Cursor, Pane, waiting};
 use crate::icons::Icon;
@@ -22,6 +25,7 @@ use crate::widgets;
 pub const KNOWN: &str = "I already know this";
 pub const START: &str = "Read now";
 pub const SHUFFLE: &str = "Shuffle";
+pub const TURN_OFF: &str = "Turn off study mode";
 const NO_MEANING: &str = "No meaning was found for this word.";
 /// What the time left in the header is for.
 const LEFT_TIP: &str = "The cards close for these pages once it runs out";
@@ -86,8 +90,15 @@ pub(super) fn send(out: &mut Commands, action: Action) {
     out.push(Sent::Engine(Command::StudyMode(action)));
 }
 
-/// The deck in the middle of `ui`, which covers the pane.
-pub fn show(ui: &mut Ui, pane: &Pane<'_>, cursor: &mut Cursor, out: &mut Commands) {
+/// The deck in the middle of `ui`, which covers the pane; what it asks
+/// before acting goes in `ask`.
+pub fn show(
+    ui: &mut Ui,
+    pane: &Pane<'_>,
+    cursor: &mut Cursor,
+    ask: &mut Option<Ask>,
+    out: &mut Commands,
+) {
     let room = ui.max_rect();
     let width = WIDTH.min(room.width());
     let at = room.center_top() + vec2(-width / 2.0, (room.height() * 0.08).min(48.0));
@@ -96,8 +107,12 @@ pub fn show(ui: &mut Ui, pane: &Pane<'_>, cursor: &mut Cursor, out: &mut Command
         .layout(Layout::top_down(Align::Center));
     ui.scope_builder(builder, |ui| {
         ui.set_width(width);
+        if let Some(open) = &pane.run.review {
+            deck(ui, pane, open, (cursor, ask), out);
+            return;
+        }
         match &pane.run.deck {
-            DeckState::Open(open) => deck(ui, pane, open, cursor, out),
+            DeckState::Open(open) => deck(ui, pane, open, (cursor, ask), out),
             DeckState::Failed { batch, why } => framed(ui, |ui| {
                 waiting::failed(ui, pane, &batch.label(), why, out);
             }),
@@ -133,7 +148,13 @@ fn framed(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
         });
 }
 
-fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mut Commands) {
+fn deck(
+    ui: &mut Ui,
+    pane: &Pane<'_>,
+    open: &Open,
+    (cursor, ask): (&mut Cursor, &mut Option<Ask>),
+    out: &mut Commands,
+) {
     let t = Tokens::get(ui.ctx());
     let left = open.allowance.left(pane.now);
     let count = open.cards.len();
@@ -160,7 +181,7 @@ fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mu
     ui.add_space(t.gap);
     marks(ui, pane, open, cursor, out);
     ui.add_space(t.gap);
-    footer(ui, pane, out);
+    footer(ui, pane, (open, left), ask, out);
     if let Some(left) = left.filter(|_| open.allowance.running()) {
         let tick = left.fract().max(0.05) as f32;
         ui.ctx().request_repaint_after_secs(tick);
@@ -293,7 +314,10 @@ fn marks(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &m
         }
     }
     let undo = open.can_undo();
-    let back = pane.run.back(pane.lock).is_some();
+    let back = match &pane.run.review {
+        Some(review) => review.batch.from > 0,
+        None => pane.run.back(pane.lock).is_some(),
+    };
     if !undo && !back {
         return;
     }
@@ -309,11 +333,28 @@ fn marks(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &m
     });
 }
 
-fn footer(ui: &mut Ui, pane: &Pane<'_>, out: &mut Commands) {
+/// Read now, which asks first while time is left, and turning study off.
+fn footer(
+    ui: &mut Ui,
+    pane: &Pane<'_>,
+    (open, left): (&Open, Option<f64>),
+    ask: &mut Option<Ask>,
+    out: &mut Commands,
+) {
     let t = Tokens::get(ui.ctx());
     let start = widgets::primary_button(ui, None, START, t.accent, &t);
     if ui.add(start.min_size(vec2(160.0, 32.0))).clicked() {
-        send(out, Action::Start(pane.id));
+        let range = open.batch.label();
+        match left.filter(|&l| l > 0.0 && pane.run.review.is_none()) {
+            Some(left) => *ask = Some(Ask::ReadNow { range, left }),
+            None => send(out, Action::Start(pane.id)),
+        }
+    }
+    ui.add_space(t.gap * 0.5);
+    let off = RichText::new(TURN_OFF).size(t.text_small).color(t.muted);
+    let off = egui::Button::new(off).frame_when_inactive(false);
+    if ui.add(off).clicked() {
+        *ask = Some(Ask::TurnOff);
     }
 }
 

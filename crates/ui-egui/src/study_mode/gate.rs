@@ -21,6 +21,8 @@ use crate::z_order::{self, Tier};
 
 /// The share of a strip the locked pages fill once the gate is reached.
 const REACHED: f32 = 0.3;
+/// The button that brings back cards left for the pages before.
+pub const OPEN_CARDS: &str = "Open the cards";
 /// A veil this short shows its button alone.
 const ROOMY: f32 = 120.0;
 /// How much of the paper the veil lets through: none of the words.
@@ -78,20 +80,31 @@ pub fn cover(ctx: &Context, pane: PaneId, rect: Rect, content: impl FnOnce(&mut 
         });
 }
 
-/// What unlocks the veiled pages, and the way to their words.
-pub fn prompt(ui: &mut Ui, pane: PaneId, range: &str, out: &mut Commands) {
+/// What unlocks the veiled pages, and the way to their words; `away` once
+/// the reader left the cards for the pages before.
+pub fn prompt(ui: &mut Ui, pane: PaneId, (range, away): (&str, bool), out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(12.0);
+    let (title, why, label) = match away {
+        true => (
+            format!("Your cards for {range} are waiting"),
+            "Their time stopped while you read back.",
+            OPEN_CARDS,
+        ),
+        false => (
+            format!("{} unlock after their words", capital(range)),
+            "Scrolling stops here until you've studied them.",
+            "Study the words",
+        ),
+    };
     if ui.max_rect().height() >= ROOMY {
         let (mark, _) = ui.allocate_exact_size(egui::Vec2::splat(22.0), Sense::hover());
         Icon::Clock.paint(ui, mark, t.muted);
-        let title = format!("{} unlock after their words", capital(range));
         ui.label(RichText::new(title).font(crate::theme::medium(15.0)));
-        let why = "Scrolling stops here until you've studied them.";
         ui.label(RichText::new(why).size(t.text_small).color(t.muted));
         ui.add_space(6.0);
     }
-    let button = widgets::primary_button(ui, None, "Study the words", t.accent, &t);
+    let button = widgets::primary_button(ui, None, label, t.accent, &t);
     if ui.add(button).clicked() {
         out.push(Sent::Engine(Command::StudyMode(Action::NextBatch(pane))));
     }

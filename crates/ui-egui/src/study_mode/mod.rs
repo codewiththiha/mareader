@@ -4,10 +4,12 @@
 //! The engine holds every run (`mareader_engine::study_mode`); this module
 //! only draws a run and sends what the reader asks. A pane's view stops at
 //! its gate in `pdf_view`; here the pages past it are veiled, and the deck
-//! covers the pane once the gate is in view. A corner toast tells how the
-//! AI is getting on with the cards. In Reactive mode a click on a shaded
-//! word opens a recall beside it instead.
+//! covers the pane once the gate is in view, unless the reader left it for
+//! the pages before. A corner toast tells how the AI is getting on with the
+//! cards. In Reactive mode a click on a shaded word opens a recall beside it
+//! instead.
 
+pub mod confirm;
 pub mod deck;
 pub mod flip_card;
 pub mod gate;
@@ -16,15 +18,15 @@ pub mod progress;
 pub mod recall;
 pub mod waiting;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use egui::{Context, Rect};
 use mareader_engine::pane::ViewMode;
 use mareader_engine::session::Session;
-use mareader_engine::study_mode::{DeckState, Run};
+use mareader_engine::study_mode::{Action, DeckState, Run};
 use mareader_settings::{BarItem, HighlightSettings};
-use mareader_study::mode::{Mode, Outcome};
+use mareader_study::mode::{Batch, Mode, Outcome};
 use mareader_workspace::PaneId;
 
 use crate::selection::Sheet;
@@ -161,6 +163,10 @@ pub struct StudyModeUi {
     cursors: HashMap<PaneId, Cursor>,
     /// Each pane's corner toast, across frames.
     watches: HashMap<PaneId, progress::Watch>,
+    /// The panes whose open deck showed last frame.
+    showing: HashSet<PaneId>,
+    /// The question a deck asks before it acts, and its pane.
+    asking: Option<(PaneId, confirm::Ask)>,
     /// The focused pane whose deck showed last frame; it takes the keys.
     keyed: Option<PaneId>,
     /// Shots: the shown card turns over once the deck opens.
@@ -178,6 +184,11 @@ impl StudyModeUi {
     pub fn begin(&mut self, studying: &[PaneId]) {
         self.cursors.retain(|pane, _| studying.contains(pane));
         self.watches.retain(|pane, _| studying.contains(pane));
+        self.showing.retain(|pane| studying.contains(pane));
+        let gone = |(p, _): &(PaneId, confirm::Ask)| !studying.contains(p);
+        if self.asking.as_ref().is_some_and(gone) {
+            self.asking = None;
+        }
         self.keyed = None;
     }
 
@@ -188,22 +199,52 @@ impl StudyModeUi {
         if let Some(work) = watch.status(progress::work(pane.run), now) {
             progress::show(ctx, pane, work, watch.alpha(now));
         }
+        let shown = self.deck_or_veil(ctx, pane, out);
+        if self.showing.contains(&pane.id) != shown {
+            match shown {
+                true => self.showing.insert(pane.id),
+                false => self.showing.remove(&pane.id),
+            };
+            let pane = pane.id;
+            deck::send(out, Action::Shown { pane, shown });
+        }
+        let keep = match &self.asking {
+            Some((id, ask)) if *id == pane.id => confirm::show(ctx, *id, ask, out),
+            _ => true,
+        };
+        if !keep {
+            self.asking = None;
+        }
+    }
+
+    /// A deck opened again, the gate's deck, or the veil before it; true
+    /// while an open deck shows.
+    fn deck_or_veil(&mut self, ctx: &Context, pane: &Pane<'_>, out: &mut Commands) -> bool {
+        if let Some(review) = &pane.run.review {
+            return self.cover(ctx, pane, &review.batch, out);
+        }
         let Some(batch) = pane.run.gate_batch() else {
-            return;
+            return false;
         };
         let Some(gate) = pane.run.gate() else {
-            return;
+            return false;
         };
         let veil = gate::veil(pane.sheets, pane.rect, gate, pane.mode);
-        if veil.is_none_or(|v| !v.reached) {
+        let away = matches!(&pane.run.deck, DeckState::Open(open) if open.away);
+        if away || veil.is_none_or(|v| !v.reached) {
             if let Some(veil) = veil {
                 let range = batch.label();
                 gate::cover(ctx, pane.id, veil.rect, |ui| {
-                    gate::prompt(ui, pane.id, &range, out);
+                    gate::prompt(ui, pane.id, (&range, away), out);
                 });
             }
-            return;
+            return false;
         }
+        self.cover(ctx, pane, batch, out)
+    }
+
+    /// The deck for `batch` over the whole pane; true while it is open.
+    fn cover(&mut self, ctx: &Context, pane: &Pane<'_>, batch: &Batch, out: &mut Commands) -> bool {
         let cursor = self.cursors.entry(pane.id).or_default();
         if cursor.batch != (batch.from, batch.to) {
             *cursor = Cursor {
@@ -211,19 +252,25 @@ impl StudyModeUi {
                 ..Cursor::default()
             };
         }
-        if self.reveal_shot && matches!(pane.run.deck, DeckState::Open(_)) {
+        let open = pane.run.shown_deck().is_some();
+        if self.reveal_shot && open {
             self.reveal_shot = false;
             cursor.turned = true;
         }
         if let Some(dx) = self.drag_shot {
             flip_card::hold(ctx, deck::card_id(pane.id, cursor.batch), dx);
         }
+        let mut ask = None;
         gate::cover(ctx, pane.id, pane.rect, |ui| {
-            deck::show(ui, pane, cursor, out);
+            deck::show(ui, pane, cursor, &mut ask, out);
         });
+        if let Some(ask) = ask {
+            self.asking = Some((pane.id, ask));
+        }
         if pane.active {
             self.keyed = Some(pane.id);
         }
+        open
     }
 
     /// The deck's keys, taken before the reader's own keys see them.
@@ -231,13 +278,14 @@ impl StudyModeUi {
         let Some(pane) = self.keyed else {
             return;
         };
-        if ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(ctx) {
+        let asking = self.asking.is_some();
+        if asking || ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(ctx) {
             return;
         }
         let Some(run) = session.study_mode().run(pane) else {
             return;
         };
-        let DeckState::Open(open) = &run.deck else {
+        let Some(open) = run.shown_deck() else {
             return;
         };
         let Some(cursor) = self.cursors.get_mut(&pane) else {
