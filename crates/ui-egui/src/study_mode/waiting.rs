@@ -89,7 +89,10 @@ pub fn failed(ui: &mut Ui, pane: &Pane<'_>, range: &str, why: &str, out: &mut Co
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         let (mark, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
-        Icon::Alert.image(ui, 18.0).tint(t.danger).paint_at(ui, mark);
+        Icon::Alert
+            .image(ui, 18.0)
+            .tint(t.danger)
+            .paint_at(ui, mark);
         let title = format!("The words for {range} couldn’t be prepared");
         ui.label(RichText::new(title).font(theme::medium(t.text)));
     });

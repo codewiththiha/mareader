@@ -11,7 +11,6 @@ use mareader_settings::{
 };
 
 use crate::icons::Icon;
-use crate::icons::anim::{self, Act};
 use crate::modal::Dialog;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
@@ -29,11 +28,11 @@ mod highlights;
 mod model_picker;
 #[cfg(not(target_arch = "wasm32"))]
 mod models;
+mod nav;
 #[cfg(not(target_arch = "wasm32"))]
 mod provider_card;
 mod read_aloud;
 mod study;
-mod tab_icon;
 mod updates;
 mod vocabulary;
 mod voice_model;
@@ -64,7 +63,7 @@ const HEADER_H: f32 = 56.0;
 const FOOT_H: f32 = 12.0;
 
 use mareader_engine::settings::Tab;
-use tab_icon::TabIcon;
+use nav::{nav_heading, nav_row};
 
 /// Live engine/front-end services read by individual settings tabs.
 pub struct Services<'a> {
@@ -255,52 +254,6 @@ impl SettingsWindow {
             },
         );
     }
-}
-
-/// A small muted heading over a group of tabs.
-fn nav_heading(ui: &mut Ui, text: &str) {
-    let t = Tokens::get(ui.ctx());
-    ui.horizontal(|ui| {
-        ui.add_space(10.0);
-        let text = RichText::new(text)
-            .font(theme::medium(t.text_small))
-            .color(t.muted);
-        ui.label(text);
-    });
-    ui.add_space(4.0);
-}
-
-/// A tab in the sidebar: its icon and name, filled while shown.
-fn nav_row(ui: &mut Ui, tab: Tab, on: bool) -> egui::Response {
-    let t = Tokens::get(ui.ctx());
-    let size = vec2(ui.available_width(), NAV_ROW_H);
-    let (rect, r) = ui.allocate_exact_size(size, Sense::click());
-    let label = tab.label();
-    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
-    let fill = if on {
-        t.selected
-    } else if r.hovered() {
-        t.hover
-    } else {
-        Color32::TRANSPARENT
-    };
-    ui.painter().rect_filled(rect, t.radius, fill);
-    let icon = Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(16.0));
-    let tint = if on { t.accent } else { t.muted };
-    // Stable row names preserve runs while earlier groups fold.
-    let _act = anim::announce(ui, Act::Click);
-    ui.push_id(("settings-nav", label), |ui| {
-        anim::paint(ui, icon, tab.icon(), tint, label, &r);
-    });
-    let font = if on {
-        theme::medium(t.text)
-    } else {
-        egui::FontId::proportional(t.text)
-    };
-    let at = pos2(rect.left() + 38.0, rect.center().y);
-    ui.painter()
-        .text(at, egui::Align2::LEFT_CENTER, label, font, t.ink);
-    r
 }
 
 /// The shown tab's name over its page, and the close button; true on close.

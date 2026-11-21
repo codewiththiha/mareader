@@ -24,9 +24,15 @@ use crate::word_marks::off_thread;
 pub enum DeckState {
     /// No batch is locked, or none is planned yet.
     None,
-    Making { batch: Batch, job: DeckJob },
+    Making {
+        batch: Batch,
+        job: Box<DeckJob>,
+    },
     Open(Open),
-    Failed { batch: Batch, why: String },
+    Failed {
+        batch: Batch,
+        why: String,
+    },
 }
 
 impl DeckState {
@@ -41,7 +47,7 @@ impl DeckState {
 
 /// A deck made ahead, for a batch past the gate.
 pub enum Ahead {
-    Making { batch: Batch, job: DeckJob },
+    Making { batch: Batch, job: Box<DeckJob> },
     Ready { batch: Batch, built: Built },
     Failed { batch: Batch, why: String },
 }

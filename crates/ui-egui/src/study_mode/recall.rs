@@ -95,7 +95,10 @@ fn recall(pane: PaneId, ask: Ask) -> Action {
 fn header(ui: &mut Ui, recalling: &Recalling, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
-        let tag = RichText::new("RECALL").size(t.text_small).color(t.accent).strong();
+        let tag = RichText::new("RECALL")
+            .size(t.text_small)
+            .color(t.accent)
+            .strong();
         ui.label(tag);
         let band = mareader_cefr::label(recalling.word.band);
         if !band.is_empty() {
@@ -117,8 +120,13 @@ fn tries(ui: &mut Ui, used: u8, t: &Tokens) {
     for i in 0..MAX_TRIES {
         let x = rect.left() + 5.0 + f32::from(i) * 10.0;
         let centre = egui::pos2(x, rect.center().y);
-        let fill = if i < used { t.accent } else { Color32::TRANSPARENT };
-        ui.painter().circle(centre, 3.0, fill, egui::Stroke::new(1.0, t.muted));
+        let fill = if i < used {
+            t.accent
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter()
+            .circle(centre, 3.0, fill, egui::Stroke::new(1.0, t.muted));
     }
     response.on_hover_text(format!("{used} of {MAX_TRIES} attempts used"));
 }
@@ -140,7 +148,9 @@ fn input(ui: &mut Ui, recalling: &Recalling, draft: &mut Draft, out: &mut Comman
     let pane = recalling.pane;
     let asked = format!("What does “{}” mean here?", recalling.word.form);
     ui.label(RichText::new(asked).font(theme::medium(t.text)));
-    let sentence = RichText::new(&recalling.word.sentence).size(t.text_small).color(t.muted);
+    let sentence = RichText::new(&recalling.word.sentence)
+        .size(t.text_small)
+        .color(t.muted);
     ui.label(sentence.italics());
     let field = widgets::input_multiline(&mut draft.text)
         .id(Id::new(("study-recall-field", pane)))
@@ -191,7 +201,11 @@ fn result(ui: &mut Ui, recalling: &Recalling, out: &mut Commands) {
         Some(Verdict::Close) => ("Almost", t.accent),
         _ => ("Not quite", t.danger),
     };
-    ui.label(RichText::new(title).font(theme::medium(t.text)).color(colour));
+    ui.label(
+        RichText::new(title)
+            .font(theme::medium(t.text))
+            .color(colour),
+    );
     feedback(ui, &recalling.recall.feedback, &t);
     if let Some(hint) = recalling.hint() {
         ui.label(RichText::new(hint).size(t.text_small).color(t.ink));
@@ -215,8 +229,16 @@ fn ask(ui: &mut Ui, recalling: &Recalling, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     let pane = recalling.pane;
     let first = recalling.recall.attempts == 1;
-    let title = if first { "Correct, first try" } else { "Correct" };
-    ui.label(RichText::new(title).font(theme::medium(t.text)).color(t.accent));
+    let title = if first {
+        "Correct, first try"
+    } else {
+        "Correct"
+    };
+    ui.label(
+        RichText::new(title)
+            .font(theme::medium(t.text))
+            .color(t.accent),
+    );
     feedback(ui, &recalling.recall.feedback, &t);
     ui.add_space(t.gap);
     let lemma = &recalling.word.key.lemma;

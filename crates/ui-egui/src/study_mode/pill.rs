@@ -36,12 +36,17 @@ pub fn status(deck: &DeckState) -> (&'static str, bool) {
 
 /// The batch the reader is in, as `batch 2/5 · page 1/3`.
 pub fn place(run: &Run, current: usize) -> Option<String> {
-    let batch = run.batches.iter().find(|b| (b.from..=b.to).contains(&current))?;
+    let batch = run
+        .batches
+        .iter()
+        .find(|b| (b.from..=b.to).contains(&current))?;
     let count = run.batches.len();
     let index = batch.index.saturating_add(1);
     let page = current.saturating_sub(batch.from).saturating_add(1);
     let pages = pages(batch);
-    Some(format!("Proactive · batch {index}/{count} · page {page}/{pages}"))
+    Some(format!(
+        "Proactive · batch {index}/{count} · page {page}/{pages}"
+    ))
 }
 
 fn pages(batch: &Batch) -> usize {

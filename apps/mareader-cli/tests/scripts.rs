@@ -278,19 +278,34 @@ fn script_06_study_mode_gates_the_first_batch() {
     let pane = &out["state"]["panes"][0];
     let study = &pane["study"];
     assert_eq!(study["mode"], "proactive", "{study}");
-    assert_eq!(study["unlocked"], 3, "Start unlocks the first batch: {study}");
+    assert_eq!(
+        study["unlocked"], 3,
+        "Start unlocks the first batch: {study}"
+    );
     assert_eq!(study["gate"], 3, "{study}");
     assert_eq!(pane["page"], 0, "Start shows the batch from its first page");
-    assert_eq!(study["deck"], "open", "the next batch's deck is ready: {study}");
+    assert_eq!(
+        study["deck"], "open",
+        "the next batch's deck is ready: {study}"
+    );
     let cards: Vec<&str> = study["cards"]
         .as_array()
         .expect("cards")
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    assert!(cards.contains(&"vow"), "kept as learning, so it comes again: {cards:?}");
-    assert!(!cards.contains(&"sphinx"), "a capital mid-sentence is a name: {cards:?}");
-    assert!(!cards.contains(&"quartz"), "memorized words are skipped: {cards:?}");
+    assert!(
+        cards.contains(&"vow"),
+        "kept as learning, so it comes again: {cards:?}"
+    );
+    assert!(
+        !cards.contains(&"sphinx"),
+        "a capital mid-sentence is a name: {cards:?}"
+    );
+    assert!(
+        !cards.contains(&"quartz"),
+        "memorized words are skipped: {cards:?}"
+    );
 }
 
 fn backdate(path: &Path) {

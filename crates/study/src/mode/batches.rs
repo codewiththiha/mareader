@@ -207,7 +207,10 @@ mod tests {
 
     #[test]
     fn light_pages_still_stop_at_ten_and_odd_sizes_hold() {
-        assert_eq!(spans(&plan(&[10; 25], pages(3))), [(0, 9), (10, 19), (20, 24)]);
+        assert_eq!(
+            spans(&plan(&[10; 25], pages(3))),
+            [(0, 9), (10, 19), (20, 24)]
+        );
         assert!(plan(&[], pages(3)).is_empty());
         assert_eq!(spans(&plan(&[400; 3], pages(0))), [(0, 0), (1, 1), (2, 2)]);
         assert_eq!(spans(&plan(&[usize::MAX; 2], pages(5))), [(0, 1)]);

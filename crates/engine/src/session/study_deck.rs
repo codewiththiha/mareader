@@ -39,7 +39,9 @@ impl Session {
             writer.unwrap_or_default(),
             self.study_dict_language().unwrap_or_default(),
         );
-        self.study_mode.run_mut(pane).is_some_and(|r| r.follow(recipe))
+        self.study_mode
+            .run_mut(pane)
+            .is_some_and(|r| r.follow(recipe))
     }
 
     /// Starts or steps the deck for the batch at `pane`'s gate.
@@ -71,7 +73,10 @@ impl Session {
 
     /// Takes the deck made ahead for `batch`, or starts making one.
     fn study_start_deck(&mut self, pane: PaneId, batch: Batch, now: f64) -> bool {
-        let made = self.study_mode.run_mut(pane).and_then(|r| r.take_ahead(&batch));
+        let made = self
+            .study_mode
+            .run_mut(pane)
+            .and_then(|r| r.take_ahead(&batch));
         let deck = match made {
             Some(Ahead::Ready { built, .. }) => return self.study_open(pane, batch, built, now),
             Some(Ahead::Making { job, .. }) => DeckState::Making { batch, job },
@@ -83,7 +88,7 @@ impl Session {
                 let Some(ask) = self.study_ask(pane, &batch) else {
                     return false;
                 };
-                let job = DeckJob::new(Arc::clone(&self.waker), ask);
+                let job = Box::new(DeckJob::new(Arc::clone(&self.waker), ask));
                 DeckState::Making { batch, job }
             }
         };
@@ -125,7 +130,7 @@ impl Session {
             let Some(ask) = self.study_ask(pane, &batch) else {
                 continue;
             };
-            let job = DeckJob::new(Arc::clone(&self.waker), ask);
+            let job = Box::new(DeckJob::new(Arc::clone(&self.waker), ask));
             if let Some(run) = self.study_mode.run_mut(pane) {
                 run.ahead.push(Ahead::Making { batch, job });
                 changed = true;

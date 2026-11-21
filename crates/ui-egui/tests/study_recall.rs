@@ -73,17 +73,29 @@ fn answer(h: &mut H, text: &str) {
 fn a_shaded_word_is_recalled_wrong_then_right_and_memorized() {
     let (mut h, pane, _shelves) = recalling("ready");
     click(&mut h, "quick");
-    assert_eq!(recall(&h, pane).map(|r| r.word.form.as_str()), Some("quick"));
+    assert_eq!(
+        recall(&h, pane).map(|r| r.word.form.as_str()),
+        Some("quick")
+    );
     assert_eq!(h.state().study().card_word(), None, "Explain stays shut");
     answer(&mut h, "slow");
-    assert!(wait(&mut h, |h| phase(h, pane) == Some(Phase::Result)), "judged");
+    assert!(
+        wait(&mut h, |h| phase(h, pane) == Some(Phase::Result)),
+        "judged"
+    );
     h.run_steps(2);
     assert!(h.query_by_label("Not quite").is_some());
-    assert!(h.query_by_label_contains("a synonym starts with").is_some(), "a hint");
+    assert!(
+        h.query_by_label_contains("a synonym starts with").is_some(),
+        "a hint"
+    );
     h.get_by_label(AGAIN).click();
     h.run_steps(2);
     answer(&mut h, "right");
-    assert!(wait(&mut h, |h| phase(h, pane) == Some(Phase::Ask)), "correct");
+    assert!(
+        wait(&mut h, |h| phase(h, pane) == Some(Phase::Ask)),
+        "correct"
+    );
     h.run_steps(2);
     assert!(h.query_by_label_contains("to memorized?").is_some());
     assert_eq!(recall(&h, pane).map(|r| r.recall.attempts), Some(2));

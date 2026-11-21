@@ -78,7 +78,10 @@ fn az(scope: Scope) -> Filter {
 fn with_books_a_row_is_a_sighting_and_merged_a_word() {
     let lib = shelf();
     let books = view(&lib, &az(Scope::Books));
-    assert_eq!(lemmas(&books), ["arcane", "gaunt", "lintel", "lintel", "sconce"]);
+    assert_eq!(
+        lemmas(&books),
+        ["arcane", "gaunt", "lintel", "lintel", "sconce"]
+    );
     assert_eq!((books.total, books.counts.all), (5, 5));
     let merged = view(&lib, &az(Scope::Merged));
     assert_eq!(lemmas(&merged), ["arcane", "gaunt", "lintel", "sconce"]);
@@ -156,12 +159,19 @@ fn groups_follow_the_first_row_and_levels_go_hardest_first() {
         sort: Sort::Recent,
         ..az(Scope::Books)
     };
-    assert_eq!(labels(&view(&lib, &month)), ["November 2026", "October 2026"]);
+    assert_eq!(
+        labels(&view(&lib, &month)),
+        ["November 2026", "October 2026"]
+    );
     let book = Filter {
         group: Group::Book,
         ..az(Scope::Merged)
     };
-    assert_eq!(labels(&view(&lib, &book)), [""], "merged rows have many books");
+    assert_eq!(
+        labels(&view(&lib, &book)),
+        [""],
+        "merged rows have many books"
+    );
     let tries = Filter {
         sort: Sort::Tries,
         ..az(Scope::Merged)

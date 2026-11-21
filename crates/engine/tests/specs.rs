@@ -102,7 +102,12 @@ fn a_row_says_which_keys_it_reads_and_no_more() {
 /// every command and every page: a script can ask before it builds.
 #[test]
 fn a_row_says_which_page_takes_its_command() {
-    let routes = [Route::Reader, Route::Library, Route::Dictionary, Route::Space];
+    let routes = [
+        Route::Reader,
+        Route::Library,
+        Route::Dictionary,
+        Route::Space,
+    ];
     for intent in every_variant() {
         let Some(spec) = intent.spec() else {
             panic!("{} has no row", intent.id());

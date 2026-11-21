@@ -138,7 +138,10 @@ fn known_cards_leave_the_deck_and_undo_puts_them_back_in_place() {
 #[test]
 fn decks_ahead_follow_the_batches_still_coming() {
     let mut run = planned(0);
-    assert_eq!(run.upcoming(2).iter().map(|b| b.from).collect::<Vec<_>>(), [3, 6]);
+    assert_eq!(
+        run.upcoming(2).iter().map(|b| b.from).collect::<Vec<_>>(),
+        [3, 6]
+    );
     let failed = |batch: Batch| Ahead::Failed {
         batch,
         why: String::new(),
@@ -146,26 +149,38 @@ fn decks_ahead_follow_the_batches_still_coming() {
     let (second, third) = (run.batches[1].clone(), run.batches[2].clone());
     run.ahead = vec![failed(second.clone()), failed(third.clone())];
     run.trim_ahead(1);
-    assert!(run.has_ahead(&second) && !run.has_ahead(&third), "past the window");
+    assert!(
+        run.has_ahead(&second) && !run.has_ahead(&third),
+        "past the window"
+    );
     run.unlock_through(2);
     assert!(run.take_ahead(&second).is_some(), "the gate takes its deck");
     run.ahead.push(failed(second));
     run.trim_ahead(2);
-    assert!(run.ahead.is_empty(), "a batch now at the gate is no longer ahead");
+    assert!(
+        run.ahead.is_empty(),
+        "a batch now at the gate is no longer ahead"
+    );
     assert!(!run.busy());
 }
 
 #[test]
 fn a_new_recipe_forgets_the_decks_not_yet_open() {
     let mut run = planned(0);
-    assert!(!run.follow("auto|b2".to_owned()), "the first recipe is only noted");
+    assert!(
+        !run.follow("auto|b2".to_owned()),
+        "the first recipe is only noted"
+    );
     let first = run.batches[0].clone();
     run.deck = DeckState::Failed {
         batch: first,
         why: String::new(),
     };
     run.fallback = Some(0);
-    assert!(!run.follow("auto|b2".to_owned()), "the same recipe keeps all");
+    assert!(
+        !run.follow("auto|b2".to_owned()),
+        "the same recipe keeps all"
+    );
     assert!(run.follow("ai|b2".to_owned()));
     assert!(matches!(run.deck, DeckState::None));
     assert_eq!(run.fallback, None);

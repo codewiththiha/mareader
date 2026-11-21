@@ -192,7 +192,11 @@ impl Session {
             return self.study_mode.stop(pane);
         }
         let Some(why) = self.study_lost(pane) else {
-            if self.study_mode.run(pane).is_some_and(|r| r.mode == Mode::Reactive) {
+            if self
+                .study_mode
+                .run(pane)
+                .is_some_and(|r| r.mode == Mode::Reactive)
+            {
                 return false;
             }
             let planned = self.study_plan(pane);

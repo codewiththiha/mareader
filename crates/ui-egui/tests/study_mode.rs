@@ -102,7 +102,10 @@ fn without_cards_to_write_the_menu_says_what_is_missing() -> Out {
     h.get_by_label("Study mode").click();
     h.run();
     let pane = h.state().active_pane();
-    assert!(!h.state().session().study_mode().on(pane), "the switch is off");
+    assert!(
+        !h.state().session().study_mode().on(pane),
+        "the switch is off"
+    );
     Ok(())
 }
 
@@ -124,13 +127,19 @@ fn the_gate_holds_the_view_until_the_deck_is_studied() -> Out {
     assert!(cards(&h, pane) > 0, "quick is a new word");
     h.key_press(egui::Key::Space);
     h.run();
-    assert!(h.query_by_label(REVEAL).is_none(), "Space turns the card over");
+    assert!(
+        h.query_by_label(REVEAL).is_none(),
+        "Space turns the card over"
+    );
     h.get_by_label(KNOWN).click();
     h.run();
     assert_eq!(cards(&h, pane), 0, "a known word leaves the deck");
     h.get_by_label(START).click();
     h.run();
     let gate = h.state().session().study_gate(pane);
-    assert!(gate.is_none_or(|g| g > 0), "Start unlocks the batch: {gate:?}");
+    assert!(
+        gate.is_none_or(|g| g > 0),
+        "Start unlocks the batch: {gate:?}"
+    );
     Ok(())
 }

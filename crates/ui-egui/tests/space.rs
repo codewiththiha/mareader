@@ -45,7 +45,10 @@ fn a_tab_keeps_only_its_status() {
     h.run();
     assert!(h.query_by_label("Memorize ponder").is_some());
     assert!(h.query_by_label("Un-memorize arcane").is_none());
-    assert!(h.query_by_label("All 10").is_some(), "counts ignore the tab");
+    assert!(
+        h.query_by_label("All 10").is_some(),
+        "counts ignore the tab"
+    );
 }
 
 #[test]

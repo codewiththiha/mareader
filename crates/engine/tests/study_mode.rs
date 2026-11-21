@@ -26,7 +26,10 @@ fn opened() -> Session {
         session.pump();
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(session.documents().page_count(pane).is_some(), "the sample opens");
+    assert!(
+        session.documents().page_count(pane).is_some(),
+        "the sample opens"
+    );
     session.drain();
     session
 }
@@ -70,5 +73,8 @@ fn a_recall_opens_only_in_reactive_mode() {
         pane,
         ask: Ask::Close,
     };
-    assert!(!session.execute(Command::StudyMode(close), 1.0).dirty, "nothing to close");
+    assert!(
+        !session.execute(Command::StudyMode(close), 1.0).dirty,
+        "nothing to close"
+    );
 }

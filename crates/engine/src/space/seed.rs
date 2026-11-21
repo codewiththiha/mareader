@@ -92,7 +92,7 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
             } else {
                 LearnedBy::Proactive
             },
-            status: STATUSES[i % STATUSES.len()],
+            status: STATUSES.get(i % STATUSES.len()).copied().unwrap_or_default(),
             tries: if recalled { 1 + (i % 3) as u8 } else { 0 },
             first_try: recalled && i % 3 == 0,
         };

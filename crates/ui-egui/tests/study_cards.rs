@@ -77,7 +77,10 @@ fn a_slow_ai_offers_the_dictionary_which_then_writes_the_deck() {
     assert!(wait(&mut h, |h| said(h, pane).starts_with("Writing meanings")));
     h.run_steps(2);
     let stage = said(&h, pane);
-    assert!(h.query_by_label(&stage).is_some(), "the card shows {stage:?}");
+    assert!(
+        h.query_by_label(&stage).is_some(),
+        "the card shows {stage:?}"
+    );
     assert!(h.query_by_label(DICTIONARY).is_none(), "not slow yet");
     // Past the slow mark, on the frames' own clock.
     h.run_steps(460);
@@ -108,12 +111,23 @@ fn a_failed_deck_tries_again_or_turns_to_the_dictionary() {
 #[test]
 fn decks_made_ahead_open_at_once_and_the_pill_leads_to_them() {
     let (mut h, pane, _shelves) = studying("ready", 2);
-    assert!(wait(&mut h, |h| open_via(h, pane) == Some(Via::Ai)), "the AI writes");
+    assert!(
+        wait(&mut h, |h| open_via(h, pane) == Some(Via::Ai)),
+        "the AI writes"
+    );
     h.run_steps(2);
     h.get_by_label(REVEAL).click();
     h.run_steps(2);
-    assert!(h.query_by_label("Like: sample").is_some(), "the back has synonyms");
-    let batches = h.state().session().study_mode().run(pane).map_or(0, |r| r.batches.len());
+    assert!(
+        h.query_by_label("Like: sample").is_some(),
+        "the back has synonyms"
+    );
+    let batches = h
+        .state()
+        .session()
+        .study_mode()
+        .run(pane)
+        .map_or(0, |r| r.batches.len());
     if batches < 2 {
         return;
     }
@@ -121,17 +135,29 @@ fn decks_made_ahead_open_at_once_and_the_pill_leads_to_them() {
         let run = h.state().session().study_mode().run(pane);
         run.is_some_and(|r| matches!(r.ahead.first(), Some(Ahead::Ready { .. })))
     };
-    assert!(wait(&mut h, ready_ahead), "the next batch's deck is made ahead");
+    assert!(
+        wait(&mut h, ready_ahead),
+        "the next batch's deck is made ahead"
+    );
     h.get_by_label(START).click();
     h.run_steps(3);
     let gate = h.state().session().study_gate(pane);
-    assert!(gate.is_some_and(|g| g > 0), "the first batch unlocks: {gate:?}");
-    assert!(open_via(&h, pane).is_some(), "the next deck is open at once");
+    assert!(
+        gate.is_some_and(|g| g > 0),
+        "the first batch unlocks: {gate:?}"
+    );
+    assert!(
+        open_via(&h, pane).is_some(),
+        "the next deck is open at once"
+    );
     // A gate already in view shows its deck; one out of reach, the pill.
     if h.query_by_label(START).is_some() {
         return;
     }
-    assert!(h.query_by_label_contains("next words ready").is_some(), "the pill tells");
+    assert!(
+        h.query_by_label_contains("next words ready").is_some(),
+        "the pill tells"
+    );
     h.get_by_label(OPEN).click();
     h.run_steps(3);
     let current = h.state().documents().reading(pane).map(|r| r.current);

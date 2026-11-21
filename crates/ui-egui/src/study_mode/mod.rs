@@ -144,7 +144,7 @@ impl StudyModeUi {
             return;
         };
         let veil = gate::veil(pane.sheets, pane.rect, gate, pane.mode);
-        let Some(veil) = veil.filter(|v| v.reached) else {
+        if veil.is_none_or(|v| !v.reached) {
             if let Some(veil) = veil {
                 let range = batch.label();
                 gate::cover(ctx, pane.id, veil.rect, |ui| {
@@ -153,7 +153,7 @@ impl StudyModeUi {
             }
             pill::show(ctx, pane, veil.map(|v| v.rect.top()), out);
             return;
-        };
+        }
         let cursor = self.cursors.entry(pane.id).or_default();
         if cursor.batch != (batch.from, batch.to) {
             *cursor = Cursor {
@@ -203,7 +203,10 @@ mod tests {
     #[test]
     fn studying_leaves_the_word_help_off_the_selection_bar() {
         let look = HighlightSettings::default();
-        assert!(look.bar.contains(&BarItem::Explain), "the default bar explains");
+        assert!(
+            look.bar.contains(&BarItem::Explain),
+            "the default bar explains"
+        );
         let kept = bar(&look, true);
         assert!(!kept.bar.contains(&BarItem::Explain));
         assert!(!kept.bar.contains(&BarItem::LookUp));

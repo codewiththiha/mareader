@@ -126,7 +126,12 @@ mod tests {
         assert_eq!(backs.len(), 2);
         assert!(backs.iter().all(Option::is_some));
         assert!(ready.take().is_none(), "an answer comes once");
-        assert!(Practice::Silent.write(vec![wanted("brisk")]).take().is_none());
+        assert!(
+            Practice::Silent
+                .write(vec![wanted("brisk")])
+                .take()
+                .is_none()
+        );
         let failed = Practice::Failing.write(Vec::new()).take();
         assert!(matches!(failed, Some(Err(f)) if f.why == Why::Offline));
         assert_eq!(Practice::parse("silent"), Some(Practice::Silent));

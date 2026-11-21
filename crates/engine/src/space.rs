@@ -220,7 +220,9 @@ pub struct Stats {
 impl Stats {
     /// First-try answers as a whole percentage; 0 with none answered.
     pub fn first_try_percent(&self) -> usize {
-        (self.first_try * 100).checked_div(self.answered).unwrap_or(0)
+        (self.first_try * 100)
+            .checked_div(self.answered)
+            .unwrap_or(0)
     }
 }
 

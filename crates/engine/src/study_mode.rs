@@ -7,6 +7,7 @@
 
 pub mod backs;
 pub mod deck_job;
+pub mod known;
 pub mod recalling;
 pub mod run;
 pub mod sightings;
@@ -20,7 +21,8 @@ use mareader_study::mode::{CardWriter, Judge, Key, Mode};
 use mareader_workspace::PaneId;
 
 pub use backs::{Backs, Shown, Writer};
-pub use deck_job::{Built, DeckJob, Doing, Known, Tags};
+pub use deck_job::{Built, DeckJob, Doing, Tags};
+pub use known::Known;
 pub use recalling::{Ask, NO_JUDGE, Recalling, Word};
 pub use run::{Ahead, DeckState, Open, Prior, Run};
 
@@ -28,12 +30,18 @@ pub use run::{Ahead, DeckState, Open, Prior, Run};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     /// Turns `mode` on in `pane`, or off when it is already on there.
-    Toggle { pane: PaneId, mode: Mode },
+    Toggle {
+        pane: PaneId,
+        mode: Mode,
+    },
     Off(PaneId),
     /// Ends the open deck: its words are kept and its pages unlock.
     Start(PaneId),
     /// Saves a card's word as memorized; its card leaves the deck.
-    Known { pane: PaneId, key: Key },
+    Known {
+        pane: PaneId,
+        key: Key,
+    },
     /// Brings back the last card marked known.
     Undo(PaneId),
     /// Takes the pane to the gate, where the deck waits.
@@ -45,7 +53,10 @@ pub enum Action {
     /// Takes the pane back to the batch before the gate.
     ReadPrevious(PaneId),
     /// What Reactive mode's recall popover asks.
-    Recall { pane: PaneId, ask: Ask },
+    Recall {
+        pane: PaneId,
+        ask: Ask,
+    },
 }
 
 pub const ON: &str = "Proactive study mode on. Words come first, then the pages.";

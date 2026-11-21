@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::study_mode::{Pane, menu::Look, recall};
+use egui::Context;
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, Ask};
 use mareader_settings::Provider;
@@ -54,7 +55,10 @@ impl MareaderApp {
         let run = self.session.study_mode().run(pane);
         if run.is_some_and(|r| r.mode == Mode::Reactive) {
             let ask = Ask::Open { page, chars };
-            self.queue(Sent::Engine(Command::StudyMode(Action::Recall { pane, ask })));
+            self.queue(Sent::Engine(Command::StudyMode(Action::Recall {
+                pane,
+                ask,
+            })));
         } else {
             self.explain_shaded(pane, page, chars, at);
         }
@@ -80,10 +84,16 @@ impl MareaderApp {
             return;
         };
         let open = Ask::Open { page, chars };
-        out.push(Sent::Engine(Command::StudyMode(Action::Recall { pane, ask: open })));
+        out.push(Sent::Engine(Command::StudyMode(Action::Recall {
+            pane,
+            ask: open,
+        })));
         if let Some(answer) = answer {
             let ask = Ask::Answer(answer.to_owned());
-            out.push(Sent::Engine(Command::StudyMode(Action::Recall { pane, ask })));
+            out.push(Sent::Engine(Command::StudyMode(Action::Recall {
+                pane,
+                ask,
+            })));
         }
     }
 }

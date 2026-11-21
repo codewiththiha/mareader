@@ -141,13 +141,7 @@ fn space(ui: &mut Ui, out: &mut Commands) {
 }
 
 /// A count stepped between `lo` and `hi`, shown with `unit`.
-fn count_row(
-    ui: &mut Ui,
-    (label, hint): (&str, &str),
-    n: &mut u8,
-    (lo, hi): (u8, u8),
-    unit: &str,
-) {
+fn count_row(ui: &mut Ui, (label, hint): (&str, &str), n: &mut u8, (lo, hi): (u8, u8), unit: &str) {
     row(ui, label, hint, |ui| {
         let mut value = f32::from(*n);
         let range = f32::from(lo)..=f32::from(hi);

@@ -19,6 +19,7 @@ use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Want
 use mareader_study::mode::{build, lemma};
 
 use super::backs::{NO_MODEL, Shown, Writer, meaning_of, said, wanted};
+use super::known::Known;
 use super::sightings::{self, Read};
 use crate::session::Waker;
 use crate::word_list::{INLINE, LEVEL_ROUND, Levels, Meanings};
@@ -43,36 +44,6 @@ pub trait Tags: Levels {
 
     /// The tag `ticket` got once answered; `Some(None)` means no tag.
     fn take_tag(&mut self, ticket: TagTicket) -> Option<Option<String>>;
-}
-
-/// Words already memorized; a key without a class matches every class.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Known {
-    exact: HashSet<Key>,
-    lemmas: HashSet<String>,
-}
-
-impl Known {
-    pub fn of(keys: impl IntoIterator<Item = Key>) -> Self {
-        let mut known = Self::default();
-        for key in keys {
-            known.add(key);
-        }
-        known
-    }
-
-    pub fn add(&mut self, key: Key) {
-        self.lemmas.insert(key.lemma.clone());
-        self.exact.insert(key);
-    }
-
-    pub fn has(&self, key: &Key) -> bool {
-        let bare = || self.exact.contains(&Key::new(&*key.lemma, None));
-        match key.pos {
-            Some(_) => self.exact.contains(key) || bare(),
-            None => self.lemmas.contains(&key.lemma),
-        }
-    }
 }
 
 /// What one deck is made of, and from where.
@@ -120,11 +91,22 @@ struct Hard {
 
 enum Stage {
     Reading(Receiver<Vec<Page>>),
-    Levels { next: usize },
-    Tags { asked: Vec<(usize, TagTicket)>, since: Option<f64> },
-    Meanings { ticket: Ticket, since: Option<f64> },
+    Levels {
+        next: usize,
+    },
+    Tags {
+        asked: Vec<(usize, TagTicket)>,
+        since: Option<f64>,
+    },
+    Meanings {
+        ticket: Ticket,
+        since: Option<f64>,
+    },
     /// The writer's job, and the cards it was asked for, by place.
-    Writing { job: Box<dyn CardJob>, asked: Vec<(usize, Wanted)> },
+    Writing {
+        job: Box<dyn CardJob>,
+        asked: Vec<(usize, Wanted)>,
+    },
     Done,
 }
 
@@ -282,7 +264,7 @@ impl DeckJob {
         let listed = |k: &str| bands.get(k).is_some_and(|b| *b > 0);
         let mut hard = Vec::new();
         for (i, read) in self.read.iter().enumerate() {
-            let lemma = lemma(&read.norm, &listed);
+            let lemma = lemma(&read.norm, listed);
             let own = bands.get(&lemma).copied().filter(|b| *b > 0);
             let parts = || {
                 let found = candidates(&read.form).into_iter();
@@ -476,21 +458,5 @@ impl DeckJob {
             via: self.via,
         });
         self.stage = Stage::Done;
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_key_without_a_class_matches_every_class() {
-        let known = Known::of([Key::new("run", None), Key::new("swim", Some(Pos::Verb))]);
-        assert!(known.has(&Key::new("run", Some(Pos::Verb))));
-        assert!(known.has(&Key::new("swim", None)));
-        assert!(known.has(&Key::new("swim", Some(Pos::Verb))));
-        assert!(!known.has(&Key::new("swim", Some(Pos::Noun))));
-        assert!(!known.has(&Key::new("fly", None)));
     }
 }

@@ -88,7 +88,10 @@ fn a_deck_s_backs_come_in_one_request_by_number() {
     assert_eq!(backs[1].as_ref().unwrap().usage, "A brisk walk.");
     assert!(job.take().is_none(), "a deck answers once");
     let sent = server.seen()[0].body.to_string();
-    assert!(sent.contains(r#"1. \"arcane\" in: \"An arcane thing.\""#), "{sent}");
+    assert!(
+        sent.contains(r#"1. \"arcane\" in: \"An arcane thing.\""#),
+        "{sent}"
+    );
     assert_eq!(server.seen().len(), 1, "one request for the deck");
 }
 

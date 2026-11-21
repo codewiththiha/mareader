@@ -21,7 +21,10 @@ use super::backs::{Writer, said};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ask {
     /// Opens a recall on the word at `chars` of `page`.
-    Open { page: usize, chars: Range<usize> },
+    Open {
+        page: usize,
+        chars: Range<usize>,
+    },
     /// Sends an answer to be judged.
     Answer(String),
     /// Back to the answer box after a miss, or after the judge failed.
@@ -128,7 +131,9 @@ impl Recalling {
         if let Some(answer) = self.back_job.as_mut().and_then(|job| job.take()) {
             self.back_job = None;
             moved = true;
-            let back = answer.ok().and_then(|backs| backs.into_iter().next().flatten());
+            let back = answer
+                .ok()
+                .and_then(|backs| backs.into_iter().next().flatten());
             if let (Some(back), Some(writer)) = (&back, writer) {
                 let id = writer.cards.id();
                 writer.backs.put(&id, &self.word.wanted(), back.clone());
@@ -214,16 +219,24 @@ mod tests {
         assert!(r.send("slow", Some(Arc::clone(&judge))));
         assert_eq!(r.step(true, Some(&ready)), (true, None));
         assert_eq!(r.recall.verdict, Some(Verdict::Wrong));
-        assert_eq!(r.hint().as_deref(), Some("Hint: a synonym starts with “s”."));
+        assert_eq!(
+            r.hint().as_deref(),
+            Some("Hint: a synonym starts with “s”.")
+        );
         assert_eq!(r.ending(Outcome::Memorized), None, "only once correct");
         assert!(r.recall.again());
         assert!(r.send("right: lively", Some(judge)));
         r.step(true, Some(&ready));
         assert_eq!(r.recall.phase, Phase::Ask);
-        let done = r.ending(Outcome::Memorized).map(|d| (d.attempts, d.first_try));
+        let done = r
+            .ending(Outcome::Memorized)
+            .map(|d| (d.attempts, d.first_try));
         assert_eq!(done, Some((2, false)));
         let again = Recalling::new(PaneId(1), word(), Some(ready), String::new());
-        assert!(again.back.is_some() && !again.busy(), "a kept back is not asked again");
+        assert!(
+            again.back.is_some() && !again.busy(),
+            "a kept back is not asked again"
+        );
     }
 
     #[test]
@@ -235,7 +248,11 @@ mod tests {
         r.step(false, None);
         assert_eq!((r.recall.phase, r.recall.attempts), (Phase::Failed, 0));
         assert_eq!(r.answer, "right");
-        assert!(r.failure.as_deref().is_some_and(|f| f.contains("couldn’t be reached")));
+        assert!(
+            r.failure
+                .as_deref()
+                .is_some_and(|f| f.contains("couldn’t be reached"))
+        );
         assert!(r.recall.again());
         assert!(r.send("right", None));
         assert_eq!(r.failure.as_deref(), Some(NO_JUDGE));

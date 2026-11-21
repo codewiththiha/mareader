@@ -185,7 +185,10 @@ mod tests {
             seen("solace", Pos::Noun, 6),
         ];
         let d = build(words, 3, |_| false, 12);
-        assert_eq!(names(&d), ["fortune|noun", "vex|verb", "solace|noun", "design|noun"]);
+        assert_eq!(
+            names(&d),
+            ["fortune|noun", "vex|verb", "solace|noun", "design|noun"]
+        );
         assert_eq!(d.cards[0].count, 2);
         assert_eq!(d.cards[0].sentence, "A fortune here.");
     }
@@ -217,7 +220,10 @@ mod tests {
         let words = (0..20).map(|i| seen(&format!("w{i}"), Pos::Noun, 5));
         let d = build(words, 3, |_| false, 4);
         assert_eq!((d.cards.len(), d.found), (4, 20));
-        assert_eq!(build(Vec::<Sighting>::new(), 3, |_| false, 4), Deck::default());
+        assert_eq!(
+            build(Vec::<Sighting>::new(), 3, |_| false, 4),
+            Deck::default()
+        );
     }
 
     #[test]

@@ -384,7 +384,10 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
         (
             "space.word",
             r#"{"action":"forget","word":"lintel|noun"}"#,
-            Command::Space(SpaceAction::Forget(vec![WordId::of("lintel", Some("noun"))])),
+            Command::Space(SpaceAction::Forget(vec![WordId::of(
+                "lintel",
+                Some("noun"),
+            )])),
         ),
         (
             "library.act",

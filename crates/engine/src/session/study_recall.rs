@@ -60,16 +60,23 @@ impl Session {
         page: usize,
         chars: Range<usize>,
     ) -> Result<bool, String> {
-        let reactive = self.study_mode.run(pane).is_some_and(|r| r.mode == Mode::Reactive);
+        let reactive = self
+            .study_mode
+            .run(pane)
+            .is_some_and(|r| r.mode == Mode::Reactive);
         if !reactive {
             return Err(mode::REACTIVE_ONLY.to_owned());
         }
-        let layer = self.documents.layer(pane, page).ok_or("That page has no text.")?;
+        let layer = self
+            .documents
+            .layer(pane, page)
+            .ok_or("That page has no text.")?;
         let asked = asked_at(&layer, page, chars).ok_or("No word is there.")?;
         let word = self.study_word(asked.word, asked.context, page, asked.chars);
         let by = self.study_mode.judge().map(|j| j.by()).unwrap_or_default();
         let writer = self.study_mode.writer();
-        self.study_mode.open_recall(Recalling::new(pane, word, writer, by));
+        self.study_mode
+            .open_recall(Recalling::new(pane, word, writer, by));
         Ok(true)
     }
 
@@ -111,7 +118,9 @@ impl Session {
         let Some(recalling) = self.study_mode.recalling(pane) else {
             return Ok(false);
         };
-        let done = recalling.ending(outcome).ok_or("The recall can't end that way now.")?;
+        let done = recalling
+            .ending(outcome)
+            .ok_or("The recall can't end that way now.")?;
         self.study_recall_save(pane, done);
         Ok(true)
     }
@@ -136,7 +145,8 @@ impl Session {
         let word = &recalling.word;
         let run = self.study_mode.run_mut(pane);
         let book = run.and_then(|r| {
-            r.recalled.push((word.page, word.chars.clone(), done.outcome));
+            r.recalled
+                .push((word.page, word.chars.clone(), done.outcome));
             r.book
         });
         if let Some(book) = book {
