@@ -178,6 +178,7 @@ fn dispatch(session: &mut Session, intent: Command, now: f64) -> Done {
         | Command::Dict(_) => study::run(session, intent),
         Command::PageAi(action) => page_ai(session, action, now),
         Command::StudyMode(action) => study_mode::run(session, action, now),
+        Command::Space(action) => session.space(action),
         #[cfg(not(target_arch = "wasm32"))]
         Command::Ai(job) => emit_changed(session, Event::Ai(job)),
         Command::PlaceReadMarker { .. }

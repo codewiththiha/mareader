@@ -62,6 +62,7 @@ pub mod shaped;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod sounds;
+pub mod space;
 pub mod study;
 pub mod study_mode;
 pub mod tab_bar;

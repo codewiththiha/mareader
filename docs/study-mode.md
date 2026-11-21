@@ -140,3 +140,32 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   CEFR shading hides unless Hints is on.
 - **Shots:** `study_mode=proactive|reactive|off`, `study_gate=on` and
   `study_deck=reveal`.
+
+## Space (`crates/engine/src/space.rs`, `crates/ui-egui/src/space`)
+
+Space is every studied word across books, on its own page beside the
+library: the library bar's *Your words* button opens it, and its pressed
+button, the Library button or Escape go back.
+
+- **Rows:** *With books* lists a row per book that met the word; *Merged*
+  folds a word's books into one row, newest first, its tries summed.
+- **The rail:** the books with their counts, B1 to C2, *Learned by* (Any,
+  Cards, Recall) and the part of speech. No level picked shows every level.
+- **The head:** a search over the word, its meaning and its sentence;
+  *Export CSV*; the status tabs, each counted after every other filter.
+- **Stats:** memorized words of those met, first-try answers of the
+  reactive answers, and a bar per level's memorized words.
+- **Toolbar:** group by none, book, level, month or status (never book when
+  merged; levels go hardest first), sort by recent, A–Z, hardest, most tries
+  or book, and a list or cards.
+- **A row** shows the word, its class and level, its meaning, its status,
+  *card* or its tries, *first try*, its books and the day it was last met.
+  Its chevron opens the sentence. *Memorize* and *Un-memorize* act on the
+  word in every book; *Forget* drops it, so it is carded again when met.
+- **CSV** (`mareader-space.csv`): a line per row shown under the header
+  `lemma,pos,level,meaning,context,book,status,date`, every cell quoted;
+  books are joined by `; ` and the date is in UTC.
+- **Scripts:** `space.word` with `action` memorize, unmemorize or forget and
+  `word` as `lemma|class`.
+- **Shots:** `words=demo` studies eight made-up words in the first books,
+  `route=space` opens the page and `space_view=cards` draws cards.

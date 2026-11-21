@@ -149,6 +149,10 @@ impl MareaderApp {
             self.escape_library(commands);
             free = false;
         }
+        if free && route == Route::Space {
+            commands.push(Sent::Ui(UiCommand::ShowLibrary));
+            free = false;
+        }
         // The dictionary clears its search, else goes back.
         if free && route == Route::Dictionary {
             if !self.ui.dict.page_escape() {

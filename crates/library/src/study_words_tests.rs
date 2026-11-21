@@ -53,6 +53,19 @@ fn a_word_is_kept_once_and_met_in_each_book() {
 }
 
 #[test]
+fn every_sighting_skips_forgotten_words() {
+    let mut lib = Library::new(A);
+    let (one, two) = (book(&mut lib, "/a.epub", 1), book(&mut lib, "/b.epub", 2));
+    lib.record_word(one, word("lintel", WordStatus::Learning), 2_000);
+    let gone = lib.record_word(two, word("sconce", WordStatus::Learning), 2_100);
+    assert_eq!(lib.every_sighting().count(), 2);
+    let ids: Vec<WordId> = gone.into_iter().collect();
+    lib.set_words_alive(&ids, false, 3_000);
+    let left: Vec<WordId> = lib.every_sighting().map(|s| s.word).collect();
+    assert_eq!(left, [WordId::of("lintel", Some("noun"))]);
+}
+
+#[test]
 fn a_card_never_lowers_a_memorized_word() {
     let mut lib = Library::new(A);
     let one = book(&mut lib, "/a.epub", 1);

@@ -17,6 +17,7 @@ mod page_ai;
 mod panes;
 mod read_aloud;
 mod services;
+mod space;
 mod study;
 mod study_mode;
 mod tick;

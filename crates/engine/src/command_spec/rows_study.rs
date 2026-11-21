@@ -1,11 +1,13 @@
-//! Study mode's row: what a script sends to turn it on and study a deck.
+//! Study's rows: what a script sends to study a deck, and to Space's words.
 
-use mareader_study::mode::{Key, Mode};
+use mareader_library::WordId;
+use mareader_study::mode::{Key, Mode, Pos};
 use serde_json::Value;
 
 use crate::command::Command;
-use crate::command_spec::{CommandSpec, acts, json, reader_only, row};
+use crate::command_spec::{CommandSpec, acts, anywhere, json, reader_only, row};
 use crate::session::Session;
+use crate::space::Action as SpaceAction;
 use crate::study_mode::Action;
 
 /// Study mode's asks a script can send.
@@ -53,4 +55,32 @@ fn parse(at: &Session, params: &Value) -> Result<Command, String> {
         other => return Err(acts::refused("study.mode", other, ACTS)),
     };
     Ok(Command::StudyMode(action))
+}
+
+/// What Space asks of a word a script names.
+const SPACE_ACTS: &str = "memorize|unmemorize|forget";
+
+/// The ask, and the word as `lemma|class`.
+const SPACE_PARAMS: &[(&str, &str)] = &[("action", SPACE_ACTS), ("word", "str")];
+
+pub(crate) const SPACE: CommandSpec = row(
+    "space.word",
+    "Memorizes, un-memorizes or forgets a studied word in every book.",
+    SPACE_PARAMS,
+    anywhere,
+    space,
+);
+
+/// A word with no class is named by its bare lemma.
+fn space(_at: &Session, params: &Value) -> Result<Command, String> {
+    let word = json::text(params, "word")?;
+    let key = Key::parse(&word).ok_or_else(|| format!("{word:?} names no word"))?;
+    let ids = vec![WordId::of(&key.lemma, key.pos.map(Pos::name))];
+    let action = match json::text(params, "action")?.as_str() {
+        "memorize" => SpaceAction::Memorize(ids),
+        "unmemorize" => SpaceAction::Unmemorize(ids),
+        "forget" => SpaceAction::Forget(ids),
+        other => return Err(acts::refused("space.word", other, SPACE_ACTS)),
+    };
+    Ok(Command::Space(action))
 }

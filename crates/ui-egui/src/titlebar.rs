@@ -1,5 +1,7 @@
 //! The auto-hiding title bar, kept open by the pin or its popups.
 
+mod page_menu;
+
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{Align, Context, Id, Layout, Rect, Sense, UiBuilder, pos2, vec2};
 use mareader_appearance::{Appearance, Preset};
@@ -23,6 +25,7 @@ use crate::zoom::ZoomState;
 use mareader_engine::command::Independence;
 use mareader_engine::library::{Crumb, Field};
 use mareader_engine::pane::ViewMode;
+use mareader_engine::route::Route;
 
 /// How long the bar stays after the pointer leaves the band.
 pub const HIDE_GRACE: f64 = 0.4;
@@ -31,7 +34,6 @@ pub const FADE: f32 = 0.2;
 pub const FLYOUT_MARGIN: f32 = 8.0;
 pub const APPEARANCE_POPOVER: &str = "appearance-popover";
 pub const DICTIONARY_MENU: &str = "dictionary-page-menu";
-const MENU_W: f32 = 248.0;
 /// A toolbar button and the gap after it.
 const TOOL_W: f32 = 40.0;
 /// Width the title keeps before tools fold into the menu.
@@ -73,6 +75,8 @@ pub enum BarPage<'a> {
     Reader(ReaderBar),
     Library(LibraryBar<'a>),
     Dictionary(DictionaryBar),
+    /// Space's bar: the library, the dictionary, and back to the library.
+    Space,
 }
 
 /// The dictionary's bar: a way to the library, and back.
@@ -318,7 +322,7 @@ impl TitleBar {
             BarPage::Library(library) => {
                 search_field(ui, &library.search, (lead_end, trail_start), &mut field)
             }
-            BarPage::Reader(_) | BarPage::Dictionary(_) => {
+            BarPage::Reader(_) | BarPage::Dictionary(_) | BarPage::Space => {
                 title(ui, bar.title, lead_end, trail_start)
             }
         }
@@ -364,6 +368,12 @@ fn leading(
             // Pressed, it undoes itself, as the library's does.
             out.extend(dictionary(ui, page.back, true));
         }
+        BarPage::Space => {
+            let r = widgets::icon_button(ui, Icon::Library, "Library", false);
+            out.extend(clicked(r, Sent::Ui(UiCommand::ShowLibrary)));
+            out.extend(dictionary(ui, "Dictionary", false));
+            out.extend(page_menu::space(ui, page_menu::BACK, true, Route::Library));
+        }
         BarPage::Library(library) => {
             // Pressed, it undoes itself; with nothing open there's no way back.
             if library.can_return {
@@ -371,6 +381,7 @@ fn leading(
                 out.extend(clicked(r, Sent::Ui(UiCommand::ShowLibrary)));
             }
             out.extend(dictionary(ui, "Dictionary", false));
+            out.extend(page_menu::space(ui, page_menu::SPACE, false, Route::Space));
             // The crumbs leave the search field its narrowest width.
             let room = end.map(|end| end - ui.cursor().min.x - SEARCH_MIN - 24.0);
             crumbs::show(ui, &library.trail, library.renaming, room, &mut out);
@@ -405,7 +416,7 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
     };
     let (dictionary, fit) = match &bar.page {
         BarPage::Reader(reader) => fitting(bar, reader, width),
-        BarPage::Library(_) | BarPage::Dictionary(_) => (true, 0),
+        BarPage::Library(_) | BarPage::Dictionary(_) | BarPage::Space => (true, 0),
     };
     let (shown, folded) = tools.split_at(fit.min(tools.len()));
     let mut folded = folded.to_vec();
@@ -431,7 +442,7 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
             library_menu::button(ui, library, pinned, bar.platform, &mut out);
         }
         // The page's own choices sit on it; the menu keeps the pin.
-        BarPage::Dictionary(_) => dictionary_menu(ui, pinned, bar.platform, &mut out),
+        BarPage::Dictionary(_) | BarPage::Space => page_menu::show(ui, bar, &mut out),
     }
     appearance_button(ui, bar, &mut out);
     if !matches!(bar.page, BarPage::Reader(_)) {
@@ -447,26 +458,6 @@ fn trailing(ui: &mut egui::Ui, bar: &BarContext<'_>, pinned: bool, width: f32) -
         out.extend(clicked(r, tool.command.clone()));
     }
     (ui.min_rect().left(), out)
-}
-
-/// The dictionary page's menu: the pin and the shortcuts.
-fn dictionary_menu(ui: &mut egui::Ui, pinned: bool, platform: Platform, out: &mut Commands) {
-    let id = Id::new(DICTIONARY_MENU);
-    let open = egui::Popup::is_id_open(ui.ctx(), id);
-    let r = widgets::icon_button(ui, Icon::Menu, "Dictionary options", open);
-    egui::Popup::from_toggle_button_response(&r)
-        .id(id)
-        .sense(crate::widgets::POPUP_SENSE)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .align(egui::RectAlign::BOTTOM_END)
-        .gap(6.0)
-        .width(MENU_W)
-        .show(|ui| {
-            ui.set_width(MENU_W);
-            ui.spacing_mut().item_spacing.y = 2.0;
-            view_menu::pin_row(ui, pinned, out);
-            view_menu::shortcuts_row(ui, platform, out);
-        });
 }
 
 /// Toggles the Appearance popover, which edits the look live.
@@ -492,7 +483,7 @@ fn appearance_button(ui: &mut egui::Ui, bar: &BarContext<'_>, out: &mut Commands
         .show(|ui| {
             let reader = match &bar.page {
                 BarPage::Reader(reader) => Some(reader),
-                BarPage::Library(_) | BarPage::Dictionary(_) => None,
+                BarPage::Library(_) | BarPage::Dictionary(_) | BarPage::Space => None,
             };
             let cx = crate::appearance_menu::MenuContext {
                 current: bar.appearance,

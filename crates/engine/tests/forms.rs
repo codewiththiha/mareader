@@ -21,9 +21,10 @@ use mareader_engine::read_aloud::player::Act as ReadAct;
 use mareader_engine::route::Route;
 use mareader_engine::session::Session;
 use mareader_engine::settings::Tab;
+use mareader_engine::space::Action as SpaceAction;
 use mareader_engine::study::Action as StudyAction;
 use mareader_engine::study_mode::Action as ModeAction;
-use mareader_library::{BookId, MarkId, Options, Pen};
+use mareader_library::{BookId, MarkId, Options, Pen, WordId};
 use mareader_session::Anchor;
 use mareader_speech::{Item, KOKORO, Model, Spot};
 use mareader_study::mode::{Key, Mode, Pos};
@@ -368,6 +369,11 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
                 pane: PaneId(1),
                 key: Key::new("arcane", Some(Pos::Adjective)),
             }),
+        ),
+        (
+            "space.word",
+            r#"{"action":"forget","word":"lintel|noun"}"#,
+            Command::Space(SpaceAction::Forget(vec![WordId::of("lintel", Some("noun"))])),
         ),
         (
             "library.act",

@@ -29,6 +29,7 @@ mod reading;
 mod search;
 mod selection;
 mod shell;
+mod space;
 mod study;
 #[cfg(not(target_arch = "wasm32"))]
 mod study_mode;

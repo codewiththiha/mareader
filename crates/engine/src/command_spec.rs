@@ -151,6 +151,7 @@ impl Command {
             Command::SetSidebarOverlay(..) => "settings.sidebar-overlay",
             Command::SetTitlebarPinned(..) => "settings.titlebar-pin",
             Command::ShowRoute(..) => "route.show",
+            Command::Space(..) => "space.word",
             Command::Split(..) => "pane.split",
             Command::StopReadAloud => "read.stop",
             Command::StopSaying => "word.stop",

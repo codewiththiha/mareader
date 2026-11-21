@@ -443,6 +443,8 @@ pub enum Action {
     SeedShelves,
     /// A fixture's twins: `count` copies of one book.
     SeedCopies(usize),
+    /// A fixture's studied words, in the first books, for Space.
+    SeedWords,
     /// A fixture's made-up AI run; `review` shows the plan it came to.
     OrganizeDemo(bool),
     /// A fixture's paused AI run; `ready` has it finished.

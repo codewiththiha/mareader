@@ -125,7 +125,10 @@ impl MareaderApp {
     ) -> PaneView {
         let context = self.page_context(ctx, drop_target);
         self.shots(ctx);
-        self.central(ui, ctx, route, &context, commands);
+        match route {
+            Route::Space => self.space_page(ui, ctx, commands),
+            _ => self.central(ui, ctx, route, &context, commands),
+        }
         context.view
     }
 

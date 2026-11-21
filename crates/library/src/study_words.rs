@@ -166,6 +166,13 @@ impl Library {
         out
     }
 
+    /// Every living sighting of a living word, in books still here.
+    pub fn every_sighting(&self) -> impl Iterator<Item = &WordSighting> {
+        let here = |s: &&WordSighting| s.alive.value && self.book(s.book.value).is_some();
+        let known = |s: &&WordSighting| self.word(s.word).is_some();
+        self.sightings.values().filter(here).filter(known)
+    }
+
     /// Keeps a word studied in `book`; a card never lowers Memorized.
     pub fn record_word(&mut self, book: BookId, new: NewWord, wall_ms: u64) -> Option<WordId> {
         self.book(book)?;

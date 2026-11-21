@@ -64,6 +64,7 @@ impl State {
             Action::Seed(_)
             | Action::SeedShelves
             | Action::SeedCopies(_)
+            | Action::SeedWords
             | Action::OrganizeDemo(_)
             | Action::OrganizePaused(_)
             | Action::RunsDemo
@@ -117,6 +118,9 @@ impl State {
             Action::Seed(count) => self.seed(count),
             Action::SeedShelves => self.seed_shelves(),
             Action::SeedCopies(count) => self.seed_copies(count),
+            Action::SeedWords => {
+                crate::space::seed(&mut self.model, wall_ms());
+            }
             Action::OrganizeDemo(review) => self.organize_demo(review),
             Action::OrganizePaused(ready) => self.organize_paused_demo(ready),
             Action::RunsDemo => self.runs.demo(),

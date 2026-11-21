@@ -4,22 +4,24 @@ use mareader_settings::Bar;
 
 use crate::command::Command;
 
-/// The page in the window: the panes being read, the library, or the
-/// dictionary.
+/// The page in the window: the panes being read, the library, the
+/// dictionary, or Space's studied words.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Route {
     #[default]
     Reader,
     Library,
     Dictionary,
+    Space,
 }
 
 impl Route {
-    /// The title bar it shows, each with its own pin.
+    /// The title bar it shows, each with its own pin; Space shares the
+    /// library's.
     pub fn bar(self) -> Bar {
         match self {
             Route::Reader => Bar::Reader,
-            Route::Library => Bar::Library,
+            Route::Library | Route::Space => Bar::Library,
             Route::Dictionary => Bar::Dictionary,
         }
     }
@@ -70,7 +72,7 @@ impl Route {
             I::ForgetPositions { .. } | I::Open(_) | I::Export { .. } => false,
             I::SetAppearance(_) | I::SavePreset { .. } | I::DeletePreset(_) => false,
             I::SetTitlebarPinned(_) | I::SetSidebarOverlay(_) | I::ShowRoute(_) => false,
-            I::Batch(_) | I::Update(_) => false,
+            I::Batch(_) | I::Update(_) | I::Space(_) => false,
             #[cfg(not(target_arch = "wasm32"))]
             I::Ai(_) | I::AttachVocab(_) => false,
         }
@@ -94,6 +96,16 @@ mod tests {
         assert!(!Route::Dictionary.takes(&Command::Bookmark(None)));
         assert!(Route::Dictionary.takes(&Command::OpenBook(mareader_library::BookId(1))));
         assert!(!Route::Dictionary.has_rail());
+    }
+
+    #[test]
+    fn space_acts_on_words_and_drops_reading() {
+        let forget = Command::Space(crate::space::Action::Forget(Vec::new()));
+        assert!(Route::Space.takes(&forget));
+        assert!(Route::Reader.takes(&forget));
+        assert!(!Route::Space.takes(&Command::FirstPage));
+        assert!(!Route::Space.has_rail());
+        assert_eq!(Route::Space.bar(), Bar::Library);
     }
 
     #[cfg(not(target_arch = "wasm32"))]

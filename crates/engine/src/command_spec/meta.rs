@@ -128,6 +128,7 @@ const TABLE: &[(&str, Meta)] = &[
     ("settings.sidebar-overlay", m("Set Sidebar Overlay", Some("View"), None, always, true)),
     ("settings.titlebar-pin", m("Pin Title Bar", Some("View"), None, always, true)),
     ("settings.write", m("Replace Settings", Some("App"), None, always, true)),
+    ("space.word", m("Space Word Action", Some("Study"), None, always, true)),
     ("study.act", m("Study Action", Some("Study"), None, in_reader, true)),
     ("study.mode", m("Study Mode", Some("Study"), None, in_reader, true)),
     ("update.act", m("Check for Updates", Some("App"), None, always, false)),

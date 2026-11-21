@@ -191,8 +191,11 @@ pub enum Command {
     /// Floating over the panes, or docked beside them.
     SetSidebarOverlay(bool),
     SetTitlebarPinned(bool),
-    /// Switches which page fills the window: reader, library or dictionary.
+    /// Switches which page fills the window: reader, library, dictionary or
+    /// Space.
     ShowRoute(Route),
+    /// Space's asks of studied words, in every book.
+    Space(crate::space::Action),
     Split(SplitAxis),
     StopReadAloud,
     StopSaying,

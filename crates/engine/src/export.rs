@@ -167,7 +167,7 @@ fn json(sheet: &Sheet<'_>) -> String {
 }
 
 /// Words on one line: a PDF's line breaks are layout, not meaning.
-fn one_line(s: &str) -> String {
+pub(crate) fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -185,7 +185,7 @@ fn stamp(ms: u64) -> String {
 }
 
 /// Days since 1970-01-01 as a calendar date (Howard Hinnant's method).
-fn civil(days: u64) -> (u64, u64, u64) {
+pub(crate) fn civil(days: u64) -> (u64, u64, u64) {
     let z = days + 719_468;
     let era = z / 146_097;
     let doe = z % 146_097;

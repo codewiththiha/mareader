@@ -1627,7 +1627,14 @@ title = "Space: every studied word across books, filtered, grouped and exported"
 area = "I"
 tier = "P1"
 milestone = "M8"
-status = "planned"
+status = "partial"
+command = "space.word"
+evidence = [
+    "crates/engine/src/space/tests.rs::with_books_a_row_is_a_sighting_and_merged_a_word",
+    "crates/engine/src/space/tests.rs::the_csv_quotes_every_cell_and_names_each_book",
+    "crates/ui-egui/tests/space.rs::a_row_memorizes_and_forgets_its_word",
+]
+notes = "Rows, filters, groups, sorts, stats and CSV in crates/engine/src/space; the page in crates/ui-egui/src/space, opened from the library bar. Missing: the Study settings row that links here"
 
 [[feature]]
 id = "study.mode-ai-cards"

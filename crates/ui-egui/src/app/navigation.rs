@@ -81,6 +81,7 @@ impl MareaderApp {
         match self.session.dict_from() {
             Some(Route::Reader) if !self.reading() => Route::Library,
             Some(Route::Reader) => Route::Reader,
+            Some(Route::Space) => Route::Space,
             _ => Route::Library,
         }
     }

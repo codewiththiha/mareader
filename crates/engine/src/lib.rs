@@ -52,6 +52,7 @@ pub mod search;
 pub mod session;
 pub mod settings;
 pub mod sounds;
+pub mod space;
 /// One stable hash for cached, content-derived keys.
 pub mod stable_hash {
     use std::hash::{DefaultHasher, Hash, Hasher};

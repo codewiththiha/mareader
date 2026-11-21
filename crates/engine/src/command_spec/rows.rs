@@ -373,6 +373,7 @@ pub(crate) const ROWS: &[CommandSpec] = &[
         anywhere,
         panes::show_route,
     ),
+    rows_study::SPACE,
     row(
         "pane.split",
         "Splits the active pane in two along an axis.",

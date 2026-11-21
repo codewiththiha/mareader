@@ -187,7 +187,7 @@ pub(crate) const OVERLAY: &[(&str, &str)] = &[("overlay", "bool")];
 pub(crate) const PINNED: &[(&str, &str)] = &[("pinned", "bool")];
 
 /// Which page fills the window.
-pub(crate) const ROUTE: &[(&str, &str)] = &[("route", "reader|library|dictionary")];
+pub(crate) const ROUTE: &[(&str, &str)] = &[("route", "reader|library|dictionary|space")];
 
 /// The library page's layout and order.
 pub(crate) const VIEW: &[(&str, &str)] = &[("view", "object")];

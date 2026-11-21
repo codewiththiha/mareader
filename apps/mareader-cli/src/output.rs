@@ -14,6 +14,7 @@ const ROUTES: &[(Route, &str)] = &[
     (Route::Reader, "reader"),
     (Route::Library, "library"),
     (Route::Dictionary, "dictionary"),
+    (Route::Space, "space"),
 ];
 
 /// Serializes every registered `CommandSpec` in `SPECS`.

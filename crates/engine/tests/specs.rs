@@ -13,6 +13,7 @@ use mareader_engine::read_aloud::ReadFrom;
 use mareader_engine::read_aloud::player::Act as ReadAct;
 use mareader_engine::route::Route;
 use mareader_engine::settings::Tab;
+use mareader_engine::space::Action as SpaceAction;
 use mareader_engine::study::Action as StudyAction;
 use mareader_engine::study_mode::Action as ModeAction;
 use mareader_engine::updates::Action as UpdateAction;
@@ -101,7 +102,7 @@ fn a_row_says_which_keys_it_reads_and_no_more() {
 /// every command and every page: a script can ask before it builds.
 #[test]
 fn a_row_says_which_page_takes_its_command() {
-    let routes = [Route::Reader, Route::Library, Route::Dictionary];
+    let routes = [Route::Reader, Route::Library, Route::Dictionary, Route::Space];
     for intent in every_variant() {
         let Some(spec) = intent.spec() else {
             panic!("{} has no row", intent.id());
@@ -216,6 +217,7 @@ fn mark_intents() -> Vec<Command> {
         Command::LookUp(pane),
         Command::Study(StudyAction::Close),
         Command::StudyMode(ModeAction::Off(pane)),
+        Command::Space(SpaceAction::Forget(Vec::new())),
         Command::Dict(DictAction::CloseCard),
         Command::Vocab(Download::Start),
         #[cfg(not(target_arch = "wasm32"))]

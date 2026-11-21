@@ -145,6 +145,8 @@ fn the_shelf_keys_answer_library_actions() -> Result<(), String> {
     assert_eq!(found, vec![Command::Library(Action::SeedShelves)]);
     let found = parsed("copies", "2")?;
     assert_eq!(found, vec![Command::Library(Action::SeedCopies(2))]);
+    let found = parsed("words", "demo")?;
+    assert_eq!(found, vec![Command::Library(Action::SeedWords)]);
     let found = parsed("shelf", "Fiction")?;
     let named = Action::OpenShelf("Fiction".to_owned());
     assert_eq!(found, vec![Command::Library(named)]);

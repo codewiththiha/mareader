@@ -37,6 +37,8 @@ pub struct UiState {
     pub(super) page_ai: crate::page_ai::PageAiUi,
     /// Each studying pane's deck cursor, and which deck takes the keys.
     pub(super) study_mode: crate::study_mode::StudyModeUi,
+    /// Space's filter and how its rows are drawn.
+    pub(super) space: crate::space::SpaceUi,
     pub(super) read_aloud: crate::read_aloud::ReadAloudUi,
     /// Who answers Explain, and the AI settings' background work.
     pub(super) ai: crate::ai::Ai,
