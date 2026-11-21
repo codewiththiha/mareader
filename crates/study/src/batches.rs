@@ -189,7 +189,7 @@ mod tests {
     use super::*;
 
     fn first(batches: &[Batch]) -> Option<&Batch> {
-        batches.get(0)
+        batches.first()
     }
 
     fn cfg(pages: usize, chars: usize) -> BatchCfg {
@@ -214,7 +214,7 @@ mod tests {
         let sizes = vec![600; 12];
         let batches = build_batches(&sizes, &cfg(3, 10000));
         assert_eq!(batches.len(), 4);
-        assert_eq!(batches.get(0).map(|b| b.to), Some(2));
+        assert_eq!(batches.first().map(|b| b.to), Some(2));
         assert_eq!(batches.get(1).map(|b| b.from), Some(3));
         assert_eq!(batches.get(1).map(|b| b.to), Some(5));
         assert_eq!(batches.get(3).map(|b| b.from), Some(9));
@@ -234,7 +234,7 @@ mod tests {
             },
         );
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches.get(0).map(|b| b.to), Some(3));
+        assert_eq!(batches.first().map(|b| b.to), Some(3));
     }
 
     #[test]
@@ -250,7 +250,7 @@ mod tests {
         );
         // 600 alone fits; a second page needs 300 more but 600+300=900 > 700.
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches.get(0).map(|b| b.to), Some(0));
+        assert_eq!(batches.first().map(|b| b.to), Some(0));
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         let sizes = vec![600, 80, 600, 600];
         let batches = build_batches(&sizes, &cfg(2, 10000));
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches.get(0).map(|b| b.to), Some(3));
+        assert_eq!(batches.first().map(|b| b.to), Some(3));
     }
 
     #[test]
@@ -266,10 +266,10 @@ mod tests {
         let sizes = vec![600, 600, 600, 60, 60];
         let batches = build_batches(&sizes, &cfg(3, 10000));
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches.get(0).map(|b| b.to), Some(4));
+        assert_eq!(batches.first().map(|b| b.to), Some(4));
         assert!(
             batches
-                .get(0)
+                .first()
                 .map(|b| b.notes.iter().any(|n| n == "short tail merged"))
                 .unwrap_or(false)
         );
@@ -280,7 +280,7 @@ mod tests {
         let sizes = vec![600, 600, 600, 500];
         let batches = build_batches(&sizes, &cfg(3, 10000));
         assert_eq!(batches.len(), 2);
-        assert_eq!(batches.get(0).map(|b| b.to), Some(2));
+        assert_eq!(batches.first().map(|b| b.to), Some(2));
         assert_eq!(batches.get(1).map(|b| b.from), Some(3));
     }
 
@@ -289,6 +289,6 @@ mod tests {
         let sizes = vec![600; 10];
         let batches = build_batches(&sizes, &cfg(10, 10000));
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches.get(0).map(|b| b.page_count), Some(10));
+        assert_eq!(batches.first().map(|b| b.page_count), Some(10));
     }
 }

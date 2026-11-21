@@ -193,7 +193,7 @@ mod tests {
     }
 
     fn first_card(deck: &Deck) -> Option<&DeckCard> {
-        deck.cards.get(0)
+        deck.cards.first()
     }
 
     fn second_card(deck: &Deck) -> Option<&DeckCard> {

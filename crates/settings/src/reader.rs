@@ -496,7 +496,11 @@ mod tests {
         let old = r#"{"titlebar_pinned":true,"library_titlebar_pinned":false}"#;
         let c: ChromeSettings = serde_json::from_str(old).expect("old settings read");
         let pins = Bar::ALL.map(|b| c.pinned(b));
-        assert_eq!(pins, [true, false, true, true], "the new pin takes its default");
+        assert_eq!(
+            pins,
+            [true, false, true, true],
+            "the new pin takes its default"
+        );
         assert_eq!(c.appearance_menu, AppearanceMenuStyle::Classic);
     }
 
