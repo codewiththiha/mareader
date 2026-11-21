@@ -14,6 +14,9 @@ use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::ai::Job;
 use mareader_ui_egui::ui_command::{Sent, UiCommand};
 
+#[path = "shot_parts/waits.rs"]
+mod waits;
+
 fn main() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     let out = args.next().ok_or("usage: shot OUT.png [key=value ...]")?;
@@ -307,7 +310,8 @@ fn main() -> Result<(), String> {
                 );
             }
             "selection" | "gloss" | "lookup" | "note" | "noted" | "highlight" | "bookmark"
-            | "pick" | "page_ai" | "word_window" => {
+            | "pick" | "page_ai" | "word_window" | "study_mode" | "study_gate" | "study_deck"
+            | "recall" => {
                 deferred.push((k.to_owned(), v.to_owned()));
             }
             _ => app.set_option(k, v)?,
@@ -441,11 +445,16 @@ fn main() -> Result<(), String> {
         harness.run_steps(40);
     }
     let lookup = deferred.iter().any(|(key, _)| key == "lookup");
+    let studying = deferred.iter().any(|(key, _)| key.starts_with("study_"));
+    let recall = deferred.iter().any(|(key, _)| key == "recall");
     let frames = deferred.len().saturating_mul(8);
     for (key, value) in deferred {
         harness.state_mut().set_option(&key, &value)?;
     }
     harness.run_steps(frames);
+    if studying || recall {
+        waits::study(&mut harness, recall);
+    }
     if live_ai {
         wait_for_ai_answer(&mut harness)?;
     }
@@ -453,7 +462,7 @@ fn main() -> Result<(), String> {
         wait_for_assistant_answer(&mut harness)?;
     }
     if lookup {
-        wait_for_dictionary_answer(&mut harness)?;
+        waits::dictionary(&mut harness)?;
     }
     if let Some(by) = nudge {
         let pin = harness.query_by_label(mareader_ui_egui::read_aloud::marker::LABEL);
@@ -735,25 +744,6 @@ fn wait_for_assistant_answer(harness: &mut Harness<'_, MareaderApp>) -> Result<(
             return Err("AI sample: timed out waiting for its answer".into());
         }
         std::thread::sleep(Duration::from_millis(50));
-    }
-}
-
-/// Waits until the open dictionary card has a real entry.
-fn wait_for_dictionary_answer(harness: &mut Harness<'_, MareaderApp>) -> Result<(), String> {
-    let until = Instant::now() + Duration::from_secs(30);
-    loop {
-        harness.run_steps(1);
-        if let Some(answers) = harness.state().dict().card_answers() {
-            if answers.is_empty() {
-                return Err("dictionary lookup: no entry found".into());
-            }
-            harness.run_steps(4);
-            return Ok(());
-        }
-        if Instant::now() > until {
-            return Err("dictionary lookup: timed out".into());
-        }
-        std::thread::sleep(Duration::from_millis(100));
     }
 }
 

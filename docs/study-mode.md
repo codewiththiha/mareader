@@ -196,7 +196,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   `study_deck=reveal`, `study_cards=ready|silent|failing` (a scripted AI that
   writes every back and judges "right" correct and "close" close, never
   answers, or fails) and `recall=word` or `recall=word:answer`, a recall on
-  the first `word` of the page read.
+  the first `word` of the page read. The shot applies them once the book and
+  its word levels are in, then waits for the deck or the recall.
 
 ## Space (`crates/engine/src/space.rs`, `crates/ui-egui/src/space`)
 
