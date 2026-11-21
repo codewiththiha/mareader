@@ -92,7 +92,7 @@ fn clip(chars: &[char], (from, to): (usize, usize), at: usize) -> String {
     let from = from.max(at.saturating_sub(SENTENCE_CHARS / 2));
     let to = to.min(from.saturating_add(SENTENCE_CHARS));
     let text: String = chars.get(from..to).unwrap_or_default().iter().collect();
-    text.trim().to_owned()
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -112,6 +112,8 @@ mod tests {
         assert_eq!(of("flew"), "Birds flew");
         let second = sentence_of("The cat sat. Dogs ran far!", 14);
         assert_eq!(second, "Dogs ran far!");
+        let wrapped = sentence_of("Boats \n unloaded rice.", 9);
+        assert_eq!(wrapped, "Boats unloaded rice.");
     }
 
     #[test]
