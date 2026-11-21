@@ -218,6 +218,10 @@ pub fn medium(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(MEDIUM.into()))
 }
 
+pub fn semibold(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(SEMIBOLD.into()))
+}
+
 pub fn serif(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(SERIF.into()))
 }

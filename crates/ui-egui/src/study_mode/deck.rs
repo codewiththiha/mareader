@@ -9,7 +9,7 @@
 //! from here asks first too. The pages, the time left and shuffle sit in
 //! small blocks in the pane's top corners.
 
-use egui::{Align, Align2, Frame, Id, Key, Layout, Margin, Rect, RichText, Sense, Stroke, Ui};
+use egui::{Align, Align2, Id, Key, Layout, Rect, RichText, Sense, Stroke, Ui};
 use egui::{Vec2, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, DeckState, Open, Shown};
@@ -134,16 +134,16 @@ pub fn show(
         }
         match &pane.run.deck {
             DeckState::Open(_) => {}
-            DeckState::Failed { batch, why } => framed(ui, |ui| {
+            DeckState::Failed { batch, why } => {
                 waiting::failed(ui, pane, &batch.label(), why, out);
-            }),
-            DeckState::Making { batch, job } => framed(ui, |ui| {
+            }
+            DeckState::Making { batch, job } => {
                 waiting::waiting(ui, pane, &batch.label(), Some(job), out);
-            }),
-            DeckState::None => framed(ui, |ui| {
+            }
+            DeckState::None => {
                 let range = pane.run.gate_batch().map_or_else(String::new, Batch::label);
                 waiting::waiting(ui, pane, &range, None, out);
-            }),
+            }
         }
     });
     let height = used.response.rect.height();
@@ -153,25 +153,9 @@ pub fn show(
     }
 }
 
-/// The waiting and error cards' paper.
-fn framed(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
-    let t = Tokens::get(ui.ctx());
-    let width = ui.available_width();
-    Frame::new()
-        .fill(t.surface)
-        .stroke(Stroke::new(1.0, t.line))
-        .corner_radius(t.radius_lg)
-        .inner_margin(Margin::same(18))
-        .shadow(egui::Shadow {
-            offset: [0, 8],
-            blur: 24,
-            spread: 0,
-            color: t.shadow,
-        })
-        .show(ui, |ui| {
-            ui.set_width(width - 36.0);
-            ui.with_layout(Layout::top_down(Align::Min), content);
-        });
+/// A card's size in a column `width` wide.
+pub fn card_size(width: f32) -> Vec2 {
+    vec2(width, (width * ASPECT).min(300.0))
 }
 
 fn deck(
@@ -189,8 +173,7 @@ fn deck(
         let all = "You know every word in these pages.";
         ui.label(RichText::new(all).font(theme::serif(16.0)));
     } else {
-        let width = ui.available_width();
-        let size = vec2(width, (width * ASPECT).min(300.0));
+        let size = card_size(ui.available_width());
         let order = cursor.order.clone();
         let face = |i: usize| order.get(i).and_then(|&c| open.cards.get(c)).map(faces);
         let id = card_id(pane.id, cursor.batch);

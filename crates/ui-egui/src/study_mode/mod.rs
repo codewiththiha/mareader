@@ -14,6 +14,7 @@ mod controls;
 pub mod deck;
 pub mod flip_card;
 pub mod gate;
+mod making;
 pub mod menu;
 pub mod progress;
 pub mod recall;

@@ -193,11 +193,15 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   good; *Turn off study mode* always asks (`study_mode/confirm.rs`). The
   deck tells the engine as it appears and goes (`Action::Shown`), so its
   time runs only on screen.
-- **Waiting:** while the deck is made it says which stage it is at (finding
-  the words, writing them with the model, looking them up). After 7 s of the
-  AI it says it is slow and offers *Use the dictionary instead*.
-- **Failed:** the card says why, with *Try again*, *Use the dictionary* and
-  *Read previous pages*.
+- **Waiting:** while the deck is made (`study_mode/making.rs`), three blank
+  cards the size of the real ones drift in a loose stack over the frost,
+  their lines shimmering as if written; no paper sits behind them. Beneath,
+  it says which stage it is at (finding the words, writing them with the
+  model, looking them up) over a thin track, filled as cards are written.
+  After 7 s of the AI it says it is slow and offers *Use the dictionary
+  instead*. With motion off the stack stands still.
+- **Failed:** an alert mark says why, with no paper behind it, then
+  *Try again*, *Use the dictionary* and *Read previous pages*.
 - **The corner toast** (`study_mode/progress.rs`): while the AI writes a
   deck, the gate's or one made ahead, a ring sits in the pane's bottom
   left corner, rising over the page bar only while that is up, spinning while the words are found, filling as cards are written,

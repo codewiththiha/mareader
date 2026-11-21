@@ -304,7 +304,7 @@ fn peek_drop(height: f32, level: f32) -> f32 {
     height * SHRINK * level / 2.0 + PEEK * level
 }
 
-fn tessellator(ctx: &egui::Context) -> Tessellator {
+pub(super) fn tessellator(ctx: &egui::Context) -> Tessellator {
     let options = ctx.tessellation_options(|o| *o);
     let atlas = ctx.fonts(|f| f.font_image_size());
     Tessellator::new(ctx.pixels_per_point(), options, atlas, Vec::new())
