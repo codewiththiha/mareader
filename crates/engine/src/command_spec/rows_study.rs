@@ -11,7 +11,8 @@ use crate::space::Action as SpaceAction;
 use crate::study_mode::Action;
 
 /// Study mode's asks a script can send.
-pub(crate) const ACTS: &str = "toggle|off|start|known|undo|next_batch|retry|read_previous";
+pub(crate) const ACTS: &str =
+    "toggle|off|start|known|undo|next_batch|retry|use_dictionary|read_previous";
 
 const MODES: &[(&str, Mode)] = &[("proactive", Mode::Proactive), ("reactive", Mode::Reactive)];
 
@@ -51,6 +52,7 @@ fn parse(at: &Session, params: &Value) -> Result<Command, String> {
         "undo" => Action::Undo(pane),
         "next_batch" => Action::NextBatch(pane),
         "retry" => Action::Retry(pane),
+        "use_dictionary" => Action::UseDictionary(pane),
         "read_previous" => Action::ReadPrevious(pane),
         other => return Err(acts::refused("study.mode", other, ACTS)),
     };

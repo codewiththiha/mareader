@@ -32,6 +32,9 @@ mod shell;
 mod space;
 mod study;
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod study_cards;
+#[cfg(not(target_arch = "wasm32"))]
 mod study_mode;
 mod thumb_picks;
 mod updates;

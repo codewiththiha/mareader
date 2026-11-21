@@ -14,6 +14,7 @@ use mareader_settings::{AiSettings, ModelPreset};
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_settings::{SummaryStyle, language_name};
 use mareader_study::Explainer;
+use mareader_study::mode::CardWriter;
 
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_engine::library::{Ask, Proposal, Spot};
@@ -50,6 +51,18 @@ impl Ai {
             }
             Err(_) => false,
         }
+    }
+
+    /// The study cards' writer, on the settings last followed.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn cards(&self) -> Option<Arc<dyn CardWriter>> {
+        self.assist.as_ref().map(mareader_assist::Assist::cards)
+    }
+
+    /// No AI writes cards on the web.
+    #[cfg(target_arch = "wasm32")]
+    pub fn cards(&self) -> Option<Arc<dyn CardWriter>> {
+        None
     }
 
     /// Takes in finished jobs; a new answerer if `ai` changed since.

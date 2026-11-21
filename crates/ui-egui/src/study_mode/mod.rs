@@ -4,11 +4,14 @@
 //! The engine holds every run (`mareader_engine::study_mode`); this module
 //! only draws a run and sends what the reader asks. A pane's view stops at
 //! its gate in `pdf_view`; here the pages past it are veiled, and the deck
-//! covers the pane once the gate is in view.
+//! covers the pane once the gate is in view. Until then a pill tells how
+//! the next deck is coming along.
 
 pub mod deck;
 pub mod gate;
 pub mod menu;
+pub mod pill;
+pub mod waiting;
 
 use std::collections::HashMap;
 
@@ -72,6 +75,10 @@ pub struct Pane<'a> {
     /// Start waits for the time floor.
     pub strict: bool,
     pub now: f64,
+    /// The page the pane reads.
+    pub current: usize,
+    /// A dictionary pack can write the cards instead.
+    pub dict: bool,
 }
 
 /// The window's half of study mode: each deck's cursor and the keys' pane.
@@ -99,16 +106,17 @@ impl StudyModeUi {
         let Some(gate) = pane.run.gate() else {
             return;
         };
-        let Some(veil) = gate::veil(pane.sheets, pane.rect, gate, pane.mode) else {
+        let veil = gate::veil(pane.sheets, pane.rect, gate, pane.mode);
+        let Some(veil) = veil.filter(|v| v.reached) else {
+            if let Some(veil) = veil {
+                let range = batch.label();
+                gate::cover(ctx, pane.id, veil.rect, |ui| {
+                    gate::prompt(ui, pane.id, &range, out);
+                });
+            }
+            pill::show(ctx, pane, veil.map(|v| v.rect.top()), out);
             return;
         };
-        if !veil.reached {
-            let range = batch.label();
-            gate::cover(ctx, pane.id, veil.rect, |ui| {
-                gate::prompt(ui, pane.id, &range, out);
-            });
-            return;
-        }
         let cursor = self.cursors.entry(pane.id).or_default();
         if cursor.batch != (batch.from, batch.to) {
             *cursor = Cursor {

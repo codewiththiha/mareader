@@ -8,10 +8,10 @@
 use egui::{Align, Frame, Key, Layout, Margin, RichText, Sense, Stroke, Ui, Vec2, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, DeckState, Open, Shown};
-use mareader_study::mode::{Batch, Card};
+use mareader_study::mode::{Batch, Card, Via};
 use mareader_workspace::PaneId;
 
-use super::{Cursor, Pane};
+use super::{Cursor, Pane, waiting};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
@@ -72,7 +72,7 @@ fn known(pane: PaneId, shown: &Shown, cursor: &mut Cursor, out: &mut Commands) {
     send(out, Action::Known { pane, key });
 }
 
-fn send(out: &mut Commands, action: Action) {
+pub(super) fn send(out: &mut Commands, action: Action) {
     out.push(Sent::Engine(Command::StudyMode(action)));
 }
 
@@ -101,40 +101,18 @@ pub fn show(ui: &mut Ui, pane: &Pane<'_>, cursor: &mut Cursor, out: &mut Command
             ui.set_width(width - 36.0);
             match &pane.run.deck {
                 DeckState::Open(open) => deck(ui, pane, open, cursor, out),
-                DeckState::Failed { batch, why } => failed(ui, pane, batch, why, out),
-                DeckState::Making { batch, .. } => making(ui, &batch.label()),
+                DeckState::Failed { batch, why } => {
+                    waiting::failed(ui, pane, &batch.label(), why, out);
+                }
+                DeckState::Making { batch, job } => {
+                    waiting::waiting(ui, pane, &batch.label(), Some(job), out);
+                }
                 DeckState::None => {
                     let range = pane.run.gate_batch().map_or_else(String::new, Batch::label);
-                    making(ui, &range);
+                    waiting::waiting(ui, pane, &range, None, out);
                 }
             }
         });
-    });
-}
-
-fn making(ui: &mut Ui, range: &str) {
-    let t = Tokens::get(ui.ctx());
-    ui.horizontal(|ui| {
-        ui.add(egui::Spinner::new().size(12.0));
-        let text = format!("Preparing the words for {range}");
-        ui.label(RichText::new(text).size(t.text).color(t.muted));
-    });
-}
-
-fn failed(ui: &mut Ui, pane: &Pane<'_>, batch: &Batch, why: &str, out: &mut Commands) {
-    let t = Tokens::get(ui.ctx());
-    let title = format!("The AI couldn’t write the words for {}", batch.label());
-    ui.label(RichText::new(title).font(theme::medium(t.text)));
-    ui.label(RichText::new(why).size(t.text_small).color(t.muted));
-    ui.add_space(t.gap);
-    ui.horizontal(|ui| {
-        let again = widgets::primary_button(ui, Some(Icon::Rescan), "Try again", t.accent, &t);
-        if ui.add(again).clicked() {
-            send(out, Action::Retry(pane.id));
-        }
-        if pane.run.previous().is_some() && ui.button("Read previous pages").clicked() {
-            send(out, Action::ReadPrevious(pane.id));
-        }
     });
 }
 
@@ -173,7 +151,11 @@ fn header(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64) {
         ui.vertical(|ui| {
             let of = pane.run.batches.len();
             let index = open.batch.index.saturating_add(1);
-            let title = format!("Batch {index} of {of} · {}", open.batch.label());
+            let via = match open.via {
+                Via::Ai => "AI",
+                Via::Dictionary => "Dictionary",
+            };
+            let title = format!("Batch {index} of {of} · {} · {via}", open.batch.label());
             ui.label(RichText::new(title).size(t.text_small).color(t.muted));
             let n = open.cards.len();
             let words = if n == 1 { "word" } else { "words" };
@@ -240,7 +222,7 @@ fn card(ui: &mut Ui, pane: PaneId, shown: &Shown, cursor: &mut Cursor, out: &mut
             ui.label(sentence.font(theme::serif(14.0)));
             ui.add_space(t.gap);
             if cursor.revealed {
-                ui.label(RichText::new(&shown.meaning).size(t.text).color(t.ink));
+                back(ui, shown, &t);
             } else {
                 let reveal = ui.add(egui::Button::new(REVEAL).min_size(vec2(0.0, 28.0)));
                 widgets::tip(&reveal, REVEAL, Some("Space"));
@@ -254,6 +236,23 @@ fn card(ui: &mut Ui, pane: PaneId, shown: &Shown, cursor: &mut Cursor, out: &mut
     widgets::tip(&mark, KNOWN, Some("K"));
     if mark.clicked() {
         known(pane, shown, cursor, out);
+    }
+}
+
+/// The card's back: its meaning, and the AI's synonyms and example.
+fn back(ui: &mut Ui, shown: &Shown, t: &Tokens) {
+    let meaning = match shown.meaning.is_empty() {
+        true => "No meaning was found for this word.",
+        false => shown.meaning.as_str(),
+    };
+    ui.label(RichText::new(meaning).size(t.text).color(t.ink));
+    if !shown.synonyms.is_empty() {
+        let like = format!("Like: {}", shown.synonyms.join(", "));
+        ui.label(RichText::new(like).size(t.text_small).color(t.muted));
+    }
+    if !shown.usage.is_empty() {
+        let usage = RichText::new(&shown.usage).italics().size(t.text_small);
+        ui.label(usage.color(t.muted));
     }
 }
 

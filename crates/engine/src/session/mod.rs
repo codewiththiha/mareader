@@ -19,6 +19,7 @@ mod read_aloud;
 mod services;
 mod space;
 mod study;
+mod study_deck;
 mod study_mode;
 mod tick;
 mod updates;

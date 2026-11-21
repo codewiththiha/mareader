@@ -16,12 +16,12 @@ use crate::board::{AppleState, Board, Job, Reply, Tried, lanes};
 use crate::compat::{Compat, failure_with_keys};
 use crate::keys::{Clients, pasted, row};
 use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, WAITS, organize_from};
-use mareader_study::page::Rewritten;
-
 use crate::page::{PageJob, rewrite};
 use crate::prompt::Prompt;
 use crate::slots::{Kind, Slots, Ticket};
 use crate::task::Explain;
+use mareader_study::page::Rewritten;
+mod cards;
 
 /// The paused organizer run, and one set aside for Undo.
 const CHECKPOINT: &str = "organize.json";

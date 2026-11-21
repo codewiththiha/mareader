@@ -8,16 +8,15 @@ use std::sync::Arc;
 
 use mareader_library::{BookId, Library, NewWord, WordId, WordStatus};
 use mareader_session::Document;
-use mareader_study::mode::{Batch, Have, Key, Mode, Pos, Size, check};
+use mareader_study::mode::{Have, Key, Mode, Pos, Size, check};
 use mareader_workspace::PaneId;
 
 use super::Session;
 use crate::event::{Event, PaneAction};
 use crate::library::wall_ms;
 use crate::notes_panel::{bookmark_spot, page_of};
-use crate::study_mode::deck_job::Ask;
 use crate::study_mode::run::Sheet;
-use crate::study_mode::{self as mode, DeckJob, DeckState, Known, Open, Prior, Run, Shown, State};
+use crate::study_mode::{self as mode, DeckState, Prior, Run, Shown, State};
 use crate::toast::Toast;
 
 impl Session {
@@ -149,8 +148,26 @@ impl Session {
         let failed = matches!(run.deck, DeckState::Failed { .. });
         if failed {
             run.deck = DeckState::None;
+            run.fallback = None;
         }
         failed
+    }
+
+    /// Writes the gate's deck from the dictionary, while it waits or failed.
+    pub(crate) fn study_mode_dictionary(&mut self, pane: PaneId) -> bool {
+        let Some(run) = self.study_mode.run_mut(pane) else {
+            return false;
+        };
+        let Some(from) = run.gate_batch().map(|b| b.from) else {
+            return false;
+        };
+        let open = matches!(run.deck, DeckState::Open(_) | DeckState::None);
+        if open || run.fallback == Some(from) {
+            return false;
+        }
+        run.fallback = Some(from);
+        run.deck = DeckState::None;
+        true
     }
 
     /// Moves `pane` to `page` and tells the front end, as a jump does.
@@ -178,7 +195,10 @@ impl Session {
             return self.study_mode.stop(pane);
         }
         let Some(why) = self.study_lost(pane) else {
-            return self.study_plan(pane) | self.study_deck(pane, now) | self.study_hold(pane);
+            let planned = self.study_plan(pane);
+            let followed = self.study_follow(pane);
+            let decks = self.study_deck(pane, now) | self.study_ahead(pane, now);
+            return planned | followed | decks | self.study_hold(pane);
         };
         self.study_mode.stop(pane);
         if !why.is_empty() {
@@ -240,64 +260,6 @@ impl Session {
         }
     }
 
-    /// Starts or steps the deck for the batch at `pane`'s gate.
-    fn study_deck(&mut self, pane: PaneId, now: f64) -> bool {
-        let Some(run) = self.study_mode.run(pane) else {
-            return false;
-        };
-        let Some(batch) = run.gate_batch().cloned() else {
-            return false;
-        };
-        if matches!(run.deck, DeckState::None) {
-            let Some(ask) = self.study_ask(pane, &batch) else {
-                return false;
-            };
-            let job = DeckJob::new(Arc::clone(&self.waker), ask);
-            if let Some(run) = self.study_mode.run_mut(pane) {
-                run.deck = DeckState::Making { batch, job };
-            }
-            return true;
-        }
-        let Some(run) = self.study_mode.run_mut(pane) else {
-            return false;
-        };
-        let DeckState::Making { job, .. } = &mut run.deck else {
-            return false;
-        };
-        match job.step(&mut self.vocab, &mut self.dict, now) {
-            Ok(None) => false,
-            Ok(Some(built)) if built.cards.is_empty() => {
-                run.unlock_through(batch.to);
-                self.study_save_gate(pane);
-                let toast = Toast::info(mode::nothing_new(&batch.label()));
-                self.emit(Event::Toast(toast));
-                true
-            }
-            Ok(Some(built)) => {
-                let per_card = u32::from(self.settings.study.mode.sec_per_card);
-                run.deck = DeckState::Open(Open::new(batch, built, per_card, now));
-                true
-            }
-            Err(why) => {
-                run.deck = DeckState::Failed { batch, why };
-                true
-            }
-        }
-    }
-
-    /// What `batch`'s deck is made of.
-    fn study_ask(&self, pane: PaneId, batch: &Batch) -> Option<Ask> {
-        let study = &self.settings.study;
-        Some(Ask {
-            document: self.documents.document_of(pane)?,
-            pages: (batch.from..=batch.to).collect(),
-            level: study.cefr.level.band(),
-            max: usize::from(study.mode.max_cards),
-            known: memorized(&self.library.model),
-            to: self.study_dict_language(),
-        })
-    }
-
     /// Stops read-aloud that reaches `pane`'s gate.
     fn study_hold(&mut self, pane: PaneId) -> bool {
         let Some(gate) = self.study_mode.gate(pane) else {
@@ -315,7 +277,7 @@ impl Session {
     }
 
     /// Saves `pane`'s gate with its book; other panes on it plan again.
-    fn study_save_gate(&mut self, pane: PaneId) {
+    pub(super) fn study_save_gate(&mut self, pane: PaneId) {
         let Some(doc) = self.study_mode.doc(pane) else {
             return;
         };
@@ -347,16 +309,6 @@ impl Session {
             pages: usize::from(mode.pages),
             chars: usize::try_from(mode.chars).unwrap_or(usize::MAX),
         }
-    }
-
-    /// Meanings' language: study's, else Explain's, if a pack has it.
-    fn study_dict_language(&self) -> Option<String> {
-        let ready = self.dict.languages();
-        let tasks = &self.settings.ai.tasks;
-        let wanted = [&tasks.study.language, &tasks.explain.language];
-        let has = |tag: &&str| ready.iter().any(|r| r == tag);
-        let picked = wanted.into_iter().filter_map(Option::as_deref).find(has);
-        picked.or_else(|| ready.first().copied()).map(str::to_owned)
     }
 
     /// `pane`'s run's book, filled in once the library has measured the file.
@@ -407,14 +359,4 @@ fn record(model: &mut Library, book: BookId, shown: &Shown, status: WordStatus) 
         ..NewWord::default()
     };
     model.record_word(book, word, wall_ms());
-}
-
-/// Every living memorized word, as a deck skips it.
-fn memorized(model: &Library) -> Known {
-    let held = model.words().filter(|w| w.alive.value);
-    let memorized = held.filter(|w| w.status.value == WordStatus::Memorized);
-    Known::of(memorized.map(|w| {
-        let pos = w.pos.as_deref().and_then(Pos::parse);
-        Key::new(w.lemma.as_str(), pos)
-    }))
 }

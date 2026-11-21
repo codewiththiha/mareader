@@ -95,7 +95,8 @@ silently.
 
 Each pane runs its own mode; `study.mode` turns it on and works the deck
 (`toggle`, `off`, `start`, `known`, `undo`, `next_batch`, `retry`,
-`read_previous`). Reactive answers that it comes in a later update.
+`use_dictionary`, `read_previous`). Reactive answers that it comes in a later
+update.
 
 - **Planning:** once the layout is complete, every page's characters are
   counted off the frame and batches are planned from the settings. A new
@@ -108,6 +109,19 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   dictionary pack in study's language, else Explain's, else the first ready
   pack. A silent tagger is given up after 10 s and the dictionary after 20 s.
   A deck with no new words unlocks its batch with a toast.
+- **AI cards:** *Cards from* picks who writes the backs: Auto (the AI when
+  study has a model, else the dictionary), AI or Dictionary. The AI writes a
+  deck's backs in one `StudyCards` request (a meaning in context, up to three
+  synonyms and an example) on study's model, else Explain's, in study's
+  language. A back is kept per word, sentence and writer for the session, so
+  a deck made again asks only for the new ones. An AI deck that fails says
+  why; `use_dictionary` has the dictionary write that batch's deck instead.
+- **Look-ahead:** `study.mode.ahead` decks are made while the reader reads:
+  the gate's and up to `ahead - 1` past it, each opened at once when its
+  batch reaches the gate. At 0 the gate's deck waits until the reader nears
+  it. A deck whose batch is no longer coming is dropped, cancelling its ask;
+  a new source, level, card cap, model or language makes the decks not yet
+  open again, and words memorized since a deck was made leave it as it opens.
 - **Known** saves the word as memorized and gives its seconds back; **Undo**
   puts back what the word was. **Start** keeps the rest as learning, unlocks
   the batch and shows it from its first page.
@@ -134,12 +148,22 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   its other classes and its sentence from the book; the meaning waits for
   *reveal* (Space). *I already know this* (K) marks it known; the arrows
   step between cards. *Start reading* waits for the floor when Strict is on.
-  The deck also says when it is being prepared and when it failed, with
-  *Try again* and *Read previous pages*.
+  An AI card's back adds its synonyms and example, and the header says who
+  wrote the deck.
+- **Waiting:** while the deck is made it says which stage it is at (finding
+  the words, writing them with the model, looking them up). After 7 s of the
+  AI it says it is slow and offers *Use the dictionary instead*.
+- **Failed:** the card says why, with *Try again*, *Use the dictionary* and
+  *Read previous pages*.
+- **The pill:** while the gate is out of reach, a pill above the page bar
+  shows the batch and page read and how the next deck is coming along
+  (waiting, writing, looking up, failed, ready), with *Open words* to go to
+  the gate.
 - **Word help is off:** the selection bar drops Explain and Look up, and
   CEFR shading hides unless Hints is on.
-- **Shots:** `study_mode=proactive|reactive|off`, `study_gate=on` and
-  `study_deck=reveal`.
+- **Shots:** `study_mode=proactive|reactive|off`, `study_gate=on`,
+  `study_deck=reveal` and `study_cards=ready|silent|failing`, a scripted AI
+  that writes every back, never answers, or fails.
 
 ## Space (`crates/engine/src/space.rs`, `crates/ui-egui/src/space`)
 

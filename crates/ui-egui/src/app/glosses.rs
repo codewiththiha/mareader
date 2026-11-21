@@ -285,6 +285,9 @@ impl MareaderApp {
         let ai_look = self.settings().ai.clone();
         if let Some(explainer) = self.ui.ai.follow(&ai_look) {
             self.session.study_set_explainer(explainer);
+            if let Some(cards) = self.ui.ai.cards() {
+                self.session.study_set_cards(cards);
+            }
         }
         self.take_organized();
         self.tick_session(ctx);

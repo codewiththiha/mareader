@@ -4,7 +4,9 @@
 //! are); every later stage moves only when [`DeckJob::step`] is handed the
 //! services that answer it. A tagger that is missing, or stops answering
 //! for [`TAG_WAIT`] seconds, leaves the word classes unknown; dictionaries
-//! silent for [`MEANING_WAIT`] seconds leave the meanings empty.
+//! silent for [`MEANING_WAIT`] seconds leave the meanings empty. Cards from
+//! the AI wait on their writer as long as it takes; the deck's waiting card
+//! offers the dictionary once that is slow.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -13,8 +15,10 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use mareader_cefr::{Ticket as TagTicket, candidates};
 use mareader_dict::{Entry, Ticket};
 use mareader_session::Document;
-use mareader_study::mode::{Card, Deck, Key, Missing, Pos, Sighting, build, lemma};
+use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
+use mareader_study::mode::{build, lemma};
 
+use super::backs::{NO_MODEL, Shown, Writer, meaning_of, said, wanted};
 use super::sightings::{self, Read};
 use crate::session::Waker;
 use crate::word_list::{INLINE, LEVEL_ROUND, Levels, Meanings};
@@ -28,8 +32,6 @@ const TAG_CAP: usize = 240;
 pub const TAG_WAIT: f64 = 10.0;
 /// Seconds the dictionaries are waited on; an evicted ask never answers.
 pub const MEANING_WAIT: f64 = 20.0;
-/// Definitions one card shows at most.
-const DEFINITIONS: usize = 3;
 
 /// Word levels with the tagger beside them, which names a word's class.
 pub trait Tags: Levels {
@@ -83,21 +85,27 @@ pub struct Ask {
     pub known: Known,
     /// The dictionary language meanings are asked in.
     pub to: Option<String>,
-}
-
-/// A card and the meaning on its back; empty when no dictionary had it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Shown {
-    pub card: Card,
-    pub meaning: String,
+    pub via: Via,
+    /// The AI's writer, when there is one.
+    pub writer: Option<Writer>,
 }
 
 /// A finished deck: its cards, the words it found, those set aside.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Built {
     pub cards: Vec<Shown>,
     pub found: usize,
     pub skipped_known: usize,
+    pub via: Via,
+}
+
+/// What a deck being made is doing, as its waiting card says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Doing {
+    /// Reading the pages, their levels and word classes.
+    Finding,
+    Writing,
+    LookingUp,
 }
 
 /// A word above the level, before its class is known.
@@ -115,6 +123,8 @@ enum Stage {
     Levels { next: usize },
     Tags { asked: Vec<(usize, TagTicket)>, since: Option<f64> },
     Meanings { ticket: Ticket, since: Option<f64> },
+    /// The writer's job, and the cards it was asked for, by place.
+    Writing { job: Box<dyn CardJob>, asked: Vec<(usize, Wanted)> },
     Done,
 }
 
@@ -124,12 +134,17 @@ pub struct DeckJob {
     max: usize,
     known: Known,
     to: Option<String>,
+    via: Via,
+    writer: Option<Writer>,
     stage: Stage,
     read: Vec<Read>,
     keys: Vec<String>,
     bands: HashMap<String, u8>,
     hard: Vec<Hard>,
     deck: Deck,
+    /// Backs found so far, by card; cached ones come first.
+    written: Vec<Option<Written>>,
+    started: Option<f64>,
     built: Option<Built>,
 }
 
@@ -142,14 +157,46 @@ impl DeckJob {
             max: ask.max,
             known: ask.known,
             to: ask.to,
+            via: ask.via,
+            writer: ask.writer,
             stage: Stage::Reading(rx),
             read: Vec::new(),
             keys: Vec::new(),
             bands: HashMap::new(),
             hard: Vec::new(),
             deck: Deck::default(),
+            written: Vec::new(),
+            started: None,
             built: None,
         }
+    }
+
+    /// Who writes the cards.
+    pub fn via(&self) -> Via {
+        self.via
+    }
+
+    pub fn doing(&self) -> Doing {
+        match self.stage {
+            Stage::Writing { .. } => Doing::Writing,
+            Stage::Meanings { .. } => Doing::LookingUp,
+            _ => Doing::Finding,
+        }
+    }
+
+    /// Memorized words set aside, once the deck is drawn up.
+    pub fn skipped(&self) -> usize {
+        self.deck.skipped_known
+    }
+
+    /// The writer's name, when the AI writes the cards.
+    pub fn by(&self) -> Option<String> {
+        self.writer.as_ref().map(|w| w.cards.by())
+    }
+
+    /// Seconds since the first step, as the slow offer counts them.
+    pub fn waited(&self, now: f64) -> f64 {
+        self.started.map_or(0.0, |since| (now - since).max(0.0))
     }
 
     /// Moves on as far as answers allow: the deck once built, or why not.
@@ -161,6 +208,7 @@ impl DeckJob {
         meanings: &mut dyn Meanings,
         now: f64,
     ) -> Result<Option<Built>, String> {
+        self.started.get_or_insert(now);
         loop {
             let moved = match &mut self.stage {
                 Stage::Reading(rx) => match rx.try_recv() {
@@ -174,8 +222,9 @@ impl DeckJob {
                     }
                 },
                 Stage::Levels { .. } => self.levels(words)?,
-                Stage::Tags { .. } => self.tags(words, meanings, now),
+                Stage::Tags { .. } => self.tags(words, meanings, now)?,
                 Stage::Meanings { .. } => self.meanings(meanings, now),
+                Stage::Writing { .. } => self.writing()?,
                 Stage::Done => return Ok(self.built.take()),
             };
             if !moved {
@@ -268,9 +317,14 @@ impl DeckJob {
         self.stage = Stage::Tags { asked, since: None };
     }
 
-    fn tags(&mut self, tags: &mut dyn Tags, meanings: &mut dyn Meanings, now: f64) -> bool {
+    fn tags(
+        &mut self,
+        tags: &mut dyn Tags,
+        meanings: &mut dyn Meanings,
+        now: f64,
+    ) -> Result<bool, String> {
         let Stage::Tags { asked, since } = &mut self.stage else {
-            return false;
+            return Ok(false);
         };
         let since = *since.get_or_insert(now);
         let mut waiting = Vec::new();
@@ -288,13 +342,13 @@ impl DeckJob {
         let gave_up = !tags.tagging() || now - since > TAG_WAIT;
         if !waiting.is_empty() && !gave_up {
             *asked = waiting;
-            return false;
+            return Ok(false);
         }
-        self.build_deck(meanings);
-        true
+        self.build_deck(meanings)?;
+        Ok(true)
     }
 
-    fn build_deck(&mut self, meanings: &mut dyn Meanings) {
+    fn build_deck(&mut self, meanings: &mut dyn Meanings) -> Result<(), String> {
         let read = &self.read;
         let seen = self.hard.iter().filter(|h| !h.name).filter_map(|h| {
             let r = read.get(h.read)?;
@@ -307,6 +361,9 @@ impl DeckJob {
         });
         let known = &self.known;
         self.deck = build(seen, self.level, |k| known.has(k), self.max);
+        if self.via == Via::Ai {
+            return self.ask_backs();
+        }
         let mut words: Vec<String> = Vec::new();
         for card in &self.deck.cards {
             if !words.contains(&card.key.lemma) {
@@ -323,6 +380,66 @@ impl DeckJob {
             }
             _ => self.finish(&HashMap::new()),
         }
+        Ok(())
+    }
+
+    /// Asks the writer for the backs not cached; with all cached, finishes.
+    fn ask_backs(&mut self) -> Result<(), String> {
+        let writer = self.writer.clone().ok_or(NO_MODEL)?;
+        let id = writer.cards.id();
+        let mut asked = Vec::new();
+        self.written = (self.deck.cards.iter().enumerate())
+            .map(|(i, card)| {
+                let wanted = wanted(card);
+                let cached = writer.backs.get(&id, &wanted);
+                if cached.is_none() {
+                    asked.push((i, wanted));
+                }
+                cached
+            })
+            .collect();
+        if asked.is_empty() {
+            self.finish_written();
+            return Ok(());
+        }
+        let words = asked.iter().map(|(_, w)| w.clone()).collect();
+        let job = writer.cards.write(words);
+        self.stage = Stage::Writing { job, asked };
+        Ok(())
+    }
+
+    /// Takes the writer's answer into the deck and the cache.
+    fn writing(&mut self) -> Result<bool, String> {
+        let Stage::Writing { job, asked } = &mut self.stage else {
+            return Ok(false);
+        };
+        let Some(answer) = job.take() else {
+            return Ok(false);
+        };
+        let backs = answer.map_err(|f| said(&f))?;
+        let asked = std::mem::take(asked);
+        if let Some(writer) = &self.writer {
+            let id = writer.cards.id();
+            for ((i, wanted), back) in asked.into_iter().zip(backs) {
+                let Some(back) = back else {
+                    continue;
+                };
+                writer.backs.put(&id, &wanted, back.clone());
+                if let Some(slot) = self.written.get_mut(i) {
+                    *slot = Some(back);
+                }
+            }
+        }
+        self.finish_written();
+        Ok(true)
+    }
+
+    fn finish_written(&mut self) {
+        let deck = std::mem::take(&mut self.deck);
+        let mut backs = std::mem::take(&mut self.written).into_iter();
+        let shown = deck.cards.into_iter();
+        let shown = shown.map(|card| Shown::written(card, backs.next().flatten()));
+        self.done(shown.collect(), deck.found, deck.skipped_known);
     }
 
     fn meanings(&mut self, meanings: &mut dyn Meanings, now: f64) -> bool {
@@ -346,45 +463,19 @@ impl DeckJob {
         let shown = deck.cards.into_iter().map(|card| {
             let entries = found.get(&card.key.lemma).map_or(&[][..], Vec::as_slice);
             let meaning = meaning_of(entries, card.key.pos);
-            Shown { card, meaning }
+            Shown::new(card, meaning)
         });
+        self.done(shown.collect(), deck.found, deck.skipped_known);
+    }
+
+    fn done(&mut self, cards: Vec<Shown>, found: usize, skipped_known: usize) {
         self.built = Some(Built {
-            cards: shown.collect(),
-            found: deck.found,
-            skipped_known: deck.skipped_known,
+            cards,
+            found,
+            skipped_known,
+            via: self.via,
         });
         self.stage = Stage::Done;
-    }
-}
-
-/// Up to [`DEFINITIONS`] definitions, those of the card's class first.
-fn meaning_of(entries: &[Entry], pos: Option<Pos>) -> String {
-    let mut sorted: Vec<&Entry> = entries.iter().collect();
-    sorted.sort_by_key(|e| pos.is_none() || e.pos.as_deref().and_then(class_of) != pos);
-    let mut out: Vec<&str> = Vec::new();
-    for entry in sorted {
-        let text = entry.definition.trim();
-        if !text.is_empty() && !out.contains(&text) {
-            out.push(text);
-        }
-    }
-    out.truncate(DEFINITIONS);
-    out.join("; ")
-}
-
-/// A dictionary's part-of-speech cell as a class: `adj.`, `n`, `verb`.
-fn class_of(cell: &str) -> Option<Pos> {
-    let cell = cell.trim().to_lowercase();
-    if cell.starts_with("adv") {
-        Some(Pos::Adverb)
-    } else if cell.starts_with("adj") || cell == "a" {
-        Some(Pos::Adjective)
-    } else if cell.starts_with('n') {
-        Some(Pos::Noun)
-    } else if cell.starts_with('v') {
-        Some(Pos::Verb)
-    } else {
-        None
     }
 }
 
@@ -401,14 +492,5 @@ mod tests {
         assert!(known.has(&Key::new("swim", Some(Pos::Verb))));
         assert!(!known.has(&Key::new("swim", Some(Pos::Noun))));
         assert!(!known.has(&Key::new("fly", None)));
-    }
-
-    #[test]
-    fn dictionary_cells_read_as_classes() {
-        assert_eq!(class_of(" Adv. "), Some(Pos::Adverb));
-        assert_eq!(class_of("adjective"), Some(Pos::Adjective));
-        assert_eq!(class_of("n"), Some(Pos::Noun));
-        assert_eq!(class_of("verb"), Some(Pos::Verb));
-        assert_eq!(class_of("prep"), None);
     }
 }

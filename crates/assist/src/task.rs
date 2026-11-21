@@ -131,9 +131,9 @@ impl Task for Explain<'_> {
 
 // Names models use when they drift from the schema, schema's first.
 const POS: &[&str] = &["pos", "part_of_speech", "partofspeech", "word_class"];
-const MEANING: &[&str] = &["meaning", "definition", "explanation", "sense", "gloss"];
-const SYNONYMS: &[&str] = &["synonyms", "synonym", "similar_words"];
-const USAGES: &[&str] = &[
+pub(crate) const MEANING: &[&str] = &["meaning", "definition", "explanation", "sense", "gloss"];
+pub(crate) const SYNONYMS: &[&str] = &["synonyms", "synonym", "similar_words"];
+pub(crate) const USAGES: &[&str] = &[
     "usages",
     "usage",
     "examples",
@@ -142,7 +142,7 @@ const USAGES: &[&str] = &[
 ];
 
 /// The first of `names` present, ignoring case, spaces and dashes.
-fn field<'a>(fields: &'a Map<String, Value>, names: &[&str]) -> Option<&'a Value> {
+pub(crate) fn field<'a>(fields: &'a Map<String, Value>, names: &[&str]) -> Option<&'a Value> {
     let plain = |k: &str| k.to_lowercase().replace([' ', '-'], "_");
     names.iter().find_map(|name| {
         fields
@@ -164,7 +164,7 @@ fn unwrap_object(v: &Value) -> Option<&Map<String, Value>> {
     }
 }
 
-fn text(v: Option<&Value>) -> String {
+pub(crate) fn text(v: Option<&Value>) -> String {
     match v {
         Some(Value::String(s)) => s.trim().to_owned(),
         _ => String::new(),
@@ -172,7 +172,7 @@ fn text(v: Option<&Value>) -> String {
 }
 
 /// A list, or a comma-separated string as some models send.
-fn list(v: Option<&Value>) -> Vec<String> {
+pub(crate) fn list(v: Option<&Value>) -> Vec<String> {
     let items: Vec<&str> = match v {
         Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).collect(),
         Some(Value::String(s)) => s.split([',', ';']).collect(),

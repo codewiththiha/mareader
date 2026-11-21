@@ -9,10 +9,12 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mareader_library::{BookId, WordStatus};
 use mareader_session::Document;
-use mareader_study::mode::{Batch, Floor, Key, Mode, Size, entering, gate, plan, retypeset};
+use mareader_study::mode::{Batch, Floor, Key, Mode, Size, Via, entering, gate, plan, retypeset};
 
-use super::deck_job::{Built, DeckJob, Shown};
+use super::backs::Shown;
+use super::deck_job::{Built, DeckJob, Tags};
 use crate::session::Waker;
+use crate::word_list::Meanings;
 use crate::word_marks::off_thread;
 
 /// The deck at the gate, as far as it got.
@@ -34,6 +36,43 @@ impl DeckState {
     }
 }
 
+/// A deck made ahead, for a batch past the gate.
+pub enum Ahead {
+    Making { batch: Batch, job: DeckJob },
+    Ready { batch: Batch, built: Built },
+    Failed { batch: Batch, why: String },
+}
+
+impl Ahead {
+    pub fn batch(&self) -> &Batch {
+        match self {
+            Self::Making { batch, .. } | Self::Ready { batch, .. } | Self::Failed { batch, .. } => {
+                batch
+            }
+        }
+    }
+
+    /// Steps a deck being made; true once it is built or has failed.
+    pub fn step(&mut self, words: &mut dyn Tags, meanings: &mut dyn Meanings, now: f64) -> bool {
+        let Self::Making { batch, job } = self else {
+            return false;
+        };
+        let next = match job.step(words, meanings, now) {
+            Ok(None) => return false,
+            Ok(Some(built)) => Self::Ready {
+                batch: batch.clone(),
+                built,
+            },
+            Err(why) => Self::Failed {
+                batch: batch.clone(),
+                why,
+            },
+        };
+        *self = next;
+        true
+    }
+}
+
 /// What a word was before Known saved it, so undo can put it back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Prior {
@@ -50,6 +89,7 @@ pub struct Open {
     pub cards: Vec<Shown>,
     pub found: usize,
     pub skipped_known: usize,
+    pub via: Via,
     pub floor: Floor,
     /// Cards marked known, latest last, each with the place it left.
     known: Vec<(usize, Shown, Prior)>,
@@ -63,6 +103,7 @@ impl Open {
             cards: built.cards,
             found: built.found,
             skipped_known: built.skipped_known,
+            via: built.via,
             known: Vec::new(),
         }
     }
@@ -112,6 +153,12 @@ pub struct Run {
     /// The first locked page; past the last page, nothing is locked.
     pub unlocked: usize,
     pub deck: DeckState,
+    /// Decks for the batches past the gate's, nearest first.
+    pub ahead: Vec<Ahead>,
+    /// The batch, by its first page, whose deck the dictionary writes instead.
+    pub fallback: Option<usize>,
+    /// What the decks were made from: the source, the level, the writer.
+    recipe: String,
     /// The layout measured: the document's layout key and page count.
     layout: Option<(Option<u64>, usize)>,
     size: Option<Size>,
@@ -132,6 +179,9 @@ impl Run {
             batches: Vec::new(),
             unlocked: 0,
             deck: DeckState::None,
+            ahead: Vec::new(),
+            fallback: None,
+            recipe: String::new(),
             layout: None,
             size: None,
             sizes: Vec::new(),
@@ -170,7 +220,36 @@ impl Run {
     }
 
     pub fn busy(&self) -> bool {
-        self.measuring.is_some() || matches!(self.deck, DeckState::Making { .. })
+        let making = |a: &Ahead| matches!(a, Ahead::Making { .. });
+        self.measuring.is_some()
+            || matches!(self.deck, DeckState::Making { .. })
+            || self.ahead.iter().any(making)
+    }
+
+    /// Up to `count` batches past the gate's, nearest first.
+    pub fn upcoming(&self, count: usize) -> Vec<Batch> {
+        let Some(at) = self.gate_batch() else {
+            return Vec::new();
+        };
+        let past = self.batches.iter().filter(|b| b.from > at.to);
+        past.take(count).cloned().collect()
+    }
+
+    /// Drops the decks made ahead for batches past the window, which
+    /// cancels their asks.
+    pub fn trim_ahead(&mut self, count: usize) {
+        let coming = self.upcoming(count);
+        self.ahead.retain(|a| coming.contains(a.batch()));
+    }
+
+    pub fn has_ahead(&self, batch: &Batch) -> bool {
+        self.ahead.iter().any(|a| a.batch() == batch)
+    }
+
+    /// Takes the deck made ahead for `batch`, as the gate reaches it.
+    pub fn take_ahead(&mut self, batch: &Batch) -> Option<Ahead> {
+        let at = self.ahead.iter().position(|a| a.batch() == batch)?;
+        Some(self.ahead.remove(at))
     }
 
     /// Plans again from the gate saved elsewhere, as another pane moved it.
@@ -216,6 +295,24 @@ impl Run {
         self.entered = true;
         self.drop_stale_deck();
         Ok(true)
+    }
+
+    /// Forgets the decks made from another recipe, but for one open now.
+    pub fn follow(&mut self, recipe: String) -> bool {
+        if self.recipe == recipe {
+            return false;
+        }
+        let first = self.recipe.is_empty();
+        self.recipe = recipe;
+        if first {
+            return false;
+        }
+        self.ahead.clear();
+        self.fallback = None;
+        if !matches!(self.deck, DeckState::Open(_)) {
+            self.deck = DeckState::None;
+        }
+        true
     }
 
     /// Unlocks every page through `to`; the deck before them is done.

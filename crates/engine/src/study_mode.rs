@@ -4,19 +4,22 @@
 //! panes on one book share it. Documents outside the library keep theirs for
 //! the session. See `docs/study-mode.md`.
 
+pub mod backs;
 pub mod deck_job;
 pub mod run;
 pub mod sightings;
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use mareader_library::Spot;
 use mareader_session::DocId;
-use mareader_study::mode::{Key, Mode};
+use mareader_study::mode::{CardWriter, Key, Mode};
 use mareader_workspace::PaneId;
 
-pub use deck_job::{Built, DeckJob, Known, Shown, Tags};
-pub use run::{DeckState, Open, Prior, Run};
+pub use backs::{Backs, Shown, Writer};
+pub use deck_job::{Built, DeckJob, Doing, Known, Tags};
+pub use run::{Ahead, DeckState, Open, Prior, Run};
 
 /// What the study menu and the deck ask of the app.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +37,8 @@ pub enum Action {
     NextBatch(PaneId),
     /// Asks again for a deck that failed.
     Retry(PaneId),
+    /// Writes the gate's deck from the dictionary, as the AI is slow or failed.
+    UseDictionary(PaneId),
     /// Takes the pane back to the batch before the gate.
     ReadPrevious(PaneId),
 }
@@ -62,9 +67,22 @@ pub fn nothing_new(range: &str) -> String {
 pub struct State {
     runs: BTreeMap<PaneId, (DocId, Run)>,
     loose: HashMap<DocId, Spot>,
+    /// The AI's card writer, once the app has one.
+    cards: Option<Arc<dyn CardWriter>>,
+    backs: Backs,
 }
 
 impl State {
+    pub(crate) fn set_cards(&mut self, cards: Arc<dyn CardWriter>) {
+        self.cards = Some(cards);
+    }
+
+    /// The AI's writer with the backs it wrote before; none without one.
+    pub(crate) fn writer(&self) -> Option<Writer> {
+        let backs = self.backs.clone();
+        self.cards.clone().map(|cards| Writer { cards, backs })
+    }
+
     pub fn run(&self, pane: PaneId) -> Option<&Run> {
         self.runs.get(&pane).map(|(_, run)| run)
     }
