@@ -112,19 +112,15 @@ pub const MAX_CARDS_MAX: usize = 30;
 pub fn build_deck(spans: &[HardSpan], known: &HashSet<String>, max: usize) -> Deck {
     let mut found: Vec<DeckCard> = Vec::new();
     let mut skipped = 0usize;
-    let mut distinct = 0usize;
+    let mut seen_keys: HashSet<String> = HashSet::new();
 
     for span in spans {
-        if known.contains(&span.word.key) {
+        let is_known = known.contains(&span.word.key);
+        if is_known {
             skipped = skipped.saturating_add(1);
-            continue;
         }
-        distinct = distinct.saturating_add(1);
-        match found.iter_mut().find(|card| card.key == span.word.key) {
-            Some(card) => {
-                card.count = card.count.saturating_add(1);
-            }
-            None => {
+        if seen_keys.insert(span.word.key.clone()) {
+            if !is_known {
                 found.push(DeckCard {
                     key: span.word.key.clone(),
                     lemma: span.word.lemma.clone(),
@@ -134,6 +130,10 @@ pub fn build_deck(spans: &[HardSpan], known: &HashSet<String>, max: usize) -> De
                     sentence: span.sentence.clone(),
                     also: Vec::new(),
                 });
+            }
+        } else if !is_known {
+            if let Some(card) = found.iter_mut().find(|card| card.key == span.word.key) {
+                card.count = card.count.saturating_add(1);
             }
         }
     }
@@ -167,7 +167,7 @@ pub fn build_deck(spans: &[HardSpan], known: &HashSet<String>, max: usize) -> De
 
     Deck {
         cards: found,
-        found: distinct,
+        found: seen_keys.len(),
         skipped_known: skipped,
     }
 }

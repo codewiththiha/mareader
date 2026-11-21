@@ -78,7 +78,6 @@ impl Provider {
             Self::Apple | Self::Custom => "",
         }
     }
-
     /// The model when none is set; empty asks the server for its first.
     pub fn default_model(self) -> &'static str {
         match self {
@@ -88,7 +87,6 @@ impl Provider {
             _ => "",
         }
     }
-
     /// Whether requests need a key; a custom server needs one if it has one.
     pub fn needs_key(self) -> bool {
         matches!(self, Self::OpenAi | Self::Gemini | Self::OpenRouter)
@@ -98,7 +96,6 @@ impl Provider {
     pub fn takes_keys(self) -> bool {
         self.needs_key() || self == Self::Custom
     }
-
     /// Whether it is a server on this computer.
     pub fn local(self) -> bool {
         matches!(self, Self::Ollama | Self::LmStudio)
@@ -158,7 +155,6 @@ pub struct ModelPreset {
     /// Tasks at once on each usable key; keyless, in all.
     pub at_once: u8,
 }
-
 impl Default for ModelPreset {
     fn default() -> Self {
         Self {
@@ -560,8 +556,12 @@ impl AiSettings {
 
     /// Forgets a model; tasks that used it are left without one.
     pub fn remove_preset(&mut self, id: PresetId) {
+        let was_study = self.tasks.study.preset == Some(id);
         self.presets.retain(|p| p.id != id);
         self.unassign_missing();
+        if was_study {
+            self.tasks.study.language = None;
+        }
     }
 
     fn unassign_missing(&mut self) {

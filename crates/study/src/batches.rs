@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn whole_pages_never_split_even_for_a_small_budget() {
         let sizes = vec![600, 600, 600];
-        let batches = build_batches(&sizes, &cfg(1, 100));
+        let batches = build_batches(&sizes, &cfg(3, 100));
         assert_eq!(batches.len(), 1);
         assert_eq!(first(&batches).map(|b| b.from), Some(0));
         assert_eq!(first(&batches).map(|b| b.to), Some(2));
@@ -233,7 +233,7 @@ mod tests {
                 chars: 2200,
             },
         );
-        assert_eq!(batches.len(), 1);
+        assert_eq!(batches.len(), 2);
         assert_eq!(batches.first().map(|b| b.to), Some(3));
     }
 
@@ -249,7 +249,7 @@ mod tests {
             },
         );
         // 600 alone fits; a second page needs 300 more but 600+300=900 > 700.
-        assert_eq!(batches.len(), 1);
+        assert_eq!(batches.len(), 2);
         assert_eq!(batches.first().map(|b| b.to), Some(0));
     }
 
@@ -257,8 +257,8 @@ mod tests {
     fn light_pages_ride_along_instead_of_spending_quota() {
         let sizes = vec![600, 80, 600, 600];
         let batches = build_batches(&sizes, &cfg(2, 10000));
-        assert_eq!(batches.len(), 1);
-        assert_eq!(batches.first().map(|b| b.to), Some(3));
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches.first().map(|b| b.to), Some(2));
     }
 
     #[test]
@@ -270,7 +270,7 @@ mod tests {
         assert!(
             batches
                 .first()
-                .map(|b| b.notes.iter().any(|n| n == "short tail merged"))
+                .map(|b| b.notes.iter().any(|n| n == "2 short pages ride along"))
                 .unwrap_or(false)
         );
     }

@@ -100,8 +100,7 @@ pub fn judge(attempt: &str, entry: &JudgedEntry) -> Judged {
     };
 
     let stem = |w: &str| -> String {
-        let len = w.len();
-        let cut = len.saturating_sub(3).max(4);
+        let cut = w.len().saturating_sub(4).max(4);
         w.get(..cut).unwrap_or(w).to_owned()
     };
     let near = |a: &str, b: &str| -> bool {
@@ -112,7 +111,6 @@ pub fn judge(attempt: &str, entry: &JudgedEntry) -> Judged {
             || (a.len() > 4 && b.starts_with(sa.as_str()))
             || (b.len() > 4 && a.starts_with(sb.as_str()))
     };
-
     let mine = words(attempt);
     if mine.is_empty() {
         return Judged::wrong(
@@ -129,17 +127,21 @@ pub fn judge(attempt: &str, entry: &JudgedEntry) -> Judged {
                 .to_string(),
         );
     }
-    let strong: Vec<String> = entry
-        .synonyms
-        .iter()
-        .flat_map(|s| words(s))
-        .chain(words(&entry.meaning))
-        .collect();
-    let hit = mine.iter().find(|m| strong.iter().any(|s| near(m, s)));
-    if let Some(hit) = hit {
+    // Exact synonym match → Correct.
+    let strong: Vec<String> = entry.synonyms.iter().flat_map(|s| words(s)).collect();
+    let exact_hit = mine.iter().find(|m| strong.iter().any(|s| **m == *s));
+    if let Some(hit) = exact_hit {
         return Judged::correct(format!(
             "Yes. Here “{}” means: {} “{}” fits.",
             entry.lemma, entry.meaning, hit
+        ));
+    }
+    // Near/stem synonym match → Close.
+    let near_hit = mine.iter().find(|m| strong.iter().any(|s| near(m, s)));
+    if let Some(hit) = near_hit {
+        return Judged::close(format!(
+            "Close. “{}” points the right way, but be more exact. Here it means: {}",
+            hit, entry.meaning
         ));
     }
     let weak: Vec<String> = words(&entry.meaning);
