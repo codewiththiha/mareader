@@ -172,19 +172,24 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   offers *Study the words*; once they fill 30 % of the strip (or any of a
   paged spread) the veil covers the pane and holds the deck. After a Read
   back it says the cards are waiting and offers *Open the cards* instead.
-- **The deck:** flash cards under a capsule giving the pages (*Before
-  pages 1–2*), the count, the time left when the deck has a limit, and a
-  shuffle that only reorders what is shown. A card's front holds the word
+- **The deck:** flash cards centred in the pane, both ways. Small blocks
+  sit in its top corners: the pages as bare numbers (*1 – 2*) on the left;
+  the time left, when the deck has a limit, and a shuffle that only
+  reorders what is shown on the right. A card's front holds the word
   alone, its band in the top right corner; nothing from the book's
   sentence, which would give it away. Its back gives the meaning and the
   word class, and an AI card adds its synonyms and an example of its own.
   The card (`study_mode/flip_card.rs`) is painted as shapes, tessellated
-  and turned in perspective about its upright axis. A click, Space or
+  and turned in perspective about its upright axis. Its texts are noted to
+  `machine_fonts::note`, as the scan of drawn text never sees a mesh, so a
+  word in any script gets the machine's fallback faces. A click, Space or
   Enter turns it over; a drag past 28 % of its width or a flick moves on,
   rubber-banded at either end, and the arrows step too. Two cards peek out
-  beneath. With motion off it changes at once. *I already know this* (K)
-  marks the word known and *Read back* shows the page before the batch.
-  *Read now* asks first while time is left, since the cards then close for
+  beneath. With motion off it changes at once. Under the card, round step
+  buttons flank *3 / 9*; then *I already know this* (K, its key cap shown)
+  marks the word known, beside an undo once one is marked; then *Read
+  back*, which shows the page before the batch, sits beside *Read now*,
+  which asks first while time is left, since the cards then close for
   good; *Turn off study mode* always asks (`study_mode/confirm.rs`). The
   deck tells the engine as it appears and goes (`Action::Shown`), so its
   time runs only on screen.
@@ -194,8 +199,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **Failed:** the card says why, with *Try again*, *Use the dictionary* and
   *Read previous pages*.
 - **The corner toast** (`study_mode/progress.rs`): while the AI writes a
-  deck, the gate's or one made ahead, a ring sits at the pane's bottom
-  left, spinning while the words are found, filling as cards are written,
+  deck, the gate's or one made ahead, a ring sits in the pane's bottom
+  left corner, rising over the page bar only while that is up, spinning while the words are found, filling as cards are written,
   red once writing failed. A hover widens it to say so (*Writing cards 3
   of 8 · pages 4–6*). A finished deck shows *Next cards ready* for 3 s.
   Dictionary cards come at once and never show it; the deck opens at the

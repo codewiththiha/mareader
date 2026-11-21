@@ -10,6 +10,7 @@
 //! instead.
 
 pub mod confirm;
+mod controls;
 pub mod deck;
 pub mod flip_card;
 pub mod gate;

@@ -6,15 +6,18 @@
 //! known. Read now unlocks the batch whenever the reader likes, asking first
 //! while time is left, as the cards then close for good; with a time limit
 //! the deck also closes once its minutes are spent. Turning study mode off
-//! from here asks first too.
+//! from here asks first too. The pages, the time left and shuffle sit in
+//! small blocks in the pane's top corners.
 
-use egui::{Align, Frame, Id, Key, Layout, Margin, RichText, Sense, Stroke, Ui, Vec2, vec2};
+use egui::{Align, Align2, Frame, Id, Key, Layout, Margin, Rect, RichText, Sense, Stroke, Ui};
+use egui::{Vec2, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, DeckState, Open, Shown};
 use mareader_study::mode::Batch;
 use mareader_workspace::PaneId;
 
 use super::confirm::Ask;
+use super::controls::{self, Chip, Look};
 use super::flip_card::{self, Faces, Gesture};
 use super::{Cursor, Pane, waiting};
 use crate::icons::Icon;
@@ -26,6 +29,16 @@ pub const KNOWN: &str = "I already know this";
 pub const START: &str = "Read now";
 pub const SHUFFLE: &str = "Shuffle";
 pub const TURN_OFF: &str = "Turn off study mode";
+pub const READ_BACK: &str = "Read back";
+const PREVIOUS: &str = "Previous card";
+const NEXT: &str = "Next card";
+const UNDO: &str = "Undo known";
+/// The room the counter takes between the step buttons.
+const STEP_GAP: f32 = 96.0;
+/// The corner blocks' drop below the pane's top, clear of its label.
+const CORNER_DROP: f32 = 22.0;
+/// The room the corner blocks keep over the deck.
+const HEAD: f32 = CORNER_DROP + controls::BLOCK + 12.0;
 const NO_MEANING: &str = "No meaning was found for this word.";
 /// What the time left in the header is for.
 const LEFT_TIP: &str = "The cards close for these pages once it runs out";
@@ -90,8 +103,8 @@ pub(super) fn send(out: &mut Commands, action: Action) {
     out.push(Sent::Engine(Command::StudyMode(action)));
 }
 
-/// The deck in the middle of `ui`, which covers the pane; what it asks
-/// before acting goes in `ask`.
+/// The deck in the middle of `ui`, which covers the pane, centred by the
+/// height it took last pass; what it asks before acting goes in `ask`.
 pub fn show(
     ui: &mut Ui,
     pane: &Pane<'_>,
@@ -101,18 +114,26 @@ pub fn show(
 ) {
     let room = ui.max_rect();
     let width = WIDTH.min(room.width());
-    let at = room.center_top() + vec2(-width / 2.0, (room.height() * 0.08).min(48.0));
+    let tall_id = Id::new(("study-deck-tall", pane.id));
+    let kept = ui.ctx().data(|d| d.get_temp(tall_id));
+    let tall: f32 = kept.unwrap_or(room.height());
+    let open = pane.run.shown_deck();
+    let clear = if open.is_some() { HEAD } else { 0.0 };
+    let top = (room.center().y - tall / 2.0).max(room.top() + clear);
+    let at = egui::pos2(room.center().x - width / 2.0, top);
+    let column = Rect::from_min_size(at, vec2(width, room.bottom() - top));
     let builder = egui::UiBuilder::new()
-        .max_rect(egui::Rect::from_min_size(at, vec2(width, room.height())))
+        .max_rect(column)
         .layout(Layout::top_down(Align::Center));
-    ui.scope_builder(builder, |ui| {
+    let used = ui.scope_builder(builder, |ui| {
         ui.set_width(width);
-        if let Some(open) = &pane.run.review {
+        if let Some(open) = open {
+            corners(ui, room, (open, open.allowance.left(pane.now)), cursor);
             deck(ui, pane, open, (cursor, ask), out);
             return;
         }
         match &pane.run.deck {
-            DeckState::Open(open) => deck(ui, pane, open, (cursor, ask), out),
+            DeckState::Open(_) => {}
             DeckState::Failed { batch, why } => framed(ui, |ui| {
                 waiting::failed(ui, pane, &batch.label(), why, out);
             }),
@@ -125,6 +146,11 @@ pub fn show(
             }),
         }
     });
+    let height = used.response.rect.height();
+    if (height - tall).abs() > 0.5 {
+        ui.ctx().data_mut(|d| d.insert_temp(tall_id, height));
+        ui.ctx().request_discard("the deck's height changed");
+    }
 }
 
 /// The waiting and error cards' paper.
@@ -159,8 +185,6 @@ fn deck(
     let left = open.allowance.left(pane.now);
     let count = open.cards.len();
     cursor.fit(count);
-    header(ui, open, left, cursor);
-    ui.add_space(t.gap * 1.5);
     if count == 0 {
         let all = "You know every word in these pages.";
         ui.label(RichText::new(all).font(theme::serif(16.0)));
@@ -176,11 +200,12 @@ fn deck(
             Some(Gesture::Step(by)) => cursor.step(by, count),
             None => {}
         }
+        ui.add_space(t.gap * 0.5);
         steps(ui, cursor, count);
     }
-    ui.add_space(t.gap);
+    ui.add_space(t.gap * 1.25);
     marks(ui, pane, open, cursor, out);
-    ui.add_space(t.gap);
+    ui.add_space(t.gap * 1.75);
     footer(ui, pane, (open, left), ask, out);
     if let Some(left) = left.filter(|_| open.allowance.running()) {
         let tick = left.fract().max(0.05) as f32;
@@ -214,49 +239,60 @@ pub fn faces(shown: &Shown) -> Faces {
     }
 }
 
-/// The capsule over the cards: the pages, the count, the time left, shuffle.
-fn header(ui: &mut Ui, open: &Open, left: Option<f64>, cursor: &mut Cursor) {
-    let t = Tokens::get(ui.ctx());
-    let width = ui.available_width();
-    Frame::new()
-        .fill(t.surface)
-        .stroke(Stroke::new(1.0, t.line))
-        .corner_radius(24.0)
-        .inner_margin(Margin::symmetric(14, 8))
-        .shadow(egui::Shadow {
-            offset: [0, 4],
-            blur: 14,
-            spread: 0,
-            color: t.shadow,
-        })
-        .show(ui, |ui| {
-            ui.set_width(width - 28.0);
-            ui.horizontal(|ui| {
-                let lead = format!("Before {}", open.batch.label());
-                ui.label(RichText::new(lead).font(theme::medium(15.0)));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if open.cards.len() > 1 && shuffle(ui, &t).clicked() {
-                        let seed = ui.input(|i| i.time).to_bits();
-                        cursor.shuffle(seed);
-                    }
-                    if let Some(left) = left {
-                        let said = format!("{} left", clock(left));
-                        let clock = RichText::new(said).size(t.text_small).color(t.muted);
-                        ui.label(clock).on_hover_text(LEFT_TIP);
-                    }
-                    let n = open.cards.len().to_string();
-                    ui.label(RichText::new(n).size(15.0).color(t.muted));
-                });
-            });
-        });
+/// The pages as bare numbers: "3" or "3 – 5".
+pub fn range(batch: &Batch) -> String {
+    let (from, to) = (batch.from.saturating_add(1), batch.to.saturating_add(1));
+    match from == to {
+        true => from.to_string(),
+        false => format!("{from} – {to}"),
+    }
 }
 
-/// Two crossing arrows: the order shuffled.
-fn shuffle(ui: &mut Ui, t: &Tokens) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+/// The blocks in the pane's top corners: the pages at the left; the time
+/// left and shuffle at the right, each on its own.
+fn corners(ui: &mut Ui, room: Rect, (open, left): (&Open, Option<f64>), cursor: &mut Cursor) {
+    let t = Tokens::get(ui.ctx());
+    let top = room.top() + CORNER_DROP;
+    let pages = range(&open.batch);
+    let at = egui::pos2(room.left(), top);
+    let block = controls::block(ui, at, Align2::LEFT_TOP, Some(Icon::Book), &pages, &t);
+    let resp = ui.interact(block, ui.id().with("deck-pages"), Sense::hover());
+    let said = format!("The words before {}", open.batch.label());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &said));
+    widgets::tip(&resp, &said, None);
+    let mut right = room.right();
+    if open.cards.len() > 1 {
+        let side = controls::BLOCK;
+        let rect = Rect::from_min_size(egui::pos2(right - side, top), Vec2::splat(side));
+        if shuffle(ui, rect, &t).clicked() {
+            let seed = ui.input(|i| i.time).to_bits();
+            cursor.shuffle(seed);
+        }
+        right -= side + 8.0;
+    }
+    if let Some(left) = left {
+        let at = egui::pos2(right, top);
+        let said = clock(left);
+        let block = controls::block(ui, at, Align2::RIGHT_TOP, Some(Icon::Clock), &said, &t);
+        let resp = ui.interact(block, ui.id().with("deck-clock"), Sense::hover());
+        let name = format!("{said} left");
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &name));
+        widgets::tip(&resp, LEFT_TIP, None);
+    }
+}
+
+/// A round block with two crossing arrows: the order shuffled.
+fn shuffle(ui: &mut Ui, rect: Rect, t: &Tokens) -> egui::Response {
+    let resp = ui.interact(rect, ui.id().with("deck-shuffle"), Sense::click());
+    controls::plate(ui, rect, t);
+    if resp.hovered() {
+        let r = rect.height() / 2.0 - 1.0;
+        ui.painter().circle_filled(rect.center(), r, t.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
     let ink = if resp.hovered() { t.ink } else { t.muted };
     let stroke = Stroke::new(1.6, ink);
-    let p = |x: f32, y: f32| rect.center() + vec2(x, y);
+    let p = |x: f32, y: f32| rect.center() + vec2(x, y) * 0.8;
     let painter = ui.painter();
     let lanes = [(-5.0, 5.0), (5.0, -5.0)];
     for (from, to) in lanes {
@@ -276,64 +312,64 @@ pub fn clock(secs: f64) -> String {
     format!("{}:{:02}", whole / 60, whole % 60)
 }
 
-/// Back and forward between cards, where this one sits, and how to move.
+/// Back and forward between cards, with where this one sits between.
 fn steps(ui: &mut Ui, cursor: &mut Cursor, count: usize) {
     let t = Tokens::get(ui.ctx());
-    let at = cursor.at.saturating_add(1);
-    let said = format!("{at} of {count} · drag or swipe, press to turn");
-    let text = RichText::new(said).size(t.text_small).color(t.muted);
-    let font = egui::FontId::proportional(t.text_small);
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text.text().to_owned(), font, t.muted);
-    let wide = galley.rect.width() + 2.0 * 24.0 + 2.0 * ui.spacing().item_spacing.x;
-    ui.horizontal(|ui| {
-        ui.add_space(((ui.available_width() - wide) / 2.0).max(0.0));
-        let first = cursor.at == 0;
-        let back = widgets::small_icon_button(ui, Icon::ChevronLeft, "Previous card");
-        if back.clicked() && !first {
-            cursor.step(-1, count);
-        }
-        ui.label(text);
-        let next = widgets::small_icon_button(ui, Icon::ChevronRight, "Next card");
-        if next.clicked() {
-            cursor.step(1, count);
-        }
-    });
+    let first = cursor.at == 0;
+    let last = cursor.at.saturating_add(1) >= count;
+    let back = Chip::new(PREVIOUS, Look::Soft)
+        .bare(Icon::ChevronLeft)
+        .key("←")
+        .enabled(!first);
+    let next = Chip::new(NEXT, Look::Soft)
+        .bare(Icon::ChevronRight)
+        .key("→")
+        .enabled(!last);
+    let pressed = controls::row(ui, vec![back, next], STEP_GAP);
+    if pressed.first().is_some_and(egui::Response::clicked) {
+        cursor.step(-1, count);
+    }
+    if pressed.get(1).is_some_and(egui::Response::clicked) {
+        cursor.step(1, count);
+    }
+    let (Some(back), Some(next)) = (pressed.first(), pressed.get(1)) else {
+        return;
+    };
+    let said = format!("{} / {count}", cursor.at.saturating_add(1));
+    let x = (back.rect.right() + next.rect.left()) / 2.0;
+    let at = egui::pos2(x, back.rect.center().y);
+    let font = theme::medium(14.0);
+    let painter = ui.painter();
+    painter.text(at, Align2::CENTER_CENTER, &said, font, t.muted);
 }
 
-/// Know this word, take that back, or read the pages before.
+/// Know this word, take that back.
 fn marks(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mut Commands) {
-    let t = Tokens::get(ui.ctx());
-    if let Some(shown) = cursor.card().and_then(|i| open.cards.get(i)) {
-        let label = RichText::new(KNOWN).size(t.text_small + 1.0);
-        let mark = ui.add(egui::Button::new(label).frame_when_inactive(false));
-        widgets::tip(&mark, "Skipped in every book from now on", Some("K"));
-        if mark.clicked() {
-            known(pane.id, shown, cursor, out);
-        }
-    }
+    let shown = cursor.card().and_then(|i| open.cards.get(i));
     let undo = open.can_undo();
-    let back = match &pane.run.review {
-        Some(review) => review.batch.from > 0,
-        None => pane.run.back(pane.lock).is_some(),
-    };
-    if !undo && !back {
+    let mut chips = Vec::new();
+    if shown.is_some() {
+        chips.push(Chip::new(KNOWN, Look::Outline).icon(Icon::Check).key("K"));
+    }
+    if undo {
+        chips.push(Chip::new(UNDO, Look::Outline).bare(Icon::Restore));
+    }
+    if chips.is_empty() {
         return;
     }
-    ui.horizontal(|ui| {
-        let wide = 24.0 + 90.0;
-        ui.add_space(((ui.available_width() - wide) / 2.0).max(0.0));
-        if undo && widgets::small_icon_button(ui, Icon::Restore, "Undo known").clicked() {
-            send(out, Action::Undo(pane.id));
-        }
-        if back && ui.button("Read back").clicked() {
-            send(out, Action::ReadPrevious(pane.id));
-        }
-    });
+    let pressed = controls::row(ui, chips, 8.0);
+    let known_at = shown.is_some().then_some(0);
+    if let Some(mark) = known_at.and_then(|i| pressed.get(i)) {
+        widgets::tip(mark, "Skipped in every book from now on", Some("K"));
+    }
+    if let (Some(shown), true) = (shown, pressed.first().is_some_and(egui::Response::clicked)) {
+        known(pane.id, shown, cursor, out);
+    } else if undo && pressed.last().is_some_and(egui::Response::clicked) {
+        send(out, Action::Undo(pane.id));
+    }
 }
 
-/// Read now, which asks first while time is left, and turning study off.
+/// Read back and Read now side by side, then turning study off.
 fn footer(
     ui: &mut Ui,
     pane: &Pane<'_>,
@@ -341,19 +377,33 @@ fn footer(
     ask: &mut Option<Ask>,
     out: &mut Commands,
 ) {
-    let t = Tokens::get(ui.ctx());
-    let start = widgets::primary_button(ui, None, START, t.accent, &t);
-    if ui.add(start.min_size(vec2(160.0, 32.0))).clicked() {
+    let back = match &pane.run.review {
+        Some(review) => review.batch.from > 0,
+        None => pane.run.back(pane.lock).is_some(),
+    };
+    let mut chips = Vec::new();
+    if back {
+        let chip = Chip::new(READ_BACK, Look::Outline).icon(Icon::ChevronLeft);
+        chips.push(chip.tall(40.0).wide(150.0));
+    }
+    let width = if back { 150.0 } else { 200.0 };
+    let start = Chip::new(START, Look::Primary).icon(Icon::Book);
+    chips.push(start.tall(40.0).wide(width));
+    let pressed = controls::row(ui, chips, 10.0);
+    if back && pressed.first().is_some_and(egui::Response::clicked) {
+        send(out, Action::ReadPrevious(pane.id));
+    }
+    if pressed.last().is_some_and(egui::Response::clicked) {
         let range = open.batch.label();
         match left.filter(|&l| l > 0.0 && pane.run.review.is_none()) {
             Some(left) => *ask = Some(Ask::ReadNow { range, left }),
             None => send(out, Action::Start(pane.id)),
         }
     }
-    ui.add_space(t.gap * 0.5);
-    let off = RichText::new(TURN_OFF).size(t.text_small).color(t.muted);
-    let off = egui::Button::new(off).frame_when_inactive(false);
-    if ui.add(off).clicked() {
+    ui.add_space(6.0);
+    let off = Chip::new(TURN_OFF, Look::Quiet).tall(30.0);
+    let pressed = controls::row(ui, vec![off], 0.0);
+    if pressed.iter().any(egui::Response::clicked) {
         *ask = Some(Ask::TurnOff);
     }
 }
