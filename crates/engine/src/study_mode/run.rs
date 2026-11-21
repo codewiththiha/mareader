@@ -1,17 +1,18 @@
 //! One pane's study mode: its batches, its gate and the deck before it.
 //!
-//! Pages before `unlocked` read freely; the batch starting there waits on
-//! its deck. Until the pages are measured on the current layout the pane
-//! is held at the page it showed when planning began.
+//! Batches start at the page shown when the mode turned on; the pages
+//! before it are not studied. Pages before `unlocked` read freely; the batch
+//! starting there waits on its deck. Until the pages are measured on the
+//! current layout the pane is held at the page it showed when planning began.
 
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use mareader_library::{BookId, WordStatus};
+use mareader_library::{BookId, Spot, WordStatus};
 use mareader_session::Document;
 use mareader_study::mode::{
-    Batch, Floor, Key, Mode, Outcome, Size, Via, entering, gate, plan, retypeset,
+    Batch, Floor, Key, Mode, Outcome, Size, Via, gate, plan_from, retypeset,
 };
 
 use super::backs::Shown;
@@ -152,6 +153,8 @@ pub struct Sheet<'a> {
     pub size: Size,
     /// The saved gate on this layout, if the book has one.
     pub saved: Option<usize>,
+    /// The run's first page on this layout, once it has one.
+    pub start: Option<usize>,
     pub current: usize,
 }
 
@@ -160,6 +163,10 @@ pub struct Run {
     pub mode: Mode,
     pub book: Option<BookId>,
     pub batches: Vec<Batch>,
+    /// The page the mode turned on at: the first batch starts there.
+    pub start: usize,
+    /// Where `start` stands in the book, so a re-typeset keeps it.
+    pub anchor: Option<Spot>,
     /// The first locked page; past the last page, nothing is locked.
     pub unlocked: usize,
     pub deck: DeckState,
@@ -191,6 +198,8 @@ impl Run {
             mode,
             book,
             batches: Vec::new(),
+            start: at,
+            anchor: None,
             unlocked: 0,
             deck: DeckState::None,
             ahead: Vec::new(),
@@ -232,10 +241,11 @@ impl Run {
         gate(&self.batches, self.unlocked)
     }
 
-    /// The batch before the gate, to read again.
-    pub fn previous(&self) -> Option<&Batch> {
-        let end = self.gate()?;
-        self.batches.iter().rev().find(|b| b.to < end)
+    /// The page just before the gate, where Read back goes; with `lock`
+    /// never one before the start.
+    pub fn back(&self, lock: bool) -> Option<usize> {
+        let page = self.gate()?.checked_sub(1)?;
+        (!lock || page >= self.start).then_some(page)
     }
 
     pub fn busy(&self) -> bool {
@@ -305,11 +315,18 @@ impl Run {
         }
         self.stale = false;
         self.size = Some(sheet.size);
-        self.batches = plan(&self.sizes, sheet.size);
-        let saved = retypeset(sheet.saved.unwrap_or(0), &self.batches, self.sizes.len());
-        self.unlocked = match self.entered {
-            true => saved,
-            false => entering(self.at, saved, &self.batches),
+        self.start = match (self.entered, sheet.start) {
+            (true, Some(start)) => start,
+            (true, None) => self.start,
+            (false, _) => self.at,
+        };
+        self.start = self.start.min(self.sizes.len());
+        self.batches = plan_from(&self.sizes, sheet.size, self.start);
+        self.unlocked = match (self.entered, sheet.saved) {
+            (true, Some(saved)) if saved > self.start => {
+                retypeset(saved, &self.batches, self.sizes.len())
+            }
+            _ => self.start,
         };
         self.entered = true;
         self.drop_stale_deck();

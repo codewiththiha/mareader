@@ -147,13 +147,15 @@ pub fn retypeset(unlocked: usize, batches: &[Batch], count: usize) -> usize {
         .map_or(count, |b| b.to + 1)
 }
 
-/// Progress when the mode turns on at `current`: pages behind are free.
-pub fn entering(current: usize, unlocked: usize, batches: &[Batch]) -> usize {
-    match batches.iter().find(|b| b.holds(current)) {
-        Some(b) if current >= unlocked && current == b.from => b.from,
-        Some(b) if current >= unlocked => b.to + 1,
-        _ => unlocked,
+/// The batches from page `start` on; the pages before it are not studied.
+pub fn plan_from(sizes: &[usize], size: Size, start: usize) -> Vec<Batch> {
+    let rest = sizes.get(start..).unwrap_or_default();
+    let mut out = plan(rest, size);
+    for b in &mut out {
+        b.from = b.from.saturating_add(start);
+        b.to = b.to.saturating_add(start);
     }
+    out
 }
 
 #[cfg(test)]
@@ -228,12 +230,12 @@ mod tests {
     }
 
     #[test]
-    fn turning_on_mid_batch_frees_the_rest_of_it() {
-        let b = plan(&[400; 9], pages(3));
-        assert_eq!(entering(4, 0, &b), 6);
-        assert_eq!(entering(3, 0, &b), 3);
-        assert_eq!(entering(1, 6, &b), 6);
-        assert_eq!(entering(99, 2, &b), 2);
+    fn batches_start_at_the_page_the_mode_turns_on() {
+        let b = plan_from(&[400; 10], pages(5), 2);
+        assert_eq!(spans(&b), [(2, 6), (7, 9)]);
+        assert_eq!((b[0].index, b[1].index), (0, 1));
+        assert_eq!(b[0].label(), "pages 3–7");
+        assert!(plan_from(&[400; 3], pages(5), 7).is_empty());
     }
 
     #[test]

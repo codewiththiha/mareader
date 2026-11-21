@@ -242,20 +242,25 @@ impl Session {
             Some(book) => self.library.model.unlocked(book).cloned(),
             None => self.study_mode.loose(doc).cloned(),
         };
-        let sheet = Sheet {
-            document: &document,
-            wake: Arc::clone(&self.waker),
-            inline: self.inline,
-            size: self.study_size(),
-            saved: spot.and_then(|s| page_of(&document, s)),
-            current,
-        };
+        let (wake, inline, size) = (Arc::clone(&self.waker), self.inline, self.study_size());
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
+        };
+        let sheet = Sheet {
+            document: &document,
+            wake,
+            inline,
+            size,
+            saved: spot.and_then(|s| page_of(&document, s)),
+            start: run.anchor.and_then(|s| page_of(&document, s)),
+            current,
         };
         match run.plan(sheet) {
             Ok(false) => false,
             Ok(true) => {
+                if run.anchor.is_none() {
+                    run.anchor = Some(bookmark_spot(&document, run.start));
+                }
                 self.study_save_gate(pane);
                 true
             }

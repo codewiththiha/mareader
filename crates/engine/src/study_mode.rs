@@ -50,7 +50,7 @@ pub enum Action {
     Retry(PaneId),
     /// Writes the gate's deck from the dictionary, as the AI is slow or failed.
     UseDictionary(PaneId),
-    /// Takes the pane back to the batch before the gate.
+    /// Takes the pane to the page just before the gate.
     ReadPrevious(PaneId),
     /// What Reactive mode's recall popover asks.
     Recall {

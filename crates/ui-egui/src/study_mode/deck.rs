@@ -307,7 +307,7 @@ fn marks(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &m
         }
     }
     let undo = open.can_undo();
-    let back = pane.run.previous().is_some();
+    let back = pane.run.back(false).is_some();
     if !undo && !back {
         return;
     }

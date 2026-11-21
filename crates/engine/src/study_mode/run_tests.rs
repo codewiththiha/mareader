@@ -1,5 +1,5 @@
-//! A pane's run: held before planning, planned on a real PDF, its gate and
-//! the known cards' trail.
+//! A pane's run: held before planning, planned on a real PDF from the page
+//! it turned on at, its gate and the known cards' trail.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use std::sync::Arc;
@@ -32,6 +32,7 @@ fn sheet(document: &Arc<Document>, saved: Option<usize>, current: usize) -> Shee
         inline: true,
         size: size(3),
         saved,
+        start: None,
         current,
     }
 }
@@ -40,7 +41,7 @@ fn sheet(document: &Arc<Document>, saved: Option<usize>, current: usize) -> Shee
 fn planned(unlocked: usize) -> Run {
     let mut run = Run::new(Mode::Proactive, None, 0);
     run.sizes = vec![400; 9];
-    run.batches = plan(&run.sizes, size(3));
+    run.batches = plan_from(&run.sizes, size(3), 0);
     run.layout = Some((None, 9));
     run.size = Some(size(3));
     run.unlocked = unlocked;
@@ -79,8 +80,26 @@ fn a_fresh_book_locks_its_first_batch_and_a_finished_one_nothing() {
 
     let mut done = Run::new(Mode::Proactive, None, 0);
     assert_eq!(done.plan(sheet(&doc, Some(PAGES), 0)), Ok(true));
-    assert_eq!(done.gate(), None);
-    assert!(done.gate_batch().is_none());
+    assert_eq!(
+        done.gate(),
+        Some(0),
+        "turning on starts over where it stands"
+    );
+    done.restale();
+    assert_eq!(done.plan(sheet(&doc, Some(PAGES), 0)), Ok(true));
+    assert_eq!(done.gate(), None, "a saved gate past the end unlocks all");
+}
+
+#[test]
+fn the_first_batch_starts_where_the_mode_turned_on() {
+    let doc = document();
+    let mut run = Run::new(Mode::Proactive, None, 2);
+    assert_eq!(run.plan(sheet(&doc, None, 2)), Ok(true));
+    assert_eq!(run.start, 2);
+    assert_eq!(run.gate(), Some(2));
+    assert_eq!(run.gate_batch().map(|b| b.from), Some(2));
+    assert_eq!(run.back(false), Some(1), "Read back shows the page before");
+    assert_eq!(run.back(true), None, "a lock keeps the pages before shut");
 }
 
 #[test]
@@ -88,12 +107,12 @@ fn the_gate_follows_unlocking_and_the_batch_before_it_reads_again() {
     let mut run = planned(3);
     assert_eq!(run.gate(), Some(3));
     assert_eq!(run.gate_batch().map(|b| (b.from, b.to)), Some((3, 5)));
-    assert_eq!(run.previous().map(|b| (b.from, b.to)), Some((0, 2)));
+    assert_eq!(run.back(true), Some(2));
     run.unlock_through(5);
     assert_eq!(run.gate(), Some(6));
     run.unlock_through(8);
     assert_eq!(run.gate(), None);
-    assert!(planned(0).previous().is_none());
+    assert!(planned(0).back(false).is_none());
 }
 
 #[test]

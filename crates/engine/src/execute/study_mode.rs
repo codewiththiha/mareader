@@ -43,11 +43,11 @@ pub(super) fn run(session: &mut Session, action: Action, now: f64) -> Done {
             session.study_show(pane, gate, now);
         }
         Action::ReadPrevious(pane) => {
-            let previous = session.study_mode().run(pane).and_then(|r| r.previous());
-            let Some(from) = previous.map(|b| b.from) else {
-                return Done::refused("Nothing is unlocked yet.".to_owned());
+            let back = session.study_mode().run(pane).and_then(|r| r.back(false));
+            let Some(page) = back else {
+                return Done::refused("Nothing comes before these pages.".to_owned());
             };
-            session.study_show(pane, from, now);
+            session.study_show(pane, page, now);
             say(session, Toast::info(mode::READ_BACK));
         }
         Action::Recall { pane, ask } => {
