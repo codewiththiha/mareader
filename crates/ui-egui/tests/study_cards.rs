@@ -9,7 +9,8 @@ use egui_kittest::kittest::Queryable as _;
 use mareader_engine::study_mode::{Ahead, DeckState};
 use mareader_study::mode::Via;
 use mareader_ui_egui::MareaderApp;
-use mareader_ui_egui::study_mode::deck::{REVEAL, START};
+use mareader_ui_egui::study_mode::deck::START;
+use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
 use mareader_ui_egui::study_mode::pill::OPEN;
 use mareader_ui_egui::study_mode::waiting::{DICTIONARY, RETRY, SLOW, stage};
 use mareader_workspace::PaneId;
@@ -116,10 +117,10 @@ fn decks_made_ahead_open_at_once_and_the_pill_leads_to_them() {
         "the AI writes"
     );
     h.run_steps(2);
-    h.get_by_label(REVEAL).click();
-    h.run_steps(2);
+    h.get_by_label_contains(TURN_HINT).click();
+    h.run_steps(30);
     assert!(
-        h.query_by_label("Like: sample").is_some(),
+        h.query_by_label_contains("Like: sample").is_some(),
         "the back has synonyms"
     );
     let batches = h

@@ -81,20 +81,60 @@ pub fn bar(look: &HighlightSettings, studying: bool) -> HighlightSettings {
 }
 
 /// One pane's place in its deck: the card shown, and whether it is turned.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Cursor {
     /// The batch it follows, by its first and last page.
     batch: (usize, usize),
     pub at: usize,
-    pub revealed: bool,
+    pub turned: bool,
+    /// The cards in the order shown, by their place in the deck.
+    pub order: Vec<usize>,
 }
 
 impl Cursor {
-    /// Moves `by` cards, staying within `count`; the next card starts hidden.
+    /// Moves `by` cards, staying within `count`; the next card starts face up.
     pub fn step(&mut self, by: isize, count: usize) {
         let last = count.saturating_sub(1);
         self.at = self.at.saturating_add_signed(by).min(last);
-        self.revealed = false;
+        self.turned = false;
+    }
+
+    /// Keeps the order to a deck of `count`, in its own order if it changed.
+    pub fn fit(&mut self, count: usize) {
+        if self.order.len() != count {
+            self.order = (0..count).collect();
+        }
+        self.at = self.at.min(count.saturating_sub(1));
+    }
+
+    /// The deck's place of the card shown.
+    pub fn card(&self) -> Option<usize> {
+        self.order.get(self.at).copied()
+    }
+
+    /// Forgets the card at deck place `card`, as the engine drops it.
+    pub fn drop_card(&mut self, card: usize) {
+        self.order.retain(|&i| i != card);
+        for i in &mut self.order {
+            if *i > card {
+                *i -= 1;
+            }
+        }
+        self.turned = false;
+    }
+
+    /// Shows the cards in a new order, from the first.
+    pub fn shuffle(&mut self, seed: u64) {
+        let mut state = seed | 1;
+        for i in (1..self.order.len()).rev() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let j = (state % (i as u64 + 1)) as usize;
+            self.order.swap(i, j);
+        }
+        self.at = 0;
+        self.turned = false;
     }
 }
 
@@ -164,7 +204,7 @@ impl StudyModeUi {
         }
         if self.reveal_shot && matches!(pane.run.deck, DeckState::Open(_)) {
             self.reveal_shot = false;
-            cursor.revealed = true;
+            cursor.turned = true;
         }
         gate::cover(ctx, pane.id, pane.rect, |ui| {
             deck::show(ui, pane, cursor, out);
@@ -215,16 +255,35 @@ mod tests {
     }
 
     #[test]
-    fn a_cursor_stays_on_the_deck_and_hides_each_new_card() {
+    fn a_cursor_stays_on_the_deck_and_shows_each_new_card_face_up() {
         let mut cursor = Cursor {
-            revealed: true,
+            turned: true,
             ..Cursor::default()
         };
         cursor.step(-1, 3);
-        assert_eq!((cursor.at, cursor.revealed), (0, false));
+        assert_eq!((cursor.at, cursor.turned), (0, false));
         cursor.step(5, 3);
         assert_eq!(cursor.at, 2);
         cursor.step(1, 0);
         assert_eq!(cursor.at, 0);
+    }
+
+    #[test]
+    fn a_shuffle_keeps_every_card_and_a_known_one_leaves() {
+        let mut cursor = Cursor::default();
+        cursor.fit(5);
+        cursor.at = 3;
+        cursor.shuffle(42);
+        let mut sorted = cursor.order.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, [0, 1, 2, 3, 4]);
+        assert_eq!(cursor.at, 0);
+        let first = cursor.card();
+        cursor.drop_card(2);
+        assert_eq!(cursor.order.len(), 4);
+        assert!(cursor.order.iter().all(|&i| i < 4));
+        if first != Some(2) {
+            assert_eq!(cursor.card(), first.map(|c| if c > 2 { c - 1 } else { c }));
+        }
     }
 }

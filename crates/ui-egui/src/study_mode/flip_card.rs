@@ -149,87 +149,20 @@ pub fn show(
     let mut s: State = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
     let dt = ui.input(|i| i.stable_dt).min(0.1);
     let (rect, resp) = ui.allocate_exact_size(size + vec2(0.0, UNDER), Sense::click_and_drag());
-    let card = Rect::from_min_size(rect.min, size);
     let moving = motion::secs(&ctx, 1.0) > 0.0;
-    if let Some(from) = s.shown.filter(|&from| from != at) {
-        let dir = if at > from { -1.0 } else { 1.0 };
-        let fly = Fly {
-            from,
-            turn: s.turn,
-            dir,
-            dx: s.dx,
-            t: 0.0,
-        };
-        s.fly = moving.then_some(fly);
-        s.dx = 0.0;
-        s.turn = f32::from(u8::from(turned));
-    }
+    s.follow(at, turned, moving);
     let target = f32::from(u8::from(turned));
     s.turn = match moving {
         true => toward(s.turn, target, dt / TURN),
         false => target,
     };
-    let mut gesture = None;
-    if resp.dragged() {
-        s.dx += resp.drag_delta().x;
-    }
-    if resp.drag_stopped() {
-        let vx = ui.input(|i| i.pointer.velocity().x);
-        let step = settle(s.dx, vx, size.x, at, count);
-        if step != 0 {
-            gesture = Some(Gesture::Step(step));
-        }
-    }
-    if resp.clicked() {
-        gesture = Some(Gesture::Turn);
-    }
-    if !resp.dragged() && !matches!(gesture, Some(Gesture::Step(_))) {
-        s.dx = spring(s.dx, dt, moving);
-    }
+    let gesture = s.handle(ui, &resp, (at, count), dt, moving);
     s.fly = s.fly.and_then(|mut fly| {
         fly.t += dt / FLY;
         (fly.t < 1.0).then_some(fly)
     });
-    let t = Tokens::get(&ctx);
-    let mut cards = Cards {
-        painter: ui.painter().clone(),
-        tess: tessellator(&ctx),
-        size,
-        depth: size.x * DEPTH,
-        t,
-    };
-    let rise = s.fly.map_or(1.0, |fly| ease(fly.t));
-    let under = count.saturating_sub(at.saturating_add(1)).min(2);
-    for i in (1..=under).rev() {
-        cards.blank(card, i as f32 + 1.0 - rise);
-    }
-    let dx = band(s.dx, at, count);
-    if let Some(faces) = face(at) {
-        let lift = 1.0 + 0.02 * (dx.abs() / 40.0).min(1.0);
-        let level = 1.0 - rise;
-        let pose = Pose {
-            center: card.center() + vec2(dx, level * peek_drop(size.y, 1.0)),
-            angle: ease(s.turn) * PI,
-            tilt: dx / size.x * TILT.to_radians(),
-            scale: (1.0 - SHRINK * level) * lift,
-            depth: cards.depth,
-        };
-        cards.card(&faces, pose, 1.0);
-    }
-    if let Some(fly) = s.fly
-        && let Some(faces) = face(fly.from)
-    {
-        let e = ease(fly.t);
-        let off = fly.dx + (fly.dir * size.x * 1.3 - fly.dx) * e;
-        let pose = Pose {
-            center: card.center() + vec2(off, 0.0),
-            angle: ease(fly.turn) * PI,
-            tilt: off / size.x * TILT.to_radians(),
-            scale: 1.0,
-            depth: cards.depth,
-        };
-        cards.card(&faces, pose, 1.0 - e);
-    }
+    let card = Rect::from_min_size(rect.min, size);
+    s.draw(ui, card, (at, count), face);
     if s.turn != target || s.dx != 0.0 || s.fly.is_some() {
         ctx.request_repaint();
     }
@@ -244,6 +177,104 @@ pub fn show(
     s.shown = Some(at);
     ctx.data_mut(|d| d.insert_temp(id, s));
     gesture
+}
+
+impl State {
+    /// A new card shown sends the last one flying, toward where it left.
+    fn follow(&mut self, at: usize, turned: bool, moving: bool) {
+        let Some(from) = self.shown.filter(|&from| from != at) else {
+            return;
+        };
+        let fly = Fly {
+            from,
+            turn: self.turn,
+            dir: if at > from { -1.0 } else { 1.0 },
+            dx: self.dx,
+            t: 0.0,
+        };
+        self.fly = moving.then_some(fly);
+        self.dx = 0.0;
+        self.turn = f32::from(u8::from(turned));
+    }
+
+    /// A click turns the card, a drag let go of far enough moves on.
+    fn handle(
+        &mut self,
+        ui: &Ui,
+        resp: &egui::Response,
+        (at, count): (usize, usize),
+        dt: f32,
+        moving: bool,
+    ) -> Option<Gesture> {
+        let mut gesture = None;
+        if resp.dragged() {
+            self.dx += resp.drag_delta().x;
+        }
+        if resp.drag_stopped() {
+            let vx = ui.input(|i| i.pointer.velocity().x);
+            let step = settle(self.dx, vx, resp.rect.width(), at, count);
+            if step != 0 {
+                gesture = Some(Gesture::Step(step));
+            }
+        }
+        if resp.clicked() {
+            gesture = Some(Gesture::Turn);
+        }
+        if !resp.dragged() && !matches!(gesture, Some(Gesture::Step(_))) {
+            self.dx = spring(self.dx, dt, moving);
+        }
+        gesture
+    }
+
+    /// The cards beneath, the top one, and the one flying off over it.
+    fn draw(
+        &self,
+        ui: &Ui,
+        card: Rect,
+        (at, count): (usize, usize),
+        face: &dyn Fn(usize) -> Option<Faces>,
+    ) {
+        let size = card.size();
+        let mut cards = Cards {
+            painter: ui.painter().clone(),
+            tess: tessellator(ui.ctx()),
+            size,
+            depth: size.x * DEPTH,
+            t: Tokens::get(ui.ctx()),
+        };
+        let rise = self.fly.map_or(1.0, |fly| ease(fly.t));
+        let under = count.saturating_sub(at.saturating_add(1)).min(2);
+        for i in (1..=under).rev() {
+            cards.blank(card, i as f32 + 1.0 - rise);
+        }
+        let dx = band(self.dx, at, count);
+        if let Some(faces) = face(at) {
+            let lift = 1.0 + 0.02 * (dx.abs() / 40.0).min(1.0);
+            let level = 1.0 - rise;
+            let pose = Pose {
+                center: card.center() + vec2(dx, level * peek_drop(size.y, 1.0)),
+                angle: ease(self.turn) * PI,
+                tilt: dx / size.x * TILT.to_radians(),
+                scale: (1.0 - SHRINK * level) * lift,
+                depth: cards.depth,
+            };
+            cards.card(&faces, pose, 1.0);
+        }
+        if let Some(fly) = self.fly
+            && let Some(faces) = face(fly.from)
+        {
+            let e = ease(fly.t);
+            let off = fly.dx + (fly.dir * size.x * 1.3 - fly.dx) * e;
+            let pose = Pose {
+                center: card.center() + vec2(off, 0.0),
+                angle: ease(fly.turn) * PI,
+                tilt: off / size.x * TILT.to_radians(),
+                scale: 1.0,
+                depth: cards.depth,
+            };
+            cards.card(&faces, pose, 1.0 - e);
+        }
+    }
 }
 
 fn toward(from: f32, to: f32, by: f32) -> f32 {
@@ -435,67 +466,5 @@ fn centred(top: Pos2, galley: Arc<Galley>, color: Color32) -> Shape {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn pose(angle: f32) -> Pose {
-        Pose {
-            center: pos2(100.0, 100.0),
-            angle,
-            tilt: 0.0,
-            scale: 1.0,
-            depth: 1200.0,
-        }
-    }
-
-    #[test]
-    fn a_card_facing_the_reader_keeps_its_size() {
-        assert_eq!(pose(0.0).place(vec2(50.0, -30.0)), pos2(150.0, 70.0));
-    }
-
-    #[test]
-    fn a_card_on_its_edge_has_no_width() {
-        let edge = pose(PI / 2.0);
-        let left = edge.place(vec2(-200.0, 0.0));
-        let right = edge.place(vec2(200.0, 0.0));
-        assert!((right.x - left.x).abs() < 0.01, "{left:?} {right:?}");
-    }
-
-    #[test]
-    fn a_turning_card_shrinks_its_far_edge() {
-        let turned = pose(0.4);
-        let far = turned.place(vec2(200.0, 100.0)).y - 100.0;
-        let near = turned.place(vec2(-200.0, 100.0)).y - 100.0;
-        assert!(far < near, "far {far} near {near}");
-    }
-
-    #[test]
-    fn a_swipe_steps_past_the_threshold_or_on_a_flick() {
-        assert_eq!(settle(-150.0, 0.0, 400.0, 0, 3), 1);
-        assert_eq!(settle(150.0, 0.0, 400.0, 1, 3), -1);
-        assert_eq!(settle(-40.0, 0.0, 400.0, 0, 3), 0);
-        assert_eq!(settle(-40.0, -900.0, 400.0, 0, 3), 1);
-        assert_eq!(settle(-40.0, 900.0, 400.0, 0, 3), 0, "a flick back");
-    }
-
-    #[test]
-    fn a_swipe_never_wraps_past_either_end() {
-        assert_eq!(settle(150.0, 0.0, 400.0, 0, 3), 0);
-        assert_eq!(settle(-150.0, 0.0, 400.0, 2, 3), 0);
-        assert_eq!(band(100.0, 0, 3), 30.0);
-        assert_eq!(band(-100.0, 0, 3), -100.0);
-        assert_eq!(band(-100.0, 2, 3), -30.0);
-    }
-
-    #[test]
-    fn the_back_is_heard_once_turned() {
-        let faces = Faces {
-            word: "gaunt".into(),
-            meaning: "very thin".into(),
-            class: "adjective".into(),
-            ..Faces::default()
-        };
-        assert_eq!(faces.label(false), format!("gaunt, {TURN_HINT}"));
-        assert_eq!(faces.label(true), "very thin · adjective");
-    }
-}
+#[path = "flip_card_tests.rs"]
+mod tests;

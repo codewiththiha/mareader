@@ -9,7 +9,8 @@ use egui_kittest::kittest::Queryable as _;
 use mareader_engine::study_mode::DeckState;
 use mareader_study::mode::Missing;
 use mareader_ui_egui::MareaderApp;
-use mareader_ui_egui::study_mode::deck::{KNOWN, REVEAL, START};
+use mareader_ui_egui::study_mode::deck::{KNOWN, START};
+use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
 use mareader_ui_egui::study_mode::menu::KEEPS;
 use mareader_workspace::PaneId;
 
@@ -128,10 +129,14 @@ fn the_gate_holds_the_view_until_the_deck_is_studied() -> Out {
     assert_eq!(current, Some(0), "the strip stops at the gate page");
     assert!(wait(&mut h, |h| deck_open(h, pane)), "the deck opens");
     assert!(cards(&h, pane) > 0, "quick is a new word");
+    assert!(
+        h.query_by_label_contains(TURN_HINT).is_some(),
+        "the card shows its front"
+    );
     h.key_press(egui::Key::Space);
     h.run();
     assert!(
-        h.query_by_label(REVEAL).is_none(),
+        h.query_by_label_contains(TURN_HINT).is_none(),
         "Space turns the card over"
     );
     h.get_by_label(KNOWN).click();

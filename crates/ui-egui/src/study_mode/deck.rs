@@ -1,33 +1,36 @@
-//! The deck at a pane's gate: the batch's new words, one card at a time.
+//! The deck at a pane's gate: the batch's new words as flash cards.
 //!
-//! A card shows its word, its band and the sentence it came from; its
-//! meaning stays hidden until revealed. Start unlocks the batch once the
-//! time floor runs out (or at once, with the floor off). Keys: Space reveals,
-//! K marks the word known, the arrows step between cards.
+//! A card's front holds the word alone and its band; turned over, it gives
+//! the meaning and the word class, with the AI's synonyms and example. A
+//! click or Space turns it, a drag or the arrows move on, K marks the word
+//! known. Start unlocks the batch once the time floor runs out.
 
-use egui::{Align, Frame, Key, Layout, Margin, RichText, Sense, Stroke, Ui, Vec2, vec2};
+use egui::{Align, Frame, Id, Key, Layout, Margin, RichText, Sense, Stroke, Ui, Vec2, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, DeckState, Open, Shown};
-use mareader_study::mode::{Batch, Card, Via};
+use mareader_study::mode::Batch;
 use mareader_workspace::PaneId;
 
+use super::flip_card::{self, Faces, Gesture};
 use super::{Cursor, Pane, waiting};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 
-/// The reveal button's label, for screen readers and tests.
-pub const REVEAL: &str = "Think of the meaning, then reveal";
 pub const KNOWN: &str = "I already know this";
 pub const START: &str = "Start reading";
+pub const SHUFFLE: &str = "Shuffle";
+const NO_MEANING: &str = "No meaning was found for this word.";
 /// The deck's widest; a narrow pane takes it in.
 const WIDTH: f32 = 440.0;
+/// A card's height to its width.
+const ASPECT: f32 = 0.68;
 
 /// A key the deck answers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Press {
-    Reveal,
+    Turn,
     Known,
     Step(isize),
 }
@@ -37,7 +40,8 @@ impl Press {
     pub fn read(input: &mut egui::InputState) -> Option<Self> {
         let none = egui::Modifiers::NONE;
         let keys = [
-            (Key::Space, Self::Reveal),
+            (Key::Space, Self::Turn),
+            (Key::Enter, Self::Turn),
             (Key::K, Self::Known),
             (Key::ArrowLeft, Self::Step(-1)),
             (Key::ArrowRight, Self::Step(1)),
@@ -54,20 +58,23 @@ impl Press {
 /// Acts on `press` in `pane`'s open deck.
 pub fn press(cursor: &mut Cursor, open: &Open, pane: PaneId, press: Press, out: &mut Commands) {
     let count = open.cards.len();
+    cursor.fit(count);
     match press {
-        Press::Reveal => cursor.revealed = count > 0,
+        Press::Turn => cursor.turned = count > 0 && !cursor.turned,
         Press::Step(by) => cursor.step(by, count),
         Press::Known => {
-            if let Some(shown) = open.cards.get(cursor.at) {
+            if let Some(shown) = cursor.card().and_then(|i| open.cards.get(i)) {
                 known(pane, shown, cursor, out);
             }
         }
     }
 }
 
-/// Marks `shown` known; the card after it takes its place, hidden.
+/// Marks `shown` known; the card after it takes its place, face up.
 fn known(pane: PaneId, shown: &Shown, cursor: &mut Cursor, out: &mut Commands) {
-    cursor.revealed = false;
+    if let Some(card) = cursor.card() {
+        cursor.drop_card(card);
+    }
     let key = shown.card.key.clone();
     send(out, Action::Known { pane, key });
 }
@@ -78,10 +85,35 @@ pub(super) fn send(out: &mut Commands, action: Action) {
 
 /// The deck in the middle of `ui`, which covers the pane.
 pub fn show(ui: &mut Ui, pane: &Pane<'_>, cursor: &mut Cursor, out: &mut Commands) {
-    let t = Tokens::get(ui.ctx());
     let room = ui.max_rect();
     let width = WIDTH.min(room.width());
-    let frame = Frame::new()
+    let at = room.center_top() + vec2(-width / 2.0, (room.height() * 0.08).min(48.0));
+    let builder = egui::UiBuilder::new()
+        .max_rect(egui::Rect::from_min_size(at, vec2(width, room.height())))
+        .layout(Layout::top_down(Align::Center));
+    ui.scope_builder(builder, |ui| {
+        ui.set_width(width);
+        match &pane.run.deck {
+            DeckState::Open(open) => deck(ui, pane, open, cursor, out),
+            DeckState::Failed { batch, why } => framed(ui, |ui| {
+                waiting::failed(ui, pane, &batch.label(), why, out);
+            }),
+            DeckState::Making { batch, job } => framed(ui, |ui| {
+                waiting::waiting(ui, pane, &batch.label(), Some(job), out);
+            }),
+            DeckState::None => framed(ui, |ui| {
+                let range = pane.run.gate_batch().map_or_else(String::new, Batch::label);
+                waiting::waiting(ui, pane, &range, None, out);
+            }),
+        }
+    });
+}
+
+/// The waiting and error cards' paper.
+fn framed(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
+    let t = Tokens::get(ui.ctx());
+    let width = ui.available_width();
+    Frame::new()
         .fill(t.surface)
         .stroke(Stroke::new(1.0, t.line))
         .corner_radius(t.radius_lg)
@@ -91,52 +123,39 @@ pub fn show(ui: &mut Ui, pane: &Pane<'_>, cursor: &mut Cursor, out: &mut Command
             blur: 24,
             spread: 0,
             color: t.shadow,
-        });
-    let at = room.center_top() + vec2(-width / 2.0, (room.height() * 0.12).min(64.0));
-    let builder = egui::UiBuilder::new()
-        .max_rect(egui::Rect::from_min_size(at, vec2(width, room.height())))
-        .layout(Layout::top_down(Align::Min));
-    ui.scope_builder(builder, |ui| {
-        frame.show(ui, |ui| {
+        })
+        .show(ui, |ui| {
             ui.set_width(width - 36.0);
-            match &pane.run.deck {
-                DeckState::Open(open) => deck(ui, pane, open, cursor, out),
-                DeckState::Failed { batch, why } => {
-                    waiting::failed(ui, pane, &batch.label(), why, out);
-                }
-                DeckState::Making { batch, job } => {
-                    waiting::waiting(ui, pane, &batch.label(), Some(job), out);
-                }
-                DeckState::None => {
-                    let range = pane.run.gate_batch().map_or_else(String::new, Batch::label);
-                    waiting::waiting(ui, pane, &range, None, out);
-                }
-            }
+            ui.with_layout(Layout::top_down(Align::Min), content);
         });
-    });
 }
 
 fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     let left = open.floor.left(pane.now);
-    header(ui, pane, open, left);
-    ui.add_space(t.gap * 1.5);
     let count = open.cards.len();
-    cursor.at = cursor.at.min(count.saturating_sub(1));
-    match open.cards.get(cursor.at) {
-        Some(shown) => card(ui, pane.id, shown, cursor, out),
-        None => {
-            let all = "You know every word in these pages.";
-            ui.label(RichText::new(all).font(theme::serif(16.0)));
+    cursor.fit(count);
+    header(ui, pane, open, left, cursor);
+    ui.add_space(t.gap * 1.5);
+    if count == 0 {
+        let all = "You know every word in these pages.";
+        ui.label(RichText::new(all).font(theme::serif(16.0)));
+    } else {
+        let width = ui.available_width();
+        let size = vec2(width, (width * ASPECT).min(300.0));
+        let order = cursor.order.clone();
+        let face = |i: usize| order.get(i).and_then(|&c| open.cards.get(c)).map(faces);
+        let id = Id::new(("study-card", pane.id, cursor.batch));
+        let shown = (cursor.at, count, cursor.turned);
+        match flip_card::show(ui, id, size, shown, &face) {
+            Some(Gesture::Turn) => cursor.turned = !cursor.turned,
+            Some(Gesture::Step(by)) => cursor.step(by, count),
+            None => {}
         }
-    }
-    if count > 1 {
         steps(ui, cursor, count);
     }
     ui.add_space(t.gap);
-    widgets::menu_rule(ui);
-    let note = "Words you mark known are skipped in every book, from now on.";
-    ui.label(RichText::new(note).size(t.text_small).color(t.muted));
+    marks(ui, pane, open, cursor, out);
     ui.add_space(t.gap);
     footer(ui, pane, open, left, out);
     if left > 0.0 {
@@ -145,39 +164,70 @@ fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mu
     }
 }
 
-fn header(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64) {
-    let t = Tokens::get(ui.ctx());
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            let of = pane.run.batches.len();
-            let index = open.batch.index.saturating_add(1);
-            let via = match open.via {
-                Via::Ai => "AI",
-                Via::Dictionary => "Dictionary",
-            };
-            let title = format!("Batch {index} of {of} · {} · {via}", open.batch.label());
-            ui.label(RichText::new(title).size(t.text_small).color(t.muted));
-            let n = open.cards.len();
-            let words = if n == 1 { "word" } else { "words" };
-            let lead = format!("{n} new {words} before you read on");
-            ui.label(RichText::new(lead).font(theme::medium(16.0)));
-        });
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ring(ui, open.floor.progress(pane.now), left, &t);
-        });
-    });
+/// A card's faces: the word and band, then what it means.
+pub fn faces(shown: &Shown) -> Faces {
+    let card = &shown.card;
+    let meaning = match shown.meaning.is_empty() {
+        true => NO_MEANING,
+        false => shown.meaning.as_str(),
+    };
+    let synonyms = match shown.synonyms.is_empty() {
+        true => String::new(),
+        false => format!("Like: {}", shown.synonyms.join(", ")),
+    };
+    Faces {
+        word: card.key.lemma.clone(),
+        badge: mareader_cefr::label(card.band).to_owned(),
+        meaning: meaning.to_owned(),
+        class: card.key.pos.map_or("", |p| p.name()).to_owned(),
+        synonyms,
+        usage: shown.usage.clone(),
+    }
 }
 
-/// The time floor as a ring filling up, with what is left inside.
-fn ring(ui: &mut Ui, progress: f32, left: f64, t: &Tokens) {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
-    let label = clock(left);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &label));
+/// The capsule over the cards: the pages, the count, the time and shuffle.
+fn header(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64, cursor: &mut Cursor) {
+    let t = Tokens::get(ui.ctx());
+    let width = ui.available_width();
+    Frame::new()
+        .fill(t.surface)
+        .stroke(Stroke::new(1.0, t.line))
+        .corner_radius(24.0)
+        .inner_margin(Margin::symmetric(14, 8))
+        .shadow(egui::Shadow {
+            offset: [0, 4],
+            blur: 14,
+            spread: 0,
+            color: t.shadow,
+        })
+        .show(ui, |ui| {
+            ui.set_width(width - 28.0);
+            ui.horizontal(|ui| {
+                ring(ui, open.floor.progress(pane.now), &t);
+                let lead = format!("Before {}", open.batch.label());
+                ui.label(RichText::new(lead).font(theme::medium(15.0)));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if open.cards.len() > 1 && shuffle(ui, &t).clicked() {
+                        let seed = ui.input(|i| i.time).to_bits();
+                        cursor.shuffle(seed);
+                    }
+                    let clock = RichText::new(clock(left)).font(theme::medium(15.0));
+                    ui.label(clock);
+                    let n = open.cards.len().to_string();
+                    ui.label(RichText::new(n).size(15.0).color(t.muted));
+                });
+            });
+        });
+}
+
+/// The time floor as a small ring filling up.
+fn ring(ui: &mut Ui, progress: f32, t: &Tokens) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
     let c = rect.center();
-    let r = 17.0;
+    let r = 7.0;
     let painter = ui.painter();
-    painter.circle_stroke(c, r, Stroke::new(3.0, t.track));
-    let steps = 48;
+    painter.circle_stroke(c, r, Stroke::new(2.5, t.track));
+    let steps = 40;
     let done = (progress.clamp(0.0, 1.0) * steps as f32).round() as usize;
     let at = |i: usize| {
         let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * i as f32 / steps as f32;
@@ -185,10 +235,27 @@ fn ring(ui: &mut Ui, progress: f32, left: f64, t: &Tokens) {
     };
     let arc: Vec<_> = (0..=done).map(at).collect();
     if arc.len() > 1 {
-        painter.add(egui::Shape::line(arc, Stroke::new(3.0, t.accent)));
+        painter.add(egui::Shape::line(arc, Stroke::new(2.5, t.accent)));
     }
-    let font = theme::medium(10.5);
-    painter.text(c, egui::Align2::CENTER_CENTER, label, font, t.ink);
+}
+
+/// Two crossing arrows: the order shuffled.
+fn shuffle(ui: &mut Ui, t: &Tokens) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+    let ink = if resp.hovered() { t.ink } else { t.muted };
+    let stroke = Stroke::new(1.6, ink);
+    let p = |x: f32, y: f32| rect.center() + vec2(x, y);
+    let painter = ui.painter();
+    let lanes = [(-5.0, 5.0), (5.0, -5.0)];
+    for (from, to) in lanes {
+        let lane = vec![p(-8.0, from), p(-3.0, from), p(3.0, to), p(8.0, to)];
+        painter.add(egui::Shape::line(lane, stroke));
+        painter.line_segment([p(8.0, to), p(5.0, to - 3.0)], stroke);
+        painter.line_segment([p(8.0, to), p(5.0, to + 3.0)], stroke);
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, SHUFFLE));
+    widgets::tip(&resp, SHUFFLE, None);
+    resp
 }
 
 /// Seconds as m:ss, rounded up so 0:00 shows only once done.
@@ -197,116 +264,72 @@ pub fn clock(secs: f64) -> String {
     format!("{}:{:02}", whole / 60, whole % 60)
 }
 
-fn card(ui: &mut Ui, pane: PaneId, shown: &Shown, cursor: &mut Cursor, out: &mut Commands) {
-    let t = Tokens::get(ui.ctx());
-    let card = &shown.card;
-    Frame::new()
-        .fill(t.card)
-        .corner_radius(t.radius)
-        .inner_margin(Margin::same(14))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(&card.key.lemma).font(theme::serif(26.0)));
-                let pos = card.key.pos.map_or("", |p| p.name());
-                let band = mareader_cefr::label(card.band);
-                let tags = [pos, band].into_iter().filter(|s| !s.is_empty());
-                let tags = tags.collect::<Vec<_>>().join(" · ");
-                ui.label(RichText::new(tags).size(t.text_small).color(t.muted));
-            });
-            ui.label(RichText::new(seen(card)).size(t.text_small).color(t.muted));
-            ui.add_space(t.gap);
-            let from = RichText::new("From the book").size(t.text_small);
-            ui.label(from.color(t.muted));
-            let sentence = RichText::new(&card.sentence).italics();
-            ui.label(sentence.font(theme::serif(14.0)));
-            ui.add_space(t.gap);
-            if cursor.revealed {
-                back(ui, shown, &t);
-            } else {
-                let reveal = ui.add(egui::Button::new(REVEAL).min_size(vec2(0.0, 28.0)));
-                widgets::tip(&reveal, REVEAL, Some("Space"));
-                if reveal.clicked() {
-                    cursor.revealed = true;
-                }
-            }
-        });
-    ui.add_space(t.gap);
-    let mark = ui.add(egui::Button::new(KNOWN).frame_when_inactive(false));
-    widgets::tip(&mark, KNOWN, Some("K"));
-    if mark.clicked() {
-        known(pane, shown, cursor, out);
-    }
-}
-
-/// The card's back: its meaning, and the AI's synonyms and example.
-fn back(ui: &mut Ui, shown: &Shown, t: &Tokens) {
-    let meaning = match shown.meaning.is_empty() {
-        true => "No meaning was found for this word.",
-        false => shown.meaning.as_str(),
-    };
-    ui.label(RichText::new(meaning).size(t.text).color(t.ink));
-    if !shown.synonyms.is_empty() {
-        let like = format!("Like: {}", shown.synonyms.join(", "));
-        ui.label(RichText::new(like).size(t.text_small).color(t.muted));
-    }
-    if !shown.usage.is_empty() {
-        let usage = RichText::new(&shown.usage).italics().size(t.text_small);
-        ui.label(usage.color(t.muted));
-    }
-}
-
-/// How often the word shows in the batch, and its other classes in the deck.
-pub fn seen(card: &Card) -> String {
-    let mut seen = format!("Appears {}×", card.count);
-    let also: Vec<&str> = card.also.iter().map(|pos| pos.name()).collect();
-    if !also.is_empty() {
-        seen.push_str(&format!(" · also as {}", also.join(", ")));
-    }
-    seen
-}
-
-/// Back and forward between cards, and where this one sits.
+/// Back and forward between cards, where this one sits, and how to move.
 fn steps(ui: &mut Ui, cursor: &mut Cursor, count: usize) {
     let t = Tokens::get(ui.ctx());
+    let at = cursor.at.saturating_add(1);
+    let said = format!("{at} of {count} · drag or swipe, press to turn");
+    let text = RichText::new(said).size(t.text_small).color(t.muted);
+    let font = egui::FontId::proportional(t.text_small);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.text().to_owned(), font, t.muted);
+    let wide = galley.rect.width() + 2.0 * 24.0 + 2.0 * ui.spacing().item_spacing.x;
     ui.horizontal(|ui| {
-        if widgets::small_icon_button(ui, Icon::ChevronLeft, "Previous card").clicked() {
+        ui.add_space(((ui.available_width() - wide) / 2.0).max(0.0));
+        let first = cursor.at == 0;
+        let back = widgets::small_icon_button(ui, Icon::ChevronLeft, "Previous card");
+        if back.clicked() && !first {
             cursor.step(-1, count);
         }
-        let at = format!("{} / {count}", cursor.at.saturating_add(1));
-        ui.label(RichText::new(at).size(t.text_small).color(t.muted));
-        if widgets::small_icon_button(ui, Icon::ChevronRight, "Next card").clicked() {
+        ui.label(text);
+        let next = widgets::small_icon_button(ui, Icon::ChevronRight, "Next card");
+        if next.clicked() {
             cursor.step(1, count);
+        }
+    });
+}
+
+/// Know this word, take that back, or read the pages before.
+fn marks(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mut Commands) {
+    let t = Tokens::get(ui.ctx());
+    if let Some(shown) = cursor.card().and_then(|i| open.cards.get(i)) {
+        let label = RichText::new(KNOWN).size(t.text_small + 1.0);
+        let mark = ui.add(egui::Button::new(label).frame_when_inactive(false));
+        widgets::tip(&mark, "Skipped in every book from now on", Some("K"));
+        if mark.clicked() {
+            known(pane.id, shown, cursor, out);
+        }
+    }
+    let undo = open.can_undo();
+    let back = pane.run.previous().is_some();
+    if !undo && !back {
+        return;
+    }
+    ui.horizontal(|ui| {
+        let wide = 24.0 + 90.0;
+        ui.add_space(((ui.available_width() - wide) / 2.0).max(0.0));
+        if undo && widgets::small_icon_button(ui, Icon::Restore, "Undo known").clicked() {
+            send(out, Action::Undo(pane.id));
+        }
+        if back && ui.button("Read back").clicked() {
+            send(out, Action::ReadPrevious(pane.id));
         }
     });
 }
 
 fn footer(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
-    let id = pane.id;
-    ui.horizontal(|ui| {
-        if open.can_undo() {
-            let undo = widgets::small_icon_button(ui, Icon::Restore, "Undo known");
-            if undo.clicked() {
-                send(out, Action::Undo(id));
-            }
-        }
-        if pane.run.previous().is_some() && ui.button("Read back").clicked() {
-            send(out, Action::ReadPrevious(id));
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let locked = open.floor.locked(pane.strict, pane.now);
-            let label = match locked {
-                true => format!("{START} · {}", clock(left)),
-                false => START.to_owned(),
-            };
-            let start = widgets::primary_button(ui, None, &label, t.accent, &t);
-            let start = ui.add_enabled(!locked, start);
-            if start.clicked() {
-                send(out, Action::Start(id));
-            }
-        });
-    });
+    let locked = open.floor.locked(pane.strict, pane.now);
+    let label = match locked {
+        true => format!("{START} · {}", clock(left)),
+        false => START.to_owned(),
+    };
+    let start = widgets::primary_button(ui, None, &label, t.accent, &t);
+    let start = ui.add_enabled(!locked, start.min_size(vec2(160.0, 32.0)));
+    if start.clicked() {
+        send(out, Action::Start(pane.id));
+    }
 }
 
 #[cfg(test)]
