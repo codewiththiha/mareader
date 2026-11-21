@@ -1,7 +1,8 @@
 //! The corner toast while the AI writes a studying pane's cards.
 //!
-//! Folded, it is a ring at the pane's bottom left: spinning while the new
-//! words are found, filling as cards are written, red once writing failed.
+//! Folded, it is a ring in the pane's bottom left corner, rising over the
+//! page bar while that is up: spinning while the new words are found,
+//! filling as cards are written, red once writing failed.
 //! A hover widens it to say so in words. Dictionary cards come at once, so
 //! they never show it; a deck finished shows *Next cards ready* a moment.
 
@@ -127,7 +128,12 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, (range, status): Work, alpha: f32) {
     let full = SIDE + galley.rect.width() + 22.0;
     let room = (pane.rect.width() - 2.0 * INSET).max(SIDE);
     let width = (SIDE + (full - SIDE) * open).min(room);
-    let bottom = pane.rect.bottom() - crate::page_bar::BAR_H - LIFT;
+    let lift = match pane.bar {
+        true => crate::page_bar::BAR_H + LIFT,
+        false => INSET,
+    };
+    let lift = ctx.animate_value_with_time(id.with("lift"), lift, motion::secs(ctx, OPEN));
+    let bottom = pane.rect.bottom() - lift;
     let at = pos2(pane.rect.left() + INSET, bottom);
     let shown = z_order::area(ctx, Tier::PageCard, id)
         .pivot(Align2::LEFT_BOTTOM)

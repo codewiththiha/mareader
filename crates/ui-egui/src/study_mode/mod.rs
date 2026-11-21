@@ -182,6 +182,8 @@ pub struct Pane<'a> {
     pub current: usize,
     /// A dictionary pack can write the cards instead.
     pub dict: bool,
+    /// The pane's page bar is up; corner marks rise over it.
+    pub bar: bool,
 }
 
 /// The window's half of study mode: each deck's cursor and the keys' pane.

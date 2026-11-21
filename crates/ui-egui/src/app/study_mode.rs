@@ -39,6 +39,7 @@ impl MareaderApp {
                 now,
                 current: reading.current,
                 dict: self.session.study_have(id).dict,
+                bar: !self.ui.chromeless && self.ui.page_bars.get(&id).is_some_and(|b| b.shown()),
             };
             self.ui.study_mode.show(ctx, &pane, out);
             if let Some(recalling) = state.recalling(id) {
