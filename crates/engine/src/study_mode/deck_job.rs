@@ -166,6 +166,14 @@ impl DeckJob {
         }
     }
 
+    /// The cards written out of the deck's, while the writer works.
+    pub fn progress(&self) -> Option<(usize, usize)> {
+        match self.stage {
+            Stage::Writing { .. } => Some(written(&self.written)),
+            _ => None,
+        }
+    }
+
     /// Memorized words set aside, once the deck is drawn up.
     pub fn skipped(&self) -> usize {
         self.deck.skipped_known
@@ -458,5 +466,22 @@ impl DeckJob {
             via: self.via,
         });
         self.stage = Stage::Done;
+    }
+}
+
+/// The backs found so far, cached ones first, and all there are to find.
+fn written(backs: &[Option<Written>]) -> (usize, usize) {
+    (backs.iter().flatten().count(), backs.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_counts_the_backs_found() {
+        let back = Written::default();
+        assert_eq!(written(&[]), (0, 0));
+        assert_eq!(written(&[Some(back.clone()), None, Some(back)]), (2, 3));
     }
 }
