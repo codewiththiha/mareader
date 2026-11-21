@@ -1,8 +1,9 @@
-//! Space's rows under their headings: a list, or cards in a grid.
+//! Space's rows under their headings: a list on one sheet, or cards in a
+//! grid.
 
-use egui::{Align, Frame, Label, Layout, Margin, RichText, ScrollArea, Stroke, Ui};
+use egui::{Align, Frame, Label, Layout, Margin, RichText, Sense, Stroke, Ui, vec2};
 use mareader_engine::command::Command;
-use mareader_engine::space::{self, Action, Row, View};
+use mareader_engine::space::{self, Action, Row, Section, View};
 use mareader_library::{LearnedBy, WordStatus};
 
 use super::look;
@@ -13,8 +14,10 @@ use crate::widgets;
 
 const CARD_W: f32 = 236.0;
 /// A card's margins and stroke on both sides, around its `CARD_W`.
-const CARD_EDGES: f32 = 26.0;
-const GAP: f32 = 10.0;
+const CARD_EDGES: f32 = 34.0;
+const GAP: f32 = 12.0;
+/// The chevron's room at a row's left, which its second line keeps too.
+const LEAD: f32 = 30.0;
 const NONE_YET: &str = "Study some pages, and the words you meet land here.";
 const NONE_MATCH: &str = "Clear a filter, or study some pages to add more.";
 
@@ -24,7 +27,7 @@ pub(super) struct Shown<'a> {
     pub open: &'a mut Option<u128>,
 }
 
-/// Every section in a scroll area; an empty page says why.
+/// Every section, under its heading; an empty page says why.
 pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: &mut Commands) {
     if view.rows().next().is_none() {
         let (title, hint) = match view.total {
@@ -35,59 +38,95 @@ pub(super) fn show(ui: &mut Ui, view: &View, shown: Shown<'_>, t: &Tokens, out: 
         return;
     }
     let Shown { cards, open } = shown;
-    let scroll = ScrollArea::vertical()
-        .id_salt("space-rows")
-        .auto_shrink([false, false]);
-    let scrolled = scroll.show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 8.0;
-        for section in &view.sections {
-            if !section.label.is_empty() {
-                let n = section.rows.len();
-                look::caption(ui, &format!("{} · {n}", section.label), t);
-            }
-            match cards {
-                true => grid(ui, &section.rows, t, out),
-                false => list(ui, &section.rows, open, t, out),
-            }
+    ui.spacing_mut().item_spacing.y = 10.0;
+    for section in &view.sections {
+        heading(ui, section, t);
+        match cards {
+            true => grid(ui, &section.rows, t, out),
+            false => sheet(ui, &section.rows, open, t, out),
         }
-    });
-    widgets::scroll_fades(ui, &scrolled, t.paper);
-}
-
-fn list(ui: &mut Ui, rows: &[Row], open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
-    for row in rows {
-        ui.push_id(row.key, |ui| line(ui, row, open, t, out));
+        ui.add_space(8.0);
     }
 }
 
-/// One row: the word and its meaning, its date and actions, then badges.
-fn line(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
-    let is_open = *open == Some(row.key);
-    card_frame(t).show(ui, |ui| {
+/// A section's name and its count in a soft pill.
+fn heading(ui: &mut Ui, section: &Section, t: &Tokens) {
+    if section.label.is_empty() {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let name = RichText::new(&section.label).font(theme::semibold(t.text + 2.0));
+        ui.add(Label::new(name.color(t.ink)).selectable(false));
+        let n = section.rows.len().to_string();
+        look::tag(ui, &n, (t.muted, t.ink.gamma_multiply(0.07)), 10.0);
+    });
+}
+
+/// The rows on one raised sheet, a hairline between each.
+fn sheet(ui: &mut Ui, rows: &[Row], open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
+    let edge = Stroke::new(1.0, t.line);
+    let frame = Frame::new()
+        .fill(t.card)
+        .stroke(edge)
+        .corner_radius(look::ROUND);
+    frame.show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| head(ui, row, open, t, out));
-        ui.horizontal_wrapped(|ui| badges(ui, row, t));
-        if is_open {
-            sentence(ui, row, t);
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for (i, row) in rows.iter().enumerate() {
+            if i > 0 {
+                let size = vec2(ui.available_width(), 1.0);
+                let (rule, _) = ui.allocate_exact_size(size, Sense::hover());
+                ui.painter().hline(rule.x_range(), rule.center().y, edge);
+            }
+            ui.push_id(row.key, |ui| line(ui, row, open, t, out));
         }
     });
 }
 
-/// The word and its meaning at the left; its date, actions and chevron right.
-fn head(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
+/// One row: the word, its meaning, its date and badges; then its actions.
+fn line(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
     let is_open = *open == Some(row.key);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if chevron(ui, is_open, &row.lemma) {
-            *open = if is_open { None } else { Some(row.key) };
-        }
-        actions(ui, row, out);
-        look::quiet(ui, &space::day(row.seen), t);
-        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-            word(ui, row, t);
-            let meaning = RichText::new(&row.meaning).color(t.muted);
-            ui.add(Label::new(meaning).truncate());
+    Frame::new()
+        .inner_margin(Margin::symmetric(18, 12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 4.0;
+            let word_w = (ui.available_width() * 0.24).clamp(170.0, 250.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    badges(ui, row, t);
+                    look::quiet(ui, &space::day(row.seen), t.text_small + 1.0, t);
+                    ui.add_space(8.0);
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        if chevron(ui, is_open, &row.lemma) {
+                            *open = if is_open { None } else { Some(row.key) };
+                        }
+                        let size = vec2(word_w, 30.0);
+                        let lead = Layout::left_to_right(Align::Center);
+                        let took = ui.allocate_ui_with_layout(size, lead, |ui| word(ui, row, t));
+                        ui.add_space((word_w - took.response.rect.width()).max(0.0));
+                        let meaning = RichText::new(&row.meaning).size(t.text + 1.0);
+                        ui.add(Label::new(meaning.color(t.ink)).truncate());
+                    });
+                });
+            });
+            ui.horizontal(|ui| {
+                ui.add_space(LEAD - ui.spacing().item_spacing.x);
+                actions(ui, row, out, t);
+                if row.books.len() > 1 {
+                    look::quiet(ui, &row.books.join(" · "), t.text_small, t);
+                }
+            });
+            if is_open {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(LEAD - ui.spacing().item_spacing.x);
+                    ui.vertical(|ui| sentence(ui, row, t));
+                });
+            }
         });
-    });
 }
 
 /// The words as cards, as many to a line as the page has room for.
@@ -107,59 +146,93 @@ fn grid(ui: &mut Ui, rows: &[Row], t: &Tokens, out: &mut Commands) {
 }
 
 fn card(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
-    card_frame(t).show(ui, |ui| {
-        ui.set_width(CARD_W);
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 6.0;
-            ui.horizontal(|ui| word(ui, row, t));
-            let meaning = RichText::new(&row.meaning).color(t.muted);
-            ui.add(Label::new(meaning).wrap());
-            ui.horizontal_wrapped(|ui| badges(ui, row, t));
-            ui.horizontal(|ui| {
-                look::quiet(ui, &space::day(row.seen), t);
-                let right = Layout::right_to_left(Align::Center);
-                ui.with_layout(right, |ui| actions(ui, row, out));
-            });
-        });
-    });
-}
-
-fn card_frame(t: &Tokens) -> Frame {
     Frame::new()
         .fill(t.card)
         .stroke(Stroke::new(1.0, t.line))
-        .corner_radius(t.radius)
-        .inner_margin(Margin::symmetric(12, 8))
+        .corner_radius(look::ROUND)
+        .inner_margin(Margin::same(16))
+        .show(ui, |ui| {
+            ui.set_width(CARD_W);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 8.0;
+                ui.horizontal(|ui| word(ui, row, t));
+                let meaning = RichText::new(&row.meaning).size(t.text + 1.0);
+                ui.add(Label::new(meaning.color(t.ink)).wrap());
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    status(ui, row, t);
+                    via(ui, row, t);
+                    if row.first_try {
+                        look::tag(ui, "first try", look::swatch(t.toast.info), 6.0);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    look::quiet(ui, &space::day(row.seen), t.text_small, t);
+                    let right = Layout::right_to_left(Align::Center);
+                    ui.with_layout(right, |ui| forget(ui, row, out));
+                });
+                ui.horizontal(|ui| memorize(ui, row, out, t));
+            });
+        });
 }
 
-/// The lemma, its class and its level.
+/// The lemma, its class in italics, and its level.
 fn word(ui: &mut Ui, row: &Row, t: &Tokens) {
-    let lemma = RichText::new(&row.lemma).font(theme::medium(t.text + 2.0));
+    ui.spacing_mut().item_spacing.x = 8.0;
+    let lemma = RichText::new(&row.lemma).font(theme::medium(t.text + 5.0));
     ui.add(Label::new(lemma.color(t.ink)).selectable(false));
     if let Some(pos) = &row.pos {
-        look::quiet(ui, pos, t);
+        let class = RichText::new(pos).size(t.text + 1.0).italics();
+        ui.add(Label::new(class.color(t.muted)).selectable(false));
     }
-    look::level(ui, mareader_cefr::label(row.band), t);
+    look::level(ui, row.band, t);
 }
 
-/// Its status, how it was learned, a first try, and its books.
+/// From the right: a first try, how it was learned, then its status.
 fn badges(ui: &mut Ui, row: &Row, t: &Tokens) {
-    let ink = match row.status {
-        WordStatus::Memorized => t.accent,
-        WordStatus::Missed => t.danger,
-        WordStatus::Learning => t.muted,
-    };
-    look::tag(ui, space::status_label(row.status), ink, t);
-    let learned = match (row.by, row.tries) {
+    if row.first_try {
+        look::tag(ui, "first try", look::swatch(t.toast.info), 6.0);
+    }
+    via(ui, row, t);
+    status(ui, row, t);
+}
+
+fn status(ui: &mut Ui, row: &Row, t: &Tokens) {
+    let colors = look::status(row.status, t);
+    look::tag(ui, space::status_label(row.status), colors, 6.0);
+}
+
+/// A card's mark and "card", or the tries a recall took.
+fn via(ui: &mut Ui, row: &Row, t: &Tokens) {
+    let said = match (row.by, row.tries) {
         (LearnedBy::Proactive, _) => "card".to_owned(),
         (LearnedBy::Reactive, 1) => "1 try".to_owned(),
         (LearnedBy::Reactive, n) => format!("{n} tries"),
     };
-    look::tag(ui, &learned, t.muted, t);
-    if row.first_try {
-        look::tag(ui, "first try", t.accent, t);
+    let font = egui::FontId::proportional(t.text_small);
+    let galley = ui.painter().layout_no_wrap(said, font, t.muted);
+    let size = vec2(14.0 + 5.0 + galley.size().x, 20.0);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let middle = rect.left_center() + vec2(7.0, 0.0);
+    let mark = egui::Rect::from_center_size(middle, vec2(13.0, 10.0));
+    let stroke = Stroke::new(1.2, t.muted);
+    let inside = egui::StrokeKind::Inside;
+    let painter = ui.painter();
+    match row.by {
+        LearnedBy::Proactive => {
+            let back = mark.translate(vec2(2.0, -2.0));
+            let faint = Stroke::new(1.0, t.muted.gamma_multiply(0.6));
+            painter.rect_stroke(back, 2.0, faint, inside);
+            painter.rect_filled(mark, 2.0, t.card);
+            painter.rect_stroke(mark, 2.0, stroke, inside);
+        }
+        LearnedBy::Reactive => {
+            painter.circle_stroke(mark.center(), 5.0, stroke);
+            painter.circle_filled(mark.center(), 1.6, t.muted);
+        }
     }
-    look::quiet(ui, &row.books.join(" · "), t);
+    let at = egui::pos2(mark.right() + 5.0, rect.center().y - galley.size().y / 2.0);
+    painter.galley(at, galley, t.muted);
 }
 
 /// The book's sentence, and how many books met the word.
@@ -168,32 +241,48 @@ fn sentence(ui: &mut Ui, row: &Row, t: &Tokens) {
     ui.add(Label::new(said.color(t.ink).italics()).wrap());
     let n = row.books.len();
     if n > 1 {
-        look::quiet(ui, &format!("Met in {n} books"), t);
+        look::quiet(ui, &format!("Met in {n} books"), t.text_small, t);
     }
 }
 
-/// Memorize or un-memorize, and forget: each acts on the word everywhere.
-fn actions(ui: &mut Ui, row: &Row, out: &mut Commands) {
+/// Memorize or un-memorize, then forget: each acts on the word everywhere.
+fn actions(ui: &mut Ui, row: &Row, out: &mut Commands, t: &Tokens) {
+    ui.spacing_mut().item_spacing.x = 6.0;
+    memorize(ui, row, out, t);
+    forget(ui, row, out);
+}
+
+fn memorize(ui: &mut Ui, row: &Row, out: &mut Commands, t: &Tokens) {
     let words = vec![row.word];
-    let forget = format!("Forget {}", row.lemma);
-    if widgets::small_icon_button(ui, Icon::Remove, &forget).clicked() {
-        out.push(Sent::Engine(Command::Space(Action::Forget(words.clone()))));
-    }
-    let (icon, label, action) = match row.status {
-        WordStatus::Memorized => (Icon::Restore, "Un-memorize", Action::Unmemorize(words)),
-        _ => (Icon::Check, "Memorize", Action::Memorize(words)),
+    let (icon, verb, action, ink) = match row.status {
+        WordStatus::Memorized => {
+            let undo = Action::Unmemorize(words);
+            (Icon::Restore, "Un-memorize", undo, t.ink)
+        }
+        _ => {
+            let ink = look::swatch(t.toast.info).0;
+            (Icon::Check, "Memorize", Action::Memorize(words), ink)
+        }
     };
-    let label = format!("{label} {}", row.lemma);
-    if widgets::small_icon_button(ui, icon, &label).clicked() {
+    let label = format!("{verb} {}", row.lemma);
+    if look::text_button(ui, (icon, verb), &label, ink).clicked() {
         out.push(Sent::Engine(Command::Space(action)));
+    }
+}
+
+fn forget(ui: &mut Ui, row: &Row, out: &mut Commands) {
+    let label = format!("Forget {}", row.lemma);
+    if widgets::small_icon_button(ui, Icon::Remove, &label).clicked() {
+        let words = vec![row.word];
+        out.push(Sent::Engine(Command::Space(Action::Forget(words))));
     }
 }
 
 /// Opens or closes the row's sentence; true when clicked.
 fn chevron(ui: &mut Ui, open: bool, lemma: &str) -> bool {
     let (icon, verb) = match open {
-        true => (Icon::ChevronUp, "Hide"),
-        false => (Icon::ChevronDown, "Show"),
+        true => (Icon::ChevronDown, "Hide"),
+        false => (Icon::ChevronRight, "Show"),
     };
     let label = format!("{verb} where {lemma} was met");
     widgets::small_icon_button(ui, icon, &label).clicked()

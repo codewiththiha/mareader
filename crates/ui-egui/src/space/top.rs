@@ -1,6 +1,8 @@
-//! Space's head: the title, search and export, the tabs, stats and toolbar.
+//! Space's head: the title, search and export, the tabs, the stat cards and
+//! the toolbar.
 
-use egui::{Align, FontId, Id, Layout, Rect, RichText, Sense, Ui, pos2, vec2};
+use egui::{Align, Align2, Button, FontId, Id, Layout, Rect, RichText, Sense, Stroke, Ui};
+use egui::{pos2, vec2};
 use mareader_engine::space::{Filter, Group, Scope, Sort, Tab, View};
 
 use super::{EXPORT, TITLE, look};
@@ -9,110 +11,257 @@ use crate::theme::{self, Tokens};
 use crate::widgets;
 
 const LINE: &str = "Across every book. Memorized words are never shaded or carded again.";
-const SEARCH_W: f32 = 280.0;
+const SEARCH_W: f32 = 320.0;
 /// A merged row has many books, so it is never grouped by one.
 const MERGED_GROUPS: [Group; 4] = [Group::None, Group::Level, Group::Month, Group::Status];
-const BAR: egui::Vec2 = vec2(40.0, 6.0);
-const GAP: f32 = 4.0;
+/// The toolbar's controls' height.
+const TOOL_H: f32 = 34.0;
+/// A stat card's height, and the room between cards.
+const STAT_H: f32 = 134.0;
+const STAT_GAP: f32 = 16.0;
+/// Stat cards shrink below the first width and stack below the second.
+const STATS_ROOMY: f32 = 620.0;
+const STATS_ROW_FROM: f32 = 440.0;
+/// The toolbar keeps to one line from this width on, else takes two.
+const TOOLS_ONE_LINE: f32 = 760.0;
 
-/// The title and its line, then search and Export; true on Export.
+/// The title and its line beside search, then Export; true on Export.
 pub(super) fn header(ui: &mut Ui, filter: &mut Filter, t: &Tokens) -> bool {
-    ui.label(RichText::new(TITLE).font(theme::serif(26.0)).color(t.ink));
-    look::quiet(ui, LINE, t);
-    ui.horizontal(|ui| {
-        widgets::input(&mut filter.text)
-            .id(Id::new("space-search"))
-            .icon(Icon::Search)
-            .hint("Search words, meanings and sentences")
-            .label("Search your words")
-            .clearable(true)
-            .compact()
-            .width(SEARCH_W)
-            .show(ui);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let button = widgets::primary_button(ui, Some(Icon::Download), EXPORT, t.accent, t);
-            ui.add(button).clicked()
-        })
-        .inner
-    })
-    .inner
+    ui.horizontal_top(|ui| {
+        let wide = ui.available_width();
+        let words = (wide - SEARCH_W - 24.0).max(wide * 0.5);
+        ui.allocate_ui_with_layout(vec2(words, 0.0), Layout::top_down(Align::Min), |ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            let title = RichText::new(TITLE).font(theme::semibold(30.0));
+            ui.add(egui::Label::new(title.color(t.ink)).selectable(false));
+            let line = RichText::new(LINE).size(t.text + 1.0).color(t.muted);
+            ui.add(egui::Label::new(line).wrap().selectable(false));
+        });
+        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+            let width = SEARCH_W.min(ui.available_width());
+            widgets::input(&mut filter.text)
+                .id(Id::new("space-search"))
+                .icon(Icon::Search)
+                .hint("Search words, meanings, sentences")
+                .label("Search your words")
+                .clearable(true)
+                .width(width)
+                .show(ui);
+        });
+    });
+    ui.add_space(4.0);
+    export(ui, t)
 }
 
-/// A pill per status, each with its count.
+/// Export CSV as a quiet outlined button.
+fn export(ui: &mut Ui, t: &Tokens) -> bool {
+    let mark = Icon::Download.image(ui, 16.0).tint(t.ink);
+    let words = RichText::new(EXPORT).size(t.text + 1.0).color(t.ink);
+    let button = Button::image_and_text(mark, words)
+        .fill(t.card)
+        .stroke(Stroke::new(1.0, t.line))
+        .corner_radius(10.0)
+        .min_size(vec2(0.0, 38.0));
+    ui.add(button).clicked()
+}
+
+/// The statuses as tabs over a hairline, each with its count.
 pub(super) fn tabs(ui: &mut Ui, view: &View, filter: &mut Filter, t: &Tokens) {
-    ui.horizontal_wrapped(|ui| {
+    let mut picked = None;
+    let row = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 30.0;
         for tab in Tab::ALL {
-            let text = format!("{} {}", tab.label(), view.counts.of(tab));
-            if look::toggle(ui, filter.tab == tab, &text, t) {
+            let on = filter.tab == tab;
+            let (rect, clicked) = tab_button(ui, tab, view.counts.of(tab), on, t);
+            if clicked {
                 filter.tab = tab;
+            }
+            if on {
+                picked = Some(rect);
             }
         }
     });
+    let full = ui.max_rect().x_range();
+    let y = row.response.rect.bottom();
+    ui.painter().hline(full, y - 0.5, Stroke::new(1.0, t.line));
+    if let Some(rect) = picked {
+        let under = Rect::from_x_y_ranges(rect.x_range(), y - 2.0..=y);
+        ui.painter().rect_filled(under, 1.0, t.accent);
+    }
 }
 
-/// Memorized words, first tries, and a bar per level's memorized words.
+/// One tab: its name, then its count, smaller; its rect, and if clicked.
+fn tab_button(ui: &mut Ui, tab: Tab, n: usize, on: bool, t: &Tokens) -> (Rect, bool) {
+    let name_font = match on {
+        true => theme::medium(t.text + 2.0),
+        false => FontId::proportional(t.text + 2.0),
+    };
+    let painter = ui.painter();
+    let name = painter.layout_no_wrap(tab.label().to_owned(), name_font, t.ink);
+    let count = painter.layout_no_wrap(n.to_string(), FontId::proportional(t.text_small), t.muted);
+    let size = vec2(name.size().x + 6.0 + count.size().x, 40.0);
+    let (rect, r) = ui.allocate_exact_size(size, Sense::click());
+    let ink = match (on, r.hovered()) {
+        (true, _) => t.accent,
+        (false, true) => t.ink,
+        (false, false) => t.ink.gamma_multiply(0.75),
+    };
+    if r.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let y = rect.center().y;
+    let name_at = pos2(rect.left(), y - name.size().y / 2.0);
+    let count_x = rect.left() + name.size().x + 6.0;
+    let count_at = pos2(count_x, y - count.size().y / 2.0 + 1.0);
+    let painter = ui.painter();
+    painter.galley(name_at, name, ink);
+    painter.galley(count_at, count, t.muted);
+    let label = format!("{} {n}", tab.label());
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &label));
+    (rect, r.clicked())
+}
+
+/// Memorized words, first tries, and a bar per level's memorized words, as
+/// three cards in a row, or one over another on a narrow page.
 pub(super) fn stats(ui: &mut Ui, view: &View, t: &Tokens) {
     let (counts, stats) = (view.counts, view.stats);
-    let (memorized, all) = (counts.memorized, counts.all);
-    let (f, n, p) = (stats.first_try, stats.answered, stats.first_try_percent());
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 16.0;
-        look::quiet(ui, &format!("Memorized {memorized} of {all} words met"), t);
-        let tries = format!("First try {p}% · {f} of {n} reactive answers");
-        look::quiet(ui, &tries, t);
-        let most = stats.by_level.iter().map(|(_, n)| *n).max().unwrap_or(0);
-        for (band, n) in stats.by_level {
-            level_bar(ui, band, n, most, t);
-        }
-    });
+    let wide = ui.available_width();
+    let across = if wide >= STATS_ROW_FROM { 3 } else { 1 };
+    let rows = 3 / across;
+    let card_h = match wide >= STATS_ROOMY {
+        true => STAT_H,
+        false => STAT_H - 20.0,
+    };
+    let card_w = (wide - STAT_GAP * (across - 1) as f32) / across as f32;
+    let tall = card_h * rows as f32 + STAT_GAP * (rows - 1) as f32;
+    let (block, _) = ui.allocate_exact_size(vec2(wide, tall), Sense::hover());
+    let cell = |i: usize| {
+        let (col, row) = ((i % across) as f32, (i / across) as f32);
+        let step = vec2(card_w + STAT_GAP, card_h + STAT_GAP);
+        let min = block.min + vec2(col * step.x, row * step.y);
+        Rect::from_min_size(min, vec2(card_w, card_h))
+    };
+    let memorized = format!("of {} words met", counts.all);
+    let figure = Figure {
+        caption: "Memorized",
+        value: counts.memorized.to_string(),
+        unit: "",
+        under: &memorized,
+    };
+    number(ui, cell(0), &figure, t);
+    let answers = format!("{} of {} reactive answers", stats.first_try, stats.answered);
+    let figure = Figure {
+        caption: "First-try recall",
+        value: stats.first_try_percent().to_string(),
+        unit: "%",
+        under: &answers,
+    };
+    number(ui, cell(1), &figure, t);
+    levels(ui, cell(2), &stats.by_level, t);
 }
 
-/// A level's name, a bar as long as its share of `most`, and its count.
-///
-/// One widget, so a wrapping row moves it whole to the next line.
-fn level_bar(ui: &mut Ui, band: u8, n: usize, most: usize, t: &Tokens) {
-    let font = FontId::proportional(t.text_small);
-    let shape = |text: String| ui.painter().layout_no_wrap(text, font.clone(), t.muted);
-    let name = shape(mareader_cefr::label(band).to_owned());
-    let count = shape(n.to_string());
-    let height = name.size().y.max(BAR.y);
-    let width = name.size().x + GAP + BAR.x + GAP + count.size().x;
-    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
-    let y = rect.center().y;
-    let mid = rect.left() + name.size().x + GAP + BAR.x / 2.0;
-    let bar = Rect::from_center_size(pos2(mid, y), BAR);
-    let share = n as f32 / most.max(1) as f32;
-    let mut filled = bar;
-    filled.set_width(bar.width() * share);
+/// A stat card's words: what it counts, the figure, and what it is of.
+struct Figure<'a> {
+    caption: &'a str,
+    value: String,
+    unit: &'a str,
+    under: &'a str,
+}
+
+/// A card with a big figure between its caption and its line.
+fn number(ui: &Ui, rect: Rect, figure: &Figure<'_>, t: &Tokens) {
+    look::paper(ui, rect, t);
     let painter = ui.painter();
-    painter.galley(pos2(rect.left(), y - name.size().y / 2.0), name, t.muted);
-    painter.rect_filled(bar, 3.0, t.track);
-    painter.rect_filled(filled, 3.0, t.accent);
-    let at = pos2(bar.right() + GAP, y - count.size().y / 2.0);
-    painter.galley(at, count, t.muted);
+    let left = rect.left() + 22.0;
+    let small = FontId::proportional(t.text_small + 1.0);
+    let top = pos2(left, rect.top() + 20.0);
+    let caption = figure.caption;
+    painter.text(top, Align2::LEFT_TOP, caption, small.clone(), t.muted);
+    let base = pos2(left, rect.top() + 44.0);
+    let value = figure.value.as_str();
+    let big = theme::semibold((rect.height() * 0.28).clamp(28.0, 38.0));
+    let big = painter.text(base, Align2::LEFT_TOP, value, big, t.ink);
+    if !figure.unit.is_empty() {
+        let at = pos2(big.right() + 2.0, big.bottom() - 8.0);
+        let unit = theme::semibold(20.0);
+        painter.text(at, Align2::LEFT_BOTTOM, figure.unit, unit, t.ink);
+    }
+    let foot = pos2(left, rect.bottom() - 20.0);
+    painter.text(foot, Align2::LEFT_BOTTOM, figure.under, small, t.muted);
 }
 
-/// Group and sort, then list or cards at the right.
-pub(super) fn toolbar(ui: &mut Ui, filter: &mut Filter, cards: &mut bool) {
+/// A card with a bar per level, as tall as its share of the most.
+fn levels(ui: &Ui, rect: Rect, by_level: &[(u8, usize); 4], t: &Tokens) {
+    look::paper(ui, rect, t);
+    let painter = ui.painter();
+    let small = FontId::proportional(t.text_small + 1.0);
+    let top = pos2(rect.left() + 22.0, rect.top() + 20.0);
+    painter.text(top, Align2::LEFT_TOP, "Memorized by level", small, t.muted);
+    let area = Rect::from_min_max(
+        pos2(rect.left() + 22.0, rect.top() + 50.0),
+        pos2(rect.right() - 22.0, rect.bottom() - 34.0),
+    );
+    let most = by_level.iter().map(|(_, n)| *n).max().unwrap_or(0).max(1);
+    let slot = area.width() / by_level.len() as f32;
+    let label = FontId::proportional(t.text_small - 1.0);
+    for (i, (band, n)) in by_level.iter().enumerate() {
+        let x = area.left() + slot * (i as f32 + 0.5);
+        let height = (area.height() * *n as f32 / most as f32).max(4.0);
+        let bar = Rect::from_min_max(
+            pos2(x - slot * 0.4, area.bottom() - height),
+            pos2(x + slot * 0.4, area.bottom()),
+        );
+        let fill = t.accent.gamma_multiply(if *n == 0 { 0.25 } else { 0.7 });
+        painter.rect_filled(bar, 4.0, fill);
+        let name = mareader_cefr::label(*band);
+        let at = pos2(x, area.bottom() + 8.0);
+        painter.text(at, Align2::CENTER_TOP, name, label.clone(), t.muted);
+        let resp = ui.interact(bar, ui.id().with(("space-level", band)), Sense::hover());
+        let said = format!("{name}: {n} memorized");
+        widgets::tip(&resp, &said, None);
+    }
+}
+
+/// Rows with books or merged, group and sort, then list or cards right.
+pub(super) fn toolbar(ui: &mut Ui, filter: &mut Filter, cards: &mut bool, t: &Tokens) {
     let groups: &[Group] = match filter.scope {
         Scope::Merged => &MERGED_GROUPS,
         Scope::Books => &Group::ALL,
     };
+    let one_line = ui.available_width() >= TOOLS_ONE_LINE;
     ui.horizontal(|ui| {
-        pick(ui, "Group", &mut filter.group, groups, Group::label);
-        pick(ui, "Sort", &mut filter.sort, &Sort::ALL, Sort::label);
+        ui.spacing_mut().item_spacing.x = 10.0;
+        ui.allocate_ui(vec2(220.0, TOOL_H), |ui| {
+            let scope = &mut filter.scope;
+            widgets::segments_of(ui, TOOL_H, scope, &Scope::ALL, 2, |s| (None, s.label()));
+        });
+        if one_line {
+            ui.add_space(8.0);
+            sorting(ui, filter, groups, t);
+        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.allocate_ui(vec2(150.0, 24.0), |ui| {
-                widgets::segments(ui, cards, &[false, true], 2, view_face);
+            ui.allocate_ui(vec2(170.0, TOOL_H), |ui| {
+                widgets::segments_of(ui, TOOL_H, cards, &[false, true], 2, view_face);
             });
         });
     });
+    if !one_line {
+        ui.horizontal(|ui| sorting(ui, filter, groups, t));
+    }
+}
+
+/// The group and sort dropdowns, side by side.
+fn sorting(ui: &mut Ui, filter: &mut Filter, groups: &[Group], t: &Tokens) {
+    ui.spacing_mut().item_spacing.x = 10.0;
+    pick(ui, ("Group", t), &mut filter.group, groups, Group::label);
+    ui.add_space(4.0);
+    pick(ui, ("Sort", t), &mut filter.sort, &Sort::ALL, Sort::label);
 }
 
 /// A dropdown of `all`, named `name`; a value not offered shows the first.
 fn pick<T: Copy + PartialEq>(
     ui: &mut Ui,
-    name: &'static str,
+    (name, t): (&'static str, &Tokens),
     value: &mut T,
     all: &[T],
     label: fn(T) -> &'static str,
@@ -121,9 +270,10 @@ fn pick<T: Copy + PartialEq>(
         true => *value,
         false => all.first().copied().unwrap_or(*value),
     };
-    ui.label(name);
+    look::quiet(ui, name, t.text + 1.0, t);
     widgets::combo(("space", name))
         .selected_text(label(shown))
+        .width(120.0)
         .show_ui(ui, |ui| {
             for &v in all {
                 ui.selectable_value(value, v, label(v));

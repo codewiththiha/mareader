@@ -501,8 +501,13 @@ the session and the reader are in [`study-mode.md`](study-mode.md).
   reading* is on.
 - **Kept words.** Every word studied is saved with the book, how it was
   learned and how many tries it took. Space, from the library bar or
-  Settings › Study mode, lists them across books with filters, stats and a
-  CSV export.
+  Settings › Study mode, lists them across books: a rail down the left
+  (books with their format and count, levels, learned by, word class),
+  then status tabs, three stat cards (memorized, first-try recall, a bar
+  per level), a toolbar (with books or merged, group, sort, list or
+  cards) and the rows on one sheet, each with its status, how it was
+  learned, and Memorize or Un-memorize and Forget. CSV export sits under
+  the title.
 - **Settings.** The tab sits after AI in the Study group. *Mode* is the one
   the page menu turns on; *My level* is shared with Vocabulary. The AI rows
   pick study's own model and language, which follow the AI Dictionary's
