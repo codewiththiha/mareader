@@ -72,6 +72,7 @@ pub(crate) const TAB: &[(&str, Tab)] = &[
     ("vocabulary", Tab::Vocabulary),
     ("dictionary", Tab::Dictionary),
     ("ai", Tab::Ai),
+    ("study", Tab::Study),
     ("models", Tab::Models),
     ("panes", Tab::Panes),
     ("motion", Tab::Motion),

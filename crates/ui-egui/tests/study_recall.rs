@@ -1,15 +1,19 @@
 //! Reactive study mode's recall, headless: a shaded word clicked, answered
-//! wrong then right, a judge that fails, and an answer revealed.
+//! wrong then right, a judge that fails, an answer revealed, and the Study
+//! mode settings tab.
 
 use std::time::Duration;
 
 use egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
+use mareader_engine::command::Command;
+use mareader_engine::settings::Tab;
 use mareader_engine::study_mode::Recalling;
-use mareader_study::mode::{Mode, Phase};
+use mareader_study::mode::{Mode, Outcome, Phase};
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::study_mode::recall::{AGAIN, CANCEL, CHECK, GOT_IT, MEMORIZED, UNSURE};
+use mareader_ui_egui::ui_command::Sent;
 use mareader_workspace::PaneId;
 
 use crate::common::{click, levels_reader, shelves};
@@ -36,6 +40,13 @@ fn recall(h: &H, pane: PaneId) -> Option<&Recalling> {
 
 fn phase(h: &H, pane: PaneId) -> Option<Phase> {
     recall(h, pane).map(|r| r.recall.phase)
+}
+
+/// The outcomes of the words `pane` recalled this run.
+fn recalled(h: &H, pane: PaneId) -> Vec<Outcome> {
+    let run = h.state().session().study_mode().run(pane);
+    run.map(|r| r.recalled.iter().map(|(.., o)| *o).collect())
+        .unwrap_or_default()
 }
 
 /// Steps until `done` holds; frames keep coming while the AI answers.
@@ -109,4 +120,38 @@ fn i_don_t_know_shows_the_meaning_and_saves_it_as_missed() {
     h.get_by_label(GOT_IT).click();
     h.run_steps(3);
     assert!(recall(&h, pane).is_none());
+    assert_eq!(recalled(&h, pane), [Outcome::Missed]);
+    // A settled word takes the missed look and opens no recall again.
+    click(&mut h, "quick");
+    assert!(recall(&h, pane).is_none(), "settled");
+}
+
+#[test]
+fn with_asking_off_a_right_answer_is_memorized_at_once() {
+    let (mut h, pane, _shelves) = recalling("ready");
+    h.state_mut().queue(Sent::Engine(Command::SetField {
+        path: "study.mode.ask_memorize".into(),
+        value: "false".into(),
+    }));
+    h.run_steps(2);
+    assert!(!h.state().settings().study.mode.ask_memorize);
+    h.state_mut().set_option("recall", "quick:right").unwrap();
+    let saved = |h: &H| recalled(h, pane) == [Outcome::Memorized];
+    assert!(wait(&mut h, saved), "memorized without asking");
+    assert!(recall(&h, pane).is_none());
+}
+
+#[test]
+fn the_study_mode_tab_shows_each_group() {
+    let (mut h, _pane, _shelves) = recalling("ready");
+    h.state_mut()
+        .queue(Sent::Engine(Command::OpenSettings(Tab::Study)));
+    h.run_steps(3);
+    assert_eq!(h.state().settings_window().tab(), Tab::Study);
+    for label in ["Batches", "Proactive", "Reactive", "Prepare ahead"] {
+        let shown = h.query_all_by_label_contains(label).count();
+        assert!(shown > 0, "{label} missing");
+    }
+    let ask = h.query_all_by_label_contains("Ask before adding").count();
+    assert!(ask > 0, "the Reactive switch");
 }

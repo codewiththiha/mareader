@@ -19,6 +19,9 @@ use crate::widgets;
 /// Why the AI tasks are off while a pane studies.
 pub const KEEPS: &str = "Study mode keeps pages as written";
 
+/// The row that opens the Study mode settings tab.
+pub const SETTINGS: &str = "Study settings…";
+
 /// Study mode as the page menu shows it, for every pane.
 #[derive(Clone, Debug, Default)]
 pub struct Look {
@@ -85,6 +88,9 @@ pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool 
     widgets::menu_note(ui, about(mode));
     if mode == Mode::Proactive && look.unit == Unit::Pages {
         batch(ui, look.pages, out);
+    }
+    if widgets::menu_row(ui, Icon::Settings, SETTINGS, None, false).clicked() {
+        out.push(Sent::Engine(Command::OpenSettings(Tab::Study)));
     }
     widgets::menu_rule(ui);
     if running.is_some() {

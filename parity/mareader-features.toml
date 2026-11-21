@@ -1604,13 +1604,13 @@ title = "Proactive study mode: a batch's hard words as cards before its pages un
 area = "I"
 tier = "P1"
 milestone = "M8"
-status = "partial"
+status = "shipped"
 command = "study.mode"
 evidence = [
     "apps/mareader-cli/tests/scripts.rs::script_06_study_mode_gates_the_first_batch",
     "crates/ui-egui/tests/study_mode.rs::the_gate_holds_the_view_until_the_deck_is_studied",
 ]
-notes = "From the lab's best-study-mode prototype. The batch planner, deck builder, word keys and time floor live in crates/study/src/mode; the engine plans each pane's batches, builds dictionary decks, holds the gate and saves progress; the reader's page menu turns it on, the view holds at the gate under a frosted veil and the deck opens it. AI cards and look-ahead are study.mode-ai-cards"
+notes = "From the lab's best-study-mode prototype. The batch planner, deck builder, word keys and time floor live in crates/study/src/mode; the engine plans each pane's batches, builds dictionary decks, holds the gate and saves progress; the reader's page menu turns it on, the view holds at the gate under a frosted veil and the deck opens it. Settings › Study mode sizes the batches and times the deck. AI cards and look-ahead are study.mode-ai-cards"
 
 [[feature]]
 id = "study.mode-reactive"
@@ -1618,7 +1618,7 @@ title = "Reactive study mode: recall a shaded word's meaning, judged by the AI"
 area = "I"
 tier = "P1"
 milestone = "M8"
-status = "partial"
+status = "shipped"
 command = "study.mode"
 evidence = [
     "crates/assist/tests/study_mode.rs::a_recall_is_judged_by_study_s_model_with_the_answer_quoted",
@@ -1628,8 +1628,10 @@ evidence = [
     "crates/ui-egui/tests/study_recall.rs::a_shaded_word_is_recalled_wrong_then_right_and_memorized",
     "crates/ui-egui/tests/study_recall.rs::a_failing_judge_keeps_the_answer_and_counts_no_try",
     "crates/ui-egui/tests/study_recall.rs::i_don_t_know_shows_the_meaning_and_saves_it_as_missed",
+    "crates/ui-egui/tests/study_recall.rs::with_asking_off_a_right_answer_is_memorized_at_once",
+    "crates/settings/src/study_mode.rs::study_recall_keeps_two_looks_no_pen_takes",
 ]
-notes = "The recall rules (three tries, a hint, I don't know) live in crates/study/src/mode/recall.rs and the Judge trait in judge.rs; StudyJudge asks study's model (crates/assist/src/study_judge.rs, service/cards.rs); the engine opens one recall per Reactive pane, writes the word's back for the hint and the answer, and saves the word met by Reactive with its tries; the reader's popover sits beside the shaded word. Missing: the reserved look for solved and missed words"
+notes = "The recall rules (three tries, a hint, I don't know) live in crates/study/src/mode/recall.rs and the Judge trait in judge.rs; StudyJudge asks study's model (crates/assist/src/study_judge.rs, service/cards.rs); the engine opens one recall per Reactive pane, writes the word's back for the hint and the answer, and saves the word met by Reactive with its tries; the reader's popover sits beside the shaded word. A recalled word then takes the reserved solved or missed look (HighlightSettings::solved/missed, kept from every pen) and opens no recall again"
 
 [[feature]]
 id = "study.space"
@@ -1637,14 +1639,15 @@ title = "Space: every studied word across books, filtered, grouped and exported"
 area = "I"
 tier = "P1"
 milestone = "M8"
-status = "partial"
+status = "shipped"
 command = "space.word"
 evidence = [
     "crates/engine/src/space/tests.rs::with_books_a_row_is_a_sighting_and_merged_a_word",
     "crates/engine/src/space/tests.rs::the_csv_quotes_every_cell_and_names_each_book",
     "crates/ui-egui/tests/space.rs::a_row_memorizes_and_forgets_its_word",
+    "crates/ui-egui/tests/study_recall.rs::the_study_mode_tab_shows_each_group",
 ]
-notes = "Rows, filters, groups, sorts, stats and CSV in crates/engine/src/space; the page in crates/ui-egui/src/space, opened from the library bar. Missing: the Study settings row that links here"
+notes = "Rows, filters, groups, sorts, stats and CSV in crates/engine/src/space; the page in crates/ui-egui/src/space, opened from the library bar and from Settings › Study mode › Your words"
 
 [[feature]]
 id = "study.mode-ai-cards"
@@ -1652,7 +1655,7 @@ title = "Study cards written by the AI, prepared ahead while reading"
 area = "I"
 tier = "P1"
 milestone = "M8"
-status = "partial"
+status = "shipped"
 command = "study.mode"
 evidence = [
     "crates/assist/tests/study_mode.rs::a_deck_s_backs_come_in_one_request_by_number",
@@ -1662,7 +1665,7 @@ evidence = [
     "crates/ui-egui/tests/study_cards.rs::a_failed_deck_tries_again_or_turns_to_the_dictionary",
     "crates/ui-egui/tests/study_cards.rs::decks_made_ahead_open_at_once_and_the_pill_leads_to_them",
 ]
-notes = "StudyCards writes a deck's backs in one request (crates/assist/src/study_mode.rs, service/cards.rs) behind the CardWriter trait in crates/study/src/mode/cards.rs; the engine keeps backs per word, sentence and writer, makes look-ahead decks and falls back to the dictionary on request; the reader shows the waiting stages, the slow offer, the error card and the pill. Missing: the Study settings tab's Cards from row"
+notes = "StudyCards writes a deck's backs in one request (crates/assist/src/study_mode.rs, service/cards.rs) behind the CardWriter trait in crates/study/src/mode/cards.rs; the engine keeps backs per word, sentence and writer, makes look-ahead decks and falls back to the dictionary on request; the reader shows the waiting stages, the slow offer, the error card and the pill. Settings › Study mode picks where cards come from, study's model and its language"
 
 [[feature]]
 id = "settings.persist"

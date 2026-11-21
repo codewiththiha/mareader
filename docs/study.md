@@ -479,3 +479,31 @@ word sounds under the word.
   voice that is already holding it. Only short English selections (up to
   three words) are sounded out, and a word that can't be sounded out
   shows nothing.
+
+## Study mode (2026-11-21)
+
+Study mode turns a book into practice. It is turned on per pane from the
+page menu's Study section and set up in Settings › Study mode; the rules,
+the session and the reader are in [`study-mode.md`](study-mode.md).
+
+- **Proactive.** The book is cut into batches of pages (or characters
+  turned into pages). Before a batch unlocks, its hard words, the ones
+  above your level, come as a timed deck of cards: the word in its
+  sentence, then its meaning from the dictionary or the AI. The pages past
+  the gate wait under a frosted veil until the deck is studied. Decks for
+  the next batches can be made while you read.
+- **Reactive.** Read freely; hard words stay shaded. A click on one asks
+  what it means here. The AI judges the answer in any language, with three
+  tries, a hint after a miss, and *I don't know* for the meaning. A
+  recalled word is underlined green when solved and red when missed.
+- **While studying,** Explain, Look up and the page AI are off in that
+  pane, and shading hides in Proactive mode unless *Shade hard words while
+  reading* is on.
+- **Kept words.** Every word studied is saved with the book, how it was
+  learned and how many tries it took. Space, from the library bar or
+  Settings › Study mode, lists them across books with filters, stats and a
+  CSV export.
+- **Settings.** The tab sits after AI in the Study group. *Mode* is the one
+  the page menu turns on; *My level* is shared with Vocabulary. The AI rows
+  pick study's own model and language, which follow the AI Dictionary's
+  until set.

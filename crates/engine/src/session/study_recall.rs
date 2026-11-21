@@ -130,10 +130,15 @@ impl Session {
 
     /// Saves `done` for the open recall's word and closes it.
     fn study_recall_save(&mut self, pane: PaneId, done: Done) {
-        let book = self.study_mode.run(pane).and_then(|r| r.book);
         let Some(recalling) = self.study_mode.take_recall() else {
             return;
         };
+        let word = &recalling.word;
+        let run = self.study_mode.run_mut(pane);
+        let book = run.and_then(|r| {
+            r.recalled.push((word.page, word.chars.clone(), done.outcome));
+            r.book
+        });
         if let Some(book) = book {
             keep(&mut self.library.model, book, &recalling, done);
         }

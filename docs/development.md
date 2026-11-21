@@ -98,7 +98,7 @@ cargo run -p mareader-ui-egui --example shot -- /tmp/a.png \
 | `panes` | 1–4 (splits the newest pane, alternating right and down) |
 | `open` | `appearance` (the popover), `settings`, `menu` (View & tools) |
 | `toast` | a message; `error:` before it for the error tone |
-| `settings` | a tab: `layout`, `theme`, `animations`, `vocabulary`, `dictionary`, `workspace` |
+| `settings` | a tab: `layout`, `theme`, `animations`, `vocabulary`, `dictionary`, `study`, `workspace` |
 | `sidebar` | `thumbnails`, `outline`, `library`, `closed` |
 | `float` | `true`: the sidebar floats over the panes |
 | `hover` | `x,y` in points: where the pointer rests |

@@ -3,7 +3,7 @@
 **Status:** Core reader, library, study tools, neural read-aloud, installers
 (`v0.0.7`), and the engine-first architecture (ADR 0007) are complete.
 Cross-device library sync (`docs/sync.md`) remains optional future work.
-**Parity:** 122 of 122 features (100 %; 83 command-backed, 39 `ui_only`,
+**Parity:** 126 of 126 features (100 %; 87 command-backed, 39 `ui_only`,
 2 dropped). Run `cargo xtask parity` for live counts.
 
 ## Shipped capabilities
@@ -16,7 +16,7 @@ Cross-device library sync (`docs/sync.md`) remains optional future work.
 | Appearance & GPU passes | Single wgpu page pass (filter chain, colour blends, seamless pane paper textures, blend backdrop, film grain), saved presets, independent per-pane themes and text | [`docs/adr/0003-pages-are-textures.md`](docs/adr/0003-pages-are-textures.md) |
 | EPUB & text pipeline | `rbook` + HTML5/CSS subset + `parley` + `vello_cpu` pagination, book CSS/layout support, vertical CJK/RTL, MathML, footnotes, hostile-input guards, progressive opening, in-memory Markdown & plain-text conversion | [`docs/epub.md`](docs/epub.md), [`docs/epub-layout.md`](docs/epub-layout.md), [`docs/epub-support.md`](docs/epub-support.md) |
 | Library | SQLite sync-ready store, read-in-place folders with move tracking, store-copy imports, nested shelves & breadcrumbs, arranged spring-physics grid, multi-selection stacking, fast search, sidebar library panel | [`docs/library.md`](docs/library.md) |
-| Study tools & AI | Selection bar, full/half/underline highlights & notes, AI dictionary & page AI (summarize/translate/simplify) over Apple Intelligence or OpenAI-compatible servers, offline dictionary packs, CEFR shading & word pronunciation | [`docs/study.md`](docs/study.md), [`docs/assist.md`](docs/assist.md), [`docs/page-ai.md`](docs/page-ai.md) |
+| Study tools & AI | Selection bar, full/half/underline highlights & notes, AI dictionary & page AI (summarize/translate/simplify) over Apple Intelligence or OpenAI-compatible servers, offline dictionary packs, CEFR shading & word pronunciation, study mode (Proactive decks at a gate, Reactive recall judged by the AI) and Space | [`docs/study.md`](docs/study.md), [`docs/study-mode.md`](docs/study-mode.md), [`docs/assist.md`](docs/assist.md), [`docs/page-ai.md`](docs/page-ai.md) |
 | Read aloud | System voices plus offline candle neural models (Kokoro in 6 languages, Piper, Kitten, Phonon), word-by-word tracking, floating/tucked player, idle model unloading | [`docs/architecture.md`](docs/architecture.md) |
 | Search & keyboard | Streaming cross-line/diacritic-folded document search, full Tab/keyboard focus navigation, auto-scroll, distraction-free mode | [`docs/search.md`](docs/search.md) |
 | Packaging & releases | Native installers for macOS (`.dmg` Apple Silicon & Intel), Windows (x64 NSIS & MSI, ARM64 NSIS), and Linux (x86_64 & ARM64 `.deb`, AppImage, multi-arch Arch `PKGBUILD`) verified end-to-end in CI | [`docs/packaging.md`](docs/packaging.md), [`docs/releases/`](docs/releases/) |
@@ -46,6 +46,7 @@ post-release and architectural milestones:
 
 | Date | Milestone |
 |---|---|
+| 2026-11-21 | **Study mode:** Proactive batches whose hard words become a timed deck before the pages unlock (dictionary or AI cards, made ahead while reading), Reactive recall of shaded words judged by the AI with three tries and a hint, the solved/missed look, Space for every studied word, and Settings › Study mode ([`docs/study-mode.md`](docs/study-mode.md)) |
 | 2026-11-15 | **Release `v0.0.7`:** unified lookup and AI word cards with CEFR badges and in-place tabs, searchable AI model picker with default provider URL toggle, animated checkboxes, streamlined Vocabulary shading, live GPU theme/blend fades with background saving, flicker-free Read Aloud voice switching, bottom-only read-aloud parking, and static window control icons ([`docs/releases/v0.0.7.md`](docs/releases/v0.0.7.md)) |
 | 2026-11-15 | **Release `v0.0.6`:** native ARM64 Windows and ARM64 Linux installers, built-in updater with silent Windows/AppImage updates, progressive EPUB opening and instant reflow, Dial deck Appearance popover, animated icons, command palette, EPUB CSS/picture theming, eight offline dictionary packs, and engine-first headless CLI / MCP control ([`docs/releases/v0.0.6.md`](docs/releases/v0.0.6.md)) |
 | 2026-11-15 | **Performance and memory pass:** streamed EPUB cover extraction, cached PDF `RenderSession` across tiles, streamed Kokoro ONNX weights from disk, zero-allocation soft-hyphen search scanning, flattened G2P neural vectors with KV caching, and reused GPU buffers with cached notes rows ([`docs/memory.md`](docs/memory.md)) |

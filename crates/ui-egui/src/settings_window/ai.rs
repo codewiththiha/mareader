@@ -365,7 +365,7 @@ fn start_picker(ui: &mut Ui, salt: &str, start: &mut PageStart) {
 }
 
 /// A saved model for a task, or `none`.
-fn preset_picker(
+pub(super) fn preset_picker(
     ui: &mut Ui,
     salt: &str,
     presets: &[ModelPreset],
@@ -386,7 +386,7 @@ fn preset_picker(
 }
 
 /// The book's language or a listed one; ones Apple can't write are greyed.
-fn language_picker(
+pub(super) fn language_picker(
     ui: &mut Ui,
     (salt, none): (&str, &str),
     chosen: &mut Option<String>,

@@ -74,11 +74,22 @@ impl Shaded {
     }
 }
 
+/// A word recalled in study mode, by its page and first character.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Settled {
+    pub page: usize,
+    pub start: usize,
+    /// The solved or the missed look.
+    pub ink: Reserved,
+}
+
 /// The shaded words on screen, their line boxes in one list.
 #[derive(Debug, Default)]
 pub struct Shading {
     words: Vec<Shaded>,
     rects: Vec<Rect>,
+    /// Recalled words' line boxes, each in its look; never clicked.
+    settled: Vec<(Rect, Reserved)>,
 }
 
 impl Shading {
@@ -95,8 +106,13 @@ impl std::ops::Deref for Shading {
     }
 }
 
-/// The shaded words on the pages on screen.
-pub fn place(vocab: &mut dyn ShadingSource, look: &Look, pages: &Pages<'_>) -> Shading {
+/// The shaded words on the pages on screen; `settled` ones only drawn.
+pub fn place(
+    vocab: &mut dyn ShadingSource,
+    look: &Look,
+    pages: &Pages<'_>,
+    settled: &[Settled],
+) -> Shading {
     let mut out = Shading::default();
     for sheet in pages.sheets.iter().filter(|s| s.shown.is_positive()) {
         let Some(layer) = pages.texts.get(pages.doc, sheet.page) else {
@@ -110,6 +126,12 @@ pub fn place(vocab: &mut dyn ShadingSource, look: &Look, pages: &Pages<'_>) -> S
                 .iter()
                 .map(|b| sheet.to_screen(*b).intersect(sheet.shown));
             out.rects.extend(on_screen.filter(|r| r.is_positive()));
+            let at = |w: &&Settled| w.page == sheet.page && w.start == chars.start;
+            if let Some(word) = settled.iter().find(at) {
+                let rects = out.rects.drain(start..).map(|r| (r, word.ink));
+                out.settled.extend(rects);
+                continue;
+            }
             let rects = out.rects.get(start..).unwrap_or_default();
             if let Some(bounds) = rects.iter().copied().reduce(|a, b| a.union(b)) {
                 out.words.push(Shaded {
@@ -133,6 +155,9 @@ pub fn add(shaded: &Shading, look: &Look, hovered: Option<usize>, under: &mut Un
         for r in shaded.rects_of(word) {
             under.add(*r, look.ink.pen, look.ink.color, look.opacity + lift);
         }
+    }
+    for (r, ink) in &shaded.settled {
+        under.add(*r, ink.pen, ink.color, look.opacity);
     }
 }
 

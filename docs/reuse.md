@@ -24,3 +24,5 @@ name the owning modules for shared primitives across the workspace.
 | spot / click | `crates/ui-egui/tests/common/levels.rs` | Kittest: the screen point of a word on page 0, and a click on it. |
 | Ahead | `crates/engine/src/study_mode/run.rs` | A deck made past the gate (making, ready or failed); `Run::take_ahead` hands it to the gate, `trim_ahead` drops those no longer coming. |
 | space::view | `crates/engine/src/space.rs` | Studied words as rows for one filter: scope, tabs, groups, sorts, counts and stats. Space's page and its CSV read only this. |
+| settings pickers | `crates/ui-egui/src/settings_window/{ai.rs, vocabulary.rs}` | `preset_picker`, `language_picker` and `level_row`, `pub(super)` for the AI, Vocabulary and Study mode tabs; a task's picker names what an unset choice follows. |
+| Settled | `crates/ui-egui/src/vocab.rs` | A recalled word by page and first character, drawn in its own reserved look by `vocab::place`/`add` and never hit or hovered. |

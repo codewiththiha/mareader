@@ -274,6 +274,8 @@ pub struct ViewContext {
     pub picked: Option<Vec<MarkId>>,
     /// How hard words are shaded; none while shading is off.
     pub shading: Option<crate::vocab::Look>,
+    /// Words recalled in study mode, in their own look.
+    pub settled: Vec<crate::vocab::Settled>,
     /// The find bar's hits, in the pane it searches.
     pub found: Option<mareader_engine::search::Lit>,
     /// The phrase read aloud, in the pane reading.

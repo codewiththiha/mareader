@@ -16,17 +16,19 @@ pub mod recall;
 pub mod waiting;
 
 use std::collections::HashMap;
+use std::ops::Range;
 
 use egui::{Context, Rect};
 use mareader_engine::pane::ViewMode;
 use mareader_engine::session::Session;
 use mareader_engine::study_mode::{DeckState, Run};
-use mareader_study::mode::Mode;
 use mareader_settings::{BarItem, HighlightSettings};
+use mareader_study::mode::{Mode, Outcome};
 use mareader_workspace::PaneId;
 
 use crate::selection::Sheet;
 use crate::ui_command::Commands;
+use crate::vocab::Settled;
 
 /// The page's shading while `pane` studies: kept only with hints on.
 ///
@@ -47,6 +49,24 @@ pub fn shading(
     let hints = session.settings().study.mode.hints;
     let hidden = run.is_some() && !hints;
     look.filter(|_| !hidden)
+}
+
+/// The words `pane` recalled this run, in the solved or the missed look.
+pub fn settled(session: &Session, pane: PaneId) -> Vec<Settled> {
+    let looks = &session.settings().study.highlights;
+    let Some(run) = session.study_mode().run(pane) else {
+        return Vec::new();
+    };
+    let ink = |outcome: &Outcome| match outcome {
+        Outcome::Missed => looks.missed,
+        Outcome::Learning | Outcome::Memorized => looks.solved,
+    };
+    let settle = |(page, chars, outcome): &(usize, Range<usize>, Outcome)| Settled {
+        page: *page,
+        start: chars.start,
+        ink: ink(outcome),
+    };
+    run.recalled.iter().map(settle).collect()
 }
 
 /// The selection bar while studying: no Explain, no Look up.

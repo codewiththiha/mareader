@@ -4,12 +4,15 @@
 //! its deck. Until the pages are measured on the current layout the pane
 //! is held at the page it showed when planning began.
 
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mareader_library::{BookId, WordStatus};
 use mareader_session::Document;
-use mareader_study::mode::{Batch, Floor, Key, Mode, Size, Via, entering, gate, plan, retypeset};
+use mareader_study::mode::{
+    Batch, Floor, Key, Mode, Outcome, Size, Via, entering, gate, plan, retypeset,
+};
 
 use super::backs::Shown;
 use super::deck_job::{Built, DeckJob, Tags};
@@ -157,6 +160,8 @@ pub struct Run {
     pub ahead: Vec<Ahead>,
     /// The batch, by its first page, whose deck the dictionary writes instead.
     pub fallback: Option<usize>,
+    /// Words recalled this run: their page, characters and outcome.
+    pub recalled: Vec<(usize, Range<usize>, Outcome)>,
     /// What the decks were made from: the source, the level, the writer.
     recipe: String,
     /// The layout measured: the document's layout key and page count.
@@ -181,6 +186,7 @@ impl Run {
             deck: DeckState::None,
             ahead: Vec::new(),
             fallback: None,
+            recalled: Vec::new(),
             recipe: String::new(),
             layout: None,
             size: None,

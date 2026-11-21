@@ -195,6 +195,17 @@ rows above, and **More than one page** holds Time on a page, Pages at once
 and Pages per request. A task without its own model reads "Same as AI
 Dictionary", or None while that has none either.
 
+## While a pane studies
+
+Study mode keeps pages as written ([`study-mode.md`](study-mode.md)). In a
+pane that studies, Summarize, Translate, Simplify, a picked group's tasks
+and Redo are refused before they reach the model: the engine's
+`execute/study_mode.rs::locks` answers with a warning toast, and the page
+menu says "Study mode keeps pages as written" under the Study section.
+Results made before stay saved with the book. Study's own model writes the
+cards and judges recalls; it is set in Settings › Study mode and follows
+the AI Dictionary's until picked.
+
 ## Where it lives
 
 | Part | Path |

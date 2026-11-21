@@ -32,6 +32,8 @@ mod models;
 #[cfg(not(target_arch = "wasm32"))]
 mod provider_card;
 mod read_aloud;
+mod study;
+mod tab_icon;
 mod updates;
 mod vocabulary;
 mod voice_model;
@@ -62,6 +64,7 @@ const HEADER_H: f32 = 56.0;
 const FOOT_H: f32 = 12.0;
 
 use mareader_engine::settings::Tab;
+use tab_icon::TabIcon;
 
 /// Live engine/front-end services read by individual settings tabs.
 pub struct Services<'a> {
@@ -345,6 +348,7 @@ fn tab_body(
             vocabulary::tab(ui, (&mut s.study, &mut s.dictionary), heard, out);
         }
         Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, live.dict, out),
+        Tab::Study => study::tab(ui, s, out),
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Ai => {
             let looks = (&mut s.study.highlights, &mut s.study.gloss);
@@ -1159,30 +1163,6 @@ fn note(ui: &mut Ui, text: &str) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(8.0);
     ui.label(RichText::new(text).size(t.text_small).color(t.muted));
-}
-
-/// A tab's icon: presentation, so it stays above the line.
-pub(crate) trait TabIcon {
-    fn icon(self) -> Icon;
-}
-
-impl TabIcon for Tab {
-    fn icon(self) -> Icon {
-        match self {
-            Tab::Appearance => Icon::Appearance,
-            Tab::Layout => Icon::Layout,
-            Tab::ReadAloud => Icon::ReadAloud,
-            Tab::Highlights => Icon::Highlight,
-            Tab::Vocabulary => Icon::Levels,
-            Tab::Dictionary => Icon::Dictionary,
-            Tab::Ai => Icon::Ai,
-            Tab::Models => Icon::Chip,
-            Tab::Panes => Icon::SplitRight,
-            Tab::Motion => Icon::Motion,
-            Tab::Updates => Icon::Download,
-            Tab::Model(model) => Icon::engine(model.id).unwrap_or(Icon::VoiceModel),
-        }
-    }
 }
 
 #[cfg(test)]

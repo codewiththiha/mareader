@@ -61,6 +61,8 @@ pub fn kept_for(pen: Pen, c: Rgb, look: &HighlightSettings) -> Option<&'static s
         Some("Kept for AI marks")
     } else if look.cefr == wanted {
         Some("Kept for CEFR shading")
+    } else if look.solved == wanted || look.missed == wanted {
+        Some("Kept for study recall")
     } else {
         None
     }

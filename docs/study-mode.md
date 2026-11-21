@@ -146,7 +146,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **The page menu** opens with a Study section: the switch, Proactive or
   Reactive, and the pages per batch. When a need is missing the switch is
   off, the reason shows and a row opens the settings tab that fixes it.
-  While a pane studies the AI tasks below it are disabled.
+  *Study settings…* opens Settings › Study mode. While a pane studies the
+  AI tasks below it are disabled.
 - **The view holds at the gate:** a strip scrolls no further than the end
   of the gate page, and a paged mode turns no further than it.
 - **The veil:** frosted paper over every locked page on screen, opaque to the
@@ -176,8 +177,20 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   and the tries used, asks what the word means here, and answers *Almost* or
   *Not quite* with the AI's feedback and a hint, *Correct* with
   *Add to memorized?*, the meaning and synonyms once revealed, or why the
-  judge failed with *Retry*. Escape closes it.
-- **Shots:** `study_mode=proactive|reactive|off`, `study_gate=on`,
+  judge failed with *Retry*. Escape closes it. With *Ask before adding to
+  memorized* off, a correct answer is memorized at once.
+- **Solved and missed:** a word recalled takes a reserved look until the
+  run ends, a green underline when answered (`highlights.solved`) and a red
+  one when missed (`highlights.missed`); it opens no recall again. No pen
+  may take either look (`HighlightSettings::reserved`), and Settings ›
+  Highlights › Other marks shows them as *Study recall*.
+- **Settings › Study mode** (`settings_window/study.rs`): the mode and the
+  reading level shared with Vocabulary; Batches (size by pages or
+  characters); Proactive (prepare ahead, time per word, Strict, shading,
+  words per deck, cards from); Reactive (ask before memorizing); AI
+  (study's model and language, desktop only); and *Open Space*.
+- **Shots:** `settings=study` opens the tab,
+  `study_mode=proactive|reactive|off`, `study_gate=on`,
   `study_deck=reveal`, `study_cards=ready|silent|failing` (a scripted AI that
   writes every back and judges "right" correct and "close" close, never
   answers, or fails) and `recall=word` or `recall=word:answer`, a recall on

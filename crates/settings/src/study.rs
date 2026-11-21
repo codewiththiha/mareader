@@ -104,6 +104,10 @@ pub struct HighlightSettings {
     pub ai: Reserved,
     /// How words above the reader's level are shaded.
     pub cefr: Reserved,
+    /// How a word recalled right in Reactive study mode is marked.
+    pub solved: Reserved,
+    /// How a word missed in Reactive study mode is marked.
+    pub missed: Reserved,
 }
 
 impl HighlightSettings {
@@ -137,9 +141,9 @@ impl HighlightSettings {
         }
     }
 
-    /// Looks kept for other purposes: the AI's and CEFR's.
-    pub fn reserved(&self) -> [Reserved; 2] {
-        [self.ai, self.cefr]
+    /// Looks kept for other purposes: the AI's, CEFR's and study's.
+    pub fn reserved(&self) -> [Reserved; 4] {
+        [self.ai, self.cefr, self.solved, self.missed]
     }
 
     /// Whether the reader may highlight with `pen` in `color`.
@@ -170,6 +174,11 @@ impl HighlightSettings {
             let (ai, own) = (self.ai.color, self.color(self.cefr.pen));
             let free = Self::PALETTE.into_iter().find(|c| *c != ai && *c != own);
             self.cefr.color = free.unwrap_or(Self::default().cefr.color);
+        }
+        // Missed never passes for solved.
+        if self.missed == self.solved {
+            self.missed = Self::default().missed;
+            self.solved = Self::default().solved;
         }
         // A pen whose colour became reserved moves to the next one free.
         for pen in Pen::ALL {
@@ -205,6 +214,14 @@ impl Default for HighlightSettings {
             },
             cefr: Reserved {
                 pen: Pen::Full,
+                color: Rgb(0xff, 0x00, 0x00),
+            },
+            solved: Reserved {
+                pen: Pen::Underline,
+                color: Rgb(0x83, 0xd3, 0x3c),
+            },
+            missed: Reserved {
+                pen: Pen::Underline,
                 color: Rgb(0xff, 0x00, 0x00),
             },
         }

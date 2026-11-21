@@ -158,4 +158,18 @@ mod tests {
         let s: StudyModeSettings = serde_json::from_str(r#"{"unit":"chars"}"#).unwrap();
         assert_eq!(s.unit, Unit::Chars);
     }
+
+    #[test]
+    fn study_recall_keeps_two_looks_no_pen_takes() {
+        let mut h = crate::HighlightSettings {
+            underline: mareader_appearance::Rgb(0x83, 0xd3, 0x3c),
+            ..crate::HighlightSettings::default()
+        };
+        h.missed = h.solved;
+        h.sanitize();
+        assert_ne!(h.missed, h.solved);
+        assert!(!h.allowed(crate::Pen::Underline, h.solved.color));
+        assert!(h.allowed(crate::Pen::Underline, h.underline));
+        assert!(!h.colors(crate::Pen::Underline).contains(&h.missed.color));
+    }
 }

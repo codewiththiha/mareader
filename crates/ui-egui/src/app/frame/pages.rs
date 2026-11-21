@@ -319,6 +319,7 @@ impl MareaderApp {
                     card: study.card_mark(id),
                     picked: study.picked(id),
                     shading: study_mode::shading(session, id, context.shading),
+                    settled: study_mode::settled(session, id),
                     menu_shot: menu_shot && id == view.active,
                     found: pane_found(&context.lit, id),
                     aloud: session.read_aloud().lit(id),

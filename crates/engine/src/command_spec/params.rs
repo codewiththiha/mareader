@@ -144,7 +144,10 @@ pub(crate) const FOLDER: &[(&str, &str)] = &[("folder", "path")];
 pub(crate) const TAB: &[(&str, &str)] = &[
     (
         "tab",
-        "appearance|layout|read-aloud|highlights|vocabulary|dictionary|ai|models|panes|motion?",
+        concat!(
+            "appearance|layout|read-aloud|highlights|vocabulary|dictionary",
+            "|ai|study|models|panes|motion?",
+        ),
     ),
     ("model", "str?"),
 ];

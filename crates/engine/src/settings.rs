@@ -15,6 +15,8 @@ pub enum Tab {
     Dictionary,
     /// What the AI does: the AI Dictionary, the library, pages.
     Ai,
+    /// Study mode: its batches, decks and recall.
+    Study,
     /// The models tasks ask, and their providers' keys.
     Models,
     Panes,
@@ -27,7 +29,7 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 11] = [
+    pub const ALL: [Tab; 12] = [
         Tab::Appearance,
         Tab::Layout,
         Tab::ReadAloud,
@@ -35,6 +37,7 @@ impl Tab {
         Tab::Vocabulary,
         Tab::Dictionary,
         Tab::Ai,
+        Tab::Study,
         Tab::Models,
         Tab::Panes,
         Tab::Motion,
@@ -50,6 +53,7 @@ impl Tab {
             Tab::Vocabulary => "Vocabulary",
             Tab::Dictionary => "Dictionary",
             Tab::Ai => "AI",
+            Tab::Study => "Study mode",
             Tab::Models => "AI models",
             Tab::Panes => "Panes",
             Tab::Motion => "Motion",
@@ -68,6 +72,7 @@ impl Tab {
             "models" => Some(Tab::Models),
             "voices" | "read_aloud" | "speech" => Some(Tab::ReadAloud),
             "update" | "updates" => Some(Tab::Updates),
+            "study" | "study_mode" | "study-mode" => Some(Tab::Study),
             _ => Self::ALL
                 .into_iter()
                 .find(|t| t.label().eq_ignore_ascii_case(&s)),
@@ -78,7 +83,7 @@ impl Tab {
     pub fn group(self) -> &'static str {
         match self {
             Tab::Appearance | Tab::Layout | Tab::ReadAloud | Tab::Model(_) => "Reading",
-            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::Ai => "Study",
+            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::Ai | Tab::Study => "Study",
             Tab::Models | Tab::Panes | Tab::Motion | Tab::Updates => "App",
         }
     }

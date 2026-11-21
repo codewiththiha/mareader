@@ -104,6 +104,13 @@ fn other_marks(ui: &mut Ui, h: &HighlightSettings, marks: Marks, out: &mut Comma
                 change(ui, ("Change in Vocabulary", Tab::Vocabulary), out);
                 preview(ui, h.cefr.pen, h.cefr.color, h.opacity);
             });
+            divider(ui);
+            let hint = "Words recalled in Reactive study mode: solved, then missed";
+            row(ui, "Study recall", hint, |ui| {
+                change(ui, ("Study mode", Tab::Study), out);
+                preview(ui, h.missed.pen, h.missed.color, h.opacity);
+                preview(ui, h.solved.pen, h.solved.color, h.opacity);
+            });
         }
     });
     note(
@@ -130,7 +137,7 @@ fn pen_row(ui: &mut Ui, h: &mut HighlightSettings, pen: Pen) {
         let free = |c: Rgb| !reserved.contains(&Reserved { pen, color: c });
         palette(
             ui,
-            (pen.label(), "Kept for AI marks or shading"),
+            (pen.label(), "Kept for AI, shading or study marks"),
             &mut color,
             free,
         );
