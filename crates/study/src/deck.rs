@@ -100,7 +100,7 @@ impl Deck {
 
 /// Default cards per deck; 4 to 30 is the allowed range.
 pub const DEFAULT_MAX_CARDS: usize = 12;
-pub const MAX_CARDS_MIN: usize = 4;
+pub const MAX_CARDS_MIN: usize = 2;
 pub const MAX_CARDS_MAX: usize = 30;
 
 /// Plans a deck: one card per `(lemma, class)`, most repeated and hardest
@@ -131,10 +131,10 @@ pub fn build_deck(spans: &[HardSpan], known: &HashSet<String>, max: usize) -> De
                     also: Vec::new(),
                 });
             }
-        } else if !is_known {
-            if let Some(card) = found.iter_mut().find(|card| card.key == span.word.key) {
-                card.count = card.count.saturating_add(1);
-            }
+        } else if !is_known
+            && let Some(card) = found.iter_mut().find(|card| card.key == span.word.key)
+        {
+            card.count = card.count.saturating_add(1);
         }
     }
 

@@ -556,11 +556,24 @@ impl AiSettings {
 
     /// Forgets a model; tasks that used it are left without one.
     pub fn remove_preset(&mut self, id: PresetId) {
-        let was_study = self.tasks.study.preset == Some(id);
-        self.presets.retain(|p| p.id != id);
-        self.unassign_missing();
-        if was_study {
+        if self.tasks.study.preset == Some(id) {
+            self.tasks.study.preset = None;
             self.tasks.study.language = None;
+        }
+        let ids: Vec<PresetId> = self.presets.iter().map(|p| p.id).collect();
+        let tasks = &mut self.tasks;
+        let slots = [
+            &mut tasks.explain.preset,
+            &mut tasks.study.preset,
+            &mut tasks.organize.preset,
+            &mut tasks.summarize.preset,
+            &mut tasks.translate.preset,
+            &mut tasks.simplify.preset,
+        ];
+        for slot in slots {
+            if slot.is_some_and(|pid| !ids.contains(&pid)) {
+                *slot = None;
+            }
         }
     }
 

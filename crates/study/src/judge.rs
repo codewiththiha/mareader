@@ -157,8 +157,8 @@ pub fn judge(attempt: &str, entry: &JudgedEntry) -> Judged {
         .get(..60.min(attempt.len()))
         .unwrap_or(attempt.trim());
     Judged::wrong(format!(
-        "Not quite. “{}” does not fit this sentence. Here it means: {}",
-        shown, entry.meaning
+        "Not quite. “{}” does not fit this sentence.",
+        shown
     ))
 }
 
