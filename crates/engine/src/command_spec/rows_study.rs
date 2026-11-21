@@ -12,7 +12,7 @@ use crate::study_mode::{Action, Ask};
 
 /// Study mode's asks a script can send.
 pub(crate) const ACTS: &str =
-    "toggle|off|start|known|undo|next_batch|retry|use_dictionary|read_previous|recall";
+    "toggle|off|start|reopen|known|undo|next_batch|retry|use_dictionary|read_previous|recall";
 
 /// What a recall asks; `open` takes `page`, `from` and `to`, `answer` `text`.
 const ASKS: &str = "open|answer|again|reveal|memorized|learning|missed|close";
@@ -54,6 +54,7 @@ fn parse(at: &Session, params: &Value) -> Result<Command, String> {
         }
         "off" => Action::Off(pane),
         "start" => Action::Start(pane),
+        "reopen" => Action::Reopen(pane),
         "known" => {
             let word = json::text(params, "word")?;
             let key = Key::parse(&word).ok_or_else(|| format!("{word:?} names no word"))?;

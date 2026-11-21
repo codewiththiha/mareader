@@ -361,7 +361,11 @@ pub fn study_mode(session: &Session, pane: PaneId) -> Value {
         "gate": run.gate(),
         "unlocked": run.unlocked,
         "batches": run.batches.len(),
+        "start": run.start,
         "deck": deck,
+        "away": run.shown_deck().is_some_and(|o| o.away),
+        "kept": run.kept.len(),
+        "review": run.review.is_some(),
         "cards": cards,
         "why": why,
     })

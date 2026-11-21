@@ -8,10 +8,11 @@ use std::sync::Arc;
 
 use mareader_library::{BookId, Library, NewWord, WordId, WordStatus};
 use mareader_session::Document;
-use mareader_study::mode::{Have, Key, Mode, Pos, Size, check};
+use mareader_study::mode::{Batch, Have, Key, Mode, Pos, Size, check};
 use mareader_workspace::PaneId;
 
 use super::Session;
+use crate::command::Command;
 use crate::event::{Event, PaneAction};
 use crate::library::wall_ms;
 use crate::notes_panel::{bookmark_spot, page_of};
@@ -70,7 +71,7 @@ impl Session {
             return false;
         };
         let book = run.book;
-        let DeckState::Open(open) = &mut run.deck else {
+        let Some(open) = run.shown_deck_mut() else {
             return false;
         };
         let Some((at, shown)) = open.take_known(key) else {
@@ -96,7 +97,7 @@ impl Session {
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
         };
-        let DeckState::Open(open) = &mut run.deck else {
+        let Some(open) = run.shown_deck_mut() else {
             return false;
         };
         let Some((key, prior)) = open.undo_known() else {
@@ -113,31 +114,125 @@ impl Session {
         true
     }
 
-    /// Ends the open deck: its cards are kept as learning, its pages unlock.
-    ///
-    /// Refused while a strict time floor still runs.
+    /// Reads now: ends the open deck, or closes one opened again.
     pub(crate) fn study_mode_start(&mut self, pane: PaneId, now: f64) -> Result<(), String> {
-        let strict = self.settings.study.mode.strict;
         let Some(run) = self.study_mode.run_mut(pane) else {
             return Err("Study mode is off here.".to_owned());
         };
-        let book = run.book;
-        let DeckState::Open(open) = &run.deck else {
-            return Err("No deck is open.".to_owned());
-        };
-        if open.floor.locked(strict, now) {
-            return Err("Study the cards a little longer.".to_owned());
+        if run.close_review() {
+            return Ok(());
         }
+        match self.study_finish(pane, now) {
+            Some(_) => Ok(()),
+            None => Err("No deck is open.".to_owned()),
+        }
+    }
+
+    /// Ends the gate's deck: its cards are kept as learning and its pages
+    /// unlock. With no time limit the deck is kept, to open again.
+    fn study_finish(&mut self, pane: PaneId, now: f64) -> Option<Batch> {
+        let run = self.study_mode.run_mut(pane)?;
+        if !matches!(run.deck, DeckState::Open(_)) {
+            return None;
+        }
+        let DeckState::Open(mut open) = std::mem::replace(&mut run.deck, DeckState::None) else {
+            return None;
+        };
+        open.allowance.pause(now);
+        open.away = false;
         let batch = open.batch.clone();
-        if let Some(book) = book {
+        if let Some(book) = run.book {
             for shown in &open.cards {
                 record(&mut self.library.model, book, shown, WordStatus::Learning);
             }
         }
+        if !open.allowance.limited() {
+            run.kept.push(open);
+        }
         run.unlock_through(batch.to);
         self.study_save_gate(pane);
         self.study_show(pane, batch.from, now);
-        Ok(())
+        Some(batch)
+    }
+
+    /// The deck came into sight or left it; one seen and left waits to be
+    /// asked back, and one opened again goes back with those kept.
+    pub(crate) fn study_mode_shown(&mut self, pane: PaneId, shown: bool, now: f64) -> bool {
+        let Some(run) = self.study_mode.run_mut(pane) else {
+            return false;
+        };
+        if !shown && run.close_review() {
+            return true;
+        }
+        let Some(open) = run.shown_deck_mut() else {
+            return false;
+        };
+        match shown {
+            true if open.away => return false,
+            true => open.allowance.resume(now),
+            false => {
+                open.away |= open.allowance.running();
+                open.allowance.pause(now);
+            }
+        }
+        true
+    }
+
+    /// Shows the cards left unfinished, or those kept for the pages read.
+    pub(crate) fn study_mode_reopen(&mut self, pane: PaneId) -> bool {
+        self.study_mode.run_mut(pane).is_some_and(Run::reopen)
+    }
+
+    /// Leaves the deck for the page before it, keeping its time; that page.
+    pub(crate) fn study_mode_leave(&mut self, pane: PaneId, now: f64) -> Option<usize> {
+        let lock = self.settings.study.mode.lock;
+        let run = self.study_mode.run_mut(pane)?;
+        if let Some(open) = &run.review {
+            let page = open.batch.from.checked_sub(1)?;
+            run.close_review();
+            return Some(page);
+        }
+        let page = run.back(lock)?;
+        if let DeckState::Open(open) = &mut run.deck {
+            open.allowance.pause(now);
+            open.away = true;
+        }
+        Some(page)
+    }
+
+    /// Closes the gate's deck for good once its time is spent.
+    fn study_expire(&mut self, pane: PaneId, now: f64) -> bool {
+        let deck = self.study_mode.run(pane).map(|r| &r.deck);
+        let spent = matches!(deck, Some(DeckState::Open(o)) if o.allowance.spent(now));
+        if !spent {
+            return false;
+        }
+        if let Some(batch) = self.study_finish(pane, now) {
+            self.emit(Event::Toast(Toast::info(mode::time_up(&batch.label()))));
+        }
+        true
+    }
+
+    /// Offers the cards again as the reader comes back into their pages.
+    fn study_arrive(&mut self, pane: PaneId, now: f64) -> bool {
+        let Some(current) = self.documents.place(pane).map(|p| p.current) else {
+            return false;
+        };
+        let Some(run) = self.study_mode.run_mut(pane) else {
+            return false;
+        };
+        let Some(batch) = run.arrived(current) else {
+            return false;
+        };
+        let left = match &run.deck {
+            DeckState::Open(open) if open.batch == batch => open.allowance.left(now),
+            _ => None,
+        };
+        let open = Command::StudyMode(mode::Action::Reopen(pane));
+        let said = mode::ask_back(&batch.label(), left);
+        let toast = Toast::info(said).action(mode::OPEN_CARDS, open);
+        self.emit(Event::Toast(toast));
+        true
     }
 
     /// Asks again for the deck that failed at `pane`'s gate.
@@ -205,7 +300,8 @@ impl Session {
             let planned = self.study_plan(pane);
             let followed = self.study_follow(pane);
             let decks = self.study_deck(pane, now) | self.study_ahead(pane, now);
-            return planned | followed | decks | self.study_hold(pane);
+            let timed = self.study_expire(pane, now) | self.study_arrive(pane, now);
+            return planned | followed | decks | timed | self.study_hold(pane);
         };
         self.study_mode.stop(pane);
         if !why.is_empty() {

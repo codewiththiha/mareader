@@ -228,7 +228,8 @@ fn script_04_build_word_list() {
     assert!(md.contains("quartz"), "{md}");
 }
 
-/// Settings with a model for study mode's cards and no time floor.
+/// Settings with a model for study mode's cards; a deck's time runs only
+/// on screen, so it never runs out here.
 fn write_study_settings(state: &Path) {
     std::fs::create_dir_all(state).expect("mkdir state");
     let settings = serde_json::json!({
@@ -239,7 +240,6 @@ fn write_study_settings(state: &Path) {
             ],
             "tasks": {"explain": {"preset": 1}},
         },
-        "study": {"mode": {"strict": false}},
     });
     std::fs::write(state.join("settings.json"), settings.to_string()).expect("write settings");
 }

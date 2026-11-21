@@ -3,7 +3,8 @@
 //! A card's front holds the word alone and its band; turned over, it gives
 //! the meaning and the word class, with the AI's synonyms and example. A
 //! click or Space turns it, a drag or the arrows move on, K marks the word
-//! known. Start unlocks the batch once the time floor runs out.
+//! known. Read now unlocks the batch whenever the reader likes; with a time
+//! limit the deck also closes once its minutes are spent.
 
 use egui::{Align, Frame, Id, Key, Layout, Margin, RichText, Sense, Stroke, Ui, Vec2, vec2};
 use mareader_engine::command::Command;
@@ -19,9 +20,11 @@ use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 
 pub const KNOWN: &str = "I already know this";
-pub const START: &str = "Start reading";
+pub const START: &str = "Read now";
 pub const SHUFFLE: &str = "Shuffle";
 const NO_MEANING: &str = "No meaning was found for this word.";
+/// What the time left in the header is for.
+const LEFT_TIP: &str = "The cards close for these pages once it runs out";
 /// The deck's widest; a narrow pane takes it in.
 const WIDTH: f32 = 440.0;
 /// A card's height to its width.
@@ -132,10 +135,10 @@ fn framed(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
 
 fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
-    let left = open.floor.left(pane.now);
+    let left = open.allowance.left(pane.now);
     let count = open.cards.len();
     cursor.fit(count);
-    header(ui, pane, open, left, cursor);
+    header(ui, open, left, cursor);
     ui.add_space(t.gap * 1.5);
     if count == 0 {
         let all = "You know every word in these pages.";
@@ -157,8 +160,8 @@ fn deck(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &mu
     ui.add_space(t.gap);
     marks(ui, pane, open, cursor, out);
     ui.add_space(t.gap);
-    footer(ui, pane, open, left, out);
-    if left > 0.0 {
+    footer(ui, pane, out);
+    if let Some(left) = left.filter(|_| open.allowance.running()) {
         let tick = left.fract().max(0.05) as f32;
         ui.ctx().request_repaint_after_secs(tick);
     }
@@ -190,8 +193,8 @@ pub fn faces(shown: &Shown) -> Faces {
     }
 }
 
-/// The capsule over the cards: the pages, the count, the time and shuffle.
-fn header(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64, cursor: &mut Cursor) {
+/// The capsule over the cards: the pages, the count, the time left, shuffle.
+fn header(ui: &mut Ui, open: &Open, left: Option<f64>, cursor: &mut Cursor) {
     let t = Tokens::get(ui.ctx());
     let width = ui.available_width();
     Frame::new()
@@ -208,7 +211,6 @@ fn header(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64, cursor: &mut Cur
         .show(ui, |ui| {
             ui.set_width(width - 28.0);
             ui.horizontal(|ui| {
-                ring(ui, open.floor.progress(pane.now), &t);
                 let lead = format!("Before {}", open.batch.label());
                 ui.label(RichText::new(lead).font(theme::medium(15.0)));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -216,32 +218,16 @@ fn header(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64, cursor: &mut Cur
                         let seed = ui.input(|i| i.time).to_bits();
                         cursor.shuffle(seed);
                     }
-                    let clock = RichText::new(clock(left)).font(theme::medium(15.0));
-                    ui.label(clock);
+                    if let Some(left) = left {
+                        let said = format!("{} left", clock(left));
+                        let clock = RichText::new(said).size(t.text_small).color(t.muted);
+                        ui.label(clock).on_hover_text(LEFT_TIP);
+                    }
                     let n = open.cards.len().to_string();
                     ui.label(RichText::new(n).size(15.0).color(t.muted));
                 });
             });
         });
-}
-
-/// The time floor as a small ring filling up.
-fn ring(ui: &mut Ui, progress: f32, t: &Tokens) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
-    let c = rect.center();
-    let r = 7.0;
-    let painter = ui.painter();
-    painter.circle_stroke(c, r, Stroke::new(2.5, t.track));
-    let steps = 40;
-    let done = (progress.clamp(0.0, 1.0) * steps as f32).round() as usize;
-    let at = |i: usize| {
-        let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * i as f32 / steps as f32;
-        c + r * Vec2::angled(a)
-    };
-    let arc: Vec<_> = (0..=done).map(at).collect();
-    if arc.len() > 1 {
-        painter.add(egui::Shape::line(arc, Stroke::new(2.5, t.accent)));
-    }
 }
 
 /// Two crossing arrows: the order shuffled.
@@ -307,7 +293,7 @@ fn marks(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &m
         }
     }
     let undo = open.can_undo();
-    let back = pane.run.back(false).is_some();
+    let back = pane.run.back(pane.lock).is_some();
     if !undo && !back {
         return;
     }
@@ -323,16 +309,10 @@ fn marks(ui: &mut Ui, pane: &Pane<'_>, open: &Open, cursor: &mut Cursor, out: &m
     });
 }
 
-fn footer(ui: &mut Ui, pane: &Pane<'_>, open: &Open, left: f64, out: &mut Commands) {
+fn footer(ui: &mut Ui, pane: &Pane<'_>, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
-    let locked = open.floor.locked(pane.strict, pane.now);
-    let label = match locked {
-        true => format!("{START} · {}", clock(left)),
-        false => START.to_owned(),
-    };
-    let start = widgets::primary_button(ui, None, &label, t.accent, &t);
-    let start = ui.add_enabled(!locked, start.min_size(vec2(160.0, 32.0)));
-    if start.clicked() {
+    let start = widgets::primary_button(ui, None, START, t.accent, &t);
+    if ui.add(start.min_size(vec2(160.0, 32.0))).clicked() {
         send(out, Action::Start(pane.id));
     }
 }

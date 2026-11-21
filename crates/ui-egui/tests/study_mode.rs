@@ -70,7 +70,7 @@ type Shelves = (tempfile::TempDir, tempfile::TempDir);
 fn studying() -> Result<(H, PaneId, Shelves), Box<dyn std::error::Error>> {
     let (words, packs) = shelves();
     let mut h = levels_reader(words.path(), Some(packs.path()));
-    h.dial(|s| s.study.mode.strict = false);
+    h.dial(|s| s.study.mode.limit = false);
     h.run();
     let pane = h.state().active_pane();
     page_menu(&mut h)?;

@@ -35,8 +35,15 @@ pub enum Action {
         mode: Mode,
     },
     Off(PaneId),
-    /// Ends the open deck: its words are kept and its pages unlock.
+    /// Ends the open deck at once: its words are kept and its pages unlock.
     Start(PaneId),
+    /// The deck came into sight or left it: its time runs only in sight.
+    Shown {
+        pane: PaneId,
+        shown: bool,
+    },
+    /// Opens again the cards left unfinished, or those kept for these pages.
+    Reopen(PaneId),
     /// Saves a card's word as memorized; its card leaves the deck.
     Known {
         pane: PaneId,
@@ -65,14 +72,32 @@ pub const ON_REACTIVE: &str = "Reactive study mode on. Click a shaded word to re
 pub const REACTIVE_ONLY: &str = "Recall works in Reactive study mode.";
 pub const OFF: &str = "Study mode off.";
 pub const AUTO_OFF: &str = "Study mode turned off: what it needs is no longer available.";
-pub const READ_BACK: &str =
-    "Scroll back to re-read. The words open again when you return to the end.";
+pub const READ_BACK: &str = "Read back as long as you like. The cards wait for your return.";
+/// The button on the toast that brings the cards back.
+pub const OPEN_CARDS: &str = "Open cards";
 pub const REFUSED: &str = "Locked in study mode: no cards or dictionary until you turn it off.";
 pub const READ_ALOUD_STOP: &str = "Read aloud stops at the study gate.";
 
 /// The words for a locked batch, as its toast says.
 pub fn locked(range: &str) -> String {
     format!("Locked. Study the words for {range} first.")
+}
+
+/// The cards offered again on coming back to `range`, with the time left.
+pub fn ask_back(range: &str, left: Option<f64>) -> String {
+    match left {
+        Some(secs) => {
+            let whole = secs.max(0.0).ceil().min(f64::from(u32::MAX)) as u64;
+            let (m, s) = (whole / 60, whole % 60);
+            format!("Open the cards for {range}? {m}:{s:02} left.")
+        }
+        None => format!("Open the cards for {range} again?"),
+    }
+}
+
+/// A deck whose time ran out, as its toast says.
+pub fn time_up(range: &str) -> String {
+    format!("Time's up for the cards on {range}. Read on.")
 }
 
 /// A deck with nothing new, as its toast says.

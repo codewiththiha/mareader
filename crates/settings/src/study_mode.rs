@@ -1,4 +1,4 @@
-//! Study mode's choices: batch size, the time floor, cards and recall.
+//! Study mode's choices: batch size, the cards' time, the lock and recall.
 
 use mareader_study::mode::{MAX_PAGES, Mode, Source, Unit};
 use serde::{Deserialize, Serialize};
@@ -18,9 +18,12 @@ pub struct StudyModeSettings {
     pub chars: u32,
     /// Decks prepared ahead while reading; 0 asks at the gate.
     pub ahead: u8,
-    pub sec_per_card: u8,
-    /// Start waits for the time floor.
-    pub strict: bool,
+    /// A deck closes for good once `minutes` on it are spent.
+    pub limit: bool,
+    /// The minutes a deck may stay open, with `limit` on.
+    pub minutes: u8,
+    /// The pages before the batches are paled and locked.
+    pub lock: bool,
     /// Proactive keeps the CEFR shading on.
     pub hints: bool,
     pub max_cards: u8,
@@ -36,9 +39,9 @@ impl StudyModeSettings {
     pub const CHARS_MAX: u32 = 20_000;
     pub const AHEAD: u8 = 1;
     pub const AHEAD_MAX: u8 = 3;
-    pub const SEC_PER_CARD: u8 = 6;
-    pub const SEC_MIN: u8 = 2;
-    pub const SEC_MAX: u8 = 20;
+    pub const MINUTES: u8 = 5;
+    pub const MINUTES_MIN: u8 = 1;
+    pub const MINUTES_MAX: u8 = 30;
     pub const MAX_CARDS: u8 = 12;
     pub const CARDS_MIN: u8 = 4;
     pub const CARDS_MAX: u8 = 30;
@@ -48,7 +51,7 @@ impl StudyModeSettings {
         self.pages = self.pages.clamp(1, most);
         self.chars = self.chars.clamp(Self::CHARS_MIN, Self::CHARS_MAX);
         self.ahead = self.ahead.min(Self::AHEAD_MAX);
-        self.sec_per_card = self.sec_per_card.clamp(Self::SEC_MIN, Self::SEC_MAX);
+        self.minutes = self.minutes.clamp(Self::MINUTES_MIN, Self::MINUTES_MAX);
         self.max_cards = self.max_cards.clamp(Self::CARDS_MIN, Self::CARDS_MAX);
     }
 }
@@ -61,8 +64,9 @@ impl Default for StudyModeSettings {
             pages: Self::PAGES,
             chars: Self::CHARS,
             ahead: Self::AHEAD,
-            sec_per_card: Self::SEC_PER_CARD,
-            strict: true,
+            limit: true,
+            minutes: Self::MINUTES,
+            lock: false,
             hints: false,
             max_cards: Self::MAX_CARDS,
             source: Source::Auto,
@@ -115,14 +119,14 @@ mod tests {
             pages: 0,
             chars: 5,
             ahead: 9,
-            sec_per_card: 99,
+            minutes: 99,
             max_cards: 1,
             ..StudyModeSettings::default()
         };
         s.sanitize();
         let min = StudyModeSettings::CHARS_MIN;
         assert_eq!((s.pages, s.chars, s.ahead), (1, min, 3));
-        assert_eq!((s.sec_per_card, s.max_cards), (20, 4));
+        assert_eq!((s.minutes, s.max_cards), (30, 4));
         let mut big = StudyModeSettings {
             pages: 40,
             ..StudyModeSettings::default()
@@ -157,6 +161,9 @@ mod tests {
         assert_eq!(s, StudyModeSettings::default());
         let s: StudyModeSettings = serde_json::from_str(r#"{"unit":"chars"}"#).unwrap();
         assert_eq!(s.unit, Unit::Chars);
+        let old = r#"{"sec_per_card":6,"strict":true}"#;
+        let s: StudyModeSettings = serde_json::from_str(old).unwrap();
+        assert!(s.limit && !s.lock, "the old timer's keys are let go");
     }
 
     #[test]

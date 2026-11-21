@@ -1,4 +1,4 @@
-//! The cards before a batch, and the time they ask (decisions D1, D2, D4).
+//! The cards before a batch, and how long they may stay open (D1, D2, D4).
 //!
 //! One card stands for one key: the same word in the same role is one card
 //! however often it shows, and the same lemma in another role is its own,
@@ -98,58 +98,58 @@ pub fn build(
     }
 }
 
-/// The time a deck asks before Start: seconds per card, less known cards.
+/// How long a deck may stay open, spent only while it shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Floor {
-    per_card: f64,
-    total: f64,
-    started: f64,
-    credit: f64,
+pub struct Allowance {
+    /// Seconds in all; none sets no limit.
+    total: Option<f64>,
+    spent: f64,
+    /// When it last began to show, while it shows.
+    since: Option<f64>,
 }
 
-impl Floor {
-    /// A floor for `cards` cards, counting from `now` in seconds.
-    pub fn new(cards: usize, per_card: u32, now: f64) -> Self {
-        let per_card = f64::from(per_card);
+impl Allowance {
+    /// `minutes` to spend, or none for no limit.
+    pub fn new(minutes: Option<u32>) -> Self {
         Self {
-            per_card,
-            total: per_card * cards as f64,
-            started: finite(now),
-            credit: 0.0,
+            total: minutes.map(|m| f64::from(m) * 60.0),
+            spent: 0.0,
+            since: None,
         }
     }
 
-    /// A card marked known gives its seconds back.
-    pub fn known(&mut self) {
-        self.credit += self.per_card;
+    pub fn limited(&self) -> bool {
+        self.total.is_some()
     }
 
-    /// An undone known card takes its seconds again.
-    pub fn unknown(&mut self) {
-        self.credit = (self.credit - self.per_card).max(0.0);
-    }
-
-    pub fn total(&self) -> f64 {
-        self.total
-    }
-
-    /// Seconds still to go, never below zero.
-    pub fn left(&self, now: f64) -> f64 {
-        let spent = (finite(now) - self.started).max(0.0);
-        (self.total - spent - self.credit).max(0.0)
-    }
-
-    /// How much of the floor has passed, 0 to 1.
-    pub fn progress(&self, now: f64) -> f32 {
-        if self.total <= 0.0 {
-            return 1.0;
+    /// The deck shows from `now`: its time runs.
+    pub fn resume(&mut self, now: f64) {
+        if self.since.is_none() {
+            self.since = Some(finite(now));
         }
-        (1.0 - self.left(now) / self.total).clamp(0.0, 1.0) as f32
     }
 
-    /// Start waits while strict and time is left.
-    pub fn locked(&self, strict: bool, now: f64) -> bool {
-        strict && self.left(now) > 0.0
+    /// The deck went out of sight at `now`: its time stops.
+    pub fn pause(&mut self, now: f64) {
+        if let Some(at) = self.since.take() {
+            self.spent += (finite(now) - at).max(0.0);
+        }
+    }
+
+    pub fn running(&self) -> bool {
+        self.since.is_some()
+    }
+
+    /// Seconds still to spend; none without a limit.
+    pub fn left(&self, now: f64) -> Option<f64> {
+        let running = self.since.map_or(0.0, |at| (finite(now) - at).max(0.0));
+        let spent = self.spent + running;
+        self.total.map(|total| (total - spent).max(0.0))
+    }
+
+    /// Every second is spent: the deck closes for good.
+    pub fn spent(&self, now: f64) -> bool {
+        self.left(now).is_some_and(|left| left <= 0.0)
     }
 }
 
@@ -227,27 +227,27 @@ mod tests {
     }
 
     #[test]
-    fn the_floor_counts_down_and_known_cards_give_time_back() {
-        let mut f = Floor::new(4, 6, 100.0);
-        assert_eq!(f.total(), 24.0);
-        assert_eq!(f.left(110.0), 14.0);
-        f.known();
-        assert_eq!(f.left(110.0), 8.0);
-        assert!(f.locked(true, 110.0));
-        assert!(!f.locked(false, 110.0));
-        assert_eq!(f.left(200.0), 0.0);
-        assert_eq!(f.progress(200.0), 1.0);
-        assert_eq!(f.left(f64::NAN), 18.0);
-        assert_eq!(Floor::new(0, 6, 0.0).progress(0.0), 1.0);
+    fn the_allowance_runs_only_while_the_deck_shows() {
+        let mut a = Allowance::new(Some(2));
+        assert_eq!(a.left(0.0), Some(120.0));
+        a.resume(10.0);
+        assert_eq!(a.left(40.0), Some(90.0));
+        a.pause(40.0);
+        assert!(!a.running());
+        assert_eq!(a.left(500.0), Some(90.0), "out of sight, it keeps");
+        a.resume(500.0);
+        a.resume(520.0);
+        assert!(!a.spent(589.0));
+        assert!(a.spent(590.0));
+        assert_eq!(a.left(f64::NAN), Some(90.0), "a bad clock spends nothing");
     }
 
     #[test]
-    fn an_undone_known_card_takes_its_time_again() {
-        let mut f = Floor::new(4, 6, 0.0);
-        f.known();
-        f.unknown();
-        assert_eq!(f.left(0.0), 24.0);
-        f.unknown();
-        assert_eq!(f.left(0.0), 24.0);
+    fn no_limit_never_runs_out() {
+        let mut a = Allowance::new(None);
+        a.resume(0.0);
+        assert!(!a.limited());
+        assert_eq!(a.left(1e9), None);
+        assert!(!a.spent(1e9));
     }
 }

@@ -20,7 +20,7 @@ impl MareaderApp {
         self.ui.study_mode.begin(&studying);
         let now = ctx.input(|i| i.time);
         let active = self.active();
-        let strict = self.session.settings().study.mode.strict;
+        let lock = self.session.settings().study.mode.lock;
         let docs = self.ui.documents.as_view(self.session.documents());
         for &(id, rect) in &self.ui.pane_rects {
             let (Some(run), Some(reading)) = (state.run(id), docs.reading(id)) else {
@@ -33,7 +33,7 @@ impl MareaderApp {
                 sheets: docs.sheets(id),
                 mode: reading.mode,
                 active: id == active,
-                strict,
+                lock,
                 now,
                 current: reading.current,
                 dict: self.session.study_have(id).dict,

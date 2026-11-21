@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 pub use batches::{Batch, LIGHT_CHARS, MAX_PAGES, Size, Unit, gate, plan, plan_from, retypeset};
 pub use cards::{Answer, CardJob, CardWriter, Practice, SLOW_SECS, Wanted, Written, practice_back};
-pub use deck::{Card, Deck, Floor, Sighting, build};
+pub use deck::{Allowance, Card, Deck, Sighting, build};
 pub use judge::{Attempt, Judge, JudgeJob, Judged, Judgement, practice_verdict};
 pub use keys::{Key, Pos, bases, lemma, proper};
 pub use recall::{Done, MAX_TRIES, Outcome, Phase, Recall, Verdict};

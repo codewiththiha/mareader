@@ -32,6 +32,10 @@ pub(super) fn run(session: &mut Session, action: Action, now: f64) -> Done {
                 return Done::refused(why);
             }
         }
+        Action::Shown { pane, shown } => {
+            return changed(session.study_mode_shown(pane, shown, now));
+        }
+        Action::Reopen(pane) => return changed(session.study_mode_reopen(pane)),
         Action::Known { pane, key } => return changed(session.study_mode_known(pane, &key)),
         Action::Undo(pane) => return changed(session.study_mode_undo(pane)),
         Action::Retry(pane) => return changed(session.study_mode_retry(pane)),
@@ -41,10 +45,10 @@ pub(super) fn run(session: &mut Session, action: Action, now: f64) -> Done {
                 return Done::refused("Every batch is unlocked.".to_owned());
             };
             session.study_show(pane, gate, now);
+            session.study_mode_reopen(pane);
         }
         Action::ReadPrevious(pane) => {
-            let back = session.study_mode().run(pane).and_then(|r| r.back(false));
-            let Some(page) = back else {
+            let Some(page) = session.study_mode_leave(pane, now) else {
                 return Done::refused("Nothing comes before these pages.".to_owned());
             };
             session.study_show(pane, page, now);

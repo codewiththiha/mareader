@@ -20,7 +20,7 @@ const LEVEL: &str = "Words above your level are shaded or become cards; Vocabula
 const ANY_LANGUAGE: &str = "Answers may be in any language: the AI judges meaning, not spelling.";
 /// A count's unit for one, then for more.
 const BATCHES: (&str, &str) = (" batch", " batches");
-const SECONDS: (&str, &str) = (" s", " s");
+const MINUTES: (&str, &str) = (" min", " min");
 const BARE: (&str, &str) = ("", "");
 
 pub fn tab(ui: &mut Ui, s: &mut Settings, out: &mut Commands) {
@@ -76,7 +76,8 @@ fn batches(ui: &mut Ui, m: &mut StudyModeSettings) {
     });
 }
 
-/// The deck before each batch: made ahead, timed, how many and by whom.
+/// The deck before each batch: made ahead, its time, the lock, how many
+/// cards and by whom.
 fn proactive(ui: &mut Ui, m: &mut StudyModeSettings) {
     section(ui, "Proactive");
     group(ui, |ui| {
@@ -84,13 +85,21 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings) {
         let ahead = (0, StudyModeSettings::AHEAD_MAX);
         count_row(ui, ("Prepare ahead", hint), &mut m.ahead, ahead, BATCHES);
         divider(ui);
-        let hint = "Added up across the deck; a word known gives its time back";
-        let secs = (StudyModeSettings::SEC_MIN, StudyModeSettings::SEC_MAX);
-        let each = &mut m.sec_per_card;
-        count_row(ui, ("Study time per word", hint), each, secs, SECONDS);
+        let hint = "Off lets a deck stay open, and open again, as long as you like";
+        switch_row(ui, "Time limit on cards", hint, &mut m.limit);
+        if m.limit {
+            divider(ui);
+            let hint = "Counted only while the cards show; then they close for good";
+            let range = (
+                StudyModeSettings::MINUTES_MIN,
+                StudyModeSettings::MINUTES_MAX,
+            );
+            let n = &mut m.minutes;
+            count_row(ui, ("Minutes per deck", hint), n, range, MINUTES);
+        }
         divider(ui);
-        let hint = "Start reading waits for the time to run out";
-        switch_row(ui, "Strict timer", hint, &mut m.strict);
+        let hint = "Pales the pages before where study mode turned on";
+        switch_row(ui, "Lock pages outside the batches", hint, &mut m.lock);
         divider(ui);
         let hint = "Off makes it a real test";
         switch_row(ui, "Shade hard words while reading", hint, &mut m.hints);

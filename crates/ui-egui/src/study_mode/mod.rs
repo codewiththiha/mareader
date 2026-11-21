@@ -146,8 +146,8 @@ pub struct Pane<'a> {
     pub sheets: &'a [Sheet],
     pub mode: ViewMode,
     pub active: bool,
-    /// Start waits for the time floor.
-    pub strict: bool,
+    /// The pages before the run's start are locked.
+    pub lock: bool,
     pub now: f64,
     /// The page the pane reads.
     pub current: usize,

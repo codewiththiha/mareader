@@ -136,20 +136,18 @@ fn known_cards_leave_the_deck_and_undo_puts_them_back_in_place() {
         via: Via::Dictionary,
     };
     let batch = planned(0).batches[0].clone();
-    let mut open = Open::new(batch, built, 6, 0.0);
-    assert_eq!(open.floor.left(0.0), 18.0);
+    let mut open = Open::new(batch, built, Some(1));
+    assert_eq!(open.allowance.left(0.0), Some(60.0));
 
     let key = Key::new("brisk", None);
     let (at, taken) = open.take_known(&key).unwrap();
     assert_eq!(at, 1);
     open.keep_known(at, taken, Prior::New);
     assert_eq!(open.cards.len(), 2);
-    assert_eq!(open.floor.left(0.0), 12.0);
     assert!(open.take_known(&key).is_none());
 
     assert_eq!(open.undo_known(), Some((key, Prior::New)));
     assert_eq!(open.cards[1].card.key.lemma, "brisk");
-    assert_eq!(open.floor.left(0.0), 18.0);
     assert!(!open.can_undo());
     assert_eq!(open.undo_known(), None);
 }
@@ -203,4 +201,42 @@ fn a_new_recipe_forgets_the_decks_not_yet_open() {
     assert!(run.follow("ai|b2".to_owned()));
     assert!(matches!(run.deck, DeckState::None));
     assert_eq!(run.fallback, None);
+}
+
+fn built() -> Built {
+    Built {
+        cards: vec![shown("arcane")],
+        found: 1,
+        skipped_known: 0,
+        via: Via::Dictionary,
+    }
+}
+
+#[test]
+fn a_deck_left_unfinished_is_offered_on_coming_back() {
+    let mut run = planned(3);
+    let batch = run.batches[1].clone();
+    let mut open = Open::new(batch.clone(), built(), Some(5));
+    open.away = true;
+    run.deck = DeckState::Open(open);
+    assert_eq!(run.arrived(2), None, "the first frame only notes the page");
+    assert_eq!(run.arrived(3), Some(batch));
+    assert_eq!(run.arrived(3), None, "asked once per return");
+    assert!(run.reopen());
+    assert!(run.shown_deck().is_some_and(|o| !o.away));
+    assert!(!run.reopen(), "nothing left to open");
+}
+
+#[test]
+fn a_deck_read_with_no_limit_opens_again_over_its_pages() {
+    let mut run = planned(6);
+    let batch = run.batches[1].clone();
+    run.kept.push(Open::new(batch.clone(), built(), None));
+    run.arrived(1);
+    assert_eq!(run.arrived(4), Some(batch.clone()));
+    assert!(run.reopen());
+    assert_eq!(run.shown_deck().map(|o| o.batch.from), Some(3));
+    assert_eq!(run.arrived(1), None, "no offer while one is open");
+    assert!(run.close_review());
+    assert_eq!(run.kept.len(), 1, "closing keeps it for next time");
 }

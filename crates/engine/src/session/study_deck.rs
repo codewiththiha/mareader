@@ -53,7 +53,7 @@ impl Session {
             return false;
         };
         if matches!(run.deck, DeckState::None) {
-            return self.study_start_deck(pane, batch, now);
+            return self.study_start_deck(pane, batch);
         }
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
@@ -63,7 +63,7 @@ impl Session {
         };
         match job.step(&mut self.vocab, &mut self.dict, now) {
             Ok(None) => false,
-            Ok(Some(built)) => self.study_open(pane, batch, built, now),
+            Ok(Some(built)) => self.study_open(pane, batch, built),
             Err(why) => {
                 run.deck = DeckState::Failed { batch, why };
                 true
@@ -72,13 +72,13 @@ impl Session {
     }
 
     /// Takes the deck made ahead for `batch`, or starts making one.
-    fn study_start_deck(&mut self, pane: PaneId, batch: Batch, now: f64) -> bool {
+    fn study_start_deck(&mut self, pane: PaneId, batch: Batch) -> bool {
         let made = self
             .study_mode
             .run_mut(pane)
             .and_then(|r| r.take_ahead(&batch));
         let deck = match made {
-            Some(Ahead::Ready { built, .. }) => return self.study_open(pane, batch, built, now),
+            Some(Ahead::Ready { built, .. }) => return self.study_open(pane, batch, built),
             Some(Ahead::Making { job, .. }) => DeckState::Making { batch, job },
             Some(Ahead::Failed { why, .. }) => DeckState::Failed { batch, why },
             None if self.settings.study.mode.ahead == 0 && !self.study_near_gate(pane) => {
@@ -99,14 +99,15 @@ impl Session {
     }
 
     /// Opens `built` at the gate; a deck with nothing new unlocks its pages.
-    fn study_open(&mut self, pane: PaneId, batch: Batch, built: Built, now: f64) -> bool {
+    fn study_open(&mut self, pane: PaneId, batch: Batch, built: Built) -> bool {
         let built = fresh(built, &self.study_known(pane));
-        let per_card = u32::from(self.settings.study.mode.sec_per_card);
+        let m = &self.settings.study.mode;
+        let minutes = m.limit.then_some(u32::from(m.minutes));
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
         };
         if !built.cards.is_empty() {
-            run.deck = DeckState::Open(Open::new(batch, built, per_card, now));
+            run.deck = DeckState::Open(Open::new(batch, built, minutes));
             return true;
         }
         run.unlock_through(batch.to);

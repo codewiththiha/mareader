@@ -12,7 +12,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use mareader_library::{BookId, Spot, WordStatus};
 use mareader_session::Document;
 use mareader_study::mode::{
-    Batch, Floor, Key, Mode, Outcome, Size, Via, gate, plan_from, retypeset,
+    Allowance, Batch, Key, Mode, Outcome, Size, Via, gate, plan_from, retypeset,
 };
 
 use super::backs::Shown;
@@ -94,22 +94,26 @@ pub enum Prior {
     Unsaved,
 }
 
-/// A deck being studied: its cards, the time floor and the undo trail.
+/// A deck being studied: its cards, its time and the undo trail.
 pub struct Open {
     pub batch: Batch,
     pub cards: Vec<Shown>,
     pub found: usize,
     pub skipped_known: usize,
     pub via: Via,
-    pub floor: Floor,
+    pub allowance: Allowance,
+    /// Left unfinished for the pages before; it waits to be asked back.
+    pub away: bool,
     /// Cards marked known, latest last, each with the place it left.
     known: Vec<(usize, Shown, Prior)>,
 }
 
 impl Open {
-    pub fn new(batch: Batch, built: Built, per_card: u32, now: f64) -> Self {
+    /// A deck that may stay open `minutes`, or with no limit.
+    pub fn new(batch: Batch, built: Built, minutes: Option<u32>) -> Self {
         Self {
-            floor: Floor::new(built.cards.len(), per_card, now),
+            allowance: Allowance::new(minutes),
+            away: false,
             batch,
             cards: built.cards,
             found: built.found,
@@ -119,10 +123,9 @@ impl Open {
         }
     }
 
-    /// Takes `key`'s card out of the deck, giving its seconds back.
+    /// Takes `key`'s card out of the deck.
     pub fn take_known(&mut self, key: &Key) -> Option<(usize, Shown)> {
         let at = self.cards.iter().position(|s| &s.card.key == key)?;
-        self.floor.known();
         Some((at, self.cards.remove(at)))
     }
 
@@ -136,7 +139,6 @@ impl Open {
         let (at, shown, prior) = self.known.pop()?;
         let key = shown.card.key.clone();
         self.cards.insert(at.min(self.cards.len()), shown);
-        self.floor.unknown();
         Some((key, prior))
     }
 
@@ -170,6 +172,10 @@ pub struct Run {
     /// The first locked page; past the last page, nothing is locked.
     pub unlocked: usize,
     pub deck: DeckState,
+    /// Decks read with no time limit, offered again on coming back.
+    pub kept: Vec<Open>,
+    /// A kept deck opened again over its pages.
+    pub review: Option<Open>,
     /// Decks for the batches past the gate's, nearest first.
     pub ahead: Vec<Ahead>,
     /// The batch, by its first page, whose deck the dictionary writes instead.
@@ -185,6 +191,8 @@ pub struct Run {
     size: Option<Size>,
     sizes: Vec<usize>,
     measuring: Option<Receiver<Vec<usize>>>,
+    /// The page read last frame, to see the reader come back to a batch.
+    seen: Option<usize>,
     /// Where the pane is held until batches are planned.
     at: usize,
     entered: bool,
@@ -202,6 +210,8 @@ impl Run {
             anchor: None,
             unlocked: 0,
             deck: DeckState::None,
+            kept: Vec::new(),
+            review: None,
             ahead: Vec::new(),
             fallback: None,
             recalled: Vec::new(),
@@ -211,6 +221,7 @@ impl Run {
             size: None,
             sizes: Vec::new(),
             measuring: None,
+            seen: None,
             at,
             entered: false,
             stale: false,
@@ -246,6 +257,73 @@ impl Run {
     pub fn back(&self, lock: bool) -> Option<usize> {
         let page = self.gate()?.checked_sub(1)?;
         (!lock || page >= self.start).then_some(page)
+    }
+
+    /// The deck on screen when the gate is reached: one opened again first.
+    pub fn shown_deck(&self) -> Option<&Open> {
+        if self.review.is_some() {
+            return self.review.as_ref();
+        }
+        match &self.deck {
+            DeckState::Open(open) => Some(open),
+            _ => None,
+        }
+    }
+
+    pub fn shown_deck_mut(&mut self) -> Option<&mut Open> {
+        if self.review.is_some() {
+            return self.review.as_mut();
+        }
+        match &mut self.deck {
+            DeckState::Open(open) => Some(open),
+            _ => None,
+        }
+    }
+
+    /// The batch whose cards to offer, as the reader comes into it from the
+    /// pages before: the gate's left unfinished, or one kept.
+    pub fn arrived(&mut self, current: usize) -> Option<Batch> {
+        let before = self.seen.replace(current)?;
+        let into = |b: &Batch| before < b.from && current >= b.from;
+        if self.review.is_some() {
+            return None;
+        }
+        if let DeckState::Open(open) = &self.deck {
+            let back = open.away && into(&open.batch);
+            if back {
+                return Some(open.batch.clone());
+            }
+        }
+        let mut kept = self.kept.iter().map(|k| &k.batch);
+        kept.find(|&b| into(b) && b.holds(current)).cloned()
+    }
+
+    /// Shows the cards again: the gate's left unfinished, else those kept
+    /// for the batch read now.
+    pub fn reopen(&mut self) -> bool {
+        if let DeckState::Open(open) = &mut self.deck {
+            let away = std::mem::replace(&mut open.away, false);
+            if away {
+                return true;
+            }
+        }
+        let Some(at) = self.seen else {
+            return false;
+        };
+        let Some(i) = self.kept.iter().position(|k| k.batch.holds(at)) else {
+            return false;
+        };
+        self.review = Some(self.kept.remove(i));
+        true
+    }
+
+    /// Puts a deck opened again back with those kept.
+    pub fn close_review(&mut self) -> bool {
+        let Some(open) = self.review.take() else {
+            return false;
+        };
+        self.kept.push(open);
+        true
     }
 
     pub fn busy(&self) -> bool {

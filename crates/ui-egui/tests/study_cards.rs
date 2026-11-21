@@ -25,7 +25,7 @@ fn studying(cards: &str, ahead: u8) -> (H, PaneId, Shelves) {
     let (words, packs) = shelves();
     let mut h = levels_reader(words.path(), Some(packs.path()));
     h.dial(|s| {
-        s.study.mode.strict = false;
+        s.study.mode.limit = false;
         s.study.mode.ahead = ahead;
         s.study.mode.pages = 1;
     });

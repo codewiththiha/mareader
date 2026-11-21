@@ -71,7 +71,7 @@ pub fn waiting(
     ui.label(RichText::new(note).size(t.text_small).color(t.muted));
     ui.add_space(t.gap);
     ui.horizontal(|ui| {
-        if pane.run.back(false).is_some() && ui.button(PREVIOUS).clicked() {
+        if pane.run.back(pane.lock).is_some() && ui.button(PREVIOUS).clicked() {
             send(out, Action::ReadPrevious(pane.id));
         }
         if slow && pane.dict && ui.button(DICTIONARY).clicked() {
@@ -110,7 +110,7 @@ pub fn failed(ui: &mut Ui, pane: &Pane<'_>, range: &str, why: &str, out: &mut Co
         if offered && ui.button(DICTIONARY).clicked() {
             send(out, Action::UseDictionary(pane.id));
         }
-        if pane.run.back(false).is_some() && ui.button(PREVIOUS).clicked() {
+        if pane.run.back(pane.lock).is_some() && ui.button(PREVIOUS).clicked() {
             send(out, Action::ReadPrevious(pane.id));
         }
     });
