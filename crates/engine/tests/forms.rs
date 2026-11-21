@@ -364,6 +364,11 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
         ),
         (
             "study.mode",
+            r#"{"action":"reopen","pane":1}"#,
+            Command::StudyMode(ModeAction::Reopen(PaneId(1))),
+        ),
+        (
+            "study.mode",
             r#"{"action":"known","pane":1,"word":"arcane|adjective"}"#,
             Command::StudyMode(ModeAction::Known {
                 pane: PaneId(1),

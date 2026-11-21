@@ -6,7 +6,7 @@ has landed. Parity entries: `study.mode-proactive`, `study.mode-reactive`,
 `study.space`, `study.mode-ai-cards`.
 
 - **Proactive:** before each batch of pages, its hard words come up as cards.
-  The pages unlock once the cards have had their time.
+  *Read now* unlocks the pages whenever the reader likes.
 - **Reactive:** read freely, and recall what a shaded word means when you
   click it. The AI judges the answer.
 
@@ -28,8 +28,9 @@ so a re-typeset keeps it.
   as long as that batch stays within 10 pages.
 - **On a re-typeset,** unlocked progress rounds up to the end of its batch, so
   unlocked text never locks again.
-- **Turning the mode on mid-book** frees the pages behind; mid-batch, it frees
-  the rest of that batch.
+- **Turning the mode on mid-book** starts the first batch at the page shown
+  (`plan_from`). The pages before it read freely unless the lock is on. The
+  start is kept as a book spot, so a re-typeset keeps it.
 
 ### Keys (`keys.rs`)
 
@@ -54,9 +55,10 @@ adjective or adverb).
   never brings one back.
 - **Order:** by count, then band, then reading order. The deck is capped at
   *Cards per batch* (12 by default).
-- **The floor:** seconds per card (6 by default) times the cards. Marking a
-  card known gives its seconds back. With *Strict* on, Start waits for the
-  floor.
+- **The allowance** (`Allowance`): with *Time limit on cards* on (the
+  default), a deck has *Minutes per deck* (5 by default, 1 to 30). Its time
+  runs only while the deck shows and is kept across visits. Nothing waits
+  on it: *Read now* works at any time.
 
 ### Recall (`recall.rs`)
 
@@ -95,7 +97,7 @@ looks every deck up in the dictionary.
 ## In the session (`crates/engine/src/study_mode`)
 
 Each pane runs its own mode; `study.mode` turns it on and works the deck
-(`toggle`, `off`, `start`, `known`, `undo`, `next_batch`, `retry`,
+(`toggle`, `off`, `start`, `reopen`, `known`, `undo`, `next_batch`, `retry`,
 `use_dictionary`, `read_previous`, `recall`).
 
 - **Planning:** once the layout is complete, every page's characters are
@@ -122,9 +124,20 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   it. A deck whose batch is no longer coming is dropped, cancelling its ask;
   a new source, level, card cap, model or language makes the decks not yet
   open again, and words memorized since a deck was made leave it as it opens.
-- **Known** saves the word as memorized and gives its seconds back; **Undo**
-  puts back what the word was. **Start** keeps the rest as learning, unlocks
-  the batch and shows it from its first page.
+- **Known** saves the word as memorized; **Undo** puts back what the word
+  was. **Start** (Read now) keeps the rest as learning, unlocks the batch and
+  shows it from its first page.
+- **The time limit:** with the limit on, Read now or a spent allowance
+  closes that batch's deck for good, the latter with a toast. With it off,
+  the deck is kept, and coming into its pages from the ones before offers it
+  again in a toast whose *Open cards* sends `reopen`.
+- **Read back** (`read_previous`) shows the page just before the gate (or
+  before a reopened deck's batch) and stops the deck's time. Coming back to
+  the gate shows the veil, not the deck, and a toast offers the cards with
+  the time left (*Open the cards for pages 3–7? · 2:10 left*).
+- **The lock** (`study.mode.lock`, off by default) keeps the pane at or
+  after the start: jumps and turns below it land on it with a toast, and
+  Read back stops there. `Session::study_floor` answers it.
 - **Kept:** a library book keeps its gate as `unlocked`, so every pane on it
   shares one gate. A file outside the library keeps its gate for the session,
   and its words marked known leave the run's later decks though none is saved.
@@ -151,13 +164,16 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   *Study settings…* opens Settings › Study mode. While a pane studies the
   AI tasks below it are disabled.
 - **The view holds at the gate:** a strip scrolls no further than the end
-  of the gate page, and a paged mode turns no further than it.
+  of the gate page, and a paged mode turns no further than it. With the lock
+  on it also holds at the top of the start page, and a frost covers the
+  pages before it (`gate::StudySpan`, `gate::frost`).
 - **The veil:** frosted paper over every locked page on screen, opaque to the
   words. While the locked pages only peek in it says what unlocks them and
   offers *Study the words*; once they fill 30 % of the strip (or any of a
-  paged spread) the veil covers the pane and holds the deck.
+  paged spread) the veil covers the pane and holds the deck. After a Read
+  back it says the cards are waiting and offers *Open the cards* instead.
 - **The deck:** flash cards under a capsule giving the pages (*Before
-  pages 1–2*), the count, a ring and clock for the time floor, and a
+  pages 1–2*), the count, the time left when the deck has a limit, and a
   shuffle that only reorders what is shown. A card's front holds the word
   alone, its band in the top right corner; nothing from the book's
   sentence, which would give it away. Its back gives the meaning and the
@@ -167,8 +183,11 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   Enter turns it over; a drag past 28 % of its width or a flick moves on,
   rubber-banded at either end, and the arrows step too. Two cards peek out
   beneath. With motion off it changes at once. *I already know this* (K)
-  marks the word known; *Start reading* waits for the floor when Strict is
-  on.
+  marks the word known and *Read back* shows the page before the batch.
+  *Read now* asks first while time is left, since the cards then close for
+  good; *Turn off study mode* always asks (`study_mode/confirm.rs`). The
+  deck tells the engine as it appears and goes (`Action::Shown`), so its
+  time runs only on screen.
 - **Waiting:** while the deck is made it says which stage it is at (finding
   the words, writing them with the model, looking them up). After 7 s of the
   AI it says it is slow and offers *Use the dictionary instead*.
@@ -181,6 +200,9 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   of 8 · pages 4–6*). A finished deck shows *Next cards ready* for 3 s.
   Dictionary cards come at once and never show it; the deck opens at the
   gate.
+- **Thumbnails** (`thumbnails/study.rs`): the batch read stays bright with
+  an accent bar beside it, the other pages dim (those before a locked start
+  the most), and the pages past the gate wear a wash and a padlock.
 - **Word help is off:** the selection bar drops Explain and Look up, and
   CEFR shading hides unless Hints is on.
 - **Reactive:** shading stays, a click on a shaded word opens the recall
@@ -197,9 +219,10 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   Highlights › Other marks shows them as *Study recall*.
 - **Settings › Study mode** (`settings_window/study.rs`): the mode and the
   reading level shared with Vocabulary; Batches (size by pages or
-  characters); Proactive (prepare ahead, time per word, Strict, shading,
-  words per deck, cards from); Reactive (ask before memorizing); AI
-  (study's model and language, desktop only); and *Open Space*.
+  characters); Proactive (prepare ahead, time limit and minutes per deck,
+  the lock, shading, words per deck, cards from); Reactive (ask before
+  memorizing); AI (study's model and language, desktop only); and *Open
+  Space*.
 - **Shots:** `settings=study` opens the tab,
   `study_mode=proactive|reactive|off`, `study_gate=on`,
   `study_deck=reveal` (the card turned) or `study_deck=drag:-140` (held

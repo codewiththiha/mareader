@@ -1609,8 +1609,13 @@ command = "study.mode"
 evidence = [
     "apps/mareader-cli/tests/scripts.rs::script_06_study_mode_gates_the_first_batch",
     "crates/ui-egui/tests/study_mode.rs::the_gate_holds_the_view_until_the_deck_is_studied",
+    "crates/ui-egui/tests/study_mode.rs::read_now_with_time_left_asks_before_the_cards_close_for_good",
+    "crates/ui-egui/tests/study_mode.rs::turning_off_from_the_deck_asks_first",
+    "crates/engine/src/study_mode/run_tests.rs::the_first_batch_starts_where_the_mode_turned_on",
+    "crates/engine/src/study_mode/run_tests.rs::a_deck_left_unfinished_is_offered_on_coming_back",
+    "crates/engine/src/study_mode/run_tests.rs::a_deck_read_with_no_limit_opens_again_over_its_pages",
 ]
-notes = "From the lab's best-study-mode prototype. The batch planner, deck builder, word keys and time floor live in crates/study/src/mode; the engine plans each pane's batches, builds dictionary decks, holds the gate and saves progress; the reader's page menu turns it on, the view holds at the gate under a frosted veil and the deck opens it. Settings › Study mode sizes the batches and times the deck. AI cards and look-ahead are study.mode-ai-cards"
+notes = "From the lab's best-study-mode prototype. The batch planner, deck builder, word keys and time allowance live in crates/study/src/mode; the engine plans each pane's batches from the page the mode turned on at, builds dictionary decks, holds the gate (and, with the lock on, the start) and saves progress; the reader's page menu turns it on, the view holds at the gate under a frosted veil and the deck opens it. Read now works at any time and asks first while the deck's time is left; Read back keeps that time; turning off from the deck asks first; the thumbnails mark the batch, the start and the gate. Settings › Study mode sizes the batches and sets the time limit and the lock. AI cards and look-ahead are study.mode-ai-cards"
 
 [[feature]]
 id = "study.mode-reactive"
