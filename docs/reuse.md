@@ -26,3 +26,5 @@ name the owning modules for shared primitives across the workspace.
 | space::view | `crates/engine/src/space.rs` | Studied words as rows for one filter: scope, tabs, groups, sorts, counts and stats. Space's page and its CSV read only this. |
 | settings pickers | `crates/ui-egui/src/settings_window/{ai.rs, vocabulary.rs}` | `preset_picker`, `language_picker` and `level_row`, `pub(super)` for the AI, Vocabulary and Study mode tabs; a task's picker names what an unset choice follows. |
 | Settled | `crates/ui-egui/src/vocab.rs` | A recalled word by page and first character, drawn in its own reserved look by `vocab::place`/`add` and never hit or hovered. |
+| keep_under | `crates/ui-egui/src/z_order.rs` | An area newly shown stays under its tier's layers already open; they are lifted back the pass after egui raises it. Study mode's veil uses it. |
+| Known | `crates/engine/src/study_mode/known.rs` | Memorized words as a deck skips them; a key without a class matches every class. The library's and a run's own are merged per deck. |

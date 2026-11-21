@@ -90,6 +90,5 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, veil_top: Option<f32>, out: &mut Com
                 });
             });
         });
-    // Toasts give the way to the deck the room.
     crate::toast::keep_clear(ctx, shown.response.rect);
 }

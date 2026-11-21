@@ -127,7 +127,9 @@ The tier ordering guarantees every critical pairwise rule:
    `widgets::combo`) are detected automatically via `Popup::is_id_open`.
 6. **Never call `ctx.move_to_top(...)` directly.** `z_order::enforce(ctx)` runs
    at the end of `MareaderApp::ui` (`app/frame.rs`) and owns all within-bucket
-   promotion without triggering idle repaints.
+   promotion without triggering idle repaints. An area that comes up under
+   cards already open, such as study mode's veil under the page menu, calls
+   `z_order::keep_under(ctx, tier, id)` before it shows.
 7. **Guard hover-reveal strips with `widgets::bare_pointer(ctx, own)`** (or
    `z_order::is_above_tier` for the closed floating sidebar edge strip) so
    hovering through a floating window, popover, or modal never summons hidden

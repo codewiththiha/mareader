@@ -62,22 +62,28 @@ fn line(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut C
     let is_open = *open == Some(row.key);
     card_frame(t).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if chevron(ui, is_open, &row.lemma) {
-                *open = if is_open { None } else { Some(row.key) };
-            }
-            actions(ui, row, out);
-            look::quiet(ui, &space::day(row.seen), t);
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                word(ui, row, t);
-                let meaning = RichText::new(&row.meaning).color(t.muted);
-                ui.add(Label::new(meaning).truncate());
-            });
-        });
+        ui.horizontal(|ui| head(ui, row, open, t, out));
         ui.horizontal_wrapped(|ui| badges(ui, row, t));
         if is_open {
             sentence(ui, row, t);
         }
+    });
+}
+
+/// The word and its meaning at the left; its date, actions and chevron right.
+fn head(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut Commands) {
+    let is_open = *open == Some(row.key);
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if chevron(ui, is_open, &row.lemma) {
+            *open = if is_open { None } else { Some(row.key) };
+        }
+        actions(ui, row, out);
+        look::quiet(ui, &space::day(row.seen), t);
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            word(ui, row, t);
+            let meaning = RichText::new(&row.meaning).color(t.muted);
+            ui.add(Label::new(meaning).truncate());
+        });
     });
 }
 

@@ -302,7 +302,7 @@ impl Library {
             if opening {
                 book.opened = Field::new(wall_ms, at);
             }
-            // Back on purpose: folders no longer leave it out.
+            // Back on purpose, so folders stop ignoring it.
             let content = opened.measure.content;
             let stoned = |s: &Tombstone| !s.moved && s.content == content;
             let holding = self

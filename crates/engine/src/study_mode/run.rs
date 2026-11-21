@@ -16,6 +16,7 @@ use mareader_study::mode::{
 
 use super::backs::Shown;
 use super::deck_job::{Built, DeckJob, Tags};
+use super::known::Known;
 use crate::session::Waker;
 use crate::word_list::Meanings;
 use crate::word_marks::off_thread;
@@ -168,6 +169,8 @@ pub struct Run {
     pub fallback: Option<usize>,
     /// Words recalled this run: their page, characters and outcome.
     pub recalled: Vec<(usize, Range<usize>, Outcome)>,
+    /// Words marked known this run; later decks skip them, saved or not.
+    pub known: Known,
     /// What the decks were made from: the source, the level, the writer.
     recipe: String,
     /// The layout measured: the document's layout key and page count.
@@ -193,6 +196,7 @@ impl Run {
             ahead: Vec::new(),
             fallback: None,
             recalled: Vec::new(),
+            known: Known::default(),
             recipe: String::new(),
             layout: None,
             size: None,

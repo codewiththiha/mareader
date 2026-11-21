@@ -100,7 +100,7 @@ impl Session {
 
     /// Opens `built` at the gate; a deck with nothing new unlocks its pages.
     fn study_open(&mut self, pane: PaneId, batch: Batch, built: Built, now: f64) -> bool {
-        let built = fresh(built, &memorized(&self.library.model));
+        let built = fresh(built, &self.study_known(pane));
         let per_card = u32::from(self.settings.study.mode.sec_per_card);
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
@@ -170,11 +170,20 @@ impl Session {
             pages: (batch.from..=batch.to).collect(),
             level: study.cefr.level.band(),
             max: usize::from(study.mode.max_cards),
-            known: memorized(&self.library.model),
+            known: self.study_known(pane),
             to: self.study_dict_language(),
             via,
             writer: writer.filter(|_| via == Via::Ai),
         })
+    }
+
+    /// Words memorized in the library or marked known in `pane`'s run.
+    fn study_known(&self, pane: PaneId) -> Known {
+        let mut known = memorized(&self.library.model);
+        if let Some(run) = self.study_mode.run(pane) {
+            known.extend(&run.known);
+        }
+        known
     }
 
     /// Meanings' language: study's, else Explain's, if a pack has it.

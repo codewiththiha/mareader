@@ -126,7 +126,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   puts back what the word was. **Start** keeps the rest as learning, unlocks
   the batch and shows it from its first page.
 - **Kept:** a library book keeps its gate as `unlocked`, so every pane on it
-  shares one gate. A file outside the library keeps its gate for the session.
+  shares one gate. A file outside the library keeps its gate for the session,
+  and its words marked known leave the run's later decks though none is saved.
 - **Reactive recall:** `recall` with `ask` works one recall at a time: `open`
   (`page`, `from`, `to`) on a word of a Reactive pane, `answer` (`text`),
   `again`, `reveal`, `memorized`, `learning`, `missed` or `close`. Opening

@@ -25,6 +25,20 @@ impl Known {
         self.exact.insert(key);
     }
 
+    /// Forgets `key`; its lemma stays while another class of it is known.
+    pub fn remove(&mut self, key: &Key) {
+        self.exact.remove(key);
+        if !self.exact.iter().any(|k| k.lemma == key.lemma) {
+            self.lemmas.remove(&key.lemma);
+        }
+    }
+
+    pub fn extend(&mut self, other: &Self) {
+        for key in &other.exact {
+            self.add(key.clone());
+        }
+    }
+
     pub fn has(&self, key: &Key) -> bool {
         let bare = || self.exact.contains(&Key::new(&*key.lemma, None));
         match key.pos {
@@ -48,5 +62,15 @@ mod tests {
         assert!(known.has(&Key::new("swim", Some(Pos::Verb))));
         assert!(!known.has(&Key::new("swim", Some(Pos::Noun))));
         assert!(!known.has(&Key::new("fly", None)));
+    }
+
+    #[test]
+    fn a_word_forgotten_leaves_its_other_classes() {
+        let mut known = Known::of([Key::new("run", Some(Pos::Verb)), Key::new("run", None)]);
+        known.remove(&Key::new("run", None));
+        assert!(known.has(&Key::new("run", Some(Pos::Verb))));
+        assert!(known.has(&Key::new("run", None)), "the verb still names it");
+        known.remove(&Key::new("run", Some(Pos::Verb)));
+        assert!(!known.has(&Key::new("run", None)));
     }
 }

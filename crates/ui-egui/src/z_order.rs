@@ -171,6 +171,33 @@ pub fn area(ctx: &Context, tier: Tier, id: impl Into<Id>) -> Area {
     Area::new(id).order(tier.order())
 }
 
+/// Lets area `id` come up under its tier's open layers; call before showing it.
+pub fn keep_under(ctx: &Context, tier: Tier, id: Id) {
+    let below = layer(tier, id);
+    let key = Id::new(("z-order-keep-under", id));
+    let fresh = !ctx.memory(|m| m.areas().is_visible(&below));
+    // egui raises a new area as its pass ends; the rest rise next pass.
+    let due = ctx.data_mut(|d| {
+        let was = d.get_temp_mut_or_default::<bool>(key);
+        std::mem::replace(was, fresh)
+    });
+    if fresh {
+        ctx.request_repaint();
+    }
+    if !due {
+        return;
+    }
+    let shown: Vec<LayerId> = ctx.memory(|m| {
+        let up = |l: &LayerId| *l != below && m.areas().is_visible(l);
+        m.layer_ids().filter(up).collect()
+    });
+    for open in shown {
+        if tier_of(ctx, open) == Some(tier) {
+            ctx.move_to_top(open);
+        }
+    }
+}
+
 /// Painter for a non-interactable overlay at `tier`.
 pub fn painter(ctx: &Context, tier: Tier, id: impl Into<Id>) -> Painter {
     ctx.layer_painter(layer(tier, id.into()))

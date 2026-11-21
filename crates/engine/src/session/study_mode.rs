@@ -85,7 +85,9 @@ impl Session {
             }
             None => Prior::Unsaved,
         };
+        let card = shown.card.key.clone();
         open.keep_known(at, shown, prior);
+        run.known.add(card);
         true
     }
 
@@ -100,6 +102,7 @@ impl Session {
         let Some((key, prior)) = open.undo_known() else {
             return false;
         };
+        run.known.remove(&key);
         let id = [word_id(&key)];
         let model = &mut self.library.model;
         match prior {

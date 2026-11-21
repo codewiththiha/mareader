@@ -231,7 +231,6 @@ fn script_04_build_word_list() {
 /// Settings with a model for study mode's cards and no time floor.
 fn write_study_settings(state: &Path) {
     std::fs::create_dir_all(state).expect("mkdir state");
-    // The current schema, so loading keeps the presets as written.
     let settings = serde_json::json!({
         "version": 7,
         "ai": {
@@ -301,8 +300,12 @@ fn script_06_study_mode_gates_the_first_batch() {
         "kept as learning, so it comes again: {cards:?}"
     );
     assert!(
-        !cards.contains(&"sphinx"),
+        !cards.contains(&"helvetica"),
         "a capital mid-sentence is a name: {cards:?}"
+    );
+    assert!(
+        cards.contains(&"sphinx"),
+        "a capital opening a sentence is a word: {cards:?}"
     );
     assert!(
         !cards.contains(&"quartz"),
