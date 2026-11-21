@@ -1,4 +1,5 @@
-//! Study mode in the reader: batches gated by decks of their hard words.
+//! Study mode in the reader: batches gated by decks of their hard words, or
+//! in Reactive mode a recall of each shaded word clicked.
 //!
 //! Each pane runs its own mode; a book's gate is saved with the book, so two
 //! panes on one book share it. Documents outside the library keep theirs for
@@ -6,6 +7,7 @@
 
 pub mod backs;
 pub mod deck_job;
+pub mod recalling;
 pub mod run;
 pub mod sightings;
 
@@ -14,11 +16,12 @@ use std::sync::Arc;
 
 use mareader_library::Spot;
 use mareader_session::DocId;
-use mareader_study::mode::{CardWriter, Key, Mode};
+use mareader_study::mode::{CardWriter, Judge, Key, Mode};
 use mareader_workspace::PaneId;
 
 pub use backs::{Backs, Shown, Writer};
 pub use deck_job::{Built, DeckJob, Doing, Known, Tags};
+pub use recalling::{Ask, NO_JUDGE, Recalling, Word};
 pub use run::{Ahead, DeckState, Open, Prior, Run};
 
 /// What the study menu and the deck ask of the app.
@@ -41,15 +44,19 @@ pub enum Action {
     UseDictionary(PaneId),
     /// Takes the pane back to the batch before the gate.
     ReadPrevious(PaneId),
+    /// What Reactive mode's recall popover asks.
+    Recall { pane: PaneId, ask: Ask },
 }
 
 pub const ON: &str = "Proactive study mode on. Words come first, then the pages.";
+pub const ON_REACTIVE: &str = "Reactive study mode on. Click a shaded word to recall it.";
+/// Why a recall can't open where it was asked.
+pub const REACTIVE_ONLY: &str = "Recall works in Reactive study mode.";
 pub const OFF: &str = "Study mode off.";
 pub const AUTO_OFF: &str = "Study mode turned off: what it needs is no longer available.";
 pub const READ_BACK: &str =
     "Scroll back to re-read. The words open again when you return to the end.";
 pub const REFUSED: &str = "Locked in study mode: no cards or dictionary until you turn it off.";
-pub const REACTIVE_LATER: &str = "Reactive study mode comes in a later update.";
 pub const READ_ALOUD_STOP: &str = "Read aloud stops at the study gate.";
 
 /// The words for a locked batch, as its toast says.
@@ -70,11 +77,45 @@ pub struct State {
     /// The AI's card writer, once the app has one.
     cards: Option<Arc<dyn CardWriter>>,
     backs: Backs,
+    /// The AI's judge of recalls, once the app has one.
+    judge: Option<Arc<dyn Judge>>,
+    /// The recall open in a Reactive pane, if any.
+    recalling: Option<Recalling>,
 }
 
 impl State {
     pub(crate) fn set_cards(&mut self, cards: Arc<dyn CardWriter>) {
         self.cards = Some(cards);
+    }
+
+    pub(crate) fn set_judge(&mut self, judge: Arc<dyn Judge>) {
+        self.judge = Some(judge);
+    }
+
+    pub(crate) fn judge(&self) -> Option<Arc<dyn Judge>> {
+        self.judge.clone()
+    }
+
+    /// The recall open in `pane`, if any.
+    pub fn recalling(&self, pane: PaneId) -> Option<&Recalling> {
+        self.recalling.as_ref().filter(|r| r.pane == pane)
+    }
+
+    pub(crate) fn recalling_pane(&self) -> Option<PaneId> {
+        self.recalling.as_ref().map(|r| r.pane)
+    }
+
+    pub(crate) fn recalling_mut(&mut self, pane: PaneId) -> Option<&mut Recalling> {
+        self.recalling.as_mut().filter(|r| r.pane == pane)
+    }
+
+    /// Opens `recalling`, closing any other.
+    pub(crate) fn open_recall(&mut self, recalling: Recalling) {
+        self.recalling = Some(recalling);
+    }
+
+    pub(crate) fn take_recall(&mut self) -> Option<Recalling> {
+        self.recalling.take()
     }
 
     /// The AI's writer with the backs it wrote before; none without one.
@@ -98,7 +139,8 @@ impl State {
     }
 
     pub fn busy(&self) -> bool {
-        self.runs.values().any(|(_, run)| run.busy())
+        let recalling = self.recalling.as_ref().is_some_and(Recalling::busy);
+        recalling || self.runs.values().any(|(_, run)| run.busy())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -122,6 +164,9 @@ impl State {
     }
 
     pub(crate) fn stop(&mut self, pane: PaneId) -> bool {
+        if self.recalling(pane).is_some() {
+            self.recalling = None;
+        }
         self.runs.remove(&pane).is_some()
     }
 

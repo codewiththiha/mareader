@@ -259,6 +259,15 @@ impl<'a> DocumentsView<'a> {
         words::asked_at(&layer, page, chars)
     }
 
+    /// The first `needle` on the page `pane` reads, as its page and characters.
+    pub fn find_word(&self, pane: PaneId, needle: &str) -> Option<(usize, Range<usize>)> {
+        let page = self.reading(pane)?.current;
+        let layer = self.state.texts.get(self.state.place(pane)?.doc, page)?;
+        let text: String = layer.text.chars().iter().map(|c| c.ch).collect();
+        let from = text.get(..text.find(needle)?)?.chars().count();
+        Some((page, from..from.saturating_add(needle.chars().count())))
+    }
+
     pub fn spans_rect(&self, pane: PaneId, spans: &[(usize, Range<usize>)]) -> Option<Rect> {
         spans
             .iter()

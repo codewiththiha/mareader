@@ -8,6 +8,7 @@
 mod batches;
 mod cards;
 mod deck;
+mod judge;
 mod keys;
 mod recall;
 
@@ -16,6 +17,7 @@ use serde::{Deserialize, Serialize};
 pub use batches::{Batch, LIGHT_CHARS, MAX_PAGES, Size, Unit, entering, gate, plan, retypeset};
 pub use cards::{Answer, CardJob, CardWriter, Practice, SLOW_SECS, Wanted, Written, practice_back};
 pub use deck::{Card, Deck, Floor, Sighting, build};
+pub use judge::{Attempt, Judge, JudgeJob, Judged, Judgement, practice_verdict};
 pub use keys::{Key, Pos, bases, lemma, proper};
 pub use recall::{Done, MAX_TRIES, Outcome, Phase, Recall, Verdict};
 

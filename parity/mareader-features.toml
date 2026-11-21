@@ -1618,8 +1618,18 @@ title = "Reactive study mode: recall a shaded word's meaning, judged by the AI"
 area = "I"
 tier = "P1"
 milestone = "M8"
-status = "planned"
-notes = "The recall rules (three tries, a hint, I don't know) live in crates/study/src/mode/recall.rs"
+status = "partial"
+command = "study.mode"
+evidence = [
+    "crates/assist/tests/study_mode.rs::a_recall_is_judged_by_study_s_model_with_the_answer_quoted",
+    "crates/engine/src/study_mode/recalling.rs::a_miss_hints_from_the_back_and_a_correct_answer_asks",
+    "crates/engine/src/study_mode/recalling.rs::a_failed_judge_keeps_the_answer_and_costs_no_try",
+    "crates/engine/tests/study_mode.rs::a_recall_opens_only_in_reactive_mode",
+    "crates/ui-egui/tests/study_recall.rs::a_shaded_word_is_recalled_wrong_then_right_and_memorized",
+    "crates/ui-egui/tests/study_recall.rs::a_failing_judge_keeps_the_answer_and_counts_no_try",
+    "crates/ui-egui/tests/study_recall.rs::i_don_t_know_shows_the_meaning_and_saves_it_as_missed",
+]
+notes = "The recall rules (three tries, a hint, I don't know) live in crates/study/src/mode/recall.rs and the Judge trait in judge.rs; StudyJudge asks study's model (crates/assist/src/study_judge.rs, service/cards.rs); the engine opens one recall per Reactive pane, writes the word's back for the hint and the answer, and saves the word met by Reactive with its tries; the reader's popover sits beside the shaded word. Missing: the reserved look for solved and missed words"
 
 [[feature]]
 id = "study.space"

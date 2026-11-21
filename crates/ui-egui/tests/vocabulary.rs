@@ -1,7 +1,7 @@
 //! Shading words above the reader's level, and the Vocabulary tab.
 
 use egui::accesskit::Role;
-use egui::{Event, Modifiers, PointerButton, Pos2};
+use egui::{Event, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 use mareader_cefr::{Part, State};
@@ -12,39 +12,9 @@ use mareader_settings::{CefrLevel, Pen};
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::ui_command::Sent;
 
-use crate::common::{levels_reader as reader, shelves};
+use crate::common::{click, levels_reader as reader, shelves, spot};
 
 type H = Harness<'static, MareaderApp>;
-
-/// The middle of the first `needle` on page 0, on screen.
-fn spot(h: &H, needle: &str) -> Pos2 {
-    let pane = h.state().active_pane();
-    let docs = h.state().documents();
-    let layer = docs.reading(pane).unwrap().document.text_layer(0).unwrap();
-    let sheet = *docs.sheets(pane).iter().find(|s| s.page == 0).unwrap();
-    let chars = layer.text.chars();
-    let text: String = chars.iter().map(|c| c.ch).collect();
-    let at = text.find(needle).unwrap();
-    let i = text.get(..at).unwrap().chars().count() + needle.chars().count() / 2;
-    sheet.to_screen(chars.get(i).unwrap().bounds).center()
-}
-
-/// A click on the middle of the first `needle` on page 0.
-fn click(h: &mut H, needle: &str) {
-    let pos = spot(h, needle);
-    h.hover_at(pos);
-    h.step();
-    for pressed in [true, false] {
-        h.event(Event::PointerButton {
-            pos,
-            button: PointerButton::Primary,
-            pressed,
-            modifiers: Modifiers::NONE,
-        });
-        h.step();
-    }
-    h.run();
-}
 
 #[test]
 fn a_click_on_a_shaded_word_explains_it_and_marks_it() {

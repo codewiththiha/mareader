@@ -95,8 +95,7 @@ silently.
 
 Each pane runs its own mode; `study.mode` turns it on and works the deck
 (`toggle`, `off`, `start`, `known`, `undo`, `next_batch`, `retry`,
-`use_dictionary`, `read_previous`). Reactive answers that it comes in a later
-update.
+`use_dictionary`, `read_previous`, `recall`).
 
 - **Planning:** once the layout is complete, every page's characters are
   counted off the frame and batches are planned from the settings. A new
@@ -127,6 +126,17 @@ update.
   the batch and shows it from its first page.
 - **Kept:** a library book keeps its gate as `unlocked`, so every pane on it
   shares one gate. A file outside the library keeps its gate for the session.
+- **Reactive recall:** `recall` with `ask` works one recall at a time: `open`
+  (`page`, `from`, `to`) on a word of a Reactive pane, `answer` (`text`),
+  `again`, `reveal`, `memorized`, `learning`, `missed` or `close`. Opening
+  it keys and bands the word from the levels and asks the card writer for
+  its back (kept like a card's), which gives the hint after a miss and the
+  meaning once revealed. Each answer goes to the `Judge`: `StudyJudge` on
+  study's model, a closed schema of verdict and feedback. A judge that fails
+  costs no try and keeps the answer. With `study.mode.ask_memorize` off, a
+  correct answer memorizes at once. The word is saved met by Reactive, with
+  its tries and whether the first was right; a reveal saves it as missed,
+  and closing a revealed recall does too.
 - **Refused while on:** Explain, Look up and the page AI in that pane.
 - **Turns itself off** with a toast when the pane's document closes or a need
   above is lost; another file opened in the pane ends it quietly.
@@ -161,9 +171,17 @@ update.
   the gate.
 - **Word help is off:** the selection bar drops Explain and Look up, and
   CEFR shading hides unless Hints is on.
+- **Reactive:** shading stays, a click on a shaded word opens the recall
+  popover beside it and a rest looks nothing up. The popover shows the band
+  and the tries used, asks what the word means here, and answers *Almost* or
+  *Not quite* with the AI's feedback and a hint, *Correct* with
+  *Add to memorized?*, the meaning and synonyms once revealed, or why the
+  judge failed with *Retry*. Escape closes it.
 - **Shots:** `study_mode=proactive|reactive|off`, `study_gate=on`,
-  `study_deck=reveal` and `study_cards=ready|silent|failing`, a scripted AI
-  that writes every back, never answers, or fails.
+  `study_deck=reveal`, `study_cards=ready|silent|failing` (a scripted AI that
+  writes every back and judges "right" correct and "close" close, never
+  answers, or fails) and `recall=word` or `recall=word:answer`, a recall on
+  the first `word` of the page read.
 
 ## Space (`crates/engine/src/space.rs`, `crates/ui-egui/src/space`)
 

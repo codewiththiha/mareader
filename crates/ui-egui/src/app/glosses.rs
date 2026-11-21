@@ -184,7 +184,7 @@ impl MareaderApp {
                 self.ask_role();
                 self.probe_dict_for_study();
             }
-            Gloss::Shaded { page, chars, at } => self.explain_shaded(pane, page, chars, at),
+            Gloss::Shaded { page, chars, at } => self.shaded(pane, page, chars, at),
             Gloss::Rest {
                 word,
                 context,
@@ -287,6 +287,9 @@ impl MareaderApp {
             self.session.study_set_explainer(explainer);
             if let Some(cards) = self.ui.ai.cards() {
                 self.session.study_set_cards(cards);
+            }
+            if let Some(judge) = self.ui.ai.judge() {
+                self.session.study_set_judge(judge);
             }
         }
         self.take_organized();

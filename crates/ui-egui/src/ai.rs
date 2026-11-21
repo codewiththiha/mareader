@@ -14,7 +14,7 @@ use mareader_settings::{AiSettings, ModelPreset};
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_settings::{SummaryStyle, language_name};
 use mareader_study::Explainer;
-use mareader_study::mode::CardWriter;
+use mareader_study::mode::{CardWriter, Judge};
 
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_engine::library::{Ask, Proposal, Spot};
@@ -62,6 +62,18 @@ impl Ai {
     /// No AI writes cards on the web.
     #[cfg(target_arch = "wasm32")]
     pub fn cards(&self) -> Option<Arc<dyn CardWriter>> {
+        None
+    }
+
+    /// Reactive mode's judge, on the settings last followed.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn judge(&self) -> Option<Arc<dyn Judge>> {
+        self.assist.as_ref().map(mareader_assist::Assist::judge)
+    }
+
+    /// No AI judges recalls on the web.
+    #[cfg(target_arch = "wasm32")]
+    pub fn judge(&self) -> Option<Arc<dyn Judge>> {
         None
     }
 

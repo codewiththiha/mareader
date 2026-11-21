@@ -2,11 +2,12 @@
 //! menu's Study section.
 
 use super::*;
-use crate::study_mode::{Pane, menu::Look};
+use crate::study_mode::{Pane, menu::Look, recall};
 use mareader_engine::command::Command;
-use mareader_engine::study_mode::Action;
+use mareader_engine::study_mode::{Action, Ask};
 use mareader_settings::Provider;
 use mareader_study::mode::{Mode, Practice};
+use std::ops::Range;
 
 impl MareaderApp {
     /// After the panes are drawn: veils and decks, and the menu's look.
@@ -37,6 +38,52 @@ impl MareaderApp {
                 dict: self.session.study_have(id).dict,
             };
             self.ui.study_mode.show(ctx, &pane, out);
+            if let Some(recalling) = state.recalling(id) {
+                let word = [(recalling.word.page, recalling.word.chars.clone())];
+                if let Some(at) = docs.spans_rect(id, &word) {
+                    let draft = &mut self.ui.study_mode.recall;
+                    recall::show(ctx, recalling, (at, rect), draft, out);
+                }
+            }
+        }
+        self.recall_shot(out);
+    }
+
+    /// A click on a shaded word: a recall in Reactive mode, else Explain.
+    pub(super) fn shaded(&mut self, pane: PaneId, page: usize, chars: Range<usize>, at: Rect) {
+        let run = self.session.study_mode().run(pane);
+        if run.is_some_and(|r| r.mode == Mode::Reactive) {
+            let ask = Ask::Open { page, chars };
+            self.queue(Sent::Engine(Command::StudyMode(Action::Recall { pane, ask })));
+        } else {
+            self.explain_shaded(pane, page, chars, at);
+        }
+    }
+
+    /// Shots: opens the recall asked for once the focused pane recalls.
+    fn recall_shot(&mut self, out: &mut Commands) {
+        let pane = self.active();
+        let state = self.session.study_mode();
+        let reactive = state.run(pane).is_some_and(|r| r.mode == Mode::Reactive);
+        if !reactive || state.recalling(pane).is_some() {
+            return;
+        }
+        let Some(shot) = self.ui.study_mode.recall_shot.take() else {
+            return;
+        };
+        let (needle, answer) = match shot.split_once(':') {
+            Some((needle, answer)) => (needle, Some(answer)),
+            None => (shot.as_str(), None),
+        };
+        let Some((page, chars)) = self.documents().find_word(pane, needle) else {
+            self.ui.study_mode.recall_shot = Some(shot);
+            return;
+        };
+        let open = Ask::Open { page, chars };
+        out.push(Sent::Engine(Command::StudyMode(Action::Recall { pane, ask: open })));
+        if let Some(answer) = answer {
+            let ask = Ask::Answer(answer.to_owned());
+            out.push(Sent::Engine(Command::StudyMode(Action::Recall { pane, ask })));
         }
     }
 }
@@ -45,11 +92,17 @@ impl MareaderApp {
 ///
 /// `study_mode=proactive|reactive|off` turns it on or off in the focused
 /// pane, `study_gate=on` takes that pane to its gate,
-/// `study_deck=reveal` turns the deck's card over once the deck opens, and
-/// `study_cards=ready|silent|failing` has a scripted AI write the cards.
+/// `study_deck=reveal` turns the deck's card over once the deck opens,
+/// `study_cards=ready|silent|failing` has a scripted AI write the cards and
+/// judge recalls, and `recall=word` or `recall=word:answer` opens a recall on
+/// the first `word` of the page read, and answers it.
 pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<Result<(), String>> {
     if key == "study_cards" {
         return Some(practice(app, value));
+    }
+    if key == "recall" {
+        app.ui.study_mode.recall_shot = Some(value.to_owned());
+        return Some(Ok(()));
     }
     let pane = app.active();
     let action = match (key, value) {
@@ -80,6 +133,7 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
 fn practice(app: &mut MareaderApp, value: &str) -> Result<(), String> {
     let practice = Practice::parse(value).ok_or("study_cards: ready, silent or failing")?;
     app.session.study_set_cards(Arc::new(practice));
+    app.session.study_set_judge(Arc::new(practice));
     if app.session.settings().ai.study_preset().is_none() {
         let mut settings = app.session.settings().clone();
         let id = settings.ai.add_preset(Provider::Ollama, "practice");

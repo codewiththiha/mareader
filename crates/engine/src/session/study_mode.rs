@@ -48,9 +48,6 @@ impl Session {
 
     /// Turns `mode` on in `pane`; why not, when it can't run.
     pub(crate) fn study_mode_on(&mut self, pane: PaneId, wanted: Mode) -> Result<(), String> {
-        if wanted == Mode::Reactive {
-            return Err(mode::REACTIVE_LATER.to_owned());
-        }
         let Some(place) = self.documents.place(pane) else {
             return Err("Open a book to study it.".to_owned());
         };
@@ -183,7 +180,7 @@ impl Session {
         if self.study_mode.is_empty() {
             return false;
         }
-        let mut changed = false;
+        let mut changed = self.tick_study_recall();
         for pane in self.study_mode.panes() {
             changed |= self.tick_study_pane(pane, now);
         }
@@ -195,6 +192,9 @@ impl Session {
             return self.study_mode.stop(pane);
         }
         let Some(why) = self.study_lost(pane) else {
+            if self.study_mode.run(pane).is_some_and(|r| r.mode == Mode::Reactive) {
+                return false;
+            }
             let planned = self.study_plan(pane);
             let followed = self.study_follow(pane);
             let decks = self.study_deck(pane, now) | self.study_ahead(pane, now);

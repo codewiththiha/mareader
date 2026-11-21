@@ -4,6 +4,7 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
+use egui::{Event, Modifiers, PointerButton, Pos2};
 use egui_kittest::Harness;
 use mareader_dict::{PACKS, build as build_pack, db_file};
 use mareader_ui_egui::MareaderApp;
@@ -105,4 +106,34 @@ pub(crate) fn levels_reader(words: &Path, packs: Option<&Path>) -> H {
     h.run_steps(3);
     h.run();
     h
+}
+
+/// The middle of the first `needle` on page 0, on screen.
+pub(crate) fn spot(h: &H, needle: &str) -> Pos2 {
+    let pane = h.state().active_pane();
+    let docs = h.state().documents();
+    let layer = docs.reading(pane).unwrap().document.text_layer(0).unwrap();
+    let sheet = *docs.sheets(pane).iter().find(|s| s.page == 0).unwrap();
+    let chars = layer.text.chars();
+    let text: String = chars.iter().map(|c| c.ch).collect();
+    let at = text.find(needle).unwrap();
+    let i = text.get(..at).unwrap().chars().count() + needle.chars().count() / 2;
+    sheet.to_screen(chars.get(i).unwrap().bounds).center()
+}
+
+/// A click on the middle of the first `needle` on page 0.
+pub(crate) fn click(h: &mut H, needle: &str) {
+    let pos = spot(h, needle);
+    h.hover_at(pos);
+    h.step();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        h.step();
+    }
+    h.run();
 }

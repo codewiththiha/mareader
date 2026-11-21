@@ -5,12 +5,14 @@
 //! only draws a run and sends what the reader asks. A pane's view stops at
 //! its gate in `pdf_view`; here the pages past it are veiled, and the deck
 //! covers the pane once the gate is in view. Until then a pill tells how
-//! the next deck is coming along.
+//! the next deck is coming along. In Reactive mode a click on a shaded word
+//! opens a recall beside it instead.
 
 pub mod deck;
 pub mod gate;
 pub mod menu;
 pub mod pill;
+pub mod recall;
 pub mod waiting;
 
 use std::collections::HashMap;
@@ -19,6 +21,7 @@ use egui::{Context, Rect};
 use mareader_engine::pane::ViewMode;
 use mareader_engine::session::Session;
 use mareader_engine::study_mode::{DeckState, Run};
+use mareader_study::mode::Mode;
 use mareader_settings::{BarItem, HighlightSettings};
 use mareader_workspace::PaneId;
 
@@ -26,13 +29,23 @@ use crate::selection::Sheet;
 use crate::ui_command::Commands;
 
 /// The page's shading while `pane` studies: kept only with hints on.
+///
+/// Reactive mode keeps it, a click recalling the word and a rest doing nothing.
 pub fn shading(
     session: &Session,
     pane: PaneId,
     look: Option<crate::vocab::Look>,
 ) -> Option<crate::vocab::Look> {
+    let run = session.study_mode().run(pane);
+    if run.is_some_and(|r| r.mode == Mode::Reactive) {
+        return look.map(|look| crate::vocab::Look {
+            click: true,
+            hover: false,
+            ..look
+        });
+    }
     let hints = session.settings().study.mode.hints;
-    let hidden = session.study_mode().on(pane) && !hints;
+    let hidden = run.is_some() && !hints;
     look.filter(|_| !hidden)
 }
 
@@ -89,6 +102,10 @@ pub struct StudyModeUi {
     keyed: Option<PaneId>,
     /// Shots: the shown card turns over once the deck opens.
     pub reveal_shot: bool,
+    /// The answer typed in the open recall.
+    pub recall: recall::Draft,
+    /// Shots: the recall to open, as `word` or `word:answer`.
+    pub recall_shot: Option<String>,
 }
 
 impl StudyModeUi {

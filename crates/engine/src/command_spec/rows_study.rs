@@ -1,27 +1,37 @@
 //! Study's rows: what a script sends to study a deck, and to Space's words.
 
 use mareader_library::WordId;
-use mareader_study::mode::{Key, Mode, Pos};
+use mareader_study::mode::{Key, Mode, Outcome, Pos};
 use serde_json::Value;
 
 use crate::command::Command;
 use crate::command_spec::{CommandSpec, acts, anywhere, json, reader_only, row};
 use crate::session::Session;
 use crate::space::Action as SpaceAction;
-use crate::study_mode::Action;
+use crate::study_mode::{Action, Ask};
 
 /// Study mode's asks a script can send.
 pub(crate) const ACTS: &str =
-    "toggle|off|start|known|undo|next_batch|retry|use_dictionary|read_previous";
+    "toggle|off|start|known|undo|next_batch|retry|use_dictionary|read_previous|recall";
+
+/// What a recall asks; `open` takes `page`, `from` and `to`, `answer` `text`.
+const ASKS: &str = "open|answer|again|reveal|memorized|learning|missed|close";
+const ASKS_OR_NONE: &str = "open|answer|again|reveal|memorized|learning|missed|close?";
 
 const MODES: &[(&str, Mode)] = &[("proactive", Mode::Proactive), ("reactive", Mode::Reactive)];
 
-/// The ask, its pane, the mode a toggle turns on and a known card's word.
+/// The ask, its pane, the mode a toggle turns on, a known card's word and
+/// what a recall asks.
 const PARAMS: &[(&str, &str)] = &[
     ("action", ACTS),
     ("pane", "int?"),
     ("mode", "proactive|reactive?"),
     ("word", "str?"),
+    ("ask", ASKS_OR_NONE),
+    ("page", "int?"),
+    ("from", "int?"),
+    ("to", "int?"),
+    ("text", "str?"),
 ];
 
 pub(crate) const MODE: CommandSpec = row(
@@ -54,9 +64,34 @@ fn parse(at: &Session, params: &Value) -> Result<Command, String> {
         "retry" => Action::Retry(pane),
         "use_dictionary" => Action::UseDictionary(pane),
         "read_previous" => Action::ReadPrevious(pane),
+        "recall" => Action::Recall {
+            pane,
+            ask: recall(params)?,
+        },
         other => return Err(acts::refused("study.mode", other, ACTS)),
     };
     Ok(Command::StudyMode(action))
+}
+
+/// A recall's ask, from `ask` and what it takes.
+fn recall(params: &Value) -> Result<Ask, String> {
+    let ask = match json::text(params, "ask")?.as_str() {
+        "open" => {
+            let page = json::count(params, "page")?;
+            let from = json::count(params, "from")?;
+            let chars = from..json::count(params, "to")?;
+            Ask::Open { page, chars }
+        }
+        "answer" => Ask::Answer(json::text(params, "text")?),
+        "again" => Ask::Again,
+        "reveal" => Ask::Reveal,
+        "memorized" => Ask::Finish(Outcome::Memorized),
+        "learning" => Ask::Finish(Outcome::Learning),
+        "missed" => Ask::Finish(Outcome::Missed),
+        "close" => Ask::Close,
+        other => return Err(acts::refused("study.mode", other, ASKS)),
+    };
+    Ok(ask)
 }
 
 /// What Space asks of a word a script names.

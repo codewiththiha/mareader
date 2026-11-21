@@ -199,6 +199,9 @@ impl Run {
 
     /// The page the pane may not pass, if any is locked.
     pub fn gate(&self) -> Option<usize> {
+        if self.mode == Mode::Reactive {
+            return None;
+        }
         if !self.planned() {
             return Some(self.at);
         }
@@ -207,7 +210,7 @@ impl Run {
 
     /// The batch waiting on its deck.
     pub fn gate_batch(&self) -> Option<&Batch> {
-        if !self.planned() {
+        if self.mode == Mode::Reactive || !self.planned() {
             return None;
         }
         gate(&self.batches, self.unlocked)

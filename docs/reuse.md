@@ -18,5 +18,9 @@ name the owning modules for shared primitives across the workspace.
 | stable_hash | `crates/engine/src/lib.rs` | Deterministic hash helper shared by Page AI, transcripts and triggers; unrelated direct `DefaultHasher` uses remain local. |
 | CardWriter | `crates/study/src/mode/cards.rs` | Who writes a deck's backs: `write` hands back a `CardJob` polled with `take`, cancelled by drop. Assist's `Assist::cards` and the scripted `Practice` implement it, so the engine never names assist. |
 | Backs | `crates/engine/src/study_mode/backs.rs` | Backs written per word, sentence hash and writer id for the session, shared by every deck through `Writer`; a deck asks only for the misses. |
+| Judge | `crates/study/src/mode/judge.rs` | Who judges a recall's answer: `judge` hands back a `JudgeJob` polled with `take`, cancelled by drop. Assist's `Assist::judge` and `Practice` implement it. `Once<T>` in `cards.rs` is the scripted job for both traits. |
+| Pending | `crates/assist/src/service/cards.rs` | One study request on the runtime as a `CardJob` or `JudgeJob`; `AiCards::spawn` starts it on a short slot of study's model, and drop aborts it. |
+| Recalling | `crates/engine/src/study_mode/recalling.rs` | The open recall: its word, the back asked through `Writer`, the judge's job; `step` takes both in and says when a correct answer ends it. |
+| spot / click | `crates/ui-egui/tests/common/levels.rs` | Kittest: the screen point of a word on page 0, and a click on it. |
 | Ahead | `crates/engine/src/study_mode/run.rs` | A deck made past the gate (making, ready or failed); `Run::take_ahead` hands it to the gate, `trim_ahead` drops those no longer coming. |
 | space::view | `crates/engine/src/space.rs` | Studied words as rows for one filter: scope, tabs, groups, sorts, counts and stats. Space's page and its CSV read only this. |

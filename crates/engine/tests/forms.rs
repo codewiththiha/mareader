@@ -23,7 +23,7 @@ use mareader_engine::session::Session;
 use mareader_engine::settings::Tab;
 use mareader_engine::space::Action as SpaceAction;
 use mareader_engine::study::Action as StudyAction;
-use mareader_engine::study_mode::Action as ModeAction;
+use mareader_engine::study_mode::{Action as ModeAction, Ask};
 use mareader_library::{BookId, MarkId, Options, Pen, WordId};
 use mareader_session::Anchor;
 use mareader_speech::{Item, KOKORO, Model, Spot};
@@ -368,6 +368,17 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
             Command::StudyMode(ModeAction::Known {
                 pane: PaneId(1),
                 key: Key::new("arcane", Some(Pos::Adjective)),
+            }),
+        ),
+        (
+            "study.mode",
+            r#"{"action":"recall","pane":1,"ask":"open","page":2,"from":4,"to":9}"#,
+            Command::StudyMode(ModeAction::Recall {
+                pane: PaneId(1),
+                ask: Ask::Open {
+                    page: 2,
+                    chars: 4..9,
+                },
             }),
         ),
         (

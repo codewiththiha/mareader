@@ -99,9 +99,9 @@ impl CardWriter for Practice {
 }
 
 /// An answer known from the start, or none ever.
-struct Once(Option<Answer>);
+pub(super) struct Once<T>(pub(super) Option<T>);
 
-impl CardJob for Once {
+impl CardJob for Once<Answer> {
     fn take(&mut self) -> Option<Answer> {
         self.0.take()
     }

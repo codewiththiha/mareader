@@ -15,7 +15,7 @@ use mareader_ui_egui::selection::Sheet;
 use mareader_ui_egui::ui_command::Sent;
 
 mod levels;
-pub(crate) use levels::{levels_reader, shelves};
+pub(crate) use levels::{click, levels_reader, shelves, spot};
 
 fn harness(
     options: &[(&str, &str)],

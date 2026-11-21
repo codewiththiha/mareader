@@ -1,4 +1,4 @@
-//! Study mode's card writer end to end, against a loopback server.
+//! Study mode's card writer and judge end to end, against a loopback server.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
 mod support;
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use mareader_assist::Assist;
 use mareader_settings::{AiSettings, Provider};
 use mareader_study::Why;
-use mareader_study::mode::{Answer as Backs, CardJob, Key, Wanted};
+use mareader_study::mode::{Answer as Backs, Attempt, CardJob, Key, Verdict, Wanted};
 use support::{Answer, Server};
 
 fn server(answers: Vec<Answer>) -> (tokio::runtime::Runtime, Server) {
@@ -110,4 +110,34 @@ fn a_dropped_deck_frees_its_model_and_no_model_says_so() {
     let _ = a.configure(&none);
     let answer = finish(a.cards().write(vec![wanted("arcane")]).as_mut());
     assert_eq!(answer.err().map(|f| f.why), Some(Why::NotHere));
+}
+
+#[test]
+fn a_recall_is_judged_by_study_s_model_with_the_answer_quoted() {
+    let verdict = r#"{"verdict":"close","feedback":"Nearly: here it means roamed."}"#;
+    let (_rt, server) = server(vec![Answer::stream(&[verdict])]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut a = assist(&dir);
+    let _explainer = a.configure(&settings(&server.url));
+    let judge = a.judge();
+    assert_eq!(judge.by(), "Ollama · m");
+    let attempt = Attempt {
+        form: "wandered".to_owned(),
+        lemma: "wander".to_owned(),
+        sentence: "He wandered off.".to_owned(),
+        answer: "walked".to_owned(),
+    };
+    let mut job = judge.judge(attempt);
+    let start = Instant::now();
+    let judged = loop {
+        if let Some(judged) = job.take() {
+            break judged.unwrap();
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "no verdict");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(judged.verdict, Verdict::Close);
+    assert!(judged.feedback.starts_with("Nearly"));
+    let sent = server.seen()[0].body.to_string();
+    assert!(sent.contains(r#"Answer: \"walked\""#), "{sent}");
 }

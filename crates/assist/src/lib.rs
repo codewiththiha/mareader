@@ -19,6 +19,7 @@ mod page;
 mod prompt;
 mod service;
 mod slots;
+mod study_judge;
 mod study_mode;
 mod task;
 
@@ -35,5 +36,6 @@ pub use page::{PAGE_CHARS, PageAsk, PageJob, Rewrite, rewrite};
 pub use prompt::{Prompt, quote};
 pub use service::{Assist, Organized, Organizing, Rewriting, Rewrote, Waker};
 pub use slots::{Kind, Slots, Ticket};
+pub use study_judge::StudyJudge;
 pub use study_mode::{MAX_WORDS, StudyCards};
 pub use task::{Explain, Task, word_info_schema};

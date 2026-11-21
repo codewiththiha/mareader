@@ -1,6 +1,6 @@
 //! Study mode's commands, the jumps its gate holds back, and what it refuses.
 
-use mareader_study::mode::Batch;
+use mareader_study::mode::{Batch, Mode};
 use mareader_workspace::PaneId;
 
 use crate::command::Command;
@@ -17,8 +17,12 @@ pub(super) fn run(session: &mut Session, action: Action, now: f64) -> Done {
             if same {
                 return off(session, pane);
             }
+            let on = match wanted {
+                Mode::Proactive => mode::ON,
+                Mode::Reactive => mode::ON_REACTIVE,
+            };
             match session.study_mode_on(pane, wanted) {
-                Ok(()) => say(session, Toast::info(mode::ON)),
+                Ok(()) => say(session, Toast::info(on)),
                 Err(why) => return Done::refused(why),
             }
         }
@@ -45,6 +49,12 @@ pub(super) fn run(session: &mut Session, action: Action, now: f64) -> Done {
             };
             session.study_show(pane, from, now);
             say(session, Toast::info(mode::READ_BACK));
+        }
+        Action::Recall { pane, ask } => {
+            return match session.study_recall(pane, ask) {
+                Ok(moved) => changed(moved),
+                Err(why) => Done::refused(why),
+            };
         }
     }
     Done::changed()

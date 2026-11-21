@@ -10,7 +10,7 @@ use mareader_engine::command::Command;
 use mareader_engine::documents::OpenRequest;
 use mareader_engine::host::Fake;
 use mareader_engine::session::Session;
-use mareader_engine::study_mode::Action;
+use mareader_engine::study_mode::{Action, Ask, REACTIVE_ONLY};
 use mareader_study::mode::{Missing, Mode};
 
 const PAGES: usize = 6;
@@ -53,4 +53,22 @@ fn while_off_a_jump_goes_where_it_was_sent() {
     assert_eq!(session.documents().current(pane), Some(4));
     let done = session.execute(Command::StudyMode(Action::Off(pane)), 1.0);
     assert!(!done.dirty, "nothing was on to turn off");
+}
+
+#[test]
+fn a_recall_opens_only_in_reactive_mode() {
+    let mut session = opened();
+    let pane = session.active();
+    let ask = Ask::Open {
+        page: 0,
+        chars: 0..3,
+    };
+    let done = session.execute(Command::StudyMode(Action::Recall { pane, ask }), 1.0);
+    assert_eq!(done.refused.as_deref(), Some(REACTIVE_ONLY));
+    assert!(session.study_mode().recalling(pane).is_none());
+    let close = Action::Recall {
+        pane,
+        ask: Ask::Close,
+    };
+    assert!(!session.execute(Command::StudyMode(close), 1.0).dirty, "nothing to close");
 }
