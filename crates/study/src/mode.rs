@@ -131,13 +131,12 @@ pub fn check(mode: Mode, have: Have) -> Result<(), Missing> {
     }
 }
 
-/// Who writes the cards for `source`, if anyone can.
+/// Who writes the cards: `source` when both could, else whoever is there.
 pub fn via(source: Source, have: Have) -> Option<Via> {
     match source {
-        Source::Ai => have.ai.then_some(Via::Ai),
-        Source::Dictionary => have.dict.then_some(Via::Dictionary),
-        Source::Auto if have.ai => Some(Via::Ai),
-        Source::Auto => have.dict.then_some(Via::Dictionary),
+        Source::Dictionary if have.dict => Some(Via::Dictionary),
+        _ if have.ai => Some(Via::Ai),
+        _ => have.dict.then_some(Via::Dictionary),
     }
 }
 
@@ -177,12 +176,19 @@ mod tests {
     }
 
     #[test]
-    fn auto_prefers_the_ai_and_a_pick_never_falls_back() {
+    fn auto_prefers_the_ai_and_a_pick_counts_only_with_both() {
         let dict_only = Have { ai: false, ..ALL };
+        let ai_only = Have { dict: false, ..ALL };
         assert_eq!(via(Source::Auto, ALL), Some(Via::Ai));
         assert_eq!(via(Source::Auto, dict_only), Some(Via::Dictionary));
-        assert_eq!(via(Source::Ai, dict_only), None);
         assert_eq!(via(Source::Dictionary, ALL), Some(Via::Dictionary));
+        assert_eq!(via(Source::Ai, dict_only), Some(Via::Dictionary));
+        assert_eq!(via(Source::Dictionary, ai_only), Some(Via::Ai));
+        let neither = Have {
+            ai: false,
+            ..ai_only
+        };
+        assert_eq!(via(Source::Auto, neither), None);
         assert_eq!(Mode::parse("reactive"), Some(Mode::Reactive));
         assert_eq!(Mode::parse("off"), None);
     }

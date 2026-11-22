@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use mareader_library::Spot;
 use mareader_session::DocId;
+use mareader_settings::Settings;
 use mareader_study::mode::{CardWriter, Judge, Key, Mode};
 use mareader_workspace::PaneId;
 
@@ -25,6 +26,13 @@ pub use deck_job::{Built, DeckJob, Doing, Tags};
 pub use known::Known;
 pub use recalling::{Ask, NO_JUDGE, Recalling, Word};
 pub use run::{Ahead, DeckState, Open, Prior, Run};
+
+/// Who could write study's cards: a model chosen for study (the desktop
+/// app's AI), then a dictionary pack answering from English.
+pub fn writers(settings: &Settings, dict: &crate::dict::Service) -> (bool, bool) {
+    let ai = cfg!(not(target_arch = "wasm32")) && settings.ai.study_preset().is_some();
+    (ai, !dict.languages().is_empty())
+}
 
 /// What the study menu and the deck ask of the app.
 #[derive(Clone, Debug, PartialEq)]

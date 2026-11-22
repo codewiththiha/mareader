@@ -45,10 +45,11 @@ impl Session {
                 .is_none_or(|tag| tag.trim().to_ascii_lowercase().starts_with("en")),
             _ => true,
         };
+        let (ai, dict) = crate::study_mode::writers(&self.settings, &self.dict);
         Have {
             cefr: self.vocab.ready() || self.vocab.coming(),
-            ai: self.settings.ai.study_preset().is_some(),
-            dict: !self.dict.languages().is_empty(),
+            ai,
+            dict,
             english,
         }
     }

@@ -508,7 +508,8 @@ the session and the reader are in [`study-mode.md`](study-mode.md).
   cards) and the rows on one sheet, each with its status, how it was
   learned, and Memorize or Un-memorize and Forget. CSV export sits under
   the title.
-- **Settings.** The tab sits after AI in the Study group. *Mode* is the one
-  the page menu turns on; *My level* is shared with Vocabulary. The AI rows
+- **Settings.** The tab sits after AI in the Study group, when an AI or a
+  dictionary could write cards. *Mode* is the one the page menu turns on;
+  the level is Vocabulary's *My level*, named in a note. The AI rows
   pick study's own model and language, which follow the AI Dictionary's
   until set.

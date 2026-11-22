@@ -214,7 +214,7 @@ fn whole<'a>(levels: &'a State, roles: &'a State) -> Whole<'a> {
 }
 
 /// A slider over the five levels; it applies as it moves.
-pub(super) fn level_row(ui: &mut Ui, level: &mut CefrLevel) {
+fn level_row(ui: &mut Ui, level: &mut CefrLevel) {
     let all = CefrLevel::ALL;
     let mut at = all.iter().position(|l| l == level).unwrap_or(2);
     row(ui, "My level", level.detail(), |ui| {

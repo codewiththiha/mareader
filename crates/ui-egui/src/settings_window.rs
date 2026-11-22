@@ -80,6 +80,8 @@ pub struct SettingsWindow {
     tab: Tab,
     /// Opened away from the books: only the tabs that matter there.
     limited: bool,
+    /// Neither an AI nor a dictionary could write study's cards.
+    no_study: bool,
 }
 
 impl SettingsWindow {
@@ -113,7 +115,8 @@ impl SettingsWindow {
 
     /// Whether the sidebar names `tab` this time.
     fn lists(&self, tab: Tab) -> bool {
-        tab.available() && (!self.limited || tab.beyond_books())
+        let study = tab != Tab::Study || !self.no_study;
+        tab.available() && (!self.limited || tab.beyond_books()) && study
     }
 
     /// Edits a copy of `current`; any change goes out as one command.
@@ -128,6 +131,8 @@ impl SettingsWindow {
         if !self.open {
             return;
         }
+        let (ai, dict) = mareader_engine::study_mode::writers(current, services.dict);
+        self.no_study = !ai && !dict;
         let models = services.voices.shelf.ready();
         // A removed model's tab goes; its engine's settings stay.
         if let Tab::Model(m) = self.tab
@@ -293,6 +298,7 @@ fn tab_body(
                 ai: cx.explains && Tab::Ai.available(),
                 shading: *live.vocab.state(mareader_cefr::Part::Dataset)
                     == mareader_cefr::State::Ready,
+                recall: mareader_engine::study_mode::writers(s, live.dict).0,
             };
             highlights::tab(ui, &mut s.study.highlights, marks, out);
         }
@@ -301,7 +307,10 @@ fn tab_body(
             vocabulary::tab(ui, (&mut s.study, &mut s.dictionary), heard, out);
         }
         Tab::Dictionary => dictionary::tab(ui, &mut s.dictionary, live.dict, out),
-        Tab::Study => study::tab(ui, s, out),
+        Tab::Study => {
+            let writers = mareader_engine::study_mode::writers(s, live.dict);
+            study::tab(ui, s, writers, out);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Ai => {
             let looks = (&mut s.study.highlights, &mut s.study.gloss);

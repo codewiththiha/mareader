@@ -2,7 +2,7 @@
 //! deck before each batch, the recall, and where the words are kept.
 
 use egui::{Button, RichText, Ui};
-use mareader_settings::{Settings, StudyModeSettings};
+use mareader_settings::{CefrLevel, Settings, StudyModeSettings};
 use mareader_study::mode::{MAX_PAGES, Mode, Source, Unit};
 
 use super::{choices, divider, group, note, row, section, switch_row};
@@ -14,8 +14,6 @@ use mareader_engine::route::Route;
 
 /// The button that leaves for Space, for screen readers and tests.
 pub const OPEN_SPACE: &str = "Open Space";
-/// Under the level: what it decides, and who shares it.
-const LEVEL: &str = "Words above your level are shaded or become cards; Vocabulary shares it.";
 /// Under Reactive: what the judge reads an answer for.
 const ANY_LANGUAGE: &str = "Answers may be in any language: the AI judges meaning, not spelling.";
 /// A count's unit for one, then for more.
@@ -23,7 +21,8 @@ const BATCHES: (&str, &str) = (" batch", " batches");
 const MINUTES: (&str, &str) = (" min", " min");
 const BARE: (&str, &str) = ("", "");
 
-pub fn tab(ui: &mut Ui, s: &mut Settings, out: &mut Commands) {
+/// The tab, given who could write the cards: an AI, a dictionary.
+pub fn tab(ui: &mut Ui, s: &mut Settings, (ai, dict): (bool, bool), out: &mut Commands) {
     section(ui, "Mode");
     group(ui, |ui| {
         let hint = "The one the page menu's Study switch turns on";
@@ -31,12 +30,10 @@ pub fn tab(ui: &mut Ui, s: &mut Settings, out: &mut Commands) {
         row(ui, "Mode", hint, |ui| {
             choices(ui, &mut m.mode, &Mode::ALL, Mode::label);
         });
-        divider(ui);
-        super::vocabulary::level_row(ui, &mut s.study.cefr.level);
     });
-    note(ui, LEVEL);
+    note(ui, &level(s.study.cefr.level));
     batches(ui, &mut s.study.mode);
-    proactive(ui, &mut s.study.mode);
+    proactive(ui, &mut s.study.mode, ai && dict);
     section(ui, "Reactive");
     group(ui, |ui| {
         let hint = "After a correct answer; off memorizes it at once";
@@ -47,6 +44,12 @@ pub fn tab(ui: &mut Ui, s: &mut Settings, out: &mut Commands) {
     #[cfg(not(target_arch = "wasm32"))]
     model(ui, &mut s.ai);
     space(ui, out);
+}
+
+/// Under the mode: the level is Vocabulary's, shared rather than set here.
+fn level(level: CefrLevel) -> String {
+    let at = level.label();
+    format!("Uses your Vocabulary level ({at}): words above it are shaded or become cards.")
 }
 
 /// How big a batch is: whole pages, or characters turned into pages.
@@ -77,8 +80,8 @@ fn batches(ui: &mut Ui, m: &mut StudyModeSettings) {
 }
 
 /// The deck before each batch: made ahead, its time, the lock, how many
-/// cards and by whom.
-fn proactive(ui: &mut Ui, m: &mut StudyModeSettings) {
+/// cards and, when both could, by whom.
+fn proactive(ui: &mut Ui, m: &mut StudyModeSettings, both: bool) {
     section(ui, "Proactive");
     group(ui, |ui| {
         let hint = "Decks made while you read; 0 waits for the gate";
@@ -107,19 +110,25 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings) {
         let hint = "The hardest, most repeated words come first";
         let cards = (StudyModeSettings::CARDS_MIN, StudyModeSettings::CARDS_MAX);
         count_row(ui, ("Words per deck", hint), &mut m.max_cards, cards, BARE);
-        divider(ui);
-        let hint = "Auto asks the AI when study has a model, else the dictionary";
-        row(ui, "Cards from", hint, |ui| {
-            let all = [Source::Auto, Source::Ai, Source::Dictionary];
-            choices(ui, &mut m.source, &all, source);
-        });
+        if both {
+            divider(ui);
+            let hint = "Auto asks the AI first, else the dictionary";
+            row(ui, "Cards from", hint, |ui| {
+                let all = [Source::Auto, Source::Ai, Source::Dictionary];
+                choices(ui, &mut m.source, &all, source);
+            });
+        }
     });
 }
 
 /// Study's own model and language; each follows the AI Dictionary's unset.
+/// With no model set up there is nothing to pick.
 #[cfg(not(target_arch = "wasm32"))]
 fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
     const SAME: &str = "Same as AI Dictionary";
+    if ai.presets.is_empty() {
+        return;
+    }
     section(ui, "AI");
     group(ui, |ui| {
         let hint = "Writes the cards and judges recalls";

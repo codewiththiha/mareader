@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use mareader_dict::Entry;
-use mareader_study::mode::Card;
+use mareader_study::mode::{Card, Missing};
 
 use super::{DeckJob, MEANING_WAIT, Stage};
 use crate::study_mode::backs::{Shown, meaning_of};
@@ -25,14 +25,7 @@ impl DeckJob {
             self.finish();
             return Ok(());
         }
-        let Some(to) = self.to.clone() else {
-            // With no pack at all, as in a headless run, the words come bare.
-            let bare = |c: &Card| Shown::new(c.clone(), String::new());
-            let cards = self.deck.cards.iter().take(self.max);
-            self.kept = cards.map(bare).collect();
-            self.finish();
-            return Ok(());
-        };
+        let to = self.to.clone().ok_or(Missing::Cards.reason())?;
         let mut words: Vec<String> = Vec::new();
         for card in self.deck.cards.iter().take(upto).skip(from) {
             if !words.contains(&card.key.lemma) {

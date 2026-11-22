@@ -22,6 +22,8 @@ pub struct Marks {
     pub ai: bool,
     /// The word levels are in, so words can be shaded.
     pub shading: bool,
+    /// A model could judge recalls, so Reactive study mode marks words.
+    pub recall: bool,
 }
 
 pub fn tab(ui: &mut Ui, h: &mut HighlightSettings, marks: Marks, out: &mut Commands) {
@@ -104,13 +106,15 @@ fn other_marks(ui: &mut Ui, h: &HighlightSettings, marks: Marks, out: &mut Comma
                 change(ui, ("Change in Vocabulary", Tab::Vocabulary), out);
                 preview(ui, h.cefr.pen, h.cefr.color, h.opacity);
             });
-            divider(ui);
-            let hint = "Words recalled in Reactive study mode: solved, then missed";
-            row(ui, "Study recall", hint, |ui| {
-                change(ui, ("Study mode", Tab::Study), out);
-                preview(ui, h.missed.pen, h.missed.color, h.opacity);
-                preview(ui, h.solved.pen, h.solved.color, h.opacity);
-            });
+            if marks.recall {
+                divider(ui);
+                let hint = "Words recalled in Reactive study mode: solved, then missed";
+                row(ui, "Study recall", hint, |ui| {
+                    change(ui, ("Study mode", Tab::Study), out);
+                    preview(ui, h.missed.pen, h.missed.color, h.opacity);
+                    preview(ui, h.solved.pen, h.solved.color, h.opacity);
+                });
+            }
         }
     });
     note(

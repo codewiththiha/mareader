@@ -7,14 +7,17 @@ use std::time::Duration;
 use egui::{Event, Modifiers, PointerButton};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
+use mareader_engine::command::Command;
+use mareader_engine::settings::Tab;
 use mareader_engine::study_mode::DeckState;
 use mareader_study::mode::Missing;
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::study_mode::confirm;
 use mareader_ui_egui::study_mode::deck::{KNOWN, START, TURN_OFF};
 use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
-use mareader_ui_egui::study_mode::menu::KEEPS;
+use mareader_ui_egui::study_mode::menu::{KEEPS, SETTINGS};
 use mareader_ui_egui::study_mode::progress::PROGRESS;
+use mareader_ui_egui::ui_command::Sent;
 use mareader_workspace::PaneId;
 
 use crate::common::{Dials, levels_reader, page, scroll, shelves};
@@ -111,6 +114,7 @@ fn without_cards_to_write_the_menu_says_what_is_missing() -> Out {
     h.run();
     page_menu(&mut h)?;
     assert!(h.query_by_label(Missing::Cards.reason()).is_some());
+    assert!(h.query_by_label(SETTINGS).is_none(), "no tab to open");
     h.get_by_label("Study mode").click();
     h.run();
     let pane = h.state().active_pane();
@@ -119,6 +123,29 @@ fn without_cards_to_write_the_menu_says_what_is_missing() -> Out {
         "the switch is off"
     );
     Ok(())
+}
+
+#[test]
+fn the_study_tab_comes_with_an_ai_or_a_dictionary() {
+    let open_study = |h: &mut H| {
+        let open = Sent::Engine(Command::OpenSettings(Tab::Study));
+        h.state_mut().queue(open);
+        h.run();
+        h.state().settings_window().tab() == Tab::Study
+    };
+    let (words, packs) = shelves();
+    let mut h = levels_reader(words.path(), None);
+    h.dial(|s| s.ai.presets.clear());
+    assert!(!open_study(&mut h), "neither writes cards, so no tab");
+    let mut h = levels_reader(words.path(), Some(packs.path()));
+    h.dial(|s| s.ai.presets.clear());
+    assert!(open_study(&mut h), "a dictionary brings the tab");
+    let choice = h.query_by_label("Cards from").is_some();
+    assert!(!choice, "one writer, no choice");
+    let slider = h.query_by_label("Reading level").is_some();
+    assert!(!slider, "Vocabulary sets the level");
+    let level = h.query_by_label_contains("Uses your Vocabulary level");
+    assert!(level.is_some(), "the tab names the level it uses");
 }
 
 #[test]

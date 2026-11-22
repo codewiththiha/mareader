@@ -433,10 +433,21 @@ fn the_icon_animation_switch_stills_only_icons() {
 fn every_settings_tab_is_named_in_its_sidebar() {
     use mareader_engine::settings::Tab;
     let mut h = with(&[("settings", "layout")]);
+    let study = Tab::Study.label();
+    let named = |h: &Harness<'static, MareaderApp>, label| {
+        let buttons = h.query_all_by_role_and_label(Role::Button, label);
+        buttons.count()
+    };
+    assert_eq!(named(&h, study), 0, "nothing could write study's cards");
+    let mut settings = h.state().settings().clone();
+    let ollama = mareader_settings::Provider::Ollama;
+    let id = settings.ai.add_preset(ollama, "model");
+    settings.ai.tasks.study.preset = Some(id);
+    h.state_mut().set_settings(settings);
+    h.run_steps(2);
     for tab in Tab::ALL {
         let label = tab.label();
-        let named = h.query_all_by_role_and_label(Role::Button, label);
-        assert!(named.count() >= 1, "{label}");
+        assert!(named(&h, label) >= 1, "{label}");
     }
     h.get_by_role_and_label(Role::Button, "Panes").click();
     h.run_steps(2);

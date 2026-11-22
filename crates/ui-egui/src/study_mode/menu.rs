@@ -7,7 +7,7 @@ use egui::{Align, Layout, RichText, Ui};
 use mareader_engine::command::Command;
 use mareader_engine::session::Session;
 use mareader_engine::settings::Tab;
-use mareader_engine::study_mode::Action;
+use mareader_engine::study_mode::{Action, writers};
 use mareader_study::mode::{Have, MAX_PAGES, Missing, Mode, Unit, check};
 use mareader_workspace::PaneId;
 
@@ -31,6 +31,8 @@ pub struct Look {
     pub pages: u8,
     /// Each pane's running mode, if any, and what it has.
     pub panes: Vec<(PaneId, Option<Mode>, Have)>,
+    /// The settings have a Study tab: an AI or a dictionary could write.
+    pub tab: bool,
 }
 
 impl Look {
@@ -38,11 +40,13 @@ impl Look {
         let settings = &session.settings().study.mode;
         let running = |pane| session.study_mode().run(pane).map(|r| r.mode);
         let pane = |&pane: &PaneId| (pane, running(pane), session.study_have(pane));
+        let (ai, dict) = writers(session.settings(), session.dict());
         Self {
             mode: settings.mode,
             unit: settings.unit,
             pages: settings.pages,
             panes: panes.iter().map(pane).collect(),
+            tab: ai || dict,
         }
     }
 }
@@ -89,7 +93,7 @@ pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool 
     if mode == Mode::Proactive && look.unit == Unit::Pages {
         batch(ui, look.pages, out);
     }
-    if widgets::menu_row(ui, Icon::Settings, SETTINGS, None, false).clicked() {
+    if look.tab && widgets::menu_row(ui, Icon::Settings, SETTINGS, None, false).clicked() {
         out.push(Sent::Engine(Command::OpenSettings(Tab::Study)));
     }
     widgets::menu_rule(ui);

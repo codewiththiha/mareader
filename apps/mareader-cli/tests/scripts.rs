@@ -254,6 +254,31 @@ fn toasts(out: &Value) -> Vec<String> {
         .collect()
 }
 
+/// A converted dictionary pack holding the deck's hard words; a headless
+/// run has no AI writer, so its cards come from here.
+fn write_dict_pack(state: &Path) {
+    let dir = state.join("dictionaries");
+    std::fs::create_dir_all(&dir).expect("mkdir dictionaries");
+    let db = Connection::open(dir.join("mcfnlp-en-my.db")).expect("open pack");
+    let schema = "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE entries (id INTEGER PRIMARY KEY, word TEXT NOT NULL,
+            word_fold TEXT NOT NULL, pos TEXT, definition TEXT NOT NULL,
+            def_fold TEXT NOT NULL, romanization TEXT, sense TEXT);";
+    db.execute_batch(schema).expect("create pack");
+    let rows = [
+        ("sphinx", "a statue that asks riddles"),
+        ("quartz", "a hard clear mineral"),
+        ("vow", "a solemn promise"),
+    ];
+    let insert = "INSERT INTO entries (word, word_fold, pos, definition, def_fold) \
+        VALUES (?1, ?1, 'n', ?2, ?2)";
+    for (word, meaning) in rows {
+        db.execute(insert, params![word, meaning]).unwrap();
+    }
+    let meta = "INSERT INTO meta (key, value) VALUES ('layout', '1'), ('rows', '3');";
+    db.execute_batch(meta).expect("finish pack");
+}
+
 #[test]
 fn script_06_study_mode_gates_the_first_batch() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -263,6 +288,7 @@ fn script_06_study_mode_gates_the_first_batch() {
     write_sample_pdf(&pdf, 6);
     write_vocab_db(&vocab);
     write_study_settings(&state);
+    write_dict_pack(&state);
 
     let path = script("06-study-mode.jsonl");
     let out = run_cli(

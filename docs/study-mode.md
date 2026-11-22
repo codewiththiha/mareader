@@ -76,9 +76,11 @@ adjective or adverb).
 | Proactive | word levels, an English book, and an AI model **or** an English dictionary pack |
 | Reactive | word levels, an English book, and an AI model |
 
-*Cards from* picks Auto (AI first), AI or Dictionary. A pick never falls back
-silently; only a session with no AI writer at all, such as `mareader-cli`,
-looks every deck up in the dictionary.
+*Cards from* picks Auto (AI first), AI or Dictionary, and counts only while
+both are there: with just one, that one writes every deck. The AI counts
+once its writer is wired, so `mareader-cli`, which has none, uses a
+dictionary pack. With neither, a deck fails and says what it needs; no card
+is made without a meaning.
 
 ## What is kept (`crates/library/src/study_words.rs`)
 
@@ -111,9 +113,9 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   dictionary pack in study's language, else Explain's, else the first ready
   pack. A dictionary deck holds only words the pack has: they are looked up
   48 at a time, most seen first, until the deck is full, so no card has an
-  empty back (a headless run with no pack gets the words bare). A silent
-  tagger is given up after 10 s and a silent dictionary after 20 s, ending
-  the deck with the cards found (or an error if none).
+  empty back. A silent tagger is given up after 10 s and a silent
+  dictionary after 20 s, ending the deck with the cards found (or an error
+  if none).
   A deck with no new words unlocks its batch with a toast.
 - **AI cards:** *Cards from* picks who writes the backs: Auto (the AI when
   study has a model, else the dictionary), AI or Dictionary. The AI writes a
@@ -165,7 +167,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **The page menu** opens with a Study section: the switch, Proactive or
   Reactive, and the pages per batch. When a need is missing the switch is
   off, the reason shows and a row opens the settings tab that fixes it.
-  *Study settings…* opens Settings › Study mode. While a pane studies the
+  *Study settings…* opens Settings › Study mode, and goes with the tab
+  when neither an AI nor a dictionary is set up. While a pane studies the
   AI tasks below it are disabled.
 - **The view holds at the gate:** a strip scrolls no further than the end
   of the gate page, and a paged mode turns no further than it. With the lock
@@ -230,12 +233,15 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   one when missed (`highlights.missed`); it opens no recall again. No pen
   may take either look (`HighlightSettings::reserved`), and Settings ›
   Highlights › Other marks shows them as *Study recall*.
-- **Settings › Study mode** (`settings_window/study.rs`): the mode and the
-  reading level shared with Vocabulary; Batches (size by pages or
-  characters); Proactive (prepare ahead, time limit and minutes per deck,
-  the lock, shading, words per deck, cards from); Reactive (ask before
-  memorizing); AI (study's model and language, desktop only); and *Open
-  Space*.
+- **Settings › Study mode** (`settings_window/study.rs`): listed only when
+  an AI model or a dictionary pack could write cards. The mode, with a note
+  naming the Vocabulary level it uses (set only in Vocabulary); Batches
+  (size by pages or characters); Proactive (prepare ahead, time limit and
+  minutes per deck, the lock, shading, words per deck, and *Cards from*
+  only when both could write); Reactive (ask before memorizing); AI
+  (study's model and language, desktop only, once a model is set up); and
+  *Open Space*. Highlights shows *Study recall* only when a model could
+  judge.
 - **Shots:** `settings=study` opens the tab,
   `study_mode=proactive|reactive|off`, `study_gate=on`,
   `study_deck=reveal` (the card turned) or `study_deck=drag:-140` (held

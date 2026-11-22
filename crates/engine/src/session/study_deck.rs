@@ -159,12 +159,14 @@ impl Session {
     fn study_ask(&self, pane: PaneId, batch: &Batch) -> Option<Ask> {
         let study = &self.settings.study;
         let fallback = self.study_mode.run(pane)?.fallback == Some(batch.from);
-        let picked = via(study.mode.source, self.study_have(pane));
         let writer = self.study_mode.writer();
-        let via = match fallback || writer.is_none() {
-            // A headless session has no writer: the dictionary looks up.
+        let mut have = self.study_have(pane);
+        // The AI writes once its writer is wired; a headless session has none.
+        have.ai &= writer.is_some();
+        let via = match fallback && have.dict {
             true => Via::Dictionary,
-            false => picked.unwrap_or(Via::Ai),
+            // With no one to write, the dictionary's deck says what is missing.
+            false => via(study.mode.source, have).unwrap_or(Via::Dictionary),
         };
         Some(Ask {
             document: self.documents.document_of(pane)?,
