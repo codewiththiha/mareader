@@ -3,27 +3,31 @@
 //! The pages are read on a thread (in the frame for a book, as word lists
 //! are); every later stage moves only when [`DeckJob::step`] is handed the
 //! services that answer it. A tagger that is missing, or stops answering
-//! for [`TAG_WAIT`] seconds, leaves the word classes unknown; dictionaries
-//! silent for [`MEANING_WAIT`] seconds leave the meanings empty. Cards from
-//! the AI wait on their writer as long as it takes; the deck's waiting card
-//! offers the dictionary once that is slow.
+//! for [`TAG_WAIT`] seconds, leaves the word classes unknown. Dictionary
+//! cards are only words a dictionary has, looked up a round at a time
+//! until the deck is full; a dictionary silent for [`MEANING_WAIT`] seconds
+//! ends the deck with those found. Cards from the AI wait on their writer
+//! as long as it takes; the deck's waiting card offers the dictionary once
+//! that is slow.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mareader_cefr::{Ticket as TagTicket, candidates};
-use mareader_dict::{Entry, Ticket};
+use mareader_dict::Ticket;
 use mareader_session::Document;
 use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
 use mareader_study::mode::{build, lemma};
 
-use super::backs::{NO_MODEL, Shown, Writer, meaning_of, said, wanted};
+use super::backs::{NO_MODEL, Shown, Writer, said, wanted};
 use super::known::Known;
 use super::sightings::{self, Read};
 use crate::session::Waker;
 use crate::word_list::{INLINE, LEVEL_ROUND, Levels, Meanings};
 use crate::word_marks::{self, Page};
+
+mod lookup;
 
 /// Words read from one batch at most.
 const READ_CAP: usize = 20_000;
@@ -126,6 +130,11 @@ pub struct DeckJob {
     deck: Deck,
     /// Backs found so far, by card; cached ones come first.
     written: Vec<Option<Written>>,
+    /// Dictionary cards with a meaning so far; the cards before `looked`
+    /// are looked up, and those before `upto` asked.
+    kept: Vec<Shown>,
+    looked: usize,
+    upto: usize,
     started: Option<f64>,
     built: Option<Built>,
 }
@@ -148,6 +157,9 @@ impl DeckJob {
             hard: Vec::new(),
             deck: Deck::default(),
             written: Vec::new(),
+            kept: Vec::new(),
+            looked: 0,
+            upto: 0,
             started: None,
             built: None,
         }
@@ -213,7 +225,7 @@ impl DeckJob {
                 },
                 Stage::Levels { .. } => self.levels(words)?,
                 Stage::Tags { .. } => self.tags(words, meanings, now)?,
-                Stage::Meanings { .. } => self.meanings(meanings, now),
+                Stage::Meanings { .. } => self.meanings(meanings, now)?,
                 Stage::Writing { .. } => self.writing()?,
                 Stage::Done => return Ok(self.built.take()),
             };
@@ -350,27 +362,16 @@ impl DeckJob {
             })
         });
         let known = &self.known;
-        self.deck = build(seen, self.level, |k| known.has(k), self.max);
+        // The dictionary may lack some words, so it sees every one in turn.
+        let max = match self.via {
+            Via::Ai => self.max,
+            Via::Dictionary => usize::MAX,
+        };
+        self.deck = build(seen, self.level, |k| known.has(k), max);
         if self.via == Via::Ai {
             return self.ask_backs();
         }
-        let mut words: Vec<String> = Vec::new();
-        for card in &self.deck.cards {
-            if !words.contains(&card.key.lemma) {
-                words.push(card.key.lemma.clone());
-            }
-        }
-        match self.to.clone() {
-            Some(to) if !words.is_empty() => {
-                let ticket = meanings.ask_words(words, vec![to], false);
-                self.stage = Stage::Meanings {
-                    ticket,
-                    since: None,
-                };
-            }
-            _ => self.finish(&HashMap::new()),
-        }
-        Ok(())
+        self.look_up(meanings)
     }
 
     /// Asks the writer for the backs not cached; with all cached, finishes.
@@ -429,32 +430,6 @@ impl DeckJob {
         let mut backs = std::mem::take(&mut self.written).into_iter();
         let shown = deck.cards.into_iter();
         let shown = shown.map(|card| Shown::written(card, backs.next().flatten()));
-        self.done(shown.collect(), deck.found, deck.skipped_known);
-    }
-
-    fn meanings(&mut self, meanings: &mut dyn Meanings, now: f64) -> bool {
-        let Stage::Meanings { ticket, since } = &mut self.stage else {
-            return false;
-        };
-        let waited = now - *since.get_or_insert(now);
-        match meanings.take_words(*ticket) {
-            Some(reply) => {
-                let found = reply.found.into_iter().map(|f| (f.word, f.own));
-                self.finish(&found.collect());
-            }
-            None if waited > MEANING_WAIT => self.finish(&HashMap::new()),
-            None => return false,
-        }
-        true
-    }
-
-    fn finish(&mut self, found: &HashMap<String, Vec<Entry>>) {
-        let deck = std::mem::take(&mut self.deck);
-        let shown = deck.cards.into_iter().map(|card| {
-            let entries = found.get(&card.key.lemma).map_or(&[][..], Vec::as_slice);
-            let meaning = meaning_of(entries, card.key.pos);
-            Shown::new(card, meaning)
-        });
         self.done(shown.collect(), deck.found, deck.skipped_known);
     }
 

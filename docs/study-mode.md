@@ -109,7 +109,11 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **Decks:** the gate batch's words are read, levelled, tagged when the
   tagger is there (a proper-noun tag drops the word) and given meanings by the
   dictionary pack in study's language, else Explain's, else the first ready
-  pack. A silent tagger is given up after 10 s and the dictionary after 20 s.
+  pack. A dictionary deck holds only words the pack has: they are looked up
+  48 at a time, most seen first, until the deck is full, so no card has an
+  empty back (a headless run with no pack gets the words bare). A silent
+  tagger is given up after 10 s and a silent dictionary after 20 s, ending
+  the deck with the cards found (or an error if none).
   A deck with no new words unlocks its batch with a toast.
 - **AI cards:** *Cards from* picks who writes the backs: Auto (the AI when
   study has a model, else the dictionary), AI or Dictionary. The AI writes a
