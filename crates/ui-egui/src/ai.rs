@@ -280,7 +280,7 @@ fn request(ask: &Ask, batch: u16) -> mareader_assist::Request {
 fn heard(news: mareader_assist::Organized) -> Heard {
     use mareader_assist::{Organized, Stage};
     match news {
-        Organized::Progress(p) => Heard::Progress {
+        Organized::Partial(p) => Heard::Progress {
             filing: p.stage == Stage::Filing,
             done: p.done,
             total: p.total,

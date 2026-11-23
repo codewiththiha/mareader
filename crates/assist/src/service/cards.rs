@@ -6,17 +6,16 @@
 
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use mareader_settings::ModelPreset;
 use mareader_study::mode::{
     Answer, Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, Judgement, Wanted, Written,
 };
 use mareader_study::{Failure, Why};
-use tokio::task::JoinHandle;
 
 use super::{Assist, Engine, Waker, short_slot};
 use crate::backend::{Backend, Nobody, run};
+use crate::running::{Running, start};
 use crate::slots::{Slots, Ticket};
 use crate::study_judge::StudyJudge;
 use crate::study_mode::StudyCards;
@@ -100,17 +99,7 @@ impl AiCards {
         &self,
         asked: impl Future<Output = Result<T, Failure>> + Send + 'static,
     ) -> Pending<T> {
-        let (tx, rx) = channel();
-        let Some(rt) = self.engine.rt() else {
-            let _ = tx.send(Err(Why::NotHere.into()));
-            return Pending::new(rx, None);
-        };
-        let waker = Arc::clone(&self.waker);
-        let task = rt.spawn(async move {
-            let _ = tx.send(asked.await);
-            waker();
-        });
-        Pending::new(rx, Some(task))
+        start(self.engine.rt(), &self.waker, |_| asked)
     }
 }
 
@@ -160,34 +149,7 @@ async fn slot(
 }
 
 /// A request on its way; dropping it cancels it and frees its model.
-struct Pending<T> {
-    rx: Receiver<Result<T, Failure>>,
-    task: Option<JoinHandle<()>>,
-    answered: bool,
-}
-
-impl<T> Pending<T> {
-    fn new(rx: Receiver<Result<T, Failure>>, task: Option<JoinHandle<()>>) -> Self {
-        Self {
-            rx,
-            task,
-            answered: false,
-        }
-    }
-
-    fn answer(&mut self) -> Option<Result<T, Failure>> {
-        if self.answered {
-            return None;
-        }
-        let answer = match self.rx.try_recv() {
-            Ok(answer) => answer,
-            Err(TryRecvError::Empty) => return None,
-            Err(TryRecvError::Disconnected) => Err(Why::NotHere.into()),
-        };
-        self.answered = true;
-        Some(answer)
-    }
-}
+type Pending<T> = Running<T>;
 
 impl CardJob for Pending<Vec<Option<Written>>> {
     fn take(&mut self) -> Option<Answer> {
@@ -198,11 +160,5 @@ impl CardJob for Pending<Vec<Option<Written>>> {
 impl JudgeJob for Pending<Judged> {
     fn take(&mut self) -> Option<Judgement> {
         self.answer()
-    }
-}
-
-impl<T> Drop for Pending<T> {
-    fn drop(&mut self) {
-        self.task.iter().for_each(JoinHandle::abort);
     }
 }

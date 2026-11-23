@@ -2,7 +2,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
 use fm_bridge::Bridge;
@@ -18,6 +17,8 @@ use crate::keys::{Clients, pasted, row};
 use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, WAITS, organize_from};
 use crate::page::{PageJob, rewrite};
 use crate::prompt::Prompt;
+use crate::running::Waker;
+use crate::running::{Event, Running, start};
 use crate::slots::{Kind, Slots, Ticket};
 use crate::task::Explain;
 use mareader_study::page::Rewritten;
@@ -40,9 +41,6 @@ fn keep(file: &std::path::Path, run: &Checkpoint) {
         let _ = std::fs::rename(&draft, file);
     }
 }
-
-/// Wakes the UI when a job finishes.
-pub type Waker = Arc<dyn Fn() + Send + Sync>;
 
 /// The sample a trial explains.
 const SAMPLE: Explain<'static> = Explain {
@@ -75,11 +73,11 @@ pub struct Assist {
     clients: Arc<Clients>,
     apple: Option<Arc<crate::Apple>>,
     ai: AiSettings,
-    tx: Sender<Reply>,
-    rx: Receiver<Reply>,
     waker: Waker,
     board: Board,
     slots: Slots,
+    /// Settings jobs under way; their replies land on the board.
+    jobs: Vec<Running<Reply>>,
 }
 
 impl Assist {
@@ -90,18 +88,16 @@ impl Assist {
             .thread_name("mareader-assist")
             .enable_all()
             .build()?;
-        let (tx, rx) = channel();
         Ok(Self {
             engine: Arc::new(Engine(Some(rt))),
             clients: Arc::new(Clients::new(root.clone())),
             root,
             apple: locate_apple(),
             ai: AiSettings::default(),
-            tx,
-            rx,
             waker,
             board: Board::default(),
             slots: Slots::default(),
+            jobs: Vec::new(),
         })
     }
 
@@ -136,6 +132,7 @@ impl Assist {
         };
         Arc::new(AiExplainer {
             engine: Arc::clone(&self.engine),
+            waker: Arc::clone(&self.waker),
             slots: self.slots.clone(),
             by: preset.as_ref().map(ModelPreset::title).unwrap_or_default(),
             preset,
@@ -202,11 +199,6 @@ impl Assist {
     }
 
     fn organize_from(&self, req: Request, paused: Option<Checkpoint>) -> Organizing {
-        let (tx, rx) = channel();
-        let Some(rt) = self.engine.rt() else {
-            let _ = tx.send(Organized::Done(Err(Why::NotHere.into())));
-            return Organizing { rx, task: None };
-        };
         let resumed = paused.is_some();
         let run = match paused {
             Some(run) => run.carry_on(&req),
@@ -214,13 +206,9 @@ impl Assist {
         };
         let preset = self.ai.organize_preset().cloned();
         let backend = preset.as_ref().map(|p| self.backend(p));
-        let (slots, waker) = (self.slots.clone(), Arc::clone(&self.waker));
+        let slots = self.slots.clone();
         let file = self.root.join(CHECKPOINT);
-        let task = rt.spawn(async move {
-            let say = |event| {
-                let _ = tx.send(event);
-                waker();
-            };
+        start(self.engine.rt(), &self.waker, |say| async move {
             let save = |run: &Checkpoint| keep(&file, run);
             // A finished run only makes its plan; no model is asked.
             let (backend, slot) = match (preset, backend) {
@@ -230,68 +218,44 @@ impl Assist {
                 }
                 (Some(preset), Some(backend)) => {
                     let what = Kind::Long(ORGANIZING);
-                    match slot(&slots, &preset, backend.as_ref(), what).await {
-                        Ok(ticket) => (backend, Some(ticket)),
-                        Err(f) => return say(Organized::Done(Err(f))),
-                    }
+                    let ticket = slot(&slots, &preset, backend.as_ref(), what).await?;
+                    (backend, Some(ticket))
                 }
                 _ => {
                     let none = "no model is chosen to organize with; pick one in Settings › AI";
-                    say(Organized::Done(Err(Failure::detailed(Why::NotHere, none))));
-                    return;
+                    return Err(Failure::detailed(Why::NotHere, none));
                 }
             };
             if !resumed {
                 save(&run);
             }
             let hooks = Hooks {
-                progress: &|p| say(Organized::Progress(p)),
+                progress: &|p| say.partial(p),
                 save: &save,
                 waits: &WAITS,
             };
             let plan = organize_from(backend.as_ref(), &req, run, &hooks).await;
             drop(slot);
-            say(Organized::Done(plan));
-        });
-        Organizing {
-            rx,
-            task: Some(task),
-        }
+            plan
+        })
     }
 
     /// Rewrites one page with its task's model; news comes by polling.
     pub fn rewrite(&self, job: PageJob) -> Rewriting {
-        let (tx, rx) = channel();
-        let Some(rt) = self.engine.rt() else {
-            let _ = tx.send(Rewrote::Done(Err(Why::NotHere.into())));
-            return Rewriting { rx, task: None };
-        };
         let preset = self.ai.page_preset(job.rewrite.task()).cloned();
         let backend = preset.as_ref().map(|p| self.backend(p));
-        let (slots, waker) = (self.slots.clone(), Arc::clone(&self.waker));
-        let task = rt.spawn(async move {
-            let say = |event| {
-                let _ = tx.send(event);
-                waker();
-            };
+        let slots = self.slots.clone();
+        start(self.engine.rt(), &self.waker, |say| async move {
             let (Some(preset), Some(backend)) = (preset, backend) else {
                 let none = "no model is chosen for this; pick one in Settings › AI";
-                return say(Rewrote::Done(Err(Failure::detailed(Why::NotHere, none))));
+                return Err(Failure::detailed(Why::NotHere, none));
             };
-            let ticket = match short_slot(&slots, &preset, backend.as_ref()).await {
-                Ok(ticket) => ticket,
-                Err(f) => return say(Rewrote::Done(Err(f))),
-            };
+            let ticket = short_slot(&slots, &preset, backend.as_ref()).await?;
             let ask = job.ask();
-            let partial = |r| say(Rewrote::Partial(r));
-            let done = rewrite(backend.as_ref(), &ask, &partial, &WAITS).await;
+            let done = rewrite(backend.as_ref(), &ask, &|r| say.partial(r), &WAITS).await;
             drop(ticket);
-            say(Rewrote::Done(done));
-        });
-        Rewriting {
-            rx,
-            task: Some(task),
-        }
+            done
+        })
     }
 
     pub fn board(&self) -> &Board {
@@ -301,10 +265,17 @@ impl Assist {
     /// Takes in finished jobs; true if any changed the board.
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        while let Ok(reply) = self.rx.try_recv() {
-            self.board.finish(reply);
+        let board = &mut self.board;
+        self.jobs.retain_mut(|job| {
+            let Some(reply) = job.answer() else {
+                return true;
+            };
+            if let Ok(reply) = reply {
+                board.finish(reply);
+            }
             changed = true;
-        }
+            false
+        });
         changed
     }
 
@@ -324,11 +295,9 @@ impl Assist {
             },
             slots: self.slots.clone(),
         };
-        let (tx, waker) = (self.tx.clone(), Arc::clone(&self.waker));
-        rt.spawn(async move {
-            let _ = tx.send(work.run(job).await);
-            waker();
-        });
+        let reply = async move { Ok(work.run(job).await) };
+        let job = start(Some(rt), &self.waker, |_| reply);
+        self.jobs.push(job);
     }
 }
 
@@ -414,78 +383,22 @@ async fn short_slot(
     slot(slots, preset, backend, Kind::Short).await
 }
 
-/// News from an organizing run.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Organized {
-    Progress(Progress),
-    /// The last event: the plan, or why there's none.
-    Done(Result<Plan, Failure>),
-}
+/// News from an organizing run: progress, then the plan.
+pub type Organized = Event<Plan, Progress>;
 
 /// A run under way; dropping it cancels the run and frees its model.
-pub struct Organizing {
-    rx: Receiver<Organized>,
-    task: Option<tokio::task::JoinHandle<()>>,
-}
+pub type Organizing = Running<Plan, Progress>;
 
-impl Organizing {
-    /// Events since the last call, oldest first.
-    pub fn poll(&mut self) -> Vec<Organized> {
-        self.rx.try_iter().collect()
-    }
-
-    /// Stops the run; no more events come.
-    pub fn cancel(&mut self) {
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
-    }
-}
-
-impl Drop for Organizing {
-    fn drop(&mut self) {
-        self.cancel();
-    }
-}
-
-/// News from a page rewrite.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Rewrote {
-    /// What has come so far, shown while the rest streams in.
-    Partial(Rewritten),
-    /// The last event: the result, or why there's none.
-    Done(Result<Rewritten, Failure>),
-}
+/// News from a page rewrite: what came so far, then the result.
+pub type Rewrote = Event<Rewritten>;
 
 /// A rewrite under way; dropping it cancels it and frees its model.
-pub struct Rewriting {
-    rx: Receiver<Rewrote>,
-    task: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Rewriting {
-    /// Events since the last call, oldest first.
-    pub fn poll(&mut self) -> Vec<Rewrote> {
-        self.rx.try_iter().collect()
-    }
-
-    /// Stops the rewrite; no more events come.
-    pub fn cancel(&mut self) {
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
-    }
-}
-
-impl Drop for Rewriting {
-    fn drop(&mut self) {
-        self.cancel();
-    }
-}
+pub type Rewriting = Running<Rewritten>;
 
 /// The study tools' answerer: blocks its worker thread, not the UI.
 struct AiExplainer {
     engine: Arc<Engine>,
+    waker: Waker,
     slots: Slots,
     preset: Option<ModelPreset>,
     backend: Arc<dyn Backend>,
@@ -500,21 +413,22 @@ impl Explainer for AiExplainer {
         context: &str,
         partial: &(dyn Fn(WordInfo) + Sync),
     ) -> Result<WordInfo, Failure> {
-        let rt = self.engine.rt().ok_or(Why::NotHere)?;
-        let language = self.language;
-        let task = Explain {
-            word,
-            context,
-            language,
-        };
-        let backend = self.backend.as_ref();
-        rt.block_on(async {
-            let _slot = match &self.preset {
-                Some(p) => Some(short_slot(&self.slots, p, backend).await?),
+        let (preset, slots) = (self.preset.clone(), self.slots.clone());
+        let (backend, language) = (Arc::clone(&self.backend), self.language);
+        let (word, context) = (word.to_owned(), context.to_owned());
+        let job = start(self.engine.rt(), &self.waker, |say| async move {
+            let _slot = match &preset {
+                Some(p) => Some(short_slot(&slots, p, backend.as_ref()).await?),
                 None => None,
             };
-            run(backend, &task, partial).await
-        })
+            let task = Explain {
+                word: &word,
+                context: &context,
+                language,
+            };
+            run(backend.as_ref(), &task, &|info| say.partial(info)).await
+        });
+        job.wait_with(partial)
     }
 
     fn by(&self) -> String {

@@ -155,7 +155,7 @@ fn the_organizer_waits_and_asks_again() {
     let plan = answer(|| {
         run.poll().into_iter().find_map(|event| match event {
             Organized::Done(plan) => Some(plan),
-            Organized::Progress(_) => None,
+            Organized::Partial(_) => None,
         })
     });
     let plan = plan.map_err(|f| f.why).unwrap();

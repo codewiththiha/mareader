@@ -346,7 +346,7 @@ fn a_failed_run_is_kept_and_resumed_where_it_stopped() {
     assert_eq!(plan.placed.len(), 2);
     assert_eq!(plan.shelves.len(), 1);
     assert_eq!(mended.seen().len(), 2);
-    let start = Organized::Progress(Progress {
+    let start = Organized::Partial(Progress {
         stage: Stage::Filing,
         done: 2,
         total: 4,

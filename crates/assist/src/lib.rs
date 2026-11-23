@@ -17,6 +17,7 @@ mod keys;
 mod organize;
 mod page;
 mod prompt;
+mod running;
 mod service;
 mod slots;
 mod study_judge;
@@ -34,7 +35,8 @@ pub use organize::{
 };
 pub use page::{PAGE_CHARS, PageAsk, PageJob, Rewrite, rewrite};
 pub use prompt::{Prompt, quote};
-pub use service::{Assist, Organized, Organizing, Rewriting, Rewrote, Waker};
+pub use running::{Event, Running, Waker};
+pub use service::{Assist, Organized, Organizing, Rewriting, Rewrote};
 pub use slots::{Kind, Slots, Ticket};
 pub use study_judge::StudyJudge;
 pub use study_mode::{MAX_WORDS, StudyCards};
