@@ -217,17 +217,20 @@ is cancelled frees it at once.
 ## How each task runs today (2026-11-23)
 
 The checklist a new task is compared against until tasks become rows of
-one table. Each task starts, holds, queues, retries, streams and finds its
-model its own way:
+one table, copied from the AI architecture review. Line numbers are those
+of `0ebd450`. ⚠ marks a risk, ⧉ a copy of something found elsewhere.
 
-| Task | Start | Handle | Queue | Retry | Stream | Model |
-|---|---|---|---|---|---|---|
-| AI Dictionary (Explain), `task.rs` | `rt.block_on` on the study worker thread (`service.rs`, `AiExplainer`) | None: a blocking `Explainer` call | Short: waits up to 15 s | **None** | Yes | `explain_preset()`, frozen in `configure()` |
-| Organize library (Shelving, Filing), `organize.rs` | `rt.spawn` (`organize_from`) | `Organizing` | Long: never waits, nothing waits behind it | `attempt()`: one re-ask, then waits 3 s and 12 s | Progress events | `organize_preset()`, read at the call |
-| Page rewrite (Summarize, Translate, Simplify), `page.rs` | `rt.spawn` (`rewrite`) | `Rewriting` | Short: waits up to 15 s | A copy of that loop in `rewrite()`, plus the engine's requeue ×3 on `InUse` (`page_ai/groups.rs`) | Yes | `page_preset(task)`, read at the call |
-| Study cards, `study_mode.rs` | `rt.spawn` (`service/cards.rs`) | `Pending<T>` | Short: waits up to 15 s | **None** | Dropped: `write_deck` passes an empty closure | `study_preset()`, frozen in `study_ai()` |
-| Study judge, `study_judge.rs` | `rt.spawn` (`service/cards.rs`) | `Pending<T>` | Short: waits up to 15 s | **None** | Dropped | `study_preset()`, frozen in `study_ai()` |
-| Settings jobs (Probe, Keys, Models, Try), `settings/ai_job.rs` | `rt.spawn` (`Assist::send`) | None: the reply lands on the `Board`; no cancel | Try takes a short slot | None | No | The preset is passed in |
+| Task | Impl | Start | Handle | Queue | Retry | Stream | Model |
+|---|---|---|---|---|---|---|---|
+| AI Dictionary (Explain) | `task.rs:85` | `rt.block_on` on the study worker thread (`service.rs:511`) | None. A blocking Explainer call | Short: waits up to 15 s | ⚠ None | Yes | `explain_preset()`, frozen in `configure()` (`service.rs:130`) |
+| Organize library (Shelving, Filing) | `organize.rs:551, :664` | `rt.spawn` (`service.rs:219`) | ⧉ `Organizing` (`service.rs:426`) | Long: never waits, and nothing waits behind it | ⧉ `attempt()`: one re-ask, then waits 3 s and 12 s (`organize.rs:301`) | Progress events | `organize_preset()`, read at the call (`settings/ai.rs:508`) |
+| Page rewrite (Summarize, Translate, Simplify) | `page.rs:573` | `rt.spawn` (`service.rs:272`) | ⧉ `Rewriting` (`service.rs:461`) | Short: waits up to 15 s | ⧉ A copy of that loop, plus an engine requeue ×3 on InUse (`page.rs:620`) | Yes | `page_preset(task)`, read at the call (`settings/ai.rs:514`) |
+| Study cards (new) | `study_mode.rs:158` | `rt.spawn` (`service/cards.rs:109`) | ⧉ `Pending<T>` (`service/cards.rs:163`) | ⚠ Short: waits up to 15 s | ⚠ None (`service/cards.rs:130`) | ⧉ Dropped | `study_preset()`, frozen in `study_ai()` (`service/cards.rs:35`) |
+| Study judge (new) | `study_judge.rs:80` | `rt.spawn` (`service/cards.rs:109`) | ⧉ `Pending<T>` (`service/cards.rs:163`) | Short: waits up to 15 s | ⚠ None (`service/cards.rs:146`) | Dropped | `study_preset()`, frozen in `study_ai()` (`service/cards.rs:35`) |
+| Settings jobs (Probe, Keys, Models, Try) | `settings/ai_job.rs` | `rt.spawn` (`service.rs:328`) | None. The reply lands on the Board; no cancel | Not traced | Not traced | No | The preset is passed in |
+
+Traced since the review: of the settings jobs only Try takes a slot (a
+short one), and none retries.
 
 Underneath every row, ai-pool retries a 5xx or 408 three times on the same
 key; `compat.rs` turns the last `ServerError` into `Why::Busy`, which the
