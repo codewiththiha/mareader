@@ -39,3 +39,4 @@ name the owning modules for shared primitives across the workspace.
 | skill_card | `crates/ui-egui/src/skill_card.rs` | A temporary plain-text answer card pointing at its text: `width_for(chars)` sizes it by the text's length; `in_view` says whether an ask's place is on screen (for the landing toast). |
 | study::offer_skills | `crates/ui-egui/src/study/bar.rs` | Hands the frame's custom skills to the selection bar's Ask AI list through context data, so the bar's signature stays as it is. |
 | Ask::asked_chars / Anchor | `crates/engine/src/skills.rs` | A skill's ask: its anchor (selected spans or a page spot) and `reveal()`, the page and characters to scroll back to. |
+| skill_menu | `crates/ui-egui/src/skill_menu.rs` | Skills in any menu: `builtins` (three side by side) and `custom` (folded row, hover list beside it, type-to-find, Escape folds first). `holds_escape`/`owns` let the host menu leave Escape and presses to it. |

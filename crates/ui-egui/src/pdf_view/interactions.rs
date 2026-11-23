@@ -195,7 +195,9 @@ pub(super) fn selection_bar(
     // Hidden while a press elsewhere may be selecting; a press on it stays.
     let bar = crate::z_order::layer(crate::z_order::Tier::PageCard, bar_id);
     let (down, from) = ctx.input(|i| (i.pointer.any_down(), i.pointer.press_origin()));
-    if down && from.and_then(|p| ctx.layer_id_at(p)) != Some(bar) {
+    let on = from.and_then(|p| ctx.layer_id_at(p));
+    // Its skills' list opens beside it: a press there keeps it too.
+    if down && on != Some(bar) && !crate::skill_menu::owns(ctx, on) {
         return None;
     }
     let mut shown = Rect::NOTHING;

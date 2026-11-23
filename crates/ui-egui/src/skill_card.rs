@@ -101,7 +101,7 @@ fn card(ui: &mut Ui, ask: &Ask, cap: f32, t: &Tokens, out: &mut Commands) {
             .max_height(most)
             .auto_shrink([false, true])
             .stick_to_bottom(!ask.answer.landed())
-            .show(ui, |ui| body(ui, ask, t, out));
+            .show(ui, |ui| body(ui, ask, t));
     });
     word_card::rule(ui, t);
     footer(ui, ask, t, out);
@@ -128,7 +128,7 @@ fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
     });
 }
 
-fn body(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
+fn body(ui: &mut Ui, ask: &Ask, t: &Tokens) {
     let size = t.text + TEXT_GROW;
     match &ask.answer {
         Answer::Waiting => shimmer(ui, t),
@@ -141,30 +141,29 @@ fn body(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                 Icon::Alert.paint(ui, rect, t.danger);
                 ui.label(RichText::new(failure.said()).color(t.muted));
             });
-            if failure.why.retry() {
-                ui.add_space(8.0);
-                let again = word_card::action_pill(ui, Some(Icon::Rescan), "Try again", true, t);
-                if again.clicked() {
-                    out.push(Sent::Engine(Command::Skill(Action::Retry(ask.id))));
-                }
-            }
         }
     }
 }
 
-/// Who answered on the left; Copy and Ask again on the right once done.
+/// Who answered on the left; Copy and Ask again on the right once done,
+/// or Try again after a failure that may pass.
 fn footer(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
     word_card::footer_frame(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if let Answer::Ready(text) = &ask.answer {
-                    word_card::copy_button(ui, text.trim(), "Copy", out);
-                    let again =
-                        word_card::footer_action(ui, Some(Icon::Rescan), "Ask again", false, t);
-                    if again.clicked() {
-                        out.push(Sent::Engine(Command::Skill(Action::Retry(ask.id))));
+                let again = match &ask.answer {
+                    Answer::Ready(text) => {
+                        word_card::copy_button(ui, text.trim(), "Copy", out);
+                        Some(("Ask again", false))
                     }
+                    Answer::Failed(f) if f.why.retry() => Some(("Try again", true)),
+                    _ => None,
+                };
+                if let Some((label, strong)) = again
+                    && word_card::footer_action(ui, Some(Icon::Rescan), label, strong, t).clicked()
+                {
+                    out.push(Sent::Engine(Command::Skill(Action::Retry(ask.id))));
                 }
                 ui.add_space(6.0);
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {

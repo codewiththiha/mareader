@@ -8,9 +8,15 @@ behaviour on 2026-11-21.
 
 - **Built in.** Translate, Summarize and Simplify. Their prompts are fixed
   in code (`crates/assist/src/skill.rs`); Settings only picks their model.
+- **In the menu.** The built-ins sit side by side in one row. The reader's
+  own fold into one "Custom skills" row (shown only when one exists);
+  hovered or pressed, a narrow list opens beside it and scrolls. Typing
+  while it shows finds a skill: the search field slides in on top, and
+  Enter runs the first match. The first Escape clears the search and folds
+  the list; the next closes the menu. The page menu folds them the same
+  way (`skill_menu.rs`).
 - **Custom.** The reader's own, written in Settings › Skills: a name, a
-  prompt and, if wanted, a model. Up to 24. The menu's "Custom skills"
-  heading and its rows show only when at least one exists.
+  prompt and, if wanted, a model. Up to 24.
 - **No chatter.** Every prompt, built in or custom, is joined to a fixed
   rule (`NO_CHATTER` in `crates/assist/src/prompt.rs`) that forbids
   greetings, "Okay, I got it", "I'm now going to…", preamble and closing
@@ -32,7 +38,8 @@ behaviour on 2026-11-21.
 
 - **Plain text.** No tags, word classes or synonyms: the AI's answer as it
   streams, under the skill's name, with Copy and Ask again below and who
-  answered in the small print.
+  answered in the small print. A failure says why; Try again sits in the
+  footer's right corner.
 - **Pointing.** An arrow points at the selection, and the card rides the
   page as it scrolls, as the word card does. A card from the page menu
   points where the menu opened.
@@ -62,7 +69,8 @@ skills"; one run there reads the whole page and answers in the same card.
 - Engine: `crates/engine/src/skills.rs` (asks, anchors, answers) and
   `session/skills.rs`; command `ai.skill`.
 - Assist: `crates/assist/src/skill.rs` (prompts), `service/skills.rs`.
-- UI: `study/bar.rs` (Ask AI), `skill_card.rs`, `app/skills.rs`,
+- UI: `study/bar.rs` (Ask AI), `skill_menu.rs`, `skill_card.rs`, `app/skills.rs`,
   `settings_window/skills.rs`, `page_ai/menu/rows.rs`.
 - Shots: `skill_answers=sample custom_skills=Quiz_me selection=0:quick
-  skill=custom-1`, or `page_skill=0:120:300:custom-1`.
+  skill=custom-1`, or `page_skill=0:120:300:custom-1`; `click=Ask_AI
+  click=Custom_skills typed=gram` shows the search.

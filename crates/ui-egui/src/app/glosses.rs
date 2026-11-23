@@ -336,6 +336,19 @@ impl MareaderApp {
         sounds
     }
 
+    /// Each pane's accent for the page menu: its own look's, or the window's.
+    fn offer_accents(&self, ctx: &Context) {
+        let own = self.routing().any();
+        let window = crate::theme::Tokens::get(ctx).accent;
+        for &(pane, _) in &self.ui.pane_rects {
+            let accent = match own {
+                true => crate::theme::Tokens::new(&self.look(pane)).accent,
+                false => window,
+            };
+            crate::page_ai::menu::offer_accent(ctx, pane, accent);
+        }
+    }
+
     fn show_page_ai(
         &mut self,
         ctx: &Context,
@@ -343,6 +356,7 @@ impl MareaderApp {
         sounds: &[(String, Vec<mareader_engine::sounds::Line>)],
     ) {
         let now = ctx.input(|i| i.time);
+        self.offer_accents(ctx);
         self.ui.page_ai.receive_cards(ctx, self.ui.documents.gpu());
         if let Some(wait) = self.session.page_ai_tick(&self.ui.ai, now) {
             ctx.request_repaint_after(wait);

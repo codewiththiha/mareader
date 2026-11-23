@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
-use egui::{Context, CornerRadius, Id, Margin, Rect, ScrollArea, Sense, Stroke, Ui, vec2};
+use egui::{Context, CornerRadius, Id, Margin, Rect, Sense, Stroke, Ui, vec2};
 use mareader_appearance::Rgb;
 use mareader_library::Pen;
-use mareader_settings::{BarItem, CustomSkill, HighlightSettings, PageTask, PickColor, Skill};
+use mareader_settings::{BarItem, CustomSkill, HighlightSettings, PickColor, Skill};
 
 use crate::bubble::{Bubble, Side};
 use crate::icons::Icon;
@@ -16,9 +16,8 @@ use crate::widgets;
 
 /// A colour swatch's size in the picker row.
 const SWATCH: f32 = 20.0;
-/// The skills list's least width, and its most height before it scrolls.
+/// The skills list's least width.
 const SKILLS_W: f32 = 200.0;
-const SKILLS_H: f32 = 300.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BarPress {
@@ -96,10 +95,20 @@ pub fn show(
         snug: true,
         prefer: Side::Above,
     };
+    // Over its words, the list opens above the bar so the bar stays put.
+    let above = Bubble::side_of(ctx, id) == Some(Side::Above);
+    let (was, width_id, listed) = (open, id.with("bar-width"), open == Some(Open::Skills));
+    let width = ctx
+        .data(|d| d.get_temp(width_id))
+        .unwrap_or(0.0_f32)
+        .max(SKILLS_W);
     let (_, pressed) = bubble.show(ctx, &t, |ui, _| {
         // Hover moves glyphs before a selection closes this transient bar.
         let _act = anim::announce(ui, Act::Hover);
         let mut pressed = None;
+        if listed && above {
+            pressed = skills(ui, width, &custom, true).map(BarPress::Skill);
+        }
         let bar = ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let mut was_pen = None;
@@ -114,9 +123,9 @@ pub fn show(
                 }
             }
         });
-        if open == Some(Open::Skills) {
-            let width = bar.response.rect.width().max(SKILLS_W);
-            pressed = pressed.or(skills(ui, width, &custom).map(BarPress::Skill));
+        ui.data_mut(|d| d.insert_temp(width_id, bar.response.rect.width()));
+        if listed && !above {
+            pressed = pressed.or(skills(ui, width, &custom, false).map(BarPress::Skill));
         }
         if let Some(Open::Pen(pen)) = open {
             ui.add_space(4.0);
@@ -133,38 +142,33 @@ pub fn show(
         }
         pressed
     });
+    if open != was {
+        ctx.request_repaint();
+    }
     ctx.data_mut(|d| d.insert_temp(open_id, open.filter(|_| pressed.is_none())));
     pressed
 }
 
-/// Ask AI's list: the built-ins, then the reader's under their heading.
-fn skills(ui: &mut Ui, width: f32, custom: &[(Skill, String)]) -> Option<Skill> {
-    ui.add_space(2.0);
+/// Ask AI's list: the built-ins in one row, then the reader's folded,
+/// its rule on the bar's side.
+fn skills(ui: &mut Ui, width: f32, custom: &[(Skill, String)], above: bool) -> Option<Skill> {
     let mut picked = None;
-    ui.allocate_ui(vec2(width, SKILLS_H), |ui| {
+    ui.allocate_ui(vec2(width, 0.0), |ui| {
         ui.set_width(width);
         // Inside the list's width: the rule spans what it may take.
-        widgets::menu_rule(ui);
-        ScrollArea::vertical().max_height(SKILLS_H).show(ui, |ui| {
-            for task in [PageTask::Translate, PageTask::Summarize, PageTask::Simplify] {
-                let icon = match task {
-                    PageTask::Translate => Icon::Translate,
-                    PageTask::Summarize => Icon::Summarize,
-                    PageTask::Simplify => Icon::Simplify,
-                };
-                if widgets::menu_row(ui, icon, task.label(), None, false).clicked() {
-                    picked = Some(Skill::Builtin(task));
-                }
-            }
-            if !custom.is_empty() {
-                widgets::menu_section(ui, None, "Custom skills");
-            }
-            for (skill, name) in custom {
-                if widgets::menu_row(ui, Icon::Ai, name, None, false).clicked() {
-                    picked = Some(*skill);
-                }
-            }
-        });
+        if !above {
+            ui.add_space(2.0);
+            widgets::menu_rule(ui);
+        }
+        picked = crate::skill_menu::builtins(ui);
+        if !custom.is_empty() {
+            widgets::menu_rule(ui);
+        }
+        picked = picked.or(crate::skill_menu::custom(ui, custom));
+        if above {
+            widgets::menu_rule(ui);
+            ui.add_space(2.0);
+        }
     });
     picked
 }

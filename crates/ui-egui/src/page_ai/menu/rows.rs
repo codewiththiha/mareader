@@ -1,11 +1,12 @@
 //! The page menu's own rows: reading aloud from a word, and the reader's
-//! skills, each run on the page with its answer in a card.
+//! skills, folded, each run on the page with its answer in a card.
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{CornerRadius, FontId, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{Color32, CornerRadius, FontId, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::skills::Action as SkillAction;
 use mareader_settings::{AiSettings, Skill};
+use mareader_workspace::PaneId;
 
 use super::super::Menu;
 use crate::icons::Icon;
@@ -13,35 +14,48 @@ use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 
-/// The reader's skills, under their heading; none, no heading. True once
-/// one is picked: it runs on the page, its card pointing where the menu
-/// opened.
+/// The reader's skills, folded into one row; none, no row. True once one
+/// is picked: it runs on the page, its card pointing where the menu opened.
 pub(super) fn custom(ui: &mut Ui, m: &Menu, ai: &AiSettings, out: &mut Commands) -> bool {
-    let skills = &ai.tasks.skills.custom;
+    let skills: Vec<(Skill, String)> = (ai.tasks.skills.custom.iter())
+        .map(|s| (Skill::Custom(s.id), s.title().to_owned()))
+        .collect();
     if skills.is_empty() {
         return false;
     }
     widgets::menu_rule(ui);
-    widgets::menu_section(ui, None, "Custom skills");
+    let Some(skill) = crate::skill_menu::custom(ui, &skills) else {
+        return false;
+    };
     let point = m.pin.as_ref().map_or(pos2(0.0, 0.0), |p| p.point);
-    for skill in skills {
-        if widgets::menu_row(ui, Icon::Ai, skill.title(), None, false).clicked() {
-            out.push(Sent::Engine(Command::Skill(SkillAction::RunPage {
-                pane: m.pane,
-                page: m.page,
-                x: point.x,
-                y: point.y,
-                skill: Skill::Custom(skill.id),
-            })));
-            return true;
-        }
-    }
-    false
+    out.push(Sent::Engine(Command::Skill(SkillAction::RunPage {
+        pane: m.pane,
+        page: m.page,
+        x: point.x,
+        y: point.y,
+        skill,
+    })));
+    true
 }
 
-/// Read aloud's row on the `30pt` menu grid, icon in the lit word's tone.
-pub(super) fn aloud_row(ui: &mut Ui, word: Option<&str>, t: &Tokens) -> egui::Response {
-    let warm = crate::read_aloud::marker::warm(t);
+/// Hands the page menu each pane's accent, once a frame, for panes that
+/// wear looks of their own.
+pub fn offer_accent(ctx: &egui::Context, pane: PaneId, accent: Color32) {
+    ctx.data_mut(|d| d.insert_temp(accent_id(pane), accent));
+}
+
+fn accent_id(pane: PaneId) -> egui::Id {
+    egui::Id::new(("page-menu-accent", pane))
+}
+
+/// Read aloud's row on the `30pt` menu grid, icon in its pane's accent.
+pub(super) fn aloud_row(
+    ui: &mut Ui,
+    (pane, word): (PaneId, Option<&str>),
+    t: &Tokens,
+) -> egui::Response {
+    let own: Option<Color32> = ui.data(|d| d.get_temp(accent_id(pane)));
+    let warm = own.unwrap_or(t.accent);
     let font = FontId::proportional(13.5);
     let (label, job) = match word {
         Some(w) => {

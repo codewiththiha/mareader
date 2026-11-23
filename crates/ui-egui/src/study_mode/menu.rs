@@ -16,8 +16,8 @@ use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 
-/// Why the AI tasks are off while a pane studies.
-pub const KEEPS: &str = "Study mode keeps pages as written";
+/// Why the AI tasks are off while a pane studies, in their heading.
+pub const KEEPS: &str = "Off while studying";
 
 /// The row that opens the Study mode settings tab.
 pub const SETTINGS: &str = "Study settings…";
@@ -65,7 +65,11 @@ pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool 
     let switch = ui.add_enabled_ui(can, |ui| {
         widgets::menu_switch(ui, Icon::Levels, "Study mode", &mut on)
     });
-    if switch.inner.changed() {
+    let switch = match missing.filter(|_| running.is_none()) {
+        Some(why) => switch.inner.on_disabled_hover_text(why.reason()),
+        None => switch.inner,
+    };
+    if switch.changed() {
         let action = match on {
             true => Action::Toggle {
                 pane,
@@ -78,34 +82,29 @@ pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool 
     if let (None, Some(missing)) = (running, missing) {
         unavailable(ui, missing, out);
     }
-    let was = running.unwrap_or(look.mode);
-    let mut mode = was;
-    let modes = [Mode::Proactive, Mode::Reactive];
-    widgets::segments(ui, &mut mode, &modes, 2, |m| (None, name(m)));
-    if mode != was {
-        set(out, "study.mode.mode", &mode);
-        if running.is_some() {
+    // Its mode and batch only matter while it runs.
+    if let Some(was) = running {
+        let mut mode = was;
+        let modes = [Mode::Proactive, Mode::Reactive];
+        widgets::segments(ui, &mut mode, &modes, 2, |m| (None, name(m)));
+        if mode != was {
+            set(out, "study.mode.mode", &mode);
             let action = Action::Toggle { pane, mode };
             out.push(Sent::Engine(Command::StudyMode(action)));
         }
-    }
-    widgets::menu_note(ui, about(mode));
-    if mode == Mode::Proactive && look.unit == Unit::Pages {
-        batch(ui, look.pages, out);
+        if mode == Mode::Proactive && look.unit == Unit::Pages {
+            batch(ui, look.pages, out);
+        }
     }
     if look.tab && widgets::menu_row(ui, Icon::Settings, SETTINGS, None, false).clicked() {
         out.push(Sent::Engine(Command::OpenSettings(Tab::Study)));
     }
     widgets::menu_rule(ui);
-    if running.is_some() {
-        widgets::menu_note(ui, KEEPS);
-    }
     running.is_some()
 }
 
-/// Why the switch is off, and the way to what it needs.
+/// The way to what the switch needs; why it is off shows on hover.
 fn unavailable(ui: &mut Ui, missing: Missing, out: &mut Commands) {
-    widgets::menu_note(ui, missing.reason());
     let Some(fix) = missing.fix() else {
         return;
     };
@@ -151,19 +150,5 @@ fn name(mode: Mode) -> &'static str {
     match mode {
         Mode::Proactive => "Proactive",
         Mode::Reactive => "Reactive",
-    }
-}
-
-/// What `mode` does, under its segments.
-fn about(mode: Mode) -> &'static str {
-    match mode {
-        Mode::Proactive => {
-            "Learn the words before you read them. The page locks at the end of \
-             each batch until you've studied the next one."
-        }
-        Mode::Reactive => {
-            "Read freely. Click a shaded word and say what it means here; the AI \
-             tells you if you're right and why."
-        }
     }
 }

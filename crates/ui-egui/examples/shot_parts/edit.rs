@@ -13,19 +13,22 @@ const INK: Rgba<u8> = Rgba([255, 45, 120, 255]);
 #[derive(Default)]
 pub struct Finish {
     keys: Vec<egui::Key>,
+    /// Words typed after the keys, `_` for a space.
+    typed: Vec<String>,
     frames: usize,
     marks: Vec<[f32; 4]>,
     crop: Option<[f32; 4]>,
 }
 
 impl Finish {
-    /// Takes `key`, `frames`, `mark` and `crop`; false for any other name.
+    /// Takes `key`, `typed`, `frames`, `mark` and `crop`; false for any other name.
     pub fn take(&mut self, k: &str, v: &str) -> Result<bool, String> {
         match k {
             "key" => {
                 let key = egui::Key::from_name(v);
                 self.keys.push(key.ok_or(format!("no key named {v}"))?);
             }
+            "typed" => self.typed.push(v.replace('_', " ")),
             "frames" => self.frames = v.parse().map_err(|_| "frames=count")?,
             "mark" => self.marks.push(rect(v, "mark")?),
             "crop" => self.crop = Some(rect(v, "crop")?),
@@ -38,6 +41,10 @@ impl Finish {
     pub fn press<S>(&self, harness: &mut Harness<'_, S>) {
         for key in &self.keys {
             harness.key_press(*key);
+            harness.run_steps(1);
+        }
+        for text in &self.typed {
+            harness.event(egui::Event::Text(text.clone()));
             harness.run_steps(1);
         }
         harness.run_steps(self.frames);

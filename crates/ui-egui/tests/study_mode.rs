@@ -84,6 +84,8 @@ fn studying_with(limit: bool) -> Result<(H, PaneId, Shelves), Box<dyn std::error
     h.run();
     let pane = h.state().active_pane();
     page_menu(&mut h)?;
+    let off = h.query_by_label("Proactive").is_none();
+    assert!(off, "no modes while off");
     h.get_by_label("Study mode").click();
     h.run();
     Ok((h, pane, (words, packs)))
@@ -93,10 +95,15 @@ fn studying_with(limit: bool) -> Result<(H, PaneId, Shelves), Box<dyn std::error
 fn the_page_menu_turns_study_mode_on_and_keeps_the_pages_as_written() -> Out {
     let (mut h, pane, _shelves) = studying()?;
     assert!(h.state().session().study_mode().on(pane));
-    if h.query_by_label(KEEPS).is_none() {
+    if h.query_by_label_contains(KEEPS).is_none() {
         page_menu(&mut h)?;
     }
-    assert!(h.query_by_label(KEEPS).is_some(), "the AI tasks wait");
+    assert!(
+        h.query_by_label_contains(KEEPS).is_some(),
+        "the AI tasks wait"
+    );
+    let on = h.query_by_label("Proactive").is_some();
+    assert!(on, "modes while on");
     let at = h.get_by_label("Study mode").rect().center();
     let met = h.ctx.layer_id_at(at);
     h.get_by_label("Study mode").click();
@@ -113,6 +120,11 @@ fn without_cards_to_write_the_menu_says_what_is_missing() -> Out {
     h.dial(|s| s.ai.presets.clear());
     h.run();
     page_menu(&mut h)?;
+    // Why it is off shows on the switch, not under it.
+    assert!(h.query_by_label(Missing::Cards.reason()).is_none());
+    let at = h.get_by_label("Study mode").rect().center();
+    h.hover_at(at);
+    h.run_steps(60);
     assert!(h.query_by_label(Missing::Cards.reason()).is_some());
     assert!(h.query_by_label(SETTINGS).is_none(), "no tab to open");
     h.get_by_label("Study mode").click();

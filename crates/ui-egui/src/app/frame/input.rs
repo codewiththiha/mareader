@@ -143,6 +143,7 @@ impl MareaderApp {
             || crate::image_viewer::is_open(ctx)
             || crate::shortcuts::is_open(ctx)
             || crate::palette::is_open(ctx)
+            || crate::skill_menu::holds_escape(ctx)
             || self.ui.lifting.is_some();
         let mut free = escape && !modal && !egui::Popup::is_any_open(ctx);
         // The library page lets go of a selection, else goes back to reading.
@@ -176,12 +177,8 @@ impl MareaderApp {
             self.ui.study.clear_stash();
             free = false;
         }
-        if free
-            && self
-                .ui
-                .documents
-                .dismiss_read_markers(ctx.input(|i| i.time))
-        {
+        let now = ctx.input(|i| i.time);
+        if free && self.ui.documents.dismiss_read_markers(now) {
             free = false;
         }
         if free && self.ui.documents.stop_drift(self.active()) {
@@ -192,7 +189,6 @@ impl MareaderApp {
             free = false;
         }
         // A selection, then picked pages, before the sidebar and chromeless.
-        let now = ctx.input(|i| i.time);
         let clear = Command::ClearSelection(self.active());
         let selection = free && self.session.execute(clear, now).dirty;
         let grid = self.ui.sidebar.is_open() && self.ui.sidebar.panel() == Panel::Thumbnails;

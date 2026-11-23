@@ -60,6 +60,12 @@ struct Memo {
 }
 
 impl Bubble {
+    /// The side card `id` took last frame, once measured.
+    pub fn side_of(ctx: &Context, id: Id) -> Option<Side> {
+        let memo: Option<Memo> = ctx.data(|d| d.get_temp(id.with("memo")));
+        memo.and_then(|m| m.side)
+    }
+
     /// Draws the card; `add` is told the tallest its content may grow.
     pub fn show<R>(
         self,

@@ -23,6 +23,7 @@ use mareader_workspace::PaneId;
 /// The language search field, for screen readers and tests.
 mod rows;
 use rows::aloud_row;
+pub use rows::offer_accent;
 
 pub const FIND: &str = "Find a language";
 
@@ -71,7 +72,9 @@ impl PageAiUi {
             self.bubble_menu = None;
         }
         let open = self.menu.is_some() || self.bubble_menu.is_some();
-        if open && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        // Folded skills shown beside it take Escape first.
+        let held = crate::skill_menu::holds_escape(ctx);
+        if open && !held && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
             self.escape();
         }
         let t = Tokens::get(ctx);
@@ -115,7 +118,16 @@ impl PageAiUi {
         let size = self
             .menu_rect
             .map_or(vec2(WIDTH + 12.0, 200.0), |r| r.size());
-        let (pos, below) = place(at, word, size, ctx.content_rect());
+        // Once placed over its word, it stays over while it fits there.
+        let side_id = Id::new("page-ai-menu-side");
+        let was: Option<(f64, bool)> = ctx.data(|d| d.get_temp(side_id));
+        let was = was
+            .filter(|(b, _)| Some(*b) == m.born)
+            .map(|(_, below)| below);
+        let (pos, below) = place(at, word, (size, was), ctx.content_rect());
+        if let Some(born) = m.born {
+            ctx.data_mut(|d| d.insert_temp(side_id, (born, below)));
+        }
         let now = ctx.input(|i| i.time);
         let k = ((now - m.born.unwrap_or(now)) / APPEAR).clamp(0.0, 1.0) as f32;
         if k < 1.0 {
@@ -195,7 +207,7 @@ impl PageAiUi {
         if let Some(from) = m.aloud {
             // On a word it names it; off text, the page's start.
             let pinned = m.pin.as_ref().and_then(|p| p.text.as_deref());
-            let row = aloud_row(ui, pinned.filter(|_| from.at.is_some()), &t);
+            let row = aloud_row(ui, (m.pane, pinned.filter(|_| from.at.is_some())), &t);
             // Hovered, its word lights up more.
             let hot = row.hovered();
             ui.ctx()
@@ -215,20 +227,17 @@ impl PageAiUi {
             }
             widgets::menu_rule(ui);
         }
-        let heading = match m.pages.len() {
+        let mut heading = match m.pages.len() {
             0 => format!("Ask AI · Page {}", m.page + 1),
             1 => "Ask AI · 1 page".to_owned(),
             n => format!("Ask AI · {n} pages"),
         };
         if m.pages.is_empty() && study_mode::menu::show(ui, &self.study, m.pane, out) {
+            heading = format!("Ask AI · {}", study_mode::menu::KEEPS);
             ui.disable();
         }
         widgets::menu_section(ui, Some(Icon::Ai), &heading);
         if !PageTask::ALL.iter().any(|t| ai.page_model(*t).is_some()) {
-            let why = "Summarize, translate and simplify pages with an AI model.";
-            ui.add_space(2.0);
-            widgets::menu_note(ui, why);
-            ui.add_space(2.0);
             if widgets::menu_row(ui, Icon::Settings, "Set up AI…", None, false).clicked() {
                 // With no model saved, adding one comes first.
                 let tab = if ai.presets.is_empty() {
@@ -642,7 +651,13 @@ const GAP: f32 = 6.0;
 const EDGE: f32 = 8.0;
 
 /// Below its word, else above, else beside; never on it. True if below.
-fn place(at: Pos2, word: Option<Rect>, size: Vec2, room: Rect) -> (Pos2, bool) {
+/// Above last frame, it stays above while it fits.
+fn place(
+    at: Pos2,
+    word: Option<Rect>,
+    (size, was): (Vec2, Option<bool>),
+    room: Rect,
+) -> (Pos2, bool) {
     let keep = word.unwrap_or(Rect::from_center_size(at, Vec2::ZERO));
     let keep = keep.expand(GAP);
     let x = word.map_or(at.x, |w| w.left() - 4.0);
@@ -655,6 +670,9 @@ fn place(at: Pos2, word: Option<Rect>, size: Vec2, room: Rect) -> (Pos2, bool) {
     };
     let fits = |y: f32| y >= room.top() + EDGE && y + size.y <= room.bottom() - EDGE;
     let (below, above) = (keep.bottom(), keep.top() - size.y);
+    if was == Some(false) && fits(above) {
+        return (pos2(clamp_x(x), above), false);
+    }
     if fits(below) {
         return (pos2(clamp_x(x), below), true);
     }
