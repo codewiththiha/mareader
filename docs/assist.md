@@ -214,6 +214,35 @@ is cancelled frees it at once.
 - Each saved model's summary shows its capacity, how many tasks run now,
   and which tasks use it.
 
+## How each task runs today (2026-11-23)
+
+The checklist a new task is compared against until tasks become rows of
+one table. Each task starts, holds, queues, retries, streams and finds its
+model its own way:
+
+| Task | Start | Handle | Queue | Retry | Stream | Model |
+|---|---|---|---|---|---|---|
+| AI Dictionary (Explain), `task.rs` | `rt.block_on` on the study worker thread (`service.rs`, `AiExplainer`) | None: a blocking `Explainer` call | Short: waits up to 15 s | **None** | Yes | `explain_preset()`, frozen in `configure()` |
+| Organize library (Shelving, Filing), `organize.rs` | `rt.spawn` (`organize_from`) | `Organizing` | Long: never waits, nothing waits behind it | `attempt()`: one re-ask, then waits 3 s and 12 s | Progress events | `organize_preset()`, read at the call |
+| Page rewrite (Summarize, Translate, Simplify), `page.rs` | `rt.spawn` (`rewrite`) | `Rewriting` | Short: waits up to 15 s | A copy of that loop in `rewrite()`, plus the engine's requeue ×3 on `InUse` (`page_ai/groups.rs`) | Yes | `page_preset(task)`, read at the call |
+| Study cards, `study_mode.rs` | `rt.spawn` (`service/cards.rs`) | `Pending<T>` | Short: waits up to 15 s | **None** | Dropped: `write_deck` passes an empty closure | `study_preset()`, frozen in `study_ai()` |
+| Study judge, `study_judge.rs` | `rt.spawn` (`service/cards.rs`) | `Pending<T>` | Short: waits up to 15 s | **None** | Dropped | `study_preset()`, frozen in `study_ai()` |
+| Settings jobs (Probe, Keys, Models, Try), `settings/ai_job.rs` | `rt.spawn` (`Assist::send`) | None: the reply lands on the `Board`; no cancel | Try takes a short slot | None | No | The preset is passed in |
+
+Underneath every row, ai-pool retries a 5xx or 408 three times on the same
+key; `compat.rs` turns the last `ServerError` into `Why::Busy`, which the
+organizer and page loops wait out twice more. A failing server can be
+asked (1 + 3) × (1 + 2) = 12 times for one organizer step.
+
+Known gaps, each pinned by a test that names the phase of the AI plan
+that changes it:
+
+- **No retry** for Explain, study cards and the judge: a single Busy fails
+  them (`tests/retry_baseline.rs`).
+- **No priority**: a deck written ahead, a recall's verdict and an Explain
+  click are all short tasks, so each gives up as `InUse` after 15 s behind
+  another one (`tests/study_mode.rs`, `tests/service.rs`).
+
 ## Workflows: the organizer
 
 Organizing is a fixed workflow, not an open-ended agent loop: the steps

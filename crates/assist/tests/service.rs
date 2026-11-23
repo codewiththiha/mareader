@@ -8,9 +8,10 @@ use std::time::{Duration, Instant};
 
 use mareader_assist::{
     Assist, Board, Job, KeyState, Kind, Load, Loose, Organized, Organizing, Plan, Progress,
-    Request, Spot, Stage,
+    Request, Slots, Spot, Stage,
 };
 use mareader_settings::{AiSettings, ModelPreset, Provider};
+use mareader_study::mode::{Key, Wanted};
 use mareader_study::{Explainer, Why, WordInfo};
 use support::{Answer, QUICK, Server};
 
@@ -178,6 +179,39 @@ fn a_busy_model_turns_explain_away_and_more_room_lets_it_in() {
     assert_eq!(a.in_use(id), 1, "explain gave its slot back");
     drop(organizing);
     assert_eq!(a.in_use(id), 0);
+}
+
+#[test]
+fn explain_waits_behind_a_deck_being_written_then_is_turned_away() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut a = assist(&dir);
+    // A server that takes the deck's request and never answers.
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/v1/", silent.local_addr().unwrap());
+    let ai = settings(Provider::Ollama, &url);
+    let id = preset(&ai).id;
+    let explainer = a.configure(&ai);
+    let word = Wanted {
+        key: Key::new("arcane", None),
+        form: "arcane".to_owned(),
+        sentence: "An arcane rule.".to_owned(),
+    };
+    let deck = a.cards().write(vec![word]);
+    let start = Instant::now();
+    while a.in_use(id) == 0 {
+        assert!(start.elapsed() < Duration::from_secs(10), "the deck starts");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let start = Instant::now();
+    // F3 as it stands; Phase 4 of the AI plan answers Explain next.
+    assert_eq!(explain(explainer.as_ref()).0.err(), Some(Why::InUse));
+    let waited = start.elapsed();
+    assert!(waited >= Slots::SHORT_WAIT, "{waited:?}");
+    drop(deck);
+    while a.in_use(id) > 0 {
+        assert!(start.elapsed() < Duration::from_secs(30), "freed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
