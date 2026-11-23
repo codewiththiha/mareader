@@ -16,6 +16,17 @@ pub trait Explainer: Send + Sync {
     fn by(&self) -> String {
         String::new()
     }
+
+    /// The answer and who gave it, which may differ from `by` beforehand.
+    fn explain_by(
+        &self,
+        word: &str,
+        context: &str,
+        partial: &(dyn Fn(WordInfo) + Sync),
+    ) -> Result<(WordInfo, String), Failure> {
+        let by = self.by();
+        self.explain(word, context, partial).map(|info| (info, by))
+    }
 }
 
 /// Why no answer came; the card shows [`Why::message`].

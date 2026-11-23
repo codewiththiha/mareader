@@ -2,19 +2,17 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
 use mareader_engine::page_ai::extract::Source;
 use mareader_engine::page_ai::state::Handle;
-#[cfg(not(target_arch = "wasm32"))]
-use mareader_engine::page_ai::state::{News, Writing};
 use mareader_engine::page_ai::view::Models;
 use mareader_library::AiTask;
 use mareader_settings::{AiSettings, ModelPreset};
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_settings::{SummaryStyle, language_name};
-use mareader_study::Explainer;
-use mareader_study::mode::{CardWriter, Judge};
+use mareader_study::pending::Answerers;
 
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_engine::library::{Ask, Proposal, Spot};
@@ -53,38 +51,16 @@ impl Ai {
         }
     }
 
-    /// The study cards' writer, on the settings last followed.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn cards(&self) -> Option<Arc<dyn CardWriter>> {
-        self.assist.as_ref().map(mareader_assist::Assist::cards)
-    }
-
-    /// No AI writes cards on the web.
-    #[cfg(target_arch = "wasm32")]
-    pub fn cards(&self) -> Option<Arc<dyn CardWriter>> {
-        None
-    }
-
-    /// Reactive mode's judge, on the settings last followed.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn judge(&self) -> Option<Arc<dyn Judge>> {
-        self.assist.as_ref().map(mareader_assist::Assist::judge)
-    }
-
-    /// No AI judges recalls on the web.
-    #[cfg(target_arch = "wasm32")]
-    pub fn judge(&self) -> Option<Arc<dyn Judge>> {
-        None
-    }
-
-    /// Takes in finished jobs; a new answerer if `ai` changed since.
-    pub fn follow(&mut self, ai: &AiSettings) -> Option<Arc<dyn Explainer>> {
+    /// Takes in finished jobs; when `ai` changed since, follows it and
+    /// hands back the answerers for the study tools. None on the web.
+    pub fn follow(&mut self, ai: &AiSettings) -> Option<Answerers> {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(assist) = &mut self.assist {
             assist.poll();
             if self.made_for.as_ref() != Some(ai) {
                 self.made_for = Some(ai.clone());
-                return Some(assist.configure(ai));
+                let _ = assist.configure(ai);
+                return Some(assist.answerers());
             }
         }
         let _ = (ai, &self.made_for);
@@ -238,31 +214,12 @@ impl Models for Ai {
         };
         let off = "The AI service couldn't start. Restart the app to try again.";
         let live = self.rewrite(job).ok_or(off)?;
-        Ok(Handle::Live(Box::new(Writer(live))))
+        Ok(Handle::Live(Box::new(live)))
     }
 
     #[cfg(target_arch = "wasm32")]
     fn start(&self, _: &AiTask, _: &Source, _: usize) -> Result<Handle, &'static str> {
         Err("Page AI needs the desktop app.")
-    }
-}
-
-/// The service's writer, wrapped so the ledger's handle can hold it.
-#[cfg(not(target_arch = "wasm32"))]
-struct Writer(mareader_assist::Rewriting);
-
-/// The service's own line to its model, as a run reads it.
-#[cfg(not(target_arch = "wasm32"))]
-impl Writing for Writer {
-    fn news(&mut self) -> Vec<News> {
-        let came = mareader_assist::Rewriting::poll(&mut self.0)
-            .into_iter()
-            .filter_map(|n| match n {
-                mareader_assist::Rewrote::Partial(r) => Some(News::Partial(r)),
-                mareader_assist::Rewrote::Done(r) => Some(News::Done(r)),
-                _ => None,
-            });
-        came.collect()
     }
 }
 

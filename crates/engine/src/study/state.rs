@@ -225,11 +225,10 @@ impl State {
 
     fn ask(&mut self, wake: Waker, key: Key, word: &str, context: &str) {
         let explainer = Arc::clone(&self.explainer);
-        let by = explainer.by();
         self.partial.remove(&key);
         if self.inline || cfg!(target_arch = "wasm32") {
-            match explainer.explain(word, context, &|_| {}) {
-                Ok(info) => {
+            match explainer.explain_by(word, context, &|_| {}) {
+                Ok((info, by)) => {
                     let info = info.clamped();
                     self.done.push((key, Said { info, by }));
                 }
@@ -239,7 +238,7 @@ impl State {
             }
             return;
         }
-        let rx = asking::ask(wake, explainer, by, word.to_owned(), context.to_owned());
+        let rx = asking::ask(wake, explainer, word.to_owned(), context.to_owned());
         self.asking.insert(key, rx);
     }
 

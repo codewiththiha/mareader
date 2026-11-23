@@ -6,14 +6,15 @@ use std::time::Instant;
 
 use fm_bridge::Bridge;
 use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId, no_model};
+use mareader_study::pending::Answerers;
 use mareader_study::{Explainer, Failure, Why, WordInfo};
 use serde_json::Value;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 use crate::backend::{Backend, BoxFuture, Nobody, Partial};
 use crate::board::{AppleState, Board, Job, Reply, Tried, lanes};
 use crate::compat::{Compat, failure_with_keys};
-use crate::dispatch::{Dispatch, Seat};
+use crate::dispatch::{Dispatcher, Seat};
 use crate::keys::{Clients, pasted, row};
 use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, organize_from};
 use crate::page::{PageJob, rewrite};
@@ -50,33 +51,15 @@ const SAMPLE: Explain<'static> = Explain {
     language: None,
 };
 
-/// The runtime, shut down without waiting, from wherever it drops.
-struct Engine(Option<Runtime>);
-
-impl Engine {
-    fn rt(&self) -> Option<&Runtime> {
-        self.0.as_ref()
-    }
-}
-
-impl Drop for Engine {
-    fn drop(&mut self) {
-        if let Some(rt) = self.0.take() {
-            rt.shutdown_background();
-        }
-    }
-}
-
 /// AI for the app: answerers for the study tools, jobs for the settings.
 pub struct Assist {
     root: PathBuf,
-    engine: Arc<Engine>,
+    /// The runtime, the queue and the settings every job starts from.
+    jobs_on: Dispatcher,
     clients: Arc<Clients>,
     apple: Option<Arc<crate::Apple>>,
     ai: AiSettings,
-    waker: Waker,
     board: Board,
-    slots: Slots,
     /// Settings jobs under way; their replies land on the board.
     jobs: Vec<Running<Reply>>,
 }
@@ -90,14 +73,12 @@ impl Assist {
             .enable_all()
             .build()?;
         Ok(Self {
-            engine: Arc::new(Engine(Some(rt))),
+            jobs_on: Dispatcher::new(rt, waker),
             clients: Arc::new(Clients::new(root.clone())),
             root,
             apple: locate_apple(),
             ai: AiSettings::default(),
-            waker,
             board: Board::default(),
-            slots: Slots::default(),
             jobs: Vec::new(),
         })
     }
@@ -123,36 +104,31 @@ impl Assist {
         self
     }
 
-    /// The answerer for `ai`; later jobs use these settings too.
+    /// Follows `ai`: every job not yet started uses it, from any port.
     pub fn configure(&mut self, ai: &AiSettings) -> Arc<dyn Explainer> {
         self.ai = ai.clone();
-        let route = self.route(TaskId::Explain);
-        Arc::new(AiExplainer {
-            line: self.line(),
-            by: route.first().map(|s| s.preset.title()).unwrap_or_default(),
-            route,
-            language: ai.explain_language(),
-        })
+        self.jobs_on.follow(ai, |p| self.seat(p));
+        self.explainer()
     }
 
-    /// The models `task` may ask, each with who answers for it.
-    fn route(&self, task: TaskId) -> Vec<Seat> {
-        let route = self.ai.route(task).into_iter();
-        route.map(|p| self.seat(p)).collect()
+    /// The AI Dictionary's answerer, on the settings followed when asked.
+    pub fn explainer(&self) -> Arc<dyn Explainer> {
+        Arc::new(AiExplainer(self.jobs_on.clone()))
+    }
+
+    /// Everyone the engine asks; each reads the settings as a job starts.
+    pub fn answerers(&self) -> Answerers {
+        Answerers {
+            explainer: self.explainer(),
+            cards: self.cards(),
+            judge: self.judge(),
+        }
     }
 
     fn seat(&self, preset: &ModelPreset) -> Seat {
         Seat {
             preset: preset.clone(),
             backend: self.backend(preset),
-        }
-    }
-
-    fn line(&self) -> Line {
-        Line {
-            engine: Arc::clone(&self.engine),
-            waker: Arc::clone(&self.waker),
-            slots: self.slots.clone(),
         }
     }
 
@@ -172,22 +148,22 @@ impl Assist {
 
     /// Every model's queue.
     pub fn slots(&self) -> &Slots {
-        &self.slots
+        &self.jobs_on.slots
     }
 
     /// Tasks `preset` runs now.
     pub fn in_use(&self, preset: PresetId) -> usize {
-        self.slots.in_use(preset)
+        self.slots().in_use(preset)
     }
 
     /// Tasks `preset` may run at once: the number the queue lets in.
     pub fn capacity(&self, preset: &ModelPreset) -> u32 {
-        u32::try_from(self.slots.room(preset)).unwrap_or(u32::MAX)
+        u32::try_from(self.slots().room(preset)).unwrap_or(u32::MAX)
     }
 
     /// Tasks that had to wait behind another since the last call.
     pub fn queued(&self) -> Vec<Queued> {
-        self.slots.news()
+        self.slots().news()
     }
 
     /// Plans `req` afresh; once the model is free, it replaces a paused run.
@@ -230,10 +206,11 @@ impl Assist {
             None => Checkpoint::new(&req),
         };
         let id = TaskId::Organize;
-        let seat = self.route(id).into_iter().next();
+        let seat = self.jobs_on.route(id).into_iter().next();
         if seat.is_none() && !run.finished() {
             let none = Failure::detailed(Why::NotHere, no_model(id));
-            return start(self.engine.rt(), &self.waker, |_| async { Err(none) });
+            let (rt, waker) = (self.jobs_on.rt(), &self.jobs_on.waker);
+            return start(rt, waker, |_| async { Err(none) });
         }
         // A finished run only makes its plan; no model is asked.
         let seat = seat.filter(|_| !run.finished());
@@ -250,7 +227,7 @@ impl Assist {
             };
             organize_from(backend.as_ref(), &req, run, &hooks).await
         };
-        self.line().dispatch().flow(id, seat, job)
+        self.jobs_on.dispatch().flow(id, seat, job)
     }
 
     /// Rewrites one page with its task's model; news comes by polling.
@@ -260,7 +237,8 @@ impl Assist {
             let ask = job.clone().ask();
             async move { rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await }
         };
-        self.line().dispatch().ask(task, self.route(task), step)
+        let route = self.jobs_on.route(task);
+        self.jobs_on.dispatch().ask(task, route, step)
     }
 
     pub fn board(&self) -> &Board {
@@ -270,7 +248,7 @@ impl Assist {
     /// Takes in finished jobs; true if any changed the board.
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        let (board, slots) = (&mut self.board, &self.slots);
+        let (board, slots) = (&mut self.board, &self.jobs_on.slots);
         self.jobs.retain_mut(|job| {
             let Some(reply) = job.answer() else {
                 return true;
@@ -289,7 +267,7 @@ impl Assist {
 
     /// Starts `job` in the background; [`Self::poll`] takes its reply.
     pub fn send(&mut self, job: Job) {
-        let Some(rt) = self.engine.rt() else {
+        let Some(rt) = self.jobs_on.rt() else {
             return;
         };
         self.board.start(&job);
@@ -301,10 +279,10 @@ impl Assist {
                 Job::Try(p) => Some(self.seat(p)),
                 _ => None,
             },
-            slots: self.slots.clone(),
+            slots: self.jobs_on.slots.clone(),
         };
         let reply = async move { Ok(work.run(job).await) };
-        let job = start(Some(rt), &self.waker, |_| reply);
+        let job = start(Some(rt), &self.jobs_on.waker, |_| reply);
         self.jobs.push(job);
     }
 }
@@ -376,30 +354,8 @@ pub type Rewrote = Event<Rewritten>;
 /// A rewrite under way; dropping it cancels it and frees its model.
 pub type Rewriting = Running<Rewritten>;
 
-/// What starts a job: the runtime, the UI's waker and the queue.
-struct Line {
-    engine: Arc<Engine>,
-    waker: Waker,
-    slots: Slots,
-}
-
-impl Line {
-    fn dispatch(&self) -> Dispatch<'_> {
-        Dispatch {
-            rt: self.engine.rt(),
-            waker: &self.waker,
-            slots: &self.slots,
-        }
-    }
-}
-
 /// The study tools' answerer: blocks its worker thread, not the UI.
-struct AiExplainer {
-    line: Line,
-    route: Vec<Seat>,
-    language: Option<&'static str>,
-    by: String,
-}
+struct AiExplainer(Dispatcher);
 
 impl Explainer for AiExplainer {
     fn explain(
@@ -408,7 +364,18 @@ impl Explainer for AiExplainer {
         context: &str,
         partial: &(dyn Fn(WordInfo) + Sync),
     ) -> Result<WordInfo, Failure> {
-        let language = self.language;
+        let said = self.explain_by(word, context, partial);
+        said.map(|(info, _)| info)
+    }
+
+    fn explain_by(
+        &self,
+        word: &str,
+        context: &str,
+        partial: &(dyn Fn(WordInfo) + Sync),
+    ) -> Result<(WordInfo, String), Failure> {
+        let now = self.0.followed();
+        let language = now.ai.explain_language();
         let (word, context): (Arc<str>, Arc<str>) = (word.into(), context.into());
         let step = move |backend: Arc<dyn Backend>, retry, say: Say<WordInfo, WordInfo>| {
             let (word, context) = (Arc::clone(&word), Arc::clone(&context));
@@ -421,13 +388,13 @@ impl Explainer for AiExplainer {
                 attempt(backend.as_ref(), &task, &|info| say.partial(info), retry).await
             }
         };
-        let (id, route) = (TaskId::Explain, self.route.clone());
-        let job = self.line.dispatch().ask(id, route, step);
-        job.wait_with(partial)
+        let (id, route) = (TaskId::Explain, now.route(TaskId::Explain));
+        let job = self.0.dispatch().ask(id, route, step);
+        job.wait_by(partial)
     }
 
     fn by(&self) -> String {
-        self.by.clone()
+        self.0.followed().by(TaskId::Explain)
     }
 }
 

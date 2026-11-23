@@ -5,6 +5,7 @@
 //! a script, for tests and shots.
 
 use super::Key;
+use crate::pending::{News, Pending};
 use crate::{Failure, Why};
 
 /// Seconds a deck waits on its writer before the dictionary is offered.
@@ -38,14 +39,11 @@ pub trait CardWriter: Send + Sync {
     fn id(&self) -> String;
 
     /// Starts on `words`; dropping the job cancels it.
-    fn write(&self, words: Vec<Wanted>) -> Box<dyn CardJob>;
+    fn write(&self, words: Vec<Wanted>) -> Box<CardJob>;
 }
 
 /// A deck's backs being written.
-pub trait CardJob: Send {
-    /// The answer once it came; after that, none.
-    fn take(&mut self) -> Option<Answer>;
-}
+pub type CardJob = dyn Pending<Vec<Option<Written>>>;
 
 /// Scripted writers, for tests and shots.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,7 +85,7 @@ impl CardWriter for Practice {
         format!("practice-{self:?}")
     }
 
-    fn write(&self, words: Vec<Wanted>) -> Box<dyn CardJob> {
+    fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {
         let backs: Vec<_> = words.iter().map(|w| Some(practice_back(w))).collect();
         let answer = match self {
             Self::Ready => Some(Ok(backs)),
@@ -101,9 +99,9 @@ impl CardWriter for Practice {
 /// An answer known from the start, or none ever.
 pub(super) struct Once<T>(pub(super) Option<T>);
 
-impl CardJob for Once<Answer> {
-    fn take(&mut self) -> Option<Answer> {
-        self.0.take()
+impl<O: Send> Pending<O> for Once<Result<O, Failure>> {
+    fn news(&mut self) -> Vec<News<O>> {
+        self.0.take().map(News::Done).into_iter().collect()
     }
 }
 

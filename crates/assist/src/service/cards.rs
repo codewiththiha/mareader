@@ -9,12 +9,12 @@ use std::sync::Arc;
 
 use mareader_settings::TaskId;
 use mareader_study::mode::{
-    Answer, Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, Judgement, Wanted, Written,
+    Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, Wanted, Written,
 };
 
-use super::{Assist, Line};
+use super::Assist;
 use crate::backend::Backend;
-use crate::dispatch::Seat;
+use crate::dispatch::Dispatcher;
 use crate::retry;
 use crate::running::{Running, Say};
 use crate::study_judge::StudyJudge;
@@ -23,44 +23,33 @@ use crate::study_mode::StudyCards;
 impl Assist {
     /// The writer of study mode's cards, on the cards' model.
     pub fn cards(&self) -> Arc<dyn CardWriter> {
-        Arc::new(self.study_ai(TaskId::StudyCards))
+        Arc::new(AiCards(self.jobs_on.clone()))
     }
 
     /// The judge of Reactive mode's recalls, on the judge's model.
     pub fn judge(&self) -> Arc<dyn Judge> {
-        Arc::new(self.study_ai(TaskId::StudyJudge))
-    }
-
-    fn study_ai(&self, task: TaskId) -> AiCards {
-        let route = self.route(task);
-        AiCards {
-            line: self.line(),
-            by: route.first().map(|s| s.preset.title()).unwrap_or_default(),
-            route,
-            language: self.ai.study_language(),
-        }
+        Arc::new(AiCards(self.jobs_on.clone()))
     }
 }
 
-/// Study's model, as both the card writer and the judge.
-struct AiCards {
-    line: Line,
-    route: Vec<Seat>,
-    language: Option<&'static str>,
-    by: String,
-}
+/// Study's models, as both the card writer and the judge; each job reads
+/// the settings followed when it starts.
+struct AiCards(Dispatcher);
 
 impl CardWriter for AiCards {
     fn by(&self) -> String {
-        self.by.clone()
+        self.0.followed().by(TaskId::StudyCards)
     }
 
     fn id(&self) -> String {
-        format!("{}|{}", self.by, self.language.unwrap_or("English"))
+        let now = self.0.followed();
+        let language = now.ai.study_language().unwrap_or("English");
+        format!("{}|{language}", now.by(TaskId::StudyCards))
     }
 
-    fn write(&self, words: Vec<Wanted>) -> Box<dyn CardJob> {
-        let (words, language) = (Arc::new(words), self.language);
+    fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {
+        let now = self.0.followed();
+        let (words, language) = (Arc::new(words), now.ai.study_language());
         let step = move |backend: Arc<dyn Backend>, retry, _: Say<_, _>| {
             let words = Arc::clone(&words);
             async move {
@@ -71,19 +60,20 @@ impl CardWriter for AiCards {
                 retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
             }
         };
-        let (id, route) = (TaskId::StudyCards, self.route.clone());
-        let job: Pending<Vec<Option<Written>>> = self.line.dispatch().ask(id, route, step);
+        let id = TaskId::StudyCards;
+        let job: Running<Vec<Option<Written>>> = self.0.dispatch().ask(id, now.route(id), step);
         Box::new(job)
     }
 }
 
 impl Judge for AiCards {
     fn by(&self) -> String {
-        self.by.clone()
+        self.0.followed().by(TaskId::StudyJudge)
     }
 
-    fn judge(&self, attempt: Attempt) -> Box<dyn JudgeJob> {
-        let (attempt, language) = (Arc::new(attempt), self.language);
+    fn judge(&self, attempt: Attempt) -> Box<JudgeJob> {
+        let now = self.0.followed();
+        let (attempt, language) = (Arc::new(attempt), now.ai.study_language());
         let step = move |backend: Arc<dyn Backend>, retry, _: Say<_, _>| {
             let attempt = Arc::clone(&attempt);
             async move {
@@ -94,23 +84,8 @@ impl Judge for AiCards {
                 retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
             }
         };
-        let (id, route) = (TaskId::StudyJudge, self.route.clone());
-        let job: Pending<Judged> = self.line.dispatch().ask(id, route, step);
+        let id = TaskId::StudyJudge;
+        let job: Running<Judged> = self.0.dispatch().ask(id, now.route(id), step);
         Box::new(job)
-    }
-}
-
-/// A request on its way; dropping it cancels it and frees its model.
-type Pending<T> = Running<T>;
-
-impl CardJob for Pending<Vec<Option<Written>>> {
-    fn take(&mut self) -> Option<Answer> {
-        self.answer()
-    }
-}
-
-impl JudgeJob for Pending<Judged> {
-    fn take(&mut self) -> Option<Judgement> {
-        self.answer()
     }
 }

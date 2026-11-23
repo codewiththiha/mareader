@@ -50,7 +50,7 @@ fn wanted(lemma: &str) -> Wanted {
 }
 
 /// Polls `job` until it answers, or fails after ten seconds.
-fn finish(job: &mut dyn CardJob) -> Backs {
+fn finish(job: &mut CardJob) -> Backs {
     let start = Instant::now();
     loop {
         if let Some(answer) = job.take() {

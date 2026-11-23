@@ -6,6 +6,7 @@
 
 use super::cards::Once;
 use super::{Practice, Verdict};
+use crate::pending::Pending;
 use crate::{Failure, Why};
 
 /// One answer to judge: the word as printed, its lemma and its sentence.
@@ -32,14 +33,11 @@ pub trait Judge: Send + Sync {
     fn by(&self) -> String;
 
     /// Starts on `attempt`; dropping the job cancels it.
-    fn judge(&self, attempt: Attempt) -> Box<dyn JudgeJob>;
+    fn judge(&self, attempt: Attempt) -> Box<JudgeJob>;
 }
 
 /// An answer being judged.
-pub trait JudgeJob: Send {
-    /// The judgement once it came; after that, none.
-    fn take(&mut self) -> Option<Judgement>;
-}
+pub type JudgeJob = dyn Pending<Judged>;
 
 /// The scripted verdict: "right" in the answer is correct, "close" is close.
 pub fn practice_verdict(answer: &str) -> Verdict {
@@ -58,7 +56,7 @@ impl Judge for Practice {
         "Sample answers".to_owned()
     }
 
-    fn judge(&self, attempt: Attempt) -> Box<dyn JudgeJob> {
+    fn judge(&self, attempt: Attempt) -> Box<JudgeJob> {
         let verdict = practice_verdict(&attempt.answer);
         let word = &attempt.lemma;
         let feedback = match verdict {
@@ -72,12 +70,6 @@ impl Judge for Practice {
             Self::Failing => Some(Err(Failure::detailed(Why::Offline, "scripted failure"))),
         };
         Box::new(Once(judged))
-    }
-}
-
-impl JudgeJob for Once<Judgement> {
-    fn take(&mut self) -> Option<Judgement> {
-        self.0.take()
     }
 }
 

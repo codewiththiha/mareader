@@ -123,7 +123,8 @@ answer says what's wrong.
 through `crates/ui-egui/src/ai.rs`:
 
 - each frame, `follow(&settings.ai)` takes in finished jobs and, when the
-  AI settings changed, hands the study tools a new `Explainer`;
+  AI settings changed, follows them and hands the engine its
+  `Answerers` in one call (`Session::study_set_ai`);
 - the AI tab sends `Job`s (probe Apple, list keys or models, add, set
   aside, bring back or remove a key, try the provider) and draws the
   `Board`, plain data that each finished job updates. Then `waker`
@@ -133,6 +134,27 @@ through `crates/ui-egui/src/ai.rs`:
 the runtime there, never on the UI thread. The browser build has no
 assist: the AI tab is hidden and Explain says it can't answer.
 
+### Live settings (Phase 5)
+
+Every port reads the settings when its job starts, not when it was made.
+`Assist::configure` swaps one `Arc` in the `Dispatcher` (`follow`), with
+each task's route under the new settings. The explainer, the card writer
+and the judge hold the dispatcher, not a model, so a port made before a
+change asks the new model on its next job. A fourth port added the same
+way can't keep asking the old model.
+
+- **Who answered.** `Explainer::explain_by` returns the answer and the
+  model that gave it, from `Event::Started`; the word card's small print
+  shows that one, even after a fall-through to a fallback.
+- **Cached backs.** A deck, and a recall's back, file what comes under
+  the writer's `id()` read when they were asked. Study cards ask only
+  their first model, so that is the model that wrote them.
+- **One pending answer.** The engine sees every AI job as
+  `mareader_study::pending::Pending`: `news()` gives `Partial`, then
+  `Done`. `Writing`, `CardJob` and `JudgeJob` are aliases of it, and
+  assist's `Running` implements it, so the engine still never names
+  assist.
+
 ## Tests
 
 - `tests/compat.rs`: streaming with the schema sent, the format
@@ -140,6 +162,10 @@ assist: the AI tab is hidden and Explain says it can't answer.
 - `tests/service.rs`: a keyless local server; keys added, used, rotated,
   set aside, brought back and removed; providers that can't answer saying
   why; Apple Intelligence through a scripted helper (Unix).
+- `tests/conformance.rs`: every `TaskId` has a spec whose `follows` ends,
+  routes through its fallback and loses a removed model, waits out a busy
+  model as its spec says, frees its model when cancelled, and asks the new
+  model after a settings change, through ports made before it.
 
 A small HTTP server in `tests/support` stands in for providers; it
 records what it was asked. Nothing in CI calls a real provider.

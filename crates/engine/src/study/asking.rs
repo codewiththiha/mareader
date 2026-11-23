@@ -53,7 +53,6 @@ impl Said {
 pub fn ask(
     wake: Waker,
     explainer: Arc<dyn Explainer>,
-    by: String,
     word: String,
     context: String,
 ) -> Receiver<Got> {
@@ -63,9 +62,9 @@ pub fn ask(
             let _ = tx.send(Got::Partial(info));
             wake();
         };
-        let done = explainer.explain(&word, &context, &partial);
-        let said = done.map(|i| Said {
-            info: i.clamped(),
+        let done = explainer.explain_by(&word, &context, &partial);
+        let said = done.map(|(info, by)| Said {
+            info: info.clamped(),
             by,
         });
         let _ = tx.send(Got::Done(said));

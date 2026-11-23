@@ -72,8 +72,9 @@ pub struct Recalling {
     pub back: Option<Written>,
     /// Who judges, as the popover names them while it waits.
     pub by: String,
-    back_job: Option<Box<dyn CardJob>>,
-    judging: Option<Box<dyn JudgeJob>>,
+    /// The back being written, and who was asked, whose cache it goes in.
+    back_job: Option<(String, Box<CardJob>)>,
+    judging: Option<Box<JudgeJob>>,
 }
 
 impl Recalling {
@@ -92,9 +93,10 @@ impl Recalling {
         };
         if let Some(writer) = writer {
             let wanted = recalling.word.wanted();
-            recalling.back = writer.backs.get(&writer.cards.id(), &wanted);
+            let id = writer.cards.id();
+            recalling.back = writer.backs.get(&id, &wanted);
             if recalling.back.is_none() {
-                recalling.back_job = Some(writer.cards.write(vec![wanted]));
+                recalling.back_job = Some((id, writer.cards.write(vec![wanted])));
             }
         }
         recalling
@@ -126,14 +128,13 @@ impl Recalling {
     /// finished recall when a correct verdict ends it at once.
     pub(crate) fn step(&mut self, ask: bool, writer: Option<&Writer>) -> (bool, Option<Done>) {
         let mut moved = false;
-        if let Some(answer) = self.back_job.as_mut().and_then(|job| job.take()) {
-            self.back_job = None;
+        if let Some(answer) = self.back_job.as_mut().and_then(|(_, job)| job.take()) {
+            let id = self.back_job.take().map(|(id, _)| id).unwrap_or_default();
             moved = true;
             let back = answer
                 .ok()
                 .and_then(|backs| backs.into_iter().next().flatten());
             if let (Some(back), Some(writer)) = (&back, writer) {
-                let id = writer.cards.id();
                 writer.backs.put(&id, &self.word.wanted(), back.clone());
             }
             self.back = back;

@@ -11,8 +11,8 @@ use std::sync::Arc;
 use mareader_library::{AiPageId, AiTask, BookId, Library, PageSpan};
 use mareader_session::Anchor;
 use mareader_settings::AiSettings;
-use mareader_study::Failure;
 use mareader_study::page::{Out, Piece, Rewritten};
+use mareader_study::pending::Pending;
 use mareader_workspace::PaneId;
 
 use super::Slot;
@@ -56,24 +56,18 @@ pub struct Run {
 /// A run's line to its writer.
 pub enum Handle {
     /// A writer above: the service's own line to its model.
-    Live(Box<dyn Writing>),
+    Live(Box<Writing>),
     /// Tests and shots: the answer, given on the first look.
     Canned(Option<Rewritten>),
     /// Tests and shots: the answer as words so far, never done.
     Held(Option<Rewritten>),
 }
 
-/// A result being written, as the engine sees it: something that yields news.
-pub trait Writing {
-    /// What has come since the last look.
-    fn news(&mut self) -> Vec<News>;
-}
+/// A result being written, as the engine sees every AI job.
+pub type Writing = dyn Pending<Rewritten>;
 
 /// News from a run.
-pub enum News {
-    Partial(Rewritten),
-    Done(Result<Rewritten, Failure>),
-}
+pub type News = mareader_study::pending::News<Rewritten>;
 
 pub fn poll(handle: Option<&mut Handle>) -> Vec<News> {
     match handle {

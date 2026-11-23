@@ -5,6 +5,7 @@ use std::sync::Arc;
 use mareader_appearance::Rgb;
 use mareader_library::{BookId, MarkId, MarkKind, Style};
 use mareader_study::Explainer;
+use mareader_study::pending::Answerers;
 use mareader_workspace::PaneId;
 
 use crate::event::Event;
@@ -24,6 +25,13 @@ impl Session {
     /// Replaces the AI Dictionary explainer used for new word lookups.
     pub fn study_set_explainer(&mut self, explainer: Arc<dyn Explainer>) {
         self.study.set_explainer(explainer);
+    }
+
+    /// Hands every study tool the AI's answerers, after a settings change.
+    pub fn study_set_ai(&mut self, ai: Answerers) {
+        self.study.set_explainer(ai.explainer);
+        self.study_mode.set_cards(ai.cards);
+        self.study_mode.set_judge(ai.judge);
     }
 
     /// Polls active explainer threads and files completed glosses into marks.

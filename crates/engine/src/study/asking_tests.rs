@@ -28,6 +28,10 @@ struct Canned {
 }
 
 impl Explainer for Canned {
+    fn by(&self) -> String {
+        "the model".to_owned()
+    }
+
     fn explain(
         &self,
         word: &str,
@@ -55,13 +59,8 @@ fn canned(answer: Result<WordInfo, Failure>) -> (Arc<Canned>, Arc<Mutex<Vec<Aske
 
 /// Asks `one` about the fox, as the card and the mark menu do.
 fn asked_of(one: Arc<Canned>, wake: Waker) -> Receiver<Got> {
-    ask(
-        wake,
-        one,
-        "the model".to_owned(),
-        "fox".to_owned(),
-        "The quick brown fox.".to_owned(),
-    )
+    let (word, context) = ("fox".to_owned(), "The quick brown fox.".to_owned());
+    ask(wake, one, word, context)
 }
 
 #[test]

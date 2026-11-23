@@ -283,14 +283,8 @@ impl MareaderApp {
             }
         }
         let ai_look = self.settings().ai.clone();
-        if let Some(explainer) = self.ui.ai.follow(&ai_look) {
-            self.session.study_set_explainer(explainer);
-            if let Some(cards) = self.ui.ai.cards() {
-                self.session.study_set_cards(cards);
-            }
-            if let Some(judge) = self.ui.ai.judge() {
-                self.session.study_set_judge(judge);
-            }
+        if let Some(answerers) = self.ui.ai.follow(&ai_look) {
+            self.session.study_set_ai(answerers);
         }
         self.take_organized();
         #[cfg(not(target_arch = "wasm32"))]

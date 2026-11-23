@@ -8,6 +8,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 
+use mareader_study::pending::{News, Pending};
 use mareader_study::{Failure, Why};
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
@@ -77,14 +78,44 @@ impl<O, P> Running<O, P> {
 
     /// Like [`Self::wait`], handing each partial to `partial` as it comes.
     pub fn wait_with(self, partial: impl Fn(P)) -> Result<O, Failure> {
+        self.wait_by(partial).map(|(done, _)| done)
+    }
+
+    /// Like [`Self::wait_with`], with the name of the model that answered.
+    pub fn wait_by(self, partial: impl Fn(P)) -> Result<(O, String), Failure> {
+        let mut by = String::new();
         loop {
             match self.rx.recv() {
                 Ok(Event::Partial(p)) => partial(p),
-                Ok(Event::Done(done)) => return done,
+                Ok(Event::Started { by: name }) => by = name,
+                Ok(Event::Done(done)) => return done.map(|out| (out, by)),
                 Ok(_) => {}
                 Err(_) => return Err(Why::NotHere.into()),
             }
         }
+    }
+}
+
+/// How the engine sees a job: what came so far, then the end.
+impl<O: Send, P: Send> Pending<O, P> for Running<O, P> {
+    fn news(&mut self) -> Vec<News<O, P>> {
+        let mut news = Vec::new();
+        while !self.over {
+            match self.rx.try_recv() {
+                Ok(Event::Partial(p)) => news.push(News::Partial(p)),
+                Ok(Event::Done(done)) => {
+                    self.over = true;
+                    news.push(News::Done(done));
+                }
+                Ok(_) => {}
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.over = true;
+                    news.push(News::Done(Err(Why::NotHere.into())));
+                }
+            }
+        }
+        news
     }
 }
 

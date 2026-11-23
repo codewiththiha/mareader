@@ -15,7 +15,7 @@
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
-use mareader_settings::{Class, ModelPreset, Retry, TaskId, no_model};
+use mareader_settings::{AiSettings, Class, ModelPreset, Retry, TaskId, no_model};
 use mareader_study::{Failure, Why};
 use serde_json::Value;
 use tokio::runtime::Runtime;
@@ -30,6 +30,95 @@ use crate::slots::{Slots, Ticket};
 pub(crate) struct Seat {
     pub preset: ModelPreset,
     pub backend: Arc<dyn Backend>,
+}
+
+/// The runtime, shut down without waiting, from wherever it drops.
+struct Engine(Option<Runtime>);
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        if let Some(rt) = self.0.take() {
+            rt.shutdown_background();
+        }
+    }
+}
+
+/// The settings last followed, and every task's route under them.
+#[derive(Default)]
+pub(crate) struct Followed {
+    pub ai: AiSettings,
+    routes: Vec<(TaskId, Vec<Seat>)>,
+}
+
+impl Followed {
+    /// The models `id` may ask, first choice first.
+    pub fn route(&self, id: TaskId) -> Vec<Seat> {
+        let mut routes = self.routes.iter();
+        let route = routes.find(|(task, _)| *task == id);
+        route.map(|(_, seats)| seats.clone()).unwrap_or_default()
+    }
+
+    /// The name of `id`'s first model; blank for none.
+    pub fn by(&self, id: TaskId) -> String {
+        let route = self.routes.iter().find(|(task, _)| *task == id);
+        let first = route.and_then(|(_, seats)| seats.first());
+        first.map(|s| s.preset.title()).unwrap_or_default()
+    }
+}
+
+/// What every job starts from; cheap to clone. A port reads the settings
+/// when its job starts, so one swap reaches them all.
+#[derive(Clone)]
+pub(crate) struct Dispatcher {
+    engine: Arc<Engine>,
+    pub waker: Waker,
+    pub slots: Slots,
+    now: Arc<Mutex<Arc<Followed>>>,
+}
+
+impl Dispatcher {
+    pub fn new(rt: Runtime, waker: Waker) -> Self {
+        Self {
+            engine: Arc::new(Engine(Some(rt))),
+            waker,
+            slots: Slots::default(),
+            now: Arc::default(),
+        }
+    }
+
+    pub fn rt(&self) -> Option<&Runtime> {
+        self.engine.0.as_ref()
+    }
+
+    /// New settings; jobs not yet started use them. `seat` makes a backend.
+    pub fn follow(&self, ai: &AiSettings, seat: impl Fn(&ModelPreset) -> Seat) {
+        let route = |id: TaskId| (id, ai.route(id).into_iter().map(&seat).collect::<Vec<_>>());
+        let followed = Followed {
+            ai: ai.clone(),
+            routes: TaskId::ALL.iter().map(|id| route(*id)).collect(),
+        };
+        if let Ok(mut now) = self.now.lock() {
+            *now = Arc::new(followed);
+        }
+    }
+
+    /// The settings followed now.
+    pub fn followed(&self) -> Arc<Followed> {
+        let now = self.now.lock().ok();
+        now.map(|now| Arc::clone(&now)).unwrap_or_default()
+    }
+
+    pub fn route(&self, id: TaskId) -> Vec<Seat> {
+        self.followed().route(id)
+    }
+
+    pub fn dispatch(&self) -> Dispatch<'_> {
+        Dispatch {
+            rt: self.rt(),
+            waker: &self.waker,
+            slots: &self.slots,
+        }
+    }
 }
 
 /// Starts jobs on the runtime, through the queue.

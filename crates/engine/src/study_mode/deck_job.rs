@@ -107,10 +107,12 @@ enum Stage {
         ticket: Ticket,
         since: Option<f64>,
     },
-    /// The writer's job, and the cards it was asked for, by place.
+    /// The writer's job, the cards it was asked for, by place, and who
+    /// was asked, whose cache the backs go in.
     Writing {
-        job: Box<dyn CardJob>,
+        job: Box<CardJob>,
         asked: Vec<(usize, Wanted)>,
+        id: String,
     },
     Done,
 }
@@ -397,22 +399,21 @@ impl DeckJob {
         }
         let words = asked.iter().map(|(_, w)| w.clone()).collect();
         let job = writer.cards.write(words);
-        self.stage = Stage::Writing { job, asked };
+        self.stage = Stage::Writing { job, asked, id };
         Ok(())
     }
 
     /// Takes the writer's answer into the deck and the cache.
     fn writing(&mut self) -> Result<bool, String> {
-        let Stage::Writing { job, asked } = &mut self.stage else {
+        let Stage::Writing { job, asked, id } = &mut self.stage else {
             return Ok(false);
         };
         let Some(answer) = job.take() else {
             return Ok(false);
         };
         let backs = answer.map_err(|f| f.said())?;
-        let asked = std::mem::take(asked);
+        let (asked, id) = (std::mem::take(asked), std::mem::take(id));
         if let Some(writer) = &self.writer {
-            let id = writer.cards.id();
             for ((i, wanted), back) in asked.into_iter().zip(backs) {
                 let Some(back) = back else {
                     continue;
