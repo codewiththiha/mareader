@@ -67,7 +67,7 @@ order:
 | 10 | `Modal` | `Foreground` | `Dialog` (`egui::Modal`) / lightbox `Area` | `settings-window`, `word-list-window`, `shortcuts`, `palette`, `library-sheet`, `remove-alert`, `picture viewer` (`image_viewer`, also sets `set_modal_layer`) |
 | 11 | `ModalPopover` | `Foreground` | `egui::Popup` (dynamic) | `ComboBox` dropdowns and popups opened while a `Modal` is active |
 | 12 | `Notification` | `Tooltip` | Interactable `Area` | `toasts` corner stack, `toasts-open` expanded notification list |
-| 13 | `Tooltip` | `Tooltip` | Non-interactable `Area` / `painter` / egui Tooltip | Standard hover tooltips, `dict-edge-peek`, `read-aloud-bubble`, `lift-target`, `library-carried`, `library-ghost`, `library-panel-drop`, `library-panel-tree-drop` |
+| 13 | `Tooltip` | `Tooltip` | Non-interactable `Area` / `painter` / egui Tooltip | Standard hover tooltips, `dict-edge-peek`, `read-aloud-bubble`, `lift-target`, `library-carried`, `library-ghost`, `ai-backup-carried`, `library-panel-drop`, `library-panel-tree-drop` |
 | 14 | `WindowLights` | `Tooltip` | Non-interactable `painter` | `lights` (macOS traffic-light backings / non-Mac stand-in dots) |
 | 15 | `PostEffect` | `Tooltip` | Non-interactable `painter` | `film-grain` full-window grain pass |
 | 16 | `Transition` | `Debug` | Non-interactable `painter` | `crossfade` theme-switch snapshot |

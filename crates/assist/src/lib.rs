@@ -41,7 +41,7 @@ pub use prompt::{Prompt, quote};
 pub use retry::{AHEAD, WAITED, WAITS};
 pub use running::{Event, Running, Waker};
 pub use service::{Assist, Organized, Organizing, Rewriting, Rewrote};
-pub use slots::{Queued, Slots, Ticket};
+pub use slots::{Asker, Queued, Slots, Ticket};
 pub use study_judge::StudyJudge;
 pub use study_mode::{MAX_WORDS, StudyCards};
 pub use task::{Explain, Task, word_info_schema};

@@ -268,9 +268,14 @@ a `Ticket`. Dropping the ticket, or the job, lets the next one in.
 - **Keys from one account share its limits.** OpenAI counts rate limits per
   organisation and project, Gemini per project. More keys from one account
   add room here but rarely more throughput; the AI tab says so.
-- **Order.** Waited (Explain, a recall's verdict) before Asked (page
-  rewrites) before Ahead (decks ahead, the organizer), then first come
-  first served. A running job is never stopped.
+- **Order.** Waited before Asked before Ahead, then first come first
+  served. A running job is never stopped. Each task's row gives its usual
+  class (Explain and a recall's verdict Waited, page rewrites Asked, decks
+  ahead and the organizer Ahead). The reader can pick another in Settings ›
+  AI › Who goes first ("Right away", "Normal", "Background"), kept in
+  `AiTasks::priority`; `AiSettings::class(task)` is the one reader, and a
+  job queues as an `Asker`, its task and that class. The class also picks
+  the retry (`Class::retry`).
 - **Nothing is turned away.** Past capacity, a job waits its turn however
   long it takes, until it gets a place or its handle is dropped. Nothing
   answers `InUse` because a model is full.
@@ -281,11 +286,12 @@ a `Ticket`. Dropping the ticket, or the job, lets the next one in.
 - **Bulk work steps aside.** The organizer gives its place back between
   requests while a Waited job is in line, then queues again. With room for
   two or more, Ahead work never takes the last free place.
-- **Waited jobs fall through their route.** With fallback models set (in
-  the file, for now), a Waited job moves on after 15 s in line, or at once
-  on Busy, Offline, TimedOut or rejected keys. On its last model it waits
-  its turn and uses its spec's waits. A failure names every model asked.
-  Other jobs ask only their first model. The table is in `dispatch.rs`.
+- **Every job falls through its route.** A job moves to its next model at
+  once on Busy, Offline, TimedOut or rejected keys, whatever its class. A
+  Waited job also moves on after 15 s in line; other classes wait their
+  turn. On its last model a job uses its class's waits. A failure names
+  every model asked. The organizer's lane moves on the same way between
+  requests. The table is in `dispatch.rs`.
 - **News.** `Event` carries `Queued { behind }`, `Started { by }`,
   `Partial`, `Again { why, attempt }` and `Done`. `Again` comes from a
   single request asked again; a flow's steps don't send it.
@@ -369,6 +375,8 @@ Each AI task is a `TaskId` with one row, its `TaskSpec`
 (`settings/src/ai_task.rs`). `spec()` is an exhaustive match, so a task
 without a row doesn't compile.
 
+Class and retry below are the usual ones; the reader's pick wins.
+
 | Task | Label | Class | Retry | Follows |
 |---|---|---|---|---|
 | `explain` | AI Dictionary | Waited | `WAITED` | — |
@@ -378,19 +386,29 @@ without a row doesn't compile.
 | `study_judge` | Study judge | Waited | `WAITED` | Explain |
 
 `doing` is the phrase a task is busy with, as "organizing your library".
-`class` orders the queue once there is one (Phase 4 of the AI plan).
+`class` orders the queue (Phase 4 of the AI plan) and picks the retry.
 
 - **`AiTasks::models`** maps each task to its saved models, first choice
   first. Per-task options (language, batch, style, start) stay in their
   own structs.
 - **`AiSettings::route(task)`** is the one resolver: the task's own
-  models, then those of the task it follows, each once. `model(task)` is
+  models, then those of the task it follows, then the backups, each once.
+  A task with no model of its own or followed gets no backups, so None on
+  the AI Dictionary still leaves the following tasks off. `model(task)` is
   its first. Every call site asks for a `TaskId`; a page task converts
   with `TaskId::from(PageTask)`.
-- **Fallbacks** are file-only for now. Settings shows one model per row;
-  choosing one keeps any fallbacks behind it, and None clears them.
-- **Removing a model** drops its id from every list, and a list left
-  empty goes. `sanitize()` does the same for ids no model has.
+- **Backups** (`AiTasks::backups`, `ai_backups.rs`) are one ordered list
+  for every task, set in Settings › AI › Backup models: drag or the arrows
+  to reorder, × to remove, "Add a backup" for more. Until the reader
+  changes it the list is `null` in the file and means the first
+  `Backups::AUTO` (3) saved models, oldest first, kept up to date. Once
+  arranged it is stored and new models aren't added. The section shows
+  from two saved models. A task's own model is skipped in it.
+- **Per-task fallbacks** stay file-only: Settings shows one model per row;
+  choosing one keeps any fallbacks behind it, and None clears them. They
+  come before the backups.
+- **Removing a model** drops its id from every list, the backups too, and
+  a task's list left empty goes. `sanitize()` does the same for ids no model has.
 - **A task this build doesn't know**, as a newer build's, is skipped when
   the file is read; the rest of the AI settings stay.
 
@@ -451,9 +469,10 @@ guesses.
 **The service.** `Assist::organize(Request)` returns an `Organizing` at
 once and runs on the runtime:
 
-- It takes a place on its model through `flow()`, waiting its turn on a
-  full model, and steps aside between requests for a Waited job. No model
-  chosen is `NotHere`.
+- It takes a place on its first model through `flow()`, waiting its turn
+  on a full model, and steps aside between requests for a Waited job. A
+  model that fails hands the run to the next in its route. No model chosen
+  is `NotHere`.
 - `poll()` returns `Organized::Progress` events (one at the start, then one
   per request, out of 2 × batches), then a final `Done` with the plan or
   the failure.

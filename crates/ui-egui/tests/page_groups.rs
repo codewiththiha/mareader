@@ -49,10 +49,17 @@ fn ask(h: &mut H, pages: impl IntoIterator<Item = usize>, task: PageTask) {
     h.run();
 }
 
+/// The kept spans by first page: groups asked at once finish in any order.
 fn spans(h: &H) -> Vec<PageSpan> {
     let pane = h.state().active_pane();
     let kept = h.state().kept_ai(pane).into_iter();
-    kept.map(|(_, span)| span).collect()
+    let mut spans: Vec<PageSpan> = kept.map(|(_, span)| span).collect();
+    spans.sort_by_key(|s| match s {
+        PageSpan::Page { page } => [*page, 0],
+        PageSpan::Pages { from, .. } => [*from, 0],
+        PageSpan::Blocks { from, .. } => *from,
+    });
+    spans
 }
 
 fn shows(h: &H, page: usize) -> bool {

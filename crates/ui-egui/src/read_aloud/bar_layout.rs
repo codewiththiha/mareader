@@ -198,6 +198,7 @@ mod tests {
         Stage {
             reader: true,
             panes: &[],
+            focused: None,
             content: room,
             shown: Some(true),
             title: "Book",

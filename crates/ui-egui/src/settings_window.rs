@@ -781,13 +781,26 @@ impl Rows<'_> {
 }
 
 fn section(ui: &mut Ui, title: &str) {
+    section_help(ui, title, &[]);
+}
+
+/// A section's title with a "?" whose card explains it, when `help` has
+/// paragraphs: (bold lead, words).
+fn section_help(ui: &mut Ui, title: &str, help: &[(&str, &str)]) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(14.0);
-    ui.label(
-        RichText::new(title)
-            .font(theme::medium(t.text_small))
-            .color(t.muted),
-    );
+    let text = RichText::new(title)
+        .font(theme::medium(t.text_small))
+        .color(t.muted);
+    if help.is_empty() {
+        ui.label(text);
+    } else {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.label(text);
+            crate::help_dot::show(ui, title, help);
+        });
+    }
     ui.add_space(6.0);
 }
 

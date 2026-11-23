@@ -27,6 +27,7 @@ pub mod focus;
 pub mod fold;
 pub mod footnote;
 pub mod gpu;
+pub mod help_dot;
 pub mod icons;
 pub mod image_viewer;
 pub mod import;

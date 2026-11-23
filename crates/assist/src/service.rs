@@ -205,15 +205,15 @@ impl Assist {
             Some(run) => run.carry_on(&req),
             None => Checkpoint::new(&req),
         };
-        let id = TaskId::Organize;
-        let seat = self.jobs_on.route(id).into_iter().next();
-        if seat.is_none() && !run.finished() {
+        let (id, now) = (TaskId::Organize, self.jobs_on.followed());
+        let (route, who) = (now.route(id), now.asker(id));
+        if route.is_empty() && !run.finished() {
             let none = Failure::detailed(Why::NotHere, no_model(id));
             let (rt, waker) = (self.jobs_on.rt(), &self.jobs_on.waker);
             return start(rt, waker, |_| async { Err(none) });
         }
         // A finished run only makes its plan; no model is asked.
-        let seat = seat.filter(|_| !run.finished());
+        let route = if run.finished() { Vec::new() } else { route };
         let file = self.root.join(CHECKPOINT);
         let job = move |backend: Arc<dyn Backend>, say: Say<Plan, Progress>| async move {
             let save = |run: &Checkpoint| keep(&file, run);
@@ -223,11 +223,11 @@ impl Assist {
             let hooks = Hooks {
                 progress: &|p| say.partial(p),
                 save: &save,
-                retry: id.spec().retry,
+                retry: who.class.retry(),
             };
             organize_from(backend.as_ref(), &req, run, &hooks).await
         };
-        self.jobs_on.dispatch().flow(id, seat, job)
+        self.jobs_on.dispatch().flow(who, route, job)
     }
 
     /// Rewrites one page with its task's model; news comes by polling.
@@ -237,8 +237,9 @@ impl Assist {
             let ask = job.clone().ask();
             async move { rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await }
         };
-        let route = self.jobs_on.route(task);
-        self.jobs_on.dispatch().ask(task, route, step)
+        let now = self.jobs_on.followed();
+        let (route, who) = (now.route(task), now.asker(task));
+        self.jobs_on.dispatch().ask(who, route, step)
     }
 
     pub fn board(&self) -> &Board {
@@ -388,8 +389,8 @@ impl Explainer for AiExplainer {
                 attempt(backend.as_ref(), &task, &|info| say.partial(info), retry).await
             }
         };
-        let (id, route) = (TaskId::Explain, now.route(TaskId::Explain));
-        let job = self.0.dispatch().ask(id, route, step);
+        let id = TaskId::Explain;
+        let job = self.0.dispatch().ask(now.asker(id), now.route(id), step);
         job.wait_by(partial)
     }
 

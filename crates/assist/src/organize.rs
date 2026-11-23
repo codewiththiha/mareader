@@ -1,6 +1,6 @@
 //! Filing loose books: batches name shelves, then each book is placed.
 
-use mareader_settings::{Retry, TaskId};
+use mareader_settings::Retry;
 use mareader_study::{Failure, Why};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -173,7 +173,7 @@ pub async fn organize(
         progress,
         save: &|_| {},
         retry: Retry {
-            unreadable: TaskId::Organize.spec().retry.unreadable,
+            unreadable: Retry::AHEAD.unreadable,
             waits: &[],
         },
     };

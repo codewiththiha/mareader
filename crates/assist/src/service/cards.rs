@@ -62,7 +62,8 @@ impl CardWriter for AiCards {
             }
         };
         let id = TaskId::StudyCards;
-        let job: Running<Vec<Option<Written>>> = self.0.dispatch().ask(id, now.route(id), step);
+        let (who, route) = (now.asker(id), now.route(id));
+        let job: Running<Vec<Option<Written>>> = self.0.dispatch().ask(who, route, step);
         Box::new(job)
     }
 }
@@ -86,7 +87,8 @@ impl Judge for AiCards {
             }
         };
         let id = TaskId::StudyJudge;
-        let job: Running<Judged> = self.0.dispatch().ask(id, now.route(id), step);
+        let (who, route) = (now.asker(id), now.route(id));
+        let job: Running<Judged> = self.0.dispatch().ask(who, route, step);
         Box::new(job)
     }
 }

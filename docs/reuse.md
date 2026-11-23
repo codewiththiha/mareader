@@ -11,6 +11,7 @@ name the owning modules for shared primitives across the workspace.
 | parity-kit | `tools/parity-kit/src/lib.rs` | Float input, correlation, envelope, edit distance and rounded PCM WAV output for Kitten, Piper, Phonon and Kokoro parity tools. |
 | tests/common | `crates/ui-egui/tests/common/mod.rs`; `crates/epub/tests/common/mod.rs` | Shared integration drivers; suite-specific fixtures and reader aliases retain their original settings. |
 | test_support | `crates/library/src/test_support.rs` | cfg(test)-only opened-book, page, unsent-book and measurement fixtures for library tests. |
+| help_dot | `crates/ui-egui/src/help_dot.rs` | The "?" beside a heading: hover shows its card, a click pins it; paragraphs are (bold lead, words). Settings uses it through `section_help`. |
 | counted | `crates/engine/src/library/mod.rs` | Sole counted-book label helper shared across library views. |
 | preset labels | `crates/ui-egui/src/dial_deck/presets.rs` | Shared `mode_icon`, `noise_label` and `strength_percent` formatting for appearance and dial widgets. |
 | entrance | `crates/ui-egui/src/motion.rs` | Shared entrance easing; callers pass their own duration. |
@@ -21,6 +22,7 @@ name the owning modules for shared primitives across the workspace.
 | Backs | `crates/engine/src/study_mode/backs.rs` | Backs written per word, sentence hash and writer id for the session, shared by every deck through `Writer`; a deck asks only for the misses. |
 | Judge | `crates/study/src/mode/judge.rs` | Who judges a recall's answer: `judge` hands back a `JudgeJob` (a `Pending`), cancelled by drop. Assist's `Assist::judge` and `Practice` implement it. `Once<T>` in `cards.rs` is the scripted job for both traits. |
 | Dispatcher | `crates/assist/src/dispatch.rs` | What every AI job starts from: the runtime, the queue and the settings followed, swapped as one `Arc`. Ports hold a clone and read the route when a job starts. `jobs()` lists what is queued and running, as `JobInfo`, for Settings. |
+| Asker / Backups | `crates/assist/src/slots.rs`, `crates/settings/src/ai_backups.rs` | `Asker` is a task and the class it queues as; `Followed::asker` reads the reader's pick, and `From<TaskId>` gives the usual class. `Backups` is the global ordered fallback list: `ids()` resolves automatic or arranged, `AiSettings::backups()` the presets. |
 | Recalling | `crates/engine/src/study_mode/recalling.rs` | The open recall: its word, the back asked through `Writer`, the judge's job; `step` takes both in and says when a correct answer ends it. |
 | spot / click | `crates/ui-egui/tests/common/levels.rs` | Kittest: the screen point of a word on page 0, and a click on it. |
 | Ahead | `crates/engine/src/study_mode/run.rs` | A deck made past the gate (making, ready or failed); `Run::take_ahead` hands it to the gate, `trim_ahead` drops those no longer coming. |

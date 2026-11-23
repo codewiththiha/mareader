@@ -16,6 +16,8 @@ use crate::widgets;
 use mareader_engine::command::Command;
 use mareader_engine::settings::Tab;
 
+mod busy;
+
 const PICK_W: f32 = 240.0;
 const DICTIONARY: &str = TaskId::Explain.spec().label;
 const BOOKS_LANGUAGE: &str = "The book's language";
@@ -40,6 +42,7 @@ pub fn tab(
     dictionary(ui, ai, looks, board);
     library(ui, ai);
     pages(ui, ai, board);
+    busy::show(ui, ai);
 }
 
 /// Asks once whether Apple Intelligence is on this Mac.

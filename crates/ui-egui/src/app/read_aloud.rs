@@ -108,6 +108,7 @@ impl MareaderApp {
         let stage = crate::read_aloud::Stage {
             reader,
             panes: &self.ui.pane_rects,
+            focused: Some(self.active_pane()),
             content,
             shown,
             title: &title,

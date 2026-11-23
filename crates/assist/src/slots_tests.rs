@@ -80,6 +80,43 @@ fn the_reader_s_task_goes_first_then_arrival() {
 }
 
 #[test]
+fn a_class_the_reader_picked_decides_the_order() {
+    let (slots, p) = (Slots::default(), model(1));
+    let held = slots.try_take(&p, TaskId::Explain);
+    let order = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let soon = Asker {
+        task: TaskId::Organize,
+        class: Class::Waited,
+    };
+    let later = Asker {
+        task: TaskId::Explain,
+        class: Class::Ahead,
+    };
+    block(async {
+        let mut jobs = Vec::new();
+        for who in [later, soon] {
+            let (slots, p, order) = (slots.clone(), p.clone(), order.clone());
+            jobs.push(tokio::spawn(async move {
+                let ticket = slots.take(&p, who, None, &|_| {}).await;
+                order.lock().unwrap().push(who.task);
+                drop(ticket);
+            }));
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            slots.waited_for(p.id),
+            "the organizer, picked Right away, waits"
+        );
+        drop(held);
+        for job in jobs {
+            job.await.unwrap();
+        }
+    });
+    let order = order.lock().unwrap().clone();
+    assert_eq!(order, [TaskId::Organize, TaskId::Explain]);
+}
+
+#[test]
 fn a_fuse_gives_up_and_leaves_the_line() {
     let (slots, p) = (Slots::default(), model(1));
     let _held = slots.try_take(&p, TaskId::Explain);

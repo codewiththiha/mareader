@@ -10,6 +10,7 @@
 )]
 
 mod ai;
+mod ai_backups;
 mod ai_job;
 mod ai_task;
 mod load;
@@ -31,6 +32,7 @@ pub use ai::{
     PageStart, PageTask, PresetId, Provider, SimplifyTask, SummarizeTask, SummaryStyle,
     TranslateTask, language_name,
 };
+pub use ai_backups::Backups;
 pub use ai_job::Job;
 pub use ai_task::{Class, Retry, Routes, TaskId, TaskSpec, no_model};
 pub use load::{Loaded, load, to_json};

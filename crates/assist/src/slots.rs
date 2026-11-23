@@ -40,6 +40,21 @@ impl Queued {
     }
 }
 
+/// A task, and the class it queues as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Asker {
+    pub task: TaskId,
+    pub class: Class,
+}
+
+impl From<TaskId> for Asker {
+    /// `task` at its row's class, as the Try button and tests ask.
+    fn from(task: TaskId) -> Self {
+        let class = task.spec().class;
+        Self { task, class }
+    }
+}
+
 /// One task in line, since it joined.
 struct Wait {
     id: u64,
@@ -256,9 +271,10 @@ impl Slots {
         }
     }
 
-    /// A place now, if `p` has room and no one is in line before `task`.
-    pub fn try_take(&self, p: &ModelPreset, task: TaskId) -> Option<Ticket> {
-        let (room, class) = (self.room(p), task.spec().class);
+    /// A place now, if `p` has room and no one is in line before `who`.
+    pub fn try_take(&self, p: &ModelPreset, who: impl Into<Asker>) -> Option<Ticket> {
+        let Asker { task, class } = who.into();
+        let room = self.room(p);
         let mut state = self.state()?;
         if state.waiting(p.id, class) || !state.fits(p.id, class, room) {
             return None;
@@ -267,23 +283,24 @@ impl Slots {
         Some(self.admit(&mut state, p.id, id, task))
     }
 
-    /// A place on `p` at `task`'s turn; none if `fuse` runs out first.
+    /// A place on `p` at `who`'s turn; none if `fuse` runs out first.
     ///
     /// `queued` hears how many are ahead when the task joins the line.
     pub async fn take(
         &self,
         p: &ModelPreset,
-        task: TaskId,
+        who: impl Into<Asker>,
         fuse: Option<Duration>,
         queued: &(dyn Fn(usize) + Sync),
     ) -> Option<Ticket> {
+        let who = who.into();
         let deadline = fuse.map(|f| tokio::time::Instant::now() + f);
         let mut line: Option<InLine<'_>> = None;
         loop {
             let freed = self.0.freed.notified();
             tokio::pin!(freed);
             freed.as_mut().enable();
-            match self.look(p, task, line.as_ref().map(|l| l.id))? {
+            match self.look(p, who, line.as_ref().map(|l| l.id))? {
                 Turn::In(ticket) => return Some(ticket),
                 Turn::Joined(id, ahead) => {
                     line = Some(InLine { of: &self.0, id });
@@ -298,9 +315,9 @@ impl Slots {
         }
     }
 
-    /// One look at `p`'s line for `task`, in line as `id` if it is.
-    fn look(&self, p: &ModelPreset, task: TaskId, id: Option<u64>) -> Option<Turn> {
-        let (room, class) = (self.room(p), task.spec().class);
+    /// One look at `p`'s line for `who`, in line as `id` if it is.
+    fn look(&self, p: &ModelPreset, who: Asker, id: Option<u64>) -> Option<Turn> {
+        let (room, Asker { task, class }) = (self.room(p), who);
         let mut state = self.state()?;
         let turn = match id {
             Some(id) => state.first(p.id, id),
@@ -314,13 +331,13 @@ impl Slots {
         if id.is_some() {
             return Some(Turn::Waits);
         }
-        let (id, ahead) = self.join(&mut state, p, task, room);
+        let (id, ahead) = self.join(&mut state, p, who, room);
         Some(Turn::Joined(id, ahead))
     }
 
-    /// Puts `task` in line; its id, and how many run or wait before it.
-    fn join(&self, state: &mut State, p: &ModelPreset, task: TaskId, room: usize) -> (u64, usize) {
-        let (id, class) = (state.id(), task.spec().class);
+    /// Puts `who` in line; its id, and how many run or wait before it.
+    fn join(&self, state: &mut State, p: &ModelPreset, who: Asker, room: usize) -> (u64, usize) {
+        let (id, Asker { task, class }) = (state.id(), who);
         let none = Vec::new();
         let held = state.held.get(&p.id).unwrap_or(&none);
         let other = held.iter().map(|(_, t, _)| *t).find(|t| *t != task);

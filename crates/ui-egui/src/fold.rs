@@ -54,8 +54,8 @@ pub fn title(ui: &mut Ui, id: Id, name: &str, count: Option<usize>) -> Fold {
     Fold { open, how }
 }
 
-/// A small count pill on the right of the title.
-fn pill(ui: &Ui, count: usize, right: f32, y: f32) {
+/// A small count pill whose right edge is `right`, centred on `y`.
+pub fn pill(ui: &Ui, count: usize, right: f32, y: f32) {
     let t = Tokens::get(ui.ctx());
     let painter = ui.painter();
     let small = egui::FontId::proportional(t.text_small - 1.0);

@@ -13,6 +13,9 @@ pub use crate::tab_bar::tab_bar;
 use crate::theme::Tokens;
 use crate::ui_command::WindowCommand;
 
+mod segmented;
+pub use segmented::{segments, segments_of, segments_width};
+
 /// A popup's own frame: clicks stay in it, but Tab skips it for its rows.
 pub const POPUP_SENSE: Sense = Sense::CLICK;
 
@@ -950,90 +953,6 @@ pub fn menu_switch_keyed(
     );
     paint_switch(ui, knob, &resp, value);
     resp
-}
-
-/// A segmented track's row height.
-const SEGMENT: f32 = 24.0;
-
-/// Choices as one segmented track, `cols` equal cells to a row.
-pub fn segments<T: Copy + PartialEq>(
-    ui: &mut Ui,
-    value: &mut T,
-    all: &[T],
-    cols: usize,
-    face: impl Fn(T) -> (Option<Icon>, &'static str),
-) {
-    segments_of(ui, SEGMENT, value, all, cols, face);
-}
-
-/// Segments with rows `row` tall, to line up with taller controls.
-pub fn segments_of<T: Copy + PartialEq>(
-    ui: &mut Ui,
-    row: f32,
-    value: &mut T,
-    all: &[T],
-    cols: usize,
-    face: impl Fn(T) -> (Option<Icon>, &'static str),
-) {
-    let t = Tokens::get(ui.ctx());
-    // A segment animates on selection because its track stays visible.
-    let _act = anim::announce(ui, Act::Click);
-    let cols = cols.max(1);
-    let rows = all.len().div_ceil(cols);
-    let size = vec2(ui.available_width(), row * rows as f32);
-    let (track, track_resp) = ui.allocate_exact_size(size, Sense::hover());
-    let base = track_resp.id;
-    let line = Stroke::new(1.0, t.line);
-    ui.painter()
-        .rect_stroke(track, CornerRadius::same(6), line, egui::StrokeKind::Inside);
-    let w = track.width() / cols as f32;
-    let row_h = row;
-    let cell = |i: f32, row: f32| {
-        let min = track.min + vec2(i * w, row * row_h);
-        Rect::from_min_size(min, vec2(w, row_h)).shrink(2.0)
-    };
-    // The pick's fill slides to a new pick instead of jumping.
-    let thumb = base.with("thumb");
-    if let Some(i) = all.iter().position(|v| v == value) {
-        let ctx = ui.ctx();
-        let x = ctx.animate_value_with_time(thumb.with("x"), (i % cols) as f32, 0.16);
-        let y = ctx.animate_value_with_time(thumb.with("y"), (i / cols) as f32, 0.16);
-        (ui.painter()).rect_filled(cell(x, y), CornerRadius::same(4), t.selected);
-    }
-    for (i, &v) in all.iter().enumerate() {
-        let (icon, label) = face(v);
-        let cell = cell((i % cols) as f32, (i / cols) as f32);
-        let resp = ui.interact(cell, base.with(("segment", i, label)), Sense::click());
-        if resp.clicked() {
-            *value = v;
-        }
-        let on = *value == v;
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            if !on {
-                (ui.painter()).rect_filled(cell, CornerRadius::same(4), t.hover);
-            }
-        }
-        // Accent ink marks the pick where the soft fill barely shows (Dim).
-        let ink = if on { t.accent } else { t.ink };
-        let font = egui::FontId::proportional(t.text);
-        let galley = ui.painter().layout_no_wrap(label.to_owned(), font, ink);
-        let icon_w = if icon.is_some() { 18.0 } else { 0.0 };
-        let mut x = cell.center().x - (icon_w + galley.size().x) / 2.0;
-        let y = cell.center().y;
-        if let Some(icon) = icon {
-            let at = Rect::from_min_size(pos2(x, y - 7.0), Vec2::splat(14.0));
-            // Stable cell names preserve runs when earlier controls change.
-            ui.push_id(("segment-icon", base, label), |ui| {
-                anim::paint(ui, at, icon, ink, label, &resp);
-            });
-            x += icon_w;
-        }
-        let top = y - galley.size().y / 2.0;
-        ui.painter().galley(pos2(x, top), galley, ink);
-        let info = || egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label);
-        resp.widget_info(info);
-    }
 }
 
 /// A dropdown with the Lucide chevron; every combo box starts here.

@@ -25,6 +25,7 @@ mod pages;
 mod panel;
 mod pronunciation;
 mod read_aloud;
+mod read_aloud_panes;
 mod reading;
 mod search;
 mod selection;

@@ -342,7 +342,8 @@ fn count_badge(ui: &mut Ui, strip: Rect, up: usize, toasts: &mut Toasts, t: &Tok
             .size(t.text_small)
             .color(t.surface),
     )
-    .fill(t.accent)
+    // Neutral, so it never reads as a fourth tone beside green, amber, red.
+    .fill(t.ink)
     .stroke(Stroke::NONE)
     .corner_radius(CornerRadius::same(11));
     let all = ui.put(rect, badge);

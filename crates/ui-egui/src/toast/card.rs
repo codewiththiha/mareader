@@ -18,11 +18,14 @@ use mareader_engine::toast::Tone;
 const PAD_X: f32 = 14.0;
 /// Fixed card height so one-line and two-line toasts share a steady silhouette.
 const HEIGHT: f32 = 52.0;
-/// The tone's round mark at the left.
-const MARK: f32 = 16.0;
-const GAP: f32 = 10.0;
+/// From the card's left edge to its words: the tone's colour says the rest.
+const LEAD: f32 = 16.0;
 const CLOSE: f32 = 24.0;
-const ACTION_H: f32 = 28.0;
+/// The player's pill: its height, its words' inset, its gap over the player.
+pub(super) const ISLAND_H: f32 = 26.0;
+pub(super) const ISLAND_PAD: f32 = 14.0;
+pub(super) const ISLAND_GAP: f32 = 8.0;
+const ACTION_H: f32 = 26.0;
 /// How soft the countdown's edge is, in points.
 const FEATHER: f32 = 64.0;
 /// The countdown's columns are this far apart, in points.
@@ -36,14 +39,18 @@ pub(super) struct Card {
     action: f32,
 }
 
-fn action_job(ctx: &Context, live: &Live, mark: Color32, t: &Tokens) -> LayoutJob {
+/// The medium face at `size`, the regular one where it is missing.
+pub(super) fn medium(ctx: &Context, size: f32) -> FontId {
+    let med = theme::medium(size);
+    match ctx.fonts_mut(|f| f.families().contains(&med.family)) {
+        true => med,
+        false => FontId::proportional(size),
+    }
+}
+
+fn action_job(ctx: &Context, live: &Live, mark: Color32) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let med = theme::medium(12.5);
-    let label_font = if ctx.fonts_mut(|f| f.families().contains(&med.family)) {
-        med
-    } else {
-        FontId::proportional(12.5)
-    };
+    let label_font = medium(ctx, 12.5);
     job.append(live.toast.label, 0.0, TextFormat::simple(label_font, mark));
     if live.toast.label == "Undo" {
         let platform = ctx
@@ -54,10 +61,11 @@ fn action_job(ctx: &Context, live: &Live, mark: Color32, t: &Tokens) -> LayoutJo
         } else {
             "  Ctrl+Z"
         };
+        let hint = mark.gamma_multiply(0.65);
         job.append(
             key,
             0.0,
-            TextFormat::simple(FontId::proportional(10.5), t.muted),
+            TextFormat::simple(FontId::proportional(10.5), hint),
         );
     }
     job
@@ -65,22 +73,23 @@ fn action_job(ctx: &Context, live: &Live, mark: Color32, t: &Tokens) -> LayoutJo
 
 pub(super) fn measure(ctx: &Context, live: &Live, width: f32, t: &Tokens) -> Card {
     let font = FontId::proportional(t.text);
-    let (_, swatch) = look(live.toast.tone, t);
+    let swatch = look(live.toast.tone, t);
     let action = match live.toast.undo {
         Some(_) => {
-            let job = action_job(ctx, live, swatch.mark, t);
+            let job = action_job(ctx, live, swatch.mark);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
-            galley.size().x + 20.0
+            galley.size().x + 22.0
         }
         None => 0.0,
     };
-    let wrap = width - 2.0 * PAD_X - MARK - GAP - action - CLOSE - 8.0;
+    let wrap = width - LEAD - PAD_X - action - CLOSE - 8.0;
     let mut job = LayoutJob::default();
     job.append(&live.toast.message, 0.0, TextFormat::simple(font, t.ink));
     if live.times > 1 {
+        // In the tone, so a repeat reads at a glance.
         let count = format!("  ×{}", live.times);
-        let small = FontId::proportional(t.text_small);
-        job.append(&count, 0.0, TextFormat::simple(small, t.muted));
+        let small = medium(ctx, t.text_small);
+        job.append(&count, 0.0, TextFormat::simple(small, swatch.mark));
     }
     job.wrap.max_width = wrap.max(80.0);
     job.wrap.max_rows = 2;
@@ -101,21 +110,20 @@ pub(super) struct Swatch {
     pub soft: Color32,
 }
 
-/// The tone's icon and its theme-harmonised semantic swatch.
-pub(super) fn look(tone: Tone, t: &Tokens) -> (Icon, Swatch) {
-    let (icon, raw) = match tone {
-        Tone::Info => (Icon::Done, t.toast.info),
-        Tone::Warning => (Icon::Alert, t.toast.warning),
-        Tone::Error => (Icon::Alert, t.toast.error),
+/// The tone's theme-harmonised semantic swatch: green, amber or red.
+pub(super) fn look(tone: Tone, t: &Tokens) -> Swatch {
+    let raw = match tone {
+        Tone::Info => t.toast.info,
+        Tone::Warning => t.toast.warning,
+        Tone::Error => t.toast.error,
     };
-    let swatch = Swatch {
+    Swatch {
         mark: theme::color(raw.mark),
         fill: theme::color(raw.fill),
         listed: theme::color(raw.listed),
         edge: theme::color(raw.edge),
         soft: theme::color(raw.soft),
-    };
-    (icon, swatch)
+    }
 }
 
 /// How a card's body is drawn where it sits.
@@ -123,27 +131,33 @@ pub(super) fn look(tone: Tone, t: &Tokens) -> (Icon, Swatch) {
 pub(super) enum Body {
     /// In front, floating over the page.
     Front,
-    /// Peeking out behind: a shade toward the ink, so it reads on any page.
+    /// Peeking out behind: plain paper a shade toward the ink, so the pile
+    /// reads as layers rather than slivers of other colours.
     Behind,
-    /// In the opened list, flat on the panel.
+    /// In the opened list, flat on the panel with no edge of its own.
     Listed,
 }
 
 /// The card's body alone, as a toast behind the front one shows.
 pub(super) fn shell(ui: &Ui, rect: Rect, tone: Tone, body: Body, t: &Tokens) {
-    let (_, swatch) = look(tone, t);
+    let swatch = look(tone, t);
     let radius = CornerRadius::from(t.radius_lg);
     let painter = ui.painter();
-    let fill = match body {
-        Body::Front => swatch.fill,
-        Body::Behind => swatch.fill.lerp_to_gamma(t.ink, 0.07),
-        Body::Listed => swatch.listed,
+    let (fill, edge) = match body {
+        Body::Front => (swatch.fill, swatch.edge),
+        Body::Behind => (t.surface.lerp_to_gamma(t.ink, 0.06), t.line),
+        Body::Listed => (swatch.listed, Color32::TRANSPARENT),
     };
     if body == Body::Front {
         painter.add(ui.style().visuals.popup_shadow.as_shape(rect, radius));
     }
-    let stroke = Stroke::new(1.0, swatch.edge);
-    painter.rect(rect, radius, fill, stroke, StrokeKind::Inside);
+    painter.rect(
+        rect,
+        radius,
+        fill,
+        Stroke::new(1.0, edge),
+        StrokeKind::Inside,
+    );
 }
 
 /// The close button's place on a card at `rect`, centred like the mark.
@@ -219,36 +233,22 @@ fn wash(tone: Tone, tint: Color32) -> Color32 {
     }
 }
 
-/// The time left, the mark, the words and the buttons.
+/// The time left, the words and the buttons.
 pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
-    let (icon, swatch) = look(live.toast.tone, &t);
+    let swatch = look(live.toast.tone, &t);
     let painter = ui.painter().clone();
     let left = live.remaining();
     if left > 0.0 && !live.listed {
         let inner = rect.shrink(1.0);
         let radius = t.radius_lg - 1.0;
-        countdown(
-            &painter,
-            inner,
-            radius,
-            wash(live.toast.tone, swatch.mark),
-            left,
-        );
+        let tint = wash(live.toast.tone, swatch.mark);
+        countdown(&painter, inner, radius, tint, left);
     }
-    // Mark, words and buttons share the card's middle, however many lines.
+    // The words and buttons share the card's middle, however many lines.
     let middle = rect.center().y;
-    let mark = Rect::from_center_size(
-        pos2(rect.left() + PAD_X + MARK / 2.0, middle),
-        Vec2::splat(MARK),
-    );
-    icon.paint(
-        ui,
-        Rect::from_center_size(mark.center(), Vec2::splat(MARK)),
-        swatch.mark,
-    );
     let words = card.galley.size().y;
-    let text = pos2(mark.right() + GAP, (middle - words / 2.0).round());
+    let text = pos2(rect.left() + LEAD, (middle - words / 2.0).round());
     painter.galley(text, card.galley.clone(), t.ink);
     if live.going() {
         return;
@@ -265,10 +265,11 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
         return;
     };
     let at = action_at(rect, card);
-    let button = Button::new(action_job(ui.ctx(), live, swatch.mark, &t))
+    // A real button: the soft tone with a hairline of it, not a bare label.
+    let button = Button::new(action_job(ui.ctx(), live, swatch.mark))
         .fill(swatch.soft)
-        .stroke(Stroke::NONE)
-        .corner_radius(8);
+        .stroke(Stroke::new(1.0, swatch.mark.gamma_multiply(0.35)))
+        .corner_radius(7);
     let pressed = ui.put(at, button).on_hover_cursor(CursorIcon::PointingHand);
     pressed.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, true, live.toast.label)
@@ -279,24 +280,26 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
     }
 }
 
-/// The compact pill above the read-aloud player, in its semantic swatch.
+/// The compact pill over the read-aloud player: round, fitted to its words,
+/// in the tone's colours with no mark of its own.
 pub(super) fn island(ui: &mut Ui, rect: Rect, live: &Live, t: &Tokens) {
-    let (icon, swatch) = look(live.toast.tone, t);
-    ui.painter().rect(
-        rect,
-        CornerRadius::same(12),
-        swatch.fill,
-        Stroke::new(1.0, swatch.edge),
-        StrokeKind::Inside,
-    );
-    let center = pos2(rect.left() + 17.0, rect.center().y);
-    let mark = Rect::from_center_size(center, Vec2::splat(14.0));
-    icon.paint(ui, mark, swatch.mark);
-    ui.painter().text(
-        pos2(rect.left() + 30.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
+    let swatch = look(live.toast.tone, t);
+    let radius = CornerRadius::from(rect.height() / 2.0);
+    let shadow = egui::Shadow {
+        offset: [0, 2],
+        blur: 10,
+        spread: 0,
+        color: Color32::from_black_alpha(22),
+    };
+    let painter = ui.painter();
+    painter.add(shadow.as_shape(rect, radius));
+    let edge = Stroke::new(1.0, swatch.edge);
+    painter.rect(rect, radius, swatch.fill, edge, StrokeKind::Inside);
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
         &live.toast.message,
-        FontId::proportional(t.text_small),
+        medium(ui.ctx(), t.text_small),
         t.ink,
     );
 }
@@ -318,15 +321,15 @@ mod tests {
             base: BaseMode::Dark,
             ..Appearance::default()
         });
-        let (_, info) = look(Tone::Info, &light);
-        let (_, warn) = look(Tone::Warning, &light);
-        let (_, err) = look(Tone::Error, &light);
+        let info = look(Tone::Info, &light);
+        let warn = look(Tone::Warning, &light);
+        let err = look(Tone::Error, &light);
         assert_ne!(info.mark, light.accent);
         assert_ne!(info.fill, light.surface);
         assert_ne!(info.mark, warn.mark);
         assert_ne!(warn.mark, err.mark);
         assert_ne!(info.mark, err.mark);
-        assert_ne!(info.fill, look(Tone::Info, &sepia).1.fill);
+        assert_ne!(info.fill, look(Tone::Info, &sepia).fill);
         let mid = light.toward(&dark, 0.5);
         assert_ne!(mid.toast, light.toast);
         assert_ne!(mid.toast, dark.toast);

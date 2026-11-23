@@ -50,6 +50,8 @@ pub struct Stage<'a> {
     /// The panes are up: the reader is the page shown.
     pub reader: bool,
     pub panes: &'a [(PaneId, Rect)],
+    /// The pane in front: its room keeps the player once its book is closed.
+    pub focused: Option<PaneId>,
     /// The window's room below the title bar.
     pub content: Rect,
     /// Whether the words lit are in sight, when they can be told.

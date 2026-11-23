@@ -325,20 +325,15 @@ impl Toasts {
             return None;
         }
         let t = crate::theme::Tokens::get(ctx);
-        let words = ctx.fonts_mut(|f| {
-            f.layout_no_wrap(
-                live.toast.message.clone(),
-                egui::FontId::proportional(t.text_small),
-                t.ink,
-            )
-        });
+        let font = card::medium(ctx, t.text_small);
+        let words = ctx.fonts_mut(|f| f.layout_no_wrap(live.toast.message.clone(), font, t.ink));
         if words.size().x + 46.0 > width {
             return None;
         }
-        let rect = Rect::from_min_size(
-            pos2(player.left() + 24.0, player.top() - 28.0),
-            egui::vec2(width, 32.0),
-        );
+        // A pill fitted to its words, floating just over the player's middle.
+        let size = egui::vec2(words.size().x + 2.0 * card::ISLAND_PAD, card::ISLAND_H);
+        let foot = pos2(player.center().x, player.top() - card::ISLAND_GAP);
+        let rect = Rect::from_min_size(foot - egui::vec2(size.x / 2.0, size.y), size);
         if !area.contains_rect(rect) || dict.is_some_and(|r| r.intersects(rect)) {
             return None;
         }

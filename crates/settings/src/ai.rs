@@ -1,8 +1,10 @@
 //! AI: named models, which task uses which, and each server's address.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
-use crate::ai_task::{Routes, TaskId, known, prune};
+use crate::ai_task::{Class, Routes, TaskId, known, prune};
 use crate::study_mode::drop_unknown;
 
 /// Who answers. Keys are not here: they live encrypted, apart.
@@ -338,6 +340,11 @@ pub struct AiTasks {
     /// Each task's models, first choice first; see [`AiSettings::route`].
     #[serde(deserialize_with = "known")]
     pub models: Routes,
+    /// The reader's class per task; a task not here keeps its row's.
+    #[serde(deserialize_with = "known")]
+    pub priority: BTreeMap<TaskId, Class>,
+    /// Models every task tries after its own; see [`AiSettings::backups`].
+    pub backups: crate::Backups,
     pub explain: ExplainTask,
     pub organize: OrganizeTask,
     pub summarize: SummarizeTask,
@@ -520,6 +527,7 @@ impl AiSettings {
 
     fn unassign_missing(&mut self) {
         prune(&mut self.tasks.models, &self.presets);
+        self.tasks.backups.prune(&self.presets);
     }
 
     /// Runs on every edit, so text being typed is never rewritten.

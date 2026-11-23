@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::ai::{AiSettings, AiTasks, ModelPreset, PageTask, PresetId};
@@ -24,7 +25,8 @@ pub enum TaskId {
 }
 
 /// Who is waiting, which decides the order in the queue.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Class {
     /// The reader is looking at a spinner: Explain, a recall's verdict.
     Waited,
@@ -32,6 +34,27 @@ pub enum Class {
     Asked,
     /// Made ahead or in bulk: decks ahead, the organizer.
     Ahead,
+}
+
+impl Class {
+    pub const ALL: [Class; 3] = [Self::Waited, Self::Asked, Self::Ahead];
+
+    /// Its name in Settings.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Waited => "Right away",
+            Self::Asked => "Normal",
+            Self::Ahead => "Background",
+        }
+    }
+
+    /// How a task of this class asks again.
+    pub const fn retry(self) -> Retry {
+        match self {
+            Self::Waited => Retry::WAITED,
+            Self::Asked | Self::Ahead => Retry::AHEAD,
+        }
+    }
 }
 
 /// How often a task asks again, and how long it waits first.
@@ -60,29 +83,24 @@ impl Retry {
     };
 }
 
-/// One task's row: its words, its place in the queue, its retry, its fallback.
+/// One task's row: its words, its place in the queue, its fallback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TaskSpec {
     /// Its name in Settings, as "AI Dictionary".
     pub label: &'static str,
     /// What it is busy with, as "organizing your library".
     pub doing: &'static str,
+    /// Its class until the reader picks another; see [`AiSettings::class`].
     pub class: Class,
-    pub retry: Retry,
     /// Whose models it takes when it has none of its own.
     pub follows: Option<TaskId>,
 }
 
 const fn row(label: &'static str, doing: &'static str, class: Class) -> TaskSpec {
-    let retry = match class {
-        Class::Waited => Retry::WAITED,
-        Class::Asked | Class::Ahead => Retry::AHEAD,
-    };
     TaskSpec {
         label,
         doing,
         class,
-        retry,
         follows: Some(TaskId::Explain),
     }
 }
@@ -142,14 +160,19 @@ pub fn no_model(task: TaskId) -> String {
 /// Each task's models, first choice first.
 pub type Routes = BTreeMap<TaskId, Vec<PresetId>>;
 
-/// Routes from the file; a task this build doesn't know is skipped, not fatal.
-pub(crate) fn known<'de, D: Deserializer<'de>>(d: D) -> Result<Routes, D::Error> {
-    let raw = BTreeMap::<String, Vec<PresetId>>::deserialize(d)?;
-    let task = |k: String| serde_json::from_value::<TaskId>(serde_json::Value::String(k)).ok();
-    Ok(raw
-        .into_iter()
-        .filter_map(|(k, ids)| task(k).map(|t| (t, ids)))
-        .collect())
+/// A per-task map from the file; an unknown task or bad value is skipped.
+pub(crate) fn known<'de, D, V>(d: D) -> Result<BTreeMap<TaskId, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: DeserializeOwned,
+{
+    use serde_json::{Value, from_value};
+    let raw = BTreeMap::<String, Value>::deserialize(d)?;
+    let entry = |(k, v): (String, Value)| {
+        let task = from_value(Value::String(k)).ok()?;
+        Some((task, from_value(v).ok()?))
+    };
+    Ok(raw.into_iter().filter_map(entry).collect())
 }
 
 /// Forgets ids no saved model has, repeats, and tasks left with none.
@@ -184,18 +207,46 @@ impl AiTasks {
 }
 
 impl AiSettings {
-    /// The models `task` may ask, in order: its own, then those it follows.
+    /// The models `task` may ask, in order: its own, those it follows, then
+    /// the backups, each once. A task with no model of its own gets none.
     pub fn route(&self, task: TaskId) -> Vec<&ModelPreset> {
-        let own = self.tasks.models.get(&task).into_iter().flatten();
-        let mut out: Vec<&ModelPreset> = own.filter_map(|id| self.preset(*id)).collect();
-        if let Some(parent) = task.spec().follows {
-            for p in self.route(parent) {
+        let mut out = self.chosen(task);
+        if !out.is_empty() {
+            for p in self.backups() {
                 if !out.iter().any(|q| q.id == p.id) {
                     out.push(p);
                 }
             }
         }
         out
+    }
+
+    /// `task`'s own models, then those of the task it follows.
+    fn chosen(&self, task: TaskId) -> Vec<&ModelPreset> {
+        let own = self.tasks.models.get(&task).into_iter().flatten();
+        let mut out: Vec<&ModelPreset> = own.filter_map(|id| self.preset(*id)).collect();
+        if let Some(parent) = task.spec().follows {
+            for p in self.chosen(parent) {
+                if !out.iter().any(|q| q.id == p.id) {
+                    out.push(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// `task`'s class: the reader's pick, else its row's.
+    pub fn class(&self, task: TaskId) -> Class {
+        let picked = self.tasks.priority.get(&task).copied();
+        picked.unwrap_or(task.spec().class)
+    }
+
+    /// Picks `task`'s class; its row's own class is kept as no pick.
+    pub fn set_class(&mut self, task: TaskId, class: Class) {
+        match class == task.spec().class {
+            true => self.tasks.priority.remove(&task),
+            false => self.tasks.priority.insert(task, class),
+        };
     }
 
     /// The first model `task` asks, if any.
@@ -239,7 +290,7 @@ mod tests {
 
     #[test]
     fn the_spinner_tasks_wait_once_and_the_rest_twice() {
-        let waits = |t: TaskId| t.spec().retry.waits.len();
+        let waits = |t: TaskId| t.spec().class.retry().waits.len();
         assert_eq!(TaskId::Explain.spec().class, Class::Waited);
         assert_eq!(TaskId::StudyJudge.spec().class, Class::Waited);
         assert_eq!(TaskId::Translate.spec().class, Class::Asked);
@@ -258,8 +309,28 @@ mod tests {
         ai.tasks.models.insert(TaskId::Organize, vec![c, a]);
         let ids = |t| ai.route(t).iter().map(|p| p.id).collect::<Vec<_>>();
         assert_eq!(ids(TaskId::Organize), [c, a, b]);
-        assert_eq!(ids(TaskId::StudyJudge), [a, b]);
+        // The automatic backups add the one model left.
+        assert_eq!(ids(TaskId::StudyJudge), [a, b, c]);
         assert_eq!(ai.model(TaskId::Organize).map(|p| p.id), Some(c));
+    }
+
+    #[test]
+    fn a_picked_class_wins_and_the_row_s_own_is_no_pick() {
+        let mut ai = bare();
+        assert_eq!(ai.class(TaskId::Organize), Class::Ahead);
+        ai.set_class(TaskId::Organize, Class::Waited);
+        assert_eq!(ai.class(TaskId::Organize), Class::Waited);
+        ai.set_class(TaskId::Organize, Class::Ahead);
+        assert!(ai.tasks.priority.is_empty(), "the default isn't stored");
+        let file = r#"{"version":8,"ai":{"tasks":{"priority":{"organize":"waited","gone":"asked",
+            "translate":"soon"}}}}"#;
+        let ai = crate::load(file).settings.ai;
+        assert_eq!(ai.class(TaskId::Organize), Class::Waited);
+        assert_eq!(
+            ai.tasks.priority.len(),
+            1,
+            "unknown tasks and values are skipped"
+        );
     }
 
     #[test]

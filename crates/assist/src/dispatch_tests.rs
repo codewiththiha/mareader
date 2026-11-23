@@ -68,7 +68,7 @@ fn seat(id: u32, name: &'static str, turns: Vec<Result<Value, Failure>>, log: &L
 }
 
 /// Asks `route` for `id` once per model, as a task's one request.
-fn ask(rt: &Runtime, slots: &Slots, id: TaskId, route: Vec<Seat>) -> Running<Value> {
+fn ask(rt: &Runtime, slots: &Slots, id: impl Into<Asker>, route: Vec<Seat>) -> Running<Value> {
     let d = Dispatch {
         rt: Some(rt),
         waker: &quiet(),
@@ -100,16 +100,61 @@ fn a_waited_job_falls_through_its_route_and_names_every_model() {
 }
 
 #[test]
-fn other_jobs_ask_only_their_first_model() {
+fn every_class_moves_on_when_a_model_fails() {
     let (rt, slots, log) = (runtime(), Slots::default(), Log::default());
     let busy = seat(1, "A", vec![Err(Why::Busy.into())], &log);
     let ok = seat(2, "B", vec![Ok(json!(1))], &log);
     let got = ask(&rt, &slots, TaskId::StudyCards, vec![busy, ok]).wait();
-    assert_eq!(got.map_err(|f| f.why), Err(Why::Busy));
-    assert_eq!(*log.lock().unwrap(), ["A"]);
+    assert_eq!(got, Ok(json!(1)));
+    assert_eq!(*log.lock().unwrap(), ["A", "B"]);
     let none = ask(&rt, &slots, TaskId::Organize, Vec::new()).wait();
     let said = none.expect_err("no model").said();
     assert!(said.contains("organizing your library"), "{said}");
+}
+
+#[test]
+fn a_background_job_waits_for_a_busy_model() {
+    let (rt, slots, log) = (runtime(), Slots::default(), Log::default());
+    let a = seat(1, "A", vec![Ok(json!("a"))], &log);
+    let ticket = slots.try_take(&a.preset, TaskId::Organize);
+    let route = vec![a, seat(2, "B", vec![Ok(json!("b"))], &log)];
+    // Explain, which the reader moved to Background, has no fuse.
+    let later = Asker {
+        task: TaskId::Explain,
+        class: Class::Ahead,
+    };
+    let job = ask(&rt, &slots, later, route);
+    let started = std::time::Instant::now();
+    while slots.queued(PresetId(1)) == 0 {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "it joins A's line"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    drop(ticket);
+    assert_eq!(job.wait(), Ok(json!("a")));
+    assert_eq!(*log.lock().unwrap(), ["A"]);
+}
+
+#[test]
+fn a_flow_moves_to_the_next_model_when_one_fails() {
+    let (rt, slots, log) = (runtime(), Slots::default(), Log::default());
+    let away = seat(1, "A", vec![Err(Why::Offline.into())], &log);
+    let ok = seat(2, "B", vec![Ok(json!(1))], &log);
+    let d = Dispatch {
+        rt: Some(&rt),
+        waker: &quiet(),
+        slots: &slots,
+    };
+    let job: Running<Value> = d.flow(TaskId::Organize, vec![away, ok], |b, _| async move {
+        let first = b.ask(&prompt(), &|_| {}).await;
+        assert_eq!(first, Ok(json!(1)));
+        b.ask(&prompt(), &|_| {}).await
+    });
+    assert_eq!(job.wait(), Ok(json!(1)));
+    assert_eq!(*log.lock().unwrap(), ["A", "B", "B"], "B keeps the flow");
+    assert_eq!(slots.in_use(PresetId(1)), 0, "A's place is given back");
 }
 
 #[test]
@@ -152,7 +197,7 @@ fn a_flow_steps_aside_between_requests_for_a_waited_job() {
         slots: &slots,
     };
     let watch = slots.clone();
-    let job: Running<Value> = d.flow(TaskId::Organize, Some(organizer), move |b, _| async move {
+    let job: Running<Value> = d.flow(TaskId::Organize, vec![organizer], move |b, _| async move {
         let _ = b.ask(&prompt(), &|_| {}).await;
         while !watch.waited_for(PresetId(1)) {
             tokio::time::sleep(Duration::from_millis(5)).await;

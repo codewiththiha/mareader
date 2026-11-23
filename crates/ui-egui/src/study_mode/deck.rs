@@ -6,8 +6,8 @@
 //! known. Read now unlocks the batch whenever the reader likes, asking first
 //! while time is left, as the cards then close for good; with a time limit
 //! the deck also closes once its minutes are spent. Turning study mode off
-//! from here asks first too. The pages, the time left and shuffle sit in
-//! small blocks in the pane's top corners.
+//! from here asks first too. The pages, the time left and shuffle sit just
+//! above the card, lined up with its edges.
 
 use egui::{Align, Align2, Id, Key, Layout, Rect, RichText, Sense, Stroke, Ui};
 use egui::{Vec2, vec2};
@@ -35,10 +35,10 @@ const NEXT: &str = "Next card";
 const UNDO: &str = "Undo known";
 /// The room the counter takes between the step buttons.
 const STEP_GAP: f32 = 96.0;
-/// The corner blocks' drop below the pane's top, clear of its label.
-const CORNER_DROP: f32 = 22.0;
-/// The room the corner blocks keep over the deck.
-const HEAD: f32 = CORNER_DROP + controls::BLOCK + 12.0;
+/// The deck's least drop below the pane's top, clear of its label.
+const HEAD: f32 = 22.0;
+/// Between the header's blocks and the card.
+const HEADER_GAP: f32 = 12.0;
 const NO_MEANING: &str = "No meaning was found for this word.";
 /// What the time left in the header is for.
 const LEFT_TIP: &str = "The cards close for these pages once it runs out";
@@ -128,7 +128,7 @@ pub fn show(
     let used = ui.scope_builder(builder, |ui| {
         ui.set_width(width);
         if let Some(open) = open {
-            corners(ui, room, (open, open.allowance.left(pane.now)), cursor);
+            header(ui, (open, open.allowance.left(pane.now)), cursor);
             deck(ui, pane, open, (cursor, ask), out);
             return;
         }
@@ -231,19 +231,22 @@ pub fn range(batch: &Batch) -> String {
     }
 }
 
-/// The blocks in the pane's top corners: the pages at the left; the time
-/// left and shuffle at the right, each on its own.
-fn corners(ui: &mut Ui, room: Rect, (open, left): (&Open, Option<f64>), cursor: &mut Cursor) {
+/// The row over the card: the pages at its left edge; the time left and
+/// shuffle at its right.
+fn header(ui: &mut Ui, (open, left): (&Open, Option<f64>), cursor: &mut Cursor) {
     let t = Tokens::get(ui.ctx());
-    let top = room.top() + CORNER_DROP;
+    let size = vec2(ui.available_width(), controls::BLOCK);
+    let (row, _) = ui.allocate_exact_size(size, Sense::hover());
+    ui.add_space(HEADER_GAP);
+    let top = row.top();
     let pages = range(&open.batch);
-    let at = egui::pos2(room.left(), top);
+    let at = row.left_top();
     let block = controls::block(ui, at, Align2::LEFT_TOP, Some(Icon::Book), &pages, &t);
     let resp = ui.interact(block, ui.id().with("deck-pages"), Sense::hover());
     let said = format!("The words before {}", open.batch.label());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &said));
     widgets::tip(&resp, &said, None);
-    let mut right = room.right();
+    let mut right = row.right();
     if open.cards.len() > 1 {
         let side = controls::BLOCK;
         let rect = Rect::from_min_size(egui::pos2(right - side, top), Vec2::splat(side));

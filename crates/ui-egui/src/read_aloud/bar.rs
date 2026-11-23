@@ -101,7 +101,11 @@ fn advance_motion(
         shape.auto = auto;
         shape.chosen = None;
     }
-    let room = pane.unwrap_or(stage.content);
+    // Its book closed, it keeps to the pane in front and centres there.
+    let front = (stage.panes.iter())
+        .find(|(p, _)| stage.reader && Some(*p) == stage.focused)
+        .map(|(_, r)| *r);
+    let room = pane.or(front).unwrap_or(stage.content);
     let style = settings.player;
     if shape.last_look.replace(style).is_some_and(|l| l != style) {
         shape.player_priority = true;

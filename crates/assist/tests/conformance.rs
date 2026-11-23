@@ -218,6 +218,8 @@ fn every_task_routes_through_its_fallback_and_loses_a_removed_model() {
         let (mut ai, first) = settings("http://127.0.0.1:9/v1/");
         let b = ai.add_preset(Provider::Ollama, "b");
         let c = ai.add_preset(Provider::Ollama, "c");
+        // No backups, to see the task's own fallback alone.
+        ai.tasks.backups.arrange(Vec::new());
         ai.tasks.models.insert(id, vec![b, c]);
         let route: Vec<PresetId> = ai.route(id).iter().map(|p| p.id).collect();
         assert_eq!(route[..2], [b, c], "{id:?}: its own, the fallback second");
@@ -246,7 +248,7 @@ fn every_task_waits_out_a_busy_model_as_its_spec_says() {
         let mut job = start(&a, &a.answerers(), id);
         assert_eq!(finish(&mut job, id), Ok(()), "{id:?}");
         let waited = started.elapsed();
-        let wait = id.spec().retry.waits[0];
+        let wait = id.spec().class.retry().waits[0];
         assert!(waited >= wait, "{id:?} waited {waited:?}, not {wait:?}");
         let asked = chats(&server);
         assert_eq!(asked, 1 + answers(id).len(), "{id:?}: busy, then asked");

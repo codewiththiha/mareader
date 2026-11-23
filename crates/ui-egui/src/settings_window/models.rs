@@ -250,7 +250,7 @@ fn logo(p: Provider) -> Icon {
 }
 
 /// The logo in ink on a quiet tile, readable in every look.
-fn badge(ui: &Ui, rect: Rect, p: Provider) {
+pub(super) fn badge(ui: &Ui, rect: Rect, p: Provider) {
     let t = Tokens::get(ui.ctx());
     let painter = ui.painter();
     painter.rect_filled(rect, 7.0, t.surface);
