@@ -1652,7 +1652,24 @@ evidence = [
     "crates/ui-egui/tests/space.rs::a_row_memorizes_and_forgets_its_word",
     "crates/ui-egui/tests/study_recall.rs::the_study_mode_tab_shows_each_group",
 ]
-notes = "Rows, filters, groups, sorts, stats and CSV in crates/engine/src/space; the page in crates/ui-egui/src/space, opened from the library bar and from Settings › Study mode › Your words"
+notes = "Rows, filters, groups, sorts, stats and CSV in crates/engine/src/space; the page in crates/ui-egui/src/space, opened from Space's hub (the library bar's Space button) by its Vocabs card, and from Settings › Study mode › Your words"
+
+[[feature]]
+id = "study.space-notes"
+title = "Space's hub of study tools, and its Notes: every highlight, note and bookmark across books"
+area = "I"
+tier = "P1"
+milestone = "M8"
+status = "shipped"
+command = "space.show"
+evidence = [
+    "crates/engine/src/space/notes_tests.rs::every_book_groups_its_notes_in_reading_order_and_explain_stays_out",
+    "crates/engine/src/space/notes_tests.rs::a_book_the_chips_and_the_search_narrow_the_rows",
+    "crates/ui-egui/tests/space_notes.rs::the_notes_card_opens_every_highlight_note_and_bookmark",
+    "crates/ui-egui/tests/space_notes.rs::a_chip_and_a_book_narrow_the_rows",
+    "crates/ui-egui/tests/space.rs::the_library_bar_opens_the_hub_and_its_card_every_sighting",
+]
+notes = "Space opens at a hub of cards (Vocabs, Notes, more to come); Room lives in the session and space.show switches it. Notes reads crates/engine/src/space/notes.rs: a sheet per book, All / Notes / Bookmarks chips, search, and the books rail; a row sends reader.open-mark, which opens the book at the mark's page or text"
 
 [[feature]]
 id = "study.mode-ai-cards"

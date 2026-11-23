@@ -76,6 +76,20 @@ impl MareaderApp {
         self.ui.dict.search(word);
     }
 
+    /// The Dictionary page's pressed button, named for where it returns.
+    pub(super) fn dict_back_label(&self) -> &'static str {
+        match self.dict_back() {
+            Route::Reader => "Back to reading",
+            Route::Space => "Back to Space",
+            _ => "Back to the library",
+        }
+    }
+
+    /// Space's title in the bar: the hub's, or the tool's it shows.
+    pub(super) fn space_title(&self) -> &'static str {
+        self.session.room().title()
+    }
+
     /// Where the Dictionary page's pressed button returns.
     pub(super) fn dict_back(&self) -> Route {
         match self.session.dict_from() {

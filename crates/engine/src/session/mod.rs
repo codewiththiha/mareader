@@ -82,6 +82,8 @@ pub struct Session {
     route: Route,
     /// Where the Dictionary page was opened from.
     dict_from: Option<Route>,
+    /// Space's hub, or the tool it was left on.
+    pub(crate) room: crate::space::Room,
     /// Split panes' own looks, and the routing they were last fitted to.
     looks: PaneLooks<PaneId>,
     routed: Routing,
@@ -214,6 +216,7 @@ impl Session {
             recent: Vec::new(),
             route: Route::Reader,
             dict_from: None,
+            room: crate::space::Room::Hub,
             looks: PaneLooks::default(),
             routed: Routing::default(),
             texts: PaneTexts::default(),
@@ -442,6 +445,11 @@ impl Session {
 
     pub fn route(&self) -> Route {
         self.route
+    }
+
+    /// The page Space shows when its route is up.
+    pub fn room(&self) -> crate::space::Room {
+        self.room
     }
 
     pub fn dict_from(&self) -> Option<Route> {

@@ -58,7 +58,7 @@ order:
 | 1 | `PaneMark` | `Middle` | Non-interactable `Area` | `floating-label` (per-pane chapter/title label) |
 | 2 | `PaneBar` | `Middle` | Interactable `Area` | `("page-bar", pane)` hover-revealed scrubber & bookmark bar |
 | 3 | `WindowChrome` | `Middle` | Interactable `Area` | `titlebar`, background `("import-run", id)` cards |
-| 4 | `AttachedPill` | `Middle` | Interactable `Area` | `toast-island` (tucks its bottom 4 px seamlessly behind `read-aloud-bar` while staying above `page-bar` and `WindowChrome`) |
+| 4 | `AttachedPill` | `Middle` | Interactable `Area` | `toast-island` (the hover and spoken words of the tab the player paints out of its own top, so the two read as one body; above `page-bar` and `WindowChrome`) |
 | 5 | `ChromeOverlay` | `Middle` | Non-interactable `painter` | `dict-edge-hint`, `lift-ring`, `lift` pane drop-target highlight (sits at the top of `Middle`, above pane chrome and strictly below page cards, floating tools, & modals) |
 | 6 | `PageCard` | `Foreground` | Interactable `Area` | Page-anchored `Bubble` cards (`dict/card` hover lookup, `study/bar` selection toolbar, `study/card` & `study/note` cards, `footnote`, `scripts`), `page_ai/menu` popups (`popup`, `page_popup`), study mode's `("study-veil", pane)` frosted veil over locked pages, which holds the deck at the gate, its `("study-progress", pane)` corner toast while the AI writes cards and Reactive mode's `("study-recall", pane)` recall popover — above page chrome, strictly below floating tools |
 | 7 | `FloatingTool` | `Foreground` | Interactable `Area` | `dict-window`, `dict-edge-tab`, `park::reveal` (`dict-window-edge-reveal`, `read-aloud-edge-reveal`), `read-aloud-bar`, `read-aloud-orb`, `read-aloud-ask`, `find-bar`, `study-picking`, `lift-card` |

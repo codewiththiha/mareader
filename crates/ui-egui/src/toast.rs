@@ -3,6 +3,8 @@
 mod card;
 mod stack;
 
+pub(crate) use card::medium as island_font;
+
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::z_order::{self, Tier};
 use egui::{Context, Id, Rect, pos2};
@@ -20,6 +22,25 @@ const INSET: f32 = 16.0;
 const WIDTH: f32 = 360.0;
 /// Fixed card height, shared by one-line and two-line toasts alike.
 const SPOT_H: f32 = 52.0;
+
+/// A confirmation the player grows out of its top, as one shape with it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IslandNote {
+    pub text: String,
+    /// Its full size, standing on the player's top edge.
+    pub size: egui::Vec2,
+    /// How far it has grown out, 0 to 1, and back down as it leaves.
+    pub shown: f32,
+    /// The frame it was written in; the player drops one older than the last.
+    pub frame: u64,
+}
+
+/// The confirmation the player should grow this frame, if one is up.
+pub fn island_note(ctx: &Context) -> Option<IslandNote> {
+    let now = ctx.cumulative_frame_nr();
+    let note: Option<IslandNote> = ctx.data(|d| d.get_temp(Id::new("toast-island-note")));
+    note.filter(|n| now.saturating_sub(n.frame) <= 1)
+}
 
 /// How a toast leaves.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -330,9 +351,9 @@ impl Toasts {
         if words.size().x + 46.0 > width {
             return None;
         }
-        // A pill fitted to its words, floating just over the player's middle.
+        // Fitted to its words, standing on the player's top, over its middle.
         let size = egui::vec2(words.size().x + 2.0 * card::ISLAND_PAD, card::ISLAND_H);
-        let foot = pos2(player.center().x, player.top() - card::ISLAND_GAP);
+        let foot = pos2(player.center().x, player.top());
         let rect = Rect::from_min_size(foot - egui::vec2(size.x / 2.0, size.y), size);
         if !area.contains_rect(rect) || dict.is_some_and(|r| r.intersects(rect)) {
             return None;
@@ -457,22 +478,26 @@ impl Toasts {
         let Some(live) = self.live.last() else {
             return;
         };
-        let t = crate::theme::Tokens::get(ctx);
-        let progress = if fade <= 0.0 {
+        let shown = if fade <= 0.0 {
             1.0
         } else if let Some((at, _)) = live.gone {
             1.0 - ((now - at) / fade).clamp(0.0, 1.0) as f32
         } else {
             ((now - live.born.unwrap_or(now)) / fade).clamp(0.0, 1.0) as f32
         };
-        let shown = rect.translate(egui::vec2(0.0, (1.0 - progress) * 12.0));
+        // The player draws it; this keeps its hover and its spoken words.
+        let note = IslandNote {
+            text: live.toast.message.clone(),
+            size: rect.size(),
+            shown,
+            frame: ctx.cumulative_frame_nr(),
+        };
+        ctx.data_mut(|d| d.insert_temp(Id::new("toast-island-note"), note));
         let response = z_order::area(ctx, Tier::AttachedPill, Id::new("toast-island"))
-            .fixed_pos(shown.min)
+            .fixed_pos(rect.min)
             .constrain(false)
             .show(ctx, |ui| {
-                let (r, resp) = ui.allocate_exact_size(shown.size(), egui::Sense::hover());
-                ui.set_opacity(progress);
-                card::island(ui, r, live, &t);
+                let (_, resp) = ui.allocate_exact_size(rect.size(), egui::Sense::hover());
                 resp.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &live.toast.message)
                 });

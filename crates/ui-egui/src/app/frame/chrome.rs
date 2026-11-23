@@ -123,15 +123,15 @@ impl MareaderApp {
                 (title, self.settings().appearance, BarPage::Library(library))
             }
             Route::Dictionary => {
-                let back = match self.dict_back() {
-                    Route::Reader => "Back to reading",
-                    Route::Space => "Back to your words",
-                    _ => "Back to the library",
-                };
+                let back = self.dict_back_label();
                 let page = BarPage::Dictionary(DictionaryBar { back });
                 ("Dictionary", self.settings().appearance, page)
             }
-            Route::Space => ("Your words", self.settings().appearance, BarPage::Space),
+            Route::Space => (
+                self.space_title(),
+                self.settings().appearance,
+                BarPage::Space,
+            ),
         };
         let bar = BarContext {
             title,

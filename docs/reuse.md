@@ -27,6 +27,11 @@ name the owning modules for shared primitives across the workspace.
 | spot / click | `crates/ui-egui/tests/common/levels.rs` | Kittest: the screen point of a word on page 0, and a click on it. |
 | Ahead | `crates/engine/src/study_mode/run.rs` | A deck made past the gate (making, ready or failed); `Run::take_ahead` hands it to the gate, `trim_ahead` drops those no longer coming. |
 | space::view | `crates/engine/src/space.rs` | Studied words as rows for one filter: scope, tabs, groups, sorts, counts and stats. Space's page and its CSV read only this. |
+| space::notes | `crates/engine/src/space/notes.rs` | Every book's highlights, notes and bookmarks for one `NotesFilter`: a group per book, chip counts and the rail's shelves. Space's Notes page reads only this; `Room` says which Space page shows. |
+| reading_order | `crates/engine/src/notes_panel/mod.rs` | Where a `Spot` falls in its book, so notes list as the book runs; the notes panel and Space's notes sort by it. |
+| Library::every_mark | `crates/library/src/marks.rs` | Every book's living marks, unordered; `marks(book)` gives one book's, oldest first. |
+| space rail / tabs | `crates/ui-egui/src/space/rail.rs`, `top.rs` | `rail::books` lists All books then each `Shelf`; `top::tab_row` draws tabs with counts over a hairline. Both Space pages use them. |
+| read_aloud::tab | `crates/ui-egui/src/read_aloud/tab.rs` | A toast's words grown out of the player's top as one body: same fill and edge, concave feet, shadow cast under the pill. `toast::island_note` hands it the words each frame. |
 | settings pickers | `crates/ui-egui/src/settings_window/ai.rs` | `model_row`, `placed` and `language_picker`, `pub(super)` for the AI and Study mode tabs; a task's row names what an unset choice follows. |
 | Settled | `crates/ui-egui/src/vocab.rs` | A recalled word by page and first character, drawn in its own reserved look by `vocab::place`/`add` and never hit or hovered. |
 | keep_under | `crates/ui-egui/src/z_order.rs` | An area newly shown stays under its tier's layers already open; they are lifted back the pass after egui raises it. Study mode's veil uses it. |

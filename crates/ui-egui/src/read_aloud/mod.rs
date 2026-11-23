@@ -30,6 +30,7 @@ mod highlight;
 pub mod marker;
 mod marker_paint;
 mod orb;
+mod tab;
 
 pub use highlight::paint;
 

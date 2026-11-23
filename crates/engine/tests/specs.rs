@@ -150,6 +150,7 @@ fn pane_intents() -> Vec<Command> {
             "a.pdf",
         )),
         Command::OpenBook(book),
+        Command::OpenMark(mareader_library::MarkId(9)),
         Command::PlaceBook {
             book,
             pane: Some(pane),
@@ -223,6 +224,7 @@ fn mark_intents() -> Vec<Command> {
         Command::Study(StudyAction::Close),
         Command::StudyMode(ModeAction::Off(pane)),
         Command::Space(SpaceAction::Forget(Vec::new())),
+        Command::ShowSpace(mareader_engine::space::Room::Notes),
         Command::Dict(DictAction::CloseCard),
         Command::Vocab(Download::Start),
         #[cfg(not(target_arch = "wasm32"))]

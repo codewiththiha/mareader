@@ -3,7 +3,7 @@
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{Align2, Color32, CursorIcon, FontId, Rect, Sense, Ui, WidgetInfo, WidgetType, vec2};
-use mareader_engine::space::{BANDS, Filter, View};
+use mareader_engine::space::{BANDS, Filter, Shelf as Book, View};
 use mareader_library::{BookId, LearnedBy};
 
 use super::look;
@@ -24,7 +24,7 @@ const TITLE_CHARS: usize = 22;
 pub(super) fn show(ui: &mut Ui, view: &View, filter: &mut Filter, t: &Tokens) {
     ui.spacing_mut().item_spacing.y = 10.0;
     look::caption(ui, "Books", t);
-    books(ui, view, &mut filter.book, t);
+    books(ui, (&view.books, view.total), &mut filter.book, t);
     ui.add_space(14.0);
     look::caption(ui, "Level", t);
     ui.horizontal_wrapped(|ui| levels(ui, &mut filter.levels, t));
@@ -37,18 +37,23 @@ pub(super) fn show(ui: &mut Ui, view: &View, filter: &mut Filter, t: &Tokens) {
     class(ui, &view.poses, &mut filter.pos);
 }
 
-/// All books, then each book with a word in it.
-fn books(ui: &mut Ui, view: &View, book: &mut Option<BookId>, t: &Tokens) {
+/// All books, counting `total`, then each of `shelves`.
+pub(super) fn books(
+    ui: &mut Ui,
+    (shelves, total): (&[Book], usize),
+    book: &mut Option<BookId>,
+    t: &Tokens,
+) {
     ui.spacing_mut().item_spacing.y = 2.0;
     let all = Shelf {
         title: "All books",
         kind: "",
-        count: view.total,
+        count: total,
     };
     if shelf(ui, book.is_none(), all, t) {
         *book = None;
     }
-    for s in &view.books {
+    for s in shelves {
         let title = cut(&s.title);
         let row = Shelf {
             title: &title,

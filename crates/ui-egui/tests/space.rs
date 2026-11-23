@@ -1,9 +1,10 @@
-//! Space, headless: the library bar's way in, the tabs and their counts, and
-//! a word memorized or forgotten from its row.
+//! Space, headless: the library bar's way in to the hub, the words page's
+//! tabs and their counts, and a word memorized or forgotten from its row.
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 use mareader_engine::route::Route;
+use mareader_engine::space::Room;
 use mareader_library::WordStatus;
 use mareader_ui_egui::MareaderApp;
 
@@ -16,6 +17,11 @@ fn shelf(page: &str) -> H {
     reader(&[("books", "3"), ("words", "demo"), ("route", page)])
 }
 
+/// The same books on Space's words page.
+fn words() -> H {
+    reader(&[("books", "3"), ("words", "demo"), ("space", "words")])
+}
+
 fn status(h: &H, lemma: &str) -> Option<WordStatus> {
     let lib = h.state().session().library_model();
     let found = lib.words().find(|w| w.lemma == lemma);
@@ -23,12 +29,16 @@ fn status(h: &H, lemma: &str) -> Option<WordStatus> {
 }
 
 #[test]
-fn the_library_bar_opens_space_on_every_sighting() {
+fn the_library_bar_opens_the_hub_and_its_card_every_sighting() {
     let mut h = shelf("library");
     assert_eq!(h.state().route(), Route::Library);
-    h.get_by_label("Your words").click();
+    h.get_by_label("Space").click();
     h.run();
     assert_eq!(h.state().route(), Route::Space);
+    assert_eq!(h.state().session().room(), Room::Hub);
+    h.get_by_label("Vocabs").click();
+    h.run();
+    assert_eq!(h.state().session().room(), Room::Words);
     // Two of the eight words were met in a second book.
     assert!(h.query_by_label("All 10").is_some());
     assert!(h.query_by_label("Memorized 4").is_some());
@@ -40,7 +50,7 @@ fn the_library_bar_opens_space_on_every_sighting() {
 
 #[test]
 fn a_tab_keeps_only_its_status() {
-    let mut h = shelf("space");
+    let mut h = words();
     h.get_by_label("Missed 2").click();
     h.run();
     assert!(h.query_by_label("Memorize ponder").is_some());
@@ -53,7 +63,7 @@ fn a_tab_keeps_only_its_status() {
 
 #[test]
 fn a_row_memorizes_and_forgets_its_word() {
-    let mut h = shelf("space");
+    let mut h = words();
     assert_eq!(status(&h, "ponder"), Some(WordStatus::Missed));
     press(&mut h, "Memorize ponder");
     h.run();
@@ -72,8 +82,12 @@ fn a_row_memorizes_and_forgets_its_word() {
 }
 
 #[test]
-fn escape_goes_back_to_the_library() {
-    let mut h = shelf("space");
+fn escape_goes_back_to_the_hub_then_the_library() {
+    let mut h = words();
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert_eq!(h.state().route(), Route::Space);
+    assert_eq!(h.state().session().room(), Room::Hub);
     h.key_press(egui::Key::Escape);
     h.run();
     assert_eq!(h.state().route(), Route::Library);

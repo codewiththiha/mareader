@@ -38,6 +38,7 @@ pub(super) fn set(key: &str, value: &str, _at: &Session) -> Option<Result<Vec<Co
         "shelves" => Ok(vec![Command::Library(Action::SeedShelves)]),
         "copies" => copies(value),
         "words" => Ok(vec![Command::Library(Action::SeedWords)]),
+        "marks" => Ok(vec![Command::Library(Action::SeedMarks)]),
         "organize" => organize(value),
         "shelf" => Ok(vec![Command::Library(Action::OpenShelf(value.to_owned()))]),
         "runs" => Ok(vec![Command::Library(Action::RunsDemo)]),

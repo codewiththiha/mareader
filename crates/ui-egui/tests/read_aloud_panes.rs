@@ -1,6 +1,8 @@
-//! The read-aloud player among panes: where it keeps once its book closes.
+//! The read-aloud player among panes: where it keeps once its book closes,
+//! and the tab its confirmations grow from.
 
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable as _;
 use mareader_engine::command::Command;
 use mareader_engine::read_aloud::ReadFrom;
 use mareader_ui_egui::MareaderApp;
@@ -69,4 +71,25 @@ fn with_its_book_closed_the_player_centres_on_the_pane_in_front() {
     let bar = h.ctx.memory(|m| m.area_rect(id)).expect("player");
     let off = (bar.center().x - pane.center().x).abs();
     assert!(off < 2.0, "player {bar:?} off its pane {pane:?} by {off}");
+}
+
+#[test]
+fn a_confirmation_grows_out_of_the_players_top_as_one_shape() {
+    let mut h = reader_wide(12);
+    start(&mut h);
+    h.get_by_label("Pause").click();
+    h.run_steps(30);
+    h.state_mut().set_option("toast", "player:Speed_saved").ok();
+    h.run_steps(30);
+    let bar = h
+        .ctx
+        .memory(|m| m.area_rect(egui::Id::new("read-aloud-bar")))
+        .expect("player");
+    let tab = h
+        .ctx
+        .memory(|m| m.area_rect(egui::Id::new("toast-island")))
+        .expect("the tab");
+    assert!((tab.bottom() - bar.top()).abs() < 0.5, "{tab:?} on {bar:?}");
+    assert!((tab.center().x - bar.center().x).abs() < 1.0);
+    assert!(tab.width() < bar.width() - 40.0, "the curves fit beside it");
 }

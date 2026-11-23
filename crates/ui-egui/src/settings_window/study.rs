@@ -10,10 +10,9 @@ use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
 use mareader_engine::command::Command;
-use mareader_engine::route::Route;
 
 /// The button that leaves for Space, for screen readers and tests.
-pub const OPEN_SPACE: &str = "Open Space";
+pub const OPEN_VOCABS: &str = "Open Vocabs";
 /// Under Reactive: what the judge reads an answer for.
 const ANY_LANGUAGE: &str = "Answers may be in any language: the AI judges meaning, not spelling.";
 /// A count's unit for one, then for more.
@@ -145,17 +144,18 @@ fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
     });
 }
 
-/// The row that leaves for Space, where every studied word is kept.
+/// The row that leaves for Space's Vocabs, where every studied word is kept.
 fn space(ui: &mut Ui, out: &mut Commands) {
     section(ui, "Your words");
     group(ui, |ui| {
         let hint = "Every word studied, in every book";
-        row(ui, "Space", hint, |ui| {
+        row(ui, "Vocabs", hint, |ui| {
             let t = Tokens::get(ui.ctx());
-            let text = RichText::new(OPEN_SPACE).color(t.accent);
+            let text = RichText::new(OPEN_VOCABS).color(t.accent);
             if ui.add(Button::new(text).fill(t.accent_soft)).clicked() {
                 out.push(Sent::Ui(UiCommand::CloseSettings));
-                out.push(Sent::Engine(Command::ShowRoute(Route::Space)));
+                let words = mareader_engine::space::Room::Words;
+                out.push(Sent::Engine(Command::ShowSpace(words)));
             }
         });
     });

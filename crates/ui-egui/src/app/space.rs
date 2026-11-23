@@ -2,8 +2,8 @@
 //! window's file dialog, and the keys a shot shows it by.
 
 use super::*;
-use crate::space::Ask;
-use mareader_engine::space::CSV_NAME;
+use crate::space::{Ask, Source};
+use mareader_engine::space::{CSV_NAME, Room};
 
 impl MareaderApp {
     /// Space fills the window; no pane is drawn behind it.
@@ -13,8 +13,12 @@ impl MareaderApp {
         let bar = Route::Space.bar();
         let pinned = self.settings().chrome.pinned(bar);
         let top = self.ui.titlebar.page_top(ctx, bar, pinned);
-        let words = self.session.library_model();
-        let asked = self.ui.space.show(ui, words, top, out);
+        let from = Source {
+            lib: self.session.library_model(),
+            room: self.session.room(),
+            look: &self.session.settings().study.highlights,
+        };
+        let asked = self.ui.space.show(ui, from, top, out);
         if let Some(Ask::Export(csv)) = asked {
             let name = (crate::space::EXPORT, CSV_NAME.to_owned());
             let bytes = csv.into_bytes();
@@ -26,8 +30,9 @@ impl MareaderApp {
 /// Space's keys a shot or a test sets by name.
 ///
 /// `route=space` (or `library`, `dictionary`, `reader`) shows that page;
-/// `space_view=cards` draws the rows as cards. Made-up words to fill it come
-/// from the engine's `words=demo`.
+/// `space=hub|words|notes` shows Space at that room; `space_view=cards`
+/// draws the words as cards. Made-up words and notes to fill it come from
+/// the engine's `words=demo` and `marks=demo`.
 pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<Result<(), String>> {
     let route = match (key, value) {
         ("route", "space") => Route::Space,
@@ -40,6 +45,13 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
         }
         ("route", _) => return Some(Err("route: reader, library, dictionary or space".into())),
         ("space_view", _) => return Some(Err("space_view: list or cards".into())),
+        ("space", _) => {
+            let Some(room) = Room::parse(value) else {
+                return Some(Err("space: hub, words or notes".into()));
+            };
+            app.send(Command::ShowSpace(room));
+            return Some(Ok(()));
+        }
         _ => return None,
     };
     app.go(route);

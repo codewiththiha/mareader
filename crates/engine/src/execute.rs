@@ -149,6 +149,7 @@ fn dispatch(session: &mut Session, intent: Command, now: f64) -> Done {
         | Command::SetSidebarOverlay(_)
         | Command::SetTitlebarPinned(_)
         | Command::ShowRoute(_)
+        | Command::ShowSpace(_)
         | Command::SetAppearance(_)
         | Command::SetSettings(_)
         | Command::SetField { .. }
@@ -195,6 +196,7 @@ fn dispatch(session: &mut Session, intent: Command, now: f64) -> Done {
         | Command::SayWordWith { .. }
         | Command::StopSaying => run_timed(session, intent, now, voice::run),
         Command::OpenBook(_)
+        | Command::OpenMark(_)
         | Command::PlaceBook { .. }
         | Command::Library(_)
         | Command::ForgetPositions { .. } => run_timed(session, intent, now, library::run),

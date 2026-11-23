@@ -31,6 +31,7 @@ mod search;
 mod selection;
 mod shell;
 mod space;
+mod space_notes;
 mod study;
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::unwrap_used, clippy::expect_used)]

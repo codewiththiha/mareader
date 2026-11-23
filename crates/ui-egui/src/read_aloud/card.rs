@@ -13,6 +13,7 @@ use mareader_engine::read_aloud::player::Lyrics;
 
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
+use crate::toast::IslandNote;
 use crate::widgets;
 
 pub(super) const HEIGHT: f32 = 224.0;
@@ -49,7 +50,9 @@ pub(super) struct Scroll {
 }
 
 /// The card's fill, edge and shadow; `k` is how far it has opened.
-pub(super) fn frame(ui: &Ui, rect: Rect, k: f32) {
+///
+/// A `note` grows as a tab out of the pill's top, one body with it.
+pub(super) fn frame(ui: &Ui, rect: Rect, k: f32, note: Option<&IslandNote>) {
     let t = Tokens::get(ui.ctx());
     let radius = lerp(super::control::HEIGHT / 2.0, 18.0, k);
     let round = CornerRadius::same(radius as u8);
@@ -59,10 +62,17 @@ pub(super) fn frame(ui: &Ui, rect: Rect, k: f32) {
         blur: (f32::from(base.blur) + 18.0 * k) as u8,
         ..base
     };
+    let tab = note.and_then(|n| Some((super::tab::rect(rect, n)?, n)));
     ui.painter().add(shadow.as_shape(rect, round));
+    if let Some((at, _)) = tab {
+        super::tab::shadow(ui.painter(), at, shadow);
+    }
     ui.painter().rect_filled(rect, round, t.surface);
     let edge = Stroke::new(1.0, t.line);
     (ui.painter()).rect_stroke(rect, round, edge, egui::StrokeKind::Inside);
+    if let Some((at, note)) = tab {
+        super::tab::body(ui.painter(), at, note, &t);
+    }
 }
 
 /// The full card, faded in by `show`; true when a `live` one is clicked.

@@ -33,6 +33,11 @@ impl Session {
                 self.show(route);
                 Done::changed()
             }
+            Command::ShowSpace(room) => {
+                self.room = room;
+                self.show(crate::route::Route::Space);
+                Done::changed()
+            }
             Command::SetAppearance(look) => {
                 self.set_appearance(look);
                 Done::changed()

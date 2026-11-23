@@ -1,6 +1,7 @@
 //! The library's books as panes take them.
 
-use mareader_library::BookId;
+use mareader_library::{BookId, MarkId, Spot};
+use mareader_session::Anchor;
 use mareader_settings::LibraryClick;
 use mareader_workspace::PaneId;
 
@@ -16,19 +17,15 @@ use crate::session::Session;
 pub(super) fn run(session: &mut Session, intent: Command, now: f64) {
     match intent {
         Command::OpenBook(book) => {
-            // Do nothing is for the rail; the page has nothing to drag to.
-            let click = session.settings().workspace.library_click;
-            let placement = match click {
-                LibraryClick::Split => Placement::Beside,
-                LibraryClick::Replace | LibraryClick::DragOnly => Placement::Into,
-            };
-            open_book(session, book, None, placement, now);
+            let placement = clicked(session);
+            open_book(session, book, (None, placement), None, now);
         }
+        Command::OpenMark(mark) => open_mark(session, mark, now),
         Command::PlaceBook {
             book,
             pane,
             placement,
-        } => open_book(session, book, pane, placement, now),
+        } => open_book(session, book, (pane, placement), None, now),
         Command::Library(Action::Book(BookAction::Reveal(book))) => {
             session.library_reveal_book(book);
         }
@@ -46,12 +43,63 @@ pub(super) fn run(session: &mut Session, intent: Command, now: f64) {
     }
 }
 
-/// Opens a library book: shown already, a click focuses its pane.
+/// Where a click opens a book; Do nothing is for the rail, as the pages
+/// have nothing to drag to.
+fn clicked(session: &Session) -> Placement {
+    match session.settings().workspace.library_click {
+        LibraryClick::Split => Placement::Beside,
+        LibraryClick::Replace | LibraryClick::DragOnly => Placement::Into,
+    }
+}
+
+/// Opens a mark's book at the mark, as a click opens a book.
+fn open_mark(session: &mut Session, id: MarkId, now: f64) {
+    let Some(mark) = session.library_model().mark(id) else {
+        note(
+            session,
+            crate::toast::Toast::error("That note was removed."),
+        );
+        return;
+    };
+    let (book, spot) = (mark.book.value, mark.spot);
+    let placement = clicked(session);
+    open_book(session, book, (None, placement), Some(spot), now);
+}
+
+/// A book's request moved to `spot`: its page, else its text's place.
+fn at_spot(request: OpenRequest, spot: Spot) -> OpenRequest {
+    let (page, place) = match spot {
+        Spot::Page { page, .. }
+        | Spot::Chars {
+            from: [page, _], ..
+        } => (page, None),
+        Spot::Text { block, start, .. } => (
+            0,
+            Some(Anchor {
+                block,
+                offset: start,
+            }),
+        ),
+        Spot::Blocks {
+            from: [block, offset],
+            ..
+        } => (0, Some(Anchor { block, offset })),
+    };
+    OpenRequest {
+        page,
+        place,
+        spine: None,
+        ..request
+    }
+}
+
+/// Opens a library book, at `at` if given: shown already, a click focuses
+/// its pane and turns to `at` there.
 fn open_book(
     session: &mut Session,
     id: BookId,
-    pane: Option<PaneId>,
-    placement: Placement,
+    (pane, placement): (Option<PaneId>, Placement),
+    at: Option<Spot>,
     now: f64,
 ) {
     // A lost book asks where it went instead of failing.
@@ -69,6 +117,19 @@ fn open_book(
     if let (false, Some(showing)) = (dropped, showing) {
         go(session, Route::Reader);
         session.focus(showing);
+        let doc = session.documents().document_of(showing);
+        let page = doc
+            .zip(at)
+            .and_then(|(d, spot)| crate::notes_panel::page_of(&d, spot));
+        if let Some(page) = page {
+            session.execute(
+                Command::GoTo {
+                    pane: showing,
+                    page,
+                },
+                now,
+            );
+        }
         return;
     }
     // A library book beside an empty pane goes in it, as in mareader.
@@ -80,6 +141,10 @@ fn open_book(
     };
     match session.library_open(id) {
         Ok(request) => {
+            let request = match at {
+                Some(spot) => at_spot(request, spot),
+                None => request,
+            };
             let request = OpenRequest {
                 pane,
                 placement,

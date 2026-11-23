@@ -14,6 +14,7 @@ mod note;
 mod picking;
 pub use picking::STYLE_ID as PICK_STYLE;
 mod restyle;
+pub(crate) use restyle::shown as mark_color;
 
 use std::cell::RefCell;
 use std::sync::Arc;

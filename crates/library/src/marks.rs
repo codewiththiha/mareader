@@ -213,6 +213,11 @@ impl Library {
         out
     }
 
+    /// Every book's living marks, in no order.
+    pub fn every_mark(&self) -> impl Iterator<Item = &Mark> {
+        self.marks.values().filter(|m| m.alive.value)
+    }
+
     pub fn mark(&self, id: MarkId) -> Option<&Mark> {
         self.marks.get(&id).filter(|m| m.alive.value)
     }

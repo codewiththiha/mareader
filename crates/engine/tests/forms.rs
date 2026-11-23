@@ -193,6 +193,16 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
             Command::OpenBook(BookId(7)),
         ),
         (
+            "reader.open-mark",
+            r#"{"mark":9}"#,
+            Command::OpenMark(mareader_library::MarkId(9)),
+        ),
+        (
+            "space.show",
+            r#"{"room":"notes"}"#,
+            Command::ShowSpace(mareader_engine::space::Room::Notes),
+        ),
+        (
             "reader.place-book",
             r#"{"book":7,"placement":"beside"}"#,
             Command::PlaceBook {

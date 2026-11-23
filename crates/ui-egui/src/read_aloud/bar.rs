@@ -304,7 +304,8 @@ fn paint_bar_area(
             ui.set_opacity(m.shown);
             ui.set_clip_rect(m.room);
             let (r, _) = ui.allocate_exact_size(place.rect.size(), egui::Sense::hover());
-            card::frame(ui, r, m.k);
+            let note = crate::toast::island_note(ctx).filter(|_| m.k < 0.01 && !place.parked);
+            card::frame(ui, r, m.k, note.as_ref());
             let row = r.with_min_y(r.bottom() - control::HEIGHT);
             // Words wait for room; compact and full cross-fade.
             let words = ((m.k - 0.35) / 0.65).clamp(0.0, 1.0);

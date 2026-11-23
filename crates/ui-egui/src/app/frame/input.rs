@@ -1,6 +1,7 @@
 use super::*;
 use crate::ui_command::UiCommand;
 use mareader_engine::command::Command;
+use mareader_engine::space::Room;
 
 impl MareaderApp {
     pub(super) fn prepare(
@@ -150,7 +151,7 @@ impl MareaderApp {
             free = false;
         }
         if free && route == Route::Space {
-            commands.push(Sent::Ui(UiCommand::ShowLibrary));
+            commands.push(self.escape_space());
             free = false;
         }
         // The dictionary clears its search, else goes back.
@@ -203,6 +204,14 @@ impl MareaderApp {
             }
         }
         drop_target
+    }
+
+    /// A tool goes back to Space's hub, and the hub to the library.
+    fn escape_space(&self) -> Sent {
+        match self.session.room() {
+            Room::Hub => Sent::Ui(UiCommand::ShowLibrary),
+            Room::Words | Room::Notes => Sent::Engine(Command::ShowSpace(Room::Hub)),
+        }
     }
 
     fn escape_library(&mut self, commands: &mut Commands) {

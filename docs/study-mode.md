@@ -240,8 +240,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   minutes per deck, the lock, shading, words per deck, and *Cards from*
   only when both could write); Reactive (ask before memorizing); AI
   (study's model and language, desktop only, once a model is set up); and
-  *Open Space*. Highlights shows *Study recall* only when a model could
-  judge.
+  *Open Vocabs* (Space's words page). Highlights shows *Study recall*
+  only when a model could judge.
 - **Shots:** `settings=study` opens the tab,
   `study_mode=proactive|reactive|off`, `study_gate=on`,
   `study_deck=reveal` (the card turned) or `study_deck=drag:-140` (held

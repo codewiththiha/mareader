@@ -76,7 +76,7 @@ pub(super) fn show_orb(
         .movable(false)
         .show(ctx, |ui| {
             ui.set_clip_rect(rect.expand(12.0));
-            card::frame(ui, rect, 0.0);
+            card::frame(ui, rect, 0.0, None);
             ui.set_clip_rect(rect);
             let slot = Rect::from_min_size(
                 rect.min + egui::vec2(4.0, 0.0),

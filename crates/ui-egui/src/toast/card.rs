@@ -21,10 +21,9 @@ const HEIGHT: f32 = 52.0;
 /// From the card's left edge to its words: the tone's colour says the rest.
 const LEAD: f32 = 16.0;
 const CLOSE: f32 = 24.0;
-/// The player's pill: its height, its words' inset, its gap over the player.
-pub(super) const ISLAND_H: f32 = 26.0;
-pub(super) const ISLAND_PAD: f32 = 14.0;
-pub(super) const ISLAND_GAP: f32 = 8.0;
+/// The player's tab: its height and its words' inset.
+pub(super) const ISLAND_H: f32 = 28.0;
+pub(super) const ISLAND_PAD: f32 = 16.0;
 const ACTION_H: f32 = 26.0;
 /// How soft the countdown's edge is, in points.
 const FEATHER: f32 = 64.0;
@@ -40,7 +39,7 @@ pub(super) struct Card {
 }
 
 /// The medium face at `size`, the regular one where it is missing.
-pub(super) fn medium(ctx: &Context, size: f32) -> FontId {
+pub(crate) fn medium(ctx: &Context, size: f32) -> FontId {
     let med = theme::medium(size);
     match ctx.fonts_mut(|f| f.families().contains(&med.family)) {
         true => med,
@@ -278,30 +277,6 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
         out.push(Sent::Engine((**command).clone()));
         out.push(Sent::Ui(UiCommand::CloseToast(live.id)));
     }
-}
-
-/// The compact pill over the read-aloud player: round, fitted to its words,
-/// in the tone's colours with no mark of its own.
-pub(super) fn island(ui: &mut Ui, rect: Rect, live: &Live, t: &Tokens) {
-    let swatch = look(live.toast.tone, t);
-    let radius = CornerRadius::from(rect.height() / 2.0);
-    let shadow = egui::Shadow {
-        offset: [0, 2],
-        blur: 10,
-        spread: 0,
-        color: Color32::from_black_alpha(22),
-    };
-    let painter = ui.painter();
-    painter.add(shadow.as_shape(rect, radius));
-    let edge = Stroke::new(1.0, swatch.edge);
-    painter.rect(rect, radius, swatch.fill, edge, StrokeKind::Inside);
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        &live.toast.message,
-        medium(ui.ctx(), t.text_small),
-        t.ink,
-    );
 }
 
 #[cfg(test)]

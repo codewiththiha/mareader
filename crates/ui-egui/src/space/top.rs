@@ -67,37 +67,49 @@ fn export(ui: &mut Ui, t: &Tokens) -> bool {
 
 /// The statuses as tabs over a hairline, each with its count.
 pub(super) fn tabs(ui: &mut Ui, view: &View, filter: &mut Filter, t: &Tokens) {
-    let mut picked = None;
+    let items = Tab::ALL.map(|tab| (tab, tab.label(), view.counts.of(tab)));
+    tab_row(ui, &items, &mut filter.tab, t);
+}
+
+/// Tabs over a hairline, each a name and its count; a click picks one.
+pub(super) fn tab_row<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    items: &[(T, &str, usize)],
+    picked: &mut T,
+    t: &Tokens,
+) {
+    let mut under = None;
     let row = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 30.0;
-        for tab in Tab::ALL {
-            let on = filter.tab == tab;
-            let (rect, clicked) = tab_button(ui, tab, view.counts.of(tab), on, t);
+        for &(item, name, n) in items {
+            let on = *picked == item;
+            let (rect, clicked) = tab_button(ui, name, n, on, t);
             if clicked {
-                filter.tab = tab;
+                *picked = item;
             }
             if on {
-                picked = Some(rect);
+                under = Some(rect);
             }
         }
     });
     let full = ui.max_rect().x_range();
     let y = row.response.rect.bottom();
     ui.painter().hline(full, y - 0.5, Stroke::new(1.0, t.line));
-    if let Some(rect) = picked {
+    if let Some(rect) = under {
         let under = Rect::from_x_y_ranges(rect.x_range(), y - 2.0..=y);
         ui.painter().rect_filled(under, 1.0, t.accent);
     }
 }
 
 /// One tab: its name, then its count, smaller; its rect, and if clicked.
-fn tab_button(ui: &mut Ui, tab: Tab, n: usize, on: bool, t: &Tokens) -> (Rect, bool) {
+fn tab_button(ui: &mut Ui, name: &str, n: usize, on: bool, t: &Tokens) -> (Rect, bool) {
     let name_font = match on {
         true => theme::medium(t.text + 2.0),
         false => FontId::proportional(t.text + 2.0),
     };
     let painter = ui.painter();
-    let name = painter.layout_no_wrap(tab.label().to_owned(), name_font, t.ink);
+    let label = format!("{name} {n}");
+    let name = painter.layout_no_wrap(name.to_owned(), name_font, t.ink);
     let count = painter.layout_no_wrap(n.to_string(), FontId::proportional(t.text_small), t.muted);
     let size = vec2(name.size().x + 6.0 + count.size().x, 40.0);
     let (rect, r) = ui.allocate_exact_size(size, Sense::click());
@@ -116,7 +128,6 @@ fn tab_button(ui: &mut Ui, tab: Tab, n: usize, on: bool, t: &Tokens) -> (Rect, b
     let painter = ui.painter();
     painter.galley(name_at, name, ink);
     painter.galley(count_at, count, t.muted);
-    let label = format!("{} {n}", tab.label());
     r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &label));
     (rect, r.clicked())
 }

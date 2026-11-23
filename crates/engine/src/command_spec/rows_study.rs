@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::command::Command;
 use crate::command_spec::{CommandSpec, acts, anywhere, json, reader_only, row};
 use crate::session::Session;
-use crate::space::Action as SpaceAction;
+use crate::space::{Action as SpaceAction, Room};
 use crate::study_mode::{Action, Ask};
 
 /// Study mode's asks a script can send.
@@ -121,4 +121,39 @@ fn space(_at: &Session, params: &Value) -> Result<Command, String> {
         other => return Err(acts::refused("space.word", other, SPACE_ACTS)),
     };
     Ok(Command::Space(action))
+}
+
+/// The room Space shows.
+const ROOM_PARAMS: &[(&str, &str)] = &[("room", "hub|words|notes")];
+
+pub(crate) const SPACE_SHOW: CommandSpec = row(
+    "space.show",
+    "Shows Space at its hub, its words or its notes.",
+    ROOM_PARAMS,
+    anywhere,
+    show_space,
+);
+
+fn show_space(_at: &Session, params: &Value) -> Result<Command, String> {
+    let name = json::text(params, "room")?;
+    let refused = || acts::refused("space.show", &name, "hub|words|notes");
+    let room = Room::parse(&name).ok_or_else(refused)?;
+    Ok(Command::ShowSpace(room))
+}
+
+/// The mark, by its number.
+const MARK_PARAMS: &[(&str, &str)] = &[("mark", "int")];
+
+pub(crate) const OPEN_MARK: CommandSpec = row(
+    "reader.open-mark",
+    "Opens a highlight's, note's or bookmark's book where it is.",
+    MARK_PARAMS,
+    anywhere,
+    open_mark,
+);
+
+fn open_mark(_at: &Session, params: &Value) -> Result<Command, String> {
+    let mark = json::maybe_mark(params, "mark")?;
+    let mark = mark.ok_or_else(|| json::wants("mark", "a mark's number"))?;
+    Ok(Command::OpenMark(mark))
 }

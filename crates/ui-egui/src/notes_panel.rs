@@ -653,12 +653,5 @@ fn clamp(ui: &Ui, mut job: LayoutJob, w: f32, rows: usize) -> Arc<Galley> {
 
 /// The reading order of `spot`, to list highlights as the book runs.
 pub fn order(spot: &Spot) -> (usize, usize) {
-    match *spot {
-        Spot::Page { page, rect } => {
-            let y = rect.get(1).copied().unwrap_or_default().max(0.0);
-            (page, y as usize)
-        }
-        Spot::Chars { from, .. } | Spot::Blocks { from, .. } => (from[0], from[1]),
-        Spot::Text { block, start, .. } => (block, start),
-    }
+    mareader_engine::notes_panel::reading_order(spot)
 }

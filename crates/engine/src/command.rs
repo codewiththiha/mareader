@@ -111,6 +111,8 @@ pub enum Command {
     Open(OpenRequest),
     /// Opens a library book as Settings › Panes says, or focuses it.
     OpenBook(BookId),
+    /// Opens a highlight's, note's or bookmark's book at where it is.
+    OpenMark(mareader_library::MarkId),
     OpenSettings(Tab),
     /// A page key: nearly a screen along a strip, a turn when paged.
     Page {
@@ -196,6 +198,8 @@ pub enum Command {
     ShowRoute(Route),
     /// Space's asks of studied words, in every book.
     Space(crate::space::Action),
+    /// Shows Space at its hub or one of its tools.
+    ShowSpace(crate::space::Room),
     Split(SplitAxis),
     StopReadAloud,
     StopSaying,

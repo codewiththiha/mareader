@@ -94,3 +94,12 @@ pub(super) fn text_button(
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     resp
 }
+
+/// The way back to Space's hub, over a tool's title; true when clicked.
+pub(super) fn back(ui: &mut Ui, t: &Tokens) -> bool {
+    let r = text_button(ui, (Icon::ChevronLeft, "Space"), BACK, t.muted);
+    r.clicked()
+}
+
+/// The back button's full name.
+pub(super) const BACK: &str = "Back to Space";

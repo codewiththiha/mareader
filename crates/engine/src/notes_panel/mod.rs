@@ -24,6 +24,18 @@ pub fn page_of(doc: &Document, spot: Spot) -> Option<usize> {
     }
 }
 
+/// Where `spot` falls in its book, to sort notes in reading order.
+pub fn reading_order(spot: &Spot) -> (usize, usize) {
+    match *spot {
+        Spot::Page { page, rect } => {
+            let y = rect.get(1).copied().unwrap_or_default().max(0.0);
+            (page, y as usize)
+        }
+        Spot::Chars { from, .. } | Spot::Blocks { from, .. } => (from[0], from[1]),
+        Spot::Text { block, start, .. } => (block, start),
+    }
+}
+
 /// Where `page` starts: its first text when the text reflows.
 pub(crate) fn bookmark_spot(doc: &Document, page: usize) -> Spot {
     match doc.anchor(page) {

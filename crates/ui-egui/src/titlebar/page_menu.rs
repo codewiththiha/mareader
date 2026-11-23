@@ -3,6 +3,7 @@
 use egui::Id;
 use mareader_engine::command::Command;
 use mareader_engine::route::Route;
+use mareader_engine::space::Room;
 
 use super::{BarContext, BarPage, DICTIONARY_MENU};
 use crate::icons::Icon;
@@ -11,14 +12,19 @@ use crate::view_menu;
 use crate::widgets;
 
 /// The library bar's way into Space, and Space's pressed way back.
-pub(super) const SPACE: &str = "Your words";
+pub(super) const SPACE: &str = "Space";
 pub(super) const BACK: &str = "Back to the library";
 const MENU_W: f32 = 248.0;
 
-/// Space's button: a click shows `to`, which `label` names.
+/// Space's button: a click shows `to`, which `label` names; Space opens at
+/// its hub.
 pub(super) fn space(ui: &mut egui::Ui, label: &str, on: bool, to: Route) -> Option<Sent> {
     let r = widgets::icon_button(ui, Icon::Levels, label, on);
-    r.clicked().then_some(Sent::Engine(Command::ShowRoute(to)))
+    let go = match to {
+        Route::Space => Command::ShowSpace(Room::Hub),
+        other => Command::ShowRoute(other),
+    };
+    r.clicked().then_some(Sent::Engine(go))
 }
 
 /// The page's menu: the pin and the shortcuts; its choices sit on the page.

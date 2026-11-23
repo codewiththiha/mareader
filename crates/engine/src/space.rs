@@ -6,14 +6,20 @@
 //! A word's status holds in every book, so each action acts on the word.
 
 mod csv;
+mod notes;
 mod query;
+mod room;
 mod seed;
+mod seed_marks;
 
 use mareader_library::{BookId, Format, LearnedBy, WordId, WordStatus};
 
 pub use csv::{CSV_NAME, csv};
+pub use notes::{Kept, NoteGroup, NoteRow, NotesFilter, NotesView, notes};
 pub use query::{day, view};
+pub use room::Room;
 pub(crate) use seed::seed;
+pub(crate) use seed_marks::seed_marks;
 
 /// What Space asks of words; each acts in every book.
 #[derive(Clone, Debug, PartialEq)]
@@ -269,3 +275,6 @@ pub fn status_label(status: WordStatus) -> &'static str {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod notes_tests;
