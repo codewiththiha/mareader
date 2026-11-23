@@ -108,6 +108,14 @@ impl Session {
         changed
     }
 
+    /// Who answers skills from now on, as a shot scripts them.
+    pub fn skills_set_runner(
+        &mut self,
+        runner: std::sync::Arc<dyn mareader_study::skill::Skiller>,
+    ) {
+        self.skills.set_runner(runner);
+    }
+
     /// Whether `id` is still asked.
     pub fn skill_asked(&self, id: AskId) -> bool {
         self.skills.get(id).is_some()

@@ -36,3 +36,6 @@ name the owning modules for shared primitives across the workspace.
 | Settled | `crates/ui-egui/src/vocab.rs` | A recalled word by page and first character, drawn in its own reserved look by `vocab::place`/`add` and never hit or hovered. |
 | keep_under | `crates/ui-egui/src/z_order.rs` | An area newly shown stays under its tier's layers already open; they are lifted back the pass after egui raises it. Study mode's veil uses it. |
 | Known | `crates/engine/src/study_mode/known.rs` | Memorized words as a deck skips them; a key without a class matches every class. The library's and a run's own are merged per deck. |
+| skill_card | `crates/ui-egui/src/skill_card.rs` | A temporary plain-text answer card pointing at its text: `width_for(chars)` sizes it by the text's length; `in_view` says whether an ask's place is on screen (for the landing toast). |
+| study::offer_skills | `crates/ui-egui/src/study/bar.rs` | Hands the frame's custom skills to the selection bar's Ask AI list through context data, so the bar's signature stays as it is. |
+| Ask::asked_chars / Anchor | `crates/engine/src/skills.rs` | A skill's ask: its anchor (selected spans or a page spot) and `reveal()`, the page and characters to scroll back to. |

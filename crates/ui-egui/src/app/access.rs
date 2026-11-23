@@ -243,6 +243,11 @@ impl MareaderApp {
         crate::study::StudyView::new(self.session.study(), &self.ui.study)
     }
 
+    /// Skills asked, and their answers.
+    pub fn skills(&self) -> &mareader_engine::skills::State {
+        self.session.skills()
+    }
+
     pub fn page_ai(&self) -> crate::page_ai::PageAiView<'_> {
         crate::page_ai::PageAiView::new(self.session.page_ai(), &self.ui.page_ai)
     }
@@ -321,6 +326,7 @@ impl MareaderApp {
             Family(super::library::own_key),
             Family(super::study::own_key),
             Family(super::page_ai::own_key),
+            Family(super::skills::own_key),
             Family(super::study_mode::own_key),
             Family(super::space::own_key),
             Family(super::read_aloud::own_key),

@@ -137,6 +137,7 @@ enum FontState {
 }
 
 /// A selection from the options: `text` on `page`, maybe explained.
+#[derive(Default)]
 struct Staged {
     page: usize,
     text: String,
@@ -151,6 +152,9 @@ struct Staged {
     bookmark: bool,
     /// Picks every mark and opens Style… instead.
     pick: bool,
+    /// A skill run on the selection, or on the page at `spot`.
+    skill: Option<mareader_settings::Skill>,
+    spot: Option<(f32, f32)>,
 }
 
 impl Default for MareaderApp {

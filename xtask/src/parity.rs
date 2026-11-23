@@ -11,6 +11,7 @@ pub const FILE: &str = "parity/mareader-features.toml";
 const SPECS_FILES: &[&str] = &[
     "crates/engine/src/command_spec/rows.rs",
     "crates/engine/src/command_spec/rows_study.rs",
+    "crates/engine/src/command_spec/rows_skills.rs",
 ];
 
 pub const AREAS: &[(&str, &str)] = &[

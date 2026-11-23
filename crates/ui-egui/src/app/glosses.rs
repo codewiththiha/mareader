@@ -37,51 +37,9 @@ impl MareaderApp {
                 self.ui.staged.push_front(staged);
                 ctx.request_repaint();
             }
-            Some(Staged {
-                page,
-                text,
-                explain,
-                look_up,
-                pen,
-                note,
-                bookmark,
-                pick,
-                ..
-            }) if has_sheets => {
-                let first = self.marks(pane).first().map(|m| m.id);
-                match (bookmark, first) {
-                    (true, _) => out.push(Sent::Engine(Command::Bookmark(Some(pane)))),
-                    // Picking starts, then a later `pick` takes all in.
-                    (false, Some(id)) if text.is_empty() && !self.ui.study.picking() => {
-                        let start = mareader_engine::study::Action::SelectSeveral(pane, id);
-                        out.push(Sent::Engine(Command::Study(start)));
-                    }
-                    (false, Some(_)) if text.is_empty() => {
-                        out.push(Sent::Engine(Command::Study(
-                            mareader_engine::study::Action::PickAll,
-                        )));
-                        if pick {
-                            egui::Popup::open_id(ctx, egui::Id::new(crate::study::PICK_STYLE));
-                        }
-                    }
-                    _ => out.push(Sent::Engine(Command::SelectText { pane, page, text })),
-                }
-                if explain {
-                    out.push(Sent::Engine(Command::Explain(pane)));
-                }
-                if look_up {
-                    out.push(Sent::Engine(Command::LookUp(pane)));
-                }
-                if let Some(pen) = pen {
-                    let color = None;
-                    out.push(Sent::Engine(Command::Highlight { pane, pen, color }));
-                }
-                if let Some((text, save)) = note {
-                    out.push(Sent::Engine(Command::Note(pane)));
-                    out.push(Sent::Engine(Command::Study(
-                        mareader_engine::study::Action::TypeNote(text, save),
-                    )));
-                }
+            Some(staged) if has_sheets => {
+                self.stage_select(ctx, pane, &staged, out);
+                stage_follow(pane, staged, out);
                 // The next waits a frame, as each selection replaces the last.
                 if !self.ui.staged.is_empty() {
                     ctx.request_repaint();
@@ -89,6 +47,35 @@ impl MareaderApp {
             }
             Some(staged) => self.ui.staged.push_front(staged),
             None => {}
+        }
+    }
+
+    /// Selects the staged text, or picks marks, or bookmarks its page.
+    fn stage_select(&mut self, ctx: &Context, pane: PaneId, staged: &Staged, out: &mut Commands) {
+        let first = self.marks(pane).first().map(|m| m.id);
+        let empty = staged.text.is_empty();
+        match (staged.bookmark, first) {
+            (true, _) => out.push(Sent::Engine(Command::Bookmark(Some(pane)))),
+            // A page skill asks the page, with nothing selected.
+            _ if staged.spot.is_some() => {}
+            // Picking starts, then a later `pick` takes all in.
+            (false, Some(id)) if empty && !self.ui.study.picking() => {
+                let start = mareader_engine::study::Action::SelectSeveral(pane, id);
+                out.push(Sent::Engine(Command::Study(start)));
+            }
+            (false, Some(_)) if empty => {
+                out.push(Sent::Engine(Command::Study(
+                    mareader_engine::study::Action::PickAll,
+                )));
+                if staged.pick {
+                    egui::Popup::open_id(ctx, egui::Id::new(crate::study::PICK_STYLE));
+                }
+            }
+            _ => out.push(Sent::Engine(Command::SelectText {
+                pane,
+                page: staged.page,
+                text: staged.text.clone(),
+            })),
         }
     }
 
@@ -439,4 +426,39 @@ fn page_gloss(gloss: &Gloss) -> bool {
         gloss,
         Gloss::Lift(..) | Gloss::PageMenu { .. } | Gloss::Bubble { .. } | Gloss::BubbleMenu { .. }
     )
+}
+
+/// What a staged selection asks for once made.
+fn stage_follow(pane: PaneId, staged: Staged, out: &mut Commands) {
+    use mareader_engine::skills::Action as SkillAction;
+    if staged.explain {
+        out.push(Sent::Engine(Command::Explain(pane)));
+    }
+    if staged.look_up {
+        out.push(Sent::Engine(Command::LookUp(pane)));
+    }
+    if let Some(pen) = staged.pen {
+        let color = None;
+        out.push(Sent::Engine(Command::Highlight { pane, pen, color }));
+    }
+    if let Some((text, save)) = staged.note {
+        out.push(Sent::Engine(Command::Note(pane)));
+        out.push(Sent::Engine(Command::Study(
+            mareader_engine::study::Action::TypeNote(text, save),
+        )));
+    }
+    let run = match (staged.skill, staged.spot) {
+        (Some(skill), Some((x, y))) => Some(SkillAction::RunPage {
+            pane,
+            page: staged.page,
+            x,
+            y,
+            skill,
+        }),
+        (Some(skill), None) => Some(SkillAction::Run { pane, skill }),
+        (None, _) => None,
+    };
+    if let Some(run) = run {
+        out.push(Sent::Engine(Command::Skill(run)));
+    }
 }

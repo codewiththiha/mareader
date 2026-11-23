@@ -282,13 +282,7 @@ impl MareaderApp {
         self.ui.staged.push_back(Staged {
             page,
             text,
-            explain: false,
-            look_up: false,
-            pen: None,
-            note: None,
-            turned: false,
-            bookmark: false,
-            pick: false,
+            ..Staged::default()
         });
 
         Ok(())
@@ -297,15 +291,9 @@ impl MareaderApp {
     // Picks marks, as `pick=on pick=on pick=style`: Style… opens.
     fn option_pick(&mut self, _key: &str, value: &str) -> Result<(), String> {
         self.ui.staged.push_back(Staged {
-            page: 0,
-            text: String::new(),
-            explain: false,
-            look_up: false,
-            pen: None,
-            note: None,
             turned: true,
-            bookmark: false,
             pick: value == "style",
+            ..Staged::default()
         });
 
         Ok(())
@@ -316,14 +304,8 @@ impl MareaderApp {
         let page = value.parse().map_err(|_| "bookmark: a page index")?;
         self.ui.staged.push_back(Staged {
             page,
-            text: String::new(),
-            explain: false,
-            look_up: false,
-            pen: None,
-            note: None,
-            turned: false,
             bookmark: true,
-            pick: false,
+            ..Staged::default()
         });
 
         Ok(())

@@ -1599,6 +1599,18 @@ reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
 notes = "Copy and Explain (M6 slice 1); highlighters, ordering and hiding (slice 3); Look up with the dictionary (slice 4), added to saved menus after Explain"
 
 [[feature]]
+id = "study.selection-skills"
+title = "Selection AI: built-in and custom skills on a selection or a page"
+area = "I"
+tier = "P1"
+milestone = "M6"
+status = "shipped"
+command = "ai.skill"
+evidence = ["crates/ui-egui/tests/skills.rs::ask_ai_opens_the_skills_then_shuts_them", "crates/ui-egui/tests/skills.rs::a_skill_answers_in_a_card_and_the_selection_goes", "crates/settings/src/skills_tests.rs::a_skill_asks_its_own_model_then_selection_ai_s_route", "crates/settings/src/skills_tests.rs::v8_s_page_models_become_the_skills_own"]
+reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
+notes = "Ask AI in the selection menu opens Translate, Summarize, Simplify and the reader's own skills from Settings › Skills; the page menu lists custom skills too. Answers show in a plain temporary card pointing at the text, and one landing out of sight offers a toast to go back. Every skill asks Selection AI's model and backups unless it has its own"
+
+[[feature]]
 id = "study.mode-proactive"
 title = "Proactive study mode: a batch's hard words as cards before its pages unlock"
 area = "I"

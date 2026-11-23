@@ -30,6 +30,7 @@ mod reading;
 mod search;
 mod selection;
 mod shell;
+mod skills;
 mod space;
 mod space_notes;
 mod study;

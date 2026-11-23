@@ -32,6 +32,8 @@ pub enum Scripted {
     /// Hands the text back, as if rewritten, at once.
     #[default]
     Echo,
+    /// A made-up answer as long as a real one, for shots.
+    Sample,
     /// Never answers, so the card keeps waiting.
     Silent,
     /// Fails as an unreachable server does.
@@ -44,6 +46,7 @@ impl Scripted {
     pub fn parse(name: &str) -> Option<Self> {
         match name.trim() {
             "echo" => Some(Self::Echo),
+            "sample" => Some(Self::Sample),
             "silent" => Some(Self::Silent),
             "failing" => Some(Self::Failing),
             "none" => Some(Self::Nobody),
@@ -63,11 +66,35 @@ impl Skiller for Scripted {
     fn run(&self, ask: SkillAsk) -> Box<SkillJob> {
         let answer = match self {
             Self::Echo => Some(Ok(ask.text.trim().to_owned())),
+            Self::Sample => Some(Ok(sample(&ask.skill).to_owned())),
             Self::Silent => None,
             Self::Failing => Some(Err(Failure::detailed(Why::Offline, "scripted failure"))),
             Self::Nobody => Some(Err(Why::NotHere.into())),
         };
         Box::new(Ready(answer))
+    }
+}
+
+/// What [`Scripted::Sample`] says for `skill`.
+fn sample(skill: &str) -> &'static str {
+    match skill {
+        "translate" => {
+            "Le renard brun et rapide saute par-dessus le chien paresseux, puis \
+             disparaît dans la forêt avant que quiconque ne remarque son passage."
+        }
+        "summarize" => {
+            "A quick fox outruns a sleepy dog and slips into the woods unseen. \
+             The scene sets up the story's theme: speed and attention win over comfort."
+        }
+        "simplify" => "A fast fox jumps over a lazy dog. Then it runs into the woods.",
+        _ => {
+            "The passage contrasts two animals. The fox is quick and alert; the dog \
+             is slow and does not notice it.\n\nThe word \"lazy\" is the key: it tells \
+             the reader the dog had every chance to act but chose rest. Writers often \
+             pair a lively character with a still one so the reader feels the movement \
+             more strongly.\n\nTry it: describe your morning with one quick and one \
+             slow detail."
+        }
     }
 }
 
@@ -103,6 +130,8 @@ mod tests {
         assert!(matches!(none, Some(Err(f)) if f.why == Why::NotHere));
         assert_eq!(Scripted::parse("silent"), Some(Scripted::Silent));
         assert_eq!(Scripted::parse("slow"), None);
+        let sample = Scripted::Sample.run(ask("x")).take();
+        assert!(matches!(sample, Some(Ok(t)) if t.starts_with("Le renard")));
         assert!(Scripted::Nobody.by("translate").is_empty());
     }
 }
