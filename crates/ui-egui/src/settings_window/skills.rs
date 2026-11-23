@@ -23,7 +23,7 @@ pub fn tab(ui: &mut Ui, ai: &mut AiSettings, out: &mut Commands) {
     if ai.presets.is_empty() {
         no_models(ui, out);
     }
-    section(ui, "Selection AI");
+    section(ui, "Default model");
     group(ui, |ui| model_row(ui, ai, TaskId::SelectionAi));
     builtins(ui, ai);
     custom(ui, ai);

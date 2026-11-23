@@ -317,7 +317,7 @@ fn main() -> Result<(), String> {
             }
             "selection" | "gloss" | "lookup" | "note" | "noted" | "highlight" | "bookmark"
             | "pick" | "page_ai" | "word_window" | "study_mode" | "study_gate" | "study_deck"
-            | "recall" => {
+            | "recall" | "skill" | "page_skill" => {
                 deferred.push((k.to_owned(), v.to_owned()));
             }
             _ => app.set_option(k, v)?,

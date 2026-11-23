@@ -140,10 +140,11 @@ pub fn show(
 /// Ask AI's list: the built-ins, then the reader's under their heading.
 fn skills(ui: &mut Ui, width: f32, custom: &[(Skill, String)]) -> Option<Skill> {
     ui.add_space(2.0);
-    widgets::menu_rule(ui);
     let mut picked = None;
     ui.allocate_ui(vec2(width, SKILLS_H), |ui| {
         ui.set_width(width);
+        // Inside the list's width: the rule spans what it may take.
+        widgets::menu_rule(ui);
         ScrollArea::vertical().max_height(SKILLS_H).show(ui, |ui| {
             for task in [PageTask::Translate, PageTask::Summarize, PageTask::Simplify] {
                 let icon = match task {

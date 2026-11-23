@@ -68,3 +68,23 @@ fn a_skill_answers_in_a_card_and_the_selection_goes() {
     assert!(matches!(answer, Some(Answer::Ready(t)) if t == "quick brown"));
     assert!(h.query_by_label("Ask again").is_some(), "the card is drawn");
 }
+
+#[test]
+fn an_answer_landing_out_of_sight_offers_a_toast_that_goes_back() {
+    let mut h = reader(&[("pdf", "sample:12"), ("skill_answers", "echo")]);
+    h.run();
+    select(&mut h, "quick brown");
+    let pane = h.state().active_pane();
+    h.state_mut()
+        .queue(Sent::Engine(Command::GoTo { pane, page: 8 }));
+    h.run();
+    let skill = mareader_settings::Skill::Builtin(mareader_settings::PageTask::Simplify);
+    let run = mareader_engine::skills::Action::Run { pane, skill };
+    h.state_mut().queue(Sent::Engine(Command::Skill(run)));
+    h.run();
+    assert!(h.query_by_label("Ask again").is_none(), "out of sight");
+    assert!(h.query_by_label_contains("Simplify is ready").is_some());
+    h.get_by_label("Show").click();
+    h.run_steps(60);
+    assert!(h.query_by_label("Ask again").is_some(), "back at its words");
+}
