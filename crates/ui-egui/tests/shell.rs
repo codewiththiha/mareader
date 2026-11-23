@@ -438,8 +438,12 @@ fn every_settings_tab_is_named_in_its_sidebar() {
         let buttons = h.query_all_by_role_and_label(Role::Button, label);
         buttons.count()
     };
-    assert_eq!(named(&h, study), 0, "nothing could write study's cards");
+    // macOS starts with Apple's model; with no model the tab goes.
     let mut settings = h.state().settings().clone();
+    settings.ai.presets.clear();
+    h.state_mut().set_settings(settings.clone());
+    h.run_steps(2);
+    assert_eq!(named(&h, study), 0, "nothing could write study's cards");
     let ollama = mareader_settings::Provider::Ollama;
     let id = settings.ai.add_preset(ollama, "model");
     settings.ai.tasks.study.preset = Some(id);

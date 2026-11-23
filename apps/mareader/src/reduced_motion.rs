@@ -77,12 +77,11 @@ fn answer(out: &str) -> Option<bool> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::answer;
 
     #[test]
-    #[cfg(target_os = "linux")]
     fn gnome_animations_off_means_reduced() {
         assert_eq!(answer("false\n"), Some(true));
         assert_eq!(answer("true\n"), Some(false));
