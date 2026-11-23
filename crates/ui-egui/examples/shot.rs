@@ -14,6 +14,8 @@ use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::ai::Job;
 use mareader_ui_egui::ui_command::{Sent, UiCommand};
 
+#[path = "shot_parts/edit.rs"]
+mod edit;
 #[path = "shot_parts/waits.rs"]
 mod waits;
 
@@ -52,10 +54,14 @@ fn main() -> Result<(), String> {
     let mut clicks = Vec::new();
     let mut thumb_menu = None;
     let mut table_question = false;
+    let mut finish = edit::Finish::default();
     for kv in args {
         let (k, v) = kv
             .split_once('=')
             .ok_or(format!("expected key=value, got {kv}"))?;
+        if finish.take(k, v)? {
+            continue;
+        }
         match k {
             "hover" => {
                 let (x, y) = v.split_once(',').ok_or("hover=x,y")?;
@@ -319,7 +325,7 @@ fn main() -> Result<(), String> {
     }
     let mut harness = Harness::builder()
         .with_size(size)
-        .with_pixels_per_point(2.0)
+        .with_pixels_per_point(edit::SCALE)
         .with_step_dt(1.0 / 60.0)
         .wgpu()
         .with_max_steps(64)
@@ -575,7 +581,8 @@ fn main() -> Result<(), String> {
         harness.hover_at(p);
         harness.run_steps(45);
     }
-    let image = harness.render()?;
+    finish.press(&mut harness);
+    let image = finish.touch(harness.render()?);
     image.save(&out).map_err(|e| e.to_string())?;
     println!("{out}");
     Ok(())
