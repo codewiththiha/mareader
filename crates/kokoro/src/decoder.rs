@@ -738,11 +738,11 @@ mod tests {
 
     #[test]
     fn a_negative_level_has_phase_plus_pi_at_dc() -> Result<()> {
-        let stft = Stft::new(20, 5)?;
         let t = Tensor::from_vec(vec![-0.3f32; 100], (1, 100), &Device::Cpu)?;
-        let (_, phase) = stft.transform(&t)?;
+        let (_, phase) = Stft::new(20, 5)?.transform(&t)?;
         let dc = phase.get(0)?.get(0)?.to_vec1::<f32>()?;
-        assert!(dc.iter().all(|p| *p == std::f32::consts::PI), "{dc:?}");
+        let plus_pi = |p: &f32| (p - std::f32::consts::PI).abs() < 1e-6;
+        assert!(dc.iter().all(plus_pi), "{dc:?}");
         Ok(())
     }
 

@@ -239,6 +239,14 @@ impl Dials for Harness<'_, MareaderApp> {
     }
 }
 
+/// No AI model, as a fresh install starts everywhere but a Mac.
+pub(crate) fn without_models(h: &mut Harness<'_, MareaderApp>) {
+    h.dial(|s| {
+        s.ai.presets.clear();
+        s.ai.tasks = mareader_settings::AiTasks::default();
+    });
+}
+
 /// The Dictionary's window open at `rect`, as a suite places it.
 pub(crate) fn window_at(rect: [f32; 4]) -> DictionaryWindow {
     DictionaryWindow {

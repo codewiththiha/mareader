@@ -562,6 +562,8 @@ fn right_click(h: &mut Harness<'static, MareaderApp>, at: egui::Pos2) {
 #[test]
 fn the_menu_keeps_off_its_word_and_rides_along_with_it() {
     let mut h = reader(2);
+    // A Mac's Apple model adds rows; this menu should fit either side.
+    crate::common::without_models(&mut h);
     let pane = h.state().active_pane();
     let (_, at) = word(&h, "quick");
     right_click(&mut h, at.center());

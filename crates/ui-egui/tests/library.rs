@@ -1179,7 +1179,9 @@ fn erasing_a_position_restarts_an_open_book_before_it_returns() {
     act(&mut h, read_in(root.clone()));
     let id = library(&h).book_at(&path).unwrap();
     let content = library(&h).book(id).unwrap().content;
-    let folder = library(&h).folder_at(&root, true).unwrap();
+    // Kept as its real path: a Mac's temporary folder sits behind a link.
+    let real = root.canonicalize().unwrap();
+    let folder = library(&h).folder_at(&real, true).unwrap();
 
     h.state_mut().queue(Sent::Engine(Command::OpenBook(id)));
     h.run();

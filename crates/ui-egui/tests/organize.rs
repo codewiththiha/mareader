@@ -9,6 +9,8 @@ use mareader_library::{BookId, Move};
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::ui_command::{Commands, Sent, UiCommand};
 
+use crate::common::without_models;
+
 /// Frames enough for a run's card to show; its ring keeps asking for more.
 const FRAMES: usize = 40;
 
@@ -116,6 +118,7 @@ fn discarding_the_plan_moves_nothing() {
 #[test]
 fn the_view_menu_asks_for_a_model_before_organizing() {
     let mut h = page(&[("copies", "3")]);
+    without_models(&mut h);
     h.get_by_label("View options").click();
     h.run_steps(4);
     h.get_by_label("Organize with AI").click();
@@ -157,6 +160,7 @@ fn a_paused_run_waits_on_its_card_with_its_books_free() {
 #[test]
 fn a_new_run_while_one_is_paused_asks_first() {
     let mut h = page(&[("copies", "3"), ("organize", "paused")]);
+    without_models(&mut h);
     act(&mut h, Action::Organize(None));
     h.get_by_label("Replace the paused run?");
     h.get_by_label("Cancel").click();

@@ -99,11 +99,12 @@ fn a_pinned_bar_blurs_the_page_scrolled_under_it() -> Out {
     let diff = |x: u32, y: u32| luma(&clear, x, y) - luma(&under, x, y);
     let mut shows = 0;
     let mut sharpest = 0;
-    // The title's glyph edges step sharply over any backdrop.
+    // Icons and the title, soft edges too, step sharply over any backdrop.
+    let drawn = |x: u32, y: u32| luma(&clear, x, y) < 230;
     let ink = |x: u32, y: u32| {
-        [(x, y), (x + 1, y), (x, y + 1)]
-            .iter()
-            .any(|&(x, y)| luma(&clear, x, y) < 128)
+        let xs = x.saturating_sub(1)..=x + 1;
+        let near = |y: u32| xs.clone().any(|x| drawn(x, y));
+        (y.saturating_sub(1)..=y + 1).any(near)
     };
     for y in 0..bar - 1 {
         for x in 0..w - 1 {
