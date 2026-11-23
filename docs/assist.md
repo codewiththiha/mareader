@@ -262,17 +262,24 @@ ai-pool asks a key again by itself after a 5xx or 408: three times, from
 (`AllKeysExhausted` with a time) aren't marked: ai-pool hasn't asked
 again, and waiting is what helps.
 
+ai-pool also steps an answer with no JSON in it down from a JSON schema
+to JSON mode to a plain prompt, and remembers the first mode that gave
+JSON for that model. If no mode gave any, the `BadAnswer` is marked
+`retried` and not asked again: asking would replay the whole chain. If a
+mode gave JSON with the wrong fields, the one re-ask goes out in that
+remembered mode, a single request.
+
 What one task can cost against a server that keeps failing:
 
 | Failure | `WAITED` | `AHEAD` |
 |---|---|---|
 | 5xx or 408 | ai-pool's 1 + 3 = **4** requests | **4** |
 | Busy (429, resting keys), Offline, TimedOut | 1 + 1 wait = **2** | 1 + 2 waits = **3** |
-| Unreadable answer | 1 + 1 re-ask = **2** asks | **2** asks |
+| Unreadable answer, no step-down | 1 + 1 re-ask = **2** | **2** |
+| No JSON in any mode | ai-pool's 3 modes = **3** | **3** |
+| Wrong fields after a step-down | 3 modes + 1 re-ask = **4** | **4** |
 
-Inside one ask, ai-pool may step an unreadable answer down from a JSON
-schema to JSON mode to a plain prompt (up to 3 requests); it remembers
-the mode that worked for a model. Not counted here: the engine requeues
+Not counted here: the engine requeues
 a page group on `InUse` (`page_ai/groups.rs`), which belongs to the
 queue (Phase 4 of the AI plan).
 

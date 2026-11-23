@@ -12,14 +12,14 @@ use mareader_settings::{AiSettings, Provider};
 use mareader_study::Why;
 use support::{Answer, Server};
 
-/// A loopback server giving `status` to everything, on its own runtime.
-fn server(status: u16) -> (tokio::runtime::Runtime, Server) {
+/// A loopback server giving `answer` to everything, on its own runtime.
+fn server(answer: Answer) -> (tokio::runtime::Runtime, Server) {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()
         .unwrap();
-    let server = rt.block_on(Server::start(vec![Answer::json(status, "{}")]));
+    let server = rt.block_on(Server::start(vec![answer]));
     (rt, server)
 }
 
@@ -52,7 +52,7 @@ fn explain(a: &mut Assist, ai: &AiSettings) -> Option<Why> {
 
 #[test]
 fn a_failing_server_is_asked_four_times_by_explain() {
-    let (_rt, server) = server(500);
+    let (_rt, server) = server(Answer::json(500, "{}"));
     let dir = tempfile::tempdir().unwrap();
     let (mut a, ai) = assist(&dir, &server.url);
     assert_eq!(explain(&mut a, &ai), Some(Why::Busy));
@@ -61,7 +61,7 @@ fn a_failing_server_is_asked_four_times_by_explain() {
 
 #[test]
 fn a_failing_server_is_asked_four_times_by_the_organizer() {
-    let (_rt, server) = server(500);
+    let (_rt, server) = server(Answer::json(500, "{}"));
     let dir = tempfile::tempdir().unwrap();
     let (mut a, ai) = assist(&dir, &server.url);
     let _explainer = a.configure(&ai);
@@ -95,7 +95,7 @@ fn a_failing_server_is_asked_four_times_by_the_organizer() {
 
 #[test]
 fn a_busy_server_is_asked_twice_by_explain() {
-    let (_rt, server) = server(429);
+    let (_rt, server) = server(Answer::json(429, "{}"));
     let dir = tempfile::tempdir().unwrap();
     let (mut a, ai) = assist(&dir, &server.url);
     let start = Instant::now();
@@ -103,4 +103,23 @@ fn a_busy_server_is_asked_twice_by_explain() {
     assert_eq!(chats(&server), 2, "one wait, then it gives up");
     let waited = start.elapsed();
     assert!(waited >= WAITED.waits[0], "{waited:?}");
+}
+
+#[test]
+fn no_json_in_any_mode_is_not_asked_for_again() {
+    let (_rt, server) = server(Answer::stream(&["no JSON here"]));
+    let dir = tempfile::tempdir().unwrap();
+    let (mut a, ai) = assist(&dir, &server.url);
+    assert_eq!(explain(&mut a, &ai), Some(Why::BadAnswer));
+    assert_eq!(chats(&server), 3, "schema, JSON mode, plain; not twice");
+}
+
+#[test]
+fn the_wrong_fields_are_asked_for_again_in_the_mode_that_worked() {
+    let drift = r#"{"term":"quick","notes":"fast"}"#;
+    let (_rt, server) = server(Answer::stream(&[drift]));
+    let dir = tempfile::tempdir().unwrap();
+    let (mut a, ai) = assist(&dir, &server.url);
+    assert_eq!(explain(&mut a, &ai), Some(Why::BadAnswer));
+    assert_eq!(chats(&server), 4, "three modes, then one re-ask");
 }

@@ -1,8 +1,9 @@
 //! One way to ask again: after an unreadable answer, or a server briefly away.
 //!
-//! ai-pool already asks a key again after a 5xx or 408, so such a failure
-//! comes marked `retried` and isn't waited on twice. The requests each
-//! failure can cost are listed in `docs/assist.md`.
+//! ai-pool already asks a key again after a 5xx or 408, and steps an
+//! unreadable answer down to weaker JSON modes. Such a failure comes marked
+//! `retried` and isn't asked again here. The requests each failure can cost
+//! are listed in `docs/assist.md`.
 
 use std::time::Duration;
 
@@ -38,7 +39,9 @@ pub async fn attempt<T: Task>(
     loop {
         match run(backend, task, partial).await {
             Ok(out) => return Ok(out),
-            Err(f) if f.why == Why::BadAnswer && unreadable < retry.unreadable => unreadable += 1,
+            Err(f) if f.why == Why::BadAnswer && !f.retried && unreadable < retry.unreadable => {
+                unreadable += 1;
+            }
             Err(f) if passing(&f) => match waits.next() {
                 Some(wait) => tokio::time::sleep(*wait).await,
                 None => return Err(f),
@@ -137,6 +140,9 @@ mod tests {
         let tried = Failure::from(Why::Busy).after_retries();
         let (got, asked) = ask(vec![Err(tried)], QUICK);
         assert_eq!((got, asked), (Err(Why::Busy), 1));
+        let stepped = Failure::from(Why::BadAnswer).after_retries();
+        let (got, asked) = ask(vec![Err(stepped)], QUICK);
+        assert_eq!((got, asked), (Err(Why::BadAnswer), 1), "not re-asked");
         let (got, asked) = ask(vec![Err(Why::Setup.into())], QUICK);
         assert_eq!((got, asked), (Err(Why::Setup), 1), "no use asking");
     }

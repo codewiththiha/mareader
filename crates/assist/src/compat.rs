@@ -45,12 +45,20 @@ impl Compat {
             .user(prompt.user.as_str())
             .structured(prompt.name, prompt.schema.clone())
             .send_stream();
+        let mut stepped = false;
         while let Some(event) = events.next().await {
             match event {
                 Ok(StructuredEvent::Partial(v)) => partial(v),
-                Ok(StructuredEvent::Retry(_)) => {}
+                Ok(StructuredEvent::Retry(_)) => stepped = true,
                 Ok(StructuredEvent::Done(answer)) => return Ok(answer.value),
-                Err(e) => return Err(failure_with_keys(&self.client, e).await),
+                Err(e) => {
+                    let f = failure_with_keys(&self.client, e).await;
+                    // Unreadable in each weaker mode too: asked again already.
+                    return Err(match stepped && f.why == Why::BadAnswer {
+                        true => f.after_retries(),
+                        false => f,
+                    });
+                }
             }
         }
         Err(Failure::detailed(Why::BadAnswer, "the answer ended early"))
