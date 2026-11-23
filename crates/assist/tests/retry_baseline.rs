@@ -15,7 +15,7 @@ use fm_bridge::Bridge;
 use mareader_assist::{
     AHEAD, Apple, Assist, Loose, Organized, PageJob, Request, Rewrite, Rewrote, WAITED, WAITS,
 };
-use mareader_settings::{AiSettings, Provider, SummaryStyle};
+use mareader_settings::{AiSettings, Provider, SummaryStyle, TaskId};
 use mareader_study::mode::{Attempt, Key, Wanted};
 use mareader_study::page::{Piece, Role};
 
@@ -70,7 +70,7 @@ fn settings() -> AiSettings {
         ..AiSettings::default()
     };
     let id = ai.add_preset(Provider::Apple, "m");
-    ai.tasks.explain.preset = Some(id);
+    ai.tasks.choose(TaskId::Explain, Some(id));
     ai
 }
 

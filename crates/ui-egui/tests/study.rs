@@ -468,9 +468,9 @@ fn the_ai_tab_picks_who_explains() {
     let openai = ai.presets.iter().find(|p| p.provider == Provider::OpenAi);
     let id = openai.map(|p| p.id);
     assert!(id.is_some(), "{:?}", ai.presets);
-    if !cfg!(target_os = "macos") {
-        assert_eq!(ai.tasks.explain.preset, id, "the first model explains");
-    }
+    let explains = ai.tasks.choice(mareader_settings::TaskId::Explain) == id;
+    let mac = cfg!(target_os = "macos");
+    assert!(mac || explains, "the first model explains");
     // Its provider opens below it with the default-address toggle.
     let toggle = h.query_all_by_label("Use default address").next();
     assert!(toggle.is_some());

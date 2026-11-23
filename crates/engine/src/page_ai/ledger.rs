@@ -157,7 +157,7 @@ impl Ledger {
             (true, false) => Handle::Canned(Some(canned(&source))),
             (false, false) => who.ai.start(&task, &source, pages)?,
         };
-        let preset = who.settings.page_preset(page_task(&task));
+        let preset = who.settings.model(page_task(&task).into());
         let by = preset.map_or_else(String::new, |p| match p.name.trim() {
             "" => p.model.clone(),
             name => format!("{name} · {}", p.model),

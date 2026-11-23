@@ -121,22 +121,21 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings, both: bool) {
     });
 }
 
-/// Study's own model and language; each follows the AI Dictionary's unset.
+/// Study's own models and language; each follows the AI Dictionary's unset.
 /// With no model set up there is nothing to pick.
 #[cfg(not(target_arch = "wasm32"))]
 fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
+    use super::ai::{Home, model_row, placed};
     const SAME: &str = "Same as AI Dictionary";
     if ai.presets.is_empty() {
         return;
     }
     section(ui, "AI");
     group(ui, |ui| {
-        let hint = "Writes the cards and judges recalls";
-        row(ui, "Model", hint, |ui| {
-            let chosen = &mut ai.tasks.study.preset;
-            super::ai::preset_picker(ui, "study-model", &ai.presets, chosen, SAME);
-        });
-        divider(ui);
+        for task in placed(Home::Study) {
+            model_row(ui, ai, task);
+            divider(ui);
+        }
         let hint = "The meanings and the feedback; examples stay in the book's";
         row(ui, "Cards in", hint, |ui| {
             let language = &mut ai.tasks.study.language;

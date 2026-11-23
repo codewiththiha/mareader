@@ -7,7 +7,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use mareader_settings::ModelPreset;
+use mareader_settings::{ModelPreset, TaskId};
 use mareader_study::mode::{
     Answer, Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, Judgement, Wanted, Written,
 };
@@ -15,25 +15,25 @@ use mareader_study::{Failure, Why};
 
 use super::{Assist, Engine, Waker, short_slot};
 use crate::backend::{Backend, Nobody};
-use crate::retry::{self, AHEAD, WAITED};
+use crate::retry;
 use crate::running::{Running, start};
 use crate::slots::{Slots, Ticket};
 use crate::study_judge::StudyJudge;
 use crate::study_mode::StudyCards;
 
 impl Assist {
-    /// The writer of study mode's cards, on the study task's model.
+    /// The writer of study mode's cards, on the cards' model.
     pub fn cards(&self) -> Arc<dyn CardWriter> {
-        Arc::new(self.study_ai())
+        Arc::new(self.study_ai(TaskId::StudyCards))
     }
 
-    /// The judge of Reactive mode's recalls, on the study task's model.
+    /// The judge of Reactive mode's recalls, on the judge's model.
     pub fn judge(&self) -> Arc<dyn Judge> {
-        Arc::new(self.study_ai())
+        Arc::new(self.study_ai(TaskId::StudyJudge))
     }
 
-    fn study_ai(&self) -> AiCards {
-        let preset = self.ai.study_preset().cloned();
+    fn study_ai(&self, task: TaskId) -> AiCards {
+        let preset = self.ai.model(task).cloned();
         let backend = match &preset {
             Some(p) => self.backend(p),
             None => Arc::new(Nobody(Why::NotHere.into())),
@@ -117,7 +117,8 @@ async fn write_deck(
         words: &words,
         language,
     };
-    retry::attempt(backend.as_ref(), &task, &|_| {}, AHEAD).await
+    let retry = TaskId::StudyCards.spec().retry;
+    retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
 }
 
 /// One recall's verdict, once the model has a slot free.
@@ -133,7 +134,8 @@ async fn judge_one(
         attempt: &attempt,
         language,
     };
-    retry::attempt(backend.as_ref(), &task, &|_| {}, WAITED).await
+    let retry = TaskId::StudyJudge.spec().retry;
+    retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
 }
 
 /// A short slot on study's model, or why there is none.

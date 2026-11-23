@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai_task::{Routes, TaskId, known, prune};
 use crate::study_mode::drop_unknown;
 
 /// Who answers. Keys are not here: they live encrypted, apart.
@@ -208,11 +209,10 @@ impl ModelPreset {
     }
 }
 
-/// Explaining a word: who answers, and the meaning's language.
+/// Explaining a word: the meaning's language.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExplainTask {
-    pub preset: Option<PresetId>,
     /// A tag from [`LANGUAGES`]; none writes in the book's language.
     pub language: Option<String>,
 }
@@ -221,8 +221,6 @@ pub struct ExplainTask {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OrganizeTask {
-    /// None follows Explain's model.
-    pub preset: Option<PresetId>,
     /// Books the model reads per request.
     pub batch: u16,
 }
@@ -236,8 +234,7 @@ impl OrganizeTask {
 impl Default for OrganizeTask {
     fn default() -> Self {
         Self {
-            preset: None,
-            batch: Self::BATCH,
+            batch: OrganizeTask::BATCH,
         }
     }
 }
@@ -255,8 +252,6 @@ pub enum SummaryStyle {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SummarizeTask {
-    /// None follows Explain's model.
-    pub preset: Option<PresetId>,
     pub style: SummaryStyle,
 }
 
@@ -275,8 +270,6 @@ pub enum PageStart {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TranslateTask {
-    /// None follows Explain's model.
-    pub preset: Option<PresetId>,
     /// A tag from [`LANGUAGES`]; none until one is picked.
     pub language: Option<String>,
     /// Tags picked before, latest first.
@@ -303,8 +296,6 @@ impl TranslateTask {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SimplifyTask {
-    /// None follows Explain's model.
-    pub preset: Option<PresetId>,
     pub start: PageStart,
 }
 
@@ -340,10 +331,13 @@ impl Default for PageRun {
     }
 }
 
-/// Which model each AI task uses.
+/// Which models each AI task asks, and each one's own options.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiTasks {
+    /// Each task's models, first choice first; see [`AiSettings::route`].
+    #[serde(deserialize_with = "known")]
+    pub models: Routes,
     pub explain: ExplainTask,
     pub organize: OrganizeTask,
     pub summarize: SummarizeTask,
@@ -366,11 +360,7 @@ impl PageTask {
     pub const ALL: [PageTask; 3] = [Self::Summarize, Self::Translate, Self::Simplify];
 
     pub fn label(self) -> &'static str {
-        match self {
-            Self::Summarize => "Summarize",
-            Self::Translate => "Translate",
-            Self::Simplify => "Simplify",
-        }
+        TaskId::from(self).spec().label
     }
 }
 
@@ -451,7 +441,7 @@ impl Default for AiSettings {
         };
         if cfg!(target_os = "macos") {
             let id = ai.add_preset(Provider::Apple, "");
-            ai.tasks.explain.preset = Some(id);
+            ai.tasks.choose(TaskId::Explain, Some(id));
         }
         ai
     }
@@ -499,29 +489,6 @@ impl AiSettings {
         self.presets.iter_mut().find(|p| p.id == id)
     }
 
-    /// The model Explain asks, if it still exists.
-    pub fn explain_preset(&self) -> Option<&ModelPreset> {
-        self.tasks.explain.preset.and_then(|id| self.preset(id))
-    }
-
-    /// The model Organize asks: its own, else Explain's.
-    pub fn organize_preset(&self) -> Option<&ModelPreset> {
-        let own = self.tasks.organize.preset.and_then(|id| self.preset(id));
-        own.or_else(|| self.explain_preset())
-    }
-
-    /// The model a page task asks: its own, else Explain's.
-    pub fn page_preset(&self, task: PageTask) -> Option<&ModelPreset> {
-        let t = &self.tasks;
-        let own = match task {
-            PageTask::Summarize => t.summarize.preset,
-            PageTask::Translate => t.translate.preset,
-            PageTask::Simplify => t.simplify.preset,
-        };
-        let own = own.and_then(|id| self.preset(id));
-        own.or_else(|| self.explain_preset())
-    }
-
     /// The meaning's language as a name, for the prompt.
     pub fn explain_language(&self) -> Option<&'static str> {
         self.tasks
@@ -552,21 +519,7 @@ impl AiSettings {
     }
 
     fn unassign_missing(&mut self) {
-        let ids: Vec<PresetId> = self.presets.iter().map(|p| p.id).collect();
-        let tasks = &mut self.tasks;
-        let slots = [
-            &mut tasks.explain.preset,
-            &mut tasks.organize.preset,
-            &mut tasks.summarize.preset,
-            &mut tasks.translate.preset,
-            &mut tasks.simplify.preset,
-            &mut tasks.study.preset,
-        ];
-        for slot in slots {
-            if slot.is_some_and(|id| !ids.contains(&id)) {
-                *slot = None;
-            }
-        }
+        prune(&mut self.tasks.models, &self.presets);
     }
 
     /// Runs on every edit, so text being typed is never rewritten.
@@ -620,10 +573,10 @@ mod tests {
         let ai = AiSettings::default();
         match cfg!(target_os = "macos") {
             true => assert_eq!(
-                ai.explain_preset().map(|p| p.provider),
+                ai.model(TaskId::Explain).map(|p| p.provider),
                 Some(Provider::Apple)
             ),
-            false => assert!(ai.presets.is_empty() && ai.explain_preset().is_none()),
+            false => assert!(ai.presets.is_empty() && ai.tasks.models.is_empty()),
         }
     }
 
@@ -641,13 +594,13 @@ mod tests {
             Some("OpenAI · gpt-4.1-nano")
         );
         assert_eq!(ai.preset(local).map(ModelPreset::model), Some(""));
-        ai.tasks.explain.preset = Some(fast);
+        ai.tasks.choose(TaskId::Explain, Some(fast));
         // Organize follows Explain until it has its own.
-        assert_eq!(ai.organize_preset().map(|p| p.id), Some(fast));
-        ai.tasks.organize.preset = Some(local);
-        assert_eq!(ai.organize_preset().map(|p| p.id), Some(local));
+        assert_eq!(ai.model(TaskId::Organize).map(|p| p.id), Some(fast));
+        ai.tasks.choose(TaskId::Organize, Some(local));
+        assert_eq!(ai.model(TaskId::Organize).map(|p| p.id), Some(local));
         ai.remove_preset(fast);
-        assert_eq!(ai.tasks.explain.preset, None);
+        assert_eq!(ai.tasks.choice(TaskId::Explain), None);
         assert_eq!(ai.add_preset(Provider::Gemini, ""), PresetId(3));
     }
 
@@ -661,7 +614,8 @@ mod tests {
         }
         let twin = ai.presets.first().cloned().unwrap_or_default();
         ai.presets.push(twin);
-        ai.tasks.organize.preset = Some(PresetId(77));
+        let organize = vec![PresetId(77), id, id];
+        ai.tasks.models.insert(TaskId::Organize, organize);
         ai.tasks.organize.batch = 1;
         ai.tasks.explain.language = Some("xx".into());
         ai.custom.url = "h".into();
@@ -671,7 +625,7 @@ mod tests {
         assert_eq!(p.name.chars().count(), ModelPreset::NAME_MAX);
         let ids: std::collections::HashSet<_> = ai.presets.iter().map(|p| p.id).collect();
         assert_eq!(ids.len(), ai.presets.len(), "ids are unique");
-        assert_eq!(ai.tasks.organize.preset, None);
+        assert_eq!(ai.tasks.models.get(&TaskId::Organize), Some(&vec![id]));
         assert_eq!(ai.tasks.organize.batch, OrganizeTask::BATCH_MIN);
         assert_eq!(ai.tasks.explain.language, None);
         assert_eq!(ai.custom.url, "h", "text being typed survives");
@@ -709,17 +663,15 @@ mod tests {
         let mut ai = AiSettings::default();
         let explain = ai.add_preset(Provider::Ollama, "qwen3");
         let own = ai.add_preset(Provider::OpenAi, "");
-        ai.tasks.explain.preset = Some(explain);
-        ai.tasks.translate.preset = Some(own);
-        let id = |t| ai.page_preset(t).map(|p| p.id);
+        ai.tasks.choose(TaskId::Explain, Some(explain));
+        ai.tasks.choose(TaskId::Translate, Some(own));
+        let id = |t: PageTask| ai.model(t.into()).map(|p| p.id);
         assert_eq!(id(PageTask::Summarize), Some(explain));
         assert_eq!(id(PageTask::Translate), Some(own));
         ai.remove_preset(own);
-        assert_eq!(ai.tasks.translate.preset, None);
-        assert_eq!(
-            ai.page_preset(PageTask::Translate).map(|p| p.id),
-            Some(explain)
-        );
+        assert_eq!(ai.tasks.choice(TaskId::Translate), None);
+        let id = ai.model(TaskId::Translate).map(|p| p.id);
+        assert_eq!(id, Some(explain));
     }
 
     #[test]

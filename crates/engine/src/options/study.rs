@@ -4,6 +4,8 @@
 //! window and page, which task a word arrives by, and the dictionary packs and
 //! AI service it attaches for itself.
 
+use mareader_settings::TaskId;
+
 use super::field;
 use crate::command::Command;
 use crate::session::Session;
@@ -45,6 +47,6 @@ fn provider(value: &str, at: &Session) -> Result<Vec<Command>, String> {
     let mut ai = at.settings().ai.clone();
     ai.presets.clear();
     let id = ai.add_preset(found, "");
-    ai.tasks.explain.preset = Some(id);
+    ai.tasks.choose(TaskId::Explain, Some(id));
     field("ai", ai)
 }

@@ -6,7 +6,7 @@ use crate::study_mode::{Pane, menu::Look, recall};
 use egui::Context;
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, Ask};
-use mareader_settings::Provider;
+use mareader_settings::{Provider, TaskId};
 use mareader_study::mode::{Mode, Practice};
 use std::ops::Range;
 
@@ -155,10 +155,13 @@ fn practice(app: &mut MareaderApp, value: &str) -> Result<(), String> {
     let practice = Practice::parse(value).ok_or("study_cards: ready, silent or failing")?;
     app.session.study_set_cards(Arc::new(practice));
     app.session.study_set_judge(Arc::new(practice));
-    if app.session.settings().ai.study_preset().is_none() {
+    let ai = &app.session.settings().ai;
+    if ai.model(TaskId::StudyCards).is_none() {
         let mut settings = app.session.settings().clone();
         let id = settings.ai.add_preset(Provider::Ollama, "practice");
-        settings.ai.tasks.study.preset = Some(id);
+        for task in [TaskId::StudyCards, TaskId::StudyJudge] {
+            settings.ai.tasks.choose(task, Some(id));
+        }
         app.set_settings(settings);
     }
     Ok(())

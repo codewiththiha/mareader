@@ -10,7 +10,7 @@ use mareader_assist::{
     Assist, Board, Job, KeyState, Kind, Load, Loose, Organized, Organizing, Plan, Progress,
     Request, Slots, Spot, Stage,
 };
-use mareader_settings::{AiSettings, ModelPreset, Provider};
+use mareader_settings::{AiSettings, ModelPreset, Provider, TaskId};
 use mareader_study::mode::{Key, Wanted};
 use mareader_study::{Explainer, Why, WordInfo};
 use support::{Answer, QUICK, Server};
@@ -57,7 +57,7 @@ fn settings(p: Provider, url: &str) -> AiSettings {
         ..AiSettings::default()
     };
     let id = ai.add_preset(p, "m");
-    ai.tasks.explain.preset = Some(id);
+    ai.tasks.choose(TaskId::Explain, Some(id));
     if let Some(e) = ai.endpoint_mut(p) {
         e.url = url.to_owned();
     }
@@ -65,7 +65,7 @@ fn settings(p: Provider, url: &str) -> AiSettings {
 }
 
 fn preset(ai: &AiSettings) -> ModelPreset {
-    ai.explain_preset().cloned().unwrap()
+    ai.model(TaskId::Explain).cloned().unwrap()
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn providers_that_cannot_answer_say_why() {
     assert_eq!(explain(custom.as_ref()).0.err(), Some(Why::Setup));
     // A deleted preset leaves Explain with no model.
     let mut unset = settings(Provider::Ollama, "");
-    unset.tasks.explain.preset = None;
+    unset.tasks.choose(TaskId::Explain, None);
     let unset = a.configure(&unset);
     assert_eq!(explain(unset.as_ref()).0.err(), Some(Why::NotHere));
     if !cfg!(target_os = "macos") {
@@ -308,7 +308,7 @@ fn organizing_needs_a_free_model_and_cancelling_frees_it() {
     }
     // With nothing chosen, it says so.
     let mut none = ai.clone();
-    none.tasks.explain.preset = None;
+    none.tasks.choose(TaskId::Explain, None);
     let _ = a.configure(&none);
     let (_, plan) = finish(&mut a.organize(books(&["Odes"])));
     assert_eq!(plan.err(), Some(Why::NotHere));

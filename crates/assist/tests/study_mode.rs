@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mareader_assist::{Assist, Kind, Slots};
-use mareader_settings::{AiSettings, Provider};
+use mareader_settings::{AiSettings, Provider, TaskId};
 use mareader_study::Why;
 use mareader_study::mode::{Answer as Backs, Attempt, CardJob, Key, Verdict, Wanted};
 use support::{Answer, Server};
@@ -34,7 +34,7 @@ fn settings(url: &str) -> AiSettings {
         ..AiSettings::default()
     };
     let id = ai.add_preset(Provider::Ollama, "m");
-    ai.tasks.explain.preset = Some(id);
+    ai.tasks.choose(TaskId::Explain, Some(id));
     if let Some(e) = ai.endpoint_mut(Provider::Ollama) {
         e.url = url.to_owned();
     }
@@ -123,14 +123,14 @@ fn a_dropped_deck_frees_its_model_and_no_model_says_so() {
     // A server that takes the request and never answers.
     let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let ai = settings(&format!("http://{}/v1/", silent.local_addr().unwrap()));
-    let id = ai.explain_preset().unwrap().id;
+    let id = ai.model(TaskId::Explain).unwrap().id;
     let _explainer = a.configure(&ai);
     let job = a.cards().write(vec![wanted("arcane")]);
     until(|| a.in_use(id) == 1);
     drop(job);
     until(|| a.in_use(id) == 0);
     let mut none = ai.clone();
-    none.tasks.explain.preset = None;
+    none.tasks.choose(TaskId::Explain, None);
     let _ = a.configure(&none);
     let answer = finish(a.cards().write(vec![wanted("arcane")]).as_mut());
     assert_eq!(answer.err().map(|f| f.why), Some(Why::NotHere));
@@ -166,7 +166,7 @@ fn a_deck_and_a_judge_behind_a_held_model_wait_then_are_turned_away() {
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(&dir);
     let ai = settings(&server.url);
-    let id = ai.explain_preset().unwrap().id;
+    let id = ai.model(TaskId::Explain).unwrap().id;
     let _explainer = a.configure(&ai);
     let held = a.slots().try_take(id, 1, Kind::Short);
     assert!(held.is_some());
@@ -194,7 +194,7 @@ fn a_dropped_judge_frees_its_model() {
     // A server that takes the request and never answers.
     let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let ai = settings(&format!("http://{}/v1/", silent.local_addr().unwrap()));
-    let id = ai.explain_preset().unwrap().id;
+    let id = ai.model(TaskId::Explain).unwrap().id;
     let _explainer = a.configure(&ai);
     let job = a.judge().judge(attempt());
     until(|| a.in_use(id) == 1);

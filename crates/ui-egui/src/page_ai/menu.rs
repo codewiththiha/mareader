@@ -224,7 +224,7 @@ impl PageAiUi {
         widgets::menu_section(ui, Some(Icon::Ai), &heading);
         if !PageTask::ALL
             .iter()
-            .any(|task| ai.page_preset(*task).is_some())
+            .any(|task| ai.model((*task).into()).is_some())
         {
             let why = "Summarize, translate and simplify pages with an AI model.";
             ui.add_space(2.0);

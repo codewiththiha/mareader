@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use fm_bridge::Bridge;
-use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider};
+use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId};
 use mareader_study::{Explainer, Failure, Why, WordInfo};
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
@@ -17,7 +17,7 @@ use crate::keys::{Clients, pasted, row};
 use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, organize_from};
 use crate::page::{PageJob, rewrite};
 use crate::prompt::Prompt;
-use crate::retry::{AHEAD, WAITED, attempt};
+use crate::retry::attempt;
 use crate::running::{Event, Running, Waker, start};
 use crate::slots::{Kind, Slots, Ticket};
 use crate::task::Explain;
@@ -125,7 +125,7 @@ impl Assist {
     /// The answerer for `ai`; later jobs use these settings too.
     pub fn configure(&mut self, ai: &AiSettings) -> Arc<dyn Explainer> {
         self.ai = ai.clone();
-        let preset = ai.explain_preset().cloned();
+        let preset = ai.model(TaskId::Explain).cloned();
         let backend = match &preset {
             Some(p) => self.backend(p),
             None => Arc::new(Nobody(Why::NotHere.into())),
@@ -204,7 +204,7 @@ impl Assist {
             Some(run) => run.carry_on(&req),
             None => Checkpoint::new(&req),
         };
-        let preset = self.ai.organize_preset().cloned();
+        let preset = self.ai.model(TaskId::Organize).cloned();
         let backend = preset.as_ref().map(|p| self.backend(p));
         let slots = self.slots.clone();
         let file = self.root.join(CHECKPOINT);
@@ -232,7 +232,7 @@ impl Assist {
             let hooks = Hooks {
                 progress: &|p| say.partial(p),
                 save: &save,
-                retry: AHEAD,
+                retry: TaskId::Organize.spec().retry,
             };
             let plan = organize_from(backend.as_ref(), &req, run, &hooks).await;
             drop(slot);
@@ -242,7 +242,7 @@ impl Assist {
 
     /// Rewrites one page with its task's model; news comes by polling.
     pub fn rewrite(&self, job: PageJob) -> Rewriting {
-        let preset = self.ai.page_preset(job.rewrite.task()).cloned();
+        let preset = self.ai.model(job.rewrite.task().into()).cloned();
         let backend = preset.as_ref().map(|p| self.backend(p));
         let slots = self.slots.clone();
         start(self.engine.rt(), &self.waker, |say| async move {
@@ -251,8 +251,9 @@ impl Assist {
                 return Err(Failure::detailed(Why::NotHere, none));
             };
             let ticket = short_slot(&slots, &preset, backend.as_ref()).await?;
+            let retry = TaskId::from(job.rewrite.task()).spec().retry;
             let ask = job.ask();
-            let done = rewrite(backend.as_ref(), &ask, &|r| say.partial(r), AHEAD).await;
+            let done = rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await;
             drop(ticket);
             done
         })
@@ -426,7 +427,8 @@ impl Explainer for AiExplainer {
                 context: &context,
                 language,
             };
-            attempt(backend.as_ref(), &task, &|info| say.partial(info), WAITED).await
+            let retry = TaskId::Explain.spec().retry;
+            attempt(backend.as_ref(), &task, &|info| say.partial(info), retry).await
         });
         job.wait_with(partial)
     }

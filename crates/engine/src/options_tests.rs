@@ -10,7 +10,7 @@ use mareader_appearance::{BaseMode, NoiseMode};
 use mareader_library::{CoverFit, Home, Layout, SortKey};
 use mareader_session::Source;
 use mareader_settings::{
-    AppearanceMenuStyle, Bar, FloatingLabelStyle, LibraryClick, Provider, Settings,
+    AppearanceMenuStyle, Bar, FloatingLabelStyle, LibraryClick, Provider, Settings, TaskId,
 };
 use mareader_workspace::{Bounds, Edge, SplitAxis};
 
@@ -396,8 +396,8 @@ fn a_provider_key_points_one_task_at_one_preset() -> Result<(), String> {
     assert_eq!(ai.presets.len(), 1);
     let made = ai.presets.first().map(|p| p.provider);
     assert_eq!(made, Some(Provider::OpenAi));
-    let pointed = ai.tasks.explain.preset.as_ref();
-    assert_eq!(pointed, ai.presets.first().map(|p| &p.id));
+    let pointed = ai.tasks.choice(TaskId::Explain);
+    assert_eq!(pointed, ai.presets.first().map(|p| p.id));
     let hint = "provider: e.g. openai or ollama";
     assert_eq!(parsed("provider", "nope").err().as_deref(), Some(hint));
     Ok(())

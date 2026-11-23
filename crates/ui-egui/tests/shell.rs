@@ -446,7 +446,8 @@ fn every_settings_tab_is_named_in_its_sidebar() {
     assert_eq!(named(&h, study), 0, "nothing could write study's cards");
     let ollama = mareader_settings::Provider::Ollama;
     let id = settings.ai.add_preset(ollama, "model");
-    settings.ai.tasks.study.preset = Some(id);
+    let cards = mareader_settings::TaskId::StudyCards;
+    settings.ai.tasks.choose(cards, Some(id));
     h.state_mut().set_settings(settings);
     h.run_steps(2);
     for tab in Tab::ALL {

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mareader_assist::{Assist, Loose, Organized, Request, WAITED};
-use mareader_settings::{AiSettings, Provider};
+use mareader_settings::{AiSettings, Provider, TaskId};
 use mareader_study::Why;
 use support::{Answer, Server};
 
@@ -31,7 +31,7 @@ fn assist(dir: &tempfile::TempDir, url: &str) -> (Assist, AiSettings) {
         ..AiSettings::default()
     };
     let id = ai.add_preset(Provider::Ollama, "m");
-    ai.tasks.explain.preset = Some(id);
+    ai.tasks.choose(TaskId::Explain, Some(id));
     if let Some(e) = ai.endpoint_mut(Provider::Ollama) {
         e.url = url.to_owned();
     }

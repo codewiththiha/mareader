@@ -68,7 +68,7 @@ pub fn doing(task: &AiTask) -> (String, &'static str) {
 /// Pages asked at once: the setting, or fewer if the model has less room.
 pub(crate) fn allowance(ai: &dyn Models, settings: &AiSettings, task: &AiTask) -> usize {
     let cap = usize::from(settings.tasks.pages.at_once.max(1));
-    let preset = settings.page_preset(page_task(task));
+    let preset = settings.model(page_task(task).into());
     let room = preset.and_then(|p| ai.capacity(p));
     room.map_or(cap, |r| cap.min(r.max(1) as usize))
 }

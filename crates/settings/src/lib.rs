@@ -32,7 +32,7 @@ pub use ai::{
     TranslateTask, language_name,
 };
 pub use ai_job::Job;
-pub use ai_task::Retry;
+pub use ai_task::{Class, Retry, Routes, TaskId, TaskSpec};
 pub use load::{Loaded, load, to_json};
 pub use reader::{
     AppearanceMenuStyle, Bar, ChromeSettings, FloatingLabelStyle, Highlight, LayoutSettings,
@@ -56,7 +56,7 @@ pub use words::{
 pub use workspace::{Corners, EdgeParking, LibraryClick, PaneLook, WorkspaceSettings};
 
 /// Bumped with every migration step in `load.rs`.
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 /// The whole persisted state of the user's choices.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -3,7 +3,7 @@
 use mareader_study::mode::{MAX_PAGES, Mode, Source, Unit};
 use serde::{Deserialize, Serialize};
 
-use crate::{AiSettings, ModelPreset, PresetId, language_name};
+use crate::{AiSettings, language_name};
 
 /// How study mode sizes batches, times decks and asks.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,23 +75,15 @@ impl Default for StudyModeSettings {
     }
 }
 
-/// The study AI task: cards and judging, with their own model and language.
+/// Study's AI tasks, cards and judging: their language.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StudyTask {
-    /// None follows Explain's model.
-    pub preset: Option<PresetId>,
     /// The meaning's language by tag; none follows Explain's.
     pub language: Option<String>,
 }
 
 impl AiSettings {
-    /// The model study mode asks: its own, else Explain's.
-    pub fn study_preset(&self) -> Option<&ModelPreset> {
-        let own = self.tasks.study.preset.and_then(|id| self.preset(id));
-        own.or_else(|| self.explain_preset())
-    }
-
     /// The cards' language as a name: study's own, else Explain's.
     pub fn study_language(&self) -> Option<&'static str> {
         let own = self.tasks.study.language.as_deref();
@@ -111,7 +103,7 @@ pub(crate) fn drop_unknown(language: &mut Option<String>) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::Provider;
+    use crate::{Provider, TaskId};
 
     #[test]
     fn study_mode_values_are_pulled_into_range() {
@@ -136,20 +128,22 @@ mod tests {
     }
 
     #[test]
-    fn the_study_task_follows_explain_until_it_has_its_own() {
+    fn the_study_tasks_follow_explain_until_they_have_their_own() {
         let mut ai = AiSettings::default();
         let explain = ai.add_preset(Provider::Ollama, "llama3");
         let own = ai.add_preset(Provider::Ollama, "qwen3");
-        ai.tasks.explain.preset = Some(explain);
+        ai.tasks.choose(TaskId::Explain, Some(explain));
         ai.tasks.explain.language = Some("my".into());
-        assert_eq!(ai.study_preset().map(|p| p.id), Some(explain));
+        let id = |ai: &AiSettings, t| ai.model(t).map(|p| p.id);
+        assert_eq!(id(&ai, TaskId::StudyCards), Some(explain));
         assert_eq!(ai.study_language(), Some("Burmese"));
-        ai.tasks.study.preset = Some(own);
+        ai.tasks.choose(TaskId::StudyJudge, Some(own));
         ai.tasks.study.language = Some("fr".into());
-        assert_eq!(ai.study_preset().map(|p| p.id), Some(own));
+        assert_eq!(id(&ai, TaskId::StudyJudge), Some(own));
+        assert_eq!(id(&ai, TaskId::StudyCards), Some(explain));
         assert_eq!(ai.study_language(), Some("French"));
         ai.remove_preset(own);
-        assert_eq!(ai.tasks.study.preset, None);
+        assert_eq!(ai.tasks.choice(TaskId::StudyJudge), None);
         ai.tasks.study.language = Some("zz".into());
         ai.sanitize();
         assert_eq!(ai.tasks.study.language, None);

@@ -3,7 +3,7 @@
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
-use crate::{AiSettings, Provider, SCHEMA_VERSION, Settings};
+use crate::{AiSettings, Provider, SCHEMA_VERSION, Settings, TaskId};
 
 /// Loaded settings plus what had to be repaired, for the log.
 #[derive(Debug, Default)]
@@ -67,7 +67,46 @@ fn migrate(root: &mut Map<String, Value>, notes: &mut Vec<String>) {
     if stored < 6 {
         v5_to_v6(root);
     }
+    if stored < 8 {
+        v7_to_v8(root);
+    }
     root.insert("version".to_owned(), json!(SCHEMA_VERSION));
+}
+
+/// v8 keeps every task's models in one map; study's one model does both.
+fn v7_to_v8(root: &mut Map<String, Value>) {
+    let tasks = (root.get_mut("ai"))
+        .and_then(|ai| ai.get_mut("tasks"))
+        .and_then(Value::as_object_mut);
+    let Some(tasks) = tasks else {
+        return;
+    };
+    let moves: [(&str, &[&str]); 6] = [
+        ("explain", &["explain"]),
+        ("organize", &["organize"]),
+        ("summarize", &["summarize"]),
+        ("translate", &["translate"]),
+        ("simplify", &["simplify"]),
+        ("study", &["study_cards", "study_judge"]),
+    ];
+    let mut models = Map::new();
+    for (task, to) in moves {
+        let old = (tasks.get_mut(task))
+            .and_then(Value::as_object_mut)
+            .and_then(|t| t.remove("preset"));
+        // A null left the task on Explain's; a lost id goes in sanitize.
+        if let Some(id) = old.filter(Value::is_u64) {
+            for key in to {
+                models.insert((*key).to_owned(), json!([id]));
+            }
+        }
+    }
+    // v5's own step already writes the map.
+    if let Value::Object(kept) = tasks.entry("models").or_insert_with(|| json!({})) {
+        for (key, ids) in models {
+            kept.entry(key).or_insert(ids);
+        }
+    }
 }
 
 /// v6 added Read aloud to the selection menu, after Look up if shown.
@@ -113,7 +152,7 @@ fn v4_to_v5(root: &mut Map<String, Value>) {
             Some(moved.add_preset(p, model))
         }
     };
-    moved.tasks.explain.preset = id;
+    moved.tasks.choose(TaskId::Explain, id);
     let presets = serde_json::to_value(&moved.presets).unwrap_or_else(|_| json!([]));
     let tasks = serde_json::to_value(&moved.tasks).unwrap_or_else(|_| json!({}));
     ai.insert("presets".to_owned(), presets);
@@ -265,7 +304,7 @@ mod tests {
     fn every_saved_section_is_read_back() {
         let mut saved = Settings::default();
         let id = saved.ai.add_preset(Provider::Ollama, "llama3.2:latest");
-        saved.ai.tasks.explain.preset = Some(id);
+        saved.ai.tasks.choose(TaskId::Explain, Some(id));
         saved.ai.tasks.explain.language = Some("my".to_owned());
         saved.motion.icon_animations = false;
         saved.updates.check_on_startup = false;
@@ -286,7 +325,7 @@ mod tests {
         let got = load(v4);
         assert!(got.notes.is_empty(), "{:?}", got.notes);
         let ai = got.settings.ai;
-        let p = ai.explain_preset().cloned().unwrap_or_default();
+        let p = ai.model(TaskId::Explain).cloned().unwrap_or_default();
         assert_eq!(
             (p.provider, p.model.as_str()),
             (Provider::Ollama, "qwen3:4b")
@@ -297,7 +336,7 @@ mod tests {
         // A blank model keeps meaning the provider's default.
         let v4 = r#"{"version":4,"ai":{"provider":"openai"}}"#;
         let ai = load(v4).settings.ai;
-        let model = ai.explain_preset().map(|p| p.model().to_owned());
+        let model = ai.model(TaskId::Explain).map(|p| p.model().to_owned());
         assert_eq!(model.as_deref(), Some("gpt-4.1-mini"));
     }
 
@@ -306,7 +345,7 @@ mod tests {
         let ai = load(r#"{"version":4,"ai":{"provider":"auto"}}"#)
             .settings
             .ai;
-        let apple = ai.explain_preset().map(|p| p.provider);
+        let apple = ai.model(TaskId::Explain).map(|p| p.provider);
         match cfg!(target_os = "macos") {
             true => assert_eq!(apple, Some(Provider::Apple)),
             false => assert!(apple.is_none() && ai.presets.is_empty()),

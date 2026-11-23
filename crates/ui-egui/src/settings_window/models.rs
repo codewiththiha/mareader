@@ -10,7 +10,7 @@ use crate::widgets;
 use egui::{Align, Layout, Rect, RichText, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_assist::{AppleState, Board, Job, KeyRow, KeyState, Load, lanes};
 use mareader_engine::command::Command;
-use mareader_settings::{AiSettings, ModelPreset, PageTask, PresetId, Provider};
+use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId};
 use mareader_study::Failure;
 
 pub(super) const FIELD_W: f32 = 260.0;
@@ -99,7 +99,7 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
             if head(ui, &look).clicked() {
                 open = (!is_open).then_some(id.0);
             }
-            let explains = ai.tasks.explain.preset == Some(id);
+            let explains = ai.tasks.choice(TaskId::Explain) == Some(id);
             if is_open
                 && let Some(p) = ai.presets.get_mut(i)
                 && let Some(a) = editor(ui, p, (board, explains), out)
@@ -116,7 +116,7 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
             open = None;
         }
         Some((id, Act::Duplicate)) => made = duplicate(ai, id).or(made),
-        Some((id, Act::Dictionary)) => ai.tasks.explain.preset = Some(id),
+        Some((id, Act::Dictionary)) => ai.tasks.choose(TaskId::Explain, Some(id)),
         None => {}
     }
     if let Some(id) = made {
@@ -136,20 +136,12 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
 
 /// The tasks asking `id`, fallbacks included, as the row's pills.
 fn uses(ai: &AiSettings, id: PresetId) -> Vec<&'static str> {
-    let is = |p: Option<&ModelPreset>| p.is_some_and(|p| p.id == id);
-    let mut names = Vec::new();
-    if is(ai.explain_preset()) {
-        names.push("AI Dictionary");
-    }
-    if is(ai.organize_preset()) {
-        names.push("Library");
-    }
-    for task in PageTask::ALL {
-        if is(ai.page_preset(task)) {
-            names.push(task.label());
-        }
-    }
-    names
+    let asks = |t: &TaskId| ai.model(*t).is_some_and(|p| p.id == id);
+    TaskId::ALL
+        .iter()
+        .filter(|t| asks(t))
+        .map(|t| t.spec().label)
+        .collect()
 }
 
 /// The row's small print; true when it asks for a hand.
@@ -447,8 +439,8 @@ fn add_model(ui: &mut Ui, ai: &mut AiSettings) -> Option<PresetId> {
     ui.data_mut(|d| d.insert_temp(id, adding && made.is_none()));
     let id = ai.add_preset(made?, "");
     // The first model looks words up straight away.
-    if ai.tasks.explain.preset.is_none() {
-        ai.tasks.explain.preset = Some(id);
+    if ai.tasks.choice(TaskId::Explain).is_none() {
+        ai.tasks.choose(TaskId::Explain, Some(id));
     }
     Some(id)
 }
@@ -886,7 +878,7 @@ mod tests {
         h.step();
         h.step();
         let ai = &h.state().ai;
-        let made = ai.explain_preset().map(|p| p.provider);
+        let made = ai.model(TaskId::Explain).map(|p| p.provider);
         assert_eq!(made, Some(Provider::Custom));
         // Its provider's keys show below, and it opened.
         h.get_by_label("Add");
@@ -913,10 +905,17 @@ mod tests {
         let mut ai = no_models();
         let first = ai.add_preset(Provider::OpenAi, "");
         let local = ai.add_preset(Provider::Ollama, "llama3.2");
-        ai.tasks.explain.preset = Some(first);
-        ai.tasks.summarize.preset = Some(local);
+        ai.tasks.choose(TaskId::Explain, Some(first));
+        ai.tasks.choose(TaskId::Summarize, Some(local));
         // Tasks with none of their own fall back to the AI Dictionary's.
-        let want = ["AI Dictionary", "Library", "Translate", "Simplify"];
+        let want = [
+            "AI Dictionary",
+            "Organize library",
+            "Translate",
+            "Simplify",
+            "Study cards",
+            "Study judge",
+        ];
         assert_eq!(uses(&ai, first), want);
         assert_eq!(uses(&ai, local), ["Summarize"]);
     }

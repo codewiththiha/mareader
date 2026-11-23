@@ -4,7 +4,7 @@ use egui::{Align, FontId, Layout, Sense, Ui, pos2, vec2};
 use mareader_assist::{Board, Job, Load};
 use mareader_settings::{
     AiSettings, GlossDensity, GlossSettings, HighlightSettings, LANGUAGES, ModelPreset,
-    OrganizeTask, PageRun, PageStart, PageTask, Pen, PresetId, Provider, SummaryStyle,
+    OrganizeTask, PageRun, PageStart, Pen, PresetId, Provider, SummaryStyle, TaskId,
 };
 
 use super::highlights::{palette, preview};
@@ -17,9 +17,8 @@ use mareader_engine::command::Command;
 use mareader_engine::settings::Tab;
 
 const PICK_W: f32 = 240.0;
-const DICTIONARY: &str = "AI Dictionary";
+const DICTIONARY: &str = TaskId::Explain.spec().label;
 const BOOKS_LANGUAGE: &str = "The book's language";
-const SAME_AS_DICTIONARY: &str = "Same as AI Dictionary";
 const PICK_LATER: &str = "Pick when translating";
 /// Books per request Apple's small context holds.
 const APPLE_BATCH: u16 = 20;
@@ -50,12 +49,60 @@ pub(super) fn probe(board: Option<&Board>, out: &mut Commands) {
     }
 }
 
-/// What a task with no model of its own falls back to.
-fn fallback(ai: &AiSettings) -> &'static str {
-    if ai.tasks.explain.preset.is_some() {
-        SAME_AS_DICTIONARY
-    } else {
-        "None"
+/// The part of Settings a task's model row sits in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Home {
+    /// The AI Dictionary's own row, which also folds open its look.
+    Words,
+    Library,
+    Pages,
+    /// The Study tab.
+    Study,
+}
+
+/// Where each task's row sits, and its tip; a new task needs both.
+fn place(task: TaskId) -> (Home, &'static str) {
+    match task {
+        TaskId::Explain => (Home::Words, "The model that explains a word"),
+        TaskId::Organize => (
+            Home::Library,
+            "The model that sorts imported books on no shelf onto shelves",
+        ),
+        TaskId::Summarize => (Home::Pages, "The model that summarizes a page"),
+        TaskId::Translate => (Home::Pages, "The model that translates a page"),
+        TaskId::Simplify => (
+            Home::Pages,
+            "The model that rewrites a page in plain English",
+        ),
+        TaskId::StudyCards => (Home::Study, "The model that writes the cards"),
+        TaskId::StudyJudge => (Home::Study, "The model that judges recalls"),
+    }
+}
+
+/// The tasks whose rows sit in `home`, in [`TaskId::ALL`]'s order.
+pub(super) fn placed(home: Home) -> impl Iterator<Item = TaskId> {
+    TaskId::ALL.into_iter().filter(move |t| place(*t).0 == home)
+}
+
+/// A task's row: its label, and the model it asks first.
+pub(super) fn model_row(ui: &mut Ui, ai: &mut AiSettings, task: TaskId) {
+    row(ui, task.spec().label, place(task).1, |ui| {
+        task_picker(ui, ai, task);
+    });
+}
+
+/// Picks `task`'s first model; fallbacks set in the file stay behind it.
+fn task_picker(ui: &mut Ui, ai: &mut AiSettings, task: TaskId) {
+    let none = match task.spec().follows {
+        Some(parent) if ai.model(parent).is_some() => format!("Same as {}", parent.spec().label),
+        _ => "None".to_owned(),
+    };
+    let was = ai.tasks.choice(task);
+    let mut chosen = was;
+    let salt = format!("ai-{}-model", task.spec().label);
+    preset_picker(ui, &salt, &ai.presets, &mut chosen, &none);
+    if chosen != was {
+        ai.tasks.choose(task, chosen);
     }
 }
 
@@ -79,7 +126,7 @@ fn dictionary(ui: &mut Ui, ai: &mut AiSettings, (h, gloss): Looks<'_>, board: Op
     // The row below carries the name; the heading says what it's for.
     section(ui, "Words");
     let apple = ai
-        .explain_preset()
+        .model(TaskId::Explain)
         .is_some_and(|p| p.provider == Provider::Apple);
     let state = board.and_then(|b| b.apple.ready()).filter(|_| apple);
     let speaks = |tag: &str| state.and_then(|s| s.speaks(tag));
@@ -88,8 +135,7 @@ fn dictionary(ui: &mut Ui, ai: &mut AiSettings, (h, gloss): Looks<'_>, board: Op
     group(ui, |ui| {
         let look = (h.ai.pen, h.ai.color, h.opacity);
         dictionary_row(ui, &mut open, look, |ui| {
-            let chosen = &mut ai.tasks.explain.preset;
-            preset_picker(ui, "ai-explain-model", &ai.presets, chosen, "None");
+            task_picker(ui, ai, TaskId::Explain);
         });
         if open {
             look_rows(ui, h, gloss);
@@ -204,14 +250,11 @@ fn look_rows(ui: &mut Ui, h: &mut HighlightSettings, gloss: &mut GlossSettings) 
 /// Sorting books onto shelves: its model and batch size.
 fn library(ui: &mut Ui, ai: &mut AiSettings) {
     section(ui, "Library");
-    let same = fallback(ai);
     group(ui, |ui| {
-        let tip = "The model that sorts imported books on no shelf onto shelves";
-        row(ui, "Organize library", tip, |ui| {
-            let organize = &mut ai.tasks.organize.preset;
-            preset_picker(ui, "ai-organize-model", &ai.presets, organize, same);
-        });
-        divider(ui);
+        for task in placed(Home::Library) {
+            model_row(ui, ai, task);
+            divider(ui);
+        }
         let tip = "Books each request reads: more is quicker, fewer suits small models";
         row(ui, "Books per request", tip, |ui| {
             let task = &mut ai.tasks.organize;
@@ -223,7 +266,7 @@ fn library(ui: &mut Ui, ai: &mut AiSettings) {
             task.batch = n;
         });
     });
-    let organizer = ai.organize_preset().map(|p| p.provider);
+    let organizer = ai.model(TaskId::Organize).map(|p| p.provider);
     let big = ai.tasks.organize.batch > APPLE_BATCH;
     if organizer == Some(Provider::Apple) && big {
         note(
@@ -239,68 +282,19 @@ fn library(ui: &mut Ui, ai: &mut AiSettings) {
 /// Summarize, translate and simplify: models, and how pages go on.
 fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
     section(ui, "Pages");
-    let same = fallback(ai);
     let apple = ai
-        .page_preset(PageTask::Translate)
+        .model(TaskId::Translate)
         .is_some_and(|p| p.provider == Provider::Apple);
     let state = board.and_then(|b| b.apple.ready()).filter(|_| apple);
     let speaks = |tag: &str| state.and_then(|s| s.speaks(tag));
     group(ui, |ui| {
-        let tip = "The model that summarizes a page";
-        row(ui, "Summarize", tip, |ui| {
-            let chosen = &mut ai.tasks.summarize.preset;
-            preset_picker(ui, "ai-summarize-model", &ai.presets, chosen, same);
-        });
-        divider(ui);
-        row(ui, "Summary style", "Paragraphs, or a short list", |ui| {
-            let style = &mut ai.tasks.summarize.style;
-            let name = |s: SummaryStyle| match s {
-                SummaryStyle::Paragraphs => "Paragraphs",
-                SummaryStyle::Points => "Key points",
-            };
-            widgets::combo("ai-summary-style")
-                .width(PICK_W)
-                .selected_text(name(*style))
-                .show_ui(ui, |ui| {
-                    for s in [SummaryStyle::Paragraphs, SummaryStyle::Points] {
-                        ui.selectable_value(style, s, name(s));
-                    }
-                });
-        });
-        divider(ui);
-        row(ui, "Translate", "The model that translates a page", |ui| {
-            let chosen = &mut ai.tasks.translate.preset;
-            preset_picker(ui, "ai-translate-model", &ai.presets, chosen, same);
-        });
-        divider(ui);
-        let tip = "The page menu offers others too";
-        row(ui, "Translate to", tip, |ui| {
-            let task = &mut ai.tasks.translate;
-            let mut chosen = task.language.clone();
-            let id = ("ai-translate-language", PICK_LATER);
-            language_picker(ui, id, &mut chosen, &speaks);
-            match chosen {
-                Some(tag) if task.language.as_deref() != Some(&tag) => task.pick(&tag),
-                None => task.language = None,
-                Some(_) => {}
+        for (i, task) in placed(Home::Pages).enumerate() {
+            if i > 0 {
+                divider(ui);
             }
-        });
-        divider(ui);
-        let tip = "What choosing Translate in the page menu does";
-        row(ui, "Translating", tip, |ui| {
-            start_picker(ui, "ai-translate-start", &mut ai.tasks.translate.start);
-        });
-        divider(ui);
-        let tip = "The model that rewrites a page in plain English";
-        row(ui, "Simplify", tip, |ui| {
-            let chosen = &mut ai.tasks.simplify.preset;
-            preset_picker(ui, "ai-simplify-model", &ai.presets, chosen, same);
-        });
-        divider(ui);
-        let tip = "What choosing Simplify in the page menu does";
-        row(ui, "Simplifying", tip, |ui| {
-            start_picker(ui, "ai-simplify-start", &mut ai.tasks.simplify.start);
-        });
+            model_row(ui, ai, task);
+            page_rows(ui, ai, task, &speaks);
+        }
     });
     section(ui, "More than one page");
     group(ui, |ui| {
@@ -347,6 +341,63 @@ fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
     }
 }
 
+/// The rows under a page task's model: how it writes, and how it starts.
+fn page_rows(
+    ui: &mut Ui,
+    ai: &mut AiSettings,
+    task: TaskId,
+    speaks: &dyn Fn(&str) -> Option<bool>,
+) {
+    match task {
+        TaskId::Summarize => {
+            divider(ui);
+            row(ui, "Summary style", "Paragraphs, or a short list", |ui| {
+                let style = &mut ai.tasks.summarize.style;
+                let name = |s: SummaryStyle| match s {
+                    SummaryStyle::Paragraphs => "Paragraphs",
+                    SummaryStyle::Points => "Key points",
+                };
+                widgets::combo("ai-summary-style")
+                    .width(PICK_W)
+                    .selected_text(name(*style))
+                    .show_ui(ui, |ui| {
+                        for s in [SummaryStyle::Paragraphs, SummaryStyle::Points] {
+                            ui.selectable_value(style, s, name(s));
+                        }
+                    });
+            });
+        }
+        TaskId::Translate => {
+            divider(ui);
+            let tip = "The page menu offers others too";
+            row(ui, "Translate to", tip, |ui| {
+                let t = &mut ai.tasks.translate;
+                let mut chosen = t.language.clone();
+                let id = ("ai-translate-language", PICK_LATER);
+                language_picker(ui, id, &mut chosen, speaks);
+                match chosen {
+                    Some(tag) if t.language.as_deref() != Some(&tag) => t.pick(&tag),
+                    None => t.language = None,
+                    Some(_) => {}
+                }
+            });
+            divider(ui);
+            let tip = "What choosing Translate in the page menu does";
+            row(ui, "Translating", tip, |ui| {
+                start_picker(ui, "ai-translate-start", &mut ai.tasks.translate.start);
+            });
+        }
+        TaskId::Simplify => {
+            divider(ui);
+            let tip = "What choosing Simplify in the page menu does";
+            row(ui, "Simplifying", tip, |ui| {
+                start_picker(ui, "ai-simplify-start", &mut ai.tasks.simplify.start);
+            });
+        }
+        _ => {}
+    }
+}
+
 /// What choosing a page task does: ask, this page, or on as one reads.
 fn start_picker(ui: &mut Ui, salt: &str, start: &mut PageStart) {
     let name = |s: PageStart| match s {
@@ -365,7 +416,7 @@ fn start_picker(ui: &mut Ui, salt: &str, start: &mut PageStart) {
 }
 
 /// A saved model for a task, or `none`.
-pub(super) fn preset_picker(
+fn preset_picker(
     ui: &mut Ui,
     salt: &str,
     presets: &[ModelPreset],

@@ -1,13 +1,13 @@
 //! Filing loose books: batches name shelves, then each book is placed.
 
-use mareader_settings::Retry;
+use mareader_settings::{Retry, TaskId};
 use mareader_study::{Failure, Why};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::backend::Backend;
 use crate::prompt::{Prompt, quote};
-use crate::retry::{AHEAD, attempt};
+use crate::retry::attempt;
 use crate::task::Task;
 
 /// A book on no shelf, by the caller's key.
@@ -173,7 +173,7 @@ pub async fn organize(
         progress,
         save: &|_| {},
         retry: Retry {
-            unreadable: AHEAD.unreadable,
+            unreadable: TaskId::Organize.spec().retry.unreadable,
             waits: &[],
         },
     };
@@ -717,8 +717,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::backend::block;
-    use crate::backend::{BoxFuture, Partial};
+    use crate::backend::{BoxFuture, Partial, block};
+    use crate::retry::AHEAD;
 
     /// Answers each prompt with what `answer` makes of it; keeps them all.
     struct Script<F> {

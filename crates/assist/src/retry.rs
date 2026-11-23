@@ -14,19 +14,13 @@ use crate::backend::{Backend, run};
 use crate::task::Task;
 
 /// Pauses a server is given to come back when no one is watching a spinner.
-pub const WAITS: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(12)];
+pub const WAITS: [Duration; 2] = Retry::WAITS;
 
 /// The reader is waiting: one re-ask, one short pause.
-pub const WAITED: Retry = Retry {
-    unreadable: 1,
-    waits: &[Duration::from_secs(2)],
-};
+pub const WAITED: Retry = Retry::WAITED;
 
 /// Work made ahead, or shown as it comes: one re-ask, then [`WAITS`].
-pub const AHEAD: Retry = Retry {
-    unreadable: 1,
-    waits: &WAITS,
-};
+pub const AHEAD: Retry = Retry::AHEAD;
 
 /// `task`'s answer, asked again as `retry` allows; else the last failure.
 pub async fn attempt<T: Task>(

@@ -47,6 +47,10 @@ short detail from the provider.
    and send lists as comma-separated strings; `Explain::read` shows how.
    Return `None` for a whole answer that is missing what matters.
 4. Call `run(backend, &task, partial)`. Every backend already works.
+5. A task the reader picks a model for is also a `TaskId` with a row in
+   `TaskId::spec()`; the compiler then asks where Settings › AI shows it
+   (`place()` in `settings_window/ai.rs`). See
+   [Tasks as data](#tasks-as-data-schema-v8).
 
 ## Adding a provider
 
@@ -160,9 +164,9 @@ Loading a v4 file moves its provider and that provider's model into one
 saved model and gives it to Explain. Automatic becomes Apple Intelligence
 on a Mac and no model elsewhere.
 
-A new task adds a field to `AiTasks`, a resolver on `AiSettings` (as
-`organize_preset()`, which may fall back to another task's model), and a
-row under Tasks in Settings › AI.
+Schema v8 replaced the per-task `preset` fields and their resolvers with
+one map and one `route()`: see
+[Tasks as data](#tasks-as-data-schema-v8).
 
 ## Two tabs: AI and AI models (2026-10-22)
 
@@ -285,6 +289,42 @@ queue (Phase 4 of the AI plan).
 
 Pinned by `tests/retry_budget.rs`, `tests/retry_baseline.rs` and the
 unit tests in `retry.rs`.
+
+## Tasks as data (schema v8)
+
+Each AI task is a `TaskId` with one row, its `TaskSpec`
+(`settings/src/ai_task.rs`). `spec()` is an exhaustive match, so a task
+without a row doesn't compile.
+
+| Task | Label | Class | Retry | Follows |
+|---|---|---|---|---|
+| `explain` | AI Dictionary | Waited | `WAITED` | — |
+| `organize` | Organize library | Ahead | `AHEAD` | Explain |
+| `summarize`, `translate`, `simplify` | Summarize, Translate, Simplify | Asked | `AHEAD` | Explain |
+| `study_cards` | Study cards | Ahead | `AHEAD` | Explain |
+| `study_judge` | Study judge | Waited | `WAITED` | Explain |
+
+`doing` is the phrase a task is busy with, as "organizing your library".
+`class` orders the queue once there is one (Phase 4 of the AI plan).
+
+- **`AiTasks::models`** maps each task to its saved models, first choice
+  first. Per-task options (language, batch, style, start) stay in their
+  own structs.
+- **`AiSettings::route(task)`** is the one resolver: the task's own
+  models, then those of the task it follows, each once. `model(task)` is
+  its first. Every call site asks for a `TaskId`; a page task converts
+  with `TaskId::from(PageTask)`.
+- **Fallbacks** are file-only for now. Settings shows one model per row;
+  choosing one keeps any fallbacks behind it, and None clears them.
+- **Removing a model** drops its id from every list, and a list left
+  empty goes. `sanitize()` does the same for ids no model has.
+- **A task this build doesn't know**, as a newer build's, is skipped when
+  the file is read; the rest of the AI settings stay.
+
+Loading a v7 file moves each `tasks.<task>.preset` into `models`. Study's
+one model goes to both `study_cards` and `study_judge`. A null leaves the
+task following Explain, and a lost id is dropped. Settings › Study shows
+the two study tasks as two rows.
 
 ## Workflows: the organizer
 
