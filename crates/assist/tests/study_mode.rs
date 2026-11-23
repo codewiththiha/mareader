@@ -6,7 +6,7 @@ mod support;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use mareader_assist::{Assist, Kind, Slots};
+use mareader_assist::Assist;
 use mareader_settings::{AiSettings, Provider, TaskId};
 use mareader_study::Why;
 use mareader_study::mode::{Answer as Backs, Attempt, CardJob, Key, Verdict, Wanted};
@@ -61,7 +61,7 @@ fn finish(job: &mut dyn CardJob) -> Backs {
     }
 }
 
-/// Polls `take` past the service's slot wait, or fails after thirty seconds.
+/// Polls `take` until it answers, or fails after thirty seconds.
 fn slowly<T>(mut take: impl FnMut() -> Option<T>) -> T {
     let start = Instant::now();
     loop {
@@ -161,30 +161,46 @@ fn a_recall_is_judged_by_study_s_model_with_the_answer_quoted() {
 }
 
 #[test]
-fn a_deck_and_a_judge_behind_a_held_model_wait_then_are_turned_away() {
-    let (_rt, server) = server(vec![Answer::stream(&[BACKS])]);
+fn a_deck_and_a_judge_wait_their_turn_and_the_judge_goes_first() {
+    let verdict = r#"{"verdict":"close","feedback":"Nearly."}"#;
+    let answers = vec![Answer::stream(&[verdict]), Answer::stream(&[BACKS])];
+    let (_rt, server) = server(answers);
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(&dir);
     let ai = settings(&server.url);
-    let id = ai.model(TaskId::Explain).unwrap().id;
+    let model = ai.model(TaskId::Explain).cloned().unwrap();
     let _explainer = a.configure(&ai);
-    let held = a.slots().try_take(id, 1, Kind::Short);
+    let held = a.slots().try_take(&model, TaskId::Organize);
     assert!(held.is_some());
-    let start = Instant::now();
-    let mut deck = a.cards().write(vec![wanted("arcane")]);
+    let mut deck = a.cards().write(vec![wanted("arcane"), wanted("brisk")]);
     let mut verdict = a.judge().judge(attempt());
-    std::thread::sleep(Duration::from_secs(1));
+    until(|| a.slots().queued(model.id) == 2);
+    std::thread::sleep(Duration::from_millis(300));
     assert!(deck.take().is_none(), "the deck waits");
     assert!(verdict.take().is_none(), "the judge waits");
-    // F3 as it stands; Phase 4 of the AI plan queues them instead.
-    let backs = slowly(|| deck.take());
-    assert_eq!(backs.err().map(|f| f.why), Some(Why::InUse));
-    let waited = start.elapsed();
-    assert!(waited >= Slots::SHORT_WAIT, "{waited:?}");
-    let judged = slowly(|| verdict.take());
-    assert_eq!(judged.err().map(|f| f.why), Some(Why::InUse));
     assert!(server.seen().is_empty(), "nothing is sent while busy");
-    assert_eq!(a.in_use(id), 1, "only the held slot is taken");
+    drop(held);
+    let judged = slowly(|| verdict.take()).unwrap();
+    assert_eq!(judged.verdict, Verdict::Close);
+    assert!(finish(deck.as_mut()).is_ok(), "the deck is written next");
+    let first = server.seen()[0].body.to_string();
+    assert!(first.contains("walked"), "the judge went first: {first}");
+}
+
+#[test]
+fn three_decks_asked_together_all_finish() {
+    let (_rt, server) = server(vec![Answer::stream(&[BACKS])]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut a = assist(&dir);
+    let _explainer = a.configure(&settings(&server.url));
+    let cards = a.cards();
+    let words = || vec![wanted("arcane"), wanted("brisk")];
+    let mut decks: Vec<_> = (0..3).map(|_| cards.write(words())).collect();
+    for deck in &mut decks {
+        let backs = finish(deck.as_mut());
+        assert!(backs.is_ok(), "no deck is turned away: {backs:?}");
+    }
+    assert_eq!(server.seen().len(), 3, "one request each");
 }
 
 #[test]

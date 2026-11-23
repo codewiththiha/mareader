@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use mareader_settings::{ModelPreset, PresetId, Provider};
+use mareader_settings::{PresetId, Provider};
 
 pub use mareader_settings::Job;
 use mareader_study::Failure;
@@ -114,6 +114,20 @@ pub enum Reply {
     Tried(PresetId, Result<Tried, Failure>),
 }
 
+impl Reply {
+    /// A key list's provider and usable keys, which set the queue's room.
+    pub fn lanes(&self) -> Option<(Provider, u32)> {
+        match self {
+            Self::Keys {
+                provider,
+                keys: Ok(keys),
+                ..
+            } => Some((*provider, lanes(keys))),
+            _ => None,
+        }
+    }
+}
+
 /// Everything the AI settings show that isn't a setting.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Board {
@@ -143,15 +157,6 @@ impl Board {
 
     pub fn tried(&self, id: PresetId) -> &Load<Tried> {
         self.tried.get(&id).unwrap_or(&Load::Idle)
-    }
-
-    /// Tasks `p` may run at once: `at_once` per usable key, if keys are known.
-    pub fn capacity(&self, p: &ModelPreset) -> u32 {
-        let keys = match p.provider.takes_keys() {
-            true => self.keys(p.provider).ready().map_or(1, |k| lanes(k)),
-            false => 1,
-        };
-        u32::from(p.at_once).saturating_mul(keys)
     }
 
     /// Marks what `job` will refresh as on its way.
@@ -256,13 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn capacity_is_at_once_per_usable_key() {
-        let mut b = Board::default();
-        let mut ai = mareader_settings::AiSettings::default();
-        let id = ai.add_preset(Provider::OpenAi, "");
-        let mut p = ai.preset(id).cloned().unwrap_or_default();
-        p.at_once = 2;
-        assert_eq!(b.capacity(&p), 2, "keys not listed yet count as one");
+    fn every_key_but_a_banned_one_is_a_lane() {
         let key = |id: &str, state| KeyRow {
             id: id.into(),
             shown: String::new(),
@@ -276,14 +275,7 @@ mod tests {
             key("b", KeyState::Resting { secs: 3 }),
             key("c", banned),
         ];
-        b.finish(Reply::Keys {
-            provider: Provider::OpenAi,
-            keys: Ok(rows),
-            problem: None,
-        });
-        assert_eq!(b.capacity(&p), 4, "resting keys come back; banned don't");
-        p.provider = Provider::Ollama;
-        assert_eq!(b.capacity(&p), 2, "a keyless server is one lane");
+        assert_eq!(lanes(&rows), 2, "resting keys come back; banned don't");
         assert_eq!(lanes(&[]), 1);
     }
 

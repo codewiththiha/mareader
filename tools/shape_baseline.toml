@@ -10,7 +10,7 @@ paths = ["crates/animated-icons/src/source.rs", "crates/epub/src/generated.rs"]
 "crates/appearance/src/tokens.rs" = 566
 "crates/assist/src/organize.rs" = 1128
 "crates/assist/src/page.rs" = 636
-"crates/assist/src/service.rs" = 532
+"crates/assist/src/service.rs" = 530
 "crates/audio/src/feed.rs" = 513
 "crates/cefr/src/service.rs" = 660
 "crates/epub/src/book.rs" = 2160
@@ -104,7 +104,7 @@ paths = ["crates/animated-icons/src/source.rs", "crates/epub/src/generated.rs"]
 "tools/phonon-parity/src/main.rs" = 553
 
 [functions]
-"crates/engine/src/page_ai/groups.rs::step_batch" = 84
+"crates/engine/src/page_ai/groups.rs::step_batch" = 72
 "crates/engine/src/word_list.rs::step" = 92
 "crates/epub/src/book.rs::assemble_book" = 110
 "crates/epub/src/convert/markdown.rs::write" = 122

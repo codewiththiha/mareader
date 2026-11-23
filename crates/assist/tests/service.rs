@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mareader_assist::{
-    Assist, Board, Job, KeyState, Kind, Load, Loose, Organized, Organizing, Plan, Progress,
-    Request, Slots, Spot, Stage,
+    Assist, Board, Job, KeyState, Load, Loose, Organized, Organizing, Plan, Progress, Request,
+    Spot, Stage,
 };
 use mareader_settings::{AiSettings, ModelPreset, Provider, TaskId};
 use mareader_study::mode::{Key, Wanted};
@@ -156,62 +156,78 @@ fn providers_that_cannot_answer_say_why() {
     wait(&mut a, |b| matches!(b.tried(openai.id), Load::Failed(_)));
 }
 
+/// Explains on a thread of its own, as the word card does.
+fn explain_apart(e: &Arc<dyn Explainer>) -> std::thread::JoinHandle<Result<WordInfo, Why>> {
+    let e = Arc::clone(e);
+    std::thread::spawn(move || explain(e.as_ref()).0)
+}
+
+fn until(done: impl Fn() -> bool) {
+    let start = Instant::now();
+    while !done() {
+        assert!(start.elapsed() < Duration::from_secs(10), "never happened");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[test]
-fn a_busy_model_turns_explain_away_and_more_room_lets_it_in() {
+fn explain_waits_for_a_held_model_and_more_room_lets_it_in() {
     let (_rt, server) = server(vec![Answer::stream(&[QUICK])]);
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(&dir);
     let mut ai = settings(Provider::Ollama, &server.url);
-    let id = preset(&ai).id;
-    let organizing = a
-        .slots()
-        .try_take(id, 1, Kind::Long("organizing your library"));
+    let model = preset(&ai);
+    let organizing = a.slots().try_take(&model, TaskId::Organize);
     assert!(organizing.is_some());
     let explainer = a.configure(&ai);
-    assert_eq!(explain(explainer.as_ref()).0.err(), Some(Why::InUse));
+    let asked = explain_apart(&explainer);
+    until(|| a.slots().queued(model.id) == 1);
     assert!(server.seen().is_empty(), "nothing is sent while busy");
-    if let Some(p) = ai.preset_mut(id) {
+    let told = a.queued();
+    assert_eq!(told.len(), 1, "the reader is told once");
+    assert!(told[0].said().contains("is organizing your library"));
+    drop(organizing);
+    assert!(asked.join().unwrap().is_ok(), "it runs once freed");
+    let organizing = a.slots().try_take(&model, TaskId::Organize);
+    if let Some(p) = ai.preset_mut(model.id) {
         p.at_once = 2;
     }
     let explainer = a.configure(&ai);
     let (got, _) = explain(explainer.as_ref());
     assert!(got.is_ok(), "{got:?}");
-    assert_eq!(a.in_use(id), 1, "explain gave its slot back");
+    assert_eq!(a.in_use(model.id), 1, "explain gave its place back");
     drop(organizing);
-    assert_eq!(a.in_use(id), 0);
+    assert_eq!(a.in_use(model.id), 0);
 }
 
 #[test]
-fn explain_waits_behind_a_deck_being_written_then_is_turned_away() {
+fn an_explain_click_during_deck_writing_is_answered_next() {
+    let (_rt, server) = server(vec![Answer::stream(&[QUICK])]);
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(&dir);
-    // A server that takes the deck's request and never answers.
-    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/v1/", silent.local_addr().unwrap());
-    let ai = settings(Provider::Ollama, &url);
-    let id = preset(&ai).id;
+    let ai = settings(Provider::Ollama, &server.url);
+    let model = preset(&ai);
     let explainer = a.configure(&ai);
+    // A deck being written holds the model; another deck waits.
+    let writing = a.slots().try_take(&model, TaskId::StudyCards);
+    assert!(writing.is_some());
     let word = Wanted {
         key: Key::new("arcane", None),
         form: "arcane".to_owned(),
         sentence: "An arcane rule.".to_owned(),
     };
-    let deck = a.cards().write(vec![word]);
-    let start = Instant::now();
-    while a.in_use(id) == 0 {
-        assert!(start.elapsed() < Duration::from_secs(10), "the deck starts");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let start = Instant::now();
-    // F3 as it stands; Phase 4 of the AI plan answers Explain next.
-    assert_eq!(explain(explainer.as_ref()).0.err(), Some(Why::InUse));
-    let waited = start.elapsed();
-    assert!(waited >= Slots::SHORT_WAIT, "{waited:?}");
-    drop(deck);
-    while a.in_use(id) > 0 {
-        assert!(start.elapsed() < Duration::from_secs(30), "freed");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    let next_deck = a.cards().write(vec![word]);
+    until(|| a.slots().queued(model.id) == 1);
+    let asked = explain_apart(&explainer);
+    until(|| a.slots().queued(model.id) == 2);
+    drop(writing);
+    assert!(asked.join().unwrap().is_ok(), "answered, not refused");
+    let first = server.seen()[0].body.to_string();
+    assert!(
+        first.contains("The quick fox"),
+        "explain went first: {first}"
+    );
+    drop(next_deck);
 }
 
 #[test]
@@ -242,16 +258,17 @@ fn books(titles: &[&str]) -> Request {
     }
 }
 
-/// Polls `run` to its end, or fails after ten seconds.
+/// Polls `run` to its end, or fails after ten seconds; partials kept.
 fn finish(run: &mut Organizing) -> (Vec<Organized>, Result<Plan, Why>) {
     let start = Instant::now();
     let mut seen = Vec::new();
     loop {
         for event in run.poll() {
-            if let Organized::Done(plan) = event {
-                return (seen, plan.map_err(|f| f.why));
+            match event {
+                Organized::Done(plan) => return (seen, plan.map_err(|f| f.why)),
+                Organized::Partial(_) => seen.push(event),
+                _ => {}
             }
-            seen.push(event);
         }
         assert!(start.elapsed() < Duration::from_secs(10), "{seen:?}");
         std::thread::sleep(Duration::from_millis(10));
@@ -282,30 +299,28 @@ fn a_chatty_model_organizes_books_and_holds_its_model_meanwhile() {
 }
 
 #[test]
-fn organizing_needs_a_free_model_and_cancelling_frees_it() {
+fn organizing_waits_for_a_free_model_and_cancelling_frees_it() {
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(&dir);
     // A server that takes the request and never answers.
     let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/v1/", silent.local_addr().unwrap());
     let ai = settings(Provider::Ollama, &url);
-    let id = preset(&ai).id;
+    let model = preset(&ai);
     let _explainer = a.configure(&ai);
-    let explaining = a.slots().try_take(id, 1, Kind::Short);
-    let (_, plan) = finish(&mut a.organize(books(&["Odes"])));
-    assert_eq!(plan.err(), Some(Why::InUse), "a long task never queues");
-    drop(explaining);
+    let explaining = a.slots().try_take(&model, TaskId::Explain);
     let mut run = a.organize(books(&["Odes"]));
+    until(|| a.slots().queued(model.id) == 1);
+    let queued = Organized::Queued { behind: 1 };
     let start = Instant::now();
-    while a.in_use(id) == 0 {
-        assert!(start.elapsed() < Duration::from_secs(10));
+    while !run.poll().contains(&queued) {
+        assert!(start.elapsed() < Duration::from_secs(10), "told it waits");
         std::thread::sleep(Duration::from_millis(10));
     }
+    drop(explaining);
+    until(|| a.in_use(model.id) == 1);
     run.cancel();
-    while a.in_use(id) > 0 {
-        assert!(start.elapsed() < Duration::from_secs(10), "freed");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    until(|| a.in_use(model.id) == 0);
     // With nothing chosen, it says so.
     let mut none = ai.clone();
     none.tasks.choose(TaskId::Explain, None);

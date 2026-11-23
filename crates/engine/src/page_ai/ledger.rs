@@ -144,7 +144,7 @@ impl Ledger {
     ) -> Result<u64, &'static str> {
         let key = (who.pane, who.layout, page);
         let same = |r: &&Run| r.layout == who.layout && r.task == task && r.span == span;
-        let live = |r: &&Run| r.failed.is_none() && !r.requeue;
+        let live = |r: &&Run| r.failed.is_none();
         if let Some(id) = self.runs.iter().find(same).filter(live).map(|r| r.id) {
             self.show_on(key, Slot::Run(id), now);
             return Ok(id);
@@ -182,7 +182,6 @@ impl Ledger {
             generation: 0,
             failed: None,
             redo_of,
-            requeue: false,
         });
         self.show_on(key, Slot::Run(id), now);
         Ok(id)

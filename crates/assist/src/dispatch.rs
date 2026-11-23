@@ -1,0 +1,258 @@
+//! The one way every AI job runs: routed, queued, retried, reported.
+//!
+//! A job names its task, and the task's row gives its class and retry. Its
+//! route is the models it may ask, first choice first. Only a job the reader
+//! waits on falls through to the next model:
+//!
+//! | Failure | More models left | Last model |
+//! |---|---|---|
+//! | Unreadable answer | Re-asked on the same model | Same |
+//! | Busy, offline, slow, keys rejected | Next model at once | Spec's waits |
+//! | 15 s in line | Next model | Waits its turn |
+//!
+//! Other jobs ask their first model and wait their turn, however long.
+
+use std::future::Future;
+use std::sync::{Arc, Mutex};
+
+use mareader_settings::{Class, ModelPreset, Retry, TaskId, no_model};
+use mareader_study::{Failure, Why};
+use serde_json::Value;
+use tokio::runtime::Runtime;
+
+use crate::backend::{Backend, BoxFuture, Nobody, Partial};
+use crate::prompt::Prompt;
+use crate::running::{Event, Running, Say, Waker, start};
+use crate::slots::{Slots, Ticket};
+
+/// A model in a route, and who answers for it.
+#[derive(Clone)]
+pub(crate) struct Seat {
+    pub preset: ModelPreset,
+    pub backend: Arc<dyn Backend>,
+}
+
+/// Starts jobs on the runtime, through the queue.
+pub(crate) struct Dispatch<'a> {
+    pub rt: Option<&'a Runtime>,
+    pub waker: &'a Waker,
+    pub slots: &'a Slots,
+}
+
+impl Dispatch<'_> {
+    /// One request: `step` asks one model, and is called again per model.
+    pub fn ask<O, P, S, Fut>(&self, id: TaskId, route: Vec<Seat>, step: S) -> Running<O, P>
+    where
+        O: Send + 'static,
+        P: Send + 'static,
+        S: Fn(Arc<dyn Backend>, Retry, Say<O, P>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<O, Failure>> + Send + 'static,
+    {
+        let slots = self.slots.clone();
+        let job = move |say| asked(slots, id, route, step, say);
+        start(self.rt, self.waker, job)
+    }
+
+    /// Many requests under one place on `seat`, as the organizer makes.
+    ///
+    /// The flow asks through a lane that steps aside between requests when
+    /// a job the reader waits on is in line. No seat: no model is asked.
+    pub fn flow<O, P, F, Fut>(&self, id: TaskId, seat: Option<Seat>, flow: F) -> Running<O, P>
+    where
+        O: Send + 'static,
+        P: Send + 'static,
+        F: FnOnce(Arc<dyn Backend>, Say<O, P>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<O, Failure>> + Send + 'static,
+    {
+        let slots = self.slots.clone();
+        start(self.rt, self.waker, move |say| async move {
+            let Some(seat) = seat else {
+                let none: Arc<dyn Backend> = Arc::new(Nobody(unrouted(id)));
+                return flow(none, say).await;
+            };
+            counted(&slots, &seat).await;
+            let told = |n| say.send(queued(n));
+            let ticket = slots.take(&seat.preset, id, None, &told).await;
+            let ticket = ticket.ok_or(Why::InUse)?;
+            say.send(Event::Started {
+                by: seat.preset.title(),
+            });
+            let lane = Lane {
+                seat,
+                slots,
+                task: id,
+                ticket: Mutex::new(Some(ticket)),
+            };
+            flow(Arc::new(lane), say).await
+        })
+    }
+}
+
+fn queued<O, P>(behind: usize) -> Event<O, P> {
+    Event::Queued { behind }
+}
+
+/// What a task with no model fails with. Explain's card already says it.
+fn unrouted(id: TaskId) -> Failure {
+    match id {
+        TaskId::Explain => Why::NotHere.into(),
+        _ => Failure::detailed(Why::NotHere, no_model(id)),
+    }
+}
+
+/// Counts the keys of `seat`'s provider the first time it is asked.
+async fn counted(slots: &Slots, seat: &Seat) {
+    let provider = seat.preset.provider;
+    if provider.takes_keys() && slots.lanes(provider).is_none() {
+        slots.count(provider, seat.backend.lanes().await);
+    }
+}
+
+async fn asked<O, P, S, Fut>(
+    slots: Slots,
+    id: TaskId,
+    mut route: Vec<Seat>,
+    step: S,
+    say: Say<O, P>,
+) -> Result<O, Failure>
+where
+    O: Send + 'static,
+    P: Send + 'static,
+    S: Fn(Arc<dyn Backend>, Retry, Say<O, P>) -> Fut,
+    Fut: Future<Output = Result<O, Failure>>,
+{
+    let spec = id.spec();
+    if spec.class != Class::Waited {
+        route.truncate(1);
+    }
+    let (count, mut tried) = (route.len(), Vec::new());
+    let mut last = unrouted(id);
+    for (i, seat) in route.into_iter().enumerate() {
+        let more = i + 1 < count;
+        let name = seat.preset.title();
+        counted(&slots, &seat).await;
+        let fuse = more.then_some(Slots::FUSE);
+        let told = |n| say.send(queued(n));
+        let Some(_ticket) = slots.take(&seat.preset, id, fuse, &told).await else {
+            last = Failure::detailed(Why::InUse, format!("“{name}” stayed busy"));
+            tried.push(name);
+            continue;
+        };
+        say.send(Event::Started { by: name.clone() });
+        let retry = match more {
+            true => Retry {
+                waits: &[],
+                ..spec.retry
+            },
+            false => spec.retry,
+        };
+        let again = say.clone();
+        let backend = Counting {
+            inner: seat.backend,
+            again: Box::new(move |why, attempt| again.send(Event::Again { why, attempt })),
+            last: Mutex::new((0, None)),
+        };
+        tried.push(name);
+        match step(Arc::new(backend), retry, say.clone()).await {
+            Ok(out) => return Ok(out),
+            Err(f) if more && moves_on(&f) => last = f,
+            Err(f) => return Err(named(f, &tried)),
+        }
+    }
+    Err(named(last, &tried))
+}
+
+/// Failures the next model may not share.
+fn moves_on(f: &Failure) -> bool {
+    use Why::{Busy, KeysRejected, Offline, TimedOut};
+    matches!(f.why, Busy | Offline | TimedOut | KeysRejected)
+}
+
+/// `f`, naming every model asked when there was more than one.
+fn named(mut f: Failure, tried: &[String]) -> Failure {
+    if tried.len() < 2 {
+        return f;
+    }
+    let names: Vec<String> = tried.iter().map(|n| format!("“{n}”")).collect();
+    let asked = format!("asked {}", names.join(", then "));
+    f.detail = Some(match f.detail.take() {
+        Some(detail) => format!("{detail}; {asked}"),
+        None => asked,
+    });
+    f
+}
+
+/// A seat's backend that tells the job each time it is asked again.
+struct Counting {
+    inner: Arc<dyn Backend>,
+    again: Box<dyn Fn(Why, u8) + Send + Sync>,
+    /// Asks so far, and why the last one failed.
+    last: Mutex<(u8, Option<Why>)>,
+}
+
+impl Backend for Counting {
+    fn ask<'a>(
+        &'a self,
+        prompt: &'a Prompt,
+        partial: Partial<'a>,
+    ) -> BoxFuture<'a, Result<Value, Failure>> {
+        let seen = self.last.lock().ok().map(|mut last| {
+            last.0 = last.0.saturating_add(1);
+            *last
+        });
+        // An answer that came but couldn't be read is why it's asked again.
+        if let Some((attempt @ 2.., why)) = seen {
+            (self.again)(why.unwrap_or(Why::BadAnswer), attempt);
+        }
+        Box::pin(async move {
+            let got = self.inner.ask(prompt, partial).await;
+            if let Ok(mut last) = self.last.lock() {
+                last.1 = got.as_ref().err().map(|f| f.why);
+            }
+            got
+        })
+    }
+
+    fn lanes(&self) -> BoxFuture<'_, u32> {
+        self.inner.lanes()
+    }
+}
+
+/// A flow's line to its model: it holds a place, and gives it back between
+/// requests while a job the reader waits on is in line.
+struct Lane {
+    seat: Seat,
+    slots: Slots,
+    task: TaskId,
+    ticket: Mutex<Option<Ticket>>,
+}
+
+impl Backend for Lane {
+    fn ask<'a>(
+        &'a self,
+        prompt: &'a Prompt,
+        partial: Partial<'a>,
+    ) -> BoxFuture<'a, Result<Value, Failure>> {
+        Box::pin(async move {
+            if self.slots.waited_for(self.seat.preset.id) {
+                let held = self.ticket.lock().ok().and_then(|mut t| t.take());
+                drop(held);
+                let quiet = |_: usize| {};
+                let back = self.slots.take(&self.seat.preset, self.task, None, &quiet);
+                let back = back.await;
+                if let Ok(mut ticket) = self.ticket.lock() {
+                    *ticket = back;
+                }
+            }
+            self.seat.backend.ask(prompt, partial).await
+        })
+    }
+
+    fn lanes(&self) -> BoxFuture<'_, u32> {
+        self.seat.backend.lanes()
+    }
+}
+
+#[cfg(test)]
+#[path = "dispatch_tests.rs"]
+mod tests;

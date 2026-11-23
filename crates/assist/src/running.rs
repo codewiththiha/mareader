@@ -18,8 +18,14 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 /// News from a job.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event<O, P = O> {
+    /// Its model was full; this many run or wait before it.
+    Queued { behind: usize },
+    /// A model took it; its name.
+    Started { by: String },
     /// What has come so far, shown while the rest streams in.
     Partial(P),
+    /// Asked again after `why`; `attempt` counts from 1.
+    Again { why: Why, attempt: u8 },
     /// The last event: the result, or why there's none.
     Done(Result<O, Failure>),
 }
@@ -42,11 +48,11 @@ impl<O, P> Running<O, P> {
     pub fn answer(&mut self) -> Option<Result<O, Failure>> {
         while !self.over {
             match self.rx.try_recv() {
-                Ok(Event::Partial(_)) => {}
                 Ok(Event::Done(done)) => {
                     self.over = true;
                     return Some(done);
                 }
+                Ok(_) => {}
                 Err(TryRecvError::Empty) => return None,
                 Err(TryRecvError::Disconnected) => {
                     self.over = true;
@@ -75,6 +81,7 @@ impl<O, P> Running<O, P> {
             match self.rx.recv() {
                 Ok(Event::Partial(p)) => partial(p),
                 Ok(Event::Done(done)) => return done,
+                Ok(_) => {}
                 Err(_) => return Err(Why::NotHere.into()),
             }
         }
@@ -93,10 +100,23 @@ pub(crate) struct Say<O, P> {
     waker: Waker,
 }
 
+impl<O, P> Clone for Say<O, P> {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+            waker: Arc::clone(&self.waker),
+        }
+    }
+}
+
 impl<O, P> Say<O, P> {
-    pub fn partial(&self, news: P) {
-        let _ = self.tx.send(Event::Partial(news));
+    pub fn send(&self, news: Event<O, P>) {
+        let _ = self.tx.send(news);
         (self.waker)();
+    }
+
+    pub fn partial(&self, news: P) {
+        self.send(Event::Partial(news));
     }
 }
 

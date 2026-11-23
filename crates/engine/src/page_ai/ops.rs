@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mareader_library::{AiPageId, AiTask, BookId, Library, NewAiPage, PageSpan};
-use mareader_study::Why;
 use mareader_study::page::Rewritten;
 use mareader_workspace::PaneId;
 
@@ -68,11 +67,6 @@ impl Ledger {
                             .batches
                             .values()
                             .find(|b| b.runs.iter().any(|(id, _)| *id == run.id));
-                        // A busy model takes the group later, as slots free.
-                        if f.why == Why::InUse && batch.is_some() {
-                            run.requeue = true;
-                            continue;
-                        }
                         let mut said = f.said();
                         if self.follows.values().any(|w| w.runs.contains(&run.id)) {
                             said.push_str(" Continuous mode stopped.");

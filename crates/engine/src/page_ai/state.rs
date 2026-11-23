@@ -51,8 +51,6 @@ pub struct Run {
     pub failed: Option<String>,
     /// The kept result it will replace.
     pub redo_of: Option<AiPageId>,
-    /// Turned away by a busy model: its group is asked again.
-    pub requeue: bool,
 }
 
 /// A run's line to its writer.

@@ -1,34 +1,115 @@
-//! How many tasks each saved model runs at once, held as tickets.
+//! The queue in front of every saved model: who runs, who waits, in what order.
+//!
+//! A model runs At once tasks on each usable key. Past that, tasks queue:
+//! Waited before Asked before Ahead, then first come first served. A ticket
+//! is a running task's place; dropping it lets the next one in.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use mareader_settings::PresetId;
-use mareader_study::{Failure, Why};
+use mareader_settings::{Class, ModelPreset, PresetId, Provider, TaskId};
 use tokio::sync::Notify;
 
-/// A task's length, which decides whether it waits for a slot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    /// Over in seconds, like Explain; it waits a little for others like it.
-    Short,
-    /// Runs for minutes; names itself, as "organizing your library".
-    Long(&'static str),
+/// A task that had to wait behind another, as its toast tells it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Queued {
+    pub task: TaskId,
+    /// The model's name.
+    pub model: String,
+    /// Tasks the model runs at once.
+    pub room: usize,
+    /// The other task holding the model.
+    pub behind: TaskId,
+}
+
+impl Queued {
+    /// What the reader is told: who holds the model, and what waits.
+    pub fn said(&self) -> String {
+        let runs = match self.room {
+            1 => "1 task".to_owned(),
+            n => format!("{n} tasks"),
+        };
+        let (model, holding) = (&self.model, self.behind.spec().doing);
+        let doing = self.task.spec().doing;
+        let mut next = doing.chars();
+        let first = next.next().map(|c| c.to_uppercase().collect::<String>());
+        let next = format!("{}{}", first.unwrap_or_default(), next.as_str());
+        let held = format!("“{model}” is {holding} and runs {runs} at a time.");
+        format!("{held} {next} starts when it's free.")
+    }
+}
+
+/// One task in line.
+struct Wait {
+    id: u64,
+    preset: PresetId,
+    class: Class,
+}
+
+#[derive(Default)]
+struct State {
+    /// Who runs on each model now.
+    held: HashMap<PresetId, Vec<(u64, TaskId)>>,
+    /// Who waits, oldest first.
+    queued: Vec<Wait>,
+    /// Usable keys per provider, once counted.
+    lanes: HashMap<Provider, u32>,
+    /// Tasks that had to wait, until the app takes them.
+    news: Vec<Queued>,
+    next: u64,
+}
+
+impl State {
+    fn id(&mut self) -> u64 {
+        self.next += 1;
+        self.next
+    }
+
+    /// Whether a `class` task may start on `preset` beside those running.
+    fn fits(&self, preset: PresetId, class: Class, room: usize) -> bool {
+        let held = self.held.get(&preset).map_or(0, Vec::len);
+        // Work made ahead leaves the last place for someone waiting.
+        let limit = match class {
+            Class::Ahead if room >= 2 => room - 1,
+            _ => room,
+        };
+        held < limit
+    }
+
+    /// Whether `id` is next in line for `preset`.
+    fn first(&self, preset: PresetId, id: u64) -> bool {
+        let line = self.queued.iter().filter(|w| w.preset == preset);
+        let first = line.min_by_key(|w| (w.class, w.id));
+        first.is_some_and(|w| w.id == id)
+    }
+
+    /// Whether anyone of `class` or before waits for `preset`.
+    fn waiting(&self, preset: PresetId, class: Class) -> bool {
+        let mut line = self.queued.iter();
+        line.any(|w| w.preset == preset && w.class <= class)
+    }
+}
+
+/// Where a task stands after a look at the line.
+enum Turn {
+    In(Ticket),
+    /// Joined the line as this id, behind this many.
+    Joined(u64, usize),
+    Waits,
 }
 
 #[derive(Default)]
 struct Inner {
-    held: Mutex<HashMap<PresetId, Vec<(u64, Kind)>>>,
-    next: Mutex<u64>,
+    state: Mutex<State>,
     freed: Notify,
 }
 
-/// Every model's slots; cheap to clone.
+/// Every model's queue; cheap to clone.
 #[derive(Clone, Default)]
 pub struct Slots(Arc<Inner>);
 
-/// A slot held; dropping it frees the slot.
+/// A place held; dropping it frees the place.
 pub struct Ticket {
     slots: Arc<Inner>,
     preset: PresetId,
@@ -37,8 +118,8 @@ pub struct Ticket {
 
 impl Drop for Ticket {
     fn drop(&mut self) {
-        if let Ok(mut held) = self.slots.held.lock()
-            && let Some(list) = held.get_mut(&self.preset)
+        if let Ok(mut state) = self.slots.state.lock()
+            && let Some(list) = state.held.get_mut(&self.preset)
         {
             list.retain(|(id, _)| *id != self.id);
         }
@@ -46,154 +127,181 @@ impl Drop for Ticket {
     }
 }
 
+/// A place in line; a cancelled job leaves the line with it.
+struct InLine<'a> {
+    of: &'a Inner,
+    id: u64,
+}
+
+impl Drop for InLine<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.of.state.lock() {
+            state.queued.retain(|w| w.id != self.id);
+        }
+        self.of.freed.notify_waiters();
+    }
+}
+
 impl Slots {
-    /// How long a short task waits behind other short ones.
-    pub const SHORT_WAIT: Duration = Duration::from_secs(15);
+    /// How long a waited task queues for a model before trying the next.
+    pub const FUSE: Duration = Duration::from_secs(15);
+
+    fn state(&self) -> Option<MutexGuard<'_, State>> {
+        self.0.state.lock().ok()
+    }
 
     /// Tasks `preset` runs now.
     pub fn in_use(&self, preset: PresetId) -> usize {
-        let held = self.0.held.lock();
-        held.map_or(0, |h| h.get(&preset).map_or(0, Vec::len))
+        let state = self.state();
+        state.map_or(0, |s| s.held.get(&preset).map_or(0, Vec::len))
     }
 
-    /// The long task holding `preset`, if any.
-    pub fn long_holder(&self, preset: PresetId) -> Option<&'static str> {
-        let held = self.0.held.lock().ok()?;
-        held.get(&preset)?.iter().find_map(|(_, k)| match k {
-            Kind::Long(what) => Some(*what),
-            Kind::Short => None,
-        })
-    }
-
-    /// A slot now if one of `cap` is free.
-    pub fn try_take(&self, preset: PresetId, cap: usize, kind: Kind) -> Option<Ticket> {
-        let mut held = self.0.held.lock().ok()?;
-        let list = held.entry(preset).or_default();
-        if list.len() >= cap.max(1) {
-            return None;
-        }
-        let id = {
-            let mut next = self.0.next.lock().ok()?;
-            *next += 1;
-            *next
+    /// Tasks waiting for `preset`.
+    pub fn queued(&self, preset: PresetId) -> usize {
+        let Some(state) = self.state() else {
+            return 0;
         };
-        list.push((id, kind));
-        Some(Ticket {
+        state.queued.iter().filter(|w| w.preset == preset).count()
+    }
+
+    /// Usable keys of `p`, if counted.
+    pub fn lanes(&self, p: Provider) -> Option<u32> {
+        self.state().and_then(|s| s.lanes.get(&p).copied())
+    }
+
+    /// Takes `p`'s count of usable keys; tasks in line see the new room.
+    pub fn count(&self, p: Provider, lanes: u32) {
+        if let Some(mut state) = self.state() {
+            state.lanes.insert(p, lanes.max(1));
+        }
+        self.0.freed.notify_waiters();
+    }
+
+    /// Tasks `p` may run at once: At once per usable key, once counted.
+    pub fn room(&self, p: &ModelPreset) -> usize {
+        let lanes = match p.provider.takes_keys() {
+            true => self.lanes(p.provider).unwrap_or(1),
+            false => 1,
+        };
+        let room = u32::from(p.at_once).saturating_mul(lanes).max(1);
+        usize::try_from(room).unwrap_or(usize::MAX)
+    }
+
+    /// Whether a task the reader waits on is in line for `preset`.
+    pub fn waited_for(&self, preset: PresetId) -> bool {
+        let state = self.state();
+        state.is_some_and(|s| s.waiting(preset, Class::Waited))
+    }
+
+    /// Tasks that waited behind another since the last call.
+    pub fn news(&self) -> Vec<Queued> {
+        self.state()
+            .map(|mut s| std::mem::take(&mut s.news))
+            .unwrap_or_default()
+    }
+
+    fn admit(&self, state: &mut State, preset: PresetId, id: u64, task: TaskId) -> Ticket {
+        state.held.entry(preset).or_default().push((id, task));
+        Ticket {
             slots: Arc::clone(&self.0),
             preset,
             id,
-        })
+        }
     }
 
-    /// A slot, or why not; only a short task behind short ones waits.
+    /// A place now, if `p` has room and no one is in line before `task`.
+    pub fn try_take(&self, p: &ModelPreset, task: TaskId) -> Option<Ticket> {
+        let (room, class) = (self.room(p), task.spec().class);
+        let mut state = self.state()?;
+        if state.waiting(p.id, class) || !state.fits(p.id, class, room) {
+            return None;
+        }
+        let id = state.id();
+        Some(self.admit(&mut state, p.id, id, task))
+    }
+
+    /// A place on `p` at `task`'s turn; none if `fuse` runs out first.
+    ///
+    /// `queued` hears how many are ahead when the task joins the line.
     pub async fn take(
         &self,
-        preset: PresetId,
-        cap: usize,
-        kind: Kind,
-        name: &str,
-        wait: Duration,
-    ) -> Result<Ticket, Failure> {
-        let deadline = tokio::time::Instant::now() + wait;
+        p: &ModelPreset,
+        task: TaskId,
+        fuse: Option<Duration>,
+        queued: &(dyn Fn(usize) + Sync),
+    ) -> Option<Ticket> {
+        let deadline = fuse.map(|f| tokio::time::Instant::now() + f);
+        let mut line: Option<InLine<'_>> = None;
         loop {
             let freed = self.0.freed.notified();
             tokio::pin!(freed);
             freed.as_mut().enable();
-            if let Some(ticket) = self.try_take(preset, cap, kind) {
-                return Ok(ticket);
+            match self.look(p, task, line.as_ref().map(|l| l.id))? {
+                Turn::In(ticket) => return Some(ticket),
+                Turn::Joined(id, ahead) => {
+                    line = Some(InLine { of: &self.0, id });
+                    queued(ahead);
+                }
+                Turn::Waits => {}
             }
-            let long = self.long_holder(preset);
-            if kind != Kind::Short || long.is_some() {
-                return Err(busy(name, cap, long));
-            }
-            if tokio::time::timeout_at(deadline, freed).await.is_err() {
-                return Err(busy(name, cap, None));
+            match deadline {
+                Some(at) => tokio::time::timeout_at(at, freed).await.ok()?,
+                None => freed.await,
             }
         }
     }
-}
 
-/// Says who holds the model, and how to get more room.
-fn busy(name: &str, cap: usize, long: Option<&str>) -> Failure {
-    let runs = match cap {
-        1 => "runs 1 task at a time".to_owned(),
-        n => format!("runs {n} tasks at a time"),
-    };
-    let doing = long.map_or_else(|| "is busy".to_owned(), |what| format!("is {what}"));
-    Failure::detailed(
-        Why::InUse,
-        format!(
-            "“{name}” {doing} and {runs}. Raise “At once” or pick another model in Settings › AI models."
-        ),
-    )
+    /// One look at `p`'s line for `task`, in line as `id` if it is.
+    fn look(&self, p: &ModelPreset, task: TaskId, id: Option<u64>) -> Option<Turn> {
+        let (room, class) = (self.room(p), task.spec().class);
+        let mut state = self.state()?;
+        let turn = match id {
+            Some(id) => state.first(p.id, id),
+            None => !state.waiting(p.id, class),
+        };
+        if turn && state.fits(p.id, class, room) {
+            let id = id.unwrap_or_else(|| state.id());
+            state.queued.retain(|w| w.id != id);
+            return Some(Turn::In(self.admit(&mut state, p.id, id, task)));
+        }
+        if id.is_some() {
+            return Some(Turn::Waits);
+        }
+        let (id, ahead) = self.join(&mut state, p, task, room);
+        Some(Turn::Joined(id, ahead))
+    }
+
+    /// Puts `task` in line; its id, and how many run or wait before it.
+    fn join(&self, state: &mut State, p: &ModelPreset, task: TaskId, room: usize) -> (u64, usize) {
+        let (id, class) = (state.id(), task.spec().class);
+        let none = Vec::new();
+        let held = state.held.get(&p.id).unwrap_or(&none);
+        let other = held.iter().map(|(_, t)| *t).find(|t| *t != task);
+        let before = state.queued.iter();
+        let before = before.filter(|w| w.preset == p.id && w.class <= class);
+        let ahead = held.len() + before.count();
+        state.queued.push(Wait {
+            id,
+            preset: p.id,
+            class,
+        });
+        // A task behind its own kind is no news; another task's is.
+        if let Some(behind) = other {
+            let model = p.title();
+            let news = Queued {
+                task,
+                model,
+                room,
+                behind,
+            };
+            if !state.news.contains(&news) {
+                state.news.push(news);
+            }
+        }
+        (id, ahead)
+    }
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    use super::*;
-    use crate::backend::block;
-
-    const P: PresetId = PresetId(1);
-    const WAIT: Duration = Duration::from_millis(200);
-
-    #[test]
-    fn a_full_model_refuses_and_a_dropped_ticket_frees_it() {
-        let slots = Slots::default();
-        let first = slots.try_take(P, 1, Kind::Short);
-        assert!(first.is_some());
-        assert!(slots.try_take(P, 1, Kind::Short).is_none());
-        assert!(slots.try_take(PresetId(2), 1, Kind::Short).is_some());
-        assert_eq!(slots.in_use(P), 1);
-        drop(first);
-        assert_eq!(slots.in_use(P), 0);
-        let two: Vec<_> = (0..3)
-            .filter_map(|_| slots.try_take(P, 2, Kind::Short))
-            .collect();
-        assert_eq!(two.len(), 2, "a cap of two holds two");
-    }
-
-    #[test]
-    fn a_long_task_makes_others_fail_at_once_naming_it() {
-        let slots = Slots::default();
-        let _organizing = slots.try_take(P, 1, Kind::Long("organizing your library"));
-        let got = block(slots.take(P, 1, Kind::Short, "Fast", WAIT));
-        let f = got.err().expect("refused");
-        assert_eq!(f.why, Why::InUse);
-        let said = f.detail.unwrap_or_default();
-        assert!(said.contains("“Fast” is organizing your library"), "{said}");
-        assert!(said.contains("runs 1 task at a time"), "{said}");
-        // With room for two, Explain still runs beside it.
-        assert!(block(slots.take(P, 2, Kind::Short, "Fast", WAIT)).is_ok());
-    }
-
-    #[test]
-    fn a_short_task_waits_for_another_short_one() {
-        let slots = Slots::default();
-        let held = slots.try_take(P, 1, Kind::Short);
-        let later = slots.clone();
-        let got = block(async move {
-            let free = tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-                drop(held);
-            });
-            let got = later.take(P, 1, Kind::Short, "Fast", WAIT).await;
-            let _ = free.await;
-            got
-        });
-        assert!(got.is_ok(), "it got the slot once freed");
-        // Never freed: it gives up after the wait.
-        let _stuck = slots.try_take(P, 1, Kind::Short);
-        let got = block(slots.take(P, 1, Kind::Short, "Fast", WAIT));
-        assert_eq!(got.err().map(|f| f.why), Some(Why::InUse));
-    }
-
-    #[test]
-    fn a_long_task_never_queues() {
-        let slots = Slots::default();
-        let _explaining = slots.try_take(P, 1, Kind::Short);
-        let got = block(slots.take(P, 1, Kind::Long("organizing"), "Fast", WAIT));
-        let said = got.err().and_then(|f| f.detail).unwrap_or_default();
-        assert!(said.contains("“Fast” is busy"), "{said}");
-    }
-}
+#[path = "slots_tests.rs"]
+mod tests;

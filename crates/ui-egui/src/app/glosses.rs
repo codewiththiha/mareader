@@ -293,6 +293,10 @@ impl MareaderApp {
             }
         }
         self.take_organized();
+        #[cfg(not(target_arch = "wasm32"))]
+        for toast in self.ui.ai.waiting() {
+            self.ui.toasts.push(toast);
+        }
         self.tick_session(ctx);
     }
 

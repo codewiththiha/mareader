@@ -268,7 +268,8 @@ whole group, unlike continuous mode, which asks a page at a time.
 - **At once.** Groups run as many at a time as the model allows: its
   "at once" setting and the room left on its keys. With 2, the first two
   groups start together and the third starts when one is done. A model
-  busy elsewhere puts the group back in line, up to three tries.
+  busy elsewhere queues the group in the AI service until it has room
+  (`docs/assist.md`, § The queue).
 - **Progress.** The pill reads "Summarizing pages · 2/3" and fills as
   groups are done; its × stops the groups left. Any other failure stops the
   batch and the toast adds "The pages left weren't asked." A text size

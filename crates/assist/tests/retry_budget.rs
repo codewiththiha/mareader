@@ -81,7 +81,7 @@ fn a_failing_server_is_asked_four_times_by_the_organizer() {
     let plan = loop {
         let done = run.poll().into_iter().find_map(|event| match event {
             Organized::Done(plan) => Some(plan),
-            Organized::Partial(_) => None,
+            _ => None,
         });
         if let Some(plan) = done {
             break plan;

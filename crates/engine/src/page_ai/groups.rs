@@ -20,9 +20,6 @@ use super::view::{Pill, Ring, group_span, page_task};
 /// A group's text, if any, the group, and the span it covers.
 pub type Read = (Option<Source>, Group, PageSpan);
 
-/// Times a group the model was too busy for is asked again.
-pub const TRIES: u8 = 3;
-
 /// Own pages `from` to `to`, both in, asked as one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Group {
@@ -30,7 +27,6 @@ pub struct Group {
     pub from: usize,
     pub to: usize,
     pub redo_of: Option<AiPageId>,
-    pub tries: u8,
 }
 
 /// A pane's groups: waiting, being read, being written.
@@ -133,7 +129,6 @@ impl Ledger {
             from,
             to,
             redo_of: None,
-            tries: 0,
         });
         self.queue(asked, view.layout, groups.collect());
     }
@@ -151,7 +146,6 @@ impl Ledger {
             from,
             to,
             redo_of,
-            tries: 0,
         };
         self.queue(asked, layout, vec![group]);
     }
@@ -231,27 +225,15 @@ impl Ledger {
         for r in read {
             self.write(b, &who, r, now);
         }
-        // Runs done, failed, or turned away for a busy model.
+        // Runs done or failed; a busy model queues the rest in the service.
         let mut stop = false;
         let mut left = Vec::new();
-        for (id, mut g) in std::mem::take(&mut b.runs) {
+        for (id, g) in std::mem::take(&mut b.runs) {
             let Some(run) = self.runs.iter().find(|r| r.id == id) else {
                 b.finished += 1;
                 continue;
             };
-            if run.requeue {
-                self.runs.retain(|r| r.id != id);
-                self.showing.retain(|_, s| s.slot != Slot::Run(id));
-                g.tries += 1;
-                match g.tries < TRIES {
-                    true => b.waiting.push_front(g),
-                    false => {
-                        let why = "The model stayed busy, so some pages weren't done.";
-                        self.notes.push(why.to_owned());
-                        b.finished += 1;
-                    }
-                }
-            } else if run.failed.is_some() {
+            if run.failed.is_some() {
                 b.finished += 1;
                 stop = true;
             } else {

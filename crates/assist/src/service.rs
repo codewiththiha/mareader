@@ -13,13 +13,14 @@ use tokio::runtime::{Builder, Runtime};
 use crate::backend::{Backend, BoxFuture, Nobody, Partial};
 use crate::board::{AppleState, Board, Job, Reply, Tried, lanes};
 use crate::compat::{Compat, failure_with_keys};
+use crate::dispatch::{Dispatch, Seat};
 use crate::keys::{Clients, pasted, row};
 use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, organize_from};
 use crate::page::{PageJob, rewrite};
 use crate::prompt::Prompt;
 use crate::retry::attempt;
-use crate::running::{Event, Running, Waker, start};
-use crate::slots::{Kind, Slots, Ticket};
+use crate::running::{Event, Running, Say, Waker, start};
+use crate::slots::{Queued, Slots};
 use crate::task::Explain;
 use mareader_study::page::Rewritten;
 mod cards;
@@ -125,20 +126,34 @@ impl Assist {
     /// The answerer for `ai`; later jobs use these settings too.
     pub fn configure(&mut self, ai: &AiSettings) -> Arc<dyn Explainer> {
         self.ai = ai.clone();
-        let preset = ai.model(TaskId::Explain).cloned();
-        let backend = match &preset {
-            Some(p) => self.backend(p),
-            None => Arc::new(Nobody(Why::NotHere.into())),
-        };
+        let route = self.route(TaskId::Explain);
         Arc::new(AiExplainer {
+            line: self.line(),
+            by: route.first().map(|s| s.preset.title()).unwrap_or_default(),
+            route,
+            language: ai.explain_language(),
+        })
+    }
+
+    /// The models `task` may ask, each with who answers for it.
+    fn route(&self, task: TaskId) -> Vec<Seat> {
+        let route = self.ai.route(task).into_iter();
+        route.map(|p| self.seat(p)).collect()
+    }
+
+    fn seat(&self, preset: &ModelPreset) -> Seat {
+        Seat {
+            preset: preset.clone(),
+            backend: self.backend(preset),
+        }
+    }
+
+    fn line(&self) -> Line {
+        Line {
             engine: Arc::clone(&self.engine),
             waker: Arc::clone(&self.waker),
             slots: self.slots.clone(),
-            by: preset.as_ref().map(ModelPreset::title).unwrap_or_default(),
-            preset,
-            backend,
-            language: ai.explain_language(),
-        })
+        }
     }
 
     /// Who answers for `preset`, as configured.
@@ -155,7 +170,7 @@ impl Assist {
         }
     }
 
-    /// Every model's slots, shared with long tasks.
+    /// Every model's queue.
     pub fn slots(&self) -> &Slots {
         &self.slots
     }
@@ -163,6 +178,16 @@ impl Assist {
     /// Tasks `preset` runs now.
     pub fn in_use(&self, preset: PresetId) -> usize {
         self.slots.in_use(preset)
+    }
+
+    /// Tasks `preset` may run at once: the number the queue lets in.
+    pub fn capacity(&self, preset: &ModelPreset) -> u32 {
+        u32::try_from(self.slots.room(preset)).unwrap_or(u32::MAX)
+    }
+
+    /// Tasks that had to wait behind another since the last call.
+    pub fn queued(&self) -> Vec<Queued> {
+        self.slots.news()
     }
 
     /// Plans `req` afresh; once the model is free, it replaces a paused run.
@@ -204,56 +229,38 @@ impl Assist {
             Some(run) => run.carry_on(&req),
             None => Checkpoint::new(&req),
         };
-        let preset = self.ai.model(TaskId::Organize).cloned();
-        let backend = preset.as_ref().map(|p| self.backend(p));
-        let slots = self.slots.clone();
+        let id = TaskId::Organize;
+        let seat = self.route(id).into_iter().next();
+        if seat.is_none() && !run.finished() {
+            let none = Failure::detailed(Why::NotHere, no_model(id));
+            return start(self.engine.rt(), &self.waker, |_| async { Err(none) });
+        }
+        // A finished run only makes its plan; no model is asked.
+        let seat = seat.filter(|_| !run.finished());
         let file = self.root.join(CHECKPOINT);
-        start(self.engine.rt(), &self.waker, |say| async move {
+        let job = move |backend: Arc<dyn Backend>, say: Say<Plan, Progress>| async move {
             let save = |run: &Checkpoint| keep(&file, run);
-            // A finished run only makes its plan; no model is asked.
-            let (backend, slot) = match (preset, backend) {
-                _ if run.finished() => {
-                    let none: Arc<dyn Backend> = Arc::new(Nobody(Why::NotHere.into()));
-                    (none, None)
-                }
-                (Some(preset), Some(backend)) => {
-                    let what = Kind::Long(ORGANIZING);
-                    let ticket = slot(&slots, &preset, backend.as_ref(), what).await?;
-                    (backend, Some(ticket))
-                }
-                _ => return Err(Failure::detailed(Why::NotHere, no_model(TaskId::Organize))),
-            };
             if !resumed {
                 save(&run);
             }
             let hooks = Hooks {
                 progress: &|p| say.partial(p),
                 save: &save,
-                retry: TaskId::Organize.spec().retry,
+                retry: id.spec().retry,
             };
-            let plan = organize_from(backend.as_ref(), &req, run, &hooks).await;
-            drop(slot);
-            plan
-        })
+            organize_from(backend.as_ref(), &req, run, &hooks).await
+        };
+        self.line().dispatch().flow(id, seat, job)
     }
 
     /// Rewrites one page with its task's model; news comes by polling.
     pub fn rewrite(&self, job: PageJob) -> Rewriting {
-        let preset = self.ai.model(job.rewrite.task().into()).cloned();
-        let backend = preset.as_ref().map(|p| self.backend(p));
-        let slots = self.slots.clone();
-        start(self.engine.rt(), &self.waker, |say| async move {
-            let task = TaskId::from(job.rewrite.task());
-            let (Some(preset), Some(backend)) = (preset, backend) else {
-                return Err(Failure::detailed(Why::NotHere, no_model(task)));
-            };
-            let ticket = short_slot(&slots, &preset, backend.as_ref()).await?;
-            let retry = task.spec().retry;
-            let ask = job.ask();
-            let done = rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await;
-            drop(ticket);
-            done
-        })
+        let task = TaskId::from(job.rewrite.task());
+        let step = move |backend: Arc<dyn Backend>, retry, say: Say<Rewritten, Rewritten>| {
+            let ask = job.clone().ask();
+            async move { rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await }
+        };
+        self.line().dispatch().ask(task, self.route(task), step)
     }
 
     pub fn board(&self) -> &Board {
@@ -263,12 +270,15 @@ impl Assist {
     /// Takes in finished jobs; true if any changed the board.
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        let board = &mut self.board;
+        let (board, slots) = (&mut self.board, &self.slots);
         self.jobs.retain_mut(|job| {
             let Some(reply) = job.answer() else {
                 return true;
             };
             if let Ok(reply) = reply {
+                if let Some((provider, lanes)) = reply.lanes() {
+                    slots.count(provider, lanes);
+                }
                 board.finish(reply);
             }
             changed = true;
@@ -288,7 +298,7 @@ impl Assist {
             apple: self.apple.clone(),
             ai: self.ai.clone(),
             trial: match &job {
-                Job::Try(p) => Some(self.backend(p)),
+                Job::Try(p) => Some(self.seat(p)),
                 _ => None,
             },
             slots: self.slots.clone(),
@@ -354,33 +364,6 @@ impl Backend for Server {
     }
 }
 
-/// How a long task names itself to the tasks it turns away.
-const ORGANIZING: &str = "organizing your library";
-
-/// Holds a slot of `preset`; how many is `at_once` per lane.
-async fn slot(
-    slots: &Slots,
-    preset: &ModelPreset,
-    backend: &dyn Backend,
-    kind: Kind,
-) -> Result<Ticket, Failure> {
-    let lanes = backend.lanes().await;
-    let cap = u32::from(preset.at_once).saturating_mul(lanes);
-    let cap = usize::try_from(cap).unwrap_or(usize::MAX);
-    let wait = Slots::SHORT_WAIT;
-    slots
-        .take(preset.id, cap, kind, &preset.title(), wait)
-        .await
-}
-
-async fn short_slot(
-    slots: &Slots,
-    preset: &ModelPreset,
-    backend: &dyn Backend,
-) -> Result<Ticket, Failure> {
-    slot(slots, preset, backend, Kind::Short).await
-}
-
 /// News from an organizing run: progress, then the plan.
 pub type Organized = Event<Plan, Progress>;
 
@@ -393,13 +376,27 @@ pub type Rewrote = Event<Rewritten>;
 /// A rewrite under way; dropping it cancels it and frees its model.
 pub type Rewriting = Running<Rewritten>;
 
-/// The study tools' answerer: blocks its worker thread, not the UI.
-struct AiExplainer {
+/// What starts a job: the runtime, the UI's waker and the queue.
+struct Line {
     engine: Arc<Engine>,
     waker: Waker,
     slots: Slots,
-    preset: Option<ModelPreset>,
-    backend: Arc<dyn Backend>,
+}
+
+impl Line {
+    fn dispatch(&self) -> Dispatch<'_> {
+        Dispatch {
+            rt: self.engine.rt(),
+            waker: &self.waker,
+            slots: &self.slots,
+        }
+    }
+}
+
+/// The study tools' answerer: blocks its worker thread, not the UI.
+struct AiExplainer {
+    line: Line,
+    route: Vec<Seat>,
     language: Option<&'static str>,
     by: String,
 }
@@ -411,22 +408,21 @@ impl Explainer for AiExplainer {
         context: &str,
         partial: &(dyn Fn(WordInfo) + Sync),
     ) -> Result<WordInfo, Failure> {
-        let (preset, slots) = (self.preset.clone(), self.slots.clone());
-        let (backend, language) = (Arc::clone(&self.backend), self.language);
-        let (word, context) = (word.to_owned(), context.to_owned());
-        let job = start(self.engine.rt(), &self.waker, |say| async move {
-            let _slot = match &preset {
-                Some(p) => Some(short_slot(&slots, p, backend.as_ref()).await?),
-                None => None,
-            };
-            let task = Explain {
-                word: &word,
-                context: &context,
-                language,
-            };
-            let retry = TaskId::Explain.spec().retry;
-            attempt(backend.as_ref(), &task, &|info| say.partial(info), retry).await
-        });
+        let language = self.language;
+        let (word, context): (Arc<str>, Arc<str>) = (word.into(), context.into());
+        let step = move |backend: Arc<dyn Backend>, retry, say: Say<WordInfo, WordInfo>| {
+            let (word, context) = (Arc::clone(&word), Arc::clone(&context));
+            async move {
+                let task = Explain {
+                    word: &word,
+                    context: &context,
+                    language,
+                };
+                attempt(backend.as_ref(), &task, &|info| say.partial(info), retry).await
+            }
+        };
+        let (id, route) = (TaskId::Explain, self.route.clone());
+        let job = self.line.dispatch().ask(id, route, step);
         job.wait_with(partial)
     }
 
@@ -440,7 +436,7 @@ struct Work {
     clients: Arc<Clients>,
     apple: Option<Arc<crate::Apple>>,
     ai: AiSettings,
-    trial: Option<Arc<dyn Backend>>,
+    trial: Option<Seat>,
     slots: Slots,
 }
 
@@ -513,10 +509,12 @@ impl Work {
     }
 
     async fn trial(&self, preset: &ModelPreset) -> Result<Tried, Failure> {
-        let backend = self.trial.as_ref().ok_or(Why::NotHere)?;
-        let _slot = short_slot(&self.slots, preset, backend.as_ref()).await?;
+        let seat = self.trial.as_ref().ok_or(Why::NotHere)?;
+        let quiet = |_: usize| {};
+        let slot = self.slots.take(preset, TaskId::Explain, None, &quiet).await;
+        let _slot = slot.ok_or(Why::InUse)?;
         let start = Instant::now();
-        let info = crate::backend::run(backend.as_ref(), &SAMPLE, &|_| {}).await?;
+        let info = crate::backend::run(seat.backend.as_ref(), &SAMPLE, &|_| {}).await?;
         Ok(Tried {
             millis: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
             meaning: info.meaning,

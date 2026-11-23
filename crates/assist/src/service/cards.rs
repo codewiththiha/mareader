@@ -1,23 +1,22 @@
 //! Study mode's card writer and judge, off the UI thread.
 //!
 //! A deck's backs come in one request, and a recall's verdict in another.
-//! Each takes a short slot on the study task's model, so decks written ahead
-//! wait their turn behind Explain; dropping a job frees its slot.
+//! Each goes through the dispatcher: decks written ahead wait their turn as
+//! long as it takes, and the judge goes before them. Dropping a job frees
+//! its place.
 
-use std::future::Future;
 use std::sync::Arc;
 
-use mareader_settings::{ModelPreset, TaskId, no_model};
+use mareader_settings::TaskId;
 use mareader_study::mode::{
     Answer, Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, Judgement, Wanted, Written,
 };
-use mareader_study::{Failure, Why};
 
-use super::{Assist, Engine, Waker, short_slot};
-use crate::backend::{Backend, Nobody};
+use super::{Assist, Line};
+use crate::backend::Backend;
+use crate::dispatch::Seat;
 use crate::retry;
-use crate::running::{Running, start};
-use crate::slots::{Slots, Ticket};
+use crate::running::{Running, Say};
 use crate::study_judge::StudyJudge;
 use crate::study_mode::StudyCards;
 
@@ -33,18 +32,11 @@ impl Assist {
     }
 
     fn study_ai(&self, task: TaskId) -> AiCards {
-        let preset = self.ai.model(task).cloned();
-        let backend = match &preset {
-            Some(p) => self.backend(p),
-            None => Arc::new(Nobody(Why::NotHere.into())),
-        };
+        let route = self.route(task);
         AiCards {
-            engine: Arc::clone(&self.engine),
-            slots: self.slots.clone(),
-            waker: Arc::clone(&self.waker),
-            by: preset.as_ref().map(ModelPreset::title).unwrap_or_default(),
-            preset,
-            backend,
+            line: self.line(),
+            by: route.first().map(|s| s.preset.title()).unwrap_or_default(),
+            route,
             language: self.ai.study_language(),
         }
     }
@@ -52,11 +44,8 @@ impl Assist {
 
 /// Study's model, as both the card writer and the judge.
 struct AiCards {
-    engine: Arc<Engine>,
-    slots: Slots,
-    waker: Waker,
-    preset: Option<ModelPreset>,
-    backend: Arc<dyn Backend>,
+    line: Line,
+    route: Vec<Seat>,
     language: Option<&'static str>,
     by: String,
 }
@@ -71,8 +60,20 @@ impl CardWriter for AiCards {
     }
 
     fn write(&self, words: Vec<Wanted>) -> Box<dyn CardJob> {
-        let (slots, preset, backend) = self.parts();
-        Box::new(self.spawn(write_deck(slots, preset, backend, words, self.language)))
+        let (words, language) = (Arc::new(words), self.language);
+        let step = move |backend: Arc<dyn Backend>, retry, _: Say<_, _>| {
+            let words = Arc::clone(&words);
+            async move {
+                let task = StudyCards {
+                    words: &words,
+                    language,
+                };
+                retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
+            }
+        };
+        let (id, route) = (TaskId::StudyCards, self.route.clone());
+        let job: Pending<Vec<Option<Written>>> = self.line.dispatch().ask(id, route, step);
+        Box::new(job)
     }
 }
 
@@ -82,73 +83,21 @@ impl Judge for AiCards {
     }
 
     fn judge(&self, attempt: Attempt) -> Box<dyn JudgeJob> {
-        let (slots, preset, backend) = self.parts();
-        Box::new(self.spawn(judge_one(slots, preset, backend, attempt, self.language)))
+        let (attempt, language) = (Arc::new(attempt), self.language);
+        let step = move |backend: Arc<dyn Backend>, retry, _: Say<_, _>| {
+            let attempt = Arc::clone(&attempt);
+            async move {
+                let task = StudyJudge {
+                    attempt: &attempt,
+                    language,
+                };
+                retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
+            }
+        };
+        let (id, route) = (TaskId::StudyJudge, self.route.clone());
+        let job: Pending<Judged> = self.line.dispatch().ask(id, route, step);
+        Box::new(job)
     }
-}
-
-type Parts = (Slots, Option<ModelPreset>, Arc<dyn Backend>);
-
-impl AiCards {
-    fn parts(&self) -> Parts {
-        let backend = Arc::clone(&self.backend);
-        (self.slots.clone(), self.preset.clone(), backend)
-    }
-
-    /// Runs `asked` on the runtime; its result comes back through the job.
-    fn spawn<T: Send + 'static>(
-        &self,
-        asked: impl Future<Output = Result<T, Failure>> + Send + 'static,
-    ) -> Pending<T> {
-        start(self.engine.rt(), &self.waker, |_| asked)
-    }
-}
-
-/// One deck's backs, once the model has a slot free.
-async fn write_deck(
-    slots: Slots,
-    preset: Option<ModelPreset>,
-    backend: Arc<dyn Backend>,
-    words: Vec<Wanted>,
-    language: Option<&'static str>,
-) -> Answer {
-    let id = TaskId::StudyCards;
-    let _ticket = slot(&slots, preset.as_ref(), backend.as_ref(), id).await?;
-    let task = StudyCards {
-        words: &words,
-        language,
-    };
-    retry::attempt(backend.as_ref(), &task, &|_| {}, id.spec().retry).await
-}
-
-/// One recall's verdict, once the model has a slot free.
-async fn judge_one(
-    slots: Slots,
-    preset: Option<ModelPreset>,
-    backend: Arc<dyn Backend>,
-    attempt: Attempt,
-    language: Option<&'static str>,
-) -> Judgement {
-    let id = TaskId::StudyJudge;
-    let _ticket = slot(&slots, preset.as_ref(), backend.as_ref(), id).await?;
-    let task = StudyJudge {
-        attempt: &attempt,
-        language,
-    };
-    retry::attempt(backend.as_ref(), &task, &|_| {}, id.spec().retry).await
-}
-
-/// A short slot on `task`'s model, or why there is none.
-async fn slot(
-    slots: &Slots,
-    preset: Option<&ModelPreset>,
-    backend: &dyn Backend,
-    task: TaskId,
-) -> Result<Ticket, Failure> {
-    let Some(preset) = preset else {
-        return Err(Failure::detailed(Why::NotHere, no_model(task)));
-    };
-    short_slot(slots, preset, backend).await
 }
 
 /// A request on its way; dropping it cancels it and frees its model.

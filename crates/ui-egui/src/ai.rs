@@ -103,6 +103,22 @@ impl Ai {
         self.assist.as_ref().map_or(0, |a| a.in_use(id))
     }
 
+    /// Tasks `preset` may run at once: the number the queue lets in.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn capacity(&self, preset: &ModelPreset) -> Option<u32> {
+        self.assist.as_ref().map(|a| a.capacity(preset))
+    }
+
+    /// Toasts for tasks that wait behind another task on their model.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn waiting(&self) -> Vec<Toast> {
+        let Some(assist) = &self.assist else {
+            return Vec::new();
+        };
+        let told = |q: &mareader_assist::Queued| Toast::info(q.said());
+        assist.queued().iter().map(told).collect()
+    }
+
     /// Files `ask`'s books, or carries on the paused run; false without AI.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn organize(&mut self, ask: &Ask, batch: u16, resume: bool) -> bool {
@@ -162,7 +178,7 @@ impl Ai {
     pub fn organized(&mut self) -> Vec<Heard> {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(run) = &mut self.organizing {
-            let heard: Vec<Heard> = run.poll().into_iter().map(heard).collect();
+            let heard: Vec<Heard> = run.poll().into_iter().filter_map(heard).collect();
             let over = heard.iter().any(|h| !matches!(h, Heard::Progress { .. }));
             if over {
                 self.organizing = None;
@@ -196,7 +212,7 @@ impl Ai {
 impl Models for Ai {
     #[cfg(not(target_arch = "wasm32"))]
     fn capacity(&self, preset: &ModelPreset) -> Option<u32> {
-        self.board().map(|board| board.capacity(preset))
+        Ai::capacity(self, preset)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -241,9 +257,10 @@ impl Writing for Writer {
     fn news(&mut self) -> Vec<News> {
         let came = mareader_assist::Rewriting::poll(&mut self.0)
             .into_iter()
-            .map(|n| match n {
-                mareader_assist::Rewrote::Partial(r) => News::Partial(r),
-                mareader_assist::Rewrote::Done(r) => News::Done(r),
+            .filter_map(|n| match n {
+                mareader_assist::Rewrote::Partial(r) => Some(News::Partial(r)),
+                mareader_assist::Rewrote::Done(r) => Some(News::Done(r)),
+                _ => None,
             });
         came.collect()
     }
@@ -275,11 +292,11 @@ fn request(ask: &Ask, batch: u16) -> mareader_assist::Request {
     }
 }
 
-/// The service's news, in the library's words.
+/// The service's news, in the library's words; a wait is toasted apart.
 #[cfg(not(target_arch = "wasm32"))]
-fn heard(news: mareader_assist::Organized) -> Heard {
+fn heard(news: mareader_assist::Organized) -> Option<Heard> {
     use mareader_assist::{Organized, Stage};
-    match news {
+    Some(match news {
         Organized::Partial(p) => Heard::Progress {
             filing: p.stage == Stage::Filing,
             done: p.done,
@@ -287,7 +304,8 @@ fn heard(news: mareader_assist::Organized) -> Heard {
         },
         Organized::Done(Ok(plan)) => Heard::Plan(proposal(plan)),
         Organized::Done(Err(f)) => Heard::Failed(failed(&f)),
-    }
+        _ => return None,
+    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]

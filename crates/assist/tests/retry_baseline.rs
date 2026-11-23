@@ -162,7 +162,7 @@ fn the_organizer_waits_and_asks_again() {
     let plan = answer(|| {
         run.poll().into_iter().find_map(|event| match event {
             Organized::Done(plan) => Some(plan),
-            Organized::Partial(_) => None,
+            _ => None,
         })
     });
     let plan = plan.map_err(|f| f.why).unwrap();
@@ -186,7 +186,7 @@ fn a_page_rewrite_waits_and_asks_again() {
     let done = answer(|| {
         rewriting.poll().into_iter().find_map(|news| match news {
             Rewrote::Done(done) => Some(done),
-            Rewrote::Partial(_) => None,
+            _ => None,
         })
     });
     assert!(done.is_ok(), "{:?}", done.err());

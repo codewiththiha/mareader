@@ -197,26 +197,50 @@ The owner split the one AI tab in two and renamed Explain:
 - Messages about keys and models point to Settings › AI models; the page
   menu's "Set up AI…" opens it when no model is saved.
 
-## Room: how many tasks a model runs
+## The queue: who runs, who waits (Phase 4)
 
-Every task holds a slot of its model's `Slots` while it runs (`slots.rs`).
-A `Ticket` frees its slot when dropped, so a task that fails, finishes or
-is cancelled frees it at once.
+Every AI job goes through the dispatcher (`dispatch.rs`): `ask()` for one
+request, `flow()` for the organizer's many. Both return a `Running`. In
+front of each saved model is a queue (`slots.rs`), and a running job holds
+a `Ticket`. Dropping the ticket, or the job, lets the next one in.
 
-- **Capacity** is At once × usable keys: keys not set aside, at least one.
-  Keyless providers count one. ai-pool rotates keys request by request, so
-  tasks running together already go out on different keys.
+- **One capacity number.** At once × usable keys: keys not set aside, at
+  least one. Keyless providers count one. The queue counts a provider's
+  keys the first time it is asked, and again whenever a key list comes back
+  from Settings. The engine's page runs and Settings read the same number
+  (`Assist::capacity`). ai-pool rotates keys request by request, so tasks
+  running together already go out on different keys.
 - **Keys from one account share its limits.** OpenAI counts rate limits per
   organisation and project, Gemini per project. More keys from one account
   add room here but rarely more throughput; the AI tab says so.
-- **Short tasks** (Explain) wait up to 15 s behind other short ones.
-  **Long tasks** (the organizer) never wait, and nothing waits behind a long
-  task.
-- **A refusal** is `Why::InUse`, naming the model, who holds it, and how to
-  get room: "“Fast” is organizing your library and runs 1 task at a time.
-  Raise “At once” or pick another model in Settings › AI."
+- **Order.** Waited (Explain, a recall's verdict) before Asked (page
+  rewrites) before Ahead (decks ahead, the organizer), then first come
+  first served. A running job is never stopped.
+- **Nothing is turned away.** Past capacity, a job waits its turn however
+  long it takes, until it gets a place or its handle is dropped. Nothing
+  answers `InUse` because a model is full.
+- **The reader is told.** A job that waits behind a different task makes a
+  toast: "“Fast” is organizing your library and runs 1 task at a time.
+  Explaining a word starts when it's free." A deck behind a deck, or a page
+  behind a page, is no news.
+- **Bulk work steps aside.** The organizer gives its place back between
+  requests while a Waited job is in line, then queues again. With room for
+  two or more, Ahead work never takes the last free place.
+- **Waited jobs fall through their route.** With fallback models set (in
+  the file, for now), a Waited job moves on after 15 s in line, or at once
+  on Busy, Offline, TimedOut or rejected keys. On its last model it waits
+  its turn and uses its spec's waits. A failure names every model asked.
+  Other jobs ask only their first model. The table is in `dispatch.rs`.
+- **News.** `Event` carries `Queued { behind }`, `Started { by }`,
+  `Partial`, `Again { why, attempt }` and `Done`. `Again` comes from a
+  single request asked again; a flow's steps don't send it.
 - Each saved model's summary shows its capacity, how many tasks run now,
   and which tasks use it.
+
+Owner's call for p4-4 (2026-11-23): the limit is per saved model, the
+order is by who waits, and bulk work steps aside, so Explain works while
+the library is organized whenever the model has room or the organizer
+is between requests.
 
 ## How each task runs today (2026-11-23)
 
@@ -243,12 +267,9 @@ asked (1 + 3) × (1 + 2) = 12 times for one organizer step. Phase 2 of the
 AI plan settled this and gave every task a retry: see
 [Retry budget](#retry-budget).
 
-Known gaps, each pinned by a test that names the phase of the AI plan
-that changes it:
-
-- **No priority**: a deck written ahead, a recall's verdict and an Explain
-  click are all short tasks, so each gives up as `InUse` after 15 s behind
-  another one (`tests/study_mode.rs`, `tests/service.rs`).
+The queue columns above are history: Phase 4 replaced short and long
+slots with one queue, and the engine's requeue on `InUse` is gone. See
+[The queue](#the-queue-who-runs-who-waits-phase-4).
 
 ## Retry budget
 
@@ -282,10 +303,6 @@ What one task can cost against a server that keeps failing:
 | Unreadable answer, no step-down | 1 + 1 re-ask = **2** | **2** |
 | No JSON in any mode | ai-pool's 3 modes = **3** | **3** |
 | Wrong fields after a step-down | 3 modes + 1 re-ask = **4** | **4** |
-
-Not counted here: the engine requeues
-a page group on `InUse` (`page_ai/groups.rs`), which belongs to the
-queue (Phase 4 of the AI plan).
 
 Pinned by `tests/retry_budget.rs`, `tests/retry_baseline.rs` and the
 unit tests in `retry.rs`.
@@ -378,19 +395,20 @@ guesses.
 **The service.** `Assist::organize(Request)` returns an `Organizing` at
 once and runs on the runtime:
 
-- It holds a long slot named "organizing your library". A full model
-  answers `InUse` straight away; no model chosen is `NotHere`.
+- It takes a place on its model through `flow()`, waiting its turn on a
+  full model, and steps aside between requests for a Waited job. No model
+  chosen is `NotHere`.
 - `poll()` returns `Organized::Progress` events (one at the start, then one
   per request, out of 2 × batches), then a final `Done` with the plan or
   the failure.
-- `cancel()`, or dropping the handle, stops the run and frees its slot.
+- `cancel()`, or dropping the handle, stops the run and frees its place.
 
 The crate knows nothing of the library: books and shelves go in and come
 back as `u128` keys (`BookId.0`, `ShelfId.0`). What the library does with
 the plan is in `docs/library.md`, § AI organizer.
 
 A new workflow is the same shape: write its tasks, chain them in an async
-function over `&dyn Backend`, and start it from `Assist` holding a slot.
+function over `&dyn Backend`, and start it from `Assist` with `flow()`.
 
 ### Pausing and resuming (2026-10-19)
 
@@ -427,8 +445,8 @@ it until the plan is applied or discarded.
   (see [Retry budget](#retry-budget)). Other failures fail at once.
   Either way, every saved step stays.
 - A fresh `Assist::organize` replaces the checkpoint only once it holds
-  its slot. A refusal (`InUse`, `NotHere`) leaves a paused run as it
-  was.
+  its place. No model (`NotHere`), or a run dropped while it waits, leaves
+  a paused run as it was.
 - `paused()` reads the checkpoint, `set_aside()` and `bring_back()`
   rename it to `organize.old.json` and back (for Undo), and `forget()`
   removes both.
@@ -439,7 +457,8 @@ it until the plan is applied or discarded.
   in two batches, the repair round, unreadable answers and a dead server,
   paths tidied and capped in depth, and titles quoted as data.
 - `tests/service.rs`: a chatty model with no JSON mode organizes books
-  while holding its model; a busy model refuses, and cancelling frees it.
+  while holding its model; on a busy model it waits, and cancelling frees
+  it.
 - Resuming (`src/organize.rs`): a stopped run carries on without asking
   again; a resumed run fits the library as it is now; a finished run
   makes its plan without asking; a busy server is waited out, then the

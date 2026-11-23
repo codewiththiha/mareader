@@ -21,6 +21,8 @@ pub struct Live<'a> {
     pub board: &'a Board,
     /// Tasks a saved model runs now.
     pub in_use: &'a dyn Fn(PresetId) -> usize,
+    /// Tasks it may run at once, as the queue counts them.
+    pub room: &'a dyn Fn(&ModelPreset) -> u32,
 }
 
 pub fn models_tab(ui: &mut Ui, ai: &mut AiSettings, live: Option<Live<'_>>, out: &mut Commands) {
@@ -85,7 +87,8 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
             };
             let id = p.id;
             let busy = live.map_or(0, |l| (l.in_use)(id));
-            let (line, warn) = status_line(p, board, busy);
+            let room = live.map_or(u32::from(p.at_once), |l| (l.room)(p));
+            let (line, warn) = status_line(p, board, (busy, room));
             let pills = uses(ai, id);
             let is_open = open == Some(id.0);
             let look = Head {
@@ -145,7 +148,8 @@ fn uses(ai: &AiSettings, id: PresetId) -> Vec<&'static str> {
 }
 
 /// The row's small print; true when it asks for a hand.
-fn status_line(p: &ModelPreset, board: Option<&Board>, busy: usize) -> (String, bool) {
+fn status_line(p: &ModelPreset, board: Option<&Board>, load: (usize, u32)) -> (String, bool) {
+    let (busy, room) = load;
     let server = p.provider.server();
     if let Some(b) = board
         && server
@@ -174,7 +178,6 @@ fn status_line(p: &ModelPreset, board: Option<&Board>, busy: usize) -> (String, 
             model => model.to_owned(),
         });
     }
-    let room = board.map_or(u32::from(p.at_once), |b| b.capacity(p));
     parts.push(format!("{room} at once"));
     if busy > 0 {
         parts.push(format!("{busy} running"));
@@ -807,6 +810,7 @@ mod tests {
                         let live = Live {
                             board: &s.board,
                             in_use: &|_| 0,
+                            room: &|p| u32::from(p.at_once),
                         };
                         models_tab(ui, &mut s.ai, Some(live), &mut s.out);
                     }
