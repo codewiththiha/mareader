@@ -17,10 +17,11 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use mareader_cefr::{Ticket as TagTicket, candidates};
 use mareader_dict::Ticket;
 use mareader_session::Document;
+use mareader_settings::{TaskId, no_model};
 use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
 use mareader_study::mode::{build, lemma};
 
-use super::backs::{NO_MODEL, Shown, Writer, said, wanted};
+use super::backs::{Shown, Writer, wanted};
 use super::known::Known;
 use super::sightings::{self, Read};
 use crate::session::Waker;
@@ -376,7 +377,8 @@ impl DeckJob {
 
     /// Asks the writer for the backs not cached; with all cached, finishes.
     fn ask_backs(&mut self) -> Result<(), String> {
-        let writer = self.writer.clone().ok_or(NO_MODEL)?;
+        let none = || no_model(TaskId::StudyCards);
+        let writer = self.writer.clone().ok_or_else(none)?;
         let id = writer.cards.id();
         let mut asked = Vec::new();
         self.written = (self.deck.cards.iter().enumerate())
@@ -407,7 +409,7 @@ impl DeckJob {
         let Some(answer) = job.take() else {
             return Ok(false);
         };
-        let backs = answer.map_err(|f| said(&f))?;
+        let backs = answer.map_err(|f| f.said())?;
         let asked = std::mem::take(asked);
         if let Some(writer) = &self.writer {
             let id = writer.cards.id();

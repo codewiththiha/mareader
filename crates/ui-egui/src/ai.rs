@@ -317,7 +317,7 @@ fn failed(f: &mareader_study::Failure) -> Toast {
             .detail
             .clone()
             .unwrap_or_else(|| f.why.message().to_owned()),
-        Why::NotHere => "No AI is set up to organize with. Choose a model in Settings › AI.".into(),
+        Why::NotHere => f.said(),
         Why::Refused => "The model declined to organize these books.".into(),
         Why::BadAnswer => "The model's answers couldn't be read. Try another model.".into(),
         why => format!("Couldn't organize the books. {}", why.message()),

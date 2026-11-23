@@ -12,15 +12,11 @@ use std::sync::{Arc, Mutex};
 
 use mareader_dict::Entry;
 use mareader_study::mode::{Card, CardWriter, Key, Pos, Wanted, Written};
-use mareader_study::{Failure, Why};
 
 /// Definitions one card shows at most.
 const DEFINITIONS: usize = 3;
 /// Backs kept at most; past it the cache starts over.
 const KEPT: usize = 4096;
-/// The error card's words when cards come from the AI and none is set.
-pub const NO_MODEL: &str = "No AI model is set for study. Choose one in Settings › AI, \
-or let the cards come from the dictionary.";
 
 /// A card and its back; the meaning is empty when no one had it.
 #[derive(Clone, Debug, PartialEq)]
@@ -103,19 +99,6 @@ pub fn wanted(card: &Card) -> Wanted {
     }
 }
 
-/// A writer's failure as the error card says it.
-pub fn said(failure: &Failure) -> String {
-    let message = match failure.why {
-        Why::NotHere => return NO_MODEL.to_owned(),
-        Why::Offline => "The AI couldn’t be reached. Check the connection or the server.",
-        why => why.message(),
-    };
-    match &failure.detail {
-        Some(detail) => format!("{message} ({detail})"),
-        None => message.to_owned(),
-    }
-}
-
 /// Up to [`DEFINITIONS`] definitions, those of the card's class first.
 pub fn meaning_of(entries: &[Entry], pos: Option<Pos>) -> String {
     let mut sorted: Vec<&Entry> = entries.iter().collect();
@@ -181,12 +164,5 @@ mod tests {
         };
         assert_eq!(backs.get("m|English", &elsewhere), None, "another sentence");
         assert_eq!(backs.count(), 1);
-    }
-
-    #[test]
-    fn failures_say_what_to_do() {
-        assert_eq!(said(&Why::NotHere.into()), NO_MODEL);
-        let offline = said(&Failure::detailed(Why::Offline, "refused"));
-        assert!(offline.contains("couldn’t be reached") && offline.ends_with("(refused)"));
     }
 }

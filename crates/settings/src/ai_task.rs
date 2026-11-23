@@ -133,6 +133,12 @@ impl From<PageTask> for TaskId {
     }
 }
 
+/// The reader's words when `task` has no model to ask.
+pub fn no_model(task: TaskId) -> String {
+    let doing = task.spec().doing;
+    format!("No AI model is set for {doing}. Choose one in Settings › AI.")
+}
+
 /// Each task's models, first choice first.
 pub type Routes = BTreeMap<TaskId, Vec<PresetId>>;
 
@@ -220,6 +226,15 @@ mod tests {
         let labels: std::collections::HashSet<_> =
             TaskId::ALL.iter().map(|t| t.spec().label).collect();
         assert_eq!(labels.len(), TaskId::ALL.len(), "labels are unique");
+    }
+
+    #[test]
+    fn a_missing_model_is_named_by_what_it_would_do() {
+        let none = no_model(TaskId::StudyJudge);
+        assert_eq!(
+            none,
+            "No AI model is set for judging a recall. Choose one in Settings › AI."
+        );
     }
 
     #[test]

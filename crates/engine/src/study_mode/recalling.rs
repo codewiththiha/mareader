@@ -10,12 +10,13 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use mareader_settings::{TaskId, no_model};
 use mareader_study::mode::{
     Attempt, CardJob, Done, Judge, JudgeJob, Key, Outcome, Phase, Recall, Wanted, Written,
 };
 use mareader_workspace::PaneId;
 
-use super::backs::{Writer, said};
+use super::backs::Writer;
 
 /// What the recall popover asks.
 #[derive(Clone, Debug, PartialEq)]
@@ -57,9 +58,6 @@ impl Word {
         }
     }
 }
-
-/// The popover's words when no AI is set to judge.
-pub const NO_JUDGE: &str = "No AI model is set for study. Choose one in Settings › AI.";
 
 /// One open recall.
 pub struct Recalling {
@@ -111,7 +109,7 @@ impl Recalling {
         self.failure = None;
         let Some(judge) = judge else {
             self.recall.failed();
-            self.failure = Some(NO_JUDGE.to_owned());
+            self.failure = Some(no_model(TaskId::StudyJudge));
             return true;
         };
         let attempt = Attempt {
@@ -148,7 +146,7 @@ impl Recalling {
             Ok(j) => (true, self.recall.judged(j.verdict, j.feedback, ask)),
             Err(failure) => {
                 self.recall.failed();
-                self.failure = Some(said(&failure));
+                self.failure = Some(failure.said());
                 (true, None)
             }
         }
@@ -251,11 +249,11 @@ mod tests {
         assert!(
             r.failure
                 .as_deref()
-                .is_some_and(|f| f.contains("couldn’t be reached"))
+                .is_some_and(|f| f.contains("couldn't be reached"))
         );
         assert!(r.recall.again());
         assert!(r.send("right", None));
-        assert_eq!(r.failure.as_deref(), Some(NO_JUDGE));
+        assert_eq!(r.failure, Some(no_model(TaskId::StudyJudge)));
         r.recall.again();
         r.recall.reveal();
         let done = r.ending(Outcome::Missed).map(|d| d.attempts);

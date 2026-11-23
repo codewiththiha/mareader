@@ -98,7 +98,7 @@ fn a_failed_deck_tries_again_or_turns_to_the_dictionary() {
     let failed = |h: &H| matches!(deck(h, pane), Some(DeckState::Failed { .. }));
     assert!(wait(&mut h, failed), "the AI fails");
     h.run_steps(2);
-    assert!(h.query_by_label_contains("couldn’t be reached").is_some());
+    assert!(h.query_by_label_contains("couldn't be reached").is_some());
     h.get_by_label(RETRY).click();
     h.run_steps(2);
     assert!(wait(&mut h, failed), "a retry asks again, and fails again");

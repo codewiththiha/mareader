@@ -24,7 +24,7 @@ use mareader_workspace::PaneId;
 pub use backs::{Backs, Shown, Writer};
 pub use deck_job::{Built, DeckJob, Doing, Tags};
 pub use known::Known;
-pub use recalling::{Ask, NO_JUDGE, Recalling, Word};
+pub use recalling::{Ask, Recalling, Word};
 pub use run::{Ahead, DeckState, Open, Prior, Run};
 
 /// Who could write study's cards: a model chosen for study (the desktop

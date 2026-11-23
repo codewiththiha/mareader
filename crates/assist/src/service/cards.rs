@@ -7,7 +7,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use mareader_settings::{ModelPreset, TaskId};
+use mareader_settings::{ModelPreset, TaskId, no_model};
 use mareader_study::mode::{
     Answer, Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, Judgement, Wanted, Written,
 };
@@ -112,13 +112,13 @@ async fn write_deck(
     words: Vec<Wanted>,
     language: Option<&'static str>,
 ) -> Answer {
-    let _ticket = slot(&slots, preset.as_ref(), backend.as_ref()).await?;
+    let id = TaskId::StudyCards;
+    let _ticket = slot(&slots, preset.as_ref(), backend.as_ref(), id).await?;
     let task = StudyCards {
         words: &words,
         language,
     };
-    let retry = TaskId::StudyCards.spec().retry;
-    retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
+    retry::attempt(backend.as_ref(), &task, &|_| {}, id.spec().retry).await
 }
 
 /// One recall's verdict, once the model has a slot free.
@@ -129,24 +129,24 @@ async fn judge_one(
     attempt: Attempt,
     language: Option<&'static str>,
 ) -> Judgement {
-    let _ticket = slot(&slots, preset.as_ref(), backend.as_ref()).await?;
+    let id = TaskId::StudyJudge;
+    let _ticket = slot(&slots, preset.as_ref(), backend.as_ref(), id).await?;
     let task = StudyJudge {
         attempt: &attempt,
         language,
     };
-    let retry = TaskId::StudyJudge.spec().retry;
-    retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
+    retry::attempt(backend.as_ref(), &task, &|_| {}, id.spec().retry).await
 }
 
-/// A short slot on study's model, or why there is none.
+/// A short slot on `task`'s model, or why there is none.
 async fn slot(
     slots: &Slots,
     preset: Option<&ModelPreset>,
     backend: &dyn Backend,
+    task: TaskId,
 ) -> Result<Ticket, Failure> {
     let Some(preset) = preset else {
-        let none = "no model is chosen for study; pick one in Settings › AI";
-        return Err(Failure::detailed(Why::NotHere, none));
+        return Err(Failure::detailed(Why::NotHere, no_model(task)));
     };
     short_slot(slots, preset, backend).await
 }

@@ -326,6 +326,19 @@ one model goes to both `study_cards` and `study_judge`. A null leaves the
 task following Explain, and a lost id is dropped. Settings › Study shows
 the two study tasks as two rows.
 
+Shared words have one home each:
+
+- **Prompts** (`prompt.rs`): `JSON_ONLY` ends every system prompt.
+  `AS_DATA` follows each prompt's word on what it quotes. `bilingual()`
+  is the rule for a meaning in another language, for Explain and the
+  cards.
+- **No model** (`settings::no_model(task)`): "No AI model is set for
+  organizing your library. Choose one in Settings › AI." It is built from
+  the task's `doing`. The service puts it in a `NotHere` failure's small
+  print, and the engine and the organizer's toasts say it as it is.
+- **A failure** (`Failure::said()`): its `Why` message, then the small
+  print in brackets. A `NotHere` failure's small print is the whole of it.
+
 ## Workflows: the organizer
 
 Organizing is a fixed workflow, not an open-ended agent loop: the steps

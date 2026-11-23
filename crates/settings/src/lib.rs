@@ -32,7 +32,7 @@ pub use ai::{
     TranslateTask, language_name,
 };
 pub use ai_job::Job;
-pub use ai_task::{Class, Retry, Routes, TaskId, TaskSpec};
+pub use ai_task::{Class, Retry, Routes, TaskId, TaskSpec, no_model};
 pub use load::{Loaded, load, to_json};
 pub use reader::{
     AppearanceMenuStyle, Bar, ChromeSettings, FloatingLabelStyle, Highlight, LayoutSettings,

@@ -112,6 +112,17 @@ impl Failure {
         }
     }
 
+    /// The reader's words: why, then the small print. A missing model's
+    /// small print, from `no_model()`, is the whole of it.
+    pub fn said(&self) -> String {
+        let why = self.why.message();
+        match &self.detail {
+            Some(detail) if self.why == Why::NotHere => detail.clone(),
+            Some(detail) => format!("{why} ({detail})"),
+            None => why.to_owned(),
+        }
+    }
+
     /// Marks a failure the provider already asked again for.
     pub fn after_retries(self) -> Self {
         Self {
@@ -197,6 +208,15 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn a_failure_says_why_then_its_small_print() {
+        let offline = Failure::detailed(Why::Offline, "refused").said();
+        assert_eq!(offline, format!("{} (refused)", Why::Offline.message()));
+        let none = Failure::detailed(Why::NotHere, "No AI model is set for this.");
+        assert_eq!(none.said(), "No AI model is set for this.");
+        assert_eq!(Failure::from(Why::Busy).said(), Why::Busy.message());
+    }
 
     #[test]
     fn the_stand_ins_answer_as_promised() {

@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mareader_library::{AiPageId, AiTask, BookId, Library, NewAiPage, PageSpan};
+use mareader_study::Why;
 use mareader_study::page::Rewritten;
-use mareader_study::{Failure, Why};
 use mareader_workspace::PaneId;
 
 use super::Slot;
@@ -17,18 +17,6 @@ use super::view::source_of;
 
 /// Seconds between settings of a result while it streams in.
 const RESET: f64 = 0.4;
-
-/// Why a page couldn't be done, in the reader's words.
-fn say(f: &Failure) -> String {
-    let why = match f.why {
-        Why::NotHere => "No AI model is set up for this. Choose one in Settings › AI.",
-        why => why.message(),
-    };
-    match &f.detail {
-        Some(d) => format!("{why} ({d})"),
-        None => why.to_owned(),
-    }
-}
 
 impl Ledger {
     /// Writes a result's task again, replacing it once done.
@@ -85,7 +73,7 @@ impl Ledger {
                             run.requeue = true;
                             continue;
                         }
-                        let mut said = say(&f);
+                        let mut said = f.said();
                         if self.follows.values().any(|w| w.runs.contains(&run.id)) {
                             said.push_str(" Continuous mode stopped.");
                         }

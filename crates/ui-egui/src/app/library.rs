@@ -144,7 +144,7 @@ impl MareaderApp {
         let organizer = ai.model(mareader_settings::TaskId::Organize);
         let model = organizer.map(mareader_settings::ModelPreset::title);
         let Some(model) = model.or_else(|| ready.then(|| "plan ready".to_owned())) else {
-            let why = "Choose a model to organize with in Settings › AI.";
+            let why = mareader_settings::no_model(mareader_settings::TaskId::Organize);
             return self.ui.toasts.push(Toast::warning(why));
         };
         #[cfg(not(target_arch = "wasm32"))]

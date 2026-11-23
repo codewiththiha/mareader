@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use fm_bridge::Bridge;
-use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId};
+use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId, no_model};
 use mareader_study::{Explainer, Failure, Why, WordInfo};
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
@@ -221,10 +221,7 @@ impl Assist {
                     let ticket = slot(&slots, &preset, backend.as_ref(), what).await?;
                     (backend, Some(ticket))
                 }
-                _ => {
-                    let none = "no model is chosen to organize with; pick one in Settings › AI";
-                    return Err(Failure::detailed(Why::NotHere, none));
-                }
+                _ => return Err(Failure::detailed(Why::NotHere, no_model(TaskId::Organize))),
             };
             if !resumed {
                 save(&run);
@@ -246,12 +243,12 @@ impl Assist {
         let backend = preset.as_ref().map(|p| self.backend(p));
         let slots = self.slots.clone();
         start(self.engine.rt(), &self.waker, |say| async move {
+            let task = TaskId::from(job.rewrite.task());
             let (Some(preset), Some(backend)) = (preset, backend) else {
-                let none = "no model is chosen for this; pick one in Settings › AI";
-                return Err(Failure::detailed(Why::NotHere, none));
+                return Err(Failure::detailed(Why::NotHere, no_model(task)));
             };
             let ticket = short_slot(&slots, &preset, backend.as_ref()).await?;
-            let retry = TaskId::from(job.rewrite.task()).spec().retry;
+            let retry = task.spec().retry;
             let ask = job.ask();
             let done = rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await;
             drop(ticket);
