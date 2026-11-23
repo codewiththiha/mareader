@@ -117,6 +117,12 @@ pub enum Event {
     Dict(DictAction),
     /// Front-end page-AI menu or model-backed run action.
     PageAi(PageAiAction),
+    /// A skill was asked: its card opens.
+    SkillOpened(crate::skills::AskId),
+    /// A skill's answer landed; out of sight, a toast offers it.
+    SkillLanded(crate::skills::AskId),
+    /// Go back to a skill's card, and show it.
+    SkillShow(crate::skills::AskId),
     /// Background AI settings job run by the front-end AI runtime.
     #[cfg(not(target_arch = "wasm32"))]
     Ai(mareader_settings::Job),

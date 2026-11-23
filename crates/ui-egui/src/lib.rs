@@ -62,6 +62,7 @@ pub mod settings_window;
 pub mod shaped;
 pub mod shortcuts;
 pub mod sidebar;
+pub mod skill_card;
 pub mod sounds;
 pub mod space;
 pub mod study;

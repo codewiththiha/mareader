@@ -86,7 +86,7 @@ pub fn groups(pages: &[usize], size: usize) -> Vec<(usize, usize)> {
 /// Pages per request: the setting, fewer for a model with little context.
 pub(crate) fn size_for(settings: &AiSettings, task: &AiTask) -> usize {
     let size = usize::from(settings.tasks.pages.per_request.max(1));
-    let preset = settings.model(page_task(task).into());
+    let preset = settings.page_model(page_task(task));
     // Apple's model reads about 4,000 tokens in all, answer included.
     match preset.map(|p| p.provider) {
         Some(Provider::Apple) if page_task(task) == PageTask::Summarize => size.min(2),
@@ -109,7 +109,7 @@ pub(crate) fn span_of(document: &Document, (from, to): (usize, usize)) -> Option
 
 /// Groups written at once: the model's room, else its own setting.
 pub(crate) fn room_for(a: &Around<'_>, task: &AiTask) -> usize {
-    let Some(preset) = a.settings.model(page_task(task).into()) else {
+    let Some(preset) = a.settings.page_model(page_task(task)) else {
         return 1;
     };
     let room = a.ai.capacity(preset).unwrap_or(u32::from(preset.at_once));

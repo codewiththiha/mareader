@@ -412,6 +412,7 @@ pub(crate) const ROWS: &[CommandSpec] = &[
         acts::study,
     ),
     rows_study::MODE,
+    super::rows_skills::SKILL,
     row(
         "pane.swap",
         "Trades two panes' places in the tree.",

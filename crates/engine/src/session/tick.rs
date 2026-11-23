@@ -26,6 +26,7 @@ impl Session {
             || self.page_copy.busy()
             || self.vocab.coming()
             || self.study_mode.busy()
+            || self.skills.running()
     }
 
     /// Advances every engine-owned background job and timer for time `now`.
@@ -59,6 +60,9 @@ impl Session {
         }
         self.tick_vocab_and_audio(now, &mut tick);
         self.page_ai_receive(now);
+        if self.skills_receive() {
+            tick.repaint = true;
+        }
         if let Some(wait) = self.page_ai.take_wait() {
             tick.wait = merge_wait(tick.wait, Some(wait.as_secs_f64()));
         }

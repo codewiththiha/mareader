@@ -70,6 +70,9 @@ fn migrate(root: &mut Map<String, Value>, notes: &mut Vec<String>) {
     if stored < 8 {
         v7_to_v8(root);
     }
+    if stored < 9 {
+        crate::skills::v8_to_v9(root);
+    }
     root.insert("version".to_owned(), json!(SCHEMA_VERSION));
 }
 
@@ -419,6 +422,7 @@ mod tests {
         let bar = load(v2).settings.study.highlights.bar;
         let want = [
             BarItem::Explain,
+            BarItem::Skills,
             BarItem::LookUp,
             BarItem::ReadAloud,
             BarItem::Note,
@@ -428,11 +432,17 @@ mod tests {
         assert_eq!(bar, want);
         let bare = r#"{"version":2,"study":{"highlights":{"bar":[]}}}"#;
         let bar = load(bare).settings.study.highlights.bar;
-        assert_eq!(bar, [BarItem::LookUp, BarItem::ReadAloud, BarItem::Note]);
+        let want = [
+            BarItem::Skills,
+            BarItem::LookUp,
+            BarItem::ReadAloud,
+            BarItem::Note,
+        ];
+        assert_eq!(bar, want);
         // Note came in v4: a v4 menu without it stays so.
         let v4 = r#"{"version":4,"study":{"highlights":{"bar":["copy"]}}}"#;
         let bar = load(v4).settings.study.highlights.bar;
-        assert_eq!(bar, [BarItem::Copy, BarItem::ReadAloud]);
+        assert_eq!(bar, [BarItem::Copy, BarItem::Skills, BarItem::ReadAloud]);
     }
 
     #[test]
@@ -442,13 +452,15 @@ mod tests {
         let bar = load(v5).settings.study.highlights.bar;
         let want = [
             BarItem::Copy,
+            BarItem::Skills,
             BarItem::LookUp,
             BarItem::ReadAloud,
             BarItem::Highlight(Pen::Full),
         ];
         assert_eq!(bar, want);
         let v6 = r#"{"version":6,"study":{"highlights":{"bar":["copy"]}}}"#;
-        assert_eq!(load(v6).settings.study.highlights.bar, [BarItem::Copy]);
+        let bar = load(v6).settings.study.highlights.bar;
+        assert_eq!(bar, [BarItem::Copy, BarItem::Skills]);
     }
 
     #[test]
@@ -465,6 +477,7 @@ mod tests {
         let v3 = r#"{"version":3,"study":{"highlights":{"bar":["look_up",{"highlight":"full"}]}}}"#;
         let bar = load(v3).settings.study.highlights.bar;
         let want = [
+            BarItem::Skills,
             BarItem::LookUp,
             BarItem::ReadAloud,
             BarItem::Note,

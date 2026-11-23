@@ -57,7 +57,7 @@ impl Route {
             I::SetIndependence(_) | I::SetInkContrast(_) | I::SetQuickText(_) => true,
             I::Explain(_) | I::Highlight { .. } | I::SelectText { .. } => true,
             I::ClearSelection(_) | I::Search { .. } => true,
-            I::LookUp(_) | I::Note(_) | I::Bookmark(_) | I::PageAi(_) => true,
+            I::LookUp(_) | I::Note(_) | I::Bookmark(_) | I::PageAi(_) | I::Skill(_) => true,
             I::ReadAloud { .. } | I::ToggleReadAloud | I::StopReadAloud => true,
             I::PlaceReadMarker { .. } => true,
             // Settings, voices and cards open over any page.

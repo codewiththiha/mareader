@@ -15,6 +15,8 @@ pub enum Tab {
     Dictionary,
     /// What the AI does: the AI Dictionary, the library, pages.
     Ai,
+    /// What the AI does with a selection: the built-ins and the reader's own.
+    Skills,
     /// Study mode: its batches, decks and recall.
     Study,
     /// The models tasks ask, and their providers' keys.
@@ -29,7 +31,7 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 12] = [
+    pub const ALL: [Tab; 13] = [
         Tab::Appearance,
         Tab::Layout,
         Tab::ReadAloud,
@@ -37,6 +39,7 @@ impl Tab {
         Tab::Vocabulary,
         Tab::Dictionary,
         Tab::Ai,
+        Tab::Skills,
         Tab::Study,
         Tab::Models,
         Tab::Panes,
@@ -53,6 +56,7 @@ impl Tab {
             Tab::Vocabulary => "Vocabulary",
             Tab::Dictionary => "Dictionary",
             Tab::Ai => "AI",
+            Tab::Skills => "Skills",
             Tab::Study => "Study mode",
             Tab::Models => "AI models",
             Tab::Panes => "Panes",
@@ -73,6 +77,7 @@ impl Tab {
             "voices" | "read_aloud" | "speech" => Some(Tab::ReadAloud),
             "update" | "updates" => Some(Tab::Updates),
             "study" | "study_mode" | "study-mode" => Some(Tab::Study),
+            "skill" | "selection_ai" => Some(Tab::Skills),
             _ => Self::ALL
                 .into_iter()
                 .find(|t| t.label().eq_ignore_ascii_case(&s)),
@@ -83,7 +88,8 @@ impl Tab {
     pub fn group(self) -> &'static str {
         match self {
             Tab::Appearance | Tab::Layout | Tab::ReadAloud | Tab::Model(_) => "Reading",
-            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary | Tab::Ai | Tab::Study => "Study",
+            Tab::Highlights | Tab::Vocabulary | Tab::Dictionary => "Study",
+            Tab::Ai | Tab::Skills | Tab::Study => "Study",
             Tab::Models | Tab::Panes | Tab::Motion | Tab::Updates => "App",
         }
     }
@@ -93,11 +99,12 @@ impl Tab {
         use Tab as T;
         let study = matches!(self, T::Highlights | T::Vocabulary | T::Dictionary);
         let voices = matches!(self, T::ReadAloud | T::Model(_));
-        study || voices || matches!(self, T::Ai | T::Models | T::Updates)
+        study || voices || matches!(self, T::Ai | T::Skills | T::Models | T::Updates)
     }
 
     /// Every tab always shows, so the list never shifts under the pointer.
     pub fn available(self) -> bool {
-        !matches!(self, Tab::Ai | Tab::Models | Tab::Updates) || cfg!(not(target_arch = "wasm32"))
+        let ai = matches!(self, Tab::Ai | Tab::Skills | Tab::Models);
+        !(ai || self == Tab::Updates) || cfg!(not(target_arch = "wasm32"))
     }
 }

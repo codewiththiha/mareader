@@ -12,6 +12,7 @@ mod page_ai;
 mod panes;
 mod read_aloud;
 mod setup;
+mod skills;
 mod space;
 mod study;
 mod study_mode;
@@ -219,6 +220,7 @@ impl MareaderApp {
                 dict: crate::dict::DictUi::default(),
                 english: None,
                 staged: Default::default(),
+                skill_reveal: None,
                 lights: NativeLights::default(),
                 light_spots: None,
                 documents: DocumentsUi::default(),

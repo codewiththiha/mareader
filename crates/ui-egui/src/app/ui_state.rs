@@ -48,6 +48,8 @@ pub struct UiState {
     pub(super) english: Option<mareader_engine::sounds::EnglishVoice>,
     /// A selection the options asked for, made once its page is laid out.
     pub(super) staged: std::collections::VecDeque<Staged>,
+    /// A skill card being brought back into view, until its page is laid out.
+    pub(super) skill_reveal: Option<mareader_engine::skills::AskId>,
     pub(super) lights: NativeLights,
     /// Where AppKit last drew the lights, once the binary measured them.
     pub(super) light_spots: Option<LightSpots>,

@@ -376,9 +376,7 @@ fn the_options_highlight_a_book_across_its_blocks() -> Out {
 
 #[test]
 fn the_highlights_tab_sets_colours_the_menu_and_keeps_the_ai_look() {
-    use mareader_appearance::Rgb;
-    use mareader_engine::settings::Tab;
-    use mareader_settings::BarItem;
+    use {mareader_appearance::Rgb, mareader_engine::settings::Tab, mareader_settings::BarItem};
     let mut h = reader(&[("pdf", "sample")]);
     h.set_size(egui::vec2(1000.0, 1200.0));
     h.state_mut()
@@ -399,6 +397,7 @@ fn the_highlights_tab_sets_colours_the_menu_and_keeps_the_ai_look() {
     let want = [
         BarItem::Explain,
         BarItem::Copy,
+        BarItem::Skills,
         BarItem::LookUp,
         BarItem::ReadAloud,
         BarItem::Note,

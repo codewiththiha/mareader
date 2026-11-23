@@ -138,7 +138,7 @@ pub struct Endpoint {
 /// Longer text is cut; a pasted page can't bloat the settings file.
 pub const TEXT_MAX: usize = 2_048;
 
-fn cut(s: &mut String, max: usize) {
+pub(crate) fn cut(s: &mut String, max: usize) {
     if let Some((byte, _)) = s.char_indices().nth(max) {
         s.truncate(byte);
     }
@@ -352,6 +352,8 @@ pub struct AiTasks {
     pub simplify: SimplifyTask,
     pub pages: PageRun,
     pub study: crate::StudyTask,
+    /// The skills' own models, and the reader's skills.
+    pub skills: crate::Skills,
 }
 
 /// The AI tasks that rewrite a page.
@@ -367,7 +369,20 @@ impl PageTask {
     pub const ALL: [PageTask; 3] = [Self::Summarize, Self::Translate, Self::Simplify];
 
     pub fn label(self) -> &'static str {
-        TaskId::from(self).spec().label
+        match self {
+            Self::Summarize => "Summarize",
+            Self::Translate => "Translate",
+            Self::Simplify => "Simplify",
+        }
+    }
+
+    /// Its name in commands and the settings file.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Summarize => "summarize",
+            Self::Translate => "translate",
+            Self::Simplify => "simplify",
+        }
     }
 }
 
@@ -528,6 +543,7 @@ impl AiSettings {
     fn unassign_missing(&mut self) {
         prune(&mut self.tasks.models, &self.presets);
         self.tasks.backups.prune(&self.presets);
+        self.tasks.skills.prune(&self.presets);
     }
 
     /// Runs on every edit, so text being typed is never rewritten.
@@ -544,6 +560,7 @@ impl AiSettings {
             p.sanitize();
         }
         self.unassign_missing();
+        self.tasks.skills.sanitize(&self.presets);
         drop_unknown(&mut self.tasks.explain.language);
         drop_unknown(&mut self.tasks.study.language);
         let batch = &mut self.tasks.organize.batch;
@@ -672,14 +689,14 @@ mod tests {
         let explain = ai.add_preset(Provider::Ollama, "qwen3");
         let own = ai.add_preset(Provider::OpenAi, "");
         ai.tasks.choose(TaskId::Explain, Some(explain));
-        ai.tasks.choose(TaskId::Translate, Some(own));
-        let id = |t: PageTask| ai.model(t.into()).map(|p| p.id);
-        assert_eq!(id(PageTask::Summarize), Some(explain));
-        assert_eq!(id(PageTask::Translate), Some(own));
+        let skill = crate::Skill::Builtin(PageTask::Translate);
+        ai.tasks.skills.set_own(skill, Some(own));
+        let id = |ai: &AiSettings, t: PageTask| ai.page_model(t).map(|p| p.id);
+        assert_eq!(id(&ai, PageTask::Summarize), Some(explain));
+        assert_eq!(id(&ai, PageTask::Translate), Some(own));
         ai.remove_preset(own);
-        assert_eq!(ai.tasks.choice(TaskId::Translate), None);
-        let id = ai.model(TaskId::Translate).map(|p| p.id);
-        assert_eq!(id, Some(explain));
+        assert_eq!(ai.tasks.skills.own(skill), None);
+        assert_eq!(id(&ai, PageTask::Translate), Some(explain));
     }
 
     #[test]

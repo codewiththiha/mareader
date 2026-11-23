@@ -23,6 +23,7 @@ use crate::pane::{Arrow, ViewMode, ZoomCommand};
 use crate::read_aloud::ReadFrom;
 use crate::route::Route;
 use crate::settings::Tab;
+use crate::skills::Action as SkillAction;
 use crate::study::Action as StudyAction;
 use crate::updates::Action as UpdateAction;
 
@@ -120,6 +121,8 @@ pub enum Command {
     },
     /// The page AI's menus: a task to run, a result to show.
     PageAi(PageAiAction),
+    /// A skill on a selection or a page, and its card.
+    Skill(SkillAction),
     /// A library book placed from the rail: clicked, or dropped on a pane.
     PlaceBook {
         book: BookId,

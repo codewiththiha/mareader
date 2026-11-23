@@ -4,7 +4,7 @@ use egui::{Align, FontId, Layout, Sense, Ui, pos2, vec2};
 use mareader_assist::{Board, Job, Load};
 use mareader_settings::{
     AiSettings, GlossDensity, GlossSettings, HighlightSettings, LANGUAGES, ModelPreset,
-    OrganizeTask, PageRun, PageStart, Pen, PresetId, Provider, SummaryStyle, TaskId,
+    OrganizeTask, PageRun, PageStart, PageTask, Pen, PresetId, Provider, SummaryStyle, TaskId,
 };
 
 use super::highlights::{palette, preview};
@@ -71,11 +71,9 @@ fn place(task: TaskId) -> (Home, &'static str) {
             Home::Library,
             "The model that sorts imported books on no shelf onto shelves",
         ),
-        TaskId::Summarize => (Home::Pages, "The model that summarizes a page"),
-        TaskId::Translate => (Home::Pages, "The model that translates a page"),
-        TaskId::Simplify => (
+        TaskId::SelectionAi => (
             Home::Pages,
-            "The model that rewrites a page in plain English",
+            "The model every skill asks, on a selection or a page",
         ),
         TaskId::StudyCards => (Home::Study, "The model that writes the cards"),
         TaskId::StudyJudge => (Home::Study, "The model that judges recalls"),
@@ -110,7 +108,7 @@ fn task_picker(ui: &mut Ui, ai: &mut AiSettings, task: TaskId) {
 }
 
 /// With no model saved yet: one step to the models tab.
-fn no_models(ui: &mut Ui, out: &mut Commands) {
+pub(super) fn no_models(ui: &mut Ui, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     section(ui, "Get started");
     group(ui, |ui| {
@@ -282,23 +280,21 @@ fn library(ui: &mut Ui, ai: &mut AiSettings) {
     }
 }
 
-/// Summarize, translate and simplify: models, and how pages go on.
+/// Selection AI's model, the built-ins' options, and how pages go on.
 fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
-    section(ui, "Pages");
+    section(ui, "Selections and pages");
     let apple = ai
-        .model(TaskId::Translate)
+        .page_model(PageTask::Translate)
         .is_some_and(|p| p.provider == Provider::Apple);
     let state = board.and_then(|b| b.apple.ready()).filter(|_| apple);
     let speaks = |tag: &str| state.and_then(|s| s.speaks(tag));
     group(ui, |ui| {
-        for (i, task) in placed(Home::Pages).enumerate() {
-            if i > 0 {
-                divider(ui);
-            }
+        for task in placed(Home::Pages) {
             model_row(ui, ai, task);
-            page_rows(ui, ai, task, &speaks);
         }
+        page_rows(ui, ai, &speaks);
     });
+    note(ui, "A skill can ask a model of its own; see Skills.");
     section(ui, "More than one page");
     group(ui, |ui| {
         let tip = "Continuous mode: time on a page, its result shown, before more are asked";
@@ -344,15 +340,21 @@ fn pages(ui: &mut Ui, ai: &mut AiSettings, board: Option<&Board>) {
     }
 }
 
-/// The rows under a page task's model: how it writes, and how it starts.
-fn page_rows(
+/// The built-ins' rows under the model: how each writes, and starts.
+fn page_rows(ui: &mut Ui, ai: &mut AiSettings, speaks: &dyn Fn(&str) -> Option<bool>) {
+    for task in PageTask::ALL {
+        page_row(ui, ai, task, speaks);
+    }
+}
+
+fn page_row(
     ui: &mut Ui,
     ai: &mut AiSettings,
-    task: TaskId,
+    task: PageTask,
     speaks: &dyn Fn(&str) -> Option<bool>,
 ) {
     match task {
-        TaskId::Summarize => {
+        PageTask::Summarize => {
             divider(ui);
             row(ui, "Summary style", "Paragraphs, or a short list", |ui| {
                 let style = &mut ai.tasks.summarize.style;
@@ -370,7 +372,7 @@ fn page_rows(
                     });
             });
         }
-        TaskId::Translate => {
+        PageTask::Translate => {
             divider(ui);
             let tip = "The page menu offers others too";
             row(ui, "Translate to", tip, |ui| {
@@ -390,14 +392,13 @@ fn page_rows(
                 start_picker(ui, "ai-translate-start", &mut ai.tasks.translate.start);
             });
         }
-        TaskId::Simplify => {
+        PageTask::Simplify => {
             divider(ui);
             let tip = "What choosing Simplify in the page menu does";
             row(ui, "Simplifying", tip, |ui| {
                 start_picker(ui, "ai-simplify-start", &mut ai.tasks.simplify.start);
             });
         }
-        _ => {}
     }
 }
 
@@ -419,7 +420,7 @@ fn start_picker(ui: &mut Ui, salt: &str, start: &mut PageStart) {
 }
 
 /// A saved model for a task, or `none`.
-fn preset_picker(
+pub(super) fn preset_picker(
     ui: &mut Ui,
     salt: &str,
     presets: &[ModelPreset],

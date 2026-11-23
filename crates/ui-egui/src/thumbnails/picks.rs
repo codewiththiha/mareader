@@ -47,7 +47,7 @@ impl Offer {
             Some((tag.to_owned(), name.to_owned()))
         });
         Self {
-            any: PageTask::ALL.iter().any(|&t| ai.model(t.into()).is_some()),
+            any: PageTask::ALL.iter().any(|&t| ai.page_model(t).is_some()),
             language,
             recent: ai
                 .tasks

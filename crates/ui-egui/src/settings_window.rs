@@ -32,6 +32,8 @@ mod nav;
 #[cfg(not(target_arch = "wasm32"))]
 mod provider_card;
 mod read_aloud;
+#[cfg(not(target_arch = "wasm32"))]
+mod skills;
 mod study;
 mod updates;
 mod vocabulary;
@@ -317,6 +319,8 @@ fn tab_body(
             ai::tab(ui, &mut s.ai, looks, live.ai.board(), out);
         }
         #[cfg(not(target_arch = "wasm32"))]
+        Tab::Skills => skills::tab(ui, &mut s.ai, out),
+        #[cfg(not(target_arch = "wasm32"))]
         Tab::Models => {
             let jobs = live.ai.jobs();
             let room = |p: &mareader_settings::ModelPreset| live.ai.capacity(p).unwrap_or(1);
@@ -328,7 +332,7 @@ fn tab_body(
             models::models_tab(ui, &mut s.ai, live_m, out);
         }
         #[cfg(target_arch = "wasm32")]
-        Tab::Ai | Tab::Models => pending(ui, "AI answers need the desktop app."),
+        Tab::Ai | Tab::Skills | Tab::Models => pending(ui, "AI answers need the desktop app."),
         Tab::Updates => updates::tab(ui, &mut s.updates, live.updates, out),
         Tab::Panes => panes(ui, s, cx),
     }

@@ -17,6 +17,7 @@ mod page_ai;
 mod panes;
 mod read_aloud;
 mod services;
+mod skills;
 mod space;
 mod study;
 mod study_deck;
@@ -115,6 +116,8 @@ pub struct Session {
     study: crate::study::state::State,
     /// Each pane's study mode, and gates of documents outside the library.
     study_mode: crate::study_mode::State,
+    /// Skills asked of a selection or a page, and their answers.
+    skills: crate::skills::State,
     /// Dictionary packs, queries, and word-list meaning lookups.
     dict: crate::dict::Service,
     /// Read-aloud playback, voice booths, and speech model shelf.
@@ -233,6 +236,7 @@ impl Session {
             page_ai: crate::page_ai::ledger::Ledger::default(),
             study: crate::study::state::State::default(),
             study_mode: crate::study_mode::State::default(),
+            skills: crate::skills::State::default(),
             dict: crate::dict::Service::default(),
             read_aloud: crate::read_aloud::state::State::default(),
             documents: DocumentsState::default(),

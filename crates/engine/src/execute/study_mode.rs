@@ -7,6 +7,7 @@ use crate::command::Command;
 use crate::event::Event;
 use crate::page_ai::Action as PageAi;
 use crate::session::{Done, Session};
+use crate::skills::Action as SkillAction;
 use crate::study_mode::{self as mode, Action};
 use crate::toast::Toast;
 
@@ -113,6 +114,7 @@ pub(super) fn locks(session: &mut Session, intent: &Command) -> bool {
             | PageAi::PagesMenu { pane, .. }
             | PageAi::Redo { pane, .. },
         ) => *pane,
+        Command::Skill(SkillAction::Run { pane, .. } | SkillAction::RunPage { pane, .. }) => *pane,
         _ => return false,
     };
     if !session.study_mode().on(pane) {

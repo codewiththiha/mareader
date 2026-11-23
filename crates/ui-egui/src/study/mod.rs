@@ -31,7 +31,7 @@ use mareader_settings::{GlossSettings, HighlightSettings};
 use mareader_study::WordInfo;
 use mareader_workspace::PaneId;
 
-pub use bar::{BarPress, show as show_bar};
+pub use bar::{BarPress, offer as offer_skills, show as show_bar};
 
 use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};

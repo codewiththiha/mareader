@@ -77,6 +77,7 @@ const FALLBACK: Meta = m("", None, None, always, true);
 const TABLE: &[(&str, Meta)] = &[
     ("ai.job", m("Run AI Job", Some("AI"), None, always, false)),
     ("ai.page", m("Page AI Action", Some("AI"), None, has_doc, false)),
+    ("ai.skill", m("Run AI Skill", Some("AI"), None, has_doc, false)),
     ("command.batch", m("Run Command Batch", None, None, always, false)),
     ("dict.act", m("Dictionary Action", Some("Study"), None, always, true)),
     ("dict.pronunciation", m("Pronunciation Pack", Some("Study"), None, always, true)),

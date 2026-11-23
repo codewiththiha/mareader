@@ -11,6 +11,7 @@ impl MareaderApp {
         let sounds = self.show_study(ctx, out);
         self.show_study_mode(ctx, out);
         self.show_page_ai(ctx, out, &sounds);
+        self.show_skills(ctx, out);
     }
 
     fn staged(&mut self, ctx: &Context, out: &mut Commands) {
@@ -155,6 +156,10 @@ impl MareaderApp {
             Gloss::Explain => out.push(Sent::Engine(Command::Explain(pane))),
             Gloss::LookUp => out.push(Sent::Engine(Command::LookUp(pane))),
             Gloss::Note => out.push(Sent::Engine(Command::Note(pane))),
+            Gloss::Skill(skill) => {
+                let run = mareader_engine::skills::Action::Run { pane, skill };
+                out.push(Sent::Engine(Command::Skill(run)));
+            }
             Gloss::ReadAloud => {
                 if let Some(sel) = self.session.documents().selection(pane) {
                     let (a, b) = sel.ordered();
@@ -283,6 +288,7 @@ impl MareaderApp {
             }
         }
         let ai_look = self.settings().ai.clone();
+        crate::study::offer_skills(ctx, &ai_look.tasks.skills.custom);
         if let Some(answerers) = self.ui.ai.follow(&ai_look) {
             self.session.study_set_ai(answerers);
         }
@@ -412,6 +418,7 @@ fn study_gloss(gloss: &Gloss) -> bool {
         Gloss::Explain
             | Gloss::LookUp
             | Gloss::Note
+            | Gloss::Skill(_)
             | Gloss::ReadAloud
             | Gloss::ReadFrom(..)
             | Gloss::Highlight(..)

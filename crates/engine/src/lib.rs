@@ -51,6 +51,7 @@ pub mod scripts;
 pub mod search;
 pub mod session;
 pub mod settings;
+pub mod skills;
 pub mod sounds;
 pub mod space;
 /// One stable hash for cached, content-derived keys.

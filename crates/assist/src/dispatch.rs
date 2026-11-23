@@ -16,7 +16,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use mareader_settings::{AiSettings, Class, ModelPreset, PresetId, Retry, TaskId, no_model};
+use mareader_settings::{AiSettings, Class, ModelPreset, PresetId, Retry, Skill, TaskId, no_model};
 use mareader_study::{Failure, Why};
 use serde_json::Value;
 use tokio::runtime::Runtime;
@@ -61,6 +61,8 @@ impl Drop for Engine {
 pub(crate) struct Followed {
     pub ai: AiSettings,
     routes: Vec<(TaskId, Vec<Seat>)>,
+    /// Each skill's route: its own model, then Selection AI's.
+    skills: Vec<(Skill, Vec<Seat>)>,
 }
 
 impl Followed {
@@ -69,6 +71,19 @@ impl Followed {
         let mut routes = self.routes.iter();
         let route = routes.find(|(task, _)| *task == id);
         route.map(|(_, seats)| seats.clone()).unwrap_or_default()
+    }
+
+    /// The models `skill` may ask; a skill not known asks Selection AI's.
+    pub fn skill_route(&self, skill: Skill) -> Vec<Seat> {
+        let found = self.skills.iter().find(|(s, _)| *s == skill);
+        let route = found.map(|(_, seats)| seats.clone());
+        route.unwrap_or_else(|| self.route(TaskId::SelectionAi))
+    }
+
+    /// The name of `skill`'s first model; blank for none.
+    pub fn skill_by(&self, skill: Skill) -> String {
+        let route = self.skill_route(skill);
+        route.first().map(|s| s.preset.title()).unwrap_or_default()
     }
 
     /// `id` at the class the reader gave it.
@@ -112,9 +127,12 @@ impl Dispatcher {
     /// New settings; jobs not yet started use them. `seat` makes a backend.
     pub fn follow(&self, ai: &AiSettings, seat: impl Fn(&ModelPreset) -> Seat) {
         let route = |id: TaskId| (id, ai.route(id).into_iter().map(&seat).collect::<Vec<_>>());
+        let own = ai.tasks.skills.custom.iter().map(|s| Skill::Custom(s.id));
+        let skill = |s: Skill| (s, ai.skill_route(s).into_iter().map(&seat).collect());
         let followed = Followed {
             ai: ai.clone(),
             routes: TaskId::ALL.iter().map(|id| route(*id)).collect(),
+            skills: Skill::BUILTIN.into_iter().chain(own).map(skill).collect(),
         };
         if let Ok(mut now) = self.now.lock() {
             *now = Arc::new(followed);

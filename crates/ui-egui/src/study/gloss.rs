@@ -13,6 +13,8 @@ pub enum Gloss {
     LookUp,
     /// Note was pressed on the pane's selection.
     Note,
+    /// A skill from Ask AI's list, on the pane's selection.
+    Skill(mareader_settings::Skill),
     /// Read aloud was pressed: the selection alone is read.
     ReadAloud,
     /// The read-aloud pin rested, or was clicked: read from it.

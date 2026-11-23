@@ -101,11 +101,11 @@ pub fn settled(session: &Session, pane: PaneId) -> Vec<Settled> {
     run.recalled.iter().map(settle).collect()
 }
 
-/// The selection bar while studying: no Explain, no Look up.
+/// The selection bar while studying: no Explain, Ask AI or Look up.
 pub fn bar(look: &HighlightSettings, studying: bool) -> HighlightSettings {
     let mut look = look.clone();
     if studying {
-        let help = |item: &BarItem| matches!(item, BarItem::Explain | BarItem::LookUp);
+        let help = |i: &BarItem| matches!(i, BarItem::Explain | BarItem::LookUp | BarItem::Skills);
         look.bar.retain(|item| !help(item));
     }
     look

@@ -50,16 +50,16 @@ fn a_route_skips_a_task_s_own_model_in_the_backups() {
     let (a, b, c) = (made[0], made[1], made[2]);
     ai.tasks.backups.arrange(vec![b, c, a]);
     ai.tasks.models.insert(TaskId::Explain, vec![a]);
-    ai.tasks.models.insert(TaskId::Translate, vec![c]);
+    ai.tasks.models.insert(TaskId::SelectionAi, vec![c]);
     let route = |ai: &AiSettings, t| ids(ai.route(t));
     assert_eq!(route(&ai, TaskId::Explain), [a, b, c]);
     assert_eq!(
-        route(&ai, TaskId::Translate),
+        route(&ai, TaskId::SelectionAi),
         [c, a, b],
         "own, followed, then the rest"
     );
     ai.tasks.models.remove(&TaskId::Explain);
-    assert_eq!(route(&ai, TaskId::Translate), [c, b, a]);
+    assert_eq!(route(&ai, TaskId::SelectionAi), [c, b, a]);
     assert!(
         route(&ai, TaskId::Explain).is_empty(),
         "no model of its own: still off"

@@ -69,6 +69,7 @@ impl TabIcon for Tab {
             Tab::Vocabulary => Icon::Levels,
             Tab::Dictionary => Icon::Dictionary,
             Tab::Ai => Icon::Ai,
+            Tab::Skills => Icon::SelectSeveral,
             Tab::Models => Icon::Chip,
             Tab::Panes => Icon::SplitRight,
             Tab::Motion => Icon::Motion,

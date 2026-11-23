@@ -10,7 +10,7 @@ use crate::widgets;
 use egui::{Align, Layout, Rect, RichText, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_assist::{AppleState, Board, Job, JobInfo, KeyRow, KeyState, Load, lanes};
 use mareader_engine::command::Command;
-use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId};
+use mareader_settings::{AiSettings, ModelPreset, PageTask, PresetId, Provider, Skill, TaskId};
 use mareader_study::Failure;
 
 mod jobs;
@@ -145,10 +145,19 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
 /// The tasks asking `id`, fallbacks included, as the row's pills.
 fn uses(ai: &AiSettings, id: PresetId) -> Vec<&'static str> {
     let asks = |t: &TaskId| ai.model(*t).is_some_and(|p| p.id == id);
-    TaskId::ALL
+    let tasks = TaskId::ALL
         .iter()
         .filter(|t| asks(t))
-        .map(|t| t.spec().label)
+        .map(|t| t.spec().label);
+    let skills = &ai.tasks.skills;
+    let own = PageTask::ALL
+        .into_iter()
+        .filter(|t| skills.own(Skill::Builtin(*t)) == Some(id));
+    let custom = skills.custom.iter().any(|s| s.model == Some(id));
+    let custom = custom.then_some("Custom skills");
+    tasks
+        .chain(own.map(PageTask::label))
+        .chain(custom)
         .collect()
 }
 
@@ -915,18 +924,18 @@ mod tests {
         let first = ai.add_preset(Provider::OpenAi, "");
         let local = ai.add_preset(Provider::Ollama, "llama3.2");
         ai.tasks.choose(TaskId::Explain, Some(first));
-        ai.tasks.choose(TaskId::Summarize, Some(local));
+        ai.tasks.choose(TaskId::StudyJudge, Some(local));
+        let summarize = Skill::Builtin(PageTask::Summarize);
+        ai.tasks.skills.set_own(summarize, Some(local));
         // Tasks with none of their own fall back to the AI Dictionary's.
         let want = [
             "AI Dictionary",
             "Organize library",
-            "Translate",
-            "Simplify",
+            "Selection AI",
             "Study cards",
-            "Study judge",
         ];
         assert_eq!(uses(&ai, first), want);
-        assert_eq!(uses(&ai, local), ["Summarize"]);
+        assert_eq!(uses(&ai, local), ["Study judge", "Summarize"]);
     }
 
     #[test]

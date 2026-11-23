@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 use mareader_study::page::{Kept, Out, Piece, Rewritten, Role};
 
 use crate::backend::Backend;
-use crate::prompt::{AS_DATA, JSON_ONLY, Prompt};
+use crate::prompt::{AS_DATA, JSON_ONLY, NO_CHATTER, Prompt};
 use crate::retry::attempt;
 use crate::task::Task;
 
@@ -270,7 +270,7 @@ of its own. "
             0 | 1 => String::new(),
             n => format!("The text runs over {n} pages in a row; numbering spans them all. "),
         };
-        format!("{DATA}{AS_DATA}{PLACEHOLDERS}{many}{rule}{JSON_ONLY}")
+        format!("{DATA}{AS_DATA}{PLACEHOLDERS}{many}{rule}{NO_CHATTER}{JSON_ONLY}")
     }
 
     fn schema(&self) -> Value {

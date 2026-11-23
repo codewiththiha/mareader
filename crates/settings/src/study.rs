@@ -43,13 +43,16 @@ pub enum BarItem {
     /// Reads the selected text aloud, and only it.
     ReadAloud,
     Highlight(Pen),
+    /// Opens the AI skills: Translate, Summarize, Simplify, the reader's.
+    Skills,
 }
 
 impl BarItem {
     /// Every button, in the order a new menu lists them.
-    pub const ALL: [BarItem; 8] = [
+    pub const ALL: [BarItem; 9] = [
         BarItem::Copy,
         BarItem::Explain,
+        BarItem::Skills,
         BarItem::LookUp,
         BarItem::ReadAloud,
         BarItem::Note,
@@ -66,6 +69,7 @@ impl BarItem {
             Self::Note => "Note",
             Self::ReadAloud => "Read aloud",
             Self::Highlight(pen) => pen.label(),
+            Self::Skills => "Ask AI",
         }
     }
 }
@@ -201,6 +205,7 @@ impl Default for HighlightSettings {
             bar: vec![
                 BarItem::Copy,
                 BarItem::Explain,
+                BarItem::Skills,
                 BarItem::LookUp,
                 BarItem::ReadAloud,
                 BarItem::Note,

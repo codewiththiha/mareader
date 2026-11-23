@@ -29,6 +29,7 @@ fn selection_actions(cx: &mut ShowContext<'_>) {
             Some(BarPress::Explain) => gloss.push(Gloss::Explain),
             Some(BarPress::LookUp) => gloss.push(Gloss::LookUp),
             Some(BarPress::Note) => gloss.push(Gloss::Note),
+            Some(BarPress::Skill(skill)) => gloss.push(Gloss::Skill(skill)),
             Some(BarPress::ReadAloud) => gloss.push(Gloss::ReadAloud),
             Some(BarPress::Highlight(pen, color)) => gloss.push(Gloss::Highlight(pen, color)),
             None => {}

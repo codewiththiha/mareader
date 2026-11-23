@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::Explainer;
 use crate::explain::Failure;
 use crate::mode::{CardWriter, Judge};
+use crate::skill::Skiller;
 
 /// News from a job: the answer so far, then the end.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,4 +38,5 @@ pub struct Answerers {
     pub explainer: Arc<dyn Explainer>,
     pub cards: Arc<dyn CardWriter>,
     pub judge: Arc<dyn Judge>,
+    pub skills: Arc<dyn Skiller>,
 }

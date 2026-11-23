@@ -21,11 +21,13 @@ use mareader_engine::read_aloud::player::Act as ReadAct;
 use mareader_engine::route::Route;
 use mareader_engine::session::Session;
 use mareader_engine::settings::Tab;
+use mareader_engine::skills::{Action as SkillAction, AskId};
 use mareader_engine::space::Action as SpaceAction;
 use mareader_engine::study::Action as StudyAction;
 use mareader_engine::study_mode::{Action as ModeAction, Ask};
 use mareader_library::{BookId, MarkId, Options, Pen, WordId};
 use mareader_session::Anchor;
+use mareader_settings::{PageTask, Skill, SkillId};
 use mareader_speech::{Item, KOKORO, Model, Spot};
 use mareader_study::mode::{Key, Mode, Pos};
 use mareader_workspace::{Bounds, Edge, PaneId, SplitAxis};
@@ -430,6 +432,30 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
             "ai.page",
             r#"{"action":"stop_pill"}"#,
             Command::PageAi(PageAiAction::StopPill(pane)),
+        ),
+        (
+            "ai.skill",
+            r#"{"action":"run","skill":"custom-3"}"#,
+            Command::Skill(SkillAction::Run {
+                pane,
+                skill: Skill::Custom(SkillId(3)),
+            }),
+        ),
+        (
+            "ai.skill",
+            r#"{"action":"run_page","page":2,"x":10,"skill":"summarize"}"#,
+            Command::Skill(SkillAction::RunPage {
+                pane,
+                page: 2,
+                x: 10.0,
+                y: 0.0,
+                skill: Skill::Builtin(PageTask::Summarize),
+            }),
+        ),
+        (
+            "ai.skill",
+            r#"{"action":"close","ask":4}"#,
+            Command::Skill(SkillAction::Close(AskId(4))),
         ),
         ("mark.clear", r#"{}"#, Command::ClearSelection(pane)),
         (

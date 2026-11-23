@@ -78,6 +78,7 @@ impl Session {
         }
         self.recent.retain(|p| *p != id);
         self.page_ai.close_pane(id);
+        self.skills.keep_pane(id, None);
         if self.active == id {
             let next = self.tree.panes().first().copied().unwrap_or(PaneId(1));
             self.active = next;

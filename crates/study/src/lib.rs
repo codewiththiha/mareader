@@ -15,6 +15,7 @@ mod gloss;
 pub mod mode;
 pub mod page;
 pub mod pending;
+pub mod skill;
 
 pub use answer::WordInfo;
 pub use explain::{Canned, Explainer, Failure, Unavailable, Why};

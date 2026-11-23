@@ -8,10 +8,9 @@ use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use crate::z_order::{self, Tier};
-use egui::text::{LayoutJob, TextFormat};
 use egui::{
-    Context, CornerRadius, FontId, Frame, Id, Key, Margin, Modifiers, Pos2, Rect, RichText,
-    ScrollArea, Sense, Stroke, Ui, Vec2, pos2, vec2,
+    Context, Frame, Id, Key, Margin, Modifiers, Pos2, Rect, RichText, ScrollArea, Stroke, Ui, Vec2,
+    pos2, vec2,
 };
 use mareader_engine::command::Command;
 use mareader_engine::page_ai::ledger::Ledger;
@@ -22,6 +21,9 @@ use mareader_settings::{AiSettings, LANGUAGES, PageStart, PageTask, language_nam
 use mareader_workspace::PaneId;
 
 /// The language search field, for screen readers and tests.
+mod rows;
+use rows::aloud_row;
+
 pub const FIND: &str = "Find a language";
 
 const WIDTH: f32 = widgets::GROUPED_MENU_W;
@@ -222,10 +224,7 @@ impl PageAiUi {
             ui.disable();
         }
         widgets::menu_section(ui, Some(Icon::Ai), &heading);
-        if !PageTask::ALL
-            .iter()
-            .any(|task| ai.model((*task).into()).is_some())
-        {
+        if !PageTask::ALL.iter().any(|t| ai.page_model(*t).is_some()) {
             let why = "Summarize, translate and simplify pages with an AI model.";
             ui.add_space(2.0);
             widgets::menu_note(ui, why);
@@ -314,6 +313,9 @@ impl PageAiUi {
         }
         if group {
             return false;
+        }
+        if rows::custom(ui, m, ai, out) {
+            return true;
         }
         let shown = ledger.showing_on(pane, page).is_some();
         let following = ledger.following(pane);
@@ -701,76 +703,6 @@ fn page_popup(
     // A menu summoned here: toasts give it the room.
     crate::toast::keep_clear(ctx, rect);
     rect
-}
-
-/// Read aloud's row on the `30pt` menu grid, icon in the lit word's tone.
-fn aloud_row(ui: &mut Ui, word: Option<&str>, t: &Tokens) -> egui::Response {
-    let warm = crate::read_aloud::marker::warm(t);
-    let font = FontId::proportional(13.5);
-    let (label, job) = match word {
-        Some(w) => {
-            let w = short(w);
-            let mut job = LayoutJob::default();
-            job.append(
-                "Read aloud from ",
-                0.0,
-                TextFormat::simple(font.clone(), t.ink),
-            );
-            job.append(
-                &format!("“{w}”"),
-                0.0,
-                TextFormat {
-                    font_id: font,
-                    color: t.ink,
-                    underline: Stroke::new(1.5, warm),
-                    ..Default::default()
-                },
-            );
-            (format!("Read aloud from “{w}”"), job)
-        }
-        None => {
-            let label = "Read aloud from page start".to_owned();
-            let mut job = LayoutJob::default();
-            job.append(&label, 0.0, TextFormat::simple(font, t.ink));
-            (label, job)
-        }
-    };
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
-    if resp.is_pointer_button_down_on() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(8), t.pressed);
-    } else if resp.hovered() || resp.has_focus() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(8), t.hover);
-    }
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    let y = rect.center().y;
-    let icon_rect = Rect::from_min_size(pos2(rect.left() + 8.0, y - 7.5), Vec2::splat(15.0));
-    Icon::ReadAloud.paint(ui, icon_rect, warm);
-    let text_x = rect.left() + 32.0;
-    let galley = ui.fonts_mut(|f| f.layout_job(job));
-    let clip = Rect::from_min_max(
-        pos2(text_x, rect.top()),
-        pos2(rect.right() - 8.0, rect.bottom()),
-    );
-    ui.painter().with_clip_rect(clip).galley(
-        pos2(text_x, y - galley.size().y * 0.5),
-        galley,
-        t.ink,
-    );
-    resp
-}
-
-/// A long word cut short, so the row keeps to one line.
-fn short(word: &str) -> String {
-    const MOST: usize = 16;
-    match word.chars().count() > MOST {
-        true => format!("{}…", word.chars().take(MOST - 1).collect::<String>()),
-        false => word.to_owned(),
-    }
 }
 
 /// The action a menu choice makes.

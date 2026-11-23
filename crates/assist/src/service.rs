@@ -25,6 +25,7 @@ use crate::slots::{Queued, Slots};
 use crate::task::Explain;
 use mareader_study::page::Rewritten;
 mod cards;
+mod skills;
 
 /// The paused organizer run, and one set aside for Undo.
 const CHECKPOINT: &str = "organize.json";
@@ -122,6 +123,7 @@ impl Assist {
             explainer: self.explainer(),
             cards: self.cards(),
             judge: self.judge(),
+            skills: self.skills(),
         }
     }
 
@@ -232,13 +234,13 @@ impl Assist {
 
     /// Rewrites one page with its task's model; news comes by polling.
     pub fn rewrite(&self, job: PageJob) -> Rewriting {
-        let task = TaskId::from(job.rewrite.task());
+        let skill = mareader_settings::Skill::Builtin(job.rewrite.task());
         let step = move |backend: Arc<dyn Backend>, retry, say: Say<Rewritten, Rewritten>| {
             let ask = job.clone().ask();
             async move { rewrite(backend.as_ref(), &ask, &|r| say.partial(r), retry).await }
         };
         let now = self.jobs_on.followed();
-        let (route, who) = (now.route(task), now.asker(task));
+        let (route, who) = (now.skill_route(skill), now.asker(TaskId::SelectionAi));
         self.jobs_on.dispatch().ask(who, route, step)
     }
 

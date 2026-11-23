@@ -17,6 +17,7 @@ mod pages;
 mod panes;
 mod params;
 mod rows;
+mod rows_skills;
 mod rows_study;
 
 use serde_json::Value;
@@ -129,6 +130,7 @@ impl Command {
             Command::OpenSettings(..) => "settings.open",
             Command::Page { .. } => "page.step",
             Command::PageAi(..) => "ai.page",
+            Command::Skill(..) => "ai.skill",
             Command::PlaceBook { .. } => "reader.place-book",
             Command::PlaceReadMarker { .. } => "read.marker",
             Command::Pronunciation(..) => "dict.pronunciation",

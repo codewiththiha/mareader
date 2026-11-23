@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::ai::{AiSettings, AiTasks, ModelPreset, PageTask, PresetId};
+use crate::ai::{AiSettings, AiTasks, ModelPreset, PresetId};
 
 /// Every AI task. Its row is [`TaskId::spec`]; its models, [`AiTasks::models`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -17,9 +17,8 @@ use crate::ai::{AiSettings, AiTasks, ModelPreset, PageTask, PresetId};
 pub enum TaskId {
     Explain,
     Organize,
-    Summarize,
-    Translate,
-    Simplify,
+    /// Every skill, on a selection or a page; see [`crate::Skill`].
+    SelectionAi,
     StudyCards,
     StudyJudge,
 }
@@ -110,19 +109,15 @@ const EXPLAIN: TaskSpec = TaskSpec {
     ..row("AI Dictionary", "explaining a word", Class::Waited)
 };
 const ORGANIZE: TaskSpec = row("Organize library", "organizing your library", Class::Ahead);
-const SUMMARIZE: TaskSpec = row("Summarize", "summarizing a page", Class::Asked);
-const TRANSLATE: TaskSpec = row("Translate", "translating a page", Class::Asked);
-const SIMPLIFY: TaskSpec = row("Simplify", "simplifying a page", Class::Asked);
+const SELECTION_AI: TaskSpec = row("Selection AI", "selections and pages", Class::Asked);
 const STUDY_CARDS: TaskSpec = row("Study cards", "writing study cards", Class::Ahead);
 const STUDY_JUDGE: TaskSpec = row("Study judge", "judging a recall", Class::Waited);
 
 impl TaskId {
-    pub const ALL: [TaskId; 7] = [
+    pub const ALL: [TaskId; 5] = [
         Self::Explain,
         Self::Organize,
-        Self::Summarize,
-        Self::Translate,
-        Self::Simplify,
+        Self::SelectionAi,
         Self::StudyCards,
         Self::StudyJudge,
     ];
@@ -132,21 +127,9 @@ impl TaskId {
         match self {
             Self::Explain => &EXPLAIN,
             Self::Organize => &ORGANIZE,
-            Self::Summarize => &SUMMARIZE,
-            Self::Translate => &TRANSLATE,
-            Self::Simplify => &SIMPLIFY,
+            Self::SelectionAi => &SELECTION_AI,
             Self::StudyCards => &STUDY_CARDS,
             Self::StudyJudge => &STUDY_JUDGE,
-        }
-    }
-}
-
-impl From<PageTask> for TaskId {
-    fn from(task: PageTask) -> Self {
-        match task {
-            PageTask::Summarize => Self::Summarize,
-            PageTask::Translate => Self::Translate,
-            PageTask::Simplify => Self::Simplify,
         }
     }
 }
@@ -293,7 +276,7 @@ mod tests {
         let waits = |t: TaskId| t.spec().class.retry().waits.len();
         assert_eq!(TaskId::Explain.spec().class, Class::Waited);
         assert_eq!(TaskId::StudyJudge.spec().class, Class::Waited);
-        assert_eq!(TaskId::Translate.spec().class, Class::Asked);
+        assert_eq!(TaskId::SelectionAi.spec().class, Class::Asked);
         assert_eq!(TaskId::StudyCards.spec().class, Class::Ahead);
         assert_eq!((waits(TaskId::Explain), waits(TaskId::Organize)), (1, 2));
     }
@@ -322,8 +305,8 @@ mod tests {
         assert_eq!(ai.class(TaskId::Organize), Class::Waited);
         ai.set_class(TaskId::Organize, Class::Ahead);
         assert!(ai.tasks.priority.is_empty(), "the default isn't stored");
-        let file = r#"{"version":8,"ai":{"tasks":{"priority":{"organize":"waited","gone":"asked",
-            "translate":"soon"}}}}"#;
+        let file = r#"{"version":9,"ai":{"tasks":{"priority":{"organize":"waited","gone":"asked",
+            "selection_ai":"soon"}}}}"#;
         let ai = crate::load(file).settings.ai;
         assert_eq!(ai.class(TaskId::Organize), Class::Waited);
         assert_eq!(
@@ -337,12 +320,12 @@ mod tests {
     fn choosing_keeps_the_fallbacks_and_none_clears_them() {
         let mut tasks = AiTasks::default();
         let (a, b) = (PresetId(1), PresetId(2));
-        tasks.models.insert(TaskId::Translate, vec![a, b]);
-        tasks.choose(TaskId::Translate, Some(b));
-        assert_eq!(tasks.models.get(&TaskId::Translate), Some(&vec![b, a]));
-        assert_eq!(tasks.choice(TaskId::Translate), Some(b));
-        tasks.choose(TaskId::Translate, None);
-        assert_eq!(tasks.choice(TaskId::Translate), None);
+        tasks.models.insert(TaskId::SelectionAi, vec![a, b]);
+        tasks.choose(TaskId::SelectionAi, Some(b));
+        assert_eq!(tasks.models.get(&TaskId::SelectionAi), Some(&vec![b, a]));
+        assert_eq!(tasks.choice(TaskId::SelectionAi), Some(b));
+        tasks.choose(TaskId::SelectionAi, None);
+        assert_eq!(tasks.choice(TaskId::SelectionAi), None);
         assert!(tasks.models.is_empty());
     }
 
@@ -359,10 +342,15 @@ mod tests {
         let (ai, version) = (got.settings.ai, got.settings.version);
         let model = |t| ai.model(t).map(|p| p.id.0);
         let all = TaskId::ALL.map(model);
-        // Summarize had none and translate a lost one: both follow Explain.
-        let want: [Option<u32>; 7] = [1, 2, 1, 1, 3, 2, 2].map(Some);
+        let want: [Option<u32>; 5] = [1, 2, 1, 2, 2].map(Some);
         assert_eq!(all, want);
-        assert_eq!(ai.tasks.models.len(), 5, "{:?}", ai.tasks.models);
+        assert_eq!(ai.tasks.models.len(), 4, "{:?}", ai.tasks.models);
+        // Summarize had none and translate a lost one: both ask Selection
+        // AI's; simplify keeps its own.
+        let page = |t| ai.page_model(t).map(|p| p.id.0);
+        let pages = crate::PageTask::ALL.map(page);
+        assert_eq!(pages, [1, 1, 3].map(Some));
+        assert_eq!(ai.tasks.skills.simplify, Some(PresetId(3)));
         assert_eq!(ai.tasks.organize.batch, 20);
         let languages = [&ai.tasks.explain.language, &ai.tasks.study.language];
         assert_eq!(languages.map(Option::as_deref), [Some("my"), Some("ja")]);

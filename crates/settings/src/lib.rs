@@ -15,6 +15,7 @@ mod ai_job;
 mod ai_task;
 mod load;
 mod reader;
+mod skills;
 mod study;
 mod study_mode;
 mod swatch;
@@ -41,6 +42,7 @@ pub use reader::{
     MotionSettings, PageIndicatorStyle, PaperArea, PaperSettings, Pass, Player, ReadAloudSettings,
     Skip, Skips, StartupFit,
 };
+pub use skills::{CustomSkill, Skill, SkillId, Skills};
 pub use study::StudySettings;
 pub use study::{
     Accent, BarItem, CefrLevel, CefrSettings, DictionaryOpens, DictionarySettings,
@@ -58,7 +60,7 @@ pub use words::{
 pub use workspace::{Corners, EdgeParking, LibraryClick, PaneLook, WorkspaceSettings};
 
 /// Bumped with every migration step in `load.rs`.
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
 /// The whole persisted state of the user's choices.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

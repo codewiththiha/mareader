@@ -10,12 +10,12 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
-use mareader_assist::{Assist, Loose, PageJob, Request, Rewrite, Running};
-use mareader_settings::{AiSettings, PresetId, Provider, SummaryStyle, TaskId};
+use mareader_assist::{Assist, Loose, Request, Running};
+use mareader_settings::{AiSettings, PresetId, Provider, TaskId};
 use mareader_study::Why;
 use mareader_study::mode::{Attempt, Key, Wanted};
-use mareader_study::page::{Piece, Role};
 use mareader_study::pending::{Answerers, Pending};
+use mareader_study::skill::SkillAsk;
 use support::{Answer, QUICK, Server};
 
 const BACKS: &str =
@@ -23,16 +23,14 @@ const BACKS: &str =
 const VERDICT: &str = r#"{"verdict":"close","feedback":"Nearly: here it means roamed."}"#;
 const SHELVING: &str = r#"{"shelves":["Poetry"]}"#;
 const FILING: &str = r#"{"placements":[{"book":"b1","shelf":1},{"book":"b2","shelf":0}]}"#;
-const SUMMARY: &str = r#"{"paragraphs":["The fox ran home before the rain."]}"#;
-const PIECES: &str = r#"{"pieces":[{"n":1,"text":"The fox went home."}]}"#;
+const SKILLED: &str = r#"{"text":"Le renard est rentré."}"#;
 
 /// What `id` answers with when all goes well, request by request.
 fn answers(id: TaskId) -> Vec<&'static str> {
     match id {
         TaskId::Explain => vec![QUICK],
         TaskId::Organize => vec![SHELVING, FILING],
-        TaskId::Summarize => vec![SUMMARY],
-        TaskId::Translate | TaskId::Simplify => vec![PIECES],
+        TaskId::SelectionAi => vec![SKILLED],
         TaskId::StudyCards => vec![BACKS],
         TaskId::StudyJudge => vec![VERDICT],
     }
@@ -47,14 +45,6 @@ fn ended<O: 'static, P: 'static>(mut job: Box<dyn Pending<O, P>>) -> Poll {
 
 fn run<O: Send + 'static, P: Send + 'static>(job: Running<O, P>) -> Poll {
     ended(Box::new(job))
-}
-
-fn page(rewrite: Rewrite) -> PageJob {
-    PageJob {
-        rewrite,
-        pieces: vec![Piece::text(Role::Para, "The fox ran home.")],
-        pages: 1,
-    }
 }
 
 /// Starts one job of `id`; the study tools ask through `ports`.
@@ -72,15 +62,10 @@ fn start(a: &Assist, ports: &Answerers, id: TaskId) -> Poll {
             polled(rx)
         }
         TaskId::Organize => run(a.organize(books())),
-        TaskId::Summarize => {
-            let summary = Rewrite::Summarize(SummaryStyle::Paragraphs);
-            run(a.rewrite(page(summary)))
-        }
-        TaskId::Translate => {
-            let french = Rewrite::Translate("French".to_owned());
-            run(a.rewrite(page(french)))
-        }
-        TaskId::Simplify => run(a.rewrite(page(Rewrite::Simplify))),
+        TaskId::SelectionAi => ended(ports.skills.run(SkillAsk {
+            skill: "translate".to_owned(),
+            text: "The fox ran home.".to_owned(),
+        })),
         TaskId::StudyCards => ended(ports.cards.write(vec![wanted()])),
         TaskId::StudyJudge => ended(ports.judge.judge(attempt())),
     }

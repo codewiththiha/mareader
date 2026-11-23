@@ -32,6 +32,7 @@ impl Session {
         self.study.set_explainer(ai.explainer);
         self.study_mode.set_cards(ai.cards);
         self.study_mode.set_judge(ai.judge);
+        self.skills.set_runner(ai.skills);
     }
 
     /// Polls active explainer threads and files completed glosses into marks.

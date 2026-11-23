@@ -128,7 +128,7 @@ fn a_backup_says_which_tasks_skip_it() {
     // Every task but the organizer follows the AI Dictionary.
     assert_eq!(
         line(&ai, a),
-        "Skipped by AI Dictionary and 5 more (their own model)"
+        "Skipped by AI Dictionary and 3 more (their own model)"
     );
     assert_eq!(line(&ai, b), "Skipped by Organize library (its own model)");
     assert_eq!(line(&ai, PresetId(3)), "Ollama · q2");

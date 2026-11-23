@@ -82,13 +82,17 @@ mod tests {
         let jobs = vec![
             job(TaskId::Organize, 1, true),
             job(TaskId::Explain, 1, false),
-            job(TaskId::Summarize, 2, true),
+            job(TaskId::SelectionAi, 2, true),
         ];
         assert_eq!(running(&jobs, PresetId(1)), 1);
         assert_eq!(running(&jobs, PresetId(3)), 0);
         let harness = Harness::new_ui(|ui| list(ui, &jobs, PresetId(1)));
         harness.get_by_label("Organize library · running 0 s");
         harness.get_by_label("AI Dictionary · waiting 0 s");
-        assert!(harness.query_by_label("Summarize · running 0 s").is_none());
+        assert!(
+            harness
+                .query_by_label("Selection AI · running 0 s")
+                .is_none()
+        );
     }
 }
