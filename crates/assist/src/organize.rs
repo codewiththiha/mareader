@@ -1,13 +1,13 @@
 //! Filing loose books: batches name shelves, then each book is placed.
 
-use std::time::Duration;
-
+use mareader_settings::Retry;
 use mareader_study::{Failure, Why};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::backend::{Backend, run};
+use crate::backend::Backend;
 use crate::prompt::{Prompt, quote};
+use crate::retry::{AHEAD, attempt};
 use crate::task::Task;
 
 /// A book on no shelf, by the caller's key.
@@ -83,13 +83,8 @@ const MAX_NEW: usize = 120;
 const NAME_CHARS: usize = 60;
 const TITLE_CHARS: usize = 160;
 const AUTHOR_CHARS: usize = 80;
-/// Tries per step when the answer can't be read.
-const TRIES: usize = 2;
 /// Filing rounds per batch: the first, and one for books it skipped.
 const ROUNDS: usize = 2;
-
-/// Pauses before asking again when a server is briefly away.
-pub const WAITS: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(12)];
 
 /// Where a book was filed: a shelf there before, or a path the run named.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,13 +154,13 @@ impl Checkpoint {
     }
 }
 
-/// What a run tells as it goes, and its waits after a passing failure.
+/// What a run tells as it goes, and how a step asks again.
 pub struct Hooks<'a> {
     /// Sees the start and each step's end.
     pub progress: &'a (dyn Fn(Progress) + Sync),
     /// Sees the checkpoint after each step.
     pub save: &'a (dyn Fn(&Checkpoint) + Sync),
-    pub waits: &'a [Duration],
+    pub retry: Retry,
 }
 
 /// Plans `req` on `backend` from the start; `progress` sees each step end.
@@ -177,7 +172,10 @@ pub async fn organize(
     let hooks = Hooks {
         progress,
         save: &|_| {},
-        waits: &[],
+        retry: Retry {
+            unreadable: AHEAD.unreadable,
+            waits: &[],
+        },
     };
     organize_from(backend, req, Checkpoint::new(req), &hooks).await
 }
@@ -211,10 +209,8 @@ pub async fn organize_from(
                 books: listing(chunk.iter()),
             };
             // An unreadable batch names no shelves; filing still runs.
-            for path in attempt(backend, &task, hooks.waits)
-                .await?
-                .unwrap_or_default()
-            {
+            let asked = attempt(backend, &task, &|_| {}, hooks.retry).await;
+            for path in skipped(asked)?.unwrap_or_default() {
                 // Kept once, and only if it made a shelf.
                 let fresh = tree.find_path(&path).is_none();
                 if tree.add_path(&path).is_some() && fresh {
@@ -228,7 +224,7 @@ pub async fn organize_from(
     }
     while let Some(chunk) = run.batches.get(run.filing) {
         let books: Vec<&Loose> = chunk.iter().collect();
-        for (key, node) in file(backend, &tree, books, hooks.waits).await? {
+        for (key, node) in file(backend, &tree, books, hooks.retry).await? {
             run.filed.push((key, node.map(|i| tree.place(i))));
         }
         run.filing += 1;
@@ -251,7 +247,7 @@ pub async fn organize_from(
             .flatten()
             .filter(|b| lost.contains(&b.key))
             .collect();
-        let again = file(backend, &tree, books, hooks.waits)
+        let again = file(backend, &tree, books, hooks.retry)
             .await
             .unwrap_or_default();
         for key in &lost {
@@ -269,7 +265,7 @@ async fn file(
     backend: &dyn Backend,
     tree: &Tree,
     mut todo: Vec<&Loose>,
-    waits: &[Duration],
+    retry: Retry,
 ) -> Result<Vec<(u128, Option<usize>)>, Failure> {
     let mut decided = Vec::new();
     for _ in 0..ROUNDS {
@@ -277,7 +273,8 @@ async fn file(
             break;
         }
         let task = Filing { tree, books: &todo };
-        let picks = attempt(backend, &task, waits).await?.unwrap_or_default();
+        let asked = attempt(backend, &task, &|_| {}, retry).await;
+        let picks = skipped(asked)?.unwrap_or_default();
         let mut again = Vec::new();
         for (i, book) in todo.iter().enumerate() {
             match picks.iter().find(|(at, _)| *at == i).map(|(_, p)| *p) {
@@ -292,36 +289,12 @@ async fn file(
     Ok(decided)
 }
 
-/// Busy, offline and slow servers often recover in seconds.
-pub(crate) fn passing(why: Why) -> bool {
-    matches!(why, Why::Busy | Why::Offline | Why::TimedOut)
-}
-
-/// The answer, or none if twice unreadable; a passing failure waits a bit.
-async fn attempt<T: Task>(
-    backend: &dyn Backend,
-    task: &T,
-    waits: &[Duration],
-) -> Result<Option<T::Output>, Failure> {
-    let (mut unreadable, mut waited) = (0, 0);
-    loop {
-        match run(backend, task, &|_| {}).await {
-            Ok(out) => return Ok(Some(out)),
-            Err(f) if f.why == Why::BadAnswer => {
-                unreadable += 1;
-                if unreadable >= TRIES {
-                    return Ok(None);
-                }
-            }
-            Err(f) if passing(f.why) => match waits.get(waited) {
-                Some(wait) => {
-                    waited += 1;
-                    tokio::time::sleep(*wait).await;
-                }
-                None => return Err(f),
-            },
-            Err(f) => return Err(f),
-        }
+/// The answer, or none if it stayed unreadable: a step skipped, not failed.
+fn skipped<O>(asked: Result<O, Failure>) -> Result<Option<O>, Failure> {
+    match asked {
+        Ok(out) => Ok(Some(out)),
+        Err(f) if f.why == Why::BadAnswer => Ok(None),
+        Err(f) => Err(f),
     }
 }
 
@@ -741,6 +714,7 @@ fn find<'a>(o: &'a Map<String, Value>, names: &[&str]) -> Option<&'a Value> {
 #[allow(clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use std::sync::Mutex;
+    use std::time::Duration;
 
     use super::*;
     use crate::backend::block;
@@ -984,14 +958,14 @@ mod tests {
         backend: &dyn Backend,
         req: &Request,
         run: Checkpoint,
-        waits: &[Duration],
+        waits: &'static [Duration],
     ) -> (Result<Plan, Why>, Checkpoint, Vec<Progress>) {
         let saved = Mutex::new(run.clone());
         let told = Mutex::new(Vec::new());
         let hooks = Hooks {
             progress: &|p| told.lock().expect("unpoisoned").push(p),
             save: &|c| *saved.lock().expect("unpoisoned") = c.clone(),
-            waits,
+            retry: Retry { waits, ..AHEAD },
         };
         let plan = block(organize_from(backend, req, run, &hooks)).map_err(|f| f.why);
         let saved = saved.into_inner().expect("unpoisoned");
@@ -1121,14 +1095,14 @@ mod tests {
             1 => Err(Failure::from(Why::Offline)),
             _ => poet(p),
         };
-        let short = [Duration::from_millis(1); 2];
-        let (plan, _, _) = carry(&script(busy_twice), &req, Checkpoint::new(&req), &short);
+        static SHORT: [Duration; 2] = [Duration::from_millis(1); 2];
+        let (plan, _, _) = carry(&script(busy_twice), &req, Checkpoint::new(&req), &SHORT);
         assert_eq!(plan.expect("a plan").placed.len(), 1);
         let (got, saved, _) = carry(
             &script(busy_twice),
             &req,
             Checkpoint::new(&req),
-            &short[..1],
+            &SHORT[..1],
         );
         assert_eq!(got.err(), Some(Why::Offline));
         assert_eq!(saved.steps(), (0, 2), "nothing done is lost");

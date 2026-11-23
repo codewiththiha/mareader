@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde_json::json;
 
@@ -252,17 +253,20 @@ fn unreadable_answers_and_brief_outages_are_asked_again() {
         Ok(json!({"nope": 1})),
         Ok(good),
     ]));
-    let waits = [Duration::ZERO];
-    let got = block(rewrite(&turns, &ask, &|_| {}, &waits)).map(|r| r.missing);
+    const ONCE: Retry = Retry {
+        unreadable: 1,
+        waits: &[Duration::ZERO],
+    };
+    let got = block(rewrite(&turns, &ask, &|_| {}, ONCE)).map(|r| r.missing);
     assert_eq!(got, Ok(2), "two pieces fell back to their own text");
     let twice = Turns(Mutex::new(vec![Ok(json!(1)), Ok(json!(2)), Ok(json!(3))]));
-    let got = block(rewrite(&twice, &ask, &|_| {}, &waits)).map_err(|f| f.why);
+    let got = block(rewrite(&twice, &ask, &|_| {}, ONCE)).map_err(|f| f.why);
     assert_eq!(got, Err(Why::BadAnswer));
     let away = Turns(Mutex::new(vec![
         Err(Why::Offline.into()),
         Err(Why::Offline.into()),
     ]));
-    let got = block(rewrite(&away, &ask, &|_| {}, &waits)).map_err(|f| f.why);
+    let got = block(rewrite(&away, &ask, &|_| {}, ONCE)).map_err(|f| f.why);
     assert_eq!(got, Err(Why::Offline), "one wait, then it gives up");
 }
 

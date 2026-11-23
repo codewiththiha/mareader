@@ -14,7 +14,8 @@ use mareader_study::mode::{
 use mareader_study::{Failure, Why};
 
 use super::{Assist, Engine, Waker, short_slot};
-use crate::backend::{Backend, Nobody, run};
+use crate::backend::{Backend, Nobody};
+use crate::retry::{self, AHEAD, WAITED};
 use crate::running::{Running, start};
 use crate::slots::{Slots, Ticket};
 use crate::study_judge::StudyJudge;
@@ -116,7 +117,7 @@ async fn write_deck(
         words: &words,
         language,
     };
-    run(backend.as_ref(), &task, &|_| {}).await
+    retry::attempt(backend.as_ref(), &task, &|_| {}, AHEAD).await
 }
 
 /// One recall's verdict, once the model has a slot free.
@@ -132,7 +133,7 @@ async fn judge_one(
         attempt: &attempt,
         language,
     };
-    run(backend.as_ref(), &task, &|_| {}).await
+    retry::attempt(backend.as_ref(), &task, &|_| {}, WAITED).await
 }
 
 /// A short slot on study's model, or why there is none.

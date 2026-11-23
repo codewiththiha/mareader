@@ -17,6 +17,7 @@ mod keys;
 mod organize;
 mod page;
 mod prompt;
+mod retry;
 mod running;
 mod service;
 mod slots;
@@ -31,10 +32,11 @@ pub use compat::Compat;
 pub use keys::KEYCHAIN_SERVICE;
 pub use organize::{
     Checkpoint, Existing, Hooks, Loose, NewShelf, Place, Plan, Progress, Request, Spot, Stage,
-    WAITS, organize, organize_from,
+    organize, organize_from,
 };
 pub use page::{PAGE_CHARS, PageAsk, PageJob, Rewrite, rewrite};
 pub use prompt::{Prompt, quote};
+pub use retry::{AHEAD, WAITED, WAITS};
 pub use running::{Event, Running, Waker};
 pub use service::{Assist, Organized, Organizing, Rewriting, Rewrote};
 pub use slots::{Kind, Slots, Ticket};

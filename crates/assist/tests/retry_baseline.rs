@@ -1,8 +1,8 @@
 //! Every AI task against a model that is busy once, then answers.
 //!
-//! The organizer and a page rewrite wait and ask again. Explain, study cards
-//! and the judge fail on the first Busy; Phase 2 of the AI plan gives them a
-//! retry and flips those three tests. See `docs/assist.md`.
+//! Each task waits and asks again: Explain and the judge once, after 2 s;
+//! study cards, the organizer and a page rewrite after 3 s, then 12 s. See
+//! `docs/assist.md`.
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
@@ -12,9 +12,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fm_bridge::Bridge;
-use mareader_assist::{Apple, Assist, Loose, Organized, PageJob, Request, Rewrite, Rewrote, WAITS};
+use mareader_assist::{
+    AHEAD, Apple, Assist, Loose, Organized, PageJob, Request, Rewrite, Rewrote, WAITED, WAITS,
+};
 use mareader_settings::{AiSettings, Provider, SummaryStyle};
-use mareader_study::Why;
 use mareader_study::mode::{Attempt, Key, Wanted};
 use mareader_study::page::{Piece, Role};
 
@@ -94,30 +95,34 @@ fn wanted(lemma: &str) -> Wanted {
 }
 
 #[test]
-fn explain_fails_on_the_first_busy() {
+fn explain_waits_and_asks_again() {
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(dir.path(), &[QUICK]);
     let explainer = a.configure(&settings());
+    let start = Instant::now();
     let got = explainer.explain("quick", "The quick fox", &|_| {});
-    // Known gap: Phase 2 gives Explain one 2 s wait, then this answers.
-    assert_eq!(got.err().map(|f| f.why), Some(Why::Busy));
-    assert_eq!(asked(dir.path()), 1, "never asked again");
+    assert_eq!(got.map(|i| i.meaning).as_deref(), Ok("Fast."));
+    assert_eq!(asked(dir.path()), 2, "busy, then the answer");
+    let waited = start.elapsed();
+    assert!(waited >= WAITED.waits[0], "{waited:?}");
 }
 
 #[test]
-fn study_cards_fail_on_the_first_busy() {
+fn study_cards_wait_and_ask_again() {
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(dir.path(), &[BACKS]);
     let _explainer = a.configure(&settings());
+    let start = Instant::now();
     let mut job = a.cards().write(vec![wanted("arcane")]);
-    let backs = answer(|| job.take());
-    // Known gap: Phase 2 waits 3 s, then 12 s, as the organizer does.
-    assert_eq!(backs.err().map(|f| f.why), Some(Why::Busy));
-    assert_eq!(asked(dir.path()), 1, "never asked again");
+    let backs = answer(|| job.take()).map_err(|f| f.why).unwrap();
+    assert_eq!(backs[0].as_ref().unwrap().meaning, "Hidden.");
+    assert_eq!(asked(dir.path()), 2, "busy, then the backs");
+    let waited = start.elapsed();
+    assert!(waited >= AHEAD.waits[0], "{waited:?}");
 }
 
 #[test]
-fn the_judge_fails_on_the_first_busy() {
+fn the_judge_waits_and_asks_again() {
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(dir.path(), &[VERDICT]);
     let _explainer = a.configure(&settings());
@@ -127,11 +132,13 @@ fn the_judge_fails_on_the_first_busy() {
         sentence: "He wandered off.".to_owned(),
         answer: "walked".to_owned(),
     };
+    let start = Instant::now();
     let mut job = a.judge().judge(attempt);
     let judged = answer(|| job.take());
-    // Known gap: Phase 2 gives the judge one 2 s wait, then this answers.
-    assert_eq!(judged.err().map(|f| f.why), Some(Why::Busy));
-    assert_eq!(asked(dir.path()), 1, "never asked again");
+    assert!(judged.is_ok(), "{:?}", judged.err());
+    assert_eq!(asked(dir.path()), 2, "busy, then the verdict");
+    let waited = start.elapsed();
+    assert!(waited >= WAITED.waits[0], "{waited:?}");
 }
 
 #[test]

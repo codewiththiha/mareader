@@ -86,8 +86,10 @@ pub fn failure(e: &AiError) -> Failure {
         AiError::AllKeysExhausted { retry_in_ms: None } => Why::KeysRejected.into(),
         AiError::Timeout => Why::TimedOut.into(),
         AiError::BadRequest { body, .. } => said(Why::Setup, body),
+        // ai-pool asked this key again already; see docs/assist.md.
         AiError::ServerError { status, body } => {
-            Failure::detailed(Why::Busy, format!("{status}: {}", provider_message(body)))
+            let said = format!("{status}: {}", provider_message(body));
+            Failure::detailed(Why::Busy, said).after_retries()
         }
         AiError::UnexpectedStatus { status, body } => {
             Failure::detailed(Why::Setup, format!("{status}: {}", provider_message(body)))
@@ -143,6 +145,13 @@ mod tests {
             f.detail.as_deref(),
             Some("every key is resting; one is back in 2 s")
         );
+        assert!(!f.retried, "resting keys are worth waiting for");
+        let down = AiError::ServerError {
+            status: 503,
+            body: "down".to_owned(),
+        };
+        let f = failure(&down);
+        assert_eq!((f.why, f.retried), (Why::Busy, true), "ai-pool retried");
         assert_eq!(failure(&AiError::Timeout).why, Why::TimedOut);
         let gone = AiError::BadRequest {
             status: 404,

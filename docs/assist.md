@@ -235,16 +235,49 @@ short one), and none retries.
 Underneath every row, ai-pool retries a 5xx or 408 three times on the same
 key; `compat.rs` turns the last `ServerError` into `Why::Busy`, which the
 organizer and page loops wait out twice more. A failing server can be
-asked (1 + 3) × (1 + 2) = 12 times for one organizer step.
+asked (1 + 3) × (1 + 2) = 12 times for one organizer step. Phase 2 of the
+AI plan settled this and gave every task a retry: see
+[Retry budget](#retry-budget).
 
 Known gaps, each pinned by a test that names the phase of the AI plan
 that changes it:
 
-- **No retry** for Explain, study cards and the judge: a single Busy fails
-  them (`tests/retry_baseline.rs`).
 - **No priority**: a deck written ahead, a recall's verdict and an Explain
   click are all short tasks, so each gives up as `InUse` after 15 s behind
   another one (`tests/study_mode.rs`, `tests/service.rs`).
+
+## Retry budget
+
+One loop, `retry::attempt`, asks again for every task, following the
+task's `Retry` (a plain value in the settings crate):
+
+| Policy | Tasks | Unreadable answer | Busy, Offline, TimedOut |
+|---|---|---|---|
+| `WAITED` | Explain, the study judge | asked again once | one 2 s wait, then asked again |
+| `AHEAD` | Study cards, the organizer, page rewrites | asked again once | waits 3 s, then 12 s |
+
+ai-pool asks a key again by itself after a 5xx or 408: three times, from
+200 ms, doubling. The `Busy` it then gives up with is marked `retried`
+(`compat.rs`), and the loop doesn't wait on it again. Resting keys
+(`AllKeysExhausted` with a time) aren't marked: ai-pool hasn't asked
+again, and waiting is what helps.
+
+What one task can cost against a server that keeps failing:
+
+| Failure | `WAITED` | `AHEAD` |
+|---|---|---|
+| 5xx or 408 | ai-pool's 1 + 3 = **4** requests | **4** |
+| Busy (429, resting keys), Offline, TimedOut | 1 + 1 wait = **2** | 1 + 2 waits = **3** |
+| Unreadable answer | 1 + 1 re-ask = **2** asks | **2** asks |
+
+Inside one ask, ai-pool may step an unreadable answer down from a JSON
+schema to JSON mode to a plain prompt (up to 3 requests); it remembers
+the mode that worked for a model. Not counted here: the engine requeues
+a page group on `InUse` (`page_ai/groups.rs`), which belongs to the
+queue (Phase 4 of the AI plan).
+
+Pinned by `tests/retry_budget.rs`, `tests/retry_baseline.rs` and the
+unit tests in `retry.rs`.
 
 ## Workflows: the organizer
 
@@ -330,8 +363,9 @@ it until the plan is applied or discarded.
   no model, so a plan that waited over a restart opens even with the
   model busy or gone.
 - `Busy`, `Offline` and `TimedOut` are waited out twice (`WAITS`, 3 s
-  then 12 s) before the run fails. Other failures fail at once. Either
-  way, every saved step stays.
+  then 12 s) before the run fails, unless ai-pool already asked again
+  (see [Retry budget](#retry-budget)). Other failures fail at once.
+  Either way, every saved step stays.
 - A fresh `Assist::organize` replaces the checkpoint only once it holds
   its slot. A refusal (`InUse`, `NotHere`) leaves a paused run as it
   was.

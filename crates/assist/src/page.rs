@@ -2,17 +2,15 @@
 
 use std::ops::Range;
 
-use std::time::Duration;
-
-use mareader_settings::{PageTask, SummaryStyle};
+use mareader_settings::{PageTask, Retry, SummaryStyle};
 use mareader_study::{Failure, Why};
 use serde_json::{Map, Value, json};
 
 use mareader_study::page::{Kept, Out, Piece, Rewritten, Role};
 
-use crate::backend::{Backend, run};
-use crate::organize::passing;
+use crate::backend::Backend;
 use crate::prompt::Prompt;
+use crate::retry::attempt;
 use crate::task::Task;
 
 /// A page's text is cut past this, so one page can't run away.
@@ -604,34 +602,17 @@ kept items."
     }
 }
 
-/// Unreadable answers are asked again this often in all.
-const TRIES: usize = 2;
-
 /// The result, asked again after unreadable answers and brief outages.
 pub async fn rewrite(
     backend: &dyn Backend,
     ask: &PageAsk,
     partial: &(dyn Fn(Rewritten) + Sync),
-    waits: &[Duration],
+    retry: Retry,
 ) -> Result<Rewritten, Failure> {
     if ask.job.is_empty() {
         return Err(Failure::detailed(Why::NotHere, "this page has no text"));
     }
-    let (mut unreadable, mut waited) = (0, 0);
-    loop {
-        match run(backend, ask, partial).await {
-            Ok(out) => return Ok(out),
-            Err(f) if f.why == Why::BadAnswer && unreadable + 1 < TRIES => unreadable += 1,
-            Err(f) if passing(f.why) => match waits.get(waited) {
-                Some(wait) => {
-                    waited += 1;
-                    tokio::time::sleep(*wait).await;
-                }
-                None => return Err(f),
-            },
-            Err(f) => return Err(f),
-        }
-    }
+    attempt(backend, ask, partial, retry).await
 }
 
 /// FNV-1a: tiny, stable across builds, enough to spot the same page.

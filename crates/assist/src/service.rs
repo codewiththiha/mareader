@@ -10,15 +10,15 @@ use mareader_study::{Explainer, Failure, Why, WordInfo};
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::backend::{Backend, BoxFuture, Nobody, Partial, run};
+use crate::backend::{Backend, BoxFuture, Nobody, Partial};
 use crate::board::{AppleState, Board, Job, Reply, Tried, lanes};
 use crate::compat::{Compat, failure_with_keys};
 use crate::keys::{Clients, pasted, row};
-use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, WAITS, organize_from};
+use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, organize_from};
 use crate::page::{PageJob, rewrite};
 use crate::prompt::Prompt;
-use crate::running::Waker;
-use crate::running::{Event, Running, start};
+use crate::retry::{AHEAD, WAITED, attempt};
+use crate::running::{Event, Running, Waker, start};
 use crate::slots::{Kind, Slots, Ticket};
 use crate::task::Explain;
 use mareader_study::page::Rewritten;
@@ -232,7 +232,7 @@ impl Assist {
             let hooks = Hooks {
                 progress: &|p| say.partial(p),
                 save: &save,
-                waits: &WAITS,
+                retry: AHEAD,
             };
             let plan = organize_from(backend.as_ref(), &req, run, &hooks).await;
             drop(slot);
@@ -252,7 +252,7 @@ impl Assist {
             };
             let ticket = short_slot(&slots, &preset, backend.as_ref()).await?;
             let ask = job.ask();
-            let done = rewrite(backend.as_ref(), &ask, &|r| say.partial(r), &WAITS).await;
+            let done = rewrite(backend.as_ref(), &ask, &|r| say.partial(r), AHEAD).await;
             drop(ticket);
             done
         })
@@ -426,7 +426,7 @@ impl Explainer for AiExplainer {
                 context: &context,
                 language,
             };
-            run(backend.as_ref(), &task, &|info| say.partial(info)).await
+            attempt(backend.as_ref(), &task, &|info| say.partial(info), WAITED).await
         });
         job.wait_with(partial)
     }
@@ -517,7 +517,7 @@ impl Work {
         let backend = self.trial.as_ref().ok_or(Why::NotHere)?;
         let _slot = short_slot(&self.slots, preset, backend.as_ref()).await?;
         let start = Instant::now();
-        let info = run(backend.as_ref(), &SAMPLE, &|_| {}).await?;
+        let info = crate::backend::run(backend.as_ref(), &SAMPLE, &|_| {}).await?;
         Ok(Tried {
             millis: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
             meaning: info.meaning,

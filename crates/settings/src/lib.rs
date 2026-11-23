@@ -11,6 +11,7 @@
 
 mod ai;
 mod ai_job;
+mod ai_task;
 mod load;
 mod reader;
 mod study;
@@ -31,6 +32,7 @@ pub use ai::{
     TranslateTask, language_name,
 };
 pub use ai_job::Job;
+pub use ai_task::Retry;
 pub use load::{Loaded, load, to_json};
 pub use reader::{
     AppearanceMenuStyle, Bar, ChromeSettings, FloatingLabelStyle, Highlight, LayoutSettings,

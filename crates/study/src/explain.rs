@@ -89,6 +89,8 @@ pub struct Failure {
     pub why: Why,
     /// What the provider said, for the card's small print.
     pub detail: Option<String>,
+    /// The provider already asked again; waiting more won't help.
+    pub retried: bool,
 }
 
 impl Failure {
@@ -106,13 +108,26 @@ impl Failure {
         Self {
             why,
             detail: Some(cut).filter(|d| !d.is_empty()),
+            retried: false,
+        }
+    }
+
+    /// Marks a failure the provider already asked again for.
+    pub fn after_retries(self) -> Self {
+        Self {
+            retried: true,
+            ..self
         }
     }
 }
 
 impl From<Why> for Failure {
     fn from(why: Why) -> Self {
-        Self { why, detail: None }
+        Self {
+            why,
+            detail: None,
+            retried: false,
+        }
     }
 }
 
