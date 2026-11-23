@@ -50,14 +50,15 @@ impl CardWriter for AiCards {
     fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {
         let now = self.0.followed();
         let (words, language) = (Arc::new(words), now.ai.study_language());
-        let step = move |backend: Arc<dyn Backend>, retry, _: Say<_, _>| {
+        // Each card comes as it is written, so a waiting deck fills.
+        let step = move |backend: Arc<dyn Backend>, retry, say: Say<_, _>| {
             let words = Arc::clone(&words);
             async move {
                 let task = StudyCards {
                     words: &words,
                     language,
                 };
-                retry::attempt(backend.as_ref(), &task, &|_| {}, retry).await
+                retry::attempt(backend.as_ref(), &task, &|b| say.partial(b), retry).await
             }
         };
         let id = TaskId::StudyCards;

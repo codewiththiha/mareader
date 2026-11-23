@@ -73,10 +73,13 @@ impl Ai {
         self.assist.as_ref().map(mareader_assist::Assist::board)
     }
 
-    /// Tasks the saved model `id` runs now.
+    /// Every AI job queued or running, for Settings.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn in_use(&self, id: mareader_settings::PresetId) -> usize {
-        self.assist.as_ref().map_or(0, |a| a.in_use(id))
+    pub fn jobs(&self) -> Vec<mareader_assist::JobInfo> {
+        self.assist
+            .as_ref()
+            .map(mareader_assist::Assist::jobs)
+            .unwrap_or_default()
     }
 
     /// Tasks `preset` may run at once: the number the queue lets in.

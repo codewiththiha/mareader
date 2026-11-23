@@ -195,9 +195,10 @@ fn explain_waits_for_a_held_model_and_more_room_lets_it_in() {
     let explainer = a.configure(&ai);
     let (got, _) = explain(explainer.as_ref());
     assert!(got.is_ok(), "{got:?}");
-    assert_eq!(a.in_use(model.id), 1, "explain gave its place back");
+    let held = a.slots().in_use(model.id);
+    assert_eq!(held, 1, "explain gave its place back");
     drop(organizing);
-    assert_eq!(a.in_use(model.id), 0);
+    assert_eq!(a.slots().in_use(model.id), 0);
 }
 
 #[test]
@@ -295,7 +296,7 @@ fn a_chatty_model_organizes_books_and_holds_its_model_meanwhile() {
     assert_eq!(plan.placed, [(1, Spot::New(0))]);
     assert_eq!(plan.left, [2]);
     assert_eq!(server.seen().len(), 2);
-    assert_eq!(a.in_use(id), 0, "the model is free again");
+    assert_eq!(a.slots().in_use(id), 0, "the model is free again");
 }
 
 #[test]
@@ -311,6 +312,9 @@ fn organizing_waits_for_a_free_model_and_cancelling_frees_it() {
     let explaining = a.slots().try_take(&model, TaskId::Explain);
     let mut run = a.organize(books(&["Odes"]));
     until(|| a.slots().queued(model.id) == 1);
+    let jobs: Vec<_> = a.jobs().iter().map(|j| (j.task, j.running)).collect();
+    assert_eq!(jobs, [(TaskId::Explain, true), (TaskId::Organize, false)]);
+    assert_eq!(a.jobs()[0].model, model.title(), "the model's name");
     let queued = Organized::Queued { behind: 1 };
     let start = Instant::now();
     while !run.poll().contains(&queued) {
@@ -318,9 +322,9 @@ fn organizing_waits_for_a_free_model_and_cancelling_frees_it() {
         std::thread::sleep(Duration::from_millis(10));
     }
     drop(explaining);
-    until(|| a.in_use(model.id) == 1);
+    until(|| a.slots().in_use(model.id) == 1);
     run.cancel();
-    until(|| a.in_use(model.id) == 0);
+    until(|| a.slots().in_use(model.id) == 0);
     // With nothing chosen, it says so.
     let mut none = ai.clone();
     none.tasks.choose(TaskId::Explain, None);

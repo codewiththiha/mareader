@@ -37,20 +37,32 @@ short detail from the provider.
 
 ## Adding a task
 
-1. Write a struct with what the task needs, e.g. `Summarise { text }`.
-2. `prompt()`: system text, then the reader's text through `quote()`, which
-   flattens it into one JSON string so it reads as data, not instructions.
-   The schema must be closed (`additionalProperties: false`), list every
-   field in `required`, and use no `$ref`. Apple's guided generation and
-   OpenAI's strict mode both need that.
-3. `read()`: turn the JSON into the output, leniently. Models wrap objects
-   and send lists as comma-separated strings; `Explain::read` shows how.
-   Return `None` for a whole answer that is missing what matters.
-4. Call `run(backend, &task, partial)`. Every backend already works.
-5. A task the reader picks a model for is also a `TaskId` with a row in
-   `TaskId::spec()`; the compiler then asks where Settings › AI shows it
-   (`place()` in `settings_window/ai.rs`). See
-   [Tasks as data](#tasks-as-data-schema-v8).
+Three places; the task's row gives the rest (its model, queue place,
+retry and fallback):
+
+1. **A file with the Task**: a struct with what it needs, its
+   `prompt()` and its `read()`.
+   - `prompt()`: system text, then the reader's text through `quote()`,
+     which flattens it into one JSON string so it reads as data, not
+     instructions. The schema must be closed (`additionalProperties:
+     false`), list every field in `required`, and use no `$ref`. Apple's
+     guided generation and OpenAI's strict mode both need that.
+   - `read()`: turn the JSON into the output, leniently. Models wrap
+     objects and send lists as comma-separated strings; `Explain::read`
+     shows how. Return `None` for a whole answer missing what matters.
+2. **A `TaskId` and its row** in `TaskId::spec()`
+   (`crates/settings/src/ai_task.rs`): label, what it is busy doing,
+   class, retry, and the task it follows. The compiler then asks for the
+   arms that list every task: where Settings › AI shows it (`place()` in
+   `settings_window/ai.rs`) and how `tests/conformance.rs` starts one.
+3. **A call to `ask()`** where the answer is wanted: the dispatcher
+   routes it, queues it by class and retries it by its row. The `step`
+   asks one model through `retry::attempt(backend, &task, partial,
+   retry)`; `Assist::rewrite` is the shortest example.
+
+Every backend already works with it. See
+[Tasks as data](#tasks-as-data-schema-v8) and
+[The queue](#the-queue-who-runs-who-waits-phase-4).
 
 ## Adding a provider
 
@@ -155,6 +167,21 @@ way can't keep asking the old model.
   assist's `Running` implements it, so the engine still never names
   assist.
 
+### See it working (Phase 6)
+
+- **Jobs list.** `Dispatcher::jobs()` (`Assist::jobs`) lists every job
+  queued or running as a `JobInfo`: task, saved model, running or
+  waiting, and since when. Those running come first, then the line in
+  its order. Settings › AI models draws a line under each model's row,
+  "AI Dictionary · running 4 s" or "Study cards · waiting 12 s", and the
+  seconds tick while any line shows.
+- **Cards as they are written.** The card writer passes each partial
+  answer on as `Event::Partial`. `StudyCards::read` leaves a partial
+  answer's last card out, as it may be half written. `DeckJob` fills
+  its backs from each partial, so the waiting card and the toast count
+  "Writing cards 3 of 12" as cards arrive. Only the whole answer goes in
+  the cache, and it stands over what came on the way.
+
 ## Tests
 
 - `tests/compat.rs`: streaming with the schema sent, the format
@@ -162,6 +189,8 @@ way can't keep asking the old model.
 - `tests/service.rs`: a keyless local server; keys added, used, rotated,
   set aside, brought back and removed; providers that can't answer saying
   why; Apple Intelligence through a scripted helper (Unix).
+- `tests/study_mode.rs`: a deck's backs in one request, by number, and
+  card by card as they stream; the judge before decks; cancels.
 - `tests/conformance.rs`: every `TaskId` has a spec whose `follows` ends,
   routes through its fallback and loses a removed model, waits out a busy
   model as its spec says, frees its model when cancelled, and asks the new
@@ -261,7 +290,8 @@ a `Ticket`. Dropping the ticket, or the job, lets the next one in.
   `Partial`, `Again { why, attempt }` and `Done`. `Again` comes from a
   single request asked again; a flow's steps don't send it.
 - Each saved model's summary shows its capacity, how many tasks run now,
-  and which tasks use it.
+  and which tasks use it. Under it, a line per job names what runs and
+  waits (see [See it working](#see-it-working-phase-6)).
 
 Owner's call for p4-4 (2026-11-23): the limit is per saved model, the
 order is by who waits, and bulk work steps aside, so Explain works while

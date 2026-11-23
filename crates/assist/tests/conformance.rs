@@ -250,7 +250,8 @@ fn every_task_waits_out_a_busy_model_as_its_spec_says() {
         assert!(waited >= wait, "{id:?} waited {waited:?}, not {wait:?}");
         let asked = chats(&server);
         assert_eq!(asked, 1 + answers(id).len(), "{id:?}: busy, then asked");
-        until(id, "the answer frees its model", || a.in_use(model) == 0);
+        let free = || a.slots().in_use(model) == 0;
+        until(id, "the answer frees its model", free);
     });
 }
 
@@ -269,9 +270,10 @@ fn cancelling_any_task_frees_its_model() {
             return;
         }
         let job = start(&a, &a.answerers(), id);
-        until(id, "it holds its model", || a.in_use(model) == 1);
+        let held = |n| a.slots().in_use(model) == n;
+        until(id, "it holds its model", || held(1));
         drop(job);
-        until(id, "cancelling frees it", || a.in_use(model) == 0);
+        until(id, "cancelling frees it", || held(0));
     });
 }
 

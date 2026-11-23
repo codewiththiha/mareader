@@ -30,6 +30,7 @@ pub use apple::Apple;
 pub use backend::{Backend, BoxFuture, Nobody, Partial, run};
 pub use board::{AppleState, Board, Job, KeyRow, KeyState, Load, Reply, Tried, lanes};
 pub use compat::Compat;
+pub use dispatch::JobInfo;
 pub use keys::KEYCHAIN_SERVICE;
 pub use organize::{
     Checkpoint, Existing, Hooks, Loose, NewShelf, Place, Plan, Progress, Request, Spot, Stage,

@@ -20,7 +20,7 @@ name the owning modules for shared primitives across the workspace.
 | CardWriter | `crates/study/src/mode/cards.rs` | Who writes a deck's backs: `write` hands back a `CardJob` (a `Pending`), cancelled by drop. Assist's `Assist::cards` and the scripted `Practice` implement it, so the engine never names assist. |
 | Backs | `crates/engine/src/study_mode/backs.rs` | Backs written per word, sentence hash and writer id for the session, shared by every deck through `Writer`; a deck asks only for the misses. |
 | Judge | `crates/study/src/mode/judge.rs` | Who judges a recall's answer: `judge` hands back a `JudgeJob` (a `Pending`), cancelled by drop. Assist's `Assist::judge` and `Practice` implement it. `Once<T>` in `cards.rs` is the scripted job for both traits. |
-| Dispatcher | `crates/assist/src/dispatch.rs` | What every AI job starts from: the runtime, the queue and the settings followed, swapped as one `Arc`. Ports hold a clone and read the route when a job starts. |
+| Dispatcher | `crates/assist/src/dispatch.rs` | What every AI job starts from: the runtime, the queue and the settings followed, swapped as one `Arc`. Ports hold a clone and read the route when a job starts. `jobs()` lists what is queued and running, as `JobInfo`, for Settings. |
 | Recalling | `crates/engine/src/study_mode/recalling.rs` | The open recall: its word, the back asked through `Writer`, the judge's job; `step` takes both in and says when a correct answer ends it. |
 | spot / click | `crates/ui-egui/tests/common/levels.rs` | Kittest: the screen point of a word on page 0, and a click on it. |
 | Ahead | `crates/engine/src/study_mode/run.rs` | A deck made past the gate (making, ready or failed); `Run::take_ahead` hands it to the gate, `trim_ahead` drops those no longer coming. |

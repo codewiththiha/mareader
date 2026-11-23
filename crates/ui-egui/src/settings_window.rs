@@ -318,11 +318,11 @@ fn tab_body(
         }
         #[cfg(not(target_arch = "wasm32"))]
         Tab::Models => {
-            let in_use = |id| live.ai.in_use(id);
+            let jobs = live.ai.jobs();
             let room = |p: &mareader_settings::ModelPreset| live.ai.capacity(p).unwrap_or(1);
             let live_m = live.ai.board().map(|board| models::Live {
                 board,
-                in_use: &in_use,
+                jobs: &jobs,
                 room: &room,
             });
             models::models_tab(ui, &mut s.ai, live_m, out);

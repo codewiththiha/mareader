@@ -10,6 +10,7 @@ use mareader_assist::Assist;
 use mareader_settings::{AiSettings, Provider, TaskId};
 use mareader_study::Why;
 use mareader_study::mode::{Answer as Backs, Attempt, CardJob, Key, Verdict, Wanted};
+use mareader_study::pending::News;
 use support::{Answer, Server};
 
 fn server(answers: Vec<Answer>) -> (tokio::runtime::Runtime, Server) {
@@ -117,6 +118,32 @@ fn a_deck_s_backs_come_in_one_request_by_number() {
 }
 
 #[test]
+fn a_deck_s_backs_come_card_by_card_as_they_are_written() {
+    // The first chunk ends inside the second card's meaning.
+    let at = BACKS.find("Hidden").unwrap() + 3;
+    let (_rt, server) = server(vec![Answer::stream(&[&BACKS[..at], &BACKS[at..]])]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut a = assist(&dir);
+    let _explainer = a.configure(&settings(&server.url));
+    let mut job = a.cards().write(vec![wanted("arcane"), wanted("brisk")]);
+    let mut counts = Vec::new();
+    let done = slowly(|| {
+        let news = job.news().into_iter();
+        news.fold(None, |done, news| match news {
+            News::Partial(backs) => {
+                counts.push(backs.iter().flatten().count());
+                done
+            }
+            News::Done(answer) => Some(answer),
+        })
+    });
+    assert_eq!(done.unwrap().iter().flatten().count(), 2);
+    assert!(counts.contains(&1), "the first card came alone: {counts:?}");
+    let half = counts.iter().all(|n| *n < 2);
+    assert!(half, "a half-written card isn't counted: {counts:?}");
+}
+
+#[test]
 fn a_dropped_deck_frees_its_model_and_no_model_says_so() {
     let dir = tempfile::tempdir().unwrap();
     let mut a = assist(&dir);
@@ -126,9 +153,9 @@ fn a_dropped_deck_frees_its_model_and_no_model_says_so() {
     let id = ai.model(TaskId::Explain).unwrap().id;
     let _explainer = a.configure(&ai);
     let job = a.cards().write(vec![wanted("arcane")]);
-    until(|| a.in_use(id) == 1);
+    until(|| a.slots().in_use(id) == 1);
     drop(job);
-    until(|| a.in_use(id) == 0);
+    until(|| a.slots().in_use(id) == 0);
     let mut none = ai.clone();
     none.tasks.choose(TaskId::Explain, None);
     let _ = a.configure(&none);
@@ -213,7 +240,7 @@ fn a_dropped_judge_frees_its_model() {
     let id = ai.model(TaskId::Explain).unwrap().id;
     let _explainer = a.configure(&ai);
     let job = a.judge().judge(attempt());
-    until(|| a.in_use(id) == 1);
+    until(|| a.slots().in_use(id) == 1);
     drop(job);
-    until(|| a.in_use(id) == 0);
+    until(|| a.slots().in_use(id) == 0);
 }

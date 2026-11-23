@@ -20,6 +20,7 @@ use mareader_session::Document;
 use mareader_settings::{TaskId, no_model};
 use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
 use mareader_study::mode::{build, lemma};
+use mareader_study::pending::News;
 
 use super::backs::{Shown, Writer, wanted};
 use super::known::Known;
@@ -403,25 +404,31 @@ impl DeckJob {
         Ok(())
     }
 
-    /// Takes the writer's answer into the deck and the cache.
+    /// Counts backs as they are written; takes the answer into the deck
+    /// and the cache.
     fn writing(&mut self) -> Result<bool, String> {
         let Stage::Writing { job, asked, id } = &mut self.stage else {
             return Ok(false);
         };
-        let Some(answer) = job.take() else {
+        let mut answer = None;
+        for news in job.news() {
+            match news {
+                News::Partial(backs) => fill(&mut self.written, asked, &backs),
+                News::Done(done) => answer = Some(done),
+            }
+        }
+        let Some(answer) = answer else {
             return Ok(false);
         };
         let backs = answer.map_err(|f| f.said())?;
         let (asked, id) = (std::mem::take(asked), std::mem::take(id));
-        if let Some(writer) = &self.writer {
-            for ((i, wanted), back) in asked.into_iter().zip(backs) {
-                let Some(back) = back else {
-                    continue;
-                };
+        for ((i, wanted), back) in asked.into_iter().zip(backs) {
+            if let (Some(writer), Some(back)) = (&self.writer, &back) {
                 writer.backs.put(&id, &wanted, back.clone());
-                if let Some(slot) = self.written.get_mut(i) {
-                    *slot = Some(back);
-                }
+            }
+            // The whole answer stands over what came on the way.
+            if let Some(slot) = self.written.get_mut(i) {
+                *slot = back;
             }
         }
         self.finish_written();
@@ -447,6 +454,15 @@ impl DeckJob {
     }
 }
 
+/// Puts each back written into its card's place, `asked` naming them.
+fn fill(written: &mut [Option<Written>], asked: &[(usize, Wanted)], backs: &[Option<Written>]) {
+    for ((i, _), back) in asked.iter().zip(backs) {
+        if let (Some(slot), Some(back)) = (written.get_mut(*i), back) {
+            *slot = Some(back.clone());
+        }
+    }
+}
+
 /// The backs found so far, cached ones first, and all there are to find.
 fn written(backs: &[Option<Written>]) -> (usize, usize) {
     (backs.iter().flatten().count(), backs.len())
@@ -456,10 +472,26 @@ fn written(backs: &[Option<Written>]) -> (usize, usize) {
 mod tests {
     use super::*;
 
+    fn back(meaning: &str) -> Option<Written> {
+        Some(Written {
+            meaning: meaning.to_owned(),
+            ..Written::default()
+        })
+    }
+
     #[test]
-    fn progress_counts_the_backs_found() {
-        let back = Written::default();
+    fn progress_counts_backs_as_they_come() {
         assert_eq!(written(&[]), (0, 0));
-        assert_eq!(written(&[Some(back.clone()), None, Some(back)]), (2, 3));
+        let wanted = |lemma: &str| Wanted {
+            key: Key::new(lemma, None),
+            form: lemma.to_owned(),
+            sentence: String::new(),
+        };
+        let mut backs = vec![back("cached"), None, None];
+        let asked = [(1, wanted("brisk")), (2, wanted("arcane"))];
+        fill(&mut backs, &asked, &[back("lively"), None]);
+        assert_eq!(written(&backs), (2, 3), "one more card as it comes");
+        fill(&mut backs, &asked, &[None, back("hidden")]);
+        assert_eq!(backs, [back("cached"), back("lively"), back("hidden")]);
     }
 }

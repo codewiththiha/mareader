@@ -14,8 +14,9 @@
 
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
-use mareader_settings::{AiSettings, Class, ModelPreset, Retry, TaskId, no_model};
+use mareader_settings::{AiSettings, Class, ModelPreset, PresetId, Retry, TaskId, no_model};
 use mareader_study::{Failure, Why};
 use serde_json::Value;
 use tokio::runtime::Runtime;
@@ -23,13 +24,25 @@ use tokio::runtime::Runtime;
 use crate::backend::{Backend, BoxFuture, Nobody, Partial};
 use crate::prompt::Prompt;
 use crate::running::{Event, Running, Say, Waker, start};
-use crate::slots::{Slots, Ticket};
+use crate::slots::{Place, Slots, Ticket};
 
 /// A model in a route, and who answers for it.
 #[derive(Clone)]
 pub(crate) struct Seat {
     pub preset: ModelPreset,
     pub backend: Arc<dyn Backend>,
+}
+
+/// A job queued or running, as Settings lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JobInfo {
+    pub task: TaskId,
+    pub preset: PresetId,
+    /// The model's name in the settings followed; blank once removed.
+    pub model: String,
+    pub running: bool,
+    /// When it started, or joined the line.
+    pub since: Instant,
 }
 
 /// The runtime, shut down without waiting, from wherever it drops.
@@ -110,6 +123,20 @@ impl Dispatcher {
 
     pub fn route(&self, id: TaskId) -> Vec<Seat> {
         self.followed().route(id)
+    }
+
+    /// Everything queued or running: those running first, then the line.
+    pub fn jobs(&self) -> Vec<JobInfo> {
+        let now = self.followed();
+        let name = |id| now.ai.preset(id).map(ModelPreset::title);
+        let info = |p: Place| JobInfo {
+            task: p.task,
+            preset: p.preset,
+            model: name(p.preset).unwrap_or_default(),
+            running: p.running,
+            since: p.since,
+        };
+        self.slots.places().into_iter().map(info).collect()
     }
 
     pub fn dispatch(&self) -> Dispatch<'_> {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use fm_bridge::Bridge;
-use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId, no_model};
+use mareader_settings::{AiSettings, ModelPreset, Provider, TaskId, no_model};
 use mareader_study::pending::Answerers;
 use mareader_study::{Explainer, Failure, Why, WordInfo};
 use serde_json::Value;
@@ -14,7 +14,7 @@ use tokio::runtime::Builder;
 use crate::backend::{Backend, BoxFuture, Nobody, Partial};
 use crate::board::{AppleState, Board, Job, Reply, Tried, lanes};
 use crate::compat::{Compat, failure_with_keys};
-use crate::dispatch::{Dispatcher, Seat};
+use crate::dispatch::{Dispatcher, JobInfo, Seat};
 use crate::keys::{Clients, pasted, row};
 use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, organize_from};
 use crate::page::{PageJob, rewrite};
@@ -151,9 +151,9 @@ impl Assist {
         &self.jobs_on.slots
     }
 
-    /// Tasks `preset` runs now.
-    pub fn in_use(&self, preset: PresetId) -> usize {
-        self.slots().in_use(preset)
+    /// Everything queued or running, for Settings.
+    pub fn jobs(&self) -> Vec<JobInfo> {
+        self.jobs_on.jobs()
     }
 
     /// Tasks `preset` may run at once: the number the queue lets in.

@@ -171,7 +171,12 @@ impl Task for StudyCards<'_> {
     fn read(&self, answer: &Value, whole: bool) -> Option<Self::Output> {
         let mut backs: Vec<Option<Written>> = vec![None; self.words.len()];
         let found = cards(answer)?;
-        for (place, card) in found.iter().enumerate() {
+        // A partial answer's last card may still be half written.
+        let ready = match whole {
+            true => found.len(),
+            false => found.len().saturating_sub(1),
+        };
+        for (place, card) in found.iter().enumerate().take(ready) {
             let Some(card) = card.as_object() else {
                 continue;
             };
@@ -284,6 +289,10 @@ mod tests {
         assert!(task.read(&blank, false).is_some());
         assert_eq!(task.read(&json!({"cards": []}), false), None);
         assert_eq!(task.read(&json!("no"), true), None);
+        let two = json!({"cards": [{"n": 1, "meaning": "Lively."}, {"n": 2, "meaning": "Ro"}]});
+        let written = task.read(&two, false).map(|b| b.iter().flatten().count());
+        assert_eq!(written, Some(1), "the last card may be half written");
+        assert_eq!(task.read(&two, true).map(|b| b.len()), Some(2));
         let stray = json!({"cards": [{"n": 9, "meaning": "x"}]});
         assert_eq!(
             task.read(&stray, true),

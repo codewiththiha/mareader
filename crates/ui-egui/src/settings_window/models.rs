@@ -8,10 +8,12 @@ use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use egui::{Align, Layout, Rect, RichText, Sense, Stroke, Ui, Vec2, pos2, vec2};
-use mareader_assist::{AppleState, Board, Job, KeyRow, KeyState, Load, lanes};
+use mareader_assist::{AppleState, Board, Job, JobInfo, KeyRow, KeyState, Load, lanes};
 use mareader_engine::command::Command;
 use mareader_settings::{AiSettings, ModelPreset, PresetId, Provider, TaskId};
 use mareader_study::Failure;
+
+mod jobs;
 
 pub(super) const FIELD_W: f32 = 260.0;
 const PICK_W: f32 = 240.0;
@@ -19,8 +21,8 @@ const PICK_W: f32 = 240.0;
 /// What the running service adds to the settings.
 pub struct Live<'a> {
     pub board: &'a Board,
-    /// Tasks a saved model runs now.
-    pub in_use: &'a dyn Fn(PresetId) -> usize,
+    /// Every job queued or running, as the queue lists them.
+    pub jobs: &'a [JobInfo],
     /// Tasks it may run at once, as the queue counts them.
     pub room: &'a dyn Fn(&ModelPreset) -> u32,
 }
@@ -86,7 +88,7 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
                 break;
             };
             let id = p.id;
-            let busy = live.map_or(0, |l| (l.in_use)(id));
+            let busy = live.map_or(0, |l| jobs::running(l.jobs, id));
             let room = live.map_or(u32::from(p.at_once), |l| (l.room)(p));
             let (line, warn) = status_line(p, board, (busy, room));
             let pills = uses(ai, id);
@@ -101,6 +103,9 @@ fn models(ui: &mut Ui, ai: &mut AiSettings, live: Option<&Live<'_>>, out: &mut C
             };
             if head(ui, &look).clicked() {
                 open = (!is_open).then_some(id.0);
+            }
+            if let Some(l) = live {
+                jobs::list(ui, l.jobs, id);
             }
             let explains = ai.tasks.choice(TaskId::Explain) == Some(id);
             if is_open
@@ -809,7 +814,7 @@ mod tests {
                     } else if s.shown {
                         let live = Live {
                             board: &s.board,
-                            in_use: &|_| 0,
+                            jobs: &[],
                             room: &|p| u32::from(p.at_once),
                         };
                         models_tab(ui, &mut s.ai, Some(live), &mut s.out);

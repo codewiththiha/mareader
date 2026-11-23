@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mareader_settings::{Class, ModelPreset, PresetId, Provider, TaskId};
 use tokio::sync::Notify;
@@ -40,17 +40,29 @@ impl Queued {
     }
 }
 
-/// One task in line.
+/// One task in line, since it joined.
 struct Wait {
     id: u64,
     preset: PresetId,
+    task: TaskId,
     class: Class,
+    since: Instant,
+}
+
+/// A task on a model now: running, or in line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Place {
+    pub preset: PresetId,
+    pub task: TaskId,
+    pub running: bool,
+    /// When it took its place, or joined the line.
+    pub since: Instant,
 }
 
 #[derive(Default)]
 struct State {
-    /// Who runs on each model now.
-    held: HashMap<PresetId, Vec<(u64, TaskId)>>,
+    /// Who runs on each model now, and since when.
+    held: HashMap<PresetId, Vec<(u64, TaskId, Instant)>>,
     /// Who waits, oldest first.
     queued: Vec<Wait>,
     /// Usable keys per provider, once counted.
@@ -121,7 +133,7 @@ impl Drop for Ticket {
         if let Ok(mut state) = self.slots.state.lock()
             && let Some(list) = state.held.get_mut(&self.preset)
         {
-            list.retain(|(id, _)| *id != self.id);
+            list.retain(|(id, ..)| *id != self.id);
         }
         self.slots.freed.notify_waiters();
     }
@@ -200,8 +212,43 @@ impl Slots {
             .unwrap_or_default()
     }
 
+    /// Every task on every model: those running, then the line in order.
+    pub(crate) fn places(&self) -> Vec<Place> {
+        let Some(state) = self.state() else {
+            return Vec::new();
+        };
+        let mut places = Vec::new();
+        for (preset, list) in &state.held {
+            for (_, task, since) in list {
+                places.push(Place {
+                    preset: *preset,
+                    task: *task,
+                    running: true,
+                    since: *since,
+                });
+            }
+        }
+        places.sort_by_key(|p| p.since);
+        let mut line: Vec<&Wait> = state.queued.iter().collect();
+        line.sort_by_key(|w| (w.class, w.id));
+        for w in line {
+            places.push(Place {
+                preset: w.preset,
+                task: w.task,
+                running: false,
+                since: w.since,
+            });
+        }
+        places
+    }
+
     fn admit(&self, state: &mut State, preset: PresetId, id: u64, task: TaskId) -> Ticket {
-        state.held.entry(preset).or_default().push((id, task));
+        let since = Instant::now();
+        state
+            .held
+            .entry(preset)
+            .or_default()
+            .push((id, task, since));
         Ticket {
             slots: Arc::clone(&self.0),
             preset,
@@ -276,14 +323,16 @@ impl Slots {
         let (id, class) = (state.id(), task.spec().class);
         let none = Vec::new();
         let held = state.held.get(&p.id).unwrap_or(&none);
-        let other = held.iter().map(|(_, t)| *t).find(|t| *t != task);
+        let other = held.iter().map(|(_, t, _)| *t).find(|t| *t != task);
         let before = state.queued.iter();
         let before = before.filter(|w| w.preset == p.id && w.class <= class);
         let ahead = held.len() + before.count();
         state.queued.push(Wait {
             id,
             preset: p.id,
+            task,
             class,
+            since: Instant::now(),
         });
         // A task behind its own kind is no news; another task's is.
         if let Some(behind) = other {
