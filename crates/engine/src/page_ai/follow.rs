@@ -13,20 +13,22 @@ use mareader_workspace::PaneId;
 use super::Slot;
 use super::ledger::Ledger;
 use super::read::{self, Read};
-use super::state::{Around, Asked, Showing, Who};
-use super::view::{Models, Pill, Ring, page_task, source_of};
+use super::state::{Around, Asked, Gone, Showing, Who};
+use super::view::{Models, page_task, source_of};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     Going,
     /// The reader went far from the run's pages.
     Away,
-    /// Still, far from them: the pill asks whether to carry on.
+    /// Still, far from them: it asks whether to carry on.
     Asking,
 }
 
 /// A pane's continuous run.
 pub struct Follow {
+    /// Names it in the AI stack, from the runs' count.
+    pub id: u64,
     /// The layout its pages are counted in: a book's own.
     pub layout: u64,
     pub task: AiTask,
@@ -53,7 +55,19 @@ pub struct Follow {
     pub pending: usize,
 }
 
-/// The pill's words for a task: what it does, and its verb.
+/// How a continuous run stands, in the AI stack's words.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Standing {
+    pub said: String,
+    /// The stay on this page so far, 0 to 1; none while it writes.
+    pub share: Option<f32>,
+    /// It waits: far from its pages, or asking.
+    pub paused: bool,
+    /// It asks whether to carry on here.
+    pub asks: bool,
+}
+
+/// A task's words: what it does, and its verb.
 pub fn doing(task: &AiTask) -> (String, &'static str) {
     match task {
         AiTask::Translate { language } => {
@@ -92,8 +106,19 @@ impl Ledger {
             return;
         };
         let (pane, page) = (asked.pane, view.document.to_base(asked.page));
-        self.stop_follow(pane);
+        // Carrying on keeps the run's name in the stack.
+        let id = match self.follows.remove(&pane) {
+            Some(old) => {
+                self.let_go(&old);
+                old.id
+            }
+            None => {
+                self.next_run += 1;
+                self.next_run
+            }
+        };
         let mut f = Follow {
+            id,
             layout: view.layout,
             task: task.clone(),
             book: asked.book,
@@ -139,6 +164,7 @@ impl Ledger {
     /// Ends the pane's continuous run; pages ahead no one saw are let go.
     pub(crate) fn stop_follow(&mut self, pane: PaneId) {
         if let Some(f) = self.follows.remove(&pane) {
+            self.note_gone(f.id, Gone::Stopped);
             self.let_go(&f);
         }
     }
@@ -179,7 +205,14 @@ impl Ledger {
                 true => {
                     self.follows.insert(pane, f);
                 }
-                false => self.let_go(&f),
+                false => {
+                    let failed =
+                        |r: &super::state::Run| f.runs.contains(&r.id) && r.failed.is_some();
+                    if self.runs.iter().any(failed) {
+                        self.note_gone(f.id, Gone::Failed);
+                    }
+                    self.let_go(&f);
+                }
             }
         }
     }
@@ -368,56 +401,50 @@ impl Ledger {
         }
     }
 
-    /// The pane's run as its pill shows it.
-    pub fn pill(&self, pane: PaneId, now: f64) -> Option<Pill> {
+    /// The pane's continuous run as the AI stack shows it.
+    pub fn standing(&self, pane: PaneId, now: f64) -> Option<Standing> {
         let f = self.follows.get(&pane)?;
         let (title, verb) = doing(&f.task);
-        let cur = f.seen.0;
-        let pill = |text: String, tip: String, ring: Ring| Pill {
-            text,
-            tip,
-            ring,
-            ask: false,
+        let going = |tip: &str, share| Standing {
+            said: format!("{title} · {tip}"),
+            share,
+            paused: false,
+            asks: false,
         };
+        let cur = f.seen.0;
         Some(match f.state {
-            State::Away => pill(
-                format!("{title} · paused"),
-                "You went far from the pages being worked on.".to_owned(),
-                Ring::Paused,
-            ),
-            State::Asking => Pill {
-                text: format!("Continue {verb} here?"),
-                tip: format!("Carry on {verb} from this page, or stop."),
-                ring: Ring::Paused,
-                ask: true,
+            State::Away => Standing {
+                paused: true,
+                ..going("paused, far from its pages", None)
+            },
+            State::Asking => Standing {
+                said: format!("Continue {verb} here?"),
+                share: None,
+                paused: true,
+                asks: true,
             },
             State::Going => {
                 let flying = self.flying(f);
                 let shown = f.blank.contains(&cur) || self.ready_on(pane, f.layout, cur);
                 let waiting = f.dwell.filter(|(p, _)| *p == cur && f.fired != Some(cur));
                 if !shown && cur >= f.from && cur < f.next {
-                    pill(title, "Writing this page…".to_owned(), Ring::Spin)
+                    going("writing this page", None)
                 } else if !shown && cur < f.from {
-                    let tip = "It works from where it started, onwards.".to_owned();
-                    pill(title, tip, Ring::Fill(0.0))
+                    going("it works onwards from where it started", Some(0.0))
                 } else if !shown {
-                    let tip = "Stay on this page to have it done too.".to_owned();
-                    pill(title, tip, Ring::Fill(0.0))
+                    going("stay on this page to have it done", Some(0.0))
                 } else if let Some((_, since)) = waiting.filter(|_| f.next < f.pages) {
                     let left = (f.dwell_secs - (now - since)).max(0.0).ceil();
-                    let tip = format!("In {left:.0} s on this page, the next pages are asked.");
-                    let p = ((now - since) / f.dwell_secs) as f32;
-                    pill(title, tip, Ring::Fill(p))
-                } else if flying > 0 {
-                    let tip = match flying {
-                        1 => "Writing the next page…".to_owned(),
-                        n => format!("Writing the next {n} pages…"),
-                    };
-                    pill(title, tip, Ring::Full)
+                    let share = ((now - since) / f.dwell_secs) as f32;
+                    going(&format!("next pages in {left:.0} s"), Some(share))
+                } else if flying == 1 {
+                    going("writing the next page", None)
+                } else if flying > 1 {
+                    going(&format!("writing the next {flying} pages"), None)
                 } else if f.next >= f.pages {
-                    pill(title, "Done to the end.".to_owned(), Ring::Full)
+                    going("done to the end", Some(1.0))
                 } else {
-                    pill(title, "The next pages are ready.".to_owned(), Ring::Full)
+                    going("the next pages are ready", Some(1.0))
                 }
             }
         })

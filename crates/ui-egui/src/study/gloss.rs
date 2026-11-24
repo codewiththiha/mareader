@@ -81,6 +81,4 @@ pub enum Gloss {
         index: usize,
         at: Pos2,
     },
-    /// The continuous run's pill was pressed.
-    Pill(mareader_engine::page_ai::view::PillPress),
 }

@@ -261,6 +261,12 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **The AI Dictionary** joins it (`docs/study.md`, The glow): each word
   asked is a line while its glow and card are both out of view, and so
   does each skill card (`docs/selection-ai.md`) while its card is away.
+- **The page AI** joins it (`docs/page-ai.md`, `activity::pages`): a page
+  rewrite is a line while its bubble and words are off screen
+  (`seen::page_runs`), picked pages one line counting their groups, and a
+  continuous run always one, with *Continue* when it asks. Cancel stops a
+  rewrite at once (`page_ai::Action::StopRun`) with a toast. The old pill
+  at the pane's bottom is gone.
 - **Toasts rise above it** (`stack::toast_lift`): a toast never covers
   a stack, nor waits behind it, so a failure's toast shows with its red
   line.

@@ -6,11 +6,17 @@ use crate::notes_panel::page_of;
 use crate::study::state::Key as Ask;
 
 impl Session {
-    /// Every job the AI works on now: the panes' first, then the library's.
-    pub fn activities(&self) -> Vec<Activity> {
+    /// Every job the AI works on at `now`: the panes', then the library's.
+    pub fn activities(&self, now: f64) -> Vec<Activity> {
         let mut all = activity::of_study(self.study_mode());
         all.extend(self.explains());
         all.extend(activity::of_skills(&self.skills));
+        let page_of = |pane, own| {
+            let place = self.documents.place(pane);
+            let document = place.and_then(|p| self.documents.document(p.doc));
+            document.map_or(own, |d| d.from_base(own))
+        };
+        all.extend(activity::of_pages(&self.page_ai, &page_of, now));
         all.extend(activity::of_library(&self.library));
         all
     }
@@ -22,6 +28,7 @@ impl Session {
             library: &self.library,
             words: &self.study,
             skills: &self.skills,
+            pages: &self.page_ai,
         };
         activity::ending(owners, key)
     }

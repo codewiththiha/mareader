@@ -7,6 +7,7 @@ use mareader_engine::command::Command;
 use mareader_pdf::TextLayer;
 use mareader_settings::PageStart;
 use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::activity::stack::{CONTINUE, STACK};
 use mareader_ui_egui::page_ai::menu::FIND;
 use mareader_ui_egui::selection::Sheet;
 use mareader_ui_egui::ui_command::{Sent, UiCommand};
@@ -215,14 +216,23 @@ fn a_task_set_to_this_page_runs_without_asking() -> Out {
     Ok(())
 }
 
+/// Fans the AI stack out, where a continuous run always has its line.
+fn open_stack(h: &mut H) {
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+}
+
 #[test]
-fn the_pill_stops_continuous_mode() -> Out {
+fn the_stack_stops_continuous_mode() -> Out {
     let mut h = reader(&[("pdf", "sample:40"), ("provider", "ollama")]);
     let pane = h.state().active_pane();
     simplify_on(&mut h, false)?;
+    open_stack(&mut h);
     h.get_by_label("Stop").click();
     h.run_steps(3);
     assert!(h.state().page_ai().ledger.following(pane).is_none());
+    let toast = h.state().toast().map(|t| t.message.clone());
+    assert_eq!(toast.as_deref(), Some("Stopped simplifying as you read"));
     Ok(())
 }
 
@@ -235,10 +245,11 @@ fn going_far_away_pauses_then_asks_to_carry_on_there() -> Out {
         .queue(Sent::Engine(Command::GoTo { pane, page: 30 }));
     // Kept still a moment far from page 0, it asks.
     h.run_steps(120);
-    assert!(h.query_by_label("Continue").is_some(), "the pill asks");
-    h.get_by_label("Continue").click();
+    open_stack(&mut h);
+    h.get_by_label_contains("Continue simplifying here?");
+    h.get_by_label(CONTINUE).click();
     h.run_steps(3);
-    assert!(h.query_by_label("Continue").is_none());
+    assert!(h.query_by_label(CONTINUE).is_none());
     assert!(h.state().page_ai().ledger.following(pane).is_some());
     assert!(h.state().page_ai().shows(pane, 30), "it carries on there");
     Ok(())

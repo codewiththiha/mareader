@@ -204,6 +204,7 @@ mod tests {
             page: from,
             keeps,
             told: false,
+            asks: false,
             stage,
         }
     }
@@ -288,6 +289,7 @@ mod tests {
         let mut ledger = Ledger::default();
         let told = Activity {
             told: true,
+            asks: false,
             ..job(4, Stage::Running(None), true)
         };
         ledger.update(vec![told], (YES, NO), 0.0);

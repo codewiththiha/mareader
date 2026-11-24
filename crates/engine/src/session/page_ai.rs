@@ -149,9 +149,9 @@ impl Session {
         self.page_ai.stop_groups(pane);
     }
 
-    /// Stops whatever run `pane`'s pill represents.
-    pub(crate) fn page_ai_stop_pill(&mut self, pane: PaneId) {
-        self.page_ai.stop_pill(pane);
+    /// Stops the page run `run`, leaving its page as it was.
+    pub(crate) fn page_ai_stop_run(&mut self, run: u64) {
+        self.page_ai.stop_run(run);
     }
 
     /// Shows `slot` over `page` in `pane`, or the original page if `None`.

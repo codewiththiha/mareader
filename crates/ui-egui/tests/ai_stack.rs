@@ -1,11 +1,12 @@
 //! The AI stack's lines for jobs whose own visuals are away: an explained
-//! word's glow and card, a skill's card.
+//! word's glow and card, a skill's card, a page's rewrite and its groups.
 
 use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 use mareader_engine::command::Command;
+use mareader_engine::page_ai::{Action as PageAi, How};
 use mareader_engine::skills::Action;
 use mareader_settings::{PageTask, Skill};
 use mareader_ui_egui::MareaderApp;
@@ -146,4 +147,78 @@ fn a_skill_failing_out_of_view_shows_red_a_moment_and_toasts() {
     h.hover_at(egui::pos2(300.0, 300.0));
     h.run_steps(240);
     assert!(h.query_by_label(STACK).is_none(), "it goes by itself");
+}
+
+/// A reader whose page rewrites stay mid-answer.
+fn held_reader() -> H {
+    let held = [
+        ("pdf", "sample:12"),
+        ("provider", "ollama"),
+        ("page_ai_hold", "true"),
+    ];
+    ai_reader(&held)
+}
+
+/// Asks `action`, sees its bubble keep it from the stack, then turns away.
+fn rewrite_and_turn_away(h: &mut H, action: PageAi) {
+    let pane = h.state().active_pane();
+    send(h, Command::PageAi(action));
+    assert!(h.query_by_label(STACK).is_none(), "its bubble shows it");
+    send(h, Command::GoTo { pane, page: 11 });
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+}
+
+/// Cancels the one line, and returns the toast that says so.
+fn cancel(h: &mut H) -> Option<String> {
+    h.get_by_label(CANCEL).click();
+    h.run_steps(3);
+    h.state().toast().map(|t| t.message.clone())
+}
+
+/// Row 5: a page rewrite away from view runs in the stack, and stops.
+#[test]
+fn a_page_rewrite_out_of_view_runs_in_the_stack_and_cancels() {
+    let mut h = held_reader();
+    let pane = h.state().active_pane();
+    let how = How::default();
+    let task = PageTask::Simplify;
+    rewrite_and_turn_away(
+        &mut h,
+        PageAi::Run {
+            pane,
+            page: 0,
+            task,
+            how,
+        },
+    );
+    h.get_by_label_contains("Simplifying page 1");
+    let toast = cancel(&mut h);
+    assert_eq!(toast.as_deref(), Some("Stopped simplifying page 1"));
+    assert!(
+        h.state().page_ai().ledger.runs.is_empty(),
+        "the run stopped"
+    );
+}
+
+/// Row 5: picked pages show their groups' progress, and stop together.
+#[test]
+fn picked_pages_out_of_view_count_their_groups_and_cancel() {
+    let mut h = held_reader();
+    let pane = h.state().active_pane();
+    let pages = (0..4).collect();
+    let task = PageTask::Simplify;
+    rewrite_and_turn_away(
+        &mut h,
+        PageAi::RunPages {
+            pane,
+            pages,
+            task,
+            tag: None,
+        },
+    );
+    h.get_by_label_contains("Simplifying pages 1–4 · 0 of");
+    let toast = cancel(&mut h);
+    assert_eq!(toast.as_deref(), Some("Stopped simplifying pages 1–4"));
+    assert!(!h.state().page_ai().ledger.grouping(pane));
 }

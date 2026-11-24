@@ -163,7 +163,6 @@ paths = ["crates/animated-icons/src/source.rs", "crates/epub/src/generated.rs"]
 "crates/ui-egui/src/notes_panel.rs::show" = 118
 "crates/ui-egui/src/page_ai/menu.rs::bubble_menu" = 134
 "crates/ui-egui/src/page_ai/menu.rs::tasks" = 156
-"crates/ui-egui/src/page_ai/paint.rs::pill" = 82
 "crates/ui-egui/src/page_bar.rs::contents" = 104
 "crates/ui-egui/src/page_bar.rs::show" = 95
 "crates/ui-egui/src/read_aloud/ask.rs::pill" = 120

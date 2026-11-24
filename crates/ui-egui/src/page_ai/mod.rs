@@ -18,7 +18,7 @@ use mareader_workspace::PaneId;
 use crate::gpu::Gpu;
 use mareader_engine::page_ai::cards::Job as CardJob;
 use mareader_engine::page_ai::extract::{self, Source};
-use mareader_engine::page_ai::view::{AiView, Pill, group_span};
+use mareader_engine::page_ai::view::{AiView, group_span};
 use mareader_engine::page_ai::{Slot, pages_of};
 use mareader_engine::session::Session;
 use mareader_engine::stable_hash::hash;
@@ -40,7 +40,6 @@ fn aloud_hot(pane: PaneId) -> Id {
 #[derive(Clone, Default)]
 pub struct PaneAi {
     pub overlays: Vec<Overlay>,
-    pub pill: Option<Pill>,
     /// The pages the open menu would ask about, washed to show it.
     pub wash: Option<paint::Wash>,
 }
@@ -217,14 +216,10 @@ impl PageAiUi {
 
     /// What `pane`'s pages on screen show of the AI this frame.
     pub fn overlays(&mut self, ctx: &Context, session: &mut Session, pane: PaneId) -> PaneAi {
-        let now = ctx.input(|i| i.time);
-        let pill =
-            (session.page_ai().pill(pane, now)).or_else(|| session.page_ai().group_pill(pane));
         let wash = self.wash(ctx, pane);
         let Some((view, index)) = session.page_ai_prepare_overlays(pane) else {
             return PaneAi {
                 overlays: Vec::new(),
-                pill,
                 wash,
             };
         };
@@ -276,12 +271,9 @@ impl PageAiUi {
             });
             drawn.push((page, slots));
         }
+        crate::activity::seen::page_runs(ctx, session.page_ai(), pane, &drawn);
         session.page_ai_record_drawn(pane, view.layout, drawn);
-        PaneAi {
-            overlays,
-            pill,
-            wash,
-        }
+        PaneAi { overlays, wash }
     }
 
     /// Own page `own`'s results as bubbles, kept ones first.

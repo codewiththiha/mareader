@@ -7,16 +7,19 @@
 //! `docs/study-mode.md` § The corner stack.
 
 mod ledger;
+mod pages;
 
 pub mod place;
 
 pub use ledger::{End, LINGER, Ledger, News, Row};
+pub use pages::{key_of, of_pages};
 
 use mareader_settings::TaskId;
 use mareader_study::mode::{Batch, Via};
 use mareader_workspace::PaneId;
 
 use crate::library::{self, RunEnd, RunId};
+use crate::page_ai::ledger::Ledger as PageAi;
 use crate::skills::{self, AskId};
 use crate::study::state::{self as words, Key as Ask};
 use crate::study_mode::{Ahead, DeckJob, DeckState, Doing, Run, State};
@@ -39,14 +42,23 @@ pub enum Key {
     Explain { pane: PaneId, ask: Ask },
     /// A skill's card, asked of a selection or a page.
     Skill { pane: PaneId, ask: AskId },
+    /// A page rewritten by the page AI, by its run.
+    Page { pane: PaneId, run: u64 },
+    /// A pane's picked pages, asked in groups.
+    Pages { pane: PaneId, batch: u64 },
+    /// A pane's continuous run, going on as the reader reads.
+    Follow { pane: PaneId, run: u64 },
 }
 
 impl Key {
     pub fn scope(self) -> Scope {
         match self {
-            Self::Cards { pane, .. } | Self::Explain { pane, .. } | Self::Skill { pane, .. } => {
-                Scope::Pane(pane)
-            }
+            Self::Cards { pane, .. }
+            | Self::Explain { pane, .. }
+            | Self::Skill { pane, .. }
+            | Self::Page { pane, .. }
+            | Self::Pages { pane, .. }
+            | Self::Follow { pane, .. } => Scope::Pane(pane),
             Self::Organize { .. } => Scope::Global,
         }
     }
@@ -54,8 +66,9 @@ impl Key {
     /// The word on its stop button: organizing pauses, keeping its work.
     pub fn stop_word(self) -> &'static str {
         match self {
-            Self::Cards { .. } | Self::Explain { .. } | Self::Skill { .. } => "Cancel",
             Self::Organize { .. } => "Pause",
+            Self::Follow { .. } => "Stop",
+            _ => "Cancel",
         }
     }
 }
@@ -97,6 +110,8 @@ pub struct Activity {
     pub keeps: bool,
     /// Whether its owner toasts its failure itself; the stack then doesn't.
     pub told: bool,
+    /// It asks whether to carry on; its line offers *Continue*.
+    pub asks: bool,
     pub stage: Stage,
 }
 
@@ -109,6 +124,9 @@ impl Activity {
             (Key::Organize { .. }, _) => format!("Shelf plan ready · {}", self.range),
             (Key::Explain { .. }, _) => format!("Explained {}", self.range),
             (Key::Skill { .. }, _) => format!("{} ready", self.range),
+            (Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. }, _) => {
+                format!("Finished {}", self.range)
+            }
         }
     }
 
@@ -119,6 +137,9 @@ impl Activity {
             Key::Organize { .. } => format!("Couldn’t organize {}", self.range),
             Key::Explain { .. } => format!("Couldn’t explain {}", self.range),
             Key::Skill { .. } => format!("{} didn’t finish", self.range),
+            Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. } => {
+                format!("Couldn’t finish {}", self.range)
+            }
         }
     }
 
@@ -129,6 +150,9 @@ impl Activity {
             Key::Organize { .. } => "Organizing paused. The library can resume it.".to_owned(),
             Key::Explain { .. } => format!("Stopped explaining {}", self.range),
             Key::Skill { .. } => format!("Stopped {}", self.range),
+            Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. } => {
+                format!("Stopped {}", self.range)
+            }
         }
     }
 }
@@ -152,6 +176,7 @@ pub fn of_library(library: &library::State) -> Vec<Activity> {
         page: 0,
         keeps: true,
         told: true,
+        asks: false,
         stage: Stage::Running(run.fraction()),
     };
     going.map(activity).collect()
@@ -169,6 +194,7 @@ pub fn explain(pane: PaneId, ask: Ask, word: &str, page: Option<usize>) -> Activ
         page: page.unwrap_or(0),
         keeps: page.is_some(),
         told: false,
+        asks: false,
         stage: Stage::Running(None),
     }
 }
@@ -193,6 +219,7 @@ pub fn skill(ask: &skills::Ask) -> Activity {
         page,
         keeps: true,
         told: false,
+        asks: false,
         stage: Stage::Running(None),
     }
 }
@@ -203,6 +230,7 @@ pub struct Owners<'a> {
     pub library: &'a library::State,
     pub words: &'a words::State,
     pub skills: &'a skills::State,
+    pub pages: &'a PageAi,
 }
 
 /// How the job `key` names, gone from the list, ended.
@@ -212,6 +240,7 @@ pub fn ending(owners: Owners<'_>, key: Key) -> Ending {
         library,
         words,
         skills,
+        pages,
     } = owners;
     match key {
         // A deck's job ends in its cards, unless study mode went off.
@@ -229,6 +258,7 @@ pub fn ending(owners: Owners<'_>, key: Key) -> Ending {
         // A landed card tells by `Event::SkillLanded`; a closed one stopped.
         Key::Skill { ask, .. } if skills.get(ask).is_some() => Ending::Quiet,
         Key::Skill { .. } => Ending::Stopped,
+        Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. } => pages::ending(pages, key),
     }
 }
 
@@ -294,6 +324,7 @@ fn cards(pane: PaneId, batch: &Batch, range: String) -> Activity {
         page: batch.from,
         keeps: false,
         told: false,
+        asks: false,
         stage: Stage::Failed,
     }
 }

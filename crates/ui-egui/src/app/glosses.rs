@@ -133,8 +133,6 @@ impl MareaderApp {
                 self.study_gloss(ctx, out, pane, gloss);
             } else if page_gloss(&gloss) {
                 self.page_gloss(ctx, out, pane, gloss);
-            } else {
-                self.pill_gloss(ctx, out, pane, gloss);
             }
         }
     }
@@ -244,26 +242,6 @@ impl MareaderApp {
                     .page_ai
                     .open_bubble_menu(self.session.page_ai(), pane, page, index, at);
             }
-            _ => {}
-        }
-    }
-
-    fn pill_gloss(&mut self, ctx: &Context, _out: &mut Commands, pane: PaneId, gloss: Gloss) {
-        match gloss {
-            Gloss::Pill(mareader_engine::page_ai::view::PillPress::Stop) => {
-                let stop = mareader_engine::page_ai::Action::StopPill(pane);
-                let now = ctx.input(|i| i.time);
-                self.session.execute(Command::PageAi(stop), now);
-            }
-            Gloss::Pill(mareader_engine::page_ai::view::PillPress::Continue) => {
-                let Some(page) = self.session.documents().current(pane) else {
-                    return;
-                };
-                let now = ctx.input(|i| i.time);
-                self.session.page_ai_resume(pane, page, &self.ui.ai, now);
-                self.drain(ctx);
-            }
-
             _ => {}
         }
     }

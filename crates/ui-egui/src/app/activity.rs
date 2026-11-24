@@ -8,6 +8,7 @@ use mareader_engine::activity::place::Spot;
 use mareader_engine::activity::{Key, News};
 use mareader_engine::command::Command;
 use mareader_engine::library::Action;
+use mareader_engine::page_ai::Action as PageAi;
 use mareader_engine::skills::Action as Skill;
 use mareader_engine::study::state::Key as Ask;
 
@@ -24,7 +25,7 @@ impl MareaderApp {
         if let Some((pane, ask)) = self.ui.study.shown_card() {
             crate::activity::seen::in_view(ctx, Key::Explain { pane, ask });
         }
-        let jobs = self.session.activities();
+        let jobs = self.session.activities(now);
         let session = &self.session;
         let ending = |key| session.activity_ending(key);
         for news in self.ui.activity.update(ctx, jobs, &ending) {
@@ -90,7 +91,8 @@ impl MareaderApp {
 
     fn press_activity(&mut self, button: Button, key: Key, now: f64, out: &mut Commands) {
         match (button, key) {
-            (Button::View, Key::Cards { pane, .. }) => {
+            (Button::View, Key::Cards { pane, .. } | Key::Page { pane, .. })
+            | (Button::View, Key::Pages { pane, .. } | Key::Follow { pane, .. }) => {
                 if let Some(page) = self.ui.activity.view(key, now) {
                     out.push(Sent::Engine(Command::GoTo { pane, page }));
                 }
@@ -121,9 +123,22 @@ impl MareaderApp {
             (Button::Cancel, Key::Skill { ask, .. }) => {
                 out.push(Sent::Engine(Command::Skill(Skill::Close(ask))));
             }
+            (Button::Cancel, Key::Page { run, .. }) => page_ai(out, PageAi::StopRun(run)),
+            (Button::Cancel, Key::Pages { pane, .. }) => page_ai(out, PageAi::StopPages(pane)),
+            (Button::Cancel, Key::Follow { pane, .. }) => page_ai(out, PageAi::StopFollow(pane)),
+            (Button::Continue, Key::Follow { pane, .. }) => {
+                if let Some(page) = self.session.documents().current(pane) {
+                    self.session.page_ai_resume(pane, page, &self.ui.ai, now);
+                }
+            }
+            (Button::Continue, _) => {}
             (Button::Dismiss, _) => self.ui.activity.dismiss(key, now),
         }
     }
+}
+
+fn page_ai(out: &mut Commands, action: PageAi) {
+    out.push(Sent::Engine(Command::PageAi(action)));
 }
 
 /// The workspace's corner away from the reader: the window's, under the bar.

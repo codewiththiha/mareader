@@ -17,10 +17,15 @@ use super::Slot;
 use super::extract::Source;
 use super::follow::Follow;
 use super::groups::Batch;
-use super::state::{Asked, Cover, Drawn, Handle, Index, Key, Loose, Run, Showing, Who, canned};
+use super::state::{
+    Asked, Cover, Drawn, Gone, Handle, Index, Key, Loose, Run, Showing, Who, canned,
+};
 use super::view::{page_task, source_of};
 use crate::session::Waker;
 use crate::study::loose::{loose_book, loose_id};
+
+/// How many ended jobs [`Ledger::gone`] remembers.
+const GONE_KEPT: usize = 32;
 
 /// The page AI's state across panes.
 pub struct Ledger {
@@ -54,6 +59,8 @@ pub struct Ledger {
     pub batches: HashMap<PaneId, Batch>,
     /// What the groups have to say, for the next frame's toasts.
     pub notes: Vec<String>,
+    /// Jobs that were stopped or failed, newest last.
+    pub gone: Vec<(u64, Gone)>,
     /// Tests: runs answer at once with the page's own text.
     pub canned: bool,
     /// Tests and shots: runs stop at their words so far.
@@ -82,6 +89,7 @@ impl Default for Ledger {
             follows: HashMap::new(),
             batches: HashMap::new(),
             notes: Vec::new(),
+            gone: Vec::new(),
             canned: false,
             held: false,
             inline: false,
@@ -100,6 +108,26 @@ impl Ledger {
         let live = |r: &&Run| r.handle.as_ref().is_some_and(Handle::writing);
         let here = self.runs.iter().filter(|r| r.layout == layout);
         here.filter(live).map(|r| (r.page, r.last)).collect()
+    }
+
+    /// Says how job `id` ended; only the last few are kept.
+    pub(crate) fn note_gone(&mut self, id: u64, gone: Gone) {
+        self.gone.push((id, gone));
+        let over = self.gone.len().saturating_sub(GONE_KEPT);
+        self.gone.drain(..over);
+    }
+
+    /// How job `id` ended, if it was stopped or failed.
+    pub fn gone(&self, id: u64) -> Option<Gone> {
+        let found = self.gone.iter().rev().find(|(at, _)| *at == id);
+        found.map(|(_, gone)| *gone)
+    }
+
+    /// Stops run `id` and leaves its page as it was.
+    pub(crate) fn stop_run(&mut self, id: u64) {
+        self.runs.retain(|r| r.id != id);
+        self.showing.retain(|_, s| s.slot != Slot::Run(id));
+        self.note_gone(id, Gone::Stopped);
     }
 
     /// Takes any deferred poll wait recorded since the last check.
@@ -173,6 +201,7 @@ impl Ledger {
         let id = self.next_run;
         self.runs.push(Run {
             id,
+            pane: who.pane,
             layout: who.layout,
             page,
             last: last.max(page),

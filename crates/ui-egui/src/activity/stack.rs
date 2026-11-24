@@ -24,6 +24,8 @@ pub const VIEW: &str = "View";
 /// A deck's stop; organizing's says *Pause*.
 pub const CANCEL: &str = "Cancel";
 pub const DISMISS: &str = "Dismiss";
+/// A continuous run's, when it asks whether to carry on here.
+pub const CONTINUE: &str = "Continue";
 /// The stack's room from the pane's top and sides; above the page bar.
 const INSET: f32 = 14.0;
 const LIFT: f32 = 12.0;
@@ -45,6 +47,7 @@ pub enum Button {
     View,
     Cancel,
     Dismiss,
+    Continue,
 }
 
 impl Button {
@@ -54,6 +57,7 @@ impl Button {
             Self::View => VIEW,
             Self::Cancel => line.key.stop_word(),
             Self::Dismiss => DISMISS,
+            Self::Continue => CONTINUE,
         }
     }
 }
@@ -73,6 +77,11 @@ impl Line {
     pub fn of(row: &Row, now: f64) -> Self {
         let a = &row.activity;
         let (said, look, buttons): (_, _, &'static [Button]) = match row.end {
+            End::Going if a.asks => (
+                a.said.clone(),
+                going(a.stage),
+                &[Button::Continue, Button::Cancel],
+            ),
             End::Going => (a.said.clone(), going(a.stage), &[Button::Cancel]),
             End::Failed => (a.said.clone(), Look::Failed, &[Button::Dismiss]),
             End::Done if a.keeps => (a.done_said(), Look::Done, &[Button::View, Button::Dismiss]),
@@ -278,7 +287,7 @@ fn press(ui: &mut Ui, (at, id): (Rect, Id), (button, line): (Button, &Line), alp
         painter.rect_filled(at, at.height() / 2.0, t.hover.gamma_multiply(alpha));
     }
     let ink = match button {
-        Button::View => t.accent,
+        Button::View | Button::Continue => t.accent,
         Button::Cancel | Button::Dismiss => t.muted,
     }
     .gamma_multiply(alpha);

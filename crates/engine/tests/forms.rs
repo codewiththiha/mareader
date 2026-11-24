@@ -429,11 +429,6 @@ fn cases(at: &Session) -> Vec<(&'static str, String, Command)> {
             Command::PageAi(PageAiAction::StopPages(pane)),
         ),
         (
-            "ai.page",
-            r#"{"action":"stop_pill"}"#,
-            Command::PageAi(PageAiAction::StopPill(pane)),
-        ),
-        (
             "ai.skill",
             r#"{"action":"run","skill":"custom-3"}"#,
             Command::Skill(SkillAction::Run {

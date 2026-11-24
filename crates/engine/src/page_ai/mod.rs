@@ -66,8 +66,8 @@ pub enum Action {
     },
     /// Drops the pane's waiting groups and stops those being written.
     StopPages(PaneId),
-    /// Stops whatever run the pane's status pill represents.
-    StopPill(PaneId),
+    /// Stops one page's run, by its id, leaving the page as it was.
+    StopRun(u64),
     /// Shows a result over the page; none shows the page itself.
     Show {
         pane: PaneId,

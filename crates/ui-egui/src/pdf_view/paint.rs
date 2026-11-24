@@ -235,15 +235,9 @@ fn paint_ai(cx: &mut ShowContext<'_>, ui: &mut Ui) {
     };
     let t = input.t;
     let view_cx = cx.view_cx;
-    let frame = cx.frame;
     let gloss = &mut *cx.gloss;
     let sheets = &cx.paint.sheets;
     ai_bubbles(ui, sheets, &view_cx.ai.overlays, &t, gloss);
-    if let Some(pill) = &view_cx.ai.pill
-        && let Some(press) = page_ai::paint::pill(ui, frame, pill, &t)
-    {
-        gloss.push(Gloss::Pill(press));
-    }
 }
 
 fn click(cx: &mut ShowContext<'_>, ui: &mut Ui) {

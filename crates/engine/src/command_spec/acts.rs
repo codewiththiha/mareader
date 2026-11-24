@@ -69,7 +69,7 @@ pub(crate) fn study(at: &Session, params: &Value) -> Result<Command, String> {
 }
 
 /// The page AI's asks a script can send.
-pub(crate) const PAGE_AI: &str = "stop_follow|stop_pages|stop_pill";
+pub(crate) const PAGE_AI: &str = "stop_follow|stop_pages";
 
 /// `ai.page`: the page AI's menus, of which a script can stop one.
 pub(crate) fn page_ai(at: &Session, params: &Value) -> Result<Command, String> {
@@ -78,7 +78,6 @@ pub(crate) fn page_ai(at: &Session, params: &Value) -> Result<Command, String> {
     let act = match name.as_str() {
         "stop_follow" => PageAiAction::StopFollow(pane),
         "stop_pages" => PageAiAction::StopPages(pane),
-        "stop_pill" => PageAiAction::StopPill(pane),
         other => return Err(refused("ai.page", other, PAGE_AI)),
     };
     Ok(Command::PageAi(act))

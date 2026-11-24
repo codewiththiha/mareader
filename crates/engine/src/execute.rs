@@ -229,7 +229,7 @@ fn page_ai(session: &mut Session, action: crate::page_ai::Action, now: f64) -> D
     match action {
         Action::StopFollow(pane) => session.page_ai_stop_follow(pane),
         Action::StopPages(pane) => session.page_ai_stop_groups(pane),
-        Action::StopPill(pane) => session.page_ai_stop_pill(pane),
+        Action::StopRun(run) => session.page_ai_stop_run(run),
         Action::Show { pane, page, slot } => {
             session.page_ai_show_result(pane, page, slot, now);
         }

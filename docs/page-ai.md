@@ -108,9 +108,10 @@ A book's kept result is laid into the book itself, in the pane's type:
 For Translate and Simplify. The aim: pages are ready as the reader gets
 to them, without paying for pages they skim past.
 
-- **The pill.** A small pill at the pane's bottom, above the page bar,
-  names the run ("Translating to Burmese"), shows a ring, and has ✕ to
-  stop. Its tooltip says what it is doing in a sentence.
+- **In the AI stack.** The run has no visual of its own, so while it goes
+  it always has a line in the pane's corner stack (`docs/study-mode.md`,
+  § The corner stack): "Translating to Burmese · next pages in 12 s",
+  with its ring and Stop. View goes to the page being read.
 - **Staying on a page.** The ring fills only while the page's result is
   on screen: by default 25 s, 5–120 s in Settings. Scrolling past pages
   never fills it, because it starts again on each page and only once that
@@ -127,16 +128,17 @@ to them, without paying for pages they skim past.
   the run asks that page once it has stayed still for a moment.
 - **Going far away.** More than "pages at once" + 2 pages outside the
   run's pages pauses it ("· paused"). Once the page stays still for
-  1.2 s, the pill asks "Continue translating here?" with Continue and
-  ✕. Continue carries on from this page; ✕ stops until the next manual
-  run. Coming back near the run's pages resumes it by itself.
-- **Stopping.** ✕ on the pill, "Stop continuous mode" in the page menu, or
-  a new run in the same pane. Pages ahead that were never reached are let
-  go: their requests stop.
+  1.2 s, its line asks "Continue translating here?" with Continue and
+  Stop. Continue carries on from this page; Stop ends it until the next
+  manual run. Coming back near the run's pages resumes it by itself.
+- **Stopping.** Stop on its line, "Stop continuous mode" in the page menu,
+  or a new run in the same pane. Pages ahead that were never reached are
+  let go: their requests stop. A toast says "Stopped translating as you
+  read".
 - **Ends.** A page that fails stops the run, and its toast says so; that
   page's bubble offers a retry. A new layout (the book's text size
   changed) starts the run again from the page shown. Closing the pane, or
-  opening another book in it, ends the run. At the book's end the pill
+  opening another book in it, ends the run. At the book's end its line
   says so.
 - **Reading ahead in PDFs.** Pages not yet on screen are read on a thread,
   so asking ahead never stalls a frame.
@@ -219,7 +221,8 @@ the AI Dictionary's until picked.
 | A book's results laid into its pages | `crates/epub/src/splice.rs`, `Flow::region` |
 | A page's text, and results back to blocks | `crates/engine/src/page_ai/extract.rs` |
 | Typesetting results off the frame | `crates/engine/src/page_ai/cards.rs`, `crates/ui-egui/src/page_ai/cards.rs` |
-| Drawing cards, bubbles and the pill | `crates/ui-egui/src/page_ai/paint.rs` |
+| Drawing cards and bubbles | `crates/ui-egui/src/page_ai/paint.rs` |
+| Runs, groups and continuous runs as AI stack lines | `crates/engine/src/activity/pages.rs` |
 | The page and bubble menus | `crates/ui-egui/src/page_ai/menu.rs` |
 | Settings | `crates/settings/src/ai.rs`, `crates/ui-egui/src/settings_window/ai.rs` |
 
@@ -232,8 +235,9 @@ the AI Dictionary's until picked.
   a model the menu offers setting one up; with one, the three tasks. A
   picked language is remembered. Marks keep their own menu. A kept result
   covers the page until the original is asked for. Asking how, and
-  remembering continuous. A task set to "this page" doesn't ask. The pill
-  stops a run. Going far away pauses, then Continue carries on there. A
+  remembering continuous. A task set to "this page" doesn't ask. The AI
+  stack stops a run. Going far away pauses, then its line's Continue
+  carries on there. A
   five-second stay asks exactly "pages at once" pages ahead. A book lays a
   kept result into its pages and takes it out again, and bigger type sets
   it again over more pages. Deleting a laid result gives the pages back;
@@ -270,8 +274,9 @@ whole group, unlike continuous mode, which asks a page at a time.
   groups start together and the third starts when one is done. A model
   busy elsewhere queues the group in the AI service until it has room
   (`docs/assist.md`, § The queue).
-- **Progress.** The pill reads "Summarizing pages · 2/3" and fills as
-  groups are done; its × stops the groups left. Any other failure stops the
+- **Progress.** While no group's bubble is on screen, the AI stack reads
+  "Summarizing pages 3–14 · 2 of 3 groups" and fills as groups are done;
+  its Cancel stops the groups left. Any other failure stops the
   batch and the toast adds "The pages left weren't asked." A text size
   change stops it too, since the page numbers move. Groups that were all
   blank pages toast once at the end.

@@ -11,11 +11,10 @@ use mareader_workspace::PaneId;
 
 use super::Slot;
 use super::extract::{self, Source};
-use super::follow::doing;
 use super::ledger::Ledger;
 use super::read;
-use super::state::{Around, Asked, Who};
-use super::view::{Pill, Ring, group_span, page_task};
+use super::state::{Around, Asked, Gone, Who};
+use super::view::{group_span, page_task};
 
 /// A group's text, if any, the group, and the span it covers.
 pub type Read = (Option<Source>, Group, PageSpan);
@@ -31,6 +30,8 @@ pub struct Group {
 
 /// A pane's groups: waiting, being read, being written.
 pub struct Batch {
+    /// Names it in the AI stack, from the runs' count.
+    pub id: u64,
     /// The layout the pages are counted in: a book's own.
     pub layout: u64,
     pub book: Option<BookId>,
@@ -41,6 +42,10 @@ pub struct Batch {
     pub total: usize,
     pub finished: usize,
     pub blank: usize,
+    /// Its first and last own page asked.
+    pub pages: (usize, usize),
+    /// A group failed, so the rest were let go.
+    pub failed: bool,
 }
 
 impl Batch {
@@ -59,7 +64,7 @@ impl Batch {
             || self.reading.iter().any(|(_, o, _)| same(o))
     }
 
-    /// The task now being done, for the pill.
+    /// The task now being done, for the stack.
     pub fn task(&self) -> Option<&AiTask> {
         let flying = self.runs.iter().map(|(_, g)| g);
         let reading = self.reading.iter().map(|(_, g, _)| g);
@@ -151,23 +156,32 @@ impl Ledger {
     }
 
     fn queue(&mut self, asked: Asked<'_>, layout: u64, groups: Vec<Group>) {
-        let fresh = || Batch {
-            layout,
-            book: asked.book,
-            name: asked.name.to_owned(),
-            waiting: VecDeque::new(),
-            reading: Vec::new(),
-            runs: Vec::new(),
-            total: 0,
-            finished: 0,
-            blank: 0,
-        };
-        let batch = self.batches.entry(asked.pane).or_insert_with(fresh);
         // Another book or text size: the old pages mean nothing now.
-        if batch.layout != layout {
-            *batch = fresh();
+        let old = self.batches.get(&asked.pane);
+        if old.is_none_or(|b| b.layout != layout) {
+            self.next_run += 1;
+            let first = groups.first().map_or((0, 0), |g| (g.from, g.to));
+            let fresh = Batch {
+                id: self.next_run,
+                layout,
+                book: asked.book,
+                name: asked.name.to_owned(),
+                waiting: VecDeque::new(),
+                reading: Vec::new(),
+                runs: Vec::new(),
+                total: 0,
+                finished: 0,
+                blank: 0,
+                pages: first,
+                failed: false,
+            };
+            self.batches.insert(asked.pane, fresh);
         }
+        let Some(batch) = self.batches.get_mut(&asked.pane) else {
+            return;
+        };
         for g in groups {
+            batch.pages = (batch.pages.0.min(g.from), batch.pages.1.max(g.to));
             if !batch.has(&g) {
                 batch.waiting.push_back(g);
                 batch.total += 1;
@@ -184,6 +198,8 @@ impl Ledger {
             };
             if self.step_batch(pane, &mut b, a, now) {
                 self.batches.insert(pane, b);
+            } else if b.failed {
+                self.note_gone(b.id, Gone::Failed);
             }
         }
     }
@@ -226,7 +242,6 @@ impl Ledger {
             self.write(b, &who, r, now);
         }
         // Runs done or failed; a busy model queues the rest in the service.
-        let mut stop = false;
         let mut left = Vec::new();
         for (id, g) in std::mem::take(&mut b.runs) {
             let Some(run) = self.runs.iter().find(|r| r.id == id) else {
@@ -235,13 +250,13 @@ impl Ledger {
             };
             if run.failed.is_some() {
                 b.finished += 1;
-                stop = true;
+                b.failed = true;
             } else {
                 left.push((id, g));
             }
         }
         b.runs = left;
-        if stop {
+        if b.failed {
             b.finished += b.waiting.len();
             b.waiting.clear();
         }
@@ -321,14 +336,6 @@ impl Ledger {
         }
     }
 
-    /// Stops what the pane's pill shows: its continuous run, else groups.
-    pub fn stop_pill(&mut self, pane: PaneId) {
-        match self.following(pane).is_some() {
-            true => self.stop_follow(pane),
-            false => self.stop_groups(pane),
-        }
-    }
-
     /// Whether `pane` has groups under way, for the menu.
     pub fn grouping(&self, pane: PaneId) -> bool {
         self.batches.contains_key(&pane)
@@ -339,29 +346,11 @@ impl Ledger {
         let Some(b) = self.batches.remove(&pane) else {
             return;
         };
+        self.note_gone(b.id, Gone::Stopped);
         let ids: Vec<u64> = b.runs.iter().map(|(id, _)| *id).collect();
         self.runs.retain(|r| !ids.contains(&r.id));
         self.showing
             .retain(|_, s| !matches!(s.slot, Slot::Run(id) if ids.contains(&id)));
-    }
-
-    /// The pane's groups as its pill shows them.
-    pub fn group_pill(&self, pane: PaneId) -> Option<Pill> {
-        let b = self.batches.get(&pane)?;
-        let (title, _) = doing(b.task()?);
-        let total = b.total.max(1);
-        let tip = match (b.finished, b.waiting.len()) {
-            (done, 0) => format!("{done} of {total} groups of pages done"),
-            (done, waiting) => {
-                format!("{done} of {total} groups of pages done, {waiting} waiting for the model")
-            }
-        };
-        Some(Pill {
-            text: format!("{title} · {}/{total}", b.finished),
-            tip,
-            ring: Ring::Fill(b.finished as f32 / total as f32),
-            ask: false,
-        })
     }
 }
 

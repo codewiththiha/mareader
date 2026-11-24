@@ -8,7 +8,9 @@
 use std::collections::HashMap;
 
 use egui::{Context, Id, Rect};
-use mareader_engine::activity::Key;
+use mareader_engine::activity::{Key, key_of};
+use mareader_engine::page_ai::Slot;
+use mareader_engine::page_ai::ledger::Ledger as PageAi;
 use mareader_engine::study::state::Key as Ask;
 use mareader_engine::study_mode::{DeckState, Run};
 use mareader_library::MarkId;
@@ -16,6 +18,8 @@ use mareader_study::mode::Batch;
 use mareader_workspace::PaneId;
 
 type Stamps<K> = HashMap<K, u64>;
+/// Each page drawn, with its results' slots and their own pages.
+type Drawn = [(usize, Vec<(Slot, usize)>)];
 
 fn stamps_id() -> Id {
     Id::new("activity-in-view")
@@ -98,4 +102,20 @@ fn shown_batch(run: &Run) -> Option<usize> {
         DeckState::Making { batch, .. } | DeckState::Failed { batch, .. } => Some(batch.from),
         DeckState::None | DeckState::Open(_) => run.gate_batch().map(|b: &Batch| b.from),
     }
+}
+
+/// Says which of `pane`'s page runs show their bubble or words, as `drawn`
+/// lists each page's slots; a run asking a kept result again shows on it.
+pub fn page_runs(ctx: &Context, ledger: &PageAi, pane: PaneId, drawn: &Drawn) {
+    let run = |slot: &Slot| match *slot {
+        Slot::Run(id) => Some(id),
+        Slot::Saved(id) => ledger
+            .runs
+            .iter()
+            .find(|r| r.redo_of == Some(id))
+            .map(|r| r.id),
+    };
+    let runs = drawn.iter().flat_map(|(_, slots)| slots);
+    let keys = runs.filter_map(|(slot, _)| run(slot).and_then(|id| key_of(ledger, pane, id)));
+    keys.for_each(|key| in_view(ctx, key));
 }

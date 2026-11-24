@@ -346,7 +346,7 @@ fn watch_wakes_and_reports_modified_file() {
 }
 
 #[test]
-fn read_aloud_and_stop_pill_execute_through_session() {
+fn read_aloud_and_stop_pages_execute_through_session() {
     let (wakes, waker) = counter_waker();
     let mut session = Session::new(Arc::new(Fake::default()), waker);
     let set_engine = r#"{"path":"read_aloud.engine","value":"\"silent\""}"#;
@@ -382,7 +382,7 @@ fn read_aloud_and_stop_pill_execute_through_session() {
     session.tick(2.0);
     assert!(!session.read_aloud().active());
 
-    session.execute(Command::PageAi(PageAiAction::StopPill(pane)), 2.0);
+    session.execute(Command::PageAi(PageAiAction::StopPages(pane)), 2.0);
     session
         .execute_id("mark.clear", "{}", 2.0)
         .expect("mark.clear");

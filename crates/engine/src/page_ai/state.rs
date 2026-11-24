@@ -31,6 +31,8 @@ impl Default for Loose {
 /// A result being written.
 pub struct Run {
     pub id: u64,
+    /// The pane that asked it.
+    pub pane: PaneId,
     /// The layout its page is counted in: a book's own pages.
     pub layout: u64,
     pub page: usize,
@@ -51,6 +53,13 @@ pub struct Run {
     pub failed: Option<String>,
     /// The kept result it will replace.
     pub redo_of: Option<AiPageId>,
+}
+
+/// How a run, a pane's groups or its continuous run ended, if not done.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gone {
+    Stopped,
+    Failed,
 }
 
 /// A run's line to its writer.

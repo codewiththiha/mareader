@@ -1,10 +1,11 @@
 //! What a page's AI run sees above it, and what only the front end answers.
 //!
-//! A run works from [`AiView`], one pane's document as of the last frame, and
-//! shows what it is doing as a [`Pill`]. Two things it cannot know itself: how
-//! a pane's pages read now, which [`Views`] answers, and how many tasks at once
-//! the attached model takes, which [`Models`] answers. Both are the front end's
-//! to give, so a run takes them as traits and never names a window.
+//! A run works from [`AiView`], one pane's document as of the last frame,
+//! and the AI stack says what it is doing. Two things it cannot know
+//! itself: how a pane's pages read now, which [`Views`] answers, and how
+//! many tasks at once the attached model takes, which [`Models`] answers.
+//! Both are the front end's to give, so a run takes them as traits and
+//! never names a window.
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -30,36 +31,6 @@ pub struct AiView {
     /// The page read now.
     pub current: usize,
     pub zoom: f32,
-}
-
-/// How a continuous run's ring stands.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Ring {
-    /// The stay on this page so far, 0 to 1.
-    Fill(f32),
-    /// This page is being written.
-    Spin,
-    /// Nothing to wait for: the pages ahead are asked.
-    Full,
-    Paused,
-}
-
-/// A pane's continuous run, shown at its bottom.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Pill {
-    pub text: String,
-    /// What it is doing, in a sentence.
-    pub tip: String,
-    pub ring: Ring,
-    /// It asks whether to carry on here.
-    pub ask: bool,
-}
-
-/// What a press on the pill asks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PillPress {
-    Stop,
-    Continue,
 }
 
 /// The panes' documents, as the front end has them this frame.
