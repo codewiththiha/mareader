@@ -25,6 +25,7 @@ const RING: f32 = 30.0;
 const INSET: f32 = 16.0;
 
 /// The cards, stacked up from `stage`'s bottom-left; `lift` clears a page bar.
+/// Off the library page, `paused` is false: an AI run shows in the AI stack.
 pub fn show(
     ctx: &Context,
     session: &mut Session,
@@ -42,7 +43,7 @@ pub fn show(
     let t = Tokens::get(ctx);
     let mut bottom = stage.bottom() - INSET - lift;
     for (run, ready) in runs.iter().zip(due) {
-        if !ready {
+        if !ready || (run.stoppable() && !paused) {
             continue;
         }
         let pos = pos2(stage.left() + INSET, bottom);

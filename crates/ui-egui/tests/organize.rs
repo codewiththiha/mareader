@@ -4,10 +4,13 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 use mareader_engine::command::Command;
 use mareader_engine::library::{Action, Heard, Paused, ShelfAction};
+use mareader_engine::route::Route;
 use mareader_engine::toast::Toast;
 use mareader_library::{BookId, Move};
 use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::activity::stack::STACK;
 use mareader_ui_egui::ui_command::{Commands, Sent, UiCommand};
+use mareader_workspace::SplitAxis;
 
 use crate::common::without_models;
 
@@ -200,4 +203,40 @@ fn a_finished_plan_waits_for_review_and_a_failure_offers_resume() {
     assert_eq!(failed.label, "Resume");
     let resume = Command::Library(Action::ResumeOrganizing);
     assert_eq!(failed.undo.as_deref(), Some(&resume));
+}
+
+fn stacks(h: &Harness<'static, MareaderApp>) -> usize {
+    h.query_all_by_label(STACK).count()
+}
+
+fn send(h: &mut Harness<'static, MareaderApp>, command: Command) {
+    h.state_mut().queue(Sent::Engine(command));
+    h.run_steps(FRAMES);
+}
+
+#[test]
+fn off_the_library_its_run_stacks_once_in_the_workspace_corner() {
+    let mut h = page(&[("copies", "5"), ("organize", "running")]);
+    h.get_by_label("Pause organizing");
+    assert_eq!(stacks(&h), 0, "the library's own card says it");
+    send(&mut h, Command::ShowRoute(Route::Reader));
+    assert!(
+        h.query_by_label("Pause organizing").is_none(),
+        "its card stays on the library page"
+    );
+    assert_eq!(stacks(&h), 1, "one pane: one stack");
+    send(&mut h, Command::Split(SplitAxis::Horizontal));
+    assert_eq!(
+        stacks(&h),
+        1,
+        "two panes: still one, in the workspace corner"
+    );
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+    h.get_by_label_contains("Filing books").hover();
+    h.get_by_label("Pause").click();
+    h.run_steps(4);
+    assert!(held(&h).is_empty(), "pausing lets the books go");
+    assert!(toast(&h).starts_with("Organizing paused"), "{}", toast(&h));
+    assert_eq!(stacks(&h), 0, "nothing is left in the corner");
 }

@@ -8,12 +8,15 @@
 
 mod ledger;
 
+pub mod place;
+
 pub use ledger::{End, LINGER, Ledger, News, Row};
 
 use mareader_settings::TaskId;
 use mareader_study::mode::{Batch, Via};
 use mareader_workspace::PaneId;
 
+use crate::library::{self, RunEnd, RunId};
 use crate::study_mode::{Ahead, DeckJob, DeckState, Doing, Run, State};
 
 /// Whose work it is: the whole app's, or one pane's.
@@ -28,19 +31,37 @@ pub enum Scope {
 pub enum Key {
     /// A studying pane's deck, by its batch's first page.
     Cards { pane: PaneId, from: usize },
+    /// The library's AI organizer, by its run.
+    Organize { run: RunId },
 }
 
 impl Key {
     pub fn scope(self) -> Scope {
         match self {
             Self::Cards { pane, .. } => Scope::Pane(pane),
+            Self::Organize { .. } => Scope::Global,
         }
     }
 
-    /// Whether stopping it asks first: a deck goes only with study mode.
-    pub fn asks_to_stop(self) -> bool {
-        matches!(self, Self::Cards { .. })
+    /// The word on its stop button: organizing pauses, keeping its work.
+    pub fn stop_word(self) -> &'static str {
+        match self {
+            Self::Cards { .. } => "Cancel",
+            Self::Organize { .. } => "Pause",
+        }
     }
+}
+
+/// How a job that left the list ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ending {
+    /// Its result is in.
+    Landed,
+    /// The reader stopped it.
+    Stopped,
+    Failed,
+    /// It ended with nothing to show, and its owner said so.
+    Quiet,
 }
 
 /// Where a job stands.
@@ -66,6 +87,8 @@ pub struct Activity {
     pub page: usize,
     /// Whether, once done, it waits to be seen; else it says so a moment.
     pub keeps: bool,
+    /// Whether its owner toasts its failure itself; the stack then doesn't.
+    pub told: bool,
     pub stage: Stage,
 }
 
@@ -75,13 +98,15 @@ impl Activity {
         match (self.key, self.keeps) {
             (Key::Cards { .. }, true) => format!("Cards ready · {}", self.range),
             (Key::Cards { .. }, false) => "Next cards ready".to_owned(),
+            (Key::Organize { .. }, _) => format!("Shelf plan ready · {}", self.range),
         }
     }
 
-    /// The toast once it failed.
+    /// The words once it failed, on its line and in its toast.
     pub fn failed_said(&self) -> String {
         match self.key {
             Key::Cards { .. } => format!("Couldn’t write the cards for {}", self.range),
+            Key::Organize { .. } => format!("Couldn’t organize {}", self.range),
         }
     }
 
@@ -89,6 +114,7 @@ impl Activity {
     pub fn stopped_said(&self) -> String {
         match self.key {
             Key::Cards { .. } => format!("Stopped writing the cards for {}", self.range),
+            Key::Organize { .. } => "Organizing paused. The library can resume it.".to_owned(),
         }
     }
 }
@@ -101,11 +127,34 @@ pub fn of_study(state: &State) -> Vec<Activity> {
         .collect()
 }
 
-/// Whether the job `key` names ended by landing; else it was stopped.
-pub fn landed(state: &State, key: Key) -> bool {
+/// The library's AI organizer, while it plans or files.
+pub fn of_library(library: &library::State) -> Vec<Activity> {
+    let going = library.runs.list().iter().filter(|run| run.stoppable());
+    let activity = |run: &library::Run| Activity {
+        key: Key::Organize { run: run.id },
+        task: TaskId::Organize,
+        said: format!("{} · {}", run.headline().trim_end_matches('…'), run.label),
+        range: run.label.clone(),
+        page: 0,
+        keeps: true,
+        told: true,
+        stage: Stage::Running(run.fraction()),
+    };
+    going.map(activity).collect()
+}
+
+/// How the job `key` names, gone from the list, ended.
+pub fn ending(study: &State, library: &library::State, key: Key) -> Ending {
     match key {
         // A deck's job ends in its cards, unless study mode went off.
-        Key::Cards { pane, .. } => state.on(pane),
+        Key::Cards { pane, .. } if study.on(pane) => Ending::Landed,
+        Key::Cards { .. } => Ending::Stopped,
+        Key::Organize { run } => match library.runs.ended(run) {
+            Some(RunEnd::Planned) => Ending::Landed,
+            Some(RunEnd::Empty) => Ending::Quiet,
+            Some(RunEnd::Failed) => Ending::Failed,
+            None => Ending::Stopped,
+        },
     }
 }
 
@@ -170,6 +219,7 @@ fn cards(pane: PaneId, batch: &Batch, range: String) -> Activity {
         range,
         page: batch.from,
         keeps: false,
+        told: false,
         stage: Stage::Failed,
     }
 }

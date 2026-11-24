@@ -1,6 +1,6 @@
 //! Study mode's AI cards, headless: the waiting card and its slow offer,
 //! the error card's way to the dictionary or to the setup it lacks, decks
-//! made ahead, and the corner stack while the AI writes out of view.
+//! made ahead, and the corner stacks while the AI writes out of view.
 
 use std::time::Duration;
 
@@ -17,7 +17,7 @@ use mareader_ui_egui::study_mode::deck::START;
 use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
 use mareader_ui_egui::study_mode::waiting::{CHECK_MODEL, DICTIONARY, RETRY, SLOW, stage};
 use mareader_ui_egui::ui_command::Sent;
-use mareader_workspace::PaneId;
+use mareader_workspace::{PaneId, SplitAxis};
 
 use crate::common::{Dials, levels_reader, shelves};
 
@@ -237,4 +237,29 @@ fn the_stack_shows_the_writing_only_while_the_deck_is_out_of_view() {
         h.query_by_label(STACK).is_none(),
         "nothing is left in the corner"
     );
+}
+
+/// PROGRESS.md §5, steps 1, 3 and 4: the library's run stacks once until a
+/// pane's job needs the corner, then joins every pane's stack.
+#[test]
+fn the_app_s_work_joins_every_pane_once_a_pane_needs_its_corner() {
+    let (mut h, pane, _shelves) = studying_at("silent", 1, Some(3));
+    h.state_mut().set_option("copies", "5").unwrap();
+    h.state_mut().set_option("organize", "running").unwrap();
+    assert!(wait(&mut h, |h| writing(h, pane)), "the AI is asked");
+    let stacks = |h: &H| h.query_all_by_label(STACK).count();
+    assert!(wait(&mut h, |h| stacks(h) == 1), "organizing stacks once");
+    let split = Sent::Engine(Command::Split(SplitAxis::Horizontal));
+    h.state_mut().queue(split);
+    h.run_steps(30);
+    assert_eq!(stacks(&h), 1, "two panes: still one, the deck says its own");
+    let away = Sent::Engine(Command::GoTo { pane, page: 0 });
+    h.state_mut().queue(away);
+    assert!(
+        wait(&mut h, |h| stacks(h) == 2),
+        "each pane stacks organizing"
+    );
+    let back = Sent::Engine(Command::GoTo { pane, page: 3 });
+    h.state_mut().queue(back);
+    assert!(wait(&mut h, |h| stacks(h) == 1), "back to the one stack");
 }

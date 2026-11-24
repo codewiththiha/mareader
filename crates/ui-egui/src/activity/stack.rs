@@ -21,6 +21,7 @@ use crate::z_order::{self, Tier};
 /// The folded stack's name, and its buttons', for screen readers and tests.
 pub const STACK: &str = "AI activity";
 pub const VIEW: &str = "View";
+/// A deck's stop; organizing's says *Pause*.
 pub const CANCEL: &str = "Cancel";
 pub const DISMISS: &str = "Dismiss";
 /// The stack's room from the pane's top and sides; above the page bar.
@@ -47,10 +48,11 @@ pub enum Button {
 }
 
 impl Button {
-    fn label(self) -> &'static str {
+    /// Its words on `line`: a job names its own stop.
+    fn label(self, line: &Line) -> &'static str {
         match self {
             Self::View => VIEW,
-            Self::Cancel => CANCEL,
+            Self::Cancel => line.key.stop_word(),
             Self::Dismiss => DISMISS,
         }
     }
@@ -97,10 +99,12 @@ fn going(stage: Stage) -> Look {
     }
 }
 
-/// Where a stack stands: its pane, and whether the page bar is up.
+/// Where a stack stands: the rect whose corner it takes, and whether that
+/// pane's page bar is up.
 #[derive(Clone, Copy, Debug)]
 pub struct At {
-    pub pane: PaneId,
+    /// Names the stack across frames; a pane's, so it glides on splitting.
+    pub id: Id,
     pub rect: Rect,
     pub bar: bool,
     /// Where the pane's deck drew, which the stack keeps clear of.
@@ -122,7 +126,7 @@ struct Laid {
 
 /// The stack of `lines`, oldest first, in `at`'s corner.
 pub fn show(ctx: &Context, at: At, lines: &[Line]) -> Out {
-    let id = Id::new(("activity-stack", at.pane));
+    let id = at.id;
     let hovered = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let open = motion::slide(ctx, id.with("open"), f32::from(u8::from(hovered)), OPEN);
     let (spot, top) = spot(at.rect, at.bar, at.taken);
@@ -212,13 +216,13 @@ fn words(
     let mut right = rect.right() - SIDE;
     let mut pressed = None;
     for &button in line.buttons.iter().rev() {
-        let width = button_width(ui.ctx(), button);
+        let width = button_width(ui.ctx(), button.label(line));
         let at = Rect::from_min_max(
             pos2(right - width, rect.top() + 4.0),
             pos2(right, rect.bottom() - 4.0),
         );
         right -= width + 2.0;
-        if press(ui, (at, id.with(button.label())), button, alpha) {
+        if press(ui, (at, id.with(button.label(line))), (button, line), alpha) {
             pressed = Some((button, line.key));
         }
     }
@@ -233,10 +237,10 @@ fn words(
 }
 
 /// A quiet button in `at`; true once clicked.
-fn press(ui: &mut Ui, (at, id): (Rect, Id), button: Button, alpha: f32) -> bool {
+fn press(ui: &mut Ui, (at, id): (Rect, Id), (button, line): (Button, &Line), alpha: f32) -> bool {
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(at, id, Sense::click());
-    let label = button.label();
+    let label = button.label(line);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     let painter = ui.painter();
     if resp.hovered() {
@@ -263,13 +267,12 @@ fn cross(painter: &egui::Painter, c: Pos2, stroke: Stroke) {
     painter.line_segment([c + vec2(-r, r), c + vec2(r, -r)], stroke);
 }
 
-fn button_width(ctx: &Context, button: Button) -> f32 {
-    if button == Button::Dismiss {
+fn button_width(ctx: &Context, label: &str) -> f32 {
+    if label == DISMISS {
         return 22.0;
     }
     let font = FontId::proportional(Tokens::get(ctx).text_small);
-    let galley =
-        ctx.fonts_mut(|f| f.layout_no_wrap(button.label().to_owned(), font, egui::Color32::WHITE));
+    let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.to_owned(), font, egui::Color32::WHITE));
     galley.rect.width() + 14.0
 }
 
@@ -279,7 +282,7 @@ fn lay(ctx: &Context, line: &Line, room: f32) -> Laid {
     let buttons: f32 = line
         .buttons
         .iter()
-        .map(|&b| button_width(ctx, b) + 2.0)
+        .map(|&b| button_width(ctx, b.label(line)) + 2.0)
         .sum();
     let left = (room - SIDE - buttons - 16.0).max(0.0);
     let font = FontId::proportional(t.text_small);
@@ -288,6 +291,11 @@ fn lay(ctx: &Context, line: &Line, room: f32) -> Laid {
     let galley = ctx.fonts_mut(|f| f.layout_job(job));
     let width = SIDE + buttons + galley.rect.width() + 16.0;
     Laid { galley, width }
+}
+
+/// The stack's name in `pane`'s corner, which the workspace's borrows.
+pub fn id(pane: PaneId) -> Id {
+    Id::new(("activity-stack", pane))
 }
 
 /// The folded stack in `pane`: the bottom right corner on the page counter,

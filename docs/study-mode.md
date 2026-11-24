@@ -251,6 +251,13 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   *View* until seen; one made ahead says *Next cards ready* for 3 s. A
   failure shows red for 3 s, longer while hovered. A failed or stopped deck
   also shows a toast. Dictionary cards come at once and never show it.
+- **One stack, or one a pane** (`engine::activity::place`): the app's own work,
+  as organizing the library, is global. Alone, it stacks once, at the
+  workspace's bottom right, however many panes show. Once a pane's job
+  needs its corner, every pane's corner shows the global lines, and the
+  owning pane its own in front of them; when that job's visual is back in
+  view, the one workspace stack returns. On the library page, its own
+  card says how organizing goes, so the stack leaves it out.
 - **Progress is real** (`DeckJob::made`, `deck_job/progress.rs`): the
   track and the ring show the same share, counted from real steps only.
   Finding the words is the first 10%: their levels looked up, then their

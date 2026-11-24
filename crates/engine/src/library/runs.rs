@@ -113,11 +113,24 @@ impl Run {
     }
 }
 
+/// How an AI run ended, where its owner said; else it was stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunEnd {
+    /// Its plan waits to be reviewed.
+    Planned,
+    /// It found nothing to plan, and a toast said so.
+    Empty,
+    /// It failed, and a toast said so.
+    Failed,
+}
+
 /// The runs in flight, oldest first.
 #[derive(Debug, Default)]
 pub struct Runs {
     list: Vec<Run>,
     next: RunId,
+    /// The last AI run that ended by itself, and how.
+    ended: Option<(RunId, RunEnd)>,
 }
 
 impl Runs {
@@ -158,6 +171,16 @@ impl Runs {
     /// The run ended; its toast says how.
     pub fn finish(&mut self, id: Option<RunId>) {
         self.list.retain(|r| Some(r.id) != id);
+    }
+
+    /// Notes how the run `id` ended, before it finishes.
+    pub fn mark(&mut self, id: Option<RunId>, end: RunEnd) {
+        self.ended = id.map(|id| (id, end));
+    }
+
+    /// How the run `id` ended, if it ended by itself.
+    pub fn ended(&self, id: RunId) -> Option<RunEnd> {
+        self.ended.filter(|(at, _)| *at == id).map(|(_, end)| end)
     }
 
     pub fn list(&self) -> &[Run] {

@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{Activity, Key, Stage};
+use super::{Activity, Ending, Key, Stage};
 
 /// Seconds a failure, or a quick *ready*, stays in the stack.
 pub const LINGER: f64 = 3.0;
@@ -60,12 +60,12 @@ pub struct Ledger {
 }
 
 impl Ledger {
-    /// Takes this frame's jobs at `now`; `landed` says whether a job gone
-    /// landed, `seen` whether its result is in view.
+    /// Takes this frame's jobs at `now`; `ending` says how a job gone ended,
+    /// `seen` whether its result is in view.
     pub fn update(
         &mut self,
         jobs: Vec<Activity>,
-        (landed, seen): (&dyn Fn(Key) -> bool, &dyn Fn(Key) -> bool),
+        (ending, seen): (&dyn Fn(Key) -> Ending, &dyn Fn(Key) -> bool),
         now: f64,
     ) -> Vec<News> {
         let mut news = Vec::new();
@@ -78,7 +78,8 @@ impl Ledger {
                 Some(row) if row.end == end => row.since,
                 _ => now,
             };
-            if failed && was.as_ref().is_none_or(|row| row.end != End::Failed) {
+            let new = was.as_ref().is_none_or(|row| row.end != End::Failed);
+            if failed && new && !activity.told {
                 news.push(News::Failed(activity.clone()));
             }
             self.ended.retain(|row| row.activity.key != activity.key);
@@ -92,25 +93,42 @@ impl Ledger {
             );
         }
         for (key, row) in std::mem::replace(&mut self.live, live) {
-            if row.end == End::Failed {
-                continue;
+            if row.end != End::Failed {
+                self.gone(row, (ending(key), seen(key)), (now, &mut news));
             }
-            if !landed(key) {
-                news.push(News::Stopped(row.activity));
-                continue;
-            }
-            if row.activity.keeps && seen(key) {
-                continue;
-            }
-            let done = Row {
-                end: End::Done,
-                since: now,
-                ..row
-            };
-            self.ended.push(done);
         }
         self.trim(now);
         news
+    }
+
+    /// A job gone from the list: a line for how it ended, and its news.
+    fn gone(
+        &mut self,
+        mut row: Row,
+        (ending, seen): (Ending, bool),
+        (now, news): (f64, &mut Vec<News>),
+    ) {
+        let end = match ending {
+            Ending::Quiet => return,
+            Ending::Stopped => {
+                news.push(News::Stopped(row.activity));
+                return;
+            }
+            Ending::Landed if row.activity.keeps && seen => return,
+            Ending::Landed => End::Done,
+            Ending::Failed => {
+                row.activity.said = row.activity.failed_said();
+                if !row.activity.told {
+                    news.push(News::Failed(row.activity.clone()));
+                }
+                End::Failed
+            }
+        };
+        self.ended.push(Row {
+            end,
+            since: now,
+            ..row
+        });
     }
 
     /// The stack's lines at `now`, oldest first: what goes on, then what
@@ -173,11 +191,14 @@ mod tests {
             range: format!("page {from}"),
             page: from,
             keeps,
+            told: false,
             stage,
         }
     }
 
-    const YES: &dyn Fn(Key) -> bool = &|_| true;
+    const YES: &dyn Fn(Key) -> Ending = &|_| Ending::Landed;
+    const STOPPED: &dyn Fn(Key) -> Ending = &|_| Ending::Stopped;
+    const SEEN: &dyn Fn(Key) -> bool = &|_| true;
     const NO: &dyn Fn(Key) -> bool = &|_| false;
 
     fn ends(ledger: &Ledger, now: f64) -> Vec<End> {
@@ -188,7 +209,7 @@ mod tests {
     fn a_landed_job_waits_to_be_seen_then_goes() {
         let mut ledger = Ledger::default();
         let going = job(4, Stage::Running(Some(0.5)), true);
-        assert!(ledger.update(vec![going], (YES, YES), 0.0).is_empty());
+        assert!(ledger.update(vec![going], (YES, SEEN), 0.0).is_empty());
         assert_eq!(ends(&ledger, 0.0), [End::Going]);
         assert!(ledger.update(Vec::new(), (YES, NO), 1.0).is_empty());
         assert_eq!(ends(&ledger, 60.0), [End::Done], "stays until seen");
@@ -199,8 +220,8 @@ mod tests {
     #[test]
     fn a_job_landing_in_view_is_seen_at_once() {
         let mut ledger = Ledger::default();
-        ledger.update(vec![job(4, Stage::Queued, true)], (YES, YES), 0.0);
-        ledger.update(Vec::new(), (YES, YES), 1.0);
+        ledger.update(vec![job(4, Stage::Queued, true)], (YES, SEEN), 0.0);
+        ledger.update(Vec::new(), (YES, SEEN), 1.0);
         assert!(ledger.rows(1.0).is_empty());
     }
 
@@ -235,7 +256,7 @@ mod tests {
     fn a_job_gone_unlanded_was_stopped() {
         let mut ledger = Ledger::default();
         ledger.update(vec![job(4, Stage::Queued, true)], (YES, NO), 0.0);
-        let news = ledger.update(Vec::new(), (NO, NO), 1.0);
+        let news = ledger.update(Vec::new(), (STOPPED, NO), 1.0);
         assert_eq!(news, [News::Stopped(job(4, Stage::Queued, true))]);
         assert!(ledger.rows(1.0).is_empty());
     }
@@ -248,5 +269,19 @@ mod tests {
         ledger.update(Vec::new(), (YES, NO), 1.0);
         let pages: Vec<_> = ledger.rows(1.0).iter().map(|r| r.activity.page).collect();
         assert_eq!(pages, [2, 3, 4], "the oldest went first");
+    }
+
+    #[test]
+    fn an_owner_that_tells_its_failure_gets_no_second_toast() {
+        let mut ledger = Ledger::default();
+        let told = Activity {
+            told: true,
+            ..job(4, Stage::Running(None), true)
+        };
+        ledger.update(vec![told], (YES, NO), 0.0);
+        let failed: &dyn Fn(Key) -> Ending = &|_| Ending::Failed;
+        assert!(ledger.update(Vec::new(), (failed, NO), 1.0).is_empty());
+        assert_eq!(ends(&ledger, 1.0), [End::Failed], "its line still says so");
+        assert!(ledger.rows(4.5).is_empty());
     }
 }

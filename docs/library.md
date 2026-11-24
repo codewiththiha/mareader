@@ -898,8 +898,12 @@ The AI can shelve loose books. How it plans is in `docs/assist.md`,
   shelf. If none qualify, or no model is chosen, a toast says why.
 - **Which shelves.** Every shelf goes to the model, folder shelves too, so
   the plan may file onto any of them. Shelves are never locked.
-- **While it runs.** A corner card shows a ring, "Planning shelves…" or
-  "Filing books…", the count and the model, with ✕ to stop. A pass of
+- **While it runs.** On the library page a corner card, bottom left, shows a
+  ring, "Planning shelves…" or "Filing books…", the count and the model,
+  with ✕ to stop. Off the library page the card steps aside for the AI
+  stack (`docs/study-mode.md`, The corner stack): one line at the
+  workspace's bottom right, *Filing books · 5 books · Fast model*, with
+  *Pause*. A pass of
   light crosses the books' covers and their captions read "Finding a
   shelf" (`docs/design.md`, Book covers); they open as usual, but they
   don't move. A drag won't
@@ -909,7 +913,8 @@ The AI can shelve loose books. How it plans is in `docs/assist.md`,
   new ones tagged New, each with its count and first titles, and the books
   left on no shelf. Only Apply or Discard closes it. It waits behind any
   other sheet, as questions do, so another sheet can't lose it. If it
-  comes in while the reader is reading, a toast says so.
+  comes in while the reader is reading, the stack keeps *Shelf plan ready*
+  with *View*, which opens the library, until it is seen or dismissed.
 - **Apply** makes the new shelves, parents first, and files each book.
   Books that changed meanwhile (shelved, removed or missing) stay put, and
   the toast counts them. A new shelf left empty isn't kept.
@@ -925,7 +930,8 @@ so it builds for the browser preview too.
 
 Tests: `crates/engine/tests/filing.rs`, the unit tests in `review.rs` and
 `runs.rs`, and `crates/ui-egui/tests/organize.rs` (a run held and stopped, Apply then Undo,
-Discard, the View options row, books read in place refused). Shots:
+Discard, the View options row, books read in place refused, the stack
+off the library page). Shots:
 `organize=running` or `organize=review` with `copies=N`.
 
 ### Pausing and resuming (2026-10-19)

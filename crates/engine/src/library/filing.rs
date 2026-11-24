@@ -6,8 +6,8 @@ use mareader_library::picks::{Pick, PickAction};
 use mareader_library::{Book, BookId, ShelfId};
 
 use super::{
-    Action, Applied, Ask, Beat, Heard, Loose, Organizer, Out, Paused, Phase, Proposal, Sheet, Spot,
-    Standing, State, apply, counted, natural, organizable, undo, wall_ms,
+    Action, Applied, Ask, Beat, Heard, Loose, Organizer, Out, Paused, Phase, Proposal, RunEnd,
+    Sheet, Spot, Standing, State, apply, counted, natural, organizable, undo, wall_ms,
 };
 use crate::command::Command;
 use crate::toast::Toast;
@@ -166,21 +166,23 @@ impl State {
             }
             Heard::Plan(plan) => {
                 let ended = self.organizer.run.take();
+                let end = match plan.placed.is_empty() {
+                    true => RunEnd::Empty,
+                    false => RunEnd::Planned,
+                };
+                self.runs.mark(ended, end);
                 self.runs.finish(ended);
                 if plan.placed.is_empty() {
                     self.organizer_end();
                     let said = "The AI found no shelf that suits these books.";
                     out.push(Out::Toast(Toast::info(said)));
                 } else {
+                    // The library page shows it; elsewhere, the AI stack.
                     self.organizer.review = Some(Box::new(plan));
-                    // The plan shows on the library page; elsewhere, a nudge.
-                    if !self.showing {
-                        let said = "The AI's shelf plan is ready. Open the library to review it.";
-                        out.push(Out::Toast(Toast::info(said)));
-                    }
                 }
             }
             Heard::Failed(toast) => {
+                self.runs.mark(self.organizer.run, RunEnd::Failed);
                 self.organizer_end();
                 // What was done is kept; the toast offers to carry on.
                 let resume = Command::Library(Action::ResumeOrganizing);

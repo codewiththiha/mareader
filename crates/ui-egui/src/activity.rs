@@ -1,8 +1,8 @@
-//! The corner stack of the AI's work, for every pane.
+//! The corner stacks of the AI's work.
 //!
 //! Every frame the session lists each job going on; the [`Ledger`] keeps
-//! how each ended. A job shows in its pane's corner only while its own
-//! visual is out of view, as [`seen`] tells. See
+//! how each ended. A job shows only while its own visual is out of view, as
+//! [`seen`] tells, and [`place`] sets which corners show what. See
 //! `docs/study-mode.md` § The corner stack.
 
 pub mod ring;
@@ -10,7 +10,8 @@ pub mod seen;
 pub mod stack;
 
 use egui::Context;
-use mareader_engine::activity::{Activity, End, Key, Ledger, News, Scope};
+use mareader_engine::activity::place::{self, Spot};
+use mareader_engine::activity::{Activity, End, Ending, Key, Ledger, News};
 use mareader_workspace::PaneId;
 
 use stack::Line;
@@ -27,11 +28,11 @@ impl ActivityUi {
         &mut self,
         ctx: &Context,
         jobs: Vec<Activity>,
-        landed: &dyn Fn(Key) -> bool,
+        ending: &dyn Fn(Key) -> Ending,
     ) -> Vec<News> {
         let now = ctx.input(|i| i.time);
         let shown = |key| seen::shown(ctx, key);
-        let news = self.ledger.update(jobs, (landed, &shown), now);
+        let news = self.ledger.update(jobs, (ending, &shown), now);
         let seen: Vec<Key> = self
             .ledger
             .rows(now)
@@ -45,13 +46,34 @@ impl ActivityUi {
         news
     }
 
-    /// `pane`'s lines, oldest first: its jobs whose own visual is out of view.
-    pub fn lines(&self, ctx: &Context, pane: PaneId) -> Vec<Line> {
+    /// The stacks and their lines, oldest first, over `panes`: the jobs
+    /// whose own visual is out of view.
+    pub fn stacks(&self, ctx: &Context, panes: &[PaneId]) -> Vec<(Spot, Vec<Line>)> {
         let now = ctx.input(|i| i.time);
-        let rows = self.ledger.rows(now).into_iter();
-        let here = rows.filter(|row| row.activity.key.scope() == Scope::Pane(pane));
-        let hidden = here.filter(|row| !seen::shown(ctx, row.activity.key));
-        hidden.map(|row| Line::of(row, now)).collect()
+        let rows = self.ledger.rows(now);
+        let hidden = rows
+            .iter()
+            .filter(|row| !seen::shown(ctx, row.activity.key));
+        let items: Vec<_> = hidden
+            .map(|r| (r.activity.key, r.activity.key.scope()))
+            .collect();
+        let line = |key: Key| {
+            let row = rows.iter().find(|row| row.activity.key == key);
+            row.map(|row| Line::of(row, now))
+        };
+        let lines = |keys: Vec<Key>| keys.into_iter().filter_map(line).collect();
+        let stacks = place::place(panes, &items).into_iter();
+        stacks.map(|(spot, keys)| (spot, lines(keys))).collect()
+    }
+
+    /// Says the jobs `which` picks show their own work on this page.
+    pub fn in_view_where(&self, ctx: &Context, now: f64, which: &dyn Fn(Key) -> bool) {
+        let rows = self.ledger.rows(now);
+        let keys = rows
+            .iter()
+            .map(|row| row.activity.key)
+            .filter(|&key| which(key));
+        keys.for_each(|key| seen::in_view(ctx, key));
     }
 
     /// Whether any line goes by itself soon, so frames keep coming.
