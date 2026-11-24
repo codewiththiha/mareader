@@ -1,8 +1,10 @@
 //! Adding books: the plus card, its one menu, and what a folder gives back.
 
+use egui::epaint::CornerRadiusF32;
+use egui::epaint::tessellator::path::rounded_rectangle;
 use egui::{
     Align2, Color32, CornerRadius, FontId, Id, Popup, PopupCloseBehavior, Rect, Response, RichText,
-    Sense, Stroke, StrokeKind, Ui, pos2, vec2,
+    Sense, Shape, Stroke, Ui, pos2, vec2,
 };
 use mareader_library::{FolderId, Library, Recovered, ShelfId, dir_of_rung, human_age, human_size};
 
@@ -23,30 +25,38 @@ pub struct Here<'a> {
     pub at: Option<ShelfId>,
 }
 
-/// The plus card ending the grid: a book's size, a menu behind it.
+/// The plus card ending the grid: a book-sized slot, a menu behind it.
 pub fn card(ui: &mut Ui, cover: Rect, here: Here<'_>, t: &Tokens, out: &mut Commands) {
     let resp = ui.interact(cover, Id::new("library-add-card"), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Add books"));
     let open = Popup::is_id_open(ui.ctx(), Id::new(ADD_MENU));
     let lit = resp.hovered() || open;
-    let fill = match lit {
-        true => t.hover,
-        false => t.hover.gamma_multiply(0.45),
+    let p = ui.painter();
+    // An empty slot on the shelf: dashed, filling in only when pointed at.
+    if lit {
+        p.rect_filled(cover, CornerRadius::same(6), t.hover.gamma_multiply(0.7));
+    }
+    let mut edge = Vec::new();
+    rounded_rectangle(&mut edge, cover.shrink(0.5), CornerRadiusF32::same(6.0));
+    if let Some(&start) = edge.first() {
+        edge.push(start);
+    }
+    let dash = t.muted.gamma_multiply(if lit { 1.0 } else { 0.55 });
+    p.extend(Shape::dashed_line(&edge, Stroke::new(1.25, dash), 6.0, 5.0));
+    let d = (cover.width() * 0.24).clamp(36.0, 52.0);
+    let middle = cover.center() - vec2(0.0, d * 0.3);
+    // Pointed at, the plus fills with the accent: this is the action.
+    let (disc, plus) = match lit {
+        true => (t.accent, theme::ink_on(t.accent)),
+        false => (t.hover, t.muted),
     };
-    let radius = CornerRadius::same(6);
-    ui.painter().rect_filled(cover, radius, fill);
-    let edge = if lit { t.muted } else { t.line };
-    let stroke = Stroke::new(1.0, edge.gamma_multiply(0.8));
-    ui.painter()
-        .rect_stroke(cover, radius, stroke, StrokeKind::Inside);
-    let size = (cover.width() * 0.22).clamp(20.0, 36.0);
-    let mark = Rect::from_center_size(cover.center(), vec2(size, size));
-    Icon::Plus.paint(ui, mark, if lit { t.ink } else { t.muted });
-    // Captioned like a book; the button's own label already reads it.
-    let at = pos2(cover.left(), cover.bottom() + 8.0);
+    p.circle_filled(middle, d / 2.0, disc);
+    let mark = Rect::from_center_size(middle, vec2(d * 0.42, d * 0.42));
+    Icon::Plus.paint(ui, mark, plus);
     let ink = if lit { t.ink } else { t.muted };
-    ui.painter()
-        .text(at, Align2::LEFT_TOP, "Add books", theme::medium(13.0), ink);
+    let at = pos2(middle.x, middle.y + d / 2.0 + 10.0);
+    let font = theme::medium(13.0);
+    p.text(at, Align2::CENTER_TOP, "Add books", font, ink);
     menu(&resp, here, t, out);
 }
 

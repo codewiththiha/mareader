@@ -533,16 +533,22 @@ A cover should look like a well-made book: quiet, still, never a sticker.
   tight at the spine and softer at the fore-edge.
 - **Cloth covers.** A book without art is bound in one of ten deep
   tones (navy, forest, oxblood, ochre, slate, plum, teal, olive, rust,
-  indigo), lit from above. Its initial is set in Literata in a gilt
-  frame, with a short rule and its format spaced at the foot. Gilt type
-  reads at 4.5:1 or better on every tone (a unit test checks it). Dark
-  looks deepen the tones.
+  indigo), lit from above, deeper in a band from the spine to the hinge
+  and dimming toward the fore-edge. Rules are blind-stamped (pressed in,
+  lit on the lower lip) near head and foot. The title is set in Literata,
+  centred, up to four lines, with a small diamond ornament under it; the
+  author sits above the foot in spaced capitals (the format when there is
+  none). Thumbs show the initial only. Gilt type reads at 4.5:1 or better
+  on every tone (a unit test checks it). Dark looks deepen the tones.
+  (A lone initial in a gilt frame came first, and read as a placeholder.)
 - **Hover.** The cover lifts 3 points and its shadow lengthens; there's
   no grey box. Picks and drop targets keep their ground and ring.
-- **Progress.** A silk bookmark in the accent, tucked under the cover's
-  top edge near its fore-edge, says how far as "89%" (at least 1%). It
-  has a swallowtail end, a sheen down its middle, a soft shadow, and
-  grows to fit "100%". An unopened book has none, and a missing one
+- **Adding.** The grid ends in a dashed, book-sized slot with a plus disc
+  and "Add books"; pointed at, it fills and the disc takes the accent.
+- **Progress.** A silk bookmark in the accent (deepened a tenth, a third
+  on dark looks, so it sits with cloth), folded over the cover's head near
+  its fore-edge, says how far as "89%" (at least 1%). It has a swallowtail
+  end, a sheen across its width, a soft shadow, and grows to fit "100%". An unopened book has none, and a missing one
   wears its Missing pill there instead. The card loses its progress
   row: 44 points of text. (A bar in the cover's foot came first, and
   looked like a scrubber, not a book.)
@@ -647,6 +653,7 @@ Lucide 1.34.0 geometry is compiled from build-only declarations behind
 | 2026-10-18 | Lifting a pane to move or swap it |
 | 2026-10-28 | Book covers: bound finish, cloth covers, progress on the cover, organizing without a badge |
 | 2026-11-07 | Generated resting glyphs replace `egui-lucide`; icon motion gains its own persisted switch |
+| 2026-11-24 | Book covers: typeset cloth, spine band, folded silk ribbon, a dashed add slot |
 
 ### Page marks and reading questions
 

@@ -7,7 +7,7 @@ use egui::{Color32, CornerRadius, Painter, Pos2, Rect, Shape, Stroke, StrokeKind
 use mareader_library::{Book, CoverFit};
 
 use super::SHAPES;
-use super::cloth::cloth;
+use super::cloth::{cloth, hinge};
 use crate::library::covers::{self, Cover, Covers};
 use crate::motion;
 use crate::theme::Tokens;
@@ -131,7 +131,7 @@ fn finish(p: &Painter, rect: Rect, (round, small): (CornerRadius, bool), fade: f
         return;
     }
     // A groove pressed in near the spine, lit on its far side.
-    let x = rect.left() + (rect.width() * 0.045).max(5.0);
+    let x = hinge(rect);
     let (top, bottom) = (rect.top() + 0.5, rect.bottom() - 0.5);
     let groove = Color32::from_black_alpha(46).gamma_multiply(fade);
     p.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.0, groove));
