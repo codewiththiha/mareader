@@ -42,11 +42,8 @@ no parity entry.
   needs.
 - **Streaming.** Words appear as they come, set again at most every 0.4 s.
   A redo keeps the old result on the page until the new words arrive.
-- **Bubbles.** Each result on a page gets a numbered bubble, in a row from
-  the page's bottom left corner. Where the page reaches the pane's bottom,
-  the row sits level with the page counter, after the AI stack's ring
-  (`activity::corner`), so the AI's rings share one corner and toasts keep
-  the right. A click shows that result; a click on the active bubble shows
+- **Bubbles.** Each result on a page gets a numbered bubble at the page's
+  end side. A click shows that result; a click on the active bubble shows
   the page again. A turning arc marks a result being written, "!" a failed
   one, and a dot one made for another layout of the book (see below).
 - **A bubble's menu** (right-click): show it or the page; redo; copy the
@@ -111,11 +108,10 @@ A book's kept result is laid into the book itself, in the pane's type:
 For Translate and Simplify. The aim: pages are ready as the reader gets
 to them, without paying for pages they skim past.
 
-- **In the AI stack.** While it goes, the run has a line in the pane's
-  corner stack (`docs/study-mode.md`, § The corner stack): "Translating to
-  Burmese · next pages in 12 s", with its ring and Stop. View goes to the
-  page being read. While a page it writes shows its busy bubble on screen,
-  the bubble says it and the line steps aside.
+- **In the AI stack.** The run has no visual of its own, so while it goes
+  it always has a line in the pane's corner stack (`docs/study-mode.md`,
+  § The corner stack): "Translating to Burmese · next pages in 12 s",
+  with its ring and Stop. View goes to the page being read.
 - **Staying on a page.** The ring fills only while the page's result is
   on screen: by default 25 s, 5–120 s in Settings. Scrolling past pages
   never fills it, because it starts again on each page and only once that

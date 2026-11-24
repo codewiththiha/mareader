@@ -18,7 +18,7 @@ use super::cards::Card;
 /// A bubble's side, in points.
 const BUBBLE: f32 = 22.0;
 const BUBBLE_GAP: f32 = 6.0;
-/// The bubbles' inset from the page's corner, off the pane's corner row.
+/// The bubbles' inset from the page's corner.
 const BUBBLE_INSET: f32 = 8.0;
 
 /// How a bubble's result stands.
@@ -122,9 +122,7 @@ pub fn card(
     Some(())
 }
 
-/// The page's bubbles in a row from its bottom left corner; a press on one.
-/// Where the page reaches the pane's corner row, they join it there, after
-/// the AI stack (`activity::corner`).
+/// The page's bubbles down its end side; a press on one.
 pub fn bubbles(
     ui: &Ui,
     (rect, clip): (Rect, Rect),
@@ -133,17 +131,11 @@ pub fn bubbles(
     t: &Tokens,
 ) -> Option<Press> {
     let seen = rect.intersect(clip);
-    let row = crate::activity::corner::row(ui.ctx(), seen);
-    let fits = |mid: f32| mid + BUBBLE / 2.0 <= seen.bottom();
-    let own = seen.left() + BUBBLE_INSET;
-    let (y, left) = match row.filter(|r| fits(r.mid)) {
-        Some(r) => (r.mid, r.from.max(own)),
-        None => (seen.bottom() - BUBBLE_INSET - BUBBLE / 2.0, own),
-    };
+    let x = seen.right() - BUBBLE_INSET - BUBBLE / 2.0;
+    let top = seen.top() + BUBBLE_INSET + BUBBLE / 2.0;
     let mut press = None;
     for (i, b) in all.iter().enumerate() {
-        let x = left + BUBBLE / 2.0 + i as f32 * (BUBBLE + BUBBLE_GAP);
-        let centre = pos2(x, y);
+        let centre = pos2(x, top + i as f32 * (BUBBLE + BUBBLE_GAP));
         let r = Rect::from_center_size(centre, Vec2::splat(BUBBLE));
         if !seen.contains_rect(r) {
             break;

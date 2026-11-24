@@ -49,6 +49,5 @@ name the owning modules for shared primitives across the workspace.
 | activity::place | `crates/engine/src/activity/place.rs` | Which corners show which lines: one workspace stack for global jobs alone, else each pane's corner with the global lines behind its own. |
 | activity::seen | `crates/ui-egui/src/activity/seen.rs` | A job's own visual stamps its key as it paints (`in_view`, `glowing`, `deck`, `page_runs`); `shown` says whether it painted this pass or the last, so the stack leaves it out. |
 | activity::stack | `crates/ui-egui/src/activity/stack.rs` | Draws one corner stack from its lines and says which button was pressed; `toast_lift` says how far toasts rise to clear the stacks. |
-| activity::corner | `crates/ui-egui/src/activity/corner.rs` | The pane's bottom left row the AI's rings share: `mid` places it level with the page counter, `stand` books the stack's ring, `row` tells page bubbles where to go on. |
 | activity::ring | `crates/ui-egui/src/activity/ring.rs` | The stack's ring in each look (queued, busy with a share, done, failed), eased and pulsing. |
 | page_ai::Ledger::gone | `crates/engine/src/page_ai/ledger.rs` | How a page run, a pane's groups or a continuous run ended when stopped or failed (`note_gone`, the last 32). |

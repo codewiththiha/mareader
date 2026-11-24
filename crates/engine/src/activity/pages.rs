@@ -37,13 +37,13 @@ pub fn of_pages(ledger: &Ledger, page_of: PageOf<'_>, now: f64) -> Vec<Activity>
     all
 }
 
-/// The job whose own visual run `run`'s bubble or result is: a continuous
-/// run's line leaves while a page it writes shows its busy bubble.
-pub fn key_of(ledger: &Ledger, pane: PaneId, run: u64) -> Key {
+/// The job whose own visual run `run`'s bubble or result is; none for a
+/// continuous run's, which has no visual but its line.
+pub fn key_of(ledger: &Ledger, pane: PaneId, run: u64) -> Option<Key> {
     match owner(ledger, pane, run) {
-        Some(Owner::Batch(batch)) => Key::Pages { pane, batch },
-        Some(Owner::Follow(run)) => Key::Follow { pane, run },
-        None => Key::Page { pane, run },
+        Some(Owner::Batch(batch)) => Some(Key::Pages { pane, batch }),
+        Some(Owner::Follow) => None,
+        None => Some(Key::Page { pane, run }),
     }
 }
 
@@ -70,7 +70,7 @@ pub(super) fn ending(ledger: &Ledger, key: Key) -> Ending {
 
 enum Owner {
     Batch(u64),
-    Follow(u64),
+    Follow,
 }
 
 fn owner(ledger: &Ledger, pane: PaneId, run: u64) -> Option<Owner> {
@@ -81,7 +81,7 @@ fn owner(ledger: &Ledger, pane: PaneId, run: u64) -> Option<Owner> {
     let follow = ledger.follows.get(&pane);
     follow
         .filter(|f| f.runs.contains(&run))
-        .map(|f| Owner::Follow(f.id))
+        .map(|_| Owner::Follow)
 }
 
 fn page(run: &Run, page_of: PageOf<'_>) -> Activity {

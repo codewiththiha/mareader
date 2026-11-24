@@ -36,9 +36,6 @@ impl MareaderApp {
             self.ui.toasts.push(toast);
         }
         let panes: Vec<PaneId> = self.ui.pane_rects.iter().map(|(p, _)| *p).collect();
-        let rects = self.ui.pane_rects.iter();
-        let rows: Vec<(Rect, bool)> = rects.map(|&(p, r)| (r, self.bar_up(p))).collect();
-        crate::activity::corner::share(ctx, &rows);
         for (spot, lines) in self.ui.activity.stacks(ctx, &panes) {
             let Some(at) = self.stack_at(ctx, spot) else {
                 continue;
@@ -62,7 +59,7 @@ impl MareaderApp {
         }
     }
 
-    /// Whether `pane`'s page bar is up, which the corner rises over.
+    /// Whether `pane`'s page bar is up, which the stack rises over.
     fn bar_up(&self, pane: PaneId) -> bool {
         !self.ui.chromeless && self.ui.page_bars.get(&pane).is_some_and(|b| b.shown())
     }

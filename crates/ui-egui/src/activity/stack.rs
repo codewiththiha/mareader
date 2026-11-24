@@ -139,7 +139,6 @@ pub fn show(ctx: &Context, at: At, lines: &[Line]) -> Out {
     let open = motion::slide(ctx, id.with("open"), f32::from(u8::from(hovered)), OPEN);
     let spot = spot(at.rect, at.bar, at.taken);
     let folded = glide(ctx, id, spot);
-    super::corner::stand(ctx, spot);
     let room = (at.rect.right() - folded.left() - INSET).max(SIDE);
     let laid: Vec<Laid> = lines.iter().map(|l| lay(ctx, l, room)).collect();
     let widths: Vec<f32> = laid.iter().map(|l| l.width).collect();
@@ -341,7 +340,11 @@ pub fn id(pane: PaneId) -> Id {
 /// counter, risen over the page bar while `bar`, and over `taken` while
 /// that leaves it in the pane's lower half.
 fn spot(pane: Rect, bar: bool, taken: Option<Rect>) -> Rect {
-    let top = super::corner::mid(pane, bar) - SIDE / 2.0;
+    use crate::page_bar::{BAR_H, COUNTER_MID};
+    let top = match bar {
+        true => pane.bottom() - BAR_H - LIFT - SIDE,
+        false => pane.bottom() - COUNTER_MID - SIDE / 2.0,
+    };
     let low = Rect::from_min_size(pos2(pane.left() + INSET, top), Vec2::splat(SIDE));
     let over = taken.filter(|t| t.intersects(low.expand(KEEP)));
     let risen = over.map(|t| low.translate(vec2(0.0, t.top() - KEEP - low.bottom())));

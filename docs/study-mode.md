@@ -247,9 +247,9 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   newest in front and up to two peeking behind; a hover fans them out to
   say so (*Writing cards 3 of 8 · pages 4–6*) with *Cancel*, which asks to
   turn study mode off. Lines fan up from the corner, ring first, then the
-  words and buttons. Where the deck covers the corner, it glides to the
-  top left, under the running head (`seen::deck` marks where the deck drew, and that its job is in
-  view). The gate's deck, finished while away, stays as *Cards ready* with
+  words and buttons. Where a low deck covers the corner, it glides up
+  above it, never past the pane's middle and never to the top (`seen::deck`
+  marks where the deck drew, and that its job is in view). The gate's deck, finished while away, stays as *Cards ready* with
   *View* until seen; one made ahead says *Next cards ready* for 3 s. A
   failure shows red for 3 s, longer while hovered. A failed or stopped deck
   also shows a toast. Dictionary cards come at once and never show it.
@@ -266,8 +266,7 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **The page AI** joins it (`docs/page-ai.md`, `activity::pages`): a page
   rewrite is a line while its bubble and words are off screen
   (`seen::page_runs`), picked pages one line counting their groups, and a
-  continuous run one while no page it writes shows its busy bubble, with
-  *Continue* when it asks. Cancel stops a
+  continuous run always one, with *Continue* when it asks. Cancel stops a
   rewrite at once (`page_ai::Action::StopRun`) with a toast. The old pill
   at the pane's bottom is gone.
 - **The judge** joins it (`Key::Judge`): while it checks a recall's
