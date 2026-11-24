@@ -5,6 +5,7 @@
 //! [`seen`] tells, and [`place`] sets which corners show what. See
 //! `docs/study-mode.md` § The corner stack.
 
+pub mod corner;
 pub mod ring;
 pub mod seen;
 pub mod stack;

@@ -1,10 +1,11 @@
 //! A pane's corner stack of the AI's work.
 //!
-//! Folded, it is the newest job's ring in the pane's bottom right corner,
-//! rising over the page bar while that is up, with up to two more peeking
-//! from behind it; where the deck leaves no room there, it moves to the
-//! top right, gliding between them. A hover fans it out into a line a job,
-//! each saying what it does, with its buttons beside its ring.
+//! Folded, it is the newest job's ring in the pane's bottom left corner,
+//! level with the page counter across the pane, with up to two more
+//! peeking from behind it; it glides up over the page bar while that is
+//! up, and over a low deck. A hover fans it out into a line a job, each
+//! saying what it does, its ring first and its buttons after its words.
+//! The corner is never the top, and toasts keep the right.
 
 use std::sync::Arc;
 
@@ -26,11 +27,9 @@ pub const CANCEL: &str = "Cancel";
 pub const DISMISS: &str = "Dismiss";
 /// A continuous run's, when it asks whether to carry on here.
 pub const CONTINUE: &str = "Continue";
-/// The stack's room from the pane's top and sides; above the page bar.
-const INSET: f32 = 14.0;
+/// The stack's room from the pane's side; above the page bar.
+const INSET: f32 = 12.0;
 const LIFT: f32 = 12.0;
-/// Room left above the page counter, which the stack sits on.
-const ON_COUNTER: f32 = 6.0;
 /// The least room kept between the stack and the deck.
 const KEEP: f32 = 2.0;
 /// Room between open lines; how far each folded one peeks out.
@@ -138,12 +137,13 @@ pub fn show(ctx: &Context, at: At, lines: &[Line]) -> Out {
     let id = at.id;
     let hovered = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let open = motion::slide(ctx, id.with("open"), f32::from(u8::from(hovered)), OPEN);
-    let (spot, top) = spot(at.rect, at.bar, at.taken);
+    let spot = spot(at.rect, at.bar, at.taken);
     let folded = glide(ctx, id, spot);
-    let room = (folded.right() - at.rect.left() - INSET).max(SIDE);
+    super::corner::stand(ctx, spot);
+    let room = (at.rect.right() - folded.left() - INSET).max(SIDE);
     let laid: Vec<Laid> = lines.iter().map(|l| lay(ctx, l, room)).collect();
     let widths: Vec<f32> = laid.iter().map(|l| l.width).collect();
-    let rects = place(folded, (top, open), &widths);
+    let rects = place(folded, open, &widths);
     let bounds = rects.iter().fold(folded, |all, r| all.union(*r));
     let shown = z_order::area(ctx, Tier::PageCard, id)
         .fixed_pos(bounds.min)
@@ -199,15 +199,14 @@ pub fn toast_lift(ctx: &Context, stage: Rect) -> f32 {
 
 /// Each line's place, oldest first: the newest in the corner, the rest
 /// peeking behind it, or fanned out away from the corner by `open`.
-fn place(folded: Rect, (top, open): (bool, f32), widths: &[f32]) -> Vec<Rect> {
+fn place(folded: Rect, open: f32, widths: &[f32]) -> Vec<Rect> {
     let n = widths.len();
     let step = PEEK + (SIDE + GAP - PEEK) * open;
-    let away = if top { 1.0 } else { -1.0 };
     let rect = |(i, full): (usize, &f32)| {
         let back = n.saturating_sub(i + 1) as f32;
         let width = SIDE + (full - SIDE) * open;
-        let y = folded.top() + away * back * step;
-        Rect::from_min_size(pos2(folded.right() - width, y), vec2(width, SIDE))
+        let y = folded.top() - back * step;
+        Rect::from_min_size(pos2(folded.left(), y), vec2(width, SIDE))
     };
     widths.iter().enumerate().map(rect).collect()
 }
@@ -234,7 +233,7 @@ fn paint(
             continue;
         }
         ring::paper(ui.painter(), *rect, &t, alpha);
-        let cell = Rect::from_min_size(pos2(rect.right() - SIDE, rect.top()), Vec2::splat(SIDE));
+        let cell = Rect::from_min_size(rect.min, Vec2::splat(SIDE));
         let ring_id = id.with(("made", line.key));
         ring::paint(ui.ctx(), ui.painter(), (cell, ring_id), line.look, alpha);
         if open > 0.0 {
@@ -245,7 +244,7 @@ fn paint(
     pressed
 }
 
-/// A fanned line's words and buttons, right to left from its ring.
+/// A fanned line's words and buttons, left to right from its ring.
 fn words(
     ui: &mut Ui,
     (rect, id): (Rect, Id),
@@ -253,21 +252,21 @@ fn words(
     alpha: f32,
 ) -> Option<(Button, Key)> {
     let t = Tokens::get(ui.ctx());
-    let mut right = rect.right() - SIDE;
+    let size = l.galley.rect.size();
+    let top = pos2(rect.left() + SIDE + 4.0, rect.center().y - size.y / 2.0);
+    let mut left = top.x + size.x + 8.0;
     let mut pressed = None;
-    for &button in line.buttons.iter().rev() {
+    for &button in line.buttons {
         let width = button_width(ui.ctx(), button.label(line));
         let at = Rect::from_min_max(
-            pos2(right - width, rect.top() + 4.0),
-            pos2(right, rect.bottom() - 4.0),
+            pos2(left, rect.top() + 4.0),
+            pos2(left + width, rect.bottom() - 4.0),
         );
-        right -= width + 2.0;
+        left += width + 2.0;
         if press(ui, (at, id.with(button.label(line))), (button, line), alpha) {
             pressed = Some((button, line.key));
         }
     }
-    let size = l.galley.rect.size();
-    let top = pos2(right - 4.0 - size.x, rect.center().y - size.y / 2.0);
     let painter = ui.painter_at(rect.shrink(1.0));
     painter.galley_with_override_text_color(top, l.galley.clone(), t.ink.gamma_multiply(alpha));
     let row = ui.interact(rect, id, Sense::hover());
@@ -338,24 +337,15 @@ pub fn id(pane: PaneId) -> Id {
     Id::new(("activity-stack", pane))
 }
 
-/// The folded stack in `pane`: the bottom right corner on the page counter,
-/// risen over the page bar while `bar`, else the top right where only that
-/// is clear of `taken`; true at the top.
-fn spot(pane: Rect, bar: bool, taken: Option<Rect>) -> (Rect, bool) {
-    use crate::page_bar::{BAR_H, COUNTER_INSET, COUNTER_TOP};
-    let lift = if bar {
-        BAR_H + LIFT
-    } else {
-        COUNTER_TOP + ON_COUNTER
-    };
-    let x = pane.right() - COUNTER_INSET - SIDE;
-    let low = Rect::from_min_size(pos2(x, pane.bottom() - lift - SIDE), Vec2::splat(SIDE));
-    let high = Rect::from_min_size(pos2(x, pane.top() + INSET), Vec2::splat(SIDE));
-    let free = |r: &Rect| taken.is_none_or(|t| !t.intersects(r.expand(KEEP)));
-    match (free(&low), free(&high)) {
-        (false, true) => (high, true),
-        _ => (low, false),
-    }
+/// The folded stack in `pane`: the bottom left corner level with the page
+/// counter, risen over the page bar while `bar`, and over `taken` while
+/// that leaves it in the pane's lower half.
+fn spot(pane: Rect, bar: bool, taken: Option<Rect>) -> Rect {
+    let top = super::corner::mid(pane, bar) - SIDE / 2.0;
+    let low = Rect::from_min_size(pos2(pane.left() + INSET, top), Vec2::splat(SIDE));
+    let over = taken.filter(|t| t.intersects(low.expand(KEEP)));
+    let risen = over.map(|t| low.translate(vec2(0.0, t.top() - KEEP - low.bottom())));
+    risen.filter(|r| r.top() >= pane.center().y).unwrap_or(low)
 }
 
 /// `to`, eased there from where the stack last stood.
@@ -370,25 +360,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_stack_sits_bottom_right_or_moves_out_of_the_decks_way() {
+    fn the_stack_sits_bottom_left_or_moves_out_of_the_decks_way() {
         let pane = Rect::from_min_size(pos2(0.0, 0.0), vec2(200.0, 250.0));
-        let (roomy, top) = spot(pane, false, None);
-        assert_eq!(roomy.right_bottom(), pos2(188.0, 210.0), "on the counter");
-        assert!(!top);
+        let roomy = spot(pane, false, None);
+        let mid = 250.0 - crate::page_bar::COUNTER_MID;
+        assert_eq!(
+            roomy.left_center(),
+            pos2(12.0, mid),
+            "level with the counter"
+        );
         let deck = |y: std::ops::RangeInclusive<f32>| Some(Rect::from_x_y_ranges(0.0..=200.0, y));
-        let (above, top) = spot(pane, false, deck(150.0..=230.0));
-        assert_eq!(above.right_top(), pos2(188.0, 14.0), "the top right");
-        assert!(top);
-        let (stuck, top) = spot(pane, false, deck(10.0..=240.0));
-        assert_eq!(stuck, roomy, "no room anywhere keeps the corner");
-        assert!(!top);
+        let above = spot(pane, false, deck(160.0..=248.0));
+        assert_eq!(
+            above.left_bottom(),
+            pos2(12.0, 160.0 - KEEP),
+            "over a low deck"
+        );
+        let stuck = spot(pane, false, deck(10.0..=240.0));
+        assert_eq!(stuck, roomy, "never up top");
     }
 
     #[test]
     fn folded_lines_peek_and_open_ones_fan_away_from_the_corner() {
         let corner = Rect::from_min_size(pos2(100.0, 200.0), Vec2::splat(SIDE));
         let lines = [120.0, 80.0];
-        let folded = place(corner, (false, 0.0), &lines);
+        let folded = place(corner, 0.0, &lines);
         assert_eq!(
             folded.get(1).copied(),
             Some(corner),
@@ -396,10 +392,10 @@ mod tests {
         );
         let behind = folded.first().map(|r| r.top());
         assert_eq!(behind, Some(200.0 - PEEK));
-        let open = place(corner, (false, 1.0), &lines);
+        let open = place(corner, 1.0, &lines);
         let first = open.first().copied().unwrap_or(Rect::NOTHING);
         assert_eq!(first.top(), 200.0 - SIDE - GAP, "fanned upwards");
         assert_eq!(first.width(), 120.0);
-        assert_eq!(first.right(), corner.right(), "lined up at the right");
+        assert_eq!(first.left(), corner.left(), "lined up at the left");
     }
 }

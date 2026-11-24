@@ -240,20 +240,22 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   *Try again* beside, as fixing them changes no recipe.
 - **The corner stack** (`crate::activity`, the AI's work in one place):
   while the AI writes a deck, the gate's or one made ahead, and its own
-  waiting card is out of view, a ring sits in the pane's bottom right
-  corner on the page counter, rising over the page bar while that is up,
+  waiting card is out of view, a ring sits in the pane's bottom left
+  corner, level with the page counter across the pane (no room added under
+  it), rising over the page bar while that is up; toasts keep the right,
   filled as far as the deck is made. Each job is a line in the stack, the
   newest in front and up to two peeking behind; a hover fans them out to
   say so (*Writing cards 3 of 8 · pages 4–6*) with *Cancel*, which asks to
-  turn study mode off. Where the deck covers the corner, it glides to the
-  top right (`seen::deck` marks where the deck drew, and that its job is in
+  turn study mode off. Lines fan up from the corner, ring first, then the
+  words and buttons. Where the deck covers the corner, it glides to the
+  top left, under the running head (`seen::deck` marks where the deck drew, and that its job is in
   view). The gate's deck, finished while away, stays as *Cards ready* with
   *View* until seen; one made ahead says *Next cards ready* for 3 s. A
   failure shows red for 3 s, longer while hovered. A failed or stopped deck
   also shows a toast. Dictionary cards come at once and never show it.
 - **One stack, or one a pane** (`engine::activity::place`): the app's own work,
   as organizing the library, is global. Alone, it stacks once, at the
-  workspace's bottom right, however many panes show. Once a pane's job
+  workspace's bottom left, however many panes show. Once a pane's job
   needs its corner, every pane's corner shows the global lines, and the
   owning pane its own in front of them; when that job's visual is back in
   view, the one workspace stack returns. On the library page, its own
@@ -264,7 +266,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **The page AI** joins it (`docs/page-ai.md`, `activity::pages`): a page
   rewrite is a line while its bubble and words are off screen
   (`seen::page_runs`), picked pages one line counting their groups, and a
-  continuous run always one, with *Continue* when it asks. Cancel stops a
+  continuous run one while no page it writes shows its busy bubble, with
+  *Continue* when it asks. Cancel stops a
   rewrite at once (`page_ai::Action::StopRun`) with a toast. The old pill
   at the pane's bottom is gone.
 - **The judge** joins it (`Key::Judge`): while it checks a recall's

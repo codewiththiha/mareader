@@ -36,6 +36,9 @@ impl MareaderApp {
             self.ui.toasts.push(toast);
         }
         let panes: Vec<PaneId> = self.ui.pane_rects.iter().map(|(p, _)| *p).collect();
+        let rects = self.ui.pane_rects.iter();
+        let rows: Vec<(Rect, bool)> = rects.map(|&(p, r)| (r, self.bar_up(p))).collect();
+        crate::activity::corner::share(ctx, &rows);
         for (spot, lines) in self.ui.activity.stacks(ctx, &panes) {
             let Some(at) = self.stack_at(ctx, spot) else {
                 continue;
@@ -59,13 +62,18 @@ impl MareaderApp {
         }
     }
 
+    /// Whether `pane`'s page bar is up, which the corner rises over.
+    fn bar_up(&self, pane: PaneId) -> bool {
+        !self.ui.chromeless && self.ui.page_bars.get(&pane).is_some_and(|b| b.shown())
+    }
+
     /// Where `spot`'s stack stands: a pane's corner, or the workspace's,
-    /// which is the corner pane's while the panes show.
+    /// the bottom left pane's while the panes show.
     fn stack_at(&self, ctx: &Context, spot: Spot) -> Option<At> {
         let pane_at = |pane: PaneId, rect: Rect| At {
             id: stack::id(pane),
             rect,
-            bar: !self.ui.chromeless && self.ui.page_bars.get(&pane).is_some_and(|b| b.shown()),
+            bar: self.bar_up(pane),
             taken: crate::activity::seen::taken(ctx, pane),
         };
         let rects = &self.ui.pane_rects;
@@ -79,7 +87,7 @@ impl MareaderApp {
                 let Some(whole) = whole else {
                     return Some(workspace_at(ctx));
                 };
-                let corner = whole.max - egui::vec2(24.0, 24.0);
+                let corner = whole.left_bottom() + egui::vec2(24.0, -24.0);
                 let (pane, _) = rects.iter().find(|(_, r)| r.contains(corner))?;
                 Some(At {
                     rect: whole,

@@ -94,7 +94,10 @@ impl MareaderApp {
                 .ui
                 .page_ai_seed
                 .as_ref()
-                .is_some_and(|(page, ..)| shown(*page));
+                .is_some_and(|&(page, _, follow, last)| {
+                    // Picked pages are read off screen, so any page will do.
+                    shown(page) || (!follow && last > page && !sheets.is_empty())
+                });
             (word, ai)
         };
         if word_ready && let Some(pages) = self.ui.word_window_seed.take() {

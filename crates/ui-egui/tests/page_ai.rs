@@ -216,7 +216,7 @@ fn a_task_set_to_this_page_runs_without_asking() -> Out {
     Ok(())
 }
 
-/// Fans the AI stack out, where a continuous run always has its line.
+/// Fans the AI stack out, where a continuous run has its line off its pages.
 fn open_stack(h: &mut H) {
     h.get_by_label(STACK).hover();
     h.run_steps(20);
@@ -227,6 +227,9 @@ fn the_stack_stops_continuous_mode() -> Out {
     let mut h = reader(&[("pdf", "sample:40"), ("provider", "ollama")]);
     let pane = h.state().active_pane();
     simplify_on(&mut h, false)?;
+    h.state_mut()
+        .queue(Sent::Engine(Command::GoTo { pane, page: 30 }));
+    h.run_steps(10);
     open_stack(&mut h);
     h.get_by_label("Stop").click();
     h.run_steps(3);
@@ -415,14 +418,14 @@ fn a_redo_keeps_the_result_in_the_pages_until_done() -> Out {
 #[test]
 fn toggling_a_result_again_and_again_keeps_one_book_open() -> Out {
     let mut h = laid()?;
+    let laid = book(&h)?;
     for _ in 0..8 {
         let bubble = h.get_by_label("Simplified").rect().center();
         press(&mut h, bubble, PointerButton::Primary);
         h.run_steps(30);
         h.run();
     }
-    let (count, base, key) = book(&h)?;
-    assert_eq!((count, key), (base, 0), "an even count of clicks: off");
+    assert_eq!(book(&h)?, laid, "an even count of clicks: as it was");
     let open = h.state().documents().meter().documents;
     assert!(open <= 2, "{open} layouts of the book kept");
     Ok(())

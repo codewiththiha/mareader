@@ -902,7 +902,7 @@ The AI can shelve loose books. How it plans is in `docs/assist.md`,
   ring, "Planning shelves…" or "Filing books…", the count and the model,
   with ✕ to stop. Off the library page the card steps aside for the AI
   stack (`docs/study-mode.md`, The corner stack): one line at the
-  workspace's bottom right, *Filing books · 5 books · Fast model*, with
+  workspace's bottom left, *Filing books · 5 books · Fast model*, with
   *Pause*. A pass of
   light crosses the books' covers and their captions read "Finding a
   shelf" (`docs/design.md`, Book covers); they open as usual, but they

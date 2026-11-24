@@ -21,8 +21,9 @@ use mareader_engine::command::Command;
 
 pub const BAR_H: f32 = 40.0;
 /// The page counter's room up from the pane's bottom and in from its right.
-pub const COUNTER_TOP: f32 = 34.0;
 pub const COUNTER_INSET: f32 = 12.0;
+/// The counter's middle, up from the pane's bottom: inset and half its pill.
+pub const COUNTER_MID: f32 = 22.0;
 /// The strip along a pane's bottom edge that brings the bar up.
 pub const EDGE: f32 = 8.0;
 /// An icon button's width, as the bookmark takes at the bar's end.

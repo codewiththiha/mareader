@@ -116,6 +116,6 @@ pub fn page_runs(ctx: &Context, ledger: &PageAi, pane: PaneId, drawn: &Drawn) {
             .map(|r| r.id),
     };
     let runs = drawn.iter().flat_map(|(_, slots)| slots);
-    let keys = runs.filter_map(|(slot, _)| run(slot).and_then(|id| key_of(ledger, pane, id)));
+    let keys = runs.filter_map(|(slot, _)| run(slot).map(|id| key_of(ledger, pane, id)));
     keys.for_each(|key| in_view(ctx, key));
 }
