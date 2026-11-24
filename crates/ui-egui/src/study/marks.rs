@@ -423,7 +423,7 @@ pub fn swallowed(ui: &Ui, clicked: bool) -> bool {
 }
 
 /// AI marks still being answered glow round their words, then flare out.
-pub fn glow(ui: &Ui, placed: &[Placed], asking: &[MarkId]) {
+pub fn glow(ui: &Ui, tokens: &crate::theme::Tokens, placed: &[Placed], asking: &[MarkId]) {
     let ctx = ui.ctx();
     for m in placed.iter().filter(|m| m.ink.ai) {
         let working = asking.contains(&m.id);
@@ -431,7 +431,7 @@ pub fn glow(ui: &Ui, placed: &[Placed], asking: &[MarkId]) {
             continue;
         };
         for r in &m.rects {
-            crate::glow::paint(ctx, ui.painter(), r.expand(0.5), 2.5, glow);
+            crate::glow::paint(ctx, ui.painter(), tokens, r.expand(0.5), 2.5, glow);
         }
     }
 }

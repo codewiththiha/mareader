@@ -7,6 +7,8 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 use egui::epaint::Mesh;
 use egui::{Color32, Context, Id, Painter, Pos2, Rect, Shape, Vec2, pos2};
 
+use mareader_appearance::GlowPalette;
+
 use crate::motion;
 use crate::theme::Tokens;
 
@@ -19,13 +21,6 @@ pub struct Glow {
     pub whole: f32,
 }
 
-/// Blue, green, yellow and red, in order along the arc.
-const HUES: [[f32; 3]; 4] = [
-    [0.26, 0.52, 0.96],
-    [0.20, 0.66, 0.33],
-    [0.98, 0.70, 0.0],
-    [0.92, 0.26, 0.21],
-];
 /// The most the light reaches past its outline, in points.
 const REACH: f32 = 18.0;
 /// Rings of light outward, as shares of the reach, and how bright each is.
@@ -68,26 +63,34 @@ pub fn state(ctx: &Context, id: Id, working: bool) -> Option<Glow> {
     (strength > 0.0).then_some(Glow { strength, whole })
 }
 
-/// Paints `glow` round `rect`, its corners rounded by `radius`, and books the
-/// next frame. With Animations off it still moves, as work in progress does.
-pub fn paint(ctx: &Context, painter: &Painter, rect: Rect, radius: f32, glow: Glow) {
+/// Paints `glow` round `rect` in the colours of `tokens`, its corners rounded
+/// by `radius`, and books the next frame. With Animations off it still moves.
+pub fn paint(
+    ctx: &Context,
+    painter: &Painter,
+    tokens: &Tokens,
+    rect: Rect,
+    radius: f32,
+    glow: Glow,
+) {
     let ring = Ring::new(rect, radius);
     let lap = (ring.length / PACE).clamp(LAP.0, LAP.1);
     let t = ctx.input(|i| i.time);
     let still = motion::reduced(ctx);
     let phase = (t / f64::from(lap)).rem_euclid(1.0) as f32;
     let breath = (TAU * (t / BREATH).rem_euclid(1.0) as f32).cos();
+    let light = Light::new(&tokens.glow);
     let look = match still {
         true => Look {
             head: 0.125,
             drift: 0.0,
             strength: glow.strength * (0.75 + 0.25 * breath),
-            ..Look::new(ctx, glow)
+            ..Look::new(light, glow)
         },
         false => Look {
             head: phase + EASE * (TAU * phase).sin() / TAU,
             drift: (t * 0.04).rem_euclid(1.0) as f32 + 0.05 * (t * 0.6).sin() as f32,
-            ..Look::new(ctx, glow)
+            ..Look::new(light, glow)
         },
     };
     painter.add(Shape::mesh(ring.mesh(&look)));
@@ -135,17 +138,17 @@ struct Look {
     drift: f32,
     strength: f32,
     whole: f32,
-    dark: bool,
+    light: Light,
 }
 
 impl Look {
-    fn new(ctx: &Context, glow: Glow) -> Self {
+    fn new(light: Light, glow: Glow) -> Self {
         Self {
             head: 0.0,
             drift: 0.0,
-            strength: glow.strength,
+            strength: glow.strength * light.strength,
             whole: glow.whole,
-            dark: Tokens::get(ctx).dark,
+            light,
         }
     }
 
@@ -164,27 +167,45 @@ impl Look {
         };
         let level = floor + (1.0 - floor) * lit;
         let level = level + (0.85 - level) * self.whole;
-        (hue(self.drift + laps * off), level)
+        (self.light.hue(self.drift + laps * off), level)
     }
 
-    /// `rgb` at `alpha`; on dark pages lifted, and partly added as light.
+    /// `rgb` at `alpha`, partly added as light where the look asks.
     fn color(&self, rgb: [f32; 3], alpha: f32) -> Color32 {
         let a = alpha.clamp(0.0, 1.0);
-        let (lift, add) = if self.dark { (0.15, 0.55) } else { (0.0, 0.0) };
-        let [r, g, b] = rgb.map(|v| ((v + (1.0 - v) * lift) * a * 255.0).round() as u8);
-        Color32::from_rgba_premultiplied(r, g, b, (a * (1.0 - add) * 255.0).round() as u8)
+        let [r, g, b] = rgb.map(|v| (v * a * 255.0).round() as u8);
+        let cover = a * (1.0 - self.light.add);
+        Color32::from_rgba_premultiplied(r, g, b, (cover * 255.0).round() as u8)
     }
 }
 
-/// The palette at `u` turns, eased between its colours.
-fn hue(u: f32) -> [f32; 3] {
-    let n = HUES.len();
-    let x = u.rem_euclid(1.0) * n as f32;
-    let i = (x.floor() as usize).min(n - 1);
-    let f = x - i as f32;
-    let f = f * f * (3.0 - 2.0 * f);
-    let (a, b) = (HUES[i], HUES[(i + 1) % n]);
-    [0, 1, 2].map(|c| a[c] + (b[c] - a[c]) * f)
+/// The look's glow colours, ready to blend.
+#[derive(Clone, Copy)]
+struct Light {
+    hues: [[f32; 3]; 4],
+    add: f32,
+    strength: f32,
+}
+
+impl Light {
+    fn new(p: &GlowPalette) -> Self {
+        Self {
+            hues: p.hues.map(|c| c.to_unit()),
+            add: p.add.clamp(0.0, 1.0),
+            strength: p.strength,
+        }
+    }
+
+    /// The palette at `u` turns, eased between its colours.
+    fn hue(&self, u: f32) -> [f32; 3] {
+        let n = self.hues.len();
+        let x = u.rem_euclid(1.0) * n as f32;
+        let i = (x.floor() as usize).min(n - 1);
+        let f = x - i as f32;
+        let f = f * f * (3.0 - 2.0 * f);
+        let (a, b) = (self.hues[i], self.hues[(i + 1) % n]);
+        [0, 1, 2].map(|c| a[c] + (b[c] - a[c]) * f)
+    }
 }
 
 /// An outline's points with their outward normals and shares of the way round.
@@ -277,6 +298,11 @@ impl Ring {
 mod tests {
     use super::*;
     use egui::vec2;
+    use mareader_appearance::Appearance;
+
+    fn light() -> Light {
+        Light::new(&Appearance::default().glow_palette())
+    }
 
     fn look(head: f32) -> Look {
         Look {
@@ -284,16 +310,17 @@ mod tests {
             drift: 0.0,
             strength: 1.0,
             whole: 0.0,
-            dark: false,
+            light: light(),
         }
     }
 
     #[test]
     fn the_palette_turns_without_a_seam() {
         let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.02);
-        assert!(close(hue(0.0), hue(1.0)));
-        assert!(close(hue(0.999), hue(0.0)));
-        assert!(close(hue(-0.25), hue(0.75)));
+        let l = light();
+        assert!(close(l.hue(0.0), l.hue(1.0)));
+        assert!(close(l.hue(0.999), l.hue(0.0)));
+        assert!(close(l.hue(-0.25), l.hue(0.75)));
     }
 
     #[test]

@@ -318,6 +318,10 @@ slice 5.
   cancels the ask and the glow stays; the answer waits on the mark, no
   card pops back, and the glow opens into a full ring and fades. Small
   words light the whole ring with the colours turning round it.
+  Its colours come from the look (`Appearance::glow_palette`): the accent
+  takes the nearest of Google's blue, green, yellow and red, a tint bends
+  the rest, and darker paper turns them softer and brighter, added to the
+  page as light, so one rule fits Light, Dim, Dark, Black and every tint.
   `glow.rs` paints it round any outline: one mesh of a few hundred
   vertices, woken only as often as it visibly moves (24 to 60 a second),
   breathing in place with reduced motion. Shots: `explain=slow:20000`.

@@ -48,6 +48,8 @@ pub struct Tokens {
     /// The bar over its blurred backdrop: mareader's 72 % surface.
     pub frost: Color32,
     pub shadow: Color32,
+    /// The AI glow's light in this look.
+    pub glow: mareader_appearance::GlowPalette,
     pub dark: bool,
     /// Buttons, fields, menu rows.
     pub radius: f32,
@@ -110,6 +112,7 @@ impl Tokens {
             // Thin enough that pages under a bar read as soft shapes.
             frost: Color32::from_rgba_unmultiplied(surface.r(), surface.g(), surface.b(), FROST),
             shadow: Color32::from_black_alpha(if dark { 120 } else { 60 }),
+            glow: a.glow_palette(),
             dark,
             radius: 8.0,
             radius_lg: 12.0,
@@ -160,6 +163,7 @@ impl Tokens {
             track: mix(self.track, to.track),
             danger: mix(self.danger, to.danger),
             toast: self.toast.mix(to.toast, f64::from(k.clamp(0.0, 1.0))),
+            glow: self.glow.mix(to.glow, f64::from(k.clamp(0.0, 1.0))),
             glass: mix(self.glass, to.glass),
             frost: mix(self.frost, to.frost),
             shadow: mix(self.shadow, to.shadow),
