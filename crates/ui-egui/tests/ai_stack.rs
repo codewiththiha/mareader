@@ -13,7 +13,7 @@ use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::activity::stack::{CANCEL, STACK, VIEW};
 use mareader_ui_egui::ui_command::Sent;
 
-use crate::common::ai_reader;
+use crate::common::{ai_reader, assert_seen};
 
 type H = Harness<'static, MareaderApp>;
 
@@ -41,7 +41,7 @@ fn explain_and_turn_away(h: &mut H, word: &str) {
     );
     send(h, Command::Explain(pane));
     assert!(h.state().study().card_open(), "its card opens");
-    assert!(h.query_by_label(STACK).is_none(), "the card says it");
+    assert_seen(h);
     send(h, Command::GoTo { pane, page: 3 });
     assert!(
         !h.state().study().card_open(),
@@ -96,6 +96,25 @@ fn an_explain_out_of_view_cancels_at_once_with_a_toast() {
     std::thread::sleep(Duration::from_millis(400));
     h.run_steps(10);
     assert!(h.query_by_label(STACK).is_none(), "its answer never lands");
+}
+
+/// A skill run on the page read keeps out of the stack: its card says it.
+#[test]
+fn a_skill_in_view_keeps_out_of_the_stack() {
+    let mut h = ai_reader(&[("pdf", "sample:12"), ("skill_answers", "silent")]);
+    let pane = h.state().active_pane();
+    let text = "quick brown".to_owned();
+    send(
+        &mut h,
+        Command::SelectText {
+            pane,
+            page: 0,
+            text,
+        },
+    );
+    let skill = Skill::Builtin(PageTask::Simplify);
+    send(&mut h, Command::Skill(Action::Run { pane, skill }));
+    assert_seen(&h);
 }
 
 /// A skill run on the first page's words while the reader is on page 8.
@@ -163,7 +182,7 @@ fn held_reader() -> H {
 fn rewrite_and_turn_away(h: &mut H, action: PageAi) {
     let pane = h.state().active_pane();
     send(h, Command::PageAi(action));
-    assert!(h.query_by_label(STACK).is_none(), "its bubble shows it");
+    assert_seen(h);
     send(h, Command::GoTo { pane, page: 11 });
     h.get_by_label(STACK).hover();
     h.run_steps(20);

@@ -218,7 +218,8 @@ fn send(h: &mut Harness<'static, MareaderApp>, command: Command) {
 fn off_the_library_its_run_stacks_once_in_the_workspace_corner() {
     let mut h = page(&[("copies", "5"), ("organize", "running")]);
     h.get_by_label("Pause organizing");
-    assert_eq!(stacks(&h), 0, "the library's own card says it");
+    // The library's own card says it.
+    crate::common::assert_seen(&h);
     send(&mut h, Command::ShowRoute(Route::Reader));
     assert!(
         h.query_by_label("Pause organizing").is_none(),

@@ -72,11 +72,11 @@ impl MareaderApp {
             .filter(|_| reader)
             .and_then(|(pane, page, chars)| {
                 let (_, rect) = self.ui.pane_rects.iter().find(|(p, _)| *p == pane)?;
-                let room = rect.with_max_y(rect.bottom() - crate::page_bar::BAR_H);
+                let room = crate::sight::reading_room(*rect);
                 let docs = self.documents();
                 let on = docs.visible(pane)?.contains(&page);
                 match chars.and_then(|c| docs.hit_box(pane, page, c)) {
-                    Some(hit) => Some(room.intersects(hit)),
+                    Some(hit) => Some(crate::sight::visible(room, hit)),
                     None => Some(on),
                 }
             });

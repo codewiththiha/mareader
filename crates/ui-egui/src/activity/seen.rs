@@ -4,6 +4,10 @@
 //! it paints; the stack leaves out what was stamped this pass or the last,
 //! so a job shows in the corner only while its own visual is out of view.
 //! A word's glow stamps its mark, which every pane's explain of it shares.
+//!
+//! A visual in a page, which can scroll away, calls [`watch`] with where it
+//! drew: it stamps only while that is in sight (`crate::sight`). One that
+//! is on screen whenever it is drawn, as an open card, calls [`in_view`].
 
 use std::collections::HashMap;
 
@@ -17,9 +21,9 @@ use mareader_library::MarkId;
 use mareader_study::mode::Batch;
 use mareader_workspace::PaneId;
 
+use crate::selection::Sheet;
+
 type Stamps<K> = HashMap<K, u64>;
-/// Each page drawn, with its results' slots and their own pages.
-type Drawn = [(usize, Vec<(Slot, usize)>)];
 
 fn stamps_id() -> Id {
     Id::new("activity-in-view")
@@ -55,9 +59,24 @@ pub fn in_view(ctx: &Context, key: Key) {
     stamp(ctx, stamps_id(), key);
 }
 
-/// Says `mark`'s words glow on screen this pass, while the AI explains them.
-pub fn glowing(ctx: &Context, mark: MarkId) {
-    stamp(ctx, glows_id(), mark);
+/// Says `key`'s visual drew at `rect` this pass; it is in view while that
+/// shows in `room`, its pane. True when it is.
+pub fn watch(ctx: &Context, key: Key, (room, rect): (Rect, Rect)) -> bool {
+    let shows = crate::sight::visible(room, rect);
+    if shows {
+        in_view(ctx, key);
+    }
+    shows
+}
+
+/// As [`watch`], for `mark`'s words glowing at `rects` while the AI
+/// explains them; every pane's explain of the mark shares the glow.
+pub fn watch_glow(ctx: &Context, mark: MarkId, (room, rects): (Rect, &[Rect])) -> bool {
+    let shows = rects.iter().any(|r| crate::sight::visible(room, *r));
+    if shows {
+        stamp(ctx, glows_id(), mark);
+    }
+    shows
 }
 
 /// Whether `key`'s own visual painted this pass or the last.
@@ -72,14 +91,15 @@ pub fn shown(ctx: &Context, key: Key) -> bool {
     glows || stamped(ctx, stamps_id(), &key)
 }
 
-/// The deck drew at `rect` in `pane`: its job is in view, and the stack
-/// keeps clear of it.
-pub fn deck(ctx: &Context, (pane, run): (PaneId, &Run), rect: Rect) {
-    if let Some(from) = shown_batch(run) {
-        in_view(ctx, Key::Cards { pane, from });
+/// The deck drew at `rect` in `pane`: its job is in view while that is in
+/// sight there, and the stack keeps clear of it.
+pub fn deck(ctx: &Context, pane: &crate::study_mode::Pane<'_>, rect: Rect) {
+    let id = pane.id;
+    if let Some(from) = shown_batch(pane.run) {
+        watch(ctx, Key::Cards { pane: id, from }, (pane.rect, rect));
     }
     let pass = ctx.cumulative_pass_nr();
-    ctx.data_mut(|d| d.insert_temp(taken_id(pane), (pass, rect)));
+    ctx.data_mut(|d| d.insert_temp(taken_id(id), (pass, rect)));
 }
 
 /// Where `pane`'s deck drew this pass or the last; none once it is gone.
@@ -104,9 +124,13 @@ fn shown_batch(run: &Run) -> Option<usize> {
     }
 }
 
-/// Says which of `pane`'s page runs show their bubble or words, as `drawn`
-/// lists each page's slots; a run asking a kept result again shows on it.
-pub fn page_runs(ctx: &Context, ledger: &PageAi, pane: PaneId, drawn: &Drawn) {
+/// Says which of `pane`'s page runs show their bubble or words: those on
+/// each page last drawn whose sheet is in sight in `room`. A run asking a
+/// kept result again shows on it.
+pub fn page_runs(ctx: &Context, ledger: &PageAi, (pane, room): (PaneId, Rect), sheets: &[Sheet]) {
+    let Some((_, drawn)) = ledger.drawn.get(&pane) else {
+        return;
+    };
     let run = |slot: &Slot| match *slot {
         Slot::Run(id) => Some(id),
         Slot::Saved(id) => ledger
@@ -115,7 +139,13 @@ pub fn page_runs(ctx: &Context, ledger: &PageAi, pane: PaneId, drawn: &Drawn) {
             .find(|r| r.redo_of == Some(id))
             .map(|r| r.id),
     };
-    let runs = drawn.iter().flat_map(|(_, slots)| slots);
-    let keys = runs.filter_map(|(slot, _)| run(slot).and_then(|id| key_of(ledger, pane, id)));
-    keys.for_each(|key| in_view(ctx, key));
+    for (page, slots) in drawn {
+        let Some(sheet) = sheets.iter().find(|s| s.page == *page) else {
+            continue;
+        };
+        let keys = slots.iter().filter_map(|(slot, _)| run(slot));
+        for key in keys.filter_map(|id| key_of(ledger, pane, id)) {
+            watch(ctx, key, (room, sheet.shown));
+        }
+    }
 }

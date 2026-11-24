@@ -311,8 +311,7 @@ impl MareaderApp {
                 let marks = pane_marks(session, study, id, highlights);
                 let bookmarks = pane_bookmarks(session, study, id);
                 let mut ai = page_ai.overlays(ctx, session, id);
-                let control = crate::theme::Tokens::get(ctx).control;
-                ai.top = ui_panes::clear_top(ui.max_rect(), view, lift, control);
+                ai.top = ui_panes::clear_top(ui.max_rect(), view, lift, context.tokens.control);
                 let cx = ViewContext {
                     active: id == view.active,
                     lift,
@@ -338,7 +337,11 @@ impl MareaderApp {
                     host: host.clone(),
                     study_span: study_mode::span(session, id),
                 };
-                documents.show(ui, session, id, &cx, true)
+                let drawn = documents.show(ui, session, id, &cx, true);
+                let sheets = documents.as_view(session.documents()).sheets(id);
+                let room = (id, ui.max_rect());
+                crate::activity::seen::page_runs(ctx, session.page_ai(), room, sheets);
+                drawn
             })
         });
         self.ui.pane_rects = rects.inner;

@@ -198,10 +198,8 @@ fn the_stack_shows_the_writing_only_while_the_deck_is_out_of_view() {
     assert!(wait(&mut h, |h| writing(h, pane)), "the AI is asked");
     assert_eq!(h.state().session().study_gate(pane), Some(3));
     h.run_steps(4);
-    assert!(
-        h.query_by_label(STACK).is_none(),
-        "the waiting card says it"
-    );
+    // The waiting card says it.
+    crate::common::assert_seen(&h);
     go_to(&mut h, 0);
     let stacked = |h: &H| h.query_by_label(STACK).is_some();
     assert!(

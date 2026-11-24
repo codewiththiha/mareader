@@ -428,9 +428,8 @@ pub fn glow(ui: &Ui, tokens: &crate::theme::Tokens, placed: &[Placed], asking: &
     let ctx = ui.ctx();
     for m in placed.iter().filter(|m| m.ink.ai) {
         let working = asking.contains(&m.id);
-        let clip = ui.clip_rect();
-        if working && m.rects.iter().any(|r| clip.intersects(*r)) {
-            crate::activity::seen::glowing(ctx, m.id);
+        if working {
+            crate::activity::seen::watch_glow(ctx, m.id, (ui.clip_rect(), &m.rects));
         }
         let Some(glow) = crate::glow::state(ctx, Id::new(("mark-glow", m.id)), working) else {
             continue;

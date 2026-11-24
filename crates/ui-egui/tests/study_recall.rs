@@ -177,6 +177,7 @@ fn a_judge_out_of_view_works_in_the_ai_stack() {
     h.run_steps(10);
     let judging = recall(&h, pane).and_then(Recalling::judging);
     assert_eq!(judging, Some(false), "the judge works on it");
+    crate::common::assert_seen(&h);
     h.state_mut()
         .queue(Sent::Engine(Command::GoTo { pane, page: 4 }));
     h.run_steps(20);

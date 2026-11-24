@@ -64,6 +64,7 @@ pub mod settings_window;
 pub mod shaped;
 pub mod shortcuts;
 pub mod sidebar;
+pub mod sight;
 pub mod skill_card;
 pub mod skill_menu;
 pub mod sounds;

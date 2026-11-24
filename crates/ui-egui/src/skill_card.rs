@@ -45,7 +45,7 @@ pub fn in_view(
         .iter()
         .find(|(p, _)| *p == ask.pane)
         .map(|(_, r)| *r)?;
-    let at = anchor_rect(ask, docs).filter(|r| r.intersects(room))?;
+    let at = anchor_rect(ask, docs).filter(|r| crate::sight::visible(room, *r))?;
     Some((at, room))
 }
 
@@ -65,7 +65,7 @@ pub fn show(
             pane: ask.pane,
             ask: ask.id,
         };
-        crate::activity::seen::in_view(ctx, key);
+        crate::activity::seen::watch(ctx, key, (room, at));
         let chars = ask.asked_chars().max(ask.answer.text().chars().count());
         let bubble = Bubble {
             id: Id::new(("skill-card", ask.id.0)),

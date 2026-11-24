@@ -48,10 +48,13 @@ impl MareaderApp {
             if let Some(recalling) = state.recalling(id) {
                 let word = [(recalling.word.page, recalling.word.chars.clone())];
                 if let Some(at) = docs.spans_rect(id, &word) {
-                    if at.intersects(rect) {
-                        let (page, at) = (recalling.word.page, recalling.word.chars.start);
-                        crate::activity::seen::in_view(ctx, Key::Judge { pane: id, page, at });
-                    }
+                    let (page, start) = (recalling.word.page, recalling.word.chars.start);
+                    let judge = Key::Judge {
+                        pane: id,
+                        page,
+                        at: start,
+                    };
+                    crate::activity::seen::watch(ctx, judge, (rect, at));
                     let draft = &mut self.ui.study_mode.recall;
                     recall::show(ctx, recalling, (at, rect), draft, out);
                 }

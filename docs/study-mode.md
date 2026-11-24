@@ -273,6 +273,20 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   answer and the recall's word is off screen, a line says *Checking your
   answer · “brisk”* (*Waiting for the model* while queued). View goes back
   to the word; Cancel asks to turn study mode off, as a deck's does.
+- **In sight** (`crate::sight`): one rule says whether a visual is on
+  screen, a rect touching its pane's room; the read-aloud player asks it
+  too, of its pane above the page bar's band (`sight::reading_room`). A
+  visual in a page calls `seen::watch(ctx, key, (room, rect))` with where
+  it drew, and stamps only while that shows; one on screen whenever drawn,
+  as an open card or the library page, calls `seen::in_view`.
+- **Adding a job.** Both rules and every state come with the stack; a new
+  job needs: a `Key` variant, whose `scope` (pane or global) the compiler
+  asks for with its words and its `ending` (one line an arm, each calling
+  the owner's own helper); a reader of it in `Session::activities`;
+  `seen::watch` from its visual; and its View and Cancel in
+  `app/activity.rs::press_activity`, which the compiler asks for too. The
+  UI tests' `has_visual` makes it say whether it has a visual of its own,
+  and one with a visual gets a test calling `assert_seen` with it in view.
   Closing the recall drops the judge, with a *Stopped checking* toast.
 - **Toasts rise above it** (`stack::toast_lift`): a toast never covers
   a stack, nor waits behind it, so a failure's toast shows with its red

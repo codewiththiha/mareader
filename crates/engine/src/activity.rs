@@ -4,7 +4,7 @@
 //! doing into one list a frame, so the window says it all in one place. A
 //! job's [`Key`] stays the same from its start to its end, and the
 //! [`Ledger`] keeps how each ended once its owner forgets it. See
-//! `docs/study-mode.md` § The corner stack.
+//! `docs/study-mode.md` § The corner stack, and § Adding a job there.
 
 mod ledger;
 mod pages;
@@ -281,31 +281,57 @@ pub fn ending(owners: Owners<'_>, key: Key) -> Ending {
         pages,
     } = owners;
     match key {
-        // A deck's job ends in its cards, unless study mode went off.
-        Key::Cards { pane, .. } if study.on(pane) => Ending::Landed,
-        Key::Cards { .. } => Ending::Stopped,
-        Key::Organize { run } => match library.runs.ended(run) {
-            Some(RunEnd::Planned) => Ending::Landed,
-            Some(RunEnd::Empty) => Ending::Quiet,
-            Some(RunEnd::Failed) => Ending::Failed,
-            None => Ending::Stopped,
-        },
-        Key::Explain { ask, .. } if words.answer(ask).is_some() => Ending::Landed,
-        Key::Explain { ask, .. } if words.failure(ask).is_some() => Ending::Failed,
-        Key::Explain { .. } => Ending::Stopped,
-        // A landed card tells by `Event::SkillLanded`; a closed one stopped.
-        Key::Skill { ask, .. } if skills.get(ask).is_some() => Ending::Quiet,
-        Key::Skill { .. } => Ending::Stopped,
+        Key::Cards { pane, .. } => cards_ending(study, pane),
+        Key::Organize { run } => organize_ending(library, run),
+        Key::Explain { ask, .. } => explain_ending(words, ask),
+        Key::Skill { ask, .. } => skill_ending(skills, ask),
         Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. } => pages::ending(pages, key),
-        Key::Judge { pane, page, at } => {
-            let same = |r: &&Recalling| r.word.page == page && r.word.chars.start == at;
-            match study.recalling(pane).filter(same) {
-                Some(r) if r.failure.is_some() => Ending::Failed,
-                Some(_) => Ending::Landed,
-                // Closing the recall, or study mode going off, drops its judge.
-                None => Ending::Stopped,
-            }
-        }
+        Key::Judge { pane, page, at } => judge_ending(study, (pane, page, at)),
+    }
+}
+
+/// A deck's job ends in its cards, unless study mode went off.
+fn cards_ending(study: &State, pane: PaneId) -> Ending {
+    match study.on(pane) {
+        true => Ending::Landed,
+        false => Ending::Stopped,
+    }
+}
+
+fn organize_ending(library: &library::State, run: RunId) -> Ending {
+    match library.runs.ended(run) {
+        Some(RunEnd::Planned) => Ending::Landed,
+        Some(RunEnd::Empty) => Ending::Quiet,
+        Some(RunEnd::Failed) => Ending::Failed,
+        None => Ending::Stopped,
+    }
+}
+
+fn explain_ending(words: &words::State, ask: Ask) -> Ending {
+    if words.answer(ask).is_some() {
+        Ending::Landed
+    } else if words.failure(ask).is_some() {
+        Ending::Failed
+    } else {
+        Ending::Stopped
+    }
+}
+
+/// A landed card tells by `Event::SkillLanded`; a closed one stopped.
+fn skill_ending(skills: &skills::State, ask: AskId) -> Ending {
+    match skills.get(ask) {
+        Some(_) => Ending::Quiet,
+        None => Ending::Stopped,
+    }
+}
+
+/// Closing the recall, or study mode going off, drops its judge.
+fn judge_ending(study: &State, (pane, page, at): (PaneId, usize, usize)) -> Ending {
+    let same = |r: &&Recalling| r.word.page == page && r.word.chars.start == at;
+    match study.recalling(pane).filter(same) {
+        Some(r) if r.failure.is_some() => Ending::Failed,
+        Some(_) => Ending::Landed,
+        None => Ending::Stopped,
     }
 }
 

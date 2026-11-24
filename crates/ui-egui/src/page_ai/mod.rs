@@ -274,7 +274,6 @@ impl PageAiUi {
             });
             drawn.push((page, slots));
         }
-        crate::activity::seen::page_runs(ctx, session.page_ai(), pane, &drawn);
         session.page_ai_record_drawn(pane, view.layout, drawn);
         PaneAi {
             overlays,
