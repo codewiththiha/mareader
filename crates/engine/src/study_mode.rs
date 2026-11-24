@@ -6,6 +6,7 @@
 //! the session. See `docs/study-mode.md`.
 
 pub mod backs;
+pub mod counts;
 pub mod deck_job;
 pub mod known;
 pub mod recalling;

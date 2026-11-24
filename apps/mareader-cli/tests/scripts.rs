@@ -240,6 +240,7 @@ fn write_study_settings(state: &Path) {
             ],
             "tasks": {"explain": {"preset": 1}},
         },
+        "study": {"mode": {"unit": "pages"}},
     });
     std::fs::write(state.join("settings.json"), settings.to_string()).expect("write settings");
 }

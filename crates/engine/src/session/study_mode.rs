@@ -304,7 +304,7 @@ impl Session {
             {
                 return false;
             }
-            let planned = self.study_plan(pane);
+            let planned = self.study_plan(pane) | self.study_count(pane);
             let followed = self.study_follow(pane);
             let decks = self.study_deck(pane, now) | self.study_ahead(pane, now);
             let timed = self.study_expire(pane, now) | self.study_arrive(pane, now);
@@ -373,6 +373,22 @@ impl Session {
                 true
             }
         }
+    }
+
+    /// Counts a round of `pane`'s pages' hard words in words mode.
+    fn study_count(&mut self, pane: PaneId) -> bool {
+        let size = self.study_size();
+        let run = self.study_mode.run(pane);
+        let wants = run.is_some_and(|r| r.wants_count(size));
+        if !wants {
+            return false;
+        }
+        let known = self.study_known(pane);
+        let level = self.settings.study.cefr.level.band();
+        let Some(run) = self.study_mode.run_mut(pane) else {
+            return false;
+        };
+        run.count(size, &mut self.vocab, &known, level)
     }
 
     /// Stops read-aloud that reaches `pane`'s gate.

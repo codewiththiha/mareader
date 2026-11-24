@@ -197,7 +197,7 @@ impl Session {
     }
 
     /// Words memorized in the library or marked known in `pane`'s run.
-    fn study_known(&self, pane: PaneId) -> Known {
+    pub(super) fn study_known(&self, pane: PaneId) -> Known {
         let mut known = memorized(&self.library.model);
         if let Some(run) = self.study_mode.run(pane) {
             known.extend(&run.known);

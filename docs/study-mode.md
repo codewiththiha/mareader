@@ -116,9 +116,17 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 (`toggle`, `off`, `start`, `reopen`, `known`, `undo`, `next_batch`, `retry`,
 `use_dictionary`, `read_previous`, `recall`).
 
-- **Planning:** once the layout is complete, every page's characters are
-  counted off the frame and batches are planned from the settings. A new
-  layout or batch size plans again, keeping unlocked text unlocked.
+- **Planning:** once the layout is complete, every page's characters and
+  words are read off the frame and batches are planned from the settings. A
+  new layout or batch size plans again, keeping unlocked text unlocked.
+- **Counting, in words mode** (`counts.rs`, `run_words.rs`): the levels of
+  each page's words are asked in rounds of whole pages from the run's first
+  page, and a page counts its distinct lemmas above the level, less
+  memorized ones. The pane holds where it is until 60 pages (`WINDOW`), or
+  the book, are counted; the pages past the count stand as pages-mode
+  batches. Each later round plans again from the first batch not in use (one
+  passed, the gate's with a deck, or one with a deck made ahead). Without the
+  word data, words mode plans by pages.
 - **The gate:** the first locked page. The pane may show it, veiled with its
   deck, but no further: jumps and turns past it land on it with a toast.
   Read-aloud stops when it reaches it. `Session::study_gate` answers it.

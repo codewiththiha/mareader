@@ -9,7 +9,7 @@ use egui_kittest::kittest::Queryable as _;
 use mareader_engine::command::Command;
 use mareader_engine::settings::Tab;
 use mareader_engine::study_mode::{Ahead, DeckState, Setup};
-use mareader_study::mode::Via;
+use mareader_study::mode::{Unit, Via};
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::activity::stack::{CANCEL, STACK};
 use mareader_ui_egui::study_mode::confirm::TURN_OFF;
@@ -36,6 +36,7 @@ pub(crate) fn studying_at(cards: &str, ahead: u8, page: Option<usize>) -> (H, Pa
     h.dial(|s| {
         s.study.mode.limit = false;
         s.study.mode.ahead = ahead;
+        s.study.mode.unit = Unit::Pages;
         s.study.mode.pages = 1;
     });
     h.state_mut().set_option("study_cards", cards).unwrap();

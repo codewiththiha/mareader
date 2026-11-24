@@ -5,7 +5,9 @@
 use std::sync::Arc;
 
 use mareader_reflow::Typography;
-use mareader_study::mode::{Card, Unit, Via};
+use mareader_study::mode::{Card, Unit, Via, plan_from};
+
+use crate::study_mode::counts::Lengths;
 
 use super::*;
 
@@ -285,4 +287,46 @@ fn locked_pages_stand_as_their_decks_do() {
     assert_eq!(nobody, [(3..6, Shut), (6..9, Shut)], "failed, or nobody");
     let unplanned = Run::new(Mode::Proactive, None, 4);
     assert_eq!(unplanned.stands(false, ai), [(4..usize::MAX, Shut)]);
+}
+
+/// The sample book planned in words mode, `target` words a batch.
+fn by_words(document: &Arc<Document>, target: usize) -> Sheet<'_> {
+    Sheet {
+        size: Size {
+            unit: Unit::Words,
+            pages: 3,
+            words: target,
+        },
+        ..sheet(document, None, 0)
+    }
+}
+
+#[test]
+fn words_mode_counts_the_pages_before_it_plans_by_their_words() {
+    let doc = document();
+    let mut run = Run::new(Mode::Proactive, None, 0);
+    let size = by_words(&doc, 4).size;
+    assert_eq!(run.plan(by_words(&doc, 4)), Ok(false), "counting first");
+    assert_eq!((run.planned(), run.gate()), (false, Some(0)));
+    assert!(run.wants_count(size));
+    let none = Known::default();
+    while run.count(size, &mut Lengths(true), &none, 3) {}
+    assert!(!run.wants_count(size) && !run.counting());
+    assert_eq!(run.plan(by_words(&doc, 4)), Ok(true));
+    let b = &run.batches;
+    assert_eq!((b[0].from, b[b.len() - 1].to), (0, PAGES - 1));
+    assert!(b.windows(2).all(|w| w[1].from == w[0].to + 1));
+    assert!(b.iter().any(|b| b.words > 0), "the sample has long words");
+}
+
+#[test]
+fn words_mode_without_the_word_data_plans_by_pages() {
+    let doc = document();
+    let mut run = Run::new(Mode::Proactive, None, 0);
+    let size = by_words(&doc, 4).size;
+    assert_eq!(run.plan(by_words(&doc, 4)), Ok(false));
+    assert!(run.count(size, &mut Lengths(false), &Known::default(), 3));
+    assert_eq!(run.plan(by_words(&doc, 4)), Ok(true));
+    let spans: Vec<_> = run.batches.iter().map(|b| (b.from, b.to)).collect();
+    assert_eq!(spans, [(0, 2), (3, 5)]);
 }

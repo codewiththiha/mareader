@@ -11,9 +11,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mareader_library::{BookId, Spot, WordStatus};
 use mareader_session::Document;
-use mareader_study::mode::{
-    Allowance, Batch, Key, Mode, Outcome, Size, Via, gate, plan_from, retypeset,
-};
+use mareader_study::mode::{Allowance, Batch, Key, Mode, Outcome, Size, Via, gate, retypeset};
 
 use super::backs::Shown;
 use super::deck_job::{Built, DeckJob, Tags};
@@ -220,7 +218,8 @@ pub struct Run {
     layout: Option<(Option<u64>, usize)>,
     size: Option<Size>,
     sizes: Vec<usize>,
-    measuring: Option<Receiver<Vec<usize>>>,
+    measuring: Option<Receiver<(Vec<usize>, Tally)>>,
+    tally: Tally,
     /// The page read last frame, to see the reader come back to a batch.
     seen: Option<usize>,
     /// Where the pane is held until batches are planned.
@@ -251,6 +250,7 @@ impl Run {
             size: None,
             sizes: Vec::new(),
             measuring: None,
+            tally: Tally::default(),
             seen: None,
             at,
             entered: false,
@@ -367,6 +367,7 @@ impl Run {
     pub fn busy(&self) -> bool {
         let making = |a: &Ahead| matches!(a, Ahead::Making { .. });
         self.measuring.is_some()
+            || self.counting()
             || matches!(self.deck, DeckState::Making { .. })
             || self.ahead.iter().any(making)
     }
@@ -412,13 +413,14 @@ impl Run {
             self.layout = Some(layout);
             self.at = sheet.current;
             let measured = Arc::clone(document);
-            let work = move || sizes(&measured);
+            let work = move || measure(&measured);
             self.measuring = Some(off_thread(sheet.wake, sheet.inline, "study-sizes", work));
         }
         if let Some(rx) = &self.measuring {
             match rx.try_recv() {
-                Ok(sizes) => {
+                Ok((sizes, tally)) => {
                     self.sizes = sizes;
+                    self.tally = tally;
                     self.measuring = None;
                     self.stale = true;
                 }
@@ -429,15 +431,18 @@ impl Run {
         if self.layout.is_none() || (!self.stale && self.size == Some(sheet.size)) {
             return Ok(false);
         }
-        self.stale = false;
-        self.size = Some(sheet.size);
         self.start = match (self.entered, sheet.start) {
             (true, Some(start)) => start,
             (true, None) => self.start,
             (false, _) => self.at,
         };
         self.start = self.start.min(self.sizes.len());
-        self.batches = plan_from(&self.sizes, sheet.size, self.start);
+        if self.words_wait(sheet.size, self.start) {
+            return Ok(false);
+        }
+        self.stale = false;
+        self.size = Some(sheet.size);
+        self.batches = self.layout_batches(sheet.size, self.start);
         self.unlocked = match (self.entered, sheet.saved) {
             (true, Some(saved)) if saved > self.start => {
                 retypeset(saved, &self.batches, self.sizes.len())
@@ -481,15 +486,9 @@ impl Run {
     }
 }
 
-/// Each page's character count, as the reader's text holds it.
-fn sizes(document: &Document) -> Vec<usize> {
-    let count = document.page_count();
-    let size = |page| {
-        let layer = document.text_layer(page);
-        layer.map_or(0, |layer| crate::study::words::read(&layer).0.len())
-    };
-    (0..count).map(size).collect()
-}
+#[path = "run_words.rs"]
+mod words;
+use words::{Tally, measure};
 
 #[cfg(test)]
 #[path = "run_tests.rs"]
