@@ -1,4 +1,4 @@
-//! The AI glow: a soft rainbow circling any outline while the AI works.
+//! The AI glow: rainbow light flaring round any outline while the AI works.
 
 // One small mesh per outline; frames come only as fast as colours move.
 
@@ -26,9 +26,17 @@ const HUES: [[f32; 3]; 4] = [
     [0.98, 0.70, 0.0],
     [0.92, 0.26, 0.21],
 ];
-/// The crisp line's width, and the most the soft glow reaches past it.
-const LINE: f32 = 1.4;
-const REACH: f32 = 7.0;
+/// The most the light reaches past its outline, in points.
+const REACH: f32 = 18.0;
+/// Rings of light outward, as shares of the reach, and how bright each is.
+const FALLOFF: [(f32, f32); 6] = [
+    (0.0, 1.0),
+    (0.15, 0.86),
+    (0.35, 0.56),
+    (0.6, 0.26),
+    (0.82, 0.08),
+    (1.0, 0.0),
+];
 /// Seconds a finished glow fades over, and its arc opens into a ring.
 const FADE: f32 = 0.7;
 const OPEN: f32 = 0.3;
@@ -44,11 +52,11 @@ const BREATH: f64 = 2.0;
 
 /// How far the glow reaches outside `rect`.
 pub fn spill(rect: Rect) -> f32 {
-    LINE + reach(rect)
+    reach(rect)
 }
 
 fn reach(rect: Rect) -> f32 {
-    (rect.width().min(rect.height()) * 0.35).clamp(3.0, REACH)
+    (rect.width().min(rect.height()) * 0.55).clamp(4.0, REACH)
 }
 
 /// The glow of something working, kept by `id`: it flares into a ring and fades
@@ -141,10 +149,10 @@ impl Look {
         }
     }
 
-    /// The colour and opacity at `share` of the way round a ring `length` long.
+    /// The colour and brightness `share` of the way round a ring `length` long.
     fn at(&self, share: f32, length: f32) -> ([f32; 3], f32) {
         // Short rings light all round; long ones carry a travelling arc.
-        let half = (90.0 / length).clamp(0.22, 0.5);
+        let half = (110.0 / length).clamp(0.25, 0.5);
         // A faint line keeps the whole shape readable behind the arc.
         let floor = (1.0 - length / 220.0).clamp(0.12, 0.7);
         let laps = if half > 0.34 { 1.0 } else { 2.0 };
@@ -156,13 +164,13 @@ impl Look {
         };
         let level = floor + (1.0 - floor) * lit;
         let level = level + (0.85 - level) * self.whole;
-        (hue(self.drift + laps * off), level * self.strength)
+        (hue(self.drift + laps * off), level)
     }
 
     /// `rgb` at `alpha`; on dark pages lifted, and partly added as light.
     fn color(&self, rgb: [f32; 3], alpha: f32) -> Color32 {
         let a = alpha.clamp(0.0, 1.0);
-        let (lift, add) = if self.dark { (0.18, 0.4) } else { (0.0, 0.0) };
+        let (lift, add) = if self.dark { (0.15, 0.55) } else { (0.0, 0.0) };
         let [r, g, b] = rgb.map(|v| ((v + (1.0 - v) * lift) * a * 255.0).round() as u8);
         Color32::from_rgba_premultiplied(r, g, b, (a * (1.0 - add) * 255.0).round() as u8)
     }
@@ -218,7 +226,7 @@ impl Ring {
             }
             from = centre + Vec2::angled(start + FRAC_PI_2) * r;
         }
-        let mid = LINE + reach * 0.3;
+        let mid = reach * 0.25;
         let at = |(p, n): (Pos2, Vec2)| p + n * mid;
         let next = points.iter().cycle().skip(1);
         let mut shares = Vec::with_capacity(points.len());
@@ -237,26 +245,20 @@ impl Ring {
         }
     }
 
-    /// Bands outward from inside the line, each keeping a share of the colour.
+    /// Light from the outline outward, reaching further where it burns hot.
     fn mesh(&self, look: &Look) -> Mesh {
-        let reach = self.reach;
-        let bands = [
-            (-0.7, 0.0),
-            (0.0, 1.0),
-            (LINE, 1.0),
-            (LINE + 0.9, 0.42),
-            (LINE + reach * 0.5, 0.14),
-            (LINE + reach, 0.0),
-        ];
-        let k = bands.len() as u32;
+        let k = FALLOFF.len() as u32 + 1;
         let n = self.points.len() as u32;
         let mut mesh = Mesh::default();
-        mesh.reserve_vertices(self.points.len() * bands.len());
-        mesh.reserve_triangles(self.points.len() * (bands.len() - 1) * 2);
+        mesh.reserve_vertices(self.points.len() * k as usize);
+        mesh.reserve_triangles(self.points.len() * (k as usize - 1) * 2);
         for ((p, normal), share) in self.points.iter().zip(&self.shares) {
             let (rgb, level) = look.at(*share, self.length);
-            for (off, keep) in bands {
-                mesh.colored_vertex(*p + *normal * off, look.color(rgb, level * keep));
+            let (alpha, flare) = (level * look.strength, self.reach * (0.45 + 0.55 * level));
+            // Half a point inside the outline smooths its edge.
+            mesh.colored_vertex(*p - *normal * 0.5, Color32::TRANSPARENT);
+            for (off, keep) in FALLOFF {
+                mesh.colored_vertex(*p + *normal * off * flare, look.color(rgb, alpha * keep));
             }
         }
         for i in 0..n {

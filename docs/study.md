@@ -312,7 +312,8 @@ slice 5.
   shade. The card shows the word's class from the tagger until the AI's
   arrives, then that sense's CEFR level beside it.
 - **The glow.** While any AI mark's answer is coming (a click on a shaded
-  word, or Explain), the word's edges glow: a soft rainbow circling it,
+  word, or Explain), the word's edges glow: rainbow light flaring from it,
+  reaching further where it burns brightest, circling it,
   easing as it goes, its colours wandering slowly. Shutting the card never
   cancels the ask and the glow stays; the answer waits on the mark, no
   card pops back, and the glow opens into a full ring and fades. Small
