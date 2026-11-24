@@ -104,7 +104,8 @@ impl MareaderApp {
 /// The study mode keys a shot or a test sets by name.
 ///
 /// `study_mode=proactive|reactive|off` turns it on or off in the focused
-/// pane, `study_gate=on` takes that pane to its gate,
+/// pane, or the one `study_focus=N` names, `study_gate=on` takes that pane to
+/// its gate,
 /// `study_deck=reveal` turns the deck's card over once the deck opens and
 /// `study_deck=drag:-140` holds it 140 points to the left, mid-swipe,
 /// `study_cards=ready|silent|failing` has a scripted AI write the cards and
@@ -118,7 +119,14 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
         app.ui.study_mode.recall_shot = Some(value.to_owned());
         return Some(Ok(()));
     }
-    let pane = app.active();
+    if key == "study_focus" {
+        let nth = value.parse::<usize>().ok().and_then(|n| n.checked_sub(1));
+        let pane = nth.and_then(|i| app.tree().panes().get(i).copied());
+        app.ui.study_mode.shot_pane = pane;
+        let hint = "study_focus: a pane number";
+        return Some(pane.map(drop).ok_or_else(|| hint.into()));
+    }
+    let pane = app.ui.study_mode.shot_pane.unwrap_or_else(|| app.active());
     let action = match (key, value) {
         ("study_mode", "proactive") => Action::Toggle {
             pane,

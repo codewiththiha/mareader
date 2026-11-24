@@ -243,7 +243,9 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   *Open Vocabs* (Space's words page). Highlights shows *Study recall*
   only when a model could judge.
 - **Shots:** `settings=study` opens the tab,
-  `study_mode=proactive|reactive|off`, `study_gate=on`,
+  `study_mode=proactive|reactive|off`, `study_gate=on` (in the focused pane,
+  or the one `study_focus=N` names, for split panes; `pdf=sample:30:beside`
+  opens a book in a new pane beside),
   `study_deck=reveal` (the card turned) or `study_deck=drag:-140` (held
   mid-swipe), `study_cards=ready|silent|failing` (a scripted AI that
   writes every back and judges "right" correct and "close" close, never

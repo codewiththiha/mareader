@@ -9,7 +9,7 @@ use mareader_workspace::{MAX_PANES, SplitAxis};
 
 use super::{field, flag, named, number};
 use crate::command::Command;
-use crate::documents::OpenRequest;
+use crate::documents::{OpenRequest, Placement};
 use crate::session::Session;
 
 /// The panes' keys; `None` for a key that is not one of them.
@@ -28,14 +28,19 @@ pub(super) fn set(key: &str, value: &str, at: &Session) -> Option<Result<Vec<Com
     Some(parsed)
 }
 
-/// A sample built here, or the file the value names.
+/// A sample built here, or the file the value names; `:beside` puts it in a
+/// new pane beside the one in front.
 ///
 /// The pane is left unset: which one is in front is a front end's to know, and
 /// it aims the request when the key arrives.
 fn open(key: &str, value: &str) -> Result<Vec<Command>, String> {
+    let (value, beside) = match value.strip_suffix(":beside") {
+        Some(rest) => (rest, true),
+        None => (value, false),
+    };
     let (kind, pages) = value.split_once(':').unwrap_or((value, ""));
     let count = pages.parse().ok();
-    let made = match (key, kind) {
+    let mut made = match (key, kind) {
         ("epub", "sample") => OpenRequest::bytes(
             mareader_epub::sample::epub(count.unwrap_or(3), "A Mareader Book"),
             "sample.epub",
@@ -54,6 +59,9 @@ fn open(key: &str, value: &str) -> Result<Vec<Command>, String> {
         ),
         _ => OpenRequest::path(value.into()),
     };
+    if beside {
+        made.placement = Placement::Beside;
+    }
     Ok(vec![Command::Open(made)])
 }
 

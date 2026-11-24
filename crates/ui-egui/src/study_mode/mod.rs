@@ -208,6 +208,8 @@ pub struct StudyModeUi {
     pub recall: recall::Draft,
     /// Shots: the recall to open, as `word` or `word:answer`.
     pub recall_shot: Option<String>,
+    /// Shots: the pane study keys aim at, else the focused one.
+    pub shot_pane: Option<PaneId>,
 }
 
 impl StudyModeUi {
