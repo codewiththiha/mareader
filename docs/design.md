@@ -554,8 +554,8 @@ A cover should look like a well-made book: quiet, still, never a sticker.
   and each caption names the shelf the plan files it on, or "Stays
   where it is". With Animations off, nothing moves and the words stay.
 
-Code: `crates/ui-egui/src/library/view/face.rs` (the finish, cloth, the ribbon
-and the band) and `view/held.rs` (the pass, captions and tips).
+Code: `crates/ui-egui/src/library/view/face.rs` (the finish and the band),
+`view/cloth.rs`, `view/ribbon.rs` and `view/held.rs` (the pass, captions and tips).
 
 ## Icons
 

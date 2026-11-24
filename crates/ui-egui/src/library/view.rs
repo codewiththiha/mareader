@@ -29,14 +29,16 @@ use mareader_engine::library::{SearchAction, counted, offline};
 use mareader_engine::session::Session;
 use mareader_library::picks::{Pick, PickAction, Picks};
 
+mod cloth;
 mod face;
 mod grid;
 mod held;
 pub(super) mod links;
+mod ribbon;
 mod tally;
 mod tree;
 
-use face::paper;
+use cloth::paper;
 use held::Held;
 pub(crate) use held::{DOTS_W, dots};
 const ROW_H: f32 = 60.0;
@@ -808,7 +810,7 @@ fn grid_card(ui: &mut Ui, rect: Rect, book: &Book, cx: &mut Cx<'_>) {
     let done = cx.model.position(book.id).and_then(|p| p.fraction());
     // An unopened book has no bookmark; a missing one wears its pill there.
     if let Some(done) = done.filter(|d| *d > 0.0 && !missing) {
-        face::ribbon(ui.painter(), face_at, done, t, fade);
+        ribbon::ribbon(ui.painter(), face_at, done, t, fade);
     }
     held::cover(ui, face_at, face::corners(false, t), book.id, cx);
     held::tip(&resp, book.id, cx);
