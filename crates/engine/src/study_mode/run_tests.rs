@@ -21,7 +21,7 @@ fn size(pages: usize) -> Size {
     Size {
         unit: Unit::Pages,
         pages,
-        chars: 0,
+        words: 12,
     }
 }
 

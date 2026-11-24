@@ -422,7 +422,7 @@ impl Session {
         Size {
             unit: mode.unit,
             pages: usize::from(mode.pages),
-            chars: usize::try_from(mode.chars).unwrap_or(usize::MAX),
+            words: usize::from(mode.max_cards),
         }
     }
 

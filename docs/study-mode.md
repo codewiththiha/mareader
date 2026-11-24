@@ -16,16 +16,25 @@ Everything below is pure: the engine feeds it pages, levels and answers.
 
 ### Batches (`batches.rs`)
 
-A batch is whole pages, 1 to 10 (`MAX_PAGES`), and is stored as a text range,
-so a re-typeset keeps it.
+A batch is whole pages, and is stored as a text range, so a re-typeset keeps
+it. A word is never studied after its page: a deck holds the words of its own
+pages.
 
-- **Pages mode** counts pages that carry text.
-- **Characters mode** spends a budget, and a page joins when at least half of
-  it fits.
-- **Light pages** (under 140 characters: a blank leaf, a lone heading) use no
-  quota and ride with a neighbour.
-- **A short tail** (under 40% of the target) merges into the batch before it,
-  as long as that batch stays within 10 pages.
+- **Words mode** (the default; an old *characters* setting reads as it)
+  counts each page's hard words and breaks the pages the way line breaking
+  spaces a paragraph's words (`even`, after Knuth and Plass). It keeps the
+  sum of (words − Words per deck)² least over all the pages, not just the
+  next batch, and among equal sums takes the fewest batches. At 12, pages of
+  11, 2, 11 and 2 words make two batches of 13, not four. A batch of several
+  pages stays under 1.5 times the target, the card requests' rule
+  (`chunks`); a page with more stands alone. A batch spans up to 20 pages
+  (`MAX_WORD_PAGES`). A word on several of its pages counts once; met again
+  in a later batch, it counts again.
+- **Pages mode** counts pages that carry text, 1 to 10 (`MAX_PAGES`).
+- **In pages mode, light pages** (under 140 characters: a blank leaf, a lone
+  heading) don't count and ride with a neighbour, and **a short tail** (under
+  40% of the batch before it) merges into that batch, as long as it stays
+  within 10 pages.
 - **On a re-typeset,** unlocked progress rounds up to the end of its batch, so
   unlocked text never locks again.
 - **Turning the mode on mid-book** starts the first batch at the page shown
@@ -345,9 +354,9 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **Settings › Study mode** (`settings_window/study.rs`): listed only when
   an AI model or a dictionary pack could write cards. The mode, with a note
   naming the Vocabulary level it uses (set only in Vocabulary); Batches
-  (size by pages or characters); Proactive (prepare ahead, time limit and
-  seconds per card, the lock, shading, words per deck, and *Cards from*
-  only when both could write); Reactive (ask before memorizing); AI
+  (size by words or pages, pages per batch, words per deck up to 50);
+  Proactive (prepare ahead, time limit and seconds per card, the lock,
+  shading, and *Cards from* only when both could write); Reactive (ask before memorizing); AI
   (study's model and language, desktop only, once a model is set up); and
   *Open Vocabs* (Space's words page). Highlights shows *Study recall*
   only when a model could judge.

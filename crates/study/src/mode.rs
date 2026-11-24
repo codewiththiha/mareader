@@ -15,7 +15,9 @@ mod recall;
 use serde::{Deserialize, Serialize};
 
 pub use crate::class::{Classes, Pos};
-pub use batches::{Batch, LIGHT_CHARS, MAX_PAGES, Size, Unit, gate, plan, plan_from, retypeset};
+pub use batches::{
+    Batch, LIGHT_CHARS, MAX_PAGES, Size, Unit, gate, plan, plan_from, plan_words, retypeset,
+};
 pub use cards::{
     Answer, CardJob, CardWriter, PER_REQUEST, PER_REQUEST_MAX, Practice, SLOW_SECS, Wanted,
     Written, chunks, practice_back,

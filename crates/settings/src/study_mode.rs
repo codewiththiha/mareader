@@ -11,11 +11,10 @@ use crate::{AiSettings, language_name};
 pub struct StudyModeSettings {
     /// The mode the menu turns on; whether it is on is each pane's own.
     pub mode: Mode,
+    /// Words (the default) or pages; the old characters mode reads as words.
     pub unit: Unit,
-    /// Pages per batch, 1 to [`MAX_PAGES`].
+    /// Pages per batch in pages mode, 1 to [`MAX_PAGES`].
     pub pages: u8,
-    /// Characters per batch in characters mode.
-    pub chars: u32,
     /// Decks prepared ahead while reading; 0 asks at the gate.
     pub ahead: u8,
     /// A deck closes for good once its time is spent.
@@ -27,6 +26,8 @@ pub struct StudyModeSettings {
     pub lock: bool,
     /// Proactive keeps the CEFR shading on.
     pub hints: bool,
+    /// Words per deck: words mode breaks its batches near it, and a deck
+    /// over 1.5 times it comes in parts.
     pub max_cards: u8,
     pub source: Source,
     /// Reactive asks before adding a recalled word to memorized.
@@ -35,9 +36,6 @@ pub struct StudyModeSettings {
 
 impl StudyModeSettings {
     pub const PAGES: u8 = 3;
-    pub const CHARS: u32 = 2400;
-    pub const CHARS_MIN: u32 = 300;
-    pub const CHARS_MAX: u32 = 20_000;
     pub const AHEAD: u8 = 1;
     pub const AHEAD_MAX: u8 = 3;
     pub const CARD_SECONDS: u8 = 25;
@@ -45,12 +43,11 @@ impl StudyModeSettings {
     pub const CARD_SECONDS_MAX: u8 = 120;
     pub const MAX_CARDS: u8 = 12;
     pub const CARDS_MIN: u8 = 4;
-    pub const CARDS_MAX: u8 = 30;
+    pub const CARDS_MAX: u8 = 50;
 
     pub fn sanitize(&mut self) {
         let most = u8::try_from(MAX_PAGES).unwrap_or(u8::MAX);
         self.pages = self.pages.clamp(1, most);
-        self.chars = self.chars.clamp(Self::CHARS_MIN, Self::CHARS_MAX);
         self.ahead = self.ahead.min(Self::AHEAD_MAX);
         let (lo, hi) = (Self::CARD_SECONDS_MIN, Self::CARD_SECONDS_MAX);
         self.card_seconds = self.card_seconds.clamp(lo, hi);
@@ -62,9 +59,8 @@ impl Default for StudyModeSettings {
     fn default() -> Self {
         Self {
             mode: Mode::Proactive,
-            unit: Unit::Pages,
+            unit: Unit::Words,
             pages: Self::PAGES,
-            chars: Self::CHARS,
             ahead: Self::AHEAD,
             limit: true,
             card_seconds: Self::CARD_SECONDS,
@@ -111,22 +107,21 @@ mod tests {
     fn study_mode_values_are_pulled_into_range() {
         let mut s = StudyModeSettings {
             pages: 0,
-            chars: 5,
             ahead: 9,
             card_seconds: 200,
             max_cards: 1,
             ..StudyModeSettings::default()
         };
         s.sanitize();
-        let min = StudyModeSettings::CHARS_MIN;
-        assert_eq!((s.pages, s.chars, s.ahead), (1, min, 3));
+        assert_eq!((s.pages, s.ahead), (1, 3));
         assert_eq!((s.card_seconds, s.max_cards), (120, 4));
         let mut big = StudyModeSettings {
             pages: 40,
+            max_cards: 90,
             ..StudyModeSettings::default()
         };
         big.sanitize();
-        assert_eq!(big.pages, 10);
+        assert_eq!((big.pages, big.max_cards), (10, 50));
     }
 
     #[test]
@@ -155,8 +150,11 @@ mod tests {
     fn old_settings_without_study_mode_read_as_defaults() {
         let s: StudyModeSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s, StudyModeSettings::default());
-        let s: StudyModeSettings = serde_json::from_str(r#"{"unit":"chars"}"#).unwrap();
-        assert_eq!(s.unit, Unit::Chars);
+        let old = r#"{"unit":"chars","chars":900}"#;
+        let s: StudyModeSettings = serde_json::from_str(old).unwrap();
+        assert_eq!(s.unit, Unit::Words, "characters mode reads as words");
+        let s: StudyModeSettings = serde_json::from_str(r#"{"unit":"pages"}"#).unwrap();
+        assert_eq!(s.unit, Unit::Pages);
         let old = r#"{"sec_per_card":6,"strict":true,"minutes":9}"#;
         let s: StudyModeSettings = serde_json::from_str(old).unwrap();
         assert!(s.limit && !s.lock, "the old timers' keys are let go");

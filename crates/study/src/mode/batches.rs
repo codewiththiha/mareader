@@ -1,24 +1,37 @@
 //! The batch planner: a book's pages as study batches (decision D3).
 //!
-//! A batch is whole pages, 1 to [`MAX_PAGES`]. Pages mode counts pages that
-//! carry text; characters mode spends a budget, and a page joins when at least
-//! half of it fits. Light pages (a blank leaf, a lone heading) use no quota and
-//! ride with a neighbour. A short tail joins the batch before it while that
-//! stays within [`MAX_PAGES`].
+//! A batch is whole pages. Pages mode counts pages that carry text, 1 to
+//! [`MAX_PAGES`]; light pages (a blank leaf, a lone heading) use no quota and
+//! ride with a neighbour, and a short tail joins the batch before it while
+//! that stays within [`MAX_PAGES`].
+//!
+//! Words mode counts the hard words each page holds and breaks the pages so
+//! every batch's deck comes as near Words per deck as whole pages allow
+//! ([`even`]). A word never moves to another batch's deck: studied later, it
+//! would be read first.
+
+use std::collections::HashSet;
+use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
+
+use super::chunks;
 
 pub const MAX_PAGES: usize = 10;
 /// A page with fewer characters is light.
 pub const LIGHT_CHARS: usize = 140;
+/// Pages one batch may span in words mode, however few words they hold.
+pub const MAX_WORD_PAGES: usize = 20;
 
 /// What a batch's size is counted in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Unit {
+    /// Hard words; the old characters mode reads as this.
     #[default]
+    #[serde(alias = "chars")]
+    Words,
     Pages,
-    Chars,
 }
 
 /// How big a batch should be.
@@ -26,7 +39,8 @@ pub enum Unit {
 pub struct Size {
     pub unit: Unit,
     pub pages: usize,
-    pub chars: usize,
+    /// Words per deck, the target in words mode.
+    pub words: usize,
 }
 
 /// Pages `from` to `to`, both included, counted from zero.
@@ -36,6 +50,8 @@ pub struct Batch {
     pub from: usize,
     pub to: usize,
     pub chars: usize,
+    /// Distinct hard words, counted in words mode.
+    pub words: usize,
     /// Light pages riding along.
     pub light: usize,
     /// A short tail was merged into it.
@@ -61,7 +77,8 @@ impl Batch {
     }
 }
 
-/// The batches of pages with `sizes` characters each, in order.
+/// The batches of pages with `sizes` characters each, in order, by page
+/// count; words mode comes here while its words are not counted yet.
 pub fn plan(sizes: &[usize], size: Size) -> Vec<Batch> {
     let quota = size.pages.clamp(1, MAX_PAGES);
     let mut out: Vec<Batch> = Vec::new();
@@ -71,17 +88,8 @@ pub fn plan(sizes: &[usize], size: Size) -> Vec<Batch> {
         while j < sizes.len() && j - i < MAX_PAGES {
             let s = sizes.get(j).copied().unwrap_or(0);
             let is_light = s < LIGHT_CHARS;
-            if j > i && !is_light {
-                let full = match size.unit {
-                    Unit::Pages => heavy >= quota,
-                    // Joins while at least half of it fits.
-                    Unit::Chars => {
-                        chars.saturating_mul(2).saturating_add(s) > size.chars.saturating_mul(2)
-                    }
-                };
-                if full {
-                    break;
-                }
+            if j > i && !is_light && heavy >= quota {
+                break;
             }
             chars = chars.saturating_add(s);
             if is_light {
@@ -96,17 +104,84 @@ pub fn plan(sizes: &[usize], size: Size) -> Vec<Batch> {
             from: i,
             to: j.saturating_sub(1),
             chars,
+            words: 0,
             light,
             merged: false,
         });
         i = j.max(i + 1);
     }
-    merge_tail(&mut out, size);
+    merge_tail(&mut out);
     out
 }
 
-/// A tail under 40% of the target joins the batch before it.
-fn merge_tail(out: &mut Vec<Batch>, size: Size) {
+/// Page breaks whose batches each hold near `target` distinct words, as
+/// line breaking spaces words in a paragraph (after Knuth and Plass).
+///
+/// `words` holds each page's hard words. The breaks keep the sum of
+/// (words − target)² least over all the pages, not just the next batch,
+/// so no batch is left with a few words at the end. A batch of several
+/// pages stays one deck ([`chunks`] leaves it whole, under 1.5× the
+/// target); a page with more stands alone, as a page is never split.
+pub fn even(words: &[Vec<u32>], target: usize) -> Vec<Range<usize>> {
+    let target = target.max(1);
+    // Per end page: least cost, fewest batches, last batch's start.
+    let mut best = vec![(u64::MAX, 0usize, 0usize); words.len().saturating_add(1)];
+    if let Some(first) = best.first_mut() {
+        *first = (0, 0, 0);
+    }
+    for end in 1..best.len() {
+        let mut seen: HashSet<u32> = HashSet::new();
+        for from in (end.saturating_sub(MAX_WORD_PAGES)..end).rev() {
+            seen.extend(words.get(from).into_iter().flatten().copied());
+            let alone = from + 1 == end;
+            if !alone && chunks(seen.len(), target).len() > 1 {
+                break;
+            }
+            let (before, count, _) = best.get(from).copied().unwrap_or((u64::MAX, 0, 0));
+            let gap = seen.len().abs_diff(target);
+            let off = u64::try_from(gap).unwrap_or(u64::MAX);
+            let cost = (before.saturating_add(off.saturating_mul(off)), count + 1);
+            let slot = best.get_mut(end);
+            if let Some(slot) = slot.filter(|s| cost < (s.0, s.1)) {
+                *slot = (cost.0, cost.1, from);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut end = words.len();
+    while end > 0 {
+        let from = best.get(end).map_or(0, |b| b.2);
+        out.push(from..end);
+        end = from;
+    }
+    out.reverse();
+    out
+}
+
+/// The batches from page `start` on by their hard words, `words` and
+/// `sizes` holding every page's.
+pub fn plan_words(words: &[Vec<u32>], sizes: &[usize], target: usize, start: usize) -> Vec<Batch> {
+    let rest = words.get(start..).unwrap_or_default();
+    let batch = |(index, pages): (usize, Range<usize>)| {
+        let (from, to) = (pages.start + start, pages.end + start);
+        let pages = words.get(from..to).unwrap_or_default();
+        let held: HashSet<u32> = pages.iter().flatten().copied().collect();
+        Batch {
+            index,
+            from,
+            to: to.saturating_sub(1),
+            chars: sizes.get(from..to).unwrap_or_default().iter().sum(),
+            words: held.len(),
+            light: 0,
+            merged: false,
+        }
+    };
+    let breaks = even(rest, target).into_iter().enumerate();
+    breaks.map(batch).collect()
+}
+
+/// A tail under 40% of the batch before it joins that batch.
+fn merge_tail(out: &mut Vec<Batch>) {
     let n = out.len();
     let (Some(last), Some(prev)) = (
         n.checked_sub(1).and_then(|i| out.get(i)).cloned(),
@@ -114,11 +189,7 @@ fn merge_tail(out: &mut Vec<Batch>, size: Size) {
     ) else {
         return;
     };
-    let target = match size.unit {
-        Unit::Chars => size.chars,
-        Unit::Pages => prev.chars,
-    };
-    let short = last.chars.saturating_mul(5) < target.saturating_mul(2);
+    let short = last.chars.saturating_mul(5) < prev.chars.saturating_mul(2);
     if !short || prev.pages() + last.pages() > MAX_PAGES {
         return;
     }
@@ -159,7 +230,11 @@ pub fn plan_from(sizes: &[usize], size: Size, start: usize) -> Vec<Batch> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::single_range_in_vec_init
+)]
 mod tests {
     use super::*;
 
@@ -167,7 +242,7 @@ mod tests {
         Size {
             unit: Unit::Pages,
             pages: n,
-            chars: 0,
+            words: 12,
         }
     }
 
@@ -191,20 +266,53 @@ mod tests {
         assert_eq!(spans(&plan(&[400; 11], pages(10))), [(0, 9), (10, 10)]);
     }
 
+    /// Pages holding `counts` distinct words each, none shared.
+    fn pages_of(counts: &[u32]) -> Vec<Vec<u32>> {
+        let mut next = 0;
+        let page = |&n: &u32| {
+            next += n;
+            (next - n..next).collect()
+        };
+        counts.iter().map(page).collect()
+    }
+
+    fn breaks(counts: &[u32], target: usize) -> Vec<Range<usize>> {
+        even(&pages_of(counts), target)
+    }
+
     #[test]
-    fn chars_mode_takes_a_page_when_half_of_it_fits() {
-        let size = Size {
-            unit: Unit::Chars,
-            pages: 3,
-            chars: 1000,
-        };
-        assert_eq!(spans(&plan(&[400; 6], size)), [(0, 2), (3, 5)]);
-        let size = Size {
-            unit: Unit::Chars,
-            pages: 3,
-            chars: 900,
-        };
-        assert_eq!(spans(&plan(&[400; 6], size)), [(0, 1), (2, 3), (4, 5)]);
+    fn words_mode_breaks_pages_evenly_and_leaves_no_small_tail() {
+        // Never over 12 would make four decks: 11, 2, 11, 2.
+        assert_eq!(breaks(&[11, 2, 11, 2], 12), [0..2, 2..4]);
+        assert_eq!(breaks(&[5, 8, 5, 8], 12), [0..2, 2..4]);
+        // 46 words over 4 pages at 30: 22 + 24, not 32 + 14.
+        assert_eq!(breaks(&[10, 12, 10, 14], 30), [0..2, 2..4]);
+        // 40 is under 1.5 × 30, so one deck.
+        assert_eq!(breaks(&[10, 12, 10, 8], 30), [0..4]);
+        // Twelve pages with eleven words are one batch.
+        let mut sparse = vec![1; 11];
+        sparse.extend([0, 12]);
+        assert_eq!(breaks(&sparse, 12), [0..12, 12..13]);
+    }
+
+    #[test]
+    fn a_crowded_page_stands_alone_and_shared_words_count_once() {
+        assert_eq!(breaks(&[4, 40, 4], 12), [0..1, 1..2, 2..3]);
+        let same = vec![vec![1, 2, 3, 4, 5, 6]; 4];
+        // A word on four pages is one card.
+        assert_eq!(even(&same, 6), [0..4]);
+        assert_eq!(breaks(&[0; 45], 12), [0..20, 20..40, 40..45]);
+        assert!(even(&[], 12).is_empty());
+        assert_eq!(breaks(&[3], 0), [0..1]);
+    }
+
+    #[test]
+    fn words_batches_start_at_the_page_and_count_their_words() {
+        let words = pages_of(&[9, 6, 6, 12]);
+        let b = plan_words(&words, &[100; 4], 12, 1);
+        assert_eq!(spans(&b), [(1, 2), (3, 3)]);
+        assert_eq!((b[0].index, b[0].words, b[0].chars), (0, 12, 200));
+        assert_eq!((b[1].index, b[1].words), (1, 12));
     }
 
     #[test]

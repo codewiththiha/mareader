@@ -51,30 +51,25 @@ fn level(level: CefrLevel) -> String {
     format!("Uses your Vocabulary level ({at}): words above it are shaded or become cards.")
 }
 
-/// How big a batch is: whole pages, or characters turned into pages.
+/// How big a batch is: whole pages holding about a deck's words, or a
+/// set number of pages; either way a deck holds every word on them.
 fn batches(ui: &mut Ui, m: &mut StudyModeSettings) {
     section(ui, "Batches");
     group(ui, |ui| {
-        let hint = "Characters suit books, whose pages follow your type";
+        let hint = "Words gathers whole pages until they hold about a deck";
         row(ui, "Size by", hint, |ui| {
-            choices(ui, &mut m.unit, &[Unit::Pages, Unit::Chars], unit);
+            choices(ui, &mut m.unit, &[Unit::Words, Unit::Pages], unit);
         });
-        divider(ui);
-        match m.unit {
-            Unit::Pages => {
-                let most = u8::try_from(MAX_PAGES).unwrap_or(u8::MAX);
-                let hint = "Most is 10";
-                count_row(ui, ("Pages per batch", hint), &mut m.pages, (1, most), BARE);
-            }
-            Unit::Chars => {
-                let hint = "Turned back into whole pages, never more than 10";
-                row(ui, "Characters per batch", hint, |ui| {
-                    let range = StudyModeSettings::CHARS_MIN..=StudyModeSettings::CHARS_MAX;
-                    let slider = egui::Slider::new(&mut m.chars, range).step_by(100.0);
-                    ui.add(slider);
-                });
-            }
+        if m.unit == Unit::Pages {
+            divider(ui);
+            let most = u8::try_from(MAX_PAGES).unwrap_or(u8::MAX);
+            let hint = "Most is 10";
+            count_row(ui, ("Pages per batch", hint), &mut m.pages, (1, most), BARE);
         }
+        divider(ui);
+        let hint = "The cards a batch aims at; words mode breaks pages near it";
+        let cards = (StudyModeSettings::CARDS_MIN, StudyModeSettings::CARDS_MAX);
+        count_row(ui, ("Words per deck", hint), &mut m.max_cards, cards, BARE);
     });
 }
 
@@ -107,10 +102,6 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings, both: bool) {
         divider(ui);
         let hint = "Off makes it a real test";
         switch_row(ui, "Shade hard words while reading", hint, &mut m.hints);
-        divider(ui);
-        let hint = "The hardest, most repeated words come first";
-        let cards = (StudyModeSettings::CARDS_MIN, StudyModeSettings::CARDS_MAX);
-        count_row(ui, ("Words per deck", hint), &mut m.max_cards, cards, BARE);
         if both {
             divider(ui);
             let hint = "Auto asks the AI first, else the dictionary";
@@ -185,8 +176,8 @@ pub(super) fn count_row(
 
 fn unit(unit: Unit) -> &'static str {
     match unit {
+        Unit::Words => "Words",
         Unit::Pages => "Pages",
-        Unit::Chars => "Characters",
     }
 }
 
