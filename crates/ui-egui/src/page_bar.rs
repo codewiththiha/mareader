@@ -2,7 +2,7 @@
 
 use egui::{
     Align, Context, CornerRadius, FontId, Id, Key, LayerId, Layout, Rect, RichText, Slider, Stroke,
-    TextEdit, UiBuilder, pos2, vec2,
+    TextEdit, UiBuilder, Vec2, pos2, vec2,
 };
 use mareader_settings::{LayoutSettings, PageIndicatorStyle};
 use mareader_workspace::PaneId;
@@ -20,6 +20,9 @@ use crate::z_order::{self, Tier};
 use mareader_engine::command::Command;
 
 pub const BAR_H: f32 = 40.0;
+/// The page counter's room up from the pane's bottom and in from its right.
+pub const COUNTER_TOP: f32 = 34.0;
+pub const COUNTER_INSET: f32 = 12.0;
 /// The strip along a pane's bottom edge that brings the bar up.
 pub const EDGE: f32 = 8.0;
 /// An icon button's width, as the bookmark takes at the bar's end.
@@ -136,7 +139,7 @@ pub fn show(
             .layout_no_wrap(text.clone(), theme::medium(11.0), t.ink)
             .size();
         let size = size + vec2(18.0, 6.0);
-        let badge = Rect::from_min_size(pane.max - size - vec2(12.0, 12.0), size);
+        let badge = Rect::from_min_size(pane.max - size - Vec2::splat(COUNTER_INSET), size);
         let covered = look.toasts.is_some_and(|r| r.expand(8.0).intersects(badge));
         let time = motion::secs(ctx, FADE);
         let away = ctx.animate_bool_with_time(id.with("under-toasts"), covered, time);

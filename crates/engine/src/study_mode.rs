@@ -179,6 +179,11 @@ impl State {
         self.runs.get(&pane).map(|(_, run)| run)
     }
 
+    /// Every studying pane's run, by pane.
+    pub fn runs(&self) -> impl Iterator<Item = (PaneId, &Run)> {
+        self.runs.iter().map(|(pane, (_, run))| (*pane, run))
+    }
+
     /// Whether study mode is on in `pane`.
     pub fn on(&self, pane: PaneId) -> bool {
         self.runs.contains_key(&pane)

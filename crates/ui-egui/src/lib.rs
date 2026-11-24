@@ -8,6 +8,7 @@
     clippy::unreachable
 )]
 
+pub mod activity;
 pub mod ai;
 pub mod app;
 pub mod appearance_menu;

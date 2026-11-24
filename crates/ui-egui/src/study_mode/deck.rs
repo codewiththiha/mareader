@@ -158,7 +158,7 @@ pub fn show(
             }
         }
     });
-    super::progress::keep_clear(ui.ctx(), pane.id, used.response.rect);
+    crate::activity::seen::deck(ui.ctx(), (pane.id, pane.run), used.response.rect);
     let height = used.response.rect.height();
     if (height - tall).abs() > 0.5 {
         ui.ctx().data_mut(|d| d.insert_temp(tall_id, height));

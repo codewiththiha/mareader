@@ -1,6 +1,7 @@
 //! The app state and its eframe loop.
 
 mod access;
+mod activity;
 mod appearance;
 mod apply;
 mod control;
@@ -219,6 +220,7 @@ impl MareaderApp {
                 study: StudyUi::default(),
                 page_ai: crate::page_ai::PageAiUi::default(),
                 study_mode: crate::study_mode::StudyModeUi::default(),
+                activity: crate::activity::ActivityUi::default(),
                 space: crate::space::SpaceUi::default(),
                 read_aloud: crate::read_aloud::ReadAloudUi::default(),
                 ai: crate::ai::Ai::default(),

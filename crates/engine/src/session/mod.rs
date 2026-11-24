@@ -9,6 +9,7 @@
 //!
 //! [`Command`]: crate::command::Command
 
+mod activity;
 mod dials;
 mod documents;
 mod library;

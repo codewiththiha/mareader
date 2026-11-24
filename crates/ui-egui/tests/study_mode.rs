@@ -12,11 +12,11 @@ use mareader_engine::settings::Tab;
 use mareader_engine::study_mode::DeckState;
 use mareader_study::mode::Missing;
 use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::activity::stack::STACK;
 use mareader_ui_egui::study_mode::confirm;
 use mareader_ui_egui::study_mode::deck::{KNOWN, START, TURN_OFF};
 use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
 use mareader_ui_egui::study_mode::menu::{KEEPS, SETTINGS};
-use mareader_ui_egui::study_mode::progress::PROGRESS;
 use mareader_ui_egui::ui_command::Sent;
 use mareader_workspace::PaneId;
 
@@ -175,8 +175,8 @@ fn the_gate_holds_the_view_until_the_deck_is_studied() -> Out {
     let current = h.state().documents().reading(pane).map(|r| r.current);
     assert_eq!(current, Some(0), "the strip stops at the gate page");
     assert!(wait(&mut h, |h| deck_open(h, pane)), "the deck opens");
-    let toast = h.query_by_label(PROGRESS).is_some();
-    assert!(!toast, "dictionary cards come at once, with no toast");
+    let stack = h.query_by_label(STACK).is_some();
+    assert!(!stack, "dictionary cards come at once, with no stack");
     assert!(cards(&h, pane) > 0, "quick is a new word");
     assert!(
         h.query_by_label_contains(TURN_HINT).is_some(),

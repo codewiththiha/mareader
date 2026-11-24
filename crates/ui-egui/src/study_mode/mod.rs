@@ -5,9 +5,9 @@
 //! only draws a run and sends what the reader asks. A pane's view stops at
 //! its gate in `pdf_view`; here the pages past it are veiled, and the deck
 //! covers the pane once the gate is in view, unless the reader left it for
-//! the pages before. A corner toast tells how the AI is getting on with the
-//! cards. In Reactive mode a click on a shaded word opens a recall beside it
-//! instead.
+//! the pages before. While the deck is out of view, the corner stack in
+//! `crate::activity` tells how the AI is getting on. In Reactive mode a
+//! click on a shaded word opens a recall beside it instead.
 
 pub mod confirm;
 mod controls;
@@ -16,7 +16,6 @@ pub mod flip_card;
 pub mod gate;
 mod making;
 pub mod menu;
-pub mod progress;
 pub mod recall;
 mod rows;
 mod tight;
@@ -176,8 +175,6 @@ pub struct Pane<'a> {
 #[derive(Default)]
 pub struct StudyModeUi {
     cursors: HashMap<PaneId, Cursor>,
-    /// Each pane's corner toast, across frames.
-    watches: HashMap<PaneId, progress::Watch>,
     /// The panes whose open deck showed last frame.
     showing: HashSet<PaneId>,
     /// The question a deck asks before it acts, and its pane.
@@ -203,13 +200,17 @@ impl StudyModeUi {
     /// Keeps the decks of the panes in `studying` and forgets the rest.
     pub fn begin(&mut self, studying: &[PaneId]) {
         self.cursors.retain(|pane, _| studying.contains(pane));
-        self.watches.retain(|pane, _| studying.contains(pane));
         self.showing.retain(|pane| studying.contains(pane));
         let gone = |(p, _): &(PaneId, confirm::Ask)| !studying.contains(p);
         if self.asking.as_ref().is_some_and(gone) {
             self.asking = None;
         }
         self.keyed = None;
+    }
+
+    /// Asks before turning study mode off in `pane`.
+    pub fn ask_off(&mut self, pane: PaneId) {
+        self.asking = Some((pane, confirm::Ask::TurnOff));
     }
 
     /// What the page grid marks of `pane`'s study: how its pages stand, and
@@ -226,11 +227,6 @@ impl StudyModeUi {
 
     /// The veil past `pane`'s gate, or its deck once the gate is in view.
     pub fn show(&mut self, ctx: &Context, pane: &Pane<'_>, out: &mut Commands) {
-        let now = ctx.input(|i| i.time);
-        let watch = self.watches.entry(pane.id).or_default();
-        if let Some(work) = watch.status(progress::work(pane.run), now) {
-            progress::show(ctx, pane, work, watch.alpha(now));
-        }
         let shown = self.deck_or_veil(ctx, pane, out);
         let floor = pane.run.floor(pane.lock);
         let frost = gate::frost(pane.sheets, pane.rect, floor, pane.mode);

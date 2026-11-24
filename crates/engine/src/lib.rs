@@ -16,6 +16,7 @@
     clippy::indexing_slicing
 )]
 
+pub mod activity;
 pub mod appearance_menu;
 pub mod command;
 pub mod command_spec;

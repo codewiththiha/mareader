@@ -238,17 +238,19 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   away over its keys or settings gives *Check the model…* (AI models);
   missing word levels give *Get word data…* (Vocabulary). Those two keep
   *Try again* beside, as fixing them changes no recipe.
-- **The corner toast** (`study_mode/progress.rs`): while the AI writes a
-  deck, the gate's or one made ahead, a ring sits in the pane's bottom
-  left corner, rising over the page bar only while that is up, filled as
-  far as the deck is made, red once writing failed. Where the pane's deck covers that corner (a short or
-  narrow pane), it glides to the top left corner, and shrinks from 30 to
-  18 pt when only that keeps it clear; with no room anywhere it sits small
-  in the top left corner. The deck marks where it drew each pass
-  (`progress::keep_clear`). A hover widens it to say so (*Writing cards 3
-  of 8 · pages 4–6*). A finished deck shows *Next cards ready* for 3 s.
-  Dictionary cards come at once and never show it; the deck opens at the
-  gate.
+- **The corner stack** (`crate::activity`, the AI's work in one place):
+  while the AI writes a deck, the gate's or one made ahead, and its own
+  waiting card is out of view, a ring sits in the pane's bottom right
+  corner on the page counter, rising over the page bar while that is up,
+  filled as far as the deck is made. Each job is a line in the stack, the
+  newest in front and up to two peeking behind; a hover fans them out to
+  say so (*Writing cards 3 of 8 · pages 4–6*) with *Cancel*, which asks to
+  turn study mode off. Where the deck covers the corner, it glides to the
+  top right (`seen::deck` marks where the deck drew, and that its job is in
+  view). The gate's deck, finished while away, stays as *Cards ready* with
+  *View* until seen; one made ahead says *Next cards ready* for 3 s. A
+  failure shows red for 3 s, longer while hovered. A failed or stopped deck
+  also shows a toast. Dictionary cards come at once and never show it.
 - **Progress is real** (`DeckJob::made`, `deck_job/progress.rs`): the
   track and the ring show the same share, counted from real steps only.
   Finding the words is the first 10%: their levels looked up, then their

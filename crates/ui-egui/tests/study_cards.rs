@@ -1,19 +1,22 @@
 //! Study mode's AI cards, headless: the waiting card and its slow offer,
 //! the error card's way to the dictionary or to the setup it lacks, decks
-//! made ahead, and the corner toast while the AI writes.
+//! made ahead, and the corner stack while the AI writes out of view.
 
 use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
+use mareader_engine::command::Command;
 use mareader_engine::settings::Tab;
 use mareader_engine::study_mode::{Ahead, DeckState, Setup};
 use mareader_study::mode::Via;
 use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::activity::stack::{CANCEL, STACK};
+use mareader_ui_egui::study_mode::confirm::TURN_OFF;
 use mareader_ui_egui::study_mode::deck::START;
 use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
-use mareader_ui_egui::study_mode::progress::PROGRESS;
 use mareader_ui_egui::study_mode::waiting::{CHECK_MODEL, DICTIONARY, RETRY, SLOW, stage};
+use mareader_ui_egui::ui_command::Sent;
 use mareader_workspace::PaneId;
 
 use crate::common::{Dials, levels_reader, shelves};
@@ -23,6 +26,11 @@ type Shelves = (tempfile::TempDir, tempfile::TempDir);
 
 /// A reader studying a page a batch, a scripted AI writing the cards.
 fn studying(cards: &str, ahead: u8) -> (H, PaneId, Shelves) {
+    studying_at(cards, ahead, None)
+}
+
+/// The same, turned on at `page`, the pages before it free to read.
+fn studying_at(cards: &str, ahead: u8, page: Option<usize>) -> (H, PaneId, Shelves) {
     let (words, packs) = shelves();
     let mut h = levels_reader(words.path(), Some(packs.path()));
     h.dial(|s| {
@@ -31,10 +39,20 @@ fn studying(cards: &str, ahead: u8) -> (H, PaneId, Shelves) {
         s.study.mode.pages = 1;
     });
     h.state_mut().set_option("study_cards", cards).unwrap();
+    if let Some(page) = page {
+        go_to(&mut h, page);
+    }
     h.state_mut().set_option("study_mode", "proactive").unwrap();
     h.run_steps(4);
     let pane = h.state().active_pane();
     (h, pane, (words, packs))
+}
+
+fn go_to(h: &mut H, page: usize) {
+    let pane = h.state().active_pane();
+    h.state_mut()
+        .queue(Sent::Engine(Command::GoTo { pane, page }));
+    h.run_steps(30);
 }
 
 /// Steps until `done` holds; frames keep coming while a deck is made.
@@ -175,19 +193,48 @@ fn decks_made_ahead_open_at_once() {
 }
 
 #[test]
-fn a_writing_ai_shows_a_ring_that_widens_on_hover() {
-    let (mut h, pane, _shelves) = studying("silent", 1);
+fn the_stack_shows_the_writing_only_while_the_deck_is_out_of_view() {
+    let (mut h, pane, _shelves) = studying_at("silent", 1, Some(3));
     assert!(wait(&mut h, |h| writing(h, pane)), "the AI is asked");
+    assert_eq!(h.state().session().study_gate(pane), Some(3));
     h.run_steps(4);
-    assert!(h.query_by_label(PROGRESS).is_some(), "the ring shows");
     assert!(
-        h.query_by_label_contains("Writing cards").is_none(),
+        h.query_by_label(STACK).is_none(),
+        "the waiting card says it"
+    );
+    go_to(&mut h, 0);
+    let stacked = |h: &H| h.query_by_label(STACK).is_some();
+    assert!(
+        wait(&mut h, stacked),
+        "away from the gate, the corner says it"
+    );
+    assert!(
+        h.query_by_label_contains("· page 4").is_none(),
         "folded, it says nothing"
     );
-    h.get_by_label(PROGRESS).hover();
+    h.get_by_label(STACK).hover();
     h.run_steps(20);
     assert!(
-        h.query_by_label_contains("Writing cards").is_some(),
-        "a hover widens it to say so"
+        h.query_by_label_contains("· page 4").is_some(),
+        "a hover fans it out to say so"
+    );
+    h.get_by_label(CANCEL).click();
+    h.run_steps(4);
+    h.get_by_label(TURN_OFF).click();
+    h.run_steps(4);
+    assert!(
+        !h.state().session().study_mode().on(pane),
+        "study mode is off"
+    );
+    let toast = h.state().toast().map(|t| t.message.clone());
+    let said = toast.unwrap_or_default();
+    assert!(
+        said.starts_with("Stopped writing"),
+        "a toast says so: {said:?}"
+    );
+    go_to(&mut h, 3);
+    assert!(
+        h.query_by_label(STACK).is_none(),
+        "nothing is left in the corner"
     );
 }

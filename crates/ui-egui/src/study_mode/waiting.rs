@@ -15,7 +15,8 @@ use mareader_workspace::PaneId;
 
 use super::controls::{self, Chip, Look};
 use super::deck::{self, send};
-use super::{Pane, making, progress};
+use super::{Pane, making};
+use crate::activity::ring;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
@@ -129,13 +130,13 @@ fn centred(ui: &mut Ui, text: RichText) {
 /// at its head while the work goes on.
 fn bar(ui: &mut Ui, id: Id, made: f32, t: &Tokens) {
     let (track, _) = ui.allocate_exact_size(vec2(BAR_W, 6.0), Sense::hover());
-    let made = progress::eased(ui.ctx(), id, made);
+    let made = ring::eased(ui.ctx(), id, made);
     let head = track.left() + (track.width() * made).max(track.height());
     let lit = Rect::from_x_y_ranges(track.left()..=head, track.y_range());
     let painter = ui.painter();
     painter.rect_filled(track, 3.0, t.ink.gamma_multiply(0.08));
     painter.rect_filled(lit, 3.0, t.accent.gamma_multiply(0.75));
-    let pulse = progress::pulse(ui.ctx());
+    let pulse = ring::pulse(ui.ctx());
     let glow = t.accent.gamma_multiply(0.25 + 0.5 * pulse);
     let tip = egui::pos2(head - track.height() / 2.0, track.center().y);
     painter.circle_filled(tip, track.height() * 0.8, glow);
