@@ -37,6 +37,14 @@ impl Session {
         self.page_ai.held = held;
     }
 
+    /// The own pages of `pane`'s book its page AI writes now, first and last.
+    pub fn page_ai_writing(&self, pane: PaneId) -> Vec<(usize, usize)> {
+        let Some(view) = self.documents.ai_view(pane) else {
+            return Vec::new();
+        };
+        self.page_ai.writing(view.layout)
+    }
+
     /// Emits any queued page-AI notices as toast events.
     fn flush_page_ai_notes(&mut self) {
         for why in std::mem::take(&mut self.page_ai.notes) {

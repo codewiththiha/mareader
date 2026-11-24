@@ -37,6 +37,8 @@ pub struct Running<O, P = O> {
     task: Option<JoinHandle<()>>,
     /// The result was handed out; nothing more comes.
     over: bool,
+    /// It waits in line for a model, as the news last said.
+    queued: bool,
 }
 
 impl<O, P> Running<O, P> {
@@ -102,12 +104,14 @@ impl<O: Send, P: Send> Pending<O, P> for Running<O, P> {
         let mut news = Vec::new();
         while !self.over {
             match self.rx.try_recv() {
+                Ok(Event::Queued { .. }) => self.queued = true,
+                Ok(Event::Started { .. }) => self.queued = false,
                 Ok(Event::Partial(p)) => news.push(News::Partial(p)),
                 Ok(Event::Done(done)) => {
                     self.over = true;
                     news.push(News::Done(done));
                 }
-                Ok(_) => {}
+                Ok(Event::Again { .. }) => {}
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     self.over = true;
@@ -116,6 +120,10 @@ impl<O: Send, P: Send> Pending<O, P> for Running<O, P> {
             }
         }
         news
+    }
+
+    fn queued(&self) -> bool {
+        self.queued && !self.over
     }
 }
 
@@ -166,6 +174,7 @@ where
             rx,
             task: None,
             over: false,
+            queued: false,
         };
     };
     let work = job(Say {
@@ -182,6 +191,7 @@ where
         rx,
         task: Some(task),
         over: false,
+        queued: false,
     }
 }
 
@@ -229,6 +239,35 @@ mod tests {
         };
         assert_eq!(got, Ok(7));
         assert_eq!(job.answer(), None, "once only");
+    }
+
+    #[test]
+    fn it_says_queued_until_a_model_takes_it() {
+        let rt = runtime();
+        let (go, wait) = channel::<()>();
+        let mut job: Running<u8> = start(Some(&rt), &quiet(), |say| async move {
+            say.send(Event::Queued { behind: 1 });
+            let _ = wait.recv();
+            say.send(Event::Started { by: "m".into() });
+            std::future::pending::<()>().await;
+            Ok(1)
+        });
+        let until = |job: &mut Running<u8>, queued: bool| {
+            let started = std::time::Instant::now();
+            loop {
+                let _ = job.news();
+                if job.queued() == queued {
+                    break;
+                }
+                assert!(started.elapsed().as_secs() < 10, "never {queued}");
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        until(&mut job, true);
+        assert!(job.queued());
+        let _ = go.send(());
+        until(&mut job, false);
+        assert!(!job.queued(), "a model took it");
     }
 
     #[test]

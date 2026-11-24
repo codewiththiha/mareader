@@ -228,3 +228,26 @@ fn a_books_group_covers_all_its_pages_while_it_writes() {
     let reading = h.state().documents().reading(pane).unwrap();
     assert_eq!(reading.document.inserts_key(), 0, "nothing laid in yet");
 }
+
+#[test]
+fn picked_pages_glow_in_the_thumbnails_while_they_write() {
+    let mut h = reader(&[
+        ("pdf", "sample:12"),
+        ("page_ai_hold", "true"),
+        ("sidebar", "thumbnails"),
+    ]);
+    let pane = h.state().active_pane();
+    let action = Action::RunPages {
+        pane,
+        pages: vec![0, 1, 2],
+        task: PageTask::Simplify,
+        tag: None,
+    };
+    // Held runs keep glowing, so steps, not `run`.
+    h.state_mut().queue(Sent::Engine(Command::PageAi(action)));
+    h.run_steps(30);
+    let writing = h.state().session().page_ai_writing(pane);
+    assert_eq!(writing, [(0, 2)], "one group of three, held");
+    let glows = mareader_ui_egui::glow::shown(&h.ctx);
+    assert!(glows >= 3, "each of its pages glows: {glows}");
+}

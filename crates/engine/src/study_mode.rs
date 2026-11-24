@@ -11,6 +11,7 @@ pub mod known;
 pub mod recalling;
 pub mod run;
 pub mod sightings;
+pub mod stand;
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -26,6 +27,7 @@ pub use deck_job::{Built, DeckJob, Doing, Tags};
 pub use known::Known;
 pub use recalling::{Ask, Recalling, Word};
 pub use run::{Ahead, DeckState, Open, Prior, Run};
+pub use stand::{Stand, Stands};
 
 /// Who could write study's cards: a model chosen for study (the desktop
 /// app's AI), then a dictionary pack answering from English.

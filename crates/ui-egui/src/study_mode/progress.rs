@@ -2,13 +2,16 @@
 //!
 //! Folded, it is a ring in the pane's bottom left corner, rising over the
 //! page bar while that is up: spinning while the new words are found,
-//! filling as cards are written, red once writing failed.
+//! filling as cards are written, red once writing failed. Where the pane's
+//! deck leaves no room there, it moves to the top left corner, and smaller
+//! when only that fits, gliding between them.
 //! A hover widens it to say so in words. Dictionary cards come at once, so
 //! they never show it; a deck finished shows *Next cards ready* a moment.
 
 use egui::{Align2, Color32, Context, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use mareader_engine::study_mode::{Ahead, DeckJob, DeckState, Doing, Run};
 use mareader_study::mode::Via;
+use mareader_workspace::PaneId;
 
 use super::Pane;
 use crate::motion;
@@ -24,6 +27,11 @@ const FADE: f64 = 0.4;
 const SIDE: f32 = 30.0;
 const INSET: f32 = 14.0;
 const LIFT: f32 = 12.0;
+/// The small toast's side and room, where the deck leaves little.
+const SMALL: f32 = 18.0;
+const TIGHT: f32 = 4.0;
+/// The least room kept between the toast and the deck.
+const GAP: f32 = 2.0;
 /// Seconds to widen and to fold.
 const OPEN: f32 = 0.2;
 
@@ -116,7 +124,55 @@ impl Watch {
     }
 }
 
-/// The toast at `pane`'s bottom left, saying `status`.
+/// Marks `rect` as `pane`'s deck this pass; the toast keeps clear of it.
+pub fn keep_clear(ctx: &Context, pane: PaneId, rect: Rect) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(taken_id(pane), (pass, rect)));
+}
+
+/// Where `pane`'s deck drew this pass or the last; none once it is gone.
+fn taken(ctx: &Context, pane: PaneId) -> Option<Rect> {
+    let pass = ctx.cumulative_pass_nr();
+    let kept: Option<(u64, Rect)> = ctx.data(|d| d.get_temp(taken_id(pane)));
+    kept.filter(|(at, _)| at + 1 >= pass).map(|(_, rect)| rect)
+}
+
+fn taken_id(pane: PaneId) -> Id {
+    Id::new(("study-progress-taken", pane))
+}
+
+/// The folded toast in `pane`: the bottom left corner, risen over the page
+/// bar while `bar`, else the top left; small where only that is clear of
+/// `taken`, and small in the top left when nothing is.
+fn spot(pane: Rect, bar: bool, taken: Option<Rect>) -> Rect {
+    let corner = |(side, inset): (f32, f32), top: bool| {
+        let lift = if bar {
+            crate::page_bar::BAR_H + LIFT
+        } else {
+            inset
+        };
+        let y = match top {
+            true => pane.top() + inset,
+            false => pane.bottom() - lift - side,
+        };
+        Rect::from_min_size(pos2(pane.left() + inset, y), Vec2::splat(side))
+    };
+    let free = |r: &Rect| taken.is_none_or(|t| !t.intersects(r.expand(GAP)));
+    let both = |size| [corner(size, false), corner(size, true)];
+    let mut tries = [(SIDE, INSET), (SMALL, TIGHT)].into_iter().flat_map(both);
+    let fallback = corner((SMALL, TIGHT), true);
+    tries.find(free).unwrap_or(fallback)
+}
+
+/// `to`, eased there from where the toast last stood.
+fn glide(ctx: &Context, id: Id, to: Rect) -> Rect {
+    let secs = motion::secs(ctx, OPEN);
+    let ease = |key: &str, to: f32| ctx.animate_value_with_time(id.with(key), to, secs);
+    let min = pos2(ease("x", to.left()), ease("y", to.top()));
+    Rect::from_min_size(min, Vec2::splat(ease("side", to.height())))
+}
+
+/// The toast in `pane`'s corner, saying `status`.
 pub fn show(ctx: &Context, pane: &Pane<'_>, (range, status): Work, alpha: f32) {
     let t = Tokens::get(ctx);
     let id = Id::new(("study-progress", pane.id));
@@ -125,26 +181,21 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, (range, status): Work, alpha: f32) {
     let galley = ctx.fonts_mut(|f| f.layout_no_wrap(said.clone(), font, t.ink));
     let hovered = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let open = motion::slide(ctx, id.with("open"), f32::from(u8::from(hovered)), OPEN);
-    let full = SIDE + galley.rect.width() + 22.0;
-    let room = (pane.rect.width() - 2.0 * INSET).max(SIDE);
-    let width = (SIDE + (full - SIDE) * open).min(room);
-    let lift = match pane.bar {
-        true => crate::page_bar::BAR_H + LIFT,
-        false => INSET,
-    };
-    let lift = ctx.animate_value_with_time(id.with("lift"), lift, motion::secs(ctx, OPEN));
-    let bottom = pane.rect.bottom() - lift;
-    let at = pos2(pane.rect.left() + INSET, bottom);
+    let folded = glide(ctx, id, spot(pane.rect, pane.bar, taken(ctx, pane.id)));
+    let side = folded.height();
+    let full = side + galley.rect.width() + 22.0;
+    let room = (pane.rect.right() - folded.left() - INSET).max(side);
+    let width = (side + (full - side) * open).min(room);
     let shown = z_order::area(ctx, Tier::PageCard, id)
-        .pivot(Align2::LEFT_BOTTOM)
-        .fixed_pos(at)
+        .pivot(Align2::LEFT_TOP)
+        .fixed_pos(folded.min)
         .constrain(false)
         .show(ctx, |ui| {
-            let (rect, resp) = ui.allocate_exact_size(vec2(width, SIDE), Sense::hover());
+            let (rect, resp) = ui.allocate_exact_size(vec2(width, side), Sense::hover());
             paint(ui, rect, status, &t, alpha);
             if open > 0.0 {
                 let ink = t.ink.gamma_multiply(open * alpha);
-                let text = pos2(rect.left() + SIDE + 4.0, rect.center().y);
+                let text = pos2(rect.left() + side + 4.0, rect.center().y);
                 let painter = ui.painter_at(rect.shrink(1.0));
                 let top = text - vec2(0.0, galley.rect.height() / 2.0);
                 painter.galley_with_override_text_color(top, galley, ink);
@@ -160,27 +211,29 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, (range, status): Work, alpha: f32) {
     crate::toast::keep_clear(ctx, shown.response.rect);
 }
 
-/// The toast's paper and its ring.
+/// The toast's paper and its ring, sized to its height.
 fn paint(ui: &Ui, rect: Rect, status: Status, t: &Tokens, alpha: f32) {
     let painter = ui.painter();
     let fade = |c: Color32| c.gamma_multiply(alpha);
+    let side = rect.height();
+    let k = side / SIDE;
     let shadow = egui::Shadow {
         offset: [0, 4],
         blur: 14,
         spread: 0,
         color: fade(t.shadow),
     };
-    painter.add(shadow.as_shape(rect, SIDE / 2.0));
-    painter.rect_filled(rect, SIDE / 2.0, fade(t.surface));
+    painter.add(shadow.as_shape(rect, side / 2.0));
+    painter.rect_filled(rect, side / 2.0, fade(t.surface));
     let edge = Stroke::new(1.0, fade(t.line));
-    painter.rect_stroke(rect, SIDE / 2.0, edge, egui::StrokeKind::Inside);
-    let c = pos2(rect.left() + SIDE / 2.0, rect.center().y);
-    let r = 8.0;
+    painter.rect_stroke(rect, side / 2.0, edge, egui::StrokeKind::Inside);
+    let c = pos2(rect.left() + side / 2.0, rect.center().y);
+    let (r, line) = (8.0 * k, Stroke::new(2.5 * k, fade(t.accent)));
     if status == Status::Failed {
-        painter.circle_filled(c, 5.0, fade(t.danger));
+        painter.circle_filled(c, 5.0 * k, fade(t.danger));
         return;
     }
-    painter.circle_stroke(c, r, Stroke::new(2.5, fade(t.track)));
+    painter.circle_stroke(c, r, Stroke::new(line.width, fade(t.track)));
     let now = ui.input(|i| i.time) as f32;
     let (from, span) = match status {
         Status::Writing { done, of } if done > 0 && of > 0 => {
@@ -189,11 +242,11 @@ fn paint(ui: &Ui, rect: Rect, status: Status, t: &Tokens, alpha: f32) {
         Status::Ready => (0.0, std::f32::consts::TAU),
         _ => (now * 5.0, 1.6),
     };
-    arc(ui, c, r, (from, span), Stroke::new(2.5, fade(t.accent)));
+    arc(ui, c, r, (from, span), line);
     if status == Status::Ready {
-        let (a, b) = (c + vec2(-3.5, 0.0), c + vec2(-1.0, 2.5));
-        let tick = vec![a, b, c + vec2(3.5, -2.5)];
-        painter.line(tick, Stroke::new(2.0, fade(t.accent)));
+        let marks = [vec2(-3.5, 0.0), vec2(-1.0, 2.5), vec2(3.5, -2.5)];
+        let tick = marks.map(|v| c + v * k);
+        painter.line(tick.to_vec(), Stroke::new(2.0 * k, fade(t.accent)));
     }
 }
 
@@ -223,6 +276,24 @@ mod tests {
         assert_eq!(watch.alpha(1.5), 1.0);
         assert!(watch.alpha(3.9) < 0.5);
         assert_eq!(watch.status(None, 4.5), None);
+    }
+
+    #[test]
+    fn the_toast_moves_and_shrinks_out_of_the_decks_way() {
+        let pane = Rect::from_min_size(pos2(0.0, 0.0), vec2(200.0, 250.0));
+        let corner = |taken: Option<Rect>| spot(pane, false, taken);
+        let roomy = corner(None);
+        assert_eq!(roomy.left_bottom(), pos2(14.0, 236.0));
+        assert_eq!(roomy.height(), SIDE);
+        let deck = |y: std::ops::RangeInclusive<f32>| Some(Rect::from_x_y_ranges(0.0..=200.0, y));
+        let above = corner(deck(150.0..=220.0));
+        assert_eq!(above.min, pos2(14.0, 14.0), "the top left");
+        assert_eq!(above.height(), SIDE);
+        let below = corner(deck(26.0..=225.0));
+        assert_eq!(below.left_bottom(), pos2(TIGHT, 246.0), "small below");
+        assert_eq!(below.height(), SMALL);
+        let none = corner(deck(10.0..=240.0));
+        assert_eq!(none.min, pos2(TIGHT, TIGHT), "small, top left");
     }
 
     #[test]

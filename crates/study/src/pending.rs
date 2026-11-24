@@ -23,6 +23,11 @@ pub trait Pending<O, P = O>: Send {
     /// What has come since the last look; nothing after the end.
     fn news(&mut self) -> Vec<News<O, P>>;
 
+    /// Whether it waits in line for a model, as of the last news.
+    fn queued(&self) -> bool {
+        false
+    }
+
     /// The result once it came, partials skipped; after that, none.
     fn take(&mut self) -> Option<Result<O, Failure>> {
         self.news().into_iter().find_map(|news| match news {

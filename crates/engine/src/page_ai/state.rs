@@ -63,6 +63,16 @@ pub enum Handle {
     Held(Option<Rewritten>),
 }
 
+impl Handle {
+    /// Whether it writes now, not waiting in line for a model.
+    pub fn writing(&self) -> bool {
+        match self {
+            Self::Live(job) => !job.queued(),
+            Self::Canned(_) | Self::Held(_) => true,
+        }
+    }
+}
+
 /// A result being written, as the engine sees every AI job.
 pub type Writing = dyn Pending<Rewritten>;
 

@@ -95,6 +95,13 @@ impl Ledger {
         self.wait = Some(self.wait.map_or(after, |w| w.min(after)));
     }
 
+    /// The own pages being written in `layout` now, first and last.
+    pub fn writing(&self, layout: u64) -> Vec<(usize, usize)> {
+        let live = |r: &&Run| r.handle.as_ref().is_some_and(Handle::writing);
+        let here = self.runs.iter().filter(|r| r.layout == layout);
+        here.filter(live).map(|r| (r.page, r.last)).collect()
+    }
+
     /// Takes any deferred poll wait recorded since the last check.
     pub fn take_wait(&mut self) -> Option<Duration> {
         self.wait.take()

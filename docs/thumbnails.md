@@ -19,6 +19,14 @@ hard words.
   document clears them. When page AI results are laid in or out of a book,
   the same pages stay picked, renumbered.
 
+## The AI glow
+
+A page the AI writes for now wears the AI glow round its thumbnail
+(`glow.rs`), fading out once it is done: a page AI run on it, alone,
+continuous, or in a group of picked pages; and, while studying, a batch
+whose cards are being written ([Study mode](study-mode.md)). A run waiting
+in line for its model (`Pending::queued`) does not glow yet.
+
 ## The menu
 
 Right-click a picked page for the picks' menu:

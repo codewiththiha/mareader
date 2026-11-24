@@ -1,5 +1,5 @@
 //! A pane's run: held before planning, planned on a real PDF from the page
-//! it turned on at, its gate and the known cards' trail.
+//! it turned on at, its gate, the known cards' trail and how pages stand.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use std::sync::Arc;
@@ -240,4 +240,42 @@ fn a_deck_read_with_no_limit_opens_again_over_its_pages() {
     assert_eq!(run.arrived(1), None, "no offer while one is open");
     assert!(run.close_review());
     assert_eq!(run.kept.len(), 1, "closing keeps it for next time");
+}
+
+/// A deck being made for `pages`, its writer `via`, not yet stepped.
+fn making(pages: &Batch, via: Via) -> Box<DeckJob> {
+    let ask = crate::study_mode::deck_job::Ask {
+        document: document(),
+        pages: (pages.from..=pages.to).collect(),
+        level: 4,
+        max: 10,
+        known: Known::default(),
+        to: None,
+        via,
+        writer: None,
+    };
+    Box::new(DeckJob::new(Arc::new(|| {}), ask))
+}
+
+#[test]
+fn locked_pages_stand_as_their_decks_do() {
+    use crate::study_mode::Stand::{Ready, Shut, Writing};
+    let mut run = planned(3);
+    let ai = |_: &Batch| Some(Via::Ai);
+    assert_eq!(run.stands(false, ai), [(3..6, Shut), (6..9, Shut)]);
+    let (second, third) = (run.batches[1].clone(), run.batches[2].clone());
+    run.deck = DeckState::Open(Open::new(second.clone(), built(), None));
+    let job = making(&third, Via::Ai);
+    run.ahead.push(Ahead::Making { batch: third, job });
+    assert_eq!(run.stands(false, ai), [(3..6, Ready), (6..9, Writing)]);
+    run.ahead.clear();
+    run.start = 2;
+    let dictionary = run.stands(true, |_| Some(Via::Dictionary));
+    assert_eq!(dictionary, [(0..2, Shut), (3..6, Ready), (6..9, Ready)]);
+    let why = String::new();
+    run.deck = DeckState::Failed { batch: second, why };
+    let nobody = run.stands(false, |_| None);
+    assert_eq!(nobody, [(3..6, Shut), (6..9, Shut)], "failed, or nobody");
+    let unplanned = Run::new(Mode::Proactive, None, 4);
+    assert_eq!(unplanned.stands(false, ai), [(4..usize::MAX, Shut)]);
 }

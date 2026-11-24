@@ -59,24 +59,6 @@ pub fn shading(
     look.filter(|_| !hidden)
 }
 
-/// What the page grid marks of `pane`'s Proactive study.
-pub fn marks(session: &Session, pane: PaneId) -> StudyMarks {
-    let run = session.study_mode().run(pane);
-    let Some(run) = run.filter(|r| r.mode == Mode::Proactive) else {
-        return StudyMarks::default();
-    };
-    let place = session.documents().place(pane);
-    let current = place.map_or(run.start, |place| place.current);
-    let batch = run.batches.iter().find(|b| b.holds(current));
-    StudyMarks {
-        on: true,
-        batch: batch.map(|b| (b.from, b.to)),
-        start: run.start,
-        lock: session.settings().study.mode.lock,
-        gate: run.gate(),
-    }
-}
-
 /// How far study mode lets `pane` go: its locked start up to its gate.
 pub fn span(session: &Session, pane: PaneId) -> gate::StudySpan {
     gate::StudySpan {
@@ -228,6 +210,18 @@ impl StudyModeUi {
             self.asking = None;
         }
         self.keyed = None;
+    }
+
+    /// What the page grid marks of `pane`'s study: how its pages stand, and
+    /// the batch whose cards show in it.
+    pub fn marks(&self, session: &Session, pane: PaneId) -> StudyMarks {
+        let run = session.study_mode().run(pane);
+        let shown = run.filter(|_| self.showing.contains(&pane));
+        let facing = shown.and_then(Run::shown_deck).map(|open| &open.batch);
+        StudyMarks {
+            stands: session.study_stands(pane),
+            facing: facing.map(|batch| (batch.from, batch.to)),
+        }
     }
 
     /// The veil past `pane`'s gate, or its deck once the gate is in view.

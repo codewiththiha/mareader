@@ -231,14 +231,26 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   *Try again*, *Use the dictionary* and *Read previous pages*.
 - **The corner toast** (`study_mode/progress.rs`): while the AI writes a
   deck, the gate's or one made ahead, a ring sits in the pane's bottom
-  left corner, rising over the page bar only while that is up, spinning while the words are found, filling as cards are written,
-  red once writing failed. A hover widens it to say so (*Writing cards 3
+  left corner, rising over the page bar only while that is up, spinning
+  while the words are found, filling as cards are written, red once
+  writing failed. Where the pane's deck covers that corner (a short or
+  narrow pane), it glides to the top left corner, and shrinks from 30 to
+  18 pt when only that keeps it clear; with no room anywhere it sits small
+  in the top left corner. The deck marks where it drew each pass
+  (`progress::keep_clear`). A hover widens it to say so (*Writing cards 3
   of 8 · pages 4–6*). A finished deck shows *Next cards ready* for 3 s.
   Dictionary cards come at once and never show it; the deck opens at the
   gate.
-- **Thumbnails** (`thumbnails/study.rs`): the batch read stays bright with
-  an accent bar beside it, the other pages dim (those before a locked start
-  the most), and the pages past the gate wear a wash and a padlock.
+- **Thumbnails** (`thumbnails/study.rs`, from `Session::study_stands`):
+  pages that read freely show as they are. A locked page stands one of
+  three ways: **shut** (its cards not ready: no deck yet, a deck waiting in
+  line for the model, a failed one, or a page before a locked start) is
+  dimmed under a padlock; **writing** (the AI writes its cards now) is
+  dimmed under a padlock and wears the AI glow; **ready** (its cards wait
+  at the gate) keeps the padlock, undimmed. The dictionary writes at once,
+  so its locked pages are always ready. The batch whose deck the reader
+  faces has an accent bar beside it. The glow is the one page AI runs show
+  ([Thumbnails](thumbnails.md#the-ai-glow)).
 - **Word help is off:** the selection bar drops Explain and Look up, and
   CEFR shading hides unless Hints is on.
 - **Reactive:** shading stays, a click on a shaded word opens the recall

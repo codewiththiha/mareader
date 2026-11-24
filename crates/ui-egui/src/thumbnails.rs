@@ -28,6 +28,7 @@ use crate::ui_command::{Commands, Sent};
 pub use grid::CELL_W;
 use grid::{BAND, Grid, fitted, shown_pages, spread_align};
 use mareader_engine::command::Command;
+use mareader_engine::study_mode::Stand;
 pub use picks::Offer;
 use picks::Picks;
 pub use study::StudyMarks;
@@ -52,6 +53,8 @@ pub struct ThumbState {
     offer: Offer,
     /// The reading pane's study, marked on its pages.
     study: StudyMarks,
+    /// The own pages its page AI writes now, first and last.
+    writing: Vec<(usize, usize)>,
 }
 
 impl ThumbState {
@@ -71,6 +74,17 @@ impl ThumbState {
 
     pub fn set_study(&mut self, study: StudyMarks) {
         self.study = study;
+    }
+
+    pub fn set_writing(&mut self, writing: Vec<(usize, usize)>) {
+        self.writing = writing;
+    }
+
+    /// Whether the AI writes for `page` now: its study cards, or its page AI
+    /// over own page `own`.
+    fn ai_writes(&self, page: usize, own: usize) -> bool {
+        let pages = self.writing.iter().any(|&(a, b)| (a..=b).contains(&own));
+        pages || self.study.stand(page) == Stand::Writing
     }
 
     /// No book to show: picks and the book they held let go.
@@ -198,9 +212,13 @@ pub fn show(
                 ui.painter()
                     .add(PagesCallback::shape(pass.clone(), ui.clip_rect(), quads));
             }
-            // Over the pages, which draw last: study's wash, a pick's tick.
+            // Over the pages, which draw last: study's marks, the glow, a tick.
             for (rect, page, chosen) in picked {
-                study::over(ui, rect, state.study.shade(page), &t);
+                let marks = &state.study;
+                study::over(ui, rect, (marks.stand(page), marks.faces(page)), &t);
+                let own = reading.document.to_base(page);
+                let id = Id::new(("thumb-glow", reading.pane, page));
+                glow(ui, (rect, id), state.ai_writes(page, own), &t);
                 if chosen {
                     tick(ui, rect, &t);
                 }
@@ -359,6 +377,14 @@ fn decorate(
         painter.text(centre, Align2::CENTER_CENTER, number, font, t.accent);
     } else {
         painter.text(centre, Align2::CENTER_CENTER, number, font, t.muted);
+    }
+}
+
+/// The AI's glow round a page it writes for, fading out once it is done.
+fn glow(ui: &Ui, (page, id): (Rect, Id), working: bool, t: &Tokens) {
+    let ctx = ui.ctx();
+    if let Some(glow) = crate::glow::state(ctx, id, working) {
+        crate::glow::paint(ctx, ui.painter(), t, page, 0.0, glow);
     }
 }
 

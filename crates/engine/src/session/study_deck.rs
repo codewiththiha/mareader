@@ -17,7 +17,7 @@ use mareader_workspace::PaneId;
 use super::Session;
 use crate::event::Event;
 use crate::study_mode::deck_job::Ask;
-use crate::study_mode::{self as mode, Ahead, Built, DeckJob, DeckState, Known, Open};
+use crate::study_mode::{self as mode, Ahead, Built, DeckJob, DeckState, Known, Open, Stands};
 use crate::toast::Toast;
 
 impl Session {
@@ -155,19 +155,34 @@ impl Session {
         place.is_some_and(|p| p.current.saturating_add(1) >= gate || p.visible.contains(&gate))
     }
 
+    /// How `pane`'s pages stand in its study; none while it studies none.
+    pub fn study_stands(&self, pane: PaneId) -> Stands {
+        let Some(run) = self.study_mode.run(pane) else {
+            return Stands::new();
+        };
+        run.stands(self.settings.study.mode.lock, self.study_via(pane))
+    }
+
+    /// Who can write each batch's deck in `pane`: the dictionary for its
+    /// fallback batch, else as the settings and what is set up allow.
+    fn study_via(&self, pane: PaneId) -> impl Fn(&Batch) -> Option<Via> {
+        let fallback = self.study_mode.run(pane).and_then(|run| run.fallback);
+        let source = self.settings.study.mode.source;
+        let mut have = self.study_have(pane);
+        // The AI writes once its writer is wired; a headless session has none.
+        have.ai &= self.study_mode.writer().is_some();
+        move |batch: &Batch| match fallback == Some(batch.from) && have.dict {
+            true => Some(Via::Dictionary),
+            false => via(source, have),
+        }
+    }
+
     /// What `batch`'s deck is made of, and who writes its backs.
     fn study_ask(&self, pane: PaneId, batch: &Batch) -> Option<Ask> {
         let study = &self.settings.study;
-        let fallback = self.study_mode.run(pane)?.fallback == Some(batch.from);
         let writer = self.study_mode.writer();
-        let mut have = self.study_have(pane);
-        // The AI writes once its writer is wired; a headless session has none.
-        have.ai &= writer.is_some();
-        let via = match fallback && have.dict {
-            true => Via::Dictionary,
-            // With no one to write, the dictionary's deck says what is missing.
-            false => via(study.mode.source, have).unwrap_or(Via::Dictionary),
-        };
+        // With no one to write, the dictionary's deck says what is missing.
+        let via = self.study_via(pane)(batch).unwrap_or(Via::Dictionary);
         Some(Ask {
             document: self.documents.document_of(pane)?,
             pages: (batch.from..=batch.to).collect(),

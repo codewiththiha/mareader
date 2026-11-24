@@ -39,10 +39,8 @@ impl MareaderApp {
             self.ui.shelf_tree.made(self.session.library_model(), made);
         }
         let notes = self.rail_notes(sidebar_drawn);
-        self.ui
-            .thumbs
-            .set_offer(crate::thumbnails::Offer::of(self.settings()));
         let active = self.active();
+        self.thumbs_news(active, sidebar_drawn);
         let reading = self.documents().reading(active);
         let thumb_look = PageLook::new(&self.settings().layout, self.session.text(active));
         let click = self.settings().workspace.library_click;
@@ -93,6 +91,17 @@ impl MareaderApp {
             }
         });
         (inset, overlay)
+    }
+
+    /// What the thumbnails show of the session: the AI's offer, and the
+    /// pages its page AI writes now.
+    fn thumbs_news(&mut self, active: PaneId, sidebar_drawn: bool) {
+        let offer = crate::thumbnails::Offer::of(self.settings());
+        self.ui.thumbs.set_offer(offer);
+        if sidebar_drawn && self.ui.sidebar.panel() == Panel::Thumbnails {
+            let writing = self.session.page_ai_writing(active);
+            self.ui.thumbs.set_writing(writing);
+        }
     }
 
     fn rail_notes(&self, sidebar_drawn: bool) -> Arc<[crate::notes_panel::Row]> {

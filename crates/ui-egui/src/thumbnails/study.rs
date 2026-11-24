@@ -1,70 +1,55 @@
-//! Study mode in the page grid: the batch read stays bright with an accent
-//! bar, the pages around it dim, and the pages past the gate wear a padlock.
+//! Study mode in the page grid: how each locked page stands, and which
+//! batch's cards the reader faces.
+//!
+//! A page whose cards are not ready is dimmed under a padlock; one whose
+//! cards the AI writes now glows too; one whose cards are ready keeps the
+//! padlock, undimmed. Pages that read freely show as they are. The batch
+//! whose deck the reader faces has an accent bar beside it.
 
 use std::f32::consts::PI;
 
 use egui::{Color32, CornerRadius, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
+use mareader_engine::study_mode::{Stand, Stands};
 
 use crate::theme::Tokens;
 
 /// What the grid marks of a pane's Proactive study, as of this frame.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct StudyMarks {
-    pub on: bool,
-    /// The batch the reader is in, first and last page.
-    pub batch: Option<(usize, usize)>,
-    /// The page study mode turned on at.
-    pub start: usize,
-    /// The pages before the start are locked.
-    pub lock: bool,
-    /// The first page past the gate.
-    pub gate: Option<usize>,
-}
-
-/// How a page shows in the grid: its wash, and whether it is locked or in
-/// the batch read.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Shade {
-    pub wash: f32,
-    pub locked: bool,
-    pub batch: bool,
+    pub stands: Stands,
+    /// The batch whose deck the reader faces, first and last page.
+    pub facing: Option<(usize, usize)>,
 }
 
 impl StudyMarks {
-    pub fn shade(self, page: usize) -> Shade {
-        let batch = self.on && self.batch.is_some_and(|(a, b)| (a..=b).contains(&page));
-        let locked = self.on && self.gate.is_some_and(|gate| page >= gate);
-        let wash = match (self.on, locked, batch) {
-            (false, ..) | (true, _, true) => 0.0,
-            (true, true, false) => 0.55,
-            _ if page < self.start && self.lock => 0.6,
-            _ => 0.35,
-        };
-        Shade {
-            wash,
-            locked,
-            batch,
-        }
+    pub fn stand(&self, page: usize) -> Stand {
+        let held = self.stands.iter().find(|(pages, _)| pages.contains(&page));
+        held.map_or(Stand::Free, |(_, stand)| *stand)
+    }
+
+    pub fn faces(&self, page: usize) -> bool {
+        self.facing.is_some_and(|(a, b)| (a..=b).contains(&page))
     }
 }
 
-/// Over a drawn page: its wash and padlock, and the batch's bar beside it.
-pub fn over(ui: &Ui, page: Rect, shade: Shade, t: &Tokens) {
+/// Over a drawn page: the wash and padlock of where it stands, and the
+/// accent bar beside it while the reader faces its cards.
+pub fn over(ui: &Ui, page: Rect, (stand, facing): (Stand, bool), t: &Tokens) {
     let painter = ui.painter();
-    if shade.wash > 0.0 {
+    if matches!(stand, Stand::Shut | Stand::Writing) {
         // Light paper on a light rail fades into it unseen, so it greys.
         let fill = match t.dark {
-            true => ui.visuals().panel_fill.gamma_multiply(shade.wash),
-            false => Color32::BLACK.gamma_multiply(shade.wash * 0.3),
+            true => ui.visuals().panel_fill.gamma_multiply(0.55),
+            false => Color32::BLACK.gamma_multiply(0.16),
         };
         painter.rect_filled(page, CornerRadius::ZERO, fill);
     }
-    if shade.batch {
+    if facing {
         let bar = Rect::from_min_max(pos2(page.left() - 7.0, page.top()), page.left_bottom());
         let bar = bar.shrink2(vec2(1.5, 0.0));
         painter.rect_filled(bar, CornerRadius::same(2), t.accent);
     }
-    if shade.locked {
+    if stand != Stand::Free {
         padlock(ui, page.center(), t);
     }
 }
@@ -88,19 +73,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_batch_read_is_bright_and_the_pages_past_the_gate_locked() {
+    fn a_page_stands_as_its_span_says_and_the_rest_read_freely() {
         let marks = StudyMarks {
-            on: true,
-            batch: Some((3, 7)),
-            start: 3,
-            lock: true,
-            gate: Some(8),
+            stands: vec![(3..6, Stand::Ready), (6..9, Stand::Writing)],
+            facing: Some((3, 5)),
         };
-        let shade = |page| marks.shade(page);
-        assert!(shade(4).batch && shade(4).wash < f32::EPSILON);
-        assert!(shade(8).locked && !shade(8).batch);
-        let (before, past) = (shade(1).wash, shade(8).wash);
-        assert!(before > past, "a lock dims the pages before more");
-        assert!(!StudyMarks::default().shade(1).locked);
+        assert_eq!(marks.stand(1), Stand::Free);
+        assert_eq!(marks.stand(5), Stand::Ready);
+        assert_eq!(marks.stand(6), Stand::Writing);
+        assert!(marks.faces(4) && !marks.faces(6));
+        assert_eq!(StudyMarks::default().stand(4), Stand::Free);
     }
 }

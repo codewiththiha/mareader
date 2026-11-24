@@ -184,10 +184,12 @@ impl DeckJob {
 
     /// The cards written out of the deck's, while the writer works.
     pub fn progress(&self) -> Option<(usize, usize)> {
-        match self.stage {
-            Stage::Writing { .. } => Some(written(&self.written)),
-            _ => None,
-        }
+        matches!(self.stage, Stage::Writing { .. }).then(|| written(&self.written))
+    }
+
+    /// Whether its writer waits in line for a model.
+    pub fn queued(&self) -> bool {
+        matches!(&self.stage, Stage::Writing { job, .. } if job.queued())
     }
 
     /// Memorized words set aside, once the deck is drawn up.
