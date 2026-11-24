@@ -280,13 +280,15 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   it drew, and stamps only while that shows; one on screen whenever drawn,
   as an open card or the library page, calls `seen::in_view`.
 - **Adding a job.** Both rules and every state come with the stack; a new
-  job needs: a `Key` variant, whose `scope` (pane or global) the compiler
-  asks for with its words and its `ending` (one line an arm, each calling
-  the owner's own helper); a reader of it in `Session::activities`;
-  `seen::watch` from its visual; and its View and Cancel in
-  `app/activity.rs::press_activity`, which the compiler asks for too. The
-  UI tests' `has_visual` makes it say whether it has a visual of its own,
-  and one with a visual gets a test calling `assert_seen` with it in view.
+  job needs: a `Key` variant; its `Kind` in the `kinds!` list; its arms in
+  `scope`, `kind`, `stop_word`, the words and `ending` (one line an arm,
+  each calling the owner's own helper); a reader of it in
+  `Session::activities`; `seen::watch` from its visual; and its View and
+  Cancel in `app/activity.rs::press_activity`. The compiler asks for every
+  arm. The UI tests' `jobs::proof` asks for a scene with the job at work,
+  its visual in view, or none; one test walks `Kind::ALL` through them. It
+  fails if `Session::activities` misses the job, or if a visual in view
+  leaves its line in the stack.
   Closing the recall drops the judge, with a *Stopped checking* toast.
 - **Toasts rise above it** (`stack::toast_lift`): a toast never covers
   a stack, nor waits behind it, so a failure's toast shows with its red

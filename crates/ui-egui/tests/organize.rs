@@ -17,7 +17,7 @@ use crate::common::without_models;
 /// Frames enough for a run's card to show; its ring keeps asking for more.
 const FRAMES: usize = 40;
 
-fn page(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
+pub(crate) fn page(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
     let mut app = MareaderApp::default();
     app.set_option("workers", "0").ok();
     app.set_option("library", "show").ok();
@@ -218,8 +218,6 @@ fn send(h: &mut Harness<'static, MareaderApp>, command: Command) {
 fn off_the_library_its_run_stacks_once_in_the_workspace_corner() {
     let mut h = page(&[("copies", "5"), ("organize", "running")]);
     h.get_by_label("Pause organizing");
-    // The library's own card says it.
-    crate::common::assert_seen(&h);
     send(&mut h, Command::ShowRoute(Route::Reader));
     assert!(
         h.query_by_label("Pause organizing").is_none(),

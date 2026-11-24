@@ -23,7 +23,7 @@ type H = Harness<'static, MareaderApp>;
 type Shelves = (tempfile::TempDir, tempfile::TempDir);
 
 /// A reader in Reactive mode, a scripted AI writing backs and judging.
-fn recalling(script: &str) -> (H, PaneId, Shelves) {
+pub(crate) fn recalling(script: &str) -> (H, PaneId, Shelves) {
     let (words, packs) = shelves();
     let mut h = levels_reader(words.path(), Some(packs.path()));
     h.state_mut().set_option("study_cards", script).unwrap();
@@ -177,7 +177,6 @@ fn a_judge_out_of_view_works_in_the_ai_stack() {
     h.run_steps(10);
     let judging = recall(&h, pane).and_then(Recalling::judging);
     assert_eq!(judging, Some(false), "the judge works on it");
-    crate::common::assert_seen(&h);
     h.state_mut()
         .queue(Sent::Engine(Command::GoTo { pane, page: 4 }));
     h.run_steps(20);

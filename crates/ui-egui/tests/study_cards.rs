@@ -30,7 +30,7 @@ fn studying(cards: &str, ahead: u8) -> (H, PaneId, Shelves) {
 }
 
 /// The same, turned on at `page`, the pages before it free to read.
-fn studying_at(cards: &str, ahead: u8, page: Option<usize>) -> (H, PaneId, Shelves) {
+pub(crate) fn studying_at(cards: &str, ahead: u8, page: Option<usize>) -> (H, PaneId, Shelves) {
     let (words, packs) = shelves();
     let mut h = levels_reader(words.path(), Some(packs.path()));
     h.dial(|s| {
@@ -56,7 +56,7 @@ fn go_to(h: &mut H, page: usize) {
 }
 
 /// Steps until `done` holds; frames keep coming while a deck is made.
-fn wait(h: &mut H, done: impl Fn(&H) -> bool) -> bool {
+pub(crate) fn wait(h: &mut H, done: impl Fn(&H) -> bool) -> bool {
     for _ in 0..600 {
         if done(h) {
             return true;
@@ -78,7 +78,7 @@ fn open_via(h: &H, pane: PaneId) -> Option<Via> {
     }
 }
 
-fn writing(h: &H, pane: PaneId) -> bool {
+pub(crate) fn writing(h: &H, pane: PaneId) -> bool {
     matches!(deck(h, pane), Some(DeckState::Making { job, .. }) if job.via() == Via::Ai)
 }
 
@@ -198,8 +198,6 @@ fn the_stack_shows_the_writing_only_while_the_deck_is_out_of_view() {
     assert!(wait(&mut h, |h| writing(h, pane)), "the AI is asked");
     assert_eq!(h.state().session().study_gate(pane), Some(3));
     h.run_steps(4);
-    // The waiting card says it.
-    crate::common::assert_seen(&h);
     go_to(&mut h, 0);
     let stacked = |h: &H| h.query_by_label(STACK).is_some();
     assert!(

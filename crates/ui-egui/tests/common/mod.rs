@@ -5,14 +5,12 @@ use std::sync::Arc;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
-use mareader_engine::activity::Key;
 use mareader_engine::command::Command;
 use mareader_engine::host::{Fake, Host, Shared};
 use mareader_engine::library::Action;
 use mareader_pdf::TextLayer;
 use mareader_settings::{DictionaryWindow, Settings};
 use mareader_ui_egui::MareaderApp;
-use mareader_ui_egui::activity::{seen, stack::STACK};
 use mareader_ui_egui::selection::Sheet;
 use mareader_ui_egui::ui_command::Sent;
 
@@ -256,38 +254,4 @@ pub(crate) fn window_at(rect: [f32; 4]) -> DictionaryWindow {
         minimized: false,
         rect: Some(rect),
     }
-}
-
-/// Whether `key`'s job has a visual of its own, which keeps its line out
-/// of the AI stack while in sight. A new job must say so here, and one
-/// with a visual gets a test that calls [`assert_seen`] with it in view.
-pub(crate) fn has_visual(key: Key) -> bool {
-    match key {
-        Key::Cards { .. } | Key::Explain { .. } | Key::Skill { .. } => true,
-        Key::Page { .. } | Key::Pages { .. } | Key::Judge { .. } => true,
-        // The library page says what it organizes.
-        Key::Organize { .. } => true,
-        // It follows the reader with no visual of its own.
-        Key::Follow { .. } => false,
-    }
-}
-
-/// Every job going on that has a visual says it is in view, and the AI
-/// stack stays clear: what a job's visual must do while on screen.
-pub(crate) fn assert_seen(h: &Harness<'static, MareaderApp>) {
-    let now = h.ctx.input(|i| i.time);
-    let jobs = h.state().session().activities(now);
-    let keys: Vec<Key> = jobs
-        .iter()
-        .map(|j| j.key)
-        .filter(|k| has_visual(*k))
-        .collect();
-    assert!(
-        !keys.is_empty(),
-        "no job with a visual of its own is going on"
-    );
-    for key in keys {
-        assert!(seen::shown(&h.ctx, key), "{key:?} shows but never says so");
-    }
-    assert!(h.query_by_label(STACK).is_none(), "the stack stays clear");
 }

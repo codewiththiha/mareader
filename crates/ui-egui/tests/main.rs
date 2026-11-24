@@ -16,6 +16,9 @@ mod focus;
 #[cfg(not(target_arch = "wasm32"))]
 mod glow;
 mod gpu;
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod jobs;
 mod keys;
 mod library;
 mod link_peek;

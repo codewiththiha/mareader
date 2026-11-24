@@ -31,6 +31,25 @@ pub enum Scope {
     Pane(PaneId),
 }
 
+/// Declares [`Kind`] and [`Kind::ALL`] from one list, so every kind
+/// [`Key::kind`] can name is in the list.
+macro_rules! kinds {
+    ($($kind:ident),+ $(,)?) => {
+        /// Which job a [`Key`] names, without its ids.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum Kind {
+            $($kind),+
+        }
+
+        impl Kind {
+            /// Every kind, for the tests that walk them all.
+            pub const ALL: &[Self] = &[$(Self::$kind),+];
+        }
+    };
+}
+
+kinds!(Cards, Organize, Explain, Skill, Page, Pages, Follow, Judge);
+
 /// One job, the same across frames.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Key {
@@ -70,12 +89,30 @@ impl Key {
         }
     }
 
+    pub fn kind(self) -> Kind {
+        match self {
+            Self::Cards { .. } => Kind::Cards,
+            Self::Organize { .. } => Kind::Organize,
+            Self::Explain { .. } => Kind::Explain,
+            Self::Skill { .. } => Kind::Skill,
+            Self::Page { .. } => Kind::Page,
+            Self::Pages { .. } => Kind::Pages,
+            Self::Follow { .. } => Kind::Follow,
+            Self::Judge { .. } => Kind::Judge,
+        }
+    }
+
     /// The word on its stop button: organizing pauses, keeping its work.
     pub fn stop_word(self) -> &'static str {
         match self {
             Self::Organize { .. } => "Pause",
             Self::Follow { .. } => "Stop",
-            _ => "Cancel",
+            Self::Cards { .. }
+            | Self::Explain { .. }
+            | Self::Skill { .. }
+            | Self::Page { .. }
+            | Self::Pages { .. }
+            | Self::Judge { .. } => "Cancel",
         }
     }
 }
