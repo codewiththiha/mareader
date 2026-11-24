@@ -42,6 +42,8 @@ pub struct PaneAi {
     pub overlays: Vec<Overlay>,
     /// The pages the open menu would ask about, washed to show it.
     pub wash: Option<paint::Wash>,
+    /// Where the pane's top is clear of the window's controls.
+    pub top: f32,
 }
 
 /// A result to place: its task, span, words, source and identity.
@@ -221,6 +223,7 @@ impl PageAiUi {
             return PaneAi {
                 overlays: Vec::new(),
                 wash,
+                top: 0.0,
             };
         };
         let groups = session
@@ -273,7 +276,11 @@ impl PageAiUi {
         }
         crate::activity::seen::page_runs(ctx, session.page_ai(), pane, &drawn);
         session.page_ai_record_drawn(pane, view.layout, drawn);
-        PaneAi { overlays, wash }
+        PaneAi {
+            overlays,
+            wash,
+            top: 0.0,
+        }
     }
 
     /// Own page `own`'s results as bubbles, kept ones first.

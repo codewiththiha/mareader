@@ -93,16 +93,17 @@ pub(super) fn mark_of(
 pub(super) fn ai_bubbles(
     ui: &Ui,
     sheets: &[Sheet],
-    ai: &[page_ai::Overlay],
+    ai: &page_ai::PaneAi,
     t: &Tokens,
     gloss: &mut Vec<Gloss>,
 ) {
-    for o in ai.iter().filter(|o| !o.bubbles.is_empty()) {
+    for o in ai.overlays.iter().filter(|o| !o.bubbles.is_empty()) {
         let Some(s) = sheets.iter().find(|s| s.page == o.page) else {
             continue;
         };
         let page = o.page;
-        match page_ai::paint::bubbles(ui, (s.rect, s.shown), page, &o.bubbles, t) {
+        let at = (s.rect, s.shown, ai.top);
+        match page_ai::paint::bubbles(ui, at, page, &o.bubbles, t) {
             Some(page_ai::paint::Press::Pick(index, at)) => {
                 gloss.push(Gloss::Bubble { page, index, at });
             }

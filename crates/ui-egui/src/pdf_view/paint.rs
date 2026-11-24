@@ -237,7 +237,7 @@ fn paint_ai(cx: &mut ShowContext<'_>, ui: &mut Ui) {
     let view_cx = cx.view_cx;
     let gloss = &mut *cx.gloss;
     let sheets = &cx.paint.sheets;
-    ai_bubbles(ui, sheets, &view_cx.ai.overlays, &t, gloss);
+    ai_bubbles(ui, sheets, &view_cx.ai, &t, gloss);
 }
 
 fn click(cx: &mut ShowContext<'_>, ui: &mut Ui) {

@@ -122,17 +122,18 @@ pub fn card(
     Some(())
 }
 
-/// The page's bubbles down its end side; a press on one.
+/// The page's bubbles down its end side, below `clear`, where the window's
+/// controls end; a press on one.
 pub fn bubbles(
     ui: &Ui,
-    (rect, clip): (Rect, Rect),
+    (rect, clip, clear): (Rect, Rect, f32),
     page: usize,
     all: &[Bubble],
     t: &Tokens,
 ) -> Option<Press> {
     let seen = rect.intersect(clip);
     let x = seen.right() - BUBBLE_INSET - BUBBLE / 2.0;
-    let top = seen.top() + BUBBLE_INSET + BUBBLE / 2.0;
+    let top = seen.top().max(clear) + BUBBLE_INSET + BUBBLE / 2.0;
     let mut press = None;
     for (i, b) in all.iter().enumerate() {
         let centre = pos2(x, top + i as f32 * (BUBBLE + BUBBLE_GAP));

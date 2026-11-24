@@ -310,7 +310,9 @@ impl MareaderApp {
                 let pane_text = text_for(&pane_texts, id, &window);
                 let marks = pane_marks(session, study, id, highlights);
                 let bookmarks = pane_bookmarks(session, study, id);
-                let ai = page_ai.overlays(ctx, session, id);
+                let mut ai = page_ai.overlays(ctx, session, id);
+                let control = crate::theme::Tokens::get(ctx).control;
+                ai.top = ui_panes::clear_top(ui.max_rect(), view, lift, control);
                 let cx = ViewContext {
                     active: id == view.active,
                     lift,

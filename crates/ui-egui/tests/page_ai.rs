@@ -415,14 +415,17 @@ fn a_redo_keeps_the_result_in_the_pages_until_done() -> Out {
 #[test]
 fn toggling_a_result_again_and_again_keeps_one_book_open() -> Out {
     let mut h = laid()?;
+    let laid = book(&h)?;
+    // Below the title bar's band, so no click is lost to the bar.
+    let top = h.get_by_label("Simplified").rect().top();
+    assert!(top >= 48.0, "the bubble sits at {top}, under the title bar");
     for _ in 0..8 {
         let bubble = h.get_by_label("Simplified").rect().center();
         press(&mut h, bubble, PointerButton::Primary);
         h.run_steps(30);
         h.run();
     }
-    let (count, base, key) = book(&h)?;
-    assert_eq!((count, key), (base, 0), "an even count of clicks: off");
+    assert_eq!(book(&h)?, laid, "an even count of clicks: as it was");
     let open = h.state().documents().meter().documents;
     assert!(open <= 2, "{open} layouts of the book kept");
     Ok(())
