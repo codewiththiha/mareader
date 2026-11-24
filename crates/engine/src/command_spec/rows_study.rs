@@ -11,8 +11,7 @@ use crate::space::{Action as SpaceAction, Room};
 use crate::study_mode::{Action, Ask};
 
 /// Study mode's asks a script can send.
-pub(crate) const ACTS: &str =
-    "toggle|off|start|reopen|known|undo|next_batch|retry|use_dictionary|read_previous|recall";
+pub(crate) const ACTS: &str = "toggle|off|start|reopen|known|undo|next_batch|retry|use_dictionary|skip_rest|read_previous|recall";
 
 /// What a recall asks; `open` takes `page`, `from` and `to`, `answer` `text`.
 const ASKS: &str = "open|answer|again|reveal|memorized|learning|missed|close";
@@ -64,6 +63,7 @@ fn parse(at: &Session, params: &Value) -> Result<Command, String> {
         "next_batch" => Action::NextBatch(pane),
         "retry" => Action::Retry(pane),
         "use_dictionary" => Action::UseDictionary(pane),
+        "skip_rest" => Action::SkipRest(pane),
         "read_previous" => Action::ReadPrevious(pane),
         "recall" => Action::Recall {
             pane,

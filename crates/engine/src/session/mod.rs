@@ -24,6 +24,7 @@ mod study;
 mod study_deck;
 mod study_mode;
 mod study_recall;
+mod study_rest;
 mod tick;
 mod updates;
 

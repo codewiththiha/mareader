@@ -17,7 +17,9 @@ use mareader_workspace::PaneId;
 use super::Session;
 use crate::event::Event;
 use crate::study_mode::deck_job::Ask;
-use crate::study_mode::{self as mode, Ahead, Built, DeckJob, DeckState, Known, Open, Stands};
+use crate::study_mode::{
+    self as mode, Ahead, Built, DeckJob, DeckState, Known, Open, Rest, Stands,
+};
 use crate::toast::Toast;
 
 impl Session {
@@ -52,8 +54,10 @@ impl Session {
         let Some(batch) = run.gate_batch().cloned() else {
             return false;
         };
-        if matches!(run.deck, DeckState::None) {
-            return self.study_start_deck(pane, batch);
+        match run.deck {
+            DeckState::None => return self.study_start_deck(pane, batch),
+            DeckState::Open(_) => return self.study_rest(pane, now),
+            _ => {}
         }
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
@@ -62,8 +66,17 @@ impl Session {
             return false;
         };
         match job.step(&mut self.vocab, &mut self.dict, now) {
-            Ok(None) => false,
-            Ok(Some(built)) => self.study_open(pane, batch, built),
+            Ok(None) => {
+                let Some(built) = job.early() else {
+                    return false;
+                };
+                let rest = match std::mem::replace(&mut run.deck, DeckState::None) {
+                    DeckState::Making { job, .. } => Some(job),
+                    _ => None,
+                };
+                self.study_open(pane, batch, (built, rest))
+            }
+            Ok(Some(built)) => self.study_open(pane, batch, (built, None)),
             Err(why) => {
                 let setup = job.setup();
                 run.deck = DeckState::Failed { batch, why, setup };
@@ -79,7 +92,7 @@ impl Session {
             .run_mut(pane)
             .and_then(|r| r.take_ahead(&batch));
         let deck = match made {
-            Some(Ahead::Ready { built, .. }) => return self.study_open(pane, batch, built),
+            Some(Ahead::Ready { built, .. }) => return self.study_open(pane, batch, (built, None)),
             Some(Ahead::Making { job, .. }) => DeckState::Making { batch, job },
             Some(Ahead::Failed { why, setup, .. }) => DeckState::Failed { batch, why, setup },
             None if self.settings.study.mode.ahead == 0 && !self.study_near_gate(pane) => {
@@ -101,8 +114,7 @@ impl Session {
 
     /// Turns `pane`'s deck to its next part; false on its last.
     pub(super) fn study_next_part(&mut self, pane: PaneId, now: f64) -> bool {
-        let m = &self.settings.study.mode;
-        let per_card = m.limit.then_some(u32::from(m.card_seconds));
+        let per_card = self.study_per_card();
         let deck = self.study_mode.run_mut(pane).map(|r| &mut r.deck);
         match deck {
             Some(DeckState::Open(open)) => open.next_part(per_card, now),
@@ -110,19 +122,34 @@ impl Session {
         }
     }
 
-    /// Opens `built` at the gate; a deck with nothing new unlocks its pages.
-    fn study_open(&mut self, pane: PaneId, batch: Batch, built: Built) -> bool {
+    /// Opens `built` at the gate, `rest` writing what it lacks; a deck
+    /// with nothing new unlocks its pages.
+    fn study_open(
+        &mut self,
+        pane: PaneId,
+        batch: Batch,
+        (built, rest): (Built, Option<Box<DeckJob>>),
+    ) -> bool {
         let built = fresh(built, &self.study_known(pane));
-        let m = &self.settings.study.mode;
-        let per_card = m.limit.then_some(u32::from(m.card_seconds));
+        let per_card = self.study_per_card();
+        let target = usize::from(self.settings.study.mode.max_cards);
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
         };
-        if !built.cards.is_empty() {
-            let target = usize::from(m.max_cards);
-            let open = Open::new(batch, built, per_card).in_parts(target, per_card);
-            run.deck = DeckState::Open(open);
-            return true;
+        match (built.cards.is_empty(), rest) {
+            (false, rest) => {
+                let open = Open::new(batch, built, per_card);
+                let mut open = open.in_parts(target, per_card);
+                open.rest = rest.map_or(Rest::Done, Rest::Writing);
+                run.deck = DeckState::Open(open);
+                return true;
+            }
+            // Every early card is known by now, so the rest decides.
+            (true, Some(job)) => {
+                run.deck = DeckState::Making { batch, job };
+                return true;
+            }
+            (true, None) => {}
         }
         run.unlock_through(batch.to);
         self.study_save_gate(pane);
@@ -192,7 +219,7 @@ impl Session {
     }
 
     /// What `batch`'s deck is made of, and who writes its backs.
-    fn study_ask(&self, pane: PaneId, batch: &Batch) -> Option<Ask> {
+    pub(super) fn study_ask(&self, pane: PaneId, batch: &Batch) -> Option<Ask> {
         let study = &self.settings.study;
         let writer = self.study_mode.writer();
         // With no one to write, the dictionary's deck says what is missing.
@@ -230,7 +257,7 @@ impl Session {
 }
 
 /// `built` without the words memorized since it was made.
-fn fresh(mut built: Built, known: &Known) -> Built {
+pub(super) fn fresh(mut built: Built, known: &Known) -> Built {
     let before = built.cards.len();
     built.cards.retain(|shown| !known.has(&shown.card.key));
     built.skipped_known += before - built.cards.len();

@@ -122,7 +122,7 @@ is made without a meaning.
 
 Each pane runs its own mode; `study.mode` turns it on and works the deck
 (`toggle`, `off`, `start`, `reopen`, `known`, `undo`, `next_batch`, `retry`,
-`use_dictionary`, `read_previous`, `recall`).
+`use_dictionary`, `skip_rest`, `read_previous`, `recall`).
 
 - **Planning:** once the layout is complete, every page's characters and
   words are read off the frame and batches are planned from the settings. A
@@ -157,13 +157,20 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   one request, 15 in 8 and 7, and 32 in 11, 11 and 10. All are asked at
   once and the model's queue runs as many as its At once lets in (with
   At once 2 or more, a task of the Ahead class, as study cards are by
-  default, leaves one place free for the reader's own asks); the deck
-  opens only when
-  every request has answered. A back is kept per word, sentence and
-  writer for the session, so a deck made again asks only for the new
-  ones, and a deck whose one request failed asks only that request's
-  words when tried again. An AI deck that fails says why;
-  `use_dictionary` has the dictionary write that batch's deck instead.
+  default, leaves one place free for the reader's own asks). A back is
+  kept per word, sentence and writer for the session, so a deck made again
+  asks only for the new ones, and a deck whose one request failed asks
+  only that request's words when tried again. An AI deck that fails says
+  why; `use_dictionary` has the dictionary write that batch's deck instead.
+- **Half written** (`deck_job/early.rs`, `open.rs`): an AI deck opens once
+  half its cards (rounded up) have backs and requests are still out. Those
+  cards' classes come from the tagger and the AI only. The same job writes
+  on behind the deck (`Rest`); its cards join the last part as they land,
+  minus any the deck has (same key, or same lemma where a class is
+  missing), with time added for them. A muted line under the header counts
+  them. If the rest fails, the line says why and offers *Try again*
+  (`retry`), *Finish with the dictionary* (`use_dictionary`) and *Skip the
+  rest* (`skip_rest`). Read now drops a rest still being written.
 - **Look-ahead:** `study.mode.ahead` decks are made while the reader reads:
   the gate's and up to `ahead - 1` past it, each opened at once when its
   batch reaches the gate. At 0 the gate's deck waits until the reader nears

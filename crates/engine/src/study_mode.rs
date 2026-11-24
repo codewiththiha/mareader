@@ -27,6 +27,7 @@ use mareader_workspace::PaneId;
 pub use backs::{Backs, Shown, Writer};
 pub use deck_job::{Built, DeckJob, Doing, Tags};
 pub use known::Known;
+pub use open::Rest;
 pub use recalling::{Ask, Recalling, Word};
 pub use run::{Ahead, DeckState, Open, Prior, Run, Setup};
 pub use stand::{Stand, Stands};
@@ -71,6 +72,8 @@ pub enum Action {
     UseDictionary(PaneId),
     /// Takes the pane to the page just before the gate.
     ReadPrevious(PaneId),
+    /// Goes on with the cards an open deck has, its rest failed or slow.
+    SkipRest(PaneId),
     /// What Reactive mode's recall popover asks.
     Recall {
         pane: PaneId,

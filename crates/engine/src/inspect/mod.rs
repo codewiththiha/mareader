@@ -14,7 +14,7 @@ use crate::export::Format;
 use crate::notes_panel::page_of;
 use crate::route::Route;
 use crate::session::Session;
-use crate::study_mode::DeckState;
+use crate::study_mode::{DeckState, Rest};
 
 /// Upper bound on pages extracted per [`read_pages`] call.
 pub const MAX_READ_PAGES: usize = 20;
@@ -342,6 +342,15 @@ fn pane_summary(session: &Session, pane: PaneId) -> Value {
 }
 
 /// `pane`'s study mode: its gate and the deck there; null while it is off.
+/// How an open deck's rest stands, as a script reads it.
+fn rest(rest: &Rest) -> &'static str {
+    match rest {
+        Rest::Done => "done",
+        Rest::Writing(_) => "writing",
+        Rest::Failed { .. } => "failed",
+    }
+}
+
 pub fn study_mode(session: &Session, pane: PaneId) -> Value {
     let Some(run) = session.study_mode().run(pane) else {
         return Value::Null;
@@ -364,6 +373,7 @@ pub fn study_mode(session: &Session, pane: PaneId) -> Value {
         "start": run.start,
         "deck": deck,
         "away": run.shown_deck().is_some_and(|o| o.away),
+        "rest": run.shown_deck().map(|o| rest(&o.rest)),
         "kept": run.kept.len(),
         "review": run.review.is_some(),
         "cards": cards,

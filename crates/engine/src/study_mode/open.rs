@@ -3,12 +3,29 @@
 //! A deck over 1.5 times Words per deck comes in parts of about that many
 //! cards ([`chunks`]), back to back before its pages, each part timed on
 //! its own. Only a page too crowded for one deck makes one in words mode.
+//!
+//! An AI deck opens half written; the rest is written behind it
+//! ([`Rest`]) and its cards join the last part as they land.
 
 use mareader_library::WordStatus;
 use mareader_study::mode::{Allowance, Batch, Key, Via, chunks};
 
 use super::backs::Shown;
-use super::deck_job::Built;
+use super::deck_job::{Built, DeckJob};
+use super::run::Setup;
+
+/// The cards of an open deck still being written.
+pub enum Rest {
+    /// None to come.
+    Done,
+    Writing(Box<DeckJob>),
+    /// They failed; the reader may try again, take the dictionary's or
+    /// go without.
+    Failed {
+        why: String,
+        setup: Option<Setup>,
+    },
+}
 
 /// What a word was before Known saved it, so undo can put it back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,6 +55,7 @@ pub struct Open {
     later: Vec<Vec<Shown>>,
     /// The cards of the parts before, kept to save and to open again.
     studied: Vec<Shown>,
+    pub rest: Rest,
 }
 
 impl Open {
@@ -56,7 +74,37 @@ impl Open {
             part: (1, 1),
             later: Vec::new(),
             studied: Vec::new(),
+            rest: Rest::Done,
         }
+    }
+
+    /// Adds the rest's cards that the deck lacks to its last part, with
+    /// time for them when that part is showing.
+    pub fn land(&mut self, cards: Vec<Shown>, per_card: Option<u32>) {
+        let mut new: Vec<Shown> = Vec::new();
+        for shown in cards {
+            let key = &shown.card.key;
+            let kept = self.all().chain(&new).any(|s| alike(&s.card.key, key));
+            if !kept {
+                new.push(shown);
+            }
+        }
+        let count = new.len();
+        match self.later.last_mut() {
+            Some(last) => last.append(&mut new),
+            None => {
+                self.cards.append(&mut new);
+                self.allowance.grow(per_card, count);
+            }
+        }
+    }
+
+    /// Every card the deck holds or held, known ones too.
+    fn all(&self) -> impl Iterator<Item = &Shown> {
+        let known = self.known.iter().map(|(_, shown, _)| shown);
+        let later = self.later.iter().flatten();
+        let shown = self.studied.iter().chain(&self.cards);
+        shown.chain(later).chain(known)
     }
 
     /// The deck in parts of about `target` cards once it holds 1.5 times
@@ -136,4 +184,11 @@ impl Open {
     pub fn can_undo(&self) -> bool {
         !self.known.is_empty()
     }
+}
+
+/// The same card: one key, or one lemma where a class is missing, as a
+/// dictionary may name it later.
+fn alike(a: &Key, b: &Key) -> bool {
+    let loose = a.pos.is_none() || b.pos.is_none();
+    a == b || (a.lemma == b.lemma && loose)
 }

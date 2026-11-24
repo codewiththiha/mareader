@@ -17,7 +17,7 @@ use crate::event::{Event, PaneAction};
 use crate::library::wall_ms;
 use crate::notes_panel::{bookmark_spot, page_of};
 use crate::study_mode::run::Sheet;
-use crate::study_mode::{self as mode, DeckState, Prior, Run, Shown, State};
+use crate::study_mode::{self as mode, DeckState, Prior, Rest, Run, Shown, State};
 use crate::toast::Toast;
 
 impl Session {
@@ -148,6 +148,7 @@ impl Session {
         open.allowance.pause(now);
         open.away = false;
         open.gather();
+        open.rest = Rest::Done;
         let batch = open.batch.clone();
         if let Some(book) = run.book {
             for shown in &open.cards {
@@ -240,36 +241,6 @@ impl Session {
         let said = mode::ask_back(&batch.label(), left);
         let toast = Toast::info(said).action(mode::OPEN_CARDS, open);
         self.emit(Event::Toast(toast));
-        true
-    }
-
-    /// Asks again for the deck that failed at `pane`'s gate.
-    pub(crate) fn study_mode_retry(&mut self, pane: PaneId) -> bool {
-        let Some(run) = self.study_mode.run_mut(pane) else {
-            return false;
-        };
-        let failed = matches!(run.deck, DeckState::Failed { .. });
-        if failed {
-            run.deck = DeckState::None;
-            run.fallback = None;
-        }
-        failed
-    }
-
-    /// Writes the gate's deck from the dictionary, while it waits or failed.
-    pub(crate) fn study_mode_dictionary(&mut self, pane: PaneId) -> bool {
-        let Some(run) = self.study_mode.run_mut(pane) else {
-            return false;
-        };
-        let Some(from) = run.gate_batch().map(|b| b.from) else {
-            return false;
-        };
-        let open = matches!(run.deck, DeckState::Open(_) | DeckState::None);
-        if open || run.fallback == Some(from) {
-            return false;
-        }
-        run.fallback = Some(from);
-        run.deck = DeckState::None;
         true
     }
 

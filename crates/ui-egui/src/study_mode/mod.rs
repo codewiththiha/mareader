@@ -17,6 +17,7 @@ pub mod gate;
 mod making;
 pub mod menu;
 pub mod recall;
+pub mod rest;
 mod rows;
 mod tight;
 pub mod waiting;

@@ -8,6 +8,7 @@ use mareader_study::mode::{Card, CardJob, CardWriter, Practice, Wanted};
 
 use super::*;
 use crate::study_mode::Backs;
+use crate::study_mode::backs::wanted;
 
 const TEXT: &str = "After the storm the ephemeral badgers stayed, and Alice watched them. \
                     The well-known aftermath came.";
@@ -202,4 +203,36 @@ fn a_failed_request_keeps_the_others_backs_for_the_next_try() {
     again.ask_backs().unwrap();
     assert_eq!(*counting.sizes.lock().unwrap(), [11, 11, 10, 11]);
     assert_eq!(again.writing(), Ok(true));
+}
+
+#[test]
+fn half_a_deck_is_shown_while_the_rest_is_written() {
+    let counting = Arc::new(Counting {
+        sizes: std::sync::Mutex::new(Vec::new()),
+        fail: None,
+    });
+    let writer = Writer {
+        cards: counting.clone(),
+        backs: Backs::default(),
+    };
+    let mut job = ai_deck(25, &writer);
+    let id = writer.cards.id();
+    let back = Written {
+        meaning: "a meaning".to_owned(),
+        ..Written::default()
+    };
+    for card in job.deck.cards.iter().take(12) {
+        writer.backs.put(&id, &wanted(card), back.clone());
+    }
+    job.ask_backs().unwrap();
+    assert!(job.early().is_none(), "12 of 25 is under half");
+    let mut job = ai_deck(25, &writer);
+    writer.backs.put(&id, &wanted(&job.deck.cards[12]), back);
+    job.ask_backs().unwrap();
+    let early = job.early().expect("13 of 25");
+    assert_eq!(early.cards.len(), 13);
+    assert!(job.early().is_none(), "only once");
+    assert!(job.handed);
+    assert_eq!(job.writing(), Ok(true));
+    assert_eq!(job.settling.len(), 25, "the whole deck goes on");
 }

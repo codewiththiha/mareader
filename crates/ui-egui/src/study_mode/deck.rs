@@ -22,7 +22,7 @@ use super::controls::{self, Chip, Look};
 use super::flip_card::{self, Faces, Gesture};
 use super::rows;
 use super::tight::{self, Fit};
-use super::{Cursor, Pane, waiting};
+use super::{Cursor, Pane, rest, waiting};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
@@ -195,6 +195,7 @@ fn whole(
     if !fit.compact {
         header(ui, (open, open.allowance.left(pane.now)), cursor);
     }
+    rest::show(ui, pane.id, open, out);
     deck(ui, pane, open, fit, (cursor, ask), out);
     if !open.cards.is_empty() {
         tight::measured(ui.ctx(), pane.id, fit, ui.min_rect().bottom() - start);

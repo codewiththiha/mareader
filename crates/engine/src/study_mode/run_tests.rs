@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use mareader_reflow::Typography;
-use mareader_study::mode::{Card, Key, Unit, Via, plan_from};
+use mareader_study::mode::{Card, Key, Pos, Unit, Via, plan_from};
 
 use crate::study_mode::backs::Shown;
 use crate::study_mode::counts::Lengths;
@@ -355,4 +355,19 @@ fn a_crowded_deck_comes_in_timed_parts_and_is_saved_whole() {
     assert_eq!(open.cards.len(), 25);
     let small = Open::new(batch, built(), None).in_parts(12, None);
     assert_eq!(small.part, (1, 1));
+}
+
+#[test]
+fn the_rest_lands_without_the_cards_the_deck_has() {
+    let batch = planned(0).batches[0].clone();
+    let mut open = Open::new(batch, built(), Some(10));
+    let mut named = shown("arcane");
+    named.card.key = Key::new("arcane", Some(Pos::Noun));
+    let rest = vec![named, shown("brisk"), shown("brisk")];
+    open.land(rest, Some(10));
+    let lemmas: Vec<&str> = (open.cards.iter())
+        .map(|s| s.card.key.lemma.as_str())
+        .collect();
+    assert_eq!(lemmas, ["arcane", "brisk"]);
+    assert_eq!(open.allowance.left(0.0), Some(20.0));
 }

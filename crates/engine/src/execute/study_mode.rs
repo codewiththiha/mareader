@@ -41,6 +41,7 @@ pub(super) fn run(session: &mut Session, action: Action, now: f64) -> Done {
         Action::Undo(pane) => return changed(session.study_mode_undo(pane)),
         Action::Retry(pane) => return changed(session.study_mode_retry(pane)),
         Action::UseDictionary(pane) => return changed(session.study_mode_dictionary(pane)),
+        Action::SkipRest(pane) => return changed(session.study_mode_skip_rest(pane)),
         Action::NextBatch(pane) => {
             let Some(gate) = session.study_gate(pane) else {
                 return Done::refused("Every batch is unlocked.".to_owned());

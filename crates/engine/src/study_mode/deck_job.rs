@@ -31,6 +31,7 @@ use crate::word_list::{INLINE, LEVEL_ROUND, Levels, Meanings};
 use crate::word_marks::{self, Page};
 
 mod classes;
+mod early;
 mod lookup;
 mod progress;
 #[cfg(test)]
@@ -162,6 +163,8 @@ pub struct DeckJob {
     built: Option<Built>,
     /// What the reader must set up, once it failed for want of it.
     setup: Option<Setup>,
+    /// The cards went to the reader half written ([`Self::early`]).
+    handed: bool,
 }
 
 impl DeckJob {
@@ -190,6 +193,7 @@ impl DeckJob {
             started: None,
             built: None,
             setup: None,
+            handed: false,
         }
     }
 

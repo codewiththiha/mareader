@@ -129,6 +129,14 @@ impl Allowance {
         }
     }
 
+    /// `cards` joined the deck: `per_card` seconds more for each.
+    pub fn grow(&mut self, per_card: Option<u32>, cards: usize) {
+        let more = Self::new(per_card, cards).total;
+        if let (Some(total), Some(more)) = (&mut self.total, more) {
+            *total += more;
+        }
+    }
+
     pub fn limited(&self) -> bool {
         self.total.is_some()
     }
