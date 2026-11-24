@@ -518,12 +518,15 @@ Study mode turns a book into practice. It is turned on per pane from the
 page menu's Study section and set up in Settings › Study mode; the rules,
 the session and the reader are in [`study-mode.md`](study-mode.md).
 
-- **Proactive.** The book is cut into batches of pages (or characters
-  turned into pages). Before a batch unlocks, its hard words, the ones
-  above your level, come as a timed deck of cards: the word in its
-  sentence, then its meaning from the dictionary or the AI. The pages past
-  the gate wait under a frosted veil until the deck is studied. Decks for
-  the next batches can be made while you read.
+- **Proactive.** The book is cut into batches of pages, each holding about
+  *Words per deck* hard words (12 by default), or a set number of pages.
+  A page's words are never put off to a later deck. Before a batch
+  unlocks, its hard words, the ones above your level, come as a timed deck
+  of cards: the word in its sentence, then its meaning from the dictionary
+  or the AI. A page with too many for one deck gets its deck in parts. An
+  AI deck opens once half is written, and the rest joins as it lands. The
+  pages past the gate wait under a frosted veil until the deck is studied.
+  Decks for the next batches can be made while you read.
 - **Reactive.** Read freely; hard words stay shaded. A click on one asks
   what it means here. The AI judges the answer in any language, with three
   tries, a hint after a miss, and *I don't know* for the meaning. A
