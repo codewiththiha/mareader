@@ -14,13 +14,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use mareader_cefr::{Ticket as TagTicket, candidates};
+use mareader_cefr::Ticket as TagTicket;
 use mareader_dict::Ticket;
 use mareader_session::Document;
 use mareader_settings::{TaskId, no_model};
 use mareader_study::Why;
+use mareader_study::mode::build;
 use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
-use mareader_study::mode::{build, lemma};
 use mareader_study::pending::News;
 
 use super::backs::{Shown, Writer, wanted};
@@ -33,6 +33,8 @@ use crate::word_marks::{self, Page};
 
 mod lookup;
 mod progress;
+#[cfg(test)]
+mod tests;
 
 /// Words read from one batch at most.
 const READ_CAP: usize = 20_000;
@@ -280,23 +282,16 @@ impl DeckJob {
         Ok(all)
     }
 
-    /// Each word's lemma and band; those above the level are kept.
+    /// The words the book's shading marks at this level, with their lemmas.
     fn find_hard(&mut self) {
         let bands = &self.bands;
-        let listed = |k: &str| bands.get(k).is_some_and(|b| *b > 0);
         let mut hard = Vec::new();
         for (i, read) in self.read.iter().enumerate() {
-            let lemma = lemma(&read.norm, listed);
-            let own = bands.get(&lemma).copied().filter(|b| *b > 0);
-            let parts = || {
-                let found = candidates(&read.form).into_iter();
-                found.filter_map(|k| bands.get(&k).copied()).max()
-            };
-            let band = own.or_else(parts).unwrap_or(0);
+            let band = read.band(bands);
             if band > self.level {
                 hard.push(Hard {
                     read: i,
-                    lemma,
+                    lemma: read.lemma(bands, band),
                     band,
                     pos: None,
                     name: false,

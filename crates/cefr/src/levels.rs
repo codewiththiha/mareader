@@ -67,20 +67,40 @@ pub fn plan_chars(chars: &[char], levels: &Levels, level: u8, cap: usize) -> Pla
         let Some(word) = chars.get(span.start..span.end) else {
             continue;
         };
-        let mut highest = 0;
-        for key in keys(normalize_chars(word.iter().copied())) {
-            match levels.get(&key) {
-                Some(b) => highest = highest.max(b),
-                None if !out.misses.contains(&key) => out.misses.push(key),
-                None => {}
-            }
-        }
+        let misses = &mut out.misses;
+        let highest = word_band(
+            word,
+            |k| levels.get(k),
+            |key| {
+                if !misses.contains(&key) {
+                    misses.push(key);
+                }
+            },
+        );
         if highest > level && out.hard.len() < cap {
             out.hard.push(span);
             out.bands.push(highest);
         }
     }
     out
+}
+
+/// A word's band as shading reads it: the highest band among its keys.
+///
+/// Each key `levels` can't answer goes to `missed`.
+pub fn word_band(
+    word: &[char],
+    levels: impl Fn(&str) -> Option<u8>,
+    mut missed: impl FnMut(String),
+) -> u8 {
+    let mut highest = 0;
+    for key in keys(normalize_chars(word.iter().copied())) {
+        match levels(&key) {
+            Some(b) => highest = highest.max(b),
+            None => missed(key),
+        }
+    }
+    highest
 }
 
 #[cfg(test)]
@@ -137,5 +157,15 @@ mod tests {
         }
         full.insert("one more", 9);
         assert_eq!((full.len(), full.get("one more")), (1, Some(6)));
+    }
+
+    #[test]
+    fn a_word_s_band_never_comes_from_a_shorter_word_inside_it() {
+        let known = levels(&[("after", 1), ("aft", 6)]);
+        let after: Vec<char> = "After".chars().collect();
+        let mut missed = Vec::new();
+        assert_eq!(word_band(&after, |k| known.get(k), |k| missed.push(k)), 1);
+        assert!(missed.is_empty());
+        assert!(plan("After", &known, 5, 9).hard.is_empty());
     }
 }

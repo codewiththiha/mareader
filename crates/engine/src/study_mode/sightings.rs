@@ -1,7 +1,12 @@
 //! A batch's words as read: each form beside the sentence it stands in.
+//!
+//! A word is hard exactly when the book's shading marks it: its band is
+//! [`word_band`]'s, never a shorter word's found by cutting an ending.
 
-use mareader_cefr::{MAX_WORD_CHARS, candidates, normalize, tokenize};
-use mareader_study::mode::{bases, proper};
+use std::collections::HashMap;
+
+use mareader_cefr::{MAX_WORD_CHARS, candidates, normalize, tokenize, word_band};
+use mareader_study::mode::{bases, lemma, proper};
 
 /// A sentence shown on a card is cut to this many characters.
 const SENTENCE_CHARS: usize = 280;
@@ -26,6 +31,19 @@ impl Read {
             }
         }
         out
+    }
+
+    /// Its band as the book's shading reads it, from the bands answered.
+    pub fn band(&self, bands: &HashMap<String, u8>) -> u8 {
+        let chars: Vec<char> = self.form.chars().collect();
+        word_band(&chars, |k| bands.get(k).copied(), |_| {})
+    }
+
+    /// Its card's word: a base of the same `band`, else itself as read.
+    ///
+    /// A base at another band is another word: "aft" is not "after".
+    pub fn lemma(&self, bands: &HashMap<String, u8>, band: u8) -> String {
+        lemma(&self.norm, |base: &str| bands.get(base) == Some(&band))
     }
 }
 
@@ -142,5 +160,22 @@ mod tests {
         let unique: std::collections::HashSet<&String> = keys.iter().collect();
         assert_eq!(unique.len(), keys.len());
         assert!(words("").is_empty());
+    }
+
+    fn bands(of: &[(&str, u8)]) -> HashMap<String, u8> {
+        of.iter().map(|(k, b)| ((*k).to_owned(), *b)).collect()
+    }
+
+    #[test]
+    fn a_word_keeps_its_own_band_and_folds_only_to_a_base_as_hard() {
+        let known = bands(&[("after", 1), ("aft", 6), ("badger", 6), ("badge", 4)]);
+        let read = &words("After badgers")[..];
+        assert_eq!(read[0].band(&known), 1, "after is not aft");
+        assert_eq!(read[0].lemma(&known, 1), "after");
+        let known = bands(&[("badgers", 6), ("badger", 6), ("badge", 4)]);
+        assert_eq!(read[1].band(&known), 6);
+        assert_eq!(read[1].lemma(&known, 6), "badger");
+        let unlisted = bands(&[("badger", 6)]);
+        assert_eq!(read[1].band(&unlisted), 0, "unshaded, so no card");
     }
 }

@@ -39,15 +39,18 @@ adjective or adverb).
 
 - **The lemma** comes from folding common endings (`-ed`, `-ing`, `-s`,
   `-ies`, `-er`, `-est`, doubled consonants) against the words the level data
-  knows. `acknowledged` becomes `acknowledge` only when `acknowledge` is known.
-  The CEFR store stays as it is.
+  knows. `acknowledged` becomes `acknowledge` only when `acknowledge` is known
+  at the same band. A base at another band is another word, so `after` never
+  becomes `aft`. The CEFR store stays as it is.
 - **The class** comes from the Penn tag of the dataset's sense.
 - **Proper nouns get no card:** a capitalised word inside a sentence reads as
   a name.
 
 ### Decks (`deck.rs`)
 
-- **What makes a card:** words above *My level*, one card per key, with its
+- **What makes a card:** the words the book's CEFR shading marks above *My
+  level*, by the same rule (`mareader_cefr::word_band`). A name inside a
+  sentence is the one shaded word left out. One card per key, with its
   count ("appears 3×") and the book's sentence of its first sighting.
 - **Also as:** the same lemma in another class is its own card, linked by
   "also as".

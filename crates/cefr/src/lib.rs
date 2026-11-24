@@ -21,7 +21,7 @@ mod text;
 #[cfg(not(target_arch = "wasm32"))]
 mod store;
 
-pub use levels::{CACHE_CAP, Levels, Plan, band, plan};
+pub use levels::{CACHE_CAP, Levels, Plan, band, plan, word_band};
 pub use roles::Role;
 pub use service::{Part, Polled, State, Ticket, Vocabulary};
 pub use source::{DATASET, Source, TAGGER};

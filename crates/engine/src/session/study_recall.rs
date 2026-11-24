@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use mareader_library::{BookId, LearnedBy, Library, NewWord, WordStatus};
 use mareader_session::TextLayer;
-use mareader_study::mode::{Done, Judge, Key, Mode, Outcome, lemma};
+use mareader_study::mode::{Done, Judge, Key, Mode, Outcome};
 use mareader_workspace::PaneId;
 
 use super::Session;
@@ -103,11 +103,9 @@ impl Session {
             .zip(self.vocab.bands(&keys))
             .filter_map(|(key, band)| Some((key, band?)))
             .collect();
-        let lemma = lemma(&read.norm, |k: &str| found.get(k).is_some_and(|b| *b > 0));
-        let own = found.get(&lemma).copied().filter(|b| *b > 0);
-        let band = own.or_else(|| found.values().copied().max()).unwrap_or(0);
+        let band = read.band(&found);
         Word {
-            key: Key::new(lemma, None),
+            key: Key::new(read.lemma(&found, band), None),
             form: read.form,
             sentence: read.sentence,
             band,
