@@ -65,8 +65,16 @@ adjective or adverb).
   "also as".
 - **Memorized words** are dropped when the deck is built, so a cached meaning
   never brings one back.
-- **Order:** by count, then band, then reading order. The deck is capped at
-  *Cards per batch* (12 by default).
+- **Order:** by count, then band, then reading order. A deck holds every
+  word of its pages; 240 (`MOST_CARDS`) is a guard, not a cut.
+- **Parts** (`open.rs`): a deck over 1.5 times *Words per deck* (the
+  `chunks` rule) comes in parts of about that many cards, back to back
+  before its pages. Words mode makes one only for a crowded page. Each part
+  has its own time; the pages chip reads `4 – 6 · 1/2`, and the primary
+  button says *Next part* (no ask) until the last part, where it is *Read
+  now* again. A part whose time is spent turns to the next. Finishing saves
+  every part's cards as learning, and a deck kept to open again holds them
+  all.
 - **The allowance** (`Allowance`): with *Time limit on cards* on (the
   default), a deck has *Seconds per card* (25 by default, 5 to 120) for
   each card it opens with: 12 cards at 25 s get 5:00, 20 at 10 s get 3:20.
@@ -160,7 +168,7 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   the gate's and up to `ahead - 1` past it, each opened at once when its
   batch reaches the gate. At 0 the gate's deck waits until the reader nears
   it. A deck whose batch is no longer coming is dropped, cancelling its ask;
-  a new source, level, card cap, model or language makes the decks not yet
+  a new source, level, Words per deck, model or language makes the decks not yet
   open again, and words memorized since a deck was made leave it as it opens.
 - **Known** saves the word as memorized; **Undo** puts back what the word
   was. **Start** (Read now) keeps the rest as learning, unlocks the batch and

@@ -126,7 +126,7 @@ impl Session {
         let Some(run) = self.study_mode.run_mut(pane) else {
             return Err("Study mode is off here.".to_owned());
         };
-        if run.close_review() {
+        if run.close_review() || self.study_next_part(pane, now) {
             return Ok(());
         }
         match self.study_finish(pane, now) {
@@ -147,6 +147,7 @@ impl Session {
         };
         open.allowance.pause(now);
         open.away = false;
+        open.gather();
         let batch = open.batch.clone();
         if let Some(book) = run.book {
             for shown in &open.cards {
@@ -211,8 +212,8 @@ impl Session {
     fn study_expire(&mut self, pane: PaneId, now: f64) -> bool {
         let deck = self.study_mode.run(pane).map(|r| &r.deck);
         let spent = matches!(deck, Some(DeckState::Open(o)) if o.allowance.spent(now));
-        if !spent {
-            return false;
+        if !spent || self.study_next_part(pane, now) {
+            return spent;
         }
         if let Some(batch) = self.study_finish(pane, now) {
             self.emit(Event::Toast(Toast::info(mode::time_up(&batch.label()))));

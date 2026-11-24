@@ -9,13 +9,13 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use mareader_library::{BookId, Spot, WordStatus};
+use mareader_library::{BookId, Spot};
 use mareader_session::Document;
-use mareader_study::mode::{Allowance, Batch, Key, Mode, Outcome, Size, Via, gate, retypeset};
+use mareader_study::mode::{Batch, Mode, Outcome, Size, gate, retypeset};
 
-use super::backs::Shown;
 use super::deck_job::{Built, DeckJob, Tags};
 use super::known::Known;
+pub use super::open::{Open, Prior};
 use crate::session::Waker;
 use crate::word_list::Meanings;
 use crate::word_marks::off_thread;
@@ -102,76 +102,6 @@ impl Ahead {
         };
         *self = next;
         true
-    }
-}
-
-/// What a word was before Known saved it, so undo can put it back.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Prior {
-    /// Known made it.
-    New,
-    Was(WordStatus),
-    /// Nothing was saved: the document is outside the library.
-    Unsaved,
-}
-
-/// A deck being studied: its cards, its time and the undo trail.
-pub struct Open {
-    pub batch: Batch,
-    pub cards: Vec<Shown>,
-    pub found: usize,
-    pub skipped_known: usize,
-    pub via: Via,
-    pub allowance: Allowance,
-    /// Left unfinished for the pages before; it waits to be asked back.
-    pub away: bool,
-    /// Cards marked known, latest last, each with the place it left.
-    known: Vec<(usize, Shown, Prior)>,
-}
-
-impl Open {
-    /// A deck that may stay open `per_card` seconds for each card it
-    /// opens with, or with no limit.
-    pub fn new(batch: Batch, built: Built, per_card: Option<u32>) -> Self {
-        Self {
-            allowance: Allowance::new(per_card, built.cards.len()),
-            away: false,
-            batch,
-            cards: built.cards,
-            found: built.found,
-            skipped_known: built.skipped_known,
-            via: built.via,
-            known: Vec::new(),
-        }
-    }
-
-    /// Takes `key`'s card out of the deck; a bare word takes its card
-    /// whatever the class, as a script names it.
-    pub fn take_known(&mut self, key: &Key) -> Option<(usize, Shown)> {
-        let exact = self.cards.iter().position(|s| &s.card.key == key);
-        let bare = || {
-            let lemma = |s: &Shown| key.pos.is_none() && s.card.key.lemma == key.lemma;
-            self.cards.iter().position(lemma)
-        };
-        let at = exact.or_else(bare)?;
-        Some((at, self.cards.remove(at)))
-    }
-
-    /// Files the card [`Self::take_known`] took from `at`, for undo.
-    pub fn keep_known(&mut self, at: usize, shown: Shown, prior: Prior) {
-        self.known.push((at, shown, prior));
-    }
-
-    /// Puts the last known card back where it was; its word's prior state.
-    pub fn undo_known(&mut self) -> Option<(Key, Prior)> {
-        let (at, shown, prior) = self.known.pop()?;
-        let key = shown.card.key.clone();
-        self.cards.insert(at.min(self.cards.len()), shown);
-        Some((key, prior))
-    }
-
-    pub fn can_undo(&self) -> bool {
-        !self.known.is_empty()
     }
 }
 

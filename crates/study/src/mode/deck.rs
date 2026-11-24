@@ -54,6 +54,10 @@ pub fn also_as(keys: &[Key], key: &Key) -> Vec<Pos> {
         .collect()
 }
 
+/// A deck's most cards, a guard only: words mode keeps decks near Words per
+/// deck, and a bigger deck comes in parts.
+pub const MOST_CARDS: usize = 240;
+
 /// The deck of words above `level`, at most `max` cards.
 ///
 /// Ranked by sightings, then band, then first sighting.

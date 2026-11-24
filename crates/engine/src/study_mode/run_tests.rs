@@ -5,8 +5,9 @@
 use std::sync::Arc;
 
 use mareader_reflow::Typography;
-use mareader_study::mode::{Card, Unit, Via, plan_from};
+use mareader_study::mode::{Card, Key, Unit, Via, plan_from};
 
+use crate::study_mode::backs::Shown;
 use crate::study_mode::counts::Lengths;
 
 use super::*;
@@ -329,4 +330,29 @@ fn words_mode_without_the_word_data_plans_by_pages() {
     assert_eq!(run.plan(by_words(&doc, 4)), Ok(true));
     let spans: Vec<_> = run.batches.iter().map(|b| (b.from, b.to)).collect();
     assert_eq!(spans, [(0, 2), (3, 5)]);
+}
+
+#[test]
+fn a_crowded_deck_comes_in_timed_parts_and_is_saved_whole() {
+    let batch = planned(0).batches[0].clone();
+    let crowded = Built {
+        cards: (0..25).map(|i| shown(&format!("word{i}"))).collect(),
+        found: 25,
+        skipped_known: 0,
+        via: Via::Dictionary,
+    };
+    let open = Open::new(batch.clone(), crowded, Some(10));
+    let mut open = open.in_parts(12, Some(10));
+    let first = (open.cards.len(), open.part, open.parts_left());
+    assert_eq!(first, (13, (1, 2), 1));
+    assert_eq!(open.allowance.left(0.0), Some(130.0));
+    open.allowance.resume(0.0);
+    assert!(open.next_part(Some(10), 5.0));
+    assert_eq!((open.cards.len(), open.part), (12, (2, 2)));
+    assert_eq!(open.allowance.left(5.0), Some(120.0), "its own time");
+    assert!(!open.next_part(Some(10), 6.0), "the last part");
+    open.gather();
+    assert_eq!(open.cards.len(), 25);
+    let small = Open::new(batch, built(), None).in_parts(12, None);
+    assert_eq!(small.part, (1, 1));
 }

@@ -30,6 +30,8 @@ use crate::widgets;
 
 pub const KNOWN: &str = "I already know this";
 pub const START: &str = "Read now";
+/// The same button while parts of the deck are left.
+pub const NEXT_PART: &str = "Next part";
 pub const SHUFFLE: &str = "Shuffle";
 pub const TURN_OFF: &str = "Turn off study mode";
 pub const READ_BACK: &str = "Read back";
@@ -313,7 +315,10 @@ fn header(ui: &mut Ui, (open, left): (&Open, Option<f64>), cursor: &mut Cursor) 
     let (row, _) = ui.allocate_exact_size(size, Sense::hover());
     ui.add_space(HEADER_GAP);
     let top = row.top();
-    let pages = range(&open.batch);
+    let pages = match open.part {
+        (at, of) if of > 1 => format!("{} · {at}/{of}", range(&open.batch)),
+        _ => range(&open.batch),
+    };
     let time = left.map(clock);
     let (marks, shuffled) = crowd(ui, row.width(), (&pages, time.as_deref()), open);
     let mark = |icon| marks.then_some(icon);
@@ -420,7 +425,8 @@ fn footer(
             false => chip.icon(Icon::ChevronLeft).tall(tall).wide(150.0),
         });
     }
-    let start = Chip::new(START, Look::Primary);
+    let more = open.parts_left() > 0;
+    let start = Chip::new(if more { NEXT_PART } else { START }, Look::Primary);
     let start = match compact {
         true => fill(ui, start, &chips),
         false => {
@@ -438,7 +444,8 @@ fn footer(
     }
     if pressed.last().is_some_and(egui::Response::clicked) {
         let range = open.batch.label();
-        match left.filter(|&l| l > 0.0 && pane.run.review.is_none()) {
+        let ask_first = pane.run.review.is_none() && !more;
+        match left.filter(|&l| l > 0.0 && ask_first) {
             Some(left) => *ask = Some(Ask::ReadNow { range, left }),
             None => send(out, Action::Start(pane.id)),
         }
@@ -472,29 +479,5 @@ fn fill<'a>(ui: &Ui, start: Chip<'a>, before: &[Chip<'_>]) -> Chip<'a> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_clock_rounds_up_to_whole_seconds() {
-        assert_eq!(clock(0.0), "0:00");
-        assert_eq!(clock(0.2), "0:01");
-        assert_eq!(clock(72.0), "1:12");
-        assert_eq!(clock(-4.0), "0:00");
-        assert_eq!(clock(f64::NAN), "0:00");
-    }
-
-    #[test]
-    fn deck_keys_are_taken_once() {
-        let mut input = egui::InputState::default();
-        input.events.push(egui::Event::Key {
-            key: Key::K,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::NONE,
-        });
-        assert_eq!(Press::read(&mut input), Some(Press::Known));
-        assert_eq!(Press::read(&mut input), None);
-    }
-}
+#[path = "deck_tests.rs"]
+mod tests;

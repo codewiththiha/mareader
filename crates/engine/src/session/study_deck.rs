@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use mareader_library::{Library, WordStatus};
-use mareader_study::mode::{Batch, CardWriter, Key, Pos, Via, via};
+use mareader_study::mode::{Batch, CardWriter, Key, MOST_CARDS, Pos, Via, via};
 use mareader_workspace::PaneId;
 
 use super::Session;
@@ -99,6 +99,17 @@ impl Session {
         true
     }
 
+    /// Turns `pane`'s deck to its next part; false on its last.
+    pub(super) fn study_next_part(&mut self, pane: PaneId, now: f64) -> bool {
+        let m = &self.settings.study.mode;
+        let per_card = m.limit.then_some(u32::from(m.card_seconds));
+        let deck = self.study_mode.run_mut(pane).map(|r| &mut r.deck);
+        match deck {
+            Some(DeckState::Open(open)) => open.next_part(per_card, now),
+            _ => false,
+        }
+    }
+
     /// Opens `built` at the gate; a deck with nothing new unlocks its pages.
     fn study_open(&mut self, pane: PaneId, batch: Batch, built: Built) -> bool {
         let built = fresh(built, &self.study_known(pane));
@@ -108,7 +119,9 @@ impl Session {
             return false;
         };
         if !built.cards.is_empty() {
-            run.deck = DeckState::Open(Open::new(batch, built, per_card));
+            let target = usize::from(m.max_cards);
+            let open = Open::new(batch, built, per_card).in_parts(target, per_card);
+            run.deck = DeckState::Open(open);
             return true;
         }
         run.unlock_through(batch.to);
@@ -188,7 +201,7 @@ impl Session {
             document: self.documents.document_of(pane)?,
             pages: (batch.from..=batch.to).collect(),
             level: study.cefr.level.band(),
-            max: usize::from(study.mode.max_cards),
+            max: MOST_CARDS,
             known: self.study_known(pane),
             to: self.study_dict_language(),
             via,
