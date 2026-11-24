@@ -5,7 +5,7 @@
 //! click or Space turns it, a drag or the arrows move on, K marks the word
 //! known. Read now unlocks the batch whenever the reader likes, asking first
 //! while time is left, as the cards then close for good; with a time limit
-//! the deck also closes once its minutes are spent. Turning study mode off
+//! the deck also closes once its time is spent. Turning study mode off
 //! from here asks first too. The pages, the time left and shuffle sit just
 //! above the card, lined up with its edges; a short pane's deck drops that
 //! row and shows the time left on the card itself.

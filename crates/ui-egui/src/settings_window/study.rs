@@ -17,7 +17,7 @@ pub const OPEN_VOCABS: &str = "Open Vocabs";
 const ANY_LANGUAGE: &str = "Answers may be in any language: the AI judges meaning, not spelling.";
 /// A count's unit for one, then for more.
 const BATCHES: (&str, &str) = (" batch", " batches");
-const MINUTES: (&str, &str) = (" min", " min");
+const SECONDS: (&str, &str) = (" s", " s");
 const BARE: (&str, &str) = ("", "");
 
 /// The tab, given who could write the cards: an AI, a dictionary.
@@ -91,13 +91,15 @@ fn proactive(ui: &mut Ui, m: &mut StudyModeSettings, both: bool) {
         switch_row(ui, "Time limit on cards", hint, &mut m.limit);
         if m.limit {
             divider(ui);
-            let hint = "Counted only while the cards show; then they close for good";
+            let full = f64::from(m.card_seconds) * f64::from(m.max_cards);
+            let time = crate::study_mode::deck::clock(full);
+            let hint = format!("Counted while cards show; {} cards: {time}", m.max_cards);
             let range = (
-                StudyModeSettings::MINUTES_MIN,
-                StudyModeSettings::MINUTES_MAX,
+                StudyModeSettings::CARD_SECONDS_MIN,
+                StudyModeSettings::CARD_SECONDS_MAX,
             );
-            let n = &mut m.minutes;
-            count_row(ui, ("Minutes per deck", hint), n, range, MINUTES);
+            let n = &mut m.card_seconds;
+            count_row(ui, ("Seconds per card", &hint), n, range, SECONDS);
         }
         divider(ui);
         let hint = "Pales the pages before where study mode turned on";

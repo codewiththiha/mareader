@@ -138,8 +138,8 @@ fn known_cards_leave_the_deck_and_undo_puts_them_back_in_place() {
         via: Via::Dictionary,
     };
     let batch = planned(0).batches[0].clone();
-    let mut open = Open::new(batch, built, Some(1));
-    assert_eq!(open.allowance.left(0.0), Some(60.0));
+    let mut open = Open::new(batch, built, Some(20));
+    assert_eq!(open.allowance.left(0.0), Some(60.0), "3 cards at 20 s");
 
     let key = Key::new("brisk", None);
     let (at, taken) = open.take_known(&key).unwrap();

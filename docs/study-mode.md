@@ -59,9 +59,11 @@ adjective or adverb).
 - **Order:** by count, then band, then reading order. The deck is capped at
   *Cards per batch* (12 by default).
 - **The allowance** (`Allowance`): with *Time limit on cards* on (the
-  default), a deck has *Minutes per deck* (5 by default, 1 to 30). Its time
-  runs only while the deck shows and is kept across visits. Nothing waits
-  on it: *Read now* works at any time.
+  default), a deck has *Seconds per card* (25 by default, 5 to 120) for
+  each card it opens with: 12 cards at 25 s get 5:00, 20 at 10 s get 3:20.
+  Its time runs only while the deck shows and is kept across visits.
+  Nothing waits on it: *Read now* works at any time. The old fixed
+  *Minutes per deck* key is let go on load.
 
 ### Recall (`recall.rs`)
 
@@ -344,7 +346,7 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   an AI model or a dictionary pack could write cards. The mode, with a note
   naming the Vocabulary level it uses (set only in Vocabulary); Batches
   (size by pages or characters); Proactive (prepare ahead, time limit and
-  minutes per deck, the lock, shading, words per deck, and *Cards from*
+  seconds per card, the lock, shading, words per deck, and *Cards from*
   only when both could write); Reactive (ask before memorizing); AI
   (study's model and language, desktop only, once a model is set up); and
   *Open Vocabs* (Space's words page). Highlights shows *Study recall*

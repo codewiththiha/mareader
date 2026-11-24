@@ -115,10 +115,11 @@ pub struct Allowance {
 }
 
 impl Allowance {
-    /// `minutes` to spend, or none for no limit.
-    pub fn new(minutes: Option<u32>) -> Self {
+    /// `per_card` seconds for each of `cards`, or none for no limit.
+    pub fn new(per_card: Option<u32>, cards: usize) -> Self {
+        let cards = u32::try_from(cards).unwrap_or(u32::MAX);
         Self {
-            total: minutes.map(|m| f64::from(m) * 60.0),
+            total: per_card.map(|s| f64::from(s.saturating_mul(cards))),
             spent: 0.0,
             since: None,
         }
@@ -234,7 +235,8 @@ mod tests {
 
     #[test]
     fn the_allowance_runs_only_while_the_deck_shows() {
-        let mut a = Allowance::new(Some(2));
+        assert_eq!(Allowance::new(Some(10), 20).left(0.0), Some(200.0), "3:20");
+        let mut a = Allowance::new(Some(10), 12);
         assert_eq!(a.left(0.0), Some(120.0));
         a.resume(10.0);
         assert_eq!(a.left(40.0), Some(90.0));
@@ -250,7 +252,7 @@ mod tests {
 
     #[test]
     fn no_limit_never_runs_out() {
-        let mut a = Allowance::new(None);
+        let mut a = Allowance::new(None, 12);
         a.resume(0.0);
         assert!(!a.limited());
         assert_eq!(a.left(1e9), None);

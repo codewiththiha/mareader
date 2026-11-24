@@ -103,12 +103,12 @@ impl Session {
     fn study_open(&mut self, pane: PaneId, batch: Batch, built: Built) -> bool {
         let built = fresh(built, &self.study_known(pane));
         let m = &self.settings.study.mode;
-        let minutes = m.limit.then_some(u32::from(m.minutes));
+        let per_card = m.limit.then_some(u32::from(m.card_seconds));
         let Some(run) = self.study_mode.run_mut(pane) else {
             return false;
         };
         if !built.cards.is_empty() {
-            run.deck = DeckState::Open(Open::new(batch, built, minutes));
+            run.deck = DeckState::Open(Open::new(batch, built, per_card));
             return true;
         }
         run.unlock_through(batch.to);

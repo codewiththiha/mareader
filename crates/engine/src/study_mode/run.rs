@@ -132,10 +132,11 @@ pub struct Open {
 }
 
 impl Open {
-    /// A deck that may stay open `minutes`, or with no limit.
-    pub fn new(batch: Batch, built: Built, minutes: Option<u32>) -> Self {
+    /// A deck that may stay open `per_card` seconds for each card it
+    /// opens with, or with no limit.
+    pub fn new(batch: Batch, built: Built, per_card: Option<u32>) -> Self {
         Self {
-            allowance: Allowance::new(minutes),
+            allowance: Allowance::new(per_card, built.cards.len()),
             away: false,
             batch,
             cards: built.cards,

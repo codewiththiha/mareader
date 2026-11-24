@@ -18,10 +18,11 @@ pub struct StudyModeSettings {
     pub chars: u32,
     /// Decks prepared ahead while reading; 0 asks at the gate.
     pub ahead: u8,
-    /// A deck closes for good once `minutes` on it are spent.
+    /// A deck closes for good once its time is spent.
     pub limit: bool,
-    /// The minutes a deck may stay open, with `limit` on.
-    pub minutes: u8,
+    /// Seconds each card adds to a deck's time, with `limit` on: a deck
+    /// opening with 12 cards at 25 has 5 minutes.
+    pub card_seconds: u8,
     /// The pages before the batches are paled and locked.
     pub lock: bool,
     /// Proactive keeps the CEFR shading on.
@@ -39,9 +40,9 @@ impl StudyModeSettings {
     pub const CHARS_MAX: u32 = 20_000;
     pub const AHEAD: u8 = 1;
     pub const AHEAD_MAX: u8 = 3;
-    pub const MINUTES: u8 = 5;
-    pub const MINUTES_MIN: u8 = 1;
-    pub const MINUTES_MAX: u8 = 30;
+    pub const CARD_SECONDS: u8 = 25;
+    pub const CARD_SECONDS_MIN: u8 = 5;
+    pub const CARD_SECONDS_MAX: u8 = 120;
     pub const MAX_CARDS: u8 = 12;
     pub const CARDS_MIN: u8 = 4;
     pub const CARDS_MAX: u8 = 30;
@@ -51,7 +52,8 @@ impl StudyModeSettings {
         self.pages = self.pages.clamp(1, most);
         self.chars = self.chars.clamp(Self::CHARS_MIN, Self::CHARS_MAX);
         self.ahead = self.ahead.min(Self::AHEAD_MAX);
-        self.minutes = self.minutes.clamp(Self::MINUTES_MIN, Self::MINUTES_MAX);
+        let (lo, hi) = (Self::CARD_SECONDS_MIN, Self::CARD_SECONDS_MAX);
+        self.card_seconds = self.card_seconds.clamp(lo, hi);
         self.max_cards = self.max_cards.clamp(Self::CARDS_MIN, Self::CARDS_MAX);
     }
 }
@@ -65,7 +67,7 @@ impl Default for StudyModeSettings {
             chars: Self::CHARS,
             ahead: Self::AHEAD,
             limit: true,
-            minutes: Self::MINUTES,
+            card_seconds: Self::CARD_SECONDS,
             lock: false,
             hints: false,
             max_cards: Self::MAX_CARDS,
@@ -111,14 +113,14 @@ mod tests {
             pages: 0,
             chars: 5,
             ahead: 9,
-            minutes: 99,
+            card_seconds: 200,
             max_cards: 1,
             ..StudyModeSettings::default()
         };
         s.sanitize();
         let min = StudyModeSettings::CHARS_MIN;
         assert_eq!((s.pages, s.chars, s.ahead), (1, min, 3));
-        assert_eq!((s.minutes, s.max_cards), (30, 4));
+        assert_eq!((s.card_seconds, s.max_cards), (120, 4));
         let mut big = StudyModeSettings {
             pages: 40,
             ..StudyModeSettings::default()
@@ -155,9 +157,10 @@ mod tests {
         assert_eq!(s, StudyModeSettings::default());
         let s: StudyModeSettings = serde_json::from_str(r#"{"unit":"chars"}"#).unwrap();
         assert_eq!(s.unit, Unit::Chars);
-        let old = r#"{"sec_per_card":6,"strict":true}"#;
+        let old = r#"{"sec_per_card":6,"strict":true,"minutes":9}"#;
         let s: StudyModeSettings = serde_json::from_str(old).unwrap();
-        assert!(s.limit && !s.lock, "the old timer's keys are let go");
+        assert!(s.limit && !s.lock, "the old timers' keys are let go");
+        assert_eq!(s.card_seconds, StudyModeSettings::CARD_SECONDS);
     }
 
     #[test]
