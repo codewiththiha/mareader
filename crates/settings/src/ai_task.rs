@@ -345,8 +345,7 @@ mod tests {
         let want: [Option<u32>; 5] = [1, 2, 1, 2, 2].map(Some);
         assert_eq!(all, want);
         assert_eq!(ai.tasks.models.len(), 4, "{:?}", ai.tasks.models);
-        // Summarize had none and translate a lost one: both ask Selection
-        // AI's; simplify keeps its own.
+        // Summarize and translate use Selection AI's; simplify keeps its own.
         let page = |t| ai.page_model(t).map(|p| p.id.0);
         let pages = crate::PageTask::ALL.map(page);
         assert_eq!(pages, [1, 1, 3].map(Some));

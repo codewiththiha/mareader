@@ -21,7 +21,7 @@ pub struct Finish {
 }
 
 impl Finish {
-    /// Takes `key`, `typed`, `frames`, `mark` and `crop`; false for any other name.
+    /// Takes `key`, `typed`, `frames`, `mark` and `crop`; false otherwise.
     pub fn take(&mut self, k: &str, v: &str) -> Result<bool, String> {
         match k {
             "key" => {

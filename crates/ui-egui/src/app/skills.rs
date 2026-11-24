@@ -82,7 +82,7 @@ impl MareaderApp {
         Ok(())
     }
 
-    // The reader's skills by name, `_` for a space: `custom_skills=Quiz_me,Grammar`.
+    /// Skills by name, `_` for a space: `custom_skills=Quiz_me,Grammar`.
     fn option_custom_skills(&mut self, value: &str) -> Result<(), String> {
         let skills: Vec<_> = (value.split(',').enumerate())
             .map(|(i, name)| {
@@ -100,7 +100,7 @@ impl MareaderApp {
         Ok(())
     }
 
-    // Runs a skill on the staged selection: `selection=0:quick skill=translate`.
+    /// A skill on the staged selection: `selection=0:quick skill=translate`.
     fn option_skill(&mut self, value: &str) -> Result<(), String> {
         let hint = "skill: translate, summarize, simplify or custom-N, after selection";
         let skill = mareader_settings::Skill::parse(value).ok_or(hint)?;
@@ -109,7 +109,7 @@ impl MareaderApp {
         Ok(())
     }
 
-    // Runs a skill on a page, its card at a spot: `page_skill=0:120:300:custom-1`.
+    /// A skill on a page, its card at a spot: `page_skill=0:120:300:custom-1`.
     fn option_page_skill(&mut self, value: &str) -> Result<(), String> {
         let hint = "page_skill: page:x:y:skill, as 0:120:300:custom-1";
         let parts: Vec<&str> = value.splitn(4, ':').collect();
