@@ -266,7 +266,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **The page AI** joins it (`docs/page-ai.md`, `activity::pages`): a page
   rewrite is a line while its bubble and words are off screen
   (`seen::page_runs`), picked pages one line counting their groups, and a
-  continuous run always one, with *Continue* when it asks. Cancel stops a
+  continuous run one, with *Continue* when it asks; it leaves the stack
+  while a page of its spins its bubble in view. Cancel stops a
   rewrite at once (`page_ai::Action::StopRun`) with a toast. The old pill
   at the pane's bottom is gone.
 - **The judge** joins it (`Key::Judge`): while it checks a recall's
@@ -285,8 +286,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   each calling the owner's own helper); a reader of it in
   `Session::activities`; `seen::watch` from its visual; and its View and
   Cancel in `app/activity.rs::press_activity`. The compiler asks for every
-  arm. The UI tests' `jobs::proof` asks for a scene with the job at work,
-  its visual in view, or none; one test walks `Kind::ALL` through them. It
+  arm. The UI tests' `jobs::scene` asks for a scene with the job at work
+  and its visual in view; one test walks `Kind::ALL` through them. It
   fails if `Session::activities` misses the job, or if a visual in view
   leaves its line in the stack.
   Closing the recall drops the judge, with a *Stopped checking* toast.

@@ -216,7 +216,8 @@ fn a_task_set_to_this_page_runs_without_asking() -> Out {
     Ok(())
 }
 
-/// Fans the AI stack out, where a continuous run always has its line.
+/// Fans the AI stack out, where a continuous run has its line while no
+/// bubble of its spins in view.
 fn open_stack(h: &mut H) {
     h.get_by_label(STACK).hover();
     h.run_steps(20);
@@ -227,6 +228,7 @@ fn the_stack_stops_continuous_mode() -> Out {
     let mut h = reader(&[("pdf", "sample:40"), ("provider", "ollama")]);
     let pane = h.state().active_pane();
     simplify_on(&mut h, false)?;
+    assert!(h.state().page_ai().shows(pane, 0), "the first page is done");
     open_stack(&mut h);
     h.get_by_label("Stop").click();
     h.run_steps(3);

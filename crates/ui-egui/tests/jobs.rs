@@ -1,7 +1,7 @@
 //! Every kind of AI job proves its place in the stack. At work,
 //! `Session::activities` lists it, and while its own visual is in view its
-//! line keeps out of the stack. A new kind can't build until [`proof`]
-//! gives it a scene, so its test always exists.
+//! line keeps out of the stack. A new kind can't build until [`scene`]
+//! gives it one, so its test always exists.
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
@@ -22,49 +22,33 @@ type Shelves = (tempfile::TempDir, tempfile::TempDir);
 /// The app with a job at work, and the folders it must outlive.
 type Scene = (H, Option<Shelves>);
 
-/// How a kind of job shows the reader it is at work.
-enum Proof {
-    /// By a visual of its own, in view in this scene.
-    Visual(fn() -> Scene),
-    /// By its line in the stack alone.
-    Line(fn() -> Scene),
-}
-
-fn proof(kind: Kind) -> Proof {
+/// The scene where `kind`'s job is at work with its own visual in view.
+fn scene(kind: Kind) -> fn() -> Scene {
     match kind {
-        Kind::Cards => Proof::Visual(cards),
+        Kind::Cards => cards,
         // The library page says what it organizes.
-        Kind::Organize => Proof::Visual(organize),
-        Kind::Explain => Proof::Visual(explain),
-        Kind::Skill => Proof::Visual(skill),
-        Kind::Page => Proof::Visual(page),
-        Kind::Pages => Proof::Visual(pages),
-        // It follows the reader with no visual of its own.
-        Kind::Follow => Proof::Line(follow),
-        Kind::Judge => Proof::Visual(judge),
+        Kind::Organize => organize,
+        Kind::Explain => explain,
+        Kind::Skill => skill,
+        Kind::Page => page,
+        Kind::Pages => pages,
+        Kind::Follow => follow,
+        Kind::Judge => judge,
     }
 }
 
 #[test]
 fn every_kind_of_job_is_listed_and_its_visual_keeps_it_out_of_the_stack() {
     for &kind in Kind::ALL {
-        let (scene, visual) = match proof(kind) {
-            Proof::Visual(scene) => (scene, true),
-            Proof::Line(scene) => (scene, false),
-        };
-        let (h, _shelves) = scene();
+        let (h, _shelves) = scene(kind)();
         let now = h.ctx.input(|i| i.time);
         let jobs = h.state().session().activities(now);
         let Some(key) = jobs.iter().map(|j| j.key).find(|k| k.kind() == kind) else {
             panic!("{kind:?} is at work, but Session::activities never lists it")
         };
+        assert!(seen::shown(&h.ctx, key), "{key:?} shows but never says so");
         let stacked = h.query_by_label(STACK).is_some();
-        if visual {
-            assert!(seen::shown(&h.ctx, key), "{key:?} shows but never says so");
-            assert!(!stacked, "{kind:?} in view: the stack stays clear");
-        } else {
-            assert!(stacked, "{kind:?} has no visual: its line shows");
-        }
+        assert!(!stacked, "{kind:?} in view: the stack stays clear");
     }
 }
 
@@ -152,20 +136,12 @@ fn pages() -> Scene {
     (h, None)
 }
 
-/// A continuous run, once its line has had the time to show.
+/// A continuous run writing the page read, its bubble spinning on it.
 fn follow() -> Scene {
-    let how = How {
+    rewrite(How {
         continuous: true,
         remember: false,
-    };
-    let (mut h, shelves) = rewrite(how);
-    for _ in 0..120 {
-        if h.query_by_label(STACK).is_some() {
-            break;
-        }
-        h.run_steps(1);
-    }
-    (h, shelves)
+    })
 }
 
 /// The judge checking an answer, its recall open on the word.

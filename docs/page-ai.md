@@ -131,6 +131,8 @@ to them, without paying for pages they skim past.
   1.2 s, its line asks "Continue translating here?" with Continue and
   Stop. Continue carries on from this page; Stop ends it until the next
   manual run. Coming back near the run's pages resumes it by itself.
+- **In the AI stack.** Its line says how it stands, except while a page
+  of its spins its bubble in view: the bubble says it then.
 - **Stopping.** Stop on its line, "Stop continuous mode" in the page menu,
   or a new run in the same pane. Pages ahead that were never reached are
   let go: their requests stop. A toast says "Stopped translating as you

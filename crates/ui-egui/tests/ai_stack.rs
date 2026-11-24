@@ -220,3 +220,27 @@ fn picked_pages_out_of_view_count_their_groups_and_cancel() {
     assert_eq!(toast.as_deref(), Some("Stopped simplifying pages 1–4"));
     assert!(!h.state().page_ai().ledger.grouping(pane));
 }
+
+/// A continuous run's line keeps out while its page's bubble spins in view.
+#[test]
+fn a_continuous_run_leaves_the_stack_while_its_bubble_spins_in_view() {
+    let mut h = held_reader();
+    let pane = h.state().active_pane();
+    let how = How {
+        continuous: true,
+        remember: false,
+    };
+    let task = PageTask::Simplify;
+    let run = PageAi::Run {
+        pane,
+        page: 0,
+        task,
+        how,
+    };
+    send(&mut h, Command::PageAi(run));
+    assert!(h.query_by_label(STACK).is_none(), "its bubble says it");
+    send(&mut h, Command::GoTo { pane, page: 11 });
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+    h.get_by_label_contains("Simplifying");
+}

@@ -144,7 +144,7 @@ pub fn page_runs(ctx: &Context, ledger: &PageAi, (pane, room): (PaneId, Rect), s
             continue;
         };
         let keys = slots.iter().filter_map(|(slot, _)| run(slot));
-        for key in keys.filter_map(|id| key_of(ledger, pane, id)) {
+        for key in keys.map(|id| key_of(ledger, pane, id)) {
             watch(ctx, key, (room, sheet.shown));
         }
     }
