@@ -224,16 +224,17 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   cards the size of the real ones drift in a loose stack over the frost,
   their lines shimmering as if written; no paper sits behind them. Beneath,
   it says which stage it is at (finding the words, writing them with the
-  model, looking them up) over a thin track, filled as cards are written.
+  model and how many are written, waiting while the model is busy with
+  other work, looking them up) over a thin track filled as far as the
+  deck is made.
   After 7 s of the AI it says it is slow and offers *Use the dictionary
   instead*. With motion off the stack stands still.
 - **Failed:** an alert mark says why, with no paper behind it, then
   *Try again*, *Use the dictionary* and *Read previous pages*.
 - **The corner toast** (`study_mode/progress.rs`): while the AI writes a
   deck, the gate's or one made ahead, a ring sits in the pane's bottom
-  left corner, rising over the page bar only while that is up, spinning
-  while the words are found, filling as cards are written, red once
-  writing failed. Where the pane's deck covers that corner (a short or
+  left corner, rising over the page bar only while that is up, filled as
+  far as the deck is made, red once writing failed. Where the pane's deck covers that corner (a short or
   narrow pane), it glides to the top left corner, and shrinks from 30 to
   18 pt when only that keeps it clear; with no room anywhere it sits small
   in the top left corner. The deck marks where it drew each pass
@@ -241,6 +242,14 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   of 8 · pages 4–6*). A finished deck shows *Next cards ready* for 3 s.
   Dictionary cards come at once and never show it; the deck opens at the
   gate.
+- **Progress is real** (`DeckJob::made`, `deck_job/progress.rs`): the
+  track and the ring show the same share, counted from real steps only.
+  Finding the words is the first 10%: their levels looked up, then their
+  classes tagged. Writing is the rest, one step per card, cached cards
+  first; cards arrive one by one as the model streams its answer. Before
+  the first card nothing is known, so the fill holds still; a soft pulse
+  at its head (steady with reduced motion) says the work goes on. The fill
+  eases to each new step.
 - **Thumbnails** (`thumbnails/study.rs`, from `Session::study_stands`):
   pages that read freely show as they are. A locked page stands one of
   three ways: **shut** (its cards not ready: no deck yet, a deck waiting in

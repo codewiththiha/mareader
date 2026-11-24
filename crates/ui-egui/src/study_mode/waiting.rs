@@ -1,19 +1,19 @@
 //! The deck's place while it is made, and when it couldn't be.
 //!
 //! While it is made, blank cards drift over the frost with the stage the
-//! deck is at beneath; once the AI has taken [`SLOW_SECS`] it says so and
-//! offers the dictionary. A failure offers another try, the dictionary and
-//! the pages before the gate.
+//! deck is at beneath, and a line filled as far as the deck is made, as
+//! the corner toast's ring is. Once the AI has taken [`SLOW_SECS`] it says
+//! so and offers the dictionary. A failure offers another try, the
+//! dictionary and the pages before the gate.
 
-use egui::{Align, Label, Rect, Response, RichText, Sense, Ui, Vec2, vec2};
+use egui::{Align, Id, Label, Rect, Response, RichText, Sense, Ui, Vec2, vec2};
 use mareader_engine::study_mode::{Action, DeckJob, Doing};
 use mareader_study::mode::{SLOW_SECS, Via};
 
 use super::controls::{self, Chip, Look};
 use super::deck::{self, send};
-use super::{Pane, making};
+use super::{Pane, making, progress};
 use crate::icons::Icon;
-use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui_command::Commands;
 
@@ -44,7 +44,13 @@ pub fn stage(range: &str, job: Option<&DeckJob>) -> String {
         Doing::Writing => {
             let by = job.by().filter(|b| !b.is_empty());
             let by = by.unwrap_or_else(|| "the AI".to_owned());
-            format!("Writing meanings in context with {by}…{skipped}")
+            match job.progress() {
+                _ if job.queued() => format!("Waiting for {by}, busy with other work…{skipped}"),
+                Some((done, of)) if done > 0 => {
+                    format!("Writing meanings in context with {by}: {done} of {of}…{skipped}")
+                }
+                _ => format!("Writing meanings in context with {by}…{skipped}"),
+            }
         }
         Doing::LookingUp => format!("Looking them up in the offline dictionary…{skipped}"),
     }
@@ -73,7 +79,8 @@ pub fn waiting(
     let said = stage(range, job);
     centred(ui, RichText::new(said).size(t.text).color(t.muted));
     ui.add_space(t.gap * 1.25);
-    bar(ui, job.and_then(written), &t);
+    let made = job.map_or(0.0, DeckJob::made);
+    bar(ui, Id::new(("study-made", pane.id)), made, &t);
     ui.add_space(t.gap * 1.25);
     let slow = job.is_some_and(|j| slow(j, pane.now));
     let note = if slow { SLOW } else { USUAL };
@@ -105,37 +112,25 @@ pub fn waiting(
     }
 }
 
-/// How much of the deck is written, once the AI is writing it.
-fn written(job: &DeckJob) -> Option<f32> {
-    let (done, of) = job.progress().filter(|_| job.doing() == Doing::Writing)?;
-    Some(done as f32 / of.max(1) as f32)
-}
-
 /// Centred words, wrapped to the column.
 fn centred(ui: &mut Ui, text: RichText) {
     ui.add(Label::new(text).wrap().halign(Align::Center));
 }
 
-/// A thin track: filled to `done` while cards are written, else a glint
-/// that runs along it while the words are found.
-fn bar(ui: &mut Ui, done: Option<f32>, t: &Tokens) {
+/// A thin track filled to `made`, easing to each step, with a soft pulse
+/// at its head while the work goes on.
+fn bar(ui: &mut Ui, id: Id, made: f32, t: &Tokens) {
     let (track, _) = ui.allocate_exact_size(vec2(BAR_W, 6.0), Sense::hover());
-    let (from, to) = match done {
-        Some(done) => (0.0, done.clamp(0.0, 1.0)),
-        None => {
-            let at = (ui.input(|i| i.time) as f32 / 1.4).fract() * 1.4 - 0.4;
-            (at.max(0.0), (at + 0.4).min(1.0))
-        }
-    };
-    let x = |k: f32| track.left() + track.width() * k;
-    let right = x(to).max(x(from) + 6.0).min(track.right());
-    let lit = Rect::from_x_y_ranges(x(from)..=right, track.y_range());
+    let made = progress::eased(ui.ctx(), id, made);
+    let head = track.left() + (track.width() * made).max(track.height());
+    let lit = Rect::from_x_y_ranges(track.left()..=head, track.y_range());
     let painter = ui.painter();
     painter.rect_filled(track, 3.0, t.ink.gamma_multiply(0.08));
     painter.rect_filled(lit, 3.0, t.accent.gamma_multiply(0.75));
-    if done.is_none() && motion::secs(ui.ctx(), 1.0) > 0.0 {
-        ui.ctx().request_repaint();
-    }
+    let pulse = progress::pulse(ui.ctx());
+    let glow = t.accent.gamma_multiply(0.25 + 0.5 * pulse);
+    let tip = egui::pos2(head - track.height() / 2.0, track.center().y);
+    painter.circle_filled(tip, track.height() * 0.8, glow);
 }
 
 /// Why the words for `range` couldn't be made, and the ways on.

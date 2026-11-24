@@ -101,8 +101,10 @@ enum Stage {
     Levels {
         next: usize,
     },
+    /// The tags still asked, of the `of` asked at first.
     Tags {
         asked: Vec<(usize, TagTicket)>,
+        of: usize,
         since: Option<f64>,
     },
     Meanings {
@@ -305,7 +307,12 @@ impl DeckJob {
                 }
             }
         }
-        self.stage = Stage::Tags { asked, since: None };
+        let of = asked.len();
+        self.stage = Stage::Tags {
+            asked,
+            of,
+            since: None,
+        };
     }
 
     fn tags(
@@ -314,7 +321,7 @@ impl DeckJob {
         meanings: &mut dyn Meanings,
         now: f64,
     ) -> Result<bool, String> {
-        let Stage::Tags { asked, since } = &mut self.stage else {
+        let Stage::Tags { asked, since, .. } = &mut self.stage else {
             return Ok(false);
         };
         let since = *since.get_or_insert(now);

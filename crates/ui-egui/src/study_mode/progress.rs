@@ -1,8 +1,9 @@
 //! The corner toast while the AI writes a studying pane's cards.
 //!
 //! Folded, it is a ring in the pane's bottom left corner, rising over the
-//! page bar while that is up: spinning while the new words are found,
-//! filling as cards are written, red once writing failed. Where the pane's
+//! page bar while that is up. It fills as far as the deck is made, from
+//! [`DeckJob::made`], easing to each step, with a soft pulse at its head
+//! while the work goes on; red once writing failed. Where the pane's
 //! deck leaves no room there, it moves to the top left corner, and smaller
 //! when only that fits, gliding between them.
 //! A hover widens it to say so in words. Dictionary cards come at once, so
@@ -34,12 +35,26 @@ const TIGHT: f32 = 4.0;
 const GAP: f32 = 2.0;
 /// Seconds to widen and to fold.
 const OPEN: f32 = 0.2;
+/// Seconds the fill eases to a new step; one pulse at its head.
+const EASE: f32 = 0.45;
+const BREATH: f64 = 1.6;
 
-/// Where the AI's work on a pane's cards stands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Where the AI's work on a pane's cards stands; `made` is the share of
+/// the deck made, 0 to 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Status {
-    Finding,
-    Writing { done: usize, of: usize },
+    Finding {
+        made: f32,
+    },
+    /// Waiting in line for its model, with the words found.
+    Queued {
+        made: f32,
+    },
+    Writing {
+        done: usize,
+        of: usize,
+        made: f32,
+    },
     Failed,
     Ready,
 }
@@ -48,15 +63,25 @@ impl Status {
     /// The words the widened toast says, `range` naming the pages.
     pub fn said(self, range: &str) -> String {
         match self {
-            Self::Finding => format!("Finding new words · {range}"),
-            Self::Writing { done, of } => format!("Writing cards {done} of {of} · {range}"),
+            Self::Finding { .. } => format!("Finding new words · {range}"),
+            Self::Queued { .. } => format!("Waiting for the model · {range}"),
+            Self::Writing { done, of, .. } => format!("Writing cards {done} of {of} · {range}"),
             Self::Failed => "Couldn’t write cards · open the deck to retry".to_owned(),
             Self::Ready => "Next cards ready".to_owned(),
         }
     }
 
     pub fn busy(self) -> bool {
-        matches!(self, Self::Finding | Self::Writing { .. })
+        self.made().is_some()
+    }
+
+    /// The share of the deck made, while it is being made.
+    fn made(self) -> Option<f32> {
+        match self {
+            Self::Finding { made } | Self::Queued { made } => Some(made),
+            Self::Writing { made, .. } => Some(made),
+            Self::Failed | Self::Ready => None,
+        }
     }
 }
 
@@ -64,10 +89,27 @@ fn of_job(job: &DeckJob) -> Option<Status> {
     if job.via() != Via::Ai {
         return None;
     }
+    let made = job.made();
     Some(match (job.doing(), job.progress()) {
-        (Doing::Writing, Some((done, of))) => Status::Writing { done, of },
-        _ => Status::Finding,
+        _ if job.queued() => Status::Queued { made },
+        (Doing::Writing, Some((done, of))) => Status::Writing { done, of, made },
+        _ => Status::Finding { made },
     })
+}
+
+/// `made`, eased from where `id` last stood, so each step glides.
+pub fn eased(ctx: &Context, id: Id, made: f32) -> f32 {
+    ctx.animate_value_with_time(id, made.clamp(0.0, 1.0), motion::secs(ctx, EASE))
+}
+
+/// A slow breath, 0 to 1, saying work goes on; still where motion is reduced.
+pub fn pulse(ctx: &Context) -> f32 {
+    if motion::reduced(ctx) || !motion::enabled(ctx) {
+        return 0.6;
+    }
+    ctx.request_repaint();
+    let now = ctx.input(|i| i.time);
+    (0.5 - 0.5 * (now * std::f64::consts::TAU / BREATH).cos()) as f32
 }
 
 /// Work on cards: the pages, and where it stands.
@@ -192,7 +234,8 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, (range, status): Work, alpha: f32) {
         .constrain(false)
         .show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(vec2(width, side), Sense::hover());
-            paint(ui, rect, status, &t, alpha);
+            let made = status.made().map(|m| eased(ctx, id.with("made"), m));
+            paint(ui, rect, (status, made), &t, alpha);
             if open > 0.0 {
                 let ink = t.ink.gamma_multiply(open * alpha);
                 let text = pos2(rect.left() + side + 4.0, rect.center().y);
@@ -205,14 +248,18 @@ pub fn show(ctx: &Context, pane: &Pane<'_>, (range, status): Work, alpha: f32) {
             resp.hovered()
         });
     ctx.data_mut(|d| d.insert_temp(id, shown.inner));
-    if status.busy() || (open > 0.0 && open < 1.0) || alpha < 1.0 {
+    if (open > 0.0 && open < 1.0) || alpha < 1.0 {
         ctx.request_repaint();
+    }
+    // News wakes the frame; this only keeps a quiet step from stalling.
+    if status.busy() {
+        ctx.request_repaint_after_secs(0.25);
     }
     crate::toast::keep_clear(ctx, shown.response.rect);
 }
 
 /// The toast's paper and its ring, sized to its height.
-fn paint(ui: &Ui, rect: Rect, status: Status, t: &Tokens, alpha: f32) {
+fn paint(ui: &Ui, rect: Rect, (status, made): (Status, Option<f32>), t: &Tokens, alpha: f32) {
     let painter = ui.painter();
     let fade = |c: Color32| c.gamma_multiply(alpha);
     let side = rect.height();
@@ -234,15 +281,13 @@ fn paint(ui: &Ui, rect: Rect, status: Status, t: &Tokens, alpha: f32) {
         return;
     }
     painter.circle_stroke(c, r, Stroke::new(line.width, fade(t.track)));
-    let now = ui.input(|i| i.time) as f32;
-    let (from, span) = match status {
-        Status::Writing { done, of } if done > 0 && of > 0 => {
-            (0.0, done as f32 / of as f32 * std::f32::consts::TAU)
-        }
-        Status::Ready => (0.0, std::f32::consts::TAU),
-        _ => (now * 5.0, 1.6),
-    };
-    arc(ui, c, r, (from, span), line);
+    let span = made.unwrap_or(1.0) * std::f32::consts::TAU;
+    arc(ui, c, r, (0.0, span), line);
+    if made.is_some() {
+        let head = c + r * Vec2::angled(span - std::f32::consts::FRAC_PI_2);
+        let glow = fade(t.accent).gamma_multiply(0.35 + 0.65 * pulse(ui.ctx()));
+        painter.circle_filled(head, line.width * 0.9, glow);
+    }
     if status == Status::Ready {
         let marks = [vec2(-3.5, 0.0), vec2(-1.0, 2.5), vec2(3.5, -2.5)];
         let tick = marks.map(|v| c + v * k);
@@ -268,7 +313,11 @@ mod tests {
     #[test]
     fn a_deck_done_says_ready_a_moment_then_goes() {
         let mut watch = Watch::default();
-        let writing = Status::Writing { done: 1, of: 4 };
+        let writing = Status::Writing {
+            done: 1,
+            of: 4,
+            made: 0.3,
+        };
         let work = Some(("pages 1–2".to_owned(), writing));
         assert_eq!(watch.status(work.clone(), 0.0), work);
         let ready = watch.status(None, 1.0).map(|(_, s)| s);
@@ -304,12 +353,21 @@ mod tests {
 
     #[test]
     fn the_toast_says_where_the_writing_stands() {
-        let writing = Status::Writing { done: 3, of: 8 };
+        let writing = Status::Writing {
+            done: 3,
+            of: 8,
+            made: 0.44,
+        };
         assert_eq!(
             writing.said("pages 4–6"),
             "Writing cards 3 of 8 · pages 4–6"
         );
-        assert!(Status::Finding.busy());
+        let queued = Status::Queued { made: 0.1 };
+        assert_eq!(
+            queued.said("pages 4–6"),
+            "Waiting for the model · pages 4–6"
+        );
+        assert!(Status::Finding { made: 0.0 }.busy());
         assert!(!Status::Failed.busy());
     }
 }
