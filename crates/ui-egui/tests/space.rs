@@ -1,16 +1,22 @@
 //! Space, headless: the library bar's way in to the hub, the words page's
-//! tabs and their counts, and a word memorized or forgotten from its row.
+//! tabs and their counts, a word memorized or forgotten from its row, and
+//! its sentence opening the book there.
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
+use mareader_engine::command::Command;
+use mareader_engine::library::Action;
 use mareader_engine::route::Route;
 use mareader_engine::space::Room;
 use mareader_library::WordStatus;
 use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::space::open_sentence;
+use mareader_ui_egui::ui_command::Sent;
 
-use crate::common::{press, reader};
+use crate::common::{act, press, reader};
 
 type H = Harness<'static, MareaderApp>;
+type Out = Result<(), Box<dyn std::error::Error>>;
 
 /// Three books and the made-up words studied in them, on `page`.
 fn shelf(page: &str) -> H {
@@ -91,4 +97,28 @@ fn escape_goes_back_to_the_hub_then_the_library() {
     h.key_press(egui::Key::Escape);
     h.run();
     assert_eq!(h.state().route(), Route::Library);
+}
+
+#[test]
+fn a_rows_sentence_opens_its_book_and_finds_it_there() -> Out {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let raven = dir.join("../epub/tests/books/the-raven-gutenberg-17192.epub");
+    let raven = raven.canonicalize()?;
+    let mut h = reader(&[("epub", raven.to_str().ok_or("a path in UTF-8")?)]);
+    h.run_steps(3);
+    act(&mut h, Action::SeedWords);
+    let words = Sent::Engine(Command::ShowSpace(Room::Words));
+    h.state_mut().queue(words);
+    h.run();
+    press(&mut h, "Show where lintel was met");
+    h.run();
+    press(&mut h, &open_sentence("lintel"));
+    for _ in 0..20 {
+        h.run_steps(1);
+    }
+    assert_eq!(h.state().route(), Route::Reader, "back in the book");
+    let find = h.state().find();
+    assert!(find.is_open(), "the find bar looks for the sentence");
+    assert_eq!(find.query(), "ducked beneath the lintel of the low");
+    Ok(())
 }

@@ -2,6 +2,9 @@ use egui::Context;
 
 use super::*;
 
+/// Seconds words wait for their book to open before they are dropped.
+const FIND_ON_OPEN_SECS: f64 = 15.0;
+
 impl MareaderApp {
     /// The page in the window; the library replaces the panes, not ends them.
     pub fn route(&self) -> Route {
@@ -114,8 +117,33 @@ impl MareaderApp {
         }
     }
 
+    /// Opens the find bar on words asked for once their book is read.
+    fn find_on_open(&mut self, ctx: &Context) {
+        let pending = self.ui.find_on_open.as_ref();
+        let Some((book, asked)) = pending.map(|(book, _, at)| (*book, *at)) else {
+            return;
+        };
+        if ctx.input(|i| i.time) - asked > FIND_ON_OPEN_SECS {
+            self.ui.find_on_open = None;
+            return;
+        }
+        let pane = self.active();
+        let reading = self.documents().reading(pane);
+        let ready = reading.is_some_and(|r| r.document.is_complete());
+        if !ready || self.session.book_in(pane) != Some(book) {
+            ctx.request_repaint();
+            return;
+        }
+        if let Some((_, quote, _)) = self.ui.find_on_open.take() {
+            self.ui.find.open(pane);
+            self.ui.find.seed(&quote);
+            self.ui.titlebar.reveal();
+        }
+    }
+
     /// Asks for the bar's query once it settles, and walks to its hits.
     pub(super) fn drive_search(&mut self, ctx: &Context) {
+        self.find_on_open(ctx);
         let Some(pane) = self.ui.find.pane() else {
             return;
         };

@@ -1663,9 +1663,11 @@ evidence = [
     "crates/engine/src/space/tests.rs::with_books_a_row_is_a_sighting_and_merged_a_word",
     "crates/engine/src/space/tests.rs::the_csv_quotes_every_cell_and_names_each_book",
     "crates/ui-egui/tests/space.rs::a_row_memorizes_and_forgets_its_word",
+    "crates/ui-egui/tests/space.rs::a_rows_sentence_opens_its_book_and_finds_it_there",
+    "crates/engine/src/space/tests.rs::a_sentence_is_found_by_the_words_around_its_word",
     "crates/ui-egui/tests/study_recall.rs::the_study_mode_tab_shows_each_group",
 ]
-notes = "Rows, filters, groups, sorts, stats and CSV in crates/engine/src/space; the page in crates/ui-egui/src/space, opened from Space's hub (the library bar's Space button) by its Vocabs card, and from Settings › Study mode › Your words"
+notes = "Rows, filters, groups, sorts, stats and CSV in crates/engine/src/space; the page in crates/ui-egui/src/space, opened from Space's hub (the library bar's Space button) by its Vocabs card, and from Settings › Study mode › Your words. A row's book names open their books; its sentence opens the book with the find bar seeded by the words around the word"
 
 [[feature]]
 id = "study.space-notes"

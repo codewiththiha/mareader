@@ -95,6 +95,36 @@ pub(super) fn text_button(
     resp
 }
 
+/// Words that open what they name: `ink`, then the accent and underlined
+/// under the pointer; wrapped to the room left when `wrap`.
+pub(super) fn link(ui: &mut Ui, words: egui::RichText, wrap: bool, label: &str) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let mode = match wrap {
+        true => egui::TextWrapMode::Wrap,
+        false => egui::TextWrapMode::Extend,
+    };
+    let text = egui::WidgetText::from(words);
+    let font = egui::FontSelection::Default;
+    let galley = text.into_galley(ui, Some(mode), ui.available_width(), font);
+    let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
+    let ink = match resp.hovered() {
+        true => t.accent,
+        false => t.ink,
+    };
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+        for row in &galley.rows {
+            let r = row.rect().translate(rect.min.to_vec2());
+            let under = Stroke::new(1.0, ink.gamma_multiply(0.6));
+            ui.painter().hline(r.x_range(), r.bottom() - 1.0, under);
+        }
+    }
+    ui.painter()
+        .galley_with_override_text_color(rect.min, galley, ink);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, label));
+    resp
+}
+
 /// The way back to Space's hub, over a tool's title; true when clicked.
 pub(super) fn back(ui: &mut Ui, t: &Tokens) -> bool {
     let r = text_button(ui, (Icon::ChevronLeft, "Space"), BACK, t.muted);

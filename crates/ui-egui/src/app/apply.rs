@@ -286,6 +286,10 @@ impl MareaderApp {
             }
             UiCommand::CloseSettings => self.ui.settings_window.close(),
             UiCommand::FindStep { forward } => self.find_step(ctx, forward),
+            UiCommand::FindInBook { book, quote } => {
+                self.apply(ctx, Sent::Engine(Command::OpenBook(book)));
+                self.ui.find_on_open = Some((book, quote, ctx.input(|i| i.time)));
+            }
             UiCommand::ShowFind => self.show_find(ctx),
             UiCommand::ShowSearch if self.ui.find.is_open() => self.ui.find.close(),
             UiCommand::ShowSearch => self.show_find(ctx),

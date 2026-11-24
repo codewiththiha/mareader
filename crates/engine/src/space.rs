@@ -177,12 +177,23 @@ pub struct Row {
     pub context: String,
     /// The titles of the books it was met in, most recent first.
     pub books: Vec<String>,
+    /// The ids of `books`, in the same order.
+    pub book_ids: Vec<BookId>,
+    /// Where `context` was met, to open its book there.
+    pub met_at: Option<MetAt>,
     /// When it was last met, in wall milliseconds.
     pub seen: u64,
     /// Answers given, summed over books; 0 for cards.
     pub tries: u32,
     pub by: LearnedBy,
     pub first_try: bool,
+}
+
+/// A sentence's book, and the words around the word to find it by.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetAt {
+    pub book: BookId,
+    pub quote: String,
 }
 
 /// Rows under one heading; the heading is empty when ungrouped.

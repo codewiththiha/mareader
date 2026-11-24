@@ -88,6 +88,20 @@ fn with_books_a_row_is_a_sighting_and_merged_a_word() {
     let lintel = merged.rows().find(|r| r.lemma == "lintel");
     let lintel = lintel.expect("lintel is listed");
     assert_eq!(lintel.books, ["Emma", "Dune"], "the latest book first");
+    let emma = merged
+        .books
+        .iter()
+        .find(|b| b.title == "Emma")
+        .map(|b| b.id);
+    assert_eq!(lintel.book_ids.first().copied(), emma, "ids follow titles");
+    let at = lintel
+        .met_at
+        .as_ref()
+        .expect("its sentence is met somewhere");
+    assert_eq!(
+        (Some(at.book), at.quote.as_str()),
+        (emma, "The lintel stood by the door.")
+    );
     assert_eq!(lintel.seen, NOV);
     let titles: Vec<&str> = merged.books.iter().map(|b| b.title.as_str()).collect();
     assert_eq!(titles, ["Dune", "Emma"]);
@@ -221,4 +235,21 @@ fn the_seed_fills_every_tab_and_meets_two_words_twice() {
     assert_eq!(counts.all, 8);
     assert!(Tab::ALL.iter().all(|&tab| counts.of(tab) > 0));
     assert!(shown.stats.answered > 0);
+}
+
+#[test]
+fn a_sentence_is_found_by_the_words_around_its_word() {
+    let long = "One two three four five six seven eight nine ten eleven.";
+    assert_eq!(
+        query::words_around(long, "Eight"),
+        "five six seven eight nine ten eleven."
+    );
+    assert_eq!(
+        query::words_around(long, "two"),
+        "One two three four five six seven"
+    );
+    assert_eq!(
+        query::words_around("Short, it said.", "absent"),
+        "Short, it said."
+    );
 }

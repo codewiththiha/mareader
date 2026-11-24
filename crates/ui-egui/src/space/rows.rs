@@ -9,7 +9,7 @@ use mareader_library::{LearnedBy, WordStatus};
 use super::look;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui_command::{Commands, Sent};
+use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
 
 const CARD_W: f32 = 236.0;
@@ -19,6 +19,7 @@ const GAP: f32 = 12.0;
 /// The chevron's room at a row's left, which its second line keeps too.
 const LEAD: f32 = 30.0;
 const NONE_YET: &str = "Study some pages, and the words you meet land here.";
+const BOOK_HERE: &str = "Open the book here";
 const NONE_MATCH: &str = "Clear a filter, or study some pages to add more.";
 
 /// How the rows are drawn, and which one is open to its sentence.
@@ -116,14 +117,14 @@ fn line(ui: &mut Ui, row: &Row, open: &mut Option<u128>, t: &Tokens, out: &mut C
                 ui.add_space(LEAD - ui.spacing().item_spacing.x);
                 actions(ui, row, out, t);
                 if row.books.len() > 1 {
-                    look::quiet(ui, &row.books.join(" · "), t.text_small, t);
+                    books(ui, row, t, out);
                 }
             });
             if is_open {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.add_space(LEAD - ui.spacing().item_spacing.x);
-                    ui.vertical(|ui| sentence(ui, row, t));
+                    ui.vertical(|ui| sentence(ui, row, t, out));
                 });
             }
         });
@@ -235,10 +236,51 @@ fn via(ui: &mut Ui, row: &Row, t: &Tokens) {
     painter.galley(at, galley, t.muted);
 }
 
-/// The book's sentence, and how many books met the word.
-fn sentence(ui: &mut Ui, row: &Row, t: &Tokens) {
+/// The books that met the word, each opening its book.
+fn books(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
+    ui.spacing_mut().item_spacing.x = 4.0;
+    for (i, (title, id)) in row.books.iter().zip(&row.book_ids).enumerate() {
+        if i > 0 {
+            look::quiet(ui, "·", t.text_small, t);
+        }
+        let words = RichText::new(title).size(t.text_small).color(t.muted);
+        if look::link(ui, words, false, &open_book(title)).clicked() {
+            out.push(Sent::Engine(Command::OpenBook(*id)));
+        }
+    }
+}
+
+/// A book link's full name.
+pub fn open_book(title: &str) -> String {
+    format!("Open {title}")
+}
+
+/// The sentence link's full name.
+pub fn open_sentence(lemma: &str) -> String {
+    format!("Open the book where {lemma} was met")
+}
+
+/// The book's sentence, which opens the book there, and how many books
+/// met the word.
+fn sentence(ui: &mut Ui, row: &Row, t: &Tokens, out: &mut Commands) {
     let said = RichText::new(&row.context).font(theme::serif(t.text + 1.0));
-    ui.add(Label::new(said.color(t.ink).italics()).wrap());
+    let said = said.color(t.ink).italics();
+    match &row.met_at {
+        Some(at) => {
+            let label = open_sentence(&row.lemma);
+            let at_book = row.book_ids.iter().position(|b| *b == at.book);
+            let title = at_book.and_then(|i| row.books.get(i));
+            let tip = title.map_or_else(|| BOOK_HERE.to_owned(), |t| format!("Open {t} here"));
+            let link = look::link(ui, said, true, &label).on_hover_text(tip);
+            if link.clicked() {
+                let (book, quote) = (at.book, at.quote.clone());
+                out.push(Sent::Ui(UiCommand::FindInBook { book, quote }));
+            }
+        }
+        None => {
+            ui.add(Label::new(said).wrap());
+        }
+    }
     let n = row.books.len();
     if n > 1 {
         look::quiet(ui, &format!("Met in {n} books"), t.text_small, t);

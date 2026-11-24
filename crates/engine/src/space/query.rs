@@ -5,10 +5,12 @@ use std::collections::BTreeMap;
 
 use mareader_library::{BookId, LearnedBy, Library, WordSighting, WordState, WordStatus};
 
-use super::{BANDS, Counts, Filter, Group, Row, Scope, Section, Shelf, Sort, Stats, View};
+use super::{BANDS, Counts, Filter, Group, MetAt, Row, Scope, Section, Shelf, Sort, Stats, View};
 use crate::export::civil;
 
 const DAY_MS: u64 = 86_400_000;
+/// Words of a sentence its book is searched for.
+const QUOTE_WORDS: usize = 7;
 
 const MONTHS: [&str; 12] = [
     "January",
@@ -101,12 +103,18 @@ fn finds(m: &Met<'_>, needle: &str) -> bool {
 /// One row from `mets`, the most recent first, known by `key`.
 fn row(key: u128, mets: &[&Met<'_>]) -> Option<Row> {
     let head = mets.first()?;
-    let mut books: Vec<String> = Vec::new();
+    let (mut books, mut book_ids) = (Vec::new(), Vec::new());
     for m in mets {
-        if !books.iter().any(|b| b == m.title) {
+        if !book_ids.contains(&m.seen.book.value) {
             books.push(m.title.to_owned());
+            book_ids.push(m.seen.book.value);
         }
     }
+    let said = mets.iter().find(|m| !m.seen.context.value.is_empty());
+    let met_at = said.map(|m| MetAt {
+        book: m.seen.book.value,
+        quote: words_around(&m.seen.context.value, &m.seen.form.value),
+    });
     Some(Row {
         key,
         word: head.word.id,
@@ -117,11 +125,29 @@ fn row(key: u128, mets: &[&Met<'_>]) -> Option<Row> {
         meaning: first_said(mets.iter().map(|m| m.seen.meaning.value.as_str())),
         context: first_said(mets.iter().map(|m| m.seen.context.value.as_str())),
         books,
+        book_ids,
+        met_at,
         seen: head.seen.seen.value,
         tries: mets.iter().map(|m| u32::from(m.seen.tries.value)).sum(),
         by: head.seen.by.value,
         first_try: mets.iter().any(|m| m.seen.first_try.value),
     })
+}
+
+/// Up to [`QUOTE_WORDS`] of `sentence`'s words around `form`, else its
+/// first ones: few enough to find through a page's line breaks.
+pub(super) fn words_around(sentence: &str, form: &str) -> String {
+    let words: Vec<&str> = sentence.split_whitespace().collect();
+    let bare = |w: &&str| {
+        w.trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase()
+    };
+    let form = form.trim().to_lowercase();
+    let at = words.iter().position(|w| bare(w) == form).unwrap_or(0);
+    let from = at.saturating_sub(QUOTE_WORDS / 2);
+    let from = from.min(words.len().saturating_sub(QUOTE_WORDS));
+    let near = words.iter().skip(from).take(QUOTE_WORDS);
+    near.copied().collect::<Vec<_>>().join(" ")
 }
 
 /// The first of `texts` that says something.

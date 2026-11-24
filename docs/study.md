@@ -521,7 +521,10 @@ the session and the reader are in [`study-mode.md`](study-mode.md).
   per level), a toolbar (with books or merged, group, sort, list or
   cards) and the rows on one sheet, each with its status, how it was
   learned, and Memorize or Un-memorize and Forget. CSV export sits under
-  the title.
+  the title. A row's book names open their books, and its sentence, once
+  shown, opens the book and finds it there: the find bar is seeded with
+  up to seven words around the word (`space::MetAt`), since sightings
+  keep no page.
 - **Settings.** The tab sits after AI in the Study group, when an AI or a
   dictionary could write cards. *Mode* is the one the page menu turns on;
   the level is Vocabulary's *My level*, named in a note. The AI rows

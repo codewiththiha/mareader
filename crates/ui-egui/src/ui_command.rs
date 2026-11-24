@@ -86,6 +86,11 @@ pub enum UiCommand {
     CloseSidebar,
     /// Closes one toast, by its stack id.
     CloseToast(u64),
+    /// Opens a library book and finds `quote` in it: a Space sentence.
+    FindInBook {
+        book: mareader_library::BookId,
+        quote: String,
+    },
     /// F3 and Cmd+G: the next or previous match, opening the bar if shut.
     FindStep {
         forward: bool,
@@ -170,6 +175,7 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::ShowReading
         | U::ShowDictionary
         | U::ShowFind
+        | U::FindInBook { .. }
         | U::ShowOpenDialog(_)
         | U::LibraryDialog(_)
         | U::Window(_)

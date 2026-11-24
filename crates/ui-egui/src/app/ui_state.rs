@@ -31,6 +31,8 @@ pub struct UiState {
     pub(super) sidebar: Sidebar,
     pub(super) settings_window: SettingsWindow,
     pub(super) find: FindBar,
+    /// Words to find once their book opens, and when that was asked.
+    pub(super) find_on_open: Option<(mareader_library::BookId, String, f64)>,
     pub(super) toasts: Toasts,
     /// The selection bar's answers, marks and the word card.
     pub(super) study: StudyUi,

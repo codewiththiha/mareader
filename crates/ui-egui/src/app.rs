@@ -213,6 +213,7 @@ impl MareaderApp {
                 word_window_seed: None,
                 sidebar: Sidebar::default(),
                 settings_window: SettingsWindow::default(),
+                find_on_open: None,
                 find: FindBar::default(),
                 toasts: Toasts::default(),
                 study: StudyUi::default(),

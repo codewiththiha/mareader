@@ -24,6 +24,7 @@ use crate::ui_command::{Commands, Sent};
 
 pub use hub::TITLE as HUB_TITLE;
 pub use notes::TITLE as NOTES_TITLE;
+pub use rows::{open_book, open_sentence};
 
 /// The words page's own label, which tests and the titlebar find it by.
 pub const TITLE: &str = "Vocabs";
