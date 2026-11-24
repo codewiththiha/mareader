@@ -26,7 +26,7 @@ pub use backs::{Backs, Shown, Writer};
 pub use deck_job::{Built, DeckJob, Doing, Tags};
 pub use known::Known;
 pub use recalling::{Ask, Recalling, Word};
-pub use run::{Ahead, DeckState, Open, Prior, Run};
+pub use run::{Ahead, DeckState, Open, Prior, Run, Setup};
 pub use stand::{Stand, Stands};
 
 /// Who could write study's cards: a model chosen for study (the desktop

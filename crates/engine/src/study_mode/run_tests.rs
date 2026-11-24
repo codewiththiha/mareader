@@ -123,6 +123,7 @@ fn a_deck_for_a_batch_no_longer_at_the_gate_is_dropped() {
     run.deck = DeckState::Failed {
         batch: first,
         why: String::new(),
+        setup: None,
     };
     run.drop_stale_deck();
     assert!(matches!(run.deck, DeckState::None));
@@ -163,6 +164,7 @@ fn decks_ahead_follow_the_batches_still_coming() {
     let failed = |batch: Batch| Ahead::Failed {
         batch,
         why: String::new(),
+        setup: None,
     };
     let (second, third) = (run.batches[1].clone(), run.batches[2].clone());
     run.ahead = vec![failed(second.clone()), failed(third.clone())];
@@ -193,6 +195,7 @@ fn a_new_recipe_forgets_the_decks_not_yet_open() {
     run.deck = DeckState::Failed {
         batch: first,
         why: String::new(),
+        setup: None,
     };
     run.fallback = Some(0);
     assert!(
@@ -273,7 +276,11 @@ fn locked_pages_stand_as_their_decks_do() {
     let dictionary = run.stands(true, |_| Some(Via::Dictionary));
     assert_eq!(dictionary, [(0..2, Shut), (3..6, Ready), (6..9, Ready)]);
     let why = String::new();
-    run.deck = DeckState::Failed { batch: second, why };
+    run.deck = DeckState::Failed {
+        batch: second,
+        why,
+        setup: None,
+    };
     let nobody = run.stands(false, |_| None);
     assert_eq!(nobody, [(3..6, Shut), (6..9, Shut)], "failed, or nobody");
     let unplanned = Run::new(Mode::Proactive, None, 4);

@@ -54,6 +54,8 @@ pub enum Practice {
     Silent,
     /// Fails as an unreachable server does.
     Failing,
+    /// Fails as a provider with no API key does.
+    Keyless,
 }
 
 impl Practice {
@@ -62,6 +64,7 @@ impl Practice {
             "ready" => Some(Self::Ready),
             "silent" => Some(Self::Silent),
             "failing" => Some(Self::Failing),
+            "keyless" => Some(Self::Keyless),
             _ => None,
         }
     }
@@ -91,6 +94,7 @@ impl CardWriter for Practice {
             Self::Ready => Some(Ok(backs)),
             Self::Silent => None,
             Self::Failing => Some(Err(Failure::detailed(Why::Offline, "scripted failure"))),
+            Self::Keyless => Some(Err(Failure::detailed(Why::NoKey, "scripted failure"))),
         };
         Box::new(Once(answer))
     }

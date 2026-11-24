@@ -68,6 +68,7 @@ impl Judge for Practice {
             Self::Ready => Some(Ok(Judged { verdict, feedback })),
             Self::Silent => None,
             Self::Failing => Some(Err(Failure::detailed(Why::Offline, "scripted failure"))),
+            Self::Keyless => Some(Err(Failure::detailed(Why::NoKey, "scripted failure"))),
         };
         Box::new(Once(judged))
     }

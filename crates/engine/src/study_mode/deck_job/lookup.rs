@@ -7,6 +7,7 @@ use mareader_dict::Entry;
 use mareader_study::mode::{Card, Missing};
 
 use super::{DeckJob, MEANING_WAIT, Stage};
+use crate::study_mode::Setup;
 use crate::study_mode::backs::{Shown, meaning_of};
 use crate::word_list::Meanings;
 
@@ -25,7 +26,10 @@ impl DeckJob {
             self.finish();
             return Ok(());
         }
-        let to = self.to.clone().ok_or(Missing::Cards.reason())?;
+        let Some(to) = self.to.clone() else {
+            self.setup = Some(Setup::Writer);
+            return Err(Missing::Cards.reason().to_owned());
+        };
         let mut words: Vec<String> = Vec::new();
         for card in self.deck.cards.iter().take(upto).skip(from) {
             if !words.contains(&card.key.lemma) {

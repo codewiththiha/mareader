@@ -3,24 +3,32 @@
 //! While it is made, blank cards drift over the frost with the stage the
 //! deck is at beneath, and a line filled as far as the deck is made, as
 //! the corner toast's ring is. Once the AI has taken [`SLOW_SECS`] it says
-//! so and offers the dictionary. A failure offers another try, the
-//! dictionary and the pages before the gate.
+//! so and offers the dictionary. A failure offers the setup it lacks, or
+//! another try, then the dictionary and the pages before the gate.
 
 use egui::{Align, Id, Label, Rect, Response, RichText, Sense, Ui, Vec2, vec2};
-use mareader_engine::study_mode::{Action, DeckJob, Doing};
+use mareader_engine::command::Command;
+use mareader_engine::settings::Tab;
+use mareader_engine::study_mode::{Action, DeckJob, Doing, Setup};
 use mareader_study::mode::{SLOW_SECS, Via};
+use mareader_workspace::PaneId;
 
 use super::controls::{self, Chip, Look};
 use super::deck::{self, send};
 use super::{Pane, making, progress};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui_command::Commands;
+use crate::ui_command::{Commands, Sent};
 
 /// The buttons' labels, for screen readers and tests.
 pub const DICTIONARY: &str = "Use the dictionary instead";
 pub const RETRY: &str = "Try again";
 pub const PREVIOUS: &str = "Read previous pages";
+/// The setup a failed deck asks for, when another try can't mend it.
+pub const SET_UP_AI: &str = "Set up AI…";
+pub const GET_DICTIONARY: &str = "Get a dictionary…";
+pub const CHECK_MODEL: &str = "Check the model…";
+pub const GET_WORD_DATA: &str = "Get word data…";
 /// What the waiting card says once the AI is slow.
 pub const SLOW: &str = "This is taking longer than usual. You can read the previous pages \
 while it finishes, and the deck opens as soon as it's ready.";
@@ -133,8 +141,15 @@ fn bar(ui: &mut Ui, id: Id, made: f32, t: &Tokens) {
     painter.circle_filled(tip, track.height() * 0.8, glow);
 }
 
-/// Why the words for `range` couldn't be made, and the ways on.
-pub fn failed(ui: &mut Ui, pane: &Pane<'_>, range: &str, why: &str, out: &mut Commands) {
+/// Why the words for `range` couldn't be made, and the ways on: what to
+/// set up first, when another try alone can't mend it.
+pub fn failed(
+    ui: &mut Ui,
+    pane: &Pane<'_>,
+    range: &str,
+    why: (&str, Option<Setup>),
+    out: &mut Commands,
+) {
     let t = Tokens::get(ui.ctx());
     let (mark, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
     ui.painter()
@@ -146,30 +161,74 @@ pub fn failed(ui: &mut Ui, pane: &Pane<'_>, range: &str, why: &str, out: &mut Co
     let font = theme::semibold(20.0);
     centred(ui, RichText::new(title).font(font).color(t.ink));
     ui.allocate_ui(vec2(NOTE_W.min(ui.available_width()), 0.0), |ui| {
-        centred(ui, RichText::new(why).size(t.text).color(t.muted));
+        centred(ui, RichText::new(why.0).size(t.text).color(t.muted));
         let kept = "Nothing is lost: your place is kept.";
         centred(ui, RichText::new(kept).size(t.text_small).color(t.muted));
     });
     ui.add_space(t.gap * 1.5);
-    let from = pane.run.gate_batch().map(|b| b.from);
-    let offered = pane.dict && pane.run.fallback != from;
-    let back = pane.run.back(pane.lock).is_some();
-    let mut chips = vec![Chip::new(RETRY, Look::Primary).icon(Icon::Rescan)];
-    if offered {
-        chips.push(Chip::new(DICTIONARY, Look::Outline).icon(Icon::Dictionary));
-    }
-    if back {
-        chips.push(Chip::new(PREVIOUS, Look::Outline).icon(Icon::ChevronLeft));
-    }
+    let (chips, ways): (Vec<_>, Vec<_>) = ways_on(pane, why.1).into_iter().unzip();
     let pressed = controls::row(ui, chips, 8.0);
-    let clicked = |i: usize| pressed.get(i).is_some_and(Response::clicked);
-    if clicked(0) {
-        send(out, Action::Retry(pane.id));
+    for (way, button) in ways.into_iter().zip(&pressed) {
+        if button.clicked() {
+            way.send(pane.id, out);
+        }
     }
-    if offered && clicked(1) {
-        send(out, Action::UseDictionary(pane.id));
+}
+
+/// A way on from a failed deck.
+#[derive(Clone, Copy)]
+enum Way {
+    Settings(Tab),
+    Retry,
+    Dictionary,
+    Previous,
+}
+
+impl Way {
+    fn send(self, pane: PaneId, out: &mut Commands) {
+        match self {
+            Self::Settings(tab) => out.push(Sent::Engine(Command::OpenSettings(tab))),
+            Self::Retry => send(out, Action::Retry(pane)),
+            Self::Dictionary => send(out, Action::UseDictionary(pane)),
+            Self::Previous => send(out, Action::ReadPrevious(pane)),
+        }
     }
-    if back && clicked(pressed.len().saturating_sub(1)) {
-        send(out, Action::ReadPrevious(pane.id));
+}
+
+/// The failed deck's buttons: the setup it wants leads, then another try
+/// where one may help, the dictionary and the pages before.
+fn ways_on(pane: &Pane<'_>, setup: Option<Setup>) -> Vec<(Chip<'static>, Way)> {
+    let chip = |label, look, icon| Chip::new(label, look).icon(icon);
+    let (lead, side) = (Look::Primary, Look::Outline);
+    let mut ways = match setup {
+        Some(Setup::Writer) => vec![(chip(SET_UP_AI, lead, Icon::Ai), Way::Settings(Tab::Ai))],
+        Some(Setup::Model) => {
+            let to = Way::Settings(Tab::Models);
+            vec![(chip(CHECK_MODEL, lead, Icon::Key), to)]
+        }
+        Some(Setup::WordData) => {
+            let to = Way::Settings(Tab::Vocabulary);
+            vec![(chip(GET_WORD_DATA, lead, Icon::Levels), to)]
+        }
+        None => vec![(chip(RETRY, lead, Icon::Rescan), Way::Retry)],
+    };
+    match setup {
+        // Setting a writer up makes the deck again by itself.
+        Some(Setup::Writer) if !pane.dict => {
+            let to = Way::Settings(Tab::Dictionary);
+            ways.push((chip(GET_DICTIONARY, side, Icon::Dictionary), to));
+        }
+        Some(Setup::Model | Setup::WordData) => {
+            ways.push((chip(RETRY, side, Icon::Rescan), Way::Retry));
+        }
+        _ => {}
     }
+    let from = pane.run.gate_batch().map(|b| b.from);
+    if pane.dict && pane.run.fallback != from {
+        ways.push((chip(DICTIONARY, side, Icon::Dictionary), Way::Dictionary));
+    }
+    if pane.run.back(pane.lock).is_some() {
+        ways.push((chip(PREVIOUS, side, Icon::ChevronLeft), Way::Previous));
+    }
+    ways
 }

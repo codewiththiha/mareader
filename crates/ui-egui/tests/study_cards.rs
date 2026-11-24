@@ -1,18 +1,19 @@
 //! Study mode's AI cards, headless: the waiting card and its slow offer,
-//! the error card's way to the dictionary, decks made ahead, and the corner
-//! toast while the AI writes.
+//! the error card's way to the dictionary or to the setup it lacks, decks
+//! made ahead, and the corner toast while the AI writes.
 
 use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
-use mareader_engine::study_mode::{Ahead, DeckState};
+use mareader_engine::settings::Tab;
+use mareader_engine::study_mode::{Ahead, DeckState, Setup};
 use mareader_study::mode::Via;
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::study_mode::deck::START;
 use mareader_ui_egui::study_mode::flip_card::TURN_HINT;
 use mareader_ui_egui::study_mode::progress::PROGRESS;
-use mareader_ui_egui::study_mode::waiting::{DICTIONARY, RETRY, SLOW, stage};
+use mareader_ui_egui::study_mode::waiting::{CHECK_MODEL, DICTIONARY, RETRY, SLOW, stage};
 use mareader_workspace::PaneId;
 
 use crate::common::{Dials, levels_reader, shelves};
@@ -107,6 +108,26 @@ fn a_failed_deck_tries_again_or_turns_to_the_dictionary() {
     h.run_steps(2);
     let opened = wait(&mut h, |h| open_via(h, pane) == Some(Via::Dictionary));
     assert!(opened, "the dictionary writes the deck");
+}
+
+#[test]
+fn a_deck_turned_away_for_its_key_leads_with_the_setup() {
+    let (mut h, pane, _shelves) = studying("keyless", 1);
+    let setup = |h: &H| match deck(h, pane) {
+        Some(DeckState::Failed { setup, .. }) => *setup,
+        _ => None,
+    };
+    let failed = wait(&mut h, |h| setup(h) == Some(Setup::Model));
+    assert!(failed, "the model wants a key");
+    h.run_steps(2);
+    assert!(
+        h.query_by_label(RETRY).is_some(),
+        "a retry once the key is in"
+    );
+    assert!(h.query_by_label(DICTIONARY).is_some(), "the pack still can");
+    h.get_by_label(CHECK_MODEL).click();
+    h.run();
+    assert_eq!(h.state().settings_window().tab(), Tab::Models);
 }
 
 #[test]

@@ -230,7 +230,14 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   After 7 s of the AI it says it is slow and offers *Use the dictionary
   instead*. With motion off the stack stands still.
 - **Failed:** an alert mark says why, with no paper behind it, then
-  *Try again*, *Use the dictionary* and *Read previous pages*.
+  *Try again*, *Use the dictionary* and *Read previous pages*. A failure
+  another try can't mend leads with its setup instead (`run::Setup`, set
+  by the deck job): nobody to write the cards gives *Set up AI…* (Settings
+  › AI) and, without a pack, *Get a dictionary…*, with no *Try again*,
+  since a new model or pack makes the deck again by itself; a model turned
+  away over its keys or settings gives *Check the model…* (AI models);
+  missing word levels give *Get word data…* (Vocabulary). Those two keep
+  *Try again* beside, as fixing them changes no recipe.
 - **The corner toast** (`study_mode/progress.rs`): while the AI writes a
   deck, the gate's or one made ahead, a ring sits in the pane's bottom
   left corner, rising over the page bar only while that is up, filled as
@@ -289,10 +296,10 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   opens a book in a new pane beside),
   `study_deck=reveal` (each pane's card turned), `study_deck=drag:-140`
   (held mid-swipe) or `study_deck=scroll:80` (a long back scrolled),
-  `study_cards=ready|ai|silent|failing` (a scripted AI that
+  `study_cards=ready|ai|silent|failing|keyless` (a scripted AI that
   writes every back, for `ai` from a long JSON answer read as a model's
   would be, and judges "right" correct and "close" close, never answers,
-  or fails) and `recall=word` or `recall=word:answer`, a recall on
+  fails, or fails for want of an API key) and `recall=word` or `recall=word:answer`, a recall on
   the first `word` of the page read. The shot applies them once the book and
   its word levels are in, then waits for the deck or the recall.
 

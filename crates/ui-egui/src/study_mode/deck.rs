@@ -146,8 +146,8 @@ pub fn show(
         }
         match &pane.run.deck {
             DeckState::Open(_) => {}
-            DeckState::Failed { batch, why } => {
-                waiting::failed(ui, pane, &batch.label(), why, out);
+            DeckState::Failed { batch, why, setup } => {
+                waiting::failed(ui, pane, &batch.label(), (why, *setup), out);
             }
             DeckState::Making { batch, job } => {
                 waiting::waiting(ui, pane, &batch.label(), Some(job), out);

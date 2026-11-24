@@ -65,7 +65,8 @@ impl Session {
             Ok(None) => false,
             Ok(Some(built)) => self.study_open(pane, batch, built),
             Err(why) => {
-                run.deck = DeckState::Failed { batch, why };
+                let setup = job.setup();
+                run.deck = DeckState::Failed { batch, why, setup };
                 true
             }
         }
@@ -80,7 +81,7 @@ impl Session {
         let deck = match made {
             Some(Ahead::Ready { built, .. }) => return self.study_open(pane, batch, built),
             Some(Ahead::Making { job, .. }) => DeckState::Making { batch, job },
-            Some(Ahead::Failed { why, .. }) => DeckState::Failed { batch, why },
+            Some(Ahead::Failed { why, setup, .. }) => DeckState::Failed { batch, why, setup },
             None if self.settings.study.mode.ahead == 0 && !self.study_near_gate(pane) => {
                 return false;
             }

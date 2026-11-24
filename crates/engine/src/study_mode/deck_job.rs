@@ -18,12 +18,14 @@ use mareader_cefr::{Ticket as TagTicket, candidates};
 use mareader_dict::Ticket;
 use mareader_session::Document;
 use mareader_settings::{TaskId, no_model};
+use mareader_study::Why;
 use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
 use mareader_study::mode::{build, lemma};
 use mareader_study::pending::News;
 
 use super::backs::{Shown, Writer, wanted};
 use super::known::Known;
+use super::run::Setup;
 use super::sightings::{self, Read};
 use crate::session::Waker;
 use crate::word_list::{INLINE, LEVEL_ROUND, Levels, Meanings};
@@ -144,6 +146,8 @@ pub struct DeckJob {
     upto: usize,
     started: Option<f64>,
     built: Option<Built>,
+    /// What the reader must set up, once it failed for want of it.
+    setup: Option<Setup>,
 }
 
 impl DeckJob {
@@ -169,6 +173,7 @@ impl DeckJob {
             upto: 0,
             started: None,
             built: None,
+            setup: None,
         }
     }
 
@@ -185,6 +190,11 @@ impl DeckJob {
     /// The writer's name, when the AI writes the cards.
     pub fn by(&self) -> Option<String> {
         self.writer.as_ref().map(|w| w.cards.by())
+    }
+
+    /// What a failure needs set up, when another try can't mend it.
+    pub fn setup(&self) -> Option<Setup> {
+        self.setup
     }
 
     /// Seconds since the first step, as the slow offer counts them.
@@ -243,6 +253,7 @@ impl DeckJob {
             return Ok(false);
         }
         if !words.ready() {
+            self.setup = Some(Setup::WordData);
             return Err(Missing::Levels.reason().to_owned());
         }
         let start = *next;
@@ -372,8 +383,10 @@ impl DeckJob {
 
     /// Asks the writer for the backs not cached; with all cached, finishes.
     fn ask_backs(&mut self) -> Result<(), String> {
-        let none = || no_model(TaskId::StudyCards);
-        let writer = self.writer.clone().ok_or_else(none)?;
+        let Some(writer) = self.writer.clone() else {
+            self.setup = Some(Setup::Writer);
+            return Err(no_model(TaskId::StudyCards));
+        };
         let id = writer.cards.id();
         let mut asked = Vec::new();
         self.written = (self.deck.cards.iter().enumerate())
@@ -412,7 +425,13 @@ impl DeckJob {
         let Some(answer) = answer else {
             return Ok(false);
         };
-        let backs = answer.map_err(|f| f.said())?;
+        let backs = match answer {
+            Ok(backs) => backs,
+            Err(failure) => {
+                self.setup = setup_for(failure.why);
+                return Err(failure.said());
+            }
+        };
         let (asked, id) = (std::mem::take(asked), std::mem::take(id));
         for ((i, wanted), back) in asked.into_iter().zip(backs) {
             if let (Some(writer), Some(back)) = (&self.writer, &back) {
@@ -452,5 +471,14 @@ fn fill(written: &mut [Option<Written>], asked: &[(usize, Wanted)], backs: &[Opt
         if let (Some(slot), Some(back)) = (written.get_mut(*i), back) {
             *slot = Some(back.clone());
         }
+    }
+}
+
+/// What a model's failure needs set up; none when trying again may do.
+fn setup_for(why: Why) -> Option<Setup> {
+    match why {
+        Why::NotHere => Some(Setup::Writer),
+        Why::NoKey | Why::KeysRejected | Why::Setup => Some(Setup::Model),
+        _ => None,
     }
 }

@@ -170,7 +170,7 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
 
 /// A scripted writer for the cards, with a model chosen so the AI writes them.
 fn practice(app: &mut MareaderApp, value: &str) -> Result<(), String> {
-    let hint = "study_cards: ready, ai, silent or failing";
+    let hint = "study_cards: ready, ai, silent, failing or keyless";
     let practice = match value {
         "ai" => Practice::Ready,
         _ => Practice::parse(value).ok_or(hint)?,

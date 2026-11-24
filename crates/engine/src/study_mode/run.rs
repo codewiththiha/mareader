@@ -34,7 +34,19 @@ pub enum DeckState {
     Failed {
         batch: Batch,
         why: String,
+        setup: Option<Setup>,
     },
+}
+
+/// What a failed deck needs set up; another try alone won't mend it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Setup {
+    /// Nothing can write the cards: no model and no dictionary.
+    Writer,
+    /// The model turned the deck away over its keys or settings.
+    Model,
+    /// The word levels aren't here.
+    WordData,
 }
 
 impl DeckState {
@@ -49,9 +61,19 @@ impl DeckState {
 
 /// A deck made ahead, for a batch past the gate.
 pub enum Ahead {
-    Making { batch: Batch, job: Box<DeckJob> },
-    Ready { batch: Batch, built: Built },
-    Failed { batch: Batch, why: String },
+    Making {
+        batch: Batch,
+        job: Box<DeckJob>,
+    },
+    Ready {
+        batch: Batch,
+        built: Built,
+    },
+    Failed {
+        batch: Batch,
+        why: String,
+        setup: Option<Setup>,
+    },
 }
 
 impl Ahead {
@@ -77,6 +99,7 @@ impl Ahead {
             Err(why) => Self::Failed {
                 batch: batch.clone(),
                 why,
+                setup: job.setup(),
             },
         };
         *self = next;
