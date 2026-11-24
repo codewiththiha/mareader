@@ -11,6 +11,21 @@ use crate::word_card::TabSnapshot;
 use mareader_engine::study::state::Key;
 
 impl StudyUi {
+    /// The card on screen: its pane and its answer's key.
+    pub fn shown_card(&self) -> Option<(PaneId, Key)> {
+        let card = self.card.as_ref().filter(|_| self.card_rect.is_some())?;
+        Some((card.pane, card.key))
+    }
+
+    /// Opens `mark`'s card in `pane` once its words are placed, as View asks.
+    pub fn reopen(&mut self, session: &mut Session, pane: PaneId, mark: MarkId) {
+        let found = session.study().mark(session.library_model(), mark);
+        let words = found.map(|m| (m.word.clone(), m.context.clone()));
+        if let Some(words) = words {
+            self.open(session, pane, Key::Mark(mark), words, Rect::NOTHING);
+        }
+    }
+
     /// The mark whose card or note is open in `pane`.
     pub fn card_mark(&self, pane: PaneId) -> Option<MarkId> {
         if let Some(n) = self.note.as_ref().filter(|n| n.pane == pane) {
@@ -137,11 +152,11 @@ impl StudyUi {
         }
         let (key, word, context) = match snap.asked {
             Some(asked) => {
-                let key = session.study_explain(book, name, &asked, wall_ms);
+                let key = session.study_explain(snap.pane, (book, name), &asked, wall_ms);
                 (key, asked.word, asked.context)
             }
             None => {
-                let key = session.study_explain_loose(&snap.word, &snap.context);
+                let key = session.study_explain_loose(snap.pane, &snap.word, &snap.context);
                 (key, snap.word, snap.context)
             }
         };
@@ -167,7 +182,7 @@ impl StudyUi {
             asked,
             rect,
         } = at;
-        let key = session.study_explain(book, name, &asked, wall_ms);
+        let key = session.study_explain(pane, (book, name), &asked, wall_ms);
         self.show_explained(pane, key, asked.word, asked.context, rect);
     }
 
@@ -183,7 +198,7 @@ impl StudyUi {
         self.menu = None;
         self.note = None;
         self.stash = None;
-        session.study_prepare_card(key, &word, &context);
+        session.study_prepare_card(pane, key, (&word, &context));
         self.card = Some(Card {
             pane,
             key,

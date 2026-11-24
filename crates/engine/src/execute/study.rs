@@ -71,7 +71,7 @@ fn explain(session: &mut Session, pane: PaneId) {
         .title(pane)
         .unwrap_or_default()
         .to_owned();
-    let key = session.study_explain(book, &name, &asked, wall_ms());
+    let key = session.study_explain(pane, (book, &name), &asked, wall_ms());
     session.ask_role(&asked.word, &asked.context);
     session.emit(Event::ExplainOpened { pane, key, asked });
 }

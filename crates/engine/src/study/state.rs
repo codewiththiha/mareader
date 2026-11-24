@@ -9,6 +9,7 @@ use mareader_library::{
     BookId, DeviceId, Library, Mark, MarkId, MarkKind, NewMark, Pen, Spot, Style,
 };
 use mareader_study::{Explainer, Failure, Unavailable, WordInfo};
+use mareader_workspace::PaneId;
 
 use super::Action;
 use super::asking::{self, Got, Said};
@@ -19,10 +20,17 @@ use crate::session::Waker;
 use crate::toast::Toast;
 
 /// Which answer a card shows: a mark's, or one kept by nothing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Key {
     Mark(MarkId),
     Loose(u64),
+}
+
+/// Who asked a word whose answer still comes, for the AI stack.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Asker {
+    pub pane: PaneId,
+    pub word: String,
 }
 
 /// A page to bookmark, or the bookmark already on it.
@@ -59,6 +67,7 @@ pub struct State {
     partial: HashMap<Key, WordInfo>,
     failed: HashMap<Key, Failure>,
     asking: HashMap<Key, Receiver<Got>>,
+    askers: HashMap<Key, Asker>,
     /// Finished answers not yet filed, as inline asks leave them.
     done: Vec<(Key, Said)>,
     next_loose: u64,
@@ -74,6 +83,7 @@ impl Default for State {
             partial: HashMap::new(),
             failed: HashMap::new(),
             asking: HashMap::new(),
+            askers: HashMap::new(),
             done: Vec::new(),
             next_loose: 0,
         }
@@ -150,6 +160,27 @@ impl State {
 
     pub fn failure(&self, key: Key) -> Option<&Failure> {
         self.failed.get(&key)
+    }
+
+    /// Notes `pane` asked `word` for `key`, while its answer comes.
+    pub fn asked_by(&mut self, key: Key, pane: PaneId, word: &str) {
+        if self.asking.contains_key(&key) {
+            let word = word.to_owned();
+            self.askers.insert(key, Asker { pane, word });
+        }
+    }
+
+    /// The words whose answers still come, and who asked them.
+    pub fn askers(&self) -> impl Iterator<Item = (Key, &Asker)> {
+        let asked = |key: &Key| self.askers.get(key).map(|asker| (*key, asker));
+        self.asking.keys().filter_map(asked)
+    }
+
+    /// Stops waiting for `key`'s answer; says whether one was coming.
+    pub fn drop_ask(&mut self, key: Key) -> bool {
+        self.partial.remove(&key);
+        self.askers.remove(&key);
+        self.asking.remove(&key).is_some()
     }
 
     /// Allocates a loose card key for a word without a saved mark.
@@ -278,6 +309,7 @@ impl State {
         }
         for (key, answer) in done {
             self.asking.remove(&key);
+            self.askers.remove(&key);
             self.partial.remove(&key);
             match answer {
                 Some(Ok(said)) => self.done.push((key, said)),

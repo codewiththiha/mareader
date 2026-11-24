@@ -1,6 +1,7 @@
 //! UI integration suites sharing one test binary and common drivers.
 
 mod a11y;
+mod ai_stack;
 mod arrange;
 mod auto_scroll;
 mod blend;

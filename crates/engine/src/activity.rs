@@ -17,6 +17,7 @@ use mareader_study::mode::{Batch, Via};
 use mareader_workspace::PaneId;
 
 use crate::library::{self, RunEnd, RunId};
+use crate::study::state::{self as words, Key as Ask};
 use crate::study_mode::{Ahead, DeckJob, DeckState, Doing, Run, State};
 
 /// Whose work it is: the whole app's, or one pane's.
@@ -33,12 +34,14 @@ pub enum Key {
     Cards { pane: PaneId, from: usize },
     /// The library's AI organizer, by its run.
     Organize { run: RunId },
+    /// The AI Dictionary explaining a word `pane` asked.
+    Explain { pane: PaneId, ask: Ask },
 }
 
 impl Key {
     pub fn scope(self) -> Scope {
         match self {
-            Self::Cards { pane, .. } => Scope::Pane(pane),
+            Self::Cards { pane, .. } | Self::Explain { pane, .. } => Scope::Pane(pane),
             Self::Organize { .. } => Scope::Global,
         }
     }
@@ -46,7 +49,7 @@ impl Key {
     /// The word on its stop button: organizing pauses, keeping its work.
     pub fn stop_word(self) -> &'static str {
         match self {
-            Self::Cards { .. } => "Cancel",
+            Self::Cards { .. } | Self::Explain { .. } => "Cancel",
             Self::Organize { .. } => "Pause",
         }
     }
@@ -99,6 +102,7 @@ impl Activity {
             (Key::Cards { .. }, true) => format!("Cards ready · {}", self.range),
             (Key::Cards { .. }, false) => "Next cards ready".to_owned(),
             (Key::Organize { .. }, _) => format!("Shelf plan ready · {}", self.range),
+            (Key::Explain { .. }, _) => format!("Explained {}", self.range),
         }
     }
 
@@ -107,6 +111,7 @@ impl Activity {
         match self.key {
             Key::Cards { .. } => format!("Couldn’t write the cards for {}", self.range),
             Key::Organize { .. } => format!("Couldn’t organize {}", self.range),
+            Key::Explain { .. } => format!("Couldn’t explain {}", self.range),
         }
     }
 
@@ -115,6 +120,7 @@ impl Activity {
         match self.key {
             Key::Cards { .. } => format!("Stopped writing the cards for {}", self.range),
             Key::Organize { .. } => "Organizing paused. The library can resume it.".to_owned(),
+            Key::Explain { .. } => format!("Stopped explaining {}", self.range),
         }
     }
 }
@@ -143,8 +149,36 @@ pub fn of_library(library: &library::State) -> Vec<Activity> {
     going.map(activity).collect()
 }
 
+/// The AI Dictionary explaining `word` for `pane`; `page` is its mark's,
+/// which View goes back to. A word kept by nothing has none to go to.
+pub fn explain(pane: PaneId, ask: Ask, word: &str, page: Option<usize>) -> Activity {
+    let range = format!("“{word}”");
+    Activity {
+        key: Key::Explain { pane, ask },
+        task: TaskId::Explain,
+        said: format!("Explaining {range}"),
+        range,
+        page: page.unwrap_or(0),
+        keeps: page.is_some(),
+        told: false,
+        stage: Stage::Running(None),
+    }
+}
+
+/// The owners `ending` asks how a job ended.
+pub struct Owners<'a> {
+    pub study: &'a State,
+    pub library: &'a library::State,
+    pub words: &'a words::State,
+}
+
 /// How the job `key` names, gone from the list, ended.
-pub fn ending(study: &State, library: &library::State, key: Key) -> Ending {
+pub fn ending(owners: Owners<'_>, key: Key) -> Ending {
+    let Owners {
+        study,
+        library,
+        words,
+    } = owners;
     match key {
         // A deck's job ends in its cards, unless study mode went off.
         Key::Cards { pane, .. } if study.on(pane) => Ending::Landed,
@@ -155,6 +189,9 @@ pub fn ending(study: &State, library: &library::State, key: Key) -> Ending {
             Some(RunEnd::Failed) => Ending::Failed,
             None => Ending::Stopped,
         },
+        Key::Explain { ask, .. } if words.answer(ask).is_some() => Ending::Landed,
+        Key::Explain { ask, .. } if words.failure(ask).is_some() => Ending::Failed,
+        Key::Explain { .. } => Ending::Stopped,
     }
 }
 

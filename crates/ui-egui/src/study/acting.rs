@@ -13,12 +13,14 @@ impl StudyUi {
             Action::Remove(ids) => self.act_remove(ids),
             Action::Retry => {
                 if let Some(card) = self.card.clone() {
-                    session.study_retry(card.key, &card.word, &card.context);
+                    let words = (card.word.as_str(), card.context.as_str());
+                    session.study_retry(card.pane, card.key, words);
                 }
             }
             Action::AskAgain => {
                 if let Some(card) = self.card.clone() {
-                    session.study_ask_again(card.key, &card.word, &card.context);
+                    let words = (card.word.as_str(), card.context.as_str());
+                    session.study_ask_again(card.pane, card.key, words);
                 }
             }
             Action::Close => {

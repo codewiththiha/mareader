@@ -423,10 +423,15 @@ pub fn swallowed(ui: &Ui, clicked: bool) -> bool {
 }
 
 /// AI marks still being answered glow round their words, then flare out.
+/// A glow on screen says the AI's work there is in view.
 pub fn glow(ui: &Ui, tokens: &crate::theme::Tokens, placed: &[Placed], asking: &[MarkId]) {
     let ctx = ui.ctx();
     for m in placed.iter().filter(|m| m.ink.ai) {
         let working = asking.contains(&m.id);
+        let clip = ui.clip_rect();
+        if working && m.rects.iter().any(|r| clip.intersects(*r)) {
+            crate::activity::seen::glowing(ctx, m.id);
+        }
         let Some(glow) = crate::glow::state(ctx, Id::new(("mark-glow", m.id)), working) else {
             continue;
         };

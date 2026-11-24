@@ -325,6 +325,13 @@ slice 5.
   `glow.rs` paints it round any outline: one mesh of a few hundred
   vertices, woken only as often as it visibly moves (24 to 60 a second),
   breathing in place with reduced motion. Shots: `explain=slow:20000`.
+- **Out of view, the AI stack.** While neither the glow nor the word's
+  card is on screen, the ask is a line in the pane's corner stack
+  (`docs/study-mode.md`, The corner stack): *Explaining “quick”* with
+  *Cancel*, which stops waiting at once, with a toast; the mark stays,
+  unanswered. An answer landed meanwhile waits as *Explained “quick”*;
+  *View* turns back to the mark and opens its card. A word kept by no
+  mark only says so for 3 s. A glow on a thumbnail doesn't count.
 - **Rest to look up** (`dictionary.hover`, on by default): resting on a
   shaded word for 160 ms opens its dictionary card, once per rest. It
   never replaces a Look up or Explain card and waits for a downloaded

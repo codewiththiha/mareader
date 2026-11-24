@@ -8,6 +8,7 @@ use mareader_engine::activity::place::Spot;
 use mareader_engine::activity::{Key, News};
 use mareader_engine::command::Command;
 use mareader_engine::library::Action;
+use mareader_engine::study::state::Key as Ask;
 
 impl MareaderApp {
     /// The stacks of the AI's work its own visuals leave unseen.
@@ -17,6 +18,10 @@ impl MareaderApp {
             // The library page shows its organizer's card and its plan.
             let organize = |key: Key| matches!(key, Key::Organize { .. });
             self.ui.activity.in_view_where(ctx, now, &organize);
+        }
+        // The word card open on a word says how its answer comes.
+        if let Some((pane, ask)) = self.ui.study.shown_card() {
+            crate::activity::seen::in_view(ctx, Key::Explain { pane, ask });
         }
         let jobs = self.session.activities();
         let session = &self.session;
@@ -94,9 +99,19 @@ impl MareaderApp {
                 out.push(Sent::Ui(UiCommand::ShowLibrary));
             }
             (Button::Cancel, Key::Cards { pane, .. }) => self.ui.study_mode.ask_off(pane),
+            (Button::View, Key::Explain { pane, ask }) => {
+                let page = self.ui.activity.view(key, now);
+                if let (Some(page), Ask::Mark(mark)) = (page, ask) {
+                    out.push(Sent::Engine(Command::GoTo { pane, page }));
+                    self.ui.study.reopen(&mut self.session, pane, mark);
+                }
+            }
             (Button::Cancel, Key::Organize { .. }) => {
                 let stop = Command::Library(Action::StopOrganizing);
                 out.push(Sent::Engine(stop));
+            }
+            (Button::Cancel, Key::Explain { ask, .. }) => {
+                self.session.study_cancel(ask);
             }
             (Button::Dismiss, _) => self.ui.activity.dismiss(key, now),
         }

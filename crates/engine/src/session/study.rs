@@ -40,54 +40,54 @@ impl Session {
         self.study.receive(&mut self.library.model)
     }
 
-    /// Marks an explained word and seeds or starts its lookup.
+    /// Marks a word `pane` explains and seeds or starts its lookup.
     pub fn study_explain(
         &mut self,
-        book: Option<BookId>,
-        name: &str,
+        pane: PaneId,
+        (book, name): (Option<BookId>, &str),
         asked: &Asked,
         wall_ms: u64,
     ) -> Key {
-        let key = self
-            .study
-            .explain_mark(&mut self.library.model, book, name, asked, wall_ms);
-        let wake = Arc::clone(&self.waker);
-        self.study.prepare_card(
-            &mut self.library.model,
-            wake,
-            key,
-            &asked.word,
-            &asked.context,
-        );
+        let model = &mut self.library.model;
+        let key = self.study.explain_mark(model, book, name, asked, wall_ms);
+        self.study_prepare_card(pane, key, (&asked.word, &asked.context));
         key
     }
 
-    /// Seeds a saved gloss or kicks off a lookup for an opened mark card.
-    pub fn study_prepare_card(&mut self, key: Key, word: &str, context: &str) {
+    /// Seeds a saved gloss or kicks off a lookup for a card `pane` opened.
+    pub fn study_prepare_card(&mut self, pane: PaneId, key: Key, (word, context): (&str, &str)) {
         let wake = Arc::clone(&self.waker);
         self.study
             .prepare_card(&mut self.library.model, wake, key, word, context);
+        self.study.asked_by(key, pane, word);
     }
 
-    /// Starts an unanchored AI explanation for an open word card.
-    pub fn study_explain_loose(&mut self, word: &str, context: &str) -> Key {
+    /// Starts an unanchored AI explanation for a word card open in `pane`.
+    pub fn study_explain_loose(&mut self, pane: PaneId, word: &str, context: &str) -> Key {
         let key = self.study.next_loose_key();
-        self.study_prepare_card(key, word, context);
+        self.study_prepare_card(pane, key, (word, context));
         key
     }
 
     /// Retries a failed explanation lookup.
-    pub fn study_retry(&mut self, key: Key, word: &str, context: &str) {
+    pub fn study_retry(&mut self, pane: PaneId, key: Key, (word, context): (&str, &str)) {
         let wake = Arc::clone(&self.waker);
         self.study
             .retry(&mut self.library.model, wake, key, word, context);
+        self.study.asked_by(key, pane, word);
     }
 
     /// Asks the active explainer again, replacing any saved answer.
-    pub fn study_ask_again(&mut self, key: Key, word: &str, context: &str) {
+    pub fn study_ask_again(&mut self, pane: PaneId, key: Key, (word, context): (&str, &str)) {
         let wake = Arc::clone(&self.waker);
         self.study
             .ask_again(&mut self.library.model, wake, key, word, context);
+        self.study.asked_by(key, pane, word);
+    }
+
+    /// Stops waiting for `key`'s answer; its mark stays, unanswered.
+    pub fn study_cancel(&mut self, key: Key) -> bool {
+        self.study.drop_ask(key)
     }
 
     /// Highlights text in `pen`; returns the mark id and whether it is new.

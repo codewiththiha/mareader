@@ -277,7 +277,9 @@ impl StudyUi {
             self.drop_card();
         }
         let t = Tokens::get(ctx);
-        self.card_rect = self.card.as_ref().and_then(|c| {
+        // A card View reopened waits until its words are placed.
+        let placed = self.card.as_ref().filter(|c| c.at.is_finite());
+        self.card_rect = placed.and_then(|c| {
             let extra = (room(c.pane)?, heard, look, dict_ready);
             show_card(ctx, c, state, extra, &t, out)
         });
