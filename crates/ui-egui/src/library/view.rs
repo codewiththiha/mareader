@@ -33,6 +33,7 @@ mod face;
 mod grid;
 mod held;
 pub(super) mod links;
+mod tally;
 mod tree;
 
 use face::paper;
@@ -56,8 +57,8 @@ const A4: f32 = 297.0 / 210.0;
 const SHAPES: std::ops::RangeInclusive<f32> = 0.55..=1.8;
 /// How long a still press takes to pick a card, as on a phone.
 const LONG_PRESS: f64 = 0.45;
-/// Title and detail under a card's cover; progress is its bookmark.
-const CARD_TEXT: f32 = 44.0;
+/// Title, detail and notes under a card's cover; progress is its bookmark.
+const CARD_TEXT: f32 = 62.0;
 /// How many shelves deep a plate nests before it shows a mark.
 const PLATE_DEPTH: usize = 2;
 
@@ -845,16 +846,10 @@ fn grid_card(ui: &mut Ui, rect: Rect, book: &Book, cx: &mut Cx<'_>) {
     let below = pos2(rect.left(), y + 1.0);
     if held::caption(ui, book.id, below, width, cx).is_none() {
         let detail = card_detail(cx.model, book);
-        let small = FontId::proportional(12.0);
-        line(
-            p,
-            &detail,
-            small,
-            faded(t.muted, fade),
-            (below.x, below.y),
-            width,
-        );
+        let (small, ink) = (FontId::proportional(12.0), faded(t.muted, fade));
+        line(p, &detail, small, ink, (below.x, below.y), width);
     }
+    tally::line(ui, (below + vec2(0.0, 17.0), width, false), book.id, cx);
 }
 
 /// A book ready to stack sinks into a plate; returns how far, 0 to 1.
@@ -912,10 +907,14 @@ fn list_row(ui: &mut Ui, book: &Book, indent: f32, cx: &mut Cx<'_>) {
     };
     let when = p.layout_no_wrap(when, FontId::proportional(12.0), faded(t.muted, fade));
     let right = rect.right() - ROW_INSET;
-    let at = pos2(right - when.size().x, rect.center().y - when.size().y / 2.0);
+    // With notes or words, the age rises to the title's line to make room.
+    let tallied = tally::of(ui, cx.model, book.id).is_some();
+    let y = rect.center().y - if tallied { 9.0 } else { 0.0 };
+    let at = pos2(right - when.size().x, y - when.size().y / 2.0);
     p.galley(at, when, t.muted);
     let x = thumb.right() + 14.0;
-    let wide = (right - x - 96.0).max(40.0);
+    let aside = if tallied { 150.0 } else { 96.0 };
+    let wide = (right - x - aside).max(40.0);
     let title = book.title.value.as_str();
     let ink = faded(t.ink, fade);
     let center = |y: f32, h: f32| y - h / 2.0;
@@ -943,16 +942,15 @@ fn list_row(ui: &mut Ui, book: &Book, indent: f32, cx: &mut Cx<'_>) {
     };
     let detail = format!("{} · {said}", book.format.label());
     let g = job(&detail, FontId::proportional(12.0), muted);
-    p.galley(
-        pos2(x, center(rect.center().y + 10.0, g.size().y)),
-        g,
-        muted,
-    );
+    let at = pos2(x, center(rect.center().y + 10.0, g.size().y));
+    p.galley(at, g, muted);
     p.hline(
         rect.x_range().shrink(ROW_INSET),
         rect.bottom(),
         Stroke::new(1.0, t.line),
     );
+    let tally_at = pos2(right, rect.center().y + 3.0);
+    tally::line(ui, (tally_at, aside - 10.0, true), book.id, cx);
 }
 
 /// One truncated line at `at`; returns its height.

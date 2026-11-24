@@ -16,7 +16,7 @@ mod top;
 use egui::{Align, Layout, Rect, Ui, UiBuilder, pos2, vec2};
 use mareader_engine::command::Command;
 use mareader_engine::space::{self, Filter, NotesFilter, Room, View};
-use mareader_library::Library;
+use mareader_library::{BookId, Library};
 use mareader_settings::HighlightSettings;
 
 use crate::theme::Tokens;
@@ -91,6 +91,27 @@ impl SpaceUi {
                 None
             }
         }
+    }
+
+    /// Shows only `book` in `room`, every chip and search let go.
+    pub fn focus(&mut self, room: Room, book: BookId) {
+        let book = Some(book);
+        if room == Room::Notes {
+            self.notes = NotesFilter {
+                book,
+                ..NotesFilter::default()
+            };
+            return;
+        }
+        // How the rows are laid out stays; what they're narrowed to goes.
+        let old = std::mem::take(&mut self.filter);
+        self.filter = Filter {
+            book,
+            group: old.group,
+            sort: old.sort,
+            scope: old.scope,
+            ..Filter::default()
+        };
     }
 
     /// The words page: its rail, then its column.

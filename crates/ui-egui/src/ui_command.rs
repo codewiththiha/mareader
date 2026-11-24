@@ -91,6 +91,11 @@ pub enum UiCommand {
         book: mareader_library::BookId,
         quote: String,
     },
+    /// Opens a Space room on one book's notes or words: a library card's.
+    SpaceFor {
+        room: mareader_engine::space::Room,
+        book: mareader_library::BookId,
+    },
     /// F3 and Cmd+G: the next or previous match, opening the bar if shut.
     FindStep {
         forward: bool,
@@ -176,6 +181,7 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::ShowDictionary
         | U::ShowFind
         | U::FindInBook { .. }
+        | U::SpaceFor { .. }
         | U::ShowOpenDialog(_)
         | U::LibraryDialog(_)
         | U::Window(_)

@@ -290,6 +290,10 @@ impl MareaderApp {
                 self.apply(ctx, Sent::Engine(Command::OpenBook(book)));
                 self.ui.find_on_open = Some((book, quote, ctx.input(|i| i.time)));
             }
+            UiCommand::SpaceFor { room, book } => {
+                self.ui.space.focus(room, book);
+                self.apply(ctx, Sent::Engine(Command::ShowSpace(room)));
+            }
             UiCommand::ShowFind => self.show_find(ctx),
             UiCommand::ShowSearch if self.ui.find.is_open() => self.ui.find.close(),
             UiCommand::ShowSearch => self.show_find(ctx),

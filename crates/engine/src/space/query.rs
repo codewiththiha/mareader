@@ -28,8 +28,8 @@ const MONTHS: [&str; 12] = [
 ];
 
 /// A sighting beside its word and its book's title.
-struct Met<'a> {
-    seen: &'a WordSighting,
+pub(super) struct Met<'a> {
+    pub(super) seen: &'a WordSighting,
     word: &'a WordState,
     title: &'a str,
 }
@@ -75,7 +75,7 @@ fn month_name(m: u64) -> &'static str {
     MONTHS.get(at).copied().unwrap_or("")
 }
 
-fn met(lib: &Library) -> Vec<Met<'_>> {
+pub(super) fn met(lib: &Library) -> Vec<Met<'_>> {
     let mut out = Vec::new();
     for seen in lib.every_sighting() {
         let (word, book) = (lib.word(seen.word), lib.book(seen.book.value));

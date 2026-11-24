@@ -259,10 +259,14 @@ What the first slice built, and where it stops short of the model above.
   ways. Ties fall to the title, then the book id, so the order never jumps.
 - **Grid.** Auto fits as many 150 pt cards as the width allows, 2 to 10;
   a pinned count shares the width. Each card is an A4 cover box, the title,
-  the author (else the page reached), and a progress line. Fit shows the
+  the author (else the page reached), and a progress line. A book with
+  notes or studied words adds "3 notes · 12 words" under them: each part
+  opens Space's Notes or Vocabs on that book alone, other filters let go.
+  The counts are Space's own (`space::tally`). Fit shows the
   whole cover bottom-aligned; Crop fills the box. Covers shaped past 0.55
   to 1.8 are trimmed to it. Rows are virtual (`show_rows`).
 - **List.** The rows gain a thumbnail; the format joins the detail line.
+  The same counts sit on the right, under the time last opened.
   A missing row fades its time too, and the header lines up with the rows.
 - **Authors.** An EPUB's first non-blank `dc:creator`, or a PDF's
   `/Author`, fills a book's author when it has none; a later open never

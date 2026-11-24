@@ -28,6 +28,7 @@ name the owning modules for shared primitives across the workspace.
 | Ahead | `crates/engine/src/study_mode/run.rs` | A deck made past the gate (making, ready or failed); `Run::take_ahead` hands it to the gate, `trim_ahead` drops those no longer coming. |
 | space::view | `crates/engine/src/space.rs` | Studied words as rows for one filter: scope, tabs, groups, sorts, counts and stats. Space's page and its CSV read only this. |
 | space::notes | `crates/engine/src/space/notes.rs` | Every book's highlights, notes and bookmarks for one `NotesFilter`: a group per book, chip counts and the rail's shelves. Space's Notes page reads only this; `Room` says which Space page shows. |
+| space::tally | `crates/engine/src/space/tally.rs` | Each book's notes and words, counted as Space's rooms count them (`notes::kept`, `query::met`). Library cards and rows read it once a frame (`library/view/tally.rs`). |
 | reading_order | `crates/engine/src/notes_panel/mod.rs` | Where a `Spot` falls in its book, so notes list as the book runs; the notes panel and Space's notes sort by it. |
 | Library::every_mark | `crates/library/src/marks.rs` | Every book's living marks, unordered; `marks(book)` gives one book's, oldest first. |
 | space rail / tabs | `crates/ui-egui/src/space/rail.rs`, `top.rs` | `rail::books` lists All books then each `Shelf`; `top::tab_row` draws tabs with counts over a hairline. Both Space pages use them. |

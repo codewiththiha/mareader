@@ -88,10 +88,7 @@ pub struct NotesView {
 
 /// Reads `lib`'s marks into the rows `filter` keeps.
 pub fn notes(lib: &Library, filter: &NotesFilter) -> NotesView {
-    let marks: Vec<&Mark> = lib
-        .every_mark()
-        .filter(|m| m.kind != MarkKind::Explain && lib.book(m.book.value).is_some())
-        .collect();
+    let marks: Vec<&Mark> = kept(lib).collect();
     let books = shelves(lib, &marks);
     let book = filter.book.filter(|b| books.iter().any(|s| s.id == *b));
     let mine: Vec<&Mark> = marks
@@ -156,6 +153,12 @@ fn row(m: &Mark) -> NoteRow {
         page,
         added: m.added,
     }
+}
+
+/// The marks Space shows: living, in a held book, Explain's own left out.
+pub(super) fn kept(lib: &Library) -> impl Iterator<Item = &Mark> {
+    lib.every_mark()
+        .filter(move |m| m.kind != MarkKind::Explain && lib.book(m.book.value).is_some())
 }
 
 /// Each book with a note, by title.

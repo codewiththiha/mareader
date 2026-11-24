@@ -11,6 +11,7 @@ mod query;
 mod room;
 mod seed;
 mod seed_marks;
+mod tally;
 
 use mareader_library::{BookId, Format, LearnedBy, WordId, WordStatus};
 
@@ -20,6 +21,7 @@ pub use query::{day, view};
 pub use room::Room;
 pub(crate) use seed::seed;
 pub(crate) use seed_marks::seed_marks;
+pub use tally::{Tally, tally};
 
 /// What Space asks of words; each acts in every book.
 #[derive(Clone, Debug, PartialEq)]
@@ -289,3 +291,6 @@ mod tests;
 
 #[cfg(test)]
 mod notes_tests;
+
+#[cfg(test)]
+mod tally_tests;
