@@ -5,19 +5,19 @@
 //! turns with the card. The cards still to come peek out beneath it.
 
 use std::f32::consts::PI;
-use std::sync::Arc;
 
 use egui::emath::Rot2;
 use egui::epaint::{Mesh, Tessellator};
-use egui::text::{LayoutJob, TextFormat};
-use egui::{
-    Align, Color32, CursorIcon, FontId, Galley, Id, Painter, Pos2, Rect, Sense, Shape, Stroke,
-    StrokeKind, Ui, Vec2, pos2, vec2,
-};
+use egui::{CursorIcon, Id, Painter, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, vec2};
 
 use crate::motion;
-use crate::theme::{self, Tokens};
+use crate::theme::Tokens;
 use crate::widgets;
+
+#[path = "card_face.rs"]
+mod face;
+
+pub(super) use face::need;
 
 /// What the front says to a screen reader, after the word.
 pub const TURN_HINT: &str = "turn to see its meaning";
@@ -50,6 +50,10 @@ pub struct Faces {
     pub class: String,
     pub synonyms: String,
     pub usage: String,
+    /// The time left, in the top left corner, when the deck has no header.
+    pub clock: String,
+    /// Which card this is, top middle, when the deck has no header.
+    pub count: String,
 }
 
 impl Faces {
@@ -135,6 +139,9 @@ struct State {
     dx: f32,
     shown: Option<usize>,
     fly: Option<Fly>,
+    /// How far a long back is scrolled, and how far it could be.
+    scroll: f32,
+    over: f32,
 }
 
 /// The cards at `at` of `count`, `face` naming each; `size` is the top one's.
@@ -160,12 +167,16 @@ pub fn show(
     if let Some(held) = ctx.data(|d| d.get_temp::<f32>(id.with("held"))) {
         s.dx = held;
     }
+    s.wheel(ui, &resp, turned);
+    if let Some(y) = ctx.data(|d| d.get_temp::<f32>(id.with("scrolled"))) {
+        s.scroll = y.clamp(0.0, s.over);
+    }
     s.fly = s.fly.and_then(|mut fly| {
         fly.t += dt / FLY;
         (fly.t < 1.0).then_some(fly)
     });
     let card = Rect::from_min_size(rect.min, size);
-    s.draw(ui, card, (at, count), face);
+    s.over = s.draw(ui, card, (at, count), face);
     if s.turn != target || s.dx != 0.0 || s.fly.is_some() {
         ctx.request_repaint();
     }
@@ -187,7 +198,25 @@ pub fn hold(ctx: &egui::Context, id: Id, dx: f32) {
     ctx.data_mut(|d| d.insert_temp(id.with("held"), dx));
 }
 
+/// Shots: scrolls a long back `y` down, as the wheel would.
+pub fn scroll(ctx: &egui::Context, id: Id, y: f32) {
+    ctx.data_mut(|d| d.insert_temp(id.with("scrolled"), y));
+}
+
 impl State {
+    /// The wheel over a turned card scrolls a back too long for it.
+    fn wheel(&mut self, ui: &Ui, resp: &egui::Response, turned: bool) {
+        if !turned {
+            self.scroll = 0.0;
+            return;
+        }
+        let dy = ui.input(|i| i.smooth_scroll_delta.y);
+        if self.over > 0.0 && resp.hovered() && dy != 0.0 {
+            self.scroll = (self.scroll - dy).clamp(0.0, self.over);
+            ui.ctx().input_mut(|i| i.smooth_scroll_delta.y = 0.0);
+        }
+    }
+
     /// A new card shown sends the last one flying, toward where it left.
     fn follow(&mut self, at: usize, turned: bool, moving: bool) {
         let Some(from) = self.shown.filter(|&from| from != at) else {
@@ -201,7 +230,7 @@ impl State {
             t: 0.0,
         };
         self.fly = moving.then_some(fly);
-        self.dx = 0.0;
+        (self.dx, self.scroll) = (0.0, 0.0);
         self.turn = f32::from(u8::from(turned));
     }
 
@@ -234,14 +263,15 @@ impl State {
         gesture
     }
 
-    /// The cards beneath, the top one, and the one flying off over it.
+    /// The cards beneath, the top one, and the one flying off over it;
+    /// gives how far the top one's back can scroll.
     fn draw(
         &self,
         ui: &Ui,
         card: Rect,
         (at, count): (usize, usize),
         face: &dyn Fn(usize) -> Option<Faces>,
-    ) {
+    ) -> f32 {
         let size = card.size();
         let mut cards = Cards {
             painter: ui.painter().clone(),
@@ -256,6 +286,7 @@ impl State {
             cards.blank(card, i as f32 + 1.0 - rise);
         }
         let dx = band(self.dx, at, count);
+        let mut over = 0.0;
         if let Some(faces) = face(at) {
             let lift = 1.0 + 0.02 * (dx.abs() / 40.0).min(1.0);
             let level = 1.0 - rise;
@@ -266,7 +297,7 @@ impl State {
                 scale: (1.0 - SHRINK * level) * lift,
                 depth: cards.depth,
             };
-            cards.card(&faces, pose, 1.0);
+            over = cards.card(&faces, pose, 1.0, self.scroll);
         }
         if let Some(fly) = self.fly
             && let Some(faces) = face(fly.from)
@@ -280,8 +311,9 @@ impl State {
                 scale: 1.0,
                 depth: cards.depth,
             };
-            cards.card(&faces, pose, 1.0 - e);
+            cards.card(&faces, pose, 1.0 - e, 0.0);
         }
+        over
     }
 }
 
@@ -330,18 +362,29 @@ impl Cards {
             depth: self.depth,
         };
         let shapes = self.sheet(0.5);
-        self.paint(shapes, pose, 1.0);
+        self.paint(shapes, pose, 1.0, None);
     }
 
-    fn card(&mut self, faces: &Faces, pose: Pose, alpha: f32) {
+    /// One card, its back scrolled by `scroll`; gives how far it can scroll.
+    fn card(&mut self, faces: &Faces, pose: Pose, alpha: f32, scroll: f32) -> f32 {
         let back = pose.angle > PI / 2.0;
         let mut shapes = self.sheet(1.0);
-        match back {
-            true => self.back(faces, &mut shapes),
-            false => self.front(faces, &mut shapes),
-        }
+        let scrolled = match back {
+            true => self.back(faces, &mut shapes, scroll),
+            false => {
+                self.front(faces, &mut shapes);
+                None
+            }
+        };
         let angle = if back { pose.angle - PI } else { pose.angle };
-        self.paint(shapes, Pose { angle, ..pose }, alpha);
+        let pose = Pose { angle, ..pose };
+        self.paint(shapes, pose, alpha, None);
+        let Some(long) = scrolled else {
+            return 0.0;
+        };
+        self.paint(long.text, pose, alpha, Some(long.window));
+        self.paint(long.fade, pose, alpha, None);
+        long.over
     }
 
     fn local(&self) -> Rect {
@@ -365,92 +408,9 @@ impl Cards {
         ]
     }
 
-    fn front(&self, faces: &Faces, out: &mut Vec<Shape>) {
-        let r = self.local();
-        let room = r.width() - 64.0;
-        let mut word = self.text(&faces.word, theme::medium(46.0), self.t.ink, room);
-        if word.rect.width() > room {
-            let size = (46.0 * room / word.rect.width()).max(14.0);
-            word = self.text(&faces.word, theme::medium(size), self.t.ink, room);
-        }
-        let at = pos2(0.0, -word.rect.height() / 2.0);
-        out.push(centred(at, word, self.t.ink));
-        self.badge(&faces.badge, out);
-    }
-
-    fn back(&self, faces: &Faces, out: &mut Vec<Shape>) {
-        let r = self.local();
-        let room = r.width() - 56.0;
-        let t = &self.t;
-        let small = FontId::proportional(t.text_small + 1.0);
-        let lines = [
-            (&faces.meaning, theme::medium(20.0), t.ink, false),
-            (&faces.class, small.clone(), t.muted, false),
-            (&faces.synonyms, small.clone(), t.muted, false),
-            (&faces.usage, small, t.muted, true),
-        ];
-        let galleys: Vec<_> = (lines.into_iter())
-            .filter(|(text, ..)| !text.is_empty())
-            .map(|(text, font, color, italics)| {
-                let g = self.styled(text, font, color, italics, room);
-                (g, color)
-            })
-            .collect();
-        let gap = 10.0;
-        let tall: f32 = galleys.iter().map(|(g, _)| g.rect.height()).sum();
-        let spaced = gap * galleys.len().saturating_sub(1) as f32;
-        let mut y = -(tall + spaced) / 2.0;
-        for (galley, color) in galleys {
-            let height = galley.rect.height();
-            out.push(centred(pos2(0.0, y), galley, color));
-            y += height + gap;
-        }
-        self.badge(&faces.badge, out);
-    }
-
-    /// The band, small in the top right corner.
-    fn badge(&self, badge: &str, out: &mut Vec<Shape>) {
-        if badge.is_empty() {
-            return;
-        }
-        let r = self.local();
-        let font = theme::medium(self.t.text_small);
-        let galley = self.text(badge, font, self.t.accent, f32::INFINITY);
-        let pill = galley.rect.size() + vec2(14.0, 6.0);
-        let corner = r.right_top() + vec2(-16.0 - pill.x, 16.0);
-        let rect = Rect::from_min_size(corner, pill);
-        out.push(Shape::rect_filled(rect, pill.y / 2.0, self.t.track));
-        let at = pos2(rect.center().x, rect.top() + 3.0);
-        out.push(centred(at, galley, self.t.accent));
-    }
-
-    fn text(&self, text: &str, font: FontId, color: Color32, width: f32) -> Arc<Galley> {
-        self.styled(text, font, color, false, width)
-    }
-
-    fn styled(
-        &self,
-        text: &str,
-        font_id: FontId,
-        color: Color32,
-        italics: bool,
-        width: f32,
-    ) -> Arc<Galley> {
-        let format = TextFormat {
-            font_id,
-            color,
-            italics,
-            ..TextFormat::default()
-        };
-        crate::machine_fonts::note(self.painter.ctx(), text);
-        let mut job = LayoutJob::single_section(text.to_owned(), format);
-        job.wrap.max_width = width;
-        job.halign = Align::Center;
-        self.painter.layout_job(job)
-    }
-
-    /// Tessellates `shapes`, then places every vertex as `pose` sees it.
-    fn paint(&mut self, shapes: Vec<Shape>, pose: Pose, alpha: f32) {
+    /// Tessellates `shapes`, then places every vertex as `pose` sees it,
+    /// clipped to where `window`, on the flat card, is seen.
+    fn paint(&mut self, shapes: Vec<Shape>, pose: Pose, alpha: f32, window: Option<Rect>) {
         if alpha <= 0.0 {
             return;
         }
@@ -464,14 +424,18 @@ impl Cards {
                 v.color = v.color.gamma_multiply(alpha);
             }
         }
-        self.painter.add(Shape::mesh(mesh));
+        let painter = match window {
+            Some(w) => {
+                let (low, high) = (w.left_bottom(), w.right_bottom());
+                let corners = [w.left_top(), w.right_top(), low, high];
+                let seen = corners.map(|p| pose.place(p.to_vec2()));
+                let clip = Rect::from_points(&seen).intersect(self.painter.clip_rect());
+                self.painter.with_clip_rect(clip)
+            }
+            None => self.painter.clone(),
+        };
+        painter.add(Shape::mesh(mesh));
     }
-}
-
-/// `galley` with its top middle at `top`.
-fn centred(top: Pos2, galley: Arc<Galley>, color: Color32) -> Shape {
-    let at = pos2(top.x - galley.rect.center().x, top.y - galley.rect.top());
-    Shape::galley(at, galley, color)
 }
 
 #[cfg(test)]

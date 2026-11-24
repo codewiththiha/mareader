@@ -4,6 +4,7 @@
 use super::*;
 use crate::study_mode::{Pane, menu::Look, recall};
 use egui::Context;
+use mareader_assist::SampleCards;
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, Ask};
 use mareader_settings::{Provider, TaskId};
@@ -106,11 +107,13 @@ impl MareaderApp {
 /// `study_mode=proactive|reactive|off` turns it on or off in the focused
 /// pane, or the one `study_focus=N` names, `study_gate=on` takes that pane to
 /// its gate,
-/// `study_deck=reveal` turns the deck's card over once the deck opens and
-/// `study_deck=drag:-140` holds it 140 points to the left, mid-swipe,
-/// `study_cards=ready|silent|failing` has a scripted AI write the cards and
-/// judge recalls, and `recall=word` or `recall=word:answer` opens a recall on
-/// the first `word` of the page read, and answers it.
+/// `study_deck=reveal` turns each deck's card over once the deck opens,
+/// `study_deck=drag:-140` holds it 140 points to the left, mid-swipe, and
+/// `study_deck=scroll:80` scrolls a long back 80 points,
+/// `study_cards=ready|ai|silent|failing` has a scripted AI write the cards,
+/// ai's from a model's long JSON answer, and judge recalls, and
+/// `recall=word` or `recall=word:answer` opens a recall on the first `word`
+/// of the page read, and answers it.
 pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<Result<(), String>> {
     if key == "study_cards" {
         return Some(practice(app, value));
@@ -149,9 +152,16 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
             app.ui.study_mode.drag_shot = Some(dx);
             return Some(Ok(()));
         }
+        ("study_deck", held) if held.starts_with("scroll:") => {
+            let Ok(y) = held.trim_start_matches("scroll:").parse() else {
+                return Some(Err("study_deck: scroll:points".into()));
+            };
+            app.ui.study_mode.scroll_shot = Some(y);
+            return Some(Ok(()));
+        }
         ("study_mode", _) => return Some(Err("study_mode: proactive, reactive or off".into())),
         ("study_gate", _) => return Some(Err("study_gate: on".into())),
-        ("study_deck", _) => return Some(Err("study_deck: reveal or drag:points".into())),
+        ("study_deck", _) => return Some(Err("study_deck: reveal, drag:dx or scroll:dy".into())),
         _ => return None,
     };
     app.queue(Sent::Engine(Command::StudyMode(action)));
@@ -160,8 +170,15 @@ pub(super) fn own_key(app: &mut MareaderApp, key: &str, value: &str) -> Option<R
 
 /// A scripted writer for the cards, with a model chosen so the AI writes them.
 fn practice(app: &mut MareaderApp, value: &str) -> Result<(), String> {
-    let practice = Practice::parse(value).ok_or("study_cards: ready, silent or failing")?;
-    app.session.study_set_cards(Arc::new(practice));
+    let hint = "study_cards: ready, ai, silent or failing";
+    let practice = match value {
+        "ai" => Practice::Ready,
+        _ => Practice::parse(value).ok_or(hint)?,
+    };
+    match value {
+        "ai" => app.session.study_set_cards(Arc::new(SampleCards)),
+        _ => app.session.study_set_cards(Arc::new(practice)),
+    }
     app.session.study_set_judge(Arc::new(practice));
     let ai = &app.session.settings().ai;
     if ai.model(TaskId::StudyCards).is_none() {

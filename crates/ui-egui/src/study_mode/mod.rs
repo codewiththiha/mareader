@@ -18,6 +18,8 @@ mod making;
 pub mod menu;
 pub mod progress;
 pub mod recall;
+mod rows;
+mod tight;
 pub mod waiting;
 
 use std::collections::{HashMap, HashSet};
@@ -200,10 +202,13 @@ pub struct StudyModeUi {
     asking: Option<(PaneId, confirm::Ask)>,
     /// The focused pane whose deck showed last frame; it takes the keys.
     keyed: Option<PaneId>,
-    /// Shots: the shown card turns over once the deck opens.
+    /// Shots: each pane's shown card turns over once its deck opens.
     pub reveal_shot: bool,
+    revealed: HashSet<PaneId>,
     /// Shots: the shown card held this far aside, as if dragged.
     pub drag_shot: Option<f32>,
+    /// Shots: a long back scrolled this far.
+    pub scroll_shot: Option<f32>,
     /// The answer typed in the open recall.
     pub recall: recall::Draft,
     /// Shots: the recall to open, as `word` or `word:answer`.
@@ -291,12 +296,15 @@ impl StudyModeUi {
             };
         }
         let open = pane.run.shown_deck().is_some();
-        if self.reveal_shot && open {
-            self.reveal_shot = false;
+        if self.reveal_shot && open && self.revealed.insert(pane.id) {
             cursor.turned = true;
         }
+        let card = deck::card_id(pane.id, cursor.batch);
         if let Some(dx) = self.drag_shot {
-            flip_card::hold(ctx, deck::card_id(pane.id, cursor.batch), dx);
+            flip_card::hold(ctx, card, dx);
+        }
+        if let Some(y) = self.scroll_shot {
+            flip_card::scroll(ctx, card, y);
         }
         let mut ask = None;
         gate::cover(ctx, pane.id, pane.rect, |ui| {

@@ -200,6 +200,26 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   good; *Turn off study mode* always asks (`study_mode/confirm.rs`). The
   deck tells the engine as it appears and goes (`Action::Shown`), so its
   time runs only on screen.
+- **Short and narrow panes** (`study_mode/tight.rs`, `rows.rs`,
+  `card_face.rs`): the deck fits the pane. A pane tall and wide enough
+  keeps the roomy deck, its card shrinking to 190 pt first. Shorter, or
+  narrower than 300 pt (where the roomy rows would overflow), it turns
+  compact and gives the card the room: the row over the card goes (the
+  pages and shuffle drop), the card shows the time left top left, *3 / 9*
+  top middle (while the corner pills leave room) and the band top right,
+  the steps become round arrows on the card's edges, and one footer row
+  holds the known check, undo, a bare *Read back* arrow and *Read now*
+  (kept off the corner marks while it fits, its icon dropped when narrow);
+  *Turn off study mode* is left to the page menu's switch, and the deck
+  rises closer to the pane's top. The card is planned tall enough for the
+  deck's longest back to read easily (up to 320 pt), taking the height left
+  in a short pane; a narrow card never goes below its usual shape, a wide
+  one down to 150 pt. The back always holds all an AI wrote: crowded, its
+  text steps down in size (meaning 20 to 13 pt) and moves under the corner
+  pills; past the smallest step it scrolls with the wheel under the pills,
+  soft edges showing there is more. Shorter still, the compact deck
+  scrolls with the wheel. What the deck takes besides its card is measured
+  per layout, so the card fills exactly what is left.
 - **Waiting:** while the deck is made (`study_mode/making.rs`), three blank
   cards the size of the real ones drift in a loose stack over the frost,
   their lines shimmering as if written; no paper sits behind them. Beneath,
@@ -246,10 +266,12 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   `study_mode=proactive|reactive|off`, `study_gate=on` (in the focused pane,
   or the one `study_focus=N` names, for split panes; `pdf=sample:30:beside`
   opens a book in a new pane beside),
-  `study_deck=reveal` (the card turned) or `study_deck=drag:-140` (held
-  mid-swipe), `study_cards=ready|silent|failing` (a scripted AI that
-  writes every back and judges "right" correct and "close" close, never
-  answers, or fails) and `recall=word` or `recall=word:answer`, a recall on
+  `study_deck=reveal` (each pane's card turned), `study_deck=drag:-140`
+  (held mid-swipe) or `study_deck=scroll:80` (a long back scrolled),
+  `study_cards=ready|ai|silent|failing` (a scripted AI that
+  writes every back, for `ai` from a long JSON answer read as a model's
+  would be, and judges "right" correct and "close" close, never answers,
+  or fails) and `recall=word` or `recall=word:answer`, a recall on
   the first `word` of the page read. The shot applies them once the book and
   its word levels are in, then waits for the deck or the recall.
 

@@ -217,28 +217,51 @@ fn colors(look: Look, hot: bool, t: &Tokens) -> (Color32, Option<Color32>, Color
 
 /// Lays `chips` out across `ui`'s width, the row centred, `gap` apart.
 pub fn row(ui: &mut Ui, chips: Vec<Chip<'_>>, gap: f32) -> Vec<Response> {
+    spaced(ui, chips, &[gap])
+}
+
+/// A centred row whose gaps go in order, the last one repeating.
+pub fn spaced(ui: &mut Ui, chips: Vec<Chip<'_>>, gaps: &[f32]) -> Vec<Response> {
     let widths: Vec<f32> = chips.iter().map(|c| c.measure(ui)).collect();
     let height = chips.iter().map(|c| c.height).fold(0.0, f32::max);
-    let spaced = gap * widths.len().saturating_sub(1) as f32;
+    let last = gaps.last().copied().unwrap_or(0.0);
+    let gap = |i: usize| gaps.get(i).copied().unwrap_or(last);
+    let spaced: f32 = (0..widths.len().saturating_sub(1)).map(gap).sum();
     let total = widths.iter().sum::<f32>() + spaced;
     let (band, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
     let mut x = band.center().x - total / 2.0;
     let mut out = Vec::new();
-    for (chip, width) in chips.into_iter().zip(widths) {
+    for (i, (chip, width)) in chips.into_iter().zip(widths).enumerate() {
         let top = band.center().y - chip.height / 2.0;
         let rect = Rect::from_min_size(pos2(x, top), vec2(width, chip.height));
         out.push(chip.show(ui, rect));
-        x += width + gap;
+        x += width + gap(i);
     }
     out
+}
+
+/// A round block holding `icon`, named and tipped `label`.
+pub fn round(ui: &mut Ui, rect: Rect, icon: Icon, label: &str, t: &Tokens) -> Response {
+    let resp = ui.interact(rect, ui.id().with(("deck-round", label)), Sense::click());
+    plate(ui, rect, t);
+    if resp.hovered() {
+        let r = rect.height() / 2.0 - 1.0;
+        ui.painter().circle_filled(rect.center(), r, t.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let ink = if resp.hovered() { t.ink } else { t.muted };
+    let mark = Rect::from_center_size(rect.center(), vec2(ICON, ICON));
+    icon.paint(ui, mark, ink);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    widgets::tip(&resp, label, None);
+    resp
 }
 
 /// A small block of words and a mark, `align` saying which corner is `at`.
 pub fn block(ui: &Ui, at: Pos2, align: Align2, icon: Option<Icon>, text: &str, t: &Tokens) -> Rect {
     let font = theme::medium(14.0);
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, t.ink);
-    let mark = icon.map_or(0.0, |_| ICON - 2.0 + PART_GAP);
-    let size = vec2(galley.size().x + mark + 28.0, BLOCK);
+    let size = vec2(block_width(ui, icon.is_some(), text), BLOCK);
     let rect = align.anchor_size(at, size);
     plate(ui, rect, t);
     let mut x = rect.left() + 14.0;
@@ -251,6 +274,16 @@ pub fn block(ui: &Ui, at: Pos2, align: Align2, icon: Option<Icon>, text: &str, t
     let top = pos2(x, rect.center().y - galley.size().y / 2.0);
     ui.painter().galley(top, galley, t.ink);
     rect
+}
+
+/// The width a corner block of `text` takes, with a mark when `icon`.
+pub fn block_width(ui: &Ui, icon: bool, text: &str) -> f32 {
+    let font = theme::medium(14.0);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font, Color32::PLACEHOLDER);
+    let mark = if icon { ICON - 2.0 + PART_GAP } else { 0.0 };
+    galley.size().x + mark + 28.0
 }
 
 /// The height of a corner block.
