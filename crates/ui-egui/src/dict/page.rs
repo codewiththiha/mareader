@@ -739,7 +739,7 @@ fn row(ui: &mut Ui, e: &Entry, i: usize, on: bool, t: &Tokens) -> Response {
             ui.spacing_mut().item_spacing.y = 2.0;
             // The headword leads; its part of speech sits at the end.
             ui.horizontal(|ui| {
-                let tags = e.tags();
+                let tags = entry::tags(e);
                 let first = tags.split(" · ").next().filter(|p| !p.is_empty());
                 let tag = first.map(|p| RichText::new(p).italics().size(t.text_small));
                 let room = ui.available_width() - if tag.is_some() { 72.0 } else { 0.0 };
@@ -802,7 +802,7 @@ fn full_entry(
             }
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                for tag in e.tags().split(" · ").filter(|s| !s.is_empty()) {
+                for tag in entry::tags(e).split(" · ").filter(|s| !s.is_empty()) {
                     look::chip(ui, tag, t);
                 }
                 if let Some(way) = look::way(e) {

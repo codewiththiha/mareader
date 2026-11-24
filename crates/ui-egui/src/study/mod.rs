@@ -28,6 +28,7 @@ use mareader_engine::study::state::{Key, State as StudyState};
 use mareader_engine::study::words::Asked;
 use mareader_library::{BookId, Library, Mark, MarkId, MarkKind, Spot, Style};
 use mareader_settings::{GlossSettings, HighlightSettings};
+use mareader_study::Pos;
 use mareader_study::WordInfo;
 use mareader_workspace::PaneId;
 
@@ -50,6 +51,8 @@ struct Card {
     seen: bool,
     /// The word's role in its sentence, once the tagger said.
     role: Option<Role>,
+    /// The class its dictionary rows name, once in.
+    dictionary: Option<Pos>,
 }
 
 mareader_engine::impl_card!(Card);
@@ -359,6 +362,7 @@ fn show_card(
     let view = card::View {
         word: &c.word,
         role: c.role.as_ref(),
+        dictionary: c.dictionary,
         answer,
         show_tabs,
         at: c.at,

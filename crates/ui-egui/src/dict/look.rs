@@ -352,7 +352,7 @@ pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Command
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
-            let tags = e.tags();
+            let tags = entry::tags(e);
             let way = way(e).filter(|_| s.way);
             if !tags.is_empty() || e.via.is_some() || way.is_some() {
                 ui.horizontal_wrapped(|ui| {

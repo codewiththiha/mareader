@@ -99,10 +99,17 @@ pub fn wanted(card: &Card) -> Wanted {
     }
 }
 
+/// The class a word's dictionary rows name first, short cells or long.
+pub fn class_in(entries: &[Entry]) -> Option<Pos> {
+    Pos::of_cells(entries.iter().filter_map(|e| e.pos.as_deref()))
+}
+
 /// Up to [`DEFINITIONS`] definitions, those of the card's class first.
+///
+/// Cells read as [`Pos::read`] reads them, short or long.
 pub fn meaning_of(entries: &[Entry], pos: Option<Pos>) -> String {
     let mut sorted: Vec<&Entry> = entries.iter().collect();
-    sorted.sort_by_key(|e| pos.is_none() || e.pos.as_deref().and_then(class_of) != pos);
+    sorted.sort_by_key(|e| pos.is_none() || e.pos.as_deref().and_then(Pos::read) != pos);
     let mut out: Vec<&str> = Vec::new();
     for entry in sorted {
         let text = entry.definition.trim();
@@ -114,34 +121,9 @@ pub fn meaning_of(entries: &[Entry], pos: Option<Pos>) -> String {
     out.join("; ")
 }
 
-/// A dictionary's part-of-speech cell as a class: `adj.`, `n`, `verb`.
-fn class_of(cell: &str) -> Option<Pos> {
-    let cell = cell.trim().to_lowercase();
-    if cell.starts_with("adv") {
-        Some(Pos::Adverb)
-    } else if cell.starts_with("adj") || cell == "a" {
-        Some(Pos::Adjective)
-    } else if cell.starts_with('n') {
-        Some(Pos::Noun)
-    } else if cell.starts_with('v') {
-        Some(Pos::Verb)
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn dictionary_cells_read_as_classes() {
-        assert_eq!(class_of(" Adv. "), Some(Pos::Adverb));
-        assert_eq!(class_of("adjective"), Some(Pos::Adjective));
-        assert_eq!(class_of("n"), Some(Pos::Noun));
-        assert_eq!(class_of("verb"), Some(Pos::Verb));
-        assert_eq!(class_of("prep"), None);
-    }
 
     #[test]
     fn backs_are_kept_by_card_sentence_and_writer() {

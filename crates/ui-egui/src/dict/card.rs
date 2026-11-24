@@ -5,10 +5,11 @@ use egui::{
     ScrollArea, Sense, Ui, Vec2, WidgetInfo, WidgetType, pos2, vec2,
 };
 use mareader_cefr::Role;
-use mareader_dict::{Entry, Reply, language};
+use mareader_dict::{Entry, Reply, WordMatch, language};
 use mareader_engine::command::Command;
 use mareader_engine::dict::Action;
 use mareader_engine::settings::Tab;
+use mareader_study::Pos;
 use mareader_workspace::PaneId;
 
 use super::entry;
@@ -48,6 +49,8 @@ pub struct View<'a> {
     pub reply: Option<&'a Reply>,
     /// The tagger's class and level for the word in its sentence.
     pub role: Option<&'a Role>,
+    /// The class the word's own dictionary rows name, once in.
+    pub dictionary: Option<Pos>,
     pub attached: bool,
     /// True when an AI explainer is available for this word.
     pub ai_ready: bool,
@@ -99,7 +102,7 @@ pub fn show(ctx: &Context, view: &View<'_>, t: &Tokens, out: &mut Commands) -> R
 fn card(ui: &mut Ui, id: Id, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Commands) {
     ui.spacing_mut().item_spacing.y = 0.0;
     let top = ui.cursor().top();
-    let (class, level) = class_and_level(view.role, shown_entry(ui, id, view));
+    let (class, level) = class_and_level(view, shown_entry(ui, id, view));
     let say = view.speaker.map(|s| word_card::Say {
         saying: view.saying,
         voice: s.voice.as_deref(),
@@ -155,13 +158,15 @@ fn shown_entry<'a>(ui: &Ui, id: Id, view: &View<'a>) -> Option<&'a Entry> {
     reply.entries.get(p.at.min(n.saturating_sub(1)))
 }
 
-/// The word's class and CEFR level: tagger first, else the entry's tags.
-fn class_and_level(role: Option<&Role>, entry: Option<&Entry>) -> (String, Option<&'static str>) {
-    match (role, entry) {
-        (Some(r), _) => (r.class().to_owned(), r.cefr()),
-        (None, Some(e)) => (e.tags(), None),
-        (None, None) => (String::new(), None),
-    }
+/// The word's class by the one rule, and the tagger's level for it.
+///
+/// The dictionary's class is the shown row's when it is the word's own.
+fn class_and_level(view: &View<'_>, entry: Option<&Entry>) -> (String, Option<&'static str>) {
+    let own = entry.filter(|e| e.fit == WordMatch::Exact);
+    let row = own.and_then(|e| e.pos.as_deref()).and_then(Pos::read);
+    let class = mareader_engine::word_card::class(None, view.role, row.or(view.dictionary));
+    let name = class.map_or("", Pos::name).to_owned();
+    (name, view.role.and_then(Role::cefr))
 }
 
 /// The entry turned to, scrolling only when taller than the room.

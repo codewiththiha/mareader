@@ -123,7 +123,7 @@ impl Task for Explain<'_> {
 }
 
 // Names models use when they drift from the schema, schema's first.
-const POS: &[&str] = &["pos", "part_of_speech", "partofspeech", "word_class"];
+pub(crate) const POS: &[&str] = &["pos", "part_of_speech", "partofspeech", "word_class"];
 pub(crate) const MEANING: &[&str] = &["meaning", "definition", "explanation", "sense", "gloss"];
 pub(crate) const SYNONYMS: &[&str] = &["synonyms", "synonym", "similar_words"];
 pub(crate) const USAGES: &[&str] = &[

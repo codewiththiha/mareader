@@ -8,7 +8,7 @@ use mareader_engine::command::Command;
 use mareader_engine::study::Action;
 use mareader_library::{MarkId, Style};
 use mareader_settings::{GlossDensity, HighlightSettings};
-use mareader_study::{Failure, WordInfo};
+use mareader_study::{Failure, Pos, WordInfo};
 use mareader_workspace::PaneId;
 
 use crate::bubble::{Bubble, Side};
@@ -29,8 +29,10 @@ pub enum Answer<'a> {
 
 pub struct View<'a> {
     pub word: &'a str,
-    /// The tagger's role: its class until the AI's, and its level.
+    /// The tagger's role: its class after the AI's, and its level.
     pub role: Option<&'a Role>,
+    /// The class the word's dictionary rows name, once in.
+    pub dictionary: Option<Pos>,
     pub answer: Answer<'a>,
     /// True when offline dictionary data exists for this word.
     pub show_tabs: bool,
@@ -67,10 +69,8 @@ fn card(ui: &mut Ui, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Commands) 
         Answer::Ready(info, _) | Answer::Partial(info) => Some(info.pos.as_str()),
         _ => None,
     };
-    let class = said
-        .filter(|p| !p.is_empty())
-        .or(view.role.map(Role::class))
-        .unwrap_or("");
+    let heard = mareader_engine::word_card::class(said, view.role, view.dictionary);
+    let class = heard.map_or("", Pos::name);
     let head = word_card::Header {
         word: view.word,
         class,

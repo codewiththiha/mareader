@@ -1,13 +1,31 @@
-//! Tab stashing, background probing, and language-query helpers for `DictUi`.
+//! Tab stashing, the card's role and class, probing, and query helpers
+//! for `DictUi`.
 
 use egui::{Context, Rect, Vec2};
+use mareader_cefr::Role;
 use mareader_dict::{Pair, Query, Ticket};
+use mareader_study::Pos;
 use mareader_workspace::PaneId;
 
 use super::{Card, DictUi, card};
 use crate::word_card;
 
 impl DictUi {
+    /// The tagger's answer for the open card, if it is still `word`'s.
+    pub fn set_role(&mut self, word: &str, role: Role) {
+        mareader_engine::word_card::set_role(&mut self.card, word, role);
+    }
+
+    /// The role the open card shows, for tests.
+    pub fn card_role(&self) -> Option<&Role> {
+        self.card.as_ref()?.role.as_ref()
+    }
+
+    /// The dictionary's class for the open card, if it is still `word`'s.
+    pub fn set_class(&mut self, word: &str, pos: Pos) {
+        mareader_engine::word_card::set_class(&mut self.card, word, pos);
+    }
+
     /// Drops any stashed lookup card.
     pub fn clear_stash(&mut self) {
         self.stash = None;
@@ -67,6 +85,7 @@ impl DictUi {
             reply: None,
             rest: false,
             role: None,
+            dictionary: None,
         });
     }
 
@@ -81,6 +100,7 @@ impl DictUi {
             asked: card.asked.clone(),
             at: card.at,
             role: card.role.clone(),
+            dictionary: card.dictionary,
             rect: self.card_rect,
         };
         self.stash = Some(card);
@@ -97,6 +117,7 @@ impl DictUi {
         let Some(mut card) = self.stash.take().filter(same) else {
             return false;
         };
+        card.dictionary = card.dictionary.or(snap.dictionary);
         if card.role.is_none() {
             card.role = snap.role.clone();
         }
@@ -126,6 +147,7 @@ impl DictUi {
             reply: None,
             rest: false,
             role: snap.role,
+            dictionary: snap.dictionary,
         });
     }
 

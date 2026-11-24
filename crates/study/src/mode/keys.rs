@@ -1,4 +1,4 @@
-//! A study word's key: its lemma and coarse word class (decision D4).
+//! A study word's key: its lemma and word class (decision D4).
 //!
 //! One card stands for one key, however often or in whatever form the word
 //! shows. The lemma comes from folding common endings against the words the
@@ -6,48 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The four word classes study mode keeps apart.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Pos {
-    Noun,
-    Verb,
-    Adjective,
-    Adverb,
-}
-
-impl Pos {
-    pub const ALL: [Self; 4] = [Self::Noun, Self::Verb, Self::Adjective, Self::Adverb];
-
-    /// The class of a Penn tag such as `VBD`; none for a proper noun or other.
-    pub fn of_tag(tag: &str) -> Option<Self> {
-        let tag = tag.trim();
-        if tag.starts_with("NNP") {
-            return None;
-        }
-        match tag.get(..2)? {
-            "NN" => Some(Self::Noun),
-            "VB" => Some(Self::Verb),
-            "JJ" => Some(Self::Adjective),
-            "RB" => Some(Self::Adverb),
-            _ => None,
-        }
-    }
-
-    /// The class as stored and shown, as "verb".
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Noun => "noun",
-            Self::Verb => "verb",
-            Self::Adjective => "adjective",
-            Self::Adverb => "adverb",
-        }
-    }
-
-    pub fn parse(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|p| p.name() == name.trim())
-    }
-}
+use crate::class::Pos;
 
 /// One card's identity: a lemma and, when known, its word class.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -177,23 +136,16 @@ mod tests {
     }
 
     #[test]
-    fn penn_tags_fold_to_four_classes_and_names_to_none() {
-        assert_eq!(Pos::of_tag("VBD"), Some(Pos::Verb));
-        assert_eq!(Pos::of_tag("NNS"), Some(Pos::Noun));
-        assert_eq!(Pos::of_tag("JJR"), Some(Pos::Adjective));
-        assert_eq!(Pos::of_tag("RB"), Some(Pos::Adverb));
-        assert_eq!(Pos::of_tag("NNP"), None);
-        assert_eq!(Pos::of_tag("DT"), None);
-        assert_eq!(Pos::of_tag("é"), None);
-    }
-
-    #[test]
     fn a_key_reads_back_from_its_id() {
         let key = Key::new("visit", Some(Pos::Noun));
         assert_eq!(key.id(), "visit|noun");
         assert_eq!(Key::parse(&key.id()), Some(key));
         assert_eq!(Key::parse("vex"), Some(Key::new("vex", None)));
-        assert_eq!(Key::parse("vex|pronoun"), None);
+        assert_eq!(
+            Key::parse("vex|pronoun"),
+            Some(Key::new("vex", Some(Pos::Pronoun)))
+        );
+        assert_eq!(Key::parse("vex|prefix"), None);
         assert_eq!(Key::parse("|verb"), None);
     }
 

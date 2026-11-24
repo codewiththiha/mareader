@@ -95,9 +95,11 @@ impl Session {
         self.vocab.set_inline(self.inline);
     }
 
-    /// Asks the tagger for `word`'s grammatical role in `sentence`.
+    /// Asks the tagger for `word`'s role in `sentence`, and its dictionary
+    /// rows for its class: a card's two sources besides an AI.
     pub fn ask_role(&mut self, word: &str, sentence: &str) {
         self.vocab.ask_role(word, sentence);
+        self.dict.ask_card_class(word);
     }
 
     /// Polls vocabulary answers; returns whether pages changed and any role.

@@ -322,21 +322,19 @@ fn script_06_study_mode_gates_the_first_batch() {
         .filter_map(Value::as_str)
         .collect();
     assert!(
-        cards.contains(&"vow"),
-        "kept as learning, so it comes again: {cards:?}"
+        cards.contains(&"vow|noun"),
+        "kept as learning, its class from the pack's short \"n\": {cards:?}"
     );
+    let has = |lemma: &str| cards.iter().any(|c| c.split('|').next() == Some(lemma));
     assert!(
-        !cards.contains(&"helvetica"),
+        !has("helvetica"),
         "a capital mid-sentence is a name: {cards:?}"
     );
     assert!(
-        cards.contains(&"sphinx"),
+        cards.contains(&"sphinx|noun"),
         "a capital opening a sentence is a word: {cards:?}"
     );
-    assert!(
-        !cards.contains(&"quartz"),
-        "memorized words are skipped: {cards:?}"
-    );
+    assert!(!has("quartz"), "memorized words are skipped: {cards:?}");
 }
 
 fn backdate(path: &Path) {

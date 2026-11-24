@@ -4,11 +4,11 @@
 use std::collections::HashMap;
 
 use mareader_dict::Entry;
-use mareader_study::mode::{Card, Missing};
+use mareader_study::mode::{Card, Classes, Missing};
 
 use super::{DeckJob, MEANING_WAIT, Stage};
 use crate::study_mode::Setup;
-use crate::study_mode::backs::{Shown, meaning_of};
+use crate::study_mode::backs::{Shown, class_in, meaning_of};
 use crate::word_list::Meanings;
 
 /// Words asked of the dictionaries at a time, so word cards still answer.
@@ -67,11 +67,22 @@ impl DeckJob {
         };
         let found = reply.found.into_iter().map(|f| (f.word, f.own));
         let found: HashMap<String, Vec<Entry>> = found.collect();
+        for (word, entries) in &found {
+            if let Some(class) = class_in(entries) {
+                self.dictionary.entry(word.clone()).or_insert(class);
+            }
+        }
         let round = self.deck.cards.iter().take(self.upto).skip(self.looked);
         let room = self.max.saturating_sub(self.kept.len());
+        let dictionary = &self.dictionary;
         let meaning = |card: &Card| {
             let entries = found.get(&card.key.lemma).map_or(&[][..], Vec::as_slice);
-            meaning_of(entries, card.key.pos)
+            let heard = Classes {
+                ai: None,
+                tagger: card.key.pos,
+                dictionary: dictionary.get(&card.key.lemma).copied(),
+            };
+            meaning_of(entries, heard.class())
         };
         let kept = with_meanings(round, meaning, room);
         self.kept.extend(kept);
@@ -80,11 +91,11 @@ impl DeckJob {
         Ok(true)
     }
 
-    /// Hands over the dictionary cards kept.
+    /// Settles the dictionary cards kept; no AI names their classes.
     pub(super) fn finish(&mut self) {
-        let deck = std::mem::take(&mut self.deck);
-        let cards = std::mem::take(&mut self.kept);
-        self.done(cards, deck.found, deck.skipped_known);
+        let kept = std::mem::take(&mut self.kept).into_iter();
+        self.settling = kept.map(|shown| (shown, None)).collect();
+        self.stage = Stage::Settle;
     }
 }
 

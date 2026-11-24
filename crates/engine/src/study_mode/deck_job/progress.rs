@@ -17,7 +17,7 @@ impl DeckJob {
     pub fn doing(&self) -> Doing {
         match self.stage {
             Stage::Writing { .. } => Doing::Writing,
-            Stage::Meanings { .. } => Doing::LookingUp,
+            Stage::Meanings { .. } | Stage::Classes { .. } => Doing::LookingUp,
             _ => Doing::Finding,
         }
     }
@@ -36,14 +36,14 @@ impl DeckJob {
                 let tagged = of.saturating_sub(asked.len());
                 0.5 + part(tagged, *of) / 2.0
             }
-            Stage::Meanings { .. } | Stage::Writing { .. } | Stage::Done => 1.0,
+            _ => 1.0,
         };
         let cards = match &self.stage {
             Stage::Writing { .. } => {
                 let (done, of) = written(&self.written);
                 part(done, of)
             }
-            Stage::Done => 1.0,
+            Stage::Settle | Stage::Classes { .. } | Stage::Done => 1.0,
             _ => 0.0,
         };
         whole(found, cards)
@@ -74,7 +74,7 @@ fn written(backs: &[Option<Written>]) -> (usize, usize) {
 mod tests {
     use mareader_study::mode::{Key, Wanted};
 
-    use super::super::fill;
+    use super::super::writing::fill;
     use super::*;
 
     fn back(meaning: &str) -> Option<Written> {

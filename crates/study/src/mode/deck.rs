@@ -7,7 +7,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::keys::{Key, Pos};
+use super::keys::Key;
+use crate::class::Pos;
 
 /// A hard word where it stands, given in reading order.
 #[derive(Clone, Debug, PartialEq)]
@@ -43,6 +44,14 @@ pub struct Deck {
     pub found: usize,
     /// Distinct keys skipped as memorized.
     pub skipped_known: usize,
+}
+
+/// The other classes `key`'s lemma has among `keys`, as "also as" says.
+pub fn also_as(keys: &[Key], key: &Key) -> Vec<Pos> {
+    (keys.iter())
+        .filter(|k| k.lemma == key.lemma && k.pos != key.pos)
+        .filter_map(|k| k.pos)
+        .collect()
 }
 
 /// The deck of words above `level`, at most `max` cards.
@@ -82,10 +91,7 @@ pub fn build(
     }
     let keys: Vec<Key> = cards.iter().map(|c| c.key.clone()).collect();
     for card in &mut cards {
-        card.also = (keys.iter())
-            .filter(|k| k.lemma == card.key.lemma && k.pos != card.key.pos)
-            .filter_map(|k| k.pos)
-            .collect();
+        card.also = also_as(&keys, &card.key);
     }
     // A stable sort keeps reading order among equals.
     cards.sort_by(|a, b| b.count.cmp(&a.count).then(b.band.cmp(&a.band)));

@@ -5,11 +5,15 @@ use std::path::PathBuf;
 
 use mareader_dict::{Dictionaries, PACKS, Pack, Query, Reply, State, Ticket};
 
+use mareader_study::Pos;
+
 use super::Action;
 use crate::word_list::Meanings;
 
 /// Word list asks kept waiting at once.
 const WORD_ASKS: usize = 4;
+/// Class asks kept waiting at once: open word cards and a recall.
+const CLASS_ASKS: usize = 4;
 
 /// Dictionary pack manager and lookup queue owned by `Session`.
 #[derive(Default)]
@@ -17,6 +21,10 @@ pub struct Service {
     service: Dictionaries,
     /// Word lists' asks and, once in, their replies; oldest first.
     words: Vec<(Ticket, Option<Reply>)>,
+    /// Single words' class asks, kept apart so they evict no list's.
+    classes: Vec<(Ticket, Option<Reply>)>,
+    /// The open word card's class ask, and the word it is for.
+    card: Option<(Ticket, String)>,
 }
 
 impl Service {
@@ -104,6 +112,45 @@ impl Service {
         ticket
     }
 
+    /// Asks for the class `word`'s rows name; none without a pack.
+    pub fn ask_class(&mut self, word: &str) -> Option<Ticket> {
+        let to = self.languages().first().map(|l| (*l).to_owned())?;
+        let words = vec![word.to_owned()];
+        let ticket = self.service.ask(Query::Words {
+            words,
+            to: vec![to],
+            near: false,
+        });
+        if self.classes.len() >= CLASS_ASKS {
+            self.classes.remove(0);
+        }
+        self.classes.push((ticket, None));
+        Some(ticket)
+    }
+
+    /// Asks the class of the open word card's `word`, over any before.
+    pub fn ask_card_class(&mut self, word: &str) {
+        self.card = self.ask_class(word).map(|t| (t, word.to_owned()));
+    }
+
+    /// The open card's word and the class its rows name, once in.
+    pub fn take_card_class(&mut self) -> Option<(String, Option<Pos>)> {
+        let ticket = self.card.as_ref()?.0;
+        let class = self.take_class(ticket)?;
+        Some((self.card.take()?.1, class))
+    }
+
+    /// The class `ticket`'s rows name, once in; `Some(None)` names none.
+    pub fn take_class(&mut self, ticket: Ticket) -> Option<Option<Pos>> {
+        let at = self
+            .classes
+            .iter()
+            .position(|(t, r)| *t == ticket && r.is_some())?;
+        let reply = self.classes.remove(at).1?;
+        let rows = reply.found.iter().flat_map(|f| f.own.iter());
+        Some(Pos::of_cells(rows.filter_map(|e| e.pos.as_deref())))
+    }
+
     pub fn take_words(&mut self, ticket: Ticket) -> Option<Reply> {
         let at = self
             .words
@@ -117,7 +164,8 @@ impl Service {
         let (changed, replies) = self.service.poll();
         let mut other = Vec::new();
         for reply in replies {
-            if let Some((_, slot)) = self.words.iter_mut().find(|(t, _)| *t == reply.ticket) {
+            let mut asks = self.words.iter_mut().chain(self.classes.iter_mut());
+            if let Some((_, slot)) = asks.find(|(t, _)| *t == reply.ticket) {
                 *slot = Some(reply);
             } else {
                 other.push(reply);

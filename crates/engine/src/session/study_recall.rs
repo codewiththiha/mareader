@@ -12,16 +12,18 @@ use std::sync::Arc;
 
 use mareader_library::{BookId, LearnedBy, Library, NewWord, WordStatus};
 use mareader_session::TextLayer;
-use mareader_study::mode::{Done, Judge, Key, Mode, Outcome};
+use mareader_study::mode::{Done, Judge, Key, Mode, Outcome, Pos};
 use mareader_workspace::PaneId;
 
 use super::Session;
 use crate::event::Event;
 use crate::library::wall_ms;
 use crate::study::words::{asked_at, read};
+use crate::study_mode::deck_job::Tags;
 use crate::study_mode::sightings::{Read, sentence_of};
 use crate::study_mode::{self as mode, Ask, Recalling, Word};
 use crate::toast::Toast;
+use crate::vocab::Vocab;
 
 impl Session {
     /// Lets Reactive mode's AI judge recalls with `judge`.
@@ -78,8 +80,11 @@ impl Session {
         let word = self.study_word(asked.word, sentence, page, asked.chars);
         let by = self.study_mode.judge().map(|j| j.by()).unwrap_or_default();
         let writer = self.study_mode.writer();
-        self.study_mode
-            .open_recall(Recalling::new(pane, word, writer, by));
+        let tag = self.vocab.ask_tag(&word.form, &word.sentence);
+        let class = self.dict.ask_class(&word.key.lemma);
+        let mut recalling = Recalling::new(pane, word, writer, by);
+        recalling.asks = (tag, class);
+        self.study_mode.open_recall(recalling);
         Ok(true)
     }
 
@@ -169,12 +174,29 @@ impl Session {
         let Some(recalling) = self.study_mode.recalling_mut(pane) else {
             return false;
         };
+        let heard = hear(recalling, &mut self.vocab, &mut self.dict);
         let (moved, done) = recalling.step(ask, writer.as_ref());
         if let Some(done) = done {
             self.study_recall_save(pane, done);
         }
-        moved
+        moved || heard
     }
+}
+
+/// Takes the tagger's and the dictionary's classes in, as they come.
+fn hear(recalling: &mut Recalling, vocab: &mut Vocab, dict: &mut crate::dict::Service) -> bool {
+    let mut heard = false;
+    if let Some(tag) = recalling.asks.0.and_then(|t| vocab.take_tag(t)) {
+        recalling.heard.tagger = tag.as_deref().and_then(Pos::of_tag);
+        recalling.asks.0 = None;
+        heard = true;
+    }
+    if let Some(class) = recalling.asks.1.and_then(|t| dict.take_class(t)) {
+        recalling.heard.dictionary = class;
+        recalling.asks.1 = None;
+        heard = true;
+    }
+    heard
 }
 
 /// Keeps a recalled word and where `book` showed it, with its tries.
@@ -188,7 +210,7 @@ fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done) {
     let meaning = recalling.back.as_ref().map(|b| b.meaning.clone());
     let new = NewWord {
         lemma: word.key.lemma.clone(),
-        pos: word.key.pos.map(|p| p.name().to_owned()),
+        pos: recalling.class().map(|p| p.name().to_owned()),
         band: word.band,
         form: word.form.clone(),
         context: word.sentence.clone(),

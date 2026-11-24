@@ -311,6 +311,15 @@ slice 5.
   AI as Explain does and marks the word, the AI mark drawn over the
   shade. The card shows the word's class from the tagger until the AI's
   arrives, then that sense's CEFR level beside it.
+- **One word class everywhere.** Every card names a word's class by one
+  rule: the AI's answer, else the tagger's reading in the sentence, else
+  the word's dictionary rows. Cards no AI writes (the dictionary card,
+  dictionary decks) start at the tagger. Short and long dictionary cells
+  read alike ("v", "verb", "v.", "transitive verb"); a cell naming no
+  class (a prefix, a phrase) gives none. The class shows only when one
+  source names it. On a deck it is the card's class too: two cards that
+  settle on one class join, and a memorized word stays out under the class
+  it settled on. A recall saves its word with the class it showed.
 - **The glow.** While any AI mark's answer is coming (a click on a shaded
   word, or Explain), the word's edges glow: rainbow light flaring from it,
   reaching further where it burns brightest, circling it,

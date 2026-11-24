@@ -5,6 +5,7 @@
 //! a script, for tests and shots.
 
 use super::Key;
+use crate::class::Pos;
 use crate::pending::{News, Pending};
 use crate::{Failure, Why};
 
@@ -22,6 +23,8 @@ pub struct Wanted {
 /// One card's back as the AI wrote it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Written {
+    /// The class the AI read the word as, when it named one.
+    pub pos: Option<Pos>,
     pub meaning: String,
     pub synonyms: Vec<String>,
     pub usage: String,
@@ -73,6 +76,7 @@ impl Practice {
 /// The back [`Practice::Ready`] writes for `wanted`.
 pub fn practice_back(wanted: &Wanted) -> Written {
     Written {
+        pos: wanted.key.pos,
         meaning: format!("What “{}” means in this sentence.", wanted.form),
         synonyms: vec!["sample".to_owned()],
         usage: format!("A sample sentence with “{}”.", wanted.key.lemma),

@@ -11,6 +11,7 @@ use mareader_study::pending::{News, Pending};
 /// One card of the answer; `{n}` and `{word}` name the asked word.
 const CARD: &str = r#"{
   "n": {n},
+  "pos": "Noun.",
   "meaning": "A short showing of how {word} works, given so people can see it in use before they decide to try it themselves.",
   "synonyms": ["showcase", "preview", "trial run", "walkthrough", "sample"],
   "usage": "Before lunch she gave the whole team a quick {word} of the new reading app."

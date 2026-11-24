@@ -146,9 +146,15 @@ impl Open {
         }
     }
 
-    /// Takes `key`'s card out of the deck.
+    /// Takes `key`'s card out of the deck; a bare word takes its card
+    /// whatever the class, as a script names it.
     pub fn take_known(&mut self, key: &Key) -> Option<(usize, Shown)> {
-        let at = self.cards.iter().position(|s| &s.card.key == key)?;
+        let exact = self.cards.iter().position(|s| &s.card.key == key);
+        let bare = || {
+            let lemma = |s: &Shown| key.pos.is_none() && s.card.key.lemma == key.lemma;
+            self.cards.iter().position(lemma)
+        };
+        let at = exact.or_else(bare)?;
         Some((at, self.cards.remove(at)))
     }
 

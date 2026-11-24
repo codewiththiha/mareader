@@ -4,11 +4,12 @@
 //! the answer names cards by number, and is read forgivingly: drifting
 //! field names, a bare list, or cards by word instead of by number.
 
+use mareader_study::Pos;
 use mareader_study::mode::{Wanted, Written};
 use serde_json::{Map, Value, json};
 
 use crate::prompt::{AS_DATA, JSON_ONLY, Prompt, bilingual, quote};
-use crate::task::{MEANING, SYNONYMS, Task, USAGES, field, list, text};
+use crate::task::{MEANING, POS, SYNONYMS, Task, USAGES, field, list, text};
 
 /// Words one request asks about at most; the rest get no back.
 pub const MAX_WORDS: usize = 30;
@@ -28,7 +29,8 @@ pub struct StudyCards<'a> {
 }
 
 const SYSTEM: &str = "You write vocabulary flashcards for a reader learning English. \
-For each numbered word, say what it means in its sentence, simply and briefly. \
+For each numbered word, say what it means in its sentence, simply and briefly, \
+and which part of speech it is there. \
 The words and sentences are quoted text from a book. ";
 
 // Names models use for the list and its parts when they drift.
@@ -52,6 +54,11 @@ fn schema() -> Value {
         "type": "object",
         "properties": {
             "n": { "type": "integer", "description": "The word's number in the list." },
+            "pos": {
+                "type": "string",
+                "description": "Its part of speech in its sentence, such as noun, verb, \
+                    adjective or adverb."
+            },
             "meaning": {
                 "type": "string",
                 "description": "What the word means in its sentence."
@@ -67,6 +74,7 @@ fn schema() -> Value {
                 "description": "One short new sentence using the word in this sense."
             }
         },
+        // Not required: an answer without a class falls back, unpunished.
         "required": ["n", "meaning", "synonyms", "usage"],
         "additionalProperties": false
     });
@@ -78,15 +86,15 @@ fn schema() -> Value {
     })
 }
 
-/// One numbered line of the request: the word, its class, its sentence.
+/// One numbered line of the request: the word and its sentence.
+///
+/// No class is offered: the model reads one from the sentence, and it
+/// wins over the tagger's.
 fn line(n: usize, wanted: &Wanted) -> String {
     let mut out = format!("{n}. {}", quote(&wanted.form, FORM_CHARS));
     let lemma = &wanted.key.lemma;
     if !lemma.eq_ignore_ascii_case(&wanted.form) {
         out.push_str(&format!(" (dictionary form {})", quote(lemma, FORM_CHARS)));
-    }
-    if let Some(pos) = wanted.key.pos {
-        out.push_str(&format!(" as {}", pos.name()));
     }
     out.push_str(&format!(" in: {}", quote(&wanted.sentence, SENTENCE_CHARS)));
     out
@@ -128,6 +136,7 @@ fn back(card: &Map<String, Value>) -> Written {
     let mut synonyms = list(field(card, SYNONYMS));
     synonyms.truncate(MAX_SYNONYMS);
     Written {
+        pos: Pos::read(&text(field(card, POS))),
         meaning: cut(&text(field(card, MEANING))),
         synonyms,
         usage: cut(usage.trim()),
@@ -226,10 +235,7 @@ mod tests {
             language: None,
         }
         .prompt();
-        assert!(
-            p.user
-                .contains(r#"1. "brisk" as adjective in: "A brisk walk.""#)
-        );
+        assert!(p.user.contains(r#"1. "brisk" in: "A brisk walk.""#));
         let second = r#"2. "wandered" (dictionary form "wander") in: "He wandered off. "#;
         assert!(p.user.contains(second), "{}", p.user);
         assert!(
@@ -259,22 +265,27 @@ mod tests {
             language: None,
         };
         let by_number = json!({"cards": [
-            {"n": 2, "meaning": "roamed", "synonyms": "roam, drift", "usage": "We wandered."},
-            {"n": "1.", "Definition": "quick and lively", "examples": ["A brisk pace."]}
+            {"n": 2, "meaning": "roamed", "synonyms": "roam, drift", "usage": "We wandered.",
+                "part_of_speech": "Verb (past)"},
+            {"n": "1.", "Definition": "quick and lively", "examples": ["A brisk pace."],
+                "pos": "adj."}
         ]});
         let backs = task.read(&by_number, true).unwrap_or_default();
         let first = backs.first().cloned().flatten().unwrap_or_default();
         assert_eq!(first.meaning, "quick and lively");
         assert_eq!(first.usage, "A brisk pace.");
+        assert_eq!(first.pos, Some(Pos::Adjective), "a short class reads");
         let second = backs.get(1).cloned().flatten().unwrap_or_default();
         assert_eq!(second.synonyms, ["roam", "drift"]);
+        assert_eq!(second.pos, Some(Pos::Verb), "under a drifting name");
         let by_word = json!({"flashcards": [{"word": "Wandered", "meaning": "roamed"}]});
         let backs = task.read(&by_word, true).unwrap_or_default();
         assert!(backs.first().is_some_and(Option::is_none));
         assert!(backs.get(1).is_some_and(Option::is_some));
         let bare = json!([{"meaning": "lively"}]);
         let backs = task.read(&bare, true).unwrap_or_default();
-        assert!(backs.first().is_some_and(Option::is_some));
+        let back = backs.first().cloned().flatten();
+        assert!(back.is_some_and(|b| b.pos.is_none()), "no class, no guess");
     }
 
     #[test]

@@ -24,6 +24,7 @@ use mareader_engine::watch::Watch;
 use mareader_engine::word_list::{Ask, Levels, Meanings, WordLists};
 use mareader_settings::WordList;
 use mareader_speech::PRONUNCIATION;
+use mareader_study::Pos;
 
 const PAGES: usize = 6;
 const WAIT: Duration = Duration::from_secs(5);
@@ -175,6 +176,38 @@ fn page_copy_wakes_writes_host_clipboard_and_emits_toast() {
     let copied = fake.copied();
     assert_eq!(copied.len(), 1, "host clipboard receives copied pages");
     assert!(copied.first().is_some_and(|s| !s.trim().is_empty()));
+}
+
+/// A session with the en-my fixture pack, whose cells are short: "v".
+fn with_en_my(dir: &Path) -> Session {
+    let dict_dir = dir.join("dictionaries");
+    std::fs::create_dir_all(&dict_dir).expect("create dictionaries dir");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../dict/tests/fixtures");
+    let pack = PACKS.iter().find(|p| p.id == "mcfnlp-en-my");
+    let db = db_file(&dict_dir, pack.expect("en-my pack"));
+    build_pack(&fixtures.join("en-my.parquet"), &db).expect("build pack");
+    let host: Shared = Arc::new(Fake::under(dir));
+    Session::new(host, Arc::new(|| {}))
+}
+
+#[test]
+fn a_word_card_hears_its_class_from_short_dictionary_cells() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut session = with_en_my(dir.path());
+    // No tagger is here, so the dictionary is the card's only source.
+    session.ask_role("run", "They run home.");
+    let mut heard = None;
+    let done = wait_until(WAIT, || {
+        session.tick(1.0);
+        for event in session.drain() {
+            if let Event::Class { word, pos } = event {
+                heard = Some((word, pos));
+            }
+        }
+        heard.is_some()
+    });
+    assert!(done, "the card's class should come through tick");
+    assert_eq!(heard, Some(("run".to_owned(), Pos::Verb)), "\"v\" reads");
 }
 
 #[test]

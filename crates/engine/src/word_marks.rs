@@ -9,6 +9,7 @@ use mareader_cefr::{MAX_WORD_CHARS, candidates, normalize, tokenize};
 use mareader_dict::{Entry, Found, fold};
 use mareader_session::Document;
 use mareader_settings::{WordFields, WordGroup, WordLayout, WordList, WordSort};
+use mareader_study::Pos;
 
 use crate::session::Waker;
 
@@ -278,17 +279,17 @@ fn own(sheet: &Sheet<'_>, word: &Word) -> Vec<Vec<Entry>> {
     rows.collect()
 }
 
-/// The parts of speech across rows, each once: "noun, verb".
+/// The classes the rows name, each once, as cards read them: "noun, verb".
 fn kinds(rows: &[Vec<Entry>]) -> String {
-    let mut out: Vec<String> = Vec::new();
-    for tags in rows.iter().flatten().map(Entry::tags) {
-        for tag in tags.split(" · ").filter(|t| !t.is_empty()) {
-            if !out.iter().any(|t| t == tag) {
-                out.push(tag.to_owned());
-            }
+    let mut out: Vec<Pos> = Vec::new();
+    let cells = rows.iter().flatten().filter_map(|e| e.pos.as_deref());
+    for class in cells.flat_map(Pos::read_all) {
+        if !out.contains(&class) {
+            out.push(class);
         }
     }
-    out.join(", ")
+    let names: Vec<&str> = out.iter().map(|p| p.name()).collect();
+    names.join(", ")
 }
 
 /// One language's rows as text, each kept part once.

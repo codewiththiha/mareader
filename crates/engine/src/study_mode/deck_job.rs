@@ -8,7 +8,8 @@
 //! until the deck is full; a dictionary silent for [`MEANING_WAIT`] seconds
 //! ends the deck with those found. Cards from the AI wait on their writer
 //! as long as it takes; the deck's waiting card offers the dictionary once
-//! that is slow.
+//! that is slow. Each card's class is then settled by the one rule, in
+//! `classes`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -17,13 +18,10 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use mareader_cefr::Ticket as TagTicket;
 use mareader_dict::Ticket;
 use mareader_session::Document;
-use mareader_settings::{TaskId, no_model};
-use mareader_study::Why;
 use mareader_study::mode::build;
 use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
-use mareader_study::pending::News;
 
-use super::backs::{Shown, Writer, wanted};
+use super::backs::{Shown, Writer};
 use super::known::Known;
 use super::run::Setup;
 use super::sightings::{self, Read};
@@ -31,10 +29,12 @@ use crate::session::Waker;
 use crate::word_list::{INLINE, LEVEL_ROUND, Levels, Meanings};
 use crate::word_marks::{self, Page};
 
+mod classes;
 mod lookup;
 mod progress;
 #[cfg(test)]
 mod tests;
+mod writing;
 
 /// Words read from one batch at most.
 const READ_CAP: usize = 20_000;
@@ -115,6 +115,13 @@ enum Stage {
         ticket: Ticket,
         since: Option<f64>,
     },
+    /// The backs are in; each card's class is settled next.
+    Settle,
+    /// The dictionary is asked the classes no one else named.
+    Classes {
+        ticket: Ticket,
+        since: Option<f64>,
+    },
     /// The writer's job, the cards it was asked for, by place, and who
     /// was asked, whose cache the backs go in.
     Writing {
@@ -144,6 +151,10 @@ pub struct DeckJob {
     /// Dictionary cards with a meaning so far; the cards before `looked`
     /// are looked up, and those before `upto` asked.
     kept: Vec<Shown>,
+    /// Each looked-up lemma's class, as its dictionary rows name it.
+    dictionary: HashMap<String, Pos>,
+    /// The finished cards, each with the class its back named, if any.
+    settling: Vec<(Shown, Option<Pos>)>,
     looked: usize,
     upto: usize,
     started: Option<f64>,
@@ -171,6 +182,8 @@ impl DeckJob {
             deck: Deck::default(),
             written: Vec::new(),
             kept: Vec::new(),
+            dictionary: HashMap::new(),
+            settling: Vec::new(),
             looked: 0,
             upto: 0,
             started: None,
@@ -230,6 +243,8 @@ impl DeckJob {
                 Stage::Tags { .. } => self.tags(words, meanings, now)?,
                 Stage::Meanings { .. } => self.meanings(meanings, now)?,
                 Stage::Writing { .. } => self.writing()?,
+                Stage::Settle => self.settle(meanings),
+                Stage::Classes { .. } => self.classes(meanings, now),
                 Stage::Done => return Ok(self.built.take()),
             };
             if !moved {
@@ -376,80 +391,7 @@ impl DeckJob {
         self.look_up(meanings)
     }
 
-    /// Asks the writer for the backs not cached; with all cached, finishes.
-    fn ask_backs(&mut self) -> Result<(), String> {
-        let Some(writer) = self.writer.clone() else {
-            self.setup = Some(Setup::Writer);
-            return Err(no_model(TaskId::StudyCards));
-        };
-        let id = writer.cards.id();
-        let mut asked = Vec::new();
-        self.written = (self.deck.cards.iter().enumerate())
-            .map(|(i, card)| {
-                let wanted = wanted(card);
-                let cached = writer.backs.get(&id, &wanted);
-                if cached.is_none() {
-                    asked.push((i, wanted));
-                }
-                cached
-            })
-            .collect();
-        if asked.is_empty() {
-            self.finish_written();
-            return Ok(());
-        }
-        let words = asked.iter().map(|(_, w)| w.clone()).collect();
-        let job = writer.cards.write(words);
-        self.stage = Stage::Writing { job, asked, id };
-        Ok(())
-    }
-
-    /// Counts backs as they are written; takes the answer into the deck
-    /// and the cache.
-    fn writing(&mut self) -> Result<bool, String> {
-        let Stage::Writing { job, asked, id } = &mut self.stage else {
-            return Ok(false);
-        };
-        let mut answer = None;
-        for news in job.news() {
-            match news {
-                News::Partial(backs) => fill(&mut self.written, asked, &backs),
-                News::Done(done) => answer = Some(done),
-            }
-        }
-        let Some(answer) = answer else {
-            return Ok(false);
-        };
-        let backs = match answer {
-            Ok(backs) => backs,
-            Err(failure) => {
-                self.setup = setup_for(failure.why);
-                return Err(failure.said());
-            }
-        };
-        let (asked, id) = (std::mem::take(asked), std::mem::take(id));
-        for ((i, wanted), back) in asked.into_iter().zip(backs) {
-            if let (Some(writer), Some(back)) = (&self.writer, &back) {
-                writer.backs.put(&id, &wanted, back.clone());
-            }
-            // The whole answer stands over what came on the way.
-            if let Some(slot) = self.written.get_mut(i) {
-                *slot = back;
-            }
-        }
-        self.finish_written();
-        Ok(true)
-    }
-
-    fn finish_written(&mut self) {
-        let deck = std::mem::take(&mut self.deck);
-        let mut backs = std::mem::take(&mut self.written).into_iter();
-        let shown = deck.cards.into_iter();
-        let shown = shown.map(|card| Shown::written(card, backs.next().flatten()));
-        self.done(shown.collect(), deck.found, deck.skipped_known);
-    }
-
-    fn done(&mut self, cards: Vec<Shown>, found: usize, skipped_known: usize) {
+    pub(super) fn done(&mut self, cards: Vec<Shown>, found: usize, skipped_known: usize) {
         self.built = Some(Built {
             cards,
             found,
@@ -457,23 +399,5 @@ impl DeckJob {
             via: self.via,
         });
         self.stage = Stage::Done;
-    }
-}
-
-/// Puts each back written into its card's place, `asked` naming them.
-fn fill(written: &mut [Option<Written>], asked: &[(usize, Wanted)], backs: &[Option<Written>]) {
-    for ((i, _), back) in asked.iter().zip(backs) {
-        if let (Some(slot), Some(back)) = (written.get_mut(*i), back) {
-            *slot = Some(back.clone());
-        }
-    }
-}
-
-/// What a model's failure needs set up; none when trying again may do.
-fn setup_for(why: Why) -> Option<Setup> {
-    match why {
-        Why::NotHere => Some(Setup::Writer),
-        Why::NoKey | Why::KeysRejected | Why::Setup => Some(Setup::Model),
-        _ => None,
     }
 }

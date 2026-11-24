@@ -10,9 +10,12 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use mareader_cefr::Ticket as TagTicket;
+use mareader_dict::Ticket as ClassTicket;
 use mareader_settings::{TaskId, no_model};
 use mareader_study::mode::{
-    Attempt, CardJob, Done, Judge, JudgeJob, Key, Outcome, Phase, Recall, Wanted, Written,
+    Attempt, CardJob, Classes, Done, Judge, JudgeJob, Key, Outcome, Phase, Pos, Recall, Wanted,
+    Written,
 };
 use mareader_workspace::PaneId;
 
@@ -72,6 +75,10 @@ pub struct Recalling {
     pub back: Option<Written>,
     /// Who judges, as the popover names them while it waits.
     pub by: String,
+    /// The tagger's and the dictionary's classes, as they answer.
+    pub heard: Classes,
+    /// Their asks while out: the tagger's, then the dictionary's.
+    pub(crate) asks: (Option<TagTicket>, Option<ClassTicket>),
     /// The back being written, and who was asked, whose cache it goes in.
     back_job: Option<(String, Box<CardJob>)>,
     judging: Option<Box<JudgeJob>>,
@@ -88,6 +95,8 @@ impl Recalling {
             failure: None,
             back: None,
             by,
+            heard: Classes::default(),
+            asks: (None, None),
             back_job: None,
             judging: None,
         };
@@ -151,6 +160,13 @@ impl Recalling {
                 (true, None)
             }
         }
+    }
+
+    /// The class the word is kept under: its back's, else the tagger's,
+    /// else the dictionary's.
+    pub fn class(&self) -> Option<Pos> {
+        let ai = self.back.as_ref().and_then(|b| b.pos);
+        Classes { ai, ..self.heard }.class()
     }
 
     /// Whether a back or a verdict is still coming.

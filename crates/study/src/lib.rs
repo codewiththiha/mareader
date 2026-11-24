@@ -10,6 +10,7 @@
 )]
 
 mod answer;
+mod class;
 mod explain;
 mod gloss;
 pub mod mode;
@@ -18,5 +19,6 @@ pub mod pending;
 pub mod skill;
 
 pub use answer::WordInfo;
+pub use class::{Classes, Pos};
 pub use explain::{Canned, Explainer, Failure, Slow, Unavailable, Why};
 pub use gloss::{CONTEXT_CHARS, MAX_GLOSS_CHARS, context, word_in};

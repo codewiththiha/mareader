@@ -18,6 +18,7 @@ use mareader_engine::read_aloud::state::{Offer, Speaker};
 use mareader_engine::session::Session;
 use mareader_engine::study::words::Asked;
 use mareader_settings::DictionarySettings;
+use mareader_study::Pos;
 use mareader_workspace::PaneId;
 
 use crate::theme::Tokens;
@@ -47,6 +48,8 @@ struct Card {
     rest: bool,
     /// The word's class and level in its sentence, once the tagger said.
     role: Option<Role>,
+    /// The class its dictionary rows name, once in.
+    dictionary: Option<Pos>,
 }
 
 mareader_engine::impl_card!(Card);
@@ -208,6 +211,7 @@ impl DictUi {
             reply: None,
             rest: false,
             role: None,
+            dictionary: None,
         });
     }
 
@@ -238,16 +242,6 @@ impl DictUi {
         }
         self.card_rect = None;
         true
-    }
-
-    /// The tagger's answer for the open card, if it is still `word`'s.
-    pub fn set_role(&mut self, word: &str, role: Role) {
-        mareader_engine::word_card::set_role(&mut self.card, word, role);
-    }
-
-    /// The role the open card shows, for tests.
-    pub fn card_role(&self) -> Option<&Role> {
-        self.card.as_ref()?.role.as_ref()
     }
 
     /// Whether the open card came from resting on a word, for tests.
@@ -380,6 +374,7 @@ impl DictUi {
                 word: &c.word,
                 reply: c.reply.as_ref(),
                 role: c.role.as_ref(),
+                dictionary: c.dictionary,
                 attached,
                 ai_ready,
                 languages,

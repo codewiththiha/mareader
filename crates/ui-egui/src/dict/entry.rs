@@ -4,6 +4,7 @@ use egui::text::LayoutJob;
 use egui::{Align, FontId, Label, Layout, RichText, TextFormat, Ui, vec2};
 use mareader_dict::{Entry, HUB, WordMatch, fold};
 use mareader_speech::primary;
+use mareader_study::Pos;
 
 use crate::shaped;
 use crate::theme::Tokens;
@@ -64,9 +65,14 @@ pub fn rows(ui: &mut Ui, e: &Entry, t: &Tokens, tags: bool) {
     }
 }
 
+/// A row's part of speech as the one class rule reads it: "verb · noun".
+pub fn tags(e: &Entry) -> String {
+    Pos::spell(e.pos.as_deref().unwrap_or_default())
+}
+
 /// Tags left, "via perfume" right; the tags give way, never the bridge.
 fn meta(ui: &mut Ui, e: &Entry, t: &Tokens, shown: bool) {
-    let tags = if shown { e.tags() } else { String::new() };
+    let tags = if shown { tags(e) } else { String::new() };
     if tags.is_empty() && e.via.is_none() {
         return;
     }

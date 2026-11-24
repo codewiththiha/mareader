@@ -133,6 +133,11 @@ pub enum Event {
         word: String,
         role: mareader_cefr::Role,
     },
+    /// The open word card's dictionary rows named its class.
+    Class {
+        word: String,
+        pos: mareader_study::Pos,
+    },
     /// Dictionary packs changed or lookup replies arrived.
     DictReplies {
         changed: bool,

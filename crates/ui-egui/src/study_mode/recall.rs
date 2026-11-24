@@ -91,7 +91,8 @@ fn recall(pane: PaneId, ask: Ask) -> Action {
     Action::Recall { pane, ask }
 }
 
-/// The tag, the word's band, the tries used and the close button.
+/// The tag, the word's band and class, the tries used and the close
+/// button.
 fn header(ui: &mut Ui, recalling: &Recalling, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
@@ -103,6 +104,13 @@ fn header(ui: &mut Ui, recalling: &Recalling, out: &mut Commands) {
         let band = mareader_cefr::label(recalling.word.band);
         if !band.is_empty() {
             ui.label(RichText::new(band).size(t.text_small).color(t.muted));
+        }
+        if let Some(class) = recalling.class() {
+            ui.label(
+                RichText::new(class.name())
+                    .size(t.text_small)
+                    .color(t.muted),
+            );
         }
         tries(ui, recalling.recall.attempts, &t);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

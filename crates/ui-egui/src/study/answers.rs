@@ -76,6 +76,11 @@ impl StudyUi {
         mareader_engine::word_card::set_role(&mut self.card, word, role);
     }
 
+    /// The dictionary's class for the open card, if it is still `word`'s.
+    pub fn set_class(&mut self, word: &str, pos: mareader_study::Pos) {
+        mareader_engine::word_card::set_class(&mut self.card, word, pos);
+    }
+
     /// Opens the AI Dictionary card for a word already marked by the session.
     pub fn show_explained(
         &mut self,
@@ -97,6 +102,7 @@ impl StudyUi {
             offset: None,
             seen: true,
             role: None,
+            dictionary: None,
         });
     }
 
@@ -120,6 +126,7 @@ impl StudyUi {
             asked: None,
             at: card.at,
             role: card.role.clone(),
+            dictionary: card.dictionary,
             rect: self.card_rect,
         };
         self.stash = Some(card);
@@ -140,6 +147,7 @@ impl StudyUi {
         self.note = None;
         let matches = |c: &Card| c.pane == snap.pane && c.word == snap.word;
         if let Some(mut card) = self.stash.take().filter(matches) {
+            card.dictionary = card.dictionary.or(snap.dictionary);
             if card.role.is_none() {
                 card.role = snap.role;
             }
@@ -170,6 +178,7 @@ impl StudyUi {
             offset: offset.filter(|_| matches!(key, Key::Loose(_))),
             seen: true,
             role: snap.role,
+            dictionary: snap.dictionary,
         });
     }
 
@@ -208,6 +217,7 @@ impl StudyUi {
             offset: None,
             seen: true,
             role: None,
+            dictionary: None,
         });
     }
 }

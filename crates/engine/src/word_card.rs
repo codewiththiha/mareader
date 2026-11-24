@@ -1,16 +1,34 @@
 //! Small state operations shared by the dictionary and study word cards.
+//!
+//! A card's class comes from [`class`] alone, the one rule decks and
+//! recalls follow too ([`Classes`]).
 
 pub use mareader_cefr::Role;
+use mareader_study::Classes;
+pub use mareader_study::Pos;
 use mareader_workspace::PaneId;
 
-/// A word card that can take its word's role.
+/// A word card that can take its word's role and dictionary class.
 pub trait Card {
     fn pane(&self) -> PaneId;
     fn word(&self) -> &str;
     fn set_role(&mut self, role: Role);
+    fn set_class(&mut self, pos: Pos);
 }
 
-/// Implements [`Card`] for a type with `pane`, `word` and `role` fields.
+/// A word card's class: an AI's answer, else the tagger's, else the
+/// dictionary's; `ai` is none on cards no AI answers.
+pub fn class(ai: Option<&str>, role: Option<&Role>, dictionary: Option<Pos>) -> Option<Pos> {
+    let heard = Classes {
+        ai: ai.and_then(Pos::read),
+        tagger: role.and_then(|r| Pos::of_tag(&r.pos)),
+        dictionary,
+    };
+    heard.class()
+}
+
+/// Implements [`Card`] for a type with `pane`, `word`, `role` and
+/// `dictionary` fields.
 #[macro_export]
 macro_rules! impl_card {
     ($type:ty) => {
@@ -26,6 +44,10 @@ macro_rules! impl_card {
             fn set_role(&mut self, role: $crate::word_card::Role) {
                 self.role = Some(role);
             }
+
+            fn set_class(&mut self, pos: $crate::word_card::Pos) {
+                self.dictionary = Some(pos);
+            }
         }
     };
 }
@@ -34,6 +56,13 @@ macro_rules! impl_card {
 pub fn set_role<C: Card>(card: &mut Option<C>, word: &str, role: Role) {
     if let Some(card) = card.as_mut().filter(|card| card.word() == word) {
         card.set_role(role);
+    }
+}
+
+/// Set the dictionary's class only while the card is still `word`'s.
+pub fn set_class<C: Card>(card: &mut Option<C>, word: &str, pos: Pos) {
+    if let Some(card) = card.as_mut().filter(|card| card.word() == word) {
+        card.set_class(pos);
     }
 }
 

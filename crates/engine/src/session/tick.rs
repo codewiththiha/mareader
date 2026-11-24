@@ -117,6 +117,10 @@ impl Session {
             tick.repaint = true;
             self.emit(Event::DictReplies { changed, replies });
         }
+        if let Some((word, Some(pos))) = self.dict.take_card_class() {
+            tick.repaint = true;
+            self.emit(Event::Class { word, pos });
+        }
         if !self.making_word_list() {
             return;
         }

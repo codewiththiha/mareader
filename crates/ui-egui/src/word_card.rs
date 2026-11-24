@@ -10,6 +10,7 @@ use mareader_engine::command::Command;
 use mareader_engine::dict::Action as DictAction;
 use mareader_engine::study::words::Asked;
 use mareader_engine::toast::Toast;
+use mareader_study::Pos;
 use mareader_workspace::PaneId;
 
 use crate::icons::Icon;
@@ -45,6 +46,7 @@ pub struct TabSnapshot {
     pub asked: Option<Asked>,
     pub at: Rect,
     pub role: Option<Role>,
+    pub dictionary: Option<Pos>,
     pub rect: Option<Rect>,
 }
 

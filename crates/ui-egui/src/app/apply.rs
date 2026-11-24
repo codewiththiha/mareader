@@ -196,6 +196,10 @@ impl MareaderApp {
                 self.ui.dict.set_role(&word, role.clone());
                 self.ui.study.set_role(&word, role);
             }
+            Event::Class { word, pos } => {
+                self.ui.dict.set_class(&word, pos);
+                self.ui.study.set_class(&word, pos);
+            }
             Event::DictReplies { changed, replies } => {
                 let exact = !self.settings().dictionary.near;
                 self.ui.dict.set_exact_only(exact);

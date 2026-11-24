@@ -41,53 +41,6 @@ impl Entry {
             &self.word
         }
     }
-
-    /// The part of speech, readable: "v,n" is "verb · noun".
-    pub fn tags(&self) -> String {
-        let cell = self.pos.as_deref().unwrap_or_default();
-        let tags: Vec<&str> = cell
-            .split([',', ';', '/'])
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(tag)
-            .collect();
-        tags.join(" · ")
-    }
-}
-
-/// A pack's tag spelled out; an unknown one is shown as written.
-fn tag(raw: &str) -> &str {
-    match raw.to_ascii_lowercase().as_str() {
-        "n" | "ns" | "noun" => "noun",
-        "name" | "proper_noun" => "name",
-        "v" | "vs" | "verb" => "verb",
-        "adj" | "adjs" | "adjective" => "adjective",
-        "adv" | "advs" | "adverb" | "indefadv" => "adverb",
-        "advpart" => "adverb particle",
-        "pron" | "pers" | "indefpron" | "pronoun" => "pronoun",
-        "possess" => "possessive",
-        "det" | "indefdet" => "determiner",
-        "article" | "indefart" => "article",
-        "prep" => "preposition",
-        "postp" => "postposition",
-        "conj" => "conjunction",
-        "interj" | "intj" => "interjection",
-        "num" => "number",
-        "pref" | "prefix" => "prefix",
-        "suff" | "suffix" => "suffix",
-        "symb" | "symbol" => "symbol",
-        "abbr" => "abbreviation",
-        "prep_phrase" => "prepositional phrase",
-        "aux" => "auxiliary",
-        "cop" => "copula",
-        "phrase" => "phrase",
-        "proverb" => "proverb",
-        "particle" => "particle",
-        "contraction" => "contraction",
-        "counter" => "counter",
-        "other" => "other",
-        _ => raw,
-    }
 }
 
 /// Tight fits first, pack order within a fit; repeated rows show once.
@@ -122,19 +75,6 @@ mod tests {
             fit,
             flipped: false,
         }
-    }
-
-    #[test]
-    fn tags_read_as_words_and_unknown_ones_stay() {
-        assert_eq!(
-            entry("a", "v,n", "", WordMatch::Exact).tags(),
-            "verb · noun"
-        );
-        assert_eq!(entry("a", "Gerund", "", WordMatch::Exact).tags(), "Gerund");
-        let mut bare = entry("a", "", "", WordMatch::Exact);
-        assert_eq!(bare.tags(), "");
-        bare.pos = None;
-        assert_eq!(bare.tags(), "");
     }
 
     #[test]
