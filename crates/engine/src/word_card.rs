@@ -16,12 +16,12 @@ pub trait Card {
     fn set_class(&mut self, pos: Pos);
 }
 
-/// A word card's class: an AI's answer, else the tagger's, else the
+/// A word card's class: the tagger's, else an AI's answer, else the
 /// dictionary's; `ai` is none on cards no AI answers.
 pub fn class(ai: Option<&str>, role: Option<&Role>, dictionary: Option<Pos>) -> Option<Pos> {
     let heard = Classes {
-        ai: ai.and_then(Pos::read),
         tagger: role.and_then(|r| Pos::of_tag(&r.pos)),
+        ai: ai.and_then(Pos::read),
         dictionary,
     };
     heard.class()

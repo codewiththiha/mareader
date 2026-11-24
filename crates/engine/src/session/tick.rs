@@ -1,5 +1,7 @@
 //! One-call frame polling for every engine-owned background job.
 
+use mareader_study::Pos;
+
 use crate::event::Event;
 use crate::library::Out;
 
@@ -101,7 +103,13 @@ impl Session {
             tick.repaint = true;
         }
         if let Some((word, role)) = role {
-            self.emit(Event::Role { word, role });
+            let named = role.as_ref().and_then(|r| Pos::of_tag(&r.pos));
+            if named.is_none() {
+                self.dict.ask_card_class(&word);
+            }
+            if let Some(role) = role {
+                self.emit(Event::Role { word, role });
+            }
         }
         if self.poll_voice_shelf() {
             tick.repaint = true;

@@ -111,13 +111,17 @@ impl Vocab {
     }
 
     /// Asks for the open card's word's role; a newer card's replaces it.
-    pub fn ask_role(&mut self, word: &str, sentence: &str) {
+    ///
+    /// False when no tagger is there to answer.
+    pub fn ask_role(&mut self, word: &str, sentence: &str) -> bool {
         let ticket = self.service.role(word, sentence);
         self.role = ticket.map(|t| (t, word.to_owned()));
+        self.role.is_some()
     }
 
-    /// Takes in answers; the open card's word and role if it came.
-    pub fn poll(&mut self) -> (bool, Option<(String, Role)>) {
+    /// Takes in answers; the open card's word and its role once the
+    /// tagger answered, none inside when it found none.
+    pub fn poll(&mut self) -> (bool, Option<(String, Option<Role>)>) {
         let polled = self.service.poll();
         let mut role = None;
         for (ticket, answer) in polled.roles {
@@ -127,7 +131,7 @@ impl Vocab {
             }
             if let Some((asked, word)) = self.role.take() {
                 match asked == ticket {
-                    true => role = answer.map(|r| (word, r)),
+                    true => role = Some((word, answer)),
                     false => self.role = Some((asked, word)),
                 }
             }

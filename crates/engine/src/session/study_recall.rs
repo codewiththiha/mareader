@@ -81,9 +81,9 @@ impl Session {
         let by = self.study_mode.judge().map(|j| j.by()).unwrap_or_default();
         let writer = self.study_mode.writer();
         let tag = self.vocab.ask_tag(&word.form, &word.sentence);
-        let class = self.dict.ask_class(&word.key.lemma);
         let mut recalling = Recalling::new(pane, word, writer, by);
-        recalling.asks = (tag, class);
+        recalling.asks.0 = tag;
+        look_up(&mut recalling, &mut self.dict);
         self.study_mode.open_recall(recalling);
         Ok(true)
     }
@@ -176,10 +176,19 @@ impl Session {
         };
         let heard = hear(recalling, &mut self.vocab, &mut self.dict);
         let (moved, done) = recalling.step(ask, writer.as_ref());
+        look_up(recalling, &mut self.dict);
         if let Some(done) = done {
             self.study_recall_save(pane, done);
         }
         moved || heard
+    }
+}
+
+/// Asks the dictionary the word's class once no other source named one.
+fn look_up(recalling: &mut Recalling, dict: &mut crate::dict::Service) {
+    if recalling.wants_dictionary() {
+        recalling.asks.1 = dict.ask_class(&recalling.word.key.lemma);
+        recalling.looked_up = true;
     }
 }
 

@@ -95,15 +95,20 @@ impl Session {
         self.vocab.set_inline(self.inline);
     }
 
-    /// Asks the tagger for `word`'s role in `sentence`, and its dictionary
-    /// rows for its class: a card's two sources besides an AI.
+    /// Asks the tagger for `word`'s role in `sentence`; with no tagger,
+    /// asks its dictionary rows for its class at once.
+    ///
+    /// The dictionary is otherwise asked only when the tagger's answer
+    /// names no class (`tick_vocab_and_audio`).
     pub fn ask_role(&mut self, word: &str, sentence: &str) {
-        self.vocab.ask_role(word, sentence);
-        self.dict.ask_card_class(word);
+        if !self.vocab.ask_role(word, sentence) {
+            self.dict.ask_card_class(word);
+        }
     }
 
-    /// Polls vocabulary answers; returns whether pages changed and any role.
-    pub(crate) fn poll_vocab(&mut self) -> (bool, Option<(String, Role)>) {
+    /// Polls vocabulary answers; whether pages changed, and the open
+    /// card's word with the tagger's answer once it came.
+    pub(crate) fn poll_vocab(&mut self) -> (bool, Option<(String, Option<Role>)>) {
         self.vocab.poll()
     }
 

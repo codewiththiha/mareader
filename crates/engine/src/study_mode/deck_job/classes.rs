@@ -1,6 +1,6 @@
 //! Each finished card's class, by the one rule ([`Classes::class`]).
 //!
-//! The AI's class leads, then the tagger's, then the dictionary's. On an
+//! The tagger's class leads, then the AI's, then the dictionary's. On an
 //! AI deck, cards neither named are looked up once; a dictionary silent
 //! for [`MEANING_WAIT`] seconds leaves them without. A class is part of
 //! a card's key, so settling may join two cards into one, or meet a word
@@ -80,8 +80,8 @@ impl DeckJob {
         let dictionary = &self.dictionary;
         let heard = cards.into_iter().map(|(shown, named)| {
             let classes = Classes {
-                ai: named,
                 tagger: shown.card.key.pos,
+                ai: named,
                 dictionary: dictionary.get(&shown.card.key.lemma).copied(),
             };
             (shown, classes)
@@ -150,26 +150,30 @@ mod tests {
         Shown::new(card, meaning.to_owned())
     }
 
-    fn heard(ai: Option<Pos>, tagger: Option<Pos>, dictionary: Option<Pos>) -> Classes {
+    fn heard(tagger: Option<Pos>, ai: Option<Pos>, dictionary: Option<Pos>) -> Classes {
         Classes {
-            ai,
             tagger,
+            ai,
             dictionary,
         }
     }
 
     #[test]
-    fn each_card_keeps_the_first_class_named_ai_tagger_dictionary() {
+    fn each_card_keeps_the_first_class_named_tagger_ai_dictionary() {
         let (n, v, a) = (Some(Pos::Noun), Some(Pos::Verb), Some(Pos::Adjective));
         let cards = vec![
-            (shown("vex", v, "annoy"), heard(n, v, a)),
+            (shown("vex", v, "annoy"), heard(v, n, a)),
             (shown("brisk", None, "quick"), heard(None, None, a)),
-            (shown("ponder", v, "think"), heard(None, v, n)),
+            (shown("ponder", None, "think"), heard(None, v, n)),
             (shown("xyz", None, "?"), heard(None, None, None)),
         ];
         let (out, memorized) = settled(cards, &Known::default());
         let classes: Vec<Option<Pos>> = out.iter().map(|s| s.card.key.pos).collect();
-        assert_eq!(classes, [n, a, v, None]);
+        assert_eq!(
+            classes,
+            [v, a, v, None],
+            "the tagger's verb beats the AI's noun"
+        );
         assert_eq!(memorized, 0);
     }
 
@@ -177,9 +181,9 @@ mod tests {
     fn cards_the_same_once_settled_join_and_memorized_ones_leave() {
         let (n, v) = (Some(Pos::Noun), Some(Pos::Verb));
         let cards = vec![
-            (shown("visit", v, "go see"), heard(None, v, n)),
+            (shown("visit", v, "go see"), heard(v, None, n)),
             (shown("visit", None, ""), heard(None, None, v)),
-            (shown("visit", n, "a trip"), heard(None, n, n)),
+            (shown("visit", n, "a trip"), heard(n, None, n)),
             (shown("solace", None, "comfort"), heard(None, None, n)),
         ];
         let known = Known::of([Key::new("solace", n)]);

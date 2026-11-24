@@ -78,8 +78,8 @@ impl DeckJob {
         let meaning = |card: &Card| {
             let entries = found.get(&card.key.lemma).map_or(&[][..], Vec::as_slice);
             let heard = Classes {
-                ai: None,
                 tagger: card.key.pos,
+                ai: None,
                 dictionary: dictionary.get(&card.key.lemma).copied(),
             };
             meaning_of(entries, heard.class())

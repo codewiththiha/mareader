@@ -1,12 +1,13 @@
 //! A word's class, and the one rule every card's class follows.
 //!
-//! Three sources may name it: an AI asked about the word, the tagger
-//! reading it in its sentence, and a dictionary's part-of-speech cell.
+//! Three sources may name it: the tagger reading it in its sentence, an AI
+//! asked about the word, and a dictionary's part-of-speech cell.
 //! [`Classes::class`] takes the first that says one, in that order. The
-//! tagger beats a dictionary since it reads the word where it stands; a
-//! dictionary lists every class a word may take. Cards without an AI
-//! leave its slot empty. Packs write their cells short or long ("v",
-//! "verb", "Adj.", "n, v"); [`Pos::read`] reads them all alike.
+//! tagger leads because it is the same reading wherever the word is asked;
+//! the AI is asked a class only where the tagger had none, and a
+//! dictionary, which lists every class a word may take, comes last. Packs
+//! write their cells short or long ("v", "verb", "Adj.", "n, v");
+//! [`Pos::read`] reads them all alike.
 
 use serde::{Deserialize, Serialize};
 
@@ -214,10 +215,10 @@ fn read_part(part: &str) -> Option<Pos> {
 /// What each source says of one word's class; strongest first.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Classes {
-    /// An AI's answer, on cards an AI wrote.
-    pub ai: Option<Pos>,
     /// The tagger's reading in the word's sentence.
     pub tagger: Option<Pos>,
+    /// An AI's answer, on cards an AI wrote.
+    pub ai: Option<Pos>,
     /// A dictionary's cell for the word.
     pub dictionary: Option<Pos>,
 }
@@ -225,7 +226,7 @@ pub struct Classes {
 impl Classes {
     /// The class a card shows: the first source that names one.
     pub fn class(self) -> Option<Pos> {
-        self.ai.or(self.tagger).or(self.dictionary)
+        self.tagger.or(self.ai).or(self.dictionary)
     }
 }
 
@@ -312,15 +313,18 @@ mod tests {
     }
 
     #[test]
-    fn the_ai_leads_then_the_tagger_then_the_dictionary() {
+    fn the_tagger_leads_then_the_ai_then_the_dictionary() {
         let all = Classes {
-            ai: Some(Pos::Adjective),
             tagger: Some(Pos::Verb),
+            ai: Some(Pos::Adjective),
             dictionary: Some(Pos::Noun),
         };
-        assert_eq!(all.class(), Some(Pos::Adjective));
-        let no_ai = Classes { ai: None, ..all };
-        assert_eq!(no_ai.class(), Some(Pos::Verb));
+        assert_eq!(all.class(), Some(Pos::Verb));
+        let no_tagger = Classes {
+            tagger: None,
+            ..all
+        };
+        assert_eq!(no_tagger.class(), Some(Pos::Adjective));
         let only_dictionary = Classes {
             dictionary: Some(Pos::Noun),
             ..Classes::default()

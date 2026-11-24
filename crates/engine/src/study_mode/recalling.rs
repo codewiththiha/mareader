@@ -79,6 +79,8 @@ pub struct Recalling {
     pub heard: Classes,
     /// Their asks while out: the tagger's, then the dictionary's.
     pub(crate) asks: (Option<TagTicket>, Option<ClassTicket>),
+    /// The dictionary was asked; it is asked once at most.
+    pub(crate) looked_up: bool,
     /// The back being written, and who was asked, whose cache it goes in.
     back_job: Option<(String, Box<CardJob>)>,
     judging: Option<Box<JudgeJob>>,
@@ -97,6 +99,7 @@ impl Recalling {
             by,
             heard: Classes::default(),
             asks: (None, None),
+            looked_up: false,
             back_job: None,
             judging: None,
         };
@@ -162,11 +165,18 @@ impl Recalling {
         }
     }
 
-    /// The class the word is kept under: its back's, else the tagger's,
+    /// The class the word is kept under: the tagger's, else its back's,
     /// else the dictionary's.
     pub fn class(&self) -> Option<Pos> {
         let ai = self.back.as_ref().and_then(|b| b.pos);
         Classes { ai, ..self.heard }.class()
+    }
+
+    /// Whether the dictionary is the one source left to ask: the tagger
+    /// and the back are in and named no class, and it was not yet asked.
+    pub(crate) fn wants_dictionary(&self) -> bool {
+        let others_done = self.asks.0.is_none() && !self.writing_back();
+        others_done && self.class().is_none() && !self.looked_up
     }
 
     /// Whether a back or a verdict is still coming.
@@ -258,6 +268,24 @@ mod tests {
             again.back.is_some() && !again.busy(),
             "a kept back is not asked again"
         );
+    }
+
+    #[test]
+    fn the_dictionary_is_asked_only_when_tagger_and_back_name_no_class() {
+        let ready = writer(Practice::Ready);
+        let mut r = Recalling::new(PaneId(1), word(), Some(ready.clone()), String::new());
+        r.asks.0 = Some(TagTicket(1));
+        assert!(!r.wants_dictionary(), "the tagger is still out");
+        r.asks.0 = None;
+        assert!(!r.wants_dictionary(), "the back is still being written");
+        r.step(true, Some(&ready));
+        assert!(r.wants_dictionary(), "neither named a class");
+        r.looked_up = true;
+        assert!(!r.wants_dictionary(), "asked once at most");
+        let mut tagged = Recalling::new(PaneId(1), word(), None, String::new());
+        tagged.heard.tagger = Some(Pos::Adjective);
+        assert!(!tagged.wants_dictionary(), "the tagger named it");
+        assert_eq!(tagged.class(), Some(Pos::Adjective));
     }
 
     #[test]

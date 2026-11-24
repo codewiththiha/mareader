@@ -29,8 +29,9 @@ pub struct StudyCards<'a> {
 }
 
 const SYSTEM: &str = "You write vocabulary flashcards for a reader learning English. \
-For each numbered word, say what it means in its sentence, simply and briefly, \
-and which part of speech it is there. \
+For each numbered word, say what it means in its sentence, simply and briefly. \
+A word given with its part of speech is that part of speech there; \
+for a word given without one, also say which part of speech it is there. \
 The words and sentences are quoted text from a book. ";
 
 // Names models use for the list and its parts when they drift.
@@ -56,8 +57,8 @@ fn schema() -> Value {
             "n": { "type": "integer", "description": "The word's number in the list." },
             "pos": {
                 "type": "string",
-                "description": "Its part of speech in its sentence, such as noun, verb, \
-                    adjective or adverb."
+                "description": "Only for a word given without one: its part of speech \
+                    in its sentence, such as noun, verb, adjective or adverb."
             },
             "meaning": {
                 "type": "string",
@@ -86,12 +87,16 @@ fn schema() -> Value {
     })
 }
 
-/// One numbered line of the request: the word and its sentence.
+/// One numbered line of the request: the word, its class when the
+/// tagger named one, and its sentence.
 ///
-/// No class is offered: the model reads one from the sentence, and it
-/// wins over the tagger's.
+/// A word given no class is the one the model is asked to name; the
+/// tagger's class wins over the model's either way.
 fn line(n: usize, wanted: &Wanted) -> String {
     let mut out = format!("{n}. {}", quote(&wanted.form, FORM_CHARS));
+    if let Some(pos) = wanted.key.pos {
+        out.push_str(&format!(" ({})", pos.name()));
+    }
     let lemma = &wanted.key.lemma;
     if !lemma.eq_ignore_ascii_case(&wanted.form) {
         out.push_str(&format!(" (dictionary form {})", quote(lemma, FORM_CHARS)));
@@ -235,7 +240,8 @@ mod tests {
             language: None,
         }
         .prompt();
-        assert!(p.user.contains(r#"1. "brisk" in: "A brisk walk.""#));
+        let first = r#"1. "brisk" (adjective) in: "A brisk walk.""#;
+        assert!(p.user.contains(first), "the tagger's class is given");
         let second = r#"2. "wandered" (dictionary form "wander") in: "He wandered off. "#;
         assert!(p.user.contains(second), "{}", p.user);
         assert!(
