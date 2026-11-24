@@ -4,6 +4,7 @@
 use super::*;
 use crate::study_mode::{Pane, menu::Look, recall};
 use egui::Context;
+#[cfg(not(target_arch = "wasm32"))]
 use mareader_assist::SampleCards;
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, Ask};
@@ -176,6 +177,8 @@ fn practice(app: &mut MareaderApp, value: &str) -> Result<(), String> {
         _ => Practice::parse(value).ok_or(hint)?,
     };
     match value {
+        // A browser has no assist crate; there `ai` writes as `ready` does.
+        #[cfg(not(target_arch = "wasm32"))]
         "ai" => app.session.study_set_cards(Arc::new(SampleCards)),
         _ => app.session.study_set_cards(Arc::new(practice)),
     }
