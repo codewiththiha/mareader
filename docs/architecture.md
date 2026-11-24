@@ -2,8 +2,8 @@
 
 > **Status:** engine-first · **Last updated:** 2026-11-15
 
-mareader2 delivers what mareader does — the same features, the same reading
-experience, the blend backdrop, panes, appearance, library and study tools — as
+mareader2 delivers what mareader does (the same features, the same reading
+experience, the blend backdrop, panes, appearance, library and study tools) as
 one native Rust process: egui for the interface, wgpu for drawing, hayro for
 PDF and parley for EPUB.
 
@@ -80,8 +80,8 @@ The rules (enforced with the eight laws in `AGENTS.md` § Layering and ADR 0007)
 egui is immediate mode: every frame, the UI is a function of the state. Write
 it that way rather than as a web app in egui syntax.
 
-**State.** Durable application state has one owner: `engine::Session` (L5),
-holding plain structs — settings, the pane tree, focus, route, open documents
+**State.** Durable application state has one owner: `engine::Session` (L5).
+It holds plain structs: settings, the pane tree, focus, route, open documents
 and per-pane reading places, the library, marks and notes, read-aloud, study
 and page-AI results, and running background jobs. `MareaderApp` holds
 `{ session, ui }`: `ui` (`UiState`) keeps only window-ephemeral state (open

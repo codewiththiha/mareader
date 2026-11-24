@@ -241,8 +241,8 @@ XML, CPU image rasterisation and icon texture uploads.
 Epaint 0.36.2 nevertheless differs from the pack contract in important ways:
 
 - `PathShape` fill supports convex polygons only;
-- its ordinary open stroke has no selectable round cap—the tessellator says a
-  circular end would be future work;
+- its ordinary open stroke has no selectable round cap (the tessellator says a
+  circular end would be future work);
 - joins are mitered or cut at sharp corners, not SVG round joins;
 - adding separate circles to imitate round caps/joins over-blends translucent
   parts instead of applying opacity to their composited result;
@@ -418,7 +418,7 @@ Build the atlas away from the UI pass:
 6. reject a stale result after eviction, DPI change or cache teardown.
 
 The first run can use the current per-frame path for missing cells while the
-worker warms the atlas, ensuring interaction never waits. Later runs change
+worker warms the atlas, so interaction never waits. Later runs change
 only UVs. Frequently visible title-bar packs may be warmed during an already
 scheduled idle pass, but all 104 packs must not be generated eagerly.
 
@@ -464,8 +464,8 @@ Optimize those call sites only after repaint-cause and scoped timing evidence.
 
 ### Keep layout stable
 
-Allocate the final control rectangle once. Animate paint inside it—opacity,
-position, scale, colour, underline width—not the surrounding layout unless the
+Allocate the final control rectangle once. Animate paint inside it (opacity,
+position, scale, colour, underline width), not the surrounding layout unless the
 layout change itself carries meaning. This prevents clipping, text movement and
 extra reflow. The icon provider's padded fixed box and the formula-bar target
 height are examples of explicit geometry.

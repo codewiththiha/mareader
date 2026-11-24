@@ -11,7 +11,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params, params_from_ite
 
 /// Marks a finished build; a table without it is rebuilt.
 const LAYOUT: i64 = 1;
-/// More rows than this is not the dataset but a mistake.
+/// More rows than this is a mistake.
 const MAX_ROWS: i64 = 5_000_000;
 /// Words asked per query, far below SQLite's bind limit.
 const CHUNK: usize = 500;

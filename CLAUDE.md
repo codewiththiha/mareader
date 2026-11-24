@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# mareader2 — agent quick start
+# mareader2: agent quick start
 
 Binding rules live in [`AGENTS.md`](AGENTS.md) (which always wins). Repository
 layout, build commands, and the screenshot look loop live in

@@ -2,7 +2,7 @@
 //!
 //! A table is the whole vocabulary of one field: what `json::one_of` reads,
 //! and what a refusal lists when the name a script sent is not in it. The
-//! names are the ids' case — dotted and kebab — so a script reads the same
+//! names are the ids' case (dotted and kebab), so a script reads the same
 //! words in an id, in a param's kind and in the answer to a mistake.
 
 use mareader_library::Pen;

@@ -11,7 +11,7 @@ use rusqlite::{Connection, params};
 use crate::search::fold;
 use crate::store::{INDEXES, LAYOUT, SCHEMA};
 
-/// More rows than this is not a dictionary but a mistake.
+/// More rows than this is a mistake.
 const MAX_ROWS: i64 = 5_000_000;
 /// A longer cell is cut; no definition needs more.
 const MAX_CELL: usize = 2_000;

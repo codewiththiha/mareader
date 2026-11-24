@@ -9,8 +9,8 @@ in `CLAUDE.md`); if anything disagrees, **this file wins.**
 
 mareader2 is a native rewrite of [mareader](https://github.com/codewiththiha/mareader)
 (Tauri + Leptos + pdf.js) in Rust with egui and wgpu. The goal is every one of
-mareader's capabilities — reading, panes, blend, appearance, library, study
-tools — in a codebase that is smaller, faster, leaner on memory and easier to
+mareader's capabilities (reading, panes, blend, appearance, library, study
+tools) in a codebase that is smaller, faster, leaner on memory and easier to
 maintain. It reads PDF (hayro) and EPUB (parley); EPUB replaces mareader's txt
 and md formats.
 
@@ -123,7 +123,7 @@ records the engine-first decision.
 4. **Two enums.** `engine::Command` holds every application action;
    `ui_egui::UiCommand` holds chrome-only actions (popovers, focus, captions,
    OS file dialogs). `ui-egui` never matches over `engine::Command`.
-5. **No toolkit below L6.** No crate at L0–L5 — and never `apps/mareader-cli` —
+5. **No toolkit below L6.** No crate at L0–L5 (and never `apps/mareader-cli`)
    may depend on or name `egui`, `eframe`, `egui_extras`, `egui_kittest`,
    `winit`, `wgpu` or `rfd`, even in dev-dependencies. Pass `now: f64`,
    `engine::Waker` and plain bounds/coordinates instead.
@@ -469,13 +469,13 @@ Compile nothing locally. Run the cheap checks: `comment_check`,
 ## Commits and pull requests
 
 - Conventional commits: `type(scope): summary`, imperative, lower case, no
-  trailing period, subject ≤ 50 characters — GitHub's own truncation sits near
+  trailing period, subject ≤ 50 characters. GitHub's own truncation sits near
   72, so 50 is what survives a log line, a UI row and a checklist cell intact.
   Enforced rather than remembered: `python3 tools/commit_check.py --install`
   writes a `commit-msg` hook that refuses an over-long subject, and
   `python3 tools/commit_check.py --range main..HEAD` audits history. The hook
   is per checkout, so a fresh clone installs it once; `--status` reports
-  whether it is armed — git skips a non-executable hook in silence.
+  whether it is armed: git skips a non-executable hook in silence.
 - Every commit builds alone, so `git bisect` never stops on a broken one:
   a change spanning crates lands in one commit, or in an order that builds.
   CI's `Build / each commit` job runs `cargo check` on every pushed commit.

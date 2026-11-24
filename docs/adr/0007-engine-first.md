@@ -2,9 +2,9 @@
 
 - **Status:** accepted, 2026-11-15
 - **Context:** By v0.0.5 the workspace already kept its low-level domain crates
-  (L0–L3) free of egui, yet application behaviour — settings mutations, pane
+  (L0–L3) free of egui, yet application behaviour (settings mutations, pane
   tree ownership, document opens, reading places, library commands, marks and
-  notes, read-aloud, study lookups, AI jobs and persistence — lived in the
+  notes, read-aloud, study lookups, AI jobs and persistence) lived in the
   front-end crate (`crates/ui`, now `crates/ui-egui`). A headless test, script
   runner or second client could not drive the application without linking egui,
   eframe and wgpu. The engine-first architecture lifts that application layer
@@ -32,8 +32,8 @@
        `ui_egui::UiCommand` holds chrome-only actions (popovers, focus, window
        caption controls, OS file dialogs). `ui-egui` never matches over
        `engine::Command`.
-    5. **No toolkit below L6.** No crate at L0–L5 — and never `apps/mareader-cli`
-       — may depend on or name `egui`, `eframe`, `egui_extras`, `egui_kittest`,
+    5. **No toolkit below L6.** No crate at L0–L5 (and never `apps/mareader-cli`)
+       may depend on or name `egui`, `eframe`, `egui_extras`, `egui_kittest`,
        `winit`, `wgpu` or `rfd`, even in dev-dependencies. Time enters as
        `now: f64`, wakeups travel through `engine::Waker`, and geometry uses
        plain `Bounds` / `(f32, f32)` values.

@@ -1,7 +1,7 @@
 //! The forms a script sends for a family's asks: an id, a name, its params.
 //!
-//! Five commands carry an enum of their own — the dictionary's, the study
-//! tools', the page AI's, the library's and the AI settings' — so a script
+//! Five commands carry an enum of their own (the dictionary's, the study
+//! tools', the page AI's, the library's and the AI settings'), so a script
 //! spells the ask out in an `"action"` and sends that ask's keys beside it.
 //! The names listed here are the ones a script can send; an ask whose params
 //! are not a script's to make says so, and names the ones that are.

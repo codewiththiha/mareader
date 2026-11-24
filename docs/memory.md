@@ -566,7 +566,7 @@ PDF page-tree enumeration remains eager, with rasters requested on demand.
   names `eframe::Storage`; it moves the browser's two keys into those files once,
   and only when neither file exists yet and the store still holds a key.
 - **When it writes:** the cadence is `save::EVERY`, half a second, armed by
-  `Save::touch` — a dial moved, a page turned, a library write — so the next frame
+  `Save::touch` (a dial moved, a page turned, a library write), so the next frame
   more than half a second past the last one carries it to disk, and `on_exit`
   flushes whatever is outstanding. A refused write re-arms the flag instead of
   dropping it, and the refusal surfaces as a toast rather than a dialog.

@@ -1,6 +1,6 @@
 //! Where a pane is in its document: the reading half of a view.
 //!
-//! This is what a reopened window and a headless client both need — which
+//! This is what a reopened window and a headless client both need: which
 //! page, how far through, the book it reads as, how it is turned. The
 //! geometry a front end needs to draw it (scroll offsets, laid-out rects,
 //! textures) and the ids of what is selected stay above the line.

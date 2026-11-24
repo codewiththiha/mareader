@@ -3,7 +3,7 @@
 //! `set_option`'s keys began as a private string channel into the front end
 //! (finding F7): a shot, an example or a query string named a dial and the
 //! window's own code turned it into state. What most of those keys set is the
-//! engine's — a setting by its dotted path, as `Command::SetField` — so the
+//! engine's (a setting by its dotted path, as `Command::SetField`), so the
 //! parsing lives here, where a front end, a command line and a test all meet
 //! the same answer. A key that reads what is set so far reads it here, from the
 //! session it arrives with; a key that reads the books asks the library, which

@@ -2,7 +2,7 @@
 //!
 //! [`Host`] is all the engine asks of a machine: where its own two files live,
 //! where files that can be built again live, the clipboard, the file manager,
-//! and the system's own opener. An app answers it — the platform on a desktop,
+//! and the system's own opener. An app answers it: the platform on a desktop,
 //! a browser's own table on the web, [`Fake`] in a test. Nothing here names a
 //! toolkit and nothing here starts a thread: how a machine does a thing is
 //! that machine's business (`docs/architecture.md` § Layers, Law 6).

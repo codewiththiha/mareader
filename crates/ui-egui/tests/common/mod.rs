@@ -63,7 +63,7 @@ fn built(
 /// A host with a window's clipboard, as `apps/mareader`'s `Desk` has one.
 ///
 /// A suite reads what the app copied from the harness's own output, so the
-/// engine's fake — which records and reaches no window — is not enough where
+/// engine's fake, which records and reaches no window, is not enough where
 /// a menu copies text. Build the app inside `build_eframe` to get one.
 pub(crate) struct Window {
     ctx: egui::Context,

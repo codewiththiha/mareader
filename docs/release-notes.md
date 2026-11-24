@@ -50,7 +50,7 @@ Short one-sentence overview for GitHub readers.
   heading.
 - **Short, user-facing bullets only.** Use plain `- ` single-line bullets,
   1–5 items per subsection, each ≤ 120 characters, describing what changed for
-  a reader — never internal refactors, crate names, file paths, PR/issue
+  a reader, never internal refactors, crate names, file paths, PR/issue
   numbers, commit SHAs, or benchmark dumps. Put technical detail below
   `<!-- release-summary:end -->`.
 - **Plain prose inside bullets.** Keep inline formatting minimal (no nested
