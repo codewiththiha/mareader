@@ -22,7 +22,7 @@ use crate::library::{self, RunEnd, RunId};
 use crate::page_ai::ledger::Ledger as PageAi;
 use crate::skills::{self, AskId};
 use crate::study::state::{self as words, Key as Ask};
-use crate::study_mode::{Ahead, DeckJob, DeckState, Doing, Run, State};
+use crate::study_mode::{Ahead, DeckJob, DeckState, Doing, Recalling, Run, State};
 
 /// Whose work it is: the whole app's, or one pane's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -48,6 +48,12 @@ pub enum Key {
     Pages { pane: PaneId, batch: u64 },
     /// A pane's continuous run, going on as the reader reads.
     Follow { pane: PaneId, run: u64 },
+    /// The judge checking a recall's answer, by its word's page and start.
+    Judge {
+        pane: PaneId,
+        page: usize,
+        at: usize,
+    },
 }
 
 impl Key {
@@ -58,7 +64,8 @@ impl Key {
             | Self::Skill { pane, .. }
             | Self::Page { pane, .. }
             | Self::Pages { pane, .. }
-            | Self::Follow { pane, .. } => Scope::Pane(pane),
+            | Self::Follow { pane, .. }
+            | Self::Judge { pane, .. } => Scope::Pane(pane),
             Self::Organize { .. } => Scope::Global,
         }
     }
@@ -127,6 +134,7 @@ impl Activity {
             (Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. }, _) => {
                 format!("Finished {}", self.range)
             }
+            (Key::Judge { .. }, _) => format!("Answer checked · {}", self.range),
         }
     }
 
@@ -140,6 +148,7 @@ impl Activity {
             Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. } => {
                 format!("Couldn’t finish {}", self.range)
             }
+            Key::Judge { .. } => format!("Couldn’t check your answer · {}", self.range),
         }
     }
 
@@ -153,16 +162,45 @@ impl Activity {
             Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. } => {
                 format!("Stopped {}", self.range)
             }
+            Key::Judge { .. } => format!("Stopped checking {}", self.range),
         }
     }
 }
 
 /// The AI's work on every studying pane's cards, each pane's gate first.
 pub fn of_study(state: &State) -> Vec<Activity> {
-    state
-        .runs()
-        .flat_map(|(pane, run)| of_run(pane, run))
-        .collect()
+    let judging = |pane| state.recalling(pane).and_then(judge);
+    let jobs = |(pane, run)| of_run(pane, run).into_iter().chain(judging(pane));
+    state.runs().flat_map(jobs).collect()
+}
+
+/// The judge checking `recalling`'s answer, while it does.
+fn judge(recalling: &Recalling) -> Option<Activity> {
+    let queued = recalling.judging()?;
+    let word = &recalling.word;
+    let range = format!("“{}”", word.form);
+    let (said, stage) = match queued {
+        true => (format!("Waiting for the model · {range}"), Stage::Queued),
+        false => (
+            format!("Checking your answer · {range}"),
+            Stage::Running(None),
+        ),
+    };
+    Some(Activity {
+        key: Key::Judge {
+            pane: recalling.pane,
+            page: word.page,
+            at: word.chars.start,
+        },
+        task: TaskId::StudyJudge,
+        said,
+        range,
+        page: word.page,
+        keeps: true,
+        told: false,
+        asks: false,
+        stage,
+    })
 }
 
 /// The library's AI organizer, while it plans or files.
@@ -259,6 +297,15 @@ pub fn ending(owners: Owners<'_>, key: Key) -> Ending {
         Key::Skill { ask, .. } if skills.get(ask).is_some() => Ending::Quiet,
         Key::Skill { .. } => Ending::Stopped,
         Key::Page { .. } | Key::Pages { .. } | Key::Follow { .. } => pages::ending(pages, key),
+        Key::Judge { pane, page, at } => {
+            let same = |r: &&Recalling| r.word.page == page && r.word.chars.start == at;
+            match study.recalling(pane).filter(same) {
+                Some(r) if r.failure.is_some() => Ending::Failed,
+                Some(_) => Ending::Landed,
+                // Closing the recall, or study mode going off, drops its judge.
+                None => Ending::Stopped,
+            }
+        }
     }
 }
 

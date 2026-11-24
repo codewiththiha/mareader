@@ -6,6 +6,7 @@ use crate::study_mode::{Pane, menu::Look, recall};
 use egui::Context;
 #[cfg(not(target_arch = "wasm32"))]
 use mareader_assist::SampleCards;
+use mareader_engine::activity::Key;
 use mareader_engine::command::Command;
 use mareader_engine::study_mode::{Action, Ask};
 use mareader_settings::{Provider, TaskId};
@@ -47,6 +48,10 @@ impl MareaderApp {
             if let Some(recalling) = state.recalling(id) {
                 let word = [(recalling.word.page, recalling.word.chars.clone())];
                 if let Some(at) = docs.spans_rect(id, &word) {
+                    if at.intersects(rect) {
+                        let (page, at) = (recalling.word.page, recalling.word.chars.start);
+                        crate::activity::seen::in_view(ctx, Key::Judge { pane: id, page, at });
+                    }
                     let draft = &mut self.ui.study_mode.recall;
                     recall::show(ctx, recalling, (at, rect), draft, out);
                 }

@@ -267,6 +267,11 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   continuous run always one, with *Continue* when it asks. Cancel stops a
   rewrite at once (`page_ai::Action::StopRun`) with a toast. The old pill
   at the pane's bottom is gone.
+- **The judge** joins it (`Key::Judge`): while it checks a recall's
+  answer and the recall's word is off screen, a line says *Checking your
+  answer · “brisk”* (*Waiting for the model* while queued). View goes back
+  to the word; Cancel asks to turn study mode off, as a deck's does.
+  Closing the recall drops the judge, with a *Stopped checking* toast.
 - **Toasts rise above it** (`stack::toast_lift`): a toast never covers
   a stack, nor waits behind it, so a failure's toast shows with its red
   line.

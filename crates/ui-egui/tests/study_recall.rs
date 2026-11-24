@@ -1,6 +1,6 @@
 //! Reactive study mode's recall, headless: a shaded word clicked, answered
-//! wrong then right, a judge that fails, an answer revealed, and the Study
-//! mode settings tab.
+//! wrong then right, a judge that fails, an answer revealed, a judge in the
+//! AI stack, and the Study mode settings tab.
 
 use std::time::Duration;
 
@@ -12,6 +12,7 @@ use mareader_engine::settings::Tab;
 use mareader_engine::study_mode::Recalling;
 use mareader_study::mode::{Mode, Outcome, Phase};
 use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::activity::stack::STACK;
 use mareader_ui_egui::study_mode::recall::{AGAIN, CANCEL, CHECK, GOT_IT, MEMORIZED, UNSURE};
 use mareader_ui_egui::ui_command::Sent;
 use mareader_workspace::PaneId;
@@ -166,4 +167,21 @@ fn the_study_mode_tab_shows_each_group() {
     }
     let ask = h.query_all_by_label_contains("Ask before adding").count();
     assert!(ask > 0, "the Reactive switch");
+}
+
+/// PROGRESS.md row 9: a judge at work while its word is away has a line.
+#[test]
+fn a_judge_out_of_view_works_in_the_ai_stack() {
+    let (mut h, pane, _shelves) = recalling("silent");
+    h.state_mut().set_option("recall", "quick:right").unwrap();
+    h.run_steps(10);
+    let judging = recall(&h, pane).and_then(Recalling::judging);
+    assert_eq!(judging, Some(false), "the judge works on it");
+    h.state_mut()
+        .queue(Sent::Engine(Command::GoTo { pane, page: 4 }));
+    h.run_steps(20);
+    assert!(recall(&h, pane).is_some(), "the recall waits");
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+    h.get_by_label_contains("Checking your answer · “quick”");
 }

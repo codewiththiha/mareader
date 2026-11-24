@@ -92,7 +92,8 @@ impl MareaderApp {
     fn press_activity(&mut self, button: Button, key: Key, now: f64, out: &mut Commands) {
         match (button, key) {
             (Button::View, Key::Cards { pane, .. } | Key::Page { pane, .. })
-            | (Button::View, Key::Pages { pane, .. } | Key::Follow { pane, .. }) => {
+            | (Button::View, Key::Pages { pane, .. } | Key::Follow { pane, .. })
+            | (Button::View, Key::Judge { pane, .. }) => {
                 if let Some(page) = self.ui.activity.view(key, now) {
                     out.push(Sent::Engine(Command::GoTo { pane, page }));
                 }
@@ -101,7 +102,9 @@ impl MareaderApp {
                 self.ui.activity.view(key, now);
                 out.push(Sent::Ui(UiCommand::ShowLibrary));
             }
-            (Button::Cancel, Key::Cards { pane, .. }) => self.ui.study_mode.ask_off(pane),
+            (Button::Cancel, Key::Cards { pane, .. } | Key::Judge { pane, .. }) => {
+                self.ui.study_mode.ask_off(pane);
+            }
             (Button::View, Key::Explain { pane, ask }) => {
                 let page = self.ui.activity.view(key, now);
                 if let (Some(page), Ask::Mark(mark)) = (page, ask) {

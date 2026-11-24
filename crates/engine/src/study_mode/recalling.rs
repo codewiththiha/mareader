@@ -158,6 +158,12 @@ impl Recalling {
         self.back_job.is_some() || self.judging.is_some()
     }
 
+    /// Whether the judge works on an answer: none when not judging, else
+    /// whether it waits in line for its model.
+    pub fn judging(&self) -> Option<bool> {
+        self.judging.as_ref().map(|job| job.queued())
+    }
+
     /// Whether the word's back is still being written.
     pub fn writing_back(&self) -> bool {
         self.back_job.is_some()
