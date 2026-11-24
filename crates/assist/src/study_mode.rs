@@ -1,18 +1,20 @@
-//! Study mode's cards: one request writes the backs of a whole deck.
+//! Study mode's cards: one request writes the backs of a deck's words.
 //!
-//! Each word is numbered and quoted with the sentence the book used it in;
-//! the answer names cards by number, and is read forgivingly: drifting
-//! field names, a bare list, or cards by word instead of by number.
+//! A deck with more words than the model's Cards per request is cut into
+//! several requests before it gets here. Each word is numbered and quoted
+//! with the sentence the book used it in; the answer names cards by
+//! number, and is read forgivingly: drifting field names, a bare list, or
+//! cards by word instead of by number.
 
 use mareader_study::Pos;
-use mareader_study::mode::{Wanted, Written};
+use mareader_study::mode::{PER_REQUEST_MAX, Wanted, Written};
 use serde_json::{Map, Value, json};
 
 use crate::prompt::{AS_DATA, JSON_ONLY, Prompt, bilingual, quote};
 use crate::task::{MEANING, POS, SYNONYMS, Task, USAGES, field, list, text};
 
 /// Words one request asks about at most; the rest get no back.
-pub const MAX_WORDS: usize = 30;
+pub const MAX_WORDS: usize = PER_REQUEST_MAX as usize;
 /// Characters of a word's sentence the model sees.
 const SENTENCE_CHARS: usize = 320;
 const FORM_CHARS: usize = 48;

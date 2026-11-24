@@ -1,15 +1,17 @@
 //! Study mode's card writer and judge, off the UI thread.
 //!
-//! A deck's backs come in one request, and a recall's verdict in another.
-//! Each goes through the dispatcher: decks written ahead wait their turn as
-//! long as it takes, and the judge goes before them. Dropping a job frees
-//! its place.
+//! A deck's backs come in requests of the cards' model's Cards per request
+//! (the engine cuts them), and a recall's verdict in another. Each goes
+//! through the dispatcher, which runs as many at once as the model takes:
+//! decks written ahead wait their turn as long as it takes, and the judge
+//! goes before them. Dropping a job frees its place.
 
 use std::sync::Arc;
 
 use mareader_settings::TaskId;
 use mareader_study::mode::{
-    Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, Wanted, Written,
+    Attempt, CardJob, CardWriter, Judge, JudgeJob, Judged, PER_REQUEST, PER_REQUEST_MAX, Wanted,
+    Written,
 };
 
 use super::Assist;
@@ -45,6 +47,14 @@ impl CardWriter for AiCards {
         let now = self.0.followed();
         let language = now.ai.study_language().unwrap_or("English");
         format!("{}|{language}", now.by(TaskId::StudyCards))
+    }
+
+    fn per_request(&self) -> usize {
+        let route = self.0.followed().route(TaskId::StudyCards);
+        let set = route
+            .first()
+            .map_or(PER_REQUEST, |s| s.preset.cards_per_request);
+        usize::from(set.clamp(1, PER_REQUEST_MAX))
     }
 
     fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {

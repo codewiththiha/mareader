@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use mareader_study::mode::{PER_REQUEST, PER_REQUEST_MAX};
 use serde::{Deserialize, Serialize};
 
 use crate::ai_task::{Class, Routes, TaskId, known, prune};
@@ -162,6 +163,9 @@ pub struct ModelPreset {
     pub model: String,
     /// Tasks at once on each usable key; keyless, in all.
     pub at_once: u8,
+    /// Study-card words one request asks this model; a deck with more is
+    /// cut into several (`mareader_study::mode::chunks`).
+    pub cards_per_request: u8,
 }
 
 impl Default for ModelPreset {
@@ -172,6 +176,7 @@ impl Default for ModelPreset {
             provider: Provider::default(),
             model: String::new(),
             at_once: 1,
+            cards_per_request: PER_REQUEST,
         }
     }
 }
@@ -208,6 +213,7 @@ impl ModelPreset {
         cut(&mut self.name, Self::NAME_MAX);
         cut(&mut self.model, TEXT_MAX);
         self.at_once = self.at_once.clamp(1, Self::AT_ONCE_MAX);
+        self.cards_per_request = self.cards_per_request.clamp(1, PER_REQUEST_MAX);
     }
 }
 
@@ -529,7 +535,7 @@ impl AiSettings {
             name: ModelPreset::suggested_name(provider, model),
             provider,
             model: model.trim().to_owned(),
-            at_once: 1,
+            ..ModelPreset::default()
         });
         id
     }
@@ -635,6 +641,7 @@ mod tests {
         let id = ai.add_preset(Provider::Custom, "m");
         if let Some(p) = ai.preset_mut(id) {
             p.at_once = 99;
+            p.cards_per_request = 0;
             p.name = "n".repeat(ModelPreset::NAME_MAX + 5);
         }
         let twin = ai.presets.first().cloned().unwrap_or_default();
@@ -647,6 +654,9 @@ mod tests {
         ai.sanitize();
         let p = ai.preset(id).cloned().unwrap_or_default();
         assert_eq!(p.at_once, ModelPreset::AT_ONCE_MAX);
+        assert_eq!(p.cards_per_request, 1);
+        let old: Option<ModelPreset> = serde_json::from_str(r#"{"id": 4}"#).ok();
+        assert_eq!(old.map(|p| p.cards_per_request), Some(10), "older files");
         assert_eq!(p.name.chars().count(), ModelPreset::NAME_MAX);
         let ids: std::collections::HashSet<_> = ai.presets.iter().map(|p| p.id).collect();
         assert_eq!(ids.len(), ai.presets.len(), "ids are unique");

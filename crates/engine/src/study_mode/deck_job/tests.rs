@@ -1,10 +1,13 @@
-//! A deck's words are the very words the book's shading marks, bar names.
+//! A deck's words are the very words the book's shading marks, bar names,
+//! and its backs are written in requests of the writer's size.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use mareader_cefr::{Levels as Shading, plan};
 use mareader_reflow::Typography;
+use mareader_study::mode::{Card, CardJob, CardWriter, Practice, Wanted};
 
 use super::*;
+use crate::study_mode::Backs;
 
 const TEXT: &str = "After the storm the ephemeral badgers stayed, and Alice watched them. \
                     The well-known aftermath came.";
@@ -98,4 +101,105 @@ fn after_makes_no_card_and_never_aft() {
     let fine = |(form, lemma): &(String, String)| form != "After" && lemma != "aft";
     assert!(all.iter().all(fine));
     assert!(!shaded(5).iter().any(|f| f == "After"));
+}
+
+/// Writes as [`Practice::Ready`] does, noting each request's size; the
+/// request numbered `fail` fails instead.
+struct Counting {
+    sizes: std::sync::Mutex<Vec<usize>>,
+    fail: Option<usize>,
+}
+
+impl CardWriter for Counting {
+    fn by(&self) -> String {
+        "Counting".to_owned()
+    }
+
+    fn id(&self) -> String {
+        "counting".to_owned()
+    }
+
+    fn per_request(&self) -> usize {
+        10
+    }
+
+    fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {
+        let mut sizes = self.sizes.lock().unwrap();
+        let practice = match Some(sizes.len()) == self.fail {
+            true => Practice::Failing,
+            false => Practice::Ready,
+        };
+        sizes.push(words.len());
+        practice.write(words)
+    }
+}
+
+/// An AI deck of `n` cards, ready to be written by `writer`.
+fn ai_deck(n: usize, writer: &Writer) -> DeckJob {
+    let bytes = mareader_pdf::sample::pdf(1, "Sample");
+    let opened = Document::open(Arc::new(bytes), &Typography::default());
+    let ask = Ask {
+        document: Arc::new(opened.unwrap()),
+        pages: Vec::new(),
+        level: 3,
+        max: n,
+        known: Known::default(),
+        to: None,
+        via: Via::Ai,
+        writer: Some(writer.clone()),
+    };
+    let mut job = DeckJob::new(Arc::new(|| {}), ask);
+    job.deck.cards = (0..n)
+        .map(|i| Card {
+            key: Key::new(format!("word{i}"), None),
+            form: format!("word{i}"),
+            sentence: format!("The word{i} here."),
+            band: 5,
+            count: 1,
+            also: Vec::new(),
+        })
+        .collect();
+    job
+}
+
+#[test]
+fn a_deck_is_written_in_even_requests_and_goes_on_once_all_answer() {
+    let counting = Arc::new(Counting {
+        sizes: std::sync::Mutex::new(Vec::new()),
+        fail: None,
+    });
+    let writer = Writer {
+        cards: counting.clone(),
+        backs: Backs::default(),
+    };
+    let mut job = ai_deck(25, &writer);
+    job.ask_backs().unwrap();
+    assert_eq!(*counting.sizes.lock().unwrap(), [9, 8, 8], "25 by 10");
+    assert_eq!(job.writing(), Ok(true));
+    assert!(matches!(job.stage, Stage::Settle), "every request answered");
+    assert_eq!(job.settling.len(), 25);
+    assert!(job.settling.iter().all(|(s, _)| !s.meaning.is_empty()));
+    let mut small = ai_deck(13, &writer);
+    small.ask_backs().unwrap();
+    assert_eq!(counting.sizes.lock().unwrap().len(), 3, "13 cached already");
+}
+
+#[test]
+fn a_failed_request_keeps_the_others_backs_for_the_next_try() {
+    let counting = Arc::new(Counting {
+        sizes: std::sync::Mutex::new(Vec::new()),
+        fail: Some(1),
+    });
+    let writer = Writer {
+        cards: counting.clone(),
+        backs: Backs::default(),
+    };
+    let mut job = ai_deck(32, &writer);
+    job.ask_backs().unwrap();
+    assert!(job.writing().is_err(), "one failed request fails the deck");
+    assert_eq!(writer.backs.count(), 21, "the other two are kept");
+    let mut again = ai_deck(32, &writer);
+    again.ask_backs().unwrap();
+    assert_eq!(*counting.sizes.lock().unwrap(), [11, 11, 10, 11]);
+    assert_eq!(again.writing(), Ok(true));
 }

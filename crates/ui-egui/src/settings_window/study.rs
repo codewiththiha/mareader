@@ -162,7 +162,7 @@ fn space(ui: &mut Ui, out: &mut Commands) {
 }
 
 /// A count stepped between `lo` and `hi`, shown with its unit for one or more.
-fn count_row(
+pub(super) fn count_row(
     ui: &mut Ui,
     (label, hint): (&str, &str),
     n: &mut u8,

@@ -115,6 +115,11 @@ fn a_deck_s_backs_come_in_one_request_by_number() {
         "{sent}"
     );
     assert_eq!(server.seen().len(), 1, "one request for the deck");
+    assert_eq!(cards.per_request(), 10, "Cards per request starts at 10");
+    let mut ai = settings(&server.url);
+    ai.presets[0].cards_per_request = 4;
+    let _explainer = a.configure(&ai);
+    assert_eq!(a.cards().per_request(), 4, "the model's own size");
 }
 
 #[test]

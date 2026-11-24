@@ -49,9 +49,13 @@ impl DeckJob {
         whole(found, cards)
     }
 
-    /// Whether its writer waits in line for a model.
+    /// Whether its writer waits in line for a model: every request still
+    /// out is queued, none running.
     pub fn queued(&self) -> bool {
-        matches!(&self.stage, Stage::Writing { job, .. } if job.queued())
+        let Stage::Writing { jobs, .. } = &self.stage else {
+            return false;
+        };
+        !jobs.is_empty() && jobs.iter().all(|chunk| chunk.job.queued())
     }
 }
 

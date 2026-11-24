@@ -6,10 +6,10 @@
 //! for [`TAG_WAIT`] seconds, leaves the word classes unknown. Dictionary
 //! cards are only words a dictionary has, looked up a round at a time
 //! until the deck is full; a dictionary silent for [`MEANING_WAIT`] seconds
-//! ends the deck with those found. Cards from the AI wait on their writer
-//! as long as it takes; the deck's waiting card offers the dictionary once
-//! that is slow. Each card's class is then settled by the one rule, in
-//! `classes`.
+//! ends the deck with those found. Cards from the AI are asked in requests
+//! of the writer's size (`writing`) and wait on them as long as it takes;
+//! the deck's waiting card offers the dictionary once that is slow. Each
+//! card's class is then settled by the one rule, in `classes`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -18,8 +18,9 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use mareader_cefr::Ticket as TagTicket;
 use mareader_dict::Ticket;
 use mareader_session::Document;
+use mareader_study::Failure;
 use mareader_study::mode::build;
-use mareader_study::mode::{CardJob, Deck, Key, Missing, Pos, Sighting, Via, Wanted, Written};
+use mareader_study::mode::{Deck, Key, Missing, Pos, Sighting, Via, Written};
 
 use super::backs::{Shown, Writer};
 use super::known::Known;
@@ -122,12 +123,12 @@ enum Stage {
         ticket: Ticket,
         since: Option<f64>,
     },
-    /// The writer's job, the cards it was asked for, by place, and who
-    /// was asked, whose cache the backs go in.
+    /// The writer's requests still out, and who was asked, whose cache
+    /// the backs go in; a failure waits there for the other requests.
     Writing {
-        job: Box<CardJob>,
-        asked: Vec<(usize, Wanted)>,
+        jobs: Vec<writing::Chunk>,
         id: String,
+        failed: Option<Failure>,
     },
     Done,
 }

@@ -1,13 +1,25 @@
-//! An AI deck's backs: those cached first, then the writer's answer.
+//! An AI deck's backs: those cached first, then the writer's answers.
+//!
+//! The words not cached are cut into requests of the writer's size
+//! ([`chunks`]) and all asked at once; the model's queue runs as many as
+//! it takes and holds the rest. The deck goes on only once every request
+//! has answered. A failed request fails the deck, but the backs the
+//! others wrote stay cached, so trying again asks only the words missing.
 
 use mareader_settings::{TaskId, no_model};
 use mareader_study::Why;
-use mareader_study::mode::{Wanted, Written};
+use mareader_study::mode::{CardJob, Wanted, Written, chunks};
 use mareader_study::pending::News;
 
 use super::{DeckJob, Stage};
-use crate::study_mode::backs::wanted;
+use crate::study_mode::backs::{Writer, wanted};
 use crate::study_mode::run::Setup;
+
+/// One request's job, and the cards it asks for, by place.
+pub(super) struct Chunk {
+    pub(super) job: Box<CardJob>,
+    pub(super) asked: Vec<(usize, Wanted)>,
+}
 
 impl DeckJob {
     /// Asks the writer for the backs not cached; with all cached, finishes.
@@ -32,47 +44,82 @@ impl DeckJob {
             self.finish_written();
             return Ok(());
         }
-        let words = asked.iter().map(|(_, w)| w.clone()).collect();
-        let job = writer.cards.write(words);
-        self.stage = Stage::Writing { job, asked, id };
+        let mut rest = asked.into_iter();
+        let jobs = chunks(rest.len(), writer.cards.per_request())
+            .into_iter()
+            .map(|range| {
+                let asked: Vec<(usize, Wanted)> = rest.by_ref().take(range.len()).collect();
+                let words = asked.iter().map(|(_, w)| w.clone()).collect();
+                let job = writer.cards.write(words);
+                Chunk { job, asked }
+            })
+            .collect();
+        self.stage = Stage::Writing {
+            jobs,
+            id,
+            failed: None,
+        };
         Ok(())
     }
 
-    /// Counts backs as they are written; takes the answer into the deck
-    /// and the cache.
+    /// Counts backs as they are written; takes each answer into the deck
+    /// and the cache, and goes on once every request has answered.
     pub(super) fn writing(&mut self) -> Result<bool, String> {
-        let Stage::Writing { job, asked, id } = &mut self.stage else {
+        let Stage::Writing { jobs, id, failed } = &mut self.stage else {
             return Ok(false);
         };
-        let mut answer = None;
-        for news in job.news() {
-            match news {
-                News::Partial(backs) => fill(&mut self.written, asked, &backs),
-                News::Done(done) => answer = Some(done),
+        let mut moved = false;
+        let mut out = Vec::new();
+        for mut chunk in std::mem::take(jobs) {
+            let mut answer = None;
+            for news in chunk.job.news() {
+                match news {
+                    News::Partial(backs) => fill(&mut self.written, &chunk.asked, &backs),
+                    News::Done(done) => answer = Some(done),
+                }
+            }
+            match answer {
+                None => out.push(chunk),
+                Some(Ok(backs)) => {
+                    let writer = self.writer.as_ref();
+                    keep(&mut self.written, writer, id, chunk.asked, backs);
+                    moved = true;
+                }
+                Some(Err(failure)) => {
+                    failed.get_or_insert(failure);
+                    moved = true;
+                }
             }
         }
-        let Some(answer) = answer else {
-            return Ok(false);
-        };
-        let backs = match answer {
-            Ok(backs) => backs,
-            Err(failure) => {
-                self.setup = setup_for(failure.why);
-                return Err(failure.said());
-            }
-        };
-        let (asked, id) = (std::mem::take(asked), std::mem::take(id));
-        for ((i, wanted), back) in asked.into_iter().zip(backs) {
-            if let (Some(writer), Some(back)) = (&self.writer, &back) {
-                writer.backs.put(&id, &wanted, back.clone());
-            }
-            // The whole answer stands over what came on the way.
-            if let Some(slot) = self.written.get_mut(i) {
-                *slot = back;
-            }
+        *jobs = out;
+        if !jobs.is_empty() {
+            return Ok(moved);
+        }
+        if let Some(failure) = failed.take() {
+            self.setup = setup_for(failure.why);
+            return Err(failure.said());
         }
         self.finish_written();
         Ok(true)
+    }
+}
+
+/// One request's whole answer, into the deck's places and the cache; it
+/// stands over what came on the way.
+fn keep(
+    written: &mut [Option<Written>],
+    writer: Option<&Writer>,
+    id: &str,
+    asked: Vec<(usize, Wanted)>,
+    backs: Vec<Option<Written>>,
+) {
+    for ((i, wanted), back) in asked.into_iter().zip(backs) {
+        if let (Some(writer), Some(back)) = (writer, &back) {
+            writer.backs.put(id, &wanted, back.clone());
+        }
+        if let Some(slot) = written.get_mut(i) {
+            *slot = back;
+        }
     }
 }
 

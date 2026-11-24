@@ -2,6 +2,7 @@
 
 use super::model_picker::model_row;
 use super::provider_card::{add_key, provider_address};
+use super::study::count_row;
 use super::{divider, group, note, row, section};
 use crate::icons::Icon;
 use crate::theme::Tokens;
@@ -12,6 +13,7 @@ use mareader_assist::{AppleState, Board, Job, JobInfo, KeyRow, KeyState, Load, l
 use mareader_engine::command::Command;
 use mareader_settings::{AiSettings, ModelPreset, PageTask, PresetId, Provider, Skill, TaskId};
 use mareader_study::Failure;
+use mareader_study::mode::PER_REQUEST_MAX;
 
 mod jobs;
 
@@ -427,6 +429,7 @@ fn duplicate(ai: &mut AiSettings, id: PresetId) -> Option<PresetId> {
     let p = ai.preset_mut(made)?;
     p.name = name;
     p.at_once = from.at_once;
+    p.cards_per_request = from.cards_per_request;
     Some(made)
 }
 
@@ -634,12 +637,12 @@ fn fields(ui: &mut Ui, p: &mut ModelPreset, board: Option<&Board>, out: &mut Com
     }
     divider(ui);
     let tip = "Tasks this model may run at the same time";
-    row(ui, "At once", tip, |ui| {
-        let mut n = f32::from(p.at_once);
-        let max = f32::from(ModelPreset::AT_ONCE_MAX);
-        widgets::stepper(ui, &mut n, 1.0..=max, 1.0, |v| format!("{v:.0}"), "at once");
-        p.at_once = (n.round() as u8).clamp(1, ModelPreset::AT_ONCE_MAX);
-    });
+    let max = ModelPreset::AT_ONCE_MAX;
+    count_row(ui, ("At once", tip), &mut p.at_once, (1, max), ("", ""));
+    divider(ui);
+    let tip = "Words a study deck asks this model in one request; more are split";
+    let (n, max) = (&mut p.cards_per_request, PER_REQUEST_MAX);
+    count_row(ui, ("Cards per request", tip), n, (1, max), ("", ""));
 }
 
 /// Apple only where it runs; a switch forgets the old provider's model.
@@ -904,18 +907,19 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_takes_a_fresh_name_and_the_same_room() {
+    fn a_duplicate_takes_a_fresh_name_and_the_same_settings() {
         let mut ai = no_models();
         let id = ai.add_preset(Provider::OpenAi, "gpt-4.1-mini");
         if let Some(p) = ai.preset_mut(id) {
             p.at_once = 3;
+            p.cards_per_request = 6;
         }
         let one = duplicate(&mut ai, id).and_then(|c| ai.preset(c).cloned());
         let two = duplicate(&mut ai, id).and_then(|c| ai.preset(c).cloned());
         let names = [&one, &two].map(|p| p.as_ref().map(ModelPreset::title));
         let want = ["OpenAI · gpt-4.1-mini (2)", "OpenAI · gpt-4.1-mini (3)"];
         assert_eq!(names, want.map(|n| Some(n.to_owned())));
-        assert_eq!(one.map(|p| p.at_once), Some(3));
+        assert_eq!(one.map(|p| (p.at_once, p.cards_per_request)), Some((3, 6)));
     }
 
     #[test]

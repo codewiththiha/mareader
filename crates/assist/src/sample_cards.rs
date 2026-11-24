@@ -5,7 +5,7 @@
 //! with the real study cards task, so a shot shows the backs it makes.
 
 use crate::{StudyCards, Task};
-use mareader_study::mode::{CardJob, CardWriter, Wanted, Written};
+use mareader_study::mode::{CardJob, CardWriter, PER_REQUEST, Wanted, Written};
 use mareader_study::pending::{News, Pending};
 
 /// One card of the answer; `{n}` and `{word}` name the asked word.
@@ -40,6 +40,10 @@ impl CardWriter for SampleCards {
 
     fn id(&self) -> String {
         "answered-json".to_owned()
+    }
+
+    fn per_request(&self) -> usize {
+        usize::from(PER_REQUEST)
     }
 
     fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {

@@ -122,11 +122,21 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   A deck with no new words unlocks its batch with a toast.
 - **AI cards:** *Cards from* picks who writes the backs: Auto (the AI when
   study has a model, else the dictionary), AI or Dictionary. The AI writes a
-  deck's backs in one `StudyCards` request (a meaning in context, up to three
+  deck's backs in `StudyCards` requests (a meaning in context, up to three
   synonyms and an example) on study's model, else Explain's, in study's
-  language. A back is kept per word, sentence and writer for the session, so
-  a deck made again asks only for the new ones. An AI deck that fails says
-  why; `use_dictionary` has the dictionary write that batch's deck instead.
+  language. Each request carries about the model's **Cards per request**
+  (AI models, default 10): a deck is cut evenly into `words / limit`
+  requests, rounded half up (`mode::chunks`), so with 10, 13 words go in
+  one request, 15 in 8 and 7, and 32 in 11, 11 and 10. All are asked at
+  once and the model's queue runs as many as its At once lets in (with
+  At once 2 or more, a task of the Ahead class, as study cards are by
+  default, leaves one place free for the reader's own asks); the deck
+  opens only when
+  every request has answered. A back is kept per word, sentence and
+  writer for the session, so a deck made again asks only for the new
+  ones, and a deck whose one request failed asks only that request's
+  words when tried again. An AI deck that fails says why;
+  `use_dictionary` has the dictionary write that batch's deck instead.
 - **Look-ahead:** `study.mode.ahead` decks are made while the reader reads:
   the gate's and up to `ahead - 1` past it, each opened at once when its
   batch reaches the gate. At 0 the gate's deck waits until the reader nears
@@ -301,7 +311,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   track and the ring show the same share, counted from real steps only.
   Finding the words is the first 10%: their levels looked up, then their
   classes tagged. Writing is the rest, one step per card, cached cards
-  first; cards arrive one by one as the model streams its answer. Before
+  first; cards arrive one by one as the model streams each request's
+  answer. Before
   the first card nothing is known, so the fill holds still; a soft pulse
   at its head (steady with reduced motion) says the work goes on. The fill
   eases to each new step.

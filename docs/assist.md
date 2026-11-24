@@ -189,8 +189,9 @@ way can't keep asking the old model.
 - `tests/service.rs`: a keyless local server; keys added, used, rotated,
   set aside, brought back and removed; providers that can't answer saying
   why; Apple Intelligence through a scripted helper (Unix).
-- `tests/study_mode.rs`: a deck's backs in one request, by number, and
-  card by card as they stream; the judge before decks; cancels.
+- `tests/study_mode.rs`: a request's backs by number, and card by card
+  as they stream; the model's Cards per request; the judge before decks;
+  cancels.
 - `tests/conformance.rs`: every `TaskId` has a spec whose `follows` ends,
   routes through its fallback and loses a removed model, waits out a busy
   model as its spec says, frees its model when cancelled, and asks the new
@@ -241,9 +242,11 @@ The owner split the one AI tab in two and renamed Explain:
     that says what needs a hand: no API key, every key set aside, the
     server not reachable, or a model gone from it. Pills name every task
     the model runs, fallbacks included, two at most and then a count.
-  - An open model edits Name, Provider, Model and At once, and can be
-    tried, made the AI Dictionary's, duplicated under a fresh name such
-    as "(2)" with the same At once, or deleted after a second click.
+  - An open model edits Name, Provider, Model, At once and **Cards per
+    request** (study-card words in one request, 1 to 30, default 10; a
+    deck with more is split, see `docs/study-mode.md` § AI cards), and can
+    be tried, made the AI Dictionary's, duplicated under a fresh name such
+    as "(2)" with the same settings, or deleted after a second click.
   - **Add a model** shows the providers as tiles; with none saved they
     show at once. Adding opens the new model and its provider's row.
   - **Providers** lists the ones in use, each a row with its standing

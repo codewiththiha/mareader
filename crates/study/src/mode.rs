@@ -16,7 +16,10 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::class::{Classes, Pos};
 pub use batches::{Batch, LIGHT_CHARS, MAX_PAGES, Size, Unit, gate, plan, plan_from, retypeset};
-pub use cards::{Answer, CardJob, CardWriter, Practice, SLOW_SECS, Wanted, Written, practice_back};
+pub use cards::{
+    Answer, CardJob, CardWriter, PER_REQUEST, PER_REQUEST_MAX, Practice, SLOW_SECS, Wanted,
+    Written, chunks, practice_back,
+};
 pub use deck::{Allowance, Card, Deck, Sighting, also_as, build};
 pub use judge::{Attempt, Judge, JudgeJob, Judged, Judgement, practice_verdict};
 pub use keys::{Key, bases, lemma, proper};
