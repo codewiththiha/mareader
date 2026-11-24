@@ -268,7 +268,13 @@ impl MareaderApp {
             "none" => self
                 .session
                 .study_set_explainer(Arc::new(mareader_study::Unavailable)),
-            _ => return Err("explain: assistant, canned or none".into()),
+            // Canned answers after a wait: `slow:20000`.
+            other => {
+                let hint = "explain: assistant, canned, slow:ms or none";
+                let ms = other.strip_prefix("slow:").and_then(|ms| ms.parse().ok());
+                let slow = mareader_study::Slow(ms.ok_or(hint)?);
+                self.session.study_set_explainer(Arc::new(slow));
+            }
         };
         Ok(())
     }

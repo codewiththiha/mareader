@@ -139,6 +139,15 @@ impl State {
         self.partial.get(&key)
     }
 
+    /// The marks whose answers are still coming.
+    pub fn asking_marks(&self) -> Vec<MarkId> {
+        let marks = self.asking.keys().filter_map(|k| match k {
+            Key::Mark(id) => Some(*id),
+            Key::Loose(_) => None,
+        });
+        marks.collect()
+    }
+
     pub fn failure(&self, key: Key) -> Option<&Failure> {
         self.failed.get(&key)
     }
@@ -226,7 +235,7 @@ impl State {
     fn ask(&mut self, wake: Waker, key: Key, word: &str, context: &str) {
         let explainer = Arc::clone(&self.explainer);
         self.partial.remove(&key);
-        if self.inline || cfg!(target_arch = "wasm32") {
+        if (self.inline && !explainer.waits()) || cfg!(target_arch = "wasm32") {
             match explainer.explain_by(word, context, &|_| {}) {
                 Ok((info, by)) => {
                     let info = info.clamped();

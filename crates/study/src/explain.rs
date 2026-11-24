@@ -27,6 +27,11 @@ pub trait Explainer: Send + Sync {
         let by = self.by();
         self.explain(word, context, partial).map(|info| (info, by))
     }
+
+    /// Answers on a worker even where asks run inline, as a slow answerer must.
+    fn waits(&self) -> bool {
+        false
+    }
 }
 
 /// Why no answer came; the card shows [`Why::message`].
@@ -211,6 +216,33 @@ impl Explainer for Canned {
             ..WordInfo::default()
         });
         Ok(info.clamped())
+    }
+}
+
+/// [`Canned`]'s answers after a wait of this many milliseconds, for shots and
+/// tests of an answer still coming.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Slow(pub u64);
+
+impl Explainer for Slow {
+    fn by(&self) -> String {
+        Canned.by()
+    }
+
+    fn explain(
+        &self,
+        word: &str,
+        context: &str,
+        partial: &(dyn Fn(WordInfo) + Sync),
+    ) -> Result<WordInfo, Failure> {
+        // A browser's one thread can't wait.
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::sleep(std::time::Duration::from_millis(self.0));
+        Canned.explain(word, context, partial)
+    }
+
+    fn waits(&self) -> bool {
+        true
     }
 }
 

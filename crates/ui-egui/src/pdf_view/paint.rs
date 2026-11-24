@@ -171,6 +171,7 @@ fn over(cx: &mut ShowContext<'_>, ui: &mut Ui) {
         lift: view_cx.lift,
     };
     study::marks::badges(ui, placed);
+    study::marks::glow(ui, placed, &view_cx.asking);
     for s in sheets
         .iter()
         .filter(|s| view_cx.bookmarks.contains(&s.page))

@@ -311,6 +311,15 @@ slice 5.
   AI as Explain does and marks the word, the AI mark drawn over the
   shade. The card shows the word's class from the tagger until the AI's
   arrives, then that sense's CEFR level beside it.
+- **The glow.** While any AI mark's answer is coming (a click on a shaded
+  word, or Explain), the word's edges glow: a soft rainbow circling it,
+  easing as it goes, its colours wandering slowly. Shutting the card never
+  cancels the ask and the glow stays; the answer waits on the mark, no
+  card pops back, and the glow opens into a full ring and fades. Small
+  words light the whole ring with the colours turning round it.
+  `glow.rs` paints it round any outline: one mesh of a few hundred
+  vertices, woken only as often as it visibly moves (24 to 60 a second),
+  breathing in place with reduced motion. Shots: `explain=slow:20000`.
 - **Rest to look up** (`dictionary.hover`, on by default): resting on a
   shaded word for 160 ms opens its dictionary card, once per rest. It
   never replaces a Look up or Explain card and waits for a downloaded

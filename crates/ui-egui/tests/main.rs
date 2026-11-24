@@ -12,6 +12,8 @@ mod dictionary;
 mod epub_pictures;
 mod find;
 mod focus;
+#[cfg(not(target_arch = "wasm32"))]
+mod glow;
 mod gpu;
 mod keys;
 mod library;

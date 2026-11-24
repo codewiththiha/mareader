@@ -422,6 +422,20 @@ pub fn swallowed(ui: &Ui, clicked: bool) -> bool {
     clicked && armed
 }
 
+/// AI marks still being answered glow round their words, then flare out.
+pub fn glow(ui: &Ui, placed: &[Placed], asking: &[MarkId]) {
+    let ctx = ui.ctx();
+    for m in placed.iter().filter(|m| m.ink.ai) {
+        let working = asking.contains(&m.id);
+        let Some(glow) = crate::glow::state(ctx, Id::new(("mark-glow", m.id)), working) else {
+            continue;
+        };
+        for r in &m.rects {
+            crate::glow::paint(ctx, ui.painter(), r.expand(0.5), 2.5, glow);
+        }
+    }
+}
+
 /// A ring around each picked mark.
 pub fn ring(painter: &Painter, placed: &[Placed], picked: &[MarkId], color: Color32) {
     let stroke = Stroke::new(1.5, color);

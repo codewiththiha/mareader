@@ -278,8 +278,7 @@ impl MareaderApp {
         let page_ai = &mut self.ui.page_ai;
         study.begin_frame();
         let host = self.session.host().clone();
-        let layout = &layout;
-        let session = &mut self.session;
+        let (layout, session) = (&layout, &mut self.session);
         self.ui.library_rect = None;
         // The dictionary page needs all of `self`: drawn outside the closure.
         if route == Route::Dictionary {
@@ -318,6 +317,7 @@ impl MareaderApp {
                     highlights: study_mode::bar(highlights, session.study_mode().on(id)),
                     card: study.card_mark(id),
                     picked: study.picked(id),
+                    asking: session.study().asking_marks(),
                     shading: study_mode::shading(session, id, context.shading),
                     settled: study_mode::settled(session, id),
                     menu_shot: menu_shot && id == view.active,

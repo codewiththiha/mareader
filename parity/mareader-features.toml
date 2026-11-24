@@ -1535,7 +1535,7 @@ tier = "P1"
 milestone = "M6"
 status = "shipped"
 command = "vocab.download"
-evidence = ["crates/cefr/tests/cefr.rs::the_dataset_becomes_a_table_that_answers", "crates/cefr/tests/cefr.rs::a_downloaded_dataset_converts_then_shades_hard_words", "crates/ui-egui/tests/vocabulary.rs::a_click_on_a_shaded_word_explains_it_and_marks_it", "crates/ui-egui/tests/vocabulary.rs::the_tab_sets_the_level_and_removes_the_dataset"]
+evidence = ["crates/cefr/tests/cefr.rs::the_dataset_becomes_a_table_that_answers", "crates/cefr/tests/cefr.rs::a_downloaded_dataset_converts_then_shades_hard_words", "crates/ui-egui/tests/vocabulary.rs::a_click_on_a_shaded_word_explains_it_and_marks_it", "crates/ui-egui/tests/glow.rs::a_word_glows_while_its_answer_comes_even_with_its_card_shut", "crates/ui-egui/tests/vocabulary.rs::the_tab_sets_the_level_and_removes_the_dataset"]
 reference = ["crates/cefr-core/src/lib.rs", "crates/reader-core/src/settings/cefr.rs"]
 notes = "Dataset and tagger download with mirrors and resume; shading in a reserved look, click to explain with the tagged role and level (M6 slice 5)"
 

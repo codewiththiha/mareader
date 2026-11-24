@@ -19,7 +19,6 @@ use mareader_settings::{ColumnAlign, HighlightSettings, LayoutSettings, StartupF
 
 use crate::gpu::{Anchor, PagePass, PagesCallback, Quad};
 use crate::layout::{self, GAP, Inputs, Layout, MARGIN};
-use crate::page_ai;
 use crate::pages::{Lookup, PageCache, PageTexture};
 use crate::reach::{self, Press, Stop};
 use crate::read_aloud::marker::{self, Marker};
@@ -27,9 +26,8 @@ use crate::selection::{self, Pages, Sheet};
 use crate::study::{self, BarPress, Gloss};
 use crate::study_mode::gate::StudySpan;
 use crate::theme::Tokens;
-use crate::vocab;
 use crate::zoom::PaneZoom;
-use crate::{keymap, motion};
+use crate::{keymap, motion, page_ai, vocab};
 
 mod input;
 mod interactions;
@@ -273,6 +271,8 @@ pub struct ViewContext {
     pub card: Option<MarkId>,
     /// The marks picked here, while picking several.
     pub picked: Option<Vec<MarkId>>,
+    /// AI marks whose answers are still coming, which glow.
+    pub asking: Vec<MarkId>,
     /// How hard words are shaded; none while shading is off.
     pub shading: Option<crate::vocab::Look>,
     /// Words recalled in study mode, in their own look.

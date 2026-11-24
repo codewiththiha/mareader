@@ -26,6 +26,7 @@ pub mod floating_label;
 pub mod focus;
 pub mod fold;
 pub mod footnote;
+pub mod glow;
 pub mod gpu;
 pub mod help_dot;
 pub mod icons;
