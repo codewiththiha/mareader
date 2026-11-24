@@ -989,9 +989,9 @@ tier = "P0"
 milestone = "M2"
 status = "shipped"
 command = "page.go"
-evidence = ["crates/ui-egui/tests/selection.rs::an_internal_link_turns_this_pane_and_a_web_link_opens_the_browser", "crates/ui-egui/tests/selection.rs::text_shows_a_text_cursor_and_links_a_hand", "crates/pdf/src/links.rs::only_web_and_mail_schemes_are_followed", "crates/pdf/src/links.rs::link_annotations_resolve_to_pages_and_checked_addresses"]
+evidence = ["crates/ui-egui/tests/selection.rs::an_internal_link_turns_this_pane_and_a_web_link_opens_the_browser", "crates/ui-egui/tests/link_peek.rs::resting_on_a_page_link_peeks_at_its_page_before_any_jump", "crates/ui-egui/tests/selection.rs::text_shows_a_text_cursor_and_links_a_hand", "crates/pdf/src/links.rs::only_web_and_mail_schemes_are_followed", "crates/pdf/src/links.rs::link_annotations_resolve_to_pages_and_checked_addresses"]
 reference = ["crates/reader-runtime/src/effects/reader/link_navigation.rs"]
-notes = "/Link annotations: /Dest, GoTo and named destinations through the outline's resolver, the four named page turns, and URI actions for http, https and mailto only (checked when read and again before opening). A hand cursor and a tooltip (the address, or Go to page N); a click turns only that pane"
+notes = "/Link annotations: /Dest, GoTo and named destinations through the outline's resolver, the four named page turns, and URI actions for http, https and mailto only (checked when read and again before opening). A hand cursor; a web link's tooltip shows the address, and resting on a page link peeks at that page (small, its number and first words); a click turns only that pane"
 
 [[feature]]
 id = "pdf.title"
@@ -1135,7 +1135,7 @@ milestone = "M4"
 status = "shipped"
 command = "page.go"
 evidence = ["crates/ui-egui/tests/selection.rs::a_book_s_links_turn_its_pages_and_open_the_browser", "crates/epub/src/xhtml.rs::links_mark_their_words_and_keep_where_they_lead", "crates/reflow/src/flow.rs::links_box_their_words_on_every_line_they_cross"]
-notes = "Underlined in the text's own ink, not the accent: pages are greys themed later. External links pass the PDF path's scheme check"
+notes = "Underlined in the text's own ink, not the accent: pages are greys themed later. External links pass the PDF path's scheme check. Resting on a link inside the book peeks at its page, as in a PDF"
 
 [[feature]]
 id = "epub.position"

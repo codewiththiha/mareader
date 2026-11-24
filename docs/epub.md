@@ -196,6 +196,10 @@ What the epub crate reads, and what each element becomes:
   Each line a link crosses gets its own hit box, read from parley. Links
   inside the book open on the page holding their place; others go through
   the PDF path's scheme check, so `javascript:` and `file:` do nothing.
+  Resting on a link inside the book or a PDF for 0.4 s peeks at where it
+  goes: a card under the link shows the page small, its number and first
+  words, so a jump is chosen knowingly. Moving off closes it; a press
+  follows the link as before. Other links keep their plain tooltip.
 - **Streams.** A sheet is hit-tested only where its band shows, so a link
   near a band edge isn't taken by the neighbouring page's hidden part.
 - **Resume.** A book read at exit saves its stable spine place, global page

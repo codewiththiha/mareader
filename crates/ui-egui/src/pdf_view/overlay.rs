@@ -1,8 +1,11 @@
 use super::*;
 
+mod peek;
+
 pub(super) fn run(cx: &mut ShowContext<'_>) {
     scroll::finish(cx);
     selection_actions(cx);
+    peek::show(cx);
     links(cx);
     windows(cx);
 }

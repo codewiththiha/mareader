@@ -12,7 +12,7 @@ use egui::{
     Align, Align2, CornerRadius, FontId, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, Vec2,
     pos2, vec2,
 };
-use mareader_session::{DocId, PageKey, Part, Scale};
+use mareader_session::{DocId, Document, PageKey, Part, Scale};
 use mareader_workspace::PaneId;
 
 use mareader_appearance::{PageTone, Pattern};
@@ -138,7 +138,8 @@ pub fn show(
     }
     let active = shown_pages(reading, count);
     let goal = follow(state, reading, &active, recentre, now, &ctx);
-    let tones = thumb_tokens(&ctx, reading.document.is_reflowable(), page_look);
+    let reflow = reading.document.is_reflowable();
+    let tones = thumb_tokens(Tokens::get(&ctx), reflow, page_look);
     let t = tones.t;
     state.picks.follow(reading);
     if state.picks.active() {
@@ -167,7 +168,7 @@ pub fn show(
                 }
                 paint_thumb(
                     ui,
-                    (reading, page),
+                    (&reading.document, page),
                     (rect, size(page).0),
                     look,
                     &tones,
@@ -245,8 +246,7 @@ struct ThumbTones {
     emoji: PageTone,
 }
 
-fn thumb_tokens(ctx: &egui::Context, reflow: bool, look: PageLook) -> ThumbTones {
-    let mut t = Tokens::get(ctx);
+fn thumb_tokens(mut t: Tokens, reflow: bool, look: PageLook) -> ThumbTones {
     t.page.pattern = Pattern::NONE;
     let mut fixed = t;
     let (mut picture, mut emoji) = (PageTone::NONE, PageTone::NONE);
@@ -268,9 +268,29 @@ fn thumb_tokens(ctx: &egui::Context, reflow: bool, look: PageLook) -> ThumbTones
     }
 }
 
+/// One page drawn small at `rect` in look `t`, as the grid draws it.
+pub(crate) fn small(
+    ui: &Ui,
+    (document, page): (&Document, usize),
+    (rect, width): (Rect, f32),
+    (look, t, page_look): (Lookup, Tokens, PageLook),
+) -> Vec<Quad> {
+    let tones = thumb_tokens(t, document.is_reflowable(), page_look);
+    let mut quads = Vec::new();
+    paint_thumb(
+        ui,
+        (document, page),
+        (rect, width),
+        look,
+        &tones,
+        &mut quads,
+    );
+    quads
+}
+
 fn paint_thumb(
     ui: &Ui,
-    (reading, page): (&Reading, usize),
+    (document, page): (&Document, usize),
     (rect, width): (Rect, f32),
     look: Lookup,
     tones: &ThumbTones,
@@ -278,7 +298,7 @@ fn paint_thumb(
 ) {
     let anchor = Anchor::page(rect, width);
     let square = (ui.clip_rect(), 0.0);
-    let fixed_page = reading.document.is_fixed_page(page);
+    let fixed_page = document.is_fixed_page(page);
     let page_t = if fixed_page { &tones.fixed } else { &tones.t };
     let first = quads.len();
     paint_page(
@@ -296,9 +316,9 @@ fn paint_thumb(
                 rect.min + vec2(b.x1, b.y1) * k,
             )
         };
-        let shown = reading.document.pictures(page).into_iter().map(to_screen);
+        let shown = document.pictures(page).into_iter().map(to_screen);
         keep_pictures(quads, first, shown, tones.picture);
-        let emojis = reading.document.emojis(page).into_iter().map(to_screen);
+        let emojis = document.emojis(page).into_iter().map(to_screen);
         keep_pictures(quads, first, emojis, tones.emoji);
     }
 }

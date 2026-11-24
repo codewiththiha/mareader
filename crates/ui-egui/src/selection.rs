@@ -53,6 +53,8 @@ pub struct Outcome {
     pub double: Option<Pos2>,
     /// Where a hold on empty space lifted the pane.
     pub lift: Option<Pos2>,
+    /// The link under the pointer, and where it is on screen.
+    pub hover: Option<(LinkTarget, Rect)>,
 }
 
 /// The pages' texts as one pane sees them.
@@ -130,7 +132,8 @@ pub fn interact(
         if over_text && !response.dragged() {
             ui.ctx().set_cursor_icon(CursorIcon::Text);
         }
-        layer.link_at(x, y).map(|l| l.target.clone())
+        let link = layer.link_at(x, y)?;
+        Some((link.target.clone(), sheet.to_screen(link.bounds)))
     });
     let origin = ui.input(|i| i.pointer.press_origin());
     let empty = origin.is_some_and(|p| pages.empty(p));
@@ -157,9 +160,13 @@ pub fn interact(
             edge_scroll(ui, area, p);
         }
         wheel(ui, pages.sideways);
-    } else if let Some(target) = &link {
+    } else if let Some((target, rect)) = &link {
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
-        tooltip(&response, target);
+        out.hover = Some((target.clone(), *rect));
+        // A page link peeks at its page instead (`pdf_view::overlay::peek`).
+        if !matches!(target, LinkTarget::Page(_)) {
+            tooltip(&response, target);
+        }
     }
     if response.clicked() {
         let p = response.interact_pointer_pos();
@@ -171,7 +178,7 @@ pub fn interact(
             out.double = p.filter(|_| selection.is_none());
         } else {
             *selection = None;
-            out.follow = link;
+            out.follow = link.map(|(target, _)| target);
             out.click = p;
         }
     }

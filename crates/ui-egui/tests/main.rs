@@ -17,6 +17,7 @@ mod glow;
 mod gpu;
 mod keys;
 mod library;
+mod link_peek;
 mod modes;
 mod navigation;
 mod option_keys;

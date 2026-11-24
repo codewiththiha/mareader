@@ -31,6 +31,7 @@ name the owning modules for shared primitives across the workspace.
 | reading_order | `crates/engine/src/notes_panel/mod.rs` | Where a `Spot` falls in its book, so notes list as the book runs; the notes panel and Space's notes sort by it. |
 | Library::every_mark | `crates/library/src/marks.rs` | Every book's living marks, unordered; `marks(book)` gives one book's, oldest first. |
 | space rail / tabs | `crates/ui-egui/src/space/rail.rs`, `top.rs` | `rail::books` lists All books then each `Shelf`; `top::tab_row` draws tabs with counts over a hairline. Both Space pages use them. |
+| thumbnails::small | `crates/ui-egui/src/thumbnails.rs` | One page drawn small at a rect in a given look, as the thumbnail grid draws it, pictures kept; the caller adds the quads with `PagesCallback`. A link's peek (`pdf_view/overlay/peek.rs`) uses it. |
 | read_aloud::tab | `crates/ui-egui/src/read_aloud/tab.rs` | A toast's words grown out of the player's top as one body: same fill and edge, concave feet, shadow cast under the pill. `toast::island_note` hands it the words each frame. |
 | settings pickers | `crates/ui-egui/src/settings_window/ai.rs` | `model_row`, `placed` and `language_picker`, `pub(super)` for the AI and Study mode tabs; a task's row names what an unset choice follows. |
 | Settled | `crates/ui-egui/src/vocab.rs` | A recalled word by page and first character, drawn in its own reserved look by `vocab::place`/`add` and never hit or hovered. |

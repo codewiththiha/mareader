@@ -12,10 +12,10 @@ use std::sync::Arc;
 
 use crate::common::find;
 
-type H = Harness<'static, MareaderApp>;
-type Out = Result<(), Box<dyn std::error::Error>>;
+pub(super) type H = Harness<'static, MareaderApp>;
+pub(super) type Out = Result<(), Box<dyn std::error::Error>>;
 
-fn reader() -> H {
+pub(super) fn reader() -> H {
     let mut app = MareaderApp::default();
     app.set_option("workers", "0").ok();
     app.set_option("pdf", "sample:40").ok();
@@ -30,7 +30,7 @@ fn reader() -> H {
 }
 
 /// The first page's text and where that page sits on screen.
-fn page_one(h: &H) -> Result<(Arc<TextLayer>, Sheet), String> {
+pub(super) fn page_one(h: &H) -> Result<(Arc<TextLayer>, Sheet), String> {
     let pane = h.state().active_pane();
     let docs = h.state().documents();
     let reading = docs.reading(pane).ok_or("no document")?;
