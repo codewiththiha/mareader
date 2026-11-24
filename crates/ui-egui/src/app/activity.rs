@@ -8,6 +8,7 @@ use mareader_engine::activity::place::Spot;
 use mareader_engine::activity::{Key, News};
 use mareader_engine::command::Command;
 use mareader_engine::library::Action;
+use mareader_engine::skills::Action as Skill;
 use mareader_engine::study::state::Key as Ask;
 
 impl MareaderApp {
@@ -112,6 +113,13 @@ impl MareaderApp {
             }
             (Button::Cancel, Key::Explain { ask, .. }) => {
                 self.session.study_cancel(ask);
+            }
+            (Button::View, Key::Skill { ask, .. }) => {
+                self.ui.activity.view(key, now);
+                out.push(Sent::Engine(Command::Skill(Skill::Show(ask))));
+            }
+            (Button::Cancel, Key::Skill { ask, .. }) => {
+                out.push(Sent::Engine(Command::Skill(Skill::Close(ask))));
             }
             (Button::Dismiss, _) => self.ui.activity.dismiss(key, now),
         }

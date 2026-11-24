@@ -143,6 +143,18 @@ impl Ledger {
         self.ended.retain(|row| row.activity.key != key);
     }
 
+    /// A job that ended between frames, as its owner tells: its line at `now`.
+    pub fn land(&mut self, activity: Activity, end: End, now: f64) {
+        self.seen(activity.key);
+        let since = now;
+        self.ended.push(Row {
+            activity,
+            end,
+            since,
+        });
+        self.trim(now);
+    }
+
     /// Dismisses an ended line; a failure still owned stays out of sight.
     pub fn dismiss(&mut self, key: Key, now: f64) {
         self.seen(key);

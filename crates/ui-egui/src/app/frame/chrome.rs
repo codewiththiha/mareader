@@ -19,7 +19,10 @@ impl MareaderApp {
             // Leave room above the bottom page bar's resting band.
             stage.max.y -= crate::page_bar::BAR_H;
             let dictionary = self.settings().dictionary.clone();
-            let lift = self.toast_lift(ctx, ctx.content_rect());
+            let whole = ctx.content_rect();
+            let lift = self
+                .toast_lift(ctx, whole)
+                .max(crate::activity::stack::toast_lift(ctx, whole));
             let active = self.session.read_aloud().active();
             let toasts = self.ui.toasts.active_bed_for(
                 ctx,
@@ -192,10 +195,12 @@ impl MareaderApp {
         };
         ctx.data_mut(|d| d.insert_temp(egui::Id::new("toast-platform"), self.ui.platform));
         let active = self.session.read_aloud().active();
+        // Toasts also rise over the AI stack, which they never cover.
+        let over = lift.max(crate::activity::stack::toast_lift(ctx, stage));
         self.ui.toasts.show_with_player(
             ctx,
             stage,
-            lift,
+            over,
             self.ui.read_aloud.island_anchor(active),
             self.ui.dict.window_cover(),
             commands,

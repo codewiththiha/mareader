@@ -69,7 +69,7 @@ impl MareaderApp {
                 ctx.memory_mut(|m| m.focused().map(|id| m.surrender_focus(id)));
             }
             Event::PageAi(action) => self.page_ai_act(ctx, action),
-            Event::SkillLanded(id) => self.skill_landed(id),
+            Event::SkillLanded(id) => self.skill_landed(ctx, id),
             Event::SkillShow(id) => self.ui.skill_reveal = Some(id),
             Event::Library(action) => self.library_action(ctx, action),
             Event::WordList { made, list } => self.deliver_word_list(ctx, &made, list.output),

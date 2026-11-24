@@ -17,6 +17,7 @@ use mareader_study::mode::{Batch, Via};
 use mareader_workspace::PaneId;
 
 use crate::library::{self, RunEnd, RunId};
+use crate::skills::{self, AskId};
 use crate::study::state::{self as words, Key as Ask};
 use crate::study_mode::{Ahead, DeckJob, DeckState, Doing, Run, State};
 
@@ -36,12 +37,16 @@ pub enum Key {
     Organize { run: RunId },
     /// The AI Dictionary explaining a word `pane` asked.
     Explain { pane: PaneId, ask: Ask },
+    /// A skill's card, asked of a selection or a page.
+    Skill { pane: PaneId, ask: AskId },
 }
 
 impl Key {
     pub fn scope(self) -> Scope {
         match self {
-            Self::Cards { pane, .. } | Self::Explain { pane, .. } => Scope::Pane(pane),
+            Self::Cards { pane, .. } | Self::Explain { pane, .. } | Self::Skill { pane, .. } => {
+                Scope::Pane(pane)
+            }
             Self::Organize { .. } => Scope::Global,
         }
     }
@@ -49,7 +54,7 @@ impl Key {
     /// The word on its stop button: organizing pauses, keeping its work.
     pub fn stop_word(self) -> &'static str {
         match self {
-            Self::Cards { .. } | Self::Explain { .. } => "Cancel",
+            Self::Cards { .. } | Self::Explain { .. } | Self::Skill { .. } => "Cancel",
             Self::Organize { .. } => "Pause",
         }
     }
@@ -103,6 +108,7 @@ impl Activity {
             (Key::Cards { .. }, false) => "Next cards ready".to_owned(),
             (Key::Organize { .. }, _) => format!("Shelf plan ready · {}", self.range),
             (Key::Explain { .. }, _) => format!("Explained {}", self.range),
+            (Key::Skill { .. }, _) => format!("{} ready", self.range),
         }
     }
 
@@ -112,6 +118,7 @@ impl Activity {
             Key::Cards { .. } => format!("Couldn’t write the cards for {}", self.range),
             Key::Organize { .. } => format!("Couldn’t organize {}", self.range),
             Key::Explain { .. } => format!("Couldn’t explain {}", self.range),
+            Key::Skill { .. } => format!("{} didn’t finish", self.range),
         }
     }
 
@@ -121,6 +128,7 @@ impl Activity {
             Key::Cards { .. } => format!("Stopped writing the cards for {}", self.range),
             Key::Organize { .. } => "Organizing paused. The library can resume it.".to_owned(),
             Key::Explain { .. } => format!("Stopped explaining {}", self.range),
+            Key::Skill { .. } => format!("Stopped {}", self.range),
         }
     }
 }
@@ -165,11 +173,36 @@ pub fn explain(pane: PaneId, ask: Ask, word: &str, page: Option<usize>) -> Activ
     }
 }
 
+/// The skills' cards still being answered.
+pub fn of_skills(skills: &skills::State) -> Vec<Activity> {
+    let going = skills.asks().iter().filter(|ask| !ask.answer.landed());
+    going.map(skill).collect()
+}
+
+/// A skill's card as a line; once landed, its owner tells how it went.
+pub fn skill(ask: &skills::Ask) -> Activity {
+    let page = ask.anchor.page();
+    Activity {
+        key: Key::Skill {
+            pane: ask.pane,
+            ask: ask.id,
+        },
+        task: TaskId::SelectionAi,
+        said: format!("{} · page {}", ask.name, page + 1),
+        range: ask.name.clone(),
+        page,
+        keeps: true,
+        told: false,
+        stage: Stage::Running(None),
+    }
+}
+
 /// The owners `ending` asks how a job ended.
 pub struct Owners<'a> {
     pub study: &'a State,
     pub library: &'a library::State,
     pub words: &'a words::State,
+    pub skills: &'a skills::State,
 }
 
 /// How the job `key` names, gone from the list, ended.
@@ -178,6 +211,7 @@ pub fn ending(owners: Owners<'_>, key: Key) -> Ending {
         study,
         library,
         words,
+        skills,
     } = owners;
     match key {
         // A deck's job ends in its cards, unless study mode went off.
@@ -192,6 +226,9 @@ pub fn ending(owners: Owners<'_>, key: Key) -> Ending {
         Key::Explain { ask, .. } if words.answer(ask).is_some() => Ending::Landed,
         Key::Explain { ask, .. } if words.failure(ask).is_some() => Ending::Failed,
         Key::Explain { .. } => Ending::Stopped,
+        // A landed card tells by `Event::SkillLanded`; a closed one stopped.
+        Key::Skill { ask, .. } if skills.get(ask).is_some() => Ending::Quiet,
+        Key::Skill { .. } => Ending::Stopped,
     }
 }
 

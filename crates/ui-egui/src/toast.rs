@@ -18,8 +18,8 @@ pub const FADE: f32 = 0.2;
 /// At most this many are kept; the oldest goes without a fade.
 const KEEP: usize = 12;
 /// Clear of the window's edges.
-const INSET: f32 = 16.0;
-const WIDTH: f32 = 360.0;
+pub(crate) const INSET: f32 = 16.0;
+pub(crate) const WIDTH: f32 = 360.0;
 /// Fixed card height, shared by one-line and two-line toasts alike.
 const SPOT_H: f32 = 52.0;
 

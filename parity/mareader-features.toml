@@ -1606,9 +1606,9 @@ tier = "P1"
 milestone = "M6"
 status = "shipped"
 command = "ai.skill"
-evidence = ["crates/ui-egui/tests/skills.rs::ask_ai_opens_the_skills_then_shuts_them", "crates/ui-egui/tests/skills.rs::typing_finds_a_skill_and_escape_folds_then_shuts", "crates/ui-egui/tests/skills.rs::the_page_menu_folds_custom_skills_and_runs_one_on_the_page", "crates/ui-egui/tests/skills.rs::a_skill_answers_in_a_card_and_the_selection_goes", "crates/ui-egui/tests/skills.rs::an_answer_landing_out_of_sight_offers_a_toast_that_goes_back", "crates/settings/src/skills_tests.rs::a_skill_asks_its_own_model_then_selection_ai_s_route", "crates/settings/src/skills_tests.rs::v8_s_page_models_become_the_skills_own"]
+evidence = ["crates/ui-egui/tests/skills.rs::ask_ai_opens_the_skills_then_shuts_them", "crates/ui-egui/tests/skills.rs::typing_finds_a_skill_and_escape_folds_then_shuts", "crates/ui-egui/tests/skills.rs::the_page_menu_folds_custom_skills_and_runs_one_on_the_page", "crates/ui-egui/tests/skills.rs::a_skill_answers_in_a_card_and_the_selection_goes", "crates/ui-egui/tests/skills.rs::an_answer_landing_out_of_sight_waits_in_the_stack_and_view_goes_back", "crates/settings/src/skills_tests.rs::a_skill_asks_its_own_model_then_selection_ai_s_route", "crates/settings/src/skills_tests.rs::v8_s_page_models_become_the_skills_own"]
 reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
-notes = "Ask AI in the selection menu opens Translate, Summarize, Simplify and the reader's own skills from Settings › Skills; the page menu lists custom skills too. Answers show in a plain temporary card pointing at the text, and one landing out of sight offers a toast to go back. Every skill asks Selection AI's model and backups unless it has its own"
+notes = "Ask AI in the selection menu opens Translate, Summarize, Simplify and the reader's own skills from Settings › Skills; the page menu lists custom skills too. Answers show in a plain temporary card pointing at the text, and one away from view waits in the AI stack with View to go back. Every skill asks Selection AI's model and backups unless it has its own"
 
 [[feature]]
 id = "study.mode-proactive"

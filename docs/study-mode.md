@@ -259,7 +259,11 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   view, the one workspace stack returns. On the library page, its own
   card says how organizing goes, so the stack leaves it out.
 - **The AI Dictionary** joins it (`docs/study.md`, The glow): each word
-  asked is a line while its glow and card are both out of view.
+  asked is a line while its glow and card are both out of view, and so
+  does each skill card (`docs/selection-ai.md`) while its card is away.
+- **Toasts rise above it** (`stack::toast_lift`): a toast never covers
+  a stack, nor waits behind it, so a failure's toast shows with its red
+  line.
 - **Progress is real** (`DeckJob::made`, `deck_job/progress.rs`): the
   track and the ring show the same share, counted from real steps only.
   Finding the words is the first 10%: their levels looked up, then their

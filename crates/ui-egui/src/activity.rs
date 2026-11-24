@@ -93,6 +93,11 @@ impl ActivityUi {
         page
     }
 
+    /// A job that ended between frames, out of view: its line, as `end`.
+    pub fn land(&mut self, activity: Activity, end: End, now: f64) {
+        self.ledger.land(activity, end, now);
+    }
+
     pub fn dismiss(&mut self, key: Key, now: f64) {
         self.ledger.dismiss(key, now);
     }

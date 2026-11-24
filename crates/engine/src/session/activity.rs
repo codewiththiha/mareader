@@ -10,6 +10,7 @@ impl Session {
     pub fn activities(&self) -> Vec<Activity> {
         let mut all = activity::of_study(self.study_mode());
         all.extend(self.explains());
+        all.extend(activity::of_skills(&self.skills));
         all.extend(activity::of_library(&self.library));
         all
     }
@@ -20,6 +21,7 @@ impl Session {
             study: self.study_mode(),
             library: &self.library,
             words: &self.study,
+            skills: &self.skills,
         };
         activity::ending(owners, key)
     }

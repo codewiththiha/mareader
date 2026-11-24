@@ -51,10 +51,14 @@ behaviour on 2026-11-21.
 
 ## Running in the background
 
-- A run goes on when its place is scrolled away; only Close stops it.
-- Landing in sight, the card just shows. Landing out of sight, a toast
-  says "{skill} is ready" (or "didn't finish") with **Show**, which scrolls
-  back to the text and shows the card.
+- A run goes on when its place is scrolled away; Close stops it.
+- While its card is away, the run is a line in the pane's AI stack
+  (`docs/study-mode.md`, The corner stack): *Simplify · page 1* with
+  *Cancel*, which closes the card with a toast "Stopped Simplify".
+- Landing in sight, the card just shows. Landing out of sight, the stack
+  keeps *Simplify ready* with **View**, which scrolls back to the text and
+  shows the card. A failure shows red there for about 3 s, and a toast
+  says "Simplify didn’t finish". Page-menu skills work the same.
 
 ## The page menu
 

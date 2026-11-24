@@ -153,8 +153,39 @@ pub fn show(ctx: &Context, at: At, lines: &[Line]) -> Out {
     if open > 0.0 && open < 1.0 {
         ctx.request_repaint();
     }
-    crate::toast::keep_clear(ctx, shown.response.rect);
+    stand(ctx, shown.response.rect);
     out
+}
+
+fn standing_id() -> Id {
+    Id::new("activity-stack-standing")
+}
+
+/// Says a stack stands at `rect` this pass, so toasts rise above it.
+fn stand(ctx: &Context, rect: Rect) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        let kept = d.get_temp_mut_or_default::<Vec<(u64, Rect)>>(standing_id());
+        kept.retain(|(at, _)| at + 1 >= pass);
+        kept.push((pass, rect));
+    });
+}
+
+/// How far toasts at `stage`'s bottom right rise to clear the stacks there.
+pub fn toast_lift(ctx: &Context, stage: Rect) -> f32 {
+    use crate::toast::{FADE, INSET, WIDTH};
+    let pass = ctx.cumulative_pass_nr();
+    let kept: Vec<(u64, Rect)> = ctx.data(|d| d.get_temp(standing_id())).unwrap_or_default();
+    let left = stage.right() - INSET - WIDTH;
+    let under = |r: &Rect| r.right() > left;
+    let rise = |r: Rect| stage.bottom() - INSET - r.top() + LIFT;
+    let now = kept
+        .into_iter()
+        .filter(|(at, _)| at + 1 >= pass)
+        .map(|(_, r)| r);
+    let target = now.filter(under).map(rise).fold(0.0, f32::max);
+    let time = crate::motion::secs(ctx, FADE);
+    ctx.animate_value_with_time(Id::new("toast-over-stack"), target, time)
 }
 
 /// Each line's place, oldest first: the newest in the corner, the rest

@@ -6,6 +6,7 @@ use egui_kittest::kittest::Queryable as _;
 use mareader_engine::command::Command;
 use mareader_engine::skills::{Anchor, Answer};
 use mareader_ui_egui::MareaderApp;
+use mareader_ui_egui::activity::stack::{STACK, VIEW};
 use mareader_ui_egui::skill_menu::ROW;
 use mareader_ui_egui::ui_command::Sent;
 
@@ -93,7 +94,7 @@ fn a_skill_answers_in_a_card_and_the_selection_goes() {
 }
 
 #[test]
-fn an_answer_landing_out_of_sight_offers_a_toast_that_goes_back() {
+fn an_answer_landing_out_of_sight_waits_in_the_stack_and_view_goes_back() {
     let mut h = reader(&[("pdf", "sample:12"), ("skill_answers", "echo")]);
     h.run();
     select(&mut h, "quick brown");
@@ -106,10 +107,17 @@ fn an_answer_landing_out_of_sight_offers_a_toast_that_goes_back() {
     h.state_mut().queue(Sent::Engine(Command::Skill(run)));
     h.run();
     assert!(h.query_by_label("Ask again").is_none(), "out of sight");
-    assert!(h.query_by_label_contains("Simplify is ready").is_some());
-    h.get_by_label("Show").click();
+    assert!(
+        h.state().toast().is_none(),
+        "the stack says it, not a toast"
+    );
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+    h.get_by_label_contains("Simplify ready");
+    h.get_by_label(VIEW).click();
     h.run_steps(60);
     assert!(h.query_by_label("Ask again").is_some(), "back at its words");
+    assert!(h.query_by_label(STACK).is_none(), "seen, the line goes");
 }
 
 #[test]

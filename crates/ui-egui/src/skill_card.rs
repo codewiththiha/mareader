@@ -61,6 +61,11 @@ pub fn show(
         let Some((at, room)) = in_view(ask, panes, docs) else {
             continue;
         };
+        let key = mareader_engine::activity::Key::Skill {
+            pane: ask.pane,
+            ask: ask.id,
+        };
+        crate::activity::seen::in_view(ctx, key);
         let chars = ask.asked_chars().max(ask.answer.text().chars().count());
         let bubble = Bubble {
             id: Id::new(("skill-card", ask.id.0)),

@@ -1,10 +1,13 @@
-//! The AI stack's lines for an explained word whose glow and card are away.
+//! The AI stack's lines for jobs whose own visuals are away: an explained
+//! word's glow and card, a skill's card.
 
 use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 use mareader_engine::command::Command;
+use mareader_engine::skills::Action;
+use mareader_settings::{PageTask, Skill};
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::activity::stack::{CANCEL, STACK, VIEW};
 use mareader_ui_egui::ui_command::Sent;
@@ -92,4 +95,55 @@ fn an_explain_out_of_view_cancels_at_once_with_a_toast() {
     std::thread::sleep(Duration::from_millis(400));
     h.run_steps(10);
     assert!(h.query_by_label(STACK).is_none(), "its answer never lands");
+}
+
+/// A skill run on the first page's words while the reader is on page 8.
+fn skill_away(answers: &str) -> H {
+    let mut h = ai_reader(&[("pdf", "sample:12"), ("skill_answers", answers)]);
+    let pane = h.state().active_pane();
+    let text = "quick brown".to_owned();
+    send(
+        &mut h,
+        Command::SelectText {
+            pane,
+            page: 0,
+            text,
+        },
+    );
+    send(&mut h, Command::GoTo { pane, page: 8 });
+    let skill = Skill::Builtin(PageTask::Simplify);
+    send(&mut h, Command::Skill(Action::Run { pane, skill }));
+    assert!(h.query_by_label("Ask again").is_none(), "its card is away");
+    h
+}
+
+#[test]
+fn a_skill_out_of_view_runs_in_the_stack_and_cancels_with_a_toast() {
+    let mut h = skill_away("silent");
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+    h.get_by_label_contains("Simplify · page 1");
+    h.get_by_label(CANCEL).click();
+    h.run_steps(4);
+    assert!(h.state().skills().asks().is_empty(), "its card is closed");
+    let toast = h.state().toast().map(|t| t.message.clone());
+    assert_eq!(toast.as_deref(), Some("Stopped Simplify"));
+    assert!(h.query_by_label(STACK).is_none());
+}
+
+/// PROGRESS.md §5, step 4: a failure shows red about 3 s, with a toast.
+#[test]
+fn a_skill_failing_out_of_view_shows_red_a_moment_and_toasts() {
+    let mut h = skill_away("failing");
+    let toast = h.state().toast().map(|t| t.message.clone());
+    assert_eq!(toast.as_deref(), Some("Simplify didn’t finish"));
+    h.get_by_label(STACK).hover();
+    h.run_steps(20);
+    let said = h
+        .query_all_by_label_contains("Simplify didn’t finish")
+        .count();
+    assert_eq!(said, 2, "its red line, and the toast above the stack");
+    h.hover_at(egui::pos2(300.0, 300.0));
+    h.run_steps(240);
+    assert!(h.query_by_label(STACK).is_none(), "it goes by itself");
 }

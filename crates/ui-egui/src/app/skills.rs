@@ -1,10 +1,10 @@
-//! Skills in the frame: their cards, the toast for one that lands out of
-//! sight, and going back to it.
+//! Skills in the frame: their cards, the AI stack's line for one that lands
+//! out of sight, and going back to it.
 
 use super::*;
 use egui::Context;
-use mareader_engine::command::Command;
-use mareader_engine::skills::{Action, Answer, AskId};
+use mareader_engine::activity::{self, End};
+use mareader_engine::skills::{Answer, AskId};
 use mareader_engine::toast::Toast;
 
 impl MareaderApp {
@@ -40,9 +40,9 @@ impl MareaderApp {
         crate::skill_card::show(ctx, asks, (&self.ui.pane_rects, docs), out);
     }
 
-    /// An answer landed: in sight it shows itself; out of sight, a toast
-    /// offers to go back to it.
-    pub(super) fn skill_landed(&mut self, id: AskId) {
+    /// An answer landed: in sight it shows itself; out of sight, the AI
+    /// stack keeps a line with View, and a failure also toasts.
+    pub(super) fn skill_landed(&mut self, ctx: &Context, id: AskId) {
         let docs = self.ui.documents.as_view(self.session.documents());
         let Some(ask) = self.session.skills().get(id) else {
             return;
@@ -50,12 +50,16 @@ impl MareaderApp {
         if crate::skill_card::in_view(ask, &self.ui.pane_rects, docs).is_some() {
             return;
         }
-        let toast = match ask.answer {
-            Answer::Failed(_) => Toast::warning(format!("{} didn't finish", ask.name)),
-            _ => Toast::info(format!("{} is ready", ask.name)),
+        let mut line = activity::skill(ask);
+        let end = match ask.answer {
+            Answer::Failed(_) => End::Failed,
+            _ => End::Done,
         };
-        let show = Command::Skill(Action::Show(id));
-        self.ui.toasts.push(toast.action("Show", show));
+        if end == End::Failed {
+            line.said = line.failed_said();
+            self.ui.toasts.push(Toast::error(line.said.clone()));
+        }
+        self.ui.activity.land(line, end, ctx.input(|i| i.time));
     }
 }
 
