@@ -445,8 +445,9 @@ shown without an update check.
   draw answers at 1.05× the text size, not 1.15×: they run taller at a size.
   An AI dictionary row has the AI card's layout (`ai_said.rs`): Meaning,
   synonym chips, Usages. A small accent "AI" sits in the footer after the
-  *1 of N* pager. A pair no pack can swap (English to English, or a
-  language only the AI dictionary keeps) shows no swap.
+  *1 of N* pager, with a pencil that opens the entry's editor. A pair no
+  pack can swap (English to English, or a language only the AI dictionary
+  keeps) shows no swap.
 - **Long highlights.** A notes-panel quote stops at three lines and a note at
   four; a cut row ends in "Show more", which opens it in place, then "Show
   less". The row's accessible label always carries the whole text.
@@ -479,6 +480,12 @@ and returns where it came from; Library sits beside it.
   column leads with the same headword, then each sense as a card (tags, the
   answer and its speak button, gloss); near matches follow under "≈ word"
   headings that carry their own speak button.
+- **AI entries.** An AI dictionary row's tags end in the "AI" mark and its
+  pencil; a sense card that is itself a button shows the mark alone.
+- **AI entry editor.** A modal card (440 px): Word; Class and Language side
+  by side; Meaning; Synonyms; Usages. Delete sits left, Cancel and Save
+  right. A taken key shows its kept meaning above *Replace it* (danger
+  fill) and *Keep editing*.
 - **Speaking.** A word or answer gets a speak button only when the voice in
   use speaks its language: a model's picked voice, the system voice's
   picked language, else the system's locale. The dictionary knows each

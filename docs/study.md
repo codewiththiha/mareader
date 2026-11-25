@@ -178,11 +178,23 @@ be kept on this machine and used again, beside the downloaded packs.
   a word with no entry in it gets *No entry*. Packs can't swap such a
   pair, so its card shows no swap. Dictionary decks and word lists read
   and offer it too, and *AI dictionary first* orders their rows as well.
+  A dictionary deck takes its meanings in the Dictionary's selected
+  language (*Default language*; Automatic is the first there is).
+- **The Dictionary page.** "AI dictionary" is one more choice in its
+  dictionary picker, its languages are in the From and To pickers, and a
+  search reads its entries after the packs': words that hold the search,
+  and meanings asked back to English. The page searches even when the AI
+  dictionary is the only one.
 - **Decks** use entries again by lemma, class and language
   (`docs/study-mode.md`), and Space filters words by who wrote their
   meaning.
-- **Not yet.** Entries change only through Replace; there is no list to
-  edit or delete them, and the Dictionary page's search doesn't show them.
+- **Editing.** A pencil beside the "AI" mark, on the lookup card and on
+  the Dictionary page, opens the entry's editor (`dict/ai_edit.rs`): word,
+  class, language (by name, in any case), meaning, synonyms separated by
+  commas and usages one a line. When the new word, class and language are
+  another entry's, Save asks *Replace it* or *Keep editing* and changes
+  nothing until answered. Delete asks once more (*Delete for good*). The
+  card and the page show the change at once.
 
 ## Saved answers
 
