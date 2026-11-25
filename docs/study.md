@@ -163,12 +163,18 @@ be kept on this machine and used again, beside the downloaded packs.
   word), or one with no class, is never kept.
 - **Language.** The meaning's language is the writer's (Explain's or
   study's), as a code (`language_code`), English when none is set.
-- **Lookup cards.** An English word's kept entries in the card's language
-  follow the packs' rows, each labelled AI (the model in its tooltip) and
-  laid out as the AI card is: meaning, synonym chips and usages. English
-  meanings make a small pack of their own: *Your AI dictionary also has*
-  offers English, and any other kept language, to turn the card to.
+- **Lookup cards.** The AI dictionary is one more dictionary (owner,
+  2026-11-25). An English word's kept entries in the card's language
+  follow the packs' rows, laid out as the AI card is (meaning, synonym
+  chips, usages), with "AI" in the footer beside *1 of N* (the model in
+  its tooltip). Other languages are never offered beside an entry.
   Settings › Dictionary › *AI dictionary first* (off) puts AI rows first.
+- **Its own languages.** A language only the AI dictionary keeps, English
+  (English meanings of English words) or one no pack offers, such as
+  Russian, is a dictionary language like a pack's. Settings › Dictionary ›
+  *Default language* offers it, a card with no entry offers *Try* it, and
+  a word with no entry in it gets *No entry*. Packs can't swap such a
+  pair, so its card shows no swap.
 - **Decks** use entries again by lemma, class and language
   (`docs/study-mode.md`), and Space filters words by who wrote their
   meaning.

@@ -3,10 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use mareader_dict::{Dictionaries, PACKS, Query, Saved, build, db_file};
+use mareader_dict::{Dictionaries, PACKS, Query, Saved, build, db_file, language_code};
 
 /// The Burmese and French test packs, built into a temporary folder; with
-/// `ai`, the AI dictionary keeps "quick" in Burmese and English too.
+/// `ai`, the AI dictionary keeps "quick" in Burmese, English and Russian.
 pub fn fixtures(ai: bool) -> Result<PathBuf, String> {
     let name = match ai {
         true => "mareader-shot-packs-ai",
@@ -52,6 +52,7 @@ fn remember(dir: &Path) -> Result<(), String> {
     let saved = vec![
         quick("my", "အမြန်လုပ်သော", &["မြန်ဆန်သော"]),
         quick("en", "moving or done fast", &["fast", "swift", "brisk"]),
+        quick(&language_code("Russian"), "быстрый", &["скорый"]),
     ];
     dicts.ask(Query::Remember {
         saved,

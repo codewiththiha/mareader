@@ -61,7 +61,7 @@ pub struct Reply {
     /// The languages asked between, when a route was taken.
     pub from: Option<String>,
     pub to: Option<String>,
-    /// How many packs were ready to ask.
+    /// How many dictionaries were ready to ask, the AI one included.
     pub ready: usize,
     /// A pack that couldn't be read, in its own words.
     pub failed: Option<String>,
@@ -69,6 +69,8 @@ pub struct Reply {
     pub found: Vec<Found>,
     /// AI meanings: those kept, or those a `Remember` left in place.
     pub saved: Vec<Saved>,
+    /// The AI dictionary's languages, when this ask read them.
+    pub ai_langs: Option<Vec<String>>,
 }
 
 /// One word's rows in one language, for a word list.
@@ -93,6 +95,7 @@ impl Reply {
             failed: None,
             found: Vec::new(),
             saved: Vec::new(),
+            ai_langs: None,
         }
     }
 }
@@ -106,6 +109,8 @@ pub struct Dictionaries {
     desk: Option<desk::Desk>,
     /// Replies made on the caller's thread, as tests and browsers need.
     done: Vec<Reply>,
+    /// The languages the AI dictionary keeps meanings in.
+    ai_langs: Vec<String>,
 }
 
 impl Dictionaries {
@@ -160,6 +165,11 @@ impl Dictionaries {
         ticket
     }
 
+    /// The languages the AI dictionary on this computer keeps meanings in.
+    pub fn ai_languages(&self) -> &[String] {
+        &self.ai_langs
+    }
+
     /// Takes in progress and replies; true if a pack's state changed.
     pub fn poll(&mut self) -> (bool, Vec<Reply>) {
         let mut replies = std::mem::take(&mut self.done);
@@ -171,9 +181,19 @@ impl Dictionaries {
             for (pack, state) in changes {
                 self.set(pack, state);
             }
+            self.note_langs(&replies);
             return (changed, replies);
         }
         (false, replies)
+    }
+
+    /// Keeps the newest AI dictionary languages a reply read.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn note_langs(&mut self, replies: &[Reply]) {
+        let mut read = replies.iter().filter_map(|r| r.ai_langs.as_ref());
+        if let Some(langs) = read.next_back() {
+            self.ai_langs.clone_from(langs);
+        }
     }
 }
 
@@ -187,6 +207,7 @@ impl Dictionaries {
     /// Keeps packs in `dir`, made if missing; `waker` repaints the app.
     pub fn attach(&mut self, dir: std::path::PathBuf, waker: Waker) -> Result<(), String> {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        self.ai_langs = crate::ai_store::langs_in(&dir);
         let (desk, states) = desk::Desk::start(dir, waker);
         self.states = states;
         self.desk = Some(desk);

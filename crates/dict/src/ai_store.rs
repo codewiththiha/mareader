@@ -34,6 +34,13 @@ pub fn file(dir: &Path) -> PathBuf {
     dir.join(FILE)
 }
 
+/// The languages kept in `dir`'s AI dictionary; none before it is made.
+pub fn langs_in(dir: &Path) -> Vec<String> {
+    let path = file(dir);
+    let open = path.is_file().then(|| AiStore::open(&path).ok()).flatten();
+    open.and_then(|ai| ai.langs().ok()).unwrap_or_default()
+}
+
 pub struct AiStore {
     conn: Connection,
 }
@@ -88,6 +95,15 @@ impl AiStore {
         let key = params![fold(word), class(pos), lang];
         let found = self.conn.query_row(&sql, key, read).optional();
         found.map_err(|e| e.to_string())
+    }
+
+    /// Each language a meaning is kept in, by code.
+    pub fn langs(&self) -> Result<Vec<String>, String> {
+        let sql = "SELECT DISTINCT lang FROM saved ORDER BY lang";
+        let mut stmt = self.conn.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0));
+        let rows = rows.map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
     }
 
     /// Every class kept for `word` in `lang`, or in any, the newest first.

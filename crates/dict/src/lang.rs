@@ -24,12 +24,27 @@ const LANGUAGES: [(&str, &str, &[Script]); 9] = [
     ("th", "Thai", &[Script::Thai]),
 ];
 
-/// A language's English name; an unknown code as written, uppercased.
+/// A language's English name. An unknown code is uppercased; a name the
+/// AI dictionary keeps, lower case, gets its capitals back.
 pub fn name(code: &str) -> String {
-    LANGUAGES
-        .iter()
-        .find(|(c, ..)| *c == code)
-        .map_or_else(|| code.to_uppercase(), |(_, n, _)| (*n).to_owned())
+    let known = LANGUAGES.iter().find(|(c, ..)| *c == code);
+    known.map_or_else(|| unknown(code), |(_, n, _)| (*n).to_owned())
+}
+
+fn unknown(code: &str) -> String {
+    if code.chars().count() <= 3 {
+        return code.to_uppercase();
+    }
+    let mut after_letter = false;
+    let mut named = String::with_capacity(code.len());
+    for ch in code.chars() {
+        match after_letter {
+            true => named.push(ch),
+            false => named.extend(ch.to_uppercase()),
+        }
+        after_letter = ch.is_alphabetic();
+    }
+    named
 }
 
 /// A language's code by English name, as packs and the AI dictionary
@@ -111,5 +126,8 @@ mod tests {
         assert_eq!(name("xx"), "XX");
         assert_eq!(code_of("Japanese"), "jp");
         assert_eq!(code_of("Italian"), "italian");
+        assert_eq!(name("italian"), "Italian");
+        let kept = code_of("Chinese (Traditional)");
+        assert_eq!(name(&kept), "Chinese (Traditional)");
     }
 }

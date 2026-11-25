@@ -32,6 +32,9 @@ fn a_meaning_is_kept_by_word_class_and_language() {
     assert_eq!(store.word("book", Some("en")).unwrap().len(), 2, "two");
     assert_eq!(store.word("book", None).unwrap().len(), 3, "any language");
     assert_eq!(store.get("book", "adjective", "en").unwrap(), None);
+    assert_eq!(store.langs().unwrap(), ["en", "ja"], "each language once");
+    assert_eq!(langs_in(dir.path()), ["en", "ja"]);
+    assert!(langs_in(&dir.path().join("none")).is_empty());
 }
 
 #[test]

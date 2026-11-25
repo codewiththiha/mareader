@@ -65,6 +65,11 @@ impl Service {
             .collect()
     }
 
+    /// The languages this computer's AI dictionary keeps meanings in.
+    pub fn ai_languages(&self) -> &[String] {
+        self.service.ai_languages()
+    }
+
     /// Submits a dictionary lookup query, returning its ticket.
     pub fn ask(&mut self, query: Query) -> Ticket {
         self.service.ask(query)

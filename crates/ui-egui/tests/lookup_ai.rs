@@ -1,17 +1,17 @@
-//! AI dictionary meanings on the lookup card: after the packs' rows, first
-//! when the reader says so, and English on its own.
+//! The AI dictionary on the lookup card: one more dictionary, marked
+//! "AI", in the language asked for, and a source of its own languages.
 
 use std::path::Path;
 use std::sync::Arc;
 
 use egui_kittest::kittest::Queryable as _;
-use mareader_dict::{Dictionaries, Query, Saved};
+use mareader_dict::{Dictionaries, Query, Saved, language_code};
 use mareader_engine::command::Command;
 use mareader_ui_egui::ui_command::Sent;
 
-use crate::dictionary::{reader, select, shelf};
+use crate::dictionary::{H, reader, select, shelf};
 
-/// Keeps an AI's "quick" in Burmese and in English in `dir`.
+/// Keeps an AI's "quick" in Burmese, English and Russian in `dir`.
 fn remember(dir: &Path) {
     let mut dicts = Dictionaries::default();
     let attached = dicts.attach(dir.to_owned(), Arc::new(|| {}));
@@ -25,7 +25,12 @@ fn remember(dir: &Path) {
         synonyms: vec!["swift".into()],
         ..Saved::default()
     };
-    let saved = vec![said("my", "အမြန်"), said("en", "moving fast")];
+    let russian = language_code("Russian");
+    let saved = vec![
+        said("my", "အမြန်"),
+        said("en", "moving fast"),
+        said(&russian, "быстрый"),
+    ];
     dicts.ask(Query::Remember {
         saved,
         replace: false,
@@ -34,34 +39,77 @@ fn remember(dir: &Path) {
     assert!(replies.iter().all(|r| r.failed.is_none()));
 }
 
-fn answers(h: &crate::dictionary::H) -> Vec<String> {
+fn answers(h: &H) -> Vec<String> {
     h.state().dict().card_answers().unwrap_or_default()
 }
 
+fn look_up(h: &mut H, words: &str) {
+    select(h, words);
+    h.get_by_label("Look up").click();
+    h.run();
+}
+
+/// Sets the card's language, or which dictionary leads.
+fn set(h: &mut H, lang: Option<&str>, ai_first: bool) {
+    let mut s = h.state().settings().clone();
+    s.dictionary.default_lang = lang.map(str::to_owned);
+    s.dictionary.ai_first = ai_first;
+    let set = Command::SetSettings(Box::new(s));
+    h.state_mut().queue(Sent::Engine(set));
+    h.run();
+}
+
+fn marks(h: &H) -> usize {
+    h.query_all_by_label("AI").count()
+}
+
 #[test]
-fn ai_meanings_follow_the_packs_lead_when_asked_and_stand_alone() {
+fn ai_meanings_extend_the_language_asked_and_carry_the_mark() {
     let dir = shelf();
     remember(dir.path());
     let mut h = reader(dir.path());
-    select(&mut h, "quick");
-    h.get_by_label("Look up").click();
-    h.run();
+    look_up(&mut h, "quick");
     assert_eq!(answers(&h), ["မြန်သော", "အမြန်"]);
-    h.get_by_label("Your AI dictionary also has:");
-    h.get_by_label("English").click();
+    let none = h.query_by_label_contains("also has").is_none();
+    assert!(none, "no other language offered");
+    let pack = marks(&h);
+    h.get_by_label("Next entry").click();
     h.run();
-    assert_eq!(answers(&h), ["moving fast"], "English alone");
+    assert_eq!(marks(&h), pack + 1, "the AI entry is marked");
     h.get_by_label("Synonyms");
-    h.get_by_label("swift");
     h.key_press(egui::Key::Escape);
     h.run();
 
-    let mut s = h.state().settings().clone();
-    s.dictionary.ai_first = true;
-    let set = Command::SetSettings(Box::new(s));
-    h.state_mut().queue(Sent::Engine(set));
-    select(&mut h, "quick");
-    h.get_by_label("Look up").click();
-    h.run();
+    set(&mut h, None, true);
+    look_up(&mut h, "quick");
     assert_eq!(answers(&h), ["အမြန်", "မြန်သော"], "AI first");
+    h.key_press(egui::Key::Escape);
+    h.run();
+
+    set(&mut h, Some("en"), false);
+    look_up(&mut h, "quick");
+    assert_eq!(answers(&h), ["moving fast"], "English alone");
+    h.get_by_label("swift");
+}
+
+#[test]
+fn a_language_only_the_ai_dictionary_keeps_is_a_dictionary_language() {
+    let dir = shelf();
+    remember(dir.path());
+    let mut h = reader(dir.path());
+    look_up(&mut h, "quick brown");
+    h.get_by_label("No entry for “quick brown”.");
+    h.get_by_label("Try English");
+    h.get_by_label("Try Russian").click();
+    h.run();
+    assert!(answers(&h).is_empty(), "no entry in Russian");
+    let swap = h.query_by_label("English → Russian");
+    assert!(swap.is_none(), "packs can't swap it");
+    h.key_press(egui::Key::Escape);
+    h.run();
+
+    let russian = language_code("Russian");
+    set(&mut h, Some(&russian), false);
+    look_up(&mut h, "quick");
+    assert_eq!(answers(&h), ["быстрый"]);
 }

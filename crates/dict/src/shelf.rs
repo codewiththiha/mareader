@@ -105,6 +105,7 @@ impl Shelf {
             Ok(stayed) => reply.saved = stayed,
             Err(why) => reply.failed = Some(why),
         }
+        reply.ai_langs = Some(self.ai_langs());
         reply
     }
 
@@ -124,22 +125,25 @@ impl Shelf {
 
     /// A card's ask: from the word's language to `to`, else another.
     ///
-    /// An English word's AI dictionary entries in that language follow
-    /// the packs' rows; a language only the AI dictionary has, English
-    /// included, may be asked too. The reply's `saved` holds every entry
-    /// kept for the word, so a card can offer their languages.
+    /// For an English word the AI dictionary is one more dictionary: its
+    /// entries in `to` follow the packs' rows, and a language only it
+    /// keeps, English included, is asked like a pack's.
     pub fn look_up(&mut self, word: &str, to: Option<&str>) -> Reply {
         let ready = self.ready();
         let langs = languages(&ready);
         let from = lang::detect(word, &langs).unwrap_or(HUB);
-        let kept = self.kept(word, from);
-        let kept_in = |t: &str| kept.iter().any(|s| s.lang == t);
+        let ai = if from == HUB {
+            self.ai_langs()
+        } else {
+            Vec::new()
+        };
+        let in_ai = |t: &str| ai.iter().any(|l| l == t);
         let to = to
-            .filter(|t| (*t != from && langs.contains(t)) || kept_in(t))
+            .filter(|t| (*t != from && langs.contains(t)) || in_ai(t))
             .or_else(|| langs.iter().copied().find(|l| *l != from))
-            .or_else(|| kept.first().map(|s| s.lang.as_str()))
+            .or_else(|| ai.first().map(String::as_str))
             .map(str::to_owned);
-        let mut reply = Reply::new(ready.len());
+        let mut reply = Reply::new(ready.len() + usize::from(!ai.is_empty()));
         let Some(to) = to else {
             return reply;
         };
@@ -151,20 +155,23 @@ impl Shelf {
             }
         }
         order(&mut reply.entries, CARD_ROWS);
-        let own = kept.iter().filter(|s| s.lang == to);
-        reply.entries.extend(own.map(ai_entry));
-        (reply.from, reply.to, reply.saved) = (Some(from.to_owned()), Some(to), kept);
+        if in_ai(&to) {
+            let kept = self.ai().and_then(|s| s.word(word, Some(to.as_str())));
+            let kept = kept.unwrap_or_default();
+            reply.entries.extend(kept.iter().map(ai_entry));
+        }
+        reply.ai_langs = (from == HUB).then_some(ai);
+        (reply.from, reply.to) = (Some(from.to_owned()), Some(to));
         reply
     }
 
-    /// What the AI dictionary keeps for an English word, in any language;
-    /// nothing before it was first written to.
-    fn kept(&mut self, word: &str, from: &str) -> Vec<Saved> {
-        if from != HUB || (self.ai.is_none() && !file(&self.dir).is_file()) {
+    /// The AI dictionary's languages; none before it was first written to.
+    fn ai_langs(&mut self) -> Vec<String> {
+        if self.ai.is_none() && !file(&self.dir).is_file() {
             return Vec::new();
         }
-        let kept = self.ai().and_then(|ai| ai.word(word, None));
-        kept.unwrap_or_default()
+        let langs = self.ai().and_then(AiStore::langs);
+        langs.unwrap_or_default()
     }
 
     /// Each word's rows in each language of `to` a pack has.

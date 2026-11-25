@@ -443,10 +443,10 @@ shown without an update check.
 - **Dictionary card, compact.** 300 px wide with tighter padding; the
   languages sit on the word's line before ✕. Burmese and other tall scripts
   draw answers at 1.05× the text size, not 1.15×: they run taller at a size.
-  An AI dictionary row carries a small accent "AI" at the left of the
-  language line and the AI card's layout (`ai_said.rs`): Meaning, synonym
-  chips, Usages. Other languages it is kept in follow as quiet pills; an
-  English-to-English card shows no swap.
+  An AI dictionary row has the AI card's layout (`ai_said.rs`): Meaning,
+  synonym chips, Usages. A small accent "AI" sits in the footer after the
+  *1 of N* pager. A pair no pack can swap (English to English, or a
+  language only the AI dictionary keeps) shows no swap.
 - **Long highlights.** A notes-panel quote stops at three lines and a note at
   four; a cut row ends in "Show more", which opens it in place, then "Show
   less". The row's accessible label always carries the whole text.

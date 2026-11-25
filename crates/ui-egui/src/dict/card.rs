@@ -5,7 +5,7 @@ use egui::{
     ScrollArea, Sense, Ui, Vec2, WidgetInfo, WidgetType, pos2, vec2,
 };
 use mareader_cefr::Role;
-use mareader_dict::{Entry, Reply, WordMatch, language};
+use mareader_dict::{Entry, HUB, Reply, WordMatch, language};
 use mareader_engine::command::Command;
 use mareader_engine::dict::Action;
 use mareader_engine::settings::Tab;
@@ -54,8 +54,8 @@ pub struct View<'a> {
     pub attached: bool,
     /// True when an AI explainer is available for this word.
     pub ai_ready: bool,
-    /// Target languages available across downloaded dictionary packs.
-    pub languages: &'a [&'a str],
+    /// The languages an English word can be looked up in.
+    pub languages: Languages<'a>,
     pub at: Rect,
     pub room: Rect,
     /// Its word is being said aloud.
@@ -64,6 +64,20 @@ pub struct View<'a> {
     pub sound: &'a [mareader_engine::sounds::Line],
     /// Who says the word, when a voice here speaks its language.
     pub speaker: Option<&'a mareader_engine::read_aloud::state::Speaker>,
+}
+
+/// The packs' languages for English words, and the AI dictionary's.
+#[derive(Clone, Copy)]
+pub struct Languages<'a> {
+    pub packs: &'a [&'a str],
+    pub ai: &'a [String],
+}
+
+impl Languages<'_> {
+    /// A pack answers `to`, so the pair can be swapped.
+    fn swaps(&self, (from, to): (&str, &str)) -> bool {
+        from != to && (from != HUB || self.packs.contains(&to))
+    }
 }
 
 /// Steps the open lookup card's pager by `delta` (`-1` or `+1`).
@@ -141,9 +155,9 @@ fn card(ui: &mut Ui, id: Id, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Co
     };
     let used = ui.cursor().top() - top + f32::from(word_card::PAD_Y) * 2.0 + word_card::FOOT;
     let list = (cap - used).max(word_card::BODY_MIN);
+    let pair = pair.filter(|&p| view.languages.swaps(p));
     word_card::section(ui, word_card::PAD_Y, |ui| {
         body(ui, view.word, e, pair, (&mut p, list), t, out);
-        also_kept(ui, reply, t, out);
     });
     word_card::rule(ui, t);
     footer(ui, view, Some(e), (&mut p, n), t, out);
@@ -192,11 +206,8 @@ fn body(
             }
             ui.spacing_mut().item_spacing.y = 4.0;
             let near = entry::near(e, asked);
-            // English to English has nothing to swap.
-            let pair = pair.filter(|(from, to)| from != to);
-            let ai = e.ai.as_ref().map(|s| s.model.as_str());
-            if near.is_some() || pair.is_some() || ai.is_some() {
-                lang_row(ui, (near, ai), pair, t, out);
+            if near.is_some() || pair.is_some() {
+                lang_row(ui, near, pair, t, out);
             }
             entry::rows(ui, e, t, false);
         });
@@ -206,10 +217,10 @@ fn body(
     p.edges = (off <= 0.5, off >= room - 0.5);
 }
 
-/// Near lemma and the AI mark on the left, the language pair on the right.
+/// Near lemma on the left, language pair on the right.
 fn lang_row(
     ui: &mut Ui,
-    (near, ai): (Option<&str>, Option<&str>),
+    near: Option<&str>,
     pair: Option<(&str, &str)>,
     t: &Tokens,
     out: &mut Commands,
@@ -223,9 +234,6 @@ fn lang_row(
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 if let Some(word) = near {
                     entry::heading(ui, word, t);
-                }
-                if let Some(model) = ai {
-                    entry::ai_badge(ui, model, t);
                 }
             });
         });
@@ -272,7 +280,8 @@ fn lang_swap_pill(ui: &mut Ui, from: &str, to: &str, t: &Tokens, out: &mut Comma
     }
 }
 
-/// Compact footer: `< 1 of N >` pager on the left, actions on the right.
+/// Compact footer: `< 1 of N >` pager and the AI mark on the left,
+/// actions on the right.
 fn footer(
     ui: &mut Ui,
     view: &View<'_>,
@@ -297,6 +306,10 @@ fn footer(
                     ui.spacing_mut().item_spacing.x = 2.0;
                     if n > 1 {
                         pager(ui, p, n, t);
+                        ui.add_space(6.0);
+                    }
+                    if let Some(s) = shown.and_then(|e| e.ai.as_deref()) {
+                        entry::ai_badge(ui, &s.model, t);
                     }
                 });
             });
@@ -354,6 +367,7 @@ fn empty(
         return;
     }
     let why = format!("No entry for “{}”.", view.word);
+    let pair = pair.filter(|&p| view.languages.swaps(p));
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -365,39 +379,23 @@ fn empty(
             });
         });
     });
+    let others = try_instead(view.languages, reply);
+    empty_actions(ui, view.ai_ready, &others, false, t, out);
+}
+
+/// The languages to try instead: the packs', and for an English word
+/// the AI dictionary's, English included.
+fn try_instead<'a>(langs: Languages<'a>, reply: &Reply) -> Vec<&'a str> {
+    let english = reply.from.as_deref().is_none_or(|f| f == HUB);
+    let ai = langs.ai.iter().map(String::as_str).filter(|_| english);
     let mut others: Vec<&str> = Vec::new();
-    let kept: Vec<&str> = reply.saved.iter().map(|s| s.lang.as_str()).collect();
-    for code in view.languages.iter().chain(&kept).copied() {
-        // The AI dictionary may hold an English word's English meaning.
-        let from = reply.from.as_deref() == Some(code) && !kept.contains(&code);
+    for code in langs.packs.iter().copied().chain(ai) {
+        let from = reply.from.as_deref() == Some(code) && code != HUB;
         if !from && reply.to.as_deref() != Some(code) && !others.contains(&code) {
             others.push(code);
         }
     }
-    empty_actions(ui, view.ai_ready, &others, false, t, out);
-}
-
-/// The other languages the AI dictionary keeps the word in, to turn to.
-fn also_kept(ui: &mut Ui, reply: &Reply, t: &Tokens, out: &mut Commands) {
-    let mut langs: Vec<&str> = Vec::new();
-    for s in &reply.saved {
-        if reply.to.as_deref() != Some(&s.lang) && !langs.contains(&s.lang.as_str()) {
-            langs.push(&s.lang);
-        }
-    }
-    if langs.is_empty() {
-        return;
-    }
-    ui.add_space(6.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        muted(ui, t, "Your AI dictionary also has:");
-        for code in langs {
-            if word_card::action_pill(ui, None, &language(code), false, t).clicked() {
-                out.push(Sent::Ui(UiCommand::WordCardTryLang(code.to_owned())));
-            }
-        }
-    });
+    others
 }
 
 fn empty_actions(

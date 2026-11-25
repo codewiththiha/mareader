@@ -103,7 +103,8 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
 fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
     section(ui, "Lookup card");
     group(ui, |ui| {
-        default_language(ui, s, &dict.ready());
+        let langs = offered(&dict.ready(), dict.ai_languages());
+        default_language(ui, s, &langs);
         divider(ui);
         let hint = "With no entry for a word, the closest ones in its place";
         switch_row(ui, "Show near matches", hint, &mut s.near);
@@ -111,10 +112,22 @@ fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
         let hint = "Meanings AI wrote on this computer show before the packs' rows";
         switch_row(ui, "AI dictionary first", hint, &mut s.ai_first);
     });
-    note(
-        ui,
-        "The card answers in this language. Only a language whose pack is downloaded is offered.",
-    );
+    let why = "The card answers in this language. A language is offered once its pack is \
+               downloaded, or once the AI dictionary keeps a meaning in it.";
+    note(ui, why);
+}
+
+/// The packs' languages but English, then the AI dictionary's, English
+/// included: it keeps English meanings of English words.
+fn offered(ready: &[&'static Pack], ai: &[String]) -> Vec<String> {
+    let packs = languages(ready).into_iter().filter(|l| *l != HUB);
+    let mut offered: Vec<String> = packs.map(str::to_owned).collect();
+    for l in ai {
+        if !offered.contains(l) {
+            offered.push(l.clone());
+        }
+    }
+    offered
 }
 
 /// A pack named by its language; buttons keep the full "English → X".
@@ -178,13 +191,11 @@ const OPENS: [(DictionaryOpens, &str, &str); 2] = [
     ),
 ];
 
-fn default_language(ui: &mut Ui, s: &mut DictionarySettings, ready: &[&'static Pack]) {
-    // English is what packs translate from; the card answers in another.
-    let offered: Vec<&str> = languages(ready).into_iter().filter(|l| *l != HUB).collect();
+fn default_language(ui: &mut Ui, s: &mut DictionarySettings, offered: &[String]) {
     let chosen: Option<&str> = s
         .default_lang
         .as_deref()
-        .and_then(|l| offered.iter().copied().find(|o| *o == l));
+        .and_then(|l| offered.iter().map(String::as_str).find(|o| *o == l));
     let shown = chosen.map_or("Automatic".to_owned(), language);
     row(
         ui,
@@ -199,16 +210,30 @@ fn default_language(ui: &mut Ui, s: &mut DictionarySettings, ready: &[&'static P
                         if ui.selectable_label(chosen.is_none(), "Automatic").clicked() {
                             s.default_lang = None;
                         }
-                        for l in &offered {
+                        for l in offered {
                             if ui
-                                .selectable_label(chosen == Some(*l), language(l))
+                                .selectable_label(chosen == Some(l.as_str()), language(l))
                                 .clicked()
                             {
-                                s.default_lang = Some((*l).to_owned());
+                                s.default_lang = Some(l.clone());
                             }
                         }
                     });
             });
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_ai_dictionarys_languages_are_offered_after_the_packs() {
+        let my = PACKS.iter().find(|p| p.target == "my");
+        let ready: Vec<&'static Pack> = my.into_iter().collect();
+        let ai = ["en", "my", "russian"].map(str::to_owned);
+        assert_eq!(offered(&ready, &ai), ["my", "en", "russian"]);
+        assert!(offered(&[], &[]).is_empty());
+    }
 }

@@ -334,7 +334,7 @@ impl DictUi {
     pub fn show(
         &mut self,
         ctx: &Context,
-        (attached, ai_ready, languages): (bool, bool, &[&str]),
+        (attached, ai_ready, languages): (bool, bool, card::Languages<'_>),
         (panes, heard): (&[(PaneId, Rect)], mareader_engine::sounds::Heard<'_>),
         pane_info: impl Fn(PaneId) -> (Option<Vec2>, Option<usize>),
         out: &mut Commands,

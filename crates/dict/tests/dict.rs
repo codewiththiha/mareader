@@ -341,11 +341,32 @@ fn a_card_shows_ai_meanings_after_the_packs_and_an_english_one_alone() {
     let packs: Vec<&str> = reply.entries.iter().map(|e| e.pack).collect();
     let my = "mcfnlp-en-my";
     assert_eq!(packs, [my, my, mareader_dict::AI_PACK]);
-    assert_eq!(reply.saved.len(), 2, "both languages offered");
+    assert!(reply.saved.is_empty(), "no other language offered");
+    assert_eq!(dicts.ai_languages(), ["en", "my"]);
     let reply = ask(&mut dicts, look_up("run", Some("en")));
     let said: Vec<&str> = reply.entries.iter().map(|e| e.answer()).collect();
     assert_eq!(said, ["move fast on foot"]);
     assert_eq!(reply.to.as_deref(), Some("en"));
     let ai = reply.entries[0].ai.as_deref();
     assert_eq!(ai.map(|s| s.pos.as_str()), Some("verb"));
+}
+
+#[test]
+fn a_language_only_the_ai_dictionary_keeps_is_asked_like_a_packs() {
+    let (dir, mut dicts) = shelf();
+    ask(&mut dicts, remember(vec![run("ru", "бежать")], false));
+    assert_eq!(dicts.ai_languages(), ["ru"]);
+    let reply = ask(&mut dicts, look_up("run", Some("ru")));
+    let said: Vec<&str> = reply.entries.iter().map(|e| e.answer()).collect();
+    assert_eq!(said, ["бежать"]);
+    assert_eq!(reply.ready, 3, "the AI dictionary counts");
+    let mut again = Dictionaries::default();
+    let attached = again.attach(dir.path().to_owned(), Arc::new(|| {}));
+    attached.unwrap();
+    assert_eq!(again.ai_languages(), ["ru"], "read at start");
+    let reply = ask(&mut dicts, look_up("walk", Some("ru")));
+    assert_eq!(reply.to.as_deref(), Some("ru"), "kept, with no entry");
+    assert!(reply.entries.is_empty());
+    let reply = ask(&mut dicts, look_up("walk", Some("de")));
+    assert_eq!(reply.to.as_deref(), Some("my"), "a language none has");
 }
