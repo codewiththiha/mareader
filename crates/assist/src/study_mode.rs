@@ -10,7 +10,7 @@ use mareader_study::Pos;
 use mareader_study::mode::{PER_REQUEST_MAX, Wanted, Written};
 use serde_json::{Map, Value, json};
 
-use crate::prompt::{AS_DATA, BOOK_ONLY_ASKED, JSON_ONLY, Prompt, bilingual, quote};
+use crate::prompt::{AS_DATA, BOOK_ONLY_ASKED, JSON_ONLY, Prompt, meaning_in, only_meaning, quote};
 use crate::task::{
     BOOK_ONLY, MEANING, POS, POS_ASKED, SYNONYMS, Task, USAGES, field, flag, list, rules, text,
 };
@@ -45,13 +45,7 @@ const WORD: &[&str] = &["word", "lemma", "term"];
 fn language_rule(language: Option<&str>) -> String {
     match language {
         None => "Write everything in simple English. ".to_owned(),
-        Some(language) => {
-            let rest = format!(
-                "Only the meaning is in {language}. Write the part of speech, synonyms and the \
-                 usage in English, never in {language}. "
-            );
-            format!("{}{rest}", bilingual(language))
-        }
+        Some(language) => only_meaning(language, "English"),
     }
 }
 
@@ -59,10 +53,7 @@ fn language_rule(language: Option<&str>) -> String {
 fn schema(language: Option<&str>) -> Value {
     let meaning = match language {
         None => "The word's common meaning for this part of speech, in simple English.".into(),
-        Some(language) => format!(
-            "The word's meaning in {language}: its closest {language} equivalent for this \
-             part of speech, with a short note only if none fits."
-        ),
+        Some(language) => meaning_in(language),
     };
     let card = json!({
         "type": "object",
@@ -283,7 +274,7 @@ mod tests {
         };
         let system = burmese.prompt().system;
         assert!(system.contains("meaning in Burmese"));
-        let english = "part of speech, synonyms and the usage in English, never in Burmese";
+        let english = "part of speech, synonyms and usages in English, never in Burmese";
         assert!(system.contains(english), "a class the reader can read");
         let asked = burmese.prompt();
         let ask = "Write a card for each word, its meaning in Burmese.";

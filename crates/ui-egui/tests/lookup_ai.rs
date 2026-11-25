@@ -216,3 +216,15 @@ fn an_edit_onto_a_kept_entry_asks_before_replacing_it() {
     look_up(&mut h, "quick");
     assert_eq!(answers(&h), ["အမြန်"], "it took the English entry's place");
 }
+
+#[test]
+fn resting_on_a_word_reads_the_ai_dictionary_with_no_pack() {
+    let (words, _) = crate::common::shelves();
+    let only_ai = tempfile::tempdir().expect("a folder");
+    remember(only_ai.path());
+    let mut h = crate::common::levels_reader(words.path(), Some(only_ai.path()));
+    h.hover_at(crate::common::spot(&h, "quick"));
+    h.run_steps(20);
+    assert_eq!(h.state().dict().card_word(), Some("quick"));
+    assert!(!answers(&h).is_empty(), "the AI dictionary answers");
+}

@@ -91,7 +91,7 @@ impl MareaderApp {
         self.probe_dict_for_study();
     }
 
-    /// Resting on a shaded word looks it up, when a pack can answer.
+    /// Resting on a shaded word looks it up, when a dictionary can answer.
     pub(super) fn rest(
         &mut self,
         pane: PaneId,
@@ -100,7 +100,7 @@ impl MareaderApp {
         at: Rect,
     ) {
         if !self.settings().dictionary.hover
-            || self.session.dict().ready().is_empty()
+            || self.session.dict().languages().is_empty()
             || self.ui.study.card_open()
         {
             return;
@@ -121,7 +121,7 @@ impl MareaderApp {
 
     /// Silently checks offline dictionaries so an AI card knows if tabs apply.
     pub(super) fn probe_dict_for_study(&mut self) {
-        if !self.session.dict().attached() || self.session.dict().ready().is_empty() {
+        if !self.session.dict().attached() || self.session.dict().languages().is_empty() {
             return;
         }
         let Some((pane, word, at)) = self.ui.study.card_probe_info() else {

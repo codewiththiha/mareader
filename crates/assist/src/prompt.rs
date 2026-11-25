@@ -50,6 +50,23 @@ explanation only when no equivalent fits exactly. "
     )
 }
 
+/// Only the meaning in `language`; the rest in `own`, never in it.
+pub fn only_meaning(language: &str, own: &str) -> String {
+    format!(
+        "{}Only the meaning is in {language}. Write the part of speech, synonyms and \
+         usages in {own}, never in {language}. ",
+        bilingual(language)
+    )
+}
+
+/// The schema's ask for a meaning in `language`; field descriptions steer.
+pub fn meaning_in(language: &str) -> String {
+    format!(
+        "The word's meaning in {language}: its closest {language} equivalent for this \
+         part of speech, with a short note only if none fits."
+    )
+}
+
 /// `text` as a one-line JSON string, so it can't pass for instructions.
 pub fn quote(text: &str, max: usize) -> String {
     let flat: String = text

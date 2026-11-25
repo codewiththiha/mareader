@@ -4,8 +4,8 @@ use mareader_study::{CONTEXT_CHARS, MAX_GLOSS_CHARS, Pos, WordInfo};
 use serde_json::{Map, Value, json};
 
 use crate::prompt::{
-    AS_DATA, BOOK_ONLY_ASKED, CLASS_HINT, COMMON_MEANING, JSON_ONLY, OWN_WORD, Prompt, bilingual,
-    quote,
+    AS_DATA, BOOK_ONLY_ASKED, CLASS_HINT, COMMON_MEANING, JSON_ONLY, OWN_WORD, Prompt, meaning_in,
+    only_meaning, quote,
 };
 
 /// What to ask, and how to read the answer, whoever answers.
@@ -39,14 +39,8 @@ pub(crate) fn rules() -> String {
 
 const SAME_LANGUAGE: &str = "Write in the language of the context, simply and briefly. ";
 
-/// A meaning in another language reads like a bilingual dictionary's.
-fn translated(language: &str) -> String {
-    let rest = format!(
-        "Only the meaning is in {language}. Write pos, synonyms and usages in the word's own \
-         language, English for an English word, never in {language}. "
-    );
-    format!("{}{rest}", bilingual(language))
-}
+/// Where Explain's synonyms and usages stay when the meaning is translated.
+const OWN: &str = "the word's own language, English for an English word";
 
 /// Synonyms and usages stay in the word's language, never the meaning's.
 fn own_language(language: Option<&str>) -> String {
@@ -122,11 +116,8 @@ impl Task for Explain<'_> {
         let (rule, schema) = match self.language {
             None => (SAME_LANGUAGE.to_owned(), word_info_schema()),
             Some(language) => {
-                let meaning = format!(
-                    "The word's meaning in {language}: its closest {language} \
-                     equivalent for this part of speech, with a short note only if none fits."
-                );
-                (translated(language), schema_with(&meaning, Some(language)))
+                let schema = schema_with(&meaning_in(language), Some(language));
+                (only_meaning(language, OWN), schema)
             }
         };
         Prompt {
