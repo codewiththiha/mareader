@@ -113,3 +113,31 @@ fn a_language_only_the_ai_dictionary_keeps_is_a_dictionary_language() {
     look_up(&mut h, "quick");
     assert_eq!(answers(&h), ["быстрый"]);
 }
+
+fn found(h: &H, text: &str) -> bool {
+    h.query_all_by_label_contains(text).count() > 0
+}
+
+#[test]
+fn the_dictionary_page_searches_the_ai_dictionary_as_one_more() {
+    let dir = shelf();
+    remember(dir.path());
+    let mut h = reader(dir.path());
+    let mut s = h.state().settings().clone();
+    s.dictionary.langs = vec![mareader_dict::AI_PACK.into()];
+    let set = Command::SetSettings(Box::new(s.clone()));
+    h.state_mut().queue(Sent::Engine(set));
+    let page = h.state_mut().set_option("dict_page", "quick");
+    page.expect("a known option");
+    h.run_steps(30);
+    assert!(found(&h, "быстрый") && found(&h, "moving fast"));
+    assert!(found(&h, "Synonyms") && marks(&h) > 0);
+
+    s.dictionary.pair = true;
+    s.dictionary.to = Some(language_code("Russian"));
+    let set = Command::SetSettings(Box::new(s));
+    h.state_mut().queue(Sent::Engine(set));
+    h.run_steps(30);
+    assert!(found(&h, "быстрый"), "an AI-only language pairs");
+    assert!(!found(&h, "moving fast"), "Russian alone");
+}

@@ -320,12 +320,14 @@ pub fn tag(ui: &mut Ui, text: &str, t: &Tokens) -> Response {
         .inner
 }
 
-/// "English → Burmese", from an entry's pack.
+/// "English → Burmese", from an entry's pack or its AI meaning.
 pub fn way(e: &Entry) -> Option<String> {
-    let p = mareader_dict::PACKS.iter().find(|p| p.id == e.pack)?;
+    let pack = mareader_dict::PACKS.iter().find(|p| p.id == e.pack);
+    let ai = e.ai.as_ref().map(|s| (mareader_dict::HUB, s.lang.as_str()));
+    let (source, target) = pack.map(|p| (p.source, p.target)).or(ai)?;
     let (from, to) = match e.flipped {
-        true => (p.target, p.source),
-        false => (p.source, p.target),
+        true => (target, source),
+        false => (source, target),
     };
     let name = mareader_dict::language;
     Some(format!("{} → {}", name(from), name(to)))
@@ -354,7 +356,7 @@ pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Command
             ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
             let tags = entry::tags(e);
             let way = way(e).filter(|_| s.way);
-            if !tags.is_empty() || e.via.is_some() || way.is_some() {
+            if !tags.is_empty() || e.via.is_some() || way.is_some() || e.ai.is_some() {
                 ui.horizontal_wrapped(|ui| {
                     // As tall as the chips, not a control's height.
                     ui.spacing_mut().interact_size.y = 18.0;
@@ -368,6 +370,9 @@ pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Command
                     if let Some(way) = &way {
                         let way = RichText::new(way).size(t.text_small).color(t.muted);
                         ui.add(egui::Label::new(way).selectable(false));
+                    }
+                    if let Some(said) = &e.ai {
+                        entry::ai_badge(ui, &said.model, t);
                     }
                 });
             }
@@ -397,6 +402,9 @@ pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Command
                     let text = RichText::new(gloss).italics().size(t.text_small);
                     ui.label(text.color(t.muted));
                 }
+            }
+            if let Some(said) = &e.ai {
+                crate::ai_said::show(ui, ("", &said.synonyms, &said.usages), t);
             }
         });
     let rect = inner.response.rect;

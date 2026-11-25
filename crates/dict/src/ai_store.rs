@@ -8,6 +8,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::ai::{Saved, class};
 use crate::search::fold;
+use crate::store::escape;
 
 const FILE: &str = "ai.sqlite";
 const LAYOUT: &str = "1";
@@ -120,6 +121,26 @@ impl AiStore {
         let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![fold(word), lang], read)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+    }
+
+    /// Up to `limit` meanings whose word, or else meaning, holds `text`.
+    pub fn search(
+        &self,
+        text: &str,
+        lang: Option<&str>,
+        meaning: bool,
+        limit: usize,
+    ) -> Result<Vec<Saved>, String> {
+        let col = if meaning { "meaning" } else { "word_fold" };
+        let only = "(?2 IS NULL OR lang = ?2)";
+        let sql = format!("{SELECT} WHERE {col} LIKE ?1 ESCAPE '\\' AND {only} LIMIT ?3");
+        let like = format!("%{}%", escape(&fold(text)));
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![like, lang, limit], read)
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
     }

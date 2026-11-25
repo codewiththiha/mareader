@@ -5,6 +5,7 @@ mod card_state;
 mod entry;
 mod look;
 pub mod page;
+mod pickers;
 pub mod window;
 mod window_chrome;
 mod window_geom;

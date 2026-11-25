@@ -57,6 +57,18 @@ pub fn languages(packs: &[&'static Pack]) -> Vec<&'static str> {
     out
 }
 
+/// The packs' languages, then English and each kept in the AI dictionary.
+pub fn languages_with<'a>(packs: &[&'static Pack], ai: &'a [String]) -> Vec<&'a str> {
+    let mut out: Vec<&'a str> = languages(packs);
+    let more = ai.iter().map(String::as_str);
+    for lang in std::iter::once(HUB).filter(|_| !ai.is_empty()).chain(more) {
+        if !out.contains(&lang) {
+            out.push(lang);
+        }
+    }
+    out
+}
+
 /// Two languages a search names; none leaves each to be worked out.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Pair {
@@ -65,14 +77,13 @@ pub struct Pair {
 }
 
 /// Chosen languages stand; else script, then English, names `from`.
-pub fn settle(pair: &Pair, word: &str, packs: &[&'static Pack]) -> Option<(String, String)> {
-    let langs = languages(packs);
+pub fn settle(pair: &Pair, word: &str, langs: &[&str]) -> Option<(String, String)> {
     if langs.len() < 2 {
         return None;
     }
     let known = |l: &Option<String>| l.clone().filter(|l| langs.contains(&l.as_str()));
     let from = known(&pair.from)
-        .or_else(|| lang::detect(word, &langs).map(str::to_owned))
+        .or_else(|| lang::detect(word, langs).map(str::to_owned))
         .unwrap_or_else(|| HUB.to_owned());
     let to = known(&pair.to)
         .filter(|t| *t != from)
@@ -115,7 +126,7 @@ mod tests {
 
     #[test]
     fn a_pair_settles_from_the_choice_then_the_word() {
-        let packs = all();
+        let packs = languages(&all());
         let none = Pair::default();
         let got = settle(&none, "မီး", &packs);
         assert_eq!(got, Some(("my".into(), "en".into())));
@@ -127,5 +138,20 @@ mod tests {
         };
         assert_eq!(settle(&chosen, "x", &packs).map(|p| p.1), Some("my".into()));
         assert_eq!(settle(&none, "x", &[]), None);
+    }
+
+    #[test]
+    fn the_ai_dictionarys_languages_join_after_the_packs() {
+        let my: Vec<&'static Pack> = PACKS.iter().filter(|p| p.id == "mcfnlp-en-my").collect();
+        let ai = ["my".to_owned(), "russian".to_owned()];
+        assert_eq!(languages_with(&my, &ai), ["en", "my", "russian"]);
+        assert_eq!(languages_with(&[], &ai), ["en", "my", "russian"]);
+        assert!(languages_with(&[], &[]).is_empty());
+        let to = Pair {
+            from: None,
+            to: Some("russian".into()),
+        };
+        let got = settle(&to, "quick", &languages_with(&[], &ai));
+        assert_eq!(got, Some(("en".into(), "russian".into())));
     }
 }

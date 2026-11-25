@@ -8,7 +8,7 @@ use crate::ai_store::{AiStore, file};
 use crate::entry::{Entry, order};
 use crate::lang;
 use crate::packs::{PACKS, Pack};
-use crate::route::{HUB, Pair, Plan, languages, plans, settle};
+use crate::route::{HUB, Pair, Plan, languages, languages_with, plans, settle};
 use crate::search::{WordMatch, fold};
 use crate::store::{Depth, Row, Side, Store};
 use crate::{Query, Reply};
@@ -239,15 +239,18 @@ impl Shelf {
         (own, near)
     }
 
-    /// The panel's ask: between a pair of languages, or across packs.
+    /// The panel's ask: between a pair of languages, or across packs; the
+    /// AI dictionary answers after them.
     pub fn search(&mut self, text: &str, pair: Option<&Pair>, pack: Option<&str>) -> Reply {
         let ready = self.ready();
-        let mut reply = Reply::new(ready.len());
+        let ai = self.ai_langs();
+        let mut reply = Reply::new(ready.len() + usize::from(!ai.is_empty()));
         if fold(text).is_empty() {
             return reply;
         }
         if let Some(pair) = pair {
-            let Some((from, to)) = settle(pair, text, &ready) else {
+            let langs = languages_with(&ready, &ai);
+            let Some((from, to)) = settle(pair, text, &langs) else {
                 return reply;
             };
             for plan in plans(&from, &to, &ready) {
@@ -256,6 +259,11 @@ impl Shelf {
                     reply.entries = rows;
                     break;
                 }
+            }
+            let side = ai_side(&from, &to).filter(|(l, _)| ai.iter().any(|a| a == l));
+            if let Some((lang, meaning)) = side {
+                let rows = self.ai_found(text, Some(lang), meaning, &mut reply.failed);
+                reply.entries.extend(rows);
             }
             (reply.from, reply.to) = (Some(from), Some(to));
         } else {
@@ -269,9 +277,37 @@ impl Shelf {
                         .extend(rows.into_iter().map(|r| entry(r, p, flipped, None)));
                 }
             }
+            let asks_ai = pack.is_none_or(|id| id == AI_PACK) && !ai.is_empty();
+            for meaning in [false, true].into_iter().filter(|_| asks_ai) {
+                let rows = self.ai_found(text, None, meaning, &mut reply.failed);
+                reply.entries.extend(rows);
+            }
         }
         order(&mut reply.entries, SEARCH_ROWS);
         reply
+    }
+
+    /// AI rows whose word, or with `meaning` meaning, holds `text`.
+    fn ai_found(
+        &mut self,
+        text: &str,
+        lang: Option<&str>,
+        meaning: bool,
+        failed: &mut Option<String>,
+    ) -> Vec<Entry> {
+        let found = self
+            .ai()
+            .and_then(|ai| ai.search(text, lang, meaning, SEARCH_ROWS));
+        let found = found.unwrap_or_else(|e| {
+            *failed = Some(e);
+            Vec::new()
+        });
+        let row = |s: &Saved| Entry {
+            fit: ai_fit(s, text, meaning),
+            flipped: meaning,
+            ..ai_entry(s)
+        };
+        found.iter().map(row).collect()
     }
 
     fn ask(
@@ -365,6 +401,29 @@ fn entry(r: Row, pack: &'static Pack, flipped: bool, via: Option<String>) -> Ent
         fit: r.fit,
         flipped,
         ai: None,
+    }
+}
+
+/// The side of the AI dictionary a pair asks: words from English, else
+/// meanings back to it.
+fn ai_side<'a>(from: &'a str, to: &'a str) -> Option<(&'a str, bool)> {
+    match (from == HUB, to == HUB) {
+        (true, false) => Some((to, false)),
+        (false, true) => Some((from, true)),
+        _ => None,
+    }
+}
+
+/// How near `text` an AI row's word, or with `meaning` its meaning, comes.
+fn ai_fit(saved: &Saved, text: &str, meaning: bool) -> WordMatch {
+    let side = fold(if meaning { &saved.meaning } else { &saved.word });
+    let ask = fold(text);
+    if side == ask {
+        WordMatch::Exact
+    } else if side.starts_with(&ask) {
+        WordMatch::Prefix
+    } else {
+        WordMatch::Substring
     }
 }
 

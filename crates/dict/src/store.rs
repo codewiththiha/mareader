@@ -279,7 +279,7 @@ pub fn stems(word: &str) -> Vec<String> {
 }
 
 /// `ask` with LIKE's wildcards and the escape itself taken literally.
-fn escape(ask: &str) -> String {
+pub(crate) fn escape(ask: &str) -> String {
     let mut out = String::with_capacity(ask.len());
     for c in ask.chars() {
         if matches!(c, '%' | '_' | '\\') {

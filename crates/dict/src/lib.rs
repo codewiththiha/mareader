@@ -33,7 +33,7 @@ pub use ai::{AI_PACK, Saved};
 pub use entry::Entry;
 pub use lang::{code_of as language_code, name as language};
 pub use packs::{PACKS, Pack};
-pub use route::{HUB, Pair, languages};
+pub use route::{HUB, Pair, languages, languages_with};
 pub use search::{WordMatch, fold};
 pub use service::{Dictionaries, Found, Query, Reply, State, Ticket};
 

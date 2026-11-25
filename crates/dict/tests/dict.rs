@@ -391,3 +391,37 @@ fn a_word_list_reads_the_ai_dictionary_after_the_packs() {
     let ru: Vec<&str> = reply.found[1].own.iter().map(|e| e.answer()).collect();
     assert_eq!(ru, ["бежать"]);
 }
+
+fn search(text: &str, pair: Option<Pair>, pack: Option<&str>) -> Query {
+    Query::Search {
+        text: text.into(),
+        pair,
+        pack: pack.map(Into::into),
+    }
+}
+
+#[test]
+fn a_search_reads_the_ai_dictionary_after_the_packs() {
+    let (_dir, mut dicts) = shelf();
+    let saved = vec![run("my", "ပြေး"), run("russian", "бежать")];
+    ask(&mut dicts, remember(saved, false));
+    let all = ask(&mut dicts, search("run", None, None));
+    assert_eq!(all.entries.iter().filter(|e| e.ai.is_some()).count(), 2);
+    let ai = mareader_dict::AI_PACK;
+    let only = ask(&mut dicts, search("ru", None, Some(ai)));
+    assert_eq!(only.entries.len(), 2);
+    assert!(only.entries.iter().all(|e| e.pack == ai));
+    let to = Pair {
+        from: None,
+        to: Some("russian".into()),
+    };
+    let ru = ask(&mut dicts, search("run", Some(to), None));
+    let said: Vec<&str> = ru.entries.iter().map(|e| e.answer()).collect();
+    assert_eq!(said, ["бежать"], "an AI-only language pairs with English");
+    let back = Pair {
+        from: Some("russian".into()),
+        to: Some("en".into()),
+    };
+    let back = ask(&mut dicts, search("бежать", Some(back), None));
+    assert_eq!(back.entries.first().map(|e| e.answer()), Some("run"));
+}

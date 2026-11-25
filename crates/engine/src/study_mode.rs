@@ -33,7 +33,7 @@ pub use run::{Ahead, DeckState, Open, Prior, Run, Setup};
 pub use stand::{Stand, Stands};
 
 /// Who could write study's cards: a model chosen for study (the desktop
-/// app's AI), then a dictionary pack answering from English.
+/// app's AI), then a dictionary, a pack's or the AI dictionary's.
 pub fn writers(settings: &Settings, dict: &crate::dict::Service) -> (bool, bool) {
     let ai = cfg!(not(target_arch = "wasm32")) && settings.ai.model(TaskId::StudyCards).is_some();
     (ai, !dict.languages().is_empty())

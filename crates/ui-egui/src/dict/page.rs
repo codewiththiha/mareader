@@ -4,12 +4,11 @@ use egui::{
     Align, Button, CornerRadius, Frame, Key, Layout, Margin, Modifiers, Rect, Response, RichText,
     ScrollArea, Sense, Shape, Stroke, Ui, UiBuilder, WidgetInfo, WidgetType, pos2, vec2,
 };
-use mareader_dict::{
-    Entry, HUB, Pack, Pair, Query, Reply, Ticket, WordMatch, fold, language, languages,
-};
+use mareader_dict::{Entry, HUB, Pair, Query, Reply, Ticket, WordMatch, fold, language};
 use mareader_engine::session::Session;
 use mareader_settings::DictionarySettings;
 
+use super::pickers::{Shelf, languages_row, pack_box};
 use super::{Voice, entry, look};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
@@ -234,8 +233,13 @@ impl Page {
             empty(ui, t, "No dictionaries here", line, None);
             return;
         }
-        let ready = session.dict().ready();
-        if ready.is_empty() {
+        let packs = session.dict().ready();
+        let ai = session.dict().ai_languages().to_vec();
+        let ready = Shelf {
+            packs: &packs,
+            ai: &ai,
+        };
+        if ready.count() == 0 {
             let line = "No dictionary is downloaded.";
             if empty(
                 ui,
@@ -253,17 +257,17 @@ impl Page {
         self.field(ui, now, &mut draft);
         let reply = self.reply.as_ref();
         match self.small {
-            true => narrow_choices(ui, &mut draft, &ready, reply, t, out),
-            false => choices(ui, &mut draft, &ready, reply, t, out),
+            true => narrow_choices(ui, &mut draft, ready, reply, t, out),
+            false => choices(ui, &mut draft, ready, reply, t, out),
         }
         self.ask(ui.ctx(), session, &draft);
         let asked = self.text.trim().to_owned();
         let act = if asked.is_empty() {
-            home(ui, t, &ready, &mut draft)
+            home(ui, t, ready, &mut draft)
         } else {
             match self.reply.take() {
                 Some(reply) => {
-                    let room = (&mut draft, &ready[..], voice);
+                    let room = (&mut draft, ready, voice);
                     let act = self.results(ui, t, &reply, &asked, room, out);
                     self.reply = Some(reply);
                     act
@@ -347,7 +351,7 @@ impl Page {
         t: &Tokens,
         reply: &Reply,
         asked: &str,
-        (draft, ready, voice): (&mut DictionarySettings, &[&'static Pack], &Voice),
+        (draft, ready, voice): (&mut DictionarySettings, Shelf<'_>, &Voice),
         out: &mut Commands,
     ) -> Option<Act> {
         if reply.entries.is_empty() {
@@ -356,7 +360,7 @@ impl Page {
         }
         let chosen = self.chosen.min(reply.entries.len() - 1);
         let reveal = std::mem::take(&mut self.reveal);
-        let packs = !draft.pair && draft.langs.is_empty() && ready.len() > 1;
+        let packs = !draft.pair && draft.langs.is_empty() && ready.count() > 1;
         let rest = ui.available_rect_before_wrap();
         let heard = Answers {
             voice,
@@ -534,15 +538,15 @@ fn mode(ui: &mut Ui, s: &mut DictionarySettings, height: f32) {
 }
 
 /// How tall the choices' controls stand.
-const CONTROL: f32 = 30.0;
+pub(super) const CONTROL: f32 = 30.0;
 /// The swap button's slot between the language pickers.
-const SWAP_W: f32 = 28.0;
+pub(super) const SWAP_W: f32 = 28.0;
 
 /// Mode, packs or languages, how the reply was reached, and settings.
 fn choices(
     ui: &mut Ui,
     s: &mut DictionarySettings,
-    ready: &[&'static Pack],
+    ready: Shelf<'_>,
     reply: Option<&Reply>,
     t: &Tokens,
     out: &mut Commands,
@@ -566,7 +570,7 @@ fn choices(
 fn narrow_choices(
     ui: &mut Ui,
     s: &mut DictionarySettings,
-    ready: &[&'static Pack],
+    ready: Shelf<'_>,
     reply: Option<&Reply>,
     t: &Tokens,
     out: &mut Commands,
@@ -604,73 +608,6 @@ fn manage(ui: &mut Ui, out: &mut Commands) {
     if manage.clicked() {
         out.push(Sent::Engine(Command::OpenSettings(Tab::Dictionary)));
     }
-}
-
-fn pack_box(
-    ui: &mut Ui,
-    s: &mut DictionarySettings,
-    ready: &[&'static Pack],
-    width: f32,
-    t: &Tokens,
-) {
-    let chosen = s
-        .langs
-        .first()
-        .and_then(|id| ready.iter().find(|p| p.id == id));
-    let shown = chosen.map_or("Every dictionary".to_owned(), |p| p.label());
-    let id = (ui.make_persistent_id("dict-pack"), "Dictionary to search");
-    look::picker(ui, id, vec2(width, CONTROL), &shown, t, |ui| {
-        if look::option(ui, chosen.is_none(), "Every dictionary", t) {
-            s.langs.clear();
-        }
-        for p in ready {
-            let on = chosen.is_some_and(|c| c.id == p.id);
-            if look::option(ui, on, &p.label(), t) {
-                s.langs = vec![p.id.to_owned()];
-            }
-        }
-    });
-}
-
-fn languages_row(
-    ui: &mut Ui,
-    s: &mut DictionarySettings,
-    ready: &[&'static Pack],
-    width: f32,
-    t: &Tokens,
-) {
-    let langs = languages(ready);
-    let names = ("dict-from", "Translate from");
-    language_box(ui, names, width, (&mut s.from, &langs), t);
-    let swap = look::icon(ui, Icon::Swap, "Swap languages", vec2(SWAP_W, CONTROL));
-    if swap.clicked() {
-        std::mem::swap(&mut s.from, &mut s.to);
-    }
-    let names = ("dict-to", "Translate to");
-    language_box(ui, names, width, (&mut s.to, &langs), t);
-}
-
-/// A language picker; `id` is its salt and its spoken name.
-fn language_box(
-    ui: &mut Ui,
-    (salt, name): (&str, &str),
-    width: f32,
-    (value, langs): (&mut Option<String>, &[&str]),
-    t: &Tokens,
-) {
-    let shown = value.as_deref().map_or("Automatic".to_owned(), language);
-    let id = (ui.make_persistent_id(salt), name);
-    look::picker(ui, id, vec2(width, CONTROL), &shown, t, |ui| {
-        if look::option(ui, value.is_none(), "Automatic", t) {
-            *value = None;
-        }
-        for l in langs {
-            let on = value.as_deref() == Some(*l);
-            if look::option(ui, on, &language(l), t) {
-                *value = Some((*l).to_owned());
-            }
-        }
-    });
 }
 
 /// "via English" when a bridge answered, or the language detected.
@@ -800,18 +737,7 @@ fn full_entry(
                 let note = format!("The nearest entry to “{asked}”");
                 ui.label(RichText::new(note).size(t.text_small).color(t.muted));
             }
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                for tag in entry::tags(e).split(" · ").filter(|s| !s.is_empty()) {
-                    look::chip(ui, tag, t);
-                }
-                if let Some(way) = look::way(e) {
-                    look::tag(ui, &way, t);
-                }
-                if let Some(via) = &e.via {
-                    look::tag(ui, &format!("via {via}"), t);
-                }
-            });
+            tag_row(ui, e, t);
             ui.add_space(2.0);
             answer_panel(ui, t, e, h, out);
             let languages = [h.asked_in(Some(e)), h.answer_in(e)];
@@ -857,6 +783,25 @@ fn full_entry(
     act
 }
 
+/// An entry's classes, its two languages, any bridge, and the AI mark.
+fn tag_row(ui: &mut Ui, e: &Entry, t: &Tokens) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        for tag in entry::tags(e).split(" · ").filter(|s| !s.is_empty()) {
+            look::chip(ui, tag, t);
+        }
+        if let Some(way) = look::way(e) {
+            look::tag(ui, &way, t);
+        }
+        if let Some(via) = &e.via {
+            look::tag(ui, &format!("via {via}"), t);
+        }
+        if let Some(said) = &e.ai {
+            entry::ai_badge(ui, &said.model, t);
+        }
+    });
+}
+
 /// The answer on a soft panel, with its voice, romanization and gloss.
 fn answer_panel(ui: &mut Ui, t: &Tokens, e: &Entry, h: &Answers<'_>, out: &mut Commands) {
     Frame::new()
@@ -883,6 +828,9 @@ fn answer_panel(ui: &mut Ui, t: &Tokens, e: &Entry, h: &Answers<'_>, out: &mut C
             });
             if let Some(r) = e.romanization.as_deref().filter(|r| !r.is_empty()) {
                 shaped::label(ui, r, t.text, t.muted);
+            }
+            if let Some(said) = &e.ai {
+                crate::ai_said::show(ui, ("", &said.synonyms, &said.usages), t);
             }
             if let Some(s) = e.sense.as_deref().filter(|s| !s.is_empty()) {
                 if shaped::needs_shaping(s) {
@@ -919,12 +867,7 @@ pub fn clear_of_bar(ui: &mut Ui) {
 }
 
 /// Nothing typed: what is searched, how, and the recent searches.
-fn home(
-    ui: &mut Ui,
-    t: &Tokens,
-    ready: &[&'static Pack],
-    s: &mut DictionarySettings,
-) -> Option<Act> {
+fn home(ui: &mut Ui, t: &Tokens, ready: Shelf<'_>, s: &mut DictionarySettings) -> Option<Act> {
     let mut act = None;
     ui.vertical_centered(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -990,7 +933,7 @@ fn recent(ui: &mut Ui, t: &Tokens, s: &mut DictionarySettings) -> Option<Act> {
 }
 
 /// "Searching English → Burmese and English → French", or the pair.
-fn scope(ready: &[&'static Pack], s: &DictionarySettings) -> String {
+fn scope(ready: Shelf<'_>, s: &DictionarySettings) -> String {
     if s.pair {
         let from = s
             .from
@@ -999,13 +942,9 @@ fn scope(ready: &[&'static Pack], s: &DictionarySettings) -> String {
         let to = s.to.as_deref().map_or("your language".to_owned(), language);
         return format!("Translating from {from} to {to}");
     }
-    let chosen = s
-        .langs
-        .first()
-        .and_then(|id| ready.iter().find(|p| p.id == id));
-    let labels: Vec<String> = match chosen {
-        Some(p) => vec![p.label()],
-        None => ready.iter().map(|p| p.label()).collect(),
+    let labels: Vec<String> = match ready.chosen(s) {
+        Some(label) => vec![label],
+        None => ready.each().into_iter().map(|(_, label)| label).collect(),
     };
     format!("Searching {}", labels.join(", "))
 }
@@ -1016,7 +955,7 @@ fn nothing(
     t: &Tokens,
     asked: &str,
     draft: &mut DictionarySettings,
-    ready: &[&'static Pack],
+    ready: Shelf<'_>,
     reply: &Reply,
 ) {
     ui.vertical_centered(|ui| {
@@ -1037,7 +976,8 @@ fn nothing(
             return;
         }
         let from = reply.from.as_deref().unwrap_or(HUB);
-        let others: Vec<&str> = languages(ready)
+        let others: Vec<&str> = ready
+            .languages()
             .into_iter()
             .filter(|l| *l != from)
             .collect();
