@@ -37,7 +37,9 @@ impl Session {
 
     /// Polls active explainer threads and files completed glosses into marks.
     pub(crate) fn study_receive(&mut self) -> bool {
-        self.study.receive(&mut self.library.model)
+        let changed = self.study.receive(&mut self.library.model);
+        self.study_file();
+        changed
     }
 
     /// Marks a word `pane` explains and seeds or starts its lookup.

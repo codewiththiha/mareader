@@ -5,15 +5,19 @@
 //! it takes and holds the rest. The deck goes on only once every request
 //! has answered. A failed request fails the deck, but the backs the
 //! others wrote stay cached, so trying again asks only the words missing.
+//! Each request's backs also go to the AI dictionary as they come.
 
+use mareader_dict::Saved;
 use mareader_settings::{TaskId, no_model};
 use mareader_study::Why;
 use mareader_study::mode::{CardJob, Wanted, Written, chunks};
 use mareader_study::pending::News;
 
 use super::{DeckJob, Stage};
+use crate::ai_dict::of_back;
 use crate::study_mode::backs::{Writer, wanted};
 use crate::study_mode::run::Setup;
+use crate::word_list::Meanings;
 
 /// One request's job, and the cards it asks for, by place.
 pub(super) struct Chunk {
@@ -64,7 +68,7 @@ impl DeckJob {
 
     /// Counts backs as they are written; takes each answer into the deck
     /// and the cache, and goes on once every request has answered.
-    pub(super) fn writing(&mut self) -> Result<bool, String> {
+    pub(super) fn writing(&mut self, meanings: &mut dyn Meanings) -> Result<bool, String> {
         let Stage::Writing { jobs, id, failed } = &mut self.stage else {
             return Ok(false);
         };
@@ -82,7 +86,10 @@ impl DeckJob {
                 None => out.push(chunk),
                 Some(Ok(backs)) => {
                     let writer = self.writer.as_ref();
-                    keep(&mut self.written, writer, id, chunk.asked, backs);
+                    let filed = keep(&mut self.written, writer, id, chunk.asked, backs);
+                    if !filed.is_empty() {
+                        meanings.remember(filed);
+                    }
                     moved = true;
                 }
                 Some(Err(failure)) => {
@@ -105,22 +112,29 @@ impl DeckJob {
 }
 
 /// One request's whole answer, into the deck's places and the cache; it
-/// stands over what came on the way.
+/// stands over what came on the way. Returns the backs the AI dictionary
+/// takes.
 fn keep(
     written: &mut [Option<Written>],
     writer: Option<&Writer>,
     id: &str,
     asked: Vec<(usize, Wanted)>,
     backs: Vec<Option<Written>>,
-) {
+) -> Vec<Saved> {
+    let who = writer.and_then(|w| Some((w.cards.by(), w.cards.language()?)));
+    let mut filed = Vec::new();
     for ((i, wanted), back) in asked.into_iter().zip(backs) {
         if let (Some(writer), Some(back)) = (writer, &back) {
             writer.backs.put(id, &wanted, back.clone());
+        }
+        if let (Some((by, language)), Some(back)) = (&who, &back) {
+            filed.extend(of_back(&wanted, back, (by, language)));
         }
         if let Some(slot) = written.get_mut(i) {
             *slot = back;
         }
     }
+    filed
 }
 
 /// Puts each back written into its card's place, `asked` naming them.

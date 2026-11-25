@@ -45,6 +45,8 @@ pub struct View<'a> {
     pub saying: bool,
     /// How it sounds, once looked up.
     pub sound: &'a [mareader_engine::sounds::Line],
+    /// A different meaning the AI dictionary kept for the word, to replace.
+    pub kept: Option<&'a str>,
 }
 
 /// Draws the card under or over its word, pointing at it.
@@ -105,7 +107,13 @@ fn card(ui: &mut Ui, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Commands) 
 fn body(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
     match &view.answer {
         Answer::Waiting => shimmer(ui, t),
-        Answer::Partial(info) | Answer::Ready(info, _) => answer(ui, info, t),
+        Answer::Partial(info) => answer(ui, info, t),
+        Answer::Ready(info, _) => {
+            answer(ui, info, t);
+            if let Some(kept) = view.kept {
+                offer(ui, kept, t, out);
+            }
+        }
         Answer::Failed(e) => {
             ui.horizontal_wrapped(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), egui::Sense::hover());
@@ -164,6 +172,19 @@ fn footer(ui: &mut Ui, view: &View<'_>, t: &Tokens, out: &mut Commands) {
             });
         });
     });
+}
+
+/// The kept meaning and Replace; nothing is saved without the click.
+fn offer(ui: &mut Ui, kept: &str, t: &Tokens, out: &mut Commands) {
+    ui.add_space(4.0);
+    heading(ui, "Your AI dictionary says", t);
+    crate::shaped::label(ui, kept, t.text_small, t.muted);
+    ui.add_space(4.0);
+    let replace = word_card::action_pill(ui, None, "Replace with this answer", true, t);
+    widgets::tip(&replace, "Save this answer in its place", None);
+    if replace.clicked() {
+        out.push(Sent::Engine(Command::Study(Action::ReplaceSaved)));
+    }
 }
 
 fn copy_text(word: &str, info: &WordInfo) -> String {

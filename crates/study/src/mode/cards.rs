@@ -79,6 +79,12 @@ pub trait CardWriter: Send + Sync {
 
     /// Starts on `words`; dropping the job cancels it.
     fn write(&self, words: Vec<Wanted>) -> Box<CardJob>;
+
+    /// The language an AI writes the backs in, for the AI dictionary;
+    /// none keeps them out, as practice backs are.
+    fn language(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// A deck's backs being written.

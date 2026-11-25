@@ -14,11 +14,12 @@ pub enum Got {
     Done(Result<Said, Failure>),
 }
 
-/// A finished answer and who gave it.
+/// A finished answer, who gave it, and the word asked.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Said {
     pub info: WordInfo,
     pub by: String,
+    pub word: String,
 }
 
 impl Said {
@@ -35,6 +36,7 @@ impl Said {
         Some(Self {
             info,
             by: g.by.clone(),
+            word: mark.word.clone(),
         })
     }
 
@@ -68,6 +70,7 @@ pub fn ask(
         let said = done.map(|(info, by)| Said {
             info: info.clamped(),
             by,
+            word: word.clone(),
         });
         let _ = tx.send(Got::Done(said));
         wake();

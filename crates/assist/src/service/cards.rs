@@ -76,6 +76,11 @@ impl CardWriter for AiCards {
         let job: Running<Vec<Option<Written>>> = self.0.dispatch().ask(who, route, step);
         Box::new(job)
     }
+
+    fn language(&self) -> Option<&'static str> {
+        let now = self.0.followed();
+        Some(now.ai.study_language().unwrap_or("English"))
+    }
 }
 
 impl Judge for AiCards {

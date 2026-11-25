@@ -18,7 +18,7 @@ pub enum State {
 }
 
 /// Names one ask, to match its reply.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ticket(pub u64);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,7 +54,7 @@ impl Query {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Reply {
     pub ticket: Ticket,
     pub entries: Vec<Entry>,

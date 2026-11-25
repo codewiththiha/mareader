@@ -370,6 +370,7 @@ fn show_card(
         density: look.density,
         saying: heard.saying(&c.word),
         sound: heard.lines(&c.word),
+        kept: state.offer(c.key).map(|o| o.kept.meaning.as_str()),
     };
     Some(card::show(ctx, &view, t, out))
 }

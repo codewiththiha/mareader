@@ -121,6 +121,9 @@ impl Session {
 
     fn tick_dict_and_word_list(&mut self, tick: &mut Tick) {
         let (changed, replies) = self.dict_poll();
+        if self.study_offers() {
+            tick.repaint = true;
+        }
         if changed || !replies.is_empty() {
             tick.repaint = true;
             self.emit(Event::DictReplies { changed, replies });

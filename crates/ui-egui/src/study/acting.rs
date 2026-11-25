@@ -23,6 +23,11 @@ impl StudyUi {
                     session.study_ask_again(card.pane, card.key, words);
                 }
             }
+            Action::ReplaceSaved => {
+                if let Some(card) = &self.card {
+                    session.study_replace(card.key);
+                }
+            }
             Action::Close => {
                 self.card = None;
                 self.stash = None;

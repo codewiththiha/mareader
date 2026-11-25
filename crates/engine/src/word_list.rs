@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use mareader_dict::{Found, Reply, Ticket};
+use mareader_dict::{Found, Reply, Saved, Ticket};
 use mareader_session::Document;
 use mareader_settings::WordList;
 
@@ -34,6 +34,9 @@ pub trait Meanings {
 
     /// The reply a ticket has collected, once it has one.
     fn take_words(&mut self, ticket: Ticket) -> Option<Reply>;
+
+    /// Files AI meanings in the AI dictionary, keeping any kept before.
+    fn remember(&mut self, _saved: Vec<Saved>) {}
 }
 
 /// Pages this few, or a book's, are read in the frame.

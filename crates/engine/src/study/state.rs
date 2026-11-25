@@ -5,9 +5,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mareader_appearance::Rgb;
-use mareader_library::{
-    BookId, DeviceId, Library, Mark, MarkId, MarkKind, NewMark, Pen, Spot, Style,
-};
+use mareader_library::{BookId, DeviceId, Library, Mark, MarkId, MarkKind, NewMark, Style};
 use mareader_study::{Explainer, Failure, Pos, Unavailable, WordInfo};
 use mareader_workspace::PaneId;
 
@@ -15,9 +13,12 @@ use super::Action;
 use super::asking::{self, Got, Said};
 use super::loose::{loose_book, loose_content};
 use super::words::Asked;
+use crate::ai_dict::{Filing, Offer};
 use crate::command::Command;
 use crate::session::Waker;
 use crate::toast::Toast;
+
+pub use super::marking::{Bookmarking, Highlighted};
 
 /// Which answer a card shows: a mark's, or one kept by nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -31,27 +32,6 @@ pub enum Key {
 pub struct Asker {
     pub pane: PaneId,
     pub word: String,
-}
-
-/// A page to bookmark, or the bookmark already on it.
-pub struct Bookmarking<'a> {
-    pub book: Option<BookId>,
-    pub name: &'a str,
-    pub spot: Spot,
-    /// Where it is, e.g. its chapter, kept with it.
-    pub label: String,
-    pub existing: Option<MarkId>,
-}
-
-/// The reader's highlight, as the app gathers it.
-pub struct Highlighted<'a> {
-    pub book: Option<BookId>,
-    pub name: &'a str,
-    pub text: String,
-    pub spot: Spot,
-    pub pen: Pen,
-    /// A colour picked for it; none follows the pen's.
-    pub color: Option<Rgb>,
 }
 
 /// Engine-owned study marks, answers, and active explainer lookups.
@@ -72,6 +52,10 @@ pub struct State {
     hints: HashMap<Key, Pos>,
     /// Finished answers not yet filed, as inline asks leave them.
     done: Vec<(Key, Said)>,
+    /// Answers filed with their marks, still to go to the AI dictionary.
+    filed: Vec<(Key, Said)>,
+    /// Answers sent to the AI dictionary, and the replace offers raised.
+    pub(crate) ai_dict: Filing,
     next_loose: u64,
 }
 
@@ -88,6 +72,8 @@ impl Default for State {
             askers: HashMap::new(),
             hints: HashMap::new(),
             done: Vec::new(),
+            filed: Vec::new(),
+            ai_dict: Filing::default(),
             next_loose: 0,
         }
     }
@@ -105,6 +91,21 @@ impl State {
     /// True while someone answers for the AI Dictionary.
     pub fn explains(&self) -> bool {
         !self.explainer.by().is_empty()
+    }
+
+    /// The language the explainer writes in for the AI dictionary, if any.
+    pub fn language(&self) -> Option<&'static str> {
+        self.explainer.language()
+    }
+
+    /// The kept meaning `key`'s answer differs from, the reader may swap.
+    pub fn offer(&self, key: Key) -> Option<&Offer> {
+        self.ai_dict.offer(key)
+    }
+
+    /// Answers that came since last taken, for the AI dictionary.
+    pub(crate) fn take_filed(&mut self) -> Vec<(Key, Said)> {
+        std::mem::take(&mut self.filed)
     }
 
     pub fn set_explainer(&mut self, explainer: Arc<dyn Explainer>) {
@@ -279,7 +280,8 @@ impl State {
             match explainer.explain_by((word, context, hint), &|_| {}) {
                 Ok((info, by)) => {
                     let info = info.clamped();
-                    self.done.push((key, Said { info, by }));
+                    let word = word.to_owned();
+                    self.done.push((key, Said { info, by, word }));
                 }
                 Err(e) => {
                     self.failed.insert(key, e);
@@ -343,6 +345,7 @@ impl State {
                     self.loose.set_gloss(id, gloss, wall);
                 }
             }
+            self.filed.push((key, said.clone()));
             self.answers.insert(key, said);
         }
     }

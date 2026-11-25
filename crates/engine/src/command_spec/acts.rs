@@ -36,7 +36,7 @@ pub(crate) fn dict(_at: &Session, params: &Value) -> Result<Command, String> {
 pub(crate) const STUDY: &str = concat!(
     "retry|ask_again|close|pick_page|",
     "pick_all|done_picking|edit_note|",
-    "cancel_note|set_note",
+    "cancel_note|set_note|replace_saved",
 );
 
 /// `study.act`: the word card's and the mark menu's asks.
@@ -45,6 +45,7 @@ pub(crate) fn study(at: &Session, params: &Value) -> Result<Command, String> {
     let act = match name.as_str() {
         "retry" => StudyAction::Retry,
         "ask_again" => StudyAction::AskAgain,
+        "replace_saved" => StudyAction::ReplaceSaved,
         "close" => StudyAction::Close,
         "pick_page" => StudyAction::PickPage,
         "pick_all" => StudyAction::PickAll,

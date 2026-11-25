@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use mareader_cefr::{Levels as Shading, plan};
+use mareader_dict::{Reply, Saved};
 use mareader_reflow::Typography;
 use mareader_study::mode::{Card, CardJob, CardWriter, Practice, Wanted};
 
@@ -124,6 +125,10 @@ impl CardWriter for Counting {
         10
     }
 
+    fn language(&self) -> Option<&'static str> {
+        Some("English")
+    }
+
     fn write(&self, words: Vec<Wanted>) -> Box<CardJob> {
         let mut sizes = self.sizes.lock().unwrap();
         let practice = match Some(sizes.len()) == self.fail {
@@ -135,7 +140,30 @@ impl CardWriter for Counting {
     }
 }
 
-/// An AI deck of `n` cards, ready to be written by `writer`.
+/// A dictionary that only keeps what the AI dictionary is given.
+#[derive(Default)]
+struct Filed(Vec<Saved>);
+
+impl Meanings for Filed {
+    fn languages(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
+    fn ask_words(&mut self, _: Vec<String>, _: Vec<String>, _: bool) -> Ticket {
+        Ticket(0)
+    }
+
+    fn take_words(&mut self, _: Ticket) -> Option<Reply> {
+        None
+    }
+
+    fn remember(&mut self, saved: Vec<Saved>) {
+        self.0.extend(saved);
+    }
+}
+
+/// An AI deck of `n` cards, ready to be written by `writer`; every other
+/// card has a class.
 fn ai_deck(n: usize, writer: &Writer) -> DeckJob {
     let bytes = mareader_pdf::sample::pdf(1, "Sample");
     let opened = Document::open(Arc::new(bytes), &Typography::default());
@@ -152,7 +180,7 @@ fn ai_deck(n: usize, writer: &Writer) -> DeckJob {
     let mut job = DeckJob::new(Arc::new(|| {}), ask);
     job.deck.cards = (0..n)
         .map(|i| Card {
-            key: Key::new(format!("word{i}"), None),
+            key: Key::new(format!("word{i}"), (i % 2 == 0).then_some(Pos::Noun)),
             form: format!("word{i}"),
             sentence: format!("The word{i} here."),
             band: 5,
@@ -176,7 +204,9 @@ fn a_deck_is_written_in_even_requests_and_goes_on_once_all_answer() {
     let mut job = ai_deck(25, &writer);
     job.ask_backs().unwrap();
     assert_eq!(*counting.sizes.lock().unwrap(), [9, 8, 8], "25 by 10");
-    assert_eq!(job.writing(), Ok(true));
+    let mut filed = Filed::default();
+    assert_eq!(job.writing(&mut filed), Ok(true));
+    assert_eq!(filed.0.len(), 13, "those with a class are filed");
     assert!(matches!(job.stage, Stage::Settle), "every request answered");
     assert_eq!(job.settling.len(), 25);
     assert!(job.settling.iter().all(|(s, _)| !s.meaning.is_empty()));
@@ -197,12 +227,13 @@ fn a_failed_request_keeps_the_others_backs_for_the_next_try() {
     };
     let mut job = ai_deck(32, &writer);
     job.ask_backs().unwrap();
-    assert!(job.writing().is_err(), "one failed request fails the deck");
+    let written = job.writing(&mut Filed::default());
+    assert!(written.is_err(), "one failed request fails the deck");
     assert_eq!(writer.backs.count(), 21, "the other two are kept");
     let mut again = ai_deck(32, &writer);
     again.ask_backs().unwrap();
     assert_eq!(*counting.sizes.lock().unwrap(), [11, 11, 10, 11]);
-    assert_eq!(again.writing(), Ok(true));
+    assert_eq!(again.writing(&mut Filed::default()), Ok(true));
 }
 
 #[test]
@@ -233,6 +264,6 @@ fn half_a_deck_is_shown_while_the_rest_is_written() {
     assert_eq!(early.cards.len(), 13);
     assert!(job.early().is_none(), "only once");
     assert!(job.handed);
-    assert_eq!(job.writing(), Ok(true));
+    assert_eq!(job.writing(&mut Filed::default()), Ok(true));
     assert_eq!(job.settling.len(), 25, "the whole deck goes on");
 }

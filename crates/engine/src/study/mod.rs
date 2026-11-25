@@ -37,6 +37,7 @@ pub(crate) mod loose {
         ContentId(u128::from(hash(name)))
     }
 }
+mod marking;
 pub mod state;
 pub mod words;
 
@@ -50,6 +51,8 @@ pub enum Action {
     Retry,
     /// Asks the AI chosen now; its answer replaces the saved one.
     AskAgain,
+    /// The card's answer replaces the AI dictionary's differing meaning.
+    ReplaceSaved,
     Close,
     /// The mark menu's Select several: picking begins with its mark.
     SelectSeveral(PaneId, MarkId),

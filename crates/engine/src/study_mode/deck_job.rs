@@ -247,7 +247,7 @@ impl DeckJob {
                 Stage::Levels { .. } => self.levels(words)?,
                 Stage::Tags { .. } => self.tags(words, meanings, now)?,
                 Stage::Meanings { .. } => self.meanings(meanings, now)?,
-                Stage::Writing { .. } => self.writing()?,
+                Stage::Writing { .. } => self.writing(meanings)?,
                 Stage::Settle => self.settle(meanings),
                 Stage::Classes { .. } => self.classes(meanings, now),
                 Stage::Done => return Ok(self.built.take()),

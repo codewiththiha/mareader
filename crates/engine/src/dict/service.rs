@@ -3,7 +3,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
-use mareader_dict::{Dictionaries, PACKS, Pack, Query, Reply, State, Ticket};
+use mareader_dict::{Dictionaries, PACKS, Pack, Query, Reply, Saved, State, Ticket};
 
 use mareader_study::Pos;
 
@@ -14,6 +14,8 @@ use crate::word_list::Meanings;
 const WORD_ASKS: usize = 4;
 /// Class asks kept waiting at once: open word cards and a recall.
 const CLASS_ASKS: usize = 4;
+/// AI dictionary filings whose replies are kept; older ones drop.
+const FILINGS: usize = 16;
 
 /// Dictionary pack manager and lookup queue owned by `Session`.
 #[derive(Default)]
@@ -25,6 +27,8 @@ pub struct Service {
     classes: Vec<(Ticket, Option<Reply>)>,
     /// The open word card's class ask, and the word it is for.
     card: Option<(Ticket, String)>,
+    /// AI dictionary filings, kept from the reader's replies.
+    filings: Vec<(Ticket, Option<Reply>)>,
 }
 
 impl Service {
@@ -112,6 +116,25 @@ impl Service {
         ticket
     }
 
+    /// Files meanings in the AI dictionary; `take_filed` hands the reply,
+    /// naming kept meanings that differ.
+    pub fn remember(&mut self, saved: Vec<Saved>, replace: bool) -> Ticket {
+        let ticket = self.service.ask(Query::Remember { saved, replace });
+        if self.filings.len() >= FILINGS {
+            self.filings.remove(0);
+        }
+        self.filings.push((ticket, None));
+        ticket
+    }
+
+    pub fn take_filed(&mut self, ticket: Ticket) -> Option<Reply> {
+        let at = self
+            .filings
+            .iter()
+            .position(|(t, r)| *t == ticket && r.is_some())?;
+        self.filings.remove(at).1
+    }
+
     /// Asks for the class `word`'s rows name; none without a pack.
     pub fn ask_class(&mut self, word: &str) -> Option<Ticket> {
         let to = self.languages().first().map(|l| (*l).to_owned())?;
@@ -164,7 +187,9 @@ impl Service {
         let (changed, replies) = self.service.poll();
         let mut other = Vec::new();
         for reply in replies {
-            let mut asks = self.words.iter_mut().chain(self.classes.iter_mut());
+            let mut asks = (self.words.iter_mut())
+                .chain(self.classes.iter_mut())
+                .chain(self.filings.iter_mut());
             if let Some((_, slot)) = asks.find(|(t, _)| *t == reply.ticket) {
                 *slot = Some(reply);
             } else {
@@ -186,5 +211,9 @@ impl Meanings for Service {
 
     fn take_words(&mut self, ticket: Ticket) -> Option<Reply> {
         Self::take_words(self, ticket)
+    }
+
+    fn remember(&mut self, saved: Vec<Saved>) {
+        Self::remember(self, saved, false);
     }
 }

@@ -32,6 +32,13 @@ pub fn name(code: &str) -> String {
         .map_or_else(|| code.to_uppercase(), |(_, n, _)| (*n).to_owned())
 }
 
+/// A language's code by English name, as packs and the AI dictionary
+/// keep it; one no pack joins keeps its name, lower case.
+pub fn code_of(name: &str) -> String {
+    let known = LANGUAGES.iter().find(|(_, n, _)| *n == name);
+    known.map_or_else(|| name.to_lowercase(), |(c, ..)| (*c).to_owned())
+}
+
 fn script_of(ch: char) -> Option<Script> {
     match u32::from(ch) {
         0x1000..=0x109F | 0xA9E0..=0xA9FF | 0xAA60..=0xAA7F => Some(Script::Myanmar),
@@ -102,5 +109,7 @@ mod tests {
         assert_eq!(name("my"), "Burmese");
         assert_eq!(name("de"), "German");
         assert_eq!(name("xx"), "XX");
+        assert_eq!(code_of("Japanese"), "jp");
+        assert_eq!(code_of("Italian"), "italian");
     }
 }

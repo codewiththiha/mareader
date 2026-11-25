@@ -10,6 +10,7 @@
 //! [`Command`]: crate::command::Command
 
 mod activity;
+mod ai_dict;
 mod dials;
 mod documents;
 mod library;

@@ -33,6 +33,12 @@ pub trait Explainer: Send + Sync {
     fn waits(&self) -> bool {
         false
     }
+
+    /// The language an AI writes its meanings in, for the AI dictionary;
+    /// none keeps them out, as sample answers are.
+    fn language(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// Why no answer came; the card shows [`Why::message`].

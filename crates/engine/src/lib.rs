@@ -17,6 +17,7 @@
 )]
 
 pub mod activity;
+pub mod ai_dict;
 pub mod appearance_menu;
 pub mod command;
 pub mod command_spec;

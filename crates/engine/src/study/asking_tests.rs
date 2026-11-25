@@ -138,6 +138,7 @@ fn an_answer_saves_as_the_gloss_of_the_mark_it_answers() {
     let said = Said {
         info: info("what the word means here"),
         by: "the model".to_owned(),
+        word: "brisk".to_owned(),
     };
     let gloss = said.gloss();
     assert_eq!(gloss.by, said.by, "who gave it is kept with it");

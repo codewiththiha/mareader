@@ -53,4 +53,9 @@ impl Explainer for AiExplainer {
     fn by(&self) -> String {
         self.0.followed().by(TaskId::Explain)
     }
+
+    fn language(&self) -> Option<&'static str> {
+        let now = self.0.followed();
+        Some(now.ai.explain_language().unwrap_or("English"))
+    }
 }
