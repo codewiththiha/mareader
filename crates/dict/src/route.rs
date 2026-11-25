@@ -1,7 +1,7 @@
 //! Ways between two languages: one pack either way round, or two
 //! meeting at English.
 
-use crate::ai::AI_PACK;
+use crate::ai::{AI_PACK, ai_language};
 use crate::lang;
 use crate::packs::Pack;
 
@@ -92,21 +92,21 @@ pub fn answer_in<'a>(chosen: Option<&str>, langs: &[&'a str]) -> Option<&'a str>
 }
 
 /// The AI rows a search across `pack` reads: every language's with no
-/// pack or the AI one picked, a pack's own language's with a pack; none
-/// when the AI dictionary keeps nothing there.
-pub fn ai_scope(
+/// pack or the AI one picked, one language's with a pack or `ai:` and
+/// it; none when the AI dictionary keeps nothing there.
+pub fn ai_scope<'a>(
     pack: Option<&str>,
     packs: &[&'static Pack],
-    ai: &[String],
-) -> Option<Option<&'static str>> {
-    let kept = |l: &str| ai.iter().any(|a| a == l);
+    ai: &'a [String],
+) -> Option<Option<&'a str>> {
+    let kept = |l: &str| ai.iter().find(|a| *a == l).map(String::as_str);
     match pack {
         _ if ai.is_empty() => None,
         None | Some(AI_PACK) => Some(None),
+        Some(id) if ai_language(id).is_some() => ai_language(id).and_then(kept).map(Some),
         Some(id) => {
             let picked = packs.iter().find(|p| p.id == id && p.source == HUB);
-            let own = picked.map(|p| p.target).filter(|t| kept(t));
-            own.map(Some)
+            picked.and_then(|p| kept(p.target)).map(Some)
         }
     }
 }
@@ -136,6 +136,7 @@ pub fn settle(pair: &Pair, word: &str, langs: &[&str]) -> Option<(String, String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::ai_only;
     use crate::packs::PACKS;
 
     fn all() -> Vec<&'static Pack> {
@@ -213,5 +214,17 @@ mod tests {
         let other = ["ru".to_owned()];
         let none = ai_scope(Some("mcfnlp-en-my"), &my, &other);
         assert_eq!(none, None, "the AI dictionary keeps none in it");
+    }
+
+    #[test]
+    fn an_ai_language_alone_is_one_pick() {
+        let ai = ["en".to_owned(), "zh".to_owned()];
+        assert_eq!(ai_only("zh"), "ai:zh");
+        assert_eq!(ai_language("ai:zh"), Some("zh"));
+        assert_eq!(ai_language(AI_PACK), None, "every language");
+        let pure = ai_scope(Some(&ai_only("en")), &[], &ai);
+        assert_eq!(pure, Some(Some("en")), "English meanings alone");
+        let gone = ai_scope(Some(&ai_only("ja")), &[], &ai);
+        assert_eq!(gone, None, "a language no longer kept");
     }
 }

@@ -9,6 +9,16 @@ use crate::search::fold;
 /// The pack id AI rows carry.
 pub const AI_PACK: &str = "ai";
 
+/// The AI dictionary in one meaning language alone, as a pick: `ai:zh`.
+pub fn ai_only(lang: &str) -> String {
+    format!("{AI_PACK}:{lang}")
+}
+
+/// The one language a pick asks the AI dictionary in, if it names one.
+pub fn ai_language(id: &str) -> Option<&str> {
+    id.strip_prefix(AI_PACK)?.strip_prefix(':')
+}
+
 /// One meaning an AI wrote.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Saved {

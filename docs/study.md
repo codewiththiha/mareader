@@ -198,8 +198,23 @@ be kept on this machine and used again, beside the downloaded packs.
   search reads its entries after the packs': words that hold the search,
   and meanings asked back to English. Across every dictionary it reads
   every language's; with one pack picked, or a pair, those in that
-  pack's or pair's language, as an extension of it (`route::ai_scope`). The page searches even when the AI
-  dictionary is the only one.
+  pack's or pair's language, as an extension of it (`route::ai_scope`).
+  The page searches even when the AI dictionary is the only one.
+- **Its picker row** (owner, T57) opens a side menu on hover, as the
+  skills menu's *Translate ›* does (`widgets::submenu_with`): *All AI
+  words*, then each language it keeps as *English → Chinese*. One of
+  those reads the AI's rows in that language alone, no pack beside them
+  (saved as `ai:zh`, `ai_only`); a click on the row itself reads every
+  language, as before. The closed picker says *AI · English → Chinese*.
+  The top-level *English → Chinese* still reads the pack and the AI's
+  Chinese rows together.
+- **What a model writes against the rules is dropped as it is read**
+  (owner, T57). An example that never shows the word (`shows_word`: a
+  word of it begins with the asked form's or lemma's stem; other scripts
+  pass) goes, so "wherefore" can't be shown by sentences with "why"; a
+  synonym that only repeats the meaning or the word goes too
+  (`fresh_synonyms`). Explain and deck backs alike; a back may be left
+  with no usage.
 - **Decks** use entries again by lemma, class and language
   (`docs/study-mode.md`), and Space filters words by who wrote their
   meaning.

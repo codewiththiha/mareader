@@ -1,6 +1,6 @@
 //! Tasks: a prompt and how to read its answer. Explain is the first.
 
-use mareader_study::{CONTEXT_CHARS, MAX_GLOSS_CHARS, Pos, WordInfo};
+use mareader_study::{CONTEXT_CHARS, MAX_GLOSS_CHARS, Pos, WordInfo, fresh_synonyms, shows_word};
 use serde_json::{Map, Value, json};
 
 use crate::prompt::{
@@ -130,11 +130,15 @@ impl Task for Explain<'_> {
 
     fn read(&self, answer: &Value, whole: bool) -> Option<WordInfo> {
         let fields = unwrap_object(answer)?;
+        let (meaning, word) = (text(field(fields, MEANING)), [self.word]);
+        // Models ignore the rules at times: stand-ins and echoes go here.
+        let mut usages = list(field(fields, USAGES));
+        usages.retain(|u| shows_word(u, &word));
         let info = WordInfo {
             pos: text(field(fields, POS)),
-            meaning: text(field(fields, MEANING)),
-            synonyms: list(field(fields, SYNONYMS)),
-            usages: list(field(fields, USAGES)),
+            synonyms: fresh_synonyms(list(field(fields, SYNONYMS)), &meaning, &word),
+            meaning,
+            usages,
             book_only: flag(field(fields, BOOK_ONLY)),
         };
         let empty = info == WordInfo::default();
@@ -225,6 +229,20 @@ mod tests {
         language: None,
         hint: None,
     };
+
+    #[test]
+    fn stand_in_examples_and_echoed_synonyms_are_dropped() {
+        let task = Explain {
+            word: "wherefore",
+            ..FOX
+        };
+        let v = json!({"pos": "interjection", "meaning": "why",
+            "synonyms": ["why", "for what reason"],
+            "usages": ["Why did he leave?", "Wherefore art thou?"]});
+        let info = task.read(&v, true).unwrap_or_default();
+        assert_eq!(info.synonyms, ["for what reason"], "the meaning echoed");
+        assert_eq!(info.usages, ["Wherefore art thou?"], "why stood in");
+    }
 
     #[test]
     fn drifting_names_are_still_read() {

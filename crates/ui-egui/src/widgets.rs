@@ -261,14 +261,7 @@ fn paint_menu_row_bg(ui: &Ui, rect: Rect, resp: &Response, on: bool, t: &Tokens)
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     if resp.clicked() {
-        let scope_id = egui::Id::new("active-submenu-click");
-        let active = ui
-            .ctx()
-            .data(|d| d.get_temp::<Option<egui::Id>>(scope_id))
-            .flatten();
-        if let Some(id) = active {
-            ui.ctx().data_mut(|d| d.insert_temp(id, true));
-        }
+        submenu_chosen(ui.ctx());
     }
 }
 
@@ -482,23 +475,96 @@ pub fn submenu_row(
     sub_width: f32,
     add: impl FnOnce(&mut Ui),
 ) -> Response {
+    let paint = |ui: &mut Ui, resp: &Response, active: bool| {
+        let t = Tokens::get(ui.ctx());
+        paint_menu_row_bg(ui, resp.rect, resp, active, &t);
+        let y = resp.rect.center().y;
+        let chev = Rect::from_min_size(
+            pos2(resp.rect.right() - MENU_PAD_X - 14.0, y - 7.0),
+            Vec2::splat(14.0),
+        );
+        Icon::ChevronRight.paint(ui, chev, if active { t.ink } else { t.muted });
+        let mut right_limit = chev.left() - 4.0;
+        if let Some(hint) = hint.filter(|s| !s.is_empty()) {
+            let painter = ui.painter();
+            let font = egui::FontId::proportional(11.5);
+            let galley = painter.layout_no_wrap(hint.to_owned(), font, t.muted);
+            let x = right_limit - galley.size().x;
+            let at = pos2(x, y - galley.size().y * 0.5);
+            painter.galley(at, galley, t.muted);
+            right_limit = x - 6.0;
+        }
+        let icon_tint = if active || resp.hovered() || resp.has_focus() {
+            t.ink
+        } else {
+            t.muted
+        };
+        paint_menu_row_lead(
+            ui,
+            resp.rect,
+            Some(icon),
+            label,
+            right_limit,
+            icon_tint,
+            t.ink,
+            resp,
+        );
+    };
+    submenu_with(ui, (label, MENU_ROW_H), sub_width, add, paint)
+}
+
+/// Tells the submenu being drawn that a row in it was chosen: it closes,
+/// and the menu it opened from.
+pub fn submenu_chosen(ctx: &egui::Context) {
+    let scope_id = egui::Id::new("active-submenu-click");
+    let active = ctx
+        .data(|d| d.get_temp::<Option<egui::Id>>(scope_id))
+        .flatten();
+    if let Some(id) = active {
+        ctx.data_mut(|d| d.insert_temp(id, true));
+    }
+}
+
+/// A submenu's side: `add`'s rows; true when one was chosen.
+fn submenu_side(ui: &mut Ui, sub_id: egui::Id, width: f32, add: impl FnOnce(&mut Ui)) -> bool {
+    crate::z_order::register_popup(ui.ctx(), ui.layer_id());
+    let click_id = sub_id.with("child-clicked");
+    let scope_id = egui::Id::new("active-submenu-click");
+    ui.data_mut(|d| {
+        d.insert_temp(click_id, false);
+        d.insert_temp(scope_id, Some(click_id));
+    });
+    menu_style(ui, width);
+    add(ui);
+    close_on_key(ui);
+    ui.data_mut(|d| d.insert_temp(scope_id, None::<egui::Id>));
+    ui.data(|d| d.get_temp::<bool>(click_id)).unwrap_or(false)
+}
+
+/// A row `(label, height)` high that opens `add` to its side on hover,
+/// pinned by a click or key; `paint` draws it, told if the side is open.
+pub fn submenu_with(
+    ui: &mut Ui,
+    (label, height): (&str, f32),
+    sub_width: f32,
+    add: impl FnOnce(&mut Ui),
+    paint: impl FnOnce(&mut Ui, &Response, bool),
+) -> Response {
     const GRACE: f64 = 0.24;
-    let t = Tokens::get(ui.ctx());
     let (now, pass) = (ui.input(|i| i.time), ui.ctx().cumulative_pass_nr());
-    let (_rect, resp) =
-        ui.allocate_exact_size(vec2(ui.available_width(), MENU_ROW_H), Sense::click());
+    let (_rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     ui.data_mut(|d| d.insert_temp(resp.id.with("submenu-trigger"), true));
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     let sub_id = resp.id.with("submenu-popup");
     let mut state = ui
         .data_mut(|d| d.get_temp::<SubMenu>(sub_id))
         .unwrap_or_default();
+    let fresh = SubMenu {
+        pass,
+        ..SubMenu::default()
+    };
     if state.pass == 0 || state.pass + 1 < pass {
-        state = SubMenu {
-            over: None,
-            pinned: false,
-            pass,
-        };
+        state = fresh;
     } else {
         state.pass = pass;
     }
@@ -522,20 +588,7 @@ pub fn submenu_row(
         .align(egui::RectAlign::RIGHT_START)
         .gap(4.0)
         .width(sub_width)
-        .show(|ui| {
-            crate::z_order::register_popup(ui.ctx(), ui.layer_id());
-            let click_id = sub_id.with("child-clicked");
-            let scope_id = egui::Id::new("active-submenu-click");
-            ui.data_mut(|d| {
-                d.insert_temp(click_id, false);
-                d.insert_temp(scope_id, Some(click_id));
-            });
-            menu_style(ui, sub_width);
-            add(ui);
-            close_on_key(ui);
-            ui.data_mut(|d| d.insert_temp(scope_id, None::<egui::Id>));
-            ui.data(|d| d.get_temp::<bool>(click_id)).unwrap_or(false)
-        });
+        .show(|ui| submenu_side(ui, sub_id, sub_width, add));
     let (pos, any_pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
     let inside = shown.as_ref().is_some_and(|s| {
         s.response.contains_pointer() || pos.is_some_and(|p| s.response.rect.contains(p))
@@ -547,11 +600,7 @@ pub fn submenu_row(
     let pressed_away = any_pressed && !inside && !resp.contains_pointer();
     let escape = open && ui.input(|i| i.key_pressed(egui::Key::Escape));
     if chosen || pressed_away || escape {
-        state = SubMenu {
-            over: None,
-            pinned: false,
-            pass,
-        };
+        state = fresh;
         if chosen {
             ui.close();
         }
@@ -563,39 +612,7 @@ pub fn submenu_row(
         }
     }
     ui.data_mut(|d| d.insert_temp(sub_id, state));
-    let active = open && shown.is_some();
-    paint_menu_row_bg(ui, resp.rect, &resp, active, &t);
-    let y = resp.rect.center().y;
-    let chev = Rect::from_min_size(
-        pos2(resp.rect.right() - MENU_PAD_X - 14.0, y - 7.0),
-        Vec2::splat(14.0),
-    );
-    Icon::ChevronRight.paint(ui, chev, if active { t.ink } else { t.muted });
-    let mut right_limit = chev.left() - 4.0;
-    if let Some(hint) = hint.filter(|s| !s.is_empty()) {
-        let galley =
-            ui.painter()
-                .layout_no_wrap(hint.to_owned(), egui::FontId::proportional(11.5), t.muted);
-        let x = right_limit - galley.size().x;
-        ui.painter()
-            .galley(pos2(x, y - galley.size().y * 0.5), galley, t.muted);
-        right_limit = x - 6.0;
-    }
-    let icon_tint = if active || resp.hovered() || resp.has_focus() {
-        t.ink
-    } else {
-        t.muted
-    };
-    paint_menu_row_lead(
-        ui,
-        resp.rect,
-        Some(icon),
-        label,
-        right_limit,
-        icon_tint,
-        t.ink,
-        &resp,
-    );
+    paint(ui, &resp, open && shown.is_some());
     resp
 }
 

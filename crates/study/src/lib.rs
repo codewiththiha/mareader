@@ -18,7 +18,7 @@ pub mod page;
 pub mod pending;
 pub mod skill;
 
-pub use answer::WordInfo;
+pub use answer::{WordInfo, fresh_synonyms, shows_word};
 pub use class::{Classes, Pos};
 pub use explain::{Canned, Explainer, Failure, Slow, Unavailable, Why};
 pub use gloss::{CONTEXT_CHARS, MAX_GLOSS_CHARS, context, word_in};

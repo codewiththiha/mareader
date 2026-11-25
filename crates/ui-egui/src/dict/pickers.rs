@@ -1,16 +1,24 @@
 //! The Dictionary page's pickers: which dictionary, or which two languages.
 
-use egui::{Ui, vec2};
-use mareader_dict::{AI_PACK, Pack, language, languages_with};
+use egui::{Response, Ui, vec2};
+use mareader_dict::{AI_PACK, HUB, Pack, ai_language, ai_only, language, languages_with};
 use mareader_settings::DictionarySettings;
 
 use super::look;
 use super::page::{CONTROL, SWAP_W};
 use crate::icons::Icon;
 use crate::theme::Tokens;
+use crate::widgets;
 
 /// The AI dictionary's name among the packs.
 pub const AI_LABEL: &str = "AI dictionary";
+/// The AI side menu's first row: every language it keeps.
+pub const ALL_AI: &str = "All AI words";
+
+/// One language the AI dictionary keeps, as its side menu names it.
+pub fn ai_pair(lang: &str) -> String {
+    format!("{} → {}", language(HUB), language(lang))
+}
 
 /// What the page can search: the packs, then the AI dictionary's languages.
 #[derive(Clone, Copy)]
@@ -34,7 +42,11 @@ impl<'a> Shelf<'a> {
     pub fn chosen(&self, s: &DictionarySettings) -> Option<String> {
         let id = s.langs.first()?;
         let pack = self.packs.iter().find(|p| p.id == id);
-        let ai = (id == AI_PACK && !self.ai.is_empty()).then(|| AI_LABEL.to_owned());
+        let kept = |l: &str| self.ai.iter().any(|a| a == l);
+        let ai = match ai_language(id) {
+            Some(l) => kept(l).then(|| format!("AI · {}", ai_pair(l))),
+            None => (id == AI_PACK && !self.ai.is_empty()).then(|| AI_LABEL.to_owned()),
+        };
         pack.map(|p| p.label()).or(ai)
     }
 
@@ -57,12 +69,45 @@ pub fn pack_box(ui: &mut Ui, s: &mut DictionarySettings, shelf: Shelf<'_>, width
         }
         for (id, label) in shelf.each() {
             let on = chosen.is_some() && s.langs.first().is_some_and(|c| c == id);
-            if look::option(ui, on, &label, t) {
+            if id == AI_PACK {
+                ai_row(ui, s, shelf.ai, t);
+            } else if look::option(ui, on, &label, t) {
                 s.langs = vec![id.to_owned()];
             }
         }
     });
 }
+
+/// The AI dictionary: a click searches all it keeps; its side menu,
+/// opened on hover, one language alone, no pack beside it.
+fn ai_row(ui: &mut Ui, s: &mut DictionarySettings, ai: &[String], t: &Tokens) {
+    let picked = s.langs.first().cloned();
+    let is = |id: &str| picked.as_deref() == Some(id);
+    let on = is(AI_PACK) || picked.as_deref().and_then(ai_language).is_some();
+    let mut pick = None;
+    let side = |ui: &mut Ui| {
+        let rows = std::iter::once((AI_PACK.to_owned(), ALL_AI.to_owned()));
+        let langs = ai.iter().map(|l| (ai_only(l), ai_pair(l)));
+        for (id, label) in rows.chain(langs) {
+            if look::option(ui, is(&id), &label, t) {
+                widgets::submenu_chosen(ui.ctx());
+                pick = Some(id);
+            }
+        }
+    };
+    let paint = |ui: &mut Ui, r: &Response, open| look::branch(ui, r, (on, open), AI_LABEL, t);
+    let row = (AI_LABEL, look::OPTION_H);
+    if widgets::submenu_with(ui, row, AI_SIDE_W, side, paint).clicked() {
+        pick = Some(AI_PACK.to_owned());
+        ui.close();
+    }
+    if let Some(id) = pick {
+        s.langs = vec![id];
+    }
+}
+
+/// The AI side menu's width: room for its longest pair.
+const AI_SIDE_W: f32 = 220.0;
 
 pub fn languages_row(
     ui: &mut Ui,

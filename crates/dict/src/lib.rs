@@ -29,7 +29,7 @@ mod shelf;
 #[cfg(not(target_arch = "wasm32"))]
 mod store;
 
-pub use ai::{AI_PACK, Saved};
+pub use ai::{AI_PACK, Saved, ai_language, ai_only};
 pub use entry::Entry;
 pub use lang::{
     LANGUAGES, Language, code_of as language_code, latin as is_latin, name as language,

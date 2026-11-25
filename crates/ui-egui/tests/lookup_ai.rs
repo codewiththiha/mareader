@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
-use mareader_dict::{Dictionaries, Query, Saved, language_code};
+use mareader_dict::{Dictionaries, Query, Saved, ai_only, language_code};
 use mareader_engine::command::Command;
 use mareader_ui_egui::dict::ai_edit;
 use mareader_ui_egui::ui_command::Sent;
@@ -264,4 +264,43 @@ fn settings_clear_one_language_from_the_ai_dictionary() {
     assert!(langs.iter().any(|l| l == "en"), "the rest stay");
     assert!(h.query_by_label("Clear: Russian").is_none());
     h.get_by_label("Clear: English");
+}
+
+/// Clicks the open list's choice named `label`, not a card's tag.
+fn choose(h: &mut H, label: &str) {
+    {
+        let mut all = h.get_all_by_label(label);
+        let choice = all.find(|n| n.accesskit_node().toggled().is_some());
+        choice.expect("a choice in the list").click();
+    }
+    h.run();
+}
+
+#[test]
+fn the_ai_dictionary_opens_its_languages_beside_it() {
+    let dir = shelf();
+    remember(dir.path());
+    let mut h = reader(dir.path());
+    let page = h.state_mut().set_option("dict_page", "quick");
+    page.expect("a known option");
+    h.run_steps(30);
+    h.get_by_label("Dictionary to search").click();
+    h.run();
+    h.get_by_label("AI dictionary").hover();
+    h.run();
+    h.get_by_label("All AI words");
+    choose(&mut h, "English → English");
+    h.run_steps(30);
+    let langs = h.state().settings().dictionary.langs.clone();
+    assert_eq!(langs, [ai_only("en")], "English meanings alone");
+    assert!(found(&h, "moving fast"), "the AI's own row");
+    let others = found(&h, "быстрый") || found(&h, "အမြန်");
+    assert!(!others, "no other language");
+    h.get_by_label("Dictionary to search").click();
+    h.run();
+    h.get_by_label("AI dictionary").click();
+    h.run_steps(30);
+    let langs = h.state().settings().dictionary.langs.clone();
+    assert_eq!(langs, [mareader_dict::AI_PACK], "a click: every language");
+    assert!(found(&h, "moving fast") && found(&h, "быстрый"));
 }

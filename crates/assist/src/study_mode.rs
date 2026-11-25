@@ -6,8 +6,8 @@
 //! number, and is read forgivingly: drifting field names, a bare list, or
 //! cards by word instead of by number.
 
-use mareader_study::Pos;
 use mareader_study::mode::{PER_REQUEST_MAX, Wanted, Written};
+use mareader_study::{Pos, fresh_synonyms, shows_word};
 use serde_json::{Map, Value, json};
 
 use crate::prompt::{AS_DATA, BOOK_ONLY_ASKED, JSON_ONLY, Prompt, meaning_in, only_meaning, quote};
@@ -146,6 +146,16 @@ fn back(card: &Map<String, Value>) -> Written {
     }
 }
 
+/// A back less what models write against the rules at times: a usage
+/// without the word, synonyms that echo it or the meaning.
+fn checked(mut back: Written, words: [&str; 2]) -> Written {
+    if !shows_word(&back.usage, &words) {
+        back.usage.clear();
+    }
+    back.synonyms = fresh_synonyms(back.synonyms, &back.meaning, &words);
+    back
+}
+
 fn cut(text: &str) -> String {
     text.chars().take(BACK_CHARS).collect()
 }
@@ -200,8 +210,14 @@ impl Task for StudyCards<'_> {
             if written.meaning.is_empty() {
                 continue;
             }
-            let at = self.slot(card, place).and_then(|i| backs.get_mut(i));
-            if let Some(at) = at.filter(|at| at.is_none()) {
+            let Some(i) = self.slot(card, place) else {
+                continue;
+            };
+            let Some(asked) = self.asked().get(i) else {
+                continue;
+            };
+            let written = checked(written, [&asked.form, &asked.key.lemma]);
+            if let Some(at) = backs.get_mut(i).filter(|at| at.is_none()) {
                 *at = Some(written);
             }
         }
@@ -285,6 +301,24 @@ mod tests {
         assert!(in_burmese, "{meaning}");
         let usage = card["usage"]["description"].as_str().unwrap_or_default();
         assert!(usage.contains("English sentence"), "{usage}");
+    }
+
+    #[test]
+    fn a_usage_without_its_word_is_left_out() {
+        let words = words();
+        let task = StudyCards {
+            words: &words,
+            language: None,
+        };
+        let v = json!({"cards": [
+            {"n": 1, "meaning": "quick", "synonyms": ["quick", "lively"], "usage": "A fast one."},
+            {"n": 2, "meaning": "roamed", "synonyms": [], "usage": "She wanders off."}]});
+        let backs = task.read(&v, true).unwrap_or_default();
+        let first = backs.first().cloned().flatten().unwrap_or_default();
+        assert_eq!(first.usage, "", "brisk never said");
+        assert_eq!(first.synonyms, ["lively"], "the meaning echoed");
+        let second = backs.get(1).cloned().flatten().unwrap_or_default();
+        assert_eq!(second.usage, "She wanders off.", "the lemma's form");
     }
 
     #[test]

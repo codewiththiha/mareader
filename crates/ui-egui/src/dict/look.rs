@@ -49,11 +49,38 @@ pub fn field(ui: &mut Ui, f: Field<'_>) -> Typed {
     }
 }
 
+/// A picker row's height.
+pub const OPTION_H: f32 = 30.0;
+
 /// One choice in a picker's list; true when picked.
 pub fn option(ui: &mut Ui, on: bool, text: &str, t: &Tokens) -> bool {
-    let size = vec2(ui.available_width(), 30.0);
-    let (rect, r) = ui.allocate_exact_size(size, Sense::click());
-    if r.hovered() {
+    let size = vec2(ui.available_width(), OPTION_H);
+    let (_, r) = ui.allocate_exact_size(size, Sense::click());
+    let mark = on.then_some((Icon::Check, t.accent));
+    paint_option(ui, &r, (on, r.hovered()), text, mark, t);
+    r.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, true, on, text));
+    r.clicked()
+}
+
+/// A row that opens more choices to its side, drawn like [`option`];
+/// `on` when one of them is picked.
+pub fn branch(ui: &mut Ui, r: &Response, (on, open): (bool, bool), text: &str, t: &Tokens) {
+    let mark = Some((Icon::ChevronRight, if open { t.ink } else { t.muted }));
+    paint_option(ui, r, (on, open || r.hovered()), text, mark, t);
+}
+
+/// A picker row: lit when hovered, its text accented when `on`, and
+/// `mark` at its end.
+fn paint_option(
+    ui: &mut Ui,
+    r: &Response,
+    (on, lit): (bool, bool),
+    text: &str,
+    mark: Option<(Icon, Color32)>,
+    t: &Tokens,
+) {
+    let rect = r.rect;
+    if lit {
         ui.painter().rect_filled(rect, t.radius - 2.0, t.hover);
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
@@ -67,18 +94,13 @@ pub fn option(ui: &mut Ui, on: bool, text: &str, t: &Tokens) -> bool {
     let galley = ui.painter().layout_job(cut(text, font, ink, room));
     let at = pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0);
     ui.painter().galley(at, galley, ink);
-    if on {
+    if let Some((icon, tint)) = mark {
         let tick = Rect::from_center_size(
             pos2(rect.right() - 18.0, rect.center().y),
             Vec2::splat(14.0),
         );
-        Icon::Check
-            .image(ui, 14.0)
-            .tint(t.accent)
-            .paint_at(ui, tick);
+        icon.image(ui, 14.0).tint(tint).paint_at(ui, tick);
     }
-    r.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, true, on, text));
-    r.clicked()
 }
 
 /// `text` on one line, ending in "…" past `width`.
