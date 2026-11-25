@@ -79,7 +79,7 @@ pub fn tags(e: &Entry) -> String {
 /// Tags left, "via perfume" right; the tags give way, never the bridge.
 fn meta(ui: &mut Ui, e: &Entry, t: &Tokens, shown: bool) {
     let tags = if shown { tags(e) } else { String::new() };
-    if tags.is_empty() && e.via.is_none() && e.ai.is_none() {
+    if tags.is_empty() && e.via.is_none() {
         return;
     }
     let width = ui.available_width();
@@ -96,9 +96,6 @@ fn meta(ui: &mut Ui, e: &Entry, t: &Tokens, shown: bool) {
                     ui.add(label).on_hover_text(tip);
                 });
             }
-            if let Some(saved) = &e.ai {
-                ai_badge(ui, &saved.model, t);
-            }
             if !tags.is_empty() {
                 let lead = Layout::left_to_right(Align::Center);
                 ui.with_layout(lead, |ui| {
@@ -111,7 +108,7 @@ fn meta(ui: &mut Ui, e: &Entry, t: &Tokens, shown: bool) {
 }
 
 /// "AI", for a row an AI wrote and this machine keeps.
-fn ai_badge(ui: &mut Ui, model: &str, t: &Tokens) {
+pub fn ai_badge(ui: &mut Ui, model: &str, t: &Tokens) {
     let text = RichText::new("AI").size(t.text_small).strong();
     let by = if model.is_empty() { "an AI" } else { model };
     let tip = format!("Written by {by}; kept in this computer's AI dictionary");

@@ -149,9 +149,12 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   A deck with no new words unlocks its batch with a toast.
 - **AI cards:** *Cards from* picks who writes the backs: Auto (the AI when
   study has a model, else the dictionary), AI or Dictionary. The AI writes a
-  deck's backs in `StudyCards` requests (a meaning in context, up to three
-  synonyms and an example) on study's model, else Explain's, in study's
-  language. Each request carries about the model's **Cards per request**
+  deck's backs in `StudyCards` requests (the word's common meaning, its
+  class, up to three synonyms, one example that uses the word itself, and
+  whether only this book uses it, as a name does) on study's model, else
+  Explain's, in study's language. The sentence goes along only so the AI
+  knows which word and class are meant; the meaning never retells the
+  story. Each request carries about the model's **Cards per request**
   (AI models, default 10): a deck is cut evenly into `words / limit`
   requests, rounded half up (`mode::chunks`), so with 10, 13 words go in
   one request, 15 in 8 and 7, and 32 in 11, 11 and 10. All are asked at
@@ -162,6 +165,11 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   asks only for the new ones, and a deck whose one request failed asks
   only that request's words when tried again. An AI deck that fails says
   why; `use_dictionary` has the dictionary write that batch's deck instead.
+- **The AI dictionary** (`deck_job/reuse.rs`, `docs/study.md`): before the
+  AI is asked, the cards with a tagger class look in it, and one kept for
+  the same lemma, class and study language becomes the back (three
+  synonyms and one example at most); only the rest are written. Written
+  backs that aren't book-only go in, and a meaning kept before stays.
 - **Half written** (`deck_job/early.rs`, `open.rs`): an AI deck opens once
   half its cards (rounded up) have backs and requests are still out. Those
   cards' classes come from the tagger and the AI only. The same job writes
@@ -216,7 +224,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   off, the reason shows and a row opens the settings tab that fixes it.
   *Study settings…* opens Settings › Study mode, and goes with the tab
   when neither an AI nor a dictionary is set up. While a pane studies the
-  AI tasks below it are disabled.
+  AI tasks below it are disabled. Turning study on, or changing its mode,
+  closes the menu, so the deck's *Preparing the words* shows clear.
 - **The view holds at the gate:** a strip scrolls no further than the end
   of the gate page, and a paged mode turns no further than it. With the lock
   on it also holds at the top of the start page, and a frost covers the
@@ -233,6 +242,9 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   alone, its band in the top right corner; nothing from the book's
   sentence, which would give it away. Its back gives the meaning and the
   word class, and an AI card adds its synonyms and an example of its own.
+  *Click to turn, drag to move on* shows on hover until the reader first
+  turns, swipes or steps a card, and never again (a flag kept with the
+  window's memory).
   The card (`study_mode/flip_card.rs`) is painted as shapes, tessellated
   and turned in perspective about its upright axis. Its texts are noted to
   `machine_fonts::note`, as the scan of drawn text never sees a mesh, so a

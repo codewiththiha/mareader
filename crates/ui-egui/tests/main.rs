@@ -22,6 +22,8 @@ mod jobs;
 mod keys;
 mod library;
 mod link_peek;
+#[cfg(not(target_arch = "wasm32"))]
+mod lookup_ai;
 mod modes;
 mod navigation;
 mod option_keys;

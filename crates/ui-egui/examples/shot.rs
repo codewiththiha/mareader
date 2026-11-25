@@ -16,6 +16,8 @@ use mareader_ui_egui::ui_command::{Sent, UiCommand};
 
 #[path = "shot_parts/edit.rs"]
 mod edit;
+#[path = "shot_parts/packs.rs"]
+mod packs;
 #[path = "shot_parts/waits.rs"]
 mod waits;
 
@@ -208,9 +210,9 @@ fn main() -> Result<(), String> {
                 let dir = voice_models(v == "ready")?;
                 app.set_option(k, &dir.to_string_lossy())?;
             }
-            // The test packs, converted: `dictionaries=fixtures`.
-            "dictionaries" if v == "fixtures" => {
-                let dir = fixture_packs()?;
+            // Test packs: `fixtures`, or `fixtures_ai` with AI meanings.
+            "dictionaries" if v.starts_with("fixtures") => {
+                let dir = packs::fixtures(v == "fixtures_ai")?;
                 app.set_option(k, &dir.to_string_lossy())?;
             }
             // A real English-to-French pack for lookup shots.
@@ -682,24 +684,6 @@ fn download_dictionary() -> Result<std::path::PathBuf, String> {
         }
     }
     Err(format!("dictionary pack: {}", failures.join("; ")))
-}
-
-/// The Burmese and French test packs, built into a temporary folder.
-fn fixture_packs() -> Result<std::path::PathBuf, String> {
-    let dir = std::env::temp_dir().join("mareader-shot-packs");
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dict/tests/fixtures");
-    for (file, id) in [
-        ("en-my.parquet", "mcfnlp-en-my"),
-        ("en-fr.parquet", "wiktionary-en-fr"),
-    ] {
-        let pack = (mareader_dict::PACKS.iter())
-            .find(|p| p.id == id)
-            .ok_or(format!("no pack {id}"))?;
-        let db = mareader_dict::db_file(&dir, pack);
-        std::fs::create_dir_all(db.parent().unwrap_or(&dir)).map_err(|e| e.to_string())?;
-        mareader_dict::build(&fixtures.join(file), &db).map_err(|e| e.to_string())?;
-    }
-    Ok(dir)
 }
 
 /// Waits until the open word card has a completed hosted answer.

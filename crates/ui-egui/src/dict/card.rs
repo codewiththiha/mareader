@@ -192,8 +192,11 @@ fn body(
             }
             ui.spacing_mut().item_spacing.y = 4.0;
             let near = entry::near(e, asked);
-            if near.is_some() || pair.is_some() {
-                lang_row(ui, near, pair, t, out);
+            // English to English has nothing to swap.
+            let pair = pair.filter(|(from, to)| from != to);
+            let ai = e.ai.as_ref().map(|s| s.model.as_str());
+            if near.is_some() || pair.is_some() || ai.is_some() {
+                lang_row(ui, (near, ai), pair, t, out);
             }
             entry::rows(ui, e, t, false);
         });
@@ -203,10 +206,10 @@ fn body(
     p.edges = (off <= 0.5, off >= room - 0.5);
 }
 
-/// Near lemma on the left, compact swappable language pair on the right.
+/// Near lemma and the AI mark on the left, the language pair on the right.
 fn lang_row(
     ui: &mut Ui,
-    near: Option<&str>,
+    (near, ai): (Option<&str>, Option<&str>),
     pair: Option<(&str, &str)>,
     t: &Tokens,
     out: &mut Commands,
@@ -217,11 +220,14 @@ fn lang_row(
             if let Some((from, to)) = pair {
                 lang_swap_pill(ui, from, to, t, out);
             }
-            if let Some(word) = near {
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                if let Some(word) = near {
                     entry::heading(ui, word, t);
-                });
-            }
+                }
+                if let Some(model) = ai {
+                    entry::ai_badge(ui, model, t);
+                }
+            });
         });
     });
 }

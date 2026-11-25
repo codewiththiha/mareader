@@ -20,10 +20,10 @@ use mareader_ui_egui::ui_command::{Sent, UiCommand};
 
 use crate::common::click_at;
 
-type H = Harness<'static, MareaderApp>;
+pub(crate) type H = Harness<'static, MareaderApp>;
 
 /// A folder holding the Burmese and French packs, converted.
-fn shelf() -> tempfile::TempDir {
+pub(crate) fn shelf() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../dict/tests/fixtures");
     for (file, id) in [
@@ -36,7 +36,7 @@ fn shelf() -> tempfile::TempDir {
     dir
 }
 
-fn reader(dir: &Path) -> H {
+pub(crate) fn reader(dir: &Path) -> H {
     let mut app = MareaderApp::default();
     let path = dir.to_string_lossy().into_owned();
     for (k, v) in [
@@ -57,7 +57,7 @@ fn reader(dir: &Path) -> H {
     h
 }
 
-fn select(h: &mut H, text: &str) {
+pub(crate) fn select(h: &mut H, text: &str) {
     let pane = h.state().active_pane();
     let text = text.to_owned();
     h.state_mut().queue(Sent::Engine(Command::SelectText {

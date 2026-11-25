@@ -13,7 +13,10 @@ entries are `study.*` in `parity/mareader-features.toml`.
 - **Explain.** Only one word: trimmed, no inner whitespace, at most 60
   characters; anything else gets a toast saying so. The word and about 60
   characters either side go to the model, which answers part of speech,
-  meaning in context, 2–5 synonyms and 2–3 usages, as JSON.
+  the word's common meaning, 2–5 synonyms, 2–3 usages that use the word
+  itself and whether only this book uses it, as JSON. The sentence is
+  there only to tell which word and class are meant; the meaning is the
+  dictionary's, never what the word means in the story.
 - **Marks.** Explaining a word marks it where it stands. The same word in
   the same spot reuses its mark. A click on a mark opens its card again; a
   right-click offers "Remove highlight", with Undo in the toast. Long press
@@ -141,6 +144,36 @@ fit together is in `docs/assist.md`.
   selection bar and everywhere else. Its model, mark, colour and card
   spacing are set in Settings › AI; Highlights shows its mark with a link
   there. Models and keys live in Settings › AI models (`docs/assist.md`).
+
+## The AI dictionary
+
+The owner asked for this (2026-11-25): what an AI wrote of a word should
+be kept on this machine and used again, beside the downloaded packs.
+
+- **Where.** `ai.sqlite` in the dictionaries folder, opened by the
+  dictionary worker (`crates/dict/src/ai_store.rs`). Desktop only; the web
+  build keeps none. An entry is a word, its class and its meaning's
+  language together, with the meaning, synonyms, usages, the model and
+  when; "book" the noun and "book" the verb are two entries.
+- **What goes in.** An AI deck's backs, quietly: a meaning kept before
+  stays. An Explain answer too, but when a different meaning is kept for
+  its word, class and language, the card shows it under *Your AI
+  dictionary says* with *Replace with this answer*; nothing changes
+  without that click. A word the AI marks book-only (a name, a made-up
+  word), or one with no class, is never kept.
+- **Language.** The meaning's language is the writer's (Explain's or
+  study's), as a code (`language_code`), English when none is set.
+- **Lookup cards.** An English word's kept entries in the card's language
+  follow the packs' rows, each labelled AI (the model in its tooltip) and
+  laid out as the AI card is: meaning, synonym chips and usages. English
+  meanings make a small pack of their own: *Your AI dictionary also has*
+  offers English, and any other kept language, to turn the card to.
+  Settings › Dictionary › *AI dictionary first* (off) puts AI rows first.
+- **Decks** use entries again by lemma, class and language
+  (`docs/study-mode.md`), and Space filters words by who wrote their
+  meaning.
+- **Not yet.** Entries change only through Replace; there is no list to
+  edit or delete them, and the Dictionary page's search doesn't show them.
 
 ## Saved answers
 
