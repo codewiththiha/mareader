@@ -4,7 +4,8 @@
 //! doing into one list a frame, so the window says it all in one place. A
 //! job's [`Key`] stays the same from its start to its end, and the
 //! [`Ledger`] keeps how each ended once its owner forgets it. See
-//! `docs/study-mode.md` § The corner stack, and § Adding a job there.
+//! `docs/study-mode.md` section The corner stack, and section Adding a job
+//! there.
 
 mod ledger;
 mod pages;

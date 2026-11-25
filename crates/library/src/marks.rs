@@ -9,7 +9,7 @@ use crate::extra::Extra;
 use crate::id::{BookId, MarkId};
 use crate::library::Library;
 
-/// Where a marked word stands; see `docs/study.md` § Marks.
+/// Where a marked word stands; see `docs/study.md` section Marks.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Spot {
@@ -27,7 +27,7 @@ pub enum Spot {
     Blocks { from: [usize; 2], to: [usize; 2] },
 }
 
-/// How a highlight is drawn; see `docs/study.md` § Highlighters.
+/// How a highlight is drawn; see `docs/study.md` section Highlighters.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Pen {

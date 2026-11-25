@@ -1,8 +1,8 @@
 //! The app without a window: what outlives a frame or reaches disk (L5).
 //!
-//! Nothing here names a toolkit (`docs/architecture.md` § Layers). What it
-//! holds is what outlives a frame or reaches disk; a front end draws it, and
-//! changes it only by handing an command to `Session::execute`.
+//! Nothing here names a toolkit (`docs/architecture.md` section Layers).
+//! What it holds is what outlives a frame or reaches disk; a front end draws
+//! it, and changes it only by handing an command to `Session::execute`.
 //!
 //! Paths here keep their front-end modules (`texts`, `paper`, `read_aloud`),
 //! because a move must not rename what it moves.

@@ -2,7 +2,7 @@
 //!
 //! A front end hands the session a directory and never writes to it. What
 //! outlives a launch is the engine's, so a headless client keeps the same two
-//! files and the same repair notes (`docs/architecture.md` § Layers). A
+//! files and the same repair notes (`docs/architecture.md` section Layers). A
 //! platform with no files keeps the same two, by the same names and in the same
 //! bytes: [`blobs`] hands them over, and [`parse`] reads them back.
 

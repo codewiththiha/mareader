@@ -66,7 +66,8 @@ fn until(h: &mut H, done: impl Fn(&H) -> bool) -> bool {
     done(h)
 }
 
-/// PROGRESS.md §5, step 5: done out of view, View scrolls back and opens it.
+/// PROGRESS.md section 5, step 5: done out of view, View scrolls back and
+/// opens it.
 #[test]
 fn an_answer_landed_out_of_view_waits_until_view_opens_its_card() {
     let mut h = slow_reader();
@@ -81,7 +82,7 @@ fn an_answer_landed_out_of_view_waits_until_view_opens_its_card() {
     assert!(h.query_by_label(STACK).is_none(), "seen, the line goes");
 }
 
-/// PROGRESS.md §5, step 6: a row that isn't study's stops at once.
+/// PROGRESS.md section 5, step 6: a row that isn't study's stops at once.
 #[test]
 fn an_explain_out_of_view_cancels_at_once_with_a_toast() {
     let mut h = slow_reader();
@@ -131,7 +132,7 @@ fn a_skill_out_of_view_runs_in_the_stack_and_cancels_with_a_toast() {
     assert!(h.query_by_label(STACK).is_none());
 }
 
-/// PROGRESS.md §5, step 4: a failure shows red about 3 s, with a toast.
+/// PROGRESS.md section 5, step 4: a failure shows red about 3 s, with a toast.
 #[test]
 fn a_skill_failing_out_of_view_shows_red_a_moment_and_toasts() {
     let mut h = skill_away("failing");

@@ -59,7 +59,7 @@ mod tests {
         (ORGANIZE, Scope::Global)
     }
 
-    /// The owner's worked example, PROGRESS.md §5, steps 1 to 5.
+    /// The owner's worked example, PROGRESS.md section 5, steps 1 to 5.
     #[test]
     fn the_app_s_work_stacks_once_until_a_pane_needs_its_corner() {
         let one = place(&[A], &[organize()]);

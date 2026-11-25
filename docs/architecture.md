@@ -55,7 +55,7 @@ the right place.
 | L7 | `apps/mareader-cli` | **exists** | the headless second client (`commands`, `exec`, `run`, `inspect`, `mcp`, `ui`) driving `mareader-engine` and `mareader-mcp` directly with zero toolkit dependencies |
 | — | `xtask` | **exists** | gates (`layers`, `wasm`, `trapped`, `parity`, `assets`, `unsafe`, `ui-commands`, `panel-commands`, `z-order`, `comments`, `ci`) |
 
-The rules (enforced with the eight laws in `AGENTS.md` § Layering and ADR 0007):
+The rules (enforced with the eight laws in `AGENTS.md` section Layering and ADR 0007):
 1. A crate depends only on lower layers. Same-layer edges need an entry in
    `SIDEWAYS`.
 2. egui, eframe, egui_extras, egui_kittest, winit, wgpu and rfd appear only in
@@ -175,7 +175,7 @@ EPUB: parley → vello_cpu ┘                                    filter · blen
   (`MAX_FILTER_OPS`) and `page_blend()`, and composites the texture tile and the
   grain. `apply_filter` in `crates/appearance` is its CPU reference, and tests
   compare the two. Appearance values are uniforms, so dragging a control
-  re-renders no page (`docs/design.md` § How the theme works).
+  re-renders no page (`docs/design.md` section How the theme works).
 - **Blend backdrop** (PDF): the dominant paper colour of the whole page or its
   edges is sampled from the raster, and the pane background takes that colour
   so the page melts into it.
@@ -278,7 +278,7 @@ mareader typography setting has a parley equivalent.
 - **macOS:** full-size content view, title hidden, native traffic lights.
 - **Windows and Linux:** `with_decorations(false)`, our own caption buttons in
   the platform's style, and 5 pt resize edges.
-- Behaviour: `docs/design.md` § Title bar.
+- Behaviour: `docs/design.md` section Title bar.
 
 ## Decisions
 

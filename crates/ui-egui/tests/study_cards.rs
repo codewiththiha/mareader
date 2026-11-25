@@ -236,8 +236,8 @@ fn the_stack_shows_the_writing_only_while_the_deck_is_out_of_view() {
     );
 }
 
-/// PROGRESS.md §5, steps 1, 3 and 4: the library's run stacks once until a
-/// pane's job needs the corner, then joins every pane's stack.
+/// PROGRESS.md section 5, steps 1, 3 and 4: the library's run stacks once
+/// until a pane's job needs the corner, then joins every pane's stack.
 #[test]
 fn the_app_s_work_joins_every_pane_once_a_pane_needs_its_corner() {
     let (mut h, pane, _shelves) = studying_at("silent", 1, Some(3));

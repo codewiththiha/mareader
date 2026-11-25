@@ -234,7 +234,7 @@ What the epub crate reads, and what each element becomes:
   second time over its own box in the pane's plain tone. Thumbnails keep
   full ink. Without a GPU, pages aren't themed and the dial does nothing.
   *Since the follow-ups, pictures keep their own colours unless Theme
-  pictures is on (§ Layout and per-pane text follow-ups).*
+  pictures is on (section Layout and per-pane text follow-ups).*
 
 ## Hostile books
 
@@ -282,7 +282,7 @@ parley layout, about 3,000 bytes plus 48 a byte of text (measured; see
 layout. *War and Peace* comes to about 190 MB, the complete Shakespeare to
 about 560 MB. Laying out on demand would lift the limit; it is a follow-up.
 *Superseded: layouts are now laid on demand and blocks are capped instead
-(§ Layout and per-pane text follow-ups).*
+(section Layout and per-pane text follow-ups).*
 
 **EPUB 2.** Books with only an NCX, an OPF 2 cover (`<meta name="cover">`)
 and HTML entities open as EPUB 3 books do. A real one is a test fixture:
@@ -339,7 +339,7 @@ Post-implementation refinements to EPUB layout, pictures and per-pane typography
   value over. The text column scales, never below 160
   units, and the page grows or shrinks with it, keeping its margins. Each
   step re-sets the book off the UI thread and keeps the reading place.
-- **Kept as built:** one binding-side rule for every view (§ View modes
+- **Kept as built:** one binding-side rule for every view (section View modes
   implementation), and the line-end hyphen hanging just past the column's edge.
 
 ## Text files as EPUBs (owner request, 2026-10-14)
@@ -439,7 +439,7 @@ packed. Legacy encodings are guessed.
   100 paragraphs would buy no speed and fill the contents with numbers.
 - **Same text, same bytes.** The zip's dates and the package's modified
   date are fixed, so a file converts to identical bytes every time. The
-  library relies on this to cache the result (`docs/library.md` § Text
+  library relies on this to cache the result (`docs/library.md` section Text
   files in the library).
 
 ## Footnotes (owner request, 2026-10-18)

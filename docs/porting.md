@@ -26,8 +26,8 @@ rebuilt from its goal, as the smallest native design that delivers it.
 5. **Test first.** Unit tests on the model and `engine::Session` (port
    mareader's cases where they apply), plus a kittest for UI interaction. Watch
    each fail before the fix.
-6. **Look at it** with the shot tool (`docs/development.md` § The look loop):
-   light, dark, a tint; wide and narrow.
+6. **Look at it** with the shot tool (`docs/development.md` section The look
+   loop): light, dark, a tint; wide and narrow.
 7. **Record:** update the parity entry's status, evidence, `command`/`ui_only`
    link and notes; update `docs/design.md` if the look changed; update
    `ROADMAP.md` for major capabilities.

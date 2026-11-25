@@ -1,5 +1,5 @@
 //! Offline dictionaries (L1): packs, downloads, lookups.
-//! See `docs/study.md` § Dictionary.
+//! See `docs/study.md` section Dictionary.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,

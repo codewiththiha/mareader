@@ -587,4 +587,4 @@ owner checks these on real machines before 1.0:
 installed build: the bar drags and double-clicks, the traffic lights sit
 in the bar and slide with the sidebar, and books open from Finder into
 the running window. All passed. Each installer's launch is also checked
-in CI on every OS (`docs/packaging.md` § Installers from CI).
+in CI on every OS (`docs/packaging.md` section Installers from CI).

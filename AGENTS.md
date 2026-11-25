@@ -21,7 +21,7 @@ and md formats.
   improve.
 - **Feature tracking:** every capability has an entry in
   `parity/mareader-features.toml`, checked by `cargo xtask parity`.
-- **Architecture:** `docs/architecture.md` (read § How the app is built in
+- **Architecture:** `docs/architecture.md` (read section How the app is built in
   egui before writing UI) and `docs/ui-layers.md` (z-order tiers enforced by
   `cargo xtask z-order`). Decisions: `docs/adr/`.
 
@@ -33,8 +33,8 @@ mareader is checked out beside this repository as `../mareader` (or at
 - **Rebuild from the goal, not the code.** For each feature, work out what the
   user gets and which edge cases matter, then design the smallest native model
   that delivers it (`docs/porting.md`). Don't port module layouts, workaround
-  layers or web-only mechanisms; `docs/porting.md` § What not to port lists
-  them. Don't add mareader's crates as dependencies.
+  layers or web-only mechanisms; the "What not to port" section of
+  `docs/porting.md` lists them. Don't add mareader's crates as dependencies.
 - **Check claims about mareader against its source.** When a doc, test or
   parity note says "mareader does X", grep `../mareader` first. Memory has been
   wrong here before.
@@ -225,7 +225,7 @@ diff; pass changed files explicitly. Review the rules the tools do not enforce.
 ## egui, natively
 
 The UI is immediate mode. Write it as egui code, not as a web app in egui
-syntax (`docs/architecture.md` § How the app is built in egui).
+syntax (`docs/architecture.md` section How the app is built in egui).
 
 - **State lives in plain structs.** Durable state lives in `engine::Session`
   (and L0–L3 domain types); `MareaderApp` pairs `session` with window-ephemeral
@@ -244,9 +244,10 @@ syntax (`docs/architecture.md` § How the app is built in egui).
   the shared heading, switch card and buttons. Never call `Modal::new`
   directly; a test fails if anything else does.
 - **The theme is `Tokens` applied to `Style` and `Visuals`,** once per change
-  (`docs/design.md` § How the theme works). Views don't pick colours or sizes;
-  custom widgets read `Tokens`. Appearance changes show on the next frame and
-  never re-render pages: page looks are uniforms of the page pass.
+  (`docs/design.md` section How the theme works). Views don't pick colours
+  or sizes; custom widgets read `Tokens`. Appearance changes show on the
+  next frame and never re-render pages: page looks are uniforms of the page
+  pass.
 - **Don't recreate per-pane isolation.** A pane is a view over a shared
   `Arc<Document>`, one tile cache and one worker pool (ADR 0006).
 - **Animate meaning, not decoration.** Hover is instant; motion goes through
@@ -291,8 +292,8 @@ is in progress, by looking and by using it.
 
 - **Every UI change is looked at, not assumed.** Render it with
   `cargo run -p mareader-ui-egui --example shot -- OUT.png key=value…` (see
-  `docs/development.md` § The look loop), open the PNG, and check it against
-  `docs/design.md`: light, dark and one tint, wide and narrow, and each
+  `docs/development.md` section The look loop), open the PNG, and check it
+  against `docs/design.md`: light, dark and one tint, wide and narrow, and each
   platform's chrome the change touches. Say what was checked.
 - **Behaviour is tested with egui_kittest** (`crates/ui-egui/tests/`): hover, click
   and keyboard through AccessKit labels, at 60 fps steps

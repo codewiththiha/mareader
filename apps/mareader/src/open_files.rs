@@ -1,5 +1,5 @@
 //! macOS: Finder's files, an Apple event winit leaves unhandled.
-//! See docs/packaging.md § macOS.
+//! See docs/packaging.md section macOS.
 
 #[cfg(all(target_os = "macos", feature = "open-files"))]
 pub use mac::install;

@@ -7,7 +7,7 @@ that gets out of the way. But it is ours to improve (ADR 0005): where egui offer
 better native answer, or a mareader detail reads poorly, change it here, then in
 the code.
 
-Every UI change is looked at with the shot tool (`docs/development.md` § The look loop)
+Every UI change is looked at with the shot tool (`docs/development.md` section The look loop)
 in light, dark and one tint, at desktop and narrow sizes.
 
 ## Principles

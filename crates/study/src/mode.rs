@@ -3,7 +3,7 @@
 //! Proactive mode shows a batch's hard words as cards before its pages
 //! unlock; Reactive mode asks the reader to recall a shaded word's meaning.
 //! Everything here is pure: the engine feeds it pages, levels and answers.
-//! See `docs/study.md` § Study mode.
+//! See `docs/study.md` section Study mode.
 
 mod batches;
 mod cards;

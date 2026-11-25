@@ -244,7 +244,7 @@ The owner split the one AI tab in two and renamed Explain:
     the model runs, fallbacks included, two at most and then a count.
   - An open model edits Name, Provider, Model, At once and **Cards per
     request** (study-card words in one request, 1 to 30, default 10; a
-    deck with more is split, see `docs/study-mode.md` § AI cards), and can
+    deck with more is split, see `docs/study-mode.md` section AI cards), and can
     be tried, made the AI Dictionary's, duplicated under a fresh name such
     as "(2)" with the same settings, or deleted after a second click.
   - **Add a model** shows the providers as tiles; with none saved they
@@ -483,7 +483,7 @@ once and runs on the runtime:
 
 The crate knows nothing of the library: books and shelves go in and come
 back as `u128` keys (`BookId.0`, `ShelfId.0`). What the library does with
-the plan is in `docs/library.md`, § AI organizer.
+the plan is in `docs/library.md`, section AI organizer.
 
 A new workflow is the same shape: write its tasks, chain them in an async
 function over `&dyn Backend`, and start it from `Assist` with `flow()`.

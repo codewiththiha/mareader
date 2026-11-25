@@ -5,7 +5,7 @@
 //! and the system's own opener. An app answers it: the platform on a desktop,
 //! a browser's own table on the web, [`Fake`] in a test. Nothing here names a
 //! toolkit and nothing here starts a thread: how a machine does a thing is
-//! that machine's business (`docs/architecture.md` § Layers, Law 6).
+//! that machine's business (`docs/architecture.md` section Layers, Law 6).
 //!
 //! [`Machine`] is what a front end reads back: the places the services it
 //! still holds are wired to, each a child of one of the host's two folders.

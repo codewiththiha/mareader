@@ -4,12 +4,12 @@
 
 mareader's library is ~32k lines (`library-core` 10k, `library-runtime` 22k,
 plus `src-tauri/src/commands/library.rs`), and its design notes
-(`Mareader.md` § The library) run past 1,000 lines. This document keeps what it
-achieves and drops the complexity its model created.
+(`Mareader.md` section The library) run past 1,000 lines. This document
+keeps what it achieves and drops the complexity its model created.
 
 ## What the library is for
 
-Read from mareader's README § Library and `Mareader.md`. A user can:
+Read from mareader's README section Library and `Mareader.md`. A user can:
 
 1. **Gather books from anywhere.** Read a folder in place, or have the app
    keep its own copy. Loose files (dialog, drop) are kept as copies.
@@ -33,7 +33,7 @@ Read from mareader's README § Library and `Mareader.md`. A user can:
 |---|---|---|
 | A watched folder's tree *is* a set of editable shelves ("rungs" on "seats") | Moving a read-in-place book off its rung had to turn it into a copy ("departure"), with families, returns, moved-out logs and a copy-cost sheet | **Sources are read-only.** A watched folder is browsed as the disk's own tree; shelves are separate, user-made collections. Filing a book never touches a source, so departures don't exist. |
 | Names unique per level | Every drop, import and filing could collide: a conflict sheet with three answers per gesture | **Shelves hold book ids.** Two books may share a title; dropping a book on a shelf that has it is a no-op that highlights it. Only sibling *shelf* names must differ (rename refuses). |
-| Rows vs books: link rows, twin rows, `independent` rows | One file could be several rows; every writer had to fold twins | **One content, one book, unless the reader asks for a twin.** A book has a list of locations; a book on two shelves is two memberships. A twin is a second book with its own id, and reading state is keyed by id, so nothing folds (§ Independent twins). |
+| Rows vs books: link rows, twin rows, `independent` rows | One file could be several rows; every writer had to fold twins | **One content, one book, unless the reader asks for a twin.** A book has a list of locations; a book on two shelves is two memberships. A twin is a second book with its own id, and reading state is keyed by id, so nothing folds (section Independent twins). |
 | Fingerprint = size + mtime + 8 KiB head hash; placeholders gating rescans | mtime changes on copy; migrated rows had no measurement | **Content identity:** size + hash of the first and last 64 KiB. A `(path, size, mtime)` cache skips re-hashing unchanged files, so a focus rescan stays cheap. |
 | Per-folder tombstones with names, addresses and shelves | To stop rescans re-adding removed books, and to offer them back | **`hidden` per source:** removing a source's book hides it there and keeps its record (with progress) for restore. |
 | A custom pointer-drag engine, DOM probes for crumbs, virtual-list crates | Browser limits | egui `dnd_*`, `Galley` measurement, `ScrollArea::show_rows`. |
@@ -103,7 +103,7 @@ written atomically (temp + rename) on a worker after a short debounce.
   shelves, sources.
 - `state/<book-id>.json` holds one book's position (and its marks, M6). A
   page turn rewrites only that small file, never the whole library; the
-  same split is the sync layout (`docs/sync.md` § Wire layout).
+  same split is the sync layout (`docs/sync.md` section Wire layout).
 - Covers live in the cache directory, keyed by content id, rebuilt on
   demand.
 
@@ -135,16 +135,16 @@ written atomically (temp + rename) on a worker after a short debounce.
 ## Text files in the library (2026-10-15, corrected 2026-10-25)
 
 Markdown and plain text open by converting to an EPUB in memory on the
-session's workers (`docs/epub.md` § Text files as EPUBs). Conversion is
+session's workers (`docs/epub.md` section Text files as EPUBs). Conversion is
 cheap and byte-for-byte repeatable, so the library keeps only the source:
 no EPUB is written, and every open converts afresh, so a better converter
 reaches old books too.
 
 - **Read in place.** The library holds the file's path; an edit to it is
-  the same book with new content (§ Identity and naming edge cases).
+  the same book with new content (section Identity and naming edge cases).
 - **Live reload (2026-10-25).** An open book saved elsewhere, in any
   format, reloads within about two seconds where it is read
-  (`docs/architecture.md` § Threads and resources). Store copies never
+  (`docs/architecture.md` section Threads and resources). Store copies never
   change, so only files read in place ever do.
 - **Store copies** are the source file in `files/<content>/<name>`. A
   Markdown file's local pictures come with it (`disk::copy_beside`), so the
@@ -199,7 +199,7 @@ Sync is optional future work (`docs/sync.md`), with its groundwork already
 built into the library schema so no library needs migrating later: ids nobody
 else mints, a hybrid-clock stamp on each synced field, tombstones instead of
 deletion, sort keys for manual order, and synced facts kept apart from a
-machine's own (`docs/sync.md` § Library groundwork).
+machine's own (`docs/sync.md` section Library groundwork).
 
 ## Records and resume (2026-10-15)
 
@@ -251,7 +251,7 @@ What the first slice built, and where it stops short of the model above.
   (none is Auto), the cover fit and the sort, inside the settings as
   `library`. An older settings file without it loads the defaults: grid,
   Auto, Fit, last read newest first. The View options menu (in the title
-  bar, § Routes) changes each at once and stays open to chain changes.
+  bar, section Routes) changes each at once and stays open to chain changes.
 - **Sort.** Last read, title, author or date added, either way. A new key
   starts in its natural direction (names A–Z, dates newest first). Names
   compare ignoring case, with digit runs as numbers, so Volume 2 comes
@@ -540,7 +540,7 @@ What the first slice built, and where it stops short of the model above.
   so the card never needs closing. The worker sends a beat only when the
   ring moves a whole percent, so huge folders don't flood the queue.
 - **Not yet.** Importing a mareader library is deferred (owner,
-  2026-10-15); see § Optional below. Dropped (owner, 2026-10-16).
+  2026-10-15); see section Optional below. Dropped (owner, 2026-10-16).
 - **Shots.** `sidebar=library` opens the panel; `library_click=split`
   picks the click; `carry=x1,y1,x2,y2` holds a drag without letting go;
   `runs=demo` shows two cards: `pdf=sample:5 books=10 shelves=demo
@@ -821,7 +821,7 @@ The library was rewritten to behave like mareader's, edge cases included,
 on mareader2's own storage: SQLite rows, stamped fields and tombstones,
 ready for sync. Where this section and an earlier one disagree, this one
 holds; in particular folders are no longer read-only source trees (see
-§ Dropped on purpose) but shelves cut from the folder, as below.
+section Dropped on purpose) but shelves cut from the folder, as below.
 
 - **Folders.** One import sheet: formats (include or exclude), a size
   floor (strictly larger), Copy into the library, Read at place, or Read
@@ -887,7 +887,7 @@ holds; in particular folders are no longer read-only source trees (see
 ## AI organizer (2026-10-19)
 
 The AI can shelve loose books. How it plans is in `docs/assist.md`,
-§ Workflows; this is what the library does with the plan.
+section Workflows; this is what the library does with the plan.
 
 - **Starting.** "Organize with AI" sits under New shelf in View options and
   on the page's right-click menu, and covers every loose book. On a long
@@ -937,7 +937,7 @@ off the library page). Shots:
 ### Pausing and resuming (2026-10-19)
 
 A run that fails, is paused, or is cut short by quitting keeps every
-step it finished (how is in `docs/assist.md`, § Pausing and resuming).
+step it finished (how is in `docs/assist.md`, section Pausing and resuming).
 The library shows where it stands.
 
 - **Pause.** The running card's ✕ is "Pause organizing", not a cancel.

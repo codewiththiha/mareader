@@ -131,7 +131,7 @@ Each JSON file is an envelope: `{ schema, device, records }`. The layout
 is frozen once shipped; later versions only add paths, which older
 clients ignore. Content-id directories mean a rename never renames a
 remote file. Text files sync as their source, which converts the same
-way on every machine (`docs/epub.md` § Text files as EPUBs).
+way on every machine (`docs/epub.md` section Text files as EPUBs).
 
 ## A sync round
 
@@ -160,8 +160,8 @@ the other machines.
 ## Why SQLite (owner, 2026-10-15)
 
 The owner reversed the plain-files decision: the library is one bundled
-SQLite file, `library.sqlite` (`docs/library.md` § Storage on SQLite). The record
-model above is unchanged; only where records rest moved.
+SQLite file, `library.sqlite` (`docs/library.md` section Storage on
+SQLite). The record model above is unchanged; only where records rest moved.
 
 - **Records** (books, shelves, memberships) are rows of `{kind, id, body,
   seq}`. The body is the record's JSON, every field stamped as above. Rows
@@ -208,7 +208,7 @@ are closed before any backend exists, so none of them becomes a migration.
   follow the schema rule: **a new field is a top-level, stamped `{v, t}`
   field of its record; a field never changes meaning; a value inside a
   field never grows.** Something with a new meaning gets a new name.
-  New kinds go in new paths (§ Wire layout), which older clients ignore.
+  New kinds go in new paths (section Wire layout), which older clients ignore.
 - **`twin_of` is stamped.** Promoting a twin when its original is removed
   rewrites `twin_of`, so it is last writer wins like the other book fields;
   the old larger-id-wins rule brought a promoted twin back under a removed
@@ -221,7 +221,7 @@ are closed before any backend exists, so none of them becomes a migration.
 - **Two shelves of one name** beside each other (case folded): the one
   named first keeps the name, the others take the first free `Name 2`,
   `Name 3`, as removing a shelf already does.
-- **One content as two originals** (§ Merge rules): the lower id keeps the
+- **One content as two originals** (section Merge rules): the lower id keeps the
   book. It takes the other's title, author and last open by stamp, its
   files here, its shelves and its position; the other becomes a removed
   twin of it, and twins of the other follow.

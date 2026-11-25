@@ -1,5 +1,5 @@
 //! Words above the reader's level, gathered page by page; see
-//! `docs/study.md` § Vocabulary.
+//! `docs/study.md` section Vocabulary.
 //!
 //! What the front end draws of this is the shading on its sheets:
 //! [`Vocab::page`] answers a page's hard words and the boxes each one runs

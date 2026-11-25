@@ -1,4 +1,4 @@
-//! `cargo xtask assets`: the asset policy in AGENTS.md §Assets.
+//! `cargo xtask assets`: the asset policy in AGENTS.md section Assets.
 
 use std::path::Path;
 

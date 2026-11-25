@@ -3,7 +3,7 @@
 //! Every frame the session lists each job going on; the [`Ledger`] keeps
 //! how each ended. A job shows only while its own visual is out of view, as
 //! [`seen`] tells, and [`place`] sets which corners show what. See
-//! `docs/study-mode.md` § The corner stack.
+//! `docs/study-mode.md` section The corner stack.
 
 pub mod ring;
 pub mod seen;

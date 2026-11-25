@@ -24,7 +24,7 @@
     mechanisms. `docs/porting.md` lists what not to port.
   - **egui idioms.** State in plain structs, views as functions, commands as the
     only way to change state, egui's own containers and widgets themed through
-    `Style` (`docs/architecture.md` § How the app is built in egui).
+    `Style` (`docs/architecture.md` section How the app is built in egui).
 - **Consequences:**
   - `parity/` entries describe outcomes, not CSS values. `reference` paths
     point at the mareader code that defines the behaviour.

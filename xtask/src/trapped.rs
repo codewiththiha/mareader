@@ -1,10 +1,10 @@
 //! `cargo xtask trapped`: no toolkit-free file hides in the front-end crate.
 //!
 //! A file belongs in the engine when it names no toolkit, and the gate says so
-//! outright: nothing may be left (`docs/architecture.md` § Layers). It counted
-//! against a committed number while the moves were still ahead; the number is
-//! gone with them. What may stay is allowlisted, and each of those is the front
-//! end's own: its root and its glyph table.
+//! outright: nothing may be left (`docs/architecture.md` section Layers). It
+//! counted against a committed number while the moves were still ahead; the
+//! number is gone with them. What may stay is allowlisted, and each of those
+//! is the front end's own: its root and its glyph table.
 //!
 //! Only `src/` counts. `tests/` and `examples/` are harnesses: a test binary's
 //! root names no toolkit and never will, and no engine should hold it.

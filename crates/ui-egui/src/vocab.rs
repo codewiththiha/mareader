@@ -1,5 +1,5 @@
 //! Words above the reader's level, shaded on the pages on screen;
-//! see `docs/study.md` § Vocabulary.
+//! see `docs/study.md` section Vocabulary.
 
 use std::ops::Range;
 

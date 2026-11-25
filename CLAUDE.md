@@ -9,14 +9,15 @@ layout, build commands, and the screenshot look loop live in
 ## Session start
 
 1. Check verification mode: `python3 tools/ci.py mode`, then follow
-   `AGENTS.md` § Session start (`local`, `cache` or `ci`). In cache mode, run
-   `python3 tools/ci.py cache status` and `source /home/user/.cache/env.sh`
-   before any cargo command.
+   `AGENTS.md` section Session start (`local`, `cache` or `ci`). In cache
+   mode, run `python3 tools/ci.py cache status` and
+   `source /home/user/.cache/env.sh` before any cargo command.
 2. Read [`ROADMAP.md`](ROADMAP.md) for current status and open work, and check
    [`docs/architecture.md`](docs/architecture.md) and
    [`docs/design.md`](docs/design.md) before modifying engine boundaries or UI.
 3. For parity work, run `cargo xtask parity --list planned` (or `partial`) and
-   follow [`docs/porting.md`](docs/porting.md) § How to rebuild one feature.
+   follow [`docs/porting.md`](docs/porting.md) section How to rebuild one
+   feature.
 
 Don't stop to ask unless a decision is on the owner list below.
 

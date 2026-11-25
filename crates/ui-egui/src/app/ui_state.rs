@@ -3,7 +3,7 @@
 //! `MareaderApp` holds a [`Session`] and this. Everything here dies with the
 //! window: controllers, animation clocks, textures, what a pointer is over.
 //! What outlives a frame belongs to the session
-//! (`docs/architecture.md` § Layers).
+//! (`docs/architecture.md` section Layers).
 
 use super::*;
 

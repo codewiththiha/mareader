@@ -110,7 +110,7 @@ to them, without paying for pages they skim past.
 
 - **In the AI stack.** The run has no visual of its own, so while it goes
   it always has a line in the pane's corner stack (`docs/study-mode.md`,
-  § The corner stack): "Translating to Burmese · next pages in 12 s",
+  section The corner stack): "Translating to Burmese · next pages in 12 s",
   with its ring and Stop. View goes to the page being read.
 - **Staying on a page.** The ring fills only while the page's result is
   on screen: by default 25 s, 5–120 s in Settings. Scrolling past pages
@@ -275,7 +275,7 @@ whole group, unlike continuous mode, which asks a page at a time.
   "at once" setting and the room left on its keys. With 2, the first two
   groups start together and the third starts when one is done. A model
   busy elsewhere queues the group in the AI service until it has room
-  (`docs/assist.md`, § The queue).
+  (`docs/assist.md`, section The queue).
 - **Progress.** While no group's bubble is on screen, the AI stack reads
   "Summarizing pages 3–14 · 2 of 3 groups" and fills as groups are done;
   its Cancel stops the groups left. Any other failure stops the

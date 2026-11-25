@@ -1,5 +1,5 @@
 //! Word levels (L1): the CEFR dataset, hard words, a word's role.
-//! See `docs/study.md` § Vocabulary.
+//! See `docs/study.md` section Vocabulary.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,

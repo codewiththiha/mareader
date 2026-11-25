@@ -46,7 +46,7 @@ pub(crate) fn find(blocks: &[Block], refs: &Refs) -> HashMap<u32, String> {
 fn mark(words: &str) -> bool {
     let brackets = |c: char| matches!(c, '[' | ']' | '(' | ')' | '{' | '}');
     let core = words.trim().trim_matches(brackets);
-    let marky = |c: char| c.is_ascii_digit() || "*†‡§¶#ivxlc¹²³⁰⁴⁵⁶⁷⁸⁹".contains(c);
+    let marky = |c: char| c.is_ascii_digit() || "*†‡\u{a7}¶#ivxlc¹²³⁰⁴⁵⁶⁷⁸⁹".contains(c);
     !core.is_empty() && core.chars().count() <= 4 && core.chars().all(marky)
 }
 

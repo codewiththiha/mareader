@@ -65,7 +65,7 @@ python3 tools/ci.py final                   # full CI matrix on branch head
 ## Adding a feature or command
 
 1. **Start in `crates/engine` (L5)** for any durable state or application
-   behaviour (see `AGENTS.md` § Layering and ADR 0007). Put pure format or
+   behaviour (see `AGENTS.md` section Layering and ADR 0007). Put pure format or
    domain rules in the lowest L0–L3 crate that fits.
 2. **Register a `Command`** in `crates/engine/src/command.rs` and add its
    static `CommandSpec` row (`id`, `label`, `params`, `enabled`, `parse`) in
