@@ -327,9 +327,9 @@ fn answer(meaning: &str) -> crate::Gloss {
     crate::Gloss {
         pos: "noun".into(),
         meaning: meaning.into(),
-        synonyms: vec!["melange".into()],
         usages: vec!["The spice must flow.".into()],
         by: "Gemini · flash".into(),
+        ..crate::Gloss::default()
     }
 }
 

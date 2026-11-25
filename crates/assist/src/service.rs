@@ -7,7 +7,7 @@ use std::time::Instant;
 use fm_bridge::Bridge;
 use mareader_settings::{AiSettings, ModelPreset, Provider, TaskId, no_model};
 use mareader_study::pending::Answerers;
-use mareader_study::{Explainer, Failure, Why, WordInfo};
+use mareader_study::{Explainer, Failure, Why};
 use serde_json::Value;
 use tokio::runtime::Builder;
 
@@ -19,12 +19,12 @@ use crate::keys::{Clients, pasted, row};
 use crate::organize::{Checkpoint, Hooks, Plan, Progress, Request, organize_from};
 use crate::page::{PageJob, rewrite};
 use crate::prompt::Prompt;
-use crate::retry::attempt;
 use crate::running::{Event, Running, Say, Waker, start};
 use crate::slots::{Queued, Slots};
 use crate::task::Explain;
 use mareader_study::page::Rewritten;
 mod cards;
+mod explainer;
 mod skills;
 
 /// The paused organizer run, and one set aside for Undo.
@@ -50,6 +50,7 @@ const SAMPLE: Explain<'static> = Explain {
     word: "quick",
     context: "The quick brown fox jumps over the lazy dog.",
     language: None,
+    hint: None,
 };
 
 /// AI for the app: answerers for the study tools, jobs for the settings.
@@ -114,7 +115,7 @@ impl Assist {
 
     /// The AI Dictionary's answerer, on the settings followed when asked.
     pub fn explainer(&self) -> Arc<dyn Explainer> {
-        Arc::new(AiExplainer(self.jobs_on.clone()))
+        Arc::new(explainer::AiExplainer(self.jobs_on.clone()))
     }
 
     /// Everyone the engine asks; each reads the settings as a job starts.
@@ -356,50 +357,6 @@ pub type Rewrote = Event<Rewritten>;
 
 /// A rewrite under way; dropping it cancels it and frees its model.
 pub type Rewriting = Running<Rewritten>;
-
-/// The study tools' answerer: blocks its worker thread, not the UI.
-struct AiExplainer(Dispatcher);
-
-impl Explainer for AiExplainer {
-    fn explain(
-        &self,
-        word: &str,
-        context: &str,
-        partial: &(dyn Fn(WordInfo) + Sync),
-    ) -> Result<WordInfo, Failure> {
-        let said = self.explain_by(word, context, partial);
-        said.map(|(info, _)| info)
-    }
-
-    fn explain_by(
-        &self,
-        word: &str,
-        context: &str,
-        partial: &(dyn Fn(WordInfo) + Sync),
-    ) -> Result<(WordInfo, String), Failure> {
-        let now = self.0.followed();
-        let language = now.ai.explain_language();
-        let (word, context): (Arc<str>, Arc<str>) = (word.into(), context.into());
-        let step = move |backend: Arc<dyn Backend>, retry, say: Say<WordInfo, WordInfo>| {
-            let (word, context) = (Arc::clone(&word), Arc::clone(&context));
-            async move {
-                let task = Explain {
-                    word: &word,
-                    context: &context,
-                    language,
-                };
-                attempt(backend.as_ref(), &task, &|info| say.partial(info), retry).await
-            }
-        };
-        let id = TaskId::Explain;
-        let job = self.0.dispatch().ask(now.asker(id), now.route(id), step);
-        job.wait_by(partial)
-    }
-
-    fn by(&self) -> String {
-        self.0.followed().by(TaskId::Explain)
-    }
-}
 
 /// What a job needs, moved onto the runtime.
 struct Work {

@@ -90,6 +90,9 @@ pub struct Gloss {
     pub usages: Vec<String>,
     /// The provider and model, as the card's small print names them.
     pub by: String,
+    /// The word only matters in its book; it stays out of the AI dictionary.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub book_only: bool,
 }
 
 /// One marked word. Only `book`, `alive`, `gloss` and `note` change.

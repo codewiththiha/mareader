@@ -59,6 +59,8 @@ pub struct Written {
     pub meaning: String,
     pub synonyms: Vec<String>,
     pub usage: String,
+    /// The word only matters in its book, as a name does.
+    pub book_only: bool,
 }
 
 /// A writer's answer: one back per word asked, in order, or none.
@@ -114,6 +116,7 @@ pub fn practice_back(wanted: &Wanted) -> Written {
         meaning: format!("What “{}” means in this sentence.", wanted.form),
         synonyms: vec!["sample".to_owned()],
         usage: format!("A sample sentence with “{}”.", wanted.key.lemma),
+        book_only: false,
     }
 }
 

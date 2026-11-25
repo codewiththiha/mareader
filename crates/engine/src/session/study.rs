@@ -69,6 +69,11 @@ impl Session {
         key
     }
 
+    /// The tagger's class for an open card, a guess its next ask carries.
+    pub fn study_hint(&mut self, key: Key, pos: mareader_study::Pos) {
+        self.study.hint(key, pos);
+    }
+
     /// Retries a failed explanation lookup.
     pub fn study_retry(&mut self, pane: PaneId, key: Key, (word, context): (&str, &str)) {
         let wake = Arc::clone(&self.waker);

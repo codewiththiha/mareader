@@ -1,6 +1,7 @@
 //! Who explains words: a contract, and the answerers every build has.
 
 use crate::answer::WordInfo;
+use crate::class::Pos;
 
 /// Explains a word in context; runs on a worker, so it may block.
 pub trait Explainer: Send + Sync {
@@ -17,11 +18,11 @@ pub trait Explainer: Send + Sync {
         String::new()
     }
 
-    /// The answer and who gave it, which may differ from `by` beforehand.
+    /// The answer and who gave it, which may differ from `by` beforehand;
+    /// the tagger's class goes with the word as a guess, where one heeds it.
     fn explain_by(
         &self,
-        word: &str,
-        context: &str,
+        (word, context, _hint): (&str, &str, Option<Pos>),
         partial: &(dyn Fn(WordInfo) + Sync),
     ) -> Result<(WordInfo, String), Failure> {
         let by = self.by();
@@ -201,12 +202,14 @@ impl Explainer for Canned {
                     "She took a quick look at the map.".into(),
                     "The quick reply surprised him.".into(),
                 ],
+                book_only: false,
             },
             _ => WordInfo {
                 pos: "word".into(),
                 meaning: format!("What “{word}” means here, in plain words."),
                 synonyms: vec![format!("{lower}-like"), "kindred".into()],
                 usages: vec![format!("As in: {context}")],
+                book_only: false,
             },
         };
         // As a streaming model would: the meaning first.

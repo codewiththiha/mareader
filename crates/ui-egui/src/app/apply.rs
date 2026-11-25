@@ -130,6 +130,16 @@ impl MareaderApp {
         }
     }
 
+    /// The tagger's role for the open cards; the AI card's next ask
+    /// carries its class as a guess.
+    fn take_role(&mut self, word: &str, role: mareader_engine::word_card::Role) {
+        self.ui.dict.set_role(word, role.clone());
+        let pos = mareader_engine::word_card::Pos::of_tag(&role.pos);
+        if let (Some(key), Some(pos)) = (self.ui.study.set_role(word, role), pos) {
+            self.session.study_hint(key, pos);
+        }
+    }
+
     fn handle_local_ui_event(&mut self, event: Event) -> Option<Event> {
         match event {
             Event::PlaceReadMarker { pane, spot, now } => {
@@ -192,10 +202,7 @@ impl MareaderApp {
             }
             #[cfg(not(target_arch = "wasm32"))]
             Event::Ai(job) => self.ui.ai.send(job),
-            Event::Role { word, role } => {
-                self.ui.dict.set_role(&word, role.clone());
-                self.ui.study.set_role(&word, role);
-            }
+            Event::Role { word, role } => self.take_role(&word, role),
             Event::Class { word, pos } => {
                 self.ui.dict.set_class(&word, pos);
                 self.ui.study.set_class(&word, pos);

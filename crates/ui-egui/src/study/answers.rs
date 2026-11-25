@@ -71,9 +71,11 @@ impl StudyUi {
         self.card.as_ref()?.role.as_ref()
     }
 
-    /// The tagger's answer for the open card, if it is still `word`'s.
-    pub fn set_role(&mut self, word: &str, role: Role) {
+    /// The tagger's answer for the open card, if it is still `word`'s;
+    /// then the card's key, so a later ask can carry the class.
+    pub fn set_role(&mut self, word: &str, role: Role) -> Option<Key> {
         mareader_engine::word_card::set_role(&mut self.card, word, role);
+        self.card.as_ref().filter(|c| c.word == word).map(|c| c.key)
     }
 
     /// The dictionary's class for the open card, if it is still `word`'s.

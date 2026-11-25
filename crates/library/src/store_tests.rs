@@ -218,6 +218,7 @@ fn erased_words_leave_the_files_while_the_store_stays_open() {
         synonyms: vec!["dikdiksynonym".into()],
         usages: vec!["a gerenukusage here".into()],
         by: "Gemini".into(),
+        ..crate::Gloss::default()
     };
     assert!(lib.set_gloss(mark, Some(gloss), 1_250));
     let page = crate::NewAiPage {

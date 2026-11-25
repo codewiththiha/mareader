@@ -11,11 +11,13 @@ const MAX_USAGE_CHARS: usize = 400;
 pub struct WordInfo {
     /// Part of speech: "noun", "verb".
     pub pos: String,
-    /// What the word means where it stands, simply put.
+    /// The word's common meaning for its class.
     pub meaning: String,
     pub synonyms: Vec<String>,
     /// Example sentences.
     pub usages: Vec<String>,
+    /// The word only matters in its book, as a name does.
+    pub book_only: bool,
 }
 
 impl WordInfo {
@@ -29,6 +31,7 @@ impl WordInfo {
             meaning: clip(self.meaning, MAX_MEANING_CHARS),
             synonyms: many(self.synonyms, MAX_SYNONYMS, MAX_SYNONYM_CHARS),
             usages: many(self.usages, MAX_USAGES, MAX_USAGE_CHARS),
+            book_only: self.book_only,
         }
     }
 }
@@ -53,6 +56,7 @@ mod tests {
             meaning: "é".repeat(MAX_MEANING_CHARS + 5),
             synonyms: vec!["s".repeat(90); 20],
             usages: vec!["fine".into()],
+            book_only: true,
         }
         .clamped();
         assert_eq!(info.meaning.chars().count(), MAX_MEANING_CHARS + 1);
@@ -61,5 +65,6 @@ mod tests {
         assert!(info.synonyms.iter().all(|s| s.chars().count() == 81));
         assert_eq!(info.usages, ["fine"]);
         assert_eq!(info.pos, "noun");
+        assert!(info.book_only, "the flag survives");
     }
 }

@@ -113,6 +113,7 @@ impl mareader_study::Explainer for AssistantSample {
                 "He acknowledged that the first plan had failed.".into(),
                 "The report acknowledges the limits of the evidence.".into(),
             ],
+            book_only: false,
         };
         partial(mareader_study::WordInfo {
             pos: info.pos.clone(),

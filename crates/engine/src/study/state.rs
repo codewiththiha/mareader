@@ -8,7 +8,7 @@ use mareader_appearance::Rgb;
 use mareader_library::{
     BookId, DeviceId, Library, Mark, MarkId, MarkKind, NewMark, Pen, Spot, Style,
 };
-use mareader_study::{Explainer, Failure, Unavailable, WordInfo};
+use mareader_study::{Explainer, Failure, Pos, Unavailable, WordInfo};
 use mareader_workspace::PaneId;
 
 use super::Action;
@@ -68,6 +68,8 @@ pub struct State {
     failed: HashMap<Key, Failure>,
     asking: HashMap<Key, Receiver<Got>>,
     askers: HashMap<Key, Asker>,
+    /// The tagger's class per card, a guess the AI is given.
+    hints: HashMap<Key, Pos>,
     /// Finished answers not yet filed, as inline asks leave them.
     done: Vec<(Key, Said)>,
     next_loose: u64,
@@ -84,6 +86,7 @@ impl Default for State {
             failed: HashMap::new(),
             asking: HashMap::new(),
             askers: HashMap::new(),
+            hints: HashMap::new(),
             done: Vec::new(),
             next_loose: 0,
         }
@@ -183,6 +186,11 @@ impl State {
         self.asking.remove(&key).is_some()
     }
 
+    /// The tagger's class for `key`'s word, for the next ask.
+    pub fn hint(&mut self, key: Key, pos: Pos) {
+        self.hints.insert(key, pos);
+    }
+
     /// Allocates a loose card key for a word without a saved mark.
     pub(crate) fn next_loose_key(&mut self) -> Key {
         self.next_loose += 1;
@@ -265,9 +273,10 @@ impl State {
 
     fn ask(&mut self, wake: Waker, key: Key, word: &str, context: &str) {
         let explainer = Arc::clone(&self.explainer);
+        let hint = self.hints.get(&key).copied();
         self.partial.remove(&key);
         if (self.inline && !explainer.waits()) || cfg!(target_arch = "wasm32") {
-            match explainer.explain_by(word, context, &|_| {}) {
+            match explainer.explain_by((word, context, hint), &|_| {}) {
                 Ok((info, by)) => {
                     let info = info.clamped();
                     self.done.push((key, Said { info, by }));
@@ -278,7 +287,8 @@ impl State {
             }
             return;
         }
-        let rx = asking::ask(wake, explainer, word.to_owned(), context.to_owned());
+        let words = (word.to_owned(), context.to_owned(), hint);
+        let rx = asking::ask(wake, explainer, words);
         self.asking.insert(key, rx);
     }
 

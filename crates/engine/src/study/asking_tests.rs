@@ -17,6 +17,7 @@ fn info(meaning: &str) -> WordInfo {
         meaning: meaning.to_owned(),
         synonyms: vec!["one".to_owned()],
         usages: vec!["A sentence that uses the word.".to_owned()],
+        book_only: false,
     }
 }
 
@@ -60,7 +61,7 @@ fn canned(answer: Result<WordInfo, Failure>) -> (Arc<Canned>, Arc<Mutex<Vec<Aske
 /// Asks `one` about the fox, as the card and the mark menu do.
 fn asked_of(one: Arc<Canned>, wake: Waker) -> Receiver<Got> {
     let (word, context) = ("fox".to_owned(), "The quick brown fox.".to_owned());
-    ask(wake, one, word, context)
+    ask(wake, one, (word, context, None))
 }
 
 #[test]
@@ -111,6 +112,7 @@ fn the_answer_that_comes_back_is_within_the_card_s_bounds() {
         meaning: "m".repeat(2_000),
         synonyms: (0..50).map(|at| format!("synonym {at}")).collect(),
         usages: (0..50).map(|at| format!("usage {at}")).collect(),
+        book_only: false,
     };
     let (one, _) = canned(Ok(long.clone()));
     let got = asked_of(one, wake);

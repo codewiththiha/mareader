@@ -137,6 +137,7 @@ mod tests {
             word: "quick",
             context: "the quick fox",
             language: None,
+            hint: None,
         };
         let seen = Mutex::new(Vec::new());
         let push = |i: mareader_study::WordInfo| {

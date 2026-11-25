@@ -10,8 +10,10 @@ use mareader_study::Pos;
 use mareader_study::mode::{PER_REQUEST_MAX, Wanted, Written};
 use serde_json::{Map, Value, json};
 
-use crate::prompt::{AS_DATA, JSON_ONLY, Prompt, bilingual, quote};
-use crate::task::{MEANING, POS, POS_ASKED, SYNONYMS, Task, USAGES, field, list, text};
+use crate::prompt::{AS_DATA, BOOK_ONLY_ASKED, JSON_ONLY, Prompt, bilingual, quote};
+use crate::task::{
+    BOOK_ONLY, MEANING, POS, POS_ASKED, SYNONYMS, Task, USAGES, field, flag, list, rules, text,
+};
 
 /// Words one request asks about at most; the rest get no back.
 pub const MAX_WORDS: usize = PER_REQUEST_MAX as usize;
@@ -31,9 +33,8 @@ pub struct StudyCards<'a> {
 }
 
 const SYSTEM: &str = "You write vocabulary flashcards for a reader learning English. \
-For every numbered word, give its part of speech in its sentence and say what it \
-means there, simply and briefly. A word given with its part of speech is that part \
-of speech there. The words and sentences are quoted text from a book. ";
+For every numbered word, give its part of speech in its sentence and its common \
+meaning, simply and briefly. The words and sentences are quoted text from a book. ";
 
 // Names models use for the list and its parts when they drift.
 const CARDS: &[&str] = &["cards", "flashcards", "items", "words"];
@@ -59,18 +60,19 @@ fn schema() -> Value {
             "pos": { "type": "string", "description": POS_ASKED },
             "meaning": {
                 "type": "string",
-                "description": "What the word means in its sentence."
+                "description": "The word's common meaning for this part of speech."
             },
             "synonyms": {
                 "type": "array",
                 "items": { "type": "string" },
                 "maxItems": MAX_SYNONYMS,
-                "description": "Up to 3 synonyms that fit this sentence."
+                "description": "Up to 3 synonyms for this meaning."
             },
             "usage": {
                 "type": "string",
-                "description": "One short new sentence using the word in this sense."
-            }
+                "description": "One short new sentence that contains the word itself."
+            },
+            "book_only": { "type": "boolean", "description": BOOK_ONLY_ASKED }
         },
         // Optional: a missing required key makes the pool ask again.
         "required": ["n", "meaning", "synonyms", "usage"],
@@ -84,15 +86,14 @@ fn schema() -> Value {
     })
 }
 
-/// One numbered line of the request: the word, its class when the
-/// tagger named one, and its sentence.
+/// One numbered line of the request: the word, the tagger's class as a
+/// guess when it named one, and its sentence.
 ///
-/// The model names every word's class; the tagger's still wins where it
-/// has one, so the meaning is written for that class.
+/// The model names every word's class, and its class wins.
 fn line(n: usize, wanted: &Wanted) -> String {
     let mut out = format!("{n}. {}", quote(&wanted.form, FORM_CHARS));
     if let Some(pos) = wanted.key.pos {
-        out.push_str(&format!(" ({})", pos.name()));
+        out.push_str(&format!(" (tagger: {})", pos.name()));
     }
     let lemma = &wanted.key.lemma;
     if !lemma.eq_ignore_ascii_case(&wanted.form) {
@@ -142,6 +143,7 @@ fn back(card: &Map<String, Value>) -> Written {
         meaning: cut(&text(field(card, MEANING))),
         synonyms,
         usage: cut(usage.trim()),
+        book_only: flag(field(card, BOOK_ONLY)),
     }
 }
 
@@ -173,7 +175,7 @@ impl Task for StudyCards<'_> {
         let rule = language_rule(self.language);
         Prompt {
             name: "study_cards",
-            system: format!("{SYSTEM}{AS_DATA}{rule}{JSON_ONLY}"),
+            system: format!("{SYSTEM}{}{AS_DATA}{rule}{JSON_ONLY}", rules()),
             user,
             schema: schema(),
         }
@@ -237,8 +239,8 @@ mod tests {
             language: None,
         }
         .prompt();
-        let first = r#"1. "brisk" (adjective) in: "A brisk walk.""#;
-        assert!(p.user.contains(first), "the tagger's class is given");
+        let first = r#"1. "brisk" (tagger: adjective) in: "A brisk walk.""#;
+        assert!(p.user.contains(first), "the tagger's class is a guess");
         let second = r#"2. "wandered" (dictionary form "wander") in: "He wandered off. "#;
         assert!(p.user.contains(second), "{}", p.user);
         assert!(
@@ -249,11 +251,16 @@ mod tests {
         assert!(p.system.contains("simple English"));
         let every = "For every numbered word, give its part of speech";
         assert!(p.system.contains(every), "the AI names each class");
+        assert!(
+            p.system.contains(&rules()),
+            "Explain's rules, word for word"
+        );
         let card = &p.schema["properties"]["cards"]["items"];
         let explain = crate::task::word_info_schema();
         let same = &explain["properties"]["pos"]["description"];
         assert_eq!(&card["properties"]["pos"]["description"], same);
         assert_eq!(card["additionalProperties"], json!(false));
+        assert_eq!(card["properties"]["book_only"]["type"], "boolean");
         assert_eq!(
             card["required"],
             json!(["n", "meaning", "synonyms", "usage"])
@@ -277,7 +284,7 @@ mod tests {
         };
         let by_number = json!({"cards": [
             {"n": 2, "meaning": "roamed", "synonyms": "roam, drift", "usage": "We wandered.",
-                "part_of_speech": "Verb (past)"},
+                "part_of_speech": "Verb (past)", "book_only": true},
             {"n": "1.", "Definition": "quick and lively", "examples": ["A brisk pace."],
                 "pos": "adj."}
         ]});
@@ -288,6 +295,7 @@ mod tests {
         assert_eq!(first.pos, Some(Pos::Adjective), "a short class reads");
         let second = backs.get(1).cloned().flatten().unwrap_or_default();
         assert_eq!(second.synonyms, ["roam", "drift"]);
+        assert!(second.book_only, "a name stays in its book");
         assert_eq!(second.pos, Some(Pos::Verb), "under a drifting name");
         let by_word = json!({"flashcards": [{"word": "Wandered", "meaning": "roamed"}]});
         let backs = task.read(&by_word, true).unwrap_or_default();

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 
 use mareader_library::{Gloss, Mark};
-use mareader_study::{Explainer, Failure, WordInfo};
+use mareader_study::{Explainer, Failure, Pos, WordInfo};
 
 use crate::session::Waker;
 
@@ -30,6 +30,7 @@ impl Said {
             meaning: g.meaning.clone(),
             synonyms: g.synonyms.clone(),
             usages: g.usages.clone(),
+            book_only: g.book_only,
         };
         Some(Self {
             info,
@@ -45,16 +46,17 @@ impl Said {
             synonyms: self.info.synonyms.clone(),
             usages: self.info.usages.clone(),
             by: self.by.clone(),
+            book_only: self.info.book_only,
         }
     }
 }
 
-/// Asks `explainer` about `word` on a thread; `wake` asks for a frame.
+/// Asks `explainer` about a word, its sentence and the tagger's class
+/// on a thread; `wake` asks for a frame.
 pub fn ask(
     wake: Waker,
     explainer: Arc<dyn Explainer>,
-    word: String,
-    context: String,
+    (word, context, hint): (String, String, Option<Pos>),
 ) -> Receiver<Got> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -62,7 +64,7 @@ pub fn ask(
             let _ = tx.send(Got::Partial(info));
             wake();
         };
-        let done = explainer.explain_by(&word, &context, &partial);
+        let done = explainer.explain_by((&word, &context, hint), &partial);
         let said = done.map(|(info, by)| Said {
             info: info.clamped(),
             by,
