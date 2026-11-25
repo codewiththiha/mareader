@@ -176,6 +176,16 @@ impl DictUi {
         })
     }
 
+    /// The open card's lookup asked again, in the language it answered in.
+    pub fn again_query(&self) -> Option<Query> {
+        let card = self.card.as_ref()?;
+        let to = card.reply.as_ref().and_then(|r| r.to.clone());
+        Some(Query::LookUp {
+            word: card.word.clone(),
+            to,
+        })
+    }
+
     /// Updates the open lookup card's pending dictionary query ticket.
     pub fn set_card_ticket(&mut self, ticket: Ticket) {
         if let Some(card) = &mut self.card {

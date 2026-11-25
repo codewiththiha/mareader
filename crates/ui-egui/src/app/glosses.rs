@@ -13,6 +13,9 @@ impl MareaderApp {
         self.show_page_ai(ctx, out, &sounds);
         self.show_skills(ctx, out);
         self.show_activity(ctx, out);
+        self.ui
+            .dict
+            .show_editor(ctx, self.session.dict().edited(), out);
     }
 
     fn staged(&mut self, ctx: &Context, out: &mut Commands) {

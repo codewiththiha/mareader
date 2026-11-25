@@ -4,9 +4,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use egui::accesskit::Role;
 use egui_kittest::kittest::Queryable as _;
 use mareader_dict::{Dictionaries, Query, Saved, language_code};
 use mareader_engine::command::Command;
+use mareader_ui_egui::dict::ai_edit;
 use mareader_ui_egui::ui_command::Sent;
 
 use crate::dictionary::{H, reader, select, shelf};
@@ -140,4 +142,69 @@ fn the_dictionary_page_searches_the_ai_dictionary_as_one_more() {
     h.run_steps(30);
     assert!(found(&h, "быстрый"), "an AI-only language pairs");
     assert!(!found(&h, "moving fast"), "Russian alone");
+}
+
+/// Opens the editor on the card's first entry, an AI one.
+fn open_editor(h: &mut H) {
+    h.get_by_label(ai_edit::EDIT).click();
+    h.run();
+    h.get_by_label(ai_edit::TITLE);
+}
+
+/// Types `text` into the editor's `name` field over what it held.
+fn retype(h: &mut H, (role, name): (Role, &str), text: &str) {
+    h.get_by_role_and_label(role, name).focus();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.get_by_role_and_label(role, name).type_text(text);
+    h.run();
+}
+
+#[test]
+fn an_ai_entry_edits_and_deletes_from_the_card() {
+    let dir = shelf();
+    remember(dir.path());
+    let mut h = reader(dir.path());
+    set(&mut h, None, true);
+    look_up(&mut h, "quick");
+    assert_eq!(answers(&h), ["အမြန်", "မြန်သော"]);
+    open_editor(&mut h);
+    let usages = (Role::MultilineTextInput, "Usages");
+    retype(&mut h, usages, "Come quick.");
+    h.get_by_label(ai_edit::SAVE).click();
+    h.run();
+    assert!(h.query_by_label(ai_edit::TITLE).is_none(), "saved, closed");
+    assert!(found(&h, "Come quick."), "the card shows the edit");
+
+    open_editor(&mut h);
+    h.get_by_label(ai_edit::DELETE).click();
+    h.run();
+    h.get_by_label(ai_edit::DELETE_SURE).click();
+    h.run();
+    assert!(h.query_by_label(ai_edit::TITLE).is_none());
+    assert_eq!(answers(&h), ["မြန်သော"], "the AI entry is gone");
+}
+
+#[test]
+fn an_edit_onto_a_kept_entry_asks_before_replacing_it() {
+    let dir = shelf();
+    remember(dir.path());
+    let mut h = reader(dir.path());
+    set(&mut h, None, true);
+    look_up(&mut h, "quick");
+    open_editor(&mut h);
+    retype(&mut h, (Role::TextInput, "Language"), "english");
+    h.get_by_label(ai_edit::SAVE).click();
+    h.run();
+    h.get_by_label_contains("already has quick (adjective, English)");
+    h.get_by_label(ai_edit::REPLACE).click();
+    h.run();
+    assert!(h.query_by_label(ai_edit::TITLE).is_none());
+    assert_eq!(answers(&h), ["မြန်သော"], "moved out of Burmese");
+    h.key_press(egui::Key::Escape);
+    h.run();
+
+    set(&mut h, Some("en"), false);
+    look_up(&mut h, "quick");
+    assert_eq!(answers(&h), ["အမြန်"], "it took the English entry's place");
 }

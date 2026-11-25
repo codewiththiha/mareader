@@ -309,7 +309,7 @@ fn footer(
                         ui.add_space(6.0);
                     }
                     if let Some(s) = shown.and_then(|e| e.ai.as_deref()) {
-                        entry::ai_badge(ui, &s.model, t);
+                        super::ai_edit::mark(ui, s, t, out);
                     }
                 });
             });

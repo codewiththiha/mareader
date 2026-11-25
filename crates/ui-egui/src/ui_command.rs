@@ -136,6 +136,8 @@ pub enum UiCommand {
     WordCardSwapLang,
     /// Looks up the open Dictionary card's word in another target language.
     WordCardTryLang(String),
+    /// Opens the editor on an AI dictionary entry.
+    EditAi(Box<mareader_dict::Saved>),
 }
 
 /// The frame's command queue, handed to every view.
@@ -185,6 +187,7 @@ fn chrome_reads(ui: &UiCommand) -> bool {
         | U::ShowOpenDialog(_)
         | U::LibraryDialog(_)
         | U::Window(_)
+        | U::EditAi(_)
         | U::CloseSettings => false,
         // Notices show anywhere.
         U::Notify(_) | U::CloseToast(_) | U::ClearToasts => false,

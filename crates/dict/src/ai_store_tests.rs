@@ -88,3 +88,31 @@ fn chinese_variants_kept_before_join_the_chinese_pack() {
     let cup = store.word("cup", Some("zh")).unwrap();
     assert_eq!(cup.len(), 1);
 }
+
+#[test]
+fn an_edit_moves_a_meaning_and_asks_before_taking_a_kept_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = AiStore::open(&file(dir.path())).unwrap();
+    let noun = saved("book", "noun", "en", "pages bound together");
+    let verb = saved("book", "verb", "en", "reserve");
+    store.put(&noun, false).unwrap();
+    store.put(&verb, false).unwrap();
+    let mut said = noun.clone();
+    said.meaning = "a bound set of pages".into();
+    assert_eq!(store.edit(&noun, &said, false).unwrap(), None, "same key");
+    assert_eq!(store.get("book", "noun", "en").unwrap(), Some(said.clone()));
+    let mut moved = said.clone();
+    moved.pos = "verb".into();
+    let kept = store.edit(&said, &moved, false).unwrap();
+    assert_eq!(kept, Some(verb), "the verb is kept: ask first");
+    assert!(store.get("book", "noun", "en").unwrap().is_some());
+    assert_eq!(store.edit(&said, &moved, true).unwrap(), None);
+    assert_eq!(store.word("book", None).unwrap(), [moved.clone()]);
+    let mut russian = moved.clone();
+    russian.lang = "russian".into();
+    store.edit(&moved, &russian, false).unwrap();
+    assert_eq!(store.langs().unwrap(), ["russian"], "the language moves");
+    assert!(store.forget(&russian).unwrap());
+    assert!(!store.forget(&russian).unwrap(), "already gone");
+    assert!(store.langs().unwrap().is_empty());
+}

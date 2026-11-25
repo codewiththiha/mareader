@@ -129,9 +129,15 @@ impl Session {
         for reply in &mut replies {
             crate::ai_dict::lead(reply, ai_first);
         }
-        if changed || !replies.is_empty() {
+        let edited = self.dict.take_edited();
+        if changed || edited || !replies.is_empty() {
             tick.repaint = true;
-            self.emit(Event::DictReplies { changed, replies });
+            let replies = Event::DictReplies {
+                changed,
+                edited,
+                replies,
+            };
+            self.emit(replies);
         }
         if let Some((word, Some(pos))) = self.dict.take_card_class() {
             tick.repaint = true;

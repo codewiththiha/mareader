@@ -7,7 +7,7 @@ use mareader_dict::{Dictionaries, PACKS, Pack, Query, Reply, Saved, State, Ticke
 
 use mareader_study::Pos;
 
-use super::Action;
+use super::{Action, Edited};
 use crate::word_list::Meanings;
 
 /// Word list asks kept waiting at once.
@@ -31,6 +31,10 @@ pub struct Service {
     ai: Vec<(Ticket, Option<Reply>)>,
     /// AI dictionary rows lead a word's rows.
     ai_first: bool,
+    /// The AI entry edit or removal under way, by its ask.
+    editing: Option<(Ticket, Edited)>,
+    /// An edit or removal landed since the last `take_edited`.
+    edited: bool,
 }
 
 impl Service {
@@ -97,6 +101,9 @@ impl Service {
 
     /// Runs a pack download action; returns true if `action` was handled.
     pub(crate) fn act_pack(&mut self, action: &Action) -> bool {
+        if self.act_ai(action) {
+            return true;
+        }
         let pack = |id: &str| PACKS.iter().find(|p| p.id == id);
         let handled = matches!(
             action,
@@ -124,10 +131,58 @@ impl Service {
                     self.service.remove(p);
                 }
             }
-            Action::CloseCard | Action::Pursue(_) | Action::Window(_) => {}
+            Action::CloseCard
+            | Action::Pursue(_)
+            | Action::Window(_)
+            | Action::Forget(_)
+            | Action::Edit { .. }
+            | Action::DropEdit => {}
         }
         let _ = pack;
         handled
+    }
+
+    /// An AI entry's edit or removal; true if `action` was one.
+    fn act_ai(&mut self, action: &Action) -> bool {
+        let query = match action {
+            Action::Forget(saved) => Query::Forget {
+                saved: saved.clone(),
+            },
+            Action::Edit { old, new, replace } => Query::Edit {
+                old: old.clone(),
+                new: new.clone(),
+                replace: *replace,
+            },
+            Action::DropEdit => {
+                self.editing = None;
+                return true;
+            }
+            _ => return false,
+        };
+        self.editing = Some((self.service.ask(query), Edited::Waiting));
+        true
+    }
+
+    /// The AI entry edit under way: waiting, taken or failed.
+    pub fn edited(&self) -> Option<&Edited> {
+        self.editing.as_ref().map(|(_, e)| e)
+    }
+
+    /// Whether an edit or removal landed since last asked.
+    pub(crate) fn take_edited(&mut self) -> bool {
+        std::mem::take(&mut self.edited)
+    }
+
+    /// Settles the edit `reply` answers; true when the AI dictionary changed.
+    fn edit_done(&mut self, reply: Reply) -> bool {
+        let state = match (reply.failed, reply.saved.into_iter().next()) {
+            (Some(why), _) => Some(Edited::Failed(why)),
+            (None, Some(kept)) => Some(Edited::Taken(Box::new(kept))),
+            (None, None) => None,
+        };
+        let done = state.is_none();
+        self.editing = state.map(|s| (reply.ticket, s));
+        done
     }
 
     /// Asks for a word list's rows; `take_words` hands the reply over.
@@ -221,6 +276,11 @@ impl Service {
         let (changed, replies) = self.service.poll();
         let mut other = Vec::new();
         for reply in replies {
+            let editing = self.editing.as_ref().map(|(t, _)| *t);
+            if editing == Some(reply.ticket) {
+                self.edited |= self.edit_done(reply);
+                continue;
+            }
             let mut asks = (self.words.iter_mut())
                 .chain(self.classes.iter_mut())
                 .chain(self.ai.iter_mut());

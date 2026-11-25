@@ -1,5 +1,6 @@
 //! Dictionaries in the app: the lookup card, the page, the packs.
 
+pub mod ai_edit;
 pub mod card;
 mod card_state;
 mod entry;
@@ -114,6 +115,7 @@ pub struct DictUi {
     exact_only: bool,
     /// What the voice can say, as of this frame.
     voice: Voice,
+    editor: Option<ai_edit::Editor>,
 }
 
 /// Read-only view over engine dictionary service and window overlays.
@@ -357,6 +359,7 @@ impl DictUi {
         let dismiss = self
             .card
             .as_ref()
+            .filter(|_| self.editor.is_none())
             .is_some_and(|c| outside || room(c.pane).is_none() || moved(c) || left(c));
         if dismiss {
             self.card = None;

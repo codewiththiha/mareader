@@ -40,6 +40,26 @@ pub enum Action {
     Pursue(String),
     /// The reader's floating window, which the app keeps.
     Window(Window),
+    /// Drops an AI dictionary entry.
+    Forget(Box<mareader_dict::Saved>),
+    /// Writes an edited AI dictionary entry over its old self.
+    Edit {
+        old: Box<mareader_dict::Saved>,
+        new: Box<mareader_dict::Saved>,
+        /// Overwrites an entry already under the new key.
+        replace: bool,
+    },
+    /// Gives up an edit that found its new key taken, or failed.
+    DropEdit,
+}
+
+/// Where an AI dictionary entry's edit or removal stands.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Edited {
+    Waiting,
+    /// Another entry holds the new word, class and language.
+    Taken(Box<mareader_dict::Saved>),
+    Failed(String),
 }
 
 /// The selection on one line, edge punctuation trimmed; none past `max`.

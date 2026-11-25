@@ -141,6 +141,8 @@ pub enum Event {
     /// Dictionary packs changed or lookup replies arrived.
     DictReplies {
         changed: bool,
+        /// An AI dictionary entry was edited or deleted.
+        edited: bool,
         replies: Vec<mareader_dict::Reply>,
     },
     /// An instant word list finished building.

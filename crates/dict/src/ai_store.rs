@@ -105,6 +105,31 @@ impl AiStore {
         found.map_err(|e| e.to_string())
     }
 
+    /// Drops the meaning under `saved`'s key; true when one was there.
+    pub fn forget(&self, saved: &Saved) -> Result<bool, String> {
+        let sql = "DELETE FROM saved WHERE word_fold = ?1 AND pos = ?2 AND lang = ?3";
+        let (word_fold, pos, lang) = saved.key();
+        let gone = self.conn.execute(sql, params![word_fold, pos, lang]);
+        gone.map(|n| n > 0).map_err(|e| e.to_string())
+    }
+
+    /// Puts `new` in `old`'s place. Another meaning under the new key stays
+    /// unless `replace`, and comes back instead.
+    pub fn edit(&self, old: &Saved, new: &Saved, replace: bool) -> Result<Option<Saved>, String> {
+        if new.key() != old.key() && !replace {
+            let (_, pos, lang) = new.key();
+            if let Some(kept) = self.get(&new.word, &pos, &lang)? {
+                return Ok(Some(kept));
+            }
+        }
+        let tx = self.conn.unchecked_transaction();
+        let tx = tx.map_err(|e| e.to_string())?;
+        self.forget(old)?;
+        self.put(new, true)?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(None)
+    }
+
     /// Each language a meaning is kept in, by code.
     pub fn langs(&self) -> Result<Vec<String>, String> {
         let sql = "SELECT DISTINCT lang FROM saved ORDER BY lang";

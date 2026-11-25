@@ -346,6 +346,36 @@ pub struct Said<'a> {
     pub at: usize,
 }
 
+/// A sense's classes, any bridge, its two languages, and the AI mark.
+fn sense_tags(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Commands) {
+    let tags = entry::tags(e);
+    let way = way(e).filter(|_| s.way);
+    if tags.is_empty() && e.via.is_none() && way.is_none() && e.ai.is_none() {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        // As tall as the chips, not a control's height.
+        ui.spacing_mut().interact_size.y = 18.0;
+        for tag in tags.split(" · ").filter(|s| !s.is_empty()) {
+            chip(ui, tag, t);
+        }
+        if let Some(via) = &e.via {
+            tag(ui, &format!("via {via}"), t)
+                .on_hover_text(format!("Found through the English “{via}”"));
+        }
+        if let Some(way) = &way {
+            let way = RichText::new(way).size(t.text_small).color(t.muted);
+            ui.add(egui::Label::new(way).selectable(false));
+        }
+        match e.ai.as_deref() {
+            // A card that is all one button holds no other.
+            Some(said) if s.click => entry::ai_badge(ui, &said.model, t),
+            Some(said) => super::ai_edit::mark(ui, said, t, out),
+            None => {}
+        }
+    });
+}
+
 /// One sense: its tags, the answer large with its voice, then the gloss.
 pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Commands) -> Response {
     let bg = ui.painter().add(Shape::Noop);
@@ -354,28 +384,7 @@ pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Command
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
-            let tags = entry::tags(e);
-            let way = way(e).filter(|_| s.way);
-            if !tags.is_empty() || e.via.is_some() || way.is_some() || e.ai.is_some() {
-                ui.horizontal_wrapped(|ui| {
-                    // As tall as the chips, not a control's height.
-                    ui.spacing_mut().interact_size.y = 18.0;
-                    for tag in tags.split(" · ").filter(|s| !s.is_empty()) {
-                        chip(ui, tag, t);
-                    }
-                    if let Some(via) = &e.via {
-                        tag(ui, &format!("via {via}"), t)
-                            .on_hover_text(format!("Found through the English “{via}”"));
-                    }
-                    if let Some(way) = &way {
-                        let way = RichText::new(way).size(t.text_small).color(t.muted);
-                        ui.add(egui::Label::new(way).selectable(false));
-                    }
-                    if let Some(said) = &e.ai {
-                        entry::ai_badge(ui, &said.model, t);
-                    }
-                });
-            }
+            sense_tags(ui, e, s, t, out);
             ui.horizontal(|ui| {
                 let speaks =
                     !s.click && s.voice.can_say(s.said_in) && !e.answer().trim().is_empty();

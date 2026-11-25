@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mareader_dict::{Query, Reply, Saved};
+use mareader_engine::command::Command;
+use mareader_engine::dict::{Action, Edited};
 use mareader_engine::event::Event;
 use mareader_engine::host::{Fake, Shared};
 use mareader_engine::session::Session;
@@ -121,4 +123,60 @@ fn an_explain_answer_is_kept_and_a_different_one_waits_for_replace() {
     let replaced = wait_until(|| now(&mut session));
     assert!(replaced, "Replace keeps the new answer");
     assert!(session.study().offer(key).is_none());
+}
+
+/// Runs `act` and ticks until the edit settles as `done` says.
+fn edit(session: &mut Session, act: Action, done: impl Fn(Option<&Edited>) -> bool) -> bool {
+    session.execute(Command::Dict(act), 1.0);
+    let mut changed = false;
+    let settled = wait_until(|| {
+        session.tick(1.0);
+        for event in session.drain() {
+            changed |= matches!(event, Event::DictReplies { edited: true, .. });
+        }
+        done(session.dict().edited())
+    });
+    settled && (changed || session.dict().edited().is_some())
+}
+
+#[test]
+fn an_entry_edits_asks_before_taking_a_kept_key_and_goes() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::create_dir_all(dir.path().join("dictionaries")).expect("dictionaries dir");
+    let host: Shared = Arc::new(Fake::under(dir.path()));
+    let mut session = Session::new(host, Arc::new(|| {}));
+    let noun = Saved {
+        word: "basin".into(),
+        pos: "noun".into(),
+        lang: "en".into(),
+        meaning: "a bowl for water".into(),
+        ..Saved::default()
+    };
+    let verb = Saved {
+        pos: "verb".into(),
+        meaning: "to pool".into(),
+        ..noun.clone()
+    };
+    session.dict_ask(Query::Remember {
+        saved: vec![noun.clone(), verb],
+        replace: false,
+    });
+    assert!(wait_until(|| kept(&mut session).is_some()), "both kept");
+    let moved = Saved {
+        pos: "verb".into(),
+        ..noun.clone()
+    };
+    let to_verb = |replace| Action::Edit {
+        old: Box::new(noun.clone()),
+        new: Box::new(moved.clone()),
+        replace,
+    };
+    let taken = |e: Option<&Edited>| matches!(e, Some(Edited::Taken(_)));
+    assert!(edit(&mut session, to_verb(false), taken), "asks first");
+    let done = |e: Option<&Edited>| e.is_none();
+    assert!(edit(&mut session, to_verb(true), done), "replaced");
+    assert_eq!(kept(&mut session).as_deref(), Some("a bowl for water"));
+    let forget = Action::Forget(Box::new(moved.clone()));
+    assert!(edit(&mut session, forget, done), "deleted");
+    assert_eq!(kept(&mut session), None);
 }

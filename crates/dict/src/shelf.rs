@@ -75,7 +75,30 @@ impl Shelf {
             Query::Words { words, to, near } => self.words(words, to, *near),
             Query::Remember { saved, replace } => self.remember(saved, *replace),
             Query::Remembered { words, lang } => self.remembered(words, lang),
+            Query::Forget { saved } => self.forget_ai(saved),
+            Query::Edit { old, new, replace } => self.edit_ai(old, new, *replace),
         }
+    }
+
+    /// Drops an AI meaning; the reply names the languages left.
+    fn forget_ai(&mut self, saved: &Saved) -> Reply {
+        let mut reply = Reply::new(0);
+        if let Err(e) = self.ai().and_then(|ai| ai.forget(saved)) {
+            reply.failed = Some(e);
+        }
+        reply.ai_langs = Some(self.ai_langs());
+        reply
+    }
+
+    /// Writes an edit; a meaning already under the new key comes back.
+    fn edit_ai(&mut self, old: &Saved, new: &Saved, replace: bool) -> Reply {
+        let mut reply = Reply::new(0);
+        match self.ai().and_then(|ai| ai.edit(old, new, replace)) {
+            Ok(kept) => reply.saved.extend(kept),
+            Err(e) => reply.failed = Some(e),
+        }
+        reply.ai_langs = Some(self.ai_langs());
+        reply
     }
 
     /// The AI dictionary, opened or made on first use.

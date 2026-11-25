@@ -144,6 +144,7 @@ impl MareaderApp {
             || crate::shortcuts::is_open(ctx)
             || crate::palette::is_open(ctx)
             || crate::skill_menu::holds_escape(ctx)
+            || self.ui.dict.editing_ai()
             || self.ui.lifting.is_some();
         let mut free = escape && !modal && !egui::Popup::is_any_open(ctx);
         // The library page lets go of a selection, else goes back to reading.

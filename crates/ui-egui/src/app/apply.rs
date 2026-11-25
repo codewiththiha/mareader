@@ -207,14 +207,25 @@ impl MareaderApp {
                 self.ui.dict.set_class(&word, pos);
                 self.ui.study.set_class(&word, pos);
             }
-            Event::DictReplies { changed, replies } => {
-                let exact = !self.settings().dictionary.near;
-                self.ui.dict.set_exact_only(exact);
-                self.ui.dict.receive(changed, replies);
-            }
+            Event::DictReplies {
+                changed,
+                edited,
+                replies,
+            } => self.dict_replies(changed, edited, replies),
             needs_ctx => return Some(needs_ctx),
         }
         None
+    }
+
+    /// Lookup replies in; after an AI entry's edit the card asks again.
+    fn dict_replies(&mut self, changed: bool, edited: bool, replies: Vec<mareader_dict::Reply>) {
+        let exact = !self.settings().dictionary.near;
+        self.ui.dict.set_exact_only(exact);
+        self.ui.dict.receive(changed || edited, replies);
+        if let Some(query) = self.ui.dict.again_query().filter(|_| edited) {
+            let ticket = self.session.dict_ask(query);
+            self.ui.dict.set_card_ticket(ticket);
+        }
     }
 
     /// Handles context-free events immediately and defers ctx-needing ones.
@@ -264,6 +275,7 @@ impl MareaderApp {
                     self.ui.dict.set_card_ticket(ticket);
                 }
             }
+            UiCommand::EditAi(saved) => self.ui.dict.edit_ai(*saved),
             UiCommand::WordCardTryLang(lang) => {
                 if let Some(query) = self.ui.dict.try_lang_query(&lang) {
                     let ticket = self.session.dict_ask(query);

@@ -737,7 +737,7 @@ fn full_entry(
                 let note = format!("The nearest entry to “{asked}”");
                 ui.label(RichText::new(note).size(t.text_small).color(t.muted));
             }
-            tag_row(ui, e, t);
+            tag_row(ui, e, t, out);
             ui.add_space(2.0);
             answer_panel(ui, t, e, h, out);
             let languages = [h.asked_in(Some(e)), h.answer_in(e)];
@@ -784,7 +784,7 @@ fn full_entry(
 }
 
 /// An entry's classes, its two languages, any bridge, and the AI mark.
-fn tag_row(ui: &mut Ui, e: &Entry, t: &Tokens) {
+fn tag_row(ui: &mut Ui, e: &Entry, t: &Tokens, out: &mut Commands) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         for tag in entry::tags(e).split(" · ").filter(|s| !s.is_empty()) {
@@ -797,7 +797,7 @@ fn tag_row(ui: &mut Ui, e: &Entry, t: &Tokens) {
             look::tag(ui, &format!("via {via}"), t);
         }
         if let Some(said) = &e.ai {
-            entry::ai_badge(ui, &said.model, t);
+            super::ai_edit::mark(ui, said, t, out);
         }
     });
 }

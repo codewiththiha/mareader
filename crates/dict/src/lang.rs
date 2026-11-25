@@ -47,12 +47,13 @@ fn unknown(code: &str) -> String {
     named
 }
 
-/// A language's code by English name, as packs and the AI dictionary
-/// keep it; one no pack joins keeps its name, lower case. A variant, as
-/// "Chinese (Simplified)", joins its language's pack.
+/// A language's code by English name, in any case, as packs and the AI
+/// dictionary keep it; one no pack joins keeps its name, lower case. A
+/// variant, as "Chinese (Simplified)", joins its language's pack.
 pub fn code_of(name: &str) -> String {
     let base = name.split_once(" (").map_or(name, |(base, _)| base);
-    let known = LANGUAGES.iter().find(|(_, n, _)| *n == name || *n == base);
+    let same = |n: &str| n.eq_ignore_ascii_case(name) || n.eq_ignore_ascii_case(base);
+    let known = LANGUAGES.iter().find(|(_, n, _)| same(n));
     known.map_or_else(|| name.to_lowercase(), |(c, ..)| (*c).to_owned())
 }
 
@@ -127,6 +128,7 @@ mod tests {
         assert_eq!(name("de"), "German");
         assert_eq!(name("xx"), "XX");
         assert_eq!(code_of("Japanese"), "jp");
+        assert_eq!(code_of("burmese"), "my", "a name in any case");
         assert_eq!(code_of("Italian"), "italian");
         assert_eq!(name("italian"), "Italian");
         assert_eq!(code_of("Chinese (Simplified)"), "zh");

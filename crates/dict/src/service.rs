@@ -41,6 +41,15 @@ pub enum Query {
     Remember { saved: Vec<Saved>, replace: bool },
     /// The AI meanings kept for `words` in `lang`, every class.
     Remembered { words: Vec<String>, lang: String },
+    /// Drops an AI meaning, found by its key.
+    Forget { saved: Box<Saved> },
+    /// Writes `new` over `old`; a meaning under the new key stays unless
+    /// `replace`, and the reply's `saved` names it.
+    Edit {
+        old: Box<Saved>,
+        new: Box<Saved>,
+        replace: bool,
+    },
 }
 
 impl Query {
@@ -49,7 +58,11 @@ impl Query {
         match self {
             Self::LookUp { .. } => Some(0),
             Self::Search { .. } => Some(1),
-            Self::Words { .. } | Self::Remember { .. } | Self::Remembered { .. } => None,
+            Self::Words { .. }
+            | Self::Remember { .. }
+            | Self::Remembered { .. }
+            | Self::Forget { .. }
+            | Self::Edit { .. } => None,
         }
     }
 }
