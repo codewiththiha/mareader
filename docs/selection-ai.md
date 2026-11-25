@@ -14,7 +14,8 @@ behaviour on 2026-11-21.
   while it shows finds a skill: the search field slides in on top, and
   Enter runs the first match. The first Escape clears the search and folds
   the list; the next closes the menu. The page menu folds them the same
-  way (`skill_menu.rs`).
+  way (`skill_menu.rs`, over the shared `side_list.rs`, which the
+  Dictionary picker's AI languages use too).
 - **Custom.** The reader's own, written in Settings › Skills: a name, a
   prompt and, if wanted, a model. Up to 24.
 - **No chatter.** Every prompt, built in or custom, is joined to a fixed

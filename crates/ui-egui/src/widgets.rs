@@ -515,7 +515,7 @@ pub fn submenu_row(
 
 /// Tells the submenu being drawn that a row in it was chosen: it closes,
 /// and the menu it opened from.
-pub fn submenu_chosen(ctx: &egui::Context) {
+fn submenu_chosen(ctx: &egui::Context) {
     let scope_id = egui::Id::new("active-submenu-click");
     let active = ctx
         .data(|d| d.get_temp::<Option<egui::Id>>(scope_id))
@@ -543,7 +543,7 @@ fn submenu_side(ui: &mut Ui, sub_id: egui::Id, width: f32, add: impl FnOnce(&mut
 
 /// A row `(label, height)` high that opens `add` to its side on hover,
 /// pinned by a click or key; `paint` draws it, told if the side is open.
-pub fn submenu_with(
+fn submenu_with(
     ui: &mut Ui,
     (label, height): (&str, f32),
     sub_width: f32,

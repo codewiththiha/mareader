@@ -75,6 +75,28 @@ fn typing_finds_a_skill_and_escape_folds_then_shuts() {
 }
 
 #[test]
+fn enter_runs_the_first_skill_found() {
+    let mut h = reader(&[
+        ("pdf", "sample:5"),
+        ("skill_answers", "echo"),
+        ("custom_skills", "Quiz_me,Explain_the_grammar"),
+    ]);
+    h.run();
+    select(&mut h, "quick brown");
+    h.get_by_label("Ask AI").click();
+    h.run();
+    h.get_by_label(ROW).click();
+    h.run();
+    h.event(egui::Event::Text("gram".into()));
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let asks = h.state().skills().asks();
+    let names: Vec<&str> = asks.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Explain the grammar"], "the one match runs");
+}
+
+#[test]
 fn a_skill_answers_in_a_card_and_the_selection_goes() {
     let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo")]);
     h.run();

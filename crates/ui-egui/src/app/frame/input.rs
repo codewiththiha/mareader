@@ -143,7 +143,7 @@ impl MareaderApp {
             || crate::image_viewer::is_open(ctx)
             || crate::shortcuts::is_open(ctx)
             || crate::palette::is_open(ctx)
-            || crate::skill_menu::holds_escape(ctx)
+            || crate::side_list::holds_escape(ctx)
             || self.ui.dict.editing_ai()
             || self.ui.lifting.is_some();
         let mut free = escape && !modal && !egui::Popup::is_any_open(ctx);

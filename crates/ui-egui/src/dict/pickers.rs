@@ -1,19 +1,21 @@
 //! The Dictionary page's pickers: which dictionary, or which two languages.
 
-use egui::{Response, Ui, vec2};
+use egui::{CornerRadius, Sense, Ui, WidgetInfo, WidgetType, vec2};
 use mareader_dict::{AI_PACK, HUB, Pack, ai_language, ai_only, language, languages_with};
 use mareader_settings::DictionarySettings;
 
 use super::look;
 use super::page::{CONTROL, SWAP_W};
 use crate::icons::Icon;
+use crate::side_list::{self, Spec};
 use crate::theme::Tokens;
-use crate::widgets;
 
 /// The AI dictionary's name among the packs.
 pub const AI_LABEL: &str = "AI dictionary";
 /// The AI side menu's first row: every language it keeps.
 pub const ALL_AI: &str = "All AI words";
+/// The AI side menu's search field, which slides in when typed in.
+pub const FIND_AI: &str = "Find a language";
 
 /// One language the AI dictionary keeps, as its side menu names it.
 pub fn ai_pair(lang: &str) -> String {
@@ -78,31 +80,40 @@ pub fn pack_box(ui: &mut Ui, s: &mut DictionarySettings, shelf: Shelf<'_>, width
     });
 }
 
-/// The AI dictionary: a click searches all it keeps; its side menu,
-/// opened on hover, one language alone, no pack beside it.
+/// The AI dictionary, a side list as Custom skills is: a click searches
+/// all it keeps; its list, opened on hover and found in by typing, one
+/// language alone, no pack beside it.
 fn ai_row(ui: &mut Ui, s: &mut DictionarySettings, ai: &[String], t: &Tokens) {
     let picked = s.langs.first().cloned();
     let is = |id: &str| picked.as_deref() == Some(id);
     let on = is(AI_PACK) || picked.as_deref().and_then(ai_language).is_some();
-    let mut pick = None;
-    let side = |ui: &mut Ui| {
-        let rows = std::iter::once((AI_PACK.to_owned(), ALL_AI.to_owned()));
-        let langs = ai.iter().map(|l| (ai_only(l), ai_pair(l)));
-        for (id, label) in rows.chain(langs) {
-            if look::option(ui, is(&id), &label, t) {
-                widgets::submenu_chosen(ui.ctx());
-                pick = Some(id);
-            }
-        }
+    let all = std::iter::once((AI_PACK.to_owned(), ALL_AI.to_owned()));
+    let items: Vec<(String, String)> = all
+        .chain(ai.iter().map(|l| (ai_only(l), ai_pair(l))))
+        .collect();
+    let row = |ui: &mut Ui| {
+        let size = vec2(ui.available_width(), look::OPTION_H);
+        let (_, r) = ui.allocate_exact_size(size, Sense::click());
+        r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, AI_LABEL));
+        look::branch(ui, &r, on, AI_LABEL, t);
+        r
     };
-    let paint = |ui: &mut Ui, r: &Response, open| look::branch(ui, r, (on, open), AI_LABEL, t);
-    let row = (AI_LABEL, look::OPTION_H);
-    if widgets::submenu_with(ui, row, AI_SIDE_W, side, paint).clicked() {
-        pick = Some(AI_PACK.to_owned());
-        ui.close();
-    }
+    let cell = |ui: &mut Ui, id: &String, label: &str| look::option(ui, is(id), label, t);
+    let spec = Spec {
+        items: &items,
+        find: FIND_AI,
+        none: "No language matches",
+        width: AI_SIDE_W,
+        corners: CornerRadius::same((t.radius - 2.0) as u8),
+    };
+    let shown = side_list::show(ui, spec, row, cell);
+    let pick = match shown.row.clicked() {
+        true => Some(AI_PACK.to_owned()),
+        false => shown.picked,
+    };
     if let Some(id) = pick {
         s.langs = vec![id];
+        ui.close();
     }
 }
 

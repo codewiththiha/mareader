@@ -266,33 +266,50 @@ fn settings_clear_one_language_from_the_ai_dictionary() {
     h.get_by_label("Clear: English");
 }
 
-/// Clicks the open list's choice named `label`, not a card's tag.
-fn choose(h: &mut H, label: &str) {
-    {
-        let mut all = h.get_all_by_label(label);
-        let choice = all.find(|n| n.accesskit_node().toggled().is_some());
-        choice.expect("a choice in the list").click();
-    }
+/// Whether an open list offers `label`, not a card's tag.
+fn listed(h: &H, label: &str) -> bool {
+    let mut all = h.query_all_by_label(label);
+    all.any(|n| n.accesskit_node().toggled().is_some())
+}
+
+/// Opens the dictionary picker and rests on its AI row.
+fn rest_on_ai(h: &mut H) {
+    h.get_by_label("Dictionary to search").click();
+    h.run();
+    h.get_by_label("AI dictionary").hover();
     h.run();
 }
 
 #[test]
-fn the_ai_dictionary_opens_its_languages_beside_it() {
+fn the_ai_dictionary_lists_its_languages_beside_it_and_finds_them() {
     let dir = shelf();
     remember(dir.path());
     let mut h = reader(dir.path());
     let page = h.state_mut().set_option("dict_page", "quick");
     page.expect("a known option");
     h.run_steps(30);
-    h.get_by_label("Dictionary to search").click();
+    rest_on_ai(&mut h);
+    let both = listed(&h, "All AI words") && listed(&h, "English → Russian");
+    assert!(both, "open beside the row");
+    h.event(egui::Event::Text("rus".into()));
     h.run();
-    h.get_by_label("AI dictionary").hover();
+    let english = listed(&h, "English → English");
+    assert!(listed(&h, "English → Russian") && !english, "typing finds");
+    h.key_press(egui::Key::Escape);
     h.run();
-    h.get_by_label("All AI words");
-    choose(&mut h, "English → English");
+    assert!(!listed(&h, "English → Russian"), "Escape folds the list");
+    assert!(listed(&h, "Every dictionary"), "the picker stays");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(!listed(&h, "Every dictionary"), "then the picker goes");
+
+    rest_on_ai(&mut h);
+    h.event(egui::Event::Text("eng".into()));
+    h.run();
+    h.key_press(egui::Key::Enter);
     h.run_steps(30);
     let langs = h.state().settings().dictionary.langs.clone();
-    assert_eq!(langs, [ai_only("en")], "English meanings alone");
+    assert_eq!(langs, [ai_only("en")], "Enter: the first match");
     assert!(found(&h, "moving fast"), "the AI's own row");
     let others = found(&h, "быстрый") || found(&h, "အမြန်");
     assert!(!others, "no other language");

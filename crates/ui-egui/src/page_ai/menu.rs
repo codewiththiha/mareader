@@ -73,8 +73,8 @@ impl PageAiUi {
             self.bubble_menu = None;
         }
         let open = self.menu.is_some() || self.bubble_menu.is_some();
-        // Folded skills shown beside it take Escape first.
-        let held = crate::skill_menu::holds_escape(ctx);
+        // A folded list shown beside it takes Escape first.
+        let held = crate::side_list::holds_escape(ctx);
         if open && !held && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
             self.escape();
         }

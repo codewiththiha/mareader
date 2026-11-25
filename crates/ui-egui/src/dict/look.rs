@@ -64,9 +64,9 @@ pub fn option(ui: &mut Ui, on: bool, text: &str, t: &Tokens) -> bool {
 
 /// A row that opens more choices to its side, drawn like [`option`];
 /// `on` when one of them is picked.
-pub fn branch(ui: &mut Ui, r: &Response, (on, open): (bool, bool), text: &str, t: &Tokens) {
-    let mark = Some((Icon::ChevronRight, if open { t.ink } else { t.muted }));
-    paint_option(ui, r, (on, open || r.hovered()), text, mark, t);
+pub fn branch(ui: &mut Ui, r: &Response, on: bool, text: &str, t: &Tokens) {
+    let mark = Some((Icon::ChevronRight, t.muted));
+    paint_option(ui, r, (on, r.hovered()), text, mark, t);
 }
 
 /// A picker row: lit when hovered, its text accented when `on`, and
@@ -150,10 +150,17 @@ pub fn picker(
     }
     r.widget_info(|| WidgetInfo::labeled(WidgetType::ComboBox, true, name));
     let width = rect.width().max(160.0);
+    // A press in a side list it opened keeps it; the list closes it.
+    let at = ui.input(|i| i.pointer.interact_pos());
+    let on = at.and_then(|p| ui.ctx().layer_id_at(p));
+    let close = match crate::side_list::owns(ui.ctx(), on) {
+        true => PopupCloseBehavior::IgnoreClicks,
+        false => PopupCloseBehavior::CloseOnClick,
+    };
     Popup::from_toggle_button_response(&r)
         .id(id)
         .sense(crate::widgets::POPUP_SENSE)
-        .close_behavior(PopupCloseBehavior::CloseOnClick)
+        .close_behavior(close)
         .align(RectAlign::BOTTOM_START)
         .gap(4.0)
         .width(width)

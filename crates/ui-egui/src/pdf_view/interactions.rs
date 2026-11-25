@@ -198,7 +198,7 @@ pub(super) fn selection_bar(
     let (down, from) = ctx.input(|i| (i.pointer.any_down(), i.pointer.press_origin()));
     let on = from.and_then(|p| ctx.layer_id_at(p));
     // Its skills' list opens beside it: a press there keeps it too.
-    if down && on != Some(bar) && !crate::skill_menu::owns(ctx, on) {
+    if down && on != Some(bar) && !crate::side_list::owns(ctx, on) {
         return None;
     }
     let mut shown = Rect::NOTHING;

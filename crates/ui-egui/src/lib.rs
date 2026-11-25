@@ -64,6 +64,7 @@ pub mod selection;
 pub mod settings_window;
 pub mod shaped;
 pub mod shortcuts;
+pub mod side_list;
 pub mod sidebar;
 pub mod sight;
 pub mod skill_card;

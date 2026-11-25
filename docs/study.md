@@ -200,9 +200,11 @@ be kept on this machine and used again, beside the downloaded packs.
   every language's; with one pack picked, or a pair, those in that
   pack's or pair's language, as an extension of it (`route::ai_scope`).
   The page searches even when the AI dictionary is the only one.
-- **Its picker row** (owner, T57) opens a side menu on hover, as the
-  skills menu's *Translate ›* does (`widgets::submenu_with`): *All AI
-  words*, then each language it keeps as *English → Chinese*. One of
+- **Its picker row** (owner, T57) opens a list beside it on hover, the
+  one Custom skills uses (`side_list`): typing slides in *Find a
+  language*, Enter picks the first match, and Escape clears and folds
+  the list before the picker goes. It lists *All AI words*, then each
+  language it keeps as *English → Chinese*. One of
   those reads the AI's rows in that language alone, no pack beside them
   (saved as `ai:zh`, `ai_only`); a click on the row itself reads every
   language, as before. The closed picker says *AI · English → Chinese*.
