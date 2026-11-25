@@ -29,7 +29,7 @@ pub enum Answer<'a> {
 
 pub struct View<'a> {
     pub word: &'a str,
-    /// The tagger's role: its class, which leads the AI's, and its level.
+    /// The tagger's role: its class, until the AI names one, and its level.
     pub role: Option<&'a Role>,
     /// The class the word's dictionary rows name, once in.
     pub dictionary: Option<Pos>,

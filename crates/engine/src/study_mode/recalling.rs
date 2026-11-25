@@ -165,7 +165,7 @@ impl Recalling {
         }
     }
 
-    /// The class the word is kept under: the tagger's, else its back's,
+    /// The class the word is kept under: its back's, else the tagger's,
     /// else the dictionary's.
     pub fn class(&self) -> Option<Pos> {
         let ai = self.back.as_ref().and_then(|b| b.pos);

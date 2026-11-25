@@ -2,10 +2,10 @@
 //!
 //! Three sources may name it: the tagger reading it in its sentence, an AI
 //! asked about the word, and a dictionary's part-of-speech cell.
-//! [`Classes::class`] takes the first that says one, in that order. The
-//! tagger leads because it is the same reading wherever the word is asked;
-//! the AI names a class for every word it explains or writes a card for,
-//! which stands where the tagger has none; a dictionary, which lists every
+//! [`Classes::class`] takes the AI's first, then the tagger's, then the
+//! dictionary's. The AI names a class for every word it explains or writes
+//! a card for, given the tagger's as a guess, so its answer settles it;
+//! the tagger stands where no AI answers; a dictionary, which lists every
 //! class a word may take, comes last. Packs
 //! write their cells short or long ("v", "verb", "Adj.", "n, v");
 //! [`Pos::read`] reads them all alike.
@@ -213,7 +213,7 @@ fn read_part(part: &str) -> Option<Pos> {
     words.filter(|w| NAMING.contains(w)).find_map(spelled)
 }
 
-/// What each source says of one word's class; strongest first.
+/// What each source says of one word's class.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Classes {
     /// The tagger's reading in the word's sentence.
@@ -225,9 +225,10 @@ pub struct Classes {
 }
 
 impl Classes {
-    /// The class a card shows: the first source that names one.
+    /// The class a card shows: the AI's, else the tagger's, else the
+    /// dictionary's.
     pub fn class(self) -> Option<Pos> {
-        self.tagger.or(self.ai).or(self.dictionary)
+        self.ai.or(self.tagger).or(self.dictionary)
     }
 }
 
@@ -314,18 +315,15 @@ mod tests {
     }
 
     #[test]
-    fn the_tagger_leads_then_the_ai_then_the_dictionary() {
+    fn the_ai_leads_then_the_tagger_then_the_dictionary() {
         let all = Classes {
             tagger: Some(Pos::Verb),
             ai: Some(Pos::Adjective),
             dictionary: Some(Pos::Noun),
         };
-        assert_eq!(all.class(), Some(Pos::Verb));
-        let no_tagger = Classes {
-            tagger: None,
-            ..all
-        };
-        assert_eq!(no_tagger.class(), Some(Pos::Adjective));
+        assert_eq!(all.class(), Some(Pos::Adjective), "the AI settles it");
+        let no_ai = Classes { ai: None, ..all };
+        assert_eq!(no_ai.class(), Some(Pos::Verb));
         let only_dictionary = Classes {
             dictionary: Some(Pos::Noun),
             ..Classes::default()

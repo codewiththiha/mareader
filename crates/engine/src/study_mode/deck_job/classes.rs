@@ -1,6 +1,6 @@
 //! Each finished card's class, by the one rule ([`Classes::class`]).
 //!
-//! The tagger's class leads, then the AI's, then the dictionary's. On an
+//! The AI's class leads, then the tagger's, then the dictionary's. On an
 //! AI deck, cards neither named are looked up once; a dictionary silent
 //! for [`MEANING_WAIT`] seconds leaves them without. A class is part of
 //! a card's key, so settling may join two cards into one, or meet a word
@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn each_card_keeps_the_first_class_named_tagger_ai_dictionary() {
+    fn each_card_keeps_the_first_class_named_ai_tagger_dictionary() {
         let (n, v, a) = (Some(Pos::Noun), Some(Pos::Verb), Some(Pos::Adjective));
         let cards = vec![
             (shown("vex", v, "annoy"), heard(v, n, a)),
@@ -171,8 +171,8 @@ mod tests {
         let classes: Vec<Option<Pos>> = out.iter().map(|s| s.card.key.pos).collect();
         assert_eq!(
             classes,
-            [v, a, v, None],
-            "the tagger's verb beats the AI's noun"
+            [n, a, v, None],
+            "the AI's noun beats the tagger's verb"
         );
         assert_eq!(memorized, 0);
     }

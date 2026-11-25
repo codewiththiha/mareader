@@ -309,13 +309,13 @@ slice 5.
   a hover or click on a word under a mark goes to the mark.
 - **Click to explain** (on by default): a click on a shaded word asks the
   AI as Explain does and marks the word, the AI mark drawn over the
-  shade. The card shows the word's class from the tagger (the AI's only
-  when the tagger names none), then that sense's CEFR level beside it.
+  shade. The card shows the word's class from the AI's answer (the
+  tagger's until it comes), then that sense's CEFR level beside it.
 - **One word class everywhere.** Every card names a word's class by one
-  rule: the tagger's reading in the sentence, else the AI's answer, else
+  rule: the AI's answer, else the tagger's reading in the sentence, else
   the word's dictionary rows. Explain and AI decks both ask the AI for
-  every word's class, with the same field; a deck also gives it the
-  tagger's class where there is one, so the meaning fits it. The
+  every word's class, with the same field, and give it the tagger's class
+  as a guess where there is one; the AI's answer replaces it. The
   dictionary is asked only when neither named one, and on the web, which
   has no tagger, at once. Short and long dictionary cells
   read alike ("v", "verb", "v.", "transitive verb"); a cell naming no
