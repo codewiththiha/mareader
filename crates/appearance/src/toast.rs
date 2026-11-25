@@ -17,6 +17,8 @@ pub struct ToastSwatch {
     pub edge: Rgb,
     /// Soft pill fill behind an Undo or action button.
     pub soft: Rgb,
+    /// The countdown's block over the paper: a pale tone the ink reads on.
+    pub block: Rgb,
 }
 
 impl ToastSwatch {
@@ -28,6 +30,7 @@ impl ToastSwatch {
             listed: self.listed.mix(to.listed, k),
             edge: self.edge.mix(to.edge, k),
             soft: self.soft.mix(to.soft, k),
+            block: self.block.mix(to.block, k),
         }
     }
 }
@@ -54,6 +57,7 @@ impl ToastPalette {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Anchor {
     l: f64,
     c: f64,
@@ -73,6 +77,28 @@ struct SurfaceMix {
     edge_k: f64,
 }
 
+/// How far the countdown block leans from the paper toward the tone's mark.
+/// Smaller is paler; error leans a touch more so it still reads as urgent.
+fn block_k(_mode: BaseMode, tone: usize) -> f64 {
+    match tone {
+        2 => 0.31,
+        _ => 0.25,
+    }
+}
+
+/// The countdown block: the tone's mark mixed into the paper in gamma
+/// (sRGB-encoded) space — the same method T60 used, just with a smaller
+/// `k`, so it reads as slightly paler while staying clearly tinted.
+fn block_of(surface: Rgb, mark: Rgb, k: f64) -> Rgb {
+    let g = |c: u8| f64::from(c) / 255.0;
+    let u = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Rgb(
+        u(g(surface.0) + (g(mark.0) - g(surface.0)) * k),
+        u(g(surface.1) + (g(mark.1) - g(surface.1)) * k),
+        u(g(surface.2) + (g(mark.2) - g(surface.2)) * k),
+    )
+}
+
 /// Pulls `base_h` smoothly toward `theme_h` without flipping at 180°.
 fn harmonise_hue(base_h: f64, theme_h: f64, max_pull: f64) -> f64 {
     let delta = (theme_h - base_h + 180.0).rem_euclid(360.0) - 180.0;
@@ -83,24 +109,24 @@ fn harmonise_hue(base_h: f64, theme_h: f64, max_pull: f64) -> f64 {
 fn anchors(mode: BaseMode) -> [Anchor; 3] {
     match mode {
         BaseMode::Light => [
-            anchor(0.50, 0.155, 148.0, 12.0),
-            anchor(0.56, 0.145, 76.0, 10.0),
-            anchor(0.52, 0.195, 25.0, 10.0),
+            anchor(0.50, 0.108, 148.0, 12.0),
+            anchor(0.56, 0.101, 76.0, 10.0),
+            anchor(0.52, 0.136, 25.0, 10.0),
         ],
         BaseMode::Dark => [
-            anchor(0.75, 0.155, 148.0, 12.0),
-            anchor(0.81, 0.160, 80.0, 10.0),
-            anchor(0.70, 0.185, 25.0, 10.0),
+            anchor(0.75, 0.108, 148.0, 12.0),
+            anchor(0.81, 0.112, 80.0, 10.0),
+            anchor(0.70, 0.13, 25.0, 10.0),
         ],
         BaseMode::Dim => [
-            anchor(0.70, 0.125, 148.0, 12.0),
-            anchor(0.75, 0.130, 80.0, 10.0),
-            anchor(0.67, 0.150, 25.0, 10.0),
+            anchor(0.70, 0.087, 148.0, 12.0),
+            anchor(0.75, 0.091, 80.0, 10.0),
+            anchor(0.67, 0.105, 25.0, 10.0),
         ],
         BaseMode::Black => [
-            anchor(0.76, 0.160, 148.0, 12.0),
-            anchor(0.82, 0.165, 80.0, 10.0),
-            anchor(0.71, 0.190, 25.0, 10.0),
+            anchor(0.76, 0.112, 148.0, 12.0),
+            anchor(0.82, 0.115, 80.0, 10.0),
+            anchor(0.71, 0.133, 25.0, 10.0),
         ],
     }
 }
@@ -151,7 +177,7 @@ impl Appearance {
         } else {
             0.0
         };
-        let build = |Anchor { l, c, h, pull }| {
+        let build = |Anchor { l, c, h, pull }, tone: usize| {
             let h = harmonise_hue(h, theme_h, pull);
             let raw = Oklch { l, c, h }.to_rgb_in_gamut();
             let wash = Oklch {
@@ -169,19 +195,21 @@ impl Appearance {
             let soft = fill.mix(raw, sm.soft_k);
             let mark = legible(raw, &[fill, listed, t.surface, soft]);
             let edge = t.line.mix(mark, sm.edge_k);
+            let block = block_of(t.surface, mark, block_k(self.base, tone));
             ToastSwatch {
                 mark,
                 fill,
                 listed,
                 edge,
                 soft,
+                block,
             }
         };
-        let [info, warning, error] = anchors(self.base);
+        let a = anchors(self.base);
         ToastPalette {
-            info: build(info),
-            warning: build(warning),
-            error: build(error),
+            info: build(a[0], 0),
+            warning: build(a[1], 1),
+            error: build(a[2], 2),
         }
     }
 }
@@ -216,7 +244,7 @@ mod tests {
                             let ratio = s.mark.contrast(ground);
                             assert!(ratio >= MIN_CONTRAST, "{at}: mark {ratio:.2}");
                         }
-                        for ground in [s.fill, s.listed] {
+                        for ground in [s.fill, s.listed, s.block] {
                             let ratio = t.ink.contrast(ground);
                             assert!(ratio >= MIN_CONTRAST, "{at}: ink {ratio:.2}");
                         }

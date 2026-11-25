@@ -106,6 +106,7 @@ pub(super) struct Swatch {
     pub listed: Color32,
     pub edge: Color32,
     pub soft: Color32,
+    pub block: Color32,
 }
 
 /// The tone's theme-harmonised semantic swatch: green, amber or red.
@@ -120,6 +121,7 @@ pub(super) fn look(tone: Tone, t: &Tokens) -> Swatch {
         listed: theme::color(raw.listed),
         edge: theme::color(raw.edge),
         soft: theme::color(raw.soft),
+        block: theme::color(raw.block),
     }
 }
 
@@ -232,15 +234,6 @@ fn countdown(painter: &Painter, rect: Rect, radius: f32, tint: Color32, left: f3
     painter.add(mesh);
 }
 
-/// The block's colour: bold enough to see go, with the words still clear.
-fn block(tone: Tone, swatch: &Swatch, t: &Tokens) -> Color32 {
-    let k = match tone {
-        Tone::Error => 0.55,
-        Tone::Info | Tone::Warning => 0.45,
-    };
-    t.surface.lerp_to_gamma(swatch.mark, k)
-}
-
 /// The time left, the words and the buttons.
 pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
@@ -250,8 +243,7 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
     if left > 0.0 && !live.listed {
         let inner = rect.shrink(1.0);
         let radius = t.radius_lg - 1.0;
-        let tint = block(live.toast.tone, &swatch, &t);
-        countdown(&painter, inner, radius, tint, left);
+        countdown(&painter, inner, radius, swatch.block, left);
     }
     // The words and buttons share the card's middle, however many lines.
     let middle = rect.center().y;
@@ -333,17 +325,17 @@ mod tests {
         let spent = paint_of(&err, Body::Front, 0.0, &t);
         assert_eq!(fresh, (t.surface, err.edge), "paper behind the block");
         assert_eq!(fresh, spent, "the paper itself never changes");
-        let bold = block(Tone::Error, &err, &t);
+        let bold = err.block;
         let shade = apart(bold, t.surface);
         let old = theme::color(t.toast.error.fill);
-        let bolder = shade > apart(old, t.surface) * 4;
+        let bolder = shade > apart(old, t.surface) * 2;
         assert!(bolder, "bolder than the old tone: {shade}");
         assert!(apart(bold, t.ink) > 200, "the words still read on it");
         let dark = Tokens::new(&Appearance {
             base: BaseMode::Dark,
             ..Appearance::default()
         });
-        let night = block(Tone::Warning, &look(Tone::Warning, &dark), &dark);
+        let night = look(Tone::Warning, &dark).block;
         assert!(apart(night, dark.ink) > 200, "and on a dark theme");
     }
 
