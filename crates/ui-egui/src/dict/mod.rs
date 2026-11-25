@@ -7,6 +7,7 @@ mod entry;
 mod look;
 pub mod page;
 mod pickers;
+mod sense;
 pub mod window;
 mod window_chrome;
 mod window_geom;

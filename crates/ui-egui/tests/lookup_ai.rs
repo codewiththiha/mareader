@@ -134,6 +134,14 @@ fn the_dictionary_page_searches_the_ai_dictionary_as_one_more() {
     h.run_steps(30);
     assert!(found(&h, "быстрый") && found(&h, "moving fast"));
     assert!(found(&h, "Synonyms") && marks(&h) > 0);
+    // The entry's pencil, then one on a sense card, itself a button.
+    let pencils = h.get_all_by_label(ai_edit::EDIT).count();
+    assert!(pencils > 1, "a pencil on each AI sense");
+    h.get_all_by_label(ai_edit::EDIT).last().unwrap().click();
+    h.run();
+    h.get_by_label(ai_edit::TITLE);
+    h.key_press(egui::Key::Escape);
+    h.run();
 
     s.dictionary.pair = true;
     s.dictionary.to = Some(language_code("Russian"));

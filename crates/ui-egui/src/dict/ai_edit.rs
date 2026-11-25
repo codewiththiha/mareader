@@ -1,7 +1,7 @@
 //! The AI dictionary's entry editor: every field, a delete, and a question
 //! before an edit takes the place of another entry.
 
-use egui::{Context, RichText, TextEdit, Ui, vec2};
+use egui::{Align, Context, Layout, Rect, RichText, Sense, Ui, Vec2, vec2};
 use mareader_dict::{Saved, language, language_code};
 use mareader_engine::command::Command;
 use mareader_engine::dict::{Action, Edited};
@@ -86,6 +86,23 @@ fn list(text: &str, sep: char) -> Vec<String> {
 /// The "AI" mark and, beside it, the button that opens the editor.
 pub fn mark(ui: &mut Ui, saved: &Saved, t: &Tokens, out: &mut Commands) {
     entry::ai_badge(ui, &saved.model, t);
+    pencil(ui, saved, out);
+}
+
+/// The mark with the pencil's spot kept; [`pin`] draws it there.
+pub fn slot(ui: &mut Ui, saved: &Saved, t: &Tokens) -> Rect {
+    entry::ai_badge(ui, &saved.model, t);
+    ui.allocate_exact_size(Vec2::splat(24.0), Sense::hover()).0
+}
+
+/// The pencil over a card's own click, so a press there is the pencil's.
+pub fn pin(ui: &mut Ui, slot: Rect, (saved, at): (&Saved, usize), out: &mut Commands) {
+    let place = egui::UiBuilder::new().max_rect(slot);
+    let mut pinned = ui.new_child(place.id_salt(("ai-pencil", at)));
+    pencil(&mut pinned, saved, out);
+}
+
+fn pencil(ui: &mut Ui, saved: &Saved, out: &mut Commands) {
     if widgets::small_icon_button(ui, Icon::Rename, EDIT).clicked() {
         out.push(Sent::Ui(UiCommand::EditAi(Box::new(saved.clone()))));
     }
@@ -154,14 +171,15 @@ fn show(ctx: &Context, ed: &mut Editor, edited: Option<&Edited>, out: &mut Comma
 fn fields(ui: &mut Ui, ed: &mut Editor, t: &Tokens) {
     ui.spacing_mut().item_spacing.y = 4.0;
     field(ui, ("Word", ""), &mut ed.word, 1, t);
-    ui.horizontal(|ui| {
+    ui.horizontal_top(|ui| {
         let half = (ui.available_width() - 8.0) / 2.0;
-        ui.allocate_ui(vec2(half, 0.0), |ui| {
-            ui.vertical(|ui| field(ui, ("Class", "noun, verb…"), &mut ed.class, 1, t));
+        let column = Layout::top_down(Align::Min);
+        ui.allocate_ui_with_layout(vec2(half, 0.0), column, |ui| {
+            field(ui, ("Class", "noun, verb…"), &mut ed.class, 1, t);
         });
-        ui.allocate_ui(vec2(half, 0.0), |ui| {
+        ui.allocate_ui_with_layout(vec2(half, 0.0), column, |ui| {
             let names = ("Language", "Burmese, Russian…");
-            ui.vertical(|ui| field(ui, names, &mut ed.language, 1, t));
+            field(ui, names, &mut ed.language, 1, t);
         });
     });
     field(ui, ("Meaning", ""), &mut ed.meaning, 2, t);
@@ -171,13 +189,13 @@ fn fields(ui: &mut Ui, ed: &mut Editor, t: &Tokens) {
 }
 
 fn field(ui: &mut Ui, (name, hint): (&str, &str), text: &mut String, rows: usize, t: &Tokens) {
-    let label = ui.label(RichText::new(name).size(t.text_small).color(t.muted));
+    ui.label(RichText::new(name).size(t.text_small).color(t.muted));
     let edit = match rows {
-        1 => TextEdit::singleline(text),
-        _ => TextEdit::multiline(text).desired_rows(rows),
+        1 => widgets::input(text),
+        _ => widgets::input_multiline(text).rows(rows),
     };
-    let edit = edit.hint_text(hint).desired_width(f32::INFINITY);
-    ui.add(edit).labelled_by(label.id);
+    edit.hint(hint).label(name).show(ui);
+    ui.add_space(4.0);
 }
 
 /// Another entry holds the new key: replace it, or keep editing.

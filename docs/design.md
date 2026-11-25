@@ -481,9 +481,11 @@ and returns where it came from; Library sits beside it.
   answer and its speak button, gloss); near matches follow under "≈ word"
   headings that carry their own speak button.
 - **AI entries.** An AI dictionary row's tags end in the "AI" mark and its
-  pencil; a sense card that is itself a button shows the mark alone.
-- **AI entry editor.** A modal card (440 px): Word; Class and Language side
-  by side; Meaning; Synonyms; Usages. Delete sits left, Cancel and Save
+  pencil, sense cards that pick an entry included: the pencil takes its
+  own press.
+- **AI entry editor.** A modal card (440 px) of the app's text fields, each
+  named above it: Word; Class and Language side by side; Meaning;
+  Synonyms; Usages. Delete sits left, Cancel and Save
   right. A taken key shows its kept meaning above *Replace it* (danger
   fill) and *Keep editing*.
 - **Speaking.** A word or answer gets a speak button only when the voice in
