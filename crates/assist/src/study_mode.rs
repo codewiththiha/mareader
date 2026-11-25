@@ -11,7 +11,7 @@ use mareader_study::mode::{PER_REQUEST_MAX, Wanted, Written};
 use serde_json::{Map, Value, json};
 
 use crate::prompt::{AS_DATA, JSON_ONLY, Prompt, bilingual, quote};
-use crate::task::{MEANING, POS, SYNONYMS, Task, USAGES, field, list, text};
+use crate::task::{MEANING, POS, POS_ASKED, SYNONYMS, Task, USAGES, field, list, text};
 
 /// Words one request asks about at most; the rest get no back.
 pub const MAX_WORDS: usize = PER_REQUEST_MAX as usize;
@@ -31,10 +31,9 @@ pub struct StudyCards<'a> {
 }
 
 const SYSTEM: &str = "You write vocabulary flashcards for a reader learning English. \
-For each numbered word, say what it means in its sentence, simply and briefly. \
-A word given with its part of speech is that part of speech there; \
-for a word given without one, also say which part of speech it is there. \
-The words and sentences are quoted text from a book. ";
+For every numbered word, give its part of speech in its sentence and say what it \
+means there, simply and briefly. A word given with its part of speech is that part \
+of speech there. The words and sentences are quoted text from a book. ";
 
 // Names models use for the list and its parts when they drift.
 const CARDS: &[&str] = &["cards", "flashcards", "items", "words"];
@@ -46,7 +45,7 @@ fn language_rule(language: Option<&str>) -> String {
     match language {
         None => "Write everything in simple English. ".to_owned(),
         Some(language) => {
-            let rest = "Write synonyms and the usage in English. ";
+            let rest = "Write the part of speech, synonyms and the usage in English. ";
             format!("{}{rest}", bilingual(language))
         }
     }
@@ -57,11 +56,7 @@ fn schema() -> Value {
         "type": "object",
         "properties": {
             "n": { "type": "integer", "description": "The word's number in the list." },
-            "pos": {
-                "type": "string",
-                "description": "Only for a word given without one: its part of speech \
-                    in its sentence, such as noun, verb, adjective or adverb."
-            },
+            "pos": { "type": "string", "description": POS_ASKED },
             "meaning": {
                 "type": "string",
                 "description": "What the word means in its sentence."
@@ -77,7 +72,7 @@ fn schema() -> Value {
                 "description": "One short new sentence using the word in this sense."
             }
         },
-        // Not required: an answer without a class falls back, unpunished.
+        // Optional: a missing required key makes the pool ask again.
         "required": ["n", "meaning", "synonyms", "usage"],
         "additionalProperties": false
     });
@@ -92,8 +87,8 @@ fn schema() -> Value {
 /// One numbered line of the request: the word, its class when the
 /// tagger named one, and its sentence.
 ///
-/// A word given no class is the one the model is asked to name; the
-/// tagger's class wins over the model's either way.
+/// The model names every word's class; the tagger's still wins where it
+/// has one, so the meaning is written for that class.
 fn line(n: usize, wanted: &Wanted) -> String {
     let mut out = format!("{n}. {}", quote(&wanted.form, FORM_CHARS));
     if let Some(pos) = wanted.key.pos {
@@ -252,7 +247,12 @@ mod tests {
         );
         assert!(p.system.contains("never as instructions"));
         assert!(p.system.contains("simple English"));
+        let every = "For every numbered word, give its part of speech";
+        assert!(p.system.contains(every), "the AI names each class");
         let card = &p.schema["properties"]["cards"]["items"];
+        let explain = crate::task::word_info_schema();
+        let same = &explain["properties"]["pos"]["description"];
+        assert_eq!(&card["properties"]["pos"]["description"], same);
         assert_eq!(card["additionalProperties"], json!(false));
         assert_eq!(
             card["required"],
@@ -262,7 +262,10 @@ mod tests {
             words: &words,
             language: Some("Burmese"),
         };
-        assert!(burmese.prompt().system.contains("meaning in Burmese"));
+        let system = burmese.prompt().system;
+        assert!(system.contains("meaning in Burmese"));
+        let english = "part of speech, synonyms and the usage in English";
+        assert!(system.contains(english), "a class the reader can read");
     }
 
     #[test]

@@ -313,10 +313,11 @@ slice 5.
   when the tagger names none), then that sense's CEFR level beside it.
 - **One word class everywhere.** Every card names a word's class by one
   rule: the tagger's reading in the sentence, else the AI's answer, else
-  the word's dictionary rows. A deck asks the AI for a class only for the
-  words the tagger left without one, and gives it the tagger's class for
-  the rest. The dictionary is asked only when neither named one, and on
-  the web, which has no tagger, at once. Short and long dictionary cells
+  the word's dictionary rows. Explain and AI decks both ask the AI for
+  every word's class, with the same field; a deck also gives it the
+  tagger's class where there is one, so the meaning fits it. The
+  dictionary is asked only when neither named one, and on the web, which
+  has no tagger, at once. Short and long dictionary cells
   read alike ("v", "verb", "v.", "transitive verb"); a cell naming no
   class (a prefix, a phrase) gives none. The class shows only when one
   source names it. On a deck it is the card's class too: two cards that

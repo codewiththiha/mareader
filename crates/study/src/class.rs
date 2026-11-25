@@ -4,8 +4,9 @@
 //! asked about the word, and a dictionary's part-of-speech cell.
 //! [`Classes::class`] takes the first that says one, in that order. The
 //! tagger leads because it is the same reading wherever the word is asked;
-//! the AI is asked a class only where the tagger had none, and a
-//! dictionary, which lists every class a word may take, comes last. Packs
+//! the AI names a class for every word it explains or writes a card for,
+//! which stands where the tagger has none; a dictionary, which lists every
+//! class a word may take, comes last. Packs
 //! write their cells short or long ("v", "verb", "Adj.", "n, v");
 //! [`Pos::read`] reads them all alike.
 

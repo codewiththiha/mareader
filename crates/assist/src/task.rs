@@ -38,6 +38,10 @@ fn translated(language: &str) -> String {
 
 const PLAIN_MEANING: &str = "A short, simple explanation of the word in this context.";
 
+/// The class field's ask, the same for Explain and study cards.
+pub(crate) const POS_ASKED: &str =
+    "The part of speech here, such as noun, verb, adjective or adverb.";
+
 /// The answer's shape; field order steers the model, so meaning comes early.
 pub fn word_info_schema() -> Value {
     schema_with(PLAIN_MEANING)
@@ -49,7 +53,7 @@ fn schema_with(meaning: &str) -> Value {
         "properties": {
             "pos": {
                 "type": "string",
-                "description": "The part of speech here, such as noun, verb or adjective."
+                "description": POS_ASKED
             },
             "meaning": {
                 "type": "string",
