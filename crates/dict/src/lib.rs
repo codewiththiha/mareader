@@ -12,6 +12,7 @@
 // The browser lists packs only; what serves downloads sits unused.
 #![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_mut))]
 
+mod ai;
 mod entry;
 mod lang;
 mod packs;
@@ -20,12 +21,15 @@ mod search;
 mod service;
 
 #[cfg(not(target_arch = "wasm32"))]
+mod ai_store;
+#[cfg(not(target_arch = "wasm32"))]
 mod build;
 #[cfg(not(target_arch = "wasm32"))]
 mod shelf;
 #[cfg(not(target_arch = "wasm32"))]
 mod store;
 
+pub use ai::{AI_PACK, Saved};
 pub use entry::Entry;
 pub use lang::name as language;
 pub use packs::{PACKS, Pack};

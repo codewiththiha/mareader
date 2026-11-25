@@ -1,6 +1,7 @@
 //! What the app holds: pack states, download threads, a lookup
 //! worker.
 
+use crate::ai::Saved;
 use crate::entry::Entry;
 use crate::packs::{PACKS, Pack};
 use crate::route::Pair;
@@ -36,6 +37,10 @@ pub enum Query {
         pair: Option<Pair>,
         pack: Option<String>,
     },
+    /// Keeps AI meanings; one already under its key stays unless `replace`.
+    Remember { saved: Vec<Saved>, replace: bool },
+    /// The AI meanings kept for `words` in `lang`, every class.
+    Remembered { words: Vec<String>, lang: String },
 }
 
 impl Query {
@@ -44,7 +49,7 @@ impl Query {
         match self {
             Self::LookUp { .. } => Some(0),
             Self::Search { .. } => Some(1),
-            Self::Words { .. } => None,
+            Self::Words { .. } | Self::Remember { .. } | Self::Remembered { .. } => None,
         }
     }
 }
@@ -62,6 +67,8 @@ pub struct Reply {
     pub failed: Option<String>,
     /// A word list's answers, a word and language at a time.
     pub found: Vec<Found>,
+    /// AI meanings: those kept, or those a `Remember` left in place.
+    pub saved: Vec<Saved>,
 }
 
 /// One word's rows in one language, for a word list.
@@ -85,6 +92,7 @@ impl Reply {
             ready,
             failed: None,
             found: Vec::new(),
+            saved: Vec::new(),
         }
     }
 }

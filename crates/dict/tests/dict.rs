@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mareader_dict::{
-    Dictionaries, PACKS, Pack, Pair, Query, Reply, State, WordMatch, build, db_file,
+    Dictionaries, PACKS, Pack, Pair, Query, Reply, Saved, State, WordMatch, build, db_file,
 };
 
 fn pack(id: &str) -> &'static Pack {
@@ -276,4 +276,50 @@ fn a_word_list_without_near_keeps_to_the_word() {
     let reply = ask(&mut dicts, query);
     let found = reply.found.first().unwrap();
     assert!(found.own.is_empty() && found.near.is_empty());
+}
+
+fn remember(saved: Vec<Saved>, replace: bool) -> Query {
+    Query::Remember { saved, replace }
+}
+
+fn meaning(pos: &str, lang: &str, said: &str) -> Saved {
+    Saved {
+        word: "book".into(),
+        pos: pos.into(),
+        lang: lang.into(),
+        meaning: said.into(),
+        ..Saved::default()
+    }
+}
+
+#[test]
+fn ai_meanings_are_kept_on_disk_and_asked_by_word() {
+    let (dir, mut dicts) = shelf();
+    let noun = meaning("noun", "en", "pages bound together");
+    let verb = meaning("verb", "en", "reserve a place");
+    let saved = vec![noun.clone(), verb];
+    let reply = ask(&mut dicts, remember(saved, false));
+    assert!(reply.failed.is_none() && reply.saved.is_empty());
+    assert!(dir.path().join("ai.sqlite").is_file());
+    let other = meaning("noun", "en", "a list of bets");
+    let saved = vec![other.clone(), noun.clone()];
+    let reply = ask(&mut dicts, remember(saved, false));
+    assert_eq!(reply.saved, [noun], "only the differing one stayed");
+    let words = vec!["Book".to_owned()];
+    let lang = "en".to_owned();
+    let query = Query::Remembered { words, lang };
+    let reply = ask(&mut dicts, query.clone());
+    let mut said: Vec<&str> = reply.saved.iter().map(|s| s.meaning.as_str()).collect();
+    said.sort_unstable();
+    assert_eq!(said, ["pages bound together", "reserve a place"]);
+    ask(&mut dicts, remember(vec![other], true));
+    let reply = ask(&mut dicts, query);
+    let nouns = reply.saved.iter().filter(|s| s.pos == "noun");
+    let said: Vec<&str> = nouns.map(|s| s.meaning.as_str()).collect();
+    assert_eq!(said, ["a list of bets"], "replaced on asking");
+    let japanese = Query::Remembered {
+        words: vec!["book".into()],
+        lang: "ja".into(),
+    };
+    assert!(ask(&mut dicts, japanese).saved.is_empty());
 }

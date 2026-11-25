@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::ai::Saved;
+use crate::ai_store::{AiStore, file};
 use crate::entry::{Entry, order};
 use crate::lang;
 use crate::packs::{PACKS, Pack};
@@ -35,6 +37,7 @@ pub fn building_file(dir: &Path, pack: &Pack) -> PathBuf {
 pub struct Shelf {
     dir: PathBuf,
     open: HashMap<&'static str, Store>,
+    ai: Option<AiStore>,
 }
 
 impl Shelf {
@@ -42,6 +45,7 @@ impl Shelf {
         Self {
             dir,
             open: HashMap::new(),
+            ai: None,
         }
     }
 
@@ -69,7 +73,53 @@ impl Shelf {
             Query::LookUp { word, to } => self.look_up(word, to.as_deref()),
             Query::Search { text, pair, pack } => self.search(text, pair.as_ref(), pack.as_deref()),
             Query::Words { words, to, near } => self.words(words, to, *near),
+            Query::Remember { saved, replace } => self.remember(saved, *replace),
+            Query::Remembered { words, lang } => self.remembered(words, lang),
         }
+    }
+
+    /// The AI dictionary, opened or made on first use.
+    fn ai(&mut self) -> Result<&AiStore, String> {
+        if self.ai.is_none() {
+            self.ai = Some(AiStore::open(&file(&self.dir))?);
+        }
+        let ai = self.ai.as_ref();
+        ai.ok_or_else(|| "no AI dictionary".to_owned())
+    }
+
+    /// Keeps each meaning; the reply lists differing ones left in place.
+    fn remember(&mut self, saved: &[Saved], replace: bool) -> Reply {
+        let mut reply = Reply::new(0);
+        let kept = self.ai().and_then(|ai| {
+            let mut stayed = Vec::new();
+            for one in saved {
+                if ai.put(one, replace)? {
+                    continue;
+                }
+                let old = ai.get(&one.word, &one.pos, &one.lang)?;
+                stayed.extend(old.filter(|o| !o.same_as(one)));
+            }
+            Ok(stayed)
+        });
+        match kept {
+            Ok(stayed) => reply.saved = stayed,
+            Err(why) => reply.failed = Some(why),
+        }
+        reply
+    }
+
+    /// The AI meanings kept for `words` in `lang`.
+    fn remembered(&mut self, words: &[String], lang: &str) -> Reply {
+        let mut reply = Reply::new(0);
+        let found = self.ai().and_then(|ai| {
+            let each = words.iter().map(|w| ai.word(w, lang));
+            each.collect::<Result<Vec<_>, _>>()
+        });
+        match found {
+            Ok(lists) => reply.saved = lists.into_iter().flatten().collect(),
+            Err(why) => reply.failed = Some(why),
+        }
+        reply
     }
 
     /// A card's ask: from the word's language to `to`, else another.
