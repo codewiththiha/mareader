@@ -24,18 +24,31 @@ pub fn answer_size(text: &str, t: &Tokens) -> f32 {
         }
 }
 
-/// The languages of an entry's two sides, as `en`; a bridge answers in `to`.
-pub fn sides(e: &Entry, to: Option<&str>) -> (String, String) {
+/// An entry's two sides by dictionary code, the asked one first; none for
+/// a row of no known pack and no AI meaning.
+fn codes(e: &Entry) -> Option<(&str, &str)> {
     let pack = mareader_dict::PACKS.iter().find(|p| p.id == e.pack);
-    let (source, target) = pack.map_or((HUB, HUB), |p| (p.source, p.target));
     // An AI row answers in the language its meaning was written in.
-    let target = e.ai.as_ref().map_or(target, |s| s.lang.as_str());
-    let (asked, answer) = match e.flipped {
+    let ai = e.ai.as_ref().map(|s| (HUB, s.lang.as_str()));
+    let (source, target) = ai.or(pack.map(|p| (p.source, p.target)))?;
+    Some(match e.flipped {
         true => (target, source),
         false => (source, target),
-    };
+    })
+}
+
+/// The languages of an entry's two sides, as `en`; a bridge answers in `to`.
+pub fn sides(e: &Entry, to: Option<&str>) -> (String, String) {
+    let (asked, answer) = codes(e).unwrap_or((HUB, HUB));
     let answer = to.filter(|_| e.via.is_some()).unwrap_or(answer);
     (primary(asked), primary(answer))
+}
+
+/// "English → Burmese", from an entry's pack or its AI meaning.
+pub fn way(e: &Entry) -> Option<String> {
+    let (from, to) = codes(e)?;
+    let name = mareader_dict::language;
+    Some(format!("{} → {}", name(from), name(to)))
 }
 
 /// The headword an entry stands for when it isn't the word asked.
@@ -127,4 +140,42 @@ fn bridge(via: &str, t: &Tokens) -> LayoutJob {
         TextFormat::simple(font, t.ink.gamma_multiply(0.8)),
     );
     job
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mareader_dict::{AI_PACK, Saved};
+
+    fn row(pack: &'static str, flipped: bool, ai: Option<&str>) -> Entry {
+        let said = |lang: &str| Saved {
+            lang: lang.to_owned(),
+            ..Saved::default()
+        };
+        Entry {
+            word: "light".into(),
+            pos: None,
+            definition: String::new(),
+            romanization: None,
+            sense: None,
+            pack,
+            via: None,
+            fit: WordMatch::Exact,
+            flipped,
+            ai: ai.map(said).map(Box::new),
+        }
+    }
+
+    #[test]
+    fn the_way_names_the_codes_sides_speak() {
+        let back = row("jmdict-en-jp", true, None);
+        assert_eq!(way(&back).as_deref(), Some("Japanese → English"));
+        assert_eq!(sides(&back, None), ("ja".to_owned(), "en".to_owned()));
+        let ai = row(AI_PACK, false, Some("russian"));
+        assert_eq!(way(&ai).as_deref(), Some("English → Russian"));
+        assert_eq!(sides(&ai, None).1, "russian");
+        let stray = row("gone", false, None);
+        assert_eq!(way(&stray), None);
+        assert_eq!(sides(&stray, None), ("en".to_owned(), "en".to_owned()));
+    }
 }

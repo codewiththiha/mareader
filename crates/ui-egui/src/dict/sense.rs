@@ -1,6 +1,6 @@
 //! A dictionary sense as a card: its tags, the answer, gloss and AI parts.
 
-use super::look::{chip, say, tag, way};
+use super::look::{chip, say, tag};
 use super::{Voice, ai_edit, entry};
 use crate::shaped;
 use crate::theme::Tokens;
@@ -24,14 +24,24 @@ pub struct Said<'a> {
     pub at: usize,
 }
 
-/// A sense's classes, any bridge, its two languages, and the AI mark.
-fn sense_tags(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Commands) -> Slot {
+/// An entry's classes, any bridge, with `way` its two languages, and the
+/// AI mark; a card that is all one button (`click`) keeps the pencil's spot.
+///
+/// The one tag row: sense cards and the page's entry both draw it.
+pub(super) fn tag_row(
+    ui: &mut Ui,
+    e: &Entry,
+    (way, click): (bool, bool),
+    t: &Tokens,
+    out: &mut Commands,
+) -> Slot {
     let tags = entry::tags(e);
-    let way = way(e).filter(|_| s.way);
+    let way = entry::way(e).filter(|_| way);
     if tags.is_empty() && e.via.is_none() && way.is_none() && e.ai.is_none() {
         return None;
     }
     let row = ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
         // As tall as the chips, not a control's height.
         ui.spacing_mut().interact_size.y = 18.0;
         for tag in tags.split(" · ").filter(|s| !s.is_empty()) {
@@ -42,12 +52,11 @@ fn sense_tags(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Comman
                 .on_hover_text(format!("Found through the English “{via}”"));
         }
         if let Some(way) = &way {
-            let way = RichText::new(way).size(t.text_small).color(t.muted);
-            ui.add(egui::Label::new(way).selectable(false));
+            tag(ui, way, t);
         }
         match e.ai.as_deref() {
             // A card that is all one button gets its pencil after the click.
-            Some(said) if s.click => return Some(ai_edit::slot(ui, said, t)),
+            Some(said) if click => return Some(ai_edit::slot(ui, said, t)),
             Some(said) => ai_edit::mark(ui, said, t, out),
             None => {}
         }
@@ -57,7 +66,7 @@ fn sense_tags(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Comman
 }
 
 /// Where a clickable card's pencil goes, drawn after its click.
-type Slot = Option<Rect>;
+pub(super) type Slot = Option<Rect>;
 
 /// One sense: its tags, the answer large with its voice, then the gloss.
 pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Commands) -> Response {
@@ -68,7 +77,7 @@ pub fn sense(ui: &mut Ui, e: &Entry, s: &Said<'_>, t: &Tokens, out: &mut Command
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
-            slot = sense_tags(ui, e, s, t, out);
+            slot = tag_row(ui, e, (s.way, s.click), t, out);
             ui.horizontal(|ui| {
                 let speaks =
                     !s.click && s.voice.can_say(s.said_in) && !e.answer().trim().is_empty();

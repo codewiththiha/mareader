@@ -12,7 +12,6 @@ use egui::{
     RectAlign, Response, RichText, Sense, Stroke, StrokeKind, Ui, Vec2, WidgetInfo, WidgetType,
     pos2, vec2,
 };
-use mareader_dict::Entry;
 use mareader_engine::{command::Command, read_aloud::state::Offer};
 
 pub use super::sense::{Said, sense};
@@ -319,19 +318,6 @@ pub fn tag(ui: &mut Ui, text: &str, t: &Tokens) -> Response {
         .inner_margin(Margin::symmetric(8, 1))
         .show(ui, |ui| ui.add(egui::Label::new(text).selectable(false)))
         .inner
-}
-
-/// "English → Burmese", from an entry's pack or its AI meaning.
-pub fn way(e: &Entry) -> Option<String> {
-    let pack = mareader_dict::PACKS.iter().find(|p| p.id == e.pack);
-    let ai = e.ai.as_ref().map(|s| (mareader_dict::HUB, s.lang.as_str()));
-    let (source, target) = pack.map(|p| (p.source, p.target)).or(ai)?;
-    let (from, to) = match e.flipped {
-        true => (target, source),
-        false => (source, target),
-    };
-    let name = mareader_dict::language;
-    Some(format!("{} → {}", name(from), name(to)))
 }
 
 /// A quiet icon button exactly `size`, so rows can count on its width.

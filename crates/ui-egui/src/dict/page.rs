@@ -737,7 +737,7 @@ fn full_entry(
                 let note = format!("The nearest entry to “{asked}”");
                 ui.label(RichText::new(note).size(t.text_small).color(t.muted));
             }
-            tag_row(ui, e, t, out);
+            super::sense::tag_row(ui, e, (true, false), t, out);
             ui.add_space(2.0);
             answer_panel(ui, t, e, h, out);
             let languages = [h.asked_in(Some(e)), h.answer_in(e)];
@@ -781,25 +781,6 @@ fn full_entry(
         });
     widgets::scroll_fades(ui, &body, Tokens::get(ui.ctx()).paper);
     act
-}
-
-/// An entry's classes, its two languages, any bridge, and the AI mark.
-fn tag_row(ui: &mut Ui, e: &Entry, t: &Tokens, out: &mut Commands) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        for tag in entry::tags(e).split(" · ").filter(|s| !s.is_empty()) {
-            look::chip(ui, tag, t);
-        }
-        if let Some(way) = look::way(e) {
-            look::tag(ui, &way, t);
-        }
-        if let Some(via) = &e.via {
-            look::tag(ui, &format!("via {via}"), t);
-        }
-        if let Some(said) = &e.ai {
-            super::ai_edit::mark(ui, said, t, out);
-        }
-    });
 }
 
 /// The answer on a soft panel, with its voice, romanization and gloss.
