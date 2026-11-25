@@ -193,6 +193,16 @@ impl PageAiUi {
         true
     }
 
+    /// A single page's Study section: none as study mode starts, which
+    /// closes the menu, else whether the pane studies.
+    fn study_section(&self, ui: &mut Ui, m: &Menu, out: &mut Commands) -> Option<bool> {
+        if !m.pages.is_empty() {
+            return Some(false);
+        }
+        let section = study_mode::menu::show(ui, &self.study, m.pane, out);
+        (!section.started).then_some(section.running)
+    }
+
     /// The tasks; true once one is picked.
     fn tasks(
         &self,
@@ -232,7 +242,10 @@ impl PageAiUi {
             1 => "Ask AI · 1 page".to_owned(),
             n => format!("Ask AI · {n} pages"),
         };
-        if m.pages.is_empty() && study_mode::menu::show(ui, &self.study, m.pane, out) {
+        let Some(running) = self.study_section(ui, m, out) else {
+            return true;
+        };
+        if running {
             heading = format!("Ask AI · {}", study_mode::menu::KEEPS);
             ui.disable();
         }

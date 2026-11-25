@@ -28,7 +28,12 @@ type Out = Result<(), Box<dyn std::error::Error>>;
 /// Opens the page menu on the first page's blank corner.
 fn page_menu(h: &mut H) -> Out {
     let (_, sheet) = page(h, 0)?;
-    let at = sheet.shown.min + egui::vec2(12.0, 12.0);
+    page_menu_at(h, sheet.shown.min + egui::vec2(12.0, 12.0));
+    Ok(())
+}
+
+/// Opens the page menu at `at`, on a page.
+fn page_menu_at(h: &mut H, at: egui::Pos2) {
     h.hover_at(at);
     h.step();
     for pressed in [true, false] {
@@ -41,7 +46,6 @@ fn page_menu(h: &mut H) -> Out {
         h.step();
     }
     h.run();
-    Ok(())
 }
 
 /// Steps until `done` holds, giving the engine's workers time to answer.
@@ -95,9 +99,15 @@ fn studying_with(limit: bool) -> Result<(H, PaneId, Shelves), Box<dyn std::error
 fn the_page_menu_turns_study_mode_on_and_keeps_the_pages_as_written() -> Out {
     let (mut h, pane, _shelves) = studying()?;
     assert!(h.state().session().study_mode().on(pane));
-    if h.query_by_label_contains(KEEPS).is_none() {
-        page_menu(&mut h)?;
-    }
+    let closed = h.query_by_label("Proactive").is_none();
+    assert!(closed, "the menu makes way as study mode starts");
+    // The preparing screen covers the page; past the deck it opens again.
+    assert!(at_the_deck(&mut h, pane), "the deck opens");
+    h.get_by_label(START).click();
+    h.run();
+    // The gate scrolled the page's top corner under the title bar.
+    let (_, sheet) = page(&h, 0)?;
+    page_menu_at(&mut h, sheet.shown.center());
     assert!(
         h.query_by_label_contains(KEEPS).is_some(),
         "the AI tasks wait"

@@ -187,10 +187,24 @@ pub fn show(
     }
     let label = face(at).map(|f| f.label(turned)).unwrap_or_default();
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
-    widgets::tip(&resp, "Click to turn, drag to move on", Some("Space · ← →"));
+    let used = gesture.is_some() || turned || s.shown.is_some_and(|was| was != at);
+    if !taught(&ctx, used) {
+        widgets::tip(&resp, "Click to turn, drag to move on", Some("Space · ← →"));
+    }
     s.shown = Some(at);
     ctx.data_mut(|d| d.insert_temp(id, s));
     gesture
+}
+
+/// Whether the reader has turned or moved a card, in any run; `used`
+/// says this frame they did.
+fn taught(ctx: &egui::Context, used: bool) -> bool {
+    let id = Id::new("study-card-taught");
+    let was = ctx.data_mut(|d| d.get_persisted::<bool>(id));
+    if used && was != Some(true) {
+        ctx.data_mut(|d| d.insert_persisted(id, true));
+    }
+    used || was == Some(true)
 }
 
 /// Shots: holds the card `dx` aside, as a drag would.

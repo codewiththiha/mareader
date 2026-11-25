@@ -64,3 +64,11 @@ fn the_back_is_heard_once_turned() {
     assert_eq!(faces.label(false), format!("gaunt, {TURN_HINT}"));
     assert_eq!(faces.label(true), "very thin · adjective");
 }
+
+#[test]
+fn the_hint_stops_once_a_card_was_turned_or_moved() {
+    let ctx = egui::Context::default();
+    assert!(!taught(&ctx, false), "a new reader sees it");
+    assert!(taught(&ctx, true));
+    assert!(taught(&ctx, false), "and never again after");
+}

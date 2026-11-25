@@ -51,13 +51,23 @@ impl Look {
     }
 }
 
-/// The Study section of `pane`'s page menu; true while the pane studies.
+/// What the Study section did this frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Section {
+    /// The pane studies.
+    pub running: bool,
+    /// Study mode starts or restarts: the menu makes way for it.
+    pub started: bool,
+}
+
+/// The Study section of `pane`'s page menu.
 ///
 /// A pane missing from `look` gets no section.
-pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool {
+pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> Section {
     let Some(&(_, running, have)) = look.panes.iter().find(|(p, ..)| *p == pane) else {
-        return false;
+        return Section::default();
     };
+    let mut started = false;
     widgets::menu_section(ui, Some(Icon::Levels), "Study");
     let missing = check(look.mode, have).err();
     let mut on = running.is_some();
@@ -70,6 +80,7 @@ pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool 
         None => switch.inner,
     };
     if switch.changed() {
+        started = on;
         let action = match on {
             true => Action::Toggle {
                 pane,
@@ -88,6 +99,7 @@ pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool 
         let modes = [Mode::Proactive, Mode::Reactive];
         widgets::segments(ui, &mut mode, &modes, 2, |m| (None, name(m)));
         if mode != was {
+            started = true;
             set(out, "study.mode.mode", &mode);
             let action = Action::Toggle { pane, mode };
             out.push(Sent::Engine(Command::StudyMode(action)));
@@ -100,7 +112,10 @@ pub fn show(ui: &mut Ui, look: &Look, pane: PaneId, out: &mut Commands) -> bool 
         out.push(Sent::Engine(Command::OpenSettings(Tab::Study)));
     }
     widgets::menu_rule(ui);
-    running.is_some()
+    Section {
+        running: running.is_some(),
+        started,
+    }
 }
 
 /// The way to what the switch needs; why it is off shows on hover.
