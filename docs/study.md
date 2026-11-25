@@ -192,7 +192,9 @@ be kept on this machine and used again, beside the downloaded packs.
 - **The Dictionary page.** "AI dictionary" is one more choice in its
   dictionary picker, its languages are in the From and To pickers, and a
   search reads its entries after the packs': words that hold the search,
-  and meanings asked back to English. The page searches even when the AI
+  and meanings asked back to English. Across every dictionary it reads
+  every language's; with one pack picked, or a pair, those in that
+  pack's or pair's language, as an extension of it (`route::ai_scope`). The page searches even when the AI
   dictionary is the only one.
 - **Decks** use entries again by lemma, class and language
   (`docs/study-mode.md`), and Space filters words by who wrote their

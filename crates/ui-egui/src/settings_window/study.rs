@@ -128,8 +128,8 @@ fn model(ui: &mut Ui, ai: &mut mareader_settings::AiSettings) {
             model_row(ui, ai, task);
             divider(ui);
         }
-        let hint = "AI decks' meanings and feedback; synonyms and examples stay in English. \
-                    Dictionary decks answer in Dictionary › Default language";
+        let hint = "AI decks write the meaning and feedback in it; synonyms and examples \
+                    stay in English. Dictionary decks use Dictionary › Default language";
         row(ui, "Cards in", hint, |ui| {
             let language = &mut ai.tasks.study.language;
             let speaks = |_: &str| None::<bool>;

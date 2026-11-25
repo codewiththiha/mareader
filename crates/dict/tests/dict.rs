@@ -445,3 +445,29 @@ fn a_search_reads_the_ai_dictionary_after_the_packs() {
     let back = ask(&mut dicts, search("бежать", Some(back), None));
     assert_eq!(back.entries.first().map(|e| e.answer()), Some("run"));
 }
+
+/// The AI meanings among `reply`'s rows.
+fn ai_said(reply: &Reply) -> Vec<&str> {
+    let ai = reply.entries.iter().filter(|e| e.ai.is_some());
+    ai.map(|e| e.answer()).collect()
+}
+
+#[test]
+fn a_search_in_a_language_reads_its_ai_rows_too() {
+    let (_dir, mut dicts) = shelf();
+    let saved = vec![run("my", "ပြေး"), run("ru", "бежать")];
+    ask(&mut dicts, remember(saved, false));
+    let my = ask(&mut dicts, search("run", None, Some("mcfnlp-en-my")));
+    assert_eq!(ai_said(&my), ["ပြေး"], "the pack's language, extended");
+    let pack_rows = my.entries.iter().any(|e| e.ai.is_none());
+    assert!(pack_rows, "and the pack's rows");
+    let fr = ask(&mut dicts, search("run", None, Some("wiktionary-en-fr")));
+    assert!(ai_said(&fr).is_empty(), "no AI meaning in French");
+    let to_my = Pair {
+        from: None,
+        to: Some("my".into()),
+    };
+    let pair = ask(&mut dicts, search("run", Some(to_my), None));
+    assert_eq!(ai_said(&pair), ["ပြေး"], "a pair into Burmese, extended");
+    assert!(pair.entries.iter().any(|e| e.ai.is_none()));
+}

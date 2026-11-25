@@ -8,7 +8,9 @@ use crate::ai_store::{AiStore, file};
 use crate::entry::{Entry, order};
 use crate::lang;
 use crate::packs::{PACKS, Pack};
-use crate::route::{HUB, Pair, Plan, answer_in, languages, languages_with, plans, settle, targets};
+use crate::route::{
+    HUB, Pair, Plan, ai_scope, answer_in, languages, languages_with, plans, settle, targets,
+};
 use crate::search::{WordMatch, fold};
 use crate::store::{Depth, Row, Side, Store};
 use crate::{Query, Reply};
@@ -326,9 +328,9 @@ impl Shelf {
                         .extend(rows.into_iter().map(|r| entry(r, p, flipped, None)));
                 }
             }
-            let asks_ai = pack.is_none_or(|id| id == AI_PACK) && !ai.is_empty();
-            for meaning in [false, true].into_iter().filter(|_| asks_ai) {
-                let rows = self.ai_found(text, None, meaning, &mut reply.failed);
+            let scope = ai_scope(pack, &ready, &ai);
+            for meaning in [false, true].into_iter().filter(|_| scope.is_some()) {
+                let rows = self.ai_found(text, scope.flatten(), meaning, &mut reply.failed);
                 reply.entries.extend(rows);
             }
         }

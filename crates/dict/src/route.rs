@@ -1,6 +1,7 @@
 //! Ways between two languages: one pack either way round, or two
 //! meeting at English.
 
+use crate::ai::AI_PACK;
 use crate::lang;
 use crate::packs::Pack;
 
@@ -88,6 +89,26 @@ pub fn languages_with<'a>(packs: &[&'static Pack], ai: &'a [String]) -> Vec<&'a 
 pub fn answer_in<'a>(chosen: Option<&str>, langs: &[&'a str]) -> Option<&'a str> {
     let picked = chosen.and_then(|c| langs.iter().copied().find(|l| *l == c));
     picked.or_else(|| langs.first().copied())
+}
+
+/// The AI rows a search across `pack` reads: every language's with no
+/// pack or the AI one picked, a pack's own language's with a pack; none
+/// when the AI dictionary keeps nothing there.
+pub fn ai_scope(
+    pack: Option<&str>,
+    packs: &[&'static Pack],
+    ai: &[String],
+) -> Option<Option<&'static str>> {
+    let kept = |l: &str| ai.iter().any(|a| a == l);
+    match pack {
+        _ if ai.is_empty() => None,
+        None | Some(AI_PACK) => Some(None),
+        Some(id) => {
+            let picked = packs.iter().find(|p| p.id == id && p.source == HUB);
+            let own = picked.map(|p| p.target).filter(|t| kept(t));
+            own.map(Some)
+        }
+    }
 }
 
 /// Two languages a search names; none leaves each to be worked out.
@@ -184,5 +205,13 @@ mod tests {
         };
         let got = settle(&to, "quick", &languages_with(&[], &ai));
         assert_eq!(got, Some(("en".into(), "ru".into())));
+        assert_eq!(ai_scope(None, &my, &ai), Some(None), "every language");
+        assert_eq!(ai_scope(Some(AI_PACK), &my, &ai), Some(None));
+        let own = ai_scope(Some("mcfnlp-en-my"), &my, &ai);
+        assert_eq!(own, Some(Some("my")), "a pack's own language");
+        assert_eq!(ai_scope(Some("mcfnlp-en-my"), &my, &[]), None);
+        let other = ["ru".to_owned()];
+        let none = ai_scope(Some("mcfnlp-en-my"), &my, &other);
+        assert_eq!(none, None, "the AI dictionary keeps none in it");
     }
 }
