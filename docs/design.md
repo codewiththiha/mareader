@@ -635,6 +635,9 @@ Lucide 1.34.0 geometry is compiled from build-only declarations behind
   window, zoom ease and scroll to page. Each preference persists separately;
   icon animations default on to preserve existing behaviour.
 - A loading indicator fades rather than freezes when animations are off.
+- Selection AI carries the same travelling rainbow flare as an AI mark or a
+  working thumbnail along a softly irregular, text-shaped contour. The flare
+  disappears when the work ends; the corner stack takes over when it is away.
 - Icon runs (`icons::anim`) read `motion::icon_secs`, which combines their own
   switch with the master and reduced-motion gates. Off, a glyph is its generated
   resting drawing, no run starts or survives, and no repaint is asked for on its

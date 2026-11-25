@@ -42,7 +42,7 @@ pub(crate) fn show(ctx: &Context, ask: &Ask, panes: &[(PaneId, Rect)], docs: Doc
         let Some(layer) = docs.cached_layer(ask.pane, sheet.page) else {
             continue;
         };
-        // Retain a margin beyond the clip so a contour doesn't close at the viewport edge.
+        // Keep the contour's ends beyond the viewport.
         let near = clip.expand(80.0);
         let lines: Vec<_> = layer
             .text
