@@ -26,8 +26,8 @@ pub trait Levels {
 
 /// Where a word's meanings come from; the front end's dictionaries answer.
 pub trait Meanings {
-    /// The languages a dictionary answers in.
-    fn languages(&self) -> Vec<&'static str>;
+    /// The languages a dictionary answers in, the AI dictionary's too.
+    fn languages(&self) -> Vec<String>;
 
     /// Asks for a word list's rows; `take_words` hands the reply over.
     fn ask_words(&mut self, words: Vec<String>, to: Vec<String>, near: bool) -> Ticket;
@@ -265,7 +265,7 @@ impl Gather {
                     if self.asked.0.is_empty() && *next == 0 && ticket.is_none() {
                         let ready = meanings.languages();
                         let wanted = self.list.languages.iter();
-                        let usable = wanted.filter(|l| ready.contains(&l.as_str())).cloned();
+                        let usable = wanted.filter(|l| ready.contains(l)).cloned();
                         self.asked = (usable.collect(), self.list.similar);
                     }
                     let all = self.words.len();

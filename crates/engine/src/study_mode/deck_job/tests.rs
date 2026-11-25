@@ -150,7 +150,7 @@ struct Filed {
 }
 
 impl Meanings for Filed {
-    fn languages(&self) -> Vec<&'static str> {
+    fn languages(&self) -> Vec<String> {
         Vec::new()
     }
 

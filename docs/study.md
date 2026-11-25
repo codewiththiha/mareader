@@ -176,7 +176,8 @@ be kept on this machine and used again, beside the downloaded packs.
   Russian, is a dictionary language like a pack's. Settings › Dictionary ›
   *Default language* offers it, a card with no entry offers *Try* it, and
   a word with no entry in it gets *No entry*. Packs can't swap such a
-  pair, so its card shows no swap.
+  pair, so its card shows no swap. Dictionary decks and word lists read
+  and offer it too, and *AI dictionary first* orders their rows as well.
 - **Decks** use entries again by lemma, class and language
   (`docs/study-mode.md`), and Space filters words by who wrote their
   meaning.

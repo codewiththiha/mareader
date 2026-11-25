@@ -174,49 +174,69 @@ impl Shelf {
         langs.unwrap_or_default()
     }
 
-    /// Each word's rows in each language of `to` a pack has.
+    /// Each word's rows in each language of `to` a pack or the AI
+    /// dictionary has; a pack's rows come first.
     pub fn words(&mut self, words: &[String], to: &[String], near: bool) -> Reply {
         let ready = self.ready();
-        let mut reply = Reply::new(ready.len());
+        let ai = self.ai_langs();
+        let mut reply = Reply::new(ready.len() + usize::from(!ai.is_empty()));
         for lang in to {
             let pack = ready.iter().find(|p| p.source == HUB && p.target == lang);
-            let Some(pack) = pack.copied() else {
+            let pack = pack.copied();
+            let kept = ai.contains(lang);
+            if pack.is_none() && !kept {
                 continue;
-            };
-            let Some(store) = self.store(pack) else {
-                continue;
-            };
+            }
             for word in words {
-                let rows = |r: Result<Vec<Row>, String>, failed: &mut Option<String>| {
-                    let mut entries: Vec<Entry> = r
-                        .unwrap_or_else(|e| {
-                            *failed = Some(e);
-                            Vec::new()
-                        })
-                        .into_iter()
-                        .map(|r| entry(r, pack, false, None))
-                        .collect();
-                    order(&mut entries, WORD_ROWS);
-                    entries
+                let (mut own, close) = match pack {
+                    Some(pack) => self.pack_words(pack, word, near, &mut reply.failed),
+                    None => (Vec::new(), Vec::new()),
                 };
-                let asks = std::slice::from_ref(word);
-                let own = rows(
-                    store.exact_any(Side::Word, asks, WORD_ROWS),
-                    &mut reply.failed,
-                );
-                let near = match near {
-                    true => rows(store.near(word, WORD_ROWS * 2), &mut reply.failed),
-                    false => Vec::new(),
-                };
+                if kept {
+                    let said = self.ai().and_then(|s| s.word(word, Some(lang.as_str())));
+                    own.extend(said.unwrap_or_default().iter().map(ai_entry));
+                }
                 reply.found.push(crate::Found {
                     word: word.clone(),
                     to: lang.clone(),
                     own,
-                    near,
+                    near: close,
                 });
             }
         }
+        reply.ai_langs = Some(ai);
         reply
+    }
+
+    /// A word's rows in `pack`, and with `near` those of words near it.
+    fn pack_words(
+        &mut self,
+        pack: &'static Pack,
+        word: &str,
+        near: bool,
+        failed: &mut Option<String>,
+    ) -> (Vec<Entry>, Vec<Entry>) {
+        let Some(store) = self.store(pack) else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut rows = |r: Result<Vec<Row>, String>| {
+            let rows = r.unwrap_or_else(|e| {
+                *failed = Some(e);
+                Vec::new()
+            });
+            let mut entries: Vec<Entry> = rows
+                .into_iter()
+                .map(|r| entry(r, pack, false, None))
+                .collect();
+            order(&mut entries, WORD_ROWS);
+            entries
+        };
+        let own = rows(store.exact_any(Side::Word, &[word.to_owned()], WORD_ROWS));
+        let near = match near {
+            true => rows(store.near(word, WORD_ROWS * 2)),
+            false => Vec::new(),
+        };
+        (own, near)
     }
 
     /// The panel's ask: between a pair of languages, or across packs.

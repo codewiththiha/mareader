@@ -29,6 +29,8 @@ pub struct Service {
     card: Option<(Ticket, String)>,
     /// AI dictionary asks, kept from the reader's replies.
     ai: Vec<(Ticket, Option<Reply>)>,
+    /// AI dictionary rows lead a word's rows.
+    ai_first: bool,
 }
 
 impl Service {
@@ -55,14 +57,32 @@ impl Service {
         self.service.ready()
     }
 
-    /// The languages English words can be looked up in.
-    pub fn languages(&self) -> Vec<&'static str> {
+    /// The languages a pack looks English words up in.
+    pub fn pack_languages(&self) -> Vec<&'static str> {
         self.service
             .ready()
             .into_iter()
             .filter(|p| p.source == mareader_dict::HUB)
             .map(|p| p.target)
             .collect()
+    }
+
+    /// Every language English words can be looked up in: the packs',
+    /// then those only the AI dictionary keeps.
+    pub fn languages(&self) -> Vec<String> {
+        let packs = self.pack_languages().into_iter().map(str::to_owned);
+        let mut all: Vec<String> = packs.collect();
+        for lang in self.ai_languages() {
+            if !all.contains(lang) {
+                all.push(lang.clone());
+            }
+        }
+        all
+    }
+
+    /// Puts AI dictionary rows before the packs' in lookups to come.
+    pub fn set_ai_first(&mut self, ai_first: bool) {
+        self.ai_first = ai_first;
     }
 
     /// The languages this computer's AI dictionary keeps meanings in.
@@ -151,7 +171,7 @@ impl Service {
 
     /// Asks for the class `word`'s rows name; none without a pack.
     pub fn ask_class(&mut self, word: &str) -> Option<Ticket> {
-        let to = self.languages().first().map(|l| (*l).to_owned())?;
+        let to = self.languages().into_iter().next()?;
         let words = vec![word.to_owned()];
         let ticket = self.service.ask(Query::Words {
             words,
@@ -205,7 +225,7 @@ impl Service {
                 .chain(self.classes.iter_mut())
                 .chain(self.ai.iter_mut());
             if let Some((_, slot)) = asks.find(|(t, _)| *t == reply.ticket) {
-                *slot = Some(reply);
+                *slot = Some(lead_words(reply, self.ai_first));
             } else {
                 other.push(reply);
             }
@@ -214,8 +234,18 @@ impl Service {
     }
 }
 
+/// `reply` with each word's AI dictionary rows first, when asked so.
+fn lead_words(mut reply: Reply, ai_first: bool) -> Reply {
+    if ai_first {
+        for found in &mut reply.found {
+            found.own.sort_by_key(|e| e.ai.is_none());
+        }
+    }
+    reply
+}
+
 impl Meanings for Service {
-    fn languages(&self) -> Vec<&'static str> {
+    fn languages(&self) -> Vec<String> {
         Self::languages(self)
     }
 
@@ -237,5 +267,45 @@ impl Meanings for Service {
 
     fn take_kept(&mut self, ticket: Ticket) -> Option<Reply> {
         self.take_ai(ticket)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mareader_dict::{AI_PACK, Entry, Found, WordMatch};
+
+    fn row(ai: bool) -> Entry {
+        Entry {
+            word: "run".into(),
+            pos: None,
+            definition: String::new(),
+            romanization: None,
+            sense: None,
+            pack: if ai { AI_PACK } else { "pack" },
+            via: None,
+            fit: WordMatch::Exact,
+            flipped: false,
+            ai: ai.then(|| Box::new(Saved::default())),
+        }
+    }
+
+    #[test]
+    fn ai_rows_lead_a_words_rows_only_when_asked() {
+        let found = Found {
+            own: vec![row(false), row(true)],
+            ..Found::default()
+        };
+        let reply = Reply {
+            found: vec![found],
+            ..Reply::default()
+        };
+        let packs = |r: Reply| {
+            let rows = r.found.into_iter().flat_map(|f| f.own);
+            rows.map(|e| e.pack).collect::<Vec<_>>()
+        };
+        let kept = packs(lead_words(reply.clone(), false));
+        assert_eq!(kept, ["pack", AI_PACK]);
+        assert_eq!(packs(lead_words(reply, true)), [AI_PACK, "pack"]);
     }
 }

@@ -95,7 +95,7 @@ impl Levels for AllHard {
 struct NoMeanings;
 
 impl Meanings for NoMeanings {
-    fn languages(&self) -> Vec<&'static str> {
+    fn languages(&self) -> Vec<String> {
         Vec::new()
     }
 

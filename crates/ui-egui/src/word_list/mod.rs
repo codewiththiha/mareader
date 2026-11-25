@@ -6,6 +6,7 @@ use mareader_settings::WordOutput;
 use mareader_engine::toast::Toast;
 use mareader_engine::word_list::{Made, copied, file_stem};
 
+mod langs;
 pub mod preview;
 pub mod window;
 

@@ -245,14 +245,13 @@ impl Session {
         known
     }
 
-    /// Meanings' language: study's, else Explain's, if a pack has it.
+    /// Meanings' language: the Dictionary's selected one, a pack's or the
+    /// AI dictionary's, else (Automatic) the first there is.
     fn study_dict_language(&self) -> Option<String> {
         let ready = self.dict.languages();
-        let tasks = &self.settings.ai.tasks;
-        let wanted = [&tasks.study.language, &tasks.explain.language];
-        let has = |tag: &&str| ready.iter().any(|r| r == tag);
-        let picked = wanted.into_iter().filter_map(Option::as_deref).find(has);
-        picked.or_else(|| ready.first().copied()).map(str::to_owned)
+        let chosen = self.settings.dictionary.default_lang.as_ref();
+        let picked = chosen.filter(|l| ready.contains(l)).cloned();
+        picked.or_else(|| ready.into_iter().next())
     }
 }
 

@@ -139,7 +139,8 @@ impl<'a> DictView<'a> {
         self.service.ready()
     }
 
-    pub fn languages(&self) -> Vec<&'static str> {
+    /// Every dictionary language, the AI dictionary's too.
+    pub fn languages(&self) -> Vec<String> {
         self.service.languages()
     }
 

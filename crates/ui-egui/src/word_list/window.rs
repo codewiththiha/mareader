@@ -6,11 +6,10 @@ use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::{files::Files, icons::Icon, modal::Dialog, widgets};
 use egui::{Frame, RichText, ScrollArea, Ui, Vec2, vec2};
-use mareader_dict::PACKS;
 use mareader_engine::word_list::{Ask, Gather, Made, Progress};
-use mareader_engine::{command::Command, dict::Service as Dict, session::Session, settings::Tab};
+use mareader_engine::{command::Command, dict::Service as Dict, session::Session};
 use mareader_settings::{
-    Settings, WORD_LANGUAGES, WordGroup, WordLayout, WordList, WordOutput, WordPreset, WordSort,
+    Settings, WordGroup, WordLayout, WordList, WordOutput, WordPreset, WordSort,
 };
 use mareader_workspace::PaneId;
 
@@ -203,7 +202,7 @@ impl Open {
         let words = &mut draft.study.words;
         let list = &mut words.last;
         section(ui, "Languages", "Beside English, in column order");
-        languages(ui, list, dict, out, close);
+        super::langs::languages(ui, list, dict, out, close);
         section(ui, "Show", "");
         let f = &mut list.fields;
         row(ui, "CEFR level", &mut f.level);
@@ -468,82 +467,6 @@ fn save_preset(
     match words.presets.iter_mut().find(|p| p.name == name) {
         Some(p) => p.list = list,
         None => words.presets.push(WordPreset { name, list }),
-    }
-}
-
-/// The languages in column order, each movable, and one more to add.
-fn languages(ui: &mut Ui, list: &mut WordList, dict: &Dict, out: &mut Commands, close: &mut bool) {
-    let t = Tokens::get(ui.ctx());
-    let ready = dict.languages();
-    let mut act = None;
-    let n = list.languages.len();
-    for (i, lang) in list.languages.iter().enumerate() {
-        ui.horizontal(|ui| {
-            let name = mareader_dict::language(lang);
-            ui.label(format!("{}. {name}", i + 1));
-            if !ready.contains(&lang.as_str()) {
-                ui.label(
-                    RichText::new("not downloaded")
-                        .color(t.muted)
-                        .size(t.text_small),
-                );
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::small_icon_button(ui, Icon::Close, &format!("Remove {name}")).clicked()
-                {
-                    act = Some((i, None));
-                }
-                let down = ui.add_enabled_ui(i + 1 < n, |ui| {
-                    widgets::small_icon_button(ui, Icon::MoveDown, &format!("Move {name} down"))
-                });
-                if down.inner.clicked() {
-                    act = Some((i, Some(i + 1)));
-                }
-                let up = ui.add_enabled_ui(i > 0, |ui| {
-                    widgets::small_icon_button(ui, Icon::MoveUp, &format!("Move {name} up"))
-                });
-                if up.inner.clicked() {
-                    act = Some((i, Some(i.saturating_sub(1))));
-                }
-            });
-        });
-    }
-    match act {
-        Some((i, None)) if i < n => {
-            list.languages.remove(i);
-        }
-        Some((i, Some(j))) if i < n && j < n => list.languages.swap(i, j),
-        _ => {}
-    }
-    let left: Vec<&str> = (PACKS.iter())
-        .map(|p| p.target)
-        .filter(|l| !list.languages.iter().any(|x| x == l))
-        .collect();
-    if list.languages.len() < WORD_LANGUAGES && !left.is_empty() {
-        ui.menu_button("Add language", |ui| {
-            for lang in left {
-                let mut name = mareader_dict::language(lang);
-                if !ready.contains(&lang) {
-                    name.push_str(" · not downloaded");
-                }
-                if ui.button(name).clicked() {
-                    list.languages.push(lang.to_owned());
-                    ui.close();
-                }
-            }
-        });
-    }
-    if list.languages.is_empty() {
-        ui.label(RichText::new("No languages: the list holds the words alone.").color(t.muted));
-    }
-    if ready.is_empty() {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Download a dictionary to add meanings.").color(t.muted));
-            if ui.link("Dictionary settings").clicked() {
-                out.push(Sent::Engine(Command::OpenSettings(Tab::Dictionary)));
-                *close = true;
-            }
-        });
     }
 }
 

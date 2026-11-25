@@ -140,8 +140,10 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   Read-aloud stops when it reaches it. `Session::study_gate` answers it.
 - **Decks:** the gate batch's words are read, levelled, tagged when the
   tagger is there (a proper-noun tag drops the word) and given meanings by the
-  dictionary pack in study's language, else Explain's, else the first ready
-  pack. A dictionary deck holds only words the pack has: they are looked up
+  dictionary in the Dictionary's selected language (Settings › Dictionary ›
+  *Default language*; Automatic is the first one). That may be a language
+  only the AI dictionary keeps; its entries are then the deck's meanings.
+  A dictionary deck holds only words the dictionary has: they are looked up
   48 at a time, most seen first, until the deck is full, so no card has an
   empty back. A silent tagger is given up after 10 s and a silent
   dictionary after 20 s, ending the deck with the cards found (or an error

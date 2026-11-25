@@ -120,6 +120,7 @@ impl Session {
     }
 
     fn tick_dict_and_word_list(&mut self, tick: &mut Tick) {
+        self.dict.set_ai_first(self.settings.dictionary.ai_first);
         let (changed, mut replies) = self.dict_poll();
         if self.study_offers() {
             tick.repaint = true;

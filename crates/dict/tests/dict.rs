@@ -370,3 +370,24 @@ fn a_language_only_the_ai_dictionary_keeps_is_asked_like_a_packs() {
     let reply = ask(&mut dicts, look_up("walk", Some("de")));
     assert_eq!(reply.to.as_deref(), Some("my"), "a language none has");
 }
+
+#[test]
+fn a_word_list_reads_the_ai_dictionary_after_the_packs() {
+    let (_dir, mut dicts) = shelf();
+    let saved = vec![run("my", "ပြေး"), run("ru", "бежать")];
+    ask(&mut dicts, remember(saved, false));
+    let to = vec!["my".to_owned(), "ru".to_owned(), "de".to_owned()];
+    let query = Query::Words {
+        words: vec!["run".into()],
+        to,
+        near: false,
+    };
+    let reply = ask(&mut dicts, query);
+    let langs: Vec<&str> = reply.found.iter().map(|f| f.to.as_str()).collect();
+    assert_eq!(langs, ["my", "ru"], "no German anywhere");
+    let packs: Vec<&str> = reply.found[0].own.iter().map(|e| e.pack).collect();
+    let my = "mcfnlp-en-my";
+    assert_eq!(packs, [my, my, mareader_dict::AI_PACK]);
+    let ru: Vec<&str> = reply.found[1].own.iter().map(|e| e.answer()).collect();
+    assert_eq!(ru, ["бежать"]);
+}
