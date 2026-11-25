@@ -179,3 +179,116 @@ fn the_page_menu_folds_custom_skills_and_runs_one_on_the_page() -> Result<(), St
     );
     Ok(())
 }
+
+#[test]
+fn running_selection_hands_feedback_to_the_corner_when_away() {
+    use mareader_engine::activity::Key;
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    use mareader_ui_egui::activity::seen;
+
+    let mut h = reader(&[("pdf", "sample:12"), ("skill_answers", "silent")]);
+    h.run();
+    select(&mut h, "quick brown");
+    let pane = h.state().active_pane();
+    let skill = Skill::Builtin(PageTask::Simplify);
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.run_steps(30);
+    let ask = h.state().skills().asks().first().expect("the ask").id;
+    let key = Key::Skill { pane, ask };
+    assert!(seen::shown(&h.ctx, key), "the outline is in view");
+    assert!(
+        h.query_by_label(STACK).is_none(),
+        "no duplicate corner ring"
+    );
+    h.state_mut()
+        .queue(Sent::Engine(Command::GoTo { pane, page: 8 }));
+    h.run_steps(40);
+    assert!(!seen::shown(&h.ctx, key), "the outline is away");
+    assert!(h.query_by_label(STACK).is_some(), "the corner takes over");
+    h.state_mut()
+        .queue(Sent::Engine(Command::GoTo { pane, page: 0 }));
+    h.run_steps(40);
+    assert!(seen::shown(&h.ctx, key), "back at the outline");
+    assert!(h.query_by_label(STACK).is_none(), "the corner clears");
+    h.state_mut()
+        .set_option("skill_answers", "echo")
+        .expect("scripted answer");
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    h.run_steps(30);
+    assert!(
+        matches!(
+            h.state().skills().get(ask).map(|a| &a.answer),
+            Some(Answer::Ready(_))
+        ),
+        "retry completed"
+    );
+    h.state_mut()
+        .set_option("skill_answers", "silent")
+        .expect("silent answer");
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    h.run_steps(30);
+    assert!(seen::shown(&h.ctx, key), "retry restores the outline");
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.run_steps(10);
+    assert!(!seen::shown(&h.ctx, key), "closed, the outline is gone");
+}
+
+#[test]
+fn a_paragraph_in_a_reflowed_book_has_a_running_outline() {
+    use mareader_engine::activity::Key;
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    use mareader_ui_egui::activity::seen;
+
+    let mut h = reader(&[("epub", "sample:3"), ("skill_answers", "silent")]);
+    let pane = h.state().active_pane();
+    let doc = h.state().documents().reading(pane).expect("book").document;
+    let (number, text) = (0..doc.page_count())
+        .find_map(|number| {
+            let layer = doc.text_layer(number).ok()?;
+            let chars: Vec<char> = layer.text.chars().iter().map(|c| c.ch).collect();
+            let start = chars
+                .windows(5)
+                .position(|w| w == ['r', 'i', 'v', 'e', 'r'])?;
+            let text: String = chars.iter().skip(start).take(140).collect();
+            Some((number, text))
+        })
+        .expect("prose page");
+    h.state_mut()
+        .queue(Sent::Engine(Command::GoTo { pane, page: number }));
+    h.run_steps(30);
+    h.state_mut().queue(Sent::Engine(Command::SelectText {
+        pane,
+        page: number,
+        text,
+    }));
+    h.run_steps(30);
+    let selected = h
+        .state()
+        .documents()
+        .selection(pane)
+        .expect("paragraph selected");
+    let (layer, _) = page(&h, number).expect("page laid out");
+    let range = selected
+        .on_page(number, layer.text.len())
+        .expect("selection on page");
+    let boxes: Vec<_> = layer.text.line_boxes(range).collect();
+    assert!(
+        boxes.len() > 1,
+        "paragraph covers multiple lines: {boxes:?}"
+    );
+    let skill = Skill::Builtin(PageTask::Simplify);
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.run_steps(30);
+    let ask = h.state().skills().asks().first().expect("the ask").id;
+    assert!(
+        seen::shown(&h.ctx, Key::Skill { pane, ask }),
+        "the paragraph outline is in view"
+    );
+}

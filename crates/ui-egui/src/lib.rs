@@ -69,6 +69,7 @@ pub mod sidebar;
 pub mod sight;
 pub mod skill_card;
 pub mod skill_menu;
+mod skill_outline;
 pub mod sounds;
 pub mod space;
 pub mod study;

@@ -117,6 +117,11 @@ fn drift(t: f64) -> f32 {
 /// The colour `share` of the way round a short glow now, as a pane's
 /// glow wears it: the AI stack's folded ring matches the panes so.
 pub fn tint(ctx: &Context, tokens: &Tokens, share: f32) -> Color32 {
+    tint_fn(ctx, tokens)(share)
+}
+
+/// The same rainbow, captured once for many points on one outline.
+pub(crate) fn tint_fn(ctx: &Context, tokens: &Tokens) -> impl Fn(f32) -> Color32 {
     let light = Light::new(&tokens.glow);
     let t = ctx.input(|i| i.time);
     let phase = (t / f64::from(LAP.0)).rem_euclid(1.0) as f32;
@@ -124,9 +129,11 @@ pub fn tint(ctx: &Context, tokens: &Tokens, share: f32) -> Color32 {
         true => (0.0, 0.0),
         false => (head(phase), drift(t)),
     };
-    let rgb = light.hue(wander + share - at);
-    let [r, g, b] = rgb.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
-    Color32::from_rgb(r, g, b)
+    move |share| {
+        let rgb = light.hue(wander + share - at);
+        let [r, g, b] = rgb.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
+        Color32::from_rgb(r, g, b)
+    }
 }
 
 /// Glows painted in the last whole pass, for tests.

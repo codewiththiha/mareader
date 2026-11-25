@@ -17,7 +17,7 @@ use mareader_engine::study::words::{self, Asked};
 use mareader_engine::texts::TextLayers;
 use mareader_engine::triggers::ClipAction;
 use mareader_library::{BookId, Spot};
-use mareader_pdf::Bounds;
+use mareader_pdf::{Bounds, TextLayer};
 use mareader_session::{
     Anchor, DocId, Document, Entry, PageKey, Prime, Raster, RenderError, Selection, Typography,
     Want,
@@ -266,6 +266,11 @@ impl<'a> DocumentsView<'a> {
         let text: String = layer.text.chars().iter().map(|c| c.ch).collect();
         let from = text.get(..text.find(needle)?)?.chars().count();
         Some((page, from..from.saturating_add(needle.chars().count())))
+    }
+
+    /// A cached page's text, without starting a read during painting.
+    pub(crate) fn cached_layer(&self, pane: PaneId, page: usize) -> Option<Arc<TextLayer>> {
+        self.state.texts.get(self.state.place(pane)?.doc, page)
     }
 
     pub fn spans_rect(&self, pane: PaneId, spans: &[(usize, Range<usize>)]) -> Option<Rect> {

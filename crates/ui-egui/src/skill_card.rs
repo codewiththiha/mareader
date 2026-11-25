@@ -58,6 +58,7 @@ pub fn show(
 ) {
     let t = Tokens::get(ctx);
     for ask in asks {
+        crate::skill_outline::show(ctx, ask, panes, docs);
         let Some((at, room)) = in_view(ask, panes, docs) else {
             continue;
         };
@@ -65,7 +66,9 @@ pub fn show(
             pane: ask.pane,
             ask: ask.id,
         };
-        crate::activity::seen::watch(ctx, key, (room, at));
+        if matches!(ask.anchor, Anchor::Spot { .. }) || ask.answer.landed() {
+            crate::activity::seen::watch(ctx, key, (room, at));
+        }
         let chars = ask.asked_chars().max(ask.answer.text().chars().count());
         let bubble = Bubble {
             id: Id::new(("skill-card", ask.id.0)),
