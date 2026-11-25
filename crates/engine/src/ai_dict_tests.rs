@@ -103,3 +103,27 @@ fn a_differing_kept_meaning_raises_an_offer_until_taken() {
     assert!(!quiet, "saved, no offer");
     assert!(filing.take_offer(key).is_none());
 }
+
+#[test]
+fn ai_rows_lead_only_when_asked() {
+    let row = |pack: &'static str, ai: Option<Saved>| mareader_dict::Entry {
+        word: "brisk".into(),
+        pos: None,
+        definition: pack.into(),
+        romanization: None,
+        sense: None,
+        pack,
+        via: None,
+        fit: mareader_dict::WordMatch::Exact,
+        flipped: false,
+        ai: ai.map(Box::new),
+    };
+    let mut reply = Reply::default();
+    let ai = Some(Saved::default());
+    reply.entries = vec![row("pack", None), row("ai", ai)];
+    let packs = |r: &Reply| r.entries.iter().map(|e| e.pack).collect::<Vec<_>>();
+    lead(&mut reply, false);
+    assert_eq!(packs(&reply), ["pack", "ai"]);
+    lead(&mut reply, true);
+    assert_eq!(packs(&reply), ["ai", "pack"]);
+}

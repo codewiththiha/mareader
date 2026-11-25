@@ -120,9 +120,13 @@ impl Session {
     }
 
     fn tick_dict_and_word_list(&mut self, tick: &mut Tick) {
-        let (changed, replies) = self.dict_poll();
+        let (changed, mut replies) = self.dict_poll();
         if self.study_offers() {
             tick.repaint = true;
+        }
+        let ai_first = self.settings.dictionary.ai_first;
+        for reply in &mut replies {
+            crate::ai_dict::lead(reply, ai_first);
         }
         if changed || !replies.is_empty() {
             tick.repaint = true;

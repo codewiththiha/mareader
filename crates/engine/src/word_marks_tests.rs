@@ -26,6 +26,7 @@ fn entry(word: &str, pos: &str, definition: &str) -> Entry {
         via: None,
         fit: WordMatch::Exact,
         flipped: false,
+        ai: None,
     }
 }
 

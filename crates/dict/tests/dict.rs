@@ -323,3 +323,29 @@ fn ai_meanings_are_kept_on_disk_and_asked_by_word() {
     };
     assert!(ask(&mut dicts, japanese).saved.is_empty());
 }
+
+fn run(lang: &str, said: &str) -> Saved {
+    let word = "run".to_owned();
+    Saved {
+        word,
+        ..meaning("verb", lang, said)
+    }
+}
+
+#[test]
+fn a_card_shows_ai_meanings_after_the_packs_and_an_english_one_alone() {
+    let (_dir, mut dicts) = shelf();
+    let saved = vec![run("my", "ပြေး"), run("en", "move fast on foot")];
+    ask(&mut dicts, remember(saved, false));
+    let reply = ask(&mut dicts, look_up("Run", None));
+    let packs: Vec<&str> = reply.entries.iter().map(|e| e.pack).collect();
+    let my = "mcfnlp-en-my";
+    assert_eq!(packs, [my, my, mareader_dict::AI_PACK]);
+    assert_eq!(reply.saved.len(), 2, "both languages offered");
+    let reply = ask(&mut dicts, look_up("run", Some("en")));
+    let said: Vec<&str> = reply.entries.iter().map(|e| e.answer()).collect();
+    assert_eq!(said, ["move fast on foot"]);
+    assert_eq!(reply.to.as_deref(), Some("en"));
+    let ai = reply.entries[0].ai.as_deref();
+    assert_eq!(ai.map(|s| s.pos.as_str()), Some("verb"));
+}

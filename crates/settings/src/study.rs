@@ -396,7 +396,7 @@ impl StudySettings {
     }
 }
 
-/// Which dictionaries look words up, and how.
+/// Which dictionaries look words up, and how; `ai_first` shows AI rows first.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DictionarySettings {
@@ -418,6 +418,7 @@ pub struct DictionarySettings {
     pub window: DictionaryWindow,
     /// Words in other languages are said by the engine's voices for them.
     pub other_voices: bool,
+    pub ai_first: bool,
 }
 
 /// The reader's Dictionary: floating over the page, or the full page.
@@ -502,6 +503,7 @@ impl Default for DictionarySettings {
             opens: DictionaryOpens::Window,
             window: DictionaryWindow::default(),
             other_voices: true,
+            ai_first: false,
         }
     }
 }

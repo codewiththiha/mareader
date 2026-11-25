@@ -10,6 +10,7 @@
 
 pub mod activity;
 pub mod ai;
+pub mod ai_said;
 pub mod app;
 pub mod appearance_menu;
 pub mod backdrop;

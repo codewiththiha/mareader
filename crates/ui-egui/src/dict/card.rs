@@ -143,6 +143,7 @@ fn card(ui: &mut Ui, id: Id, view: &View<'_>, cap: f32, t: &Tokens, out: &mut Co
     let list = (cap - used).max(word_card::BODY_MIN);
     word_card::section(ui, word_card::PAD_Y, |ui| {
         body(ui, view.word, e, pair, (&mut p, list), t, out);
+        also_kept(ui, reply, t, out);
     });
     word_card::rule(ui, t);
     footer(ui, view, Some(e), (&mut p, n), t, out);
@@ -359,13 +360,38 @@ fn empty(
         });
     });
     let mut others: Vec<&str> = Vec::new();
-    for &code in view.languages {
-        let same = reply.from.as_deref() == Some(code) || reply.to.as_deref() == Some(code);
-        if !same && !others.contains(&code) {
+    let kept: Vec<&str> = reply.saved.iter().map(|s| s.lang.as_str()).collect();
+    for code in view.languages.iter().chain(&kept).copied() {
+        // The AI dictionary may hold an English word's English meaning.
+        let from = reply.from.as_deref() == Some(code) && !kept.contains(&code);
+        if !from && reply.to.as_deref() != Some(code) && !others.contains(&code) {
             others.push(code);
         }
     }
     empty_actions(ui, view.ai_ready, &others, false, t, out);
+}
+
+/// The other languages the AI dictionary keeps the word in, to turn to.
+fn also_kept(ui: &mut Ui, reply: &Reply, t: &Tokens, out: &mut Commands) {
+    let mut langs: Vec<&str> = Vec::new();
+    for s in &reply.saved {
+        if reply.to.as_deref() != Some(&s.lang) && !langs.contains(&s.lang.as_str()) {
+            langs.push(&s.lang);
+        }
+    }
+    if langs.is_empty() {
+        return;
+    }
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        muted(ui, t, "Your AI dictionary also has:");
+        for code in langs {
+            if word_card::action_pill(ui, None, &language(code), false, t).clicked() {
+                out.push(Sent::Ui(UiCommand::WordCardTryLang(code.to_owned())));
+            }
+        }
+    });
 }
 
 fn empty_actions(

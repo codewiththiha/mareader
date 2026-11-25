@@ -90,9 +90,10 @@ impl AiStore {
         found.map_err(|e| e.to_string())
     }
 
-    /// Every class kept for `word` in `lang`, the newest first.
-    pub fn word(&self, word: &str, lang: &str) -> Result<Vec<Saved>, String> {
-        let sql = format!("{SELECT} WHERE word_fold = ?1 AND lang = ?2 ORDER BY added DESC");
+    /// Every class kept for `word` in `lang`, or in any, the newest first.
+    pub fn word(&self, word: &str, lang: Option<&str>) -> Result<Vec<Saved>, String> {
+        let only = "(?2 IS NULL OR lang = ?2)";
+        let sql = format!("{SELECT} WHERE word_fold = ?1 AND {only} ORDER BY added DESC");
         let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![fold(word), lang], read)

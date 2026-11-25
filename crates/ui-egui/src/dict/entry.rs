@@ -28,6 +28,8 @@ pub fn answer_size(text: &str, t: &Tokens) -> f32 {
 pub fn sides(e: &Entry, to: Option<&str>) -> (String, String) {
     let pack = mareader_dict::PACKS.iter().find(|p| p.id == e.pack);
     let (source, target) = pack.map_or((HUB, HUB), |p| (p.source, p.target));
+    // An AI row answers in the language its meaning was written in.
+    let target = e.ai.as_ref().map_or(target, |s| s.lang.as_str());
     let (asked, answer) = match e.flipped {
         true => (target, source),
         false => (source, target),
@@ -52,6 +54,10 @@ pub fn heading(ui: &mut Ui, word: &str, t: &Tokens) {
 /// Tags, unless shown elsewhere, and source; the answer, romanization, sense.
 pub fn rows(ui: &mut Ui, e: &Entry, t: &Tokens, tags: bool) {
     meta(ui, e, t, tags);
+    if let Some(s) = &e.ai {
+        crate::ai_said::show(ui, (&s.meaning, &s.synonyms, &s.usages), t);
+        return;
+    }
     shaped::label(ui, e.answer(), answer_size(e.answer(), t), t.ink);
     if let Some(r) = e.romanization.as_deref().filter(|r| !r.is_empty()) {
         shaped::label(ui, r, t.text_small, t.muted);
@@ -73,7 +79,7 @@ pub fn tags(e: &Entry) -> String {
 /// Tags left, "via perfume" right; the tags give way, never the bridge.
 fn meta(ui: &mut Ui, e: &Entry, t: &Tokens, shown: bool) {
     let tags = if shown { tags(e) } else { String::new() };
-    if tags.is_empty() && e.via.is_none() {
+    if tags.is_empty() && e.via.is_none() && e.ai.is_none() {
         return;
     }
     let width = ui.available_width();
@@ -90,6 +96,9 @@ fn meta(ui: &mut Ui, e: &Entry, t: &Tokens, shown: bool) {
                     ui.add(label).on_hover_text(tip);
                 });
             }
+            if let Some(saved) = &e.ai {
+                ai_badge(ui, &saved.model, t);
+            }
             if !tags.is_empty() {
                 let lead = Layout::left_to_right(Align::Center);
                 ui.with_layout(lead, |ui| {
@@ -99,6 +108,14 @@ fn meta(ui: &mut Ui, e: &Entry, t: &Tokens, shown: bool) {
             }
         });
     });
+}
+
+/// "AI", for a row an AI wrote and this machine keeps.
+fn ai_badge(ui: &mut Ui, model: &str, t: &Tokens) {
+    let text = RichText::new("AI").size(t.text_small).strong();
+    let by = if model.is_empty() { "an AI" } else { model };
+    let tip = format!("Written by {by}; kept in this computer's AI dictionary");
+    ui.add(Label::new(text.color(t.accent))).on_hover_text(tip);
 }
 
 /// "via" quiet, the English word between a shade stronger.

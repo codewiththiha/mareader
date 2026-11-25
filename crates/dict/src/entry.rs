@@ -1,5 +1,6 @@
 //! One dictionary row as the reader sees it, and the order rows show in.
 
+use crate::ai::Saved;
 use crate::search::{WordMatch, fold};
 
 /// One answer, whichever pack gave it.
@@ -21,6 +22,8 @@ pub struct Entry {
     pub fit: WordMatch,
     /// Asked from the definition side: the answer is the headword.
     pub flipped: bool,
+    /// The whole entry, on a row from the AI dictionary.
+    pub ai: Option<Box<Saved>>,
 }
 
 impl Entry {
@@ -74,6 +77,7 @@ mod tests {
             via: None,
             fit,
             flipped: false,
+            ai: None,
         }
     }
 

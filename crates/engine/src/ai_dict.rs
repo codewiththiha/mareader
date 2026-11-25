@@ -19,6 +19,14 @@ use crate::study::state::Key;
 /// Explain filings whose replies are awaited at most.
 const AWAITED: usize = 16;
 
+/// A card's rows with the AI dictionary's first, when the reader says so;
+/// the packs' rows lead otherwise.
+pub fn lead(reply: &mut Reply, ai_first: bool) {
+    if ai_first {
+        reply.entries.sort_by_key(|e| e.ai.is_none());
+    }
+}
+
 /// A deck card's back as the AI dictionary keeps it, under its lemma.
 pub fn of_back(wanted: &Wanted, back: &Written, (by, language): (&str, &str)) -> Option<Saved> {
     let pos = back.pos.or(wanted.key.pos)?;

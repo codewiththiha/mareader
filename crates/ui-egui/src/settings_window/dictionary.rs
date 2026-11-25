@@ -87,17 +87,7 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
         }
     });
     note(ui, "The Dictionary button and Cmd/Ctrl+Shift+D open it so.");
-    section(ui, "Lookup card");
-    group(ui, |ui| {
-        default_language(ui, s, &dict.ready());
-        divider(ui);
-        let hint = "With no entry for a word, the closest ones in its place";
-        switch_row(ui, "Show near matches", hint, &mut s.near);
-    });
-    note(
-        ui,
-        "The card answers in this language. Only a language whose pack is downloaded is offered.",
-    );
+    lookup_card(ui, s, dict);
     section(ui, "Saying words");
     group(ui, |ui| {
         let hint = "A word in another language is said by a voice downloaded for it";
@@ -106,6 +96,24 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
     note(
         ui,
         "Only voices of the engine in use. Each may sound unlike yours.",
+    );
+}
+
+/// The card's language, near matches and which dictionary leads.
+fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
+    section(ui, "Lookup card");
+    group(ui, |ui| {
+        default_language(ui, s, &dict.ready());
+        divider(ui);
+        let hint = "With no entry for a word, the closest ones in its place";
+        switch_row(ui, "Show near matches", hint, &mut s.near);
+        divider(ui);
+        let hint = "Meanings AI wrote on this computer show before the packs' rows";
+        switch_row(ui, "AI dictionary first", hint, &mut s.ai_first);
+    });
+    note(
+        ui,
+        "The card answers in this language. Only a language whose pack is downloaded is offered.",
     );
 }
 

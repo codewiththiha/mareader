@@ -29,7 +29,8 @@ fn a_meaning_is_kept_by_word_class_and_language() {
     }
     let got = store.get("BOOK", " Noun ", "en").unwrap();
     assert_eq!(got.as_ref(), Some(&noun), "folded word, trimmed class");
-    assert_eq!(store.word("book", "en").unwrap().len(), 2, "two classes");
+    assert_eq!(store.word("book", Some("en")).unwrap().len(), 2, "two");
+    assert_eq!(store.word("book", None).unwrap().len(), 3, "any language");
     assert_eq!(store.get("book", "adjective", "en").unwrap(), None);
 }
 

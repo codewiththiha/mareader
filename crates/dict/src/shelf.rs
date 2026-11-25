@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::ai::Saved;
+use crate::ai::{AI_PACK, Saved};
 use crate::ai_store::{AiStore, file};
 use crate::entry::{Entry, order};
 use crate::lang;
@@ -112,7 +112,7 @@ impl Shelf {
     fn remembered(&mut self, words: &[String], lang: &str) -> Reply {
         let mut reply = Reply::new(0);
         let found = self.ai().and_then(|ai| {
-            let each = words.iter().map(|w| ai.word(w, lang));
+            let each = words.iter().map(|w| ai.word(w, Some(lang)));
             each.collect::<Result<Vec<_>, _>>()
         });
         match found {
@@ -123,19 +123,27 @@ impl Shelf {
     }
 
     /// A card's ask: from the word's language to `to`, else another.
+    ///
+    /// An English word's AI dictionary entries in that language follow
+    /// the packs' rows; a language only the AI dictionary has, English
+    /// included, may be asked too. The reply's `saved` holds every entry
+    /// kept for the word, so a card can offer their languages.
     pub fn look_up(&mut self, word: &str, to: Option<&str>) -> Reply {
         let ready = self.ready();
         let langs = languages(&ready);
         let from = lang::detect(word, &langs).unwrap_or(HUB);
+        let kept = self.kept(word, from);
+        let kept_in = |t: &str| kept.iter().any(|s| s.lang == t);
         let to = to
-            .filter(|t| *t != from && langs.contains(t))
-            .or_else(|| langs.iter().copied().find(|l| *l != from));
+            .filter(|t| (*t != from && langs.contains(t)) || kept_in(t))
+            .or_else(|| langs.iter().copied().find(|l| *l != from))
+            .or_else(|| kept.first().map(|s| s.lang.as_str()))
+            .map(str::to_owned);
         let mut reply = Reply::new(ready.len());
         let Some(to) = to else {
             return reply;
         };
-        (reply.from, reply.to) = (Some(from.to_owned()), Some(to.to_owned()));
-        for plan in plans(from, to, &ready) {
+        for plan in plans(from, &to, &ready) {
             let rows = self.run(&plan, word, Depth::Card, CARD_ROWS, &mut reply.failed);
             if !rows.is_empty() {
                 reply.entries = rows;
@@ -143,7 +151,20 @@ impl Shelf {
             }
         }
         order(&mut reply.entries, CARD_ROWS);
+        let own = kept.iter().filter(|s| s.lang == to);
+        reply.entries.extend(own.map(ai_entry));
+        (reply.from, reply.to, reply.saved) = (Some(from.to_owned()), Some(to), kept);
         reply
+    }
+
+    /// What the AI dictionary keeps for an English word, in any language;
+    /// nothing before it was first written to.
+    fn kept(&mut self, word: &str, from: &str) -> Vec<Saved> {
+        if from != HUB || (self.ai.is_none() && !file(&self.dir).is_file()) {
+            return Vec::new();
+        }
+        let kept = self.ai().and_then(|ai| ai.word(word, None));
+        kept.unwrap_or_default()
     }
 
     /// Each word's rows in each language of `to` a pack has.
@@ -316,5 +337,22 @@ fn entry(r: Row, pack: &'static Pack, flipped: bool, via: Option<String>) -> Ent
         via,
         fit: r.fit,
         flipped,
+        ai: None,
+    }
+}
+
+/// An AI dictionary entry as a card row.
+fn ai_entry(saved: &Saved) -> Entry {
+    Entry {
+        word: saved.word.clone(),
+        pos: Some(saved.pos.clone()),
+        definition: saved.meaning.clone(),
+        romanization: None,
+        sense: None,
+        pack: AI_PACK,
+        via: None,
+        fit: WordMatch::Exact,
+        flipped: false,
+        ai: Some(Box::new(saved.clone())),
     }
 }
