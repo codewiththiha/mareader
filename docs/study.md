@@ -537,6 +537,11 @@ meaning: the book's language (the default) or one of 40 listed ones.
   the word's own language, English for an English word, never the chosen
   one (owner). The prompt says so, and so do the schema's
   descriptions of synonyms and usages.
+- Three pickers name a language, and each one's hint says which cards it
+  sets: Settings › Dictionary › *Default language* (lookup cards, word
+  lists, dictionary decks), Settings › AI › *Meaning in* (Explain) and
+  Settings › Study mode › *Cards in* (AI decks). The Dictionary tab's note
+  points to the other two.
 - Study cards follow the same rule in Settings › Study › *Cards in*: the
   prompt, the request and the schema's `meaning` all name the language,
   and synonyms and the usage are asked in English. Before, only the

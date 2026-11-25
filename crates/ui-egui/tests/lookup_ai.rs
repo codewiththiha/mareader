@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use egui::accesskit::Role;
-use egui_kittest::kittest::Queryable as _;
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use mareader_dict::{Dictionaries, Query, Saved, language_code};
 use mareader_engine::command::Command;
 use mareader_ui_egui::dict::ai_edit;
@@ -243,6 +243,12 @@ fn settings_clear_one_language_from_the_ai_dictionary() {
     h.state_mut().queue(open);
     h.run();
     h.get_by_label("AI dictionary");
+    h.get_by_label(mareader_ui_egui::settings_window::ELSEWHERE);
+    let clears = h.query_all_by_label_contains("Clear: ");
+    let labels = clears.filter_map(|n| n.accesskit_node().label());
+    let rows: Vec<String> = labels.collect();
+    let names: Vec<String> = rows.iter().map(|l| l.replace("Clear: ", "")).collect();
+    assert_eq!(names, ["Burmese", "English", "Russian"], "by name");
     h.get_by_label("Clear: Russian").click();
     h.run();
     h.get_by_label("Keep").click();

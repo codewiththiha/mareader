@@ -17,6 +17,9 @@ use crate::widgets;
 use mareader_engine::command::Command;
 use mareader_engine::dict::{Action, Download, Service as DictService};
 
+/// Where the languages AI writes in are picked.
+pub const ELSEWHERE: &str = "AI writes Explain's meanings in AI › Meaning in, and AI \
+                             decks in Study mode › Cards in.";
 /// The fold of packs not on this device, beside some that are.
 pub const MORE_LANGUAGES: &str = "More languages";
 /// The same fold while no pack is on this device.
@@ -95,10 +98,11 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
 
 /// The AI dictionary's languages, each cleared on a second press.
 fn ai_dictionary(ui: &mut Ui, dict: &DictService, out: &mut Commands) {
-    let langs = dict.ai_languages();
+    let mut langs = dict.ai_languages().to_vec();
     if langs.is_empty() {
         return;
     }
+    langs.sort_by_key(|l| language(l));
     section(ui, "AI dictionary");
     group(ui, |ui| {
         for (i, lang) in langs.iter().enumerate() {
@@ -167,6 +171,7 @@ fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
     let why = "The card answers in this language. A language is offered once its pack is \
                downloaded, or once the AI dictionary keeps a meaning in it.";
     note(ui, why);
+    note(ui, ELSEWHERE);
 }
 
 /// A pack named by its language; buttons keep the full "English → X".
@@ -239,7 +244,7 @@ fn default_language(ui: &mut Ui, s: &mut DictionarySettings, offered: &[String])
     row(
         ui,
         "Default language",
-        "What the card translates into",
+        "Lookup cards, word lists and dictionary decks answer in it",
         |ui| {
             ui.add_enabled_ui(!offered.is_empty(), |ui| {
                 widgets::combo("dict-default-lang")

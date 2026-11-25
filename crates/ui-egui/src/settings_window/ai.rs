@@ -143,7 +143,8 @@ fn dictionary(ui: &mut Ui, ai: &mut AiSettings, (h, gloss): Looks<'_>, board: Op
             look_rows(ui, h, gloss);
         }
         divider(ui);
-        let tip = "The meaning's language; examples stay in the book's";
+        let tip = "Explain's meaning, kept in the AI dictionary; synonyms and examples stay \
+                   in the word's language. Lookups answer in Dictionary › Default language";
         row(ui, "Meaning in", tip, |ui| {
             let meaning = &mut ai.tasks.explain.language;
             language_picker(
