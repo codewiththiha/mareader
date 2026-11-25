@@ -1,6 +1,6 @@
 //! Made-up studied words in the first books, so shots and tests fill Space.
 
-use mareader_library::{BookId, LearnedBy, Library, NewWord, WordStatus};
+use mareader_library::{BookId, LearnedBy, Library, MeaningBy, NewWord, WordStatus};
 
 const DAY_MS: u64 = 86_400_000;
 /// Taken in turn, so every tab has words.
@@ -70,6 +70,9 @@ const WORDS: [(&str, &str, u8, &str, &str); 8] = [
     ),
 ];
 
+/// Who wrote the meanings, in turn; older rows don't say.
+const WRITERS: [Option<MeaningBy>; 3] = [Some(MeaningBy::Dictionary), Some(MeaningBy::Ai), None];
+
 /// Studies the words in the first three books; how many were kept.
 ///
 /// Statuses take turns, every other word was recalled, and the first two
@@ -87,6 +90,7 @@ pub(crate) fn seed(model: &mut Library, now_ms: u64) -> usize {
             form: lemma.to_owned(),
             context: context.to_owned(),
             meaning: meaning.to_owned(),
+            meaning_by: WRITERS.get(i % WRITERS.len()).copied().flatten(),
             by: if recalled {
                 LearnedBy::Reactive
             } else {

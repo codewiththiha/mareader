@@ -405,7 +405,9 @@ button, the Library button or Escape go back.
 - **Rows:** *With books* lists a row per book that met the word; *Merged*
   folds a word's books into one row, newest first, its tries summed.
 - **The rail:** the books with their counts, B1 to C2, *Learned by* (Any,
-  Cards, Recall) and the part of speech. No level picked shows every level.
+  Cards, Recall), *Meaning from* (Any, Dictionary, AI) and the part of
+  speech. No level picked shows every level. Words kept before a row knew
+  who wrote its meaning show only under Any.
 - **The head:** a search over the word, its meaning and its sentence;
   *Export CSV*; the status tabs, each counted after every other filter.
 - **Stats:** memorized words of those met, first-try answers of the

@@ -19,6 +19,7 @@ fn word(lemma: &str, status: WordStatus) -> NewWord {
         form: format!("{lemma}s"),
         context: format!("Two {lemma}s stood by the door."),
         meaning: "a meaning".into(),
+        meaning_by: Some(crate::MeaningBy::Dictionary),
         by: LearnedBy::Proactive,
         status,
         tries: 0,
@@ -163,4 +164,30 @@ fn two_machines_meeting_one_word_merge_either_way() {
     let mut twice = left.clone();
     twice.merge(right);
     assert_eq!(twice, left, "idempotent");
+}
+
+#[test]
+fn who_wrote_a_meaning_is_kept_and_older_rows_say_nothing() {
+    use crate::MeaningBy::Ai;
+    let mut lib = Library::new(A);
+    let one = book(&mut lib, "/a.epub", 1);
+    let written = NewWord {
+        meaning_by: Some(Ai),
+        ..word("lintel", WordStatus::Learning)
+    };
+    lib.record_word(one, written, 1_000);
+    let seen = |lib: &Library| lib.sightings(one).into_iter().next().cloned().unwrap();
+    assert_eq!(seen(&lib).meaning_by.value, Some(Ai));
+    let blank = NewWord {
+        meaning: String::new(),
+        meaning_by: None,
+        ..word("lintel", WordStatus::Learning)
+    };
+    lib.record_word(one, blank, 2_000);
+    let kept = seen(&lib).meaning_by.value;
+    assert_eq!(kept, Some(Ai), "no meaning, no change");
+    let mut row = serde_json::to_value(seen(&lib)).unwrap();
+    row.as_object_mut().unwrap().remove("meaning_by");
+    let older: crate::WordSighting = serde_json::from_value(row).unwrap();
+    assert_eq!(older.meaning_by.value, None);
 }

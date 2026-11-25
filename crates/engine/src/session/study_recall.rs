@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use mareader_library::{BookId, LearnedBy, Library, NewWord, WordStatus};
+use mareader_library::{BookId, LearnedBy, Library, MeaningBy, NewWord, WordStatus};
 use mareader_session::TextLayer;
 use mareader_study::mode::{Done, Judge, Key, Mode, Outcome, Pos};
 use mareader_workspace::PaneId;
@@ -19,6 +19,7 @@ use super::Session;
 use crate::event::Event;
 use crate::library::wall_ms;
 use crate::study::words::{asked_at, read};
+use crate::study_mode::backs::said;
 use crate::study_mode::deck_job::Tags;
 use crate::study_mode::sightings::{Read, sentence_of};
 use crate::study_mode::{self as mode, Ask, Recalling, Word};
@@ -223,6 +224,7 @@ fn keep(model: &mut Library, book: BookId, recalling: &Recalling, done: Done) {
         band: word.band,
         form: word.form.clone(),
         context: word.sentence.clone(),
+        meaning_by: meaning.as_deref().and_then(|m| said(m, MeaningBy::Ai)),
         meaning: meaning.unwrap_or_default(),
         by: LearnedBy::Reactive,
         status,

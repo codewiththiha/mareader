@@ -91,8 +91,10 @@ fn passes(m: &Met<'_>, f: &Filter, needle: &str) -> bool {
     let book = f.book.is_none_or(|b| b == m.seen.book.value);
     let level = f.levels.is_empty() || f.levels.contains(&m.word.band);
     let by = f.by.is_none_or(|by| by == m.seen.by.value);
+    let wrote = f.meaning_by.is_none() || f.meaning_by == m.seen.meaning_by.value;
     let pos = f.pos.is_none() || f.pos == m.word.pos;
-    book && level && by && pos && (needle.is_empty() || finds(m, needle))
+    let picked = book && level && by && wrote && pos;
+    picked && (needle.is_empty() || finds(m, needle))
 }
 
 fn finds(m: &Met<'_>, needle: &str) -> bool {

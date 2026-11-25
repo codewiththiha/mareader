@@ -32,6 +32,16 @@ pub enum LearnedBy {
     Reactive,
 }
 
+/// Who wrote a sighting's meaning; rows from before it knew are unknown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeaningBy {
+    /// A downloaded dictionary pack.
+    Dictionary,
+    /// An AI model, now or kept earlier in the AI dictionary.
+    Ai,
+}
+
 /// One word for the reader, by lemma and class, in every book.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WordState {
@@ -62,6 +72,8 @@ pub struct WordSighting {
     /// The book's sentence around it.
     pub context: Field<String>,
     pub meaning: Field<String>,
+    #[serde(default, skip_serializing_if = "Field::is_unset")]
+    pub meaning_by: Field<Option<MeaningBy>>,
     /// Answers given the last time it was asked; 0 for a card.
     pub tries: Field<u8>,
     pub first_try: Field<bool>,
@@ -82,6 +94,7 @@ pub struct NewWord {
     pub form: String,
     pub context: String,
     pub meaning: String,
+    pub meaning_by: Option<MeaningBy>,
     pub by: LearnedBy,
     pub status: WordStatus,
     pub tries: u8,
@@ -218,6 +231,7 @@ impl Library {
                 form: Field::new(new.form, at),
                 context: Field::new(new.context, at),
                 meaning: Field::new(new.meaning, at),
+                meaning_by: Field::new(new.meaning_by, at),
                 tries: Field::new(new.tries, at),
                 first_try: Field::new(new.first_try, at),
                 added: wall_ms,
@@ -234,6 +248,7 @@ impl Library {
         }
         if !new.meaning.is_empty() {
             put(&mut seen.meaning, new.meaning, at);
+            put(&mut seen.meaning_by, new.meaning_by, at);
         }
         put(&mut seen.by, new.by, at);
         put(&mut seen.tries, new.tries, at);
@@ -322,6 +337,7 @@ impl Library {
             seen.form = Field::new(String::new(), at);
             seen.context = Field::new(String::new(), at);
             seen.meaning = Field::new(String::new(), at);
+            seen.meaning_by = Field::new(None, at);
         }
     }
 }
@@ -349,6 +365,7 @@ impl Merge for WordSighting {
         self.form.merge(other.form);
         self.context.merge(other.context);
         self.meaning.merge(other.meaning);
+        self.meaning_by.merge(other.meaning_by);
         self.tries.merge(other.tries);
         self.first_try.merge(other.first_try);
         self.seen.merge(other.seen);
@@ -363,6 +380,7 @@ impl Merge for WordSighting {
             self.form.at,
             self.context.at,
             self.meaning.at,
+            self.meaning_by.at,
             self.tries.at,
             self.first_try.at,
             self.seen.at,

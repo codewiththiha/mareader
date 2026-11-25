@@ -1,10 +1,10 @@
-//! The rail down Space's left side: the books, levels, learner and word
-//! class that narrow the rows.
+//! The rail down Space's left side: the books, levels, learner, who wrote
+//! the meaning and word class that narrow the rows.
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{Align2, Color32, CursorIcon, FontId, Rect, Sense, Ui, WidgetInfo, WidgetType, vec2};
 use mareader_engine::space::{BANDS, Filter, Shelf as Book, View};
-use mareader_library::{BookId, LearnedBy};
+use mareader_library::{BookId, LearnedBy, MeaningBy};
 
 use super::look;
 use crate::icons::Icon;
@@ -14,6 +14,8 @@ use crate::widgets;
 const CARDS: Option<LearnedBy> = Some(LearnedBy::Proactive);
 const RECALL: Option<LearnedBy> = Some(LearnedBy::Reactive);
 const LEARNERS: [Option<LearnedBy>; 3] = [None, CARDS, RECALL];
+const LOOKED_UP: Option<MeaningBy> = Some(MeaningBy::Dictionary);
+const WRITERS: [Option<MeaningBy>; 3] = [None, LOOKED_UP, Some(MeaningBy::Ai)];
 const ROW_H: f32 = 40.0;
 /// A level chip's size.
 const CHIP: egui::Vec2 = vec2(46.0, 32.0);
@@ -32,6 +34,10 @@ pub(super) fn show(ui: &mut Ui, view: &View, filter: &mut Filter, t: &Tokens) {
     look::caption(ui, "Learned by", t);
     let by = &mut filter.by;
     widgets::segments_of(ui, 34.0, by, &LEARNERS, 3, |by| (None, learner(by)));
+    ui.add_space(14.0);
+    look::caption(ui, "Meaning from", t);
+    let wrote = &mut filter.meaning_by;
+    widgets::segments_of(ui, 34.0, wrote, &WRITERS, 3, |w| (None, writer(w)));
     ui.add_space(14.0);
     look::caption(ui, "Part of speech", t);
     class(ui, &view.poses, &mut filter.pos);
@@ -182,6 +188,14 @@ fn learner(by: Option<LearnedBy>) -> &'static str {
         None => "Any",
         Some(LearnedBy::Proactive) => "Cards",
         Some(LearnedBy::Reactive) => "Recall",
+    }
+}
+
+fn writer(by: Option<MeaningBy>) -> &'static str {
+    match by {
+        None => "Any",
+        Some(MeaningBy::Dictionary) => "Dictionary",
+        Some(MeaningBy::Ai) => "AI",
     }
 }
 

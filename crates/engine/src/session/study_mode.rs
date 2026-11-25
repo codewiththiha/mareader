@@ -458,6 +458,7 @@ fn record(model: &mut Library, book: BookId, shown: &Shown, status: WordStatus) 
         form: card.form.clone(),
         context: card.sentence.clone(),
         meaning: shown.meaning.clone(),
+        meaning_by: shown.by,
         status,
         ..NewWord::default()
     };

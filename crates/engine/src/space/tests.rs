@@ -42,8 +42,13 @@ fn shelf() -> Library {
     let (dune, emma) = (book(&mut lib, "Dune", 1), book(&mut lib, "Emma", 2));
     lib.record_word(dune, noun("lintel", 5), OCT);
     lib.record_word(emma, noun("lintel", 5), NOV);
-    let sconce = lib.record_word(dune, noun("sconce", 4), NOV);
+    let looked_up = NewWord {
+        meaning_by: Some(MeaningBy::Dictionary),
+        ..noun("sconce", 4)
+    };
+    let sconce = lib.record_word(dune, looked_up, NOV);
     let asked = |lemma, band, tries, first_try| NewWord {
+        meaning_by: Some(MeaningBy::Ai),
         by: LearnedBy::Reactive,
         status: WordStatus::Missed,
         tries,
@@ -157,6 +162,21 @@ fn filters_narrow_by_book_level_class_learner_and_words() {
     };
     assert_eq!(only(typed), "sconce");
     assert_eq!(view(&lib, &az(Scope::Books)).poses, ["noun"]);
+}
+
+#[test]
+fn who_wrote_the_meaning_narrows_and_older_rows_show_only_for_any() {
+    let lib = shelf();
+    let only = |by: Option<MeaningBy>| {
+        let filter = Filter {
+            meaning_by: by,
+            ..az(Scope::Merged)
+        };
+        lemmas(&view(&lib, &filter)).join(" ")
+    };
+    assert_eq!(only(Some(MeaningBy::Ai)), "arcane gaunt");
+    assert_eq!(only(Some(MeaningBy::Dictionary)), "sconce");
+    assert_eq!(only(None), "arcane gaunt lintel sconce");
 }
 
 #[test]

@@ -11,6 +11,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 use mareader_dict::Entry;
+use mareader_library::MeaningBy;
 use mareader_study::mode::{Card, CardWriter, Key, Pos, Wanted, Written};
 
 /// Definitions one card shows at most.
@@ -26,11 +27,15 @@ pub struct Shown {
     /// The AI's synonyms and example; the dictionary gives none.
     pub synonyms: Vec<String>,
     pub usage: String,
+    /// Who wrote the meaning; none when it is empty.
+    pub by: Option<MeaningBy>,
 }
 
 impl Shown {
+    /// A card with a dictionary's meaning.
     pub fn new(card: Card, meaning: String) -> Self {
         Self {
+            by: said(&meaning, MeaningBy::Dictionary),
             card,
             meaning,
             synonyms: Vec::new(),
@@ -41,12 +46,18 @@ impl Shown {
     pub(crate) fn written(card: Card, back: Option<Written>) -> Self {
         let back = back.unwrap_or_default();
         Self {
+            by: said(&back.meaning, MeaningBy::Ai),
             card,
             meaning: back.meaning,
             synonyms: back.synonyms,
             usage: back.usage,
         }
     }
+}
+
+/// `by`, when `meaning` says something.
+pub(crate) fn said(meaning: &str, by: MeaningBy) -> Option<MeaningBy> {
+    (!meaning.trim().is_empty()).then_some(by)
 }
 
 /// Who writes a deck's backs, and the backs written before.
@@ -124,6 +135,12 @@ pub fn meaning_of(entries: &[Entry], pos: Option<Pos>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_meaning_that_says_something_names_who_wrote_it() {
+        assert_eq!(said(" lively ", MeaningBy::Ai), Some(MeaningBy::Ai));
+        assert_eq!(said("  ", MeaningBy::Dictionary), None);
+    }
 
     #[test]
     fn backs_are_kept_by_card_sentence_and_writer() {

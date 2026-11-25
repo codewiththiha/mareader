@@ -13,7 +13,7 @@ mod seed;
 mod seed_marks;
 mod tally;
 
-use mareader_library::{BookId, Format, LearnedBy, WordId, WordStatus};
+use mareader_library::{BookId, Format, LearnedBy, MeaningBy, WordId, WordStatus};
 
 pub use csv::{CSV_NAME, csv};
 pub use notes::{Kept, NoteGroup, NoteRow, NotesFilter, NotesView, notes};
@@ -157,6 +157,8 @@ pub struct Filter {
     /// CEFR bands, 1 (A1) to 6 (C2).
     pub levels: Vec<u8>,
     pub by: Option<LearnedBy>,
+    /// Who wrote the meaning; older rows, which don't say, show only for none.
+    pub meaning_by: Option<MeaningBy>,
     pub pos: Option<String>,
     pub tab: Tab,
     pub scope: Scope,
