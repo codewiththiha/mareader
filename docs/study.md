@@ -162,7 +162,9 @@ be kept on this machine and used again, beside the downloaded packs.
   without that click. A word the AI marks book-only (a name, a made-up
   word), or one with no class, is never kept.
 - **Language.** The meaning's language is the writer's (Explain's or
-  study's), as a code (`language_code`), English when none is set.
+  study's), as a code (`language_code`), English when none is set. A
+  variant joins its language's pack: Chinese (Simplified) and Chinese
+  (Traditional) both extend the Chinese pack, which holds both scripts.
 - **Lookup cards.** The AI dictionary is one more dictionary (owner,
   2026-11-25). An English word's kept entries in the card's language
   follow the packs' rows, laid out as the AI card is (meaning, synonym

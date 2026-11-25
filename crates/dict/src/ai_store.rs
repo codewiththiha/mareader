@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS saved (
     PRIMARY KEY (word_fold, pos, lang)
 );";
 
+/// Chinese variants kept apart before they joined the `zh` pack; a
+/// variant whose word and class `zh` already keeps goes.
+const MERGE: &str = "
+UPDATE OR IGNORE saved SET lang = 'zh' WHERE lang LIKE 'chinese (%';
+DELETE FROM saved WHERE lang LIKE 'chinese (%';";
+
 /// The file beside the packs in `dir`.
 pub fn file(dir: &Path) -> PathBuf {
     dir.join(FILE)
@@ -50,6 +56,7 @@ impl AiStore {
     pub fn open(path: &Path) -> Result<Self, String> {
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
         conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
+        conn.execute_batch(MERGE).map_err(|e| e.to_string())?;
         let sql = "INSERT OR IGNORE INTO meta (key, value) VALUES ('layout', ?1)";
         conn.execute(sql, [LAYOUT]).map_err(|e| e.to_string())?;
         let sql = "SELECT value FROM meta WHERE key = 'layout'";
