@@ -190,8 +190,9 @@ be kept on this machine and used again, beside the downloaded packs.
   meaning.
 - **Editing.** A pencil beside the "AI" mark, on the lookup card and on
   the Dictionary page, opens the entry's editor (`dict/ai_edit.rs`): word,
-  class, language (by name, in any case), meaning, synonyms separated by
-  commas and usages one a line. When the new word, class and language are
+  class (picked from the classes cards name), language (picked from those
+  the AI writes in), meaning, synonyms separated by commas and usages one
+  a line. A class or language outside those lists stays a choice. When the new word, class and language are
   another entry's, Save asks *Replace it* or *Keep editing* and changes
   nothing until answered. Delete asks once more (*Delete for good*). The
   card and the page show the change at once.

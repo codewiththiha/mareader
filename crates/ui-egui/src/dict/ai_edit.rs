@@ -1,10 +1,12 @@
 //! The AI dictionary's entry editor: every field, a delete, and a question
 //! before an edit takes the place of another entry.
 
-use egui::{Align, Context, Layout, Rect, RichText, Sense, Ui, Vec2, vec2};
+use egui::{Align, Context, Layout, Rect, RichText, Sense, Ui, Vec2, WidgetInfo, WidgetType, vec2};
 use mareader_dict::{Saved, language, language_code};
 use mareader_engine::command::Command;
 use mareader_engine::dict::{Action, Edited};
+use mareader_settings::LANGUAGES;
+use mareader_study::Pos;
 
 use super::{DictUi, entry};
 use crate::icons::Icon;
@@ -20,13 +22,19 @@ pub const SAVE: &str = "Save";
 pub const DELETE: &str = "Delete";
 pub const DELETE_SURE: &str = "Delete for good";
 pub const REPLACE: &str = "Replace it";
+pub const CLASS: &str = "Class";
+pub const LANGUAGE: &str = "Language";
 
 /// An AI entry open for editing: its old self, and each field as typed.
 pub struct Editor {
     old: Saved,
     word: String,
+    /// One of `classes`, as stored.
     class: String,
+    /// One of `languages`, by code.
     language: String,
+    classes: Vec<String>,
+    languages: Vec<String>,
     meaning: String,
     synonyms: String,
     usages: String,
@@ -41,7 +49,9 @@ impl Editor {
         Self {
             word: old.word.clone(),
             class: old.pos.clone(),
-            language: language(&old.lang),
+            language: old.lang.clone(),
+            classes: classes(&old.pos),
+            languages: languages(&old.lang),
             meaning: old.meaning.clone(),
             synonyms: old.synonyms.join(", "),
             usages: old.usages.join("\n"),
@@ -55,8 +65,8 @@ impl Editor {
     pub fn edited(&self) -> Saved {
         Saved {
             word: self.word.trim().to_owned(),
-            pos: self.class.trim().to_lowercase(),
-            lang: language_code(self.language.trim()),
+            pos: self.class.clone(),
+            lang: self.language.clone(),
             meaning: self.meaning.trim().to_owned(),
             synonyms: list(&self.synonyms, ','),
             usages: list(&self.usages, '\n'),
@@ -75,6 +85,28 @@ impl Editor {
         let blank = fields.into_iter().find(|(f, _)| f.trim().is_empty());
         blank.map(|(_, name)| name)
     }
+}
+
+/// The classes cards name; `old`, when none of them, stays one.
+fn classes(old: &str) -> Vec<String> {
+    let names = Pos::ALL.map(|p| p.name().to_owned());
+    keep(names.into_iter(), old)
+}
+
+/// Each language the AI writes in, by stored code, and `old`.
+fn languages(old: &str) -> Vec<String> {
+    keep(LANGUAGES.iter().map(|(_, name)| language_code(name)), old)
+}
+
+/// `all` once each, then `old` when it is none of them.
+fn keep(all: impl Iterator<Item = String>, old: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for choice in all.chain(std::iter::once(old.to_owned())) {
+        if !choice.is_empty() && !out.contains(&choice) {
+            out.push(choice);
+        }
+    }
+    out
 }
 
 /// `text`'s parts between `sep`, trimmed, the empty ones dropped.
@@ -175,17 +207,41 @@ fn fields(ui: &mut Ui, ed: &mut Editor, t: &Tokens) {
         let half = (ui.available_width() - 8.0) / 2.0;
         let column = Layout::top_down(Align::Min);
         ui.allocate_ui_with_layout(vec2(half, 0.0), column, |ui| {
-            field(ui, ("Class", "noun, verb…"), &mut ed.class, 1, t);
+            let class = (&mut ed.class, ed.classes.as_slice());
+            pick(ui, CLASS, class, str::to_owned, t);
         });
         ui.allocate_ui_with_layout(vec2(half, 0.0), column, |ui| {
-            let names = ("Language", "Burmese, Russian…");
-            field(ui, names, &mut ed.language, 1, t);
+            let lang = (&mut ed.language, ed.languages.as_slice());
+            pick(ui, LANGUAGE, lang, language, t);
         });
     });
     field(ui, ("Meaning", ""), &mut ed.meaning, 2, t);
     let names = ("Synonyms", "Separated by commas");
     field(ui, names, &mut ed.synonyms, 1, t);
     field(ui, ("Usages", "One sentence a line"), &mut ed.usages, 3, t);
+}
+
+/// A field picked from `choices`, each shown as `shown` names it.
+fn pick(
+    ui: &mut Ui,
+    name: &str,
+    (value, choices): (&mut String, &[String]),
+    shown: fn(&str) -> String,
+    t: &Tokens,
+) {
+    ui.label(RichText::new(name).size(t.text_small).color(t.muted));
+    let list = widgets::combo(("ai-entry", name))
+        .width(ui.available_width())
+        .height(280.0)
+        .selected_text(shown(value))
+        .show_ui(ui, |ui| {
+            for choice in choices {
+                ui.selectable_value(value, choice.clone(), shown(choice));
+            }
+        });
+    let info = || WidgetInfo::labeled(WidgetType::ComboBox, true, name);
+    list.response.widget_info(info);
+    ui.add_space(4.0);
 }
 
 fn field(ui: &mut Ui, (name, hint): (&str, &str), text: &mut String, rows: usize, t: &Tokens) {
@@ -285,10 +341,9 @@ mod tests {
             added: 7,
         };
         let mut ed = Editor::new(old.clone());
-        assert_eq!(ed.language, "Burmese");
         assert_eq!(ed.edited(), old, "untouched, unchanged");
         ed.word = " Quick ".into();
-        ed.class = "Adverb".into();
+        ed.class = "adverb".into();
         ed.language = "russian".into();
         ed.synonyms = "swift, , rapid".into();
         ed.usages = "Run quick.\n\nCome quick.".into();
@@ -298,9 +353,20 @@ mod tests {
         assert_eq!(new.synonyms, ["swift", "rapid"]);
         assert_eq!(new.usages, ["Run quick.", "Come quick."]);
         assert_eq!((new.model.as_str(), new.added), ("Model", 7));
-        ed.language = "burmese".into();
-        assert_eq!(ed.edited().lang, "my", "names match in any case");
         ed.meaning = " ".into();
         assert_eq!(ed.missing(), Some("a meaning"));
+    }
+
+    #[test]
+    fn class_and_language_are_picked_from_known_ones() {
+        let langs = languages("my");
+        let count = |code: &str| langs.iter().filter(|l| *l == code).count();
+        assert_eq!((count("my"), count("zh"), count("jp")), (1, 1, 1));
+        assert_eq!(count("russian"), 1, "a language no pack joins, by name");
+        let odd = languages("klingon");
+        assert_eq!(odd.last().map(String::as_str), Some("klingon"));
+        assert_eq!(classes("noun").len(), Pos::ALL.len());
+        assert_eq!(classes("phrase").last().map(String::as_str), Some("phrase"));
+        assert!(classes("").iter().all(|c| !c.is_empty()));
     }
 }

@@ -201,7 +201,11 @@ fn an_edit_onto_a_kept_entry_asks_before_replacing_it() {
     set(&mut h, None, true);
     look_up(&mut h, "quick");
     open_editor(&mut h);
-    retype(&mut h, (Role::TextInput, "Language"), "english");
+    let language = (Role::ComboBox, ai_edit::LANGUAGE);
+    h.get_by_role_and_label(language.0, language.1).click();
+    h.run();
+    h.get_all_by_label("English").last().unwrap().click();
+    h.run();
     h.get_by_label(ai_edit::SAVE).click();
     h.run();
     h.get_by_label_contains("already has quick (adjective, English)");

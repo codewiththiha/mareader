@@ -484,8 +484,8 @@ and returns where it came from; Library sits beside it.
   pencil, sense cards that pick an entry included: the pencil takes its
   own press.
 - **AI entry editor.** A modal card (440 px) of the app's text fields, each
-  named above it: Word; Class and Language side by side; Meaning;
-  Synonyms; Usages. Delete sits left, Cancel and Save
+  named above it: Word; Class and Language side by side, as pickers;
+  Meaning; Synonyms; Usages. Delete sits left, Cancel and Save
   right. A taken key shows its kept meaning above *Replace it* (danger
   fill) and *Keep editing*.
 - **Speaking.** A word or answer gets a speak button only when the voice in
