@@ -117,3 +117,16 @@ fn an_edit_moves_a_meaning_and_asks_before_taking_a_kept_key() {
     assert!(!store.forget(&russian).unwrap(), "already gone");
     assert!(store.langs().unwrap().is_empty());
 }
+
+#[test]
+fn a_language_clears_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = AiStore::open(&file(dir.path())).unwrap();
+    for (word, lang) in [("tea", "vi"), ("cup", "vi"), ("tea", "my")] {
+        let one = saved(word, "noun", lang, "a drink");
+        store.put(&one, false).unwrap();
+    }
+    assert_eq!(store.clear("vi").unwrap(), 2);
+    assert_eq!(store.langs().unwrap(), ["my"]);
+    assert_eq!(store.clear("vi").unwrap(), 0, "already gone");
+}

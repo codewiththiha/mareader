@@ -88,6 +88,7 @@ impl Shelf {
             Query::Remember { saved, replace } => self.remember(saved, *replace),
             Query::Remembered { words, lang } => self.remembered(words, lang),
             Query::Forget { saved } => self.forget_ai(saved),
+            Query::Clear { lang } => self.clear_ai(lang),
             Query::Edit { old, new, replace } => self.edit_ai(old, new, *replace),
         }
     }
@@ -96,6 +97,16 @@ impl Shelf {
     fn forget_ai(&mut self, saved: &Saved) -> Reply {
         let mut reply = Reply::new(0);
         if let Err(e) = self.ai().and_then(|ai| ai.forget(saved)) {
+            reply.failed = Some(e);
+        }
+        reply.ai_langs = Some(self.ai_langs());
+        reply
+    }
+
+    /// Drops a language's AI meanings; the reply names the languages left.
+    fn clear_ai(&mut self, lang: &str) -> Reply {
+        let mut reply = Reply::new(0);
+        if let Err(e) = self.ai().and_then(|ai| ai.clear(lang)) {
             reply.failed = Some(e);
         }
         reply.ai_langs = Some(self.ai_langs());

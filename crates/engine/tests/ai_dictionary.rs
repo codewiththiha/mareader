@@ -140,7 +140,7 @@ fn edit(session: &mut Session, act: Action, done: impl Fn(Option<&Edited>) -> bo
 }
 
 #[test]
-fn an_entry_edits_asks_before_taking_a_kept_key_and_goes() {
+fn an_entry_edits_asks_before_taking_a_kept_key_goes_and_clears() {
     let dir = tempfile::tempdir().expect("temp dir");
     std::fs::create_dir_all(dir.path().join("dictionaries")).expect("dictionaries dir");
     let host: Shared = Arc::new(Fake::under(dir.path()));
@@ -179,4 +179,13 @@ fn an_entry_edits_asks_before_taking_a_kept_key_and_goes() {
     let forget = Action::Forget(Box::new(moved.clone()));
     assert!(edit(&mut session, forget, done), "deleted");
     assert_eq!(kept(&mut session), None);
+    session.dict_ask(Query::Remember {
+        saved: vec![noun.clone()],
+        replace: false,
+    });
+    assert!(wait_until(|| kept(&mut session).is_some()), "kept again");
+    let clear = Action::Clear("en".into());
+    assert!(edit(&mut session, clear, done), "its language cleared");
+    assert_eq!(kept(&mut session), None);
+    assert!(session.dict().ai_languages().is_empty());
 }

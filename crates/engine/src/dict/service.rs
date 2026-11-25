@@ -29,7 +29,7 @@ pub struct Service {
     card: Option<(Ticket, String)>,
     /// AI dictionary asks, kept from the reader's replies.
     ai: Vec<(Ticket, Option<Reply>)>,
-    /// The AI entry edit or removal under way, by its ask.
+    /// The AI dictionary edit or removal under way, by its ask.
     editing: Option<(Ticket, Edited)>,
     /// The ready packs as last polled, so a poll tells when they change.
     told: Vec<&'static str>,
@@ -128,6 +128,7 @@ impl Service {
             | Action::Pursue(_)
             | Action::Window(_)
             | Action::Forget(_)
+            | Action::Clear(_)
             | Action::Edit { .. }
             | Action::DropEdit => {}
         }
@@ -135,11 +136,14 @@ impl Service {
         handled
     }
 
-    /// An AI entry's edit or removal; true if `action` was one.
+    /// An AI entry's edit or removal, or a language's; true if one.
     fn act_ai(&mut self, action: &Action) -> bool {
         let query = match action {
             Action::Forget(saved) => Query::Forget {
                 saved: saved.clone(),
+            },
+            Action::Clear(lang) => Query::Clear {
+                lang: lang.to_owned(),
             },
             Action::Edit { old, new, replace } => Query::Edit {
                 old: old.clone(),
@@ -263,7 +267,7 @@ impl Service {
     ///
     /// `moved` is any pack's state moving, a download's progress included;
     /// `changed` is what the dictionaries answer changing: a pack came or
-    /// went, or an AI entry was edited or deleted.
+    /// went, or AI entries were edited or deleted.
     pub fn poll(&mut self) -> (bool, bool, Vec<Reply>) {
         let (moved, replies) = self.service.poll();
         let ready: Vec<&'static str> = self.service.ready().iter().map(|p| p.id).collect();

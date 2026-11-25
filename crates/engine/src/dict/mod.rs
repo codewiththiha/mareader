@@ -42,6 +42,8 @@ pub enum Action {
     Window(Window),
     /// Drops an AI dictionary entry.
     Forget(Box<mareader_dict::Saved>),
+    /// Drops every AI dictionary entry in a language, by code.
+    Clear(String),
     /// Writes an edited AI dictionary entry over its old self.
     Edit {
         old: Box<mareader_dict::Saved>,
@@ -53,7 +55,7 @@ pub enum Action {
     DropEdit,
 }
 
-/// Where an AI dictionary entry's edit or removal stands.
+/// Where an AI dictionary edit or removal stands.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Edited {
     Waiting,

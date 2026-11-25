@@ -232,3 +232,30 @@ fn resting_on_a_word_reads_the_ai_dictionary_with_no_pack() {
     assert_eq!(h.state().dict().card_word(), Some("quick"));
     assert!(!answers(&h).is_empty(), "the AI dictionary answers");
 }
+
+#[test]
+fn settings_clear_one_language_from_the_ai_dictionary() {
+    let dir = shelf();
+    remember(dir.path());
+    let mut h = reader(dir.path());
+    let tab = mareader_engine::settings::Tab::Dictionary;
+    let open = Sent::Engine(Command::OpenSettings(tab));
+    h.state_mut().queue(open);
+    h.run();
+    h.get_by_label("AI dictionary");
+    h.get_by_label("Clear: Russian").click();
+    h.run();
+    h.get_by_label("Keep").click();
+    h.run();
+    let sure = h.query_by_label("Clear for good: Russian");
+    assert!(sure.is_none(), "kept");
+    h.get_by_label("Clear: Russian").click();
+    h.run();
+    h.get_by_label("Clear for good: Russian").click();
+    h.run_steps(30);
+    let langs = h.state().dict().languages();
+    assert!(!langs.iter().any(|l| l == "ru"), "Russian goes");
+    assert!(langs.iter().any(|l| l == "en"), "the rest stay");
+    assert!(h.query_by_label("Clear: Russian").is_none());
+    h.get_by_label("Clear: English");
+}

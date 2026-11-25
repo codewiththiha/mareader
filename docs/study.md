@@ -185,7 +185,10 @@ be kept on this machine and used again, beside the downloaded packs.
   Entries are kept under the language's code from the one table in
   `dict/src/lang.rs` (`ru`; a pack's own, as `jp` and `zh`); ones kept
   by name before (`russian`) move to it when the dictionary opens, and
-  settings that named one read its code.
+  settings that named one read its code. Settings › Dictionary › *AI
+  dictionary* lists each language it keeps; *Clear* (pressed twice)
+  deletes that language's meanings, as English ones kept under another
+  language by mistake, and cards and decks then ask the AI again.
 - **The Dictionary page.** "AI dictionary" is one more choice in its
   dictionary picker, its languages are in the From and To pickers, and a
   search reads its entries after the packs': words that hold the search,

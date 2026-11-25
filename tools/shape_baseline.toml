@@ -168,7 +168,6 @@ paths = ["crates/animated-icons/src/source.rs", "crates/epub/src/generated.rs"]
 "crates/ui-egui/src/read_aloud/card.rs::show" = 86
 "crates/ui-egui/src/read_aloud/control.rs::show" = 85
 "crates/ui-egui/src/settings_window/ai.rs::pages" = 109
-"crates/ui-egui/src/settings_window/dictionary.rs::tab" = 87
 "crates/ui-egui/src/study/acting.rs::act" = 116
 "crates/ui-egui/src/study/marks.rs::place" = 87
 "crates/ui-egui/src/study/mod.rs::show" = 111

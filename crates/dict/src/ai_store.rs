@@ -127,6 +127,13 @@ impl AiStore {
         gone.map(|n| n > 0).map_err(|e| e.to_string())
     }
 
+    /// Drops every meaning kept in `lang`; how many went.
+    pub fn clear(&self, lang: &str) -> Result<usize, String> {
+        let sql = "DELETE FROM saved WHERE lang = ?1";
+        let gone = self.conn.execute(sql, [lang]);
+        gone.map_err(|e| e.to_string())
+    }
+
     /// Puts `new` in `old`'s place. Another meaning under the new key stays
     /// unless `replace`, and comes back instead.
     pub fn edit(&self, old: &Saved, new: &Saved, replace: bool) -> Result<Option<Saved>, String> {

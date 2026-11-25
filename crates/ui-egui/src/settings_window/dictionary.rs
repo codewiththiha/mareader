@@ -1,7 +1,7 @@
-//! The Dictionary tab: language packs to download, and the card's
-//! language.
+//! The Dictionary tab: language packs to download, the AI dictionary's
+//! languages, and the card's language.
 
-use egui::Ui;
+use egui::{RichText, Ui};
 use mareader_dict::{PACKS, Pack, State, language};
 use mareader_settings::{DictionaryOpens, DictionarySettings};
 
@@ -11,6 +11,7 @@ use super::{
 };
 use crate::dict::{count, megabytes};
 use crate::icons::Icon;
+use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::widgets;
 use mareader_engine::command::Command;
@@ -75,6 +76,7 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
     } else {
         note(ui, "Downloads need the desktop app.");
     }
+    ai_dictionary(ui, dict, out);
     section(ui, "In the reader");
     group(ui, |ui| {
         for (i, (choice, title, detail)) in OPENS.into_iter().enumerate() {
@@ -88,6 +90,56 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
     });
     note(ui, "The Dictionary button and Cmd/Ctrl+Shift+D open it so.");
     lookup_card(ui, s, dict);
+    saying(ui, s);
+}
+
+/// The AI dictionary's languages, each cleared on a second press.
+fn ai_dictionary(ui: &mut Ui, dict: &DictService, out: &mut Commands) {
+    let langs = dict.ai_languages();
+    if langs.is_empty() {
+        return;
+    }
+    section(ui, "AI dictionary");
+    group(ui, |ui| {
+        for (i, lang) in langs.iter().enumerate() {
+            if i > 0 {
+                divider(ui);
+            }
+            ai_row(ui, lang, out);
+        }
+    });
+    let why = "Meanings AI wrote on this computer, by language. Clearing one deletes \
+               them; cards and decks then ask the AI again.";
+    note(ui, why);
+}
+
+/// One AI dictionary language: Clear, then Clear for good or Keep.
+fn ai_row(ui: &mut Ui, lang: &str, out: &mut Commands) {
+    let t = Tokens::get(ui.ctx());
+    let name = language(lang);
+    let id = egui::Id::new(("ai-dict-clear", lang));
+    let mut asked: bool = ui.data(|d| d.get_temp(id)).unwrap_or(false);
+    row(ui, &name, "Kept on this computer", |ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let label = if asked { "Clear for good" } else { "Clear" };
+        let r = ui.button(RichText::new(label).color(t.danger));
+        widgets::name(&r, &format!("{label}: {name}"));
+        if r.clicked() {
+            if asked {
+                let clear = Action::Clear(lang.to_owned());
+                out.push(Sent::Engine(Command::Dict(clear)));
+            }
+            asked = !asked;
+        }
+        if asked && ui.button("Keep").clicked() {
+            asked = false;
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(id, asked));
+}
+
+/// Whether other languages' voices say their words.
+fn saying(ui: &mut Ui, s: &mut DictionarySettings) {
     section(ui, "Saying words");
     group(ui, |ui| {
         let hint = "A word in another language is said by a voice downloaded for it";
