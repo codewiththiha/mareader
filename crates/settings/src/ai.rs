@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use mareader_dict::LANGUAGES;
 use mareader_study::mode::{PER_REQUEST, PER_REQUEST_MAX};
 use serde::{Deserialize, Serialize};
 
@@ -221,7 +222,7 @@ impl ModelPreset {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExplainTask {
-    /// A tag from [`LANGUAGES`]; none writes in the book's language.
+    /// A tag of `mareader_dict::LANGUAGES`; none: the book's language.
     pub language: Option<String>,
 }
 
@@ -278,7 +279,7 @@ pub enum PageStart {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TranslateTask {
-    /// A tag from [`LANGUAGES`]; none until one is picked.
+    /// A tag of `mareader_dict::LANGUAGES`; none until one is picked.
     pub language: Option<String>,
     /// Tags picked before, latest first.
     pub recent: Vec<String>,
@@ -392,53 +393,9 @@ impl PageTask {
     }
 }
 
-/// Languages an AI task may write in, by tag and English name.
-pub const LANGUAGES: [(&str, &str); 40] = [
-    ("ar", "Arabic"),
-    ("bn", "Bengali"),
-    ("my", "Burmese"),
-    ("zh-Hans", "Chinese (Simplified)"),
-    ("zh-Hant", "Chinese (Traditional)"),
-    ("cs", "Czech"),
-    ("da", "Danish"),
-    ("nl", "Dutch"),
-    ("en", "English"),
-    ("fil", "Filipino"),
-    ("fi", "Finnish"),
-    ("fr", "French"),
-    ("de", "German"),
-    ("el", "Greek"),
-    ("he", "Hebrew"),
-    ("hi", "Hindi"),
-    ("hu", "Hungarian"),
-    ("id", "Indonesian"),
-    ("it", "Italian"),
-    ("ja", "Japanese"),
-    ("km", "Khmer"),
-    ("ko", "Korean"),
-    ("lo", "Lao"),
-    ("ms", "Malay"),
-    ("ne", "Nepali"),
-    ("nb", "Norwegian"),
-    ("fa", "Persian"),
-    ("pl", "Polish"),
-    ("pt", "Portuguese"),
-    ("ro", "Romanian"),
-    ("ru", "Russian"),
-    ("si", "Sinhala"),
-    ("es", "Spanish"),
-    ("sv", "Swedish"),
-    ("ta", "Tamil"),
-    ("th", "Thai"),
-    ("tr", "Turkish"),
-    ("uk", "Ukrainian"),
-    ("ur", "Urdu"),
-    ("vi", "Vietnamese"),
-];
-
 /// The English name of a language tag, if listed.
 pub fn language_name(tag: &str) -> Option<&'static str> {
-    LANGUAGES.iter().find(|l| l.0 == tag).map(|l| l.1)
+    LANGUAGES.iter().find(|l| l.tag == tag).map(|l| l.name)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -667,10 +624,9 @@ mod tests {
     }
 
     #[test]
-    fn languages_have_unique_tags_and_burmese_is_named() {
-        let tags: std::collections::HashSet<_> = LANGUAGES.iter().map(|l| l.0).collect();
-        assert_eq!(tags.len(), LANGUAGES.len());
+    fn a_language_tag_is_named() {
         assert_eq!(language_name("my"), Some("Burmese"));
+        assert_eq!(language_name("zh-Hant"), Some("Chinese (Traditional)"));
         assert_eq!(language_name("??"), None);
     }
 

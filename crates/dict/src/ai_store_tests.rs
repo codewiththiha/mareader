@@ -70,19 +70,20 @@ fn lists_survive_their_column() {
 }
 
 #[test]
-fn chinese_variants_kept_before_join_the_chinese_pack() {
+fn names_kept_before_codes_move_to_their_code() {
     let dir = tempfile::tempdir().unwrap();
     let path = file(dir.path());
     let store = AiStore::open(&path).unwrap();
     let simplified = saved("tea", "noun", "chinese (simplified)", "茶");
     let traditional = saved("tea", "noun", "chinese (traditional)", "茶。");
     let other = saved("cup", "noun", "chinese (traditional)", "杯");
-    for one in [&simplified, &traditional, &other] {
+    let russian = saved("cup", "noun", "russian", "чашка");
+    for one in [&simplified, &traditional, &other, &russian] {
         assert!(store.put(one, false).unwrap());
     }
     drop(store);
     let store = AiStore::open(&path).unwrap();
-    assert_eq!(store.langs().unwrap(), ["zh"]);
+    assert_eq!(store.langs().unwrap(), ["ru", "zh"]);
     let tea = store.word("tea", Some("zh")).unwrap();
     assert_eq!(tea.len(), 1, "one entry under one key");
     let cup = store.word("cup", Some("zh")).unwrap();
@@ -109,9 +110,9 @@ fn an_edit_moves_a_meaning_and_asks_before_taking_a_kept_key() {
     assert_eq!(store.edit(&said, &moved, true).unwrap(), None);
     assert_eq!(store.word("book", None).unwrap(), [moved.clone()]);
     let mut russian = moved.clone();
-    russian.lang = "russian".into();
+    russian.lang = "ru".into();
     store.edit(&moved, &russian, false).unwrap();
-    assert_eq!(store.langs().unwrap(), ["russian"], "the language moves");
+    assert_eq!(store.langs().unwrap(), ["ru"], "the language moves");
     assert!(store.forget(&russian).unwrap());
     assert!(!store.forget(&russian).unwrap(), "already gone");
     assert!(store.langs().unwrap().is_empty());

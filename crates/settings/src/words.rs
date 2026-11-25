@@ -44,6 +44,9 @@ impl Default for WordList {
 
 impl WordList {
     pub fn sanitize(&mut self) {
+        for lang in &mut self.languages {
+            *lang = mareader_dict::language_code(lang);
+        }
         let mut seen = Vec::new();
         self.languages.retain(|l| {
             let keep = !l.trim().is_empty() && !seen.contains(l);
@@ -170,7 +173,7 @@ mod tests {
     #[test]
     fn sanitize_keeps_three_distinct_languages_and_named_presets() {
         let mut s = WordListSettings::default();
-        s.last.languages = ["my", "my", "", "jp", "fr", "de"]
+        s.last.languages = ["my", "my", "", "jp", "French", "de"]
             .map(String::from)
             .to_vec();
         let mine = |name: &str| WordPreset {

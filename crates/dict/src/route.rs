@@ -164,25 +164,25 @@ mod tests {
     #[test]
     fn the_ai_dictionarys_languages_join_after_the_packs() {
         let my: Vec<&'static Pack> = PACKS.iter().filter(|p| p.id == "mcfnlp-en-my").collect();
-        let ai = ["my".to_owned(), "russian".to_owned()];
-        assert_eq!(languages_with(&my, &ai), ["en", "my", "russian"]);
-        assert_eq!(languages_with(&[], &ai), ["en", "my", "russian"]);
+        let ai = ["my".to_owned(), "ru".to_owned()];
+        assert_eq!(languages_with(&my, &ai), ["en", "my", "ru"]);
+        assert_eq!(languages_with(&[], &ai), ["en", "my", "ru"]);
         assert!(languages_with(&[], &[]).is_empty());
-        assert_eq!(targets(&my, &ai), ["my", "russian"]);
+        assert_eq!(targets(&my, &ai), ["my", "ru"]);
         let en = ["en".to_owned()];
         let english = targets(&my, &en);
         assert_eq!(english, ["my", "en"], "English meanings of English words");
         let offered = targets(&my, &ai);
-        assert_eq!(answer_in(Some("russian"), &offered), Some("russian"));
+        assert_eq!(answer_in(Some("ru"), &offered), Some("ru"));
         let gone = answer_in(Some("jp"), &offered);
         assert_eq!(gone, Some("my"), "a choice no longer offered: Automatic");
         assert_eq!(answer_in(None, &offered), Some("my"));
         assert_eq!(answer_in(Some("my"), &[]), None);
         let to = Pair {
             from: None,
-            to: Some("russian".into()),
+            to: Some("ru".into()),
         };
         let got = settle(&to, "quick", &languages_with(&[], &ai));
-        assert_eq!(got, Some(("en".into(), "russian".into())));
+        assert_eq!(got, Some(("en".into(), "ru".into())));
     }
 }

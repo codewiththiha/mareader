@@ -2,9 +2,10 @@
 
 use egui::{Align, FontId, Layout, Sense, Ui, pos2, vec2};
 use mareader_assist::{Board, Job, Load};
+use mareader_dict::LANGUAGES;
 use mareader_settings::{
-    AiSettings, GlossDensity, GlossSettings, HighlightSettings, LANGUAGES, ModelPreset,
-    OrganizeTask, PageRun, PageStart, PageTask, Pen, PresetId, Provider, SummaryStyle, TaskId,
+    AiSettings, GlossDensity, GlossSettings, HighlightSettings, ModelPreset, OrganizeTask, PageRun,
+    PageStart, PageTask, Pen, PresetId, Provider, SummaryStyle, TaskId,
 };
 
 use super::highlights::{palette, preview};
@@ -454,7 +455,7 @@ pub(super) fn language_picker(
         .selected_text(name.unwrap_or(none))
         .show_ui(ui, |ui| {
             ui.selectable_value(chosen, None, none);
-            for (tag, name) in LANGUAGES {
+            for (tag, name) in LANGUAGES.map(|l| (l.tag, l.name)) {
                 let on = chosen.as_deref() == Some(tag);
                 let button = egui::Button::selectable(on, name);
                 let r = ui.add_enabled(speaks(tag) != Some(false), button);

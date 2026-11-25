@@ -3837,6 +3837,7 @@ name = "mareader-settings"
 version = "0.0.7"
 dependencies = [
  "mareader-appearance",
+ "mareader-dict",
  "mareader-library",
  "mareader-study",
  "serde",

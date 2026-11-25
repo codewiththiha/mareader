@@ -12,12 +12,13 @@ use egui::{
     Context, Frame, Id, Key, Margin, Modifiers, Pos2, Rect, RichText, ScrollArea, Stroke, Ui, Vec2,
     pos2, vec2,
 };
+use mareader_dict::LANGUAGES;
 use mareader_engine::command::Command;
 use mareader_engine::page_ai::ledger::Ledger;
 use mareader_engine::page_ai::{Action, How, Slot};
 use mareader_engine::settings::Tab;
 use mareader_library::Library;
-use mareader_settings::{AiSettings, LANGUAGES, PageStart, PageTask, language_name};
+use mareader_settings::{AiSettings, PageStart, PageTask, language_name};
 use mareader_workspace::PaneId;
 
 /// The language search field, for screen readers and tests.
@@ -462,7 +463,7 @@ impl PageAiUi {
         };
         let all: Vec<(&str, &str)> = LANGUAGES
             .iter()
-            .copied()
+            .map(|l| (l.tag, l.name))
             .filter(|(tag, name)| matches(tag, name))
             .collect();
         let current = ai.tasks.translate.language.as_deref();

@@ -171,9 +171,9 @@ mod tests {
         let back = row("jmdict-en-jp", true, None);
         assert_eq!(way(&back).as_deref(), Some("Japanese → English"));
         assert_eq!(sides(&back, None), ("ja".to_owned(), "en".to_owned()));
-        let ai = row(AI_PACK, false, Some("russian"));
+        let ai = row(AI_PACK, false, Some("ru"));
         assert_eq!(way(&ai).as_deref(), Some("English → Russian"));
-        assert_eq!(sides(&ai, None).1, "russian");
+        assert_eq!(sides(&ai, None).1, "ru");
         let stray = row("gone", false, None);
         assert_eq!(way(&stray), None);
         assert_eq!(sides(&stray, None), ("en".to_owned(), "en".to_owned()));

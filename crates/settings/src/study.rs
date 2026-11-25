@@ -470,15 +470,12 @@ impl DictionarySettings {
     }
 
     pub fn sanitize(&mut self) {
-        let mut kept: Vec<String> = Vec::with_capacity(self.recent.len());
-        for w in self.recent.drain(..) {
-            let w = w.trim().to_owned();
-            if !w.is_empty() && !kept.contains(&w) {
-                kept.push(w);
-            }
+        let langs = [&mut self.default_lang, &mut self.from, &mut self.to];
+        for lang in langs.into_iter().flatten() {
+            *lang = mareader_dict::language_code(lang);
         }
-        kept.truncate(RECENT);
-        self.recent = kept;
+        let recent = std::mem::take(&mut self.recent);
+        recent.iter().rev().for_each(|w| self.remember(w));
         self.window.sanitize();
         let mut seen = Vec::with_capacity(self.langs.len());
         self.langs.retain(|id| {
@@ -549,7 +546,9 @@ mod tests {
         assert_eq!(d.recent, ["light", "dark"]);
         d.recent = (0..20).map(|i| format!("w{i}")).collect();
         d.recent.push("w1".into());
+        d.to = Some("Russian".into());
         d.sanitize();
+        assert_eq!(d.to.as_deref(), Some("ru"), "a name kept before tags");
         assert_eq!(d.recent.len(), RECENT);
         assert_eq!(d.recent.iter().filter(|w| *w == "w1").count(), 1);
     }

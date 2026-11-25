@@ -115,13 +115,13 @@ mod tests {
             .iter()
             .filter(|p| p.id == "mcfnlp-en-my")
             .collect();
-        let ai = ["russian".to_owned()];
+        let ai = ["ru".to_owned()];
         let shelf = Shelf {
             packs: &my,
             ai: &ai,
         };
         assert_eq!(shelf.count(), 2);
-        assert_eq!(shelf.languages(), ["en", "my", "russian"]);
+        assert_eq!(shelf.languages(), ["en", "my", "ru"]);
         let ids: Vec<&str> = shelf.each().into_iter().map(|(id, _)| id).collect();
         assert_eq!(ids, ["mcfnlp-en-my", AI_PACK]);
         let s = DictionarySettings {

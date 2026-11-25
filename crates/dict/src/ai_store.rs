@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::ai::{Saved, class};
+use crate::lang::code_of;
 use crate::search::fold;
 use crate::store::escape;
 
@@ -30,12 +31,6 @@ CREATE TABLE IF NOT EXISTS saved (
     PRIMARY KEY (word_fold, pos, lang)
 );";
 
-/// Chinese variants kept apart before they joined the `zh` pack; a
-/// variant whose word and class `zh` already keeps goes.
-const MERGE: &str = "
-UPDATE OR IGNORE saved SET lang = 'zh' WHERE lang LIKE 'chinese (%';
-DELETE FROM saved WHERE lang LIKE 'chinese (%';";
-
 /// The file beside the packs in `dir`.
 pub fn file(dir: &Path) -> PathBuf {
     dir.join(FILE)
@@ -57,17 +52,36 @@ impl AiStore {
     pub fn open(path: &Path) -> Result<Self, String> {
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
         conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
-        conn.execute_batch(MERGE).map_err(|e| e.to_string())?;
         let sql = "INSERT OR IGNORE INTO meta (key, value) VALUES ('layout', ?1)";
         conn.execute(sql, [LAYOUT]).map_err(|e| e.to_string())?;
         let sql = "SELECT value FROM meta WHERE key = 'layout'";
         let layout: String = conn
             .query_row(sql, [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
-        match layout == LAYOUT {
-            true => Ok(Self { conn }),
-            false => Err("an AI dictionary in another layout".into()),
+        if layout != LAYOUT {
+            return Err("an AI dictionary in another layout".into());
         }
+        let store = Self { conn };
+        store.refile()?;
+        Ok(store)
+    }
+
+    /// Moves meanings kept under a language's name, as `russian` or
+    /// `chinese (simplified)` were, to its code; one whose word and class
+    /// the code already keeps goes.
+    fn refile(&self) -> Result<(), String> {
+        let up = "UPDATE OR IGNORE saved SET lang = ?1 WHERE lang = ?2";
+        let gone = "DELETE FROM saved WHERE lang = ?1";
+        for old in self.langs()? {
+            let code = code_of(&old);
+            if code != old {
+                let moved = self.conn.execute(up, [&code, &old]);
+                moved.map_err(|e| e.to_string())?;
+                let left = self.conn.execute(gone, [&old]);
+                left.map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
     }
 
     /// Keeps `saved`; one already under its key stays unless `replace`.

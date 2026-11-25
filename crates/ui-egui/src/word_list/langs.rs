@@ -105,10 +105,10 @@ mod tests {
 
     #[test]
     fn a_list_can_add_the_ai_dictionarys_languages_after_the_packs() {
-        let ready = ["my", "russian"].map(str::to_owned);
+        let ready = ["my", "ru"].map(str::to_owned);
         let listed = ["my", "fr"].map(str::to_owned);
         let left = addable(&ready, &listed);
         assert!(!left.iter().any(|l| l == "my" || l == "fr"), "listed ones");
-        assert_eq!(left.last().map(String::as_str), Some("russian"));
+        assert_eq!(left.last().map(String::as_str), Some("ru"));
     }
 }

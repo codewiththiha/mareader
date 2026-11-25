@@ -31,7 +31,7 @@ mod store;
 
 pub use ai::{AI_PACK, Saved};
 pub use entry::Entry;
-pub use lang::{code_of as language_code, name as language};
+pub use lang::{LANGUAGES, Language, code_of as language_code, name as language};
 pub use packs::{PACKS, Pack};
 pub use route::{HUB, Pair, answer_in, languages, languages_with, targets};
 pub use search::{WordMatch, fold};

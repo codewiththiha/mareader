@@ -41,7 +41,7 @@ the right place.
 | L1 | `reflow` | **exists** | styled blocks → parley lines → pages; typography knobs; hit-testing |
 | L1 | `library` | **exists** | books, locations, shelves, sources, scans, SQLite store (`docs/library.md`) |
 | L1 | `study` | **exists** | gloss requests, answers, marks and highlights |
-| L1 | `dict` | **exists** | dictionary packs: download with mirrors and resume, parquet → SQLite, card lookups, search, bridges through English; downloads and lookups need the desktop |
+| L1 | `dict` | **exists** | dictionary packs: download with mirrors and resume, parquet → SQLite, card lookups, search, bridges through English; the app's one table of languages; downloads and lookups need the desktop |
 | L1 | `cefr` | **exists** | word levels: the CEFR dataset (download, parquet → SQLite), which words of a text are hard, a clicked word's role from the tagger; downloads and answers need the desktop |
 | L2 | `epub` | **exists** | rbook container, spine, ToC, XHTML+CSS subset → `reflow` blocks |
 | L2 | `settings` | **exists** | the persisted schema, defaults, ranges and migration |

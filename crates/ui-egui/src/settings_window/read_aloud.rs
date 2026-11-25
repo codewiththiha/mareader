@@ -9,10 +9,11 @@ use crate::theme::Tokens;
 use crate::ui_command::{Commands, Sent};
 use crate::{keymap, widgets};
 use egui::{Align, Id, Layout, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
+use mareader_dict::LANGUAGES;
 use mareader_engine::command::Command;
 use mareader_engine::read_aloud::booth::Booth;
 use mareader_engine::settings::Tab;
-use mareader_settings::{Highlight, LANGUAGES, Player, ReadAloudSettings, Skip};
+use mareader_settings::{Highlight, Player, ReadAloudSettings, Skip};
 use mareader_speech::{Build, Item, Model, Shelf, Stage, Voice};
 
 /// What the tab shows besides settings: voices, models, the keys.
@@ -642,11 +643,11 @@ fn primary(tag: &str) -> String {
 
 /// A primary tag's English name, else the tag itself.
 fn language_name(tag: &str) -> String {
-    let named = LANGUAGES.iter().find(|(t, _)| primary(t) == tag);
+    let named = LANGUAGES.iter().find(|l| primary(l.tag) == tag);
     match named {
         // Both Chinese scripts share the one spoken name.
         Some(_) if tag == "zh" => "Chinese".to_owned(),
-        Some((_, name)) => (*name).to_owned(),
+        Some(l) => l.name.to_owned(),
         None => tag.to_owned(),
     }
 }

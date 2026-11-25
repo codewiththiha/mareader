@@ -2,10 +2,9 @@
 //! before an edit takes the place of another entry.
 
 use egui::{Align, Context, Layout, Rect, RichText, Sense, Ui, Vec2, WidgetInfo, WidgetType, vec2};
-use mareader_dict::{Saved, language, language_code};
+use mareader_dict::{LANGUAGES, Saved, language};
 use mareader_engine::command::Command;
 use mareader_engine::dict::{Action, Edited};
-use mareader_settings::LANGUAGES;
 use mareader_study::Pos;
 
 use super::{DictUi, entry};
@@ -95,7 +94,7 @@ fn classes(old: &str) -> Vec<String> {
 
 /// Each language the AI writes in, by stored code, and `old`.
 fn languages(old: &str) -> Vec<String> {
-    keep(LANGUAGES.iter().map(|(_, name)| language_code(name)), old)
+    keep(LANGUAGES.iter().map(|l| l.code.to_owned()), old)
 }
 
 /// `all` once each, then `old` when it is none of them.
@@ -344,12 +343,12 @@ mod tests {
         assert_eq!(ed.edited(), old, "untouched, unchanged");
         ed.word = " Quick ".into();
         ed.class = "adverb".into();
-        ed.language = "russian".into();
+        ed.language = "ru".into();
         ed.synonyms = "swift, , rapid".into();
         ed.usages = "Run quick.\n\nCome quick.".into();
         let new = ed.edited();
         assert_eq!((new.word.as_str(), new.pos.as_str()), ("Quick", "adverb"));
-        assert_eq!(new.lang, "russian");
+        assert_eq!(new.lang, "ru");
         assert_eq!(new.synonyms, ["swift", "rapid"]);
         assert_eq!(new.usages, ["Run quick.", "Come quick."]);
         assert_eq!((new.model.as_str(), new.added), ("Model", 7));
@@ -362,7 +361,7 @@ mod tests {
         let langs = languages("my");
         let count = |code: &str| langs.iter().filter(|l| *l == code).count();
         assert_eq!((count("my"), count("zh"), count("jp")), (1, 1, 1));
-        assert_eq!(count("russian"), 1, "a language no pack joins, by name");
+        assert_eq!(count("ru"), 1, "a language no pack joins, by its tag");
         let odd = languages("klingon");
         assert_eq!(odd.last().map(String::as_str), Some("klingon"));
         assert_eq!(classes("noun").len(), Pos::ALL.len());
