@@ -52,8 +52,8 @@ behaviour on 2026-11-21.
 
 ## Running in the background
 
-- While a selection skill is running, a softly irregular rainbow outline follows its selected
-  line shapes; it goes away on success, failure or cancellation. It is not a saved mark.
+- While a selection skill is running, a softly irregular outline follows its selected
+  line shapes, carrying the same travelling rainbow light flare as AI marks and thumbnails; it goes away on success, failure or cancellation. It is not a saved mark.
   Ask again brings it back. A run goes on when its place is scrolled away; Close stops it.
 - While the selection outline is away, the run is a line in the pane's AI stack
   (`docs/study-mode.md`, The corner stack): *Simplify · page 1* with

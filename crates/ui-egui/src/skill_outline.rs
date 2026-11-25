@@ -1,7 +1,6 @@
 //! A temporary, text-shaped outline for a selection skill in flight.
 
-use egui::epaint::Mesh;
-use egui::{Context, Id, Pos2, Rect, Shape, Vec2, pos2, vec2};
+use egui::{Context, Id, Pos2, Rect, pos2, vec2};
 use mareader_engine::activity::Key;
 use mareader_engine::skills::{Anchor, Ask};
 use mareader_workspace::PaneId;
@@ -12,7 +11,7 @@ use crate::z_order::{self, Tier};
 
 const AIR: f32 = 4.0;
 const MAX_LINES: usize = 256;
-const STEP: f32 = 12.0;
+const STEP: f32 = 6.0;
 
 /// Draw the visible pages of a running selection and report its own visual.
 pub(crate) fn show(ctx: &Context, ask: &Ask, panes: &[(PaneId, Rect)], docs: DocumentsView<'_>) {
@@ -23,6 +22,9 @@ pub(crate) fn show(ctx: &Context, ask: &Ask, panes: &[(PaneId, Rect)], docs: Doc
         return;
     }
     let Some(room) = panes.iter().find(|(p, _)| *p == ask.pane).map(|(_, r)| *r) else {
+        return;
+    };
+    let Some(glow) = crate::glow::state(ctx, Id::new(("skill-glow", ask.id.0)), true) else {
         return;
     };
     let tokens = Tokens::get(ctx);
@@ -51,8 +53,8 @@ pub(crate) fn show(ctx: &Context, ask: &Ask, panes: &[(PaneId, Rect)], docs: Doc
             .collect();
         let painter = painter.with_clip_rect(clip);
         for group in groups(&lines) {
-            let points = contour(group);
-            visible |= paint(ctx, &painter, &tokens, &points, clip);
+            let points = rounded(&contour(group));
+            visible |= crate::glow::paint_path(ctx, &painter, &tokens, &points, glow);
         }
     }
     if visible {
@@ -150,73 +152,6 @@ fn rounded(points: &[Pos2]) -> Vec<Pos2> {
         }
     }
     out
-}
-
-/// A narrow rainbow stroke and a softer halo, clipped to the page.
-fn paint(
-    ctx: &Context,
-    painter: &egui::Painter,
-    tokens: &Tokens,
-    outline: &[Pos2],
-    clip: Rect,
-) -> bool {
-    let points = rounded(outline);
-    if points.len() < 3 {
-        return false;
-    }
-    let lengths: Vec<f32> = points
-        .iter()
-        .zip(points.iter().cycle().skip(1))
-        .map(|(a, b)| (*b - *a).length())
-        .collect();
-    let total: f32 = lengths.iter().sum();
-    if total <= 0.0 || !total.is_finite() {
-        return false;
-    }
-    let mut mesh = Mesh::default();
-    let mut distance = 0.0;
-    let mut visible = false;
-    let tint = crate::glow::tint_fn(ctx, tokens);
-    for ((a, b), length) in points
-        .iter()
-        .zip(points.iter().cycle().skip(1))
-        .zip(lengths)
-    {
-        if length < 0.01 {
-            continue;
-        }
-        let normal = vec2(-(b.y - a.y), b.x - a.x) / length;
-        let start = distance;
-        distance += length;
-        let bounds = Rect::from_two_pos(*a, *b).expand(3.5);
-        if !bounds.intersects(clip) {
-            continue;
-        }
-        let color = tint(start / total);
-        let next = tint(distance / total);
-        visible = true;
-        segment(&mut mesh, *a, *b, normal, color, next);
-    }
-    if visible {
-        painter.add(Shape::mesh(mesh));
-        if !crate::motion::reduced(ctx) {
-            ctx.request_repaint_after_secs(1.0 / 30.0);
-        }
-    }
-    visible
-}
-
-fn segment(mesh: &mut Mesh, a: Pos2, b: Pos2, n: Vec2, color: egui::Color32, next: egui::Color32) {
-    let base = mesh.vertices.len() as u32;
-    for (p, c) in [(a, color), (b, next)] {
-        for (off, alpha) in [(-3.5, 0.0), (-1.0, 0.85), (1.0, 0.85), (3.5, 0.0)] {
-            mesh.colored_vertex(p + n * off, c.gamma_multiply(alpha));
-        }
-    }
-    for i in 0..3 {
-        mesh.add_triangle(base + i, base + i + 1, base + i + 4);
-        mesh.add_triangle(base + i + 1, base + i + 5, base + i + 4);
-    }
 }
 
 #[cfg(test)]

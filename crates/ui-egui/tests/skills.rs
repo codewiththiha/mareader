@@ -199,6 +199,10 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
     let key = Key::Skill { pane, ask };
     assert!(seen::shown(&h.ctx, key), "the outline is in view");
     assert!(
+        mareader_ui_egui::glow::shown(&h.ctx) > 0,
+        "the shared AI flare is painted"
+    );
+    assert!(
         h.query_by_label(STACK).is_none(),
         "no duplicate corner ring"
     );
@@ -206,6 +210,11 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
         .queue(Sent::Engine(Command::GoTo { pane, page: 8 }));
     h.run_steps(40);
     assert!(!seen::shown(&h.ctx, key), "the outline is away");
+    assert_eq!(
+        mareader_ui_egui::glow::shown(&h.ctx),
+        0,
+        "no off-screen flare"
+    );
     assert!(h.query_by_label(STACK).is_some(), "the corner takes over");
     h.state_mut()
         .queue(Sent::Engine(Command::GoTo { pane, page: 0 }));
@@ -225,6 +234,11 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
         ),
         "retry completed"
     );
+    assert_eq!(
+        mareader_ui_egui::glow::shown(&h.ctx),
+        0,
+        "the flare ends on completion"
+    );
     h.state_mut()
         .set_option("skill_answers", "silent")
         .expect("silent answer");
@@ -232,10 +246,19 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
         .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
     h.run_steps(30);
     assert!(seen::shown(&h.ctx, key), "retry restores the outline");
+    assert!(
+        mareader_ui_egui::glow::shown(&h.ctx) > 0,
+        "retry restores the flare"
+    );
     h.state_mut()
         .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(10);
     assert!(!seen::shown(&h.ctx, key), "closed, the outline is gone");
+    assert_eq!(
+        mareader_ui_egui::glow::shown(&h.ctx),
+        0,
+        "closing removes the flare"
+    );
 }
 
 #[test]

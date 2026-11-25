@@ -73,7 +73,37 @@ pub fn paint(
     radius: f32,
     glow: Glow,
 ) {
-    let ring = Ring::new(rect, radius);
+    paint_ring(ctx, painter, tokens, Ring::new(rect, radius), glow);
+}
+
+/// Paint the same flare around a closed, sampled selection contour.
+/// Returns false when no part of the glow reaches the painter's clip.
+pub(crate) fn paint_path(
+    ctx: &Context,
+    painter: &Painter,
+    tokens: &Tokens,
+    points: &[Pos2],
+    glow: Glow,
+) -> bool {
+    let Some(ring) = Ring::path(points) else {
+        return false;
+    };
+    let clip = painter.clip_rect();
+    let visible = points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .any(|(a, b)| {
+            Rect::from_two_pos(*a, *b)
+                .expand(ring.reach)
+                .intersects(clip)
+        });
+    if visible {
+        paint_ring(ctx, painter, tokens, ring, glow);
+    }
+    visible
+}
+
+fn paint_ring(ctx: &Context, painter: &Painter, tokens: &Tokens, ring: Ring, glow: Glow) {
     let lap = (ring.length / PACE).clamp(LAP.0, LAP.1);
     let t = ctx.input(|i| i.time);
     let still = motion::reduced(ctx);
@@ -117,11 +147,6 @@ fn drift(t: f64) -> f32 {
 /// The colour `share` of the way round a short glow now, as a pane's
 /// glow wears it: the AI stack's folded ring matches the panes so.
 pub fn tint(ctx: &Context, tokens: &Tokens, share: f32) -> Color32 {
-    tint_fn(ctx, tokens)(share)
-}
-
-/// The same rainbow, captured once for many points on one outline.
-pub(crate) fn tint_fn(ctx: &Context, tokens: &Tokens) -> impl Fn(f32) -> Color32 {
     let light = Light::new(&tokens.glow);
     let t = ctx.input(|i| i.time);
     let phase = (t / f64::from(LAP.0)).rem_euclid(1.0) as f32;
@@ -129,11 +154,9 @@ pub(crate) fn tint_fn(ctx: &Context, tokens: &Tokens) -> impl Fn(f32) -> Color32
         true => (0.0, 0.0),
         false => (head(phase), drift(t)),
     };
-    move |share| {
-        let rgb = light.hue(wander + share - at);
-        let [r, g, b] = rgb.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
-        Color32::from_rgb(r, g, b)
-    }
+    let rgb = light.hue(wander + share - at);
+    let [r, g, b] = rgb.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
+    Color32::from_rgb(r, g, b)
 }
 
 /// Glows painted in the last whole pass, for tests.
@@ -279,6 +302,44 @@ impl Ring {
             }
             from = centre + Vec2::angled(start + FRAC_PI_2) * r;
         }
+        Self::from_points(points, reach)
+    }
+
+    /// A sampled closed path, with outward normals for either winding.
+    fn path(path: &[Pos2]) -> Option<Self> {
+        if path.len() < 3 || path.iter().any(|p| !p.is_finite()) {
+            return None;
+        }
+        let bounds = path.iter().fold(Rect::NOTHING, |mut r, p| {
+            r.extend_with(*p);
+            r
+        });
+        if !bounds.is_positive() {
+            return None;
+        }
+        let area: f64 = path
+            .iter()
+            .zip(path.iter().cycle().skip(1))
+            .map(|(a, b)| f64::from(a.x) * f64::from(b.y) - f64::from(b.x) * f64::from(a.y))
+            .sum();
+        if !area.is_finite() || area.abs() < 0.01 {
+            return None;
+        }
+        let winding = area.signum() as f32;
+        let mut points = Vec::with_capacity(path.len());
+        for (i, at) in path.iter().enumerate() {
+            let prev = path[(i + path.len() - 1) % path.len()];
+            let next = path[(i + 1) % path.len()];
+            let before = (*at - prev).normalized();
+            let after = (next - *at).normalized();
+            let tangent = (before + after).normalized();
+            let normal = egui::vec2(tangent.y, -tangent.x) * winding;
+            points.push((*at, normal));
+        }
+        Some(Self::from_points(points, reach(bounds)))
+    }
+
+    fn from_points(points: Vec<(Pos2, Vec2)>, reach: f32) -> Self {
         let mid = reach * 0.25;
         let at = |(p, n): (Pos2, Vec2)| p + n * mid;
         let next = points.iter().cycle().skip(1);
@@ -378,6 +439,25 @@ mod tests {
         let far = look(0.0).at(0.5, 800.0).1;
         let near = look(0.0).at(0.0, 800.0).1;
         assert!(far < 0.15 && near > 0.99, "{far} {near}");
+    }
+
+    #[test]
+    fn a_text_path_uses_the_same_outward_flare_as_a_ring() {
+        let path = [
+            pos2(0.0, 0.0),
+            pos2(200.0, 0.0),
+            pos2(200.0, 40.0),
+            pos2(0.0, 40.0),
+        ];
+        for p in [path.to_vec(), path.into_iter().rev().collect()] {
+            let ring = Ring::path(&p).expect("a valid closed path");
+            let centre = pos2(100.0, 20.0);
+            assert!(ring.points.iter().all(|(p, n)| (*p - centre).dot(*n) > 0.0));
+            let mesh = ring.mesh(&look(0.0));
+            assert_eq!(mesh.vertices.len(), p.len() * (FALLOFF.len() + 1));
+            assert!((ring.reach - 18.0).abs() < 0.001);
+        }
+        assert!(Ring::path(&[Pos2::ZERO, Pos2::ZERO, Pos2::ZERO]).is_none());
     }
 
     #[test]
