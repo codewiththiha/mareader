@@ -1594,7 +1594,7 @@ tier = "P1"
 milestone = "M6"
 status = "shipped"
 ui_only = true
-evidence = ["crates/ui-egui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui-egui/tests/study.rs::a_phrase_is_not_explained_and_nothing_is_marked", "crates/ui-egui/tests/study.rs::a_failed_answer_says_why_and_offers_a_retry", "crates/ui-egui/tests/study.rs::the_bar_highlights_and_underlines_and_a_click_offers_removal", "crates/ui-egui/tests/study.rs::asking_for_a_colour_each_time_never_offers_the_ai_look", "crates/ui-egui/tests/dictionary.rs::look_up_answers_from_the_packs_in_the_default_language", "crates/settings/src/load.rs::v2_menus_gain_look_up_after_explain"]
+evidence = ["crates/ui-egui/tests/study.rs::explain_marks_the_word_and_its_card_comes_back_on_a_click", "crates/ui-egui/tests/study.rs::a_phrase_is_not_explained_and_nothing_is_marked", "crates/ui-egui/tests/study_asks.rs::a_failed_answer_says_why_and_unmarks_the_word", "crates/ui-egui/tests/study.rs::the_bar_highlights_and_underlines_and_a_click_offers_removal", "crates/ui-egui/tests/study.rs::asking_for_a_colour_each_time_never_offers_the_ai_look", "crates/ui-egui/tests/dictionary.rs::look_up_answers_from_the_packs_in_the_default_language", "crates/settings/src/load.rs::v2_menus_gain_look_up_after_explain"]
 reference = ["crates/reader-runtime/src/components/ai/selection_menu.rs"]
 notes = "Copy and Explain (M6 slice 1); highlighters, ordering and hiding (slice 3); Look up with the dictionary (slice 4), added to saved menus after Explain"
 

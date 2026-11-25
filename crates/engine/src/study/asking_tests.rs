@@ -2,8 +2,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use mareader_library::{DeviceId, Library};
 use mareader_study::Why;
 
+use super::super::state::Key;
 use super::*;
 use crate::testing::{asked, waited, wakes};
 
@@ -59,7 +61,7 @@ fn canned(answer: Result<WordInfo, Failure>) -> (Arc<Canned>, Arc<Mutex<Vec<Aske
 }
 
 /// Asks `one` about the fox, as the card and the mark menu do.
-fn asked_of(one: Arc<Canned>, wake: Waker) -> Receiver<Got> {
+fn asked_of(one: Arc<Canned>, wake: Waker) -> Ask {
     let (word, context) = ("fox".to_owned(), "The quick brown fox.".to_owned());
     ask(wake, one, (word, context, None))
 }
@@ -69,11 +71,11 @@ fn a_word_asked_off_the_frame_streams_and_then_answers() {
     let (wake, frames) = asked();
     let (one, asks) = canned(Ok(info("what the word means here")));
     let got = asked_of(one, wake);
-    let Got::Partial(part) = got.recv().expect("the worker sends as it goes") else {
+    let Got::Partial(part) = got.rx.recv().expect("the worker sends as it goes") else {
         panic!("the first thing it sends is the answer so far");
     };
     assert_eq!(part.meaning, "the first words of it", "as it streamed");
-    let Got::Done(done) = got.recv().expect("the worker sends the end") else {
+    let Got::Done(done) = got.rx.recv().expect("the worker sends the end") else {
         panic!("the last thing it sends is the answer, done");
     };
     let said = done.expect("the canned explainer answered");
@@ -93,9 +95,9 @@ fn an_explainer_that_fails_says_why_it_could_not_answer() {
     let failed = Failure::detailed(Why::Busy, "the model is busy with another");
     let (one, _) = canned(Err(failed.clone()));
     let got = asked_of(one, wake);
-    let first = got.recv().expect("the worker sends as it goes");
+    let first = got.rx.recv().expect("the worker sends as it goes");
     assert!(matches!(first, Got::Partial(_)), "it streams first");
-    let last = got.recv().expect("the worker sends the end");
+    let last = got.rx.recv().expect("the worker sends the end");
     let Got::Done(done) = last else {
         panic!("the last thing it sends is the answer, done");
     };
@@ -116,12 +118,12 @@ fn the_answer_that_comes_back_is_within_the_card_s_bounds() {
     };
     let (one, _) = canned(Ok(long.clone()));
     let got = asked_of(one, wake);
-    let first = got.recv().expect("the worker sends as it goes");
+    let first = got.rx.recv().expect("the worker sends as it goes");
     let Got::Partial(part) = first else {
         panic!("the first thing it sends is the answer so far");
     };
     assert_eq!(part.meaning, "the first words of it", "streamed as given");
-    let Got::Done(done) = got.recv().expect("the worker sends the end") else {
+    let Got::Done(done) = got.rx.recv().expect("the worker sends the end") else {
         panic!("the last thing it sends is the answer, done");
     };
     let said = done.expect("the canned explainer answered");
@@ -249,4 +251,118 @@ fn ask_again_replaces_saved_gloss_and_stays_clear_while_pending() {
         .expect("saved gloss updated");
     assert_eq!(saved.meaning, "fresh meaning");
     assert_eq!(saved.by, "Model B");
+}
+
+/// An explainer that waits until it is told to stop, and says it gave up.
+struct Stoppable {
+    gave_up: Arc<Mutex<bool>>,
+}
+
+impl Explainer for Stoppable {
+    fn explain(
+        &self,
+        _: &str,
+        _: &str,
+        _: &(dyn Fn(WordInfo) + Sync),
+    ) -> Result<WordInfo, Failure> {
+        Err(Why::NotHere.into())
+    }
+
+    fn explain_until(
+        &self,
+        _: (&str, &str, Option<Pos>),
+        _: &(dyn Fn(WordInfo) + Sync),
+        stop: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(WordInfo, String), Failure> {
+        while !stop() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        if let Ok(mut gave_up) = self.gave_up.lock() {
+            *gave_up = true;
+        }
+        Err(Why::NotHere.into())
+    }
+}
+
+/// A word on the page to explain, with its spot.
+fn slumber() -> super::super::words::Asked {
+    super::super::words::Asked {
+        word: "slumber".into(),
+        context: "deep slumber".into(),
+        page: 0,
+        chars: 5..12,
+        spot: Some(mareader_library::Spot::Page {
+            page: 0,
+            rect: [40.0, 0.0, 50.0, 20.0],
+        }),
+    }
+}
+
+/// Whether `key`'s mark still shows.
+fn shows(state: &super::super::state::State, main: &Library, key: Key) -> bool {
+    let Key::Mark(id) = key else {
+        return false;
+    };
+    state.mark(main, id).is_some_and(|m| m.alive.value)
+}
+
+#[test]
+fn cancelling_an_ask_stops_its_explainer_and_unmarks_the_word() {
+    use super::super::state::State;
+    let (wake, _) = asked();
+    let mut main = Library::new(DeviceId(1));
+    let mut state = State::default();
+    let gave_up = Arc::new(Mutex::new(false));
+    let told = Arc::clone(&gave_up);
+    state.set_explainer(Arc::new(Stoppable { gave_up: told }));
+    let ask = slumber();
+    let key = state.explain_mark(&mut main, None, "book", &ask, 1);
+    state.prepare_card(&mut main, wake, key, &ask.word, &ask.context);
+    assert!(shows(&state, &main, key), "marked while it asks");
+    assert!(state.cancel_ask(&mut main, key), "an ask was coming");
+    let stopped = || gave_up.lock().map(|g| *g).unwrap_or(false);
+    assert!(waited(stopped), "the explainer itself gave up");
+    assert!(!shows(&state, &main, key), "the word as it was");
+}
+
+#[test]
+fn removing_a_mark_stops_its_ask() {
+    use super::super::state::State;
+    let (wake, _) = asked();
+    let mut main = Library::new(DeviceId(1));
+    let mut state = State::default();
+    let gave_up = Arc::new(Mutex::new(false));
+    let told = Arc::clone(&gave_up);
+    state.set_explainer(Arc::new(Stoppable { gave_up: told }));
+    let ask = slumber();
+    let key = state.explain_mark(&mut main, None, "book", &ask, 1);
+    state.prepare_card(&mut main, wake, key, &ask.word, &ask.context);
+    let Key::Mark(id) = key else {
+        panic!("expected a mark key");
+    };
+    let _ = state.remove_marks(&mut main, vec![id], 2);
+    let stopped = || gave_up.lock().map(|g| *g).unwrap_or(false);
+    assert!(waited(stopped), "nobody asks for a mark that went");
+    assert!(state.asking_marks().is_empty());
+}
+
+#[test]
+fn a_failed_ask_unmarks_the_word_and_try_again_marks_it_back() {
+    use super::super::state::State;
+    let (wake, _) = asked();
+    let mut main = Library::new(DeviceId(1));
+    let mut state = State::default();
+    state.set_inline(true);
+    let failed = Failure::detailed(Why::Busy, "busy");
+    state.set_explainer(canned(Err(failed)).0);
+    let ask = slumber();
+    let key = state.explain_mark(&mut main, None, "book", &ask, 1);
+    state.prepare_card(&mut main, Arc::clone(&wake), key, &ask.word, &ask.context);
+    assert!(state.failure(key).is_some(), "it failed");
+    assert!(!shows(&state, &main, key), "its mark went with it");
+    state.set_explainer(canned(Ok(info("asleep"))).0);
+    state.retry(&mut main, wake, key, &ask.word, &ask.context);
+    assert!(shows(&state, &main, key), "Try again marks it back");
+    let meaning = state.answer(key).map(|s| s.info.meaning.clone());
+    assert_eq!(meaning.as_deref(), Some("asleep"), "and answers");
 }

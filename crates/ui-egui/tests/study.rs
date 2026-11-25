@@ -196,21 +196,6 @@ fn a_phrase_is_not_explained_and_nothing_is_marked() -> Out {
 }
 
 #[test]
-fn a_failed_answer_says_why_and_offers_a_retry() -> Out {
-    let mut h = reader(&[("pdf", "sample:5"), ("explain", "none")]);
-    let pane = h.state().active_pane();
-    select(&mut h, 0, "quick");
-    h.state_mut().queue(Sent::Engine(Command::Explain(pane)));
-    h.run();
-    assert!(h.state().study().card_open());
-    assert!(h.state().study().card_answer().is_none());
-    // Nothing on this machine can answer: no retry is offered.
-    assert!(h.query_by_label("Try again").is_none());
-    assert_eq!(marks(&h).len(), 1, "the word is marked all the same");
-    Ok(())
-}
-
-#[test]
 fn a_book_s_mark_is_found_again_after_the_type_changes() -> Out {
     let mut h = reader(&[("epub", "sample:2"), ("view", "single")]);
     let pane = h.state().active_pane();

@@ -1,6 +1,8 @@
 //! A word asked of an explainer off the frame, and the answer that comes.
+//! Dropping its [`Ask`] stops it: the explainer gives up and frees its model.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 
 use mareader_library::{Gloss, Mark};
@@ -53,20 +55,36 @@ impl Said {
     }
 }
 
+/// A word being asked: what comes back, and the flag that stops it.
+pub struct Ask {
+    pub rx: Receiver<Got>,
+    stop: Arc<AtomicBool>,
+}
+
+impl Drop for Ask {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Asks `explainer` about a word, its sentence and the tagger's class
 /// on a thread; `wake` asks for a frame.
 pub fn ask(
     wake: Waker,
     explainer: Arc<dyn Explainer>,
     (word, context, hint): (String, String, Option<Pos>),
-) -> Receiver<Got> {
+) -> Ask {
     let (tx, rx) = channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let told = Arc::clone(&stop);
     std::thread::spawn(move || {
         let partial = |info| {
             let _ = tx.send(Got::Partial(info));
             wake();
         };
-        let done = explainer.explain_by((&word, &context, hint), &partial);
+        let stopped = || told.load(Ordering::Relaxed);
+        let words = (word.as_str(), context.as_str(), hint);
+        let done = explainer.explain_until(words, &partial, &stopped);
         let said = done.map(|(info, by)| Said {
             info: info.clamped(),
             by,
@@ -75,7 +93,7 @@ pub fn ask(
         let _ = tx.send(Got::Done(said));
         wake();
     });
-    rx
+    Ask { rx, stop }
 }
 
 #[cfg(test)]

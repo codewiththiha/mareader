@@ -246,10 +246,11 @@ fn menu_place(ctx: &Context, id: Id, at: egui::Pos2, words: Rect) -> (egui::Pos2
     }
 }
 
-/// The right-click menu on a mark; returns where it went.
+/// The right-click menu on a mark, which offers Cancel instead of Remove
+/// while its answer comes; returns where it went.
 pub fn menu(
     ctx: &Context,
-    (pane, mark): (PaneId, MarkId),
+    (pane, mark, asking): (PaneId, MarkId, bool),
     (at, words): (egui::Pos2, Rect),
     noted: Option<bool>,
     (style, look): (Option<Style>, &HighlightSettings),
@@ -291,8 +292,13 @@ pub fn menu(
                         ))));
                     }
                     widgets::menu_rule(ui);
-                    if widgets::menu_row_danger(ui, Icon::Remove, "Remove highlight").clicked() {
-                        out.push(Sent::Engine(Command::Study(Action::Remove(vec![mark]))));
+                    let (icon, label, act) = if asking {
+                        (Icon::Close, "Cancel", Action::StopAsk(mark))
+                    } else {
+                        (Icon::Remove, "Remove highlight", Action::Remove(vec![mark]))
+                    };
+                    if widgets::menu_row_danger(ui, icon, label).clicked() {
+                        out.push(Sent::Engine(Command::Study(act)));
                     }
                 });
         })

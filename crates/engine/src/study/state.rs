@@ -2,21 +2,24 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::mpsc::TryRecvError;
 
 use mareader_appearance::Rgb;
-use mareader_library::{BookId, DeviceId, Library, Mark, MarkId, MarkKind, NewMark, Style};
+use mareader_library::{BookId, DeviceId, Library, Mark, MarkId, MarkKind, NewMark};
 use mareader_study::{Explainer, Failure, Pos, Unavailable, WordInfo};
 use mareader_workspace::PaneId;
 
 use super::Action;
-use super::asking::{self, Got, Said};
+use super::asking::{self, Ask, Got, Said};
 use super::loose::{loose_book, loose_content};
 use super::words::Asked;
 use crate::ai_dict::{Filing, Offer};
 use crate::command::Command;
 use crate::session::Waker;
 use crate::toast::Toast;
+
+#[path = "state_looks.rs"]
+mod looks;
 
 pub use super::marking::{Bookmarking, Highlighted};
 
@@ -46,7 +49,10 @@ pub struct State {
     /// Answers still arriving, as far as they got.
     partial: HashMap<Key, WordInfo>,
     failed: HashMap<Key, Failure>,
-    asking: HashMap<Key, Receiver<Got>>,
+    /// Dropping one stops its explainer.
+    asking: HashMap<Key, Ask>,
+    /// Failed since the last save: their unanswered marks go.
+    lapsed: Vec<Key>,
     askers: HashMap<Key, Asker>,
     /// The tagger's class per card, a guess the AI is given.
     hints: HashMap<Key, Pos>,
@@ -69,6 +75,7 @@ impl Default for State {
             partial: HashMap::new(),
             failed: HashMap::new(),
             asking: HashMap::new(),
+            lapsed: Vec::new(),
             askers: HashMap::new(),
             hints: HashMap::new(),
             done: Vec::new(),
@@ -180,11 +187,33 @@ impl State {
         self.asking.keys().filter_map(asked)
     }
 
-    /// Stops waiting for `key`'s answer; says whether one was coming.
+    /// Stops `key`'s ask, its explainer too; says whether one was coming.
     pub fn drop_ask(&mut self, key: Key) -> bool {
         self.partial.remove(&key);
         self.askers.remove(&key);
         self.asking.remove(&key).is_some()
+    }
+
+    /// The reader cancels `key`'s ask: it stops, and a mark never
+    /// answered goes, its word as it was; says whether one was coming.
+    pub(crate) fn cancel_ask(&mut self, main: &mut Library, key: Key) -> bool {
+        let stopped = self.drop_ask(key);
+        if stopped {
+            self.failed.remove(&key);
+            self.unmark(main, key);
+        }
+        stopped
+    }
+
+    /// Drops `key`'s mark quietly if it never got an answer.
+    fn unmark(&mut self, main: &mut Library, key: Key) {
+        let Key::Mark(id) = key else {
+            return;
+        };
+        let bare = |m: &Mark| m.kind == MarkKind::Explain && m.gloss.value.is_none();
+        if self.mark(main, id).is_some_and(bare) {
+            self.drop_marks(main, &[id]);
+        }
     }
 
     /// The tagger's class for `key`'s word, for the next ask.
@@ -244,8 +273,12 @@ impl State {
         self.save(main);
     }
 
-    /// Retries a failed explanation lookup for `key`.
+    /// Retries a failed explanation lookup for `key`, its dropped mark
+    /// back while it asks.
     pub fn retry(&mut self, main: &mut Library, wake: Waker, key: Key, word: &str, context: &str) {
+        if let Key::Mark(id) = key {
+            self.restore_marks(main, &[id], crate::library::wall_ms());
+        }
         if !self.asking.contains_key(&key) {
             self.answers.remove(&key);
             self.failed.remove(&key);
@@ -285,6 +318,7 @@ impl State {
                 }
                 Err(e) => {
                     self.failed.insert(key, e);
+                    self.lapsed.push(key);
                 }
             }
             return;
@@ -298,9 +332,9 @@ impl State {
     pub fn receive(&mut self, main: &mut Library) -> bool {
         let mut changed = false;
         let mut done = Vec::new();
-        for (key, rx) in &self.asking {
+        for (key, ask) in &self.asking {
             loop {
-                match rx.try_recv() {
+                match ask.rx.try_recv() {
                     Ok(Got::Partial(info)) => {
                         self.partial.insert(*key, info.clamped());
                         changed = true;
@@ -327,6 +361,7 @@ impl State {
                 Some(Ok(said)) => self.done.push((key, said)),
                 Some(Err(e)) => {
                     self.failed.insert(key, e);
+                    self.lapsed.push(key);
                 }
                 None => {}
             }
@@ -335,8 +370,12 @@ impl State {
         changed
     }
 
-    /// Files finished answers: in the session, and with their marks.
+    /// Files finished answers: in the session, and with their marks. A
+    /// failed ask's mark that was never answered goes.
     pub fn save(&mut self, main: &mut Library) {
+        for key in std::mem::take(&mut self.lapsed) {
+            self.unmark(main, key);
+        }
         let wall = crate::library::wall_ms();
         for (key, said) in std::mem::take(&mut self.done) {
             if let Key::Mark(id) = key {
@@ -396,6 +435,10 @@ impl State {
         } else {
             "highlight"
         };
+        // Nothing asks for a mark that went.
+        for &id in &ids {
+            self.drop_ask(Key::Mark(id));
+        }
         let n =
             main.set_marks_alive(&ids, false, wall) + self.loose.set_marks_alive(&ids, false, wall);
         (n > 0).then(|| {
@@ -409,6 +452,9 @@ impl State {
 
     /// Removes marks quietly, as a cancelled note's placeholder highlight.
     pub(crate) fn drop_marks(&mut self, main: &mut Library, ids: &[MarkId]) {
+        for &id in ids {
+            self.drop_ask(Key::Mark(id));
+        }
         let wall = crate::library::wall_ms();
         main.set_marks_alive(ids, false, wall);
         self.loose.set_marks_alive(ids, false, wall);
@@ -418,82 +464,5 @@ impl State {
     pub(crate) fn restore_marks(&mut self, main: &mut Library, ids: &[MarkId], wall: u64) {
         main.set_marks_alive(ids, true, wall);
         self.loose.set_marks_alive(ids, true, wall);
-    }
-
-    /// Updates a single highlight's style.
-    pub fn restyle(&mut self, main: &mut Library, id: MarkId, style: Style, wall: u64) {
-        if !main.set_style(id, style, wall) {
-            self.loose.set_style(id, style, wall);
-        }
-    }
-
-    /// Restyles picked highlights; returns an Undo toast when any changed.
-    pub(crate) fn restyle_all(
-        &mut self,
-        main: &mut Library,
-        changes: Vec<(MarkId, Style)>,
-        skipped: usize,
-        wall: u64,
-    ) -> Toast {
-        let mut before = Vec::new();
-        for (id, style) in changes {
-            let Some(was) = self.mark(main, id).map(Mark::look) else {
-                continue;
-            };
-            if main.set_style(id, style, wall) || self.loose.set_style(id, style, wall) {
-                before.push((id, was));
-            }
-        }
-        let n = before.len();
-        let message = match (n, skipped) {
-            (0, _) => "That look is kept for marks of their own".to_owned(),
-            (1, 0) => "Restyled 1 highlight".to_owned(),
-            (n, 0) => format!("Restyled {n} highlights"),
-            (n, s) => format!("Restyled {n} of {} highlights", n + s),
-        };
-        match n {
-            0 => Toast::info(message),
-            _ => Toast::info(message).undo(Command::Study(Action::Unstyle(before))),
-        }
-    }
-
-    /// Reverts picked highlights' previous styles (Undo).
-    pub(crate) fn unstyle(&mut self, main: &mut Library, looks: &[(MarkId, Style)], wall: u64) {
-        for &(id, style) in looks {
-            if !main.set_style(id, style, wall) {
-                self.loose.set_style(id, style, wall);
-            }
-        }
-    }
-
-    /// Saves note text on mark `id`.
-    pub fn set_note(&mut self, main: &mut Library, id: MarkId, text: String, wall: u64) {
-        if !main.set_note(id, Some(text.clone()), wall) {
-            self.loose.set_note(id, Some(text), wall);
-        }
-    }
-
-    /// Deletes `id`'s note, returning an Undo toast when one was present.
-    pub(crate) fn forget_note(
-        &mut self,
-        main: &mut Library,
-        id: MarkId,
-        wall: u64,
-    ) -> Option<Toast> {
-        let was = self.mark(main, id).and_then(|m| m.note.value.clone());
-        if !main.set_note(id, None, wall) {
-            self.loose.set_note(id, None, wall);
-        }
-        was.map(|text| {
-            let undo = Command::Study(Action::RestoreNote(id, text));
-            Toast::info("Deleted note").undo(undo)
-        })
-    }
-
-    /// Restores a deleted note's text (Undo).
-    pub(crate) fn restore_note(&mut self, main: &mut Library, id: MarkId, text: String, wall: u64) {
-        if !main.set_note(id, Some(text.clone()), wall) {
-            self.loose.set_note(id, Some(text), wall);
-        }
     }
 }

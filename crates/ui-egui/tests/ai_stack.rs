@@ -97,6 +97,8 @@ fn an_explain_out_of_view_cancels_at_once_with_a_toast() {
     std::thread::sleep(Duration::from_millis(400));
     h.run_steps(10);
     assert!(h.query_by_label(STACK).is_none(), "its answer never lands");
+    let pane = h.state().active_pane();
+    assert!(h.state().marks(pane).is_empty(), "nor its mark");
 }
 
 /// A skill run on the first page's words while the reader is on page 8.

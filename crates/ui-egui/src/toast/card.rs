@@ -103,7 +103,6 @@ pub(super) fn measure(ctx: &Context, live: &Live, width: f32, t: &Tokens) -> Car
 /// Theme-inflected semantic colours for one toast card.
 pub(super) struct Swatch {
     pub mark: Color32,
-    pub fill: Color32,
     pub listed: Color32,
     pub edge: Color32,
     pub soft: Color32,
@@ -118,7 +117,6 @@ pub(super) fn look(tone: Tone, t: &Tokens) -> Swatch {
     };
     Swatch {
         mark: theme::color(raw.mark),
-        fill: theme::color(raw.fill),
         listed: theme::color(raw.listed),
         edge: theme::color(raw.edge),
         soft: theme::color(raw.soft),
@@ -137,9 +135,9 @@ pub(super) enum Body {
     Listed,
 }
 
-/// The card's body alone, as a toast behind the front one shows. Its
-/// tone's colour drains into the theme's paper as its time `left` runs
-/// out, 1 to 0.
+/// The card's body alone, as a toast behind the front one shows: the
+/// theme's paper in front, its tone's block of time drawn over it; in the
+/// list, its tone drains into the paper as its time `left` runs out.
 pub(super) fn shell(ui: &Ui, rect: Rect, (tone, left): (Tone, f32), body: Body, t: &Tokens) {
     let radius = CornerRadius::from(t.radius_lg);
     let painter = ui.painter();
@@ -160,7 +158,7 @@ pub(super) fn shell(ui: &Ui, rect: Rect, (tone, left): (Tone, f32), body: Body, 
 fn paint_of(swatch: &Swatch, body: Body, left: f32, t: &Tokens) -> (Color32, Color32) {
     let toned = |paper: Color32, tint: Color32| paper.lerp_to_gamma(tint, left.clamp(0.0, 1.0));
     match body {
-        Body::Front => (toned(t.surface, swatch.fill), toned(t.line, swatch.edge)),
+        Body::Front => (t.surface, swatch.edge),
         Body::Behind => (t.surface.lerp_to_gamma(t.ink, 0.06), t.line),
         Body::Listed => {
             let paper = t.surface.lerp_to_gamma(t.ink, 0.04);
@@ -195,7 +193,7 @@ pub(super) fn controls(rect: Rect, card: &Card) -> Rect {
     }
 }
 
-/// The time left as a wash of the tone, its edge feathered away.
+/// The time left as a block of the tone, its edge feathered away.
 fn countdown(painter: &Painter, rect: Rect, radius: f32, tint: Color32, left: f32) {
     let edge = rect.left() - FEATHER / 2.0 + (rect.width() + FEATHER) * left;
     let end = (edge + FEATHER / 2.0).min(rect.right());
@@ -234,12 +232,13 @@ fn countdown(painter: &Painter, rect: Rect, radius: f32, tint: Color32, left: f3
     painter.add(mesh);
 }
 
-/// The wash's strength for a tone: a hint of colour, never a block.
-fn wash(tone: Tone, tint: Color32) -> Color32 {
-    match tone {
-        Tone::Error => tint.gamma_multiply(0.16),
-        Tone::Info | Tone::Warning => tint.gamma_multiply(0.13),
-    }
+/// The block's colour: bold enough to see go, with the words still clear.
+fn block(tone: Tone, swatch: &Swatch, t: &Tokens) -> Color32 {
+    let k = match tone {
+        Tone::Error => 0.55,
+        Tone::Info | Tone::Warning => 0.45,
+    };
+    t.surface.lerp_to_gamma(swatch.mark, k)
 }
 
 /// The time left, the words and the buttons.
@@ -251,7 +250,7 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
     if left > 0.0 && !live.listed {
         let inner = rect.shrink(1.0);
         let radius = t.radius_lg - 1.0;
-        let tint = wash(live.toast.tone, swatch.mark);
+        let tint = block(live.toast.tone, &swatch, &t);
         countdown(&painter, inner, radius, tint, left);
     }
     // The words and buttons share the card's middle, however many lines.
@@ -310,25 +309,51 @@ mod tests {
         let warn = look(Tone::Warning, &light);
         let err = look(Tone::Error, &light);
         assert_ne!(info.mark, light.accent);
-        assert_ne!(info.fill, light.surface);
+        assert_ne!(info.listed, light.surface);
         assert_ne!(info.mark, warn.mark);
         assert_ne!(warn.mark, err.mark);
         assert_ne!(info.mark, err.mark);
-        assert_ne!(info.fill, look(Tone::Info, &sepia).fill);
+        assert_ne!(info.listed, look(Tone::Info, &sepia).listed);
         let mid = light.toward(&dark, 0.5);
         assert_ne!(mid.toast, light.toast);
         assert_ne!(mid.toast, dark.toast);
     }
 
+    /// How far apart two colours are, channel by channel.
+    fn apart(a: Color32, b: Color32) -> i32 {
+        let d = |x: u8, y: u8| (i32::from(x) - i32::from(y)).abs();
+        d(a.r(), b.r()) + d(a.g(), b.g()) + d(a.b(), b.b())
+    }
+
     #[test]
-    fn a_card_drains_from_its_tone_into_the_theme_as_its_time_runs_out() {
+    fn a_card_s_time_is_a_bold_block_over_the_theme_s_paper() {
         let t = Tokens::new(&Appearance::default());
         let err = look(Tone::Error, &t);
         let fresh = paint_of(&err, Body::Front, 1.0, &t);
-        assert_eq!(fresh, (err.fill, err.edge), "arrives in its tone");
         let spent = paint_of(&err, Body::Front, 0.0, &t);
-        assert_eq!(spent, (t.surface, t.line), "goes in the theme's paper");
-        let half = paint_of(&err, Body::Front, 0.5, &t);
-        assert!(half != fresh && half != spent, "between, on the way");
+        assert_eq!(fresh, (t.surface, err.edge), "paper behind the block");
+        assert_eq!(fresh, spent, "the paper itself never changes");
+        let bold = block(Tone::Error, &err, &t);
+        let shade = apart(bold, t.surface);
+        let old = theme::color(t.toast.error.fill);
+        let bolder = shade > apart(old, t.surface) * 4;
+        assert!(bolder, "bolder than the old tone: {shade}");
+        assert!(apart(bold, t.ink) > 200, "the words still read on it");
+        let dark = Tokens::new(&Appearance {
+            base: BaseMode::Dark,
+            ..Appearance::default()
+        });
+        let night = block(Tone::Warning, &look(Tone::Warning, &dark), &dark);
+        assert!(apart(night, dark.ink) > 200, "and on a dark theme");
+    }
+
+    #[test]
+    fn a_listed_card_drains_from_its_tone_into_the_theme() {
+        let t = Tokens::new(&Appearance::default());
+        let err = look(Tone::Error, &t);
+        let fresh = paint_of(&err, Body::Listed, 1.0, &t);
+        let spent = paint_of(&err, Body::Listed, 0.0, &t);
+        assert_eq!(fresh.0, err.listed, "arrives in its tone");
+        assert_ne!(fresh, spent, "and drains");
     }
 }

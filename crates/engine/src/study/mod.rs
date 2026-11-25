@@ -84,4 +84,7 @@ pub enum Action {
     SetNote(MarkId, String),
     /// Drops placeholder marks quietly without an undo toast.
     DropMarks(Vec<MarkId>),
+    /// The mark menu's Cancel while its answer comes: the ask stops, and a
+    /// mark never answered goes.
+    StopAsk(MarkId),
 }

@@ -27,8 +27,19 @@ impl Explainer for AiExplainer {
 
     fn explain_by(
         &self,
+        words: (&str, &str, Option<Pos>),
+        partial: &(dyn Fn(WordInfo) + Sync),
+    ) -> Result<(WordInfo, String), Failure> {
+        self.explain_until(words, partial, &|| false)
+    }
+
+    /// Dropping the job once `stop` says so aborts its request and frees
+    /// its model.
+    fn explain_until(
+        &self,
         (word, context, hint): (&str, &str, Option<Pos>),
         partial: &(dyn Fn(WordInfo) + Sync),
+        stop: &(dyn Fn() -> bool + Sync),
     ) -> Result<(WordInfo, String), Failure> {
         let now = self.0.followed();
         let language = now.ai.explain_language();
@@ -47,7 +58,7 @@ impl Explainer for AiExplainer {
         };
         let id = TaskId::Explain;
         let job = self.0.dispatch().ask(now.asker(id), now.route(id), step);
-        job.wait_by(partial)
+        job.wait_until(partial, stop)
     }
 
     fn by(&self) -> String {

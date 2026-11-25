@@ -28,8 +28,7 @@ use mareader_engine::study::state::{Key, State as StudyState};
 use mareader_engine::study::words::Asked;
 use mareader_library::{BookId, Library, Mark, MarkId, MarkKind, Spot, Style};
 use mareader_settings::{GlossSettings, HighlightSettings};
-use mareader_study::Pos;
-use mareader_study::WordInfo;
+use mareader_study::{Pos, WordInfo};
 use mareader_workspace::PaneId;
 
 pub use bar::{BarPress, offer as offer_skills, show as show_bar};
@@ -264,7 +263,8 @@ impl StudyUi {
                 None => self.note = None,
             }
         }
-        // A scrolled-away mark, scrolled loose card, or closed pane drops it.
+        // Mark off screen (kept if failed), loose card moved, or pane gone.
+        let failed = |c: &Card| state.failure(c.key).is_some();
         let loose_moved = |c: &Card| {
             matches!(c.key, Key::Loose(_))
                 && match (c.offset, pane_offset(c.pane)) {
@@ -275,7 +275,7 @@ impl StudyUi {
         if self
             .card
             .as_ref()
-            .is_some_and(|c| !c.seen || room(c.pane).is_none() || loose_moved(c))
+            .is_some_and(|c| !(c.seen || failed(c)) || room(c.pane).is_none() || loose_moved(c))
         {
             self.drop_card();
         }
@@ -289,7 +289,7 @@ impl StudyUi {
         self.menu_rect = self.menu.map(|m| {
             card::menu(
                 ctx,
-                (m.pane, m.mark),
+                (m.pane, m.mark, state.asking_marks().contains(&m.mark)),
                 (m.at, m.rect),
                 m.noted,
                 (m.style, pens),

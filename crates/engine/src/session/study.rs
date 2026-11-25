@@ -92,9 +92,9 @@ impl Session {
         self.study.asked_by(key, pane, word);
     }
 
-    /// Stops waiting for `key`'s answer; its mark stays, unanswered.
+    /// Stops `key`'s ask, its request too; a mark never answered goes.
     pub fn study_cancel(&mut self, key: Key) -> bool {
-        self.study.drop_ask(key)
+        self.study.cancel_ask(&mut self.library.model, key)
     }
 
     /// Highlights text in `pen`; returns the mark id and whether it is new.

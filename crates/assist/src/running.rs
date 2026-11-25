@@ -6,12 +6,16 @@
 
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
+use std::time::Duration;
 
 use mareader_study::pending::{News, Pending};
 use mareader_study::{Failure, Why};
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
+
+/// How often a wait that may be stopped looks whether it is.
+const LOOK: Duration = Duration::from_millis(50);
 
 /// Wakes the UI when a job has news.
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
@@ -81,6 +85,27 @@ impl<O, P> Running<O, P> {
     /// Like [`Self::wait`], handing each partial to `partial` as it comes.
     pub fn wait_with(self, partial: impl Fn(P)) -> Result<O, Failure> {
         self.wait_by(partial).map(|(done, _)| done)
+    }
+
+    /// Like [`Self::wait_by`], giving up once `stop` says so: the job is
+    /// dropped, which cancels it.
+    pub fn wait_until(
+        self,
+        partial: impl Fn(P),
+        stop: impl Fn() -> bool,
+    ) -> Result<(O, String), Failure> {
+        let mut by = String::new();
+        while !stop() {
+            match self.rx.recv_timeout(LOOK) {
+                Ok(Event::Partial(p)) => partial(p),
+                Ok(Event::Started { by: name }) => by = name,
+                Ok(Event::Done(done)) => return done.map(|out| (out, by)),
+                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Err(Why::NotHere.into()),
+            }
+        }
+        // Nobody waits for this answer any more.
+        Err(Why::NotHere.into())
     }
 
     /// Like [`Self::wait_with`], with the name of the model that answered.
@@ -274,6 +299,27 @@ mod tests {
     fn without_a_runtime_it_is_not_here() {
         let job: Running<u8> = start(None, &quiet(), |_| async { Ok(1) });
         assert_eq!(job.wait().map_err(|f| f.why), Err(Why::NotHere));
+    }
+
+    #[test]
+    fn a_wait_told_to_stop_gives_up_and_cancels_the_job() {
+        let rt = runtime();
+        let (tx, rx) = channel::<()>();
+        let job: Running<()> = start(Some(&rt), &quiet(), |_| async move {
+            let _keep = tx;
+            std::future::pending::<()>().await;
+            Ok(())
+        });
+        // Told to stop on the third look, after waiting twice.
+        let looks = std::cell::Cell::new(0);
+        let stop = || {
+            looks.set(looks.get() + 1);
+            looks.get() >= 3
+        };
+        assert!(job.wait_until(|_| {}, stop).is_err(), "no answer");
+        let gone = rx.recv_timeout(std::time::Duration::from_secs(10));
+        let dropped = RecvTimeoutError::Disconnected;
+        assert_eq!(gone, Err(dropped), "its request went too");
     }
 
     #[test]

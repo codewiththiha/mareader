@@ -19,8 +19,14 @@ entries are `study.*` in `parity/mareader-features.toml`.
   dictionary's, never what the word means in the story.
 - **Marks.** Explaining a word marks it where it stands. The same word in
   the same spot reuses its mark. A click on a mark opens its card again; a
-  right-click offers "Remove highlight", with Undo in the toast. Long press
-  selects many marks to remove at once.
+  right-click offers "Remove highlight", with Undo in the toast; while its
+  answer is coming it offers "Cancel" instead, which stops the request and
+  takes the mark away, the word back in its CEFR colour, with no Undo. An
+  ask that fails takes its never-answered mark away too; its card stays
+  with the error, and Try again marks the word again. Ask again on an
+  answered mark keeps the mark and its old answer if it fails. Any other
+  removal stops a pending ask. Long press selects many marks to remove at
+  once.
 - **Card.** The word, then Meaning, Synonyms (chips) and Usages; a shimmer
   while waiting; an error with Retry when retrying can help. Escape or a
   press outside closes it. Answers are saved with their mark (see "Saved
@@ -429,8 +435,8 @@ slice 5.
 - **Out of view, the AI stack.** While neither the glow nor the word's
   card is on screen, the ask is a line in the pane's corner stack
   (`docs/study-mode.md`, The corner stack): *Explaining “quick”* with
-  *Cancel*, which stops waiting at once, with a toast; the mark stays,
-  unanswered. An answer landed meanwhile waits as *Explained “quick”*;
+  *Cancel*, which stops the request at once, with a toast, and takes a
+  never-answered mark away. An answer landed meanwhile waits as *Explained “quick”*;
   *View* turns back to the mark and opens its card. A word kept by no
   mark only says so for 3 s. A glow on a thumbnail doesn't count.
 - **Rest to look up** (`dictionary.hover`, on by default): resting on a

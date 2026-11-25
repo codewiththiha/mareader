@@ -359,11 +359,13 @@ shown without an update check.
 - **Toasts.** `crates/ui-egui/src/toast.rs` and `toast/`. They stack in the
   bottom-right corner of the panes, 16 pt in, above the page bar in the
   reader; 360 pt wide.
-  - **Card.** The tone icon and edge mark each card; the original gradient
-    wash drains across its surface to show the time left, and the card's
-    green, amber or red drains with it into the theme's paper (`surface`
-    and `line`), fully themed as it goes. The tone stays in its mark,
-    count and action. An action such as
+  - **Card.** The tone icon and edge mark each card. The card is the
+    theme's paper (`surface`); a bold block of its green, amber or red
+    (the tone mixed 45%, or 55% for errors, into the paper) covers it and
+    shrinks right to left, its edge feathered, to show the time left, so
+    the paper shows more as it goes. The words stay legible on both. In
+    the opened list a card's tone drains into the paper instead. The tone
+    stays in its mark, count and action. An action such as
     Undo shows its shortcut; a dismiss button remains available.
   - **Pile and fan.** The newest is in front, with older cards peeking behind
     and a count badge. Hover fans the pile into a paused list; click the pile

@@ -11,7 +11,7 @@ use crate::library::wall_ms;
 use crate::notes_panel::{bookmark_label, bookmark_spot, page_of};
 use crate::route::Route;
 use crate::session::{Done, Session};
-use crate::study::state::{Bookmarking, Highlighted};
+use crate::study::state::{Bookmarking, Highlighted, Key};
 use crate::toast::Toast;
 
 pub(super) fn run(session: &mut Session, intent: Command) -> Done {
@@ -174,6 +174,10 @@ fn study(session: &mut Session, action: crate::study::Action) {
         Action::RestoreNote(id, text) => session.study_restore_note(id, text),
         Action::SetNote(id, text) => session.study_set_note(id, text),
         Action::DropMarks(ids) => session.study_drop_marks(&ids),
+        Action::StopAsk(id) => {
+            session.study_cancel(Key::Mark(id));
+            session.emit(Event::Study(Action::StopAsk(id)));
+        }
         other => session.emit(Event::Study(other)),
     }
 }

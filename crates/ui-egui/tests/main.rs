@@ -43,6 +43,7 @@ mod skills;
 mod space;
 mod space_notes;
 mod study;
+mod study_asks;
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod study_cards;

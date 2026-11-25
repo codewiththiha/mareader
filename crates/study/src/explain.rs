@@ -29,6 +29,18 @@ pub trait Explainer: Send + Sync {
         self.explain(word, context, partial).map(|info| (info, by))
     }
 
+    /// Like [`Self::explain_by`], giving up once `stop` says so, as when the
+    /// reader cancels; one that can't give up runs to its end.
+    fn explain_until(
+        &self,
+        words: (&str, &str, Option<Pos>),
+        partial: &(dyn Fn(WordInfo) + Sync),
+        stop: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(WordInfo, String), Failure> {
+        let _ = stop;
+        self.explain_by(words, partial)
+    }
+
     /// Answers on a worker even where asks run inline, as a slow answerer must.
     fn waits(&self) -> bool {
         false

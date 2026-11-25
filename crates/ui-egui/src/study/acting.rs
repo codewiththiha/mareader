@@ -3,6 +3,7 @@
 use egui::Rect;
 use mareader_engine::session::Session;
 use mareader_engine::study::Action;
+use mareader_engine::study::state::Key;
 
 use super::StudyUi;
 
@@ -87,6 +88,12 @@ impl StudyUi {
                 if save {
                     let id = n.mark.id;
                     self.save_note(session, id);
+                }
+            }
+            Action::StopAsk(id) => {
+                self.menu = None;
+                if self.card.as_ref().is_some_and(|c| c.key == Key::Mark(id)) {
+                    self.card = None;
                 }
             }
             Action::Restore(_)
