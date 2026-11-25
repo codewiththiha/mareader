@@ -522,7 +522,13 @@ Settings › AI › Tasks › **Meaning in** picks the language of Explain's
 meaning: the book's language (the default) or one of 40 listed ones.
 
 - Only the meaning changes. The part of speech, synonyms and usages stay in
-  the language of the text.
+  the word's own language, English for an English word, never the chosen
+  one (owner). The prompt says so, and so do the schema's
+  descriptions of synonyms and usages.
+- Study cards follow the same rule in Settings › Study › *Cards in*: the
+  prompt, the request and the schema's `meaning` all name the language,
+  and synonyms and the usage are asked in English. Before, only the
+  system prompt named it, and models wrote the cards in English.
 - In another language, the meaning reads like a bilingual dictionary: the
   closest equivalent of the word in that sense, with a short explanation
   only when no equivalent fits exactly. The schema's description of

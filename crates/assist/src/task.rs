@@ -41,8 +41,19 @@ const SAME_LANGUAGE: &str = "Write in the language of the context, simply and br
 
 /// A meaning in another language reads like a bilingual dictionary's.
 fn translated(language: &str) -> String {
-    let rest = "Write pos, synonyms and usages in the language of the context. ";
-    format!("{rest}{}", bilingual(language))
+    let rest = format!(
+        "Only the meaning is in {language}. Write pos, synonyms and usages in the word's own \
+         language, English for an English word, never in {language}. "
+    );
+    format!("{}{rest}", bilingual(language))
+}
+
+/// Synonyms and usages stay in the word's language, never the meaning's.
+fn own_language(language: Option<&str>) -> String {
+    match language {
+        None => String::new(),
+        Some(language) => format!(" In the word's own language, never in {language}."),
+    }
 }
 
 const PLAIN_MEANING: &str = "The word's common meaning for this part of speech, short and simple.";
@@ -53,10 +64,11 @@ pub(crate) const POS_ASKED: &str =
 
 /// The answer's shape; field order steers the model, so meaning comes early.
 pub fn word_info_schema() -> Value {
-    schema_with(PLAIN_MEANING)
+    schema_with(PLAIN_MEANING, None)
 }
 
-fn schema_with(meaning: &str) -> Value {
+fn schema_with(meaning: &str, language: Option<&str>) -> Value {
+    let own = own_language(language);
     json!({
         "type": "object",
         "properties": {
@@ -73,14 +85,14 @@ fn schema_with(meaning: &str) -> Value {
                 "items": { "type": "string" },
                 "minItems": 2,
                 "maxItems": 5,
-                "description": "2 to 5 synonyms for this meaning."
+                "description": format!("2 to 5 synonyms for this meaning.{own}")
             },
             "usages": {
                 "type": "array",
                 "items": { "type": "string" },
                 "minItems": 2,
                 "maxItems": 3,
-                "description": "2 to 3 short new sentences, each containing the word itself."
+                "description": format!("2 to 3 short new sentences with the word itself.{own}")
             },
             "book_only": {
                 "type": "boolean",
@@ -114,7 +126,7 @@ impl Task for Explain<'_> {
                     "The word's meaning in {language}: its closest {language} \
                      equivalent for this part of speech, with a short note only if none fits."
                 );
-                (translated(language), schema_with(&meaning))
+                (translated(language), schema_with(&meaning, Some(language)))
             }
         };
         Prompt {
@@ -292,13 +304,14 @@ mod tests {
         .prompt();
         assert!(burmese.system.contains("Write meaning in Burmese"));
         assert!(burmese.system.contains("bilingual dictionary"));
-        assert!(
-            burmese
-                .system
-                .contains("synonyms and usages in the language of the context")
-        );
+        let own = "synonyms and usages in the word's own language";
+        assert!(burmese.system.contains(own), "{}", burmese.system);
+        assert!(burmese.system.contains("never in Burmese"));
         let said = burmese.schema["properties"]["meaning"]["description"].as_str();
         assert!(said.is_some_and(|d| d.contains("in Burmese")), "{said:?}");
+        let usages = burmese.schema["properties"]["usages"]["description"].as_str();
+        let english = |d: &str| d.ends_with("never in Burmese.");
+        assert!(usages.is_some_and(english), "{usages:?}");
         assert!(burmese.system.ends_with(JSON_ONLY));
     }
 

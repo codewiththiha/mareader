@@ -46,31 +46,39 @@ fn language_rule(language: Option<&str>) -> String {
     match language {
         None => "Write everything in simple English. ".to_owned(),
         Some(language) => {
-            let rest = "Write the part of speech, synonyms and the usage in English. ";
+            let rest = format!(
+                "Only the meaning is in {language}. Write the part of speech, synonyms and the \
+                 usage in English, never in {language}. "
+            );
             format!("{}{rest}", bilingual(language))
         }
     }
 }
 
-fn schema() -> Value {
+/// The card's shape; each field says its language, as the model reads them.
+fn schema(language: Option<&str>) -> Value {
+    let meaning = match language {
+        None => "The word's common meaning for this part of speech, in simple English.".into(),
+        Some(language) => format!(
+            "The word's meaning in {language}: its closest {language} equivalent for this \
+             part of speech, with a short note only if none fits."
+        ),
+    };
     let card = json!({
         "type": "object",
         "properties": {
             "n": { "type": "integer", "description": "The word's number in the list." },
             "pos": { "type": "string", "description": POS_ASKED },
-            "meaning": {
-                "type": "string",
-                "description": "The word's common meaning for this part of speech."
-            },
+            "meaning": { "type": "string", "description": meaning },
             "synonyms": {
                 "type": "array",
                 "items": { "type": "string" },
                 "maxItems": MAX_SYNONYMS,
-                "description": "Up to 3 synonyms for this meaning."
+                "description": "Up to 3 English synonyms for this meaning."
             },
             "usage": {
                 "type": "string",
-                "description": "One short new sentence that contains the word itself."
+                "description": "One short new English sentence that contains the word itself."
             },
             "book_only": { "type": "boolean", "description": BOOK_ONLY_ASKED }
         },
@@ -171,13 +179,17 @@ impl Task for StudyCards<'_> {
         let lines: Vec<String> = (self.asked().iter().enumerate())
             .map(|(i, w)| line(i + 1, w))
             .collect();
-        let user = format!("Write a card for each word.\n{}", lines.join("\n"));
+        let ask = match self.language {
+            Some(language) => format!("Write a card for each word, its meaning in {language}."),
+            None => "Write a card for each word.".to_owned(),
+        };
+        let user = format!("{ask}\n{}", lines.join("\n"));
         let rule = language_rule(self.language);
         Prompt {
             name: "study_cards",
             system: format!("{SYSTEM}{}{AS_DATA}{rule}{JSON_ONLY}", rules()),
             user,
-            schema: schema(),
+            schema: schema(self.language),
         }
     }
 
@@ -271,8 +283,17 @@ mod tests {
         };
         let system = burmese.prompt().system;
         assert!(system.contains("meaning in Burmese"));
-        let english = "part of speech, synonyms and the usage in English";
+        let english = "part of speech, synonyms and the usage in English, never in Burmese";
         assert!(system.contains(english), "a class the reader can read");
+        let asked = burmese.prompt();
+        let ask = "Write a card for each word, its meaning in Burmese.";
+        assert!(asked.user.starts_with(ask), "{}", asked.user);
+        let card = &asked.schema["properties"]["cards"]["items"]["properties"];
+        let meaning = card["meaning"]["description"].as_str().unwrap_or_default();
+        let in_burmese = meaning.starts_with("The word's meaning in Burmese");
+        assert!(in_burmese, "{meaning}");
+        let usage = card["usage"]["description"].as_str().unwrap_or_default();
+        assert!(usage.contains("English sentence"), "{usage}");
     }
 
     #[test]
