@@ -160,7 +160,11 @@ be kept on this machine and used again, beside the downloaded packs.
   its word, class and language, the card shows it under *Your AI
   dictionary says* with *Replace with this answer*; nothing changes
   without that click. A word the AI marks book-only (a name, a made-up
-  word), or one with no class, is never kept.
+  word), or one with no class, is never kept. Nor is an Explain word not
+  written in Latin letters (`lang::latin`, the rule lookups use to read a
+  word as English): its card still shows the answer, but every lookup
+  starts from English, so a row under 速い would never be read (owner,
+  T56).
 - **Language.** The meaning's language is the writer's (Explain's or
   study's), as a code (`language_code`), English when none is set. A
   variant joins its language's pack: Chinese (Simplified) and Chinese

@@ -76,6 +76,20 @@ fn an_explain_answer_is_kept_under_the_word_asked() {
     assert_eq!(of_said(&said("", false), "English"), None, "no class");
 }
 
+#[test]
+fn only_an_english_word_is_kept_though_its_card_shows_any() {
+    let japanese = Said {
+        word: "速い".into(),
+        ..said("adjective", false)
+    };
+    assert_eq!(of_said(&japanese, "Burmese"), None, "lookups never read it");
+    let accented = Said {
+        word: "café".into(),
+        ..said("noun", false)
+    };
+    assert!(of_said(&accented, "Burmese").is_some(), "Latin letters");
+}
+
 fn reply(saved: Vec<Saved>) -> Reply {
     Reply {
         saved,

@@ -5,7 +5,8 @@
 //! answer goes in the same way, but when a different meaning was kept
 //! for its word, class and language, the card offers to replace it, and
 //! nothing changes without that click. Words only their book uses, as
-//! names are, stay out.
+//! names are, stay out, and so do Explain words not in Latin letters:
+//! lookups start from English, so nothing would read them.
 
 use std::collections::HashMap;
 
@@ -32,8 +33,12 @@ pub fn of_back(wanted: &Wanted, back: &Written, (by, language): (&str, &str)) ->
     (!back.book_only).then_some(saved)
 }
 
-/// An Explain answer as the AI dictionary keeps it, under the word asked.
+/// An Explain answer as the AI dictionary keeps it, under the word asked;
+/// none for a word lookups wouldn't read as English.
 pub fn of_said(said: &Said, language: &str) -> Option<Saved> {
+    if !mareader_dict::is_latin(&said.word) {
+        return None;
+    }
     let info = &said.info;
     let pos = Pos::read(&info.pos)?;
     let saved = Saved {

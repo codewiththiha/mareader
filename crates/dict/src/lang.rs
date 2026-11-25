@@ -163,6 +163,12 @@ pub fn detect(text: &str, langs: &[&str]) -> Option<&'static str> {
     }
 }
 
+/// Whether lookups read `text` as English: it has letters, all Latin.
+pub fn latin(text: &str) -> bool {
+    let mut letters = text.chars().filter(|c| c.is_alphabetic()).peekable();
+    letters.peek().is_some() && letters.all(|c| script_of(c) == Some(Script::Latin))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +193,14 @@ mod tests {
         assert_eq!(detect("사랑", &all), Some("ko"));
         assert_eq!(detect("รัก", &all), Some("th"));
         assert_eq!(detect("사랑", &["en", "jp"]), None);
+    }
+
+    #[test]
+    fn latin_letters_alone_read_as_english() {
+        assert!(latin("brisk") && latin("Café") && latin("well-known"));
+        assert!(!latin("速い") && !latin("မြန်") && !latin("быстро"));
+        assert!(!latin("2026"), "no letters");
+        assert!(!latin("Tokyo東京"), "mixed scripts");
     }
 
     #[test]
