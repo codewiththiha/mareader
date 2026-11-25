@@ -24,7 +24,7 @@ impl Session {
     /// Takes in filing replies; true when a card gained an offer.
     pub(crate) fn study_offers(&mut self) -> bool {
         let dict = &mut self.dict;
-        self.study.ai_dict.collect(|ticket| dict.take_filed(ticket))
+        self.study.ai_dict.collect(|ticket| dict.take_ai(ticket))
     }
 
     /// The card's Replace: its answer takes the kept meaning's place.

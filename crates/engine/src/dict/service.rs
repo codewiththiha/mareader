@@ -14,8 +14,8 @@ use crate::word_list::Meanings;
 const WORD_ASKS: usize = 4;
 /// Class asks kept waiting at once: open word cards and a recall.
 const CLASS_ASKS: usize = 4;
-/// AI dictionary filings whose replies are kept; older ones drop.
-const FILINGS: usize = 16;
+/// AI dictionary asks whose replies are kept; older ones drop.
+const AI_ASKS: usize = 16;
 
 /// Dictionary pack manager and lookup queue owned by `Session`.
 #[derive(Default)]
@@ -27,8 +27,8 @@ pub struct Service {
     classes: Vec<(Ticket, Option<Reply>)>,
     /// The open word card's class ask, and the word it is for.
     card: Option<(Ticket, String)>,
-    /// AI dictionary filings, kept from the reader's replies.
-    filings: Vec<(Ticket, Option<Reply>)>,
+    /// AI dictionary asks, kept from the reader's replies.
+    ai: Vec<(Ticket, Option<Reply>)>,
 }
 
 impl Service {
@@ -116,23 +116,32 @@ impl Service {
         ticket
     }
 
-    /// Files meanings in the AI dictionary; `take_filed` hands the reply,
+    /// Files meanings in the AI dictionary; `take_ai` hands the reply,
     /// naming kept meanings that differ.
     pub fn remember(&mut self, saved: Vec<Saved>, replace: bool) -> Ticket {
-        let ticket = self.service.ask(Query::Remember { saved, replace });
-        if self.filings.len() >= FILINGS {
-            self.filings.remove(0);
+        self.ask_ai(Query::Remember { saved, replace })
+    }
+
+    /// Asks what the AI dictionary keeps for `words` in `lang`.
+    pub fn recall(&mut self, words: Vec<String>, lang: String) -> Ticket {
+        self.ask_ai(Query::Remembered { words, lang })
+    }
+
+    fn ask_ai(&mut self, query: Query) -> Ticket {
+        let ticket = self.service.ask(query);
+        if self.ai.len() >= AI_ASKS {
+            self.ai.remove(0);
         }
-        self.filings.push((ticket, None));
+        self.ai.push((ticket, None));
         ticket
     }
 
-    pub fn take_filed(&mut self, ticket: Ticket) -> Option<Reply> {
+    pub fn take_ai(&mut self, ticket: Ticket) -> Option<Reply> {
         let at = self
-            .filings
+            .ai
             .iter()
             .position(|(t, r)| *t == ticket && r.is_some())?;
-        self.filings.remove(at).1
+        self.ai.remove(at).1
     }
 
     /// Asks for the class `word`'s rows name; none without a pack.
@@ -189,7 +198,7 @@ impl Service {
         for reply in replies {
             let mut asks = (self.words.iter_mut())
                 .chain(self.classes.iter_mut())
-                .chain(self.filings.iter_mut());
+                .chain(self.ai.iter_mut());
             if let Some((_, slot)) = asks.find(|(t, _)| *t == reply.ticket) {
                 *slot = Some(reply);
             } else {
@@ -215,5 +224,13 @@ impl Meanings for Service {
 
     fn remember(&mut self, saved: Vec<Saved>) {
         Self::remember(self, saved, false);
+    }
+
+    fn ask_kept(&mut self, words: Vec<String>, lang: String) -> Option<Ticket> {
+        Some(self.recall(words, lang))
+    }
+
+    fn take_kept(&mut self, ticket: Ticket) -> Option<Reply> {
+        self.take_ai(ticket)
     }
 }

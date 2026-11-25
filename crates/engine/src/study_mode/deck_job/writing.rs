@@ -1,6 +1,7 @@
-//! An AI deck's backs: those cached first, then the writer's answers.
+//! An AI deck's backs: those cached first, then those the AI dictionary
+//! keeps (`reuse`), then the writer's answers.
 //!
-//! The words not cached are cut into requests of the writer's size
+//! The words still missing are cut into requests of the writer's size
 //! ([`chunks`]) and all asked at once; the model's queue runs as many as
 //! it takes and holds the rest. The deck goes on only once every request
 //! has answered. A failed request fails the deck, but the backs the
@@ -26,27 +27,31 @@ pub(super) struct Chunk {
 }
 
 impl DeckJob {
-    /// Asks the writer for the backs not cached; with all cached, finishes.
-    pub(super) fn ask_backs(&mut self) -> Result<(), String> {
+    /// Takes the cached backs, then asks the AI dictionary for those it
+    /// keeps ([`Self::reusing`]), else the writer for the rest.
+    pub(super) fn ask_backs(&mut self, meanings: &mut dyn Meanings) -> Result<(), String> {
         let Some(writer) = self.writer.clone() else {
             self.setup = Some(Setup::Writer);
             return Err(no_model(TaskId::StudyCards));
         };
         let id = writer.cards.id();
-        let mut asked = Vec::new();
-        self.written = (self.deck.cards.iter().enumerate())
-            .map(|(i, card)| {
-                let wanted = wanted(card);
-                let cached = writer.backs.get(&id, &wanted);
-                if cached.is_none() {
-                    asked.push((i, wanted));
-                }
-                cached
-            })
-            .collect();
+        let cards = self.deck.cards.iter();
+        self.written = cards.map(|c| writer.backs.get(&id, &wanted(c))).collect();
+        if self.ask_kept(&writer, meanings) {
+            return Ok(());
+        }
+        self.write_rest(&writer);
+        Ok(())
+    }
+
+    /// Asks `writer` for every back still missing; with none, finishes.
+    pub(super) fn write_rest(&mut self, writer: &Writer) {
+        let cards = self.deck.cards.iter().zip(&self.written).enumerate();
+        let missing = cards.filter(|(_, (_, back))| back.is_none());
+        let asked: Vec<(usize, Wanted)> = missing.map(|(i, (c, _))| (i, wanted(c))).collect();
         if asked.is_empty() {
             self.finish_written();
-            return Ok(());
+            return;
         }
         let mut rest = asked.into_iter();
         let jobs = chunks(rest.len(), writer.cards.per_request())
@@ -60,10 +65,9 @@ impl DeckJob {
             .collect();
         self.stage = Stage::Writing {
             jobs,
-            id,
+            id: writer.cards.id(),
             failed: None,
         };
-        Ok(())
     }
 
     /// Counts backs as they are written; takes each answer into the deck

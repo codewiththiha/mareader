@@ -140,9 +140,14 @@ impl CardWriter for Counting {
     }
 }
 
-/// A dictionary that only keeps what the AI dictionary is given.
+/// A dictionary that only keeps what the AI dictionary is given, and
+/// answers with `kept` when asked what it keeps.
 #[derive(Default)]
-struct Filed(Vec<Saved>);
+struct Filed {
+    saved: Vec<Saved>,
+    kept: Vec<Saved>,
+    asked: Vec<String>,
+}
 
 impl Meanings for Filed {
     fn languages(&self) -> Vec<&'static str> {
@@ -158,7 +163,21 @@ impl Meanings for Filed {
     }
 
     fn remember(&mut self, saved: Vec<Saved>) {
-        self.0.extend(saved);
+        self.saved.extend(saved);
+    }
+
+    fn ask_kept(&mut self, words: Vec<String>, lang: String) -> Option<Ticket> {
+        assert_eq!(lang, "en");
+        self.asked = words;
+        (!self.kept.is_empty()).then_some(Ticket(1))
+    }
+
+    fn take_kept(&mut self, _: Ticket) -> Option<Reply> {
+        let saved = self.kept.clone();
+        Some(Reply {
+            saved,
+            ..Reply::default()
+        })
     }
 }
 
@@ -202,16 +221,16 @@ fn a_deck_is_written_in_even_requests_and_goes_on_once_all_answer() {
         backs: Backs::default(),
     };
     let mut job = ai_deck(25, &writer);
-    job.ask_backs().unwrap();
+    job.ask_backs(&mut Filed::default()).unwrap();
     assert_eq!(*counting.sizes.lock().unwrap(), [9, 8, 8], "25 by 10");
     let mut filed = Filed::default();
     assert_eq!(job.writing(&mut filed), Ok(true));
-    assert_eq!(filed.0.len(), 13, "those with a class are filed");
+    assert_eq!(filed.saved.len(), 13, "those with a class are filed");
     assert!(matches!(job.stage, Stage::Settle), "every request answered");
     assert_eq!(job.settling.len(), 25);
     assert!(job.settling.iter().all(|(s, _)| !s.meaning.is_empty()));
     let mut small = ai_deck(13, &writer);
-    small.ask_backs().unwrap();
+    small.ask_backs(&mut Filed::default()).unwrap();
     assert_eq!(counting.sizes.lock().unwrap().len(), 3, "13 cached already");
 }
 
@@ -226,12 +245,12 @@ fn a_failed_request_keeps_the_others_backs_for_the_next_try() {
         backs: Backs::default(),
     };
     let mut job = ai_deck(32, &writer);
-    job.ask_backs().unwrap();
+    job.ask_backs(&mut Filed::default()).unwrap();
     let written = job.writing(&mut Filed::default());
     assert!(written.is_err(), "one failed request fails the deck");
     assert_eq!(writer.backs.count(), 21, "the other two are kept");
     let mut again = ai_deck(32, &writer);
-    again.ask_backs().unwrap();
+    again.ask_backs(&mut Filed::default()).unwrap();
     assert_eq!(*counting.sizes.lock().unwrap(), [11, 11, 10, 11]);
     assert_eq!(again.writing(&mut Filed::default()), Ok(true));
 }
@@ -255,15 +274,52 @@ fn half_a_deck_is_shown_while_the_rest_is_written() {
     for card in job.deck.cards.iter().take(12) {
         writer.backs.put(&id, &wanted(card), back.clone());
     }
-    job.ask_backs().unwrap();
+    job.ask_backs(&mut Filed::default()).unwrap();
     assert!(job.early().is_none(), "12 of 25 is under half");
     let mut job = ai_deck(25, &writer);
     writer.backs.put(&id, &wanted(&job.deck.cards[12]), back);
-    job.ask_backs().unwrap();
+    job.ask_backs(&mut Filed::default()).unwrap();
     let early = job.early().expect("13 of 25");
     assert_eq!(early.cards.len(), 13);
     assert!(job.early().is_none(), "only once");
     assert!(job.handed);
     assert_eq!(job.writing(&mut Filed::default()), Ok(true));
     assert_eq!(job.settling.len(), 25, "the whole deck goes on");
+}
+
+#[test]
+fn a_card_the_ai_dictionary_keeps_by_lemma_and_class_is_not_written() {
+    let counting = Arc::new(Counting {
+        sizes: std::sync::Mutex::new(Vec::new()),
+        fail: None,
+    });
+    let writer = Writer {
+        cards: counting.clone(),
+        backs: Backs::default(),
+    };
+    let kept = |word: &str, pos: &str| Saved {
+        word: word.into(),
+        pos: pos.into(),
+        lang: "en".into(),
+        meaning: format!("kept {word}"),
+        synonyms: (0..5).map(|i| format!("s{i}")).collect(),
+        usages: vec!["One.".into(), "Two.".into()],
+        ..Saved::default()
+    };
+    let mut filed = Filed {
+        kept: vec![kept("Word0", "noun"), kept("word2", "verb")],
+        ..Filed::default()
+    };
+    let mut job = ai_deck(4, &writer);
+    job.ask_backs(&mut filed).unwrap();
+    assert_eq!(filed.asked, ["word0", "word2"], "only cards with a class");
+    assert!(counting.sizes.lock().unwrap().is_empty(), "none yet");
+    assert!(job.reusing(&mut filed, 0.0));
+    assert_eq!(*counting.sizes.lock().unwrap(), [3], "word2 is a noun here");
+    let reused = job.written[0].clone().unwrap();
+    assert_eq!(reused.meaning, "kept Word0");
+    assert_eq!(reused.synonyms.len(), 3, "as many as a written back");
+    assert_eq!(reused.usage, "One.");
+    assert_eq!(job.writing(&mut filed), Ok(true));
+    assert_eq!(filed.saved.len(), 1, "only word2 was written with a class");
 }

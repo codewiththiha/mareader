@@ -37,6 +37,17 @@ pub trait Meanings {
 
     /// Files AI meanings in the AI dictionary, keeping any kept before.
     fn remember(&mut self, _saved: Vec<Saved>) {}
+
+    /// Asks what the AI dictionary keeps for `words` in `lang`; none
+    /// where there is no AI dictionary.
+    fn ask_kept(&mut self, _words: Vec<String>, _lang: String) -> Option<Ticket> {
+        None
+    }
+
+    /// The AI dictionary's reply `ticket` collected, once in.
+    fn take_kept(&mut self, _ticket: Ticket) -> Option<Reply> {
+        None
+    }
 }
 
 /// Pages this few, or a book's, are read in the frame.

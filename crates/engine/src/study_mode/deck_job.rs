@@ -34,6 +34,7 @@ mod classes;
 mod early;
 mod lookup;
 mod progress;
+mod reuse;
 #[cfg(test)]
 mod tests;
 mod writing;
@@ -121,6 +122,11 @@ enum Stage {
     Settle,
     /// The dictionary is asked the classes no one else named.
     Classes {
+        ticket: Ticket,
+        since: Option<f64>,
+    },
+    /// The AI dictionary is asked for the backs it keeps.
+    Reusing {
         ticket: Ticket,
         since: Option<f64>,
     },
@@ -247,6 +253,7 @@ impl DeckJob {
                 Stage::Levels { .. } => self.levels(words)?,
                 Stage::Tags { .. } => self.tags(words, meanings, now)?,
                 Stage::Meanings { .. } => self.meanings(meanings, now)?,
+                Stage::Reusing { .. } => self.reusing(meanings, now),
                 Stage::Writing { .. } => self.writing(meanings)?,
                 Stage::Settle => self.settle(meanings),
                 Stage::Classes { .. } => self.classes(meanings, now),
@@ -391,7 +398,7 @@ impl DeckJob {
         };
         self.deck = build(seen, self.level, |k| known.has(k), max);
         if self.via == Via::Ai {
-            return self.ask_backs();
+            return self.ask_backs(meanings);
         }
         self.look_up(meanings)
     }
