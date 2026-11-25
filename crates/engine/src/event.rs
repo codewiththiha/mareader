@@ -140,9 +140,9 @@ pub enum Event {
     },
     /// Dictionary packs changed or lookup replies arrived.
     DictReplies {
+        /// What the dictionaries answer changed: a pack came or went, or an
+        /// AI entry was edited or deleted. A download's progress is not it.
         changed: bool,
-        /// An AI dictionary entry was edited or deleted.
-        edited: bool,
         replies: Vec<mareader_dict::Reply>,
     },
     /// An instant word list finished building.

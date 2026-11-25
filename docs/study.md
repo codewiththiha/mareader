@@ -170,7 +170,9 @@ be kept on this machine and used again, beside the downloaded packs.
   follow the packs' rows, laid out as the AI card is (meaning, synonym
   chips, usages), with "AI" in the footer beside *1 of N* (the model in
   its tooltip). Other languages are never offered beside an entry.
-  Settings › Dictionary › *AI dictionary first* (off) puts AI rows first.
+  Settings › Dictionary › *AI dictionary first* (off) puts AI rows first;
+  the lookup worker orders every reply by it (`Shelf::answer`), cards,
+  the page, word lists and decks alike.
 - **Its own languages.** A language only the AI dictionary keeps, English
   (English meanings of English words) or one no pack offers, such as
   Russian, is a dictionary language like a pack's. Settings › Dictionary ›
@@ -192,10 +194,12 @@ be kept on this machine and used again, beside the downloaded packs.
   the Dictionary page, opens the entry's editor (`dict/ai_edit.rs`): word,
   class (picked from the classes cards name), language (picked from those
   the AI writes in), meaning, synonyms separated by commas and usages one
-  a line. A class or language outside those lists stays a choice. When the new word, class and language are
-  another entry's, Save asks *Replace it* or *Keep editing* and changes
-  nothing until answered. Delete asks once more (*Delete for good*). The
-  card and the page show the change at once.
+  a line. A class or language outside those lists stays a choice. When
+  the new word, class and language are another entry's, Save asks
+  *Replace it* or *Keep editing* and changes nothing until answered.
+  Delete asks once more (*Delete for good*). The card and the page show
+  the change at once: an edit tells them what the dictionaries answer
+  changed, as a pack arriving or going does.
 
 ## Saved answers
 

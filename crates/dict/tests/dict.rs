@@ -392,6 +392,26 @@ fn a_word_list_reads_the_ai_dictionary_after_the_packs() {
     assert_eq!(ru, ["бежать"]);
 }
 
+#[test]
+fn ai_rows_lead_only_when_asked() {
+    let (_dir, mut dicts) = shelf();
+    ask(&mut dicts, remember(vec![run("my", "ပြေး")], false));
+    let first = |r: &Reply| r.entries.first().map(|e| e.ai.is_some());
+    let card = ask(&mut dicts, look_up("run", Some("my")));
+    assert_eq!(first(&card), Some(false), "the packs' rows lead");
+    dicts.set_ai_first(true);
+    let card = ask(&mut dicts, look_up("run", Some("my")));
+    assert_eq!(first(&card), Some(true), "the AI dictionary's lead");
+    let words = Query::Words {
+        words: vec!["run".into()],
+        to: vec!["my".into()],
+        near: false,
+    };
+    let list = ask(&mut dicts, words);
+    let own = list.found.first().and_then(|f| f.own.first());
+    assert!(own.is_some_and(|e| e.ai.is_some()), "in a word list too");
+}
+
 fn search(text: &str, pair: Option<Pair>, pack: Option<&str>) -> Query {
     Query::Search {
         text: text.into(),

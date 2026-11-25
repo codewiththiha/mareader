@@ -132,7 +132,7 @@ fn edit(session: &mut Session, act: Action, done: impl Fn(Option<&Edited>) -> bo
     let settled = wait_until(|| {
         session.tick(1.0);
         for event in session.drain() {
-            changed |= matches!(event, Event::DictReplies { edited: true, .. });
+            changed |= matches!(event, Event::DictReplies { changed: true, .. });
         }
         done(session.dict().edited())
     });

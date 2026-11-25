@@ -20,7 +20,8 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 const TELL_EVERY: Duration = Duration::from_millis(100);
 
 enum Job {
-    Ask(Ticket, Query),
+    /// An ask, and whether the AI dictionary's rows lead its reply.
+    Ask(Ticket, Query, bool),
     Remove(&'static Pack),
 }
 
@@ -79,16 +80,16 @@ impl Desk {
         }
     }
 
-    pub fn ask(&mut self, ticket: Ticket, query: Query) {
+    pub fn ask(&mut self, ticket: Ticket, query: Query, ai_first: bool) {
         if self.inline {
             let dir = self.dir.clone();
             let shelf = self.shelf.get_or_insert_with(|| Shelf::new(dir));
-            let mut reply = shelf.answer(&query);
+            let mut reply = shelf.answer(&query, ai_first);
             reply.ticket = ticket;
             self.replies.push(reply);
             return;
         }
-        let _ = self.jobs.send(Job::Ask(ticket, query));
+        let _ = self.jobs.send(Job::Ask(ticket, query, ai_first));
     }
 
     pub fn remove(&mut self, pack: &'static Pack) {
@@ -194,18 +195,18 @@ fn serve(
         let lanes: Vec<Option<u8>> = jobs
             .iter()
             .map(|j| match j {
-                Job::Ask(_, q) => q.lane(),
+                Job::Ask(_, q, _) => q.lane(),
                 Job::Remove(_) => None,
             })
             .collect();
         for (i, job) in jobs.into_iter().enumerate() {
             match job {
-                Job::Ask(ticket, query) => {
+                Job::Ask(ticket, query, ai_first) => {
                     let lane = query.lane();
                     if lane.is_some() && lanes.iter().skip(i + 1).any(|l| *l == lane) {
                         continue;
                     }
-                    let mut reply = shelf.answer(&query);
+                    let mut reply = shelf.answer(&query, ai_first);
                     reply.ticket = ticket;
                     let _ = tell.send(Event::Reply(reply));
                 }

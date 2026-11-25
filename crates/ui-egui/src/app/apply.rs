@@ -207,22 +207,19 @@ impl MareaderApp {
                 self.ui.dict.set_class(&word, pos);
                 self.ui.study.set_class(&word, pos);
             }
-            Event::DictReplies {
-                changed,
-                edited,
-                replies,
-            } => self.dict_replies(changed, edited, replies),
+            Event::DictReplies { changed, replies } => self.dict_replies(changed, replies),
             needs_ctx => return Some(needs_ctx),
         }
         None
     }
 
-    /// Lookup replies in; after an AI entry's edit the card asks again.
-    fn dict_replies(&mut self, changed: bool, edited: bool, replies: Vec<mareader_dict::Reply>) {
+    /// Lookup replies in; when what dictionaries answer changed, the card
+    /// asks again.
+    fn dict_replies(&mut self, changed: bool, replies: Vec<mareader_dict::Reply>) {
         let exact = !self.settings().dictionary.near;
         self.ui.dict.set_exact_only(exact);
-        self.ui.dict.receive(changed || edited, replies);
-        if let Some(query) = self.ui.dict.again_query().filter(|_| edited) {
+        self.ui.dict.receive(changed, replies);
+        if let Some(query) = self.ui.dict.again_query().filter(|_| changed) {
             let ticket = self.session.dict_ask(query);
             self.ui.dict.set_card_ticket(ticket);
         }

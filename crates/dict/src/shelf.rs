@@ -68,7 +68,19 @@ impl Shelf {
         self.open.remove(pack.id);
     }
 
-    pub fn answer(&mut self, query: &Query) -> Reply {
+    /// Answers `query`; with `ai_first` the AI dictionary's rows lead.
+    pub fn answer(&mut self, query: &Query, ai_first: bool) -> Reply {
+        let mut reply = self.reply(query);
+        if ai_first {
+            reply.entries.sort_by_key(|e| e.ai.is_none());
+            for found in &mut reply.found {
+                found.own.sort_by_key(|e| e.ai.is_none());
+            }
+        }
+        reply
+    }
+
+    fn reply(&mut self, query: &Query) -> Reply {
         match query {
             Query::LookUp { word, to } => self.look_up(word, to.as_deref()),
             Query::Search { text, pair, pack } => self.search(text, pair.as_ref(), pack.as_deref()),
@@ -179,13 +191,17 @@ impl Shelf {
         }
         order(&mut reply.entries, CARD_ROWS);
         if in_ai(&to) {
-            let kept = self.ai().and_then(|s| s.word(word, Some(to.as_str())));
-            let kept = kept.unwrap_or_default();
-            reply.entries.extend(kept.iter().map(ai_entry));
+            reply.entries.extend(self.kept_rows(word, &to));
         }
         reply.ai_langs = (from == HUB).then_some(ai);
         (reply.from, reply.to) = (Some(from.to_owned()), Some(to));
         reply
+    }
+
+    /// The AI dictionary's rows for `word` in `lang`, after a pack's.
+    fn kept_rows(&mut self, word: &str, lang: &str) -> Vec<Entry> {
+        let kept = self.ai().and_then(|s| s.word(word, Some(lang)));
+        kept.unwrap_or_default().iter().map(ai_entry).collect()
     }
 
     /// The AI dictionary's languages; none before it was first written to.
@@ -216,8 +232,7 @@ impl Shelf {
                     None => (Vec::new(), Vec::new()),
                 };
                 if kept {
-                    let said = self.ai().and_then(|s| s.word(word, Some(lang.as_str())));
-                    own.extend(said.unwrap_or_default().iter().map(ai_entry));
+                    own.extend(self.kept_rows(word, lang));
                 }
                 reply.found.push(crate::Found {
                     word: word.clone(),

@@ -80,8 +80,8 @@ impl Session {
         self.dict.ask(Query::LookUp { word, to })
     }
 
-    /// Polls dictionary packs and queries; returns `(changed, replies)`.
-    pub(crate) fn dict_poll(&mut self) -> (bool, Vec<Reply>) {
+    /// Polls dictionary packs and queries: `(moved, changed, replies)`.
+    pub(crate) fn dict_poll(&mut self) -> (bool, bool, Vec<Reply>) {
         self.dict.poll()
     }
 

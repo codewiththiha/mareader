@@ -121,23 +121,13 @@ impl Session {
 
     fn tick_dict_and_word_list(&mut self, tick: &mut Tick) {
         self.dict.set_ai_first(self.settings.dictionary.ai_first);
-        let (changed, mut replies) = self.dict_poll();
-        if self.study_offers() {
+        let (moved, changed, replies) = self.dict_poll();
+        if self.study_offers() || moved {
             tick.repaint = true;
         }
-        let ai_first = self.settings.dictionary.ai_first;
-        for reply in &mut replies {
-            crate::ai_dict::lead(reply, ai_first);
-        }
-        let edited = self.dict.take_edited();
-        if changed || edited || !replies.is_empty() {
+        if changed || !replies.is_empty() {
             tick.repaint = true;
-            let replies = Event::DictReplies {
-                changed,
-                edited,
-                replies,
-            };
-            self.emit(replies);
+            self.emit(Event::DictReplies { changed, replies });
         }
         if let Some((word, Some(pos))) = self.dict.take_card_class() {
             tick.repaint = true;

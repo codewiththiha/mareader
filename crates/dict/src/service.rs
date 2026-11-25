@@ -124,6 +124,8 @@ pub struct Dictionaries {
     done: Vec<Reply>,
     /// The languages the AI dictionary keeps meanings in.
     ai_langs: Vec<String>,
+    /// Asks from now on put the AI dictionary's rows first.
+    ai_first: bool,
 }
 
 impl Dictionaries {
@@ -162,16 +164,21 @@ impl Dictionaries {
         }
     }
 
+    /// Puts the AI dictionary's rows before the packs' in asks to come.
+    pub fn set_ai_first(&mut self, ai_first: bool) {
+        self.ai_first = ai_first;
+    }
+
     /// Sends `query`; its reply comes from `poll`.
     pub fn ask(&mut self, query: Query) -> Ticket {
         self.next += 1;
         let ticket = Ticket(self.next);
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(desk) = &mut self.desk {
-            desk.ask(ticket, query);
+            desk.ask(ticket, query, self.ai_first);
             return ticket;
         }
-        let _ = query.lane();
+        let _ = (query.lane(), self.ai_first);
         let mut reply = Reply::new(0);
         reply.ticket = ticket;
         self.done.push(reply);

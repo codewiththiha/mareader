@@ -29,12 +29,10 @@ pub struct Service {
     card: Option<(Ticket, String)>,
     /// AI dictionary asks, kept from the reader's replies.
     ai: Vec<(Ticket, Option<Reply>)>,
-    /// AI dictionary rows lead a word's rows.
-    ai_first: bool,
     /// The AI entry edit or removal under way, by its ask.
     editing: Option<(Ticket, Edited)>,
-    /// An edit or removal landed since the last `take_edited`.
-    edited: bool,
+    /// The ready packs as last polled, so a poll tells when they change.
+    told: Vec<&'static str>,
 }
 
 impl Service {
@@ -81,7 +79,7 @@ impl Service {
 
     /// Puts AI dictionary rows before the packs' in lookups to come.
     pub fn set_ai_first(&mut self, ai_first: bool) {
-        self.ai_first = ai_first;
+        self.service.set_ai_first(ai_first);
     }
 
     /// The languages this computer's AI dictionary keeps meanings in.
@@ -161,11 +159,6 @@ impl Service {
     /// The AI entry edit under way: waiting, taken or failed.
     pub fn edited(&self) -> Option<&Edited> {
         self.editing.as_ref().map(|(_, e)| e)
-    }
-
-    /// Whether an edit or removal landed since last asked.
-    pub(crate) fn take_edited(&mut self) -> bool {
-        std::mem::take(&mut self.edited)
     }
 
     /// Settles the edit `reply` answers; true when the AI dictionary changed.
@@ -266,37 +259,34 @@ impl Service {
         self.words.remove(at).1
     }
 
-    /// Polls replies and pack changes; returns `(changed, ui_replies)`.
-    pub fn poll(&mut self) -> (bool, Vec<Reply>) {
-        let (changed, replies) = self.service.poll();
+    /// Polls replies and pack changes: `(moved, changed, ui_replies)`.
+    ///
+    /// `moved` is any pack's state moving, a download's progress included;
+    /// `changed` is what the dictionaries answer changing: a pack came or
+    /// went, or an AI entry was edited or deleted.
+    pub fn poll(&mut self) -> (bool, bool, Vec<Reply>) {
+        let (moved, replies) = self.service.poll();
+        let ready: Vec<&'static str> = self.service.ready().iter().map(|p| p.id).collect();
+        let mut changed = ready != self.told;
+        self.told = ready;
         let mut other = Vec::new();
         for reply in replies {
             let editing = self.editing.as_ref().map(|(t, _)| *t);
             if editing == Some(reply.ticket) {
-                self.edited |= self.edit_done(reply);
+                changed |= self.edit_done(reply);
                 continue;
             }
             let mut asks = (self.words.iter_mut())
                 .chain(self.classes.iter_mut())
                 .chain(self.ai.iter_mut());
             if let Some((_, slot)) = asks.find(|(t, _)| *t == reply.ticket) {
-                *slot = Some(lead_words(reply, self.ai_first));
+                *slot = Some(reply);
             } else {
                 other.push(reply);
             }
         }
-        (changed, other)
+        (moved, changed, other)
     }
-}
-
-/// `reply` with each word's AI dictionary rows first, when asked so.
-fn lead_words(mut reply: Reply, ai_first: bool) -> Reply {
-    if ai_first {
-        for found in &mut reply.found {
-            found.own.sort_by_key(|e| e.ai.is_none());
-        }
-    }
-    reply
 }
 
 impl Meanings for Service {
@@ -322,45 +312,5 @@ impl Meanings for Service {
 
     fn take_kept(&mut self, ticket: Ticket) -> Option<Reply> {
         self.take_ai(ticket)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use mareader_dict::{AI_PACK, Entry, Found, WordMatch};
-
-    fn row(ai: bool) -> Entry {
-        Entry {
-            word: "run".into(),
-            pos: None,
-            definition: String::new(),
-            romanization: None,
-            sense: None,
-            pack: if ai { AI_PACK } else { "pack" },
-            via: None,
-            fit: WordMatch::Exact,
-            flipped: false,
-            ai: ai.then(|| Box::new(Saved::default())),
-        }
-    }
-
-    #[test]
-    fn ai_rows_lead_a_words_rows_only_when_asked() {
-        let found = Found {
-            own: vec![row(false), row(true)],
-            ..Found::default()
-        };
-        let reply = Reply {
-            found: vec![found],
-            ..Reply::default()
-        };
-        let packs = |r: Reply| {
-            let rows = r.found.into_iter().flat_map(|f| f.own);
-            rows.map(|e| e.pack).collect::<Vec<_>>()
-        };
-        let kept = packs(lead_words(reply.clone(), false));
-        assert_eq!(kept, ["pack", AI_PACK]);
-        assert_eq!(packs(lead_words(reply, true)), [AI_PACK, "pack"]);
     }
 }
