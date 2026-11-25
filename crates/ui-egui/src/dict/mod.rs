@@ -15,7 +15,7 @@ mod window_tab;
 
 use egui::{Context, Rect, Vec2};
 use mareader_cefr::Role;
-use mareader_dict::{Pack, Query, Reply, State, Ticket, WordMatch};
+use mareader_dict::{Pack, Reply, State, Ticket, WordMatch};
 use mareader_engine::dict::{Action, Service as DictService};
 use mareader_engine::read_aloud::state::{Offer, Speaker};
 use mareader_engine::session::Session;
@@ -227,17 +227,13 @@ impl DictUi {
         pane: PaneId,
         (word, context): (String, String),
         (at, offset): (Rect, Option<Vec2>),
-        (to, asked): (Option<String>, Option<Asked>),
+        asked: Option<Asked>,
     ) -> bool {
         match &self.card {
             Some(c) if !c.rest || (c.word == word && c.at == at) => return false,
             _ => {}
         }
-        let query = Query::LookUp {
-            word: word.clone(),
-            to,
-        };
-        let ticket = session.dict_ask(query);
+        let ticket = session.dict_look_up(&word);
         self.show_lookup(pane, word, ticket, at, offset, asked);
         if let Some(card) = &mut self.card {
             card.rest = true;

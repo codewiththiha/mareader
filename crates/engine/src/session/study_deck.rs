@@ -249,9 +249,9 @@ impl Session {
     /// AI dictionary's, else (Automatic) the first there is.
     fn study_dict_language(&self) -> Option<String> {
         let ready = self.dict.languages();
-        let chosen = self.settings.dictionary.default_lang.as_ref();
-        let picked = chosen.filter(|l| ready.contains(l)).cloned();
-        picked.or_else(|| ready.into_iter().next())
+        let offered: Vec<&str> = ready.iter().map(String::as_str).collect();
+        let chosen = self.settings.dictionary.default_lang.as_deref();
+        mareader_dict::answer_in(chosen, &offered).map(str::to_owned)
     }
 }
 

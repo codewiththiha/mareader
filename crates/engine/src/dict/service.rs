@@ -74,14 +74,9 @@ impl Service {
     /// Every language English words can be looked up in: the packs',
     /// then those only the AI dictionary keeps.
     pub fn languages(&self) -> Vec<String> {
-        let packs = self.pack_languages().into_iter().map(str::to_owned);
-        let mut all: Vec<String> = packs.collect();
-        for lang in self.ai_languages() {
-            if !all.contains(lang) {
-                all.push(lang.clone());
-            }
-        }
-        all
+        let ready = self.service.ready();
+        let all = mareader_dict::targets(&ready, self.ai_languages());
+        all.into_iter().map(str::to_owned).collect()
     }
 
     /// Puts AI dictionary rows before the packs' in lookups to come.

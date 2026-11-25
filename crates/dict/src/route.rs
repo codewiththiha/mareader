@@ -57,16 +57,37 @@ pub fn languages(packs: &[&'static Pack]) -> Vec<&'static str> {
     out
 }
 
-/// The packs' languages, then English and each kept in the AI dictionary.
-pub fn languages_with<'a>(packs: &[&'static Pack], ai: &'a [String]) -> Vec<&'a str> {
-    let mut out: Vec<&'a str> = languages(packs);
-    let more = ai.iter().map(String::as_str);
-    for lang in std::iter::once(HUB).filter(|_| !ai.is_empty()).chain(more) {
+/// The languages an English word is looked up in: each pack's other
+/// side, then each kept in the AI dictionary, English included.
+///
+/// The one list every dictionary-language picker offers.
+pub fn targets<'a>(packs: &[&'static Pack], ai: &'a [String]) -> Vec<&'a str> {
+    let sides = packs.iter().flat_map(|p| [p.source, p.target]);
+    let packs = sides.filter(|l| *l != HUB);
+    let mut out: Vec<&'a str> = Vec::new();
+    for lang in packs.chain(ai.iter().map(String::as_str)) {
         if !out.contains(&lang) {
             out.push(lang);
         }
     }
     out
+}
+
+/// English, then [`targets`]; none when nothing answers.
+pub fn languages_with<'a>(packs: &[&'static Pack], ai: &'a [String]) -> Vec<&'a str> {
+    let targets = targets(packs, ai);
+    if targets.is_empty() {
+        return targets;
+    }
+    let others = targets.into_iter().filter(|l| *l != HUB);
+    std::iter::once(HUB).chain(others).collect()
+}
+
+/// The language a card answers in: `chosen` when `langs` offers it, else
+/// the first offered (Automatic); none when nothing is offered.
+pub fn answer_in<'a>(chosen: Option<&str>, langs: &[&'a str]) -> Option<&'a str> {
+    let picked = chosen.and_then(|c| langs.iter().copied().find(|l| *l == c));
+    picked.or_else(|| langs.first().copied())
 }
 
 /// Two languages a search names; none leaves each to be worked out.
@@ -147,6 +168,16 @@ mod tests {
         assert_eq!(languages_with(&my, &ai), ["en", "my", "russian"]);
         assert_eq!(languages_with(&[], &ai), ["en", "my", "russian"]);
         assert!(languages_with(&[], &[]).is_empty());
+        assert_eq!(targets(&my, &ai), ["my", "russian"]);
+        let en = ["en".to_owned()];
+        let english = targets(&my, &en);
+        assert_eq!(english, ["my", "en"], "English meanings of English words");
+        let offered = targets(&my, &ai);
+        assert_eq!(answer_in(Some("russian"), &offered), Some("russian"));
+        let gone = answer_in(Some("jp"), &offered);
+        assert_eq!(gone, Some("my"), "a choice no longer offered: Automatic");
+        assert_eq!(answer_in(None, &offered), Some("my"));
+        assert_eq!(answer_in(Some("my"), &[]), None);
         let to = Pair {
             from: None,
             to: Some("russian".into()),

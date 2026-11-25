@@ -66,11 +66,12 @@ pub struct View<'a> {
     pub speaker: Option<&'a mareader_engine::read_aloud::state::Speaker>,
 }
 
-/// The packs' languages for English words, and the AI dictionary's.
+/// The packs' languages for English words, and every dictionary's.
 #[derive(Clone, Copy)]
 pub struct Languages<'a> {
     pub packs: &'a [&'a str],
-    pub ai: &'a [String],
+    /// `mareader_dict::targets`: the packs', then the AI dictionary's.
+    pub all: &'a [String],
 }
 
 impl Languages<'_> {
@@ -383,19 +384,18 @@ fn empty(
     empty_actions(ui, view.ai_ready, &others, false, t, out);
 }
 
-/// The languages to try instead: the packs', and for an English word
-/// the AI dictionary's, English included.
+/// The languages to try instead: every dictionary's for an English word,
+/// else the packs'; neither the word's own nor the one asked.
 fn try_instead<'a>(langs: Languages<'a>, reply: &Reply) -> Vec<&'a str> {
     let english = reply.from.as_deref().is_none_or(|f| f == HUB);
-    let ai = langs.ai.iter().map(String::as_str).filter(|_| english);
-    let mut others: Vec<&str> = Vec::new();
-    for code in langs.packs.iter().copied().chain(ai) {
-        let from = reply.from.as_deref() == Some(code) && code != HUB;
-        if !from && reply.to.as_deref() != Some(code) && !others.contains(&code) {
-            others.push(code);
-        }
-    }
-    others
+    let offered: Vec<&'a str> = match english {
+        true => langs.all.iter().map(String::as_str).collect(),
+        false => langs.packs.to_vec(),
+    };
+    let own = |code: &str| code != HUB && reply.from.as_deref() == Some(code);
+    let asked = |code: &str| reply.to.as_deref() == Some(code);
+    let left = offered.into_iter().filter(|&c| !own(c) && !asked(c));
+    left.collect()
 }
 
 fn empty_actions(

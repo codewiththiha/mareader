@@ -1,7 +1,6 @@
 //! Study tools: marks, the word card, word lists and the dictionaries.
 
 use mareader_appearance::Rgb;
-use mareader_dict::Query;
 use mareader_library::{MarkKind, Pen};
 use mareader_workspace::PaneId;
 
@@ -99,11 +98,7 @@ fn look_up(session: &mut Session, pane: PaneId) {
     let asked = session.documents().asked(pane);
     let context = asked.as_ref().map(|a| a.context.as_str());
     session.clear_document_selection(pane);
-    let to = session.settings().dictionary.default_lang.clone();
-    let ticket = session.dict_ask(Query::LookUp {
-        word: word.clone(),
-        to,
-    });
+    let ticket = session.dict_look_up(&word);
     session.ask_role(&word, context.unwrap_or(&word));
     session.emit(Event::LookUpOpened {
         pane,

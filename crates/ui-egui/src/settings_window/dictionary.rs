@@ -2,7 +2,7 @@
 //! language.
 
 use egui::Ui;
-use mareader_dict::{HUB, PACKS, Pack, State, language, languages};
+use mareader_dict::{PACKS, Pack, State, language};
 use mareader_settings::{DictionaryOpens, DictionarySettings};
 
 use super::downloads::{Buttons, muted, progress};
@@ -103,7 +103,7 @@ pub fn tab(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService, out: &mu
 fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
     section(ui, "Lookup card");
     group(ui, |ui| {
-        let langs = offered(&dict.ready(), dict.ai_languages());
+        let langs = dict.languages();
         default_language(ui, s, &langs);
         divider(ui);
         let hint = "With no entry for a word, the closest ones in its place";
@@ -115,19 +115,6 @@ fn lookup_card(ui: &mut Ui, s: &mut DictionarySettings, dict: &DictService) {
     let why = "The card answers in this language. A language is offered once its pack is \
                downloaded, or once the AI dictionary keeps a meaning in it.";
     note(ui, why);
-}
-
-/// The packs' languages but English, then the AI dictionary's, English
-/// included: it keeps English meanings of English words.
-fn offered(ready: &[&'static Pack], ai: &[String]) -> Vec<String> {
-    let packs = languages(ready).into_iter().filter(|l| *l != HUB);
-    let mut offered: Vec<String> = packs.map(str::to_owned).collect();
-    for l in ai {
-        if !offered.contains(l) {
-            offered.push(l.clone());
-        }
-    }
-    offered
 }
 
 /// A pack named by its language; buttons keep the full "English → X".
@@ -222,18 +209,4 @@ fn default_language(ui: &mut Ui, s: &mut DictionarySettings, offered: &[String])
             });
         },
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_ai_dictionarys_languages_are_offered_after_the_packs() {
-        let my = PACKS.iter().find(|p| p.target == "my");
-        let ready: Vec<&'static Pack> = my.into_iter().collect();
-        let ai = ["en", "my", "russian"].map(str::to_owned);
-        assert_eq!(offered(&ready, &ai), ["my", "en", "russian"]);
-        assert!(offered(&[], &[]).is_empty());
-    }
 }

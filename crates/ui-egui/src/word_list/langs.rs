@@ -2,7 +2,7 @@
 //! a pack's or the AI dictionary's.
 
 use egui::{RichText, Ui};
-use mareader_dict::PACKS;
+use mareader_dict::{PACKS, Pack};
 use mareader_engine::{command::Command, dict::Service as Dict, settings::Tab};
 use mareader_settings::{WORD_LANGUAGES, WordList};
 
@@ -14,14 +14,10 @@ use crate::widgets;
 /// Languages a list can add: every pack's, then those only the AI
 /// dictionary keeps, less the list's own.
 fn addable(ready: &[String], listed: &[String]) -> Vec<String> {
-    let packs = PACKS.iter().map(|p| p.target.to_owned());
-    let mut left: Vec<String> = Vec::new();
-    for lang in packs.chain(ready.iter().cloned()) {
-        if !listed.contains(&lang) && !left.contains(&lang) {
-            left.push(lang);
-        }
-    }
-    left
+    let every: Vec<&'static Pack> = PACKS.iter().collect();
+    let all = mareader_dict::targets(&every, ready).into_iter();
+    let left = all.filter(|l| !listed.iter().any(|x| x == l));
+    left.map(str::to_owned).collect()
 }
 
 /// The languages in column order, each movable, and one more to add.

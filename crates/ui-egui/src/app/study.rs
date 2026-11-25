@@ -107,13 +107,12 @@ impl MareaderApp {
         }
         let offset = self.documents().offset(pane);
         let asked = self.documents().asked_at(pane, page, chars);
-        let to = self.settings().dictionary.default_lang.clone();
         if self.ui.dict.rest(
             &mut self.session,
             pane,
             (word.clone(), context.clone()),
             (at, offset),
-            (to, asked),
+            asked,
         ) {
             self.session.ask_role(&word, &context);
         }
@@ -131,12 +130,7 @@ impl MareaderApp {
             return;
         }
         let offset = self.documents().offset(pane);
-        let to = self.settings().dictionary.default_lang.clone();
-        let query = mareader_dict::Query::LookUp {
-            word: word.clone(),
-            to,
-        };
-        let ticket = self.session.dict_ask(query);
+        let ticket = self.session.dict_look_up(&word);
         self.ui.dict.stash_probe(pane, word, ticket, at, offset);
     }
 
@@ -170,12 +164,7 @@ impl MareaderApp {
                 if self.ui.dict.restore_from_tab(&snap, offset) {
                     return;
                 }
-                let to = self.settings().dictionary.default_lang.clone();
-                let query = mareader_dict::Query::LookUp {
-                    word: snap.word.clone(),
-                    to,
-                };
-                let ticket = self.session.dict_ask(query);
+                let ticket = self.session.dict_look_up(&snap.word);
                 self.ui.dict.open_tab_lookup(snap, ticket, offset);
             }
         }

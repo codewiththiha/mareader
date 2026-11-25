@@ -8,7 +8,7 @@ use crate::ai_store::{AiStore, file};
 use crate::entry::{Entry, order};
 use crate::lang;
 use crate::packs::{PACKS, Pack};
-use crate::route::{HUB, Pair, Plan, languages, languages_with, plans, settle};
+use crate::route::{HUB, Pair, Plan, answer_in, languages, languages_with, plans, settle, targets};
 use crate::search::{WordMatch, fold};
 use crate::store::{Depth, Row, Side, Store};
 use crate::{Query, Reply};
@@ -161,11 +161,11 @@ impl Shelf {
             Vec::new()
         };
         let in_ai = |t: &str| ai.iter().any(|l| l == t);
-        let to = to
-            .filter(|t| (*t != from && langs.contains(t)) || in_ai(t))
-            .or_else(|| langs.iter().copied().find(|l| *l != from))
-            .or_else(|| ai.first().map(String::as_str))
-            .map(str::to_owned);
+        let offered: Vec<&str> = match from == HUB {
+            true => targets(&ready, &ai),
+            false => langs.iter().copied().filter(|l| *l != from).collect(),
+        };
+        let to = answer_in(to, &offered).map(str::to_owned);
         let mut reply = Reply::new(ready.len() + usize::from(!ai.is_empty()));
         let Some(to) = to else {
             return reply;

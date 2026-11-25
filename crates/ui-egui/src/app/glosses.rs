@@ -388,10 +388,10 @@ impl MareaderApp {
                 .card_pane_word()
                 .is_some_and(|(p, w)| self.ui.study.has_stash_for(p, w));
         let packs = self.session.dict().pack_languages();
-        let ai = self.session.dict().ai_languages().to_vec();
+        let all = self.session.dict().languages();
         let languages = crate::dict::card::Languages {
             packs: &packs,
-            ai: &ai,
+            all: &all,
         };
         self.ui.dict.show(
             ctx,

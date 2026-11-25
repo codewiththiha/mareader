@@ -73,6 +73,13 @@ impl Session {
         self.dict.ask(query)
     }
 
+    /// Looks `word` up for a card, in the Dictionary's chosen language.
+    pub fn dict_look_up(&mut self, word: &str) -> Ticket {
+        let to = self.settings.dictionary.default_lang.clone();
+        let word = word.to_owned();
+        self.dict.ask(Query::LookUp { word, to })
+    }
+
     /// Polls dictionary packs and queries; returns `(changed, replies)`.
     pub(crate) fn dict_poll(&mut self) -> (bool, Vec<Reply>) {
         self.dict.poll()
