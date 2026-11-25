@@ -202,8 +202,8 @@ be kept on this machine and used again, beside the downloaded packs.
   The page searches even when the AI dictionary is the only one.
 - **Its picker row** (owner, T57) opens a list beside it on hover, the
   one Custom skills uses (`side_list`): typing slides in *Find a
-  language*, Enter picks the first match, and Escape clears and folds
-  the list before the picker goes. It lists *All AI words*, then each
+  language*, the first match lights, ↑ ↓ move it, Enter picks it, and
+  Escape clears and folds the list before the picker goes. It lists *All AI words*, then each
   language it keeps as *English → Chinese*. One of
   those reads the AI's rows in that language alone, no pack beside them
   (saved as `ai:zh`, `ai_only`); a click on the row itself reads every

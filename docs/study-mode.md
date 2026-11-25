@@ -304,8 +304,12 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
   waiting card is out of view, a ring sits in the pane's bottom left
   corner, level with the page counter across the pane (no room added under
   it), rising over the page bar while that is up; toasts keep the right,
-  filled as far as the deck is made. Each job is a line in the stack, the
-  newest in front and up to two peeking behind; a hover fans them out to
+  filled as far as the deck is made. Each job is a line in the stack.
+  Folded, it is one ring holding how many jobs it has, coloured by how
+  they stand: in the panes' AI glow while any works (`glow::tint`, the
+  same colours, turning as a pane's do), red while a failure's line
+  stays, green once all are done; one job done shows a tick instead of
+  1. A hover fans them out to
   say so (*Writing cards 3 of 8 · pages 4–6*) with *Cancel*, which asks to
   turn study mode off. Lines fan up from the corner, ring first, then the
   words and buttons. Where a low deck covers the corner, it glides up

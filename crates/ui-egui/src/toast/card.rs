@@ -137,16 +137,13 @@ pub(super) enum Body {
     Listed,
 }
 
-/// The card's body alone, as a toast behind the front one shows.
-pub(super) fn shell(ui: &Ui, rect: Rect, tone: Tone, body: Body, t: &Tokens) {
-    let swatch = look(tone, t);
+/// The card's body alone, as a toast behind the front one shows. Its
+/// tone's colour drains into the theme's paper as its time `left` runs
+/// out, 1 to 0.
+pub(super) fn shell(ui: &Ui, rect: Rect, (tone, left): (Tone, f32), body: Body, t: &Tokens) {
     let radius = CornerRadius::from(t.radius_lg);
     let painter = ui.painter();
-    let (fill, edge) = match body {
-        Body::Front => (swatch.fill, swatch.edge),
-        Body::Behind => (t.surface.lerp_to_gamma(t.ink, 0.06), t.line),
-        Body::Listed => (swatch.listed, Color32::TRANSPARENT),
-    };
+    let (fill, edge) = paint_of(&look(tone, t), body, left, t);
     if body == Body::Front {
         painter.add(ui.style().visuals.popup_shadow.as_shape(rect, radius));
     }
@@ -157,6 +154,19 @@ pub(super) fn shell(ui: &Ui, rect: Rect, tone: Tone, body: Body, t: &Tokens) {
         Stroke::new(1.0, edge),
         StrokeKind::Inside,
     );
+}
+
+/// A body's fill and edge, `left` of its time to go.
+fn paint_of(swatch: &Swatch, body: Body, left: f32, t: &Tokens) -> (Color32, Color32) {
+    let toned = |paper: Color32, tint: Color32| paper.lerp_to_gamma(tint, left.clamp(0.0, 1.0));
+    match body {
+        Body::Front => (toned(t.surface, swatch.fill), toned(t.line, swatch.edge)),
+        Body::Behind => (t.surface.lerp_to_gamma(t.ink, 0.06), t.line),
+        Body::Listed => {
+            let paper = t.surface.lerp_to_gamma(t.ink, 0.04);
+            (toned(paper, swatch.listed), Color32::TRANSPARENT)
+        }
+    }
 }
 
 /// The close button's place on a card at `rect`, centred like the mark.
@@ -308,5 +318,17 @@ mod tests {
         let mid = light.toward(&dark, 0.5);
         assert_ne!(mid.toast, light.toast);
         assert_ne!(mid.toast, dark.toast);
+    }
+
+    #[test]
+    fn a_card_drains_from_its_tone_into_the_theme_as_its_time_runs_out() {
+        let t = Tokens::new(&Appearance::default());
+        let err = look(Tone::Error, &t);
+        let fresh = paint_of(&err, Body::Front, 1.0, &t);
+        assert_eq!(fresh, (err.fill, err.edge), "arrives in its tone");
+        let spent = paint_of(&err, Body::Front, 0.0, &t);
+        assert_eq!(spent, (t.surface, t.line), "goes in the theme's paper");
+        let half = paint_of(&err, Body::Front, 0.5, &t);
+        assert!(half != fresh && half != spent, "between, on the way");
     }
 }

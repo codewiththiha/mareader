@@ -1,9 +1,10 @@
 //! A pane's corner stack of the AI's work.
 //!
-//! Folded, it is the newest job's ring in the pane's bottom left corner,
-//! level with the page counter across the pane, with up to two more
-//! peeking from behind it; it glides up over the page bar while that is
-//! up, and over a low deck. A hover fans it out into a line a job, each
+//! Folded, it is one ring in the pane's bottom left corner, level with
+//! the page counter across the pane, holding how many jobs it has: in the
+//! panes' glow while any works, red a moment once one fails, green once
+//! all are done. It glides up over the page bar while that is up, and
+//! over a low deck. A hover fans it out into a line a job, each
 //! saying what it does, its ring first and its buttons after its words.
 //! The corner is never the top, and toasts keep the right.
 
@@ -14,7 +15,7 @@ use egui::{Context, FontId, Galley, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos
 use mareader_engine::activity::{End, Key, Row, Stage};
 use mareader_workspace::PaneId;
 
-use super::ring::{self, Look, SIDE};
+use super::ring::{self, Look, Mood, SIDE};
 use crate::motion;
 use crate::theme::Tokens;
 use crate::z_order::{self, Tier};
@@ -32,10 +33,10 @@ const INSET: f32 = 12.0;
 const LIFT: f32 = 12.0;
 /// The least room kept between the stack and the deck.
 const KEEP: f32 = 2.0;
-/// Room between open lines; how far each folded one peeks out.
+/// Room between open lines.
 const GAP: f32 = 6.0;
-const PEEK: f32 = 4.0;
-const PEEKS: usize = 2;
+/// How far round the stack's column the page bar's edge waits for a rest.
+const COLUMN: f32 = 12.0;
 /// Seconds to fan out and to fold; a lingering line's last, fading.
 const OPEN: f32 = 0.2;
 const FADE: f64 = 0.4;
@@ -196,11 +197,36 @@ pub fn toast_lift(ctx: &Context, stage: Rect) -> f32 {
     ctx.animate_value_with_time(Id::new("toast-over-stack"), target, time)
 }
 
-/// Each line's place, oldest first: the newest in the corner, the rest
-/// peeking behind it, or fanned out away from the corner by `open`.
+/// Whether `p` is just under a stack standing this pass: leaving it
+/// downward crosses the page bar's edge, which waits for a rest there.
+pub fn under(ctx: &Context, p: Pos2) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    let kept: Vec<(u64, Rect)> = ctx.data(|d| d.get_temp(standing_id())).unwrap_or_default();
+    let below = |r: &Rect| {
+        let column = r.x_range().expand(COLUMN);
+        column.contains(p.x) && p.y >= r.top() && p.y - r.bottom() < SIDE
+    };
+    kept.iter().any(|(at, r)| at + 1 >= pass && below(r))
+}
+
+/// What the folded ring says of `lines`: how they stand, and how many.
+pub fn tally(lines: &[Line]) -> (Mood, usize) {
+    let any = |look: fn(Look) -> bool| lines.iter().any(|l| look(l.look));
+    let mood = if any(|l| l == Look::Failed) {
+        Mood::Failed
+    } else if any(|l| matches!(l, Look::Queued | Look::Busy(_))) {
+        Mood::Working
+    } else {
+        Mood::Done
+    };
+    (mood, lines.len())
+}
+
+/// Each line's place, oldest first: all in the corner, or fanned out
+/// away from it by `open`, the newest staying.
 fn place(folded: Rect, open: f32, widths: &[f32]) -> Vec<Rect> {
     let n = widths.len();
-    let step = PEEK + (SIDE + GAP - PEEK) * open;
+    let step = (SIDE + GAP) * open;
     let rect = |(i, full): (usize, &f32)| {
         let back = n.saturating_sub(i + 1) as f32;
         let width = SIDE + (full - SIDE) * open;
@@ -219,22 +245,29 @@ fn paint(
 ) -> Option<(Button, Key)> {
     let t = Tokens::get(ui.ctx());
     let n = lines.len();
+    // The folded ring fades only once every line does.
+    let whole = lines.iter().map(|l| l.alpha).fold(0.0, f32::max);
     let mut pressed = None;
     for (i, ((line, l), rect)) in lines.iter().zip(laid).zip(rects).enumerate() {
-        let back = n.saturating_sub(i + 1);
-        let peek = match back {
-            0 => 1.0,
-            b if b <= PEEKS => 0.7,
-            _ => 0.0,
+        let newest = i + 1 == n;
+        let alpha = match newest {
+            true => whole + (line.alpha - whole) * open,
+            false => line.alpha * open,
         };
-        let alpha = line.alpha * (peek + (1.0 - peek) * open);
         if alpha <= 0.0 {
             continue;
         }
         ring::paper(ui.painter(), *rect, &t, alpha);
         let cell = Rect::from_min_size(rect.min, Vec2::splat(SIDE));
+        if newest && open < 1.0 {
+            let folded = whole * (1.0 - open);
+            ring::tally(ui.ctx(), ui.painter(), cell, tally(lines), folded);
+        }
         let ring_id = id.with(("made", line.key));
-        ring::paint(ui.ctx(), ui.painter(), (cell, ring_id), line.look, alpha);
+        let shown = line.alpha * open;
+        if shown > 0.0 {
+            ring::paint(ui.ctx(), ui.painter(), (cell, ring_id), line.look, shown);
+        }
         if open > 0.0 {
             let row = (*rect, id.with(line.key));
             pressed = words(ui, row, (line, l), open * alpha).or(pressed);
@@ -383,8 +416,32 @@ mod tests {
         assert_eq!(stuck, roomy, "never up top");
     }
 
+    fn line(n: u64, look: Look) -> Line {
+        Line {
+            key: Key::Organize { run: n },
+            said: String::new(),
+            look,
+            buttons: &[],
+            alpha: 1.0,
+        }
+    }
+
     #[test]
-    fn folded_lines_peek_and_open_ones_fan_away_from_the_corner() {
+    fn the_folded_ring_counts_the_jobs_and_says_how_they_stand() {
+        let done = line(1, Look::Done);
+        let busy = line(2, Look::Busy(Some(0.5)));
+        let queued = line(3, Look::Queued);
+        let failed = line(4, Look::Failed);
+        let all = [done.clone(), busy.clone(), queued.clone(), failed];
+        assert_eq!(tally(&all), (Mood::Failed, 4), "a failure goes red");
+        let going = [done.clone(), busy, queued];
+        assert_eq!(tally(&going), (Mood::Working, 3), "then the glow's colours");
+        let ended = [done.clone(), done];
+        assert_eq!(tally(&ended), (Mood::Done, 2), "green once all are done");
+    }
+
+    #[test]
+    fn folded_lines_hide_behind_the_newest_and_open_ones_fan_away() {
         let corner = Rect::from_min_size(pos2(100.0, 200.0), Vec2::splat(SIDE));
         let lines = [120.0, 80.0];
         let folded = place(corner, 0.0, &lines);
@@ -393,8 +450,8 @@ mod tests {
             Some(corner),
             "the newest in the corner"
         );
-        let behind = folded.first().map(|r| r.top());
-        assert_eq!(behind, Some(200.0 - PEEK));
+        let behind = folded.first().copied();
+        assert_eq!(behind, Some(corner), "the rest hide behind it");
         let open = place(corner, 1.0, &lines);
         let first = open.first().copied().unwrap_or(Rect::NOTHING);
         assert_eq!(first.top(), 200.0 - SIDE - GAP, "fanned upwards");

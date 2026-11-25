@@ -87,13 +87,14 @@ fn enter_runs_the_first_skill_found() {
     h.run();
     h.get_by_label(ROW).click();
     h.run();
-    h.event(egui::Event::Text("gram".into()));
+    // Both hold an e: the first is lit.
+    h.event(egui::Event::Text("e".into()));
     h.run();
     h.key_press(egui::Key::Enter);
     h.run();
     let asks = h.state().skills().asks();
     let names: Vec<&str> = asks.iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(names, ["Explain the grammar"], "the one match runs");
+    assert_eq!(names, ["Quiz me"], "the first match runs");
 }
 
 #[test]

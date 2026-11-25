@@ -88,8 +88,8 @@ pub fn paint(
             ..Look::new(light, glow)
         },
         false => Look {
-            head: phase + EASE * (TAU * phase).sin() / TAU,
-            drift: (t * 0.04).rem_euclid(1.0) as f32 + 0.05 * (t * 0.6).sin() as f32,
+            head: head(phase),
+            drift: drift(t),
             ..Look::new(light, glow)
         },
     };
@@ -102,6 +102,31 @@ pub fn paint(
     };
     ctx.request_repaint_after_secs(wait);
     count(ctx);
+}
+
+/// The arc's middle at `phase` of its lap, quick then slow.
+fn head(phase: f32) -> f32 {
+    phase + EASE * (TAU * phase).sin() / TAU
+}
+
+/// How far the colours have wandered by `t`, in turns of the palette.
+fn drift(t: f64) -> f32 {
+    (t * 0.04).rem_euclid(1.0) as f32 + 0.05 * (t * 0.6).sin() as f32
+}
+
+/// The colour `share` of the way round a short glow now, as a pane's
+/// glow wears it: the AI stack's folded ring matches the panes so.
+pub fn tint(ctx: &Context, tokens: &Tokens, share: f32) -> Color32 {
+    let light = Light::new(&tokens.glow);
+    let t = ctx.input(|i| i.time);
+    let phase = (t / f64::from(LAP.0)).rem_euclid(1.0) as f32;
+    let (at, wander) = match motion::reduced(ctx) {
+        true => (0.0, 0.0),
+        false => (head(phase), drift(t)),
+    };
+    let rgb = light.hue(wander + share - at);
+    let [r, g, b] = rgb.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
+    Color32::from_rgb(r, g, b)
 }
 
 /// Glows painted in the last whole pass, for tests.

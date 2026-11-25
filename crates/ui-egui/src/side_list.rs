@@ -3,12 +3,13 @@
 //!
 //! Hovered or pressed, the row opens a narrow list beside it. Typing
 //! while the list shows finds in it: the search field slides in on top,
-//! and Enter picks the first match. Escape clears the search and folds
-//! the list; the next Escape is the menu's own.
+//! the first match lights, the arrows move the light and Enter picks it.
+//! Escape clears the search and folds the list; the next Escape is the
+//! menu's own.
 
 use egui::{
-    Context, CornerRadius, Id, Key, LayerId, Modifiers, Rect, Response, ScrollArea, Sense, Ui,
-    UiBuilder, pos2, vec2,
+    Context, CornerRadius, EventFilter, Id, Key, LayerId, Modifiers, Rect, Response, ScrollArea,
+    Sense, Shape, Ui, UiBuilder, pos2, vec2,
 };
 
 use crate::icons::Icon;
@@ -52,6 +53,8 @@ struct State {
     query: String,
     /// Folded by Escape under the pointer: hover waits for it to leave.
     hush: bool,
+    /// The match Enter takes, lit while searching.
+    lit: usize,
 }
 
 /// An open list last frame, and its layer.
@@ -91,7 +94,7 @@ pub fn show<T: Clone>(
 ) -> Shown<T> {
     let ctx = ui.ctx().clone();
     let (now, pass) = (ui.input(|i| i.time), ctx.cumulative_pass_nr());
-    let under = ui.painter().add(egui::Shape::Noop);
+    let under = ui.painter().add(Shape::Noop);
     let resp = row(ui);
     let id = resp.id.with("side-list");
     let mut state: State = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
@@ -125,10 +128,7 @@ pub fn show<T: Clone>(
         .gap(4.0)
         .width(spec.width)
         .show(|ui| {
-            crate::z_order::register_popup(ui.ctx(), ui.layer_id());
-            widgets::menu_style(ui, spec.width);
-            let enter = find(ui, (id, spec.find), &mut state.query);
-            picked = list(ui, &spec, (&state.query, enter), cell);
+            picked = contents(ui, (&spec, id), &mut state, cell);
             ui.layer_id()
         });
     let (pos, pressed) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_pressed()));
@@ -151,12 +151,31 @@ pub fn show<T: Clone>(
         ctx.data_mut(|d| d.insert_temp(held_id(), Held { pass, layer }));
         if !resp.hovered() {
             let t = Tokens::get(&ctx);
-            let lit = egui::Shape::rect_filled(resp.rect, spec.corners, t.selected);
+            let lit = Shape::rect_filled(resp.rect, spec.corners, t.selected);
             ui.painter().set(under, lit);
         }
     }
     ui.data_mut(|d| d.insert_temp(id, state));
     Shown { row: resp, picked }
+}
+
+/// The open list: its search field over its items; the one picked.
+fn contents<T: Clone>(
+    ui: &mut Ui,
+    (spec, id): (&Spec<'_, T>, Id),
+    state: &mut State,
+    cell: impl FnMut(&mut Ui, &T, &str) -> bool,
+) -> Option<T> {
+    crate::z_order::register_popup(ui.ctx(), ui.layer_id());
+    widgets::menu_style(ui, spec.width);
+    let step = arrows(ui, !state.query.is_empty());
+    let typed = state.query.clone();
+    let enter = find(ui, (id, spec.find), &mut state.query);
+    if state.query != typed {
+        state.lit = 0;
+    }
+    let keys = (enter, step, &mut state.lit);
+    list(ui, spec, &state.query, keys, cell)
 }
 
 /// Wakes the frame when a hovered list's grace runs out.
@@ -172,9 +191,22 @@ fn linger(ui: &Ui, state: &State, now: f64) {
     }
 }
 
+/// Which way the arrows move the light while `searching`: down 1, up -1.
+fn arrows(ui: &Ui, searching: bool) -> i8 {
+    if !searching {
+        return 0;
+    }
+    let press = |key| ui.input_mut(|i| i.consume_key(Modifiers::NONE, key));
+    match (press(Key::ArrowDown), press(Key::ArrowUp)) {
+        (true, _) => 1,
+        (_, true) => -1,
+        _ => 0,
+    }
+}
+
 /// The search field, named `name`: it holds the keys while the list
 /// shows, and slides in once something is typed. True when Enter picks
-/// the first match.
+/// the lit match.
 fn find(ui: &mut Ui, (id, name): (Id, &str), query: &mut String) -> bool {
     let k = ui
         .ctx()
@@ -192,7 +224,14 @@ fn find(ui: &mut Ui, (id, name): (Id, &str), query: &mut String) -> bool {
     };
     child.set_clip_rect(clip.intersect(ui.clip_rect()));
     child.multiply_opacity(k);
+    // The arrows move the light, not the focus.
+    let keep = EventFilter {
+        horizontal_arrows: true,
+        vertical_arrows: true,
+        ..EventFilter::default()
+    };
     let input = widgets::input(query)
+        .event_filter(keep)
         .id(id.with("find"))
         .icon(Icon::Search)
         .hint(name)
@@ -206,26 +245,47 @@ fn find(ui: &mut Ui, (id, name): (Id, &str), query: &mut String) -> bool {
     enter
 }
 
-/// The items whose names hold `query`, as rows; the one picked, the
-/// first with `enter`.
+/// The items whose names hold `query`, as rows, the match `lit` lit
+/// once moved by `step`; the one picked, the lit one with `enter`.
 fn list<T: Clone>(
     ui: &mut Ui,
     spec: &Spec<'_, T>,
-    (query, enter): (&str, bool),
+    query: &str,
+    (enter, step, lit): (bool, i8, &mut usize),
     mut cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Option<T> {
     let find = query.trim().to_lowercase();
     let found: Vec<&(T, String)> = (spec.items.iter())
         .filter(|(_, name)| find.is_empty() || name.to_lowercase().contains(&find))
         .collect();
+    let last = found.len().saturating_sub(1);
+    let moved = match step {
+        1 => *lit + 1,
+        -1 => lit.saturating_sub(1),
+        _ => *lit,
+    };
+    *lit = moved.min(last);
     let mut picked = found
-        .first()
+        .get(*lit)
         .map(|(item, _)| item.clone())
         .filter(|_| enter);
+    let light = Tokens::get(ui.ctx()).accent_soft;
     ScrollArea::vertical().max_height(LIST_H).show(ui, |ui| {
-        for (item, name) in &found {
+        for (i, (item, name)) in found.iter().enumerate() {
+            let under = ui.painter().add(Shape::Noop);
+            let top = ui.cursor().top();
             if cell(ui, item, name) {
                 picked = Some(item.clone());
+            }
+            if find.is_empty() || i != *lit {
+                continue;
+            }
+            let rows = ui.min_rect();
+            let rect = Rect::from_x_y_ranges(rows.x_range(), top..=rows.bottom());
+            let fill = Shape::rect_filled(rect, spec.corners, light);
+            ui.painter().set(under, fill);
+            if step != 0 {
+                ui.scroll_to_rect(rect, None);
             }
         }
         if found.is_empty() {

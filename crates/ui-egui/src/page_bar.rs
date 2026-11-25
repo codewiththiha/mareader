@@ -12,6 +12,7 @@ use crate::documents::Reading;
 use crate::gpu::{Look, Reach};
 use crate::icons::Icon;
 use crate::motion;
+use crate::sidebar::EDGE_DELAY;
 use crate::theme::{self, Tokens};
 use crate::titlebar::{FADE, HIDE_GRACE};
 use crate::ui_command::{Commands, Sent};
@@ -36,6 +37,8 @@ const SLIDER_MIN_PANE: f32 = 260.0;
 pub struct PageBar {
     shown: bool,
     left_at: Option<f64>,
+    /// Since when the pointer rests on the edge under the AI stack.
+    edge_at: Option<f64>,
     /// The page number being typed, while the entry has focus.
     typing: Option<String>,
 }
@@ -55,7 +58,15 @@ impl PageBar {
         let now = ctx.input(|i| i.time);
         let reach = if self.shown { BAR_H } else { EDGE };
         let band = Rect::from_min_max(pos2(pane.left(), pane.bottom() - reach), pane.max);
-        let inside = widgets::bare_pointer(ctx, own).is_some_and(|p| band.contains(p));
+        let on = widgets::bare_pointer(ctx, own).filter(|&p| band.contains(p));
+        let inside = match on {
+            Some(p) if !self.shown => self.rested(ctx, p, now),
+            Some(_) => true,
+            None => {
+                self.edge_at = None;
+                false
+            }
+        };
         if inside || held {
             self.shown = true;
             self.left_at = None;
@@ -68,6 +79,19 @@ impl PageBar {
                 ctx.request_repaint_after_secs((HIDE_GRACE - waited) as f32);
             }
         }
+    }
+
+    /// Whether the pointer at `p` on the edge brings the bar up: under
+    /// the AI stack only after a rest, as leaving it downward crosses here.
+    fn rested(&mut self, ctx: &Context, p: egui::Pos2, now: f64) -> bool {
+        if !crate::activity::stack::under(ctx, p) {
+            return true;
+        }
+        let waited = now - *self.edge_at.get_or_insert(now);
+        if waited < EDGE_DELAY {
+            ctx.request_repaint_after_secs((EDGE_DELAY - waited) as f32);
+        }
+        waited >= EDGE_DELAY
     }
 }
 

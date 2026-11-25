@@ -225,6 +225,9 @@ over the panes, so content never moves when it appears.
 - **Sidebar edge.** In overlay mode the window's left 6 pt opens the rail
   at once, but within the bar's band only after resting there 0.5 s, so
   overshooting Library onto the edge doesn't move it.
+- **Page bar edge.** A pane's bottom 8 pt brings its page bar up at once,
+  but under the AI stack's corner only after the same 0.5 s rest
+  (`activity::stack::under`), so leaving the stack downward doesn't.
 - **Fading out, it ignores clicks**, so a click meant for the page lands there.
 - **Window moves.** Dragging the empty bar moves the window; double-click
   toggles maximise.
@@ -357,7 +360,10 @@ shown without an update check.
   bottom-right corner of the panes, 16 pt in, above the page bar in the
   reader; 360 pt wide.
   - **Card.** The tone icon and edge mark each card; the original gradient
-    wash drains across its surface to show the time left. An action such as
+    wash drains across its surface to show the time left, and the card's
+    green, amber or red drains with it into the theme's paper (`surface`
+    and `line`), fully themed as it goes. The tone stays in its mark,
+    count and action. An action such as
     Undo shows its shortcut; a dismiss button remains available.
   - **Pile and fan.** The newest is in front, with older cards peeking behind
     and a count badge. Hover fans the pile into a paused list; click the pile

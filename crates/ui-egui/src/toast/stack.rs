@@ -174,7 +174,8 @@ fn paint(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, look: (f32, f32), ou
         (false, true) => Body::Front,
         (false, false) => Body::Behind,
     };
-    card::shell(&child, rect, live.toast.tone, body, &t);
+    let tone = (live.toast.tone, live.remaining());
+    card::shell(&child, rect, tone, body, &t);
     if content > 0.0 {
         child.set_opacity(alpha * content);
         card::content(&mut child, rect, live, card, out);

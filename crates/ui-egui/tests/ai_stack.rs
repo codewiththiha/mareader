@@ -12,6 +12,7 @@ use mareader_settings::{PageTask, Skill};
 use mareader_ui_egui::MareaderApp;
 use mareader_ui_egui::activity::stack::{CANCEL, STACK, VIEW};
 use mareader_ui_egui::ui_command::Sent;
+use mareader_ui_egui::z_order::{self, Tier};
 
 use crate::common::ai_reader;
 
@@ -147,6 +148,31 @@ fn a_skill_failing_out_of_view_shows_red_a_moment_and_toasts() {
     h.hover_at(egui::pos2(300.0, 300.0));
     h.run_steps(240);
     assert!(h.query_by_label(STACK).is_none(), "it goes by itself");
+}
+
+/// Leaving the stack downward crosses the page bar's edge: there the bar
+/// waits for a rest, as the sidebar's edge does by the Library button.
+#[test]
+fn the_page_bar_waits_for_a_rest_under_the_stack() {
+    let mut h = skill_away("silent");
+    let pane = h.state().active_pane();
+    let rects = h.state().pane_rects().to_vec();
+    let rect = rects.iter().find(|(p, _)| *p == pane).map(|(_, r)| *r);
+    let rect = rect.expect("the pane is drawn");
+    let bar = z_order::layer(Tier::PaneBar, egui::Id::new(("page-bar", pane)));
+    let up = |h: &H| h.ctx.memory(|m| m.areas().is_visible(&bar));
+    let stack = h.get_by_label(STACK).rect();
+    h.hover_at(egui::pos2(stack.center().x, rect.bottom() - 2.0));
+    h.run_steps(6);
+    assert!(!up(&h), "passing under the stack");
+    h.run_steps(40);
+    assert!(up(&h), "a rest there brings it");
+    h.hover_at(egui::pos2(300.0, 300.0));
+    h.run_steps(90);
+    assert!(!up(&h), "left, it goes");
+    h.hover_at(egui::pos2(rect.right() - 40.0, rect.bottom() - 2.0));
+    h.run_steps(6);
+    assert!(up(&h), "elsewhere the edge brings it at once");
 }
 
 /// A reader whose page rewrites stay mid-answer.

@@ -1,12 +1,13 @@
 //! The ring a job shows in the stack: it fills as far as the work is done,
 //! easing to each step, with a soft pulse at its head while the work goes
 //! on; a dot breathes at its top while it waits for its model, it turns red
-//! once the work failed, and holds a tick once done.
+//! once the work failed, and holds a tick once done. Folded, the stack is
+//! one ring holding how many jobs it has, coloured by how they stand.
 
-use egui::{Context, Id, Painter, Pos2, Rect, Shape, Stroke, Vec2, vec2};
+use egui::{Align2, Color32, Context, Id, Painter, Pos2, Rect, Shape, Stroke, Vec2, vec2};
 
-use crate::motion;
-use crate::theme::Tokens;
+use crate::theme::{self, Tokens};
+use crate::{glow, motion};
 
 /// The side the ring's measures are drawn for; others scale to it.
 pub const SIDE: f32 = 30.0;
@@ -23,6 +24,17 @@ pub enum Look {
     /// At work, with the share done when it is known.
     Busy(Option<f32>),
     Failed,
+    Done,
+}
+
+/// How a folded stack's jobs stand, newest news first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mood {
+    /// Some still at work: the ring wears the panes' glow.
+    Working,
+    /// One just failed: red while its line stays.
+    Failed,
+    /// All done: green.
     Done,
 }
 
@@ -86,12 +98,57 @@ pub fn paint(ctx: &Context, painter: &Painter, (cell, id): (Rect, Id), look: Loo
         }
         Look::Done => {
             arc(painter, (c, r), (0.0, std::f32::consts::TAU), line);
-            let marks = [vec2(-3.5, 0.0), vec2(-1.0, 2.5), vec2(3.5, -2.5)];
-            let tick = marks.map(|v| c + v * k);
-            painter.line(tick.to_vec(), Stroke::new(2.0 * k, fade(t.accent)));
+            tick(painter, (c, k), fade(t.accent));
         }
         Look::Failed => {}
     }
+}
+
+/// The folded stack's ring in `cell`: `n` jobs, coloured by `mood`; a
+/// single job done holds a tick.
+pub fn tally(ctx: &Context, painter: &Painter, cell: Rect, (mood, n): (Mood, usize), alpha: f32) {
+    let t = Tokens::get(ctx);
+    let fade = |c: Color32| c.gamma_multiply(alpha);
+    let k = cell.height() / SIDE;
+    let (c, r, width) = (cell.center(), 9.5 * k, 2.0 * k);
+    let ink = match mood {
+        Mood::Working => t.ink,
+        Mood::Failed => t.danger,
+        Mood::Done => theme::color(t.toast.info.mark),
+    };
+    if mood == Mood::Working {
+        rainbow(ctx, painter, (c, r, width), alpha);
+    } else {
+        painter.circle_stroke(c, r, Stroke::new(width, fade(ink)));
+    }
+    if mood == Mood::Done && n == 1 {
+        tick(painter, (c, k), fade(ink));
+        return;
+    }
+    let font = crate::toast::island_font(ctx, 11.0 * k);
+    painter.text(c, Align2::CENTER_CENTER, n.to_string(), font, fade(ink));
+}
+
+/// A ring round `c` in the glow's colours, turning as a pane's does.
+fn rainbow(ctx: &Context, painter: &Painter, (c, r, width): (Pos2, f32, f32), alpha: f32) {
+    let t = Tokens::get(ctx);
+    let steps = 48;
+    let at = |i: usize| c + r * Vec2::angled(std::f32::consts::TAU * i as f32 / steps as f32);
+    for i in 0..steps {
+        let share = (i as f32 + 0.5) / steps as f32;
+        let hue = glow::tint(ctx, &t, share).gamma_multiply(alpha);
+        painter.line_segment([at(i), at(i + 1)], Stroke::new(width, hue));
+    }
+    if !motion::reduced(ctx) {
+        ctx.request_repaint_after_secs(1.0 / 30.0);
+    }
+}
+
+/// The tick of a job done, centred at `c`, scaled by `k`.
+fn tick(painter: &Painter, (c, k): (Pos2, f32), ink: Color32) {
+    let marks = [vec2(-3.5, 0.0), vec2(-1.0, 2.5), vec2(3.5, -2.5)];
+    let points = marks.map(|v| c + v * k);
+    painter.line(points.to_vec(), Stroke::new(2.0 * k, ink));
 }
 
 /// How far round a ring of unknown share is, 0 to 1.

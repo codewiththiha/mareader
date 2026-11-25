@@ -303,15 +303,20 @@ fn the_ai_dictionary_lists_its_languages_beside_it_and_finds_them() {
     h.run();
     assert!(!listed(&h, "Every dictionary"), "then the picker goes");
 
+    // English, Burmese, Russian match: down past the end, back up one.
     rest_on_ai(&mut h);
-    h.event(egui::Event::Text("eng".into()));
+    h.event(egui::Event::Text("english".into()));
     h.run();
-    h.key_press(egui::Key::Enter);
+    use egui::Key::{ArrowDown, ArrowUp, Enter};
+    for key in [ArrowDown, ArrowDown, ArrowDown, ArrowUp, Enter] {
+        h.key_press(key);
+        h.run();
+    }
     h.run_steps(30);
     let langs = h.state().settings().dictionary.langs.clone();
-    assert_eq!(langs, [ai_only("en")], "Enter: the first match");
-    assert!(found(&h, "moving fast"), "the AI's own row");
-    let others = found(&h, "быстрый") || found(&h, "အမြန်");
+    assert_eq!(langs, [ai_only("my")], "Enter: the lit match");
+    assert!(found(&h, "အမြန်"), "the AI's own row");
+    let others = found(&h, "быстрый") || found(&h, "moving fast");
     assert!(!others, "no other language");
     h.get_by_label("Dictionary to search").click();
     h.run();

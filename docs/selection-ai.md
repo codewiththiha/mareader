@@ -11,8 +11,8 @@ behaviour on 2026-11-21.
 - **In the menu.** The built-ins sit side by side in one row. The reader's
   own fold into one "Custom skills" row (shown only when one exists);
   hovered or pressed, a narrow list opens beside it and scrolls. Typing
-  while it shows finds a skill: the search field slides in on top, and
-  Enter runs the first match. The first Escape clears the search and folds
+  while it shows finds a skill: the search field slides in on top, the
+  first match lights, ↑ ↓ move the light, and Enter runs it. The first Escape clears the search and folds
   the list; the next closes the menu. The page menu folds them the same
   way (`skill_menu.rs`, over the shared `side_list.rs`, which the
   Dictionary picker's AI languages use too).
