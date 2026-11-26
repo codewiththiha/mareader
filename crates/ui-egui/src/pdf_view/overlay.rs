@@ -28,7 +28,7 @@ fn selection_actions(cx: &mut ShowContext<'_>) {
             texts,
             room,
             &view_cx.highlights,
-            view_cx.selection_menu,
+            view_cx.selection_restricted,
         );
         match pressed {
             Some(BarPress::Copy) => {
@@ -42,7 +42,6 @@ fn selection_actions(cx: &mut ShowContext<'_>) {
             Some(BarPress::Note) => gloss.push(Gloss::Note),
             Some(BarPress::Skill(skill)) => gloss.push(Gloss::Skill(skill)),
             Some(BarPress::ManageSkills) => gloss.push(Gloss::ManageSkills),
-            Some(BarPress::Resize(size)) => gloss.push(Gloss::SelectionMenuSize(size)),
             Some(BarPress::ReadAloud) => gloss.push(Gloss::ReadAloud),
             Some(BarPress::Highlight(pen, color)) => gloss.push(Gloss::Highlight(pen, color)),
             None => {}

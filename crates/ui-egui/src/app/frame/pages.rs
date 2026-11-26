@@ -357,7 +357,7 @@ impl MareaderApp {
                     marks,
                     bookmarks,
                     highlights: highlights.clone(),
-                    selection_menu: menu_state(session, id),
+                    selection_restricted: session.study_mode().on(id),
                     card: study.card_mark(id),
                     picked: study.picked(id),
                     asking: session.study().asking_marks(),
@@ -424,14 +424,4 @@ fn pane_bookmarks(session: &Session, study: &StudyUi, pane: PaneId) -> Vec<usize
         .into_iter()
         .map(|(_, page)| page)
         .collect()
-}
-
-fn menu_state(
-    session: &mareader_engine::session::Session,
-    id: PaneId,
-) -> (mareader_settings::SelectionMenuSize, bool) {
-    (
-        session.settings().study.selection_menu,
-        session.study_mode().on(id),
-    )
 }

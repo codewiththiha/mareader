@@ -17,8 +17,6 @@ pub enum Gloss {
     Skill(mareader_settings::Skill),
     /// Open settings to add or edit skills.
     ManageSkills,
-    /// Persist the selection menu's preferred size.
-    SelectionMenuSize(mareader_settings::SelectionMenuSize),
     /// Read aloud was pressed: the selection alone is read.
     ReadAloud,
     /// The read-aloud pin rested, or was clicked: read from it.

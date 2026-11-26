@@ -151,10 +151,6 @@ impl MareaderApp {
             Gloss::ManageSkills => out.push(Sent::Engine(Command::OpenSettings(
                 mareader_engine::settings::Tab::Skills,
             ))),
-            Gloss::SelectionMenuSize(size) => out.push(Sent::Engine(Command::SetField {
-                path: "study.selection_menu".to_owned(),
-                value: format!(r#"{{"width":{},"height":{}}}"#, size.width, size.height),
-            })),
             Gloss::Skill(skill) => {
                 let run = mareader_engine::skills::Action::Run { pane, skill };
                 out.push(Sent::Engine(Command::Skill(run)));
@@ -419,7 +415,6 @@ fn study_gloss(gloss: &Gloss) -> bool {
             | Gloss::Note
             | Gloss::Skill(_)
             | Gloss::ManageSkills
-            | Gloss::SelectionMenuSize(_)
             | Gloss::ReadAloud
             | Gloss::ReadFrom(..)
             | Gloss::Highlight(..)

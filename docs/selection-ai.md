@@ -1,16 +1,16 @@
 # Selection AI: skills on a selection or a page
 
-Selecting text shows the selection menu, and in it **Ask AI**. A press opens
-the skills under the bar; a second press shuts them. The owner set the
-behaviour on 2026-11-21.
+Selecting text shows the fixed narrow selection menu, with skills above the
+other actions. It fits within the available pane and scrolls if needed; its
+size is not user-resizable.
 
 ## The skills
 
 - **Built in.** Translate, Summarize and Simplify. Their prompts are fixed
   in code (`crates/assist/src/skill.rs`); Settings only picks their model.
-- **In the menu.** The built-ins sit side by side in one row. The reader's
-  own fold into one "Custom skills" row (shown only when one exists);
-  hovered or pressed, a narrow list opens beside it and scrolls. Typing
+- **In the menu.** The built-ins have their own rows. The reader's custom
+  skills fold into one "Custom skills" row; hovered or pressed, a narrow
+  list opens beside it and scrolls, or explains that there are no skills. Typing
   while it shows finds a skill: the search field slides in on top, the
   first match lights, ↑ ↓ move the light, and Enter runs it. The first Escape clears the search and folds
   the list; the next closes the menu. The page menu folds them the same

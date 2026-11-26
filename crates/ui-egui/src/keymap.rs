@@ -261,12 +261,7 @@ pub fn read(ctx: &Context, platform: Platform, route: Route, out: &mut Commands)
         .filter(|b| !sheet || b.command == Sent::Ui(UiCommand::ShowShortcuts))
         .filter(|b| !palette || b.command == Sent::Ui(UiCommand::ShowPalette))
     {
-        let resizing = crate::study::bar::resize_focused(ctx)
-            && matches!(
-                b.shortcut.logical_key,
-                Key::Equals | Key::Plus | Key::Minus | Key::Num0
-            );
-        if resizing || (typing && types(&b.shortcut)) || (focused && steers(&b)) {
+        if (typing && types(&b.shortcut)) || (focused && steers(&b)) {
             continue;
         }
         if ctx.input_mut(|i| i.consume_shortcut(&b.shortcut)) {

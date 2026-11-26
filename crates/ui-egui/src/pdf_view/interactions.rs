@@ -189,7 +189,7 @@ pub(super) fn selection_bar(
     texts: &TextLayers,
     room: Rect,
     look: &HighlightSettings,
-    options: (mareader_settings::SelectionMenuSize, bool),
+    restricted: bool,
 ) -> Option<BarPress> {
     let sel = place.selection.filter(|s| !s.is_empty())?;
     let id = place.doc;
@@ -199,11 +199,7 @@ pub(super) fn selection_bar(
     let (down, from) = ctx.input(|i| (i.pointer.any_down(), i.pointer.press_origin()));
     let on = from.and_then(|p| ctx.layer_id_at(p));
     // Its skills' list opens beside it: a press there keeps it too.
-    if down
-        && on != Some(bar)
-        && !crate::side_list::owns(ctx, on)
-        && !study::bar::is_resizing(ctx, bar_id)
-    {
+    if down && on != Some(bar) && !crate::side_list::owns(ctx, on) {
         return None;
     }
     let mut shown = Rect::NOTHING;
@@ -224,5 +220,5 @@ pub(super) fn selection_bar(
     if !shown.is_positive() {
         return None;
     }
-    study::show_bar(ctx, bar_id, shown, room, look, options.0, options.1)
+    study::show_bar(ctx, bar_id, shown, room, look, restricted)
 }

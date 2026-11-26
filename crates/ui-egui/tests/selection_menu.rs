@@ -1,4 +1,4 @@
-//! Selection menu layout and preferences.
+//! Selection menu layout and interactions.
 
 use egui_kittest::kittest::Queryable as _;
 use mareader_engine::command::Command;
@@ -63,9 +63,14 @@ fn narrow_pane_keeps_the_menu_and_its_actions_reachable() {
 }
 
 #[test]
-fn dragging_each_edge_saves_a_global_preference() {
-    use crate::common::{carry, release};
+fn legacy_sizes_are_ignored_and_resize_controls_are_gone() {
     let mut h = reader(&[("pdf", "sample:5")]);
+    let mut json: serde_json::Value =
+        serde_json::from_str(&mareader_settings::to_json(h.state().settings())).unwrap();
+    json["study"]["selection_menu"] = serde_json::json!({"width": 340, "height": 480});
+    let loaded = mareader_settings::load(&json.to_string());
+    assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
+    h.state_mut().set_settings(loaded.settings);
     let pane = h.state().active_pane();
     h.state_mut().queue(Sent::Engine(Command::SelectText {
         pane,
@@ -73,58 +78,31 @@ fn dragging_each_edge_saves_a_global_preference() {
         text: "quick brown".to_owned(),
     }));
     h.run_steps(30);
-    for (label, delta) in [
-        ("Resize menu right edge", egui::vec2(40.0, 0.0)),
-        ("Resize menu left edge", egui::vec2(-25.0, 0.0)),
-        ("Resize menu top edge", egui::vec2(0.0, -30.0)),
-        ("Resize menu bottom edge", egui::vec2(0.0, 25.0)),
+    let translate = h.get_by_label("Translate").rect();
+    assert!((translate.width() - 180.0).abs() < 1.0, "{translate:?}");
+    for label in [
+        "Resize menu right edge",
+        "Resize menu left edge",
+        "Resize menu top edge",
+        "Resize menu bottom edge",
     ] {
-        let before = h.state().settings().study.selection_menu;
-        let from = h.get_by_label(label).rect().center();
-        let to = from + delta;
-        carry(&mut h, from, to);
-        release(&mut h, to);
-        h.run_steps(5);
-        let after = h.state().settings().study.selection_menu;
-        if delta.x != 0.0 {
-            assert!(
-                after.width > before.width,
-                "{label}: {before:?} -> {after:?}"
-            );
-        } else {
-            assert!(
-                after.height > before.height,
-                "{label}: {before:?} -> {after:?}"
-            );
-        }
+        assert!(h.query_by_label(label).is_none());
     }
-    let saved = h.state().settings().study.selection_menu;
-    let reloaded = mareader_settings::load(&mareader_settings::to_json(h.state().settings()));
-    assert_eq!(reloaded.settings.study.selection_menu, saved);
-}
-
-#[test]
-fn keyboard_can_resize_and_reset_the_menu() {
-    let mut h = reader(&[("pdf", "sample:5")]);
-    let pane = h.state().active_pane();
+    assert!(h.query_by_label("Copy").is_some());
+    assert!(h.query_by_label("Note").is_some());
+    assert!(h.query_by_label("AI Dictionary").is_some());
+    assert!(!mareader_settings::to_json(h.state().settings()).contains("selection_menu"));
+    let start = egui::pos2(translate.right() + 4.0, translate.center().y);
+    let end = start + egui::vec2(80.0, 0.0);
+    crate::common::carry(&mut h, start, end);
+    crate::common::release(&mut h, end);
     h.state_mut().queue(Sent::Engine(Command::SelectText {
         pane,
         page: 0,
-        text: "quick brown".to_owned(),
+        text: "lazy dog".to_owned(),
     }));
     h.run_steps(30);
-    let initial = h.state().settings().study.selection_menu;
-    h.get_by_label("Resize menu right edge").focus();
-    h.run_steps(1);
-    h.key_press(egui::Key::Equals);
-    h.run_steps(5);
-    assert_eq!(
-        h.state().settings().study.selection_menu.width,
-        initial.width + 8
-    );
-    h.key_press(egui::Key::Num0);
-    h.run_steps(5);
-    assert_eq!(h.state().settings().study.selection_menu, initial);
+    assert!((h.get_by_label("Translate").rect().width() - 180.0).abs() < 1.0);
 }
 
 #[test]
@@ -155,40 +133,6 @@ fn bottom_actions_are_evenly_spaced() {
 }
 
 #[test]
-fn preferred_size_survives_a_temporarily_narrow_window_and_a_new_selection() {
-    let mut h = reader(&[("pdf", "sample:5")]);
-    h.dial(|s| {
-        s.study.selection_menu = mareader_settings::SelectionMenuSize {
-            width: 340,
-            height: 300,
-        };
-        s.study.highlights.bar.clear();
-    });
-    h.set_size(egui::vec2(320.0, 420.0));
-    h.run_steps(10);
-    let pane = h.state().active_pane();
-    h.state_mut().queue(Sent::Engine(Command::SelectText {
-        pane,
-        page: 0,
-        text: "quick brown".to_owned(),
-    }));
-    h.run_steps(30);
-    let size = h.state().settings().study.selection_menu;
-    assert_eq!(size.width, 340);
-    assert!(h.query_by_label("Copy").is_some());
-    assert!(h.query_by_label("Translate").is_some());
-    h.set_size(egui::vec2(900.0, 700.0));
-    h.run_steps(20);
-    h.state_mut().queue(Sent::Engine(Command::SelectText {
-        pane,
-        page: 0,
-        text: "lazy dog".to_owned(),
-    }));
-    h.run_steps(30);
-    assert_eq!(h.state().settings().study.selection_menu, size);
-}
-
-#[test]
 fn empty_custom_skills_submenu_explains_its_state() {
     let mut h = reader(&[("pdf", "sample:5")]);
     let pane = h.state().active_pane();
@@ -204,10 +148,11 @@ fn empty_custom_skills_submenu_explains_its_state() {
 }
 
 #[test]
-fn all_action_buttons_share_their_row_center_at_each_width() {
-    for width in [180, 216, 340] {
+fn all_action_buttons_share_their_row_center_in_the_fixed_menu() {
+    for viewport in [320.0, 900.0] {
         let mut h = reader(&[("pdf", "sample:5")]);
-        h.dial(|s| s.study.selection_menu.width = width);
+        h.set_size(egui::vec2(viewport, 700.0));
+        h.run_steps(10);
         let pane = h.state().active_pane();
         h.state_mut().queue(Sent::Engine(Command::SelectText {
             pane,
@@ -229,7 +174,7 @@ fn all_action_buttons_share_their_row_center_at_each_width() {
         for r in &bottom {
             assert!(
                 (r.center().y - bottom[0].center().y).abs() < 0.1,
-                "width {width}, {bottom:?}"
+                "viewport {viewport}, {bottom:?}"
             );
         }
         let row: Vec<_> = ["Note", "AI Dictionary", "Look up"]
@@ -239,7 +184,7 @@ fn all_action_buttons_share_their_row_center_at_each_width() {
         for r in &row {
             assert!(
                 (r.center().y - row[0].center().y).abs() < 0.1,
-                "width {width}, {row:?}"
+                "viewport {viewport}, {row:?}"
             );
         }
         assert!(row[0].left() < row[1].left() && row[1].left() < row[2].left());

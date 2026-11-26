@@ -1,5 +1,4 @@
 //! Compact selection menu: skills above, common actions nearest the words.
-mod resize;
 mod skills;
 
 use crate::bubble::{Bubble, Side};
@@ -10,10 +9,12 @@ use crate::widgets;
 use egui::{Context, CornerRadius, Id, Margin, Rect, ScrollArea, Sense, Stroke, Ui, vec2};
 use mareader_appearance::Rgb;
 use mareader_library::Pen;
-use mareader_settings::{CustomSkill, HighlightSettings, PickColor, SelectionMenuSize, Skill};
+use mareader_settings::{CustomSkill, HighlightSettings, PickColor, Skill};
 use std::sync::Arc;
 
 const SWATCH: f32 = 18.0;
+const WIDTH: f32 = 180.0;
+const HEIGHT: f32 = 216.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BarPress {
@@ -23,20 +24,11 @@ pub enum BarPress {
     Note,
     ReadAloud,
     ManageSkills,
-    Resize(SelectionMenuSize),
     Highlight(Pen, Option<Rgb>),
     Skill(Skill),
 }
 
 type Offered = Arc<[(Skill, String)]>;
-pub fn resize_focused(ctx: &Context) -> bool {
-    resize::owns_focus(ctx)
-}
-
-pub fn is_resizing(ctx: &Context, id: Id) -> bool {
-    resize::active(ctx, id)
-}
-
 fn offered_id() -> Id {
     Id::new("study-bar-skills")
 }
@@ -66,7 +58,6 @@ pub fn show(
     selected: Rect,
     room: Rect,
     look: &HighlightSettings,
-    size: SelectionMenuSize,
     restricted: bool,
 ) -> Option<BarPress> {
     let t = Tokens::get(ctx);
@@ -77,34 +68,25 @@ pub fn show(
     }
     let was = pen;
     let custom: Offered = ctx.data(|d| d.get_temp(offered_id())).unwrap_or_default();
-    // While dragging, remember a size independently of pane constraints.
-    let live: Option<SelectionMenuSize> = ctx.data(|d| d.get_temp(id.with("live-size")));
-    let size_now = live.unwrap_or(size);
     let bubble = Bubble {
         id,
         at: selected,
         room,
-        width: f32::from(size_now.width),
+        width: WIDTH,
         margin: Margin::same(6),
         snug: false,
         prefer: Side::Above,
     };
     let (_, pressed) = bubble.show(ctx, &t, |ui, cap| {
         let _act = anim::announce(ui, Act::Hover);
-        let height = f32::from(size_now.height).min(cap).max(0.0);
+        let height = HEIGHT.min(cap).max(0.0);
         let height = if restricted {
             height.min(108.0)
         } else {
             height
         };
-        let rect =
-            Rect::from_min_size(ui.min_rect().min, vec2(ui.available_width(), height)).expand(6.0);
-        let changed = resize::edges(ui, rect, id, size);
-        let live = resize::current(ui, id, size);
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(id.with("live-size"), live));
         ui.set_height(height);
-        let action = if height < 84.0 {
+        if height < 84.0 {
             ScrollArea::vertical()
                 .id_salt("selection-tiny")
                 .max_height(height)
@@ -114,18 +96,12 @@ pub fn show(
                 .inner
         } else {
             contents(ui, look, &custom, &mut pen, &t, height, restricted)
-        };
-        changed.map(BarPress::Resize).or(action)
+        }
     });
     if pen != was {
         ctx.request_repaint();
     }
-    ctx.data_mut(|d| {
-        d.insert_temp(
-            open_id,
-            pen.filter(|_| !matches!(pressed, Some(p) if !matches!(p, BarPress::Resize(_)))),
-        )
-    });
+    ctx.data_mut(|d| d.insert_temp(open_id, pen.filter(|_| pressed.is_none())));
     pressed
 }
 

@@ -267,7 +267,7 @@ pub struct ViewContext {
     /// Pages with a bookmark, which hang a ribbon.
     pub bookmarks: Vec<usize>,
     pub highlights: HighlightSettings,
-    pub selection_menu: (mareader_settings::SelectionMenuSize, bool),
+    pub selection_restricted: bool,
     /// The mark whose card is open here, to keep the card beside it.
     pub card: Option<MarkId>,
     /// The marks picked here, while picking several.

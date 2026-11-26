@@ -381,7 +381,6 @@ impl Default for PronunciationSettings {
 pub struct StudySettings {
     pub gloss: GlossSettings,
     pub highlights: HighlightSettings,
-    pub selection_menu: crate::SelectionMenuSize,
     pub cefr: CefrSettings,
     pub words: crate::words::WordListSettings,
     pub pronunciation: PronunciationSettings,
@@ -391,7 +390,6 @@ pub struct StudySettings {
 impl StudySettings {
     pub fn sanitize(&mut self) {
         self.highlights.sanitize();
-        self.selection_menu.sanitize();
         self.words.sanitize();
         self.mode.sanitize();
     }
