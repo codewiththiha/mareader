@@ -76,46 +76,7 @@ pub(super) fn edges(
     menu: Id,
     saved: SelectionMenuSize,
 ) -> Option<SelectionMenuSize> {
-    let band = 5.0;
-    let inset = 7.0;
-    let edges = [
-        (
-            Edge::Left,
-            Rect::from_min_max(
-                rect.min + Vec2::new(0.0, inset),
-                pos2(rect.left() + band, rect.bottom() - inset),
-            ),
-            CursorIcon::ResizeHorizontal,
-            "Resize menu left edge",
-        ),
-        (
-            Edge::Right,
-            Rect::from_min_max(
-                pos2(rect.right() - band, rect.top() + inset),
-                pos2(rect.right(), rect.bottom() - inset),
-            ),
-            CursorIcon::ResizeHorizontal,
-            "Resize menu right edge",
-        ),
-        (
-            Edge::Top,
-            Rect::from_min_max(
-                rect.min + Vec2::new(inset, 0.0),
-                pos2(rect.right() - inset, rect.top() + band),
-            ),
-            CursorIcon::ResizeVertical,
-            "Resize menu top edge",
-        ),
-        (
-            Edge::Bottom,
-            Rect::from_min_max(
-                pos2(rect.left() + inset, rect.bottom() - band),
-                pos2(rect.right() - inset, rect.bottom()),
-            ),
-            CursorIcon::ResizeVertical,
-            "Resize menu bottom edge",
-        ),
-    ];
+    let edges = zones(rect);
     let ids: Vec<Id> = edges
         .iter()
         .map(|(_, _, _, label)| ui.id().with(label))
@@ -180,4 +141,47 @@ pub(super) fn edges(
         ui.ctx().data_mut(|d| d.remove_temp::<Drag>(id(menu)));
     }
     result.filter(|s| *s != saved)
+}
+
+fn zones(rect: Rect) -> [(Edge, Rect, CursorIcon, &'static str); 4] {
+    let band = 5.0;
+    let inset = 7.0;
+    [
+        (
+            Edge::Left,
+            Rect::from_min_max(
+                rect.min + Vec2::new(0.0, inset),
+                pos2(rect.left() + band, rect.bottom() - inset),
+            ),
+            CursorIcon::ResizeHorizontal,
+            "Resize menu left edge",
+        ),
+        (
+            Edge::Right,
+            Rect::from_min_max(
+                pos2(rect.right() - band, rect.top() + inset),
+                pos2(rect.right(), rect.bottom() - inset),
+            ),
+            CursorIcon::ResizeHorizontal,
+            "Resize menu right edge",
+        ),
+        (
+            Edge::Top,
+            Rect::from_min_max(
+                rect.min + Vec2::new(inset, 0.0),
+                pos2(rect.right() - inset, rect.top() + band),
+            ),
+            CursorIcon::ResizeVertical,
+            "Resize menu top edge",
+        ),
+        (
+            Edge::Bottom,
+            Rect::from_min_max(
+                pos2(rect.left() + inset, rect.bottom() - band),
+                pos2(rect.right() - inset, rect.bottom()),
+            ),
+            CursorIcon::ResizeVertical,
+            "Resize menu bottom edge",
+        ),
+    ]
 }
