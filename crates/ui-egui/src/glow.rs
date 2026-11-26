@@ -92,12 +92,7 @@ impl Clock {
 }
 
 /// A retained glow opens into focus, then uses the usual exit on close.
-pub(crate) fn retained_state(
-    ctx: &Context,
-    id: Id,
-    working: bool,
-    focused: bool,
-) -> Option<Glow> {
+pub(crate) fn retained_state(ctx: &Context, id: Id, working: bool, focused: bool) -> Option<Glow> {
     let active = working || focused;
     let mut glow = state(ctx, id, active)?;
     let whole = ctx.animate_bool_with_time(
