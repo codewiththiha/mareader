@@ -315,3 +315,57 @@ fn a_paragraph_in_a_reflowed_book_has_a_running_outline() {
         "the paragraph outline is in view"
     );
 }
+
+#[test]
+fn selection_flare_uses_the_shared_outro_on_finish_and_close() {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    use mareader_ui_egui::glow;
+
+    let mut h = reader(&[
+        ("pdf", "sample:12"),
+        ("skill_answers", "silent"),
+        ("animations", "true"),
+    ]);
+    select(&mut h, "quick brown");
+    let pane = h.state().active_pane();
+    let skill = Skill::Builtin(PageTask::Simplify);
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.run_steps(60);
+    let ask = h.state().skills().asks().first().expect("the ask").id;
+    assert!(glow::shown(&h.ctx) > 0, "working flare is visible");
+    h.state_mut().set_option("skill_answers", "echo").unwrap();
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    for _ in 0..12 {
+        h.run_steps(1);
+        if h.state().skills().get(ask).is_some_and(|a| a.answer.landed()) {
+            break;
+        }
+    }
+    assert!(h.state().skills().get(ask).is_some_and(|a| a.answer.landed()));
+    h.run_steps(6);
+    let id = egui::Id::new(("skill-glow", ask.0));
+    let fading = glow::state(&h.ctx, id, false).expect("completion still glows");
+    assert!(fading.whole > 0.0, "the arc opens into a ring");
+    assert!(fading.strength > 0.0 && fading.strength < 1.0, "it fades");
+    assert!(glow::shown(&h.ctx) > 0, "the outro is actually painted");
+    h.run_steps(60);
+    assert_eq!(glow::shown(&h.ctx), 0, "the completed flare disappears");
+
+    h.state_mut().set_option("skill_answers", "silent").unwrap();
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    h.run_steps(60);
+    assert!(glow::shown(&h.ctx) > 0, "retry restores the flare");
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.run_steps(6);
+    assert!(h.state().skills().get(ask).is_none(), "the ask was closed");
+    let fading = glow::state(&h.ctx, id, false).expect("close still glows");
+    assert!(fading.whole > 0.0 && fading.strength > 0.0, "close flares out");
+    assert!(glow::shown(&h.ctx) > 0, "the closed ask's outro is painted");
+    h.run_steps(60);
+    assert_eq!(glow::shown(&h.ctx), 0, "the closed flare disappears");
+}

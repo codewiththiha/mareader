@@ -11,8 +11,9 @@ impl MareaderApp {
     /// After the page AI: every card whose place is on screen, and a card
     /// being brought back, once its page is laid out.
     pub(super) fn show_skills(&mut self, ctx: &Context, out: &mut Commands) {
-        if self.route() != Route::Reader || self.session.skills().asks().is_empty() {
+        if self.route() != Route::Reader {
             self.ui.skill_reveal = None;
+            crate::skill_outline::clear(ctx);
             return;
         }
         if let Some(id) = self.ui.skill_reveal {

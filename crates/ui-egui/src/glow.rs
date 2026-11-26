@@ -83,9 +83,10 @@ pub(crate) fn paint_path(
     painter: &Painter,
     tokens: &Tokens,
     points: &[Pos2],
+    reference: Rect,
     glow: Glow,
 ) -> bool {
-    let Some(ring) = Ring::path(points) else {
+    let Some(ring) = Ring::path(points, reach(reference)) else {
         return false;
     };
     let clip = painter.clip_rect();
@@ -306,7 +307,7 @@ impl Ring {
     }
 
     /// A sampled closed path, with outward normals for either winding.
-    fn path(path: &[Pos2]) -> Option<Self> {
+    fn path(path: &[Pos2], reach: f32) -> Option<Self> {
         if path.len() < 3 || path.iter().any(|p| !p.is_finite()) {
             return None;
         }
@@ -336,7 +337,7 @@ impl Ring {
             let normal = egui::vec2(tangent.y, -tangent.x) * winding;
             points.push((*at, normal));
         }
-        Some(Self::from_points(points, reach(bounds)))
+        Some(Self::from_points(points, reach))
     }
 
     fn from_points(points: Vec<(Pos2, Vec2)>, reach: f32) -> Self {
@@ -449,15 +450,17 @@ mod tests {
             pos2(200.0, 40.0),
             pos2(0.0, 40.0),
         ];
+        let line = Rect::from_min_size(Pos2::ZERO, vec2(200.0, 14.0)).expand(0.5);
+        let mark = Ring::new(line, 2.5);
         for p in [path.to_vec(), path.into_iter().rev().collect()] {
-            let ring = Ring::path(&p).expect("a valid closed path");
+            let ring = Ring::path(&p, reach(line)).expect("a valid closed path");
             let centre = pos2(100.0, 20.0);
             assert!(ring.points.iter().all(|(p, n)| (*p - centre).dot(*n) > 0.0));
             let mesh = ring.mesh(&look(0.0));
             assert_eq!(mesh.vertices.len(), p.len() * (FALLOFF.len() + 1));
-            assert!((ring.reach - 18.0).abs() < 0.001);
+            assert_eq!(ring.reach, mark.reach, "the mark's light reach");
         }
-        assert!(Ring::path(&[Pos2::ZERO, Pos2::ZERO, Pos2::ZERO]).is_none());
+        assert!(Ring::path(&[Pos2::ZERO, Pos2::ZERO, Pos2::ZERO], 4.0).is_none());
     }
 
     #[test]

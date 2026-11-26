@@ -57,8 +57,8 @@ pub fn show(
     out: &mut Commands,
 ) {
     let t = Tokens::get(ctx);
+    crate::skill_outline::show(ctx, asks, panes, docs);
     for ask in asks {
-        crate::skill_outline::show(ctx, ask, panes, docs);
         let Some((at, room)) = in_view(ask, panes, docs) else {
             continue;
         };

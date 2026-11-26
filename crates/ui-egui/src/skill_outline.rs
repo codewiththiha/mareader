@@ -2,8 +2,9 @@
 
 use egui::{Context, Id, Pos2, Rect, Vec2, pos2, vec2};
 use mareader_engine::activity::Key;
-use mareader_engine::skills::{Anchor, Ask};
 use mareader_workspace::PaneId;
+
+mod feedback;
 
 use crate::documents::DocumentsView;
 use crate::theme::Tokens;
@@ -13,33 +14,32 @@ const AIR: f32 = 7.0;
 const MAX_LINES: usize = 256;
 const STEP: f32 = 6.0;
 
-/// Draw the visible pages of a running selection and report its own visual.
-pub(crate) fn show(ctx: &Context, ask: &Ask, panes: &[(PaneId, Rect)], docs: DocumentsView<'_>) {
-    let Anchor::Text(spans) = &ask.anchor else {
-        return;
-    };
-    if ask.answer.landed() {
-        return;
-    }
-    let Some(room) = panes.iter().find(|(p, _)| *p == ask.pane).map(|(_, r)| *r) else {
-        return;
-    };
-    let Some(glow) = crate::glow::state(ctx, Id::new(("skill-glow", ask.id.0)), true) else {
+pub(crate) use feedback::{clear, show};
+
+/// Draw the visible pages of a selection, reporting its visual while working.
+fn paint(
+    ctx: &Context,
+    place: &feedback::Place,
+    panes: &[(PaneId, Rect)],
+    docs: DocumentsView<'_>,
+    (working, glow): (bool, crate::glow::Glow),
+) {
+    let Some(room) = panes.iter().find(|(p, _)| *p == place.pane).map(|(_, r)| *r) else {
         return;
     };
     let tokens = Tokens::get(ctx);
-    let painter = z_order::painter(ctx, Tier::PaneMark, Id::new(("skill-outline", ask.id.0)));
+    let painter = z_order::painter(ctx, Tier::PaneMark, Id::new(("skill-outline", place.id.0)));
     z_order::register(ctx, Tier::PaneMark, painter.layer_id());
     let mut visible = false;
-    for sheet in docs.sheets(ask.pane) {
+    for sheet in docs.sheets(place.pane) {
         let clip = room.intersect(sheet.shown);
         if !clip.is_positive() {
             continue;
         }
-        let Some((_, range)) = spans.iter().find(|(page, _)| *page == sheet.page) else {
+        let Some((_, range)) = place.spans.iter().find(|(page, _)| *page == sheet.page) else {
             continue;
         };
-        let Some(layer) = docs.cached_layer(ask.pane, sheet.page) else {
+        let Some(layer) = docs.cached_layer(place.pane, sheet.page) else {
             continue;
         };
         // Keep the contour's ends beyond the viewport.
@@ -53,20 +53,22 @@ pub(crate) fn show(ctx: &Context, ask: &Ask, panes: &[(PaneId, Rect)], docs: Doc
             .collect();
         let painter = painter.with_clip_rect(clip);
         for group in groups(&lines) {
-            let seed = ask.id.0
+            let seed = place.id.0
                 ^ (sheet.page as u64).wrapping_mul(0x9e3779b97f4a7c15)
                 ^ (range.start as u64).wrapping_mul(0xbf58476d1ce4e5b9)
                 ^ (range.end as u64).wrapping_mul(0x94d049bb133111eb);
             let points = rounded(&contour(group), group, seed);
-            visible |= crate::glow::paint_path(ctx, &painter, &tokens, &points, glow);
+            if let Some(line) = group.first() {
+                visible |= crate::glow::paint_path(ctx, &painter, &tokens, &points, line.expand(0.5), glow);
+            }
         }
     }
-    if visible {
+    if working && visible {
         crate::activity::seen::in_view(
             ctx,
             Key::Skill {
-                pane: ask.pane,
-                ask: ask.id,
+                pane: place.pane,
+                ask: place.id,
             },
         );
     }
