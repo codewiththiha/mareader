@@ -291,7 +291,9 @@ impl State {
 
     /// Stops a retry and returns to the last saved answer.
     pub(crate) fn cancel_to(&mut self, id: AskId, text: String, by: String) -> bool {
-        let Some(ask) = self.get_mut(id) else { return false };
+        let Some(ask) = self.get_mut(id) else {
+            return false;
+        };
         ask.job = None;
         ask.answer = Answer::Ready(text);
         ask.by = by;

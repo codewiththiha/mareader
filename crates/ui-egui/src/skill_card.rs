@@ -163,7 +163,11 @@ fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                     out.push(Sent::Engine(Command::Skill(Action::Close(ask.id))));
                 }
                 if matches!(ask.anchor, Anchor::Text(_)) {
-                    let label = if ask.pinned.is_some() { "Unpin answer" } else { "Pin answer" };
+                    let label = if ask.pinned.is_some() {
+                        "Unpin answer"
+                    } else {
+                        "Pin answer"
+                    };
                     if widgets::icon_button(ui, Icon::Pin, label, ask.pinned.is_some()).clicked() {
                         out.push(Sent::Engine(Command::Skill(Action::Pin(ask.id))));
                     }
@@ -184,7 +188,10 @@ fn body(ui: &mut Ui, ask: &Ask, t: &Tokens) {
             crate::shaped::label(ui, text.trim(), size, t.ink);
         }
         Answer::Interrupted => {
-            ui.label(RichText::new("The app closed before this answer arrived. Try again.").color(t.muted));
+            ui.label(
+                RichText::new("The app closed before this answer arrived. Try again.")
+                    .color(t.muted),
+            );
         }
         Answer::Failed(failure) => {
             ui.horizontal_wrapped(|ui| {

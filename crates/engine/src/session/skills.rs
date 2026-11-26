@@ -96,7 +96,10 @@ impl Session {
         };
         let book = self.book_in(pane);
         let path = self.documents().path(pane).map(ToOwned::to_owned);
-        let layout = self.documents().document_of(pane).map(|d| std::sync::Arc::downgrade(&d));
+        let layout = self
+            .documents()
+            .document_of(pane)
+            .map(|d| std::sync::Arc::downgrade(&d));
         let id = self.skills.start(Asked {
             pane,
             doc,
@@ -121,15 +124,20 @@ impl Session {
         let docs = &self.documents;
         let reads = |pane| docs.place(pane).map(|p| p.doc.get());
         let mut changed = self.skills.keep_read(reads);
-        let views = self.tree.panes().into_iter().filter_map(|pane| {
-            Some(crate::skills::restore::View {
-                pane,
-                doc: self.documents().place(pane)?.doc.get(),
-                book: self.book_in(pane),
-                path: self.documents().path(pane).map(ToOwned::to_owned),
-                document: self.documents().document_of(pane)?,
+        let views = self
+            .tree
+            .panes()
+            .into_iter()
+            .filter_map(|pane| {
+                Some(crate::skills::restore::View {
+                    pane,
+                    doc: self.documents().place(pane)?.doc.get(),
+                    book: self.book_in(pane),
+                    path: self.documents().path(pane).map(ToOwned::to_owned),
+                    document: self.documents().document_of(pane)?,
+                })
             })
-        }).collect();
+            .collect();
         changed |= self.skills.refresh(views, self.library.model());
         let (landed, news) = self.skills.receive();
         changed |= news;

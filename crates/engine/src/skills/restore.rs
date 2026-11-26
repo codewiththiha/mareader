@@ -40,7 +40,9 @@ impl State {
             if !matches!(ask.anchor, Anchor::Text(_)) {
                 continue;
             }
-            let current = views.iter().find(|v| v.pane == ask.pane && v.doc == ask.doc);
+            let current = views
+                .iter()
+                .find(|v| v.pane == ask.pane && v.doc == ask.doc);
             let same = |v: &&View| {
                 (ask.book.is_some() && ask.book == v.book)
                     || (ask.path.is_some() && ask.path == v.path)
@@ -48,7 +50,10 @@ impl State {
             let Some(view) = current.or_else(|| views.iter().find(same)) else {
                 continue;
             };
-            let same_layout = ask.layout.as_ref().and_then(|w| w.upgrade())
+            let same_layout = ask
+                .layout
+                .as_ref()
+                .and_then(|w| w.upgrade())
                 .is_some_and(|d| Arc::ptr_eq(&d, &view.document));
             if same_layout && ask.pane == view.pane && ask.doc == view.doc {
                 continue;
@@ -79,7 +84,11 @@ fn restored(saved: &AiSelection, view: &View, id: AskId) -> Option<Ask> {
         spot: Some(saved.spot),
         open: false,
         pinned: Some(saved.id),
-        answer: if saved.pending { Answer::Interrupted } else { Answer::Ready(saved.result.clone()) },
+        answer: if saved.pending {
+            Answer::Interrupted
+        } else {
+            Answer::Ready(saved.result.clone())
+        },
         by: saved.by.clone(),
         text: saved.source.clone(),
         path: view.path.clone(),
@@ -89,12 +98,22 @@ fn restored(saved: &AiSelection, view: &View, id: AskId) -> Option<Ask> {
 }
 
 /// Resolve only bounded spans, and reject text changed under the saved spot.
-fn resolve(doc: &Document, spot: Spot, source: &str) -> Option<Vec<(usize, std::ops::Range<usize>)>> {
+fn resolve(
+    doc: &Document,
+    spot: Spot,
+    source: &str,
+) -> Option<Vec<(usize, std::ops::Range<usize>)>> {
     let (first, last) = match spot {
         Spot::Chars { from, to } => (from[0], to[0]),
         Spot::Blocks { from, to } => (
-            doc.locate(BookAnchor { block: from[0], offset: from[1] })?,
-            doc.locate(BookAnchor { block: to[0], offset: to[1] })?,
+            doc.locate(BookAnchor {
+                block: from[0],
+                offset: from[1],
+            })?,
+            doc.locate(BookAnchor {
+                block: to[0],
+                offset: to[1],
+            })?,
         ),
         _ => return None,
     };
@@ -107,8 +126,12 @@ fn resolve(doc: &Document, spot: Spot, source: &str) -> Option<Vec<(usize, std::
         let layer = doc.text_layer(page).ok()?;
         let range = match spot {
             Spot::Chars { from, to } => {
-                let caret = |[page, index]| Caret { page, index };
-                Selection { anchor: caret(from), focus: caret(to) }.on_page(page, layer.text.len())
+                let caret = |[page, index]: [usize; 2]| Caret { page, index };
+                Selection {
+                    anchor: caret(from),
+                    focus: caret(to),
+                }
+                .on_page(page, layer.text.len())
             }
             Spot::Blocks { from, to } => words::between(&layer, (from[0], from[1]), (to[0], to[1])),
             _ => None,
