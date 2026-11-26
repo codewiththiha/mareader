@@ -88,3 +88,37 @@ fn a_finish_lights_the_whole_ring() {
     assert_ne!(done.at(0.5, 800.0).0, later.at(0.5, 800.0).0);
     assert_eq!(done.at(0.5, 800.0).1, later.at(0.5, 800.0).1);
 }
+
+#[test]
+fn a_stepped_selection_never_folds_its_flare_triangles() {
+    let line = |x, y, w| Rect::from_min_size(pos2(x, y), vec2(w, 18.0));
+    for gap in [0.5, 3.0, 9.0] {
+        for (x, w) in [(0.0, 120.0), (25.0, 70.0), (85.0, 60.0)] {
+            let lines = [line(0.0, 0.0, 120.0), line(x, 18.0 + gap, w)];
+            for seed in 0..16 {
+                let points = crate::skill_outline::sample_outline(&lines, seed);
+                for reverse in [false, true] {
+                    let mut path = points.clone();
+                    if reverse {
+                        path.reverse();
+                    }
+                    let ring = Ring::path(&path, 12.0).unwrap();
+                    for phase in [0.0, 0.25, 0.5, 0.75] {
+                        let mesh = ring.mesh(&look(phase));
+                        for triangle in mesh.indices.as_chunks::<3>().0 {
+                            let a = mesh.vertices[triangle[0] as usize].pos;
+                            let b = mesh.vertices[triangle[1] as usize].pos;
+                            let c = mesh.vertices[triangle[2] as usize].pos;
+                            let (u, v) = (b - a, c - a);
+                            let area = (u.x * v.y - u.y * v.x) * if reverse { -1.0 } else { 1.0 };
+                            assert!(
+                                area >= -0.001,
+                                "folded triangle: gap {gap} x {x} w {w} seed {seed} reverse {reverse} phase {phase} area {area}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -316,6 +316,11 @@ fn enters(at: Pos2, delta: Vec2, rect: Rect) -> Option<f32> {
 }
 
 #[cfg(test)]
+pub(crate) fn sample_outline(lines: &[Rect], seed: u64) -> Vec<Pos2> {
+    rounded(&contour(lines), lines, seed)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

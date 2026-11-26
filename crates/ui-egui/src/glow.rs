@@ -12,6 +12,8 @@ use mareader_appearance::GlowPalette;
 use crate::motion;
 use crate::theme::Tokens;
 
+mod path;
+
 /// How the glow shows this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Glow {
@@ -30,6 +32,14 @@ const FALLOFF: [(f32, f32); 6] = [
     (0.35, 0.56),
     (0.6, 0.26),
     (0.82, 0.08),
+    (1.0, 0.0),
+];
+const SOFT_FALLOFF: [(f32, f32); 6] = [
+    (0.0, 0.70),
+    (0.15, 0.78),
+    (0.35, 0.56),
+    (0.6, 0.28),
+    (0.82, 0.09),
     (1.0, 0.0),
 ];
 /// Seconds a finished glow fades over, and its arc opens into a ring.
@@ -88,7 +98,7 @@ pub(crate) fn paint_path(
     glow: Glow,
     travel_time: f64,
 ) -> bool {
-    let Some(ring) = Ring::path(points, reach(reference)) else {
+    let Some(ring) = Ring::path(points, reach(reference) * 1.2) else {
         return false;
     };
     let clip = painter.clip_rect();
@@ -119,12 +129,24 @@ fn paint_ring(
     let still = motion::reduced(ctx);
     let phase = (travel_time / f64::from(lap)).rem_euclid(1.0) as f32;
     let breath = (TAU * (t / BREATH).rem_euclid(1.0) as f32).cos();
-    let light = Light::new(&tokens.glow);
+    let soft = ring.limits.is_some();
+    let mut light = Light::new(&tokens.glow);
+    if soft {
+        light.strength *= 0.78;
+        for color in &mut light.hues {
+            let grey = (color[0] + color[1] + color[2]) / 3.0;
+            for channel in color {
+                *channel = grey + (*channel - grey) * 0.72;
+            }
+        }
+    }
     let look = match still {
         true => Look {
             head: 0.125,
             drift: 0.0,
-            strength: glow.strength * (0.75 + 0.25 * breath),
+            strength: glow.strength
+                * (0.75 + 0.25 * breath)
+                * if soft { light.strength } else { 1.0 },
             ..Look::new(light, glow)
         },
         false => Look {
@@ -280,6 +302,7 @@ struct Ring {
     /// Points round the ring's middle.
     length: f32,
     reach: f32,
+    limits: Option<Vec<(f32, f32)>>,
 }
 
 impl Ring {
@@ -346,7 +369,10 @@ impl Ring {
             let normal = egui::vec2(tangent.y, -tangent.x) * winding;
             points.push((*at, normal));
         }
-        Some(Self::from_points(points, reach))
+        let limits = path::limits(&points, winding, reach);
+        let mut ring = Self::from_points(points, reach);
+        ring.limits = Some(limits);
+        Some(ring)
     }
 
     fn from_points(points: Vec<(Pos2, Vec2)>, reach: f32) -> Self {
@@ -366,6 +392,7 @@ impl Ring {
             shares,
             length,
             reach,
+            limits: None,
         }
     }
 
@@ -376,12 +403,18 @@ impl Ring {
         let mut mesh = Mesh::default();
         mesh.reserve_vertices(self.points.len() * k as usize);
         mesh.reserve_triangles(self.points.len() * (k as usize - 1) * 2);
-        for ((p, normal), share) in self.points.iter().zip(&self.shares) {
+        for (i, ((p, normal), share)) in self.points.iter().zip(&self.shares).enumerate() {
             let (rgb, level) = look.at(*share, self.length);
-            let (alpha, flare) = (level * look.strength, self.reach * (0.45 + 0.55 * level));
-            // Half a point inside the outline smooths its edge.
-            mesh.colored_vertex(*p - *normal * 0.5, Color32::TRANSPARENT);
-            for (off, keep) in FALLOFF {
+            let (alpha, mut flare) = (level * look.strength, self.reach * (0.45 + 0.55 * level));
+            let (inset, bands) =
+                if let Some((inside, outside)) = self.limits.as_ref().and_then(|v| v.get(i)) {
+                    flare = flare.min(*outside);
+                    (*inside, SOFT_FALLOFF)
+                } else {
+                    (0.5, FALLOFF)
+                };
+            mesh.colored_vertex(*p - *normal * inset, Color32::TRANSPARENT);
+            for (off, keep) in bands {
                 mesh.colored_vertex(*p + *normal * off * flare, look.color(rgb, alpha * keep));
             }
         }
