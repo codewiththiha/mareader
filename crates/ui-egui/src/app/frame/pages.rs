@@ -322,7 +322,6 @@ impl MareaderApp {
         let host = self.session.host().clone();
         let (layout, session) = (&layout, &mut self.session);
         self.ui.library_rect = None;
-        // The dictionary page needs all of `self`: drawn outside the closure.
         if route == Route::Dictionary {
             self.ui.pane_rects.clear();
             self.ui
@@ -330,7 +329,6 @@ impl MareaderApp {
                 .page(ui, session, dictionary, page_top, commands);
             return;
         }
-        // Copied out above: the closures below need `&mut self`.
         let mut library_rect = None;
         let rects = egui::CentralPanel::no_frame().show(ui, |ui| {
             if route == Route::Library {
@@ -357,7 +355,8 @@ impl MareaderApp {
                     sample: context.blend && (context.every || Some(id) == context.source),
                     marks,
                     bookmarks,
-                    highlights: study_mode::bar(highlights, session.study_mode().on(id)),
+                    highlights: highlights.clone(),
+                    selection_menu: menu_state(session, id),
                     card: study.card_mark(id),
                     picked: study.picked(id),
                     asking: session.study().asking_marks(),
@@ -424,4 +423,14 @@ fn pane_bookmarks(session: &Session, study: &StudyUi, pane: PaneId) -> Vec<usize
         .into_iter()
         .map(|(_, page)| page)
         .collect()
+}
+
+fn menu_state(
+    session: &mareader_engine::session::Session,
+    id: PaneId,
+) -> (mareader_settings::SelectionMenuSize, bool) {
+    (
+        session.settings().study.selection_menu,
+        session.study_mode().on(id),
+    )
 }

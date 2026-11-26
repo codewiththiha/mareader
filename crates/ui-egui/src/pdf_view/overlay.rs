@@ -21,7 +21,15 @@ fn selection_actions(cx: &mut ShowContext<'_>) {
     if view_cx.active {
         copy(ctx, cx.place, doc, texts);
         let room = Rect::from_min_max(frame.min + vec2(0.0, view_cx.top_inset), frame.max);
-        let pressed = selection_bar(ctx, view, cx.place, texts, room, &view_cx.highlights);
+        let pressed = selection_bar(
+            ctx,
+            view,
+            cx.place,
+            texts,
+            room,
+            &view_cx.highlights,
+            view_cx.selection_menu,
+        );
         match pressed {
             Some(BarPress::Copy) => {
                 if let Some(text) = selected_text(cx.place, doc, texts) {
@@ -34,6 +42,7 @@ fn selection_actions(cx: &mut ShowContext<'_>) {
             Some(BarPress::Note) => gloss.push(Gloss::Note),
             Some(BarPress::Skill(skill)) => gloss.push(Gloss::Skill(skill)),
             Some(BarPress::ManageSkills) => gloss.push(Gloss::ManageSkills),
+            Some(BarPress::Resize(size)) => gloss.push(Gloss::SelectionMenuSize(size)),
             Some(BarPress::ReadAloud) => gloss.push(Gloss::ReadAloud),
             Some(BarPress::Highlight(pen, color)) => gloss.push(Gloss::Highlight(pen, color)),
             None => {}

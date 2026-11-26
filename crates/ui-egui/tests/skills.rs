@@ -106,7 +106,10 @@ fn a_skill_answers_in_a_card_and_the_selection_goes() {
     let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo")]);
     h.run();
     select(&mut h, "quick brown");
-    assert!(h.query_by_label("Custom skills").is_none(), "none written");
+    assert!(
+        h.query_by_label("Custom skills").is_some(),
+        "the empty list remains discoverable"
+    );
     h.get_by_label("Simplify").click();
     h.run_steps(30);
     let pane = h.state().active_pane();

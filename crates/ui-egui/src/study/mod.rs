@@ -3,7 +3,7 @@
 
 mod acting;
 mod answers;
-mod bar;
+pub(crate) mod bar;
 mod card;
 mod gloss;
 pub use gloss::Gloss;

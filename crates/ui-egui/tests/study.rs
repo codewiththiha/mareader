@@ -368,7 +368,7 @@ fn the_options_highlight_a_book_across_its_blocks() -> Out {
 
 #[test]
 fn the_highlights_tab_sets_colours_the_menu_and_keeps_the_ai_look() {
-    use {mareader_appearance::Rgb, mareader_engine::settings::Tab, mareader_settings::BarItem};
+    use {mareader_appearance::Rgb, mareader_engine::settings::Tab};
     let mut h = reader(&[("pdf", "sample")]);
     h.set_size(egui::vec2(1000.0, 1200.0));
     h.state_mut()
@@ -380,27 +380,8 @@ fn the_highlights_tab_sets_colours_the_menu_and_keeps_the_ai_look() {
     h.run();
     let look = &h.state().settings().study.highlights;
     assert_eq!(look.full, Rgb(0xff, 0xbe, 0x00));
-    // Half can be hidden and restored; Copy moves down past Explain.
-    h.get_by_role_and_label(Role::CheckBox, "Half highlight")
-        .click();
-    h.run();
-    h.get_by_role_and_label(Role::CheckBox, "Half highlight")
-        .click();
-    h.get_by_label("Move Copy down").click();
-    h.run();
-    let bar = &h.state().settings().study.highlights.bar;
-    let want = [
-        BarItem::Explain,
-        BarItem::Copy,
-        BarItem::Skills,
-        BarItem::LookUp,
-        BarItem::ReadAloud,
-        BarItem::Note,
-        BarItem::Highlight(Pen::Full),
-        BarItem::Highlight(Pen::Underline),
-        BarItem::Highlight(Pen::Half),
-    ];
-    assert_eq!(bar.as_slice(), want);
+    // The obsolete menu visibility and ordering controls are gone.
+    assert!(h.query_by_label("Move Copy down").is_none());
     // Half takes violet, then the AI takes Half: Half moves on.
     h.get_by_label("Half highlight #a58af0").click();
     h.run();

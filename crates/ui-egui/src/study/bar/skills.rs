@@ -7,7 +7,7 @@ use crate::icons::Icon;
 use crate::side_list::{self, Spec};
 use crate::theme::Tokens;
 
-const HEIGHT: f32 = 30.0;
+const HEIGHT: f32 = 25.0;
 const WIDTH: f32 = 196.0;
 
 pub(super) fn builtins(ui: &mut Ui) -> Option<Skill> {
@@ -21,13 +21,14 @@ pub(super) fn builtins(ui: &mut Ui) -> Option<Skill> {
 }
 
 pub(super) fn custom(ui: &mut Ui, skills: &[(Skill, String)]) -> Option<Skill> {
-    if skills.is_empty() {
-        return None;
-    }
     let spec = Spec {
         items: skills,
         find: crate::skill_menu::FIND,
-        none: "No skill matches",
+        none: if skills.is_empty() {
+            "No custom skills yet"
+        } else {
+            "No skill matches"
+        },
         width: WIDTH,
         corners: CornerRadius::same(8),
     };

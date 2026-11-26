@@ -29,7 +29,6 @@ use egui::{Context, Rect};
 use mareader_engine::pane::ViewMode;
 use mareader_engine::session::Session;
 use mareader_engine::study_mode::{Action, DeckState, Run};
-use mareader_settings::{BarItem, HighlightSettings};
 use mareader_study::mode::{Batch, Mode, Outcome};
 use mareader_workspace::PaneId;
 
@@ -83,16 +82,6 @@ pub fn settled(session: &Session, pane: PaneId) -> Vec<Settled> {
         ink: ink(outcome),
     };
     run.recalled.iter().map(settle).collect()
-}
-
-/// The selection menu while studying: no Explain, Skills or Look up.
-pub fn bar(look: &HighlightSettings, studying: bool) -> HighlightSettings {
-    let mut look = look.clone();
-    if studying {
-        let help = |i: &BarItem| matches!(i, BarItem::Explain | BarItem::LookUp | BarItem::Skills);
-        look.bar.retain(|item| !help(item));
-    }
-    look
 }
 
 /// One pane's place in its deck: the card shown, and whether it is turned.
@@ -337,19 +326,6 @@ impl StudyModeUi {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn studying_leaves_the_word_help_off_the_selection_bar() {
-        let look = HighlightSettings::default();
-        assert!(
-            look.bar.contains(&BarItem::Explain),
-            "the default bar explains"
-        );
-        let kept = bar(&look, true);
-        assert!(!kept.bar.contains(&BarItem::Explain));
-        assert!(!kept.bar.contains(&BarItem::LookUp));
-        assert_eq!(bar(&look, false), look);
-    }
 
     #[test]
     fn a_cursor_stays_on_the_deck_and_shows_each_new_card_face_up() {

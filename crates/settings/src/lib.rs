@@ -15,6 +15,7 @@ mod ai_job;
 mod ai_task;
 mod load;
 mod reader;
+mod selection_menu;
 mod selection_migration;
 mod skills;
 mod study;
@@ -43,6 +44,7 @@ pub use reader::{
     MotionSettings, PageIndicatorStyle, PaperArea, PaperSettings, Pass, Player, ReadAloudSettings,
     Skip, Skips, StartupFit,
 };
+pub use selection_menu::SelectionMenuSize;
 pub use skills::{CustomSkill, Skill, SkillId, Skills};
 pub use study::StudySettings;
 pub use study::{

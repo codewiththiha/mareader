@@ -115,17 +115,7 @@ fn note(session: &mut Session, pane: PaneId) {
     };
     let spans = session.documents().selection_spans(pane);
     session.clear_document_selection(pane);
-    let pen = session
-        .settings()
-        .study
-        .highlights
-        .bar
-        .iter()
-        .find_map(|i| match i {
-            mareader_settings::BarItem::Highlight(pen) => Some(*pen),
-            _ => None,
-        })
-        .unwrap_or_default();
+    let pen = mareader_settings::Pen::Full;
     let book = session.book_in(pane);
     let name = session
         .documents()

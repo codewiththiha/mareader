@@ -100,7 +100,7 @@ pub struct HighlightSettings {
     pub underline: Rgb,
     /// The fills' strength; underlines are drawn solid.
     pub opacity: f32,
-    /// The selection menu's buttons, in order; the rest are hidden.
+    /// Legacy menu preference retained for compatibility; the menu ignores it.
     pub bar: Vec<BarItem>,
     pub pick: PickColor,
     /// How words the AI explained are marked.
@@ -144,7 +144,6 @@ impl HighlightSettings {
         }
     }
 
-    /// Looks kept for other purposes: the AI's, CEFR's and study's.
     pub fn reserved(&self) -> [Reserved; 4] {
         [self.ai, self.cefr, self.solved, self.missed]
     }
@@ -382,6 +381,7 @@ impl Default for PronunciationSettings {
 pub struct StudySettings {
     pub gloss: GlossSettings,
     pub highlights: HighlightSettings,
+    pub selection_menu: crate::SelectionMenuSize,
     pub cefr: CefrSettings,
     pub words: crate::words::WordListSettings,
     pub pronunciation: PronunciationSettings,
@@ -391,12 +391,12 @@ pub struct StudySettings {
 impl StudySettings {
     pub fn sanitize(&mut self) {
         self.highlights.sanitize();
+        self.selection_menu.sanitize();
         self.words.sanitize();
         self.mode.sanitize();
     }
 }
 
-/// Which dictionaries look words up, and how; `ai_first` shows AI rows first.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DictionarySettings {

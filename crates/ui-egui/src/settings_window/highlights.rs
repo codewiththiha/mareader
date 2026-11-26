@@ -2,10 +2,9 @@
 
 use egui::{Align2, Color32, FontId, Sense, Stroke, Ui, Vec2, vec2};
 use mareader_appearance::Rgb;
-use mareader_settings::{BarItem, HighlightSettings, Pen, PickColor, Reserved};
+use mareader_settings::{HighlightSettings, Pen, PickColor, Reserved};
 
 use super::{choice_row, divider, group, note, row, section};
-use crate::icons::Icon;
 use crate::study::marks::pen_area;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
@@ -77,12 +76,6 @@ pub fn tab(ui: &mut Ui, h: &mut HighlightSettings, marks: Marks, out: &mut Comma
             }
         }
     });
-    section(ui, "Selection menu");
-    group(ui, |ui| menu(ui, &mut h.bar));
-    note(
-        ui,
-        "Hidden actions stay off the menu; order applies within each group.",
-    );
     other_marks(ui, h, marks, out);
 }
 
@@ -213,52 +206,5 @@ pub(super) fn palette(
         if open && r.clicked() {
             *value = c;
         }
-    }
-}
-
-/// What a menu row asks for.
-enum Move {
-    Show(BarItem, bool),
-    Up(usize),
-    Down(usize),
-}
-
-/// The bar's buttons in order, then the hidden; each shown or not.
-fn menu(ui: &mut Ui, bar: &mut Vec<BarItem>) {
-    let hidden = BarItem::ALL.into_iter().filter(|i| !bar.contains(i));
-    let listed: Vec<BarItem> = bar.iter().copied().chain(hidden).collect();
-    let mut asked = None;
-    for (i, item) in listed.iter().copied().enumerate() {
-        if i > 0 {
-            divider(ui);
-        }
-        let shown = i < bar.len();
-        let label = item.label();
-        let hint = if shown { "On the menu" } else { "Hidden" };
-        row(ui, label, hint, |ui| {
-            let mut on = shown;
-            if widgets::switch(ui, &mut on, label).changed() || on != shown {
-                asked = Some(Move::Show(item, on));
-            }
-            if !shown {
-                return;
-            }
-            let down =
-                widgets::small_icon_button(ui, Icon::MoveDown, &format!("Move {label} down"));
-            if down.clicked() && i + 1 < bar.len() {
-                asked = Some(Move::Down(i));
-            }
-            let up = widgets::small_icon_button(ui, Icon::MoveUp, &format!("Move {label} up"));
-            if up.clicked() && i > 0 {
-                asked = Some(Move::Up(i));
-            }
-        });
-    }
-    match asked {
-        Some(Move::Show(item, true)) => bar.push(item),
-        Some(Move::Show(item, false)) => bar.retain(|i| *i != item),
-        Some(Move::Up(i)) => bar.swap(i, i - 1),
-        Some(Move::Down(i)) => bar.swap(i, i + 1),
-        None => {}
     }
 }
