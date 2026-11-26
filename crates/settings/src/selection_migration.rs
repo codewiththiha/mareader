@@ -24,8 +24,10 @@ mod tests {
 
     #[test]
     fn only_the_old_default_gets_the_extra_pen() {
-        let mut old = Settings::default();
-        old.version = 9;
+        let mut old = Settings {
+            version: 9,
+            ..Settings::default()
+        };
         old.study
             .highlights
             .bar
