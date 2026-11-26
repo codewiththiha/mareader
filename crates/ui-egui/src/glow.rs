@@ -115,6 +115,7 @@ enum OutlineKind<'a> {
         caches: &'a mut Vec<outline::Cache>,
         key: (usize, usize),
         travel: f64,
+        reach_scale: f32,
     },
 }
 
@@ -131,6 +132,7 @@ impl<'a> Outline<'a> {
         caches: &'a mut Vec<outline::Cache>,
         key: (usize, usize),
         travel: f64,
+        reach_scale: f32,
     ) -> Self {
         Self(OutlineKind::Path {
             points,
@@ -138,6 +140,7 @@ impl<'a> Outline<'a> {
             caches,
             key,
             travel,
+            reach_scale,
         })
     }
 }
@@ -164,8 +167,9 @@ pub fn paint<'a>(
             caches,
             key,
             travel,
+            reach_scale,
         } => {
-            let reach = reach(reference);
+            let reach = reach(reference) * reach_scale;
             let visible = points
                 .iter()
                 .zip(points.iter().cycle().skip(1))

@@ -24,12 +24,21 @@ fn memory() -> Id {
 }
 
 /// Draws running places and lets finished or closed ones flare out.
-pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: DocumentsView<'_>) {
+pub(crate) fn show(
+    ctx: &Context,
+    asks: &[Ask],
+    panes: &[(PaneId, Rect)],
+    docs: DocumentsView<'_>,
+    hovered: &[AskId],
+) {
     let mut places = ctx
         .data(|d| d.get_temp::<Vec<Place>>(memory()))
         .unwrap_or_default();
     let now = ctx.input(|i| i.time);
-    for ask in asks.iter().filter(|a| !a.answer.landed() || a.open) {
+    for ask in asks
+        .iter()
+        .filter(|a| !a.answer.landed() || a.open || hovered.contains(&a.id))
+    {
         if let Anchor::Text(spans) = &ask.anchor {
             if let Some(place) = places.iter_mut().find(|p| p.id == ask.id) {
                 place.pane = ask.pane;
@@ -60,14 +69,30 @@ pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: 
         let active = working || focused;
         place.clock.advance(now, working);
         let id = Id::new(("skill-glow", place.id.0));
-        let glow = crate::glow::retained_state(ctx, id, working, focused);
+        let normal = crate::glow::retained_state(ctx, id, working, focused);
+        let soft = ctx.animate_bool_with_time(
+            id.with("hover"),
+            hovered.contains(&place.id) && !active,
+            crate::motion::secs(ctx, 0.3),
+        ) * 0.65;
+        let (glow, reach) = match normal {
+            Some(g) if g.strength >= soft => (Some(g), 1.0),
+            _ if soft > 0.0 => (
+                Some(crate::glow::Glow {
+                    strength: soft,
+                    whole: 1.0,
+                }),
+                0.55,
+            ),
+            _ => (None, 1.0),
+        };
         if let Some(glow) = glow {
-            super::paint(ctx, place, panes, docs, (working, glow));
+            super::paint(ctx, place, panes, docs, (working, glow, reach));
             if !active {
                 ctx.request_repaint_after_secs(1.0 / 60.0);
             }
         }
-        active || glow.is_some()
+        active || hovered.contains(&place.id) || glow.is_some()
     });
     ctx.data_mut(|d| d.insert_temp(memory(), places));
 }

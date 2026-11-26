@@ -1,27 +1,24 @@
-//! Named reopen buttons for selection answers, placed clear of window chrome.
+//! Page-edge stacks for closed selection answers.
 
 use egui::{Align2, Context, Id, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use mareader_engine::command::Command;
-use mareader_engine::skills::{Action, Ask};
+use mareader_engine::skills::{Action, Anchor, Ask, AskId};
 use mareader_workspace::PaneId;
 
+use crate::documents::DocumentsView;
 use crate::theme::{self, Tokens};
 use crate::ui_command::{Commands, Sent};
 
 const HEIGHT: f32 = 28.0;
 const GAP: f32 = 4.0;
-const MAX_WIDTH: f32 = 200.0;
+const INSET: f32 = 8.0;
+const MAX_WIDTH: f32 = 180.0;
 const MIN_WIDTH: f32 = 40.0;
 
 struct Item<'a> {
     ask: &'a Ask,
-    at: Rect,
+    page: usize,
     room: Rect,
-}
-
-struct Placed<'a> {
-    ask: &'a Ask,
-    rect: Rect,
 }
 
 pub(super) struct Indicators<'a> {
@@ -39,100 +36,131 @@ impl<'a> Indicators<'a> {
         }
     }
 
-    pub(super) fn push(&mut self, ask: &'a Ask, at: Rect, pane: Rect) {
-        if let Some(room) = crate::chrome_clearance::room(pane, self.bar, self.reserve) {
-            self.items.push(Item { ask, at, room });
+    pub(super) fn push(&mut self, ask: &'a Ask, panes: &[(PaneId, Rect)], docs: DocumentsView<'_>) {
+        if docs
+            .reading(ask.pane)
+            .is_none_or(|r| r.doc.get() != ask.doc)
+        {
+            return;
         }
-    }
-
-    pub(super) fn show(&self, ctx: &Context, out: &mut Commands) {
-        let mut panes = Vec::new();
-        for item in &self.items {
-            if !panes.contains(&item.ask.pane) {
-                panes.push(item.ask.pane);
-            }
-        }
-        for pane in panes {
-            self.pane(ctx, pane, out);
-        }
-    }
-
-    fn pane(&self, ctx: &Context, pane: PaneId, out: &mut Commands) {
-        let t = Tokens::get(ctx);
-        let mut placed: Vec<Placed<'_>> = Vec::new();
-        let mut overflow: Vec<&Ask> = Vec::new();
-        for item in self.items.iter().filter(|item| item.ask.pane == pane) {
-            let font = theme::medium(t.text_small);
-            let text = ctx.fonts_mut(|f| f.layout_no_wrap(item.ask.name.clone(), font, t.ink));
-            let width = (text.size().x + 24.0)
-                .clamp(MIN_WIDTH, MAX_WIDTH)
-                .min(item.room.width());
-            let used: Vec<Rect> = placed.iter().map(|p| p.rect).collect();
-            if let Some(rect) = place(item.at, item.room, vec2(width, HEIGHT), &used) {
-                placed.push(Placed {
-                    ask: item.ask,
-                    rect,
-                });
-            } else {
-                overflow.push(item.ask);
-            }
-        }
-        let more = if overflow.is_empty() {
-            None
-        } else {
-            placed.pop().map(|last| {
-                overflow.insert(0, last.ask);
-                last.rect
-            })
+        let Some(pane) = panes
+            .iter()
+            .find(|(id, _)| *id == ask.pane)
+            .map(|(_, r)| *r)
+        else {
+            return;
         };
-        for p in placed {
-            button(ctx, p.ask, p.rect, &t, out);
-        }
-        if let Some(rect) = more {
-            more_button(ctx, pane, rect, &overflow, &t, out);
-        }
-    }
-}
-
-/// Finds the nearest clear slot, then checks the other rows and columns.
-fn place(at: Rect, room: Rect, size: egui::Vec2, used: &[Rect]) -> Option<Rect> {
-    if size.x < MIN_WIDTH || size.y > room.height() {
-        return None;
-    }
-    let x = (at.right() + GAP).clamp(room.left(), room.right() - size.x);
-    let y = (at.top() - size.y - GAP).clamp(room.top(), room.bottom() - size.y);
-    let original = Rect::from_min_size(pos2(x, y), size);
-    if used
-        .iter()
-        .all(|r| !r.expand(GAP / 2.0).intersects(original))
-    {
-        return Some(original);
-    }
-    let mut best: Option<(f32, Rect)> = None;
-    let mut y = room.top();
-    let mut checked = 0;
-    while y + size.y <= room.bottom() && checked < 512 {
-        let mut x = room.left();
-        while x + size.x <= room.right() && checked < 512 {
-            checked += 1;
-            let candidate = Rect::from_min_size(pos2(x, y), size);
-            if used
-                .iter()
-                .all(|r| !r.expand(GAP / 2.0).intersects(candidate))
-            {
-                let distance = candidate.center().distance_sq(original.center());
-                if best.is_none_or(|(d, _)| distance < d) {
-                    best = Some((distance, candidate));
-                }
+        let Some(clear) = crate::chrome_clearance::room(pane, self.bar, self.reserve) else {
+            return;
+        };
+        let Anchor::Text(spans) = &ask.anchor else {
+            return;
+        };
+        for sheet in docs.sheets(ask.pane) {
+            if !spans.iter().any(|(page, _)| *page == sheet.page) {
+                continue;
             }
-            x += size.x + GAP;
+            let room = sheet.rect.intersect(sheet.shown).intersect(clear);
+            if room.is_positive() {
+                self.items.push(Item {
+                    ask,
+                    page: sheet.page,
+                    room,
+                });
+                break;
+            }
         }
-        y += size.y + GAP;
     }
-    best.map(|(_, rect)| rect)
+
+    pub(super) fn show(&self, ctx: &Context, out: &mut Commands) -> Vec<AskId> {
+        let mut hovered = Vec::new();
+        let mut pages = Vec::new();
+        for item in &self.items {
+            let key = (item.ask.pane, item.page);
+            if !pages.contains(&key) {
+                pages.push(key);
+                self.page(ctx, key, out, &mut hovered);
+            }
+        }
+        hovered
+    }
+
+    fn page(
+        &self,
+        ctx: &Context,
+        key: (PaneId, usize),
+        out: &mut Commands,
+        hovered: &mut Vec<AskId>,
+    ) {
+        let items: Vec<_> = self
+            .items
+            .iter()
+            .filter(|i| (i.ask.pane, i.page) == key)
+            .collect();
+        let room = items[0].room;
+        let bubbles: Vec<_> = crate::page_ai::paint::bubble_rects(ctx)
+            .into_iter()
+            .filter(|r| room.intersects(*r))
+            .collect();
+        let t = Tokens::get(ctx);
+        let width = items
+            .iter()
+            .map(|i| {
+                ctx.fonts_mut(|f| {
+                    f.layout_no_wrap(i.ask.name.clone(), theme::medium(t.text_small), t.ink)
+                })
+                .size()
+                .x + 24.0
+            })
+            .fold(MIN_WIDTH, f32::max)
+            .min(MAX_WIDTH)
+            .min(room.width() - INSET * 2.0);
+        if width < MIN_WIDTH {
+            return;
+        }
+        let top = bubbles
+            .iter()
+            .fold(room.top() + INSET, |y, b| y.max(b.bottom() + GAP));
+        let (right, top) = if top + HEIGHT <= room.bottom() - INSET {
+            (room.right() - INSET, top)
+        } else if let Some(left) = bubbles.iter().map(|r| r.left()).reduce(f32::min) {
+            (left - GAP, room.top() + INSET)
+        } else {
+            return;
+        };
+        if right - width < room.left() {
+            return;
+        }
+        let slots = (((room.bottom() - INSET - top + GAP) / (HEIGHT + GAP)).floor() as usize)
+            .min(items.len());
+        if slots == 0 {
+            return;
+        }
+        let direct = if items.len() > slots {
+            slots - 1
+        } else {
+            slots
+        };
+        for (i, item) in items.iter().take(direct).enumerate() {
+            let rect = Rect::from_min_size(
+                pos2(right - width, top + i as f32 * (HEIGHT + GAP)),
+                vec2(width, HEIGHT),
+            );
+            if button(ctx, item.ask, rect, &t, out) {
+                hovered.push(item.ask.id);
+            }
+        }
+        if direct < items.len() {
+            let rect = Rect::from_min_size(
+                pos2(right - width, top + direct as f32 * (HEIGHT + GAP)),
+                vec2(width, HEIGHT),
+            );
+            more_button(ctx, key, rect, &items[direct..], &t, out, hovered);
+        }
+    }
 }
 
-fn button(ctx: &Context, ask: &Ask, rect: Rect, t: &Tokens, out: &mut Commands) {
+fn button(ctx: &Context, ask: &Ask, rect: Rect, t: &Tokens, out: &mut Commands) -> bool {
     crate::z_order::area(
         ctx,
         crate::z_order::Tier::PageCard,
@@ -143,21 +171,26 @@ fn button(ctx: &Context, ask: &Ask, rect: Rect, t: &Tokens, out: &mut Commands) 
     .show(ctx, |ui| {
         let label = format!("Open {} answer", ask.name);
         let response = draw(ui, rect.size(), &ask.name, &label, t);
+        let lit = response.hovered() || response.has_focus();
         if response.clicked() {
             out.push(Sent::Engine(Command::Skill(Action::Show(ask.id))));
         }
         response.on_hover_text(label);
-    });
+        lit
+    })
+    .inner
 }
 
 fn draw(ui: &mut Ui, size: egui::Vec2, text: &str, label: &str, t: &Tokens) -> egui::Response {
     let (rect, r) = ui.allocate_exact_size(size, Sense::click());
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     let fill = if r.hovered() || r.has_focus() {
-        t.hover
+        t.hover.blend(t.surface)
     } else {
         t.surface
     };
+    ui.painter()
+        .rect_filled(rect.translate(vec2(0.0, 1.0)), t.radius, t.shadow);
     ui.painter().rect_filled(rect, t.radius, fill);
     ui.painter()
         .rect_stroke(rect, t.radius, Stroke::new(1.0, t.line), StrokeKind::Inside);
@@ -180,18 +213,19 @@ fn draw(ui: &mut Ui, size: egui::Vec2, text: &str, label: &str, t: &Tokens) -> e
 
 fn more_button(
     ctx: &Context,
-    pane: PaneId,
+    key: (PaneId, usize),
     rect: Rect,
-    asks: &[&Ask],
+    items: &[&Item<'_>],
     t: &Tokens,
     out: &mut Commands,
+    hovered: &mut Vec<AskId>,
 ) {
-    let id = Id::new(("skill-indicator-more", pane.0));
+    let id = Id::new(("skill-indicator-more", key.0.0, key.1));
     crate::z_order::area(ctx, crate::z_order::Tier::PageCard, id)
         .fixed_pos(rect.min)
         .constrain(false)
         .show(ctx, |ui| {
-            let label = format!("More selection AI answers ({})", asks.len());
+            let label = format!("More selection AI answers ({})", items.len());
             let r = draw(ui, rect.size(), "More…", &label, t);
             egui::Popup::from_toggle_button_response(&r)
                 .id(id.with("list"))
@@ -202,9 +236,9 @@ fn more_button(
                     egui::ScrollArea::vertical()
                         .max_height(200.0)
                         .show(ui, |ui| {
-                            for ask in asks {
-                                let title = format!("Open {} answer", ask.name);
-                                let r = ui.add(egui::Button::new(&ask.name));
+                            for item in items {
+                                let title = format!("Open {} answer", item.ask.name);
+                                let r = ui.add(egui::Button::new(&item.ask.name));
                                 r.widget_info(|| {
                                     egui::WidgetInfo::labeled(
                                         egui::WidgetType::Button,
@@ -212,27 +246,17 @@ fn more_button(
                                         &title,
                                     )
                                 });
+                                if r.hovered() || r.has_focus() {
+                                    hovered.push(item.ask.id);
+                                }
                                 if r.clicked() {
-                                    out.push(Sent::Engine(Command::Skill(Action::Show(ask.id))));
+                                    out.push(Sent::Engine(Command::Skill(Action::Show(
+                                        item.ask.id,
+                                    ))));
                                     ui.close();
                                 }
                             }
                         });
                 });
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn placements_stay_in_room_and_do_not_overlap() {
-        let room = Rect::from_min_size(pos2(0.0, 48.0), vec2(240.0, 200.0));
-        let at = Rect::from_min_size(pos2(5.0, 0.0), vec2(40.0, 10.0));
-        let one = place(at, room, vec2(80.0, HEIGHT), &[]).unwrap();
-        let two = place(at, room, vec2(80.0, HEIGHT), &[one]).unwrap();
-        assert!(room.contains_rect(one) && room.contains_rect(two));
-        assert!(!one.intersects(two));
-        assert!(place(at, room, vec2(20.0, HEIGHT), &[]).is_none());
-    }
 }

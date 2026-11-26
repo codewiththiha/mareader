@@ -1,8 +1,9 @@
 //! A skill's answer, in a card pointing at the text it was asked about.
 //!
 //! The card is plain: the skill's name, the answer, who gave it. It rides
-//! its page as AI cards do and hides while its place is scrolled away.
-//! Its width follows the text. See `docs/selection-ai.md`.
+//! its page as AI cards do and hides while its place is scrolled away; it
+//! is never saved. Its width follows the text, so a short answer stays
+//! small and a long one reads in fewer lines. See `docs/selection-ai.md`.
 
 use egui::{Align, Context, Id, Layout, Margin, Rect, RichText, ScrollArea, Ui, vec2};
 use mareader_engine::command::Command;
@@ -65,16 +66,16 @@ pub fn show(
     out: &mut Commands,
 ) {
     let t = Tokens::get(ctx);
-    crate::skill_outline::show(ctx, asks, panes, docs);
     let mut indicators = indicators::Indicators::new(clearance);
     for ask in asks {
+        if !ask.open && ask.answer.landed() && matches!(ask.anchor, Anchor::Text(_)) {
+            indicators.push(ask, panes, docs);
+            continue;
+        }
         let Some((at, room)) = in_view(ask, panes, docs) else {
             continue;
         };
         if !ask.open {
-            if ask.answer.landed() && matches!(ask.anchor, Anchor::Text(_)) {
-                indicators.push(ask, at, room);
-            }
             continue;
         }
         let key = mareader_engine::activity::Key::Skill {
@@ -96,7 +97,8 @@ pub fn show(
         };
         bubble.show(ctx, &t, |ui, cap| card(ui, ask, cap, &t, out));
     }
-    indicators.show(ctx, out);
+    let hovered = indicators.show(ctx, out);
+    crate::skill_outline::show(ctx, asks, panes, docs, &hovered);
 }
 
 /// Where the card points, on screen: the asked text, or the page spot.

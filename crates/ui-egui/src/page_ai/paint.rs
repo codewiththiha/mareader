@@ -15,6 +15,35 @@ use crate::theme::Tokens;
 
 use super::cards::Card;
 
+#[derive(Clone, Default)]
+struct BubbleRects {
+    pass: u64,
+    rects: Vec<Rect>,
+}
+
+fn remember_bubble(ctx: &egui::Context, rect: Rect) {
+    let id = egui::Id::new("page-ai-bubble-rects");
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        let mut all = d.get_temp::<BubbleRects>(id).unwrap_or_default();
+        if all.pass != pass {
+            all = BubbleRects {
+                pass,
+                rects: Vec::new(),
+            };
+        }
+        all.rects.push(rect);
+        d.insert_temp(id, all);
+    });
+}
+
+/// Visible page AI buttons painted in this pass.
+pub(crate) fn bubble_rects(ctx: &egui::Context) -> Vec<Rect> {
+    ctx.data(|d| d.get_temp::<BubbleRects>(egui::Id::new("page-ai-bubble-rects")))
+        .filter(|all| all.pass == ctx.cumulative_pass_nr())
+        .map_or_else(Vec::new, |all| all.rects)
+}
+
 /// A bubble's side, in points.
 const BUBBLE: f32 = 22.0;
 const BUBBLE_GAP: f32 = 6.0;
@@ -141,6 +170,7 @@ pub fn bubbles(
         if !seen.contains_rect(r) {
             break;
         }
+        remember_bubble(ui.ctx(), r);
         let resp = ui.interact(r, ui.id().with(("page-ai-bubble", page, i)), Sense::click());
         resp.widget_info(|| {
             egui::WidgetInfo::selected(egui::WidgetType::Button, true, b.active, &b.tip)

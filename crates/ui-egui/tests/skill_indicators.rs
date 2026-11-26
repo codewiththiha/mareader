@@ -269,3 +269,57 @@ fn named_answers_respect_a_pinned_bar_and_split_panes() {
         }
     }
 }
+
+#[test]
+fn page_edge_stack_avoids_page_ai_and_hover_lights_one_answer() {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    let mut h = reader(&[
+        ("pdf", "sample:5"),
+        ("page_ai", "0:simplify"),
+        ("skill_answers", "echo"),
+        ("custom_skills", "Quiz_me"),
+        ("animations", "false"),
+    ]);
+    let pane = h.state().active_pane();
+    for (skill, text) in [
+        (Skill::Builtin(PageTask::Simplify), "quick brown"),
+        (Skill::Custom(mareader_settings::SkillId(1)), "lazy dog"),
+    ] {
+        select(&mut h, text);
+        h.state_mut()
+            .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+        h.run_steps(30);
+        let id = h.state().skills().asks().last().unwrap().id;
+        h.state_mut()
+            .queue(Sent::Engine(Command::Skill(Action::Close(id))));
+        h.run_steps(60);
+    }
+    let page = h.state().documents().sheets(pane)[0];
+    let first = h.get_by_label("Open Simplify answer").rect();
+    let second = h.get_by_label("Open Quiz me answer").rect();
+    let edge = page
+        .rect
+        .intersect(page.shown)
+        .intersect(h.state().pane_rects()[0].1);
+    assert!(
+        (first.right() - (edge.right() - 8.0)).abs() < 2.0,
+        "{first:?} {edge:?}"
+    );
+    assert!(second.top() >= first.bottom(), "{first:?} {second:?}");
+    let number = h.get_by_label("Simplified").rect();
+    assert!(
+        !first.intersects(number) && !second.intersects(number),
+        "{number:?} {first:?} {second:?}"
+    );
+    h.hover_at(first.center());
+    h.run_steps(30);
+    assert_eq!(mareader_ui_egui::glow::shown(&h.ctx), 1);
+    assert!(h.state().skills().asks().iter().all(|a| !a.open));
+    h.hover_at(second.center());
+    h.run_steps(60);
+    assert_eq!(mareader_ui_egui::glow::shown(&h.ctx), 1);
+    h.hover_at(egui::pos2(20.0, 300.0));
+    h.run_steps(60);
+    assert_eq!(mareader_ui_egui::glow::shown(&h.ctx), 0);
+}

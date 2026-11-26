@@ -21,7 +21,7 @@ fn paint(
     place: &mut feedback::Place,
     panes: &[(PaneId, Rect)],
     docs: DocumentsView<'_>,
-    (working, glow): (bool, crate::glow::Glow),
+    (working, glow, reach): (bool, crate::glow::Glow, f32),
 ) {
     let Some(room) = panes
         .iter()
@@ -64,6 +64,7 @@ fn paint(
                     &mut place.cache,
                     (sheet.page, group_index),
                     place.clock.travel,
+                    reach,
                 );
                 visible |= crate::glow::paint(ctx, &painter, &tokens, outline, 0.0, glow);
             }
