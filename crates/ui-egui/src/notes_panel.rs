@@ -14,8 +14,8 @@ use egui::{
 };
 use mareader_appearance::Rgb;
 use mareader_engine::command::Command;
-use mareader_engine::study::Action;
 use mareader_engine::skills::{Action as SkillAction, AskId};
+use mareader_engine::study::Action;
 use mareader_library::{MarkId, Pen, Spot};
 use mareader_session::Document;
 use std::sync::{Arc, Weak};
@@ -138,7 +138,13 @@ fn cached_places(
 }
 
 /// Draws the panel for `reading`'s document and its `rows`.
-pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, ai: &[SelectionRow], out: &mut Commands) {
+pub fn show(
+    ui: &mut Ui,
+    reading: &Reading,
+    rows: &Arc<[Row]>,
+    ai: &[SelectionRow],
+    out: &mut Commands,
+) {
     let t = Tokens::get(ui.ctx());
     let id = Id::new(("notes-filter", reading.doc));
     let mut filter: Filter = ui.data(|d| d.get_temp(id)).unwrap_or_default();
@@ -171,10 +177,13 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, ai: &[SelectionRo
         })
         .map(|(r, (p, c))| (*p, c.as_deref(), r))
         .collect();
-    let shown_ai: Vec<&SelectionRow> = ai.iter().filter(|a| {
-        matches!(filter, Filter::All | Filter::SelectionAi)
-            && query::keeps(&words, &[a.source.as_str(), a.name.as_str()])
-    }).collect();
+    let shown_ai: Vec<&SelectionRow> = ai
+        .iter()
+        .filter(|a| {
+            matches!(filter, Filter::All | Filter::SelectionAi)
+                && query::keeps(&words, &[a.source.as_str(), a.name.as_str()])
+        })
+        .collect();
     ui.add_space(8.0);
     // The book and its tools, then the filters on a row of their own.
     ui.horizontal(|ui| {
@@ -249,7 +258,11 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, ai: &[SelectionRo
         });
 }
 
-fn filters(ui: &mut Ui, filter: &mut Filter, (rows, noted, kept, ai): (usize, usize, usize, usize)) {
+fn filters(
+    ui: &mut Ui,
+    filter: &mut Filter,
+    (rows, noted, kept, ai): (usize, usize, usize, usize),
+) {
     let pad = egui::Margin::symmetric(PAD_X as i8, 0);
     egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
@@ -260,8 +273,7 @@ fn filters(ui: &mut Ui, filter: &mut Filter, (rows, noted, kept, ai): (usize, us
                 (Filter::SelectionAi, format!("Selection AI · {ai}")),
             ];
             let some = |f: &&(Filter, String)| {
-                (f.0 != Filter::Bookmarks || kept > 0)
-                    && (f.0 != Filter::SelectionAi || ai > 0)
+                (f.0 != Filter::Bookmarks || kept > 0) && (f.0 != Filter::SelectionAi || ai > 0)
             };
             for (f, label) in chips.iter().filter(some) {
                 if ui.selectable_label(*filter == *f, label).clicked() {
@@ -273,7 +285,11 @@ fn filters(ui: &mut Ui, filter: &mut Filter, (rows, noted, kept, ai): (usize, us
 }
 
 fn selection_entry(ui: &mut Ui, answer: &SelectionRow, out: &mut Commands) {
-    let state = if answer.pinned { "Pinned" } else { "This session" };
+    let state = if answer.pinned {
+        "Pinned"
+    } else {
+        "This session"
+    };
     let label = format!("{} · {state}\n{}", answer.name, answer.source);
     let response = ui.add_enabled(answer.found, egui::Button::new(label).wrap());
     if response.clicked() {

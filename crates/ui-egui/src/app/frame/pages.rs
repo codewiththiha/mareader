@@ -106,11 +106,23 @@ impl MareaderApp {
     }
 
     fn rail_ai_notes(&self, active: PaneId) -> Vec<crate::notes_panel::SelectionRow> {
-        let mut ai_notes: Vec<crate::notes_panel::SelectionRow> = self.session.skills().asks().iter()
-            .filter(|a| a.pane == active && self.session.documents().place(active)
-                .is_some_and(|p| p.doc.get() == a.doc))
+        let mut ai_notes: Vec<crate::notes_panel::SelectionRow> = self
+            .session
+            .skills()
+            .asks()
+            .iter()
+            .filter(|a| {
+                a.pane == active
+                    && self
+                        .session
+                        .documents()
+                        .place(active)
+                        .is_some_and(|p| p.doc.get() == a.doc)
+            })
             .filter_map(|a| {
-                let mareader_engine::skills::Anchor::Text(spans) = &a.anchor else { return None };
+                let mareader_engine::skills::Anchor::Text(spans) = &a.anchor else {
+                    return None;
+                };
                 Some(crate::notes_panel::SelectionRow {
                     id: a.id,
                     spot: a.spot?,
@@ -119,7 +131,8 @@ impl MareaderApp {
                     pinned: a.pinned.is_some(),
                     found: !spans.is_empty(),
                 })
-            }).collect();
+            })
+            .collect();
         ai_notes.sort_by_key(|a| crate::notes_panel::order(&a.spot));
         ai_notes
     }
