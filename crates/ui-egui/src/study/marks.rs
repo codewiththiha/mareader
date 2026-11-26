@@ -1,13 +1,12 @@
 //! Marks on the pages on screen: where each lands, drawn and hit.
 
-use std::ops::Range;
 use std::sync::Arc;
 
 use egui::{Color32, Id, Painter, Pos2, Rect, Stroke, StrokeKind, Ui, pos2};
 use mareader_appearance::{MarkFill, PageTone, Rgb};
 use mareader_engine::study::words;
 use mareader_library::{MarkId, Pen, Spot};
-use mareader_pdf::{Bounds, TextLayer};
+use mareader_pdf::Bounds;
 use mareader_session::{Caret, Selection};
 
 use crate::gpu::{PagePass, PagesCallback, Quad};
