@@ -5,14 +5,18 @@
 //! See `docs/selection-ai.md`.
 
 use std::ops::Range;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Weak};
 
-use mareader_library::{BookId, Spot};
+use mareader_library::{AiSelectionId, BookId, NewAiSelection, Spot};
+use mareader_session::Document;
 use mareader_settings::Skill;
 use mareader_study::Failure;
 use mareader_study::pending::News;
 use mareader_study::skill::{Scripted, SkillAsk, SkillJob, Skiller};
 use mareader_workspace::PaneId;
+
+pub(crate) mod restore;
 
 /// Page-menu asks kept at once; selections are retained for the session.
 pub const MOST: usize = 8;
@@ -59,19 +63,21 @@ pub enum Answer {
     Partial(String),
     Ready(String),
     Failed(Failure),
+    /// The app closed before the answer arrived.
+    Interrupted,
 }
 
 impl Answer {
     /// Done, well or not.
     pub fn landed(&self) -> bool {
-        matches!(self, Self::Ready(_) | Self::Failed(_))
+        matches!(self, Self::Ready(_) | Self::Failed(_) | Self::Interrupted)
     }
 
     /// The text so far; blank while none has come.
     pub fn text(&self) -> &str {
         match self {
             Self::Partial(text) | Self::Ready(text) => text,
-            Self::Waiting | Self::Failed(_) => "",
+            Self::Waiting | Self::Failed(_) | Self::Interrupted => "",
         }
     }
 }
@@ -91,14 +97,36 @@ pub struct Ask {
     pub spot: Option<Spot>,
     /// Whether the answer card is open.
     pub open: bool,
+    /// The saved record, if pinning was requested.
+    pub pinned: Option<AiSelectionId>,
     pub answer: Answer,
     /// Who answers, as the card's small print names them.
     pub by: String,
     text: String,
+    path: Option<PathBuf>,
+    layout: Option<Weak<Document>>,
     job: Option<Box<SkillJob>>,
 }
 
 impl Ask {
+    /// A snapshot for the library, preserving a waiting request honestly.
+    pub(crate) fn record(&self) -> Option<NewAiSelection> {
+        let spot = self.spot?;
+        let result = match &self.answer {
+            Answer::Ready(text) => text.clone(),
+            _ => String::new(),
+        };
+        Some(NewAiSelection {
+            skill: self.skill.key(),
+            name: self.name.clone(),
+            spot,
+            source: self.text.clone(),
+            result,
+            pending: !matches!(self.answer, Answer::Ready(_)),
+            by: self.by.clone(),
+        })
+    }
+
     /// How long the asked text is, in characters.
     pub fn asked_chars(&self) -> usize {
         self.text.chars().count()
@@ -126,6 +154,8 @@ pub enum Action {
     Cancel(AskId),
     /// Removes a selection answer.
     Remove(AskId),
+    /// Toggles whether a selection answer is saved.
+    Pin(AskId),
     /// Goes back to a card's place, and shows it.
     Show(AskId),
 }
@@ -157,6 +187,8 @@ pub(crate) struct Asked {
     pub book: Option<BookId>,
     pub spot: Option<Spot>,
     pub text: String,
+    pub path: Option<PathBuf>,
+    pub layout: Option<Weak<Document>>,
 }
 
 impl State {
@@ -166,6 +198,10 @@ impl State {
 
     pub fn get(&self, id: AskId) -> Option<&Ask> {
         self.asks.iter().find(|a| a.id == id)
+    }
+
+    pub(crate) fn get_mut(&mut self, id: AskId) -> Option<&mut Ask> {
+        self.asks.iter_mut().find(|a| a.id == id)
     }
 
     /// Who answers from now on; runs under way keep theirs.
@@ -192,9 +228,12 @@ impl State {
             book: asked.book,
             spot: asked.spot,
             open: true,
+            pinned: None,
             answer: Answer::Waiting,
             by: self.runner.by(&key),
             text: asked.text,
+            path: asked.path,
+            layout: asked.layout,
             job: Some(job),
         });
         while self
@@ -247,6 +286,15 @@ impl State {
             return false;
         };
         ask.open = true;
+        true
+    }
+
+    /// Stops a retry and returns to the last saved answer.
+    pub(crate) fn cancel_to(&mut self, id: AskId, text: String, by: String) -> bool {
+        let Some(ask) = self.get_mut(id) else { return false };
+        ask.job = None;
+        ask.answer = Answer::Ready(text);
+        ask.by = by;
         true
     }
 

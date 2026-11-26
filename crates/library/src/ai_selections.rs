@@ -23,6 +23,9 @@ pub struct AiSelection {
     /// The selected text, kept to detect a changed passage.
     pub source: String,
     pub result: String,
+    /// Work was still running when this record was saved.
+    #[serde(default)]
+    pub pending: bool,
     pub by: String,
     pub added: u64,
     pub alive: Field<bool>,
@@ -38,6 +41,7 @@ pub struct NewAiSelection {
     pub spot: Spot,
     pub source: String,
     pub result: String,
+    pub pending: bool,
     pub by: String,
 }
 
@@ -80,6 +84,7 @@ impl Library {
             spot: new.spot,
             source: new.source,
             result: new.result,
+            pending: new.pending,
             by: new.by,
             added: wall_ms,
             alive: Field::new(true, at),

@@ -11,6 +11,8 @@ fn asked(pane: u64, text: &str) -> Asked {
         anchor: Anchor::Text(vec![(2, 4..9)]),
         book: None,
         spot: None,
+        path: None,
+        layout: None,
         text: text.to_owned(),
     }
 }

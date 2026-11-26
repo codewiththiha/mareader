@@ -162,6 +162,15 @@ fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                 if close.clicked() {
                     out.push(Sent::Engine(Command::Skill(Action::Close(ask.id))));
                 }
+                if matches!(ask.anchor, Anchor::Text(_)) {
+                    let label = if ask.pinned.is_some() { "Unpin answer" } else { "Pin answer" };
+                    if widgets::icon_button(ui, Icon::Pin, label, ask.pinned.is_some()).clicked() {
+                        out.push(Sent::Engine(Command::Skill(Action::Pin(ask.id))));
+                    }
+                    if widgets::small_icon_button(ui, Icon::Remove, "Remove answer").clicked() {
+                        out.push(Sent::Engine(Command::Skill(Action::Remove(ask.id))));
+                    }
+                }
             });
         });
     });
@@ -173,6 +182,9 @@ fn body(ui: &mut Ui, ask: &Ask, t: &Tokens) {
         Answer::Waiting => shimmer(ui, t),
         Answer::Partial(text) | Answer::Ready(text) => {
             crate::shaped::label(ui, text.trim(), size, t.ink);
+        }
+        Answer::Interrupted => {
+            ui.label(RichText::new("The app closed before this answer arrived. Try again.").color(t.muted));
         }
         Answer::Failed(failure) => {
             ui.horizontal_wrapped(|ui| {
@@ -197,6 +209,7 @@ fn footer(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                         Some(("Ask again", false))
                     }
                     Answer::Failed(f) if f.why.retry() => Some(("Try again", true)),
+                    Answer::Interrupted => Some(("Try again", true)),
                     _ => None,
                 };
                 if let Some((label, strong)) = again
@@ -209,7 +222,7 @@ fn footer(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                     let said = match &ask.answer {
                         Answer::Waiting | Answer::Partial(_) => "Asking AI…",
                         Answer::Ready(_) => ask.by.as_str(),
-                        Answer::Failed(_) => "",
+                        Answer::Failed(_) | Answer::Interrupted => "",
                     };
                     let label = RichText::new(said).size(t.text_small).color(t.muted);
                     ui.add(egui::Label::new(label).truncate());

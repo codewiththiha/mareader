@@ -13,6 +13,7 @@ fn selection(spot: Spot, text: &str) -> NewAiSelection {
         spot,
         source: "a passage".into(),
         result: text.into(),
+        pending: false,
         by: "example model".into(),
     }
 }

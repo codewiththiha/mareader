@@ -19,6 +19,7 @@ mod page_ai;
 mod panes;
 mod read_aloud;
 mod services;
+mod skill_pinning;
 mod skills;
 mod space;
 mod study;

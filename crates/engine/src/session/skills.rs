@@ -28,7 +28,9 @@ impl Session {
             } => self.skill_on_page(pane, (page, x, y), skill),
             Action::Retry(id) => self.skills.retry(id),
             Action::Close(id) => self.skills.close(id),
-            Action::Cancel(id) | Action::Remove(id) => self.skills.remove(id),
+            Action::Cancel(id) => self.skill_cancel(id),
+            Action::Remove(id) => self.skill_remove(id),
+            Action::Pin(id) => self.skill_pin(id, true),
             Action::Show(id) => {
                 let known = self.skills.show(id);
                 if known {
@@ -93,6 +95,8 @@ impl Session {
             return false;
         };
         let book = self.book_in(pane);
+        let path = self.documents().path(pane).map(ToOwned::to_owned);
+        let layout = self.documents().document_of(pane).map(|d| std::sync::Arc::downgrade(&d));
         let id = self.skills.start(Asked {
             pane,
             doc,
@@ -101,8 +105,13 @@ impl Session {
             anchor,
             book,
             spot,
+            path,
+            layout,
             text,
         });
+        if spot.is_some() && self.settings().ai.tasks.skills.pin_by_default {
+            self.skill_pin(id, false);
+        }
         self.emit(Event::SkillOpened(id));
         true
     }
@@ -112,9 +121,20 @@ impl Session {
         let docs = &self.documents;
         let reads = |pane| docs.place(pane).map(|p| p.doc.get());
         let mut changed = self.skills.keep_read(reads);
+        let views = self.tree.panes().into_iter().filter_map(|pane| {
+            Some(crate::skills::restore::View {
+                pane,
+                doc: self.documents().place(pane)?.doc.get(),
+                book: self.book_in(pane),
+                path: self.documents().path(pane).map(ToOwned::to_owned),
+                document: self.documents().document_of(pane)?,
+            })
+        }).collect();
+        changed |= self.skills.refresh(views, self.library.model());
         let (landed, news) = self.skills.receive();
         changed |= news;
         for id in landed {
+            self.skill_save_landed(id);
             self.emit(Event::SkillLanded(id));
         }
         changed
