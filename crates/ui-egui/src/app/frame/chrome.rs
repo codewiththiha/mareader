@@ -144,7 +144,7 @@ impl MareaderApp {
             maximized: ctx.input(|i| i.viewport().maximized.unwrap_or(false)),
             fullscreen,
             // With no rail beside it, the bar hosts the lights.
-            gutter: (!overlay || !route.has_rail()) && inset <= 0.0 && !fullscreen,
+            gutter: inset <= 0.0 && !fullscreen,
             appearance: &look,
             appearance_menu: self.settings().chrome.appearance_menu,
             presets: &presets,
@@ -169,10 +169,9 @@ impl MareaderApp {
         ctx: &Context,
         route: Route,
         inset: f32,
-        overlay: bool,
         commands: &mut Commands,
     ) {
-        self.ui.lights = self.place_lights(ctx, overlay, route);
+        self.ui.lights = self.place_lights(ctx, route);
         // Shots and the preview simulate macOS; draw where the lights go.
         let simulated = self.ui.platform == Platform::Mac && !cfg!(target_os = "macos");
         let spots = if simulated {

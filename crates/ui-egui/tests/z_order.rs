@@ -156,7 +156,7 @@ fn floating_sidebar_covers_page_bar_and_dictionary_and_stays_under_modals() {
     // Reveal the page bar from the right edge, then open the floating sidebar.
     h.hover_at(pos2(pane_rect.right() - 40.0, pane_rect.bottom() - 4.0));
     h.run_steps(6);
-    h.state_mut().queue(Sent::Ui(UiCommand::OpenSidebar(None)));
+    h.hover_at(pos2(2.0, 400.0));
     h.run_steps(6);
 
     let bar = z_order::layer(Tier::PaneBar, Id::new(("page-bar", pane_id)));

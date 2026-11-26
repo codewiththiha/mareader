@@ -33,7 +33,7 @@ pub struct ChromeSettings {
     pub titlebar_pinned: bool,
     pub library_titlebar_pinned: bool,
     pub dictionary_titlebar_pinned: bool,
-    /// The sidebar floats over the page rather than pushing it aside.
+    /// Retained for older settings; the sidebar now chooses its mode automatically.
     pub sidebar_overlay: bool,
     /// The bars blur the page behind them; off, they are solid.
     pub glass: bool,

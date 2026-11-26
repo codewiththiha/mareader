@@ -347,10 +347,6 @@ fn layout(ui: &mut Ui, s: &mut Settings, cx: &Scope) {
             switch_row(ui, "Keep title bar shown", hint, &mut c.titlebar_pinned);
         });
         r.always(|ui| {
-            let hint = "The sidebar floats over pages and hides when the pointer leaves";
-            switch_row(ui, "Overlay sidebar", hint, &mut c.sidebar_overlay);
-        });
-        r.always(|ui| {
             let hint = "Blur the page behind the title bar and page bar; off makes both solid";
             switch_row(ui, "Frosted glass", hint, &mut c.glass);
         });

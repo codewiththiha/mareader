@@ -1,5 +1,7 @@
 //! One sidebar rail per window, docked or floating; it serves the focused pane.
 
+mod hover;
+
 use egui::emath::easing;
 use egui::{
     Align, Context, CornerRadius, Id, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, Vec2,
@@ -15,7 +17,6 @@ use crate::theme::{self, TITLE_BAR_H, Tokens};
 use crate::ui_command::{Commands, Sent, UiCommand, WindowCommand};
 use crate::widgets;
 use crate::z_order::{self, Tier};
-use mareader_engine::command::Command;
 
 pub const WIDTH: f32 = 288.0;
 /// The rail's slide, docked or floating, in seconds.
@@ -94,7 +95,6 @@ impl Panel {
 
 /// What the rail needs from the app this frame.
 pub struct RailContext {
-    pub overlay: bool,
     /// Settings → Animations → Sidebar slide; off shows end frames only.
     pub slide: bool,
     pub platform: Platform,
@@ -105,6 +105,12 @@ pub struct RailContext {
 #[derive(Clone, Debug, Default)]
 pub struct Sidebar {
     open: bool,
+    /// An explicit toggle holds the rail beside the page.
+    docked: bool,
+    /// Keep the docked layer until its closing slide has finished.
+    dock_exit: bool,
+    /// An explicit close suppresses hover until the edge is left.
+    hover_blocked: bool,
     /// The panel shown, kept while closed so a reopen returns to it.
     panel: Panel,
     /// Floating only: the pointer has reached the rail since it opened.
@@ -123,6 +129,11 @@ impl Sidebar {
         self.open
     }
 
+    /// Whether it is taking space, including its closing slide.
+    pub fn is_docked(&self) -> bool {
+        self.docked || self.dock_exit
+    }
+
     /// The rail's shift last frame, `-WIDTH` to 0; `None` if not drawn.
     pub fn offset(&self) -> Option<f32> {
         self.offset
@@ -132,7 +143,7 @@ impl Sidebar {
         self.panel
     }
 
-    /// Opens on `panel`, or on the last one shown.
+    /// Opens persistently on `panel`, or on the last one shown.
     pub fn open(&mut self, panel: Option<Panel>) {
         if let Some(p) = panel {
             self.recentre |= p != self.panel;
@@ -140,19 +151,28 @@ impl Sidebar {
         }
         if !self.open {
             self.recentre = true;
-            self.open = true;
-            self.armed = false;
-            self.left_at = None;
-            self.edge_at = None;
         }
+        self.open = true;
+        self.docked = true;
+        self.dock_exit = false;
+        self.hover_blocked = false;
+        self.armed = false;
+        self.left_at = None;
+        self.edge_at = None;
     }
 
     pub fn close(&mut self) {
+        self.dock_exit |= self.docked;
+        self.docked = false;
         self.open = false;
+        self.hover_blocked = true;
+        self.armed = false;
+        self.left_at = None;
+        self.edge_at = None;
     }
 
     pub fn toggle(&mut self) {
-        if self.open {
+        if self.docked {
             self.close();
         } else {
             self.open(None);
@@ -186,6 +206,10 @@ impl Sidebar {
         let width = self.slide(ui.ctx(), cx, "sidebar-slide");
         self.offset = (width >= 1.0).then_some(width - WIDTH);
         if width < 1.0 {
+            if self.dock_exit {
+                self.dock_exit = false;
+                ui.ctx().request_repaint();
+            }
             return 0.0;
         }
         egui::Panel::left("sidebar")
@@ -223,8 +247,8 @@ impl Sidebar {
     ) -> f32 {
         let screen = ctx.content_rect();
         let home = Rect::from_min_size(screen.min, vec2(WIDTH, screen.height()));
-        self.track_hover(ctx, cx, home, screen, out);
-        let width = self.slide(ctx, cx, "sidebar-float-slide");
+        self.track_hover(ctx, cx, home, screen);
+        let width = self.slide(ctx, cx, "sidebar-slide");
         self.offset = (width >= 1.0).then_some(width - WIDTH);
         if width < 1.0 {
             return 0.0;
@@ -253,67 +277,6 @@ impl Sidebar {
                     .vline(rail.right() - 0.5, rail.y_range(), Stroke::new(1.0, t.line));
             });
         width
-    }
-
-    /// The edge strip opens a closed rail; leaving an open one closes it.
-    fn track_hover(
-        &mut self,
-        ctx: &Context,
-        cx: &RailContext,
-        rail: Rect,
-        screen: Rect,
-        out: &mut Commands,
-    ) {
-        let down = ctx.input(|i| i.pointer.any_down());
-        if !self.open {
-            let edge = Rect::from_min_size(screen.min, vec2(EDGE, screen.height()));
-            let blocked = |p| {
-                ctx.layer_id_at(p)
-                    .is_some_and(|l| z_order::is_above_tier(ctx, l, Tier::WindowChrome))
-            };
-            let hit = ctx
-                .pointer_hover_pos()
-                .filter(|&p| !down && edge.contains(p) && !blocked(p));
-            match hit {
-                Some(p) if p.y < cx.bar_bottom => self.dwell(ctx, out),
-                Some(_) => out.push(Sent::Ui(UiCommand::OpenSidebar(None))),
-                None => self.edge_at = None,
-            }
-            return;
-        }
-        let pointer = ctx.pointer_hover_pos();
-        // Keyboard focus in it holds it, as the pointer does.
-        if crate::focus::within(ctx, rail) {
-            self.left_at = None;
-            return;
-        }
-        if pointer.is_some_and(|p| rail.contains(p)) {
-            self.armed = true;
-            self.left_at = None;
-            return;
-        }
-        // Opened from a key or button: wait until the pointer has visited.
-        if !self.armed || down || egui::Popup::is_any_open(ctx) {
-            return;
-        }
-        let now = ctx.input(|i| i.time);
-        let waited = now - *self.left_at.get_or_insert(now);
-        if waited >= HOVER_GRACE {
-            out.push(Sent::Ui(UiCommand::CloseSidebar));
-        } else {
-            ctx.request_repaint_after(std::time::Duration::from_secs_f64(HOVER_GRACE - waited));
-        }
-    }
-
-    /// Opens after a rest: aiming at bar buttons often overshoots here.
-    fn dwell(&mut self, ctx: &Context, out: &mut Commands) {
-        let now = ctx.input(|i| i.time);
-        let waited = now - *self.edge_at.get_or_insert(now);
-        if waited >= EDGE_DELAY {
-            out.push(Sent::Ui(UiCommand::OpenSidebar(None)));
-        } else {
-            ctx.request_repaint_after(std::time::Duration::from_secs_f64(EDGE_DELAY - waited));
-        }
     }
 
     /// Header, panel and switcher, laid out in `ui.max_rect()`.
@@ -348,7 +311,7 @@ impl Sidebar {
         }
         ui.painter()
             .hline(switcher.x_range(), switcher.top(), Stroke::new(1.0, t.line));
-        self.switcher(ui, switcher, out);
+        self.switcher(ui, switcher);
     }
 
     fn header(&self, ui: &mut Ui, rect: Rect, cx: &RailContext, out: &mut Commands) {
@@ -369,12 +332,21 @@ impl Sidebar {
             // The docked rail belongs to title-bar hover motion.
             let _act = anim::announce(ui, Act::Hover);
             ui.spacing_mut().item_spacing.x = 4.0;
-            let buttons = [
+            let sidebar_button = if self.docked {
                 (
                     Icon::SidebarClose,
                     "Close sidebar",
                     Sent::Ui(UiCommand::CloseSidebar),
-                ),
+                )
+            } else {
+                (
+                    Icon::Sidebar,
+                    "Keep sidebar open",
+                    Sent::Ui(UiCommand::ToggleSidebar),
+                )
+            };
+            let buttons = [
+                sidebar_button,
                 (Icon::Search, "Search", Sent::Ui(UiCommand::ShowSearch)),
                 (
                     Icon::Settings,
@@ -389,17 +361,11 @@ impl Sidebar {
                     out.push(command);
                 }
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let docked = !cx.overlay;
-                if widgets::icon_button(ui, Icon::Pin, "Dock sidebar", docked).clicked() {
-                    out.push(Sent::Engine(Command::SetSidebarOverlay(docked)));
-                }
-            });
         });
     }
 
     /// The panels, each named under its icon.
-    fn switcher(&mut self, ui: &mut Ui, rect: Rect, out: &mut Commands) {
+    fn switcher(&mut self, ui: &mut Ui, rect: Rect) {
         let t = Tokens::get(ui.ctx());
         let _act = anim::announce(ui, Act::Click);
         let slot = rect.width() / Panel::SWITCHER.len() as f32;
@@ -433,7 +399,8 @@ impl Sidebar {
             if r.clicked() && on {
                 self.recentre = true;
             } else if r.clicked() {
-                out.push(Sent::Ui(UiCommand::OpenSidebar(Some(panel))));
+                self.panel = panel;
+                self.recentre = true;
             }
         }
     }

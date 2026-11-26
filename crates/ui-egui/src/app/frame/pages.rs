@@ -21,9 +21,8 @@ impl MareaderApp {
         route: Route,
         commands: &mut Commands,
     ) -> (f32, bool) {
-        let overlay = self.settings().chrome.sidebar_overlay;
+        let overlay = !self.ui.sidebar.is_docked();
         let rail = RailContext {
-            overlay,
             slide: self.settings().motion.sidebar_slide,
             platform: self.ui.platform,
             bar_bottom: self.ui.titlebar.band_bottom(ctx),

@@ -251,7 +251,7 @@ impl MareaderApp {
         let routing = self.routing();
         let docs = self.documents();
         ReaderBar {
-            sidebar_toggle: !overlay && !self.ui.sidebar.is_open(),
+            sidebar_toggle: !self.ui.sidebar.is_open(),
             rail_docked: !overlay && self.ui.sidebar.is_open(),
             independence: routing.split.then_some(Independence {
                 themes: routing.themes,
@@ -271,10 +271,10 @@ impl MareaderApp {
         }
     }
 
-    /// The rail hosts the lights while drawn; then the bar, unless overlay.
-    pub(super) fn place_lights(&self, ctx: &Context, overlay: bool, route: Route) -> NativeLights {
+    /// The rail hosts the lights while drawn; otherwise the bar does.
+    pub(super) fn place_lights(&self, ctx: &Context, route: Route) -> NativeLights {
         let rail = self.ui.sidebar.offset().filter(|_| route.has_rail());
-        let bar_hosts = rail.is_none() && (!overlay || !route.has_rail());
+        let bar_hosts = rail.is_none();
         // Handing over from a rail, they fade in rather than pop.
         let secs = motion::secs(ctx, titlebar::FADE);
         let handoff = ctx.animate_bool_with_time(egui::Id::new("lights-bar"), bar_hosts, secs);

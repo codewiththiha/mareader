@@ -217,7 +217,7 @@ fn with_kept(dir: &std::path::Path, options: &[(&str, &str)]) -> Harness<'static
     harness(app)
 }
 
-fn with(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
+pub(super) fn with(options: &[(&str, &str)]) -> Harness<'static, MareaderApp> {
     let mut app = MareaderApp::default();
     for (k, v) in options {
         app.set_option(k, v).map_err(|e| e.to_string()).ok();
@@ -268,7 +268,7 @@ fn a_floating_sidebar_opens_from_the_edge_and_closes_after_the_grace() {
     let mut h = with(&[("float", "true")]);
     h.hover_at(egui::pos2(600.0, 20.0));
     h.run_steps(8);
-    assert!(h.query_by_label("Toggle sidebar").is_none());
+    assert!(h.query_by_label("Toggle sidebar").is_some());
     h.hover_at(egui::pos2(2.0, 400.0));
     h.run_steps(4);
     assert!(h.state().sidebar().is_open());
@@ -300,17 +300,6 @@ fn the_edge_waits_while_the_pointer_is_in_the_title_bar() {
     wait(&mut h, 0.5);
     h.hover_at(egui::pos2(2.0, 400.0));
     h.run_steps(2);
-    assert!(h.state().sidebar().is_open());
-}
-
-#[test]
-fn docking_a_floating_sidebar_keeps_it_open() {
-    let mut h = with(&[("float", "true"), ("sidebar", "outline")]);
-    h.hover_at(egui::pos2(150.0, 400.0));
-    h.run_steps(4);
-    h.get_by_label("Dock sidebar").click();
-    h.run_steps(4);
-    assert!(!h.state().settings().chrome.sidebar_overlay);
     assert!(h.state().sidebar().is_open());
 }
 
@@ -362,11 +351,12 @@ fn the_gear_opens_settings_and_escape_closes_only_them() {
 #[test]
 fn a_settings_switch_applies_on_the_frame_it_flips() {
     let mut h = with(&[("settings", "layout")]);
-    h.get_by_role_and_label(Role::CheckBox, "Overlay sidebar")
+    assert!(h.query_by_label("Overlay sidebar").is_none());
+    h.get_by_role_and_label(Role::CheckBox, "Frosted glass")
         .click();
     h.step();
     h.step();
-    assert!(h.state().settings().chrome.sidebar_overlay);
+    assert!(!h.state().settings().chrome.glass);
 }
 
 #[test]
@@ -923,12 +913,16 @@ fn without_a_sidebar_the_lights_come_with_the_bar() {
 }
 
 #[test]
-fn in_overlay_mode_the_lights_slide_in_with_the_rail_only() {
+fn the_hovered_sidebar_takes_over_the_titlebar_lights() {
     let mut h = with(&[("platform", "mac"), ("float", "true")]);
     h.hover_at(egui::pos2(600.0, 20.0));
     wait(&mut h, 0.5);
     assert!(h.state().bar_shown());
-    assert_eq!(lights(&h).opacity, 0.0, "the bar never hosts them here");
+    assert_eq!(
+        lights(&h).opacity,
+        1.0,
+        "the bar hosts lights while the rail is closed"
+    );
     h.hover_at(egui::pos2(2.0, 400.0));
     wait(&mut h, 0.12);
     h.hover_at(egui::pos2(100.0, 400.0));
@@ -939,16 +933,14 @@ fn in_overlay_mode_the_lights_slide_in_with_the_rail_only() {
 }
 
 #[test]
-fn the_overlay_bar_leaves_no_gutter_for_lights() {
-    let mut h = with(&[("platform", "mac"), ("float", "true")]);
-    h.hover_at(egui::pos2(600.0, 20.0));
-    wait(&mut h, 0.5);
-    assert!(h.get_by_label("Library").rect().left() < 20.0);
-    let mut h = with(&[("platform", "mac")]);
-    h.hover_at(egui::pos2(600.0, 20.0));
-    wait(&mut h, 0.5);
-    let inset = mareader_ui_egui::platform::Platform::Mac.leading_inset();
-    assert!(h.get_by_label("Toggle sidebar").rect().left() >= inset);
+fn the_closed_bar_keeps_its_gutter_regardless_of_old_overlay_setting() {
+    for old in ["true", "false"] {
+        let mut h = with(&[("platform", "mac"), ("float", old)]);
+        h.hover_at(egui::pos2(600.0, 20.0));
+        wait(&mut h, 0.5);
+        let inset = mareader_ui_egui::platform::Platform::Mac.leading_inset();
+        assert!(h.get_by_label("Toggle sidebar").rect().left() >= inset);
+    }
 }
 
 #[test]

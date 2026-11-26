@@ -147,9 +147,11 @@ fn the_floating_label_shows_while_the_bar_hides_and_room_allows() {
     h.run();
     let _ = h.get_by_label(label);
     // A floating sidebar slides over the label instead of hiding it.
-    h.state_mut().set_option("float", "true").ok();
-    h.state_mut().set_option("sidebar", "outline").ok();
-    h.run();
+    h.hover_at(egui::pos2(2.0, 400.0));
+    h.run_steps(30);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Outline")
+        .click();
+    h.run_steps(4);
     let _ = h.get_by_label(label);
     let _ = h.get_by_label("Chapter 1: Opening");
 }

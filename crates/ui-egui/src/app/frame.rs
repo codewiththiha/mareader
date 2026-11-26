@@ -52,7 +52,7 @@ impl eframe::App for MareaderApp {
             self.ui.find.close();
             ctx.request_repaint();
         }
-        self.lights(&ctx, route, inset, overlay, &mut commands);
+        self.lights(&ctx, route, inset, &mut commands);
         self.windows(&ctx, &mut commands);
         crate::z_order::enforce(&ctx);
         self.finish(&ctx, outside, commands);

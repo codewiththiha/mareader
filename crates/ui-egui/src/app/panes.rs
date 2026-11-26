@@ -28,7 +28,7 @@ impl MareaderApp {
         if self.route() != Route::Reader {
             return;
         }
-        let floating = self.settings().chrome.sidebar_overlay;
+        let floating = !self.ui.sidebar.is_docked();
         let rail = (self.ui.sidebar.offset()).filter(|_| floating);
         let edge = rail.map(|o| o + crate::sidebar::WIDTH);
         // Docked, the rail ends where the panes begin.
