@@ -63,6 +63,7 @@ pub(crate) fn paint(
                     .get(h.share as usize * DISTANCES + distance)
                     .copied()
                     .unwrap_or(Color32::TRANSPARENT)
+                    .gamma_multiply(f32::from(h.coverage) / 255.0)
             }
         })
         .collect();

@@ -10,6 +10,7 @@ const SIDE: f32 = 1536.0;
 pub(super) struct Hit {
     pub distance: u8,
     pub share: u8,
+    pub coverage: u8,
 }
 
 pub(super) struct Field {
@@ -95,19 +96,9 @@ impl Field {
             }
             along += len;
         }
-        mask_inside(points, bounds, scale, size, &mut distances);
-        let hits = distances
-            .into_iter()
-            .zip(shares)
-            .map(|(distance, share)| Hit {
-                distance: if distance >= reach {
-                    255
-                } else {
-                    ((distance / reach * 254.0).round() as u8).min(254)
-                },
-                share: (share.rem_euclid(1.0) * 256.0) as u8,
-            })
-            .collect();
+        let mut inside = vec![false; count];
+        mask_inside(points, bounds, scale, size, &mut inside);
+        let hits = compress(distances, shares, inside, scale, reach);
         Some(Self {
             bounds,
             size,
@@ -115,6 +106,20 @@ impl Field {
             length,
         })
     }
+}
+
+fn compress(distances: Vec<f32>, shares: Vec<f32>, inside: Vec<bool>, scale: f32, reach: f32) -> Vec<Hit> {
+    distances.into_iter().zip(shares).zip(inside).map(|((distance, share), inside)| {
+        let signed = if inside { -distance } else { distance };
+        let coverage = ((0.5 + signed * scale).clamp(0.0, 1.0) * 255.0).round() as u8;
+        Hit {
+            distance: if distance >= reach || coverage == 0 { 255 } else {
+                ((distance / reach * 254.0).round() as u8).min(254)
+            },
+            share: (share.rem_euclid(1.0) * 256.0) as u8,
+            coverage,
+        }
+    }).collect()
 }
 
 fn mark_segment(
@@ -144,7 +149,7 @@ fn mark_segment(
     }
 }
 
-fn mask_inside(points: &[Pos2], bounds: Rect, scale: f32, size: [usize; 2], distances: &mut [f32]) {
+fn mask_inside(points: &[Pos2], bounds: Rect, scale: f32, size: [usize; 2], inside: &mut [bool]) {
     let mut crossings = Vec::new();
     for y in 0..size[1] {
         let yy = bounds.top() + (y as f32 + 0.5) / scale;
@@ -161,8 +166,8 @@ fn mask_inside(points: &[Pos2], bounds: Rect, scale: f32, size: [usize; 2], dist
             let right =
                 (((to - bounds.left()) * scale - 0.5).ceil().max(0.0) as usize).min(size[0]);
             for x in left..right {
-                if let Some(distance) = distances.get_mut(y * size[0] + x) {
-                    *distance = f32::INFINITY;
+                if let Some(pixel) = inside.get_mut(y * size[0] + x) {
+                    *pixel = true;
                 }
             }
         }
@@ -199,6 +204,7 @@ mod tests {
             }
         }
         assert_eq!(hit(&field, pos2(20.0, 20.0)).distance, 255);
+        assert!(field.hits.iter().any(|h| h.coverage > 0 && h.coverage < 255), "the boundary is antialiased");
     }
 
     #[test]
