@@ -53,6 +53,9 @@ impl Session {
             .library
             .model_mut()
             .add_ai_selection(book, record, wall_ms());
+        if let Some(saved) = saved {
+            self.library.selection_pending(saved);
+        }
         if let Some(ask) = self.skills.get_mut(id) {
             ask.book = Some(book);
             ask.pinned = saved;
@@ -73,6 +76,7 @@ impl Session {
         let now = wall_ms();
         let saved = self.library.model_mut().add_ai_selection(book, record, now);
         if let Some(saved) = saved {
+            self.library.selection_pending(saved);
             self.library
                 .model_mut()
                 .set_ai_selection_alive(old, false, now);

@@ -50,6 +50,7 @@ pub struct SelectionRow {
     pub name: String,
     pub source: String,
     pub pinned: bool,
+    pub pin_status: mareader_engine::library::SaveStatus,
     pub found: bool,
 }
 
@@ -284,10 +285,11 @@ fn filters(
 }
 
 fn selection_entry(ui: &mut Ui, answer: &SelectionRow, out: &mut Commands) {
-    let state = if answer.pinned {
-        "Pinned"
-    } else {
-        "This session"
+    let state = match (answer.pinned, answer.pin_status) {
+        (false, _) => "This session",
+        (true, mareader_engine::library::SaveStatus::Pending) => "Saving…",
+        (true, mareader_engine::library::SaveStatus::Failed) => "Save failed",
+        (true, mareader_engine::library::SaveStatus::Saved) => "Pinned",
     };
     let label = format!("{} · {state}\n{}", answer.name, answer.source);
     let response = ui.add_enabled(answer.found, egui::Button::new(label).wrap());

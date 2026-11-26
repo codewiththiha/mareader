@@ -39,7 +39,7 @@ pub use question::{Kind, Question};
 pub use runs::{Beat, DELAY, Phase, Run, RunEnd, RunId, Runs};
 pub use searching::{Field, Listing, Lit, RING_END, RING_HOLD, Reveal, Search, Shape};
 pub use shelving::Crumb;
-pub use state::{State, Status, wall_ms};
+pub use state::{SaveStatus, State, Status, wall_ms};
 
 /// "3 books", "1 shelf": a count and its noun.
 pub fn counted(n: usize, one: &str, many: &str) -> String {

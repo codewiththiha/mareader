@@ -129,6 +129,7 @@ impl MareaderApp {
                     name: a.name.clone(),
                     source: a.source().to_owned(),
                     pinned: a.pinned.is_some(),
+                    pin_status: a.pin_status,
                     found: !spans.is_empty(),
                 })
             })

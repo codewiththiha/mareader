@@ -26,12 +26,12 @@ impl State {
         for view in &views {
             if let Some(book) = view.book {
                 for saved in lib.ai_selections(book) {
-                    if !self.asks.iter().any(|a| a.pinned == Some(saved.id)) {
-                        if let Some(ask) = restored(saved, view, AskId(self.next)) {
-                            self.next = self.next.saturating_add(1);
-                            self.asks.push(ask);
-                            changed = true;
-                        }
+                    if !self.asks.iter().any(|a| a.pinned == Some(saved.id))
+                        && let Some(ask) = restored(saved, view, AskId(self.next))
+                    {
+                        self.next = self.next.saturating_add(1);
+                        self.asks.push(ask);
+                        changed = true;
                     }
                 }
             }
@@ -84,6 +84,7 @@ fn restored(saved: &AiSelection, view: &View, id: AskId) -> Option<Ask> {
         spot: Some(saved.spot),
         open: false,
         pinned: Some(saved.id),
+        pin_status: crate::library::SaveStatus::Saved,
         answer: if saved.pending {
             Answer::Interrupted
         } else {

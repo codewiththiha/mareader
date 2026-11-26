@@ -36,7 +36,12 @@ impl State {
                     };
                     self.model.record_open_as(opened, wall_ms(), probe.book);
                 }
-                News::WriteFailed(e) => out.push(Out::Toast(Toast::error(e))),
+                News::Written(changes, error) => {
+                    self.selection_written(&changes, error.is_some());
+                    if let Some(error) = error {
+                        out.push(Out::Toast(Toast::error(error)));
+                    }
+                }
                 News::Walked(done) => self.walked(*done, now, out),
                 News::Files(done) => self.measured(*done, now, out),
                 News::Copied(done) => self.copied(*done, now, out),

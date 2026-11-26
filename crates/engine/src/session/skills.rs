@@ -139,6 +139,8 @@ impl Session {
             })
             .collect();
         changed |= self.skills.refresh(views, self.library.model());
+        let library = &self.library;
+        self.skills.pin_statuses(|id| library.selection_status(id));
         let (landed, news) = self.skills.receive();
         changed |= news;
         for id in landed {

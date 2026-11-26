@@ -1,12 +1,12 @@
 //! What the library remembers between frames: its model, where the page
 //! stands in it, and the sheet over it.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::hash::{BuildHasher, RandomState};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mareader_library::{BookId, DeviceId, Library, ShelfId, disk::Folder};
+use mareader_library::{AiSelectionId, BookId, Changes, DeviceId, Kind, Library, ShelfId, disk::Folder};
 use mareader_workspace::PaneId;
 
 use crate::documents::OpenRequest;
@@ -30,9 +30,18 @@ pub enum Status {
     ReadOnly,
 }
 
+/// Whether a selection's latest record reached the store.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveStatus {
+    Pending,
+    Saved,
+    Failed,
+}
+
 /// The library's own state: the part that outlives a frame.
 pub struct State {
     pub model: Library,
+    selection_saves: HashMap<AiSelectionId, (String, SaveStatus)>,
     /// None: in memory only, as in tests and shots.
     pub folder: Option<Folder>,
     /// Questions waiting for the reader, oldest first.
@@ -84,6 +93,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             model: Library::new(new_device()),
+            selection_saves: HashMap::new(),
             folder: None,
             status: Status::Ready,
             inline: false,
@@ -185,9 +195,37 @@ impl State {
         }
         let dirty = self.model.take_dirty();
         let changes = self.model.changes(&dirty);
+        self.selection_sent(&changes);
         self.io.send(Job::Write(Box::new(changes)));
         self.wrote = now;
         None
+    }
+
+    pub(crate) fn selection_pending(&mut self, id: AiSelectionId) {
+        self.selection_saves.insert(id, (String::new(), SaveStatus::Pending));
+    }
+
+    pub(crate) fn selection_status(&self, id: AiSelectionId) -> SaveStatus {
+        self.selection_saves.get(&id).map_or(SaveStatus::Saved, |(_, status)| *status)
+    }
+
+    fn selection_sent(&mut self, changes: &Changes) {
+        for row in changes.put.iter().filter(|row| row.kind == Kind::AiSelection) {
+            if let Ok(id) = AiSelectionId::try_from(row.id.clone()) {
+                self.selection_saves.insert(id, (row.body.clone(), SaveStatus::Pending));
+            }
+        }
+    }
+
+    pub(super) fn selection_written(&mut self, changes: &Changes, failed: bool) {
+        for row in changes.put.iter().filter(|row| row.kind == Kind::AiSelection) {
+            let Ok(id) = AiSelectionId::try_from(row.id.clone()) else { continue };
+            if let Some((body, status)) = self.selection_saves.get_mut(&id)
+                && *body == row.body
+            {
+                *status = if failed { SaveStatus::Failed } else { SaveStatus::Saved };
+            }
+        }
     }
 
     /// Sends every pending change now: the app is saving or exiting.

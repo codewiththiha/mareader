@@ -113,7 +113,7 @@ pub struct Probe {
 pub enum News {
     Loaded(Box<Loaded>),
     Measured(Box<Probe>, Measure),
-    WriteFailed(String),
+    Written(Box<Changes>, Option<String>),
     Walked(Box<Walked>),
     Files(Box<Measured>),
     Copied(Box<Copies>),
@@ -231,9 +231,8 @@ fn run(job: Job, store: &mut Option<Store>, post: &mut dyn FnMut(News)) {
                 Some(store) => store.apply(&changes),
                 None => Err("the library file isn't open".into()),
             };
-            saved
-                .err()
-                .map(|e| News::WriteFailed(format!("Couldn't save the library: {e}")))
+            let error = saved.err().map(|e| format!("Couldn't save the library: {e}"));
+            Some(News::Written(changes, error))
         }
         Job::Walk(job) => Some(News::Walked(Box::new(walk(*job, post)))),
         Job::Files(job) => Some(News::Files(Box::new(files(*job, post)))),
