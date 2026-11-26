@@ -204,9 +204,12 @@ impl State {
     }
 
     pub(crate) fn retry_selection_writes(&mut self) {
-        let failed: Vec<_> = self.selection_saves.iter()
+        let failed: Vec<_> = self
+            .selection_saves
+            .iter()
             .filter(|(_, (_, status))| *status == SaveStatus::Failed)
-            .map(|(id, _)| *id).collect();
+            .map(|(id, _)| *id)
+            .collect();
         for id in failed {
             self.model.retry_ai_selection(id);
         }
@@ -289,7 +292,11 @@ mod selection_save_tests {
 
     fn changes(id: AiSelectionId, body: &str) -> Changes {
         Changes {
-            put: vec![Row { kind: Kind::AiSelection, id: id.to_string(), body: body.into() }],
+            put: vec![Row {
+                kind: Kind::AiSelection,
+                id: id.to_string(),
+                body: body.into(),
+            }],
             ..Changes::default()
         }
     }
@@ -307,7 +314,11 @@ mod selection_save_tests {
         let second = changes(id, "second");
         state.selection_sent(&second);
         state.selection_written(&first, false);
-        assert_eq!(state.selection_status(id), SaveStatus::Pending, "old success cannot confirm a later write");
+        assert_eq!(
+            state.selection_status(id),
+            SaveStatus::Pending,
+            "old success cannot confirm a later write"
+        );
         state.selection_written(&second, false);
         assert_eq!(state.selection_status(id), SaveStatus::Saved);
     }

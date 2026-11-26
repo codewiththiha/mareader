@@ -118,3 +118,62 @@ impl Session {
         self.skills.remove(id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use mareader_library::disk::Folder;
+    use mareader_settings::{PageTask, Skill};
+    use mareader_study::skill::Scripted;
+    use mareader_workspace::PaneId;
+    use crate::host::Fake;
+    use crate::skills::{Asked, Anchor};
+
+    fn session() -> Session {
+        Session::headless(Arc::new(Fake::default()))
+    }
+
+    fn ask(session: &mut Session, book: Option<mareader_library::BookId>) -> AskId {
+        session.skills.set_runner(Arc::new(Scripted::Echo));
+        session.skills.start(Asked {
+            pane: PaneId(1), doc: 1,
+            skill: Skill::Builtin(PageTask::Simplify), name: "Simplify".into(),
+            anchor: Anchor::Text(vec![(0, 0..4)]),
+            book, spot: Some(Spot::Chars { from: [0, 0], to: [0, 4] }),
+            text: "text".into(), path: None, layout: None, auto_pin: false,
+        })
+    }
+
+    #[test]
+    fn pinning_requires_an_imported_book_and_keeps_the_last_good_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session();
+        s.library.folder = Some(Folder::new(dir.path()));
+        s.library.seed(1);
+        let loose = s.library.model.books().next().unwrap().id;
+        let loose_ask = ask(&mut s, Some(loose));
+        assert!(!s.skill_pin(loose_ask, true));
+        assert!(s.skills.get(loose_ask).unwrap().pinned.is_none());
+        s.library.seed_copies(1);
+        let imported = s.library.model.books().find(|b| b.locations.iter().any(|l| l.origin == Origin::Store)).unwrap().id;
+        let id = ask(&mut s, Some(imported));
+        assert!(s.skill_pin(id, true));
+        let pending = s.skills.get(id).unwrap().pinned.unwrap();
+        assert!(s.library.model.ai_selection(pending).unwrap().pending);
+        s.skills.receive();
+        s.skill_save_landed(id);
+        let saved = s.skills.get(id).unwrap().pinned.unwrap();
+        assert_ne!(saved, pending);
+        assert_eq!(s.library.model.ai_selection(saved).unwrap().result, "text");
+        s.skills.set_runner(Arc::new(Scripted::Failing));
+        assert!(s.skills.retry(id));
+        s.skills.receive();
+        s.skill_save_landed(id);
+        assert_eq!(s.skills.get(id).unwrap().pinned, Some(saved));
+        assert!(s.skill_pin(id, true));
+        assert!(s.skills.get(id).unwrap().pinned.is_none());
+        assert!(s.skills.get(id).is_some());
+        assert!(s.library.model.ai_selection(saved).is_none());
+    }
+}

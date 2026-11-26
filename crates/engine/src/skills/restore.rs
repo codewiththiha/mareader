@@ -153,14 +153,19 @@ mod tests {
     use mareader_reflow::Typography;
 
     fn document(bytes: Vec<u8>, size: f32) -> Arc<Document> {
-        let typo = Typography { font_size: size, ..Typography::default() };
+        let typo = Typography {
+            font_size: size,
+            ..Typography::default()
+        };
         Arc::new(Document::open(Arc::new(bytes), &typo).unwrap())
     }
 
     fn selected(doc: &Document) -> (Spot, String) {
         for page in 0..doc.page_count() {
             let layer = Arc::new(doc.text_layer(page).unwrap());
-            if layer.text.len() < 30 { continue }
+            if layer.text.len() < 30 {
+                continue;
+            }
             let start = if layer.places.is_empty() {
                 Some(0)
             } else {
@@ -169,9 +174,13 @@ mod tests {
             };
             let Some(start) = start else { continue };
             let selection = Selection::within(page, start..start + 25);
-            let Some(spot) = words::span(selection, |_| Some(Arc::clone(&layer))) else { continue };
+            let Some(spot) = words::span(selection, |_| Some(Arc::clone(&layer))) else {
+                continue;
+            };
             let source = selection.text(|_| Some(Arc::clone(&layer)));
-            if !source.trim().is_empty() { return (spot, source) }
+            if !source.trim().is_empty() {
+                return (spot, source);
+            }
         }
         panic!("sample has no selectable text")
     }
@@ -194,4 +203,32 @@ mod tests {
         let resized = document(bytes, 24.0);
         assert!(resolve(&resized, spot, &text).is_some());
     }
+
+    #[test]
+    fn saved_answers_reattach_and_interrupted_requests_are_not_complete() {
+        use mareader_library::{ContentId, DeviceId, Format, Measure, NewAiSelection, Opened};
+        let doc = document(mareader_pdf::sample::pdf(2, "Sample"), 16.0);
+        let (spot, text) = selected(&doc);
+        let mut lib = Library::new(DeviceId(1));
+        let book = lib.record_open(Opened {
+            path: "/tmp/a.pdf".into(),
+            measure: Measure { content: ContentId(1), stamp: Default::default() },
+            format: Format::Pdf, title: "Sample".into(), author: None,
+        }, 1);
+        let record = NewAiSelection {
+            skill: "simplify".into(), name: "Simplify".into(), spot,
+            source: text, result: String::new(), pending: true, by: "Model".into(),
+        };
+        let saved = lib.add_ai_selection(book, record, 2).unwrap();
+        let view = || View { pane: PaneId(1), doc: 1, book: Some(book), path: None, document: Arc::clone(&doc) };
+        let mut state = State::default();
+        assert!(state.refresh(vec![view()], &lib));
+        let ask = state.asks().first().unwrap();
+        assert_eq!(ask.pinned, Some(saved));
+        assert!(matches!(ask.answer, Answer::Interrupted));
+        assert!(matches!(&ask.anchor, Anchor::Text(spans) if !spans.is_empty()));
+        assert!(!ask.open);
+        assert!(!state.refresh(vec![view()], &lib), "reload does not duplicate");
+    }
+
 }

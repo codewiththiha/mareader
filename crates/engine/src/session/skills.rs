@@ -141,9 +141,13 @@ impl Session {
             })
             .collect();
         changed |= self.skills.refresh(views, self.library.model());
-        let pending: Vec<_> = self.skills.asks().iter()
+        let pending: Vec<_> = self
+            .skills
+            .asks()
+            .iter()
             .filter(|a| a.auto_pin && a.pinned.is_none())
-            .map(|a| a.id).collect();
+            .map(|a| a.id)
+            .collect();
         for id in pending {
             self.skill_pin(id, false);
         }
