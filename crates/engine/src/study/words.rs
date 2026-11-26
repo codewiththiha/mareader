@@ -126,6 +126,15 @@ pub fn find(layer: &TextLayer, block: usize, bytes: Range<usize>) -> Option<Rang
     Some(start..end + 1)
 }
 
+/// The characters on one page within a saved block-and-byte span.
+pub fn between(layer: &TextLayer, from: (usize, usize), to: (usize, usize)) -> Option<Range<usize>> {
+    let within = |i: usize| layer.place(i).is_some_and(|p| from <= p && p < to);
+    let n = layer.places.len();
+    let start = (0..n).find(|&i| within(i))?;
+    let end = (start..n).rev().find(|&i| within(i))?;
+    Some(start..end + 1)
+}
+
 /// Where a highlight of `sel` is kept: chars on a PDF, bytes in a book.
 pub fn span(sel: Selection, layer: impl Fn(usize) -> Option<Arc<TextLayer>>) -> Option<Spot> {
     let (a, b) = sel.ordered();
@@ -216,6 +225,16 @@ mod tests {
         assert_eq!(got.spot, Some(spot));
         assert_eq!(find(&page, 4, 104..109), Some(4..9));
         assert_eq!(find(&page, 5, 104..109), None);
+    }
+
+    #[test]
+    fn saved_block_spans_resolve_against_each_reflowed_page() {
+        let page = layer("The quick fox", true);
+        assert_eq!(between(&page, (4, 104), (4, 109)), Some(4..9));
+        assert_eq!(between(&page, (3, 0), (4, 103)), Some(0..3));
+        assert_eq!(between(&page, (4, 110), (5, 0)), Some(10..13));
+        assert_eq!(between(&page, (5, 0), (6, 0)), None);
+        assert_eq!(between(&page, (4, 109), (4, 104)), None);
     }
 
     #[test]

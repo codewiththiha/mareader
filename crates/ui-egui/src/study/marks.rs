@@ -107,7 +107,7 @@ pub fn place(marks: &[Shown], pages: &crate::selection::Pages<'_>) -> Vec<Placed
                     if to <= first || from > last {
                         continue;
                     }
-                    let Some(chars) = between(layer, from, to) else {
+                    let Some(chars) = words::between(layer, from, to) else {
                         continue;
                     };
                     (None, chars)
@@ -163,15 +163,6 @@ pub fn chars(from: [usize; 2], to: [usize; 2]) -> Selection {
         anchor: caret(from),
         focus: caret(to),
     }
-}
-
-/// The chars whose `(block, byte)` lie from `from` up to `to`.
-fn between(layer: &TextLayer, from: (usize, usize), to: (usize, usize)) -> Option<Range<usize>> {
-    let within = |i: usize| layer.place(i).is_some_and(|p| from <= p && p < to);
-    let n = layer.places.len();
-    let start = (0..n).find(|&i| within(i))?;
-    let end = (start..n).rev().find(|&i| within(i))?;
-    Some(start..end + 1)
 }
 
 /// Each mark's boxes in its pen, at `opacity`.
