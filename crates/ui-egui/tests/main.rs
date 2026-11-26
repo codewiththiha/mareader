@@ -39,6 +39,7 @@ mod reading;
 mod search;
 mod selection;
 mod shell;
+mod sidebar_edge;
 mod sidebar_toggle;
 mod skills;
 mod space;

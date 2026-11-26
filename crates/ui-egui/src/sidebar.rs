@@ -1,5 +1,6 @@
 //! One sidebar rail per window, docked or floating; it serves the focused pane.
 
+mod edge;
 mod hover;
 
 use egui::emath::easing;
@@ -227,12 +228,7 @@ impl Sidebar {
                 let mut child = ui.new_child(UiBuilder::new().max_rect(rail).id_salt("rail"));
                 child.shrink_clip_rect(strip);
                 self.contents(&mut child, cx, body, out);
-                let t = Tokens::get(ui.ctx());
-                ui.painter().vline(
-                    strip.right() - 0.5,
-                    strip.y_range(),
-                    Stroke::new(1.0, t.line),
-                );
+                self.edge(ui, strip, out);
             });
         width
     }
@@ -273,8 +269,7 @@ impl Sidebar {
                 let mut child = ui.new_child(UiBuilder::new().max_rect(rail).id_salt("rail"));
                 child.set_clip_rect(rail);
                 self.contents(&mut child, cx, body, out);
-                ui.painter()
-                    .vline(rail.right() - 0.5, rail.y_range(), Stroke::new(1.0, t.line));
+                self.edge(ui, rail, out);
             });
         width
     }
