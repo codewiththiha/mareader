@@ -69,6 +69,9 @@ fn paint(
             }
         }
     }
+    if !visible {
+        place.cache.clear();
+    }
     if working && visible {
         crate::activity::seen::in_view(
             ctx,

@@ -13,7 +13,11 @@ pub(super) fn groups(lines: &[Rect]) -> Vec<&[Rect]> {
         let (a, b) = (pair[0], pair[1]);
         let gap = b.top() - a.bottom();
         let overlap = a.right().min(b.right()) - a.left().max(b.left());
-        if b.center().y <= a.center().y || gap > a.height().max(b.height()) * 1.1 + 4.0 || overlap <= 4.0 {
+        if b.center().y <= a.center().y
+            || gap < 0.0
+            || gap > a.height().max(b.height()) * 1.1 + 4.0
+            || overlap <= 4.0
+        {
             out.push(&lines[start..i + 1]);
             start = i + 1;
         }
@@ -29,13 +33,19 @@ pub(super) fn outline(lines: &[Rect]) -> Vec<Pos2> {
     let (Some(first), Some(last)) = (lines.first(), lines.last()) else {
         return Vec::new();
     };
-    let mut edges = vec![pos2(first.left() - PAD, first.top() - PAD), pos2(first.right() + PAD, first.top() - PAD)];
+    let mut edges = vec![
+        pos2(first.left() - PAD, first.top() - PAD),
+        pos2(first.right() + PAD, first.top() - PAD),
+    ];
     for pair in lines.windows(2) {
         let (a, b) = (pair[0], pair[1]);
         let y = (a.bottom() + b.top()) * 0.5;
         edges.extend([pos2(a.right() + PAD, y), pos2(b.right() + PAD, y)]);
     }
-    edges.extend([pos2(last.right() + PAD, last.bottom() + PAD), pos2(last.left() - PAD, last.bottom() + PAD)]);
+    edges.extend([
+        pos2(last.right() + PAD, last.bottom() + PAD),
+        pos2(last.left() - PAD, last.bottom() + PAD),
+    ]);
     for pair in lines.windows(2).rev() {
         let (a, b) = (pair[0], pair[1]);
         let y = (a.bottom() + b.top()) * 0.5;
@@ -48,18 +58,25 @@ pub(super) fn outline(lines: &[Rect]) -> Vec<Pos2> {
 fn round(edges: &[Pos2]) -> Vec<Pos2> {
     let mut corners = Vec::new();
     for &p in edges {
-        if corners.last().is_none_or(|q: &Pos2| (*q - p).length_sq() > 1e-5) {
+        if corners
+            .last()
+            .is_none_or(|q: &Pos2| (*q - p).length_sq() > 1e-5)
+        {
             corners.push(p);
         }
     }
-    if corners.len() > 1 && (corners[0] - corners[corners.len() - 1]).length_sq() < 1e-5 {
+    if corners.len() > 1
+        && corners.first().zip(corners.last()).is_some_and(|(a, b)| (*a - *b).length_sq() < 1e-5)
+    {
         corners.pop();
     }
-    if corners.len() < 3 { return Vec::new(); }
+    if corners.len() < 3 {
+        return Vec::new();
+    }
     let mut out = Vec::new();
-    for (i, &p) in corners.iter().enumerate() {
-        let prev = corners[(i + corners.len() - 1) % corners.len()];
-        let next = corners[(i + 1) % corners.len()];
+    let previous = corners.iter().cycle().skip(corners.len() - 1);
+    let following = corners.iter().cycle().skip(1);
+    for ((&prev, &p), &next) in previous.zip(&corners).zip(following) {
         let a = p - prev;
         let b = next - p;
         let (u, v) = (a.normalized(), b.normalized());
@@ -74,7 +91,9 @@ fn round(edges: &[Pos2]) -> Vec<Pos2> {
         for step in 0..=6 {
             let angle = turn.signum() * std::f32::consts::FRAC_PI_2 * step as f32 / 6.0;
             let (sin, cos) = angle.sin_cos();
-            out.push(center + egui::vec2(start.x * cos - start.y * sin, start.x * sin + start.y * cos));
+            out.push(
+                center + egui::vec2(start.x * cos - start.y * sin, start.x * sin + start.y * cos),
+            );
         }
     }
     out
@@ -87,18 +106,57 @@ mod tests {
 
     #[test]
     fn separated_columns_and_far_lines_do_not_connect() {
-        let lines = [Rect::from_min_size(pos2(0.0,0.0),vec2(80.0,14.0)), Rect::from_min_size(pos2(200.0,18.0),vec2(80.0,14.0)), Rect::from_min_size(pos2(0.0,200.0),vec2(80.0,14.0))];
+        let lines = [
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(80.0, 14.0)),
+            Rect::from_min_size(pos2(200.0, 18.0), vec2(80.0, 14.0)),
+            Rect::from_min_size(pos2(0.0, 200.0), vec2(80.0, 14.0)),
+        ];
         assert_eq!(groups(&lines).len(), 3);
         assert!(outline(&[]).is_empty());
     }
 
     #[test]
     fn rounded_line_bands_follow_the_shorter_line() {
-        let lines = [Rect::from_min_size(pos2(0.0, 0.0), vec2(120.0,18.0)), Rect::from_min_size(pos2(25.0, 21.0), vec2(60.0,18.0))];
+        let lines = [
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(120.0, 18.0)),
+            Rect::from_min_size(pos2(25.0, 21.0), vec2(60.0, 18.0)),
+        ];
         let shape = outline(&lines);
         assert!(shape.len() > 20);
         assert!(shape.iter().all(|p| p.is_finite()));
         assert!(shape.iter().any(|p| p.x > 120.0));
-        assert!(shape.iter().any(|p| p.x > 85.0 && p.x < 100.0 && p.y > 30.0));
+        assert!(
+            shape
+                .iter()
+                .any(|p| p.x > 85.0 && p.x < 100.0 && p.y > 30.0)
+        );
     }
+    fn contains(path: &[Pos2], p: Pos2) -> bool {
+        let crosses = path.iter().zip(path.iter().cycle().skip(1)).filter(|(a, b)| {
+            (a.y > p.y) != (b.y > p.y)
+                && p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)
+        }).count();
+        crosses % 2 == 1
+    }
+
+    #[test]
+    fn rounded_indents_enclose_every_selected_line() {
+        for gap in [0.2, 1.0, 4.0, 10.0] {
+            for (x, w) in [(0.0, 110.0), (25.0, 70.0), (85.0, 60.0)] {
+                let lines = [Rect::from_min_size(pos2(0.0, 0.0), vec2(110.0, 12.0)),
+                    Rect::from_min_size(pos2(x, 12.0 + gap), vec2(w, 12.0))];
+                let path = outline(&lines);
+                for r in lines {
+                    for j in 0..=4 {
+                        for i in 0..=20 {
+                            let p = pos2(r.left() + r.width() * i as f32 / 20.0,
+                                r.top() + r.height() * j as f32 / 4.0);
+                            assert!(contains(&path, p), "gap {gap}, x {x}, w {w}, point {p:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 }
