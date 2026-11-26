@@ -125,10 +125,10 @@ evidence = [
     "apps/mareader/src/traffic_lights.rs::a_closing_rail_carries_them_off_the_left_edge",
     "crates/ui-egui/tests/shell.rs::closing_the_sidebar_slides_the_lights_away",
     "crates/ui-egui/tests/shell.rs::without_a_sidebar_the_lights_come_with_the_bar",
-    "crates/ui-egui/tests/shell.rs::in_overlay_mode_the_lights_slide_in_with_the_rail_only",
+    "crates/ui-egui/tests/shell.rs::the_hovered_sidebar_takes_over_the_titlebar_lights",
 ]
 reference = ["src-tauri/src/macos/traffic_light.rs", "crates/app-chrome/src/window/traffic_lights.rs"]
-notes = "Centred at x 20 in the bar. A drawn sidebar carries them and slides them away; otherwise they come with the bar, never in overlay mode (apps/mareader/src/traffic_lights.rs). The owner checked them on a Mac (2026-10-17, docs/verification.md)"
+notes = "Centred at x 20 in the bar. A drawn sidebar carries them and slides them away; otherwise they come with the bar (apps/mareader/src/traffic_lights.rs). The owner checked them on a Mac (2026-10-17, docs/verification.md)"
 
 [[feature]]
 id = "chrome.frameless-resize"
@@ -176,18 +176,19 @@ notes = "Cmd/Ctrl+Shift+F or the View menu; Esc leaves; page bars and sidebar hi
 
 [[feature]]
 id = "chrome.sidebar"
-title = "Sidebar with outline, thumbnails and dictionary panels; docked or overlay; slides"
+title = "Sidebar with outline, thumbnails, library and notes; automatic dock or overlay"
 area = "A"
 tier = "P0"
 milestone = "M1"
 status = "shipped"
-command = "settings.sidebar-overlay"
+ui_only = true
 reference = ["crates/reader-runtime/src/components/shell/sidebar/container.rs"]
 evidence = [
     "crates/ui-egui/tests/shell.rs::the_bar_toggle_docks_the_sidebar_and_hands_closing_to_it",
     "crates/ui-egui/tests/shell.rs::the_switcher_changes_panel_and_a_reclick_keeps_it",
     "crates/ui-egui/tests/shell.rs::a_floating_sidebar_opens_from_the_edge_and_closes_after_the_grace",
-    "crates/ui-egui/tests/shell.rs::docking_a_floating_sidebar_keeps_it_open",
+    "crates/ui-egui/tests/sidebar_toggle.rs::toggling_a_hovered_sidebar_docks_it_and_keeps_it_open",
+    "crates/ui-egui/tests/sidebar_edge.rs::both_sidebar_modes_offer_a_highlighted_edge_that_closes_on_click",
     "crates/ui-egui/tests/shell.rs::escape_closes_the_sidebar",
     "crates/ui-egui/tests/navigation.rs::clicking_a_chapter_jumps_there_and_marks_it",
     "crates/ui-egui/tests/navigation.rs::the_thumbnails_follow_the_page_and_a_click_jumps",
@@ -195,7 +196,7 @@ evidence = [
     "crates/ui-egui/src/library_panel.rs::a_link_is_a_row_under_its_own_name_and_counts_on_its_shelf",
     "crates/ui-egui/src/library_panel.rs::a_book_on_two_open_shelves_is_two_rows_of_their_own",
 ]
-notes = "Docked or floating, sliding, with the outline, thumbnails, library and notes panels serving the focused pane. The dictionary left the rail for its own page (study.dictionary-page)"
+notes = "Explicit toggle docks the sliding sidebar; edge hover previews it over the page. The legacy overlay setting no longer controls layout. The dictionary has its own page (study.dictionary-page)"
 
 [[feature]]
 id = "chrome.popovers"
