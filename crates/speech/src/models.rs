@@ -171,7 +171,7 @@ impl Model {
     }
 }
 
-/// Files of voices no longer offered, as model and path, to clean up.
+#[cfg(any(not(target_arch = "wasm32"), test))]
 pub const RETIRED: &[(&str, &str)] = &[
     ("piper", "en/en_US/kathleen/low/en_US-kathleen-low.onnx"),
     (

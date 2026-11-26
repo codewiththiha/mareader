@@ -70,7 +70,7 @@ impl State {
         let books = work.books(&self.model);
         let files: Vec<Found> = books.iter().filter_map(|b| self.found_of(*b)).collect();
         match files.is_empty() {
-            true => self.departed(work, &HashMap::new(), out),
+            true => self.departed(*work, &HashMap::new(), out),
             false => self.copy_out(work, files, out),
         }
     }
@@ -172,7 +172,7 @@ impl State {
     /// The copies made: each book departs, then the gesture finishes.
     pub fn departed(
         &mut self,
-        work: Box<CopyWork>,
+        work: CopyWork,
         copies: &HashMap<PathBuf, Copied>,
         out: &mut Vec<Out>,
     ) {
@@ -186,7 +186,7 @@ impl State {
                 done.push(id);
             }
         }
-        match *work {
+        match work {
             CopyWork::Move { mv, .. } => self.land_moved(&mv, &done, out),
             // A copy that failed leaves the rung standing.
             CopyWork::Apart(id) if done.len() == books.len() => self.take_apart(id, out),

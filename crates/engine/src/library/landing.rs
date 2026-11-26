@@ -128,7 +128,7 @@ impl State {
                 let copy = question.found().and_then(|f| done.copies.get(&f.path));
                 self.write_answer(*question, answer, copy, now, out);
             }
-            Some(Pending::Depart(work)) => self.departed(work, copies, out),
+            Some(Pending::Depart(work)) => self.departed(*work, copies, out),
             Some(Pending::Duplicate(picks)) => self.duplicated(&picks, &done.copies, out),
             Some(Pending::Restored(folder, content, found)) => {
                 let copy = done.copies.get(&found.path);
