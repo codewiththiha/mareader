@@ -82,7 +82,12 @@ fn selection_answers_are_not_evicted_or_lost_when_panes_change() {
 fn page_menu_asks_remain_transient_and_bounded() {
     let mut state = scripted(Scripted::Silent);
     let page = || Asked {
-        anchor: Anchor::Spot { page: 0, x: 0.0, y: 0.0, near: 0 },
+        anchor: Anchor::Spot {
+            page: 0,
+            x: 0.0,
+            y: 0.0,
+            near: 0,
+        },
         ..asked(1, "page")
     };
     let first = state.start(page());

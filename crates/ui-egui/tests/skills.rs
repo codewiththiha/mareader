@@ -91,7 +91,7 @@ fn enter_runs_the_first_skill_found() {
     h.event(egui::Event::Text("e".into()));
     h.run();
     h.key_press(egui::Key::Enter);
-    h.run();
+    h.run_steps(30);
     let asks = h.state().skills().asks();
     let names: Vec<&str> = asks.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, ["Quiz me"], "the first match runs");
@@ -106,7 +106,7 @@ fn a_skill_answers_in_a_card_and_the_selection_goes() {
     h.run();
     assert!(h.query_by_label("Custom skills").is_none(), "none written");
     h.get_by_label("Simplify").click();
-    h.run();
+    h.run_steps(30);
     let pane = h.state().active_pane();
     assert!(h.state().documents().selection(pane).is_none());
     let asks = h.state().skills().asks();
@@ -238,7 +238,10 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
         ),
         "retry completed"
     );
-    assert!(mareader_ui_egui::glow::shown(&h.ctx) > 0, "the focused flare stays");
+    assert!(
+        mareader_ui_egui::glow::shown(&h.ctx) > 0,
+        "the focused flare stays"
+    );
     h.state_mut()
         .set_option("skill_answers", "silent")
         .expect("silent answer");
@@ -253,7 +256,10 @@ fn running_selection_hands_feedback_to_the_corner_when_away() {
     h.state_mut()
         .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(10);
-    assert!(seen::shown(&h.ctx, key), "closing does not stop the working outline");
+    assert!(
+        seen::shown(&h.ctx, key),
+        "closing does not stop the working outline"
+    );
     assert!(mareader_ui_egui::glow::shown(&h.ctx) > 0);
 }
 
@@ -323,19 +329,26 @@ fn selection_focus_stays_on_completion_and_close_plays_the_outro() {
     use mareader_settings::{PageTask, Skill};
     use mareader_ui_egui::glow;
 
-    let mut h = reader(&[("pdf", "sample:12"), ("skill_answers", "silent"), ("animations", "true")]);
+    let mut h = reader(&[
+        ("pdf", "sample:12"),
+        ("skill_answers", "silent"),
+        ("animations", "true"),
+    ]);
     select(&mut h, "quick brown");
     let pane = h.state().active_pane();
     let skill = Skill::Builtin(PageTask::Simplify);
-    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
     h.run_steps(60);
     let ask = h.state().skills().asks().first().unwrap().id;
     h.state_mut().set_option("skill_answers", "echo").unwrap();
-    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
     h.run_steps(60);
     assert!(h.state().skills().get(ask).unwrap().answer.landed());
     assert!(glow::shown(&h.ctx) > 0, "the focused flare continues");
-    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(6);
     assert!(!h.state().skills().get(ask).unwrap().open);
     let id = egui::Id::new(("skill-glow", ask.0));
@@ -357,15 +370,18 @@ fn closing_a_working_selection_keeps_it_running() {
     select(&mut h, "quick brown");
     let pane = h.state().active_pane();
     let skill = Skill::Builtin(PageTask::Simplify);
-    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
     h.run_steps(30);
     let ask = h.state().skills().asks().first().unwrap().id;
-    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(30);
     assert!(h.state().skills().running());
     assert!(!h.state().skills().get(ask).unwrap().open);
     assert!(mareader_ui_egui::glow::shown(&h.ctx) > 0);
-    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Cancel(ask))));
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Cancel(ask))));
     h.run_steps(30);
     assert!(h.state().skills().get(ask).is_none());
 }

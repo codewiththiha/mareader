@@ -197,8 +197,18 @@ impl State {
             text: asked.text,
             job: Some(job),
         });
-        while self.asks.iter().filter(|a| matches!(a.anchor, Anchor::Spot { .. })).count() > MOST {
-            if let Some(i) = self.asks.iter().position(|a| matches!(a.anchor, Anchor::Spot { .. })) {
+        while self
+            .asks
+            .iter()
+            .filter(|a| matches!(a.anchor, Anchor::Spot { .. }))
+            .count()
+            > MOST
+        {
+            if let Some(i) = self
+                .asks
+                .iter()
+                .position(|a| matches!(a.anchor, Anchor::Spot { .. }))
+            {
                 self.asks.remove(i);
             }
         }
@@ -249,13 +259,16 @@ impl State {
 
     /// Drops the asks of `pane` not about `doc`; none drops them all.
     pub(crate) fn keep_pane(&mut self, pane: PaneId, doc: Option<u64>) {
-        self.asks.retain(|a| matches!(a.anchor, Anchor::Text(_)) || a.pane != pane || Some(a.doc) == doc);
+        self.asks.retain(|a| {
+            matches!(a.anchor, Anchor::Text(_)) || a.pane != pane || Some(a.doc) == doc
+        });
     }
 
     /// Keeps the asks whose pane still reads their document; true if any went.
     pub(crate) fn keep_read(&mut self, reads: impl Fn(PaneId) -> Option<u64>) -> bool {
         let before = self.asks.len();
-        self.asks.retain(|a| matches!(a.anchor, Anchor::Text(_)) || reads(a.pane) == Some(a.doc));
+        self.asks
+            .retain(|a| matches!(a.anchor, Anchor::Text(_)) || reads(a.pane) == Some(a.doc));
         self.asks.len() != before
     }
 
