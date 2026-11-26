@@ -273,6 +273,10 @@ pub enum BookAction {
         shelves: Vec<ShelfId>,
         links: Vec<LinkId>,
     },
+    /// Asks before removing the page's missing books.
+    AskRemoveMissing(Vec<BookId>),
+    /// Removes only those still missing, keeping data unless requested.
+    RemoveMissing { books: Vec<BookId>, forget: bool },
     /// Asks first for whatever the page has picked; nothing picked, no sheet.
     AskRemovePicked,
     /// `cascade` takes what's inside the shelves; `forget`, marks and places.
@@ -335,6 +339,10 @@ pub enum Sheet {
         books: Vec<BookId>,
         shelves: Vec<ShelfId>,
         links: Vec<LinkId>,
+    },
+    /// The page's missing books, checked again before removal.
+    MissingRemoval {
+        books: Vec<BookId>,
     },
     Rename(Named),
     /// Books read in place about to leave their folder: copy them first?

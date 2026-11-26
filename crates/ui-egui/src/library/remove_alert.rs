@@ -23,12 +23,18 @@ struct Switches {
 type Asked<'a> = (&'a [BookId], &'a [ShelfId], &'a [LinkId]);
 
 /// The alert; Enter removes, Escape or Cancel keeps everything.
-pub(super) fn show(ctx: &Context, model: &Library, asked: Asked<'_>, t: &Tokens) -> Option<Action> {
+pub(super) fn show(
+    ctx: &Context,
+    model: &Library,
+    asked: Asked<'_>,
+    missing: bool,
+    t: &Tokens,
+) -> Option<Action> {
     let key = Id::new(KEY);
     let mut on = ctx
         .data(|d| d.get_temp::<Switches>(key))
         .unwrap_or_default();
-    let (books, shelves, links) = asked;
+    let (books, shelves, _) = asked;
     let going = model.removing(books, shelves, on.cascade);
     let receipt = model.receipt(&going.books);
     let mut act = None;
@@ -36,7 +42,11 @@ pub(super) fn show(ctx: &Context, model: &Library, asked: Asked<'_>, t: &Tokens)
         let width = WIDTH.min(ui.ctx().content_rect().width() - 64.0);
         ui.set_width(width.max(200.0));
         ui.spacing_mut().item_spacing.y = 12.0;
-        let message = message(asked, &going, &receipt);
+        let mut message = message(asked, &going, &receipt);
+        if missing {
+            let warning = "These books are removed from the library and every shelf.";
+            message = Some(format!("{} {warning}", message.unwrap_or_default()));
+        }
         let mark = Some((Icon::Remove, t.danger));
         modal::heading(ui, mark, &title(model, asked), message.as_deref(), t);
         if going.inside_books + going.inside_shelves > 0 {
@@ -67,13 +77,7 @@ pub(super) fn show(ctx: &Context, model: &Library, asked: Asked<'_>, t: &Tokens)
                 let free = ui.ctx().memory(|m| m.focused().is_none());
                 let enter = free && ui.input(|i| i.key_pressed(Key::Enter));
                 if modal::primary(ui, label, t.danger, t).clicked() || enter {
-                    act = Some(Action::Book(BookAction::Remove {
-                        books: books.to_vec(),
-                        shelves: shelves.to_vec(),
-                        links: links.to_vec(),
-                        cascade: on.cascade,
-                        forget: erase,
-                    }));
+                    act = Some(remove(asked, missing, on.cascade, erase));
                 }
                 if modal::quiet(ui, "Cancel", t).clicked() {
                     act = Some(Action::CloseSheet);
@@ -91,6 +95,29 @@ pub(super) fn show(ctx: &Context, model: &Library, asked: Asked<'_>, t: &Tokens)
         }),
     }
     act
+}
+
+fn remove(
+    (books, shelves, links): Asked<'_>,
+    missing: bool,
+    cascade: bool,
+    forget: bool,
+) -> Action {
+    let action = if missing {
+        BookAction::RemoveMissing {
+            books: books.to_vec(),
+            forget,
+        }
+    } else {
+        BookAction::Remove {
+            books: books.to_vec(),
+            shelves: shelves.to_vec(),
+            links: links.to_vec(),
+            cascade,
+            forget,
+        }
+    };
+    Action::Book(action)
 }
 
 /// What was asked for, by name when it's one thing.

@@ -32,7 +32,13 @@ pub fn show(ctx: &Context, library: &LibraryState, out: &mut Commands) {
     }) = sheet
     {
         let asked = (books.as_slice(), shelves.as_slice(), links.as_slice());
-        let act = super::remove_alert::show(ctx, model, asked, &t);
+        let act = super::remove_alert::show(ctx, model, asked, false, &t);
+        out.extend(act.map(|a| Sent::Engine(Command::Library(a))));
+        return;
+    }
+    if let Some(Sheet::MissingRemoval { books }) = sheet {
+        let asked = (books.as_slice(), &[][..], &[][..]);
+        let act = super::remove_alert::show(ctx, model, asked, true, &t);
         out.extend(act.map(|a| Sent::Engine(Command::Library(a))));
         return;
     }
@@ -55,7 +61,7 @@ pub fn show(ctx: &Context, library: &LibraryState, out: &mut Commands) {
                 None => Some(lib(Action::CloseSheet)),
             },
             // Drawn by its own alert, above.
-            Sheet::Removal { .. } => None,
+            Sheet::Removal { .. } | Sheet::MissingRemoval { .. } => None,
             Sheet::Rename(named) => rename(ui, library, *named, &t).map(lib),
             Sheet::Copy(work) => super::copying::show(ui, model, work, &t).map(lib),
             Sheet::Import(root) => super::import_sheet::show(ui, library, root, &t),

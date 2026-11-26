@@ -1,6 +1,10 @@
 //! Book work from menus, the selection bar and drops: removal,
 //! twins and imports.
 
+#[cfg(test)]
+#[path = "books/missing_tests.rs"]
+mod missing_tests;
+
 use mareader_library::{LinkId, Move};
 
 use super::Out;
@@ -24,6 +28,16 @@ impl State {
                     links,
                 };
                 self.sheet = Some(asked);
+            }
+            BookAction::AskRemoveMissing(books) => {
+                let books = self.still_missing(books);
+                if books.len() > 1 {
+                    self.sheet = Some(Sheet::MissingRemoval { books });
+                }
+            }
+            BookAction::RemoveMissing { books, forget } => {
+                let books = self.still_missing(books);
+                self.remove_entries((&books, &[]), false, forget, out);
             }
             BookAction::AskRemovePicked => {
                 let books = self.picks.books();
@@ -74,6 +88,17 @@ impl State {
             // File manager calls go through the host.
             BookAction::Reveal(_) => {}
         }
+    }
+
+    fn still_missing(&self, books: Vec<mareader_library::BookId>) -> Vec<mareader_library::BookId> {
+        books
+            .into_iter()
+            .filter(|id| {
+                self.model
+                    .book(*id)
+                    .is_some_and(|b| b.missing() && !super::offline(b, self.offline()))
+            })
+            .collect()
     }
 
     /// Links go at once: what they point at stays. `alone` tells of it.

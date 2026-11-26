@@ -408,7 +408,14 @@ What the first slice built, and where it stops short of the model above.
   Rename…, Read separately, Show in Finder / Explorer / folder, Take off
   this shelf, Remove…. A shelf: Open, Select, Rename…, New shelf inside,
   Remove shelf…. Right-click inside a selection: the bar's actions for
-  all of it. Empty page: New shelf, Import books…, Select all.
+  all of it. Empty page: New shelf, Organize with AI, Select all, and
+  Remove all missing books… when at least two listed books are missing.
+  The bulk option is not shown during a search and leaves Offline books alone.
+  On library home it counts only unshelved books, even if other shelved books
+  are displayed there. On a shelf it counts its direct members, not nested
+  shelves. It asks for confirmation and checks again before removing; links
+  are not included. Removing a book removes its library entry from
+  every shelf it belongs to, not just the current shelf.
 - **Removal receipt.** Remove… asks first and says what goes: how many
   books, the places and shelf spots kept, the store copies deleted and the
   folder books hidden. A book that is also somewhere else is only taken

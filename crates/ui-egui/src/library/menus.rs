@@ -15,7 +15,6 @@ use mareader_library::{Book, BookId, Library, Link, LinkTo, Move, Shelf, ShelfId
 
 const ADD_TO_SHELF: &str = "library-add-to-shelf";
 const BAR_H: f32 = 44.0;
-
 fn act(out: &mut Commands, action: Action) {
     out.push(Sent::Engine(Command::Library(action)));
 }
@@ -285,11 +284,11 @@ fn ask_remove(picks: &[Pick], out: &mut Commands) {
     );
 }
 
-/// The page's own menu, on empty space; `paused` tells a stopped run.
 pub fn page_menu(
     ui: &mut Ui,
     selecting: bool,
     sequence: &[Pick],
+    missing: &[BookId],
     organizer: Organizer<'_>,
     out: &mut Commands,
 ) {
@@ -298,6 +297,7 @@ pub fn page_menu(
         ui.close();
     }
     organize_rows(ui, organizer, out);
+    super::missing::menu_row(ui, missing, out);
     if sequence.is_empty() {
         return;
     }

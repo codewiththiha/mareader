@@ -149,7 +149,6 @@ pub fn show(
     ui.add_space(12.0);
     // The plus card ends the page, unless it shows found or lost books.
     let adding = (searched.is_none() && scope != Scope::Missing).then_some(Here { model, at });
-    // Empty space: a click lets go of the selection; a right-click offers more.
     let back = ui.available_rect_before_wrap();
     let back = ui.interact(back, Id::new("library-page"), Sense::CLICK);
     if back.clicked() && picks.active() {
@@ -162,7 +161,8 @@ pub fn show(
         paused: paused.as_deref(),
     };
     crate::widgets::context_menu(&back, |ui| {
-        menus::page_menu(ui, picks.active(), sequence, organizer, out)
+        let missing = super::missing::books(model, sequence, offline, searched.is_some(), at);
+        menus::page_menu(ui, picks.active(), sequence, &missing, organizer, out)
     });
     let typing = ui.ctx().egui_wants_keyboard_input();
     let all = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
