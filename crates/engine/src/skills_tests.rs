@@ -9,6 +9,8 @@ fn asked(pane: u64, text: &str) -> Asked {
         skill: Skill::Builtin(PageTask::Translate),
         name: "Translate".to_owned(),
         anchor: Anchor::Text(vec![(2, 4..9)]),
+        book: None,
+        spot: None,
         text: text.to_owned(),
     }
 }

@@ -48,8 +48,9 @@ impl Session {
         let Some((text, spans)) = self.documents().selected_text_spans(pane) else {
             return false;
         };
+        let spot = self.documents().highlighted(pane).map(|(spot, _)| spot);
         self.clear_document_selection(pane);
-        self.skill_start(pane, skill, Anchor::Text(spans), text)
+        self.skill_start(pane, skill, Anchor::Text(spans), spot, text)
     }
 
     /// Runs `skill` on one page; its card points where the menu opened.
@@ -72,10 +73,17 @@ impl Session {
             .min_by(|(_, a), (_, b)| far(a).total_cmp(&far(b)))
             .map_or(0, |(i, _)| i);
         let anchor = Anchor::Spot { page, x, y, near };
-        self.skill_start(pane, skill, anchor, text)
+        self.skill_start(pane, skill, anchor, None, text)
     }
 
-    fn skill_start(&mut self, pane: PaneId, skill: Skill, anchor: Anchor, text: String) -> bool {
+    fn skill_start(
+        &mut self,
+        pane: PaneId,
+        skill: Skill,
+        anchor: Anchor,
+        spot: Option<mareader_library::Spot>,
+        text: String,
+    ) -> bool {
         let Some(doc) = self.documents().place(pane).map(|p| p.doc.get()) else {
             return false;
         };
@@ -83,12 +91,15 @@ impl Session {
             self.emit(Event::Toast(Toast::warning("That skill is gone.")));
             return false;
         };
+        let book = self.book_in(pane);
         let id = self.skills.start(Asked {
             pane,
             doc,
             skill,
             name,
             anchor,
+            book,
+            spot,
             text,
         });
         self.emit(Event::SkillOpened(id));

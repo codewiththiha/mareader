@@ -111,6 +111,10 @@ fn a_skill_answers_in_a_card_and_the_selection_goes() {
     assert!(h.state().documents().selection(pane).is_none());
     let asks = h.state().skills().asks();
     assert_eq!(asks.len(), 1);
+    assert!(matches!(
+        asks[0].spot,
+        Some(mareader_library::Spot::Chars { .. })
+    ));
     let answer = asks.first().map(|a| &a.answer);
     assert!(matches!(answer, Some(Answer::Ready(t)) if t == "quick brown"));
     assert!(h.query_by_label("Ask again").is_some(), "the card is drawn");
@@ -309,7 +313,12 @@ fn a_paragraph_in_a_reflowed_book_has_a_running_outline() {
     h.state_mut()
         .queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
     h.run_steps(30);
-    let ask = h.state().skills().asks().first().expect("the ask").id;
+    let entry = h.state().skills().asks().first().expect("the ask");
+    assert!(matches!(
+        entry.spot,
+        Some(mareader_library::Spot::Blocks { .. })
+    ));
+    let ask = entry.id;
     assert!(
         seen::shown(&h.ctx, Key::Skill { pane, ask }),
         "the paragraph outline is in view"

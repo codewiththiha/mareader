@@ -9,6 +9,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use mareader_library::{BookId, Spot};
 use mareader_settings::Skill;
 use mareader_study::Failure;
 use mareader_study::pending::News;
@@ -87,6 +88,9 @@ pub struct Ask {
     /// What the card calls it, as when asked.
     pub name: String,
     pub anchor: Anchor,
+    /// The library book and durable selection spot, if available.
+    pub book: Option<BookId>,
+    pub spot: Option<Spot>,
     pub answer: Answer,
     /// Who answers, as the card's small print names them.
     pub by: String,
@@ -146,6 +150,8 @@ pub(crate) struct Asked {
     pub skill: Skill,
     pub name: String,
     pub anchor: Anchor,
+    pub book: Option<BookId>,
+    pub spot: Option<Spot>,
     pub text: String,
 }
 
@@ -179,6 +185,8 @@ impl State {
             skill: asked.skill,
             name: asked.name,
             anchor: asked.anchor,
+            book: asked.book,
+            spot: asked.spot,
             answer: Answer::Waiting,
             by: self.runner.by(&key),
             text: asked.text,
