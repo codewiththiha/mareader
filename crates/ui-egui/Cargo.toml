@@ -31,6 +31,7 @@ mareader-speech = { workspace = true }
 mareader-g2p = { workspace = true }
 mareader-animated-icons = { workspace = true }
 image = { workspace = true, features = ["jpeg"] }
+i_triangle = "0.51"
 egui = { workspace = true }
 egui_extras = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "persistence"] }

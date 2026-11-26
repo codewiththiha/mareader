@@ -16,7 +16,7 @@ pub(super) struct Place {
     pub doc: u64,
     pub spans: Vec<(usize, Range<usize>)>,
     pub clock: Clock,
-    pub cache: Vec<crate::glow::selection::Cache>,
+    pub cache: Vec<crate::glow::outline::Cache>,
 }
 
 fn memory() -> Id {

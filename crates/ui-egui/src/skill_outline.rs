@@ -58,14 +58,14 @@ fn paint(
         for (group_index, group) in shape::groups(&lines).into_iter().enumerate() {
             let points = shape::outline(group);
             if let Some(line) = group.first() {
-                visible |= crate::glow::selection::paint(
-                    (ctx, &painter, &tokens),
+                let outline = crate::glow::Outline::path(
                     &points,
                     line.expand(0.5),
-                    (glow, place.clock.travel),
                     &mut place.cache,
                     (sheet.page, group_index),
+                    place.clock.travel,
                 );
+                visible |= crate::glow::paint(ctx, &painter, &tokens, outline, 0.0, glow);
             }
         }
     }

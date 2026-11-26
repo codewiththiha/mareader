@@ -4,7 +4,6 @@
 
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
-use egui::epaint::Mesh;
 use egui::{Color32, Context, Id, Painter, Pos2, Rect, Shape, Vec2, pos2};
 
 use mareader_appearance::GlowPalette;
@@ -12,7 +11,8 @@ use mareader_appearance::GlowPalette;
 use crate::motion;
 use crate::theme::Tokens;
 
-pub(crate) mod selection;
+mod mesh;
+pub(crate) mod outline;
 
 /// How the glow shows this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -104,21 +104,89 @@ pub(crate) fn retained_state(ctx: &Context, id: Id, working: bool, focused: bool
     Some(glow)
 }
 
-/// Paints `glow` round `rect` in the colours of `tokens`, its corners rounded
-/// by `radius`, and books the next frame. With Animations off it still moves.
-pub fn paint(
+/// An outline to be lit by the shared flare renderer.
+pub struct Outline<'a>(OutlineKind<'a>);
+
+enum OutlineKind<'a> {
+    Rect(Rect),
+    Path {
+        points: &'a [Pos2],
+        reference: Rect,
+        caches: &'a mut Vec<outline::Cache>,
+        key: (usize, usize),
+        travel: f64,
+    },
+}
+
+impl From<Rect> for Outline<'_> {
+    fn from(rect: Rect) -> Self {
+        Self(OutlineKind::Rect(rect))
+    }
+}
+
+impl<'a> Outline<'a> {
+    pub(crate) fn path(
+        points: &'a [Pos2],
+        reference: Rect,
+        caches: &'a mut Vec<outline::Cache>,
+        key: (usize, usize),
+        travel: f64,
+    ) -> Self {
+        Self(OutlineKind::Path {
+            points,
+            reference,
+            caches,
+            key,
+            travel,
+        })
+    }
+}
+
+/// Paints the same flare around a rectangle or an irregular closed outline.
+/// The radius applies to rectangles; a path supplies its own corners.
+pub fn paint<'a>(
     ctx: &Context,
     painter: &Painter,
     tokens: &Tokens,
-    rect: Rect,
+    outline: impl Into<Outline<'a>>,
     radius: f32,
     glow: Glow,
-) {
-    let time = ctx.input(|i| i.time);
-    let ring = Ring::new(rect, radius);
-    let look = look_at(ctx, tokens, glow, ring.length, time);
-    painter.add(Shape::mesh(ring.mesh(&look)));
-    wake(ctx, ring.length);
+) -> bool {
+    let (mesh, length) = match outline.into().0 {
+        OutlineKind::Rect(rect) => {
+            let ring = Ring::new(rect, radius);
+            let look = look_at(ctx, tokens, glow, ring.length, ctx.input(|i| i.time));
+            (ring.mesh(&look), ring.length)
+        }
+        OutlineKind::Path {
+            points,
+            reference,
+            caches,
+            key,
+            travel,
+        } => {
+            let reach = reach(reference);
+            let visible = points
+                .iter()
+                .zip(points.iter().cycle().skip(1))
+                .any(|(a, b)| {
+                    Rect::from_two_pos(*a, *b)
+                        .expand(reach)
+                        .intersects(painter.clip_rect())
+                });
+            if !visible {
+                return false;
+            }
+            let Some((origin, geometry)) = outline::cached(points, reach, caches, key) else {
+                return false;
+            };
+            let look = look_at(ctx, tokens, glow, geometry.length, travel);
+            (mesh::path(geometry, origin, reach, &look), geometry.length)
+        }
+    };
+    painter.add(Shape::mesh(mesh));
+    wake(ctx, length);
+    true
 }
 
 fn look_at(ctx: &Context, tokens: &Tokens, glow: Glow, length: f32, travel_time: f64) -> Look {
@@ -342,33 +410,6 @@ impl Ring {
             length,
             reach,
         }
-    }
-
-    /// Light from the outline outward, reaching further where it burns hot.
-    fn mesh(&self, look: &Look) -> Mesh {
-        let k = FALLOFF.len() as u32 + 1;
-        let n = self.points.len() as u32;
-        let mut mesh = Mesh::default();
-        mesh.reserve_vertices(self.points.len() * k as usize);
-        mesh.reserve_triangles(self.points.len() * (k as usize - 1) * 2);
-        for ((p, normal), share) in self.points.iter().zip(&self.shares) {
-            let (rgb, level) = look.at(*share, self.length);
-            let (alpha, flare) = (level * look.strength, self.reach * (0.45 + 0.55 * level));
-            // Half a point inside the outline smooths its edge.
-            mesh.colored_vertex(*p - *normal * 0.5, Color32::TRANSPARENT);
-            for (off, keep) in FALLOFF {
-                mesh.colored_vertex(*p + *normal * off * flare, look.color(rgb, alpha * keep));
-            }
-        }
-        for i in 0..n {
-            let j = (i + 1) % n;
-            for band in 0..k - 1 {
-                let (a, b) = (i * k + band, j * k + band);
-                mesh.add_triangle(a, a + 1, b);
-                mesh.add_triangle(a + 1, b + 1, b);
-            }
-        }
-        mesh
     }
 }
 
