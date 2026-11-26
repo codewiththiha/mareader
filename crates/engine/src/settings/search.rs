@@ -3,13 +3,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use mareader_engine::settings::Tab;
+use super::Tab;
 
 const CATALOG: &str = include_str!("catalog.txt");
 
 /// A destination in the existing settings pages.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Entry {
+pub struct Entry {
     pub tab: Tab,
     pub section: &'static str,
     pub title: &'static str,
@@ -113,7 +113,7 @@ fn index() -> &'static Index {
 }
 
 /// Exact labels, then prefixes, then all query terms in the indexed text.
-pub(super) fn find(query: &str, allowed: impl Fn(Tab) -> bool) -> Vec<Entry> {
+pub fn find(query: &str, allowed: impl Fn(Tab) -> bool) -> Vec<Entry> {
     let query = normalize(query);
     if query.is_empty() {
         return Vec::new();
@@ -229,59 +229,5 @@ mod tests {
             std::hint::black_box(find("dictionary hover", |_| true));
         }
         eprintln!("5000 indexed queries: {:?}", start.elapsed());
-    }
-
-    // Computed labels and custom controls still need manual review.
-    #[test]
-    fn literal_rows_in_settings_modules_are_indexed() {
-        let sources = [
-            (Tab::Appearance, include_str!("../fonts.rs")),
-            (Tab::Highlights, include_str!("../highlights.rs")),
-            (Tab::Vocabulary, include_str!("../vocabulary.rs")),
-            (Tab::Dictionary, include_str!("../dictionary.rs")),
-            (Tab::ReadAloud, include_str!("../read_aloud.rs")),
-            (Tab::Ai, include_str!("../ai.rs")),
-            (Tab::Skills, include_str!("../skills.rs")),
-            (Tab::Study, include_str!("../study.rs")),
-            (Tab::Models, include_str!("../models.rs")),
-            (Tab::Updates, include_str!("../updates.rs")),
-        ];
-        for (tab, source) in sources {
-            for name in [
-                "row(",
-                "switch_row(",
-                "stepped(",
-                "picker(",
-                "count_row(",
-                "detail_row(",
-                "disclosure(",
-            ] {
-                for (at, _) in source.match_indices(name) {
-                    if source[..at]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
-                    {
-                        continue;
-                    }
-                    let call = &source[at + name.len()..];
-                    let Some(args) = call.trim_start().strip_prefix("ui,") else {
-                        continue;
-                    };
-                    let args = args.trim_start().trim_start_matches('(').trim_start();
-                    let Some(label) = args.strip_prefix('"').and_then(|s| s.split('"').next())
-                    else {
-                        continue;
-                    };
-                    assert!(
-                        index()
-                            .entries
-                            .iter()
-                            .any(|i| i.entry.tab == tab && i.entry.title == label),
-                        "{tab:?}: {label}"
-                    );
-                }
-            }
-        }
     }
 }

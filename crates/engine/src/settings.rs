@@ -1,5 +1,7 @@
 //! What the settings window is showing: a tab's name, not its drawing.
 
+pub mod search;
+
 /// Which page of the settings window is open.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tab {
