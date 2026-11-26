@@ -64,13 +64,12 @@ behaviour on 2026-11-21.
 
 ## Running in the background
 
-- A selection's irregular outline follows its lines with the shared AI-mark
-  and thumbnail flare, with a softer, wider halo for selections. While the
-  card is open, it eases into the focused full ring on completion without an
-  outro or restart. Its colours
-  change slowly, but the travelling arc stops once work ends. Closing a
-  finished card plays the shared outro. Closing while the AI is working
-  leaves the working flare until completion, then plays the outro.
+- A rounded outline follows the selected lines. It uses the AI-mark and
+  thumbnail flare's full palette and timing. While the card is open, it
+  eases into a bright full ring on completion without an outro or restart.
+  Its colours change slowly, but the travelling arc stops once work ends.
+  Closing a finished card plays the shared outro. Closing while the AI is
+  working leaves the working flare until completion, then plays the outro.
 - A run continues when its place is scrolled away or its card is closed.
   Close is not Cancel; the corner stack's Cancel stops the work.
 - While the selection outline is away, the run is a line in the pane's AI stack

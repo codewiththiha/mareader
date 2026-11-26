@@ -66,7 +66,10 @@ fn round(edges: &[Pos2]) -> Vec<Pos2> {
         }
     }
     if corners.len() > 1
-        && corners.first().zip(corners.last()).is_some_and(|(a, b)| (*a - *b).length_sq() < 1e-5)
+        && corners
+            .first()
+            .zip(corners.last())
+            .is_some_and(|(a, b)| (*a - *b).length_sq() < 1e-5)
     {
         corners.pop();
     }
@@ -132,10 +135,13 @@ mod tests {
         );
     }
     fn contains(path: &[Pos2], p: Pos2) -> bool {
-        let crosses = path.iter().zip(path.iter().cycle().skip(1)).filter(|(a, b)| {
-            (a.y > p.y) != (b.y > p.y)
-                && p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)
-        }).count();
+        let crosses = path
+            .iter()
+            .zip(path.iter().cycle().skip(1))
+            .filter(|(a, b)| {
+                (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)
+            })
+            .count();
         crosses % 2 == 1
     }
 
@@ -143,14 +149,18 @@ mod tests {
     fn rounded_indents_enclose_every_selected_line() {
         for gap in [0.2, 1.0, 4.0, 10.0] {
             for (x, w) in [(0.0, 110.0), (25.0, 70.0), (85.0, 60.0)] {
-                let lines = [Rect::from_min_size(pos2(0.0, 0.0), vec2(110.0, 12.0)),
-                    Rect::from_min_size(pos2(x, 12.0 + gap), vec2(w, 12.0))];
+                let lines = [
+                    Rect::from_min_size(pos2(0.0, 0.0), vec2(110.0, 12.0)),
+                    Rect::from_min_size(pos2(x, 12.0 + gap), vec2(w, 12.0)),
+                ];
                 let path = outline(&lines);
                 for r in lines {
                     for j in 0..=4 {
                         for i in 0..=20 {
-                            let p = pos2(r.left() + r.width() * i as f32 / 20.0,
-                                r.top() + r.height() * j as f32 / 4.0);
+                            let p = pos2(
+                                r.left() + r.width() * i as f32 / 20.0,
+                                r.top() + r.height() * j as f32 / 4.0,
+                            );
                             assert!(contains(&path, p), "gap {gap}, x {x}, w {w}, point {p:?}");
                         }
                     }
@@ -158,5 +168,4 @@ mod tests {
             }
         }
     }
-
 }

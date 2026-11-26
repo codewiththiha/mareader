@@ -148,12 +148,18 @@ mod tests {
     #[test]
     fn focused_colors_use_the_full_shared_palette_at_the_edge() {
         let light = super::super::Light::new(&Appearance::default().glow_palette());
-        let glow = Glow { strength: 1.0, whole: 1.0 };
+        let glow = Glow {
+            strength: 1.0,
+            whole: 1.0,
+        };
         let look = super::super::Look::new(light, glow);
         let colors = palette(&look, 600.0);
         for share in 0..SHARES {
             let (rgb, level) = look.at(share as f32 / SHARES as f32, 600.0);
-            assert_eq!(colors[share * DISTANCES], look.color(rgb, level * look.strength));
+            assert_eq!(
+                colors[share * DISTANCES],
+                look.color(rgb, level * look.strength)
+            );
         }
     }
 }
