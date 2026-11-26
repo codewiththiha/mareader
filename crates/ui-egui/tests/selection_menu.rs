@@ -205,6 +205,10 @@ fn translation_hover_search_and_enter_runs_the_selected_language() {
     h.run();
     h.event(egui::Event::Text("burm".into()));
     h.run();
+    assert!(
+        h.query_by_label("Language support is not verified for this model.")
+            .is_none()
+    );
     assert!(h.query_by_label("Burmese").is_some());
     assert!(h.query_by_label("Japanese").is_none());
     h.key_press(egui::Key::Enter);

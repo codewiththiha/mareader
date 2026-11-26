@@ -420,9 +420,6 @@ impl PageAiUi {
         if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             picked = all.first().map(|(tag, _)| tag.clone());
         }
-        if choices.unverified {
-            widgets::menu_note(ui, "Language support is not verified for this model.");
-        }
         ScrollArea::vertical().max_height(LIST_H).show(ui, |ui| {
             for (tag, name) in &all {
                 if widgets::menu_check_row(ui, name, choices.current.as_ref() == Some(tag))

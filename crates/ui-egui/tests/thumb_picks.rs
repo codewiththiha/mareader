@@ -199,6 +199,10 @@ fn translation_submenu_offers_recent_and_all_languages() {
     h.run();
     h.get_by_label("Translate").click();
     h.run();
+    assert!(
+        h.query_by_label("Language support is not verified for this model.")
+            .is_none()
+    );
     assert!(h.query_by_label("French").is_some());
     assert!(h.query_by_label("Burmese").is_some());
     h.event(egui::Event::Text("japan".into()));

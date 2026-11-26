@@ -263,6 +263,10 @@ fn direct_picked_pages_language_menu_still_runs_the_chosen_language() {
             at: [300.0, 200.0],
         })));
     h.run();
+    assert!(
+        h.query_by_label("Language support is not verified for this model.")
+            .is_none()
+    );
     h.get_by_label("Find a language").type_text("burm");
     h.run();
     h.get_by_label("Burmese").click();

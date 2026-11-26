@@ -31,7 +31,6 @@ pub(super) fn custom(ui: &mut Ui, skills: &[(Skill, String)]) -> Option<Skill> {
         } else {
             "No skill matches"
         },
-        notice: None,
         width: WIDTH,
         corners: CornerRadius::same(8),
     };

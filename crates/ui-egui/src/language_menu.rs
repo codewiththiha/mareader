@@ -8,13 +8,11 @@ use crate::side_list::{self, Spec};
 use crate::widgets;
 
 pub const FIND: &str = "Find a language";
-const UNKNOWN: &str = "Language support is not verified for this model.";
 
 #[derive(Clone, Default)]
 pub struct Choices {
     pub items: Vec<(String, String)>,
     pub current: Option<String>,
-    pub unverified: bool,
 }
 
 /// Builds choices from the first model's capabilities, when reported.
@@ -50,7 +48,6 @@ pub fn choices(ai: &AiSettings, apple_languages: Option<&[String]>) -> Choices {
     Choices {
         items,
         current: ai.tasks.translate.language.clone(),
-        unverified: known.is_none(),
     }
 }
 
@@ -76,7 +73,6 @@ pub fn show(
         items: &choices.items,
         find: FIND,
         none: "No language matches",
-        notice: choices.unverified.then_some(UNKNOWN),
         width: 196.0,
         corners: CornerRadius::same(8),
     };
@@ -94,19 +90,18 @@ mod tests {
     fn unknown_model_offers_catalog_and_known_apple_is_filtered() {
         let mut ai = AiSettings::default();
         let unknown = choices(&ai, None);
-        assert!(unknown.unverified);
         assert!(unknown.items.iter().any(|(tag, _)| tag == "my"));
         let id = ai.add_preset(Provider::Apple, "");
         ai.tasks
             .choose(mareader_settings::TaskId::SelectionAi, Some(id));
         let langs = vec!["en-US".into(), "ja-JP".into()];
         let filtered = choices(&ai, Some(&langs));
-        assert!(!filtered.unverified);
         assert!(filtered.items.iter().any(|(tag, _)| tag == "ja"));
         assert!(!filtered.items.iter().any(|(tag, _)| tag == "my"));
         let id = ai.add_preset(Provider::Ollama, "");
         ai.tasks
             .choose(mareader_settings::TaskId::SelectionAi, Some(id));
-        assert!(choices(&ai, Some(&langs)).unverified);
+        let unknown = choices(&ai, Some(&langs));
+        assert!(unknown.items.iter().any(|(tag, _)| tag == "my"));
     }
 }

@@ -456,6 +456,10 @@ fn remembered_language_uses_translate_submenu_without_extra_row() -> Out {
     press(&mut h, margin(sheet), PointerButton::Secondary);
     h.get_by_label("Translate page…").hover();
     h.run();
+    assert!(
+        h.query_by_label("Language support is not verified for this model.")
+            .is_none()
+    );
     assert!(h.query_by_label("Japanese").is_some());
     assert!(h.query_by_label("Burmese").is_some());
     h.event(Event::Text("arab".into()));

@@ -16,8 +16,8 @@ no parity entry.
   searchable language list as selection translation. Typing opens search;
   recent languages come first and the current one is checked. A pick is
   remembered, with the last five. Apple model languages are filtered when
-  reported; otherwise the catalog is shown with an unverified-support notice.
-  A fallback model may support different languages.
+  reported; otherwise the catalog is shown. A fallback model may support
+  different languages.
 - **This page or continuous.** Translate and Simplify follow their
   setting: ask each time (the default), this page, or continuous. Asking
   shows a second step with "This page", "Continuous" and "Remember my

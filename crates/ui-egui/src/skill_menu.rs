@@ -93,7 +93,6 @@ pub fn custom(ui: &mut Ui, skills: &[(Skill, String)]) -> Option<Skill> {
         items: skills,
         find: FIND,
         none: "No skill matches",
-        notice: None,
         width: WIDTH,
         corners: CornerRadius::same(8),
     };

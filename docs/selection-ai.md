@@ -21,8 +21,7 @@ size is not user-resizable.
   and the current choice is checked. The selected language is kept with the
   request and pinned answer, so retrying it keeps the original target. Apple
   model languages are filtered when its probe reports them; otherwise the
-  catalog is offered with an unverified-support notice. A fallback model may
-  have different language support.
+  catalog is offered. A fallback model may have different language support.
 - **Custom.** The reader's own, written in Settings › Skills: a name, a
   prompt and, if wanted, a model. Up to 24 skills; new names are limited to
   24 characters, while longer existing names stay intact.

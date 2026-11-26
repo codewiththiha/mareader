@@ -31,8 +31,6 @@ pub struct Spec<'a, T> {
     pub find: &'a str,
     /// Said when nothing matches: "No skill matches".
     pub none: &'a str,
-    /// A note shown above the list, if its contents need qualification.
-    pub notice: Option<&'a str>,
     /// The list's width, narrower than the menu it opens from.
     pub width: f32,
     /// The row's corners, lit while its list shows.
@@ -177,9 +175,6 @@ fn contents<T: Clone>(
 ) -> Option<T> {
     crate::z_order::register_popup(ui.ctx(), ui.layer_id());
     widgets::menu_style(ui, spec.width);
-    if let Some(notice) = spec.notice {
-        widgets::menu_note(ui, notice);
-    }
     let step = arrows(ui);
     state.keyboard |= step != 0;
     let typed = state.query.clone();
