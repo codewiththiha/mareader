@@ -15,6 +15,7 @@ use egui::{
 use mareader_appearance::Rgb;
 use mareader_engine::command::Command;
 use mareader_engine::study::Action;
+use mareader_engine::skills::{Action as SkillAction, AskId};
 use mareader_library::{MarkId, Pen, Spot};
 use mareader_session::Document;
 use std::sync::{Arc, Weak};
@@ -41,13 +42,25 @@ pub struct Row {
     pub bookmark: bool,
 }
 
-/// Which rows show: everything, those with notes, or bookmarks.
+/// A selection answer listed alongside the book's annotations.
+#[derive(Clone)]
+pub struct SelectionRow {
+    pub id: AskId,
+    pub spot: Spot,
+    pub name: String,
+    pub source: String,
+    pub pinned: bool,
+    pub found: bool,
+}
+
+/// Which rows show: everything, notes, bookmarks, or selection answers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Filter {
     #[default]
     All,
     Notes,
     Bookmarks,
+    SelectionAi,
 }
 
 impl Filter {
@@ -56,6 +69,7 @@ impl Filter {
             Self::All => true,
             Self::Notes => row.note.is_some(),
             Self::Bookmarks => row.bookmark,
+            Self::SelectionAi => false,
         }
     }
 }
@@ -124,19 +138,21 @@ fn cached_places(
 }
 
 /// Draws the panel for `reading`'s document and its `rows`.
-pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Commands) {
+pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, ai: &[SelectionRow], out: &mut Commands) {
     let t = Tokens::get(ui.ctx());
     let id = Id::new(("notes-filter", reading.doc));
     let mut filter: Filter = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     let noted = rows.iter().filter(|r| r.note.is_some()).count();
     let kept = rows.iter().filter(|r| r.bookmark).count();
-    if rows.is_empty() {
+    if rows.is_empty() && ai.is_empty() {
         let hint = "Select text, then highlight it or add a note.";
         widgets::panel_empty(ui, Some(Icon::Note), "No highlights yet", hint);
         return;
     }
     // The last bookmark gone, its filter goes too.
-    if kept == 0 && filter == Filter::Bookmarks {
+    if (kept == 0 && filter == Filter::Bookmarks)
+        || (ai.is_empty() && filter == Filter::SelectionAi)
+    {
         filter = Filter::All;
     }
     let query_id = Id::new(("notes-query", reading.doc));
@@ -155,6 +171,10 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Command
         })
         .map(|(r, (p, c))| (*p, c.as_deref(), r))
         .collect();
+    let shown_ai: Vec<&SelectionRow> = ai.iter().filter(|a| {
+        matches!(filter, Filter::All | Filter::SelectionAi)
+            && query::keeps(&words, &[a.source.as_str(), a.name.as_str()])
+    }).collect();
     ui.add_space(8.0);
     // The book and its tools, then the filters on a row of their own.
     ui.horizontal(|ui| {
@@ -173,28 +193,13 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Command
         });
     });
     ui.add_space(2.0);
-    let pad = egui::Margin::symmetric(PAD_X as i8, 0);
-    egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            let chips = [
-                (Filter::All, format!("All · {}", rows.len())),
-                (Filter::Notes, format!("Notes · {noted}")),
-                (Filter::Bookmarks, format!("Bookmarks · {kept}")),
-            ];
-            let some = |f: &&(Filter, String)| f.0 != Filter::Bookmarks || kept > 0;
-            for (f, label) in chips.iter().filter(some) {
-                if ui.selectable_label(filter == *f, label).clicked() {
-                    filter = *f;
-                }
-            }
-        });
-    });
+    filters(ui, &mut filter, (rows.len(), noted, kept, ai.len()));
     ui.data_mut(|d| d.insert_temp(id, filter));
     ui.add_space(6.0);
     search(ui, &mut typed);
     ui.data_mut(|d| d.insert_temp(query_id, typed));
     ui.add_space(4.0);
-    if placed.is_empty() && !words.is_empty() {
+    if placed.is_empty() && shown_ai.is_empty() && !words.is_empty() {
         widgets::panel_empty(
             ui,
             Some(Icon::Note),
@@ -203,7 +208,7 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Command
         );
         return;
     }
-    if placed.is_empty() {
+    if placed.is_empty() && shown_ai.is_empty() {
         widgets::panel_empty(
             ui,
             Some(Icon::Note),
@@ -237,8 +242,46 @@ pub fn show(ui: &mut Ui, reading: &Reading, rows: &Arc<[Row]>, out: &mut Command
                     entry(ui, reading, page, row, find, &t, out);
                 }
             }
+            for answer in shown_ai {
+                selection_entry(ui, answer, out);
+            }
             ui.add_space(12.0);
         });
+}
+
+fn filters(ui: &mut Ui, filter: &mut Filter, (rows, noted, kept, ai): (usize, usize, usize, usize)) {
+    let pad = egui::Margin::symmetric(PAD_X as i8, 0);
+    egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            let chips = [
+                (Filter::All, format!("All · {}", rows + ai)),
+                (Filter::Notes, format!("Notes · {noted}")),
+                (Filter::Bookmarks, format!("Bookmarks · {kept}")),
+                (Filter::SelectionAi, format!("Selection AI · {ai}")),
+            ];
+            let some = |f: &&(Filter, String)| {
+                (f.0 != Filter::Bookmarks || kept > 0)
+                    && (f.0 != Filter::SelectionAi || ai > 0)
+            };
+            for (f, label) in chips.iter().filter(some) {
+                if ui.selectable_label(*filter == *f, label).clicked() {
+                    *filter = *f;
+                }
+            }
+        });
+    });
+}
+
+fn selection_entry(ui: &mut Ui, answer: &SelectionRow, out: &mut Commands) {
+    let state = if answer.pinned { "Pinned" } else { "This session" };
+    let label = format!("{} · {state}\n{}", answer.name, answer.source);
+    let response = ui.add_enabled(answer.found, egui::Button::new(label).wrap());
+    if response.clicked() {
+        out.push(Sent::Engine(Command::Skill(SkillAction::Show(answer.id))));
+    }
+    if !answer.found {
+        ui.label("This passage could not be found in the current layout.");
+    }
 }
 
 /// The search over quotes, notes and chapters; Escape clears it.

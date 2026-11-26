@@ -40,6 +40,7 @@ impl MareaderApp {
         }
         let notes = self.rail_notes(sidebar_drawn);
         let active = self.active();
+        let ai_notes = self.rail_ai_notes(active);
         self.thumbs_news(active, sidebar_drawn);
         let reading = self.documents().reading(active);
         let thumb_look = PageLook::new(&self.settings().layout, self.session.text(active));
@@ -78,7 +79,7 @@ impl MareaderApp {
                     }
                     Panel::Library => library_panel::show(ui, &shelves, shelf_tree, out),
                     Panel::Notes => reading.as_ref().is_some_and(|r| {
-                        notes_panel::show(ui, r, &notes, out);
+                        notes_panel::show(ui, r, &notes, &ai_notes, out);
                         true
                     }),
                 };
@@ -102,6 +103,25 @@ impl MareaderApp {
             let writing = self.session.page_ai_writing(active);
             self.ui.thumbs.set_writing(writing);
         }
+    }
+
+    fn rail_ai_notes(&self, active: PaneId) -> Vec<crate::notes_panel::SelectionRow> {
+        let mut ai_notes: Vec<crate::notes_panel::SelectionRow> = self.session.skills().asks().iter()
+            .filter(|a| a.pane == active && self.session.documents().place(active)
+                .is_some_and(|p| p.doc.get() == a.doc))
+            .filter_map(|a| {
+                let mareader_engine::skills::Anchor::Text(spans) = &a.anchor else { return None };
+                Some(crate::notes_panel::SelectionRow {
+                    id: a.id,
+                    spot: a.spot?,
+                    name: a.name.clone(),
+                    source: a.source().to_owned(),
+                    pinned: a.pinned.is_some(),
+                    found: !spans.is_empty(),
+                })
+            }).collect();
+        ai_notes.sort_by_key(|a| crate::notes_panel::order(&a.spot));
+        ai_notes
     }
 
     fn rail_notes(&self, sidebar_drawn: bool) -> Arc<[crate::notes_panel::Row]> {

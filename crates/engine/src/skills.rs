@@ -127,6 +127,11 @@ impl Ask {
         })
     }
 
+    /// The selected text originally sent to the skill.
+    pub fn source(&self) -> &str {
+        &self.text
+    }
+
     /// How long the asked text is, in characters.
     pub fn asked_chars(&self) -> usize {
         self.text.chars().count()

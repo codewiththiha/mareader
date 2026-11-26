@@ -385,3 +385,23 @@ fn closing_a_working_selection_keeps_it_running() {
     h.run_steps(30);
     assert!(h.state().skills().get(ask).is_none());
 }
+
+#[test]
+fn selection_answers_appear_in_annotations_and_reopen() {
+    use mareader_engine::skills::Action;
+    use mareader_settings::{PageTask, Skill};
+    let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo"), ("sidebar", "notes")]);
+    select(&mut h, "quick brown");
+    let pane = h.state().active_pane();
+    let skill = Skill::Builtin(PageTask::Simplify);
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run { pane, skill })));
+    h.run_steps(30);
+    let ask = h.state().skills().asks().first().unwrap().id;
+    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Close(ask))));
+    h.run_steps(60);
+    h.get_by_label("Selection AI · 1").click();
+    h.run_steps(10);
+    h.get_by_label_contains("Simplify · This session").click();
+    h.run_steps(30);
+    assert!(h.state().skills().get(ask).unwrap().open);
+}
