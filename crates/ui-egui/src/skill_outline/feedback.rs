@@ -26,15 +26,19 @@ pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: 
         .data(|d| d.get_temp::<Vec<Place>>(memory()))
         .unwrap_or_default();
     for ask in asks.iter().filter(|a| !a.answer.landed() || a.open) {
-        if let Anchor::Text(spans) = &ask.anchor
-            && !places.iter().any(|p| p.id == ask.id)
-        {
-            places.push(Place {
-                id: ask.id,
-                pane: ask.pane,
-                doc: ask.doc,
-                spans: spans.clone(),
-            });
+        if let Anchor::Text(spans) = &ask.anchor {
+            if let Some(place) = places.iter_mut().find(|p| p.id == ask.id) {
+                place.pane = ask.pane;
+                place.doc = ask.doc;
+                place.spans.clone_from(spans);
+            } else {
+                places.push(Place {
+                    id: ask.id,
+                    pane: ask.pane,
+                    doc: ask.doc,
+                    spans: spans.clone(),
+                });
+            }
         }
     }
     places.retain(|place| {

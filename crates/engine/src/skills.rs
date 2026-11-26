@@ -100,6 +100,7 @@ pub struct Ask {
     /// The saved record, if pinning was requested.
     pub pinned: Option<AiSelectionId>,
     pub pin_status: crate::library::SaveStatus,
+    pub(crate) auto_pin: bool,
     pub answer: Answer,
     /// Who answers, as the card's small print names them.
     pub by: String,
@@ -195,6 +196,7 @@ pub(crate) struct Asked {
     pub text: String,
     pub path: Option<PathBuf>,
     pub layout: Option<Weak<Document>>,
+    pub auto_pin: bool,
 }
 
 impl State {
@@ -206,7 +208,10 @@ impl State {
         self.asks.iter().find(|a| a.id == id)
     }
 
-    pub(crate) fn pin_statuses(&mut self, status: impl Fn(AiSelectionId) -> crate::library::SaveStatus) {
+    pub(crate) fn pin_statuses(
+        &mut self,
+        status: impl Fn(AiSelectionId) -> crate::library::SaveStatus,
+    ) {
         for ask in &mut self.asks {
             if let Some(id) = ask.pinned {
                 ask.pin_status = status(id);
@@ -244,6 +249,7 @@ impl State {
             open: true,
             pinned: None,
             pin_status: crate::library::SaveStatus::Saved,
+            auto_pin: asked.auto_pin,
             answer: Answer::Waiting,
             by: self.runner.by(&key),
             text: asked.text,

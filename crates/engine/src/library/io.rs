@@ -231,7 +231,9 @@ fn run(job: Job, store: &mut Option<Store>, post: &mut dyn FnMut(News)) {
                 Some(store) => store.apply(&changes),
                 None => Err("the library file isn't open".into()),
             };
-            let error = saved.err().map(|e| format!("Couldn't save the library: {e}"));
+            let error = saved
+                .err()
+                .map(|e| format!("Couldn't save the library: {e}"));
             Some(News::Written(changes, error))
         }
         Job::Walk(job) => Some(News::Walked(Box::new(walk(*job, post)))),

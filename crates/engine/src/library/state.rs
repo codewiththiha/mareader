@@ -6,7 +6,9 @@ use std::hash::{BuildHasher, RandomState};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mareader_library::{AiSelectionId, BookId, Changes, DeviceId, Kind, Library, ShelfId, disk::Folder};
+use mareader_library::{
+    AiSelectionId, BookId, Changes, DeviceId, Kind, Library, ShelfId, disk::Folder,
+};
 use mareader_workspace::PaneId;
 
 use crate::documents::OpenRequest;
@@ -201,29 +203,56 @@ impl State {
         None
     }
 
+    pub(crate) fn retry_selection_writes(&mut self) {
+        let failed: Vec<_> = self.selection_saves.iter()
+            .filter(|(_, (_, status))| *status == SaveStatus::Failed)
+            .map(|(id, _)| *id).collect();
+        for id in failed {
+            self.model.retry_ai_selection(id);
+        }
+    }
+
     pub(crate) fn selection_pending(&mut self, id: AiSelectionId) {
-        self.selection_saves.insert(id, (String::new(), SaveStatus::Pending));
+        self.selection_saves
+            .insert(id, (String::new(), SaveStatus::Pending));
     }
 
     pub(crate) fn selection_status(&self, id: AiSelectionId) -> SaveStatus {
-        self.selection_saves.get(&id).map_or(SaveStatus::Saved, |(_, status)| *status)
+        self.selection_saves
+            .get(&id)
+            .map_or(SaveStatus::Saved, |(_, status)| *status)
     }
 
     fn selection_sent(&mut self, changes: &Changes) {
-        for row in changes.put.iter().filter(|row| row.kind == Kind::AiSelection) {
+        for row in changes
+            .put
+            .iter()
+            .filter(|row| row.kind == Kind::AiSelection)
+        {
             if let Ok(id) = AiSelectionId::try_from(row.id.clone()) {
-                self.selection_saves.insert(id, (row.body.clone(), SaveStatus::Pending));
+                self.selection_saves
+                    .insert(id, (row.body.clone(), SaveStatus::Pending));
             }
         }
     }
 
     pub(super) fn selection_written(&mut self, changes: &Changes, failed: bool) {
-        for row in changes.put.iter().filter(|row| row.kind == Kind::AiSelection) {
-            let Ok(id) = AiSelectionId::try_from(row.id.clone()) else { continue };
+        for row in changes
+            .put
+            .iter()
+            .filter(|row| row.kind == Kind::AiSelection)
+        {
+            let Ok(id) = AiSelectionId::try_from(row.id.clone()) else {
+                continue;
+            };
             if let Some((body, status)) = self.selection_saves.get_mut(&id)
                 && *body == row.body
             {
-                *status = if failed { SaveStatus::Failed } else { SaveStatus::Saved };
+                *status = if failed {
+                    SaveStatus::Failed
+                } else {
+                    SaveStatus::Saved
+                };
             }
         }
     }
@@ -250,5 +279,36 @@ pub fn wall_ms() -> u64 {
     #[cfg(target_arch = "wasm32")]
     {
         0
+    }
+}
+
+#[cfg(test)]
+mod selection_save_tests {
+    use super::*;
+    use mareader_library::Row;
+
+    fn changes(id: AiSelectionId, body: &str) -> Changes {
+        Changes {
+            put: vec![Row { kind: Kind::AiSelection, id: id.to_string(), body: body.into() }],
+            ..Changes::default()
+        }
+    }
+
+    #[test]
+    fn a_selection_is_not_saved_until_its_own_write_succeeds() {
+        let mut state = State::default();
+        let id = AiSelectionId(9);
+        state.selection_pending(id);
+        assert_eq!(state.selection_status(id), SaveStatus::Pending);
+        let first = changes(id, "first");
+        state.selection_sent(&first);
+        state.selection_written(&first, true);
+        assert_eq!(state.selection_status(id), SaveStatus::Failed);
+        let second = changes(id, "second");
+        state.selection_sent(&second);
+        state.selection_written(&first, false);
+        assert_eq!(state.selection_status(id), SaveStatus::Pending, "old success cannot confirm a later write");
+        state.selection_written(&second, false);
+        assert_eq!(state.selection_status(id), SaveStatus::Saved);
     }
 }

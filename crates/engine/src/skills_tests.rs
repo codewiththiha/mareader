@@ -13,6 +13,7 @@ fn asked(pane: u64, text: &str) -> Asked {
         spot: None,
         path: None,
         layout: None,
+        auto_pin: false,
         text: text.to_owned(),
     }
 }

@@ -100,6 +100,7 @@ impl Session {
             .documents()
             .document_of(pane)
             .map(|d| std::sync::Arc::downgrade(&d));
+        let auto_pin = spot.is_some() && self.settings().ai.tasks.skills.pin_by_default;
         let id = self.skills.start(Asked {
             pane,
             doc,
@@ -110,6 +111,7 @@ impl Session {
             spot,
             path,
             layout,
+            auto_pin,
             text,
         });
         if spot.is_some() && self.settings().ai.tasks.skills.pin_by_default {
@@ -139,6 +141,12 @@ impl Session {
             })
             .collect();
         changed |= self.skills.refresh(views, self.library.model());
+        let pending: Vec<_> = self.skills.asks().iter()
+            .filter(|a| a.auto_pin && a.pinned.is_none())
+            .map(|a| a.id).collect();
+        for id in pending {
+            self.skill_pin(id, false);
+        }
         let library = &self.library;
         self.skills.pin_statuses(|id| library.selection_status(id));
         let (landed, news) = self.skills.receive();

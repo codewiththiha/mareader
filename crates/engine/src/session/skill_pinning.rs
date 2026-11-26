@@ -12,6 +12,12 @@ use super::Session;
 impl Session {
     /// Toggle a selection's pin; defaults stay quiet if the book is loose.
     pub(super) fn skill_pin(&mut self, id: AskId, tell: bool) -> bool {
+        if tell {
+            self.library.retry_selection_writes();
+        }
+        if tell && let Some(ask) = self.skills.get_mut(id) {
+            ask.auto_pin = false;
+        }
         let Some(ask) = self.skills.get(id) else {
             return false;
         };
@@ -59,6 +65,7 @@ impl Session {
         if let Some(ask) = self.skills.get_mut(id) {
             ask.book = Some(book);
             ask.pinned = saved;
+            ask.pin_status = crate::library::SaveStatus::Pending;
         }
         saved.is_some()
     }
@@ -82,6 +89,7 @@ impl Session {
                 .set_ai_selection_alive(old, false, now);
             if let Some(ask) = self.skills.get_mut(id) {
                 ask.pinned = Some(saved);
+                ask.pin_status = crate::library::SaveStatus::Pending;
             }
         }
     }
@@ -101,6 +109,7 @@ impl Session {
     }
 
     pub(super) fn skill_remove(&mut self, id: AskId) -> bool {
+        self.library.retry_selection_writes();
         if let Some(saved) = self.skills.get(id).and_then(|a| a.pinned) {
             self.library
                 .model_mut()

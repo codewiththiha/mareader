@@ -85,6 +85,7 @@ fn restored(saved: &AiSelection, view: &View, id: AskId) -> Option<Ask> {
         open: false,
         pinned: Some(saved.id),
         pin_status: crate::library::SaveStatus::Saved,
+        auto_pin: false,
         answer: if saved.pending {
             Answer::Interrupted
         } else {
@@ -144,4 +145,53 @@ fn resolve(
     }
     let compact = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
     (!spans.is_empty() && compact(&found) == compact(source)).then_some(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mareader_reflow::Typography;
+
+    fn document(bytes: Vec<u8>, size: f32) -> Arc<Document> {
+        let typo = Typography { font_size: size, ..Typography::default() };
+        Arc::new(Document::open(Arc::new(bytes), &typo).unwrap())
+    }
+
+    fn selected(doc: &Document) -> (Spot, String) {
+        for page in 0..doc.page_count() {
+            let layer = Arc::new(doc.text_layer(page).unwrap());
+            if layer.text.len() < 30 { continue }
+            let start = if layer.places.is_empty() {
+                Some(0)
+            } else {
+                (0..layer.text.len().saturating_sub(25))
+                    .find(|&i| (i..i + 25).all(|n| layer.place(n).is_some()))
+            };
+            let Some(start) = start else { continue };
+            let selection = Selection::within(page, start..start + 25);
+            let Some(spot) = words::span(selection, |_| Some(Arc::clone(&layer))) else { continue };
+            let source = selection.text(|_| Some(Arc::clone(&layer)));
+            if !source.trim().is_empty() { return (spot, source) }
+        }
+        panic!("sample has no selectable text")
+    }
+
+    #[test]
+    fn pdf_selection_resolves_and_changed_text_is_rejected() {
+        let doc = document(mareader_pdf::sample::pdf(2, "Sample"), 16.0);
+        let (spot, text) = selected(&doc);
+        assert!(matches!(spot, Spot::Chars { .. }));
+        assert!(resolve(&doc, spot, &text).is_some());
+        assert!(resolve(&doc, spot, "different text").is_none());
+    }
+
+    #[test]
+    fn epub_selection_resolves_after_the_text_reflows() {
+        let bytes = mareader_epub::sample::epub(3, "Book");
+        let doc = document(bytes.clone(), 16.0);
+        let (spot, text) = selected(&doc);
+        assert!(matches!(spot, Spot::Blocks { .. }));
+        let resized = document(bytes, 24.0);
+        assert!(resolve(&resized, spot, &text).is_some());
+    }
 }

@@ -165,8 +165,12 @@ fn header(ui: &mut Ui, ask: &Ask, t: &Tokens, out: &mut Commands) {
                 if matches!(ask.anchor, Anchor::Text(_)) {
                     let label = match (ask.pinned, ask.pin_status) {
                         (None, _) => "Pin answer",
-                        (Some(_), mareader_engine::library::SaveStatus::Pending) => "Saving answer…",
-                        (Some(_), mareader_engine::library::SaveStatus::Failed) => "Save failed · unpin answer",
+                        (Some(_), mareader_engine::library::SaveStatus::Pending) => {
+                            "Saving answer…"
+                        }
+                        (Some(_), mareader_engine::library::SaveStatus::Failed) => {
+                            "Save failed · unpin answer"
+                        }
                         (Some(_), mareader_engine::library::SaveStatus::Saved) => "Unpin answer",
                     };
                     if widgets::icon_button(ui, Icon::Pin, label, ask.pinned.is_some()).clicked() {

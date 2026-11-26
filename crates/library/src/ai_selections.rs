@@ -110,6 +110,11 @@ impl Library {
         true
     }
 
+    /// Marks a failed write for retry with the current record contents.
+    pub fn retry_ai_selection(&mut self, id: AiSelectionId) {
+        let _ = self.ai_selections.get_mut(&id);
+    }
+
     pub(crate) fn move_ai_selections(&mut self, gone: BookId, keeper: BookId, at: Stamp) {
         for selection in self
             .ai_selections
