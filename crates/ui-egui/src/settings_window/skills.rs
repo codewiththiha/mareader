@@ -8,7 +8,7 @@ use egui::{Align, Layout, RichText, Ui, vec2};
 use mareader_settings::{AiSettings, CustomSkill, PageTask, Skill, SkillId, Skills, TaskId};
 
 use super::ai::{model_row, no_models, preset_picker};
-use super::{ROW_H, divider, group, note, row, section};
+use super::{ROW_H, divider, group, note, row, section, switch_row};
 use crate::icons::Icon;
 use crate::input_field::{input, input_multiline};
 use crate::theme::Tokens;
@@ -25,6 +25,15 @@ pub fn tab(ui: &mut Ui, ai: &mut AiSettings, out: &mut Commands) {
     }
     section(ui, "Default model");
     group(ui, |ui| model_row(ui, ai, TaskId::SelectionAi));
+    section(ui, "Selection answers");
+    group(ui, |ui| {
+        switch_row(
+            ui,
+            "Pin new answers by default",
+            "Saved with books in your library",
+            &mut ai.tasks.skills.pin_by_default,
+        );
+    });
     builtins(ui, ai);
     custom(ui, ai);
 }

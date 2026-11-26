@@ -104,3 +104,12 @@ fn v8_s_page_models_become_the_skills_own() {
     ];
     assert_eq!(bar, want);
 }
+
+#[test]
+fn selection_answers_pin_by_default_in_new_and_old_settings() {
+    assert!(Skills::default().pin_by_default);
+    let old: Skills = serde_json::from_str(r#"{"custom":[]}"#).unwrap();
+    assert!(old.pin_by_default);
+    let changed: Skills = serde_json::from_str(r#"{"pin_by_default":false}"#).unwrap();
+    assert!(!changed.pin_by_default);
+}

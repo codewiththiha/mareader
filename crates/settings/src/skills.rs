@@ -81,7 +81,7 @@ impl CustomSkill {
 }
 
 /// The skills' own models and the reader's skills.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Skills {
     /// Built-ins' own models; none asks Selection AI's.
@@ -89,6 +89,20 @@ pub struct Skills {
     pub summarize: Option<PresetId>,
     pub simplify: Option<PresetId>,
     pub custom: Vec<CustomSkill>,
+    /// Save new selection answers unless the reader unpins them.
+    pub pin_by_default: bool,
+}
+
+impl Default for Skills {
+    fn default() -> Self {
+        Self {
+            translate: None,
+            summarize: None,
+            simplify: None,
+            custom: Vec::new(),
+            pin_by_default: true,
+        }
+    }
 }
 
 impl Skills {
