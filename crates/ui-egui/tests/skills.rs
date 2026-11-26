@@ -348,7 +348,9 @@ fn selection_focus_stays_on_completion_and_close_plays_the_outro() {
     assert!(h.state().skills().get(ask).unwrap().answer.landed());
     assert!(glow::shown(&h.ctx) > 0, "the focused flare continues");
     let id = egui::Id::new(("skill-glow", ask.0));
-    let focused = h.ctx.animate_bool_with_time(id.with("focus-whole"), true, 0.3);
+    let focused = h
+        .ctx
+        .animate_bool_with_time(id.with("focus-whole"), true, 0.3);
     assert!(focused > 0.99, "the whole outline lifts into focus");
     let held = glow::state(&h.ctx, id, true).expect("focus stays bright");
     assert!(held.strength > 0.99, "focus does not fade out");
@@ -356,8 +358,13 @@ fn selection_focus_stays_on_completion_and_close_plays_the_outro() {
         .queue(Sent::Engine(Command::Skill(Action::Close(ask))));
     h.run_steps(6);
     assert!(!h.state().skills().get(ask).unwrap().open);
-    let focused_outro = h.ctx.animate_bool_with_time(id.with("focus-whole"), true, 0.3);
-    assert!(focused_outro > 0.99, "closing keeps the whole outline lit while it fades");
+    let focused_outro = h
+        .ctx
+        .animate_bool_with_time(id.with("focus-whole"), true, 0.3);
+    assert!(
+        focused_outro > 0.99,
+        "closing keeps the whole outline lit while it fades"
+    );
     let fading = glow::state(&h.ctx, id, false).expect("close still glows");
     assert!(fading.whole > 0.0 && fading.strength > 0.0);
     h.run_steps(60);

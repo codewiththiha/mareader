@@ -26,7 +26,11 @@ pub(super) struct Clock {
 
 impl Clock {
     fn new(now: f64, working: bool) -> Self {
-        Self { travel: now, last: now, working }
+        Self {
+            travel: now,
+            last: now,
+            working,
+        }
     }
 
     fn advance(&mut self, now: f64, working: bool) {
