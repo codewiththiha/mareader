@@ -67,6 +67,21 @@ impl Ai {
         None
     }
 
+    /// Probes Apple's language list once when it is the translation model.
+    #[cfg(target_os = "macos")]
+    pub fn probe_translation(&mut self, ai: &AiSettings) {
+        let skill = mareader_settings::Skill::Builtin(mareader_settings::PageTask::Translate);
+        let apple = ai
+            .skill_model(skill)
+            .is_some_and(|m| m.provider == mareader_settings::Provider::Apple);
+        let idle = self
+            .board()
+            .is_some_and(|b| b.apple == mareader_assist::Load::Idle);
+        if apple && idle {
+            self.send(Job::Probe);
+        }
+    }
+
     /// What the AI settings show; none without the service.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn board(&self) -> Option<&Board> {
