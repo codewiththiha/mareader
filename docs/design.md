@@ -357,8 +357,8 @@ shown without an update check.
 - **Tooltips.** `widgets::tip`: a chip on `surface` with a `line` edge,
   radius 6, 12 pt text, the shortcut beside it in `muted`. 350 ms delay.
 - **Toasts.** `crates/ui-egui/src/toast.rs` and `toast/`. They stack in the
-  bottom-right corner of the panes, 16 pt in, above the page bar in the
-  reader; 360 pt wide.
+  bottom-right corner of the panes, 12 pt in, above the page bar in the
+  reader; 320 pt wide and 44 pt tall, with 12.5 pt message text.
   - **Card.** The tone icon and edge mark each card. The card is the
     theme's paper (`surface`); a bold block of its green, amber or red
     (the tone mixed 45%, or 55% for errors, into the paper) covers it and

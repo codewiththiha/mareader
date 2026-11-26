@@ -152,6 +152,43 @@ fn a_skill_failing_out_of_view_shows_red_a_moment_and_toasts() {
     assert!(h.query_by_label(STACK).is_none(), "it goes by itself");
 }
 
+#[test]
+fn progress_and_toast_share_the_page_counter_bottom_inset() {
+    let mut h = skill_away("silent");
+    h.state_mut()
+        .set_option("toast", "Highlights_saved")
+        .unwrap();
+    h.run_steps(5);
+    h.get_by_label(STACK).hover();
+    h.run_steps(25);
+    let pane = h.state().pane_rects()[0].1;
+    let stack = h.get_by_label(STACK).rect();
+    let toast = h.get_by_label("Highlights saved").rect();
+    let foot = pane.bottom() - mareader_ui_egui::page_bar::COUNTER_INSET;
+    assert!((stack.bottom() - foot).abs() < 1.0, "{stack:?} {pane:?}");
+    assert!((toast.bottom() - foot).abs() < 1.0, "{toast:?} {pane:?}");
+    assert!((toast.width() - 320.0).abs() < 1.0, "{toast:?}");
+    assert!((toast.height() - 44.0).abs() < 1.0, "{toast:?}");
+    assert!(!toast.intersects(stack));
+}
+
+#[test]
+fn an_open_progress_stack_lifts_a_toast_on_a_narrow_pane() {
+    let mut h = skill_away("silent");
+    h.set_size(egui::vec2(360.0, 700.0));
+    h.run_steps(20);
+    h.state_mut()
+        .set_option("toast", "Highlights_saved")
+        .unwrap();
+    h.run_steps(4);
+    h.get_by_label(STACK).hover();
+    h.run_steps(30);
+    let stack = h.get_by_label(STACK).rect();
+    let toast = h.get_by_label("Highlights saved").rect();
+    assert!(!stack.intersects(toast), "{stack:?} {toast:?}");
+    assert!(toast.bottom() < stack.top(), "{stack:?} {toast:?}");
+}
+
 /// Leaving the stack downward crosses the page bar's edge: there the bar
 /// waits for a rest, as the sidebar's edge does by the Library button.
 #[test]

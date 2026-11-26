@@ -18,10 +18,10 @@ pub const FADE: f32 = 0.2;
 /// At most this many are kept; the oldest goes without a fade.
 const KEEP: usize = 12;
 /// Clear of the window's edges.
-pub(crate) const INSET: f32 = 16.0;
-pub(crate) const WIDTH: f32 = 360.0;
+pub(crate) const INSET: f32 = crate::page_bar::COUNTER_INSET;
+pub(crate) const WIDTH: f32 = 320.0;
 /// Fixed card height, shared by one-line and two-line toasts alike.
-const SPOT_H: f32 = 52.0;
+const SPOT_H: f32 = 44.0;
 
 /// A confirmation the player grows out of its top, as one shape with it.
 #[derive(Clone, Debug, PartialEq)]

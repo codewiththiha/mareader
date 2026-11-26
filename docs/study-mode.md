@@ -302,8 +302,8 @@ Each pane runs its own mode; `study.mode` turns it on and works the deck
 - **The corner stack** (`crate::activity`, the AI's work in one place):
   while the AI writes a deck, the gate's or one made ahead, and its own
   waiting card is out of view, a ring sits in the pane's bottom left
-  corner, level with the page counter across the pane (no room added under
-  it), rising over the page bar while that is up; toasts keep the right,
+  corner, its bottom edge matching the page counter and toast inset,
+  rising over the page bar while that is up; toasts keep the right,
   filled as far as the deck is made. Each job is a line in the stack.
   Folded, it is one ring holding how many jobs it has, coloured by how
   they stand: in the panes' AI glow while any works (`glow::tint`, the

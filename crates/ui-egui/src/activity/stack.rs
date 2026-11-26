@@ -1,7 +1,7 @@
 //! A pane's corner stack of the AI's work.
 //!
 //! Folded, it is one ring in the pane's bottom left corner, level with
-//! the page counter across the pane, holding how many jobs it has: in the
+//! the page counter's bottom edge, holding how many jobs it has: in the
 //! panes' glow while any works, red a moment once one fails, green once
 //! all are done. It glides up over the page bar while that is up, and
 //! over a low deck. A hover fans it out into a line a job, each
@@ -370,13 +370,13 @@ pub fn id(pane: PaneId) -> Id {
 }
 
 /// The folded stack in `pane`: the bottom left corner level with the page
-/// counter, risen over the page bar while `bar`, and over `taken` while
+/// counter's bottom, risen over the page bar while `bar`, and over `taken` while
 /// that leaves it in the pane's lower half.
 fn spot(pane: Rect, bar: bool, taken: Option<Rect>) -> Rect {
-    use crate::page_bar::{BAR_H, COUNTER_MID};
+    use crate::page_bar::{BAR_H, COUNTER_INSET};
     let top = match bar {
         true => pane.bottom() - BAR_H - LIFT - SIDE,
-        false => pane.bottom() - COUNTER_MID - SIDE / 2.0,
+        false => pane.bottom() - COUNTER_INSET - SIDE,
     };
     let low = Rect::from_min_size(pos2(pane.left() + INSET, top), Vec2::splat(SIDE));
     let over = taken.filter(|t| t.intersects(low.expand(KEEP)));
@@ -399,11 +399,10 @@ mod tests {
     fn the_stack_sits_bottom_left_or_moves_out_of_the_decks_way() {
         let pane = Rect::from_min_size(pos2(0.0, 0.0), vec2(200.0, 250.0));
         let roomy = spot(pane, false, None);
-        let mid = 250.0 - crate::page_bar::COUNTER_MID;
         assert_eq!(
-            roomy.left_center(),
-            pos2(12.0, mid),
-            "level with the counter"
+            roomy.left_bottom(),
+            pos2(12.0, 250.0 - crate::page_bar::COUNTER_INSET),
+            "the counter and stack share a bottom inset"
         );
         let deck = |y: std::ops::RangeInclusive<f32>| Some(Rect::from_x_y_ranges(0.0..=200.0, y));
         let above = spot(pane, false, deck(160.0..=248.0));

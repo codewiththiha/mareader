@@ -15,11 +15,11 @@ use crate::ui_command::{Commands, Sent, UiCommand};
 use crate::widgets;
 use mareader_engine::toast::Tone;
 
-const PAD_X: f32 = 14.0;
+const PAD_X: f32 = 8.0;
 /// Fixed card height so one-line and two-line toasts share a steady silhouette.
-const HEIGHT: f32 = 52.0;
+const HEIGHT: f32 = super::SPOT_H;
 /// From the card's left edge to its words: the tone's colour says the rest.
-const LEAD: f32 = 16.0;
+const LEAD: f32 = 12.0;
 const CLOSE: f32 = 24.0;
 /// The player's tab: its height and its words' inset.
 pub(super) const ISLAND_H: f32 = 28.0;
@@ -49,7 +49,7 @@ pub(crate) fn medium(ctx: &Context, size: f32) -> FontId {
 
 fn action_job(ctx: &Context, live: &Live, mark: Color32) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let label_font = medium(ctx, 12.5);
+    let label_font = medium(ctx, 11.5);
     job.append(live.toast.label, 0.0, TextFormat::simple(label_font, mark));
     if live.toast.label == "Undo" {
         let platform = ctx
@@ -64,24 +64,24 @@ fn action_job(ctx: &Context, live: &Live, mark: Color32) -> LayoutJob {
         job.append(
             key,
             0.0,
-            TextFormat::simple(FontId::proportional(10.5), hint),
+            TextFormat::simple(FontId::proportional(10.0), hint),
         );
     }
     job
 }
 
 pub(super) fn measure(ctx: &Context, live: &Live, width: f32, t: &Tokens) -> Card {
-    let font = FontId::proportional(t.text);
+    let font = FontId::proportional(12.5);
     let swatch = look(live.toast.tone, t);
     let action = match live.toast.undo {
         Some(_) => {
             let job = action_job(ctx, live, swatch.mark);
             let galley = ctx.fonts_mut(|f| f.layout_job(job));
-            galley.size().x + 22.0
+            galley.size().x + 16.0
         }
         None => 0.0,
     };
-    let wrap = width - LEAD - PAD_X - action - CLOSE - 8.0;
+    let wrap = width - LEAD - PAD_X - action - CLOSE - 6.0;
     let mut job = LayoutJob::default();
     job.append(&live.toast.message, 0.0, TextFormat::simple(font, t.ink));
     if live.times > 1 {
@@ -284,6 +284,73 @@ pub(super) fn content(ui: &mut Ui, rect: Rect, live: &Live, card: &Card, out: &m
 mod tests {
     use super::*;
     use mareader_appearance::{Appearance, BaseMode};
+
+    fn old_undo_width(ctx: &Context, t: &Tokens) -> f32 {
+        let mut job = LayoutJob::default();
+        job.append("Undo", 0.0, TextFormat::simple(medium(ctx, 12.5), t.ink));
+        let key = if cfg!(target_os = "macos") {
+            "  ⌘Z"
+        } else {
+            "  Ctrl+Z"
+        };
+        job.append(
+            key,
+            0.0,
+            TextFormat::simple(FontId::proportional(10.5), t.ink),
+        );
+        ctx.fonts_mut(|f| f.layout_job(job)).size().x + 22.0
+    }
+
+    #[test]
+    fn compact_cards_preserve_one_line_messages() {
+        let ctx = Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let t = Tokens::new(&Appearance::default());
+            let mut toasts = super::super::Toasts::default();
+            for message in [
+                "Highlights saved",
+                "Moved a book to the selected shelf",
+                "The library is ready to use again",
+                "Copied the text to the clipboard",
+            ] {
+                for undo in [false, true] {
+                    let toast = mareader_engine::toast::Toast::info(message);
+                    let toast = if undo {
+                        let action = mareader_engine::study::Action::Restore(Vec::new());
+                        toast.undo(mareader_engine::command::Command::Study(action))
+                    } else {
+                        toast
+                    };
+                    toasts.push(toast);
+                    let live = toasts.live.last().unwrap();
+                    let card = measure(ui.ctx(), live, super::super::WIDTH, &t);
+                    let mut old = LayoutJob::simple_singleline(
+                        message.to_owned(),
+                        FontId::proportional(14.0),
+                        t.ink,
+                    );
+                    old.wrap.max_width = 298.0
+                        - if undo {
+                            old_undo_width(ui.ctx(), &t)
+                        } else {
+                            0.0
+                        };
+                    old.wrap.max_rows = 2;
+                    let old = ui.ctx().fonts_mut(|f| f.layout_job(old));
+                    if old.rows.len() == 1 {
+                        assert_eq!(card.galley.rows.len(), 1, "{message}, undo={undo}");
+                    }
+                    assert_eq!(card.height, 44.0);
+                }
+            }
+        });
+        output.textures_delta.clear();
+        let area = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(900.0, 700.0));
+        let bed = super::super::bed(area, 0.0);
+        assert_eq!(area.bottom() - bed.bottom(), crate::page_bar::COUNTER_INSET);
+        assert_eq!(bed.width(), 320.0);
+        assert_eq!(bed.height(), 44.0);
+    }
 
     #[test]
     fn tones_use_distinct_theme_inflected_swatches() {
