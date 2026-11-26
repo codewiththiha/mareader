@@ -12,7 +12,7 @@ use mareader_appearance::GlowPalette;
 use crate::motion;
 use crate::theme::Tokens;
 
-mod path;
+pub(crate) mod selection;
 
 /// How the glow shows this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,14 +32,6 @@ const FALLOFF: [(f32, f32); 6] = [
     (0.35, 0.56),
     (0.6, 0.26),
     (0.82, 0.08),
-    (1.0, 0.0),
-];
-const SOFT_FALLOFF: [(f32, f32); 6] = [
-    (0.0, 0.70),
-    (0.15, 0.78),
-    (0.35, 0.56),
-    (0.6, 0.28),
-    (0.82, 0.09),
     (1.0, 0.0),
 ];
 /// Seconds a finished glow fades over, and its arc opens into a ring.
@@ -84,69 +76,23 @@ pub fn paint(
     glow: Glow,
 ) {
     let time = ctx.input(|i| i.time);
-    paint_ring(ctx, painter, tokens, Ring::new(rect, radius), glow, time);
+    let ring = Ring::new(rect, radius);
+    let look = look_at(ctx, tokens, glow, ring.length, time);
+    painter.add(Shape::mesh(ring.mesh(&look)));
+    wake(ctx, ring.length);
 }
 
-/// Paint the same flare around a closed, sampled selection contour.
-/// Returns false when no part of the glow reaches the painter's clip.
-pub(crate) fn paint_path(
-    ctx: &Context,
-    painter: &Painter,
-    tokens: &Tokens,
-    points: &[Pos2],
-    reference: Rect,
-    glow: Glow,
-    travel_time: f64,
-) -> bool {
-    let Some(ring) = Ring::path(points, reach(reference) * 1.2) else {
-        return false;
-    };
-    let clip = painter.clip_rect();
-    let visible = points
-        .iter()
-        .zip(points.iter().cycle().skip(1))
-        .any(|(a, b)| {
-            Rect::from_two_pos(*a, *b)
-                .expand(ring.reach)
-                .intersects(clip)
-        });
-    if visible {
-        paint_ring(ctx, painter, tokens, ring, glow, travel_time);
-    }
-    visible
-}
-
-fn paint_ring(
-    ctx: &Context,
-    painter: &Painter,
-    tokens: &Tokens,
-    ring: Ring,
-    glow: Glow,
-    travel_time: f64,
-) {
-    let lap = (ring.length / PACE).clamp(LAP.0, LAP.1);
+fn look_at(ctx: &Context, tokens: &Tokens, glow: Glow, length: f32, travel_time: f64) -> Look {
+    let lap = (length / PACE).clamp(LAP.0, LAP.1);
     let t = ctx.input(|i| i.time);
-    let still = motion::reduced(ctx);
     let phase = (travel_time / f64::from(lap)).rem_euclid(1.0) as f32;
     let breath = (TAU * (t / BREATH).rem_euclid(1.0) as f32).cos();
-    let soft = ring.limits.is_some();
-    let mut light = Light::new(&tokens.glow);
-    if soft {
-        light.strength *= 0.78;
-        for color in &mut light.hues {
-            let grey = (color[0] + color[1] + color[2]) / 3.0;
-            for channel in color {
-                *channel = grey + (*channel - grey) * 0.72;
-            }
-        }
-    }
-    let look = match still {
+    let light = Light::new(&tokens.glow);
+    match motion::reduced(ctx) {
         true => Look {
             head: 0.125,
             drift: 0.0,
-            strength: glow.strength
-                * (0.75 + 0.25 * breath)
-                * if soft { light.strength } else { 1.0 },
+            strength: glow.strength * (0.75 + 0.25 * breath),
             ..Look::new(light, glow)
         },
         false => Look {
@@ -154,11 +100,13 @@ fn paint_ring(
             drift: drift(t),
             ..Look::new(light, glow)
         },
-    };
-    painter.add(Shape::mesh(ring.mesh(&look)));
-    // Wake once the arc has moved a step; a breath needs fewer frames.
-    let speed = ring.length / lap * (1.0 + EASE);
-    let wait = match still {
+    }
+}
+
+fn wake(ctx: &Context, length: f32) {
+    let lap = (length / PACE).clamp(LAP.0, LAP.1);
+    let speed = length / lap * (1.0 + EASE);
+    let wait = match motion::reduced(ctx) {
         true => 1.0 / 15.0,
         false => (STEP / speed).clamp(1.0 / 60.0, 1.0 / 24.0),
     };
@@ -302,7 +250,6 @@ struct Ring {
     /// Points round the ring's middle.
     length: f32,
     reach: f32,
-    limits: Option<Vec<(f32, f32)>>,
 }
 
 impl Ring {
@@ -338,43 +285,6 @@ impl Ring {
         Self::from_points(points, reach)
     }
 
-    /// A sampled closed path, with outward normals for either winding.
-    fn path(path: &[Pos2], reach: f32) -> Option<Self> {
-        if path.len() < 3 || path.iter().any(|p| !p.is_finite()) {
-            return None;
-        }
-        let bounds = path.iter().fold(Rect::NOTHING, |mut r, p| {
-            r.extend_with(*p);
-            r
-        });
-        if !bounds.is_positive() {
-            return None;
-        }
-        let area: f64 = path
-            .iter()
-            .zip(path.iter().cycle().skip(1))
-            .map(|(a, b)| f64::from(a.x) * f64::from(b.y) - f64::from(b.x) * f64::from(a.y))
-            .sum();
-        if !area.is_finite() || area.abs() < 0.01 {
-            return None;
-        }
-        let winding = area.signum() as f32;
-        let mut points = Vec::with_capacity(path.len());
-        for (i, at) in path.iter().enumerate() {
-            let prev = path[(i + path.len() - 1) % path.len()];
-            let next = path[(i + 1) % path.len()];
-            let before = (*at - prev).normalized();
-            let after = (next - *at).normalized();
-            let tangent = (before + after).normalized();
-            let normal = egui::vec2(tangent.y, -tangent.x) * winding;
-            points.push((*at, normal));
-        }
-        let limits = path::limits(&points, winding, reach);
-        let mut ring = Self::from_points(points, reach);
-        ring.limits = Some(limits);
-        Some(ring)
-    }
-
     fn from_points(points: Vec<(Pos2, Vec2)>, reach: f32) -> Self {
         let mid = reach * 0.25;
         let at = |(p, n): (Pos2, Vec2)| p + n * mid;
@@ -392,7 +302,6 @@ impl Ring {
             shares,
             length,
             reach,
-            limits: None,
         }
     }
 
@@ -403,18 +312,12 @@ impl Ring {
         let mut mesh = Mesh::default();
         mesh.reserve_vertices(self.points.len() * k as usize);
         mesh.reserve_triangles(self.points.len() * (k as usize - 1) * 2);
-        for (i, ((p, normal), share)) in self.points.iter().zip(&self.shares).enumerate() {
+        for ((p, normal), share) in self.points.iter().zip(&self.shares) {
             let (rgb, level) = look.at(*share, self.length);
-            let (alpha, mut flare) = (level * look.strength, self.reach * (0.45 + 0.55 * level));
-            let (inset, bands) =
-                if let Some((inside, outside)) = self.limits.as_ref().and_then(|v| v.get(i)) {
-                    flare = flare.min(*outside);
-                    (*inside, SOFT_FALLOFF)
-                } else {
-                    (0.5, FALLOFF)
-                };
-            mesh.colored_vertex(*p - *normal * inset, Color32::TRANSPARENT);
-            for (off, keep) in bands {
+            let (alpha, flare) = (level * look.strength, self.reach * (0.45 + 0.55 * level));
+            // Half a point inside the outline smooths its edge.
+            mesh.colored_vertex(*p - *normal * 0.5, Color32::TRANSPARENT);
+            for (off, keep) in FALLOFF {
                 mesh.colored_vertex(*p + *normal * off * flare, look.color(rgb, alpha * keep));
             }
         }

@@ -15,6 +15,7 @@ pub(super) struct Place {
     pub doc: u64,
     pub spans: Vec<(usize, Range<usize>)>,
     pub clock: Clock,
+    pub cache: Vec<crate::glow::selection::Cache>,
 }
 
 #[derive(Clone, Copy)]
@@ -65,6 +66,7 @@ pub(crate) fn show(ctx: &Context, asks: &[Ask], panes: &[(PaneId, Rect)], docs: 
                     doc: ask.doc,
                     spans: spans.clone(),
                     clock: Clock::new(now, !ask.answer.landed()),
+                    cache: Vec::new(),
                 });
             }
         }
