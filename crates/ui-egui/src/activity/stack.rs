@@ -369,9 +369,8 @@ pub fn id(pane: PaneId) -> Id {
     Id::new(("activity-stack", pane))
 }
 
-/// The folded stack in `pane`: the bottom left corner level with the page
-/// counter's bottom, risen over the page bar while `bar`, and over `taken` while
-/// that leaves it in the pane's lower half.
+/// The folded stack shares the counter's bottom, rising above the page bar
+/// and above `taken` when that leaves it in the pane's lower half.
 fn spot(pane: Rect, bar: bool, taken: Option<Rect>) -> Rect {
     use crate::page_bar::{BAR_H, COUNTER_INSET};
     let top = match bar {
