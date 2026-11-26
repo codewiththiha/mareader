@@ -1,8 +1,8 @@
 //! The settings window: a modal with a sidebar of tabs, grouped.
 
 use egui::{
-    Align, Button, Color32, CornerRadius, Frame, Layout, Margin, Rect, RichText, ScrollArea, Sense,
-    Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
+    Align, Button, Color32, CornerRadius, Frame, Layout, Margin, Rect, RichText, Sense, Stroke, Ui,
+    UiBuilder, Vec2, pos2, vec2,
 };
 use mareader_appearance::Rgb;
 use mareader_settings::{
@@ -32,6 +32,7 @@ mod nav;
 #[cfg(not(target_arch = "wasm32"))]
 mod provider_card;
 mod read_aloud;
+mod search;
 #[cfg(not(target_arch = "wasm32"))]
 mod skills;
 mod study;
@@ -84,6 +85,9 @@ pub struct SettingsWindow {
     limited: bool,
     /// Neither an AI nor a dictionary could write study's cards.
     no_study: bool,
+    query: String,
+    jump: Option<search::Entry>,
+    conditional: bool,
 }
 
 impl SettingsWindow {
@@ -94,6 +98,9 @@ impl SettingsWindow {
     /// Opens on `tab`, or where it was left; `limited` lists fewer tabs.
     pub fn open(&mut self, tab: Option<Tab>, limited: bool) {
         self.open = true;
+        self.query.clear();
+        self.jump = None;
+        self.conditional = false;
         self.limited = limited;
         if let Some(t) = tab {
             self.tab = t;
@@ -102,6 +109,8 @@ impl SettingsWindow {
 
     pub fn close(&mut self) {
         self.open = false;
+        self.query.clear();
+        self.jump = None;
     }
 
     /// The tab on screen: one not listed falls back to the first listed.
@@ -142,6 +151,8 @@ impl SettingsWindow {
         {
             self.tab = Tab::ReadAloud;
         }
+        let enter = self.search_enter(ctx);
+        let hits = self.search_hits(ctx);
         let t = Tokens::get(ctx);
         let size = window_size(ctx.content_rect().size());
         let mut draft = current.clone();
@@ -159,24 +170,29 @@ impl SettingsWindow {
                     ui.set_width(size.x - NAV_W - 1.0);
                     let tab = self.tab();
                     close = header(ui, tab);
+                    let field = search::field(ui, &mut self.query);
+                    if self.query.trim().is_empty() && self.conditional {
+                        search::conditional_note(ui);
+                    }
                     // Short of the rounded corner, fade and all.
                     let room = ui.available_height() - FOOT_H;
-                    let body = ScrollArea::vertical()
-                        .id_salt(("settings-body", tab.label()))
-                        .max_height(room)
-                        .auto_shrink(false)
-                        .show(ui, |ui| {
-                            let margin = Margin {
-                                left: 24,
-                                right: 24,
-                                top: 0,
-                                bottom: 24,
-                            };
-                            Frame::new().inner_margin(margin).show(ui, |ui| {
-                                ui.spacing_mut().item_spacing.y = 0.0;
-                                tab_body(ui, tab, &mut draft, cx, &services, out);
-                            });
+                    let scroll = search::scroll(tab, &self.query, room, field.changed());
+                    let body = scroll.show(ui, |ui| {
+                        let margin = Margin {
+                            left: 24,
+                            right: 24,
+                            top: 0,
+                            bottom: 24,
+                        };
+                        Frame::new().inner_margin(margin).show(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            if self.query.trim().is_empty() {
+                                self.search_page(ui, (tab, &mut draft, cx, &services, out));
+                            } else {
+                                self.search_results(ui, &hits, enter);
+                            }
                         });
+                    });
                     widgets::scroll_fades(ui, &body, t.surface);
                 });
             });
@@ -221,8 +237,12 @@ impl SettingsWindow {
                 nav_heading(&mut ui, tab.group());
                 group = Some(tab.group());
             }
-            if nav_row(&mut ui, tab, tab == shown).clicked() && self.tab != tab {
+            if nav_row(&mut ui, tab, tab == shown).clicked()
+                && (self.tab != tab || !self.query.is_empty())
+            {
                 self.tab = tab;
+                self.query.clear();
+                self.conditional = false;
                 ui.ctx().request_repaint();
             }
             // The downloaded models fold under Read aloud.
@@ -254,8 +274,10 @@ impl SettingsWindow {
             rows,
             |ui, tab, live| {
                 let r = nav_row(ui, tab, live && tab == shown);
-                if live && r.clicked() && self.tab != tab {
+                if live && r.clicked() && (self.tab != tab || !self.query.is_empty()) {
                     self.tab = tab;
+                    self.query.clear();
+                    self.conditional = false;
                     ui.ctx().request_repaint();
                 }
             },
@@ -792,15 +814,18 @@ fn section_help(ui: &mut Ui, title: &str, help: &[(&str, &str)]) {
     let text = RichText::new(title)
         .font(theme::medium(t.text_small))
         .color(t.muted);
-    if help.is_empty() {
-        ui.label(text);
+    let heading = if help.is_empty() {
+        ui.label(text)
     } else {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.label(text);
             crate::help_dot::show(ui, title, help);
-        });
-    }
+        })
+        .response
+    };
+    search::touch(ui, title, &heading, true);
+    search::cue(ui, title, heading.rect);
     ui.add_space(6.0);
 }
 
@@ -828,7 +853,7 @@ fn divider(ui: &mut Ui) {
 
 /// Label on the left (its hint as a tooltip), control on the right.
 fn row(ui: &mut Ui, label: &str, hint: &str, control: impl FnOnce(&mut Ui)) {
-    ui.allocate_ui_with_layout(
+    let shown = ui.allocate_ui_with_layout(
         vec2(ui.available_width(), ROW_H),
         Layout::left_to_right(Align::Center),
         |ui| {
@@ -842,6 +867,8 @@ fn row(ui: &mut Ui, label: &str, hint: &str, control: impl FnOnce(&mut Ui)) {
             });
         },
     );
+    search::touch(ui, label, &shown.response, false);
+    search::cue(ui, label, shown.response.rect);
 }
 
 fn switch_row(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) {
@@ -857,6 +884,8 @@ fn disclosure(ui: &mut Ui, label: &str, hint: &str) -> bool {
     let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     let size = vec2(ui.available_width(), ROW_H);
     let (rect, r) = ui.allocate_exact_size(size, Sense::click());
+    search::touch(ui, label, &r, false);
+    search::cue(ui, label, rect);
     r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, open, label));
     if !hint.is_empty() {
         widgets::tip(&r, hint, None);
@@ -1079,7 +1108,9 @@ fn flagged_row(
 ) {
     let t = Tokens::get(ui.ctx());
     let size = vec2(ui.available_width(), 52.0);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    search::touch(ui, title, &response, false);
+    search::cue(ui, title, rect);
     // Controls first: the lines take the room they leave, cut short.
     let name = ui.id().with(("detail_row", title));
     let builder = UiBuilder::new()

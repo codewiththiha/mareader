@@ -1,0 +1,160 @@
+Appearance|Colours|Mode, tint, texture and presets|theme dark light color colour appearance preset|
+Appearance|Colours|Appearance menu|theme quick menu|
+Appearance|Book|Book styles|epub original design|conditional
+Appearance|Book|This book|per book design override|conditional
+Appearance|Font|Override book font|font override|conditional
+Appearance|Font|Body font|typeface family|
+Appearance|Font|Text size|font size type scale|
+Appearance|Font|Minimum size|minimum font size|conditional
+Appearance|Font|Font weight|bold thickness|
+Appearance|Font|Book's own families|font family overrides|
+Appearance|Font|Serif font|typeface family|conditional
+Appearance|Font|Sans-serif font|typeface family|conditional
+Appearance|Font|Monospace font|typeface code|conditional
+Appearance|Paragraph|Override book layout|spacing overrides|conditional
+Appearance|Paragraph|Line spacing|line height leading|
+Appearance|Paragraph|Paragraph margin|paragraph spacing|
+Appearance|Paragraph|Word spacing||
+Appearance|Paragraph|Letter spacing|tracking|
+Appearance|Paragraph|Text indent|paragraph indent|
+Appearance|Paragraph|Full justification|justify text alignment|
+Appearance|Paragraph|Hyphenation|break words|
+Appearance|Column|Column width|text width|conditional
+Appearance|Column|Column alignment|text position|conditional
+Appearance|Column|Book layout|spine margin|conditional
+Appearance|Page|Top and bottom margins|page margin vertical|conditional
+Appearance|Page|Side margins|page margin horizontal|conditional
+Appearance|Page|Longest line|text width|conditional
+Appearance|Colour|Text ink|text contrast color|conditional
+Appearance|Colour|Theme pictures|images tint|conditional
+Appearance|Colour|Theme emoji|emojis tint|conditional
+Appearance|Paper|Blend mode|pdf paper color|conditional
+Appearance|Paper|Detection|paper color sampling|conditional
+Layout|Reader chrome|Keep title bar shown|pin titlebar|
+Layout|Reader chrome|Frosted glass|blur transparency|
+Layout|Page position|Page indicator|page number counter|
+Layout|Page position|Indicator shows|page number percentage|conditional
+Layout|Page position|Progress bar|reading progress|
+Layout|Page label|Floating label|chapter filename title|
+Layout|Page label|Label shows|chapter file name|conditional
+Layout|Page label|Always show label||conditional
+Layout|Page label|Label width limit||conditional
+Layout|Pages|Default fit|page zoom|
+Layout|Pages|No gap|page spacing gap|
+Layout|Pages|Page margin|page spacing|
+Layout|Pages|Scale my zoom with the pane|auto resize zoom|
+Layout|Pages|Page shadow||
+ReadAloud|Engine|System voices|speech engine voice model|
+ReadAloud|Engine|Voice engines|speech models|
+ReadAloud|Memory|Speech kept|speech cache memory|
+ReadAloud|Memory|Keep a model loaded|model memory|
+ReadAloud|Memory|In memory now|loaded models|
+ReadAloud|Voice|Voice|speaker voice|
+ReadAloud|Voice|Language|speech language|
+ReadAloud|Voice|Hear a sample|voice preview|
+ReadAloud|Sound|Speed|reading rate speech|
+ReadAloud|Sound|Pitch|voice|
+ReadAloud|Sound|Volume|audio loudness|
+ReadAloud|While reading|Turn pages to follow|follow speech|
+ReadAloud|While reading|Player|read aloud audio player|
+ReadAloud|While reading|Skip page numbers|reading speech|
+ReadAloud|While reading|Skip notes|reading speech|
+ReadAloud|While reading|Skip tables|reading speech|
+ReadAloud|While reading|Skip lists|reading speech|
+ReadAloud|While reading|Skip figures|reading speech|
+ReadAloud|While reading|Skip asides|reading speech|
+ReadAloud|While reading|Highlight|reading spoken words|
+ReadAloud|While reading|Words at a time|speech highlight|
+Highlights|Highlighters|Highlight|full pen color|
+Highlights|Highlighters|Half highlight|pen color|
+Highlights|Highlighters|Underline|pen color|
+Highlights|Highlighters|Fill strength|opacity transparency|
+Highlights|When a highlighter is clicked|Use its colour|highlight color behavior|
+Highlights|When a highlighter is clicked|Choose a colour each time|highlight color behavior|
+Highlights|Other marks|AI Dictionary|mark look color|conditional
+Highlights|Other marks|Vocabulary shading|mark look color|conditional
+Highlights|Other marks|Study recall|mark look color|conditional
+Vocabulary|Word data|Word data|cefr vocabulary download|
+Vocabulary|Word data|Pronunciation|sounds download ipa|
+Vocabulary|Vocabulary highlighter|Shade words above my level|cefr highlight|conditional
+Vocabulary|Vocabulary highlighter|My level|reading level cefr|conditional
+Vocabulary|Vocabulary highlighter|Click a shaded word to look it up|click ai dictionary|conditional
+Vocabulary|Vocabulary highlighter|Rest on a shaded word to look it up|hover dictionary|conditional
+Vocabulary|Shading look|Mark|cefr highlight pen|conditional
+Vocabulary|Shading look|Colour|cefr shading color|conditional
+Vocabulary|Pronunciation|Show on word cards|pronunciation sounds|conditional
+Vocabulary|Pronunciation|Match the reading voice|pronunciation dialect accent|conditional
+Vocabulary|Pronunciation|Accent|dialect pronunciation|conditional
+Vocabulary|Pronunciation|Written as|ipa notation pronunciation|conditional
+Dictionary|Language packs|Language packs|download dictionary languages|
+Dictionary|In the reader|In the reader|dictionary opens window page|
+Dictionary|AI dictionary|AI dictionary|saved meanings clear language|
+Dictionary|Saying words|Use other languages' voices|speech multilingual|
+Dictionary|Lookup card|Default language|translation language|
+Dictionary|Lookup card|Show near matches|similar words search|
+Dictionary|Lookup card|AI dictionary first|dictionary order|
+Ai|Words|AI Dictionary|word model|
+Ai|Words|Meaning in|language translation|
+Ai|Words|Mark|pen word highlight|conditional
+Ai|Words|Colour|mark color|conditional
+Ai|Words|Card spacing|word card density|conditional
+Ai|Library|Books per request|batch library metadata|
+Ai|Library|Organize library|metadata cover sorting model|
+Ai|Selections and pages|Selection AI|skill model|
+Ai|Selections and pages|Summary style|paragraph list|
+Ai|Selections and pages|Translate to|target language translation|
+Ai|Selections and pages|Translating|voice speech translation|
+Ai|Selections and pages|Simplifying|voice speech simplification|
+Ai|More than one page|Time on a page|pages batch|
+Ai|More than one page|Pages at once|parallel batch|
+Ai|More than one page|Pages per request|batch|
+Skills|Default model|Selection AI|default skills model|
+Skills|Selection answers|Pin new answers by default|save selection ai|
+Skills|Built-in skills|Translate|skill model|
+Skills|Built-in skills|Summarize|skill model|
+Skills|Built-in skills|Simplify|skill model|
+Skills|Your skills|Your skills|custom skills prompt add remove|
+Study|Mode|Mode|study reactive proactive|
+Study|Reactive|Ask before adding to memorized|study recall|
+Study|Batches|Size by|study batch pages words|
+Study|Batches|Pages per batch||conditional
+Study|Batches|Words per deck|cards|
+Study|Proactive|Prepare ahead|study batch|
+Study|Proactive|Time limit on cards|timer|
+Study|Proactive|Seconds per card|timer|conditional
+Study|Proactive|Lock pages outside the batches||
+Study|Proactive|Shade hard words while reading|cefr|
+Study|Proactive|Cards from|study deck source|conditional
+Study|AI|Cards in|study language|
+Study|AI|Study cards|ai cards model|
+Study|AI|Study judge|ai recall model|
+Study|Your words|Vocabs|word list|
+Models|Models|Models|ai model presets add edit provider|
+Models|Models|Name|model name|conditional
+Models|Models|Provider|model provider|conditional
+Models|Models|At once|model concurrency|conditional
+Models|Models|Cards per request|batch size|conditional
+Models|Providers|API keys|credentials provider|conditional
+Panes|Library panel|Library panel|click open split panes|
+Panes|Floating windows at the edge|Floating windows at the edge|parking sliver edge tab|
+Panes|Split pane appearance|Outline thickness|pane border|conditional
+Panes|Split pane appearance|Outline colour|pane border color|conditional
+Panes|Split pane appearance|Space around and between panes|pane gap|conditional
+Panes|Split pane appearance|Corners|pane rounding|conditional
+Panes|Split pane appearance|Pane drop shadow||conditional
+Panes|Pane themes|Independent theme for each pane|split colors|
+Panes|Pane themes|Light, Dark and Dim change every pane|shared theme|conditional
+Panes|Pane themes|Independent page texture for each pane|split textures|
+Panes|Pane text|Independent text for each pane|split font|conditional
+Motion|All motion|Animations|reduce motion|
+Motion|Each motion|Icon animations|animated icons|conditional
+Motion|Each motion|Sidebar animation|slide|conditional
+Motion|Each motion|Canvas follows window|resize|conditional
+Motion|Each motion|Zoom in and out||conditional
+Motion|Each motion|Scroll to page||conditional
+Updates|Updates|Notify about updates|notifications|
+Updates|Updates|Auto-update|automatic updates|
+Updates|Updates|Check for updates automatically|version updates|
+Updates|Version|Version|app software update|
+Ai|Get started|No AI models yet|add configure models|
+Skills|Your skills|Model|custom skill model|conditional
