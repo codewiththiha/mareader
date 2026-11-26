@@ -231,8 +231,7 @@ mod tests {
         eprintln!("5000 indexed queries: {:?}", start.elapsed());
     }
 
-    // Guards literal labels passed through the shared row helpers. Computed
-    // labels and custom controls still require a manual catalog review.
+    // Computed labels and custom controls still need manual review.
     #[test]
     fn literal_rows_in_settings_modules_are_indexed() {
         let sources = [
