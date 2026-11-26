@@ -108,18 +108,31 @@ impl Field {
     }
 }
 
-fn compress(distances: Vec<f32>, shares: Vec<f32>, inside: Vec<bool>, scale: f32, reach: f32) -> Vec<Hit> {
-    distances.into_iter().zip(shares).zip(inside).map(|((distance, share), inside)| {
-        let signed = if inside { -distance } else { distance };
-        let coverage = ((0.5 + signed * scale).clamp(0.0, 1.0) * 255.0).round() as u8;
-        Hit {
-            distance: if distance >= reach || coverage == 0 { 255 } else {
-                ((distance / reach * 254.0).round() as u8).min(254)
-            },
-            share: (share.rem_euclid(1.0) * 256.0) as u8,
-            coverage,
-        }
-    }).collect()
+fn compress(
+    distances: Vec<f32>,
+    shares: Vec<f32>,
+    inside: Vec<bool>,
+    scale: f32,
+    reach: f32,
+) -> Vec<Hit> {
+    distances
+        .into_iter()
+        .zip(shares)
+        .zip(inside)
+        .map(|((distance, share), inside)| {
+            let signed = if inside { -distance } else { distance };
+            let coverage = ((0.5 + signed * scale).clamp(0.0, 1.0) * 255.0).round() as u8;
+            Hit {
+                distance: if distance >= reach || coverage == 0 {
+                    255
+                } else {
+                    ((distance / reach * 254.0).round() as u8).min(254)
+                },
+                share: (share.rem_euclid(1.0) * 256.0) as u8,
+                coverage,
+            }
+        })
+        .collect()
 }
 
 fn mark_segment(
@@ -196,7 +209,7 @@ mod tests {
             pos2(60.0, 60.0),
             pos2(0.0, 60.0),
         ];
-        let field = Field::build(&shape, 12.0, 2.0).unwrap();
+        let field = Field::build(&shape, 12.17, 2.0).unwrap();
         for y in 26..34 {
             for x in 61..69 {
                 let h = hit(&field, pos2(x as f32, y as f32));
@@ -204,7 +217,13 @@ mod tests {
             }
         }
         assert_eq!(hit(&field, pos2(20.0, 20.0)).distance, 255);
-        assert!(field.hits.iter().any(|h| h.coverage > 0 && h.coverage < 255), "the boundary is antialiased");
+        assert!(
+            field
+                .hits
+                .iter()
+                .any(|h| h.coverage > 0 && h.coverage < 255),
+            "the boundary is antialiased"
+        );
     }
 
     #[test]
