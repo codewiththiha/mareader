@@ -107,10 +107,12 @@ impl Library {
                 let selection: AiSelection = parse(row)?;
                 self.clock.observe(selection.latest());
                 let id = selection.id;
-                Some(merge_into(self.ai_selections.get(&id), selection).is_some_and(|s| {
-                    self.ai_selections.insert(id, s);
-                    true
-                }))
+                Some(
+                    merge_into(self.ai_selections.get(&id), selection).is_some_and(|s| {
+                        self.ai_selections.insert(id, s);
+                        true
+                    }),
+                )
             }
             Kind::Link => {
                 let link: Link = parse(row)?;

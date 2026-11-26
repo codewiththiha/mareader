@@ -34,9 +34,10 @@ fn selections_round_trip_and_overlaps_remain_distinct() {
         .add_ai_selection(book, selection(spot, "two"), 2_100)
         .unwrap();
     assert_ne!(first, second);
-    assert!(lib
-        .add_ai_selection(BookId(99), selection(spot, "x"), 2_200)
-        .is_none());
+    assert!(
+        lib.add_ai_selection(BookId(99), selection(spot, "x"), 2_200)
+            .is_none()
+    );
     save(&folder, &mut lib);
     let mut back = folder.load(A).library;
     let saved = back.ai_selection(first).unwrap();

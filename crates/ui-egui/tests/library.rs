@@ -1200,7 +1200,7 @@ fn erasing_a_position_restarts_an_open_book_before_it_returns() {
             links: Vec::new(),
         },
     );
-    let erase = "Erase highlights, AI pages and reading position";
+    let erase = "Erase highlights, AI answers and reading position";
     assert!(h.query_by_role_and_label(Role::CheckBox, erase).is_some());
     h.get_by_role_and_label(Role::CheckBox, erase).click();
     h.run();

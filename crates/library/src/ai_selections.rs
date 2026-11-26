@@ -90,12 +90,7 @@ impl Library {
     }
 
     /// Removes or restores an answer, unless its book's data was erased.
-    pub fn set_ai_selection_alive(
-        &mut self,
-        id: AiSelectionId,
-        alive: bool,
-        wall_ms: u64,
-    ) -> bool {
+    pub fn set_ai_selection_alive(&mut self, id: AiSelectionId, alive: bool, wall_ms: u64) -> bool {
         let Some(selection) = self.ai_selections.get(&id) else {
             return false;
         };
@@ -111,7 +106,10 @@ impl Library {
     }
 
     pub(crate) fn move_ai_selections(&mut self, gone: BookId, keeper: BookId, at: Stamp) {
-        for selection in self.ai_selections.values_mut_where(|s| s.book.value == gone) {
+        for selection in self
+            .ai_selections
+            .values_mut_where(|s| s.book.value == gone)
+        {
             selection.book = Field::new(keeper, at);
         }
     }
