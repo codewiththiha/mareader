@@ -395,13 +395,16 @@ fn a_failed_selection_flares_out_before_disappearing() {
     ]);
     select(&mut h, "quick brown");
     let pane = h.state().active_pane();
-    h.state_mut().queue(Sent::Engine(Command::Skill(Action::Run {
-        pane,
-        skill: Skill::Builtin(PageTask::Simplify),
-    })));
+    h.state_mut()
+        .queue(Sent::Engine(Command::Skill(Action::Run {
+            pane,
+            skill: Skill::Builtin(PageTask::Simplify),
+        })));
     h.run_steps(60);
     let ask = h.state().skills().asks().first().expect("the ask").id;
-    h.state_mut().set_option("skill_answers", "failing").unwrap();
+    h.state_mut()
+        .set_option("skill_answers", "failing")
+        .unwrap();
     h.state_mut()
         .queue(Sent::Engine(Command::Skill(Action::Retry(ask))));
     h.run_steps(8);
