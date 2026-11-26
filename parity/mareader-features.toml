@@ -188,7 +188,7 @@ evidence = [
     "crates/ui-egui/tests/shell.rs::the_switcher_changes_panel_and_a_reclick_keeps_it",
     "crates/ui-egui/tests/shell.rs::a_floating_sidebar_opens_from_the_edge_and_closes_after_the_grace",
     "crates/ui-egui/tests/sidebar_toggle.rs::toggling_a_hovered_sidebar_docks_it_and_keeps_it_open",
-    "crates/ui-egui/tests/sidebar_edge.rs::both_sidebar_modes_offer_a_highlighted_edge_that_closes_on_click",
+    "crates/ui-egui/tests/sidebar_edge.rs::clicking_the_edge_toggles_persistent_sidebar_state",
     "crates/ui-egui/tests/shell.rs::escape_closes_the_sidebar",
     "crates/ui-egui/tests/navigation.rs::clicking_a_chapter_jumps_there_and_marks_it",
     "crates/ui-egui/tests/navigation.rs::the_thumbnails_follow_the_page_and_a_click_jumps",
