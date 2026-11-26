@@ -283,11 +283,10 @@ impl MareaderApp {
                 shift,
                 opacity: 1.0,
             },
-            None if bar_hosts => NativeLights {
+            None => NativeLights {
                 shift: 0.0,
                 opacity: self.ui.titlebar.opacity().min(handoff),
             },
-            None => NativeLights::default(),
         }
     }
 }

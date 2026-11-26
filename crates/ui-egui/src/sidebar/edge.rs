@@ -23,8 +23,8 @@ impl Sidebar {
                 out.push(Sent::Ui(UiCommand::CloseSidebar));
             }
             response
-                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
-                .on_hover_text("Click to close sidebar. Width is fixed.");
+                .on_hover_cursor(egui::CursorIcon::Default)
+                .on_hover_text_at_pointer("Click to close sidebar");
         }
         ui.painter().vline(rail.right() - 0.5, rail.y_range(), line);
     }

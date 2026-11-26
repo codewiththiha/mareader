@@ -40,13 +40,10 @@ fn both_sidebar_modes_offer_a_highlighted_edge_that_closes_on_click() {
         h.run_steps(45);
         assert_eq!(
             h.output().platform_output.cursor_icon,
-            egui::CursorIcon::ResizeHorizontal
+            egui::CursorIcon::Default
         );
         assert!(h.query_by_label("Close sidebar at edge").is_some());
-        assert!(
-            h.query_by_label("Click to close sidebar. Width is fixed.")
-                .is_some()
-        );
+        assert!(h.query_by_label("Click to close sidebar").is_some());
         button(&mut h, edge, true);
         button(&mut h, edge, false);
         h.run_steps(45);
@@ -89,4 +86,22 @@ fn hovering_changes_the_edge_pixels_and_leaving_restores_them() -> Result<(), St
     let restored = h.render()?.get_pixel(285, 400).0;
     assert_eq!(plain, restored, "the highlight leaves with the pointer");
     Ok(())
+}
+
+#[test]
+fn edge_tooltip_waits_then_tracks_the_pointer() {
+    let mut h = with(&[("sidebar", "outline")]);
+    h.run_steps(30);
+    h.hover_at(pos2(WIDTH - 3.0, 300.0));
+    h.run_steps(5);
+    assert!(h.query_by_label("Click to close sidebar").is_none());
+    h.run_steps(45);
+    let before = h.get_by_label("Click to close sidebar").rect();
+    h.hover_at(pos2(WIDTH - 3.0, 450.0));
+    h.run_steps(3);
+    let after = h.get_by_label("Click to close sidebar").rect();
+    assert!(
+        (after.top() - before.top() - 150.0).abs() < 5.0,
+        "tooltip should follow pointer: {before:?} to {after:?}"
+    );
 }

@@ -281,7 +281,7 @@ impl TitleBar {
                 }
                 let live = visible;
                 let mut row = band;
-                // Over a rail or in overlay mode, the bar hosts no lights.
+                // A docked rail hosts the lights instead.
                 row.min.x += if bar.gutter {
                     bar.platform.leading_inset()
                 } else {

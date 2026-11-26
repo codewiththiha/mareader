@@ -122,3 +122,24 @@ fn programmatic_open_promotes_a_preview_and_escape_closes_it() {
     assert!(!h.state().sidebar().is_open());
     assert!(!h.state().sidebar().is_docked());
 }
+
+#[test]
+fn old_overlay_preference_does_not_hide_titlebar_lights() {
+    for old in ["true", "false"] {
+        let mut h = with(&[("platform", "mac"), ("float", old)]);
+        h.hover_at(egui::pos2(600.0, 20.0));
+        h.run_steps(40);
+        assert_eq!(h.state().native_lights().opacity, 1.0);
+        h.hover_at(egui::pos2(2.0, 400.0));
+        h.run_steps(30);
+        assert!(h.state().sidebar().is_open());
+        assert!(!h.state().sidebar().is_docked());
+        h.hover_at(egui::pos2(600.0, 400.0));
+        h.run_steps(45);
+        assert!(!h.state().sidebar().is_open());
+        h.hover_at(egui::pos2(600.0, 20.0));
+        h.run_steps(40);
+        assert_eq!(h.state().native_lights().opacity, 1.0);
+        assert_eq!(h.state().native_lights().shift, 0.0);
+    }
+}
