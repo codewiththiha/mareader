@@ -87,9 +87,9 @@ fn a_picked_language_is_remembered_for_next_time() -> Out {
     let mut h = reader(&[("pdf", "sample:5"), ("provider", "ollama")]);
     let (_, sheet) = page(&h, 0)?;
     press(&mut h, margin(sheet), PointerButton::Secondary);
-    h.get_by_label("Translate page…").click();
+    h.get_by_label("Translate page…").hover();
     h.run();
-    h.get_by_label(FIND).type_text("burm");
+    h.event(Event::Text("burm".into()));
     h.run();
     h.get_by_label("Burmese").click();
     h.run();
@@ -454,13 +454,34 @@ fn remembered_language_uses_translate_submenu_without_extra_row() -> Out {
     h.dial(|s| s.ai.tasks.translate.recent = vec!["ja".to_owned(), "my".to_owned()]);
     let (_, sheet) = page(&h, 0)?;
     press(&mut h, margin(sheet), PointerButton::Secondary);
-    assert!(h.query_by_label("Translate page").is_some());
-    assert!(h.query_by_label("Other language…").is_none());
-    h.get_by_label("Translate page").click();
+    h.get_by_label("Translate page…").hover();
     h.run();
     assert!(h.query_by_label("Japanese").is_some());
-    h.get_by_label("More languages…").click();
+    assert!(h.query_by_label("Burmese").is_some());
+    h.event(Event::Text("arab".into()));
     h.run();
     assert!(h.query_by_label(FIND).is_some());
+    assert!(h.query_by_label("Arabic").is_some());
+    assert!(h.query_by_label("Japanese").is_none());
+    Ok(())
+}
+
+#[test]
+fn translation_submenu_escape_folds_before_the_page_menu_closes() -> Out {
+    let mut h = reader(&[("pdf", "sample:5"), ("provider", "ollama")]);
+    let (_, sheet) = page(&h, 0)?;
+    press(&mut h, margin(sheet), PointerButton::Secondary);
+    h.get_by_label("Translate page…").click();
+    h.run();
+    h.event(Event::Text("burm".into()));
+    h.run();
+    assert!(h.query_by_label("Burmese").is_some());
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_label("Burmese").is_none());
+    assert!(h.query_by_label("Translate page…").is_some());
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_label("Translate page…").is_none());
     Ok(())
 }

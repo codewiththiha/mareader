@@ -37,6 +37,7 @@ pub mod image_viewer;
 pub mod import;
 pub mod input_field;
 pub mod keymap;
+pub mod language_menu;
 pub mod layout;
 pub mod library;
 pub mod library_panel;

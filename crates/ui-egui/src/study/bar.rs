@@ -16,7 +16,7 @@ const SWATCH: f32 = 18.0;
 const WIDTH: f32 = 180.0;
 const HEIGHT: f32 = 216.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BarPress {
     Copy,
     Explain,
@@ -26,6 +26,7 @@ pub enum BarPress {
     ManageSkills,
     Highlight(Pen, Option<Rgb>),
     Skill(Skill),
+    Translate(String),
 }
 
 type Offered = Arc<[(Skill, String)]>;
@@ -130,9 +131,9 @@ fn contents(
                 if skills_heading(ui, t) {
                     pressed = Some(BarPress::ManageSkills);
                 }
-                let builtin = skills::builtins(ui).map(BarPress::Skill);
+                let builtin = skills::builtins(ui);
                 let own = skills::custom(ui, custom).map(BarPress::Skill);
-                pressed = pressed.or(builtin).or(own);
+                pressed = pressed.take().or(builtin).or(own);
             }
         });
     widgets::menu_rule(ui);

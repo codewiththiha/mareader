@@ -65,6 +65,7 @@ fn start(a: &Assist, ports: &Answerers, id: TaskId) -> Poll {
         TaskId::SelectionAi => ended(ports.skills.run(SkillAsk {
             skill: "translate".to_owned(),
             text: "The fox ran home.".to_owned(),
+            language: None,
         })),
         TaskId::StudyCards => ended(ports.cards.write(vec![wanted()])),
         TaskId::StudyJudge => ended(ports.judge.judge(attempt())),

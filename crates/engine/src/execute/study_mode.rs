@@ -115,7 +115,11 @@ pub(super) fn locks(session: &mut Session, intent: &Command) -> bool {
             | PageAi::PagesMenu { pane, .. }
             | PageAi::Redo { pane, .. },
         ) => *pane,
-        Command::Skill(SkillAction::Run { pane, .. } | SkillAction::RunPage { pane, .. }) => *pane,
+        Command::Skill(
+            SkillAction::Run { pane, .. }
+            | SkillAction::Translate { pane, .. }
+            | SkillAction::RunPage { pane, .. },
+        ) => *pane,
         _ => return false,
     };
     if !session.study_mode().on(pane) {

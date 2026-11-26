@@ -190,3 +190,75 @@ fn all_action_buttons_share_their_row_center_in_the_fixed_menu() {
         assert!(row[0].left() < row[1].left() && row[1].left() < row[2].left());
     }
 }
+
+#[test]
+fn translation_hover_search_and_enter_runs_the_selected_language() {
+    let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo")]);
+    let pane = h.state().active_pane();
+    h.state_mut().queue(Sent::Engine(Command::SelectText {
+        pane,
+        page: 0,
+        text: "quick brown".into(),
+    }));
+    h.run_steps(30);
+    h.get_by_label("Translate").hover();
+    h.run();
+    h.event(egui::Event::Text("burm".into()));
+    h.run();
+    assert!(h.query_by_label("Burmese").is_some());
+    assert!(h.query_by_label("Japanese").is_none());
+    h.key_press(egui::Key::Enter);
+    h.run_steps(30);
+    let ask = h.state().skills().asks().last().unwrap();
+    assert_eq!(ask.language(), Some("my"));
+    assert_eq!(
+        h.state().settings().ai.tasks.translate.language.as_deref(),
+        Some("my")
+    );
+}
+
+#[test]
+fn escape_folds_translation_before_closing_the_selection() {
+    let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo")]);
+    let pane = h.state().active_pane();
+    h.state_mut().queue(Sent::Engine(Command::SelectText {
+        pane,
+        page: 0,
+        text: "quick brown".into(),
+    }));
+    h.run_steps(30);
+    h.get_by_label("Translate").click();
+    h.run();
+    h.event(egui::Event::Text("japan".into()));
+    h.run();
+    assert!(h.query_by_label("Japanese").is_some());
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_label("Japanese").is_none());
+    assert!(h.query_by_label("Translate").is_some());
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_label("Translate").is_none());
+}
+
+#[test]
+fn arrow_keys_choose_a_language_without_searching() {
+    let mut h = reader(&[("pdf", "sample:5"), ("skill_answers", "echo")]);
+    let pane = h.state().active_pane();
+    h.state_mut().queue(Sent::Engine(Command::SelectText {
+        pane,
+        page: 0,
+        text: "quick brown".into(),
+    }));
+    h.run_steps(30);
+    h.get_by_label("Translate").click();
+    h.run();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run_steps(30);
+    assert_eq!(
+        h.state().skills().asks().last().unwrap().language(),
+        Some("bn")
+    );
+}

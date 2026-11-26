@@ -105,6 +105,7 @@ pub struct Ask {
     /// Who answers, as the card's small print names them.
     pub by: String,
     text: String,
+    language: Option<String>,
     path: Option<PathBuf>,
     layout: Option<Weak<Document>>,
     job: Option<Box<SkillJob>>,
@@ -123,6 +124,7 @@ impl Ask {
             name: self.name.clone(),
             spot,
             source: self.text.clone(),
+            language: self.language.clone(),
             result,
             pending: !matches!(self.answer, Answer::Ready(_)),
             by: self.by.clone(),
@@ -132,6 +134,11 @@ impl Ask {
     /// The selected text originally sent to the skill.
     pub fn source(&self) -> &str {
         &self.text
+    }
+
+    /// The translation target fixed when this ask began, if any.
+    pub fn language(&self) -> Option<&str> {
+        self.language.as_deref()
     }
 
     /// How long the asked text is, in characters.
@@ -145,6 +152,8 @@ impl Ask {
 pub enum Action {
     /// Runs a skill on the pane's selection.
     Run { pane: PaneId, skill: Skill },
+    /// Translates the selection into a request-specific language.
+    Translate { pane: PaneId, tag: String },
     /// Runs a skill on a page; its card points at a spot on it.
     RunPage {
         pane: PaneId,
@@ -194,6 +203,7 @@ pub(crate) struct Asked {
     pub book: Option<BookId>,
     pub spot: Option<Spot>,
     pub text: String,
+    pub language: Option<String>,
     pub path: Option<PathBuf>,
     pub layout: Option<Weak<Document>>,
     pub auto_pin: bool,
@@ -236,6 +246,7 @@ impl State {
         let job = self.runner.run(SkillAsk {
             skill: key.clone(),
             text: asked.text.clone(),
+            language: asked.language.clone(),
         });
         self.asks.push(Ask {
             id,
@@ -253,6 +264,7 @@ impl State {
             answer: Answer::Waiting,
             by: self.runner.by(&key),
             text: asked.text,
+            language: asked.language,
             path: asked.path,
             layout: asked.layout,
             job: Some(job),
@@ -285,6 +297,7 @@ impl State {
         ask.job = Some(runner.run(SkillAsk {
             skill: key.clone(),
             text: ask.text.clone(),
+            language: ask.language.clone(),
         }));
         ask.by = runner.by(&key);
         ask.answer = Answer::Waiting;

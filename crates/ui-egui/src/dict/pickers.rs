@@ -103,6 +103,7 @@ fn ai_row(ui: &mut Ui, s: &mut DictionarySettings, ai: &[String], t: &Tokens) {
         items: &items,
         find: FIND_AI,
         none: "No language matches",
+        notice: None,
         width: AI_SIDE_W,
         corners: CornerRadius::same((t.radius - 2.0) as u8),
     };

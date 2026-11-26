@@ -12,10 +12,12 @@ no parity entry.
   text when nothing is selected. Those keep their own menus.
 - **No model yet.** The menu says what the tasks do and offers
   "Set up AI…", which opens Settings › AI.
-- **Translate.** "Translate to X" uses the last language picked; "Other
-  language…" (or "Translate page…" before the first pick) opens a list
-  with a search field, recent languages first. A pick is remembered, with
-  the last five.
+- **Translate.** Hover or activate "Translate page…" to open the same
+  searchable language list as selection translation. Typing opens search;
+  recent languages come first and the current one is checked. A pick is
+  remembered, with the last five. Apple model languages are filtered when
+  reported; otherwise the catalog is shown with an unverified-support notice.
+  A fallback model may support different languages.
 - **This page or continuous.** Translate and Simplify follow their
   setting: ask each time (the default), this page, or continuous. Asking
   shows a second step with "This page", "Continuous" and "Remember my

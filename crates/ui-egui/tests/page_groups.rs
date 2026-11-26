@@ -251,3 +251,24 @@ fn picked_pages_glow_in_the_thumbnails_while_they_write() {
     let glows = mareader_ui_egui::glow::shown(&h.ctx);
     assert!(glows >= 3, "each of its pages glows: {glows}");
 }
+
+#[test]
+fn direct_picked_pages_language_menu_still_runs_the_chosen_language() {
+    let mut h = reader(&[("pdf", "sample:5")]);
+    let pane = h.state().active_pane();
+    h.state_mut()
+        .queue(Sent::Engine(Command::PageAi(Action::PagesMenu {
+            pane,
+            pages: vec![0, 1],
+            at: [300.0, 200.0],
+        })));
+    h.run();
+    h.get_by_label("Find a language").type_text("burm");
+    h.run();
+    h.get_by_label("Burmese").click();
+    h.run_steps(30);
+    assert_eq!(
+        h.state().settings().ai.tasks.translate.language.as_deref(),
+        Some("my")
+    );
+}

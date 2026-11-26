@@ -12,6 +12,8 @@ pub struct SkillAsk {
     /// The skill's key, as `translate` or `custom-3`.
     pub skill: String,
     pub text: String,
+    /// Translation target fixed for this request, as a language tag.
+    pub language: Option<String>,
 }
 
 /// A skill's answer on its way: the text so far, then all of it.
@@ -115,6 +117,7 @@ mod tests {
         SkillAsk {
             skill: "translate".to_owned(),
             text: text.to_owned(),
+            language: None,
         }
     }
 

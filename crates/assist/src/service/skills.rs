@@ -14,7 +14,7 @@ use crate::backend::Backend;
 use crate::dispatch::Dispatcher;
 use crate::retry;
 use crate::running::{Running, Say, start};
-use crate::skill::{SkillTask, rule};
+use crate::skill::{SkillTask, rule_for};
 
 impl Assist {
     /// Who answers skills, on the settings followed when each starts.
@@ -36,7 +36,7 @@ impl Skiller for AiSkills {
     fn run(&self, ask: SkillAsk) -> Box<SkillJob> {
         let now = self.0.followed();
         let skill = Skill::parse(&ask.skill);
-        let rule = skill.and_then(|s| rule(&now.ai, s));
+        let rule = skill.and_then(|s| rule_for(&now.ai, s, ask.language.as_deref()));
         let route = skill.map(|s| now.skill_route(s)).unwrap_or_default();
         let failed = match (&rule, route.is_empty()) {
             (None, _) => Some(Failure::detailed(

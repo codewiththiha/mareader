@@ -15,6 +15,7 @@ fn asked(pane: u64, text: &str) -> Asked {
         layout: None,
         auto_pin: false,
         text: text.to_owned(),
+        language: None,
     }
 }
 
@@ -116,4 +117,37 @@ fn an_anchor_starts_on_its_first_page() {
     assert_eq!((spot.page(), Anchor::Text(Vec::new()).page()), (4, 0));
     assert_eq!(spot.reveal(), (4, 30..31));
     assert_eq!(asked(1, "x").anchor.reveal(), (2, 4..9));
+}
+
+#[test]
+fn translations_keep_their_targets_across_concurrent_runs_and_retry() {
+    use std::sync::Mutex;
+    struct Recorder(Mutex<Vec<SkillAsk>>);
+    impl Skiller for Recorder {
+        fn by(&self, _: &str) -> String {
+            String::new()
+        }
+        fn run(&self, ask: SkillAsk) -> Box<SkillJob> {
+            self.0.lock().unwrap().push(ask.clone());
+            Scripted::Silent.run(ask)
+        }
+    }
+    let recorder = Arc::new(Recorder(Mutex::new(Vec::new())));
+    let mut state = State::default();
+    state.set_runner(recorder.clone());
+    let mut first = asked(1, "one");
+    first.language = Some("my".into());
+    let id = state.start(first);
+    let mut second = asked(1, "two");
+    second.language = Some("ja".into());
+    state.start(second);
+    assert!(state.retry(id));
+    let calls = recorder.0.lock().unwrap();
+    assert_eq!(
+        calls
+            .iter()
+            .map(|a| a.language.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("my"), Some("ja"), Some("my")]
+    );
 }

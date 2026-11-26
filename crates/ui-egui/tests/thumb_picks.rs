@@ -201,7 +201,15 @@ fn translation_submenu_offers_recent_and_all_languages() {
     h.run();
     assert!(h.query_by_label("French").is_some());
     assert!(h.query_by_label("Burmese").is_some());
-    h.get_by_label("More languages…").click();
+    h.event(egui::Event::Text("japan".into()));
     h.run();
     assert!(h.query_by_label("Find a language").is_some());
+    assert!(h.query_by_label("Japanese").is_some());
+    assert!(h.query_by_label("French").is_none());
+    h.key_press(Key::Enter);
+    h.run_steps(10);
+    assert_eq!(
+        h.state().settings().ai.tasks.translate.language.as_deref(),
+        Some("ja")
+    );
 }

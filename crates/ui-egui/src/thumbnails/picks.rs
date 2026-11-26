@@ -2,7 +2,7 @@
 
 use egui::{Align2, CornerRadius, FontId, Id, Rect, Response, RichText, Sense, Ui, pos2, vec2};
 use mareader_session::{DocId, Document};
-use mareader_settings::{CefrLevel, PageTask, Settings, WordOutput, language_name};
+use mareader_settings::{CefrLevel, PageTask, Settings, WordOutput};
 use mareader_workspace::PaneId;
 use std::collections::BTreeSet;
 use std::fmt;
@@ -23,10 +23,6 @@ use mareader_engine::settings::Tab;
 pub struct Offer {
     /// Some page task has a model.
     pub any: bool,
-    /// The language Translate goes to, by tag and name.
-    pub language: Option<(String, String)>,
-    /// Valid recently used translation languages, most recent first.
-    pub recent: Vec<(String, String)>,
     /// What the quick word list does, and the preset it uses.
     pub quick: (WordOutput, Option<String>),
     /// Fallback CEFR threshold badge (`B2+`) when no custom preset is active.
@@ -42,21 +38,8 @@ impl Offer {
             CefrLevel::C2 => "C2".to_owned(),
             other => format!("{}+", other.label()),
         };
-        let language = ai.tasks.translate.language.as_deref().and_then(|tag| {
-            let name = language_name(tag)?;
-            Some((tag.to_owned(), name.to_owned()))
-        });
         Self {
             any: PageTask::ALL.iter().any(|&t| ai.page_model(t).is_some()),
-            language,
-            recent: ai
-                .tasks
-                .translate
-                .recent
-                .iter()
-                .filter_map(|tag| language_name(tag).map(|name| (tag.clone(), name.to_owned())))
-                .take(5)
-                .collect(),
             quick: (words.instant().output, words.instant.clone()),
             level_tag,
         }
@@ -462,40 +445,17 @@ fn ai_rows(ui: &mut Ui, (pane, offer): (PaneId, &Offer), picks: &Picks, out: &mu
         out.push(run(PageTask::Summarize, None));
         ui.close();
     }
-    let current_name = offer.language.as_ref().map(|(_, name)| name.as_str());
-    widgets::submenu_row(
-        ui,
-        Icon::Translate,
-        "Translate",
-        current_name,
-        188.0,
-        |ui| {
-            if !offer.recent.is_empty() {
-                widgets::menu_section(ui, None, "Recent");
-                for (tag, name) in &offer.recent {
-                    let on = offer
-                        .language
-                        .as_ref()
-                        .is_some_and(|(selected, _)| selected == tag);
-                    if widgets::menu_check_row(ui, name, on).clicked() {
-                        out.push(run(PageTask::Translate, Some(tag.clone())));
-                        ui.close();
-                    }
-                }
-                widgets::menu_rule(ui);
-            }
-            if menu_row(ui, Icon::Translate, "More languages…", None, false).clicked() {
-                let (at, pages) = (ui.max_rect().right_top(), picks.pages());
-                let at = [at.x, at.y];
-                out.push(Sent::Engine(Command::PageAi(Action::PagesMenu {
-                    pane,
-                    pages,
-                    at,
-                })));
-                ui.close();
-            }
-        },
-    );
+    let choices = crate::language_menu::offered(ui.ctx());
+    let current = choices
+        .current
+        .as_deref()
+        .and_then(mareader_settings::language_name);
+    if let Some(tag) = crate::language_menu::show(ui, &choices, |ui| {
+        widgets::menu_row_chevron(ui, Icon::Translate, "Translate", current)
+    }) {
+        out.push(run(PageTask::Translate, Some(tag)));
+        ui.close();
+    }
     let simplify = menu_row(ui, Icon::Simplify, "Simplify", None, false);
     if simplify
         .on_hover_text("Rewrites the text in plain English")

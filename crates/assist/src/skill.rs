@@ -29,8 +29,13 @@ pub struct SkillTask {
 /// What `skill` tells the AI to do under `ai`; none for a skill since
 /// removed, or one with no prompt yet.
 pub fn rule(ai: &AiSettings, skill: Skill) -> Option<String> {
+    rule_for(ai, skill, None)
+}
+
+/// Builds instructions with an optional request-specific translation target.
+pub fn rule_for(ai: &AiSettings, skill: Skill, language: Option<&str>) -> Option<String> {
     match skill {
-        Skill::Builtin(task) => Some(builtin(ai, task)),
+        Skill::Builtin(task) => Some(builtin(ai, task, language)),
         Skill::Custom(id) => {
             let prompt = ai.tasks.skills.get(id)?.prompt.trim();
             (!prompt.is_empty()).then(|| format!("The reader asks: {prompt}"))
@@ -38,10 +43,10 @@ pub fn rule(ai: &AiSettings, skill: Skill) -> Option<String> {
     }
 }
 
-fn builtin(ai: &AiSettings, task: PageTask) -> String {
+fn builtin(ai: &AiSettings, task: PageTask, language: Option<&str>) -> String {
     match task {
         PageTask::Translate => {
-            let tag = ai.tasks.translate.language.as_deref();
+            let tag = language.or(ai.tasks.translate.language.as_deref());
             let language = tag.and_then(language_name).unwrap_or(TRANSLATE_TO);
             format!(
                 "Translate the passage into {language}. Keep the meaning, tone and \
@@ -111,6 +116,16 @@ fn only(fields: &Map<String, Value>) -> Option<&Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_language_overrides_the_followed_setting() {
+        let mut ai = AiSettings::default();
+        ai.tasks.translate.language = Some("ja".into());
+        let skill = Skill::Builtin(PageTask::Translate);
+        let said = rule_for(&ai, skill, Some("my")).unwrap();
+        assert!(said.contains("Burmese"));
+        assert!(!said.contains("Japanese"));
+    }
 
     #[test]
     fn every_prompt_asks_for_the_result_alone() {

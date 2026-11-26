@@ -93,6 +93,7 @@ fn restored(saved: &AiSelection, view: &View, id: AskId) -> Option<Ask> {
         },
         by: saved.by.clone(),
         text: saved.source.clone(),
+        language: saved.language.clone(),
         path: view.path.clone(),
         layout: None,
         job: None,
@@ -224,10 +225,11 @@ mod tests {
             1,
         );
         let record = NewAiSelection {
-            skill: "simplify".into(),
-            name: "Simplify".into(),
+            skill: "translate".into(),
+            name: "Translate".into(),
             spot,
             source: text,
+            language: Some("my".into()),
             result: String::new(),
             pending: true,
             by: "Model".into(),
@@ -244,6 +246,7 @@ mod tests {
         assert!(state.refresh(vec![view()], &lib));
         let ask = state.asks().first().unwrap();
         assert_eq!(ask.pinned, Some(saved));
+        assert_eq!(ask.language(), Some("my"));
         assert!(matches!(ask.answer, Answer::Interrupted));
         assert!(matches!(&ask.anchor, Anchor::Text(spans) if !spans.is_empty()));
         assert!(!ask.open);

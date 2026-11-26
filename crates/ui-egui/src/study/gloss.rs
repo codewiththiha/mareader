@@ -15,6 +15,8 @@ pub enum Gloss {
     Note,
     /// A skill from the selection menu.
     Skill(mareader_settings::Skill),
+    /// Translate the selection into this language.
+    Translate(String),
     /// Open settings to add or edit skills.
     ManageSkills,
     /// Read aloud was pressed: the selection alone is read.

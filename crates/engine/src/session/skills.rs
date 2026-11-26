@@ -1,6 +1,6 @@
 //! Skills on a selection or a page inside [`Session`].
 
-use mareader_settings::Skill;
+use mareader_settings::{PageTask, Skill};
 use mareader_workspace::PaneId;
 
 use crate::event::Event;
@@ -18,7 +18,10 @@ impl Session {
 
     pub(crate) fn skills_act(&mut self, action: Action) -> Done {
         let changed = match action {
-            Action::Run { pane, skill } => self.skill_on_selection(pane, skill),
+            Action::Run { pane, skill } => self.skill_on_selection(pane, skill, None),
+            Action::Translate { pane, tag } => {
+                self.skill_on_selection(pane, Skill::Builtin(PageTask::Translate), Some(tag))
+            }
             Action::RunPage {
                 pane,
                 page,
@@ -47,13 +50,13 @@ impl Session {
     }
 
     /// Runs `skill` on the pane's selection; its card points there.
-    fn skill_on_selection(&mut self, pane: PaneId, skill: Skill) -> bool {
+    fn skill_on_selection(&mut self, pane: PaneId, skill: Skill, language: Option<String>) -> bool {
         let Some((text, spans)) = self.documents().selected_text_spans(pane) else {
             return false;
         };
         let spot = self.documents().highlighted(pane).map(|(spot, _)| spot);
         self.clear_document_selection(pane);
-        self.skill_start(pane, skill, Anchor::Text(spans), spot, text)
+        self.skill_start(pane, skill, Anchor::Text(spans), spot, text, language)
     }
 
     /// Runs `skill` on one page; its card points where the menu opened.
@@ -76,7 +79,7 @@ impl Session {
             .min_by(|(_, a), (_, b)| far(a).total_cmp(&far(b)))
             .map_or(0, |(i, _)| i);
         let anchor = Anchor::Spot { page, x, y, near };
-        self.skill_start(pane, skill, anchor, None, text)
+        self.skill_start(pane, skill, anchor, None, text, None)
     }
 
     fn skill_start(
@@ -86,6 +89,7 @@ impl Session {
         anchor: Anchor,
         spot: Option<mareader_library::Spot>,
         text: String,
+        language: Option<String>,
     ) -> bool {
         let Some(doc) = self.documents().place(pane).map(|p| p.doc.get()) else {
             return false;
@@ -101,6 +105,15 @@ impl Session {
             .document_of(pane)
             .map(|d| std::sync::Arc::downgrade(&d));
         let auto_pin = spot.is_some() && self.settings().ai.tasks.skills.pin_by_default;
+        let language = if skill == Skill::Builtin(PageTask::Translate) {
+            Some(
+                language
+                    .or_else(|| self.settings().ai.tasks.translate.language.clone())
+                    .unwrap_or_else(|| "en".to_owned()),
+            )
+        } else {
+            None
+        };
         let id = self.skills.start(Asked {
             pane,
             doc,
@@ -112,6 +125,7 @@ impl Session {
             path,
             layout,
             auto_pin,
+            language,
             text,
         });
         if spot.is_some() && self.settings().ai.tasks.skills.pin_by_default {

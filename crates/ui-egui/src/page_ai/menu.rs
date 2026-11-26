@@ -12,7 +12,6 @@ use egui::{
     Context, Frame, Id, Key, Margin, Modifiers, Pos2, Rect, RichText, ScrollArea, Stroke, Ui, Vec2,
     pos2, vec2,
 };
-use mareader_dict::LANGUAGES;
 use mareader_engine::command::Command;
 use mareader_engine::page_ai::ledger::Ledger;
 use mareader_engine::page_ai::{Action, How, Slot};
@@ -26,7 +25,7 @@ mod rows;
 use rows::aloud_row;
 pub use rows::offer_accent;
 
-pub const FIND: &str = "Find a language";
+pub const FIND: &str = crate::language_menu::FIND;
 
 const WIDTH: f32 = widgets::GROUPED_MENU_W;
 const BUBBLE_WIDTH: f32 = widgets::MENU_W;
@@ -277,53 +276,14 @@ impl PageAiUi {
             return Self::ask(m, ai, (PageTask::Summarize, None), step, out);
         }
         let translate_hint = hint(ai.tasks.translate.start);
-        let mut recent: Vec<(String, String)> = ai
-            .tasks
-            .translate
-            .recent
-            .iter()
-            .filter_map(|tag| language_name(tag).map(|name| (tag.clone(), name.to_owned())))
-            .take(5)
-            .collect();
-        if let Some(tag) = ai.tasks.translate.language.as_deref()
-            && !recent.iter().any(|(r, _)| r == tag)
-            && let Some(name) = language_name(tag)
-        {
-            recent.insert(0, (tag.to_owned(), name.to_owned()));
-        }
-        if recent.is_empty() {
-            let to = format!("Translate {what}…");
-            if widgets::menu_row_chevron(ui, Icon::Translate, &to, translate_hint).clicked() {
-                *step = Step::Languages;
-            }
-        } else {
-            let current = ai.tasks.translate.language.as_deref();
-            let current_name = current.and_then(language_name).or(translate_hint);
-            let to = format!("Translate {what}");
-            let mut chosen = None;
-            let mut more = false;
-            widgets::submenu_row(ui, Icon::Translate, &to, current_name, 188.0, |ui| {
-                widgets::menu_section(ui, None, "Recent");
-                for (tag, name) in &recent {
-                    if widgets::menu_check_row(ui, name, current == Some(tag.as_str())).clicked() {
-                        chosen = Some(tag.clone());
-                        ui.close();
-                    }
-                }
-                widgets::menu_rule(ui);
-                if widgets::menu_row(ui, Icon::Translate, "More languages…", None, false).clicked()
-                {
-                    more = true;
-                    ui.close();
-                }
-            });
-            if let Some(tag) = chosen {
-                return Self::ask(m, ai, (PageTask::Translate, Some(tag)), step, out);
-            }
-            if more {
-                *step = Step::Languages;
-                return false;
-            }
+        let choices = crate::language_menu::offered(ui.ctx());
+        let current = choices.current.as_deref().and_then(language_name);
+        let to = format!("Translate {what}…");
+        let chosen = crate::language_menu::show(ui, &choices, |ui| {
+            widgets::menu_row_chevron(ui, Icon::Translate, &to, current.or(translate_hint))
+        });
+        if let Some(tag) = chosen {
+            return Self::ask(m, ai, (PageTask::Translate, Some(tag)), step, out);
         }
         let simplify = hint(ai.tasks.simplify.start);
         let label = format!("Simplify {what}");
@@ -446,46 +406,29 @@ impl PageAiUi {
         }
         ui.add_space(2.0);
         let find = self.filter.trim().to_lowercase();
-        let matches = |tag: &str, name: &str| {
-            find.is_empty()
-                || name.to_lowercase().contains(&find)
-                || tag.to_lowercase().starts_with(&find)
-        };
-        let recent: Vec<&str> = match find.is_empty() {
-            true => ai
-                .tasks
-                .translate
-                .recent
-                .iter()
-                .map(String::as_str)
-                .collect(),
-            false => Vec::new(),
-        };
-        let all: Vec<(&str, &str)> = LANGUAGES
+        let choices = crate::language_menu::offered(ui.ctx());
+        let all: Vec<_> = choices
+            .items
             .iter()
-            .map(|l| (l.tag, l.name))
-            .filter(|(tag, name)| matches(tag, name))
+            .filter(|(tag, name)| {
+                find.is_empty()
+                    || name.to_lowercase().contains(&find)
+                    || tag.to_lowercase().starts_with(&find)
+            })
             .collect();
-        let current = ai.tasks.translate.language.as_deref();
         let mut picked = None;
         if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            picked = all.first().map(|(tag, _)| (*tag).to_owned());
+            picked = all.first().map(|(tag, _)| tag.clone());
+        }
+        if choices.unverified {
+            widgets::menu_note(ui, "Language support is not verified for this model.");
         }
         ScrollArea::vertical().max_height(LIST_H).show(ui, |ui| {
-            for tag in &recent {
-                let Some(name) = language_name(tag) else {
-                    continue;
-                };
-                if widgets::menu_check_row(ui, name, current == Some(*tag)).clicked() {
-                    picked = Some((*tag).to_owned());
-                }
-            }
-            if !recent.is_empty() {
-                widgets::menu_rule(ui);
-            }
             for (tag, name) in &all {
-                if widgets::menu_check_row(ui, name, current == Some(*tag)).clicked() {
-                    picked = Some((*tag).to_owned());
+                if widgets::menu_check_row(ui, name, choices.current.as_ref() == Some(tag))
+                    .clicked()
+                {
+                    picked = Some(tag.clone());
                 }
             }
             if all.is_empty() {

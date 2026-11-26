@@ -12,6 +12,7 @@ fn selection(spot: Spot, text: &str) -> NewAiSelection {
         name: "Simplify".into(),
         spot,
         source: "a passage".into(),
+        language: None,
         result: text.into(),
         pending: false,
         by: "example model".into(),
@@ -28,9 +29,9 @@ fn selections_round_trip_and_overlaps_remain_distinct() {
         from: [3, 4],
         to: [5, 120],
     };
-    let first = lib
-        .add_ai_selection(book, selection(spot, "one"), 2_000)
-        .unwrap();
+    let mut translation = selection(spot, "one");
+    translation.language = Some("my".into());
+    let first = lib.add_ai_selection(book, translation, 2_000).unwrap();
     let second = lib
         .add_ai_selection(book, selection(spot, "two"), 2_100)
         .unwrap();
@@ -46,6 +47,7 @@ fn selections_round_trip_and_overlaps_remain_distinct() {
         (saved.spot, saved.source.as_str(), saved.result.as_str()),
         (spot, "a passage", "one")
     );
+    assert_eq!(saved.language.as_deref(), Some("my"));
     assert_eq!(back.ai_selections(book).len(), 2);
     back.take_dirty();
     assert!(back.set_ai_selection_alive(first, false, 3_000));

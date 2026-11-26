@@ -31,6 +31,8 @@ pub struct Spec<'a, T> {
     pub find: &'a str,
     /// Said when nothing matches: "No skill matches".
     pub none: &'a str,
+    /// A note shown above the list, if its contents need qualification.
+    pub notice: Option<&'a str>,
     /// The list's width, narrower than the menu it opens from.
     pub width: f32,
     /// The row's corners, lit while its list shows.
@@ -55,6 +57,7 @@ struct State {
     hush: bool,
     /// The match Enter takes, lit while searching.
     lit: usize,
+    keyboard: bool,
 }
 
 /// An open list last frame, and its layer.
@@ -106,7 +109,13 @@ pub fn show<T: Clone>(
     if resp.contains_pointer() && !state.hush {
         state.over = Some(now);
     }
-    if resp.clicked() {
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(resp.id.with("submenu-trigger"), true));
+    let right =
+        resp.has_focus() && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowRight));
+    if right {
+        state.pinned = true;
+    } else if resp.clicked() {
         state.pinned = !state.pinned;
     }
     let lingers = state.over.is_some_and(|t0| now - t0 < GRACE);
@@ -168,13 +177,17 @@ fn contents<T: Clone>(
 ) -> Option<T> {
     crate::z_order::register_popup(ui.ctx(), ui.layer_id());
     widgets::menu_style(ui, spec.width);
-    let step = arrows(ui, !state.query.is_empty());
+    if let Some(notice) = spec.notice {
+        widgets::menu_note(ui, notice);
+    }
+    let step = arrows(ui);
+    state.keyboard |= step != 0;
     let typed = state.query.clone();
     let enter = find(ui, (id, spec.find), &mut state.query);
     if state.query != typed {
         state.lit = 0;
     }
-    let keys = (enter, step, &mut state.lit);
+    let keys = (enter, step, &mut state.lit, state.keyboard);
     list(ui, spec, &state.query, keys, cell)
 }
 
@@ -192,10 +205,7 @@ fn linger(ui: &Ui, state: &State, now: f64) {
 }
 
 /// Which way the arrows move the light while `searching`: down 1, up -1.
-fn arrows(ui: &Ui, searching: bool) -> i8 {
-    if !searching {
-        return 0;
-    }
+fn arrows(ui: &Ui) -> i8 {
     let press = |key| ui.input_mut(|i| i.consume_key(Modifiers::NONE, key));
     match (press(Key::ArrowDown), press(Key::ArrowUp)) {
         (true, _) => 1,
@@ -251,7 +261,7 @@ fn list<T: Clone>(
     ui: &mut Ui,
     spec: &Spec<'_, T>,
     query: &str,
-    (enter, step, lit): (bool, i8, &mut usize),
+    (enter, step, lit, keyboard): (bool, i8, &mut usize, bool),
     mut cell: impl FnMut(&mut Ui, &T, &str) -> bool,
 ) -> Option<T> {
     let find = query.trim().to_lowercase();
@@ -277,7 +287,7 @@ fn list<T: Clone>(
             if cell(ui, item, name) {
                 picked = Some(item.clone());
             }
-            if find.is_empty() || i != *lit {
+            if (find.is_empty() && !keyboard) || i != *lit {
                 continue;
             }
             let rows = ui.min_rect();

@@ -10,11 +10,13 @@ use crate::theme::Tokens;
 const HEIGHT: f32 = 25.0;
 const WIDTH: f32 = 196.0;
 
-pub(super) fn builtins(ui: &mut Ui) -> Option<Skill> {
-    let mut chosen = None;
-    for task in [PageTask::Translate, PageTask::Summarize, PageTask::Simplify] {
+pub(super) fn builtins(ui: &mut Ui) -> Option<super::BarPress> {
+    let choices = crate::language_menu::offered(ui.ctx());
+    let mut chosen = crate::language_menu::show(ui, &choices, |ui| row(ui, "Translate", true))
+        .map(super::BarPress::Translate);
+    for task in [PageTask::Summarize, PageTask::Simplify] {
         if row(ui, task.label(), false).clicked() {
-            chosen = Some(Skill::Builtin(task));
+            chosen = Some(super::BarPress::Skill(Skill::Builtin(task)));
         }
     }
     chosen
@@ -29,6 +31,7 @@ pub(super) fn custom(ui: &mut Ui, skills: &[(Skill, String)]) -> Option<Skill> {
         } else {
             "No skill matches"
         },
+        notice: None,
         width: WIDTH,
         corners: CornerRadius::same(8),
     };

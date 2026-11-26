@@ -155,6 +155,13 @@ impl MareaderApp {
                 let run = mareader_engine::skills::Action::Run { pane, skill };
                 out.push(Sent::Engine(Command::Skill(run)));
             }
+            Gloss::Translate(tag) => {
+                let mut ai = self.settings().ai.clone();
+                ai.tasks.translate.pick(&tag);
+                let _ = self.set_field("ai", ai);
+                let run = mareader_engine::skills::Action::Translate { pane, tag };
+                out.push(Sent::Engine(Command::Skill(run)));
+            }
             Gloss::ReadAloud => {
                 if let Some(sel) = self.session.documents().selection(pane) {
                     let (a, b) = sel.ordered();
@@ -267,6 +274,14 @@ impl MareaderApp {
         if let Some(answerers) = self.ui.ai.follow(&ai_look) {
             self.session.study_set_ai(answerers);
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        let apple = self.ui.ai.board().and_then(|b| match b.apple.ready() {
+            Some(mareader_assist::AppleState::Ready(languages)) => Some(languages.as_slice()),
+            _ => None,
+        });
+        #[cfg(target_arch = "wasm32")]
+        let apple: Option<&[String]> = None;
+        crate::language_menu::offer(ctx, crate::language_menu::choices(&ai_look, apple));
         self.take_organized();
         #[cfg(not(target_arch = "wasm32"))]
         for toast in self.ui.ai.waiting() {
@@ -414,6 +429,7 @@ fn study_gloss(gloss: &Gloss) -> bool {
             | Gloss::LookUp
             | Gloss::Note
             | Gloss::Skill(_)
+            | Gloss::Translate(_)
             | Gloss::ManageSkills
             | Gloss::ReadAloud
             | Gloss::ReadFrom(..)

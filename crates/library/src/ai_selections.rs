@@ -22,6 +22,9 @@ pub struct AiSelection {
     pub spot: Spot,
     /// The selected text, kept to detect a changed passage.
     pub source: String,
+    /// The translation target at the time of the request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
     pub result: String,
     /// Work was still running when this record was saved.
     #[serde(default)]
@@ -40,6 +43,7 @@ pub struct NewAiSelection {
     pub name: String,
     pub spot: Spot,
     pub source: String,
+    pub language: Option<String>,
     pub result: String,
     pub pending: bool,
     pub by: String,
@@ -83,6 +87,7 @@ impl Library {
             name: new.name,
             spot: new.spot,
             source: new.source,
+            language: new.language,
             result: new.result,
             pending: new.pending,
             by: new.by,

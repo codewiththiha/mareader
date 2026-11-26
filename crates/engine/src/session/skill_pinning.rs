@@ -148,6 +148,7 @@ mod tests {
                 to: [0, 4],
             }),
             text: "text".into(),
+            language: None,
             path: None,
             layout: None,
             auto_pin: false,
