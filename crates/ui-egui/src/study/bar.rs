@@ -160,28 +160,8 @@ fn contents(
             }
         });
     widgets::menu_rule(ui);
-    if !restricted {
-        let wide = ui.available_width() >= 300.0;
-        distributed(ui, 3, |ui, i| {
-            let (icon, name, action) = match i {
-                0 => (Icon::Ai, "AI Dictionary", BarPress::Explain),
-                1 => (Icon::LookUp, "Look up", BarPress::LookUp),
-                _ => (Icon::Note, "Note", BarPress::Note),
-            };
-            let clicked = if wide {
-                ui.add(egui::Button::new(name).frame(false)).clicked()
-            } else {
-                compact_icon(ui, icon, name, false).clicked()
-            };
-            if clicked {
-                pressed = Some(action);
-            }
-        });
-    } else {
-        if compact_icon(ui, Icon::Note, "Note", false).clicked() {
-            pressed = Some(BarPress::Note);
-        }
-    }
+    let action = action_row(ui, restricted);
+    pressed = pressed.or(action);
     if let Some(p) = *pen {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
@@ -194,6 +174,56 @@ fn contents(
     }
     let bottom = bottom_actions(ui, look, pen);
     pressed.or(bottom)
+}
+
+fn action_row(ui: &mut Ui, restricted: bool) -> Option<BarPress> {
+    let available = ui.available_width();
+    let icon_width = (available / 5.0).max(32.0);
+    let note_width = if restricted {
+        available
+    } else {
+        (available - 2.0 * icon_width).max(80.0)
+    };
+    let mut pressed = None;
+    let draw = |ui: &mut Ui, pressed: &mut Option<BarPress>| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.allocate_ui_with_layout(
+                vec2(note_width, 36.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    if widgets::menu_row(ui, Icon::Note, "Note", None, false).clicked() {
+                        *pressed = Some(BarPress::Note);
+                    }
+                },
+            );
+            if !restricted {
+                for (icon, label, action) in [
+                    (Icon::Ai, "AI Dictionary", BarPress::Explain),
+                    (Icon::LookUp, "Look up", BarPress::LookUp),
+                ] {
+                    ui.allocate_ui_with_layout(
+                        vec2(icon_width, 36.0),
+                        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        |ui| {
+                            if compact_icon(ui, icon, label, false).clicked() {
+                                *pressed = Some(action);
+                            }
+                        },
+                    );
+                }
+            }
+        });
+    };
+    if !restricted && note_width + 2.0 * icon_width > available {
+        ScrollArea::horizontal()
+            .id_salt("selection-other-actions")
+            .max_width(available)
+            .show(ui, |ui| draw(ui, &mut pressed));
+    } else {
+        draw(ui, &mut pressed);
+    }
+    pressed
 }
 
 fn skills_heading(ui: &mut Ui, t: &Tokens) -> bool {
@@ -255,7 +285,7 @@ fn distributed(ui: &mut Ui, count: usize, mut draw: impl FnMut(&mut Ui, usize)) 
             ui.spacing_mut().item_spacing.x = 0.0;
             for i in 0..count {
                 ui.allocate_ui_with_layout(
-                    vec2(width, 32.0),
+                    vec2(width, 36.0),
                     egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                     |ui| draw(ui, i),
                 );

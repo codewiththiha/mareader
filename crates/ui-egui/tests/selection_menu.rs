@@ -202,3 +202,46 @@ fn empty_custom_skills_submenu_explains_its_state() {
     h.run_steps(10);
     assert!(h.query_by_label("No custom skills yet").is_some());
 }
+
+#[test]
+fn all_action_buttons_share_their_row_center_at_each_width() {
+    for width in [180, 216, 340] {
+        let mut h = reader(&[("pdf", "sample:5")]);
+        h.dial(|s| s.study.selection_menu.width = width);
+        let pane = h.state().active_pane();
+        h.state_mut().queue(Sent::Engine(Command::SelectText {
+            pane,
+            page: 0,
+            text: "quick brown".to_owned(),
+        }));
+        h.run_steps(30);
+        let rect = |name| h.get_by_label(name).rect();
+        let bottom: Vec<_> = [
+            "Copy",
+            "Read aloud",
+            "Highlight",
+            "Half highlight",
+            "Underline",
+        ]
+        .iter()
+        .map(|name| rect(name))
+        .collect();
+        for r in &bottom {
+            assert!(
+                (r.center().y - bottom[0].center().y).abs() < 0.1,
+                "width {width}, {bottom:?}"
+            );
+        }
+        let row: Vec<_> = ["Note", "AI Dictionary", "Look up"]
+            .iter()
+            .map(|name| rect(name))
+            .collect();
+        for r in &row {
+            assert!(
+                (r.center().y - row[0].center().y).abs() < 0.1,
+                "width {width}, {row:?}"
+            );
+        }
+        assert!(row[0].left() < row[1].left() && row[1].left() < row[2].left());
+    }
+}
