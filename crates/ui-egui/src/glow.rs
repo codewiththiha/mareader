@@ -482,7 +482,10 @@ mod tests {
             let share = i as f32 / 40.0;
             assert!((done.at(share, 800.0).1 - 0.85).abs() < 1e-4);
         }
-        let later = Look { drift: 0.04, ..done };
+        let later = Look {
+            drift: 0.04,
+            ..done
+        };
         assert_ne!(done.at(0.5, 800.0).0, later.at(0.5, 800.0).0);
         assert_eq!(done.at(0.5, 800.0).1, later.at(0.5, 800.0).1);
     }
